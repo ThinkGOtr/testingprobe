@@ -226,8 +226,11 @@ describe("case ve bug taslakları golden kayıtlardan", () => {
     const caseler = ilkVeri().caseler.filter((c) => c.requirement_id === "req-tpd-1");
     expect(caseler).toHaveLength(TPD1_GOLDEN_CASELER.length);
     // İnsan düzeltmesi (edit) başlığı da değiştirebilir (C3: Demo-B sınır case'i, story esas alındı).
-    for (const c of caseler) if (c.karar !== "edit") expect(basliklar.has(c.icerik.title), c.icerik.title).toBe(true);
-    for (const c of caseler) {
+    // u2 N2: C6, AI'ın sınır hatası varyantıdır (`ai-sinir-hatasi` case_facts golden'ı; aşağıdaki testte birebir).
+    const varyant = (c: { sira_no: number }) => c.sira_no === 6;
+    for (const c of caseler) if (c.karar !== "edit" && !varyant(c)) expect(basliklar.has(c.icerik.title), c.icerik.title).toBe(true);
+    expect(caseler.find(varyant)?.icerik).toEqual(TPD1_C6_SINIR_HATASI);
+    for (const c of caseler.filter((x) => !varyant(x))) {
       const g = TPD1_GOLDEN_CASELER[c.sira_no - 1];
       if (c.karar === "edit") {
         expect(c.icerik).not.toEqual(g);

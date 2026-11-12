@@ -285,7 +285,7 @@ export function beklentiDogruluguHesapla(v: MockVeri, rid: string | null): Bekle
     const r = kontrolEt(ai, ts);
     const ks = r.ayrintilar.gruplar.flatMap((g) => g.karsilastirmalar);
     if (ks.length) {
-      const anahtar = `${c.requirement_id}|${ks.map((k) => `${k.tablo_id}:${k.satir_id}:${k.column}=${String(k.case_degeri)}`).sort().join(",")}`;
+      const anahtar = `${c.requirement_id}|${[...new Set(ks.map((k) => `${k.tablo_id}:${k.satir_id}:${k.column}=${String(k.case_degeri)}`))].sort().join(",")}`;
       if (gorulen.has(anahtar)) {
         tekrar += 1;
         continue;
@@ -320,14 +320,14 @@ export function beklentiDogruluguHesapla(v: MockVeri, rid: string | null): Bekle
  * §13.2 Kule `onayli_uyumsuz`: onaylı/yayınlı case'in güncel içeriği güncel onaylı tablolarla `uyumsuz` ve aynı
  * tablo kümesiyle verilmiş geçerli `uyumsuz` istisnası yok (u2 N10: istisnalı case listelenmez).
  */
-export function onayliUyumsuzHesapla(v: MockVeri): { case_id: string; requirement_id: string; baslik: string }[] {
+export function onayliUyumsuzHesapla(v: MockVeri): { case_id: string; requirement_id: string; baslik: string; jira_key: string | null; sira_no: number }[] {
   return v.caseler
     .filter((c) => c.durum === "approved" || c.durum === "published")
     .flatMap((c) => {
       const ts = kapsayanTablolarV(v, c.requirement_id, c.icerik.acceptance_criteria_refs);
       if (!ts.length || kontrolEt(c.icerik, ts).sonuc !== "uyumsuz") return [];
       if (gecerliIstisna(v, c.id, icerikHash(c.icerik), "uyumsuz")) return [];
-      return [{ case_id: c.id, requirement_id: c.requirement_id, baslik: c.icerik.title }];
+      return [{ case_id: c.id, requirement_id: c.requirement_id, baslik: c.icerik.title, jira_key: c.jira_key, sira_no: c.sira_no }];
     });
 }
 

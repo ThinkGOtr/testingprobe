@@ -608,7 +608,8 @@ function caseler(): TestCase[] {
     karar("case-1-6", 4, G[3], { ...analist, durum: "rejected", karar: "reject", ret_nedeni: "duplicate", karar_zamani: t(30, "10:38"), review_sure_ms: 30000 }),
     karar("case-1-4", 5, G[4], { ...analist, durum: "approved", karar: "approve", karar_zamani: t(30, "10:41"), duzeltme_olcusu: 0, review_sure_ms: 52000 }),
     // u2 N2: AI'ın sınır hatası (750,00 TL'de uyarı görünür). T2 düzeltilip onaylanınca kapı bu case'i engeller.
-    karar("case-1-7", 6, TPD1_C6_SINIR_HATASI, { durum: "draft" }),
+    // DEMO-AKISI §6: varyant IDE kanalından (Claude Code `submit_drafts`) taslak olarak gelir.
+    karar("case-1-7", 6, TPD1_C6_SINIR_HATASI, { durum: "draft", kanal: "ide" }),
     // Kredi limiti case'i bilinen kod hatasını hedefler (golden etiketi expected-code-defect).
     karar("case-1-5", 7, G[6], { durum: "draft", kanal: "ide", mode: "replay" }),
     karar("case-1-8", 8, G[7], { durum: "draft" }),

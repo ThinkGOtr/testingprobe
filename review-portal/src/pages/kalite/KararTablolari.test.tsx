@@ -13,6 +13,7 @@ import { MIN_SIPARIS_TABLOSU, YEDI_ARTIS_ILISKISI } from "../../api/mock/kaliteV
 import { mockOlayYayinla } from "../../api/mock/olaylar";
 import { OturumProvider } from "../../auth";
 import { BildirimProvider } from "../../components/Bildirim";
+import { t2Duzelt, t2Taslak } from "../../test/kaliteYardimci";
 import { oturumAc } from "../../test/yardimci";
 
 const REQ = "req-tpd-1";
@@ -48,10 +49,13 @@ describe("liste", () => {
     expect(within(t1).getByTestId("kt-onay")).toHaveTextContent("PO onayı:");
     expect(t1).toHaveClass("insan-kapisi", "kapi-gecti");
     const t2 = await kart(MIN);
-    expect(within(t2).getByText("Taslak")).toBeInTheDocument();
-    expect(within(t2).getByText("AI taslağı")).toBeInTheDocument();
-    expect(t2).toHaveClass("kt-ai");
+    // u2 N2: T2 AI taslağı PO onayı bekliyor (AI kökenli, amber şerit).
+    expect(within(t2).getByText("PO onayı bekliyor")).toBeInTheDocument();
+    expect(within(t2).getByText("AI kökenli")).toBeInTheDocument();
+    expect(t2).toHaveClass("kt-ai", "kapi-bekliyor");
     expect(t2).not.toHaveClass("kapi-gecti");
+    // g2 O2: dürüst bağımsızlık notu.
+    expect(screen.getByTestId("kt-bagimsizlik")).toHaveTextContent("Bağımsızlık insan onayına dayanır: tablo AI taslağıdır, PO onayıyla bağımsızlaşır.");
     // Satırlar tablosu: her çıktı için bir sütun.
     const satirlar = within(t1).getByRole("region", { name: /satırlar/ });
     expect(within(satirlar).getByRole("columnheader", { name: "indirim" })).toBeInTheDocument();
@@ -63,32 +67,63 @@ describe("liste", () => {
     expect(screen.getByRole("link", { name: /← TPD-1/ })).toHaveAttribute("href", `/gereksinimler/${REQ}`);
   });
 
-  it("analist/PO 5, 10: satırların düz Türkçe anlamı, AI taslağından ayrılan satır işareti, sınır örnekleri", async () => {
+  it("u2 N8, N13, N18, N19: satır anlamı iş dilinde, hücrelerde Türkçe; PO ızgarada 750'deki AI sınır hatasını story cümlesiyle görür", async () => {
     await oturumAc("po");
     uygulama();
     const t1 = await kart(KAMPANYA);
     const anlam = within(t1).getByTestId("kt-anlam");
-    expect(anlam).toHaveTextContent("Eğer adet 7 ya da daha fazla → bedava adet: adet ÷ 7 (tam kısım)");
-    expect(anlam).toHaveTextContent("Diğer tüm durumlarda → bedava adet: 0");
+    expect(anlam).toHaveTextContent(
+      "Eğer adet 7 ya da daha fazla → bedava adet = adet ÷ 7 (tam kısım); indirim = bedava adetlerin tutarı, kuruşa yuvarlanır; toplam = indirim düşülmüş satır tutarı, kuruşa yuvarlanır",
+    );
+    expect(anlam).toHaveTextContent("Diğer tüm durumlarda → bedava adet 0; indirim 0; toplam = ara toplam");
     expect(within(t1).queryByTestId("kt-analist-degistirdi")).toBeNull();
+    // N13: okuma görünümünde `dogru` → "doğru".
+    expect(within(within(t1).getByRole("region", { name: /satırlar/ })).getByText("doğru")).toBeInTheDocument();
     const t2 = await kart(MIN);
-    // T2 R2'yi (`<= 750`) analist değiştirdi; AI taslağı `< 750` idi.
+    // Analist değiştirmedi: AI taslağı olduğu gibi PO'da (işaret yok).
+    expect(within(t2).queryByTestId("kt-analist-degistirdi")).toBeNull();
+    const t2Anlam = within(t2).getByTestId("kt-anlam");
+    expect(t2Anlam).toHaveTextContent("Eğer sepet tutarı 750 ya da daha az → uyarı görünür");
+    expect(t2Anlam).toHaveTextContent("Eğer kampanyalı sepet ise → uyarı görünmez");
+    // Sınır örnekleri PO onayı beklerken açık gelir.
+    const ornek = within(t2).getByTestId("kt-ornek");
+    const izgara = await within(ornek).findByRole("region", { name: /sınır örnekleri/ });
+    expect(within(izgara).getByRole("columnheader", { name: "Story ne diyor" })).toBeInTheDocument();
+    const satirlar = within(izgara).getAllByRole("row");
+    const esik = satirlar.filter((r) => r.getAttribute("data-esik") === "true");
+    // N19: eşik satırı (750,00) işaretli ve story cümlesi yanında; AI'ın `<=` hatası "uyarı görünür" der.
+    const satir750 = esik.find((r) => /^yanlış750/.test(r.textContent ?? ""))!;
+    expect(satir750).toHaveTextContent("eşik");
+    expect(satir750).toHaveTextContent("R2");
+    expect(satir750).toHaveTextContent("uyarı görünür");
+    expect(satir750).toHaveTextContent("AC3:");
+    expect(satir750).toHaveTextContent(/altında/);
+    // Eşik dışı satırda story sütunu boş.
+    expect(satirlar.find((r) => /^yanlış749,99/.test(r.textContent ?? ""))).toHaveTextContent(/—$/);
+  });
+
+  it("u2 N2, N9: analist `< 750` düzeltmesi 'analist değiştirdi' + AI'ın özgün koşulu; PO geçmişte değişiklik isteğini görür", async () => {
+    await t2Duzelt();
+    await oturumAc("po");
+    uygulama();
+    const t2 = await kart(MIN);
     const degisen = within(t2).getAllByTestId("kt-analist-degistirdi");
     expect(degisen).toHaveLength(1);
     expect(degisen[0].closest("tr")).toHaveTextContent("R2");
-    expect(within(t2).getByTestId("kt-anlam")).toHaveTextContent("Eğer sepet tutari 750 ya da daha az → minimum uyarisi: doğru");
-    // Sınır örnekleri (PO onayı beklemeyen kart kapalı gelir; açınca yüklenir).
-    const ornek = within(t2).getByTestId("kt-ornek");
-    await userEvent.click(within(ornek).getByText("Sınır örnekleri"));
-    const izgara = await within(ornek).findByRole("region", { name: /sınır örnekleri/ });
-    const satir750 = within(izgara)
-      .getAllByRole("row")
-      .find((r) => /^yanlış750R/.test(r.textContent ?? ""));
-    expect(satir750).toHaveTextContent("R2");
-    expect(satir750).toHaveTextContent("doğru");
+    expect(within(t2).getByTestId("kt-ai-ozgun")).toHaveTextContent("AI taslağında: sepet_tutari <= 750");
+    expect(within(t2).getByTestId("kt-anlam")).toHaveTextContent("Eğer sepet tutarı 750'den az → uyarı görünür");
+    const gecmis = within(t2).getByTestId("kt-gecmis");
+    await userEvent.click(within(gecmis).getByText(/^Geçmiş/));
+    expect(gecmis).toHaveTextContent("Değişiklik istedi — “AC3 'altında' diyor; tam 750,00 TL'de uyarı olmamalı.”");
+    expect(gecmis).toHaveTextContent("İçeriği düzenledi");
+    // Düzeltilmiş tabloda 750,00 TL'de uyarı yok.
+    const izgara = await within(within(t2).getByTestId("kt-ornek")).findByRole("region", { name: /sınır örnekleri/ });
+    expect(within(izgara).getAllByRole("row").find((r) => /^yanlış750 eşik/.test(r.textContent ?? ""))).toHaveTextContent("uyarı görünmez");
   });
 
   it("onyüz 12: gereksinim okunamazsa hata kutusu ve analist eylemleri nedenle kapalı", async () => {
+    // T2 başlangıçta PO onayı bekler (u2 N2); bu senaryo taslaktan başlar.
+    await t2Taslak();
     await oturumAc("analist");
     vi.spyOn(api, "gereksinim").mockRejectedValue(new Error("ağ hatası"));
     uygulama();
@@ -118,7 +153,7 @@ describe("liste", () => {
 
 describe("düzenleyici", () => {
   async function ac() {
-    await oturumAc("analist");
+    await t2Taslak();
     uygulama();
     const t2 = await kart(MIN);
     await userEvent.click(within(t2).getByRole("button", { name: "Düzenle" }));
@@ -257,6 +292,8 @@ describe("düzenleyici", () => {
 
 describe("rol kapıları ve durum geçişleri", () => {
   it("PO: düzenleme ve analist geçişleri pasif + rol nedeni; analist: PO kararları pasif", async () => {
+    // T2 başlangıçta PO onayı bekler (u2 N2); bu senaryo taslaktan başlar.
+    await t2Taslak();
     await oturumAc("po");
     uygulama();
     const t2 = await kart(MIN);
@@ -268,6 +305,8 @@ describe("rol kapıları ve durum geçişleri", () => {
   });
 
   it("gönder → geri çek → gönder → değişiklik iste (gerekçe) → gönder → PO onayı → yeniden aç", async () => {
+    // T2 başlangıçta PO onayı bekler (u2 N2); bu senaryo taslaktan başlar.
+    await t2Taslak();
     await oturumAc("analist");
     const { unmount } = uygulama();
     let t2 = await kart(MIN);
@@ -294,8 +333,8 @@ describe("rol kapıları ve durum geçişleri", () => {
     await userEvent.type(alan, "Sınır 750 dahil olmalı (AC3).");
     await userEvent.click(within(t2).getByRole("button", { name: "Değişiklik isteğini gönder" }));
     expect(await within(t2).findByText("PO değişiklik istedi")).toBeInTheDocument();
-    expect(within(t2).getByText(/Sınır 750 dahil olmalı/)).toBeInTheDocument();
-
+    // Gerekçe uyarıda ve (kapalı) geçmişte görünür.
+    expect(within(t2).getAllByText(/Sınır 750 dahil olmalı/).length).toBeGreaterThan(0);
 
     await oturumAc("analist");
     await api.kararTablosuGecis("kt-2", "submit", { icerik_hash: kalite().tablolar.find((x) => x.id === "kt-2")!.icerik_hash });
@@ -318,6 +357,8 @@ describe("rol kapıları ve durum geçişleri", () => {
   });
 
   it("onyüz 6, 7: PO incelerken içerik değişirse uyarı ve onay kapalı; gözden geçirince onay notuyla onaylar, duyuru satırı odak alır", async () => {
+    // T2 başlangıçta PO onayı bekler (u2 N2); bu senaryo taslaktan başlar.
+    await t2Taslak();
     await oturumAc("analist");
     const t = () => kalite().tablolar.find((x) => x.id === "kt-2")!;
     await api.kararTablosuGecis("kt-2", "submit", { icerik_hash: t().icerik_hash });
@@ -349,6 +390,8 @@ describe("rol kapıları ve durum geçişleri", () => {
   });
 
   it("görülen hash eskiyse geçiş 409 verir ve liste yenilenir", async () => {
+    // T2 başlangıçta PO onayı bekler (u2 N2); bu senaryo taslaktan başlar.
+    await t2Taslak();
     await oturumAc("analist");
     uygulama();
     const t2 = await kart(MIN);
@@ -561,6 +604,8 @@ describe("çekirdek sözleşmesi: son taslak, elle ilişki, örnekle dene (kayde
   });
 
   it("PO 'Değişiklik iste' gerekçesi `son_karar`dan gösterilir", async () => {
+    // T2 başlangıçta PO onayı bekler (u2 N2); bu senaryo taslaktan başlar.
+    await t2Taslak();
     await oturumAc("analist");
     const t = kalite().tablolar.find((x) => x.id === "kt-2")!;
     t.son_karar = { karar: "request_changes", gerekce: "Sınır dahil olmalı.", kullanici: "po", zaman: null };
@@ -571,6 +616,8 @@ describe("çekirdek sözleşmesi: son taslak, elle ilişki, örnekle dene (kayde
   });
 
   it("düzenleyici açıkken 'Örnekle dene' kaydedilmemiş içeriği değerlendirir", async () => {
+    // T2 başlangıçta PO onayı bekler (u2 N2); bu senaryo taslaktan başlar.
+    await t2Taslak();
     await oturumAc("analist");
     uygulama();
     const t2 = await kart(MIN);

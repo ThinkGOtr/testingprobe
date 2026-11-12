@@ -282,8 +282,17 @@ export function TabloDuzenleyici({
           const kosul = bag(`satirlar[${i}].kosul`);
           bag(`satirlar[${i}].id`);
           const idHata = hatalar?.alan[`satirlar[${i}].id`];
+          // onyüz 21: satır kimliği hatası satıra ve koşul alanına bağlı (aria-describedby + aria-invalid).
+          const idHataId = `${id}-satir-${s.anahtar}-id-hata`;
           return (
-            <div key={s.anahtar} className="kt-satir" role="group" aria-label={`Satır ${s.id}`} aria-describedby={`${id}-satir-kimligi`} data-testid="kt-satir">
+            <div
+              key={s.anahtar}
+              className={`kt-satir${idHata ? " kt-satir-hatali" : ""}`}
+              role="group"
+              aria-label={`Satır ${s.id}`}
+              aria-describedby={[idHata ? idHataId : null, `${id}-satir-kimligi`].filter(Boolean).join(" ")}
+              data-testid="kt-satir"
+            >
               <div className="kt-satir-bas">
                 <strong className="mono kucuk">{s.id}</strong>
                 <SiraDugmeleri
@@ -297,7 +306,11 @@ export function TabloDuzenleyici({
                   }}
                 />
               </div>
-              {idHata && <span className="alan-hata kt-satir-kosul">{idHata.join(" · ")}</span>}
+              {idHata && (
+                <span id={idHataId} className="alan-hata kt-satir-kosul" data-testid="kt-satir-id-hatasi">
+                  Satır {s.id || "(kimliksiz)"}: {idHata.join(" · ")}
+                </span>
+              )}
               <div className="alan kt-satir-kosul">
                 <label htmlFor={`${id}-satir-${s.anahtar}-kosul`}>Koşul</label>
                 <input
@@ -307,8 +320,8 @@ export function TabloDuzenleyici({
                   maxLength={300}
                   spellCheck={false}
                   autoComplete="off"
-                  aria-describedby={[kosul.oz["aria-describedby"], `${id}-ifade-ozet`].filter(Boolean).join(" ")}
-                  {...("aria-invalid" in kosul.oz ? { "aria-invalid": true } : {})}
+                  aria-describedby={[kosul.oz["aria-describedby"], idHata ? idHataId : null, `${id}-ifade-ozet`].filter(Boolean).join(" ")}
+                  {...("aria-invalid" in kosul.oz || idHata ? { "aria-invalid": true } : {})}
                   onChange={(e) => setTaslak({ ...taslak, satirlar: taslak.satirlar.map((x, j) => (j === i ? { ...x, kosul: e.target.value } : x)) })}
                 />
                 {kosul.mesaj}

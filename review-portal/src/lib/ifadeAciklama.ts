@@ -11,8 +11,33 @@ const KARSILASTIRMA: Record<string, string> = {
   "!=": "değil",
 };
 
-/** `sepet_tutari` → "sepet tutarı" değil, "sepet tutari": adlar okunur kalsın diye yalnız alt çizgi boşluk olur. */
-const ad = (x: string) => x.replace(/_/g, " ");
+/** ASCII kolon adlarının sık sözcükleri → Türkçe (u2 N8: "sepet_tutari" → "sepet tutarı"); bilinmeyen sözcük aynen. */
+const TR_SOZLUK: Record<string, string> = {
+  tutari: "tutarı",
+  kampanyali: "kampanyalı",
+  uyarisi: "uyarısı",
+  siparis: "sipariş",
+  siparisi: "siparişi",
+  fiyati: "fiyatı",
+  sayisi: "sayısı",
+  urun: "ürün",
+  urunu: "ürünü",
+  odeme: "ödeme",
+  gun: "gün",
+  sure: "süre",
+  ucret: "ücret",
+  ucreti: "ücreti",
+  kisi: "kişi",
+  musteri: "müşteri",
+};
+/** `sepet_tutari` → "sepet tutarı" (alt çizgi boşluk, bilinen sözcükler Türkçe karakterle). */
+export const trAd = (x: string) =>
+  x
+    .trim()
+    .split("_")
+    .map((w) => TR_SOZLUK[w] ?? w)
+    .join(" ");
+const ad = trAd;
 
 /** "750" → "750", "25.5" → "25,5" (ondalık virgül). */
 const sayi = (x: string) => x.replace(".", ",");

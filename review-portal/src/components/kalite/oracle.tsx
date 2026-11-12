@@ -23,7 +23,7 @@ import { kismenNedeniMetni, ORACLE_DURUMU, ORACLE_NEDENI, ORACLE_NEDENI_ACIKLAMA
 import { alintiMetni, mantiksalMi, mantiksalOku } from "../../lib/ifadeAciklama";
 import { tarih, yuzde } from "../../lib/format";
 import { AlanHatasi, Cip, IslemDugmesi, Metrik, Olculmedi, Uyari } from "../ui";
-import { CEKIRDEK_BILDIRMIYOR, GOSTERGE_ESIGI } from "../kule/KaliteKpilari";
+import { beklentiNParcalari, beklentiParcalari, CEKIRDEK_BILDIRMIYOR, GOSTERGE_ESIGI } from "../kule/KaliteKpilari";
 import "./kalite.css";
 
 export const ISTISNA_EN_AZ = 20;
@@ -358,7 +358,7 @@ export function KarsilastirmaTablosu({
   );
 }
 
-function IstisnaNotu({ oracle }: { oracle: CaseOracle }) {
+function IstisnaNotu({ oracle, kapidaGosteriliyor = false }: { oracle: CaseOracle; kapidaGosteriliyor?: boolean }) {
   const kisiAdi = useKisiAdi();
   if (!oracle.istisna) return null;
   const i = oracle.istisna;
@@ -368,7 +368,8 @@ function IstisnaNotu({ oracle }: { oracle: CaseOracle }) {
       {i.zaman && `, ${tarih(i.zaman)}`}
     </span>
   );
-  if (i.gecerli === true) return null; // Geçerli saklı istisna kapı bölümünde gösterilir (Onayla açık).
+  // Taslak case'te geçerli saklı istisna kapı bölümünde gösterilir ("Saklı istisna geçerli", Onayla açık).
+  if (i.gecerli === true && kapidaGosteriliyor) return null;
   return (
     <p className="kucuk" data-testid="oracle-istisna">
       <strong>{i.tur === "kontrolsuz" ? "Kontrol edilemeden onay gerekçesi:" : "Gerekçeli istisna:"}</strong> {i.gerekce}
@@ -376,7 +377,9 @@ function IstisnaNotu({ oracle }: { oracle: CaseOracle }) {
       <span className="soluk">
         {i.gecerli === false
           ? " Bu istisna artık geçerli değil (tablo ya da içerik değişti); onayda gerekçe yeniden istenir."
-          : " Saklı gerekçe bu içerik ve aynı tablolarla geçerli olduğu sürece yeniden kullanılır."}
+          : i.gecerli === true
+            ? " Aynı içerik ve aynı onaylı tablolarla geçerli; yeniden onayda gerekçe istenmez."
+            : " Saklı gerekçe bu içerik ve aynı tablolarla geçerli olduğu sürece yeniden kullanılır."}
       </span>
     </p>
   );
@@ -473,7 +476,7 @@ export function OracleAyrinti({ tc }: { tc: TestCase }) {
       {(satirlar.length > 0 || disarida.length > 0) && (
         <KarsilastirmaTablosu satirlar={satirlar} karsilastirilamayan={disarida} baslik={`Tablo karşılaştırması: ${tc.icerik.title}`} />
       )}
-      {o && <IstisnaNotu oracle={o} />}
+      {o && <IstisnaNotu oracle={o} kapidaGosteriliyor={tc.durum === "draft"} />}
       <p className="kucuk">{baglanti}</p>
       {gorunum === "kontrol_edilemedi" && tc.durum === "draft" && <KontrolYenidenIste tc={tc} />}
     </details>
@@ -962,17 +965,13 @@ export function BeklentiDogruluguMetrigi({ m }: { m: CaseMetrikleri | null | und
   const b = beklentiDogruluguUyarla(m?.beklenti_dogrulugu);
   const parcalar: string[] = [];
   if (b) {
-    parcalar.push(b.oran === null ? "tabloyla karşılaştırılan case yok" : `${b.uyumlu} uyumlu · ${b.uyumsuz} uyuşmuyor`);
-    if (b.kismen) parcalar.push(`${b.kismen} kısmen (orana girmez)`);
+    parcalar.push(...beklentiParcalari(b));
     if (b.kontrol_edilemedi) parcalar.push(`${b.kontrol_edilemedi} kontrol edilemedi`);
     if (b.istisna) parcalar.push(`${b.istisna} istisna`);
     if (b.kontrolsuz_onay) parcalar.push(`${b.kontrolsuz_onay} kontrolsüz onay`);
   }
-  const n = b?.n_case;
-  const nMetni =
-    b && n !== undefined
-      ? [`n = ${n} case`, ...(b.n_story !== undefined ? [`${b.n_story} story`] : []), ...(b.golden_kaynakli ? ["REPLAY / elle golden"] : [])].join(" · ")
-      : null;
+  const n = b ? b.uyumlu + b.uyumsuz : undefined;
+  const nMetni = b && b.n_case !== undefined ? beklentiNParcalari(b).join(" · ") : null;
   return (
     <Metrik
       etiket="Beklenti doğruluğu"
@@ -999,7 +998,6 @@ export function BeklentiDogruluguMetrigi({ m }: { m: CaseMetrikleri | null | und
     />
   );
 }
-
 
 // ------------------------------------------------------------------ ilişkiden türetilen case
 

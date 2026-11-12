@@ -10,12 +10,38 @@ import { Cip, Kart, Metrik, Olculmedi } from "../ui";
 import "./kule-hata.css";
 
 /** Kule'deki `KpiBaslik` ile aynı biçim: ad + (i) kaynak ipucu (`k.kaynaklar[anahtar]`). */
-function KpiBaslik({ ad, k, anahtar }: { ad: string; k: KontrolKulesi; anahtar: KpiAnahtari }): ReactNode {
+function KpiBaslik({ ad, k, anahtar, ek }: { ad: string; k: KontrolKulesi; anahtar: KpiAnahtari; ek?: string }): ReactNode {
+  const kaynak = k.kaynaklar[anahtar];
   return (
     <span className="kpi-baslik">
-      {ad} <KaynakIpucu kaynak={k.kaynaklar[anahtar]} />
+      {ad} <KaynakIpucu kaynak={kaynak && ek ? `${kaynak} ${ek}` : (kaynak ?? ek)} />
     </span>
   );
+}
+
+/** g2 O2: dürüst bağımsızlık notu (karar tabloları sayfası ve Kule ipucu). */
+export const BAGIMSIZLIK_NOTU = "Bağımsızlık insan onayına dayanır: tablo AI taslağıdır, PO onayıyla bağımsızlaşır.";
+
+/**
+ * u2 N1: beklenti doğruluğunun özeti — "5/6 uyumlu" (payda = uyumlu + uyumsuz = n), kısmen / kontrol edilemedi /
+ * tekrar ayrı. Kule karosu ve case review "Özet" kartı aynı metni kullanır.
+ */
+export function beklentiParcalari(b: { uyumlu: number; uyumsuz: number; kismen?: number; kontrol_edilemedi: number; tekrar?: number }): string[] {
+  const payda = b.uyumlu + b.uyumsuz;
+  const p = [payda > 0 ? `${b.uyumlu}/${payda} uyumlu${b.uyumsuz > 0 ? ` · ${b.uyumsuz} uyuşmayan` : ""}` : "tabloyla karşılaştırılan case yok"];
+  if (b.kismen) p.push(`${b.kismen} kısmen (orana girmez)`);
+  return p;
+}
+
+/** n satırı: n = oranın paydası (uyumlu + uyumsuz); tekrar ayrı yazılır ("n = 6 case · 1 tekrar"). */
+export function beklentiNParcalari(b: { uyumlu: number; uyumsuz: number; tekrar?: number; n_story?: number; golden_kaynakli?: number }): string[] {
+  const n = b.uyumlu + b.uyumsuz;
+  return [
+    `n = ${n} case`,
+    ...(b.tekrar ? [`${b.tekrar} tekrar (aynı denetim, tek sayıldı)`] : []),
+    ...(b.n_story !== undefined ? [`${b.n_story} story`] : []),
+    ...(b.golden_kaynakli ? ["REPLAY / elle golden"] : []),
+  ];
 }
 
 /** Çekirdeğin anahtarı hiç sunmadığı durum (eski sürüm): tek ifade, oracle metriğiyle aynı. */
@@ -28,10 +54,7 @@ export function BeklentiDogruluguKarosu({ k }: { k: KontrolKulesi }) {
   const b = k.beklenti_dogrulugu;
   const parcalar: string[] = [];
   if (b) {
-    if (b.uyumlu + b.uyumsuz > 0) parcalar.push(`${b.uyumlu} uyumlu · ${b.uyumsuz} uyuşmayan`);
-    else parcalar.push("tabloyla karşılaştırılan case yok");
-    // K11: kısmen uyumlu orana girmez; ayrı sayılır (anahtar yoksa yazılmaz).
-    if (b.kismen !== undefined) parcalar.push(`${b.kismen} kısmen (orana girmez)`);
+    parcalar.push(...beklentiParcalari(b));
     // Payda yalnız tablosu olan story'ler: etiket bunu söyler (yanlış okunmasın).
     if (b.kapsam_orani !== null) parcalar.push(`tablosu olan story'lerde kapsam ${yuzde(b.kapsam_orani)}`);
     else if (b.kapsam_disi > 0) parcalar.push(`${b.kapsam_disi} kapsam dışı`);
@@ -40,14 +63,11 @@ export function BeklentiDogruluguKarosu({ k }: { k: KontrolKulesi }) {
     parcalar.push(`${b.istisna} istisnayla onaylanan`);
     if (b.kontrolsuz_onay !== undefined) parcalar.push(`${b.kontrolsuz_onay} kontrolsüz onay`);
   }
-  const n = b?.n_case;
-  const nParcalari =
-    b && n !== undefined
-      ? [`n = ${n} case`, ...(b.n_story !== undefined ? [`${b.n_story} story`] : []), ...(b.golden_kaynakli ? ["REPLAY / elle golden"] : [])]
-      : [];
+  const n = b ? b.uyumlu + b.uyumsuz : undefined;
+  const nParcalari = b && b.n_case !== undefined ? beklentiNParcalari(b) : [];
   return (
     <Metrik
-      etiket={<KpiBaslik ad="Beklenti doğruluğu" k={k} anahtar="beklenti_dogrulugu" />}
+      etiket={<KpiBaslik ad="Beklenti doğruluğu" k={k} anahtar="beklenti_dogrulugu" ek={BAGIMSIZLIK_NOTU} />}
       deger={<span data-testid="beklenti-dogrulugu">{!b || b.oran === null ? <Olculmedi /> : yuzde(b.oran)}</span>}
       alt={
         <>
@@ -87,9 +107,15 @@ export function HataYakalamaKarosu({ k }: { k: KontrolKulesi }) {
     const sayilan = h.yakalanan + h.kacan;
     const parcalar: string[] = [];
     if (h.el_yazisi) {
-      parcalar.push(h.oran === null ? "AI testleri: ölçülmedi (üretilmiş test yok)" : `AI testleri ${h.yakalanan}/${sayilan}`);
+      parcalar.push(
+        h.oran === null
+          ? h.kapsam?.yeterli === false
+            ? `AI testleri ${h.yakalanan}/${sayilan}`
+            : "AI testleri: ölçülmedi (üretilmiş test yok)"
+          : `AI testleri ${h.yakalanan}/${sayilan}`,
+      );
       const e = h.el_yazisi;
-      parcalar.push(`el yazısı suite ${e.oran === null ? "ölçülmedi" : `${yuzde(e.oran)} (${e.yakalanan}/${e.yakalanan + e.kacan})`}`);
+      parcalar.push(`el yazısı suite ${e.oran === null ? (e.yakalanan + e.kacan > 0 ? `${e.yakalanan}/${e.yakalanan + e.kacan}` : "ölçülmedi") : `${yuzde(e.oran)} (${e.yakalanan}/${e.yakalanan + e.kacan})`}`);
     } else parcalar.push(sayilan > 0 ? `${h.yakalanan}/${sayilan} hata yakalandı` : "sayılan adım yok");
     if (h.kapsam) {
       const kp = h.kapsam;
@@ -98,6 +124,9 @@ export function HataYakalamaKarosu({ k }: { k: KontrolKulesi }) {
       );
     }
     if (h.gecersiz > 0) parcalar.push(`${h.gecersiz} geçersiz (orana girmez)`);
+    // Q2 (Y10): geçerli adım eşiğin altındaysa oranlar null; nedeni yazılır.
+    if (h.kapsam?.yeterli === false) parcalar.unshift(`ölçülmedi — ${h.kapsam.not ?? "geçerli hata adımı yetersiz"}`);
+    if (h.ai_kacanlar && h.ai_kacanlar.length > 0) parcalar.push(`AI testlerinin kaçırdığı ${new Set(h.ai_kacanlar.map((x) => x.hata_kodu)).size} hata`);
     parcalar.push(`son koşu ${tarih(h.son_kosu.bitis)}`);
     alt = parcalar.join(" · ");
   }
@@ -129,8 +158,12 @@ export function OnayliUyumsuzKarti({ k }: { k: KontrolKulesi }) {
             <ul className="duz-liste">
               {liste.map((c) => (
                 <li key={c.case_id}>
-                  <Link to={`/gereksinimler/${encodeURIComponent(c.requirement_id)}/caseler#case-${encodeURIComponent(c.case_id)}`}>{c.baslik}</Link>{" "}
-                  <span className="kucuk soluk mono">{c.case_id}</span>
+                  {/* Ham case kimliği gösterilmez: "TPD-1 · C5 başlık" (core anahtarı vermezse yalnız başlık). */}
+                  <Link to={`/gereksinimler/${encodeURIComponent(c.requirement_id)}/caseler#case-${encodeURIComponent(c.case_id)}`}>
+                    {[c.jira_key, typeof c.sira_no === "number" ? `C${c.sira_no}` : null].filter(Boolean).join(" · ")}
+                    {(c.jira_key || typeof c.sira_no === "number") && " "}
+                    {c.baslik}
+                  </Link>
                 </li>
               ))}
             </ul>

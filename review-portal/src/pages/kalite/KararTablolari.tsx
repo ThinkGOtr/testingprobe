@@ -10,6 +10,7 @@ import { EkCaseTuret } from "../../components/kalite/EkCaseTuret";
 import { IliskiDuzenleyici, IliskiKarti } from "../../components/kalite/IliskiKarti";
 import { KararTablosuKarti } from "../../components/kalite/KararTablosuKarti";
 import "../../components/kalite/kalite.css";
+import { BAGIMSIZLIK_NOTU } from "../../components/kule/KaliteKpilari";
 import { BosDurum, HataKutusu, IslemDugmesi, SayfaBasligi, Uyari, Yukleniyor } from "../../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../../hooks";
 
@@ -35,6 +36,15 @@ export function KararTablolari() {
   const uretIslem = useIslem();
   const ekleIslem = useIslem();
   const durumRef = useRef<HTMLDivElement | null>(null);
+  const onayKutusu = useRef<HTMLDivElement | null>(null);
+  // onyüz 22: kutu açılınca odak kutudaki ilk düğmeye geçer; kapanınca (Vazgeç / Esc) açan düğmeye döner.
+  useEffect(() => {
+    if (onay) requestAnimationFrame(() => onayKutusu.current?.querySelector<HTMLButtonElement>("button:not([disabled])")?.focus());
+  }, [onay]);
+  const onayiKapat = () => {
+    setOnay(false);
+    requestAnimationFrame(() => document.getElementById("kt-ai-taslak")?.focus());
+  };
 
   const sessiz = useGeciktirilmis(() => void veri.yenile(true));
   useOlay(
@@ -145,9 +155,25 @@ export function KararTablolari() {
         Karar tablosu, bir hesaplama kuralının PO onaylı girdi → çıktı tanımıdır. AI taslağı yalnız onaylı gereksinim metninden çıkarılır; analist düzenler, PO
         onaylar. Onaylı ve güncel tablo, case'lerin beklenen değerlerini onaydan önce bağımsız olarak kontrol eder.
       </p>
+      <p className="kucuk kt-bagimsizlik" data-testid="kt-bagimsizlik">
+        <strong>{BAGIMSIZLIK_NOTU}</strong> PO bir AI hatasını onaylarsa aynı hatayı yapan case de “uyumlu” görünür; sınır örneklerini story cümlesiyle karşılaştırın.
+      </p>
 
       {onay && (
-        <div className="kt-onay-kutu" data-testid="taslak-onay">
+        <div
+          className="kt-onay-kutu"
+          data-testid="taslak-onay"
+          role="group"
+          aria-label="Yeni AI taslağı onayı"
+          ref={onayKutusu}
+          onKeyDown={(e) => {
+            // onyüz 22: Esc de Vazgeç gibi kapatır ve odağı "AI taslağı üret"e döndürür.
+            if (e.key === "Escape") {
+              e.preventDefault();
+              onayiKapat();
+            }
+          }}
+        >
           <Uyari baslik="Yeni AI taslağı mevcut kayıtların yerini alır">
             Bu gereksinimdeki {etkinTablolar.length} tablo ve {etkinIliskiler.length} ilişki "Yerini yenisi aldı" durumuna geçer; onaylı tablolar kontrolde
             kullanılmaz hâle gelir. Yeni taslaklar yeniden düzenlenip PO onayından geçmelidir.
@@ -156,14 +182,7 @@ export function KararTablolari() {
             <IslemDugmesi roller={["analyst"]} kucuk calisiyor={uretIslem.calisiyor} onClick={() => void taslakUret()}>
               Evet, yeni taslak üret
             </IslemDugmesi>
-            <button
-              type="button"
-              className="dugme dugme-hayalet dugme-kucuk"
-              onClick={() => {
-                setOnay(false);
-                requestAnimationFrame(() => document.getElementById("kt-ai-taslak")?.focus());
-              }}
-            >
+            <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={onayiKapat}>
               Vazgeç
             </button>
           </div>

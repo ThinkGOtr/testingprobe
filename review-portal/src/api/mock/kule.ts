@@ -65,9 +65,10 @@ function ozetHesapla(k: HataKosusuDetay): HataKosusuOzeti {
       ...ayrik(pa),
       gecersiz,
       bekleyen,
-      // Q2: yalnız temelde yeşil testler sayılır (temelde kırmızı C3 hariç).
-      uretilen_test: AI_TESTLERI.filter((t) => !TEMELDE_KIRMIZI.includes(t)).length,
-      el_test: PAKET_TESTLERI.length - AI_TESTLERI.length,
+      // Q2: yalnız temelde yeşil testler sayılır (temelde kırmızı C3 hariç); temel koşulamadıysa envanter yok.
+      ...(pa.find((a) => a.asama === "temel")?.sonuc === "yesil"
+        ? { uretilen_test: AI_TESTLERI.filter((t) => !TEMELDE_KIRMIZI.includes(t)).length, el_test: PAKET_TESTLERI.length - AI_TESTLERI.length }
+        : {}),
       temel: pa.find((a) => a.asama === "temel")?.sonuc ?? null,
       kapanis: pa.find((a) => a.asama === "kapanis")?.sonuc ?? null,
       gecerli_adim: pa.filter((a) => a.asama === "hata" && (a.sonuc === "yakalandi" || a.sonuc === "kacti")).length,

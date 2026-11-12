@@ -42,7 +42,7 @@ export function storyCumlesi(deger: number, refs: string[], kriterler: { ref: st
     const k = kriterler?.find((x) => x.ref.replace(/\s/g, "").toUpperCase() === ref.replace(/\s/g, "").toUpperCase());
     if (!k) continue;
     const cumle = k.metin
-      .split(/(?<=[.;])\s+/)
+      .split(/(?<=\.)\s+/)
       .find((c) => yazimlar(deger).some((y) => new RegExp(`(^|[^0-9,.])${y.replace(/[.,]/g, (x) => `\\${x}`)}(?![0-9]|,[0-9])`).test(c)));
     if (cumle) return `${k.ref}: ${cumle.trim()}`;
   }

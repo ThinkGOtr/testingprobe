@@ -367,3 +367,56 @@
   display: block;
   margin-top: 4px;
 }
+
+/* ---------------------------------------------------------------- tur 2 */
+/* u2 N19: sınır örneklerinde eşik satırı (koşuldaki sabit) vurgulu; "Story ne diyor" sütunu düz metin. */
+.kt-ornek-tablo tr.kt-esik > td {
+  background: var(--warn-bg);
+}
+.kt-ornek-tablo .kt-story {
+  font-family: inherit;
+  min-width: 18ch;
+  white-space: normal;
+}
+/* AI taslağındaki özgün koşul (analist değiştirdiyse) satırın altında. */
+.kt-ai-ozgun {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.85em;
+  color: var(--text-2);
+}
+/* u2 N9: görülen → güncel içerik farkı. */
+.kt-fark {
+  margin: 8px 0;
+}
+.kt-fark del {
+  background: var(--err-bg);
+  text-decoration: line-through;
+  padding: 0 2px;
+}
+.kt-fark ins {
+  background: var(--ok-bg);
+  text-decoration: none;
+  padding: 0 2px;
+}
+.kt-bagimsizlik {
+  margin: -4px 0 16px;
+  padding: 8px 12px;
+  border-left: 3px solid var(--border-strong);
+  background: var(--surface-2);
+}
+.kt-gecmis {
+  margin: 8px 0;
+}
+.kt-satir-hatali {
+  border-color: var(--err);
+}
+.oracle-sakli {
+  margin: 4px 0;
+}
+.turet-onizleme {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--accent);
+  background: var(--surface-2);
+}
