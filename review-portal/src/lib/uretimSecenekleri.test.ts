@@ -179,7 +179,7 @@ describe("derinleştirme kuralları", () => {
   it("engel: yalnız cases_ready ve çalışan derinleştirme yokken etkin", () => {
     expect(derinlestirmeEngeli("cases_ready", { durum: "tamam" })).toBeNull();
     expect(derinlestirmeEngeli("cases_ready", null)).toBeNull();
-    expect(derinlestirmeEngeli("generating", null)).toMatch(/yalnız case'leri hazır gereksinimde/);
+    expect(derinlestirmeEngeli("generating", null)).toMatch(/yalnız "Case review aşamasında" olan gereksinimde/);
     expect(derinlestirmeEngeli("cases_ready", { durum: "calisiyor" })).toMatch(/sürüyor/);
   });
 

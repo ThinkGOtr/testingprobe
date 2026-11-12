@@ -7,6 +7,8 @@
 | GET  | `/cases/{id}` | herkes |
 | POST | `/cases/{id}/viewed` | analyst — ilk görüntüleme (review süresinin başlangıcı) |
 | POST | `/cases/{id}/decision` (aşağıda `CaseKararGirdisi`) | analyst |
+| POST | `/cases/bulk-decision` (`TopluKararGirdisi`) | analyst — "Seçilenleri onayla" (K20) |
+| POST | `/cases/{id}/assumption-verified` (`VarsayimDogrulandiGirdisi`) | analyst — K20 |
 | GET  | `/requirements/{id}/case-metrics` | herkes — kabul oranı ve süreler (§12) |
 | GET  | `/requirements/{id}/case-summary` | herkes — üretim özetleri + kapsam matrisi (011 §4.4) |
 | POST | `/requirements/{id}/review-complete` | analyst |
@@ -25,10 +27,10 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from tp_core.auth.deps import CurrentUser, DbSession, require_role
-from tp_core.features.cases import acik_sorular, denetim_akisi, gherkin, review, service
+from tp_core.features.cases import acik_sorular, denetim_akisi, gherkin, review, service, toplu
 from tp_core.features.cases import deepen as deepen_modulu
 from tp_core.features.cases import secenekler as secenek_modulu
 from tp_core.workflow.service import Principal
@@ -174,6 +176,64 @@ def decide(
         ret_nedeni=body.ret_nedeni,
         gerekce=body.gerekce,
         beklenen_anlam_degisti=body.beklenen_anlam_degisti,
+    )
+    session.flush()
+    return service.serialize_cases(session, [tc])[0]
+
+
+class TopluKalem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    case_id: uuid.UUID
+    icerik_hash: str = Field(min_length=1)
+
+
+class TopluKararGirdisi(BaseModel):
+    """`POST /cases/bulk-decision` ("Seçilenleri onayla", 011 K20). Sonuç kalem bazlıdır
+    (`toplu.bulk_approve`); gövde geçersizse 422."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    karar: Literal["approve"]
+    kalemler: list[TopluKalem] = Field(min_length=1, max_length=toplu.AZAMI_KALEM)
+
+    @field_validator("kalemler")
+    @classmethod
+    def _tekil(cls, v: list[TopluKalem]) -> list[TopluKalem]:
+        gorulen: set[uuid.UUID] = set()
+        for k in v:
+            if k.case_id in gorulen:
+                raise ValueError(f"case_id tekrarlanıyor: {k.case_id}")
+            gorulen.add(k.case_id)
+        return v
+
+
+@router.post("/cases/bulk-decision")
+def bulk_decision(body: TopluKararGirdisi, session: DbSession, user: Analyst) -> dict[str, Any]:
+    return toplu.bulk_approve(session, user, [(k.case_id, k.icerik_hash) for k in body.kalemler])
+
+
+class VarsayimDogrulandiGirdisi(BaseModel):
+    """`POST /cases/{id}/assumption-verified` ("Varsayım doğrulandı", 011 K20)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    icerik_hash: str = Field(min_length=1)
+    varsayim_id: str | list[str]
+    gerekce: str | None = Field(default=None, max_length=2000)
+
+
+@router.post("/cases/{case_id}/assumption-verified")
+def assumption_verified(
+    case_id: uuid.UUID, body: VarsayimDogrulandiGirdisi, session: DbSession, user: Analyst
+) -> dict[str, Any]:
+    tc = toplu.assumption_verified(
+        session,
+        case_id,
+        user,
+        icerik_hash=body.icerik_hash,
+        varsayim_id=body.varsayim_id,
+        gerekce=body.gerekce,
     )
     session.flush()
     return service.serialize_cases(session, [tc])[0]

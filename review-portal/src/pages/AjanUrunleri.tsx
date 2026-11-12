@@ -1,6 +1,8 @@
 // Agent Probe'da ön tanımları tamamlanmış AI ajan ürünleri (011 F6, K10). Bu sürümde Agent Probe
 // simüle edilir; sayfa bunu rozet ve açıklamayla açıkça söyler.
+import { Link } from "react-router-dom";
 import { api } from "../api/client";
+import type { AjanUrunu } from "../api/types";
 import { BosDurum, Cip, HataKutusu, Kart, SayfaBasligi, Yukleniyor } from "../components/ui";
 import { useVeri } from "../hooks";
 import { SIMULASYON_ACIKLAMASI } from "../lib/ajanProbe";
@@ -14,20 +16,21 @@ export function AjanUrunleri() {
         baslik="Ajan ürünleri"
         aciklama={
           <span className="satir-ogeler">
-            {(v.veri?.simulasyon ?? true) && (
-              <Cip ton="uyari" title={SIMULASYON_ACIKLAMASI}>
-                Simülasyon
-              </Cip>
-            )}
             <span>
               Test edilen ürün bir AI ajanıysa test Agent Probe'da koşar; Testing Probe sonuçlara göre süreci sürdürür.
             </span>
+            {/* Simülasyon açıklaması sayfada yalnız burada (rozetin yanında) yazılır. */}
+            {(v.veri?.simulasyon ?? true) && (
+              <span className="satir-ogeler">
+                <Cip ton="uyari">Simülasyon</Cip>
+                <span className="soluk kucuk" data-testid="simulasyon-aciklamasi">
+                  {SIMULASYON_ACIKLAMASI}
+                </span>
+              </span>
+            )}
           </span>
         }
       />
-      <p className="soluk kucuk" data-testid="simulasyon-aciklamasi">
-        {SIMULASYON_ACIKLAMASI}
-      </p>
       {v.yukleniyor && !v.veri ? (
         <Yukleniyor />
       ) : v.hata && !v.veri ? (
@@ -44,6 +47,7 @@ export function AjanUrunleri() {
                     <th scope="col">Ürün</th>
                     <th scope="col">Kod</th>
                     <th scope="col">Açıklama</th>
+                    <th scope="col">Bağlı gereksinim</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -52,6 +56,9 @@ export function AjanUrunleri() {
                       <td>{u.ad}</td>
                       <td className="mono">{u.kod}</td>
                       <td>{u.aciklama}</td>
+                      <td>
+                        <BagliGereksinimler u={u} />
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -62,5 +69,26 @@ export function AjanUrunleri() {
         </Kart>
       )}
     </>
+  );
+}
+
+/** Ürüne bağlı gereksinimler (UX-11); core alanı sunmuyorsa ya da bağlı gereksinim yoksa "—". */
+function BagliGereksinimler({ u }: { u: AjanUrunu }) {
+  const liste = u.bagli_gereksinimler ?? [];
+  if (liste.length === 0)
+    return (
+      <span data-testid="bagli-gereksinim-yok">
+        <span aria-hidden="true">—</span>
+        <span className="gorunmez">Bağlı gereksinim yok</span>
+      </span>
+    );
+  return (
+    <span className="satir-ogeler">
+      {liste.map((r) => (
+        <Link key={r.id} to={`/gereksinimler/${encodeURIComponent(r.id)}`} title={r.baslik ?? undefined}>
+          {r.jira_key ?? r.baslik ?? r.id}
+        </Link>
+      ))}
+    </span>
   );
 }

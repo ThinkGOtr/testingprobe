@@ -48,6 +48,13 @@ export interface CevapDenetimi {
   engellenen: "soru" | "cevap" | null;
   soru: DenetimOzeti | null;
   cevap: DenetimOzeti | null;
+  /** D4: gösterim alanları (backend metni; yoksa portal varsayılanı). */
+  etiket?: string | null;
+  baslik?: string | null;
+  aciklama?: string | null;
+  kategori_etiketi?: string | null;
+  /** Cevap içerik kontrolü sınırında kısaltıldı (açıklama notu `notlar`'da). */
+  kesildi?: boolean;
 }
 export type AsistanAmaci = "assistant" | "assistant_deep";
 

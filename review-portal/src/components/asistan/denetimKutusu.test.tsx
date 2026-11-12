@@ -1,12 +1,14 @@
-// Asistan denetimi gösterimi (011 F7, K11): engellenen soru/cevap açıklaması, uyarı notu, kısa
-// puan + ayrıntı ipucu, fail-closed "denetim çalışmıyor" ve denetimli cevapta derin inceleme yok.
+// Asistan içerik kontrolü gösterimi (011 F7, K11, UX-9): engel/uyarıda puan yalnız <details> ayrıntısında,
+// geçen cevapta işaret yok, engel başlığı "Bu soruyu yanıtlayamıyorum", kategori uyarı tonunda (kırmızı değil),
+// backend notu tek kez yazılır, fail-closed "çalışmıyor" ve denetimli cevapta derin inceleme yok.
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import type { AsistanMesaji, CevapDenetimi } from "../../api/asistan";
 import { BildirimProvider } from "../Bildirim";
 import { CevapKarti } from "./CevapKarti";
-import { denetimPuani } from "./DenetimKutusu";
+import { denetimNotuMu, denetimPuani } from "./DenetimKutusu";
 
 function mesaj(denetim: CevapDenetimi, ek: Partial<AsistanMesaji> = {}, notlar: string[] = []): AsistanMesaji {
   return {
@@ -50,19 +52,46 @@ const ENGEL_SORU: CevapDenetimi = {
 };
 
 describe("DenetimKutusu", () => {
-  it("engellenen soru: açıklama kutusu, kategori etiketi, puan; derin inceleme yok", () => {
+  it("engellenen soru: 'Bu soruyu yanıtlayamıyorum', kategori uyarı tonunda, puan görünmez; derin inceleme yok", () => {
     kart(mesaj(ENGEL_SORU, { kaynak: "denetim", amac: null }));
     const kutu = screen.getByTestId("denetim-kutusu");
-    expect(kutu).toHaveAttribute("role", "alert");
-    expect(kutu).toHaveTextContent("Soru engellendi");
-    expect(kutu).toHaveTextContent("asistana iletilmedi");
-    expect(within(kutu).getByText("Nefret söylemi / ırkçılık")).toBeInTheDocument();
-    expect(screen.getByText("Denetim 5/100")).toBeInTheDocument();
+    expect(kutu).toHaveAttribute("role", "note");
+    expect(kutu).toHaveClass("uyari-uyari");
+    expect(kutu).not.toHaveClass("uyari-hata");
+    expect(within(kutu).getByText("Bu soruyu yanıtlayamıyorum")).toBeInTheDocument();
+    const kategori = within(kutu).getByText("Nefret söylemi / ırkçılık");
+    expect(kategori).toHaveClass("cip-uyari");
+    // Puan özet satırında yok; yalnız kapalı ayrıntıda.
+    expect(screen.queryByText(/Denetim \d+\/100/)).toBeNull();
+    expect(screen.getByText(/puan 5\/100/)).not.toBeVisible();
+    // Açıklama backend cevap bloğunda bir kez; kutu aynı açıklamayı tekrar yazmaz.
     expect(screen.getByText("Sunucu açıklaması")).toBeInTheDocument();
+    expect(kutu).not.toHaveTextContent("Sunucu açıklaması");
+    expect(kutu).not.toHaveTextContent("asistana iletilmedi");
+    // Kaynak notu yeni adla; engelde ayrı rozet yok.
+    expect(screen.getByText("İçerik kontrolü")).toBeInTheDocument();
+    expect(screen.queryByTestId("denetim-rozeti")).toBeNull();
     expect(screen.queryByRole("button", { name: "Daha ayrıntılı incele" })).toBeNull();
   });
 
-  it("engellenen cevap: 'Cevap gösterilmedi' ve kişisel veri etiketi", () => {
+  // <summary> tarayıcıda yerel olarak odaklanır ve Enter/Boşluk ile açılır; jsdom klavye etkinleştirmesini
+  // uygulamadığı için burada tıklama (dokunma) ile doğrulanır.
+  it("ayrıntı yerel <details>/<summary>: dokunarak açılır; puan, gerekçe, kaynak içinde", async () => {
+    const k = userEvent.setup();
+    kart(mesaj(ENGEL_SORU, { kaynak: "denetim", amac: null }));
+    const ayrinti = screen.getByTestId("denetim-ayrinti");
+    expect(ayrinti.tagName).toBe("DETAILS");
+    expect(ayrinti).not.toHaveAttribute("open");
+    const ozet = within(ayrinti).getByText("Kontrol ayrıntısı");
+    expect(ozet.tagName).toBe("SUMMARY");
+    await k.click(ozet);
+    expect(ayrinti).toHaveAttribute("open");
+    expect(ayrinti).toHaveTextContent("puan 5/100");
+    expect(ayrinti).toHaveTextContent("Gerekçe: Irkçı genelleme.");
+    expect(ayrinti).toHaveTextContent("Kaynak: Testing Probe geçidi (model)");
+  });
+
+  it("engellenen cevap: D4 başlığı 'Bu cevabı gösteremiyorum', kişisel veri etiketi; ayrıntıda iki yön", () => {
     kart(
       mesaj(
         {
@@ -75,33 +104,54 @@ describe("DenetimKutusu", () => {
       ),
     );
     const kutu = screen.getByTestId("denetim-kutusu");
-    expect(kutu).toHaveTextContent("Cevap gösterilmedi");
+    expect(kutu).toHaveTextContent("Bu cevabı gösteremiyorum");
     expect(within(kutu).getByText("Kişisel veri")).toBeInTheDocument();
-    expect(screen.getByText("Denetim 20/100")).toBeInTheDocument();
+    const ayrinti = screen.getByTestId("denetim-ayrinti");
+    expect(ayrinti).toHaveTextContent("Soru");
+    expect(ayrinti).toHaveTextContent("puan 20/100");
   });
 
-  it("uyarı: cevap gösterilir, uyarı kutusu + not stili, ipucunda kategoriler/gerekçe/kaynak", () => {
+  it("uyarı: 'İçerik kontrolü' rozeti (puansız), backend notu kutuda bir kez; cevap gösterilir", () => {
     const d: CevapDenetimi = {
       karar: "uyar",
       engellenen: null,
       soru: { puan: 62, karar: "uyar", kategoriler: ["rekabete_aykiri"], gerekce: "Rakip hakkında doğrulanmamış iddia isteniyor.", kaynak: "tp-gecit" },
       cevap: { puan: 88, karar: "gec", kategoriler: ["temiz"], gerekce: "", kaynak: "tp-gecit" },
     };
-    kart(mesaj(d, {}, ["Denetim uyarısı: rekabete aykırı içerik"]));
-    expect(screen.getByTestId("denetim-kutusu")).toHaveAttribute("role", "note");
-    expect(screen.getByTestId("denetim-kutusu")).toHaveTextContent("Rekabete aykırı");
-    expect(screen.getByText("Denetim uyarısı: rekabete aykırı içerik")).toHaveClass("asistan-not-denetim");
-    const rozet = screen.getByText("Denetim 62/100");
-    const ipucu = rozet.closest("[title]")!.getAttribute("title")!;
-    expect(ipucu).toContain("Soru: 62/100");
-    expect(ipucu).toContain("Cevap: 88/100");
-    expect(ipucu).toContain("Rakip hakkında doğrulanmamış iddia isteniyor.");
-    expect(ipucu).toContain("Testing Probe geçidi (model)");
+    kart(mesaj(d, {}, ["Denetim uyarısı: rekabete aykırı içerik", "Başka not"]));
+    const kutu = screen.getByTestId("denetim-kutusu");
+    expect(kutu).toHaveAttribute("role", "note");
+    expect(kutu).toHaveTextContent("İçerik kontrolü uyarısı");
+    expect(within(kutu).getByText("rekabete aykırı içerik")).toBeInTheDocument();
+    // Not ayrı paragraf olarak tekrar yazılmaz; diğer notlar kalır.
+    expect(screen.queryByText("Denetim uyarısı: rekabete aykırı içerik")).toBeNull();
+    expect(screen.getAllByText(/rekabete aykırı içerik/)).toHaveLength(1);
+    expect(screen.getByText("Başka not")).toBeInTheDocument();
+    const rozet = screen.getByTestId("denetim-rozeti");
+    expect(rozet).toHaveTextContent(/^İçerik kontrolü$/);
+    expect(rozet.querySelector("[title]")).toBeNull();
+    expect(screen.getByTestId("denetim-ayrinti")).toHaveTextContent("puan 62/100");
+    expect(screen.getByTestId("denetim-ayrinti")).toHaveTextContent("puan 88/100");
+    expect(screen.getByText("Sunucu açıklaması")).toBeInTheDocument();
     // Model cevabı: derin inceleme düğmesi kalır.
     expect(screen.getByRole("button", { name: "Daha ayrıntılı incele" })).toBeInTheDocument();
   });
 
-  it("geçti: kutu yok, yalnız kısa puan", () => {
+  it("uyarı, backend notu yoksa: kısa cümle + kategori etiketi", () => {
+    kart(
+      mesaj({
+        karar: "uyar",
+        engellenen: null,
+        soru: { puan: 62, karar: "uyar", kategoriler: ["rekabete_aykiri"], gerekce: "", kaynak: "sim" },
+        cevap: null,
+      }),
+    );
+    const kutu = screen.getByTestId("denetim-kutusu");
+    expect(kutu).toHaveTextContent("Bu cevabı dikkatle değerlendirin.");
+    expect(within(kutu).getByText("Rekabete aykırı")).toHaveClass("cip-uyari");
+  });
+
+  it("geçti: kutu yok, rozet yok, puan yok", () => {
     kart(
       mesaj({
         karar: "gec",
@@ -111,12 +161,13 @@ describe("DenetimKutusu", () => {
       }),
     );
     expect(screen.queryByTestId("denetim-kutusu")).toBeNull();
-    expect(screen.getByText("Denetim 92/100")).toBeInTheDocument();
+    expect(screen.queryByTestId("denetim-rozeti")).toBeNull();
+    expect(screen.queryByText(/\/100/)).toBeNull();
   });
 
-  it("denetim çalışmıyor (fail-closed): açıklama, puan yok", () => {
+  it("içerik kontrolü çalışmıyor (fail-closed): açıklama, puan yok", () => {
     kart(mesaj({ karar: "calismiyor", engellenen: null, soru: null, cevap: null }, { kaynak: "denetim" }));
-    expect(screen.getByTestId("denetim-kutusu")).toHaveTextContent("Denetim çalışmıyor");
+    expect(screen.getByTestId("denetim-kutusu")).toHaveTextContent("Şu an yanıt veremiyorum");
     expect(screen.queryByTestId("denetim-rozeti")).toBeNull();
     expect(screen.queryByRole("button", { name: "Daha ayrıntılı incele" })).toBeNull();
   });
@@ -124,5 +175,34 @@ describe("DenetimKutusu", () => {
   it("puan iki yönün düşüğüdür", () => {
     expect(denetimPuani(ENGEL_SORU)!.puan).toBe(5);
     expect(denetimPuani({ karar: "gec", engellenen: null, soru: null, cevap: null })).toBeNull();
+  });
+
+  it("D4: backend başlığı/kategori etiketi kutuda; aynı başlık bloğu ve açıklama tekrar yazılmaz", () => {
+    const m = mesaj(
+      {
+        karar: "engelle",
+        engellenen: "soru",
+        baslik: "Bu soruyu yanıtlayamıyorum",
+        aciklama: "Soru içerik kurallarına takıldı (Talimat manipülasyonu).",
+        kategori_etiketi: "Talimat manipülasyonu",
+        soru: { puan: 5, karar: "engelle", kategoriler: ["prompt_injection"], gerekce: "", kaynak: "tp-gecit" },
+        cevap: null,
+      },
+      { kaynak: "denetim" },
+    );
+    m.cevap!.cevap_bloklari = [
+      { tur: "baslik", metin: "Bu soruyu yanıtlayamıyorum" },
+      { tur: "paragraf", metin: "Soru içerik kurallarına takıldı (Talimat manipülasyonu)." },
+    ];
+    kart(m);
+    expect(screen.getAllByText("Bu soruyu yanıtlayamıyorum")).toHaveLength(1);
+    expect(screen.getAllByText("Soru içerik kurallarına takıldı (Talimat manipülasyonu).")).toHaveLength(1);
+    expect(within(screen.getByTestId("denetim-kutusu")).getByText("Talimat manipülasyonu")).toBeInTheDocument();
+  });
+
+  it("eski ve yeni uyarı notu öneki tanınır", () => {
+    expect(denetimNotuMu("İçerik kontrolü uyarısı: x")).toBe(true);
+    expect(denetimNotuMu("Denetim uyarısı: x")).toBe(true);
+    expect(denetimNotuMu("Başka not")).toBe(false);
   });
 });

@@ -37,7 +37,7 @@ import { mockOlayYayinla } from "./olaylar";
 type Rota = [string, RegExp, (m: RegExpMatchArray, q: URLSearchParams, govde: unknown) => unknown];
 
 export const REPLAY_MISS_DERINLESTIRME = "REPLAY-MISS: bu girdi için kayıtlı model çıktısı yok";
-export const DERINLESTIRME_DURUM_HATASI = "Derinleştirme yalnız case'leri hazır gereksinimde (cases_ready) başlatılabilir.";
+export const DERINLESTIRME_DURUM_HATASI = "Derinleştirme yalnız \"Case review aşamasında\" olan gereksinimde başlatılabilir.";
 export const DERINLESTIRME_SURUYOR_HATASI = "Bu gereksinimde süren bir derinleştirme var; bitmesini bekleyin.";
 const TEKNIKLER: DerinlestirmeTeknigi[] = ["EP", "BVA", "DT", "ST", "PW", "UC", "EG"];
 
@@ -59,8 +59,12 @@ export interface MockBaglami {
 /** `GET generation-options` (core biçimi). */
 export function uretimSecenekleriYaniti(v: MockVeri, id: string): UretimSecenekleriYaniti {
   const kayitli = v.uretimSecenekleri?.[id];
+  const kip = v.uretimKipleri?.[id];
   return {
-    secenekler: kayitli ? JSON.parse(JSON.stringify(kayitli)) : null,
+    // D1: kayıtlı kip tercihi core'da `secenekler.kip`; seçenek kaydı yoksa yalnız kip taşıyan
+    // `kayitli` (eski taslak biçim) — uyarlayıcı ikisini de `kip` alanına çevirir.
+    ...(kip && !kayitli ? ({ kayitli: { kip } } as object) : {}),
+    secenekler: kayitli ? { ...JSON.parse(JSON.stringify(kayitli)), ...(kip ? { kip } : {}) } : null,
     varsayilan: varsayilanSecenekler(),
     platformlar: [...URETIM_PLATFORMLARI],
     test_seviyeleri: [...URETIM_TEST_SEVIYELERI],

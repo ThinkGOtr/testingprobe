@@ -2,13 +2,14 @@
 // testi talebinin durumu/sonucu. Bağlı gereksinimde case üretim akışı çalışmaz; test Agent
 // Probe'da koşar ve Testing Probe sonuca göre süreci sürdürür. Agent Probe bu sürümde simüle
 // edilir: her yerde "Simülasyon" açıkça yazılır.
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { api } from "../api/client";
 import { ApiError } from "../api/http";
 import type { AjanTestiGorunumu, AjanTestiTalebi } from "../api/types";
 import { useVeri, type VeriDurumu } from "../hooks";
 import { AJAN_TESTI_BITMEDI, AJAN_TESTI_DURUMU, SIMULASYON_ACIKLAMASI } from "../lib/ajanProbe";
 import { tarih } from "../lib/format";
+import { useOturum } from "../auth";
 import { useBildirim } from "./Bildirim";
 import { Cip, DisBaglanti, HataKutusu, IslemDugmesi, Kart, Uyari } from "./ui";
 
@@ -17,7 +18,8 @@ export const AJAN_SORGU_MS = 3000;
 
 /**
  * Gereksinimin ajan ürünü görünümü. Core bu ucu sunmuyorsa (eski sürüm: 404/501) `null` döner ve
- * panel hiç çizilmez; diğer hatalar panelde gösterilir.
+ * panel hiç çizilmez; diğer hatalar panelde gösterilir. Talep sürerken sonuç D4'ün
+ * `POST …/agent-test/refresh` ucuyla işletilip okunur (uç yoksa istemci eski GET'e düşer).
  */
 export function useAjanTesti(id: string): VeriDurumu<AjanTestiGorunumu | null> {
   const v = useVeri(
@@ -28,13 +30,28 @@ export function useAjanTesti(id: string): VeriDurumu<AjanTestiGorunumu | null> {
       }),
     [id],
   );
-  const aktif = !!v.veri?.talep && AJAN_TESTI_BITMEDI.has(v.veri.talep.durum);
-  const { yenile } = v;
+  const { kullanici } = useOturum();
+  const analist = kullanici?.rol === "analyst";
+  // D4: GET yalnız okur; `yenilenebilir` true iken analist refresh POST'u ile sonucu işletir.
+  // Alan yoksa (eski core) talep bitmeyene kadar yoklanır. Analist olmayan rol yalnız GET ile okur.
+  const veri = v.veri;
+  const aktif = !!veri && (typeof veri.yenilenebilir === "boolean" ? veri.yenilenebilir : !!veri.talep && AJAN_TESTI_BITMEDI.has(veri.talep.durum));
+  const { setVeri } = v;
   useEffect(() => {
     if (!aktif) return;
-    const t = window.setTimeout(() => void yenile(true), AJAN_SORGU_MS);
-    return () => window.clearTimeout(t);
-  }, [aktif, yenile, v.veri]);
+    let iptal = false;
+    const t = window.setTimeout(() => {
+      (analist ? api.ajanTestiYenile(id) : api.ajanTesti(id))
+        .then((g) => {
+          if (!iptal) setVeri(g);
+        })
+        .catch(() => undefined); // geçici hata: bir sonraki çizimde yeniden denenmez; sayfa yenilemesi okur
+    }, AJAN_SORGU_MS);
+    return () => {
+      iptal = true;
+      window.clearTimeout(t);
+    };
+  }, [aktif, analist, id, setVeri, v.veri]);
   return v;
 }
 
@@ -65,10 +82,16 @@ function TalepSonucu({ t }: { t: AjanTestiTalebi }) {
           Toplam {t.sonuc.toplam} senaryo · geçen {t.sonuc.gecen ?? 0} · kalan {t.sonuc.kalan ?? 0}
         </p>
       )}
-      {t.surec_notu && (
-        <Uyari ton={t.surec === "tamamlandi" ? "basari" : t.surec === "bulgu" ? "uyari" : t.surec ? "hata" : "bilgi"} baslik="Testing Probe süreci">
-          {t.surec_notu}
+      {t.surec === "simule" ? (
+        <Uyari ton="bilgi" baslik="Simülasyon sonucu — gereksinim tamamlanmadı">
+          {t.surec_notu ?? "Sonuç simülatörden geldi; gerçek Agent Probe koşusu olmadığı için gereksinim tamamlandı olarak işaretlenmez."}
         </Uyari>
+      ) : (
+        t.surec_notu && (
+          <Uyari ton={t.surec === "tamamlandi" ? "basari" : t.surec === "bulgu" ? "uyari" : t.surec ? "hata" : "bilgi"} baslik="Testing Probe süreci">
+            {t.surec_notu}
+          </Uyari>
+        )
       )}
       {t.durum === "failed" && kalanlar.length > 0 && (
         <div data-testid="ajan-bulgular">
@@ -101,11 +124,14 @@ function TalepSonucu({ t }: { t: AjanTestiTalebi }) {
 
 export function AjanUrunuPaneli({
   id,
+  bolumId,
   ajan,
   caseVar,
   degisti,
 }: {
   id: string;
+  /** Bölüm gezgininin çapası (kart kimliği). */
+  bolumId?: string;
   ajan: VeriDurumu<AjanTestiGorunumu | null>;
   /** Gereksinimin case'i var: bağlama sunucuda reddedilir, düğme açıklamalı pasif. */
   caseVar: boolean;
@@ -115,10 +141,13 @@ export function AjanUrunuPaneli({
   const [secim, setSecim] = useState("");
   const [calisiyor, setCalisiyor] = useState(false);
   const [hata, setHata] = useState<unknown>(null);
+  // Bağlı değilken bölüm tek satırlık özet (UX-11): bağlama formu yalnız "Bağla" ile açılır.
+  const [acik, setAcik] = useState(false);
+  const govdeId = useId();
   const g = ajan.veri;
   const bagli = !!g?.urun_kodu;
-  // Ürün listesi yalnız bağlama formu gerektiğinde okunur.
-  const urunler = useVeri(() => (g && !bagli ? api.ajanUrunleri() : Promise.resolve(null)), [!!g, bagli]);
+  // Ürün listesi yalnız bağlama formu açıkken okunur.
+  const urunler = useVeri(() => (g && !bagli && acik ? api.ajanUrunleri() : Promise.resolve(null)), [!!g, bagli, acik]);
 
   if (ajan.veri === null) return null; // core ucu yok (eski sürüm)
   if (ajan.hata && !g) return <HataKutusu hata={ajan.hata} kaynak={ajan.hataNesnesi} yenile={() => void ajan.yenile()} />;
@@ -140,8 +169,63 @@ export function AjanUrunuPaneli({
 
   const liste = urunler.veri?.urunler ?? [];
   const aktif = !!g.talep && AJAN_TESTI_BITMEDI.has(g.talep.durum);
+  if (!bagli) {
+    return (
+      <Kart
+        id={bolumId}
+        className="ajan-daraltilmis"
+        baslik="Ürün AI ajanı"
+        eylemler={
+          <span className="satir-ogeler">
+            <span data-testid="ajan-ozet">bağlı değil —</span>
+            {g.simulasyon && <SimulasyonRozeti />}
+            <button
+              type="button"
+              className="dugme dugme-ikincil dugme-kucuk"
+              aria-expanded={acik}
+              aria-controls={acik ? govdeId : undefined}
+              onClick={() => setAcik((x) => !x)}
+            >
+              Bağla
+            </button>
+          </span>
+        }
+      >
+        {hata !== null && <HataKutusu hata={hata instanceof Error ? hata.message : String(hata)} kaynak={hata} />}
+        {acik && (
+          <div id={govdeId}>
+            <p className="soluk kucuk">
+              Test edilen ürün bir AI ajanıysa gereksinimi Agent Probe'daki ürünüyle bağlayın: test Agent Probe'da koşar, case üretilmez.
+            </p>
+            <div className="alan alan-satir">
+              <label htmlFor={`${govdeId}-urun`}>Ajan ürünü</label>
+              <select id={`${govdeId}-urun`} value={secim} onChange={(e) => setSecim(e.target.value)}>
+                <option value="">Ürün seçin…</option>
+                {liste.map((u) => (
+                  <option key={u.kod} value={u.kod}>
+                    {u.ad}
+                  </option>
+                ))}
+              </select>
+              <IslemDugmesi
+                roller={["analyst"]}
+                tur="ikincil"
+                disabled={!secim || caseVar}
+                title={caseVar ? "Bu gereksinim için case'ler üretilmiş; ajan ürününe bağlanamaz." : !secim ? "Önce bir ürün seçin" : undefined}
+                calisiyor={calisiyor}
+                onClick={() => void calistir(() => api.ajanUrunuBagla(id, secim), "Gereksinim ajan ürününe bağlandı.")}
+              >
+                Ürün AI ajanı olarak bağla
+              </IslemDugmesi>
+            </div>
+          </div>
+        )}
+      </Kart>
+    );
+  }
   return (
     <Kart
+      id={bolumId}
       baslik="Ürün AI ajanı"
       eylemler={
         <span className="satir-ogeler">
@@ -200,34 +284,7 @@ export function AjanUrunuPaneli({
             </details>
           )}
         </>
-      ) : (
-        <>
-          <p className="soluk kucuk">
-            Test edilen ürün bir AI ajanıysa gereksinimi Agent Probe'daki ürünüyle bağlayın: test Agent Probe'da koşar, case üretilmez.
-          </p>
-          <div className="alan alan-satir">
-            <label htmlFor="ajan-urunu-sec">Ajan ürünü</label>
-            <select id="ajan-urunu-sec" value={secim} onChange={(e) => setSecim(e.target.value)}>
-              <option value="">Ürün seçin…</option>
-              {liste.map((u) => (
-                <option key={u.kod} value={u.kod}>
-                  {u.ad}
-                </option>
-              ))}
-            </select>
-            <IslemDugmesi
-              roller={["analyst"]}
-              tur="ikincil"
-              disabled={!secim || caseVar}
-              title={caseVar ? "Bu gereksinim için case'ler üretilmiş; ajan ürününe bağlanamaz." : !secim ? "Önce bir ürün seçin" : undefined}
-              calisiyor={calisiyor}
-              onClick={() => void calistir(() => api.ajanUrunuBagla(id, secim), "Gereksinim ajan ürününe bağlandı.")}
-            >
-              Ürün AI ajanı olarak bağla
-            </IslemDugmesi>
-          </div>
-        </>
-      )}
+      ) : null}
     </Kart>
   );
 }

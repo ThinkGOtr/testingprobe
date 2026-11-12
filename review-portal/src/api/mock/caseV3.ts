@@ -78,7 +78,7 @@ const ortak = {
   tags: ["AI-generated"],
 };
 
-/** v3 örnek case içerikleri: hazır, varsayıma bağlı, engelli, saldırı verili güvenlik, yetki. */
+/** v3 örnek case içerikleri: hazır, varsayıma bağlı, soru bekliyor, saldırı verili güvenlik, yetki, varsayıma bağlı. */
 export const V3_ICERIKLER: TestCaseIcerik[] = [
   {
     ...ortak,
@@ -210,7 +210,7 @@ export const V3_ICERIKLER: TestCaseIcerik[] = [
 export function caseV3Alanlari(
   c: TestCase,
   uretimler: CaseUretimOzeti[] | undefined,
-): Pick<TestCase, "readiness" | "legacy" | "acik_sorular" | "varsayimlar" | "uyarilar" | "onay_engeli"> {
+): Pick<TestCase, "readiness" | "legacy" | "acik_sorular" | "varsayimlar" | "uyarilar" | "onay_engeli" | "po_sorulari"> {
   const legacy = eskiIcerik(c.icerik);
   if (legacy) return { readiness: "ready", legacy: true, acik_sorular: [], varsayimlar: [], onay_engeli: null, ...(c.uyarilar ? { uyarilar: c.uyarilar } : {}) };
   const ozet = birlesikOzet(uretimler);
@@ -230,6 +230,12 @@ export function caseV3Alanlari(
     acik_sorular: (c.icerik.open_question_refs ?? []).flatMap((r) => sorular.get(r) ?? []),
     varsayimlar: (c.icerik.assumption_refs ?? []).flatMap((r) => varsayimlar.get(r) ?? []),
     uyarilar: [...new Set([...(c.uyarilar ?? []), ...sorunlar])],
+    // D6 biçimi: atıf yapılan sorular örnekte henüz PO'ya gönderilmemiştir (mevcut kayıt korunur).
+    po_sorulari:
+      c.po_sorulari ??
+      Object.fromEntries(
+        (c.icerik.open_question_refs ?? []).map((r, i) => [r, { tur: "soru" as const, po_etiketi: `CQ${i + 1}`, po_durumu: "gonderilmedi" as const, po_yaniti: null }]),
+      ),
   };
 }
 
@@ -270,16 +276,19 @@ export function caseKapsamOzeti(g: Pick<GereksinimDetay, "id" | "jira_key" | "ka
   const ogeler = [...new Map(us.flatMap((u) => u.coverage_items).map((o) => [o.id, o])).values()];
   const kapsayan = (secici: (i: TestCaseIcerik) => string[] | undefined, kimlik: string) =>
     caseler.filter((c) => (secici(c.icerik) ?? []).includes(kimlik)).map((c) => c.sira_no).sort((a, b) => a - b);
+  // D3: hazır (readiness ready) case'lerle kapsam: satırda `covered_by_ready`, oranlarda `hazir_*`.
+  const hazirSiralar = new Set(caseler.filter((c) => caseHazirlik(c) === "ready").map((c) => c.sira_no));
+  const hazirlar = (covered_by: number[]) => covered_by.filter((n) => hazirSiralar.has(n));
 
   const acSatirlari: KapsamSatiri[] = g.kabul_kriterleri.map((ac) => {
     const covered_by = kapsayan((i) => i.acceptance_criteria_refs, ac.ref);
-    return { item: ac.ref, tur: "ac", tanim: ac.metin, valid: null, ac_ref: ac.ref, karar: null, covered_by, gerekce: covered_by.length ? null : (kapsanmayanNeden.get(ac.ref) ?? null) };
+    return { item: ac.ref, tur: "ac", tanim: ac.metin, valid: null, ac_ref: ac.ref, karar: null, covered_by, covered_by_ready: hazirlar(covered_by), gerekce: covered_by.length ? null : (kapsanmayanNeden.get(ac.ref) ?? null) };
   });
   const ogeSatirlari: KapsamSatiri[] = ogeler.map((o) => {
     const covered_by = kapsayan((i) => i.covers, o.id);
     const karar = kararlar.get(o.id);
     const gerekce = covered_by.length ? null : (kapsanmayanNeden.get(o.id) ?? (karar?.decision === "out_of_scope" ? karar.rationale : null));
-    return { item: o.id, tur: "oge", tanim: o.definition, valid: o.valid, ac_ref: o.ac_ref, covered_by, gerekce, karar: karar?.decision ?? null };
+    return { item: o.id, tur: "oge", tanim: o.definition, valid: o.valid, ac_ref: o.ac_ref, covered_by, covered_by_ready: hazirlar(covered_by), gerekce, karar: karar?.decision ?? null };
   });
   // core `covered_by_cases`: kimlik, sıra no, üretim no, başlık (sıra no üretimler arasında tekil değil).
   const siradan = new Map(caseler.map((c) => [c.sira_no, c]));
@@ -308,6 +317,8 @@ export function caseKapsamOzeti(g: Pick<GereksinimDetay, "id" | "jira_key" | "ka
       gereksinim_kapsami: oran(acSatirlari.filter((s) => s.covered_by.length).length, acSatirlari.length),
       oge_kapsami: oran(ogeSatirlari.filter((s) => s.covered_by.length).length, ogeSatirlari.length),
       negatif_karar_kapsami: oran(gecersiz.filter((o) => kararlar.has(o.id)).length, gecersiz.length),
+      hazir_gereksinim_kapsami: oran(acSatirlari.filter((s) => (s.covered_by_ready ?? []).length).length, acSatirlari.length),
+      hazir_oge_kapsami: oran(ogeSatirlari.filter((s) => (s.covered_by_ready ?? []).length).length, ogeSatirlari.length),
     },
     teknik_dagilimi: say(caseler.flatMap((c) => c.icerik.technique ?? [])),
     // Eski case hazır sayılır (K9).

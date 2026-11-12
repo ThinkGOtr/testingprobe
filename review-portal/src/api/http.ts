@@ -402,8 +402,23 @@ export function cakismaMesaji(e: ApiError): string {
   return metin;
 }
 
+/**
+ * Kullanıcı metninde ortam değişkeni adı (ör. `TP_DENETIM_KAPISI`, hız sınırı ayarı) gösterilmez:
+ * adı geçen cümle atılır. Geriye bir şey kalmazsa genel ama anlamlı bir metin döner.
+ */
+export function ortamAdiniAyikla(metin: string, yedek = "İşlem şu an yapılamıyor; yöneticinize başvurun."): string {
+  if (!/\bTP_[A-Z0-9_]+/.test(metin)) return metin;
+  const cumleler = metin.split(/(?<=[.;!?])\s+/).filter((c) => !/\bTP_[A-Z0-9_]+/.test(c));
+  const kalan = cumleler.join(" ").trim();
+  return kalan || yedek;
+}
+
 export function hataMesaji(e: unknown): string {
-  if (e instanceof ApiError) return e.detail;
+  if (e instanceof ApiError) {
+    // D1: 429 `hiz_siniri` ("Bu gereksinim için son 24 saatte en çok N review|denetim…").
+    if (e.status === 429 || e.kod === "hiz_siniri") return ortamAdiniAyikla(e.detail, "Bu işlem için kısa sürede çok fazla istek gönderildi; daha sonra yeniden deneyin.");
+    return ortamAdiniAyikla(e.detail);
+  }
   if (e instanceof Error) return e.message;
   return "Beklenmeyen bir hata oluştu.";
 }

@@ -310,11 +310,11 @@ export function caseAcikSoruAlanlari(
   v: MockVeri,
   c: TestCase,
 ): {
-  po_sorulari: Record<string, unknown>;
+  po_sorulari: NonNullable<TestCase["po_sorulari"]>;
   po_yanit_onerisi: TestCase["po_yanit_onerisi"];
 } {
   const yanitli: string[] = [];
-  const po_sorulari: Record<string, unknown> = {};
+  const po_sorulari: NonNullable<TestCase["po_sorulari"]> = {};
   const ekle = (tur: "soru" | "varsayim", id: string, metin: string) => {
     const k = kayitBul(v, c.requirement_id, tur, metin);
     if (k?.durum === "yanitlandi") yanitli.push(k.etiket);

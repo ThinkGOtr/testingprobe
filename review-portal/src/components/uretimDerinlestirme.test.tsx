@@ -175,9 +175,16 @@ describe("Gereksinim detayı: 'Seçeneklerle üret…'", () => {
     const uret = vi.spyOn(api, "caseUret");
     uygulama("/gereksinimler/req-tpd-4");
     const ac = await screen.findByRole("button", { name: "Seçeneklerle üret…" });
-    expect(screen.getByRole("button", { name: "Case üret" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Tasarım modelini üret (iki tur)" })).toBeEnabled();
     await u.click(ac);
-    await screen.findByRole("form", { name: "Üretim seçenekleri" });
+    const f = await screen.findByRole("form", { name: "Üretim seçenekleri" });
+    // UX-4: kip seçimi formun ilk alanı (fieldset + legend radyo grubu); form açıkken sayfada tek kip grubu.
+    const ilkAlan = f.querySelector("fieldset, input, select, textarea")!;
+    expect(ilkAlan.tagName).toBe("FIELDSET");
+    expect(within(f).getAllByRole("group")[0]).toBe(ilkAlan);
+    expect(ilkAlan.querySelector("legend")).toHaveTextContent("Üretim kipi");
+    expect(within(f).getByRole("radio", { name: /İki tur \(önerilen\)/ })).toBeChecked();
+    expect(screen.getAllByTestId("uretim-kipi")).toHaveLength(1);
     await u.click(screen.getByRole("checkbox", { name: "API" }));
     await u.click(screen.getByRole("button", { name: "Üretimi başlat" }));
     await waitFor(() => expect(uret).toHaveBeenCalledTimes(1));
@@ -216,7 +223,7 @@ describe("DerinlestirmePaneli", () => {
     const negatif = await screen.findByRole("button", { name: "Negatif kapsamı genişlet" });
     expect(negatif).toBeDisabled();
     expect(screen.getByRole("button", { name: "Teknikle derinleştir" })).toBeDisabled();
-    expect(negatif).toHaveAccessibleDescription(/yalnız case'leri hazır gereksinimde/);
+    expect(negatif).toHaveAccessibleDescription(/yalnız "Case review aşamasında" olan gereksinimde/);
   });
 
   it("analist olmayan rolde pasif ve gereken rol yazılı", async () => {
@@ -243,7 +250,10 @@ describe("DerinlestirmePaneli", () => {
     await u.click(teknik);
     expect(istek).toHaveBeenCalledWith("req-tpd-1", { tur: "teknik", teknik: "BVA" });
     expect(await screen.findByText(/Teknik derinleştirme \(BVA — Sınır değer analizi\) çalışıyor/)).toBeInTheDocument();
+    // Core tek iş tutar: diğer düğme pasif ve nedeni yazılı; başlatan düğme "çalışıyor".
     expect(screen.getByRole("button", { name: "Negatif kapsamı genişlet" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Negatif kapsamı genişlet" })).toHaveAccessibleDescription("Diğer derinleştirme sürüyor");
+    expect(screen.getByRole("button", { name: "Teknikle derinleştir" })).toHaveAttribute("aria-busy", "true");
     expect(await within(screen.getByTestId("derinlestirme-durumu")).findByText(/^2 yeni taslak eklendi/, {}, { timeout: 3000 })).toBeInTheDocument();
     expect(tazele).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: "Negatif kapsamı genişlet" })).toBeEnabled();
@@ -278,6 +288,48 @@ describe("DerinlestirmePaneli", () => {
     sar(<DerinlestirmePaneli gereksinim={{ id: V3_GEREKSINIM_ID, durum: "cases_ready" }} tazele={vi.fn()} />);
     expect(await screen.findByText("Yeni taslak eklenmedi.")).toBeInTheDocument();
     expect(screen.getByText("Tüm geçersiz bölümler zaten kapsanıyor.")).toBeInTheDocument();
+  });
+
+  it("yoklama ardışık 3 hatada durur, 'Durum alınamadı — Tekrar dene'; sürdürünce biter, 'göster' üretime süzer", async () => {
+    const u = userEvent.setup();
+    await oturumAc("analist");
+    const calisiyor = { durum: "calisiyor" as const, tur: "negatif" as const, teknik: null, uretim_no: 4, yeni_case_sayisi: null, uyarilar: [], hata: null };
+    const oku = vi
+      .spyOn(api, "derinlestirmeDurumu")
+      .mockResolvedValueOnce(calisiyor)
+      .mockRejectedValueOnce(new Error("ağ"))
+      .mockRejectedValueOnce(new Error("ağ"))
+      .mockRejectedValueOnce(new Error("ağ"))
+      .mockResolvedValue({ ...calisiyor, durum: "tamam", yeni_case_sayisi: 3 });
+    const tazele = vi.fn();
+    const goster = vi.fn();
+    sar(<DerinlestirmePaneli gereksinim={{ id: V3_GEREKSINIM_ID, durum: "cases_ready" }} tazele={tazele} goster={goster} />);
+    const kutu = await screen.findByTestId("derinlestirme-yoklama-hatasi", {}, { timeout: 3000 });
+    expect(kutu).toHaveTextContent("Durum alınamadı");
+    expect(oku).toHaveBeenCalledTimes(4);
+    // Durdu: yeni okuma yok.
+    await new Promise((r) => setTimeout(r, 100));
+    expect(oku).toHaveBeenCalledTimes(4);
+    expect(tazele).not.toHaveBeenCalled();
+    await u.click(within(kutu).getByRole("button", { name: "Tekrar dene" }));
+    const sonuc = await screen.findByTestId("derinlestirme-sonucu", {}, { timeout: 3000 });
+    expect(sonuc).toHaveTextContent("3 yeni taslak eklendi — göster");
+    expect(tazele).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId("derinlestirme-yoklama-hatasi")).toBeNull();
+    await u.click(within(sonuc).getByRole("button", { name: "Üretim 4 ile eklenen 3 taslağı listede göster" }));
+    expect(goster).toHaveBeenCalledWith(4);
+  });
+
+  it("Case review sayfasında 'göster' URL'ye ?uretim= yazar ve case kararlarına gider", async () => {
+    const u = userEvent.setup();
+    await oturumAc("analist");
+    vi.spyOn(api, "derinlestirmeDurumu").mockResolvedValue({ durum: "tamam", tur: "negatif", teknik: null, uretim_no: 2, yeni_case_sayisi: 1, uyarilar: [], hata: null });
+    uygulama(`/gereksinimler/${V3_GEREKSINIM_ID}/caseler`);
+    const dugme = await screen.findByRole("button", { name: "Üretim 2 ile eklenen 1 taslağı listede göster" }, { timeout: 3000 });
+    await u.click(dugme);
+    // Durum şeridindeki bağlantılar güncel aramayı taşır: URL'de uretim=2 var.
+    await waitFor(() => expect(screen.getByTestId("serit-bekleyen").getAttribute("href")).toContain("uretim=2"));
+    await waitFor(() => expect(document.activeElement?.id).toBe("case-kararlari"));
   });
 
   it("uç yoksa (eski core) panel görünmez", async () => {

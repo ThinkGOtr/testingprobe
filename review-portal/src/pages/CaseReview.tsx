@@ -8,12 +8,13 @@ import { bazKaynagiUyarla, manuelBazUyarla } from "../api/uyumFaz5";
 import { useKisiAdi, useOturum } from "../auth";
 import { BAZ_KAYNAGI } from "../components/BazDegerKarti";
 import { AcikSorularPaneli } from "../components/AcikSorular";
-import { CaseKarti } from "../components/CaseKarti";
+import { CaseListesi } from "../components/CaseListesi";
 import { GherkinIndir } from "../components/GherkinIndir";
-import { DenetimPaneli, ReviewPaneli } from "../components/KalitePanelleri";
+import { CASE_KARARLARI_ID, CaseDurumSeridi, useCaseListesineGit, yayinAcikMi } from "../components/CaseDurumSeridi";
+import { DenetimPaneli, gonderBirincilMi, ReviewPaneli } from "../components/KalitePanelleri";
 import { DerinlestirmePaneli } from "../components/DerinlestirmePaneli";
 import { KapsamPaneli } from "../components/KapsamPaneli";
-import { BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, Metrik, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
+import { Cip, IslemDugmesi, Kart, Metrik, ReplayRozeti, SayfaBasligi, Uyari } from "../components/ui";
 import { HedefOlcer } from "../components/Grafikler";
 import { useGeciktirilmis, useVeri } from "../hooks";
 import { caseEski } from "../lib/caseV3";
@@ -141,8 +142,6 @@ export function caseOzeti(caseler: TestCase[], m?: CaseMetrikleri | null) {
   };
 }
 
-type Filtre = "hepsi" | "bekleyen" | "onayli" | "reddedilen";
-
 export function CaseReview() {
   const { id = "" } = useParams();
   const gereksinim = useVeri(() => api.gereksinim(id), [id]);
@@ -166,7 +165,8 @@ export function CaseReview() {
   const review = useVeri(() => api.caseReview(id).catch(yoksaNull), [id]);
   const denetim = useVeri(() => api.caseDenetim(id).catch(yoksaNull), [id]);
   const [kaliteIslem, setKaliteIslem] = useState<"review" | "denetim" | null>(null);
-  const [kaliteHata, setKaliteHata] = useState<string | null>(null);
+  // İşlem hatası ilgili panelin içinde gösterilir (UX-7: hata tek yerde).
+  const [kaliteHata, setKaliteHata] = useState<{ tur: "review" | "denetim"; mesaj: string } | null>(null);
   const kaliteCalistir = async (tur: "review" | "denetim") => {
     setKaliteIslem(tur);
     setKaliteHata(null);
@@ -174,12 +174,11 @@ export function CaseReview() {
       if (tur === "review") review.setVeri(await api.caseReviewCalistir(id));
       else denetim.setVeri(await api.caseDenetimGonder(id));
     } catch (e) {
-      setKaliteHata(e instanceof Error ? e.message : String(e));
+      setKaliteHata({ tur, mesaj: e instanceof Error ? e.message : String(e) });
     } finally {
       setKaliteIslem(null);
     }
   };
-  const [filtre, setFiltre] = useState<Filtre>("hepsi");
   const kisiAdi = useKisiAdi();
   const sessiz = useGeciktirilmis(() => {
     void caseler.yenile(true);
@@ -196,15 +195,6 @@ export function CaseReview() {
 
   const liste = caseler.veri ?? [];
   const ozet = useMemo(() => caseOzeti(liste, metrik.veri), [liste, metrik.veri]);
-  const gorunen = liste.filter((c) =>
-    filtre === "hepsi"
-      ? true
-      : filtre === "bekleyen"
-        ? c.durum === "draft"
-        : filtre === "onayli"
-          ? c.durum === "approved" || c.durum === "published"
-          : c.durum === "rejected",
-  );
   const g = gereksinim.veri;
   const { kullanici } = useOturum();
   const yayinYetkili = kullanici?.rol === "analyst";
@@ -217,6 +207,12 @@ export function CaseReview() {
   const kazanc = kz.oran;
   const hazirlik = aiOlculmedi ? ozet.reviewSure : ozet.aiSure + ozet.reviewSure;
   const reviewBetik = ozet.olculenReview > 0 && !kz.reviewOlculdu;
+  const yayinYolu = `/gereksinimler/${encodeURIComponent(id)}/yayin`;
+  // Sayfada tek birincil eylem (UX-7): "Agent Probe'a gönder" birincilse yayın düğmesi ikincildir;
+  // yayın düğmesi yalnız yayın kapısı açıkken birincil olur.
+  const gonderBirincil = gonderBirincilMi(denetim.veri, ozet.bekleyen);
+  const yayinBirincil = !gonderBirincil && yayinAcikMi(denetim.veri) && ozet.bekleyen === 0;
+  const listeyeGit = useCaseListesineGit();
 
   return (
     <>
@@ -228,7 +224,7 @@ export function CaseReview() {
           <>
             <GherkinIndir requirementId={id} anahtar={g?.jira_key ?? id} caseler={liste} />
             {yayinYetkili ? (
-              <Link className="dugme dugme-birincil" to={`/gereksinimler/${encodeURIComponent(id)}/yayin`}>
+              <Link className={`dugme ${yayinBirincil ? "dugme-birincil" : "dugme-ikincil"}`} to={yayinYolu}>
                 Yayın önizleme
               </Link>
             ) : (
@@ -239,6 +235,8 @@ export function CaseReview() {
           </>
         }
       />
+
+      {caseler.veri && liste.length > 0 && <CaseDurumSeridi caseler={liste} denetim={denetim.veri} yayinYolu={yayinYolu} />}
 
       <Kart baslik="Özet" eylemler={aiOlculmedi ? <ReplayRozeti mode={mod} /> : undefined}>
         <div className="metrik-izgara">
@@ -338,7 +336,8 @@ export function CaseReview() {
         </p>
       </Kart>
 
-      {/* 011 P5/P6: derinleştirme bitince case listesi, kapsam özeti ve ölçümler tazelenir. */}
+      {/* 011 P5/P6: derinleştirme bitince case listesi, kapsam özeti, ölçümler, review ve denetim tazelenir;
+          "göster" listeyi o üretimin case'lerine süzer (`?uretim=`, A2 süzgeci) ve listeye kaydırır. */}
       {caseler.veri && liste.length > 0 && (
         <DerinlestirmePaneli
           gereksinim={g}
@@ -347,7 +346,10 @@ export function CaseReview() {
             void caseler.yenile(true);
             void metrik.yenile(true);
             void kapsam.yenile(true);
+            void review.yenile(true);
+            void denetim.yenile(true);
           }}
+          goster={(no) => listeyeGit({ uretim: String(no) })}
         />
       )}
 
@@ -360,17 +362,14 @@ export function CaseReview() {
           yenile={() => void kapsam.yenile()}
           caseSayisi={liste.length}
           eskiSema={liste.length > 0 && liste.every(caseEski)}
+          baslangictaAcik={false}
+          filtreSec={(f) => listeyeGit(f)}
         />
       )}
 
       {/* 011 K16: açık soruların PO'ya gönderimi ve yanıtları; gönderim/yanıt case listesini tazeler. */}
       {caseler.veri && liste.length > 0 && <AcikSorularPaneli requirementId={id} tazele={() => void caseler.yenile(true)} />}
 
-      {kaliteHata && (
-        <Uyari baslik="İşlem yapılamadı">
-          <span data-testid="kalite-hata">{kaliteHata}</span>
-        </Uyari>
-      )}
       {review.veri !== null && caseler.veri && liste.length > 0 && (
         <ReviewPaneli
           gorunum={review.veri}
@@ -380,6 +379,7 @@ export function CaseReview() {
           yenile={() => void review.yenile()}
           calistir={() => void kaliteCalistir("review")}
           calisiyor={kaliteIslem === "review"}
+          islemHata={kaliteHata?.tur === "review" ? kaliteHata.mesaj : null}
         />
       )}
       {denetim.veri !== null && caseler.veri && liste.length > 0 && (
@@ -391,52 +391,42 @@ export function CaseReview() {
           yenile={() => void denetim.yenile()}
           gonder={() => void kaliteCalistir("denetim")}
           gonderiliyor={kaliteIslem === "denetim"}
+          islemHata={kaliteHata?.tur === "denetim" ? kaliteHata.mesaj : null}
+          bekleyen={ozet.bekleyen}
+          toplam={liste.filter((c) => c.durum !== "rejected" && c.durum !== "superseded").length}
+          yayinYolu={yayinYolu}
         />
       )}
 
-      <div className="sekmeler sekmeler-yapiskan" role="group" aria-label="Case filtresi">
-        {(
-          [
-            ["hepsi", `Hepsi (${liste.length})`],
-            ["bekleyen", `Karar bekleyen (${ozet.bekleyen})`],
-            ["onayli", `Onaylı (${liste.filter((c) => c.durum === "approved" || c.durum === "published").length})`],
-            ["reddedilen", `Reddedilen (${ozet.ret})`],
-          ] as [Filtre, string][]
-        ).map(([k, etiket]) => (
-          <button key={k} type="button" className={`sekme${filtre === k ? " aktif" : ""}`} aria-pressed={filtre === k} onClick={() => setFiltre(k)}>
-            {etiket}
-          </button>
-        ))}
-      </div>
+      {/* Durum şeridi ve derinleştirme "göster" bağlantılarının hedefi (A1). */}
+      <h2 id={CASE_KARARLARI_ID} className="bolum-basligi-case">
+        Case kararları
+      </h2>
 
-      {caseler.yukleniyor && !caseler.veri ? (
-        <Yukleniyor />
-      ) : caseler.hata && !caseler.veri ? (
-        <HataKutusu hata={caseler.hata} kaynak={caseler.hataNesnesi} yenile={() => void caseler.yenile()} />
-      ) : gorunen.length === 0 ? (
-        <Kart>
-          <BosDurum baslik={liste.length ? "Bu filtrede case yok." : "Henüz case üretilmedi."}>
-            {!liste.length && "PO teyidinden sonra gereksinim ekranından 'Case üret' ile başlatın."}
-          </BosDurum>
-        </Kart>
-      ) : (
-        <div className="case-liste">
-          {gorunen.map((c) => (
-            <CaseKarti
-              key={c.id}
-              tc={c}
-              guncellendi={(t) => {
-                caseler.setVeri(liste.map((x) => (x.id === t.id ? t : x)));
-                // Karar/düzeltme kapsamı, hazır olma dağılımını ve setin kimliğini değiştirir.
-                void kapsam.yenile(true);
-                void review.yenile(true);
-                void denetim.yenile(true);
-              }}
-              yenile={() => void caseler.yenile(true)}
-            />
-          ))}
-        </div>
-      )}
+      {/* A2: filtre sekmeleri (URL ?filtre= / ?uretim= / ?hazirlik= / ?teknik=), toplu onay ve case kartları. */}
+      <CaseListesi
+        liste={liste}
+        yukleniyor={caseler.yukleniyor && !caseler.veri}
+        hata={caseler.veri ? null : caseler.hata}
+        hataNesnesi={caseler.hataNesnesi}
+        yeniden={() => void caseler.yenile()}
+        yenile={() => void caseler.yenile(true)}
+        guncellendi={(t) => {
+          caseler.setVeri(liste.map((x) => (x.id === t.id ? t : x)));
+          // Karar/düzeltme kapsamı, hazır olma dağılımını ve setin kimliğini değiştirir.
+          void kapsam.yenile(true);
+          void review.yenile(true);
+          void denetim.yenile(true);
+        }}
+        topluSonrasi={() => {
+          void caseler.yenile(true);
+          void metrik.yenile(true);
+          void kapsam.yenile(true);
+          void review.yenile(true);
+          void denetim.yenile(true);
+        }}
+        uretimler={kapsam.veri?.uretimler}
+      />
     </>
   );
 }

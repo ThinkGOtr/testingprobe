@@ -98,11 +98,11 @@ describe("CaseKarti v3: rozetler ve bloklar", () => {
     expect(screen.getByRole("button", { name: "Reddet" })).toBeEnabled();
   });
 
-  it("engelli case: açık soru metni ve sahibi görünür; Onayla pasif; sunucu onayı 422 ile reddeder", async () => {
+  it("soru bekleyen case: açık soru metni ve sahibi görünür; Onayla pasif; sunucu onayı 422 ile reddeder", async () => {
     await oturumAc("analist");
     const tc = await v3Case("case-v3-3");
     sar(<CaseKarti tc={tc} guncellendi={() => {}} />);
-    expect(screen.getByTestId("case-hazirlik")).toHaveTextContent("✗ Engelli");
+    expect(screen.getByTestId("case-hazirlik")).toHaveTextContent("? Soru bekliyor");
     const blok = within(screen.getByTestId("case-acik-sorular"));
     expect(blok.getByText("Q1")).toBeInTheDocument();
     expect(blok.getByText(/Yalnızca boşluk karakterlerinden oluşan not kaydedilir mi/)).toBeInTheDocument();
@@ -214,7 +214,7 @@ describe("CaseKarti v3: düzeltme formu", () => {
     spy.mockRestore();
   });
 
-  it("engelli case'i hazır yapma akışı: form eksikleri söyler, hazır olmadan kaydetmez; hazır yapılınca onaylanır", async () => {
+  it("soru bekleyen case'i hazır yapma akışı: form eksikleri söyler, hazır olmadan kaydetmez; hazır yapılınca onaylanır", async () => {
     await oturumAc("analist");
     const spy = vi.spyOn(api, "caseKarari");
     const guncellendi = vi.fn();
@@ -223,11 +223,11 @@ describe("CaseKarti v3: düzeltme formu", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Düzelt" })).toBeEnabled());
     await u.click(screen.getByRole("button", { name: "Düzelt" }));
 
-    // Engelli hâliyle kaydedilemez: form nedenini söyler, istek gitmez.
+    // "Soru bekliyor" hâliyle kaydedilemez: form nedenini söyler, istek gitmez.
     expect(screen.getByLabelText("Durum")).toHaveValue("blocked");
-    expect(screen.getByTestId("hazirlik-eksikleri")).toHaveTextContent('Durum "Engelli": bu hâliyle kaydedilemez');
+    expect(screen.getByTestId("hazirlik-eksikleri")).toHaveTextContent('Durum "Soru bekliyor": bu hâliyle kaydedilemez');
     await u.click(screen.getByRole("button", { name: "Düzeltip onayla" }));
-    expect(screen.getByRole("alert")).toHaveTextContent(/Düzeltme case'i onaylar; durum "Engelli" iken kaydedilemez/);
+    expect(screen.getByRole("alert")).toHaveTextContent(/Düzeltme case'i onaylar; durum "Soru bekliyor" iken kaydedilemez/);
     expect(spy).not.toHaveBeenCalled();
 
     // "Hazır" seçilince atıfların boşaltılması ve beklenenlerin doldurulması gerektiği listelenir.
@@ -343,7 +343,7 @@ describe("Kapsam ve açık noktalar paneli", () => {
     expect(teknik.getByTitle("eşdeğerlik bölümleme").closest("li")).toHaveTextContent("EP (eşdeğerlik bölümleme) 4 case");
     expect(teknik.getByTitle("hata tahmini").closest("li")).toHaveTextContent("1 case");
     const hazirlik = within(panel.getByTestId("kapsam-hazirlik-dagilimi")).getAllByRole("listitem").map((li) => li.textContent);
-    expect(hazirlik).toEqual(["Hazır olma durumu: ✓ Hazır 3 case", "Hazır olma durumu: ⚠ Varsayıma bağlı 2 case", "Hazır olma durumu: ✗ Engelli 1 case"]);
+    expect(hazirlik).toEqual(["Hazır olma durumu: ✓ Hazır 3 case", "Hazır olma durumu: ⚠ Varsayıma bağlı 2 case", "Hazır olma durumu: ? Soru bekliyor 1 case"]);
 
     expect(within(panel.getByTestId("kapsam-acik-sorular")).getByText(/Yalnızca boşluk karakterlerinden oluşan not/)).toBeInTheDocument();
     expect(panel.getByTestId("kapsam-acik-sorular")).toHaveTextContent("Sahibi: PO");
@@ -359,7 +359,9 @@ describe("Kapsam ve açık noktalar paneli", () => {
     expect(oranlar.getByText("Öğe kapsamı").parentElement).toHaveTextContent("8/10");
     expect(satir("AC4").getByText("Kabul kriteri")).toBeInTheDocument();
     expect(satir("EP-I2").getByText(/Geçersiz/)).toBeInTheDocument();
-    expect(satir("EG-2").getByText("⚠ Kapsanmıyor")).toBeInTheDocument();
+    // UX-13: gerekçesi yazılı kapsanmayan öğe nötr; "⚠ Kapsanmıyor" yalnız gerekçesizde.
+    expect(satir("EG-2").getByText("Kapsanmıyor (gerekçeli)")).toBeInTheDocument();
+    expect(matris.queryByText("⚠ Kapsanmıyor")).not.toBeInTheDocument();
     expect(satir("EG-2").getByText(/Story satır sonu davranışını tanımlamıyor/)).toBeInTheDocument();
 
     const kapsanmayan = panel.getByTestId("kapsam-kapsanmayanlar");
@@ -368,8 +370,8 @@ describe("Kapsam ve açık noktalar paneli", () => {
     expect(kapsanmayan).toHaveTextContent("Ağ hatası davranışı bu story'nin kapsamında tanımlı değil.");
 
     const kararlar = within(panel.getByRole("region", { name: "Negatif kapsam kararları tablosu" }));
-    expect(kararlar.getAllByText("Test ediliyor")).toHaveLength(5);
-    expect(kararlar.getByText("Kapsam dışı")).toBeInTheDocument();
+    expect(kararlar.getAllByText("Negatif case ile test edilir")).toHaveLength(5);
+    expect(kararlar.getByText("Kapsam dışı (gerekçeli)")).toBeInTheDocument();
   });
 
   it("karar kapsamı değiştirir: case reddedilince panel yenilenir", async () => {
@@ -428,9 +430,12 @@ describe("Kapsam ve açık noktalar paneli", () => {
 describe("yayın önizleme: hazır olmayan onaylı case", () => {
   it("blocked_not_ready engelini nedeniyle gösterir; seçilemez", async () => {
     await oturumAc("analist");
+    // K6 öncesi kayıt: örnek veride onaylı case hep hazırdır (UX-10); eski kaydı burada kurarız.
+    const eski = mockVerisi().caseler.find((c) => c.id === "case-v3-6")!;
+    Object.assign(eski, { durum: "approved", karar: "approve", karar_veren: "analist", onaylanan_hash: eski.icerik_hash });
     uygulama(`/gereksinimler/${V3_GEREKSINIM_ID}/yayin`);
     const satir = within((await screen.findByText(/Türkçe karakterli 250 karakterlik not eksiksiz görünür/)).closest("tr")!);
-    expect(satir.getByText("Engelli: hazır değil")).toBeInTheDocument();
+    expect(satir.getByText("Yayınlanamaz: hazır değil")).toBeInTheDocument();
     expect(satir.getByTestId("yayin-engel-nedeni")).toHaveTextContent("Case hazır değil (varsayıma bağlı); yalnız hazır case yayınlanır.");
     expect(satir.getByRole("checkbox")).toBeDisabled();
     expect(screen.getByRole("button", { name: /Seçilenleri yayınla \(0\)/ })).toBeDisabled();

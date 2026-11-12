@@ -285,7 +285,7 @@ def test_kapi_bagli_degilken_fail_closed(
     publish.set_gate_check(None)
     k = _kalemler(api, rid)
     assert {x["islem"] for x in k} == {"blocked_gate"}
-    assert k[0]["neden"] == publish.KAPI_BAGLI_DEGIL
+    assert k[0]["neden"] == publish.yayinlanamaz(publish.KAPI_BAGLI_DEGIL)
     monkeypatch.setenv("TP_DENETIM_KAPISI", "off")
     assert {x["islem"] for x in _kalemler(api, rid)} == {"create"}
 

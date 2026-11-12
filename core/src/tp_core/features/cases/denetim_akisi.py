@@ -2,12 +2,13 @@
 
 Akış:
 
-1. `request_audit` (`POST /requirements/{id}/case-audit`, analist, "Denetime gönder"): gereksinim
-   `cases_ready|done` ve PO onayı güncel; setin v3 case'i var; aynı set için review sürmüyor; ve
-   **güncel setin review'u tamamlanmış ya da setin en az bir onaylı v3 case'i var**. Gerekçe:
-   P9, P8'i girdi olarak alır (tamamlanmış review en iyi girdi); review başarısız olduysa ya da hiç
-   çalışmadıysa analist kalıcı olarak kilitlenmesin, ama denetime insan incelemesinden geçmemiş bir
-   set gitmesin (en az bir onay = analist seti gördü). Aynı set için bekleyen denetim varsa o döner.
+1. `request_audit` (`POST /requirements/{id}/case-audit`, analist, "Agent Probe'a gönder"):
+   gereksinim `cases_ready|done` ve PO onayı güncel; setin v3 case'i var; aynı set için review
+   sürmüyor; ve **güncel setin review'u tamamlanmış ya da setin en az bir onaylı v3 case'i
+   var**. Gerekçe: P9, P8'i girdi olarak alır (tamamlanmış review en iyi girdi); review
+   başarısız olduysa ya da hiç çalışmadıysa analist kalıcı olarak kilitlenmesin, ama denetime
+   insan incelemesinden geçmemiş bir set gitmesin (en az bir onay = analist seti gördü). Aynı
+   set için bekleyen denetim varsa o döner.
 2. `run_audit` (core-worker, `cases.audit`): istek (`ports.CaseSetAuditRequest`) kurulur ve
    Agent Probe portuna gider (`get_agent_probe().audit_case_set`; bugün geçitte `case_audit`,
    Opus). Port hatası (erişilemiyor, REPLAY-MISS, model hatası) karar ÜRETMEZ: satır `hata` olur,
@@ -504,13 +505,18 @@ def submit_block(
     hash_: str | None,
     cases: Sequence[TestCase] | None = None,
 ) -> str | None:
-    """ "Denetime gönder" neden kapalı (None = gönderilebilir). Portal düğme açıklaması da budur.
+    """ "Agent Probe'a gönder" neden kapalı (None = gönderilebilir).
+
+    Portal düğme açıklaması da budur.
 
     `cases`: güncel set (verilmezse hesaplanır; görünüm tek kez hesaplayıp verir)."""
     from tp_core.features.cases.service import requirement_change_reason
 
     if req.durum not in review_mod.SET_KULLANILIR:
-        return f"Denetim yalnızca case'leri hazır gereksinimde istenir (durum: {req.durum})"
+        return (
+            "Agent Probe denetimi yalnızca case'leri hazır gereksinimde istenir "
+            f"(durum: {req.durum})"
+        )
     engel = requirement_change_reason(req)
     if engel is not None:
         return engel
@@ -523,7 +529,7 @@ def submit_block(
             "yapılmaz. Case'leri düzeltip yeniden gönderin"
         )
     if review_mod._bekleyen(session, req.id, hash_) is not None:
-        return "Bu set için review sürüyor; review bitince denetime gönderin"
+        return "Bu set için review sürüyor; review bitince 'Agent Probe'a gönder'i kullanın"
     sinir = limit_block(session, req.id)
     if sinir is not None:
         return sinir
@@ -540,7 +546,7 @@ def submit_block(
 
 
 def request_audit(session: Session, requirement_id: uuid.UUID, user: Principal) -> dict[str, Any]:
-    """`POST /requirements/{id}/case-audit` ("Denetime gönder").
+    """`POST /requirements/{id}/case-audit` ("Agent Probe'a gönder").
 
     409: set boş / gereksinim uygun değil / review sürüyor / bu set ZATEN denetlendi (aynı
     `set_hash` için tamamlanmış karar varken yeniden denetim yok). 429: gereksinim başına
@@ -794,15 +800,20 @@ def _hash_reason(session: Session, req: Requirement, hash_: str | None) -> str |
     if karar is None:
         son = latest(session, req.id)
         if son is None:
-            return "Denetim kararı yok: set Agent Probe denetiminden geçmedi ('Denetime gönder')"
+            return (
+                "Denetim kararı yok: set Agent Probe denetiminden geçmedi ('Agent Probe'a gönder')"
+            )
         if son.set_hash == hash_ and review_mod.is_running(session, son):
             return "Denetim bekliyor: bu set için Agent Probe kararı henüz gelmedi"
         if son.set_hash == hash_ and son.durum in ("hata", "bekliyor"):
             neden = son.hata or review_mod.YARIDA_KALDI
-            return f"Denetim yapılamadı: {_kisa(neden, 160)}; yeniden denetime gönderin"
+            return (
+                f"Denetim yapılamadı: {_kisa(neden, 160)}; "
+                "'Agent Probe'a gönder' ile yeniden gönderin"
+            )
         return (
             "Denetim kararı bayat: set son denetimden sonra değişti (case eklendi, düzeltildi ya "
-            "da reddedildi); yeniden denetime gönderin"
+            "da reddedildi); 'Agent Probe'a gönder' ile yeniden gönderin"
         )
     if karar.karar == KABUL:
         return None

@@ -153,7 +153,7 @@ def test_hazir_olmayan_ve_tutarsiz_case_onaylanamaz(api: TestClient, v3) -> None
     assert r.status_code == 422
     assert "hazır değil (varsayıma bağlı)" in r.json()["detail"] and "Düzelt" in r.json()["detail"]
     r = _karar(api, engelli, karar="approve")
-    assert r.status_code == 422 and "engelli" in r.json()["detail"]
+    assert r.status_code == 422 and "soru bekliyor" in r.json()["detail"]
     r = _karar(api, tutarsiz, karar="approve")
     assert r.status_code == 422 and "EP-I9" in r.json()["detail"]
     assert [c["durum"] for c in latest_cases(api, rid)] == ["approved", "draft", "draft", "draft"]

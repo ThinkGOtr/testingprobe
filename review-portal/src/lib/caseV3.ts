@@ -2,6 +2,7 @@
 // sunucunun 422 hata listesinin ayrıştırılması. Saf işlevler: hem düzeltme formu hem örnek veri
 // (mock) katmanı kullanır. Nihai doğrulama her zaman sunucudadır (`consistency_problems`).
 import type { AcikSoru, CaseHazirlik, CaseUretimOzeti, TestCase, TestCaseIcerik, Varsayim } from "../api/types";
+import { CASE_DURUMU, CASE_HAZIRLIK, SORU_SAHIBI } from "./etiketler";
 
 /** Eski (v2) içerik: `readiness` anahtarı yok (K9). */
 export const eskiIcerik = (i: TestCaseIcerik): boolean => i.readiness === undefined;
@@ -35,8 +36,8 @@ export function hazirlikSorunlari(i: TestCaseIcerik): string[] {
     if (!beklenenDolu) s.push('"Varsayıma bağlı" case\'in beklenen sonucu dolu olmalı.');
     if (bosAdimlar.length) s.push(`"Varsayıma bağlı" case'te her adımın beklenen sonucu dolu olmalı (boş: ${bosAdimlar.join(", ")}).`);
   } else if (i.readiness === "blocked") {
-    if (!soru.length) s.push('"Engelli" case en az bir açık soruya atıf yapmalı (ör. Q1).');
-    if (beklenenDolu) s.push('"Engelli" case\'in beklenen sonucu boş olmalı (soru yanıtlanınca yazılır).');
+    if (!soru.length) s.push('"Soru bekliyor" case en az bir açık soruya atıf yapmalı (ör. Q1).');
+    if (beklenenDolu) s.push('"Soru bekliyor" case\'in beklenen sonucu boş olmalı (soru yanıtlanınca yazılır).');
   }
   for (const v of i.test_data ?? []) {
     if (!v.synthetic) s.push(`Test verisi "${v.name}" sentetik olmalı (gerçek veri kullanılmaz).`);
@@ -118,3 +119,108 @@ export const kimlikListesi = (m: string): string[] => [
       .filter(Boolean),
   ),
 ];
+
+// ---------------------------------------------------------------- D5: hazır olmayan case yönlendirmesi, toplu onay
+
+/** Sayının okunuşundaki son sözcük: [son ünlü (4'lü uyum: i, ı, u, ü), ünlüyle bitiyor mu]. */
+function sayiSesi(n: number): [string, boolean] {
+  const birler: [string, boolean][] = [["ı", false], ["i", false], ["i", true], ["ü", false], ["ü", false], ["i", false], ["ı", true], ["i", true], ["i", false], ["u", false]];
+  const onlar: [string, boolean][] = [["ı", false], ["u", false], ["i", true], ["u", false], ["ı", false], ["i", true], ["ı", false], ["i", false], ["i", false], ["ı", false]];
+  const m = Math.abs(Math.trunc(n));
+  if (m === 0) return birler[0];
+  if (m % 10) return birler[m % 10];
+  if (m % 100) return onlar[(m % 100) / 10];
+  if (m % 1000) return ["ü", false]; // yüz
+  if (m % 1_000_000) return ["i", false]; // bin
+  return ["u", false]; // milyon
+}
+
+/**
+ * Sayıya Türkçe hâl eki (kesme işaretiyle): belirtme "3'ü", "6'yı"; tamlayan "2'nin", "3'ün".
+ * Ek okunuşa göre seçilir (2 → "iki" → 'yi / 'nin).
+ */
+export function sayiEki(n: number, hal: "belirtme" | "tamlayan"): string {
+  const [unlu, unluyleBiter] = sayiSesi(n);
+  if (hal === "belirtme") return `${n}'${unluyleBiter ? "y" : ""}${unlu}`;
+  return `${n}'${unluyleBiter ? "n" : ""}${unlu}n`;
+}
+
+export interface HazirlikYonlendirmesi {
+  /** soru: açık soru bekliyor; varsayim: yalnız varsayıma bağlı; tutarlilik: core onay engeli; genel: diğer. */
+  tur: "soru" | "varsayim" | "tutarlilik" | "genel";
+  metin: string;
+  /** "Varsayım doğrulandı" ile doğrulanabilecek varsayımlar (yalnız `tur === "varsayim"`). */
+  dogrulanacak: string[];
+}
+
+/**
+ * UX-2: taslaktaki case neden onaylanamıyor ve ne yapmalı. Açık soru varsa önce o söylenir (varsayım
+ * doğrulaması bu durumda sunulmaz); yalnız varsayım varsa "Varsayım doğrulandı" önerilir; core
+ * tutarlılık engeli varsa onun metni. Onaylanabilir case'te ya da taslak olmayan case'te null.
+ */
+export function hazirlikYonlendirmesi(
+  tc: Pick<TestCase, "durum" | "readiness" | "icerik" | "onay_engeli" | "acik_sorular" | "legacy" | "po_sorulari">,
+): HazirlikYonlendirmesi | null {
+  if (tc.durum !== "draft") return null;
+  const eski = caseEski(tc);
+  const sorular = eski ? [] : (tc.icerik.open_question_refs ?? []);
+  const varsayimlar = eski ? [] : (tc.icerik.assumption_refs ?? []);
+  if (sorular.length) {
+    const ek = varsayimlar.length
+      ? ` Case ayrıca ${varsayimlar.join(", ")} ${varsayimlar.length > 1 ? "varsayımlarına" : "varsayımına"} bağlı; yanıtla birlikte ${varsayimlar.length > 1 ? "onları" : "onu"} da doğrulayıp 'Düzelt' ile hazır yapın.`
+      : "";
+    // D6 (K16): soru PO'ya gönderildi mi / yanıtlandı mı — `po_sorulari` varsa metin duruma göre.
+    const po = tc.po_sorulari;
+    if (po && sorular.some((q) => po[q])) {
+      const grup = (d: string) => sorular.filter((q) => (po[q]?.po_durumu ?? "gonderilmedi") === d);
+      const parcalar: string[] = [];
+      const yanitli = grup("yanitlandi");
+      const gonderildi = grup("gonderildi");
+      const gonderilmedi = grup("gonderilmedi");
+      const etiket = (q: string) => (po[q]?.po_etiketi ? `${q} (${po[q]!.po_etiketi})` : q);
+      if (yanitli.length) parcalar.push(`${yanitli.map(etiket).join(", ")} PO tarafından yanıtlandı; beklenen sonucu 'Düzelt' ile bu yanıta göre yazın ya da case'i yeniden üretin.`);
+      if (gonderildi.length) parcalar.push(`${gonderildi.map(etiket).join(", ")} PO'ya gönderildi, yanıt bekleniyor; yanıt gelince 'Düzelt' ile beklenen sonucu yazın.`);
+      if (gonderilmedi.length) parcalar.push(`${gonderilmedi.join(", ")} PO'nun yanıtını bekliyor ve henüz gönderilmedi; 'Açık soruları PO'ya gönder' ile gönderin, yanıt gelince 'Düzelt' ile beklenen sonucu yazın.`);
+      return { tur: "soru", metin: parcalar.join(" ") + ek, dogrulanacak: [] };
+    }
+    const sahipler = [...new Set((tc.acik_sorular ?? []).filter((q) => sorular.includes(q.id)).map((q) => q.owner))];
+    const bekleyen = sahipler.length === 0 || (sahipler.length === 1 && sahipler[0] === "PO") ? "PO'nun yanıtını bekliyor" : `yanıt bekliyor (sahibi: ${sahipler.map((x) => SORU_SAHIBI[x] ?? x).join(", ")})`;
+    return { tur: "soru", metin: `${sorular.join(", ")} ${bekleyen}. Henüz gönderilmediyse 'Açık soruları PO'ya gönder' ile gönderin; yanıt gelince 'Düzelt' ile beklenen sonucu yazın.${ek}`, dogrulanacak: [] };
+  }
+  if (varsayimlar.length) {
+    const cok = varsayimlar.length > 1;
+    return {
+      tur: "varsayim",
+      metin: `${varsayimlar.join(", ")} ${cok ? "varsayımları" : "varsayımı"} doğrulanmadı. Doğruladıysanız '${cok ? "Varsayımlar doğrulandı" : "Varsayım doğrulandı"}' ile onaylayın; değilse 'Düzelt' ile beklenen sonucu güncelleyin ya da reddedin.`,
+      dogrulanacak: varsayimlar,
+    };
+  }
+  if (tc.onay_engeli) return { tur: "tutarlilik", metin: `${tc.onay_engeli}. 'Düzelt' ile giderin ya da reddedin.`, dogrulanacak: [] };
+  const hazirlik = caseHazirlik(tc);
+  if (hazirlik !== "ready") {
+    return { tur: "genel", metin: `Hazır değil (${CASE_HAZIRLIK[hazirlik]?.etiket ?? hazirlik}): 'Düzelt' ile hazır yapın ya da reddedin.`, dogrulanacak: [] };
+  }
+  return null;
+}
+
+/**
+ * K20 toplu onay: case seçilebilir mi. Yalnız taslak, hazır ve tutarlı (core `onay_engeli` null)
+ * case seçilir; değilse görünür neden döner. Core alanı yoksa (eski core) içerikten türetilir.
+ */
+export function topluOnayEngeli(tc: Pick<TestCase, "durum" | "readiness" | "icerik" | "onay_engeli" | "uyarilar" | "legacy">): string | null {
+  if (tc.durum !== "draft") return `Taslak değil (${CASE_DURUMU[tc.durum]?.etiket ?? tc.durum})`;
+  const hazirlik = caseHazirlik(tc);
+  if (hazirlik !== "ready") return `Hazır değil (${CASE_HAZIRLIK[hazirlik]?.etiket ?? hazirlik})`;
+  if (tc.onay_engeli) return "Tutarlılık ihlali var";
+  if (tc.onay_engeli === undefined && !caseEski(tc) && (tc.uyarilar?.length ?? 0) > 0) return "İçerik uyarısı var";
+  return null;
+}
+
+/**
+ * UX-6 "Hazır değil" süzgeci: güncel (reddedilmemiş, yerini yenisi almamış) case'in hazır olma durumu
+ * "ready" değil ya da core onay engeli var. Durum şeridinin (A1) sayacıyla aynı kural.
+ */
+export function onayaHazirDegil(c: Pick<TestCase, "durum" | "readiness" | "icerik" | "onay_engeli">): boolean {
+  if (c.durum === "rejected" || c.durum === "superseded") return false;
+  return caseHazirlik(c) !== "ready" || !!c.onay_engeli;
+}

@@ -114,13 +114,13 @@ describe("kabul kriteri eksik story (TPD-2): ön inceleme açık, case üretimi 
     expect(gereksinim("req-tpd-2").son_kontrol).toMatchObject({ mode: "replay" });
   });
 
-  it("PO onaylı olsa da 'Case üret' pasif ve nedeni söylenir", async () => {
+  it("PO onaylı olsa da üretim düğmesi pasif ve nedeni söylenir", async () => {
     await oturumAc("analist");
     const g = gereksinim("req-tpd-2");
     g.durum = "po_approved";
     g.po = { durum: "approved", onaylayan: "po", zaman: "2026-10-30T10:00:00Z", kanal: "jira" };
     uygulama("/gereksinimler/req-tpd-2");
-    const dugme = await screen.findByRole("button", { name: "Case üret" });
+    const dugme = await screen.findByRole("button", { name: "Tasarım modelini üret (iki tur)" });
     expect(dugme).toBeDisabled();
     expect(dugme).toHaveAttribute("title", AC_YOK_CASE_URETILEMEZ);
   });
@@ -199,7 +199,7 @@ describe("case review özeti: ölçülmeyen süre '0 ms' değil '—'", () => {
 });
 
 describe("case düzeltme formu", () => {
-  it("adım alanları çok satırlı; ön koşul, tür, risk ve AC atfı düzeltilip gönderilir", async () => {
+  it("adım alanları çok satırlı; ön koşul, tür ve AC atfı (v3: risk yok) düzeltilip gönderilir", async () => {
     await oturumAc("analist");
     const spy = vi.spyOn(api, "caseKarari");
     const guncellendi = vi.fn();
@@ -213,7 +213,8 @@ describe("case düzeltme formu", () => {
     await u.clear(onKosul);
     await u.type(onKosul, "Kullanıcı giriş yapmış{enter}Sepet boş");
     await u.selectOptions(screen.getByLabelText("Tür"), "boundary");
-    await u.selectOptions(screen.getByLabelText("Risk"), "low");
+    // K18: v3 case'te risk alanı düzeltme formunda yok.
+    expect(screen.queryByLabelText("Risk")).not.toBeInTheDocument();
     const ac = screen.getByLabelText("Kabul kriteri atıfları");
     await u.clear(ac);
     await u.type(ac, "ac2, AC3");
@@ -224,7 +225,6 @@ describe("case düzeltme formu", () => {
     expect(girdi.icerik).toMatchObject({
       preconditions: ["Kullanıcı giriş yapmış", "Sepet boş"],
       type: "boundary",
-      risk: "low",
       acceptance_criteria_refs: ["AC2", "AC3"],
     });
   });

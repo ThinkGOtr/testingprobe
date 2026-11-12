@@ -1,12 +1,15 @@
 // Gereksinim detayı bölüm gezgini (tasarım planı §5, F4): yapışkan sağ sütun, düz bağlantılar.
 import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Rotalar } from "../App";
 import { OturumProvider } from "../auth";
 import { BildirimProvider } from "../components/Bildirim";
 import { oturumAc } from "../test/yardimci";
-import { BOLUM_ID } from "./GereksinimDetay";
+import { api } from "../api/client";
+import { ApiError } from "../api/http";
+import { mockVerisi } from "../api/mock/handlers";
+import { BOLUM_ID, BOLUMLER } from "./GereksinimDetay";
 
 function uygulama(yol: string) {
   return render(
@@ -26,9 +29,11 @@ describe("gereksinim detayı: bölüm gezgini", () => {
     const { container } = uygulama("/gereksinimler/req-ft-1");
     const gezgin = await screen.findByRole("navigation", { name: "Sayfa bölümleri" });
     const baglantilar = within(gezgin).getAllByRole("link");
+    // Tasarım modeli paneli bu gereksinimde yok → gezginde de yok; Ürün AI ajanı (bağlı değil, daraltılmış) var.
     expect(baglantilar.map((a) => a.textContent)).toEqual([
       "Doküman",
       "PO teyidi",
+      "Ürün AI ajanı",
       "Manuel baz değer",
       "Ön inceleme soruları",
       "Tutarlılık bulguları",
@@ -40,10 +45,27 @@ describe("gereksinim detayı: bölüm gezgini", () => {
       expect(hedef!.tagName).toBe("SECTION");
       expect(within(hedef as HTMLElement).getByRole("heading", { level: 2 }).textContent).toContain(a.textContent!);
     }
-    expect(Object.values(BOLUM_ID).map((id) => `#${id}`)).toEqual(baglantilar.map((a) => a.getAttribute("href")));
+    expect(BOLUMLER.map((b) => b.id)).toEqual(Object.values(BOLUM_ID));
+    expect(Object.values(BOLUM_ID).filter((id) => id !== BOLUM_ID.model).map((id) => `#${id}`)).toEqual(baglantilar.map((a) => a.getAttribute("href")));
     // Gezgin ile asistan öneri çapaları (rules/assistant/oneriler.yaml) aynı kimlikleri kullanır.
     expect(BOLUM_ID.bulgular).toBe("bulgular");
     expect(BOLUM_ID.po).toBe("po-onay");
+  });
+
+  it("tasarım modeli paneli görünürse gezginin ilk bölümüdür; ajan ucu yoksa 'Ürün AI ajanı' gezginde de yok", async () => {
+    await oturumAc("analist");
+    const g = mockVerisi().gereksinimler.find((x) => x.id === "req-tpd-1")!;
+    g.durum = "modeling"; // model aşaması: panel her zaman çizilir
+    const casus = vi.spyOn(api, "ajanTesti").mockRejectedValue(new ApiError(404, "Not Found"));
+    const { container } = uygulama("/gereksinimler/req-tpd-1");
+    const gezgin = await screen.findByRole("navigation", { name: "Sayfa bölümleri" });
+    await within(gezgin).findByRole("link", { name: "Tasarım modeli" });
+    const adlar = within(gezgin).getAllByRole("link").map((a) => a.textContent);
+    expect(adlar[0]).toBe("Tasarım modeli");
+    expect(adlar).not.toContain("Ürün AI ajanı");
+    const hedef = container.querySelector(`#${BOLUM_ID.model}`)!;
+    expect(within(hedef as HTMLElement).getByRole("heading", { level: 2 }).textContent).toContain("Tasarım modeli");
+    casus.mockRestore();
   });
 
   it("liste/makale rolü eklemez; kilitli sayımlar ve akış gezgini korunur", async () => {

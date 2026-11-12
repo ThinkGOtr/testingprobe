@@ -16,6 +16,9 @@ import { bugIcerikCoreBicimi, bugTaslagiUyarla, hataAnaliziUyarla } from "./uyum
 import { nesneMi } from "./uyum";
 import { kontrolKulesiUyarla, kosuDetayUyarla, kosuUyarla, scriptDetayUyarla, scriptUyarla } from "./uyumDemoB";
 import { bazYanitiUyarla, demoDurumuUyarla, gereksinimBazi } from "./uyumFaz5";
+import { caseKalitesiUyarla } from "./uyumCaseKalitesi";
+import type { CaseKalitesi } from "./types";
+import type { TopluOnayKalemi, TopluOnaySonucu, VarsayimDogrulamaGirdisi } from "./types";
 import type {
   AjanTestiGorunumu,
   AjanUrunleriYaniti,
@@ -62,6 +65,7 @@ import type {
   UretimSecenekleriYaniti,
 } from "./types";
 import { uretimSecenekleriYanitiUyarla } from "../lib/uretimSecenekleri";
+import { tur2Uyarla, type Tur2Bilgisi } from "../lib/tasarimModeli";
 import { derinlestirmeDurumuUyarla } from "../lib/derinlestirme";
 
 import type {
@@ -139,10 +143,11 @@ export const api = {
   /** Modeli yeniden üret (reddedilmiş/onaysız model; 202, asama "model"). */
   tasarimModeliUret: (id: string) => istek<IsYaniti>("POST", `/requirements/${yol(id)}/design-model`, { kaynak: GEREKSINIM_KAYNAGI }),
   /** approve | edit | reject; gövde ekranda görülen içeriğin hash'ini taşır. */
-  tasarimModeliKarari: async (modelId: string, g: TasarimModeliKararGirdisi): Promise<TasarimModeliKaydi> =>
-    tasarimModeliKaydiUyarla(
-      nesne(await istek<unknown>("POST", `/design-models/${yol(modelId)}/decision`, { govde: g, kaynak: GEREKSINIM_KAYNAGI })),
-    ),
+  /** D1/K20: yanıt `tur2` (ya da `tur2_basladi`) taşıyorsa onay tur 2'yi otomatik başlatmıştır; yoksa `tur2: null`. */
+  tasarimModeliKarari: async (modelId: string, g: TasarimModeliKararGirdisi): Promise<TasarimModeliKaydi & { tur2: Tur2Bilgisi | null }> => {
+    const ham = nesne(await istek<unknown>("POST", `/design-models/${yol(modelId)}/decision`, { govde: g, kaynak: GEREKSINIM_KAYNAGI }));
+    return { ...tasarimModeliKaydiUyarla(ham), tur2: tur2Uyarla(ham) };
+  },
   /** Üretim formu: kayıtlı son seçenekler, varsayılan ve ek bilgi alanı kataloğu (011 §4.4). */
   uretimSecenekleri: async (id: string): Promise<UretimSecenekleriYaniti> =>
     uretimSecenekleriYanitiUyarla(
@@ -184,6 +189,33 @@ export const api = {
     ),
   /** Analist case'i ilk kez gördü: review süresi (`review_sure_ms`) sunucuda bu andan ölçülür. */
   caseGoruntulendi: (id: string) => istek<unknown>("POST", `/cases/${yol(id)}/viewed`, { kaynak: CASE_KAYNAGI }),
+  /**
+   * K20 "Varsayım doğrulandı": analist varsayımı doğruladı; case görülen içeriğiyle (hash) hazır
+   * yapılıp onaylanır (review kaydı düzeltme). Başka atıf kalırsa 422, içerik değiştiyse 409.
+   */
+  varsayimDogrulandi: async (caseId: string, g: VarsayimDogrulamaGirdisi): Promise<TestCase> =>
+    caseUyarla(nesne(await istek<unknown>("POST", `/cases/${yol(caseId)}/assumption-verified`, { govde: g, kaynak: CASE_KAYNAGI }))),
+  /** K20 toplu onay: kalem bazlı (her case ayrı review kaydı ve kendi hash'i); kalem hataları sonuçta döner. */
+  topluOnay: async (kalemler: TopluOnayKalemi[]): Promise<TopluOnaySonucu> => {
+    const ham = nesne(await istek<unknown>("POST", "/cases/bulk-decision", { govde: { karar: "approve", kalemler }, kaynak: CASE_KAYNAGI }));
+    const sonuclar = (Array.isArray(ham.sonuclar) ? ham.sonuclar : []).map((x) => {
+      const k = nesne(x);
+      return {
+        case_id: String(k.case_id ?? ""),
+        basarili: k.basarili === true,
+        hata: typeof k.hata === "string" ? k.hata : null,
+        kod: typeof k.kod === "number" ? k.kod : null,
+        case: k.case && typeof k.case === "object" ? caseUyarla(nesne(k.case)) : null,
+      };
+    });
+    const onaylanan = sonuclar.filter((k) => k.basarili).length;
+    return {
+      karar: "approve",
+      onaylanan: typeof ham.onaylanan === "number" ? ham.onaylanan : onaylanan,
+      basarisiz: typeof ham.basarisiz === "number" ? ham.basarisiz : sonuclar.length - onaylanan,
+      sonuclar,
+    };
+  },
   /** §12 ölçümleri (kabul oranı ilk karara göre, AI + review süresi, maliyet). */
   caseMetrikleri: (requirementId: string) =>
     istek<CaseMetrikleri>("GET", `/requirements/${yol(requirementId)}/case-metrics`, { kaynak: CASE_KAYNAGI }),
@@ -225,7 +257,7 @@ export const api = {
   /** P9 denetim (011 F5): son karar, güncel set, yayın kapısı durumu. */
   caseDenetim: (requirementId: string) =>
     istek<CaseDenetimGorunumu>("GET", `/requirements/${yol(requirementId)}/case-audit`, { kaynak: CASE_KAYNAGI }),
-  /** "Denetime gönder" (analist). */
+  /** "Agent Probe'a gönder" (analist). */
   caseDenetimGonder: (requirementId: string) =>
     istek<CaseDenetimGorunumu>("POST", `/requirements/${yol(requirementId)}/case-audit`, { kaynak: CASE_KAYNAGI }),
 
@@ -340,12 +372,31 @@ export const api = {
 
   // Kontrol Kulesi ve denetim
   kontrolKulesi: async (): Promise<KontrolKulesi> => kontrolKulesiUyarla(await istek<unknown>("GET", "/control-tower")),
+  /** K21 Case kalitesi; `requirementId` verilirse yalnız o gereksinim. Eski core'da 404 (bölüm gizlenir). */
+  caseKalitesi: async (requirementId?: string): Promise<CaseKalitesi> =>
+    caseKalitesiUyarla(
+      await istek<unknown>("GET", "/control-tower/case-quality", { sorgu: requirementId ? { requirement_id: requirementId } : undefined }),
+    ),
   denetim: async (dogrula = true): Promise<DenetimYaniti> =>
     denetimiUyarla(await istek<unknown>("GET", "/audit", { sorgu: { verify: dogrula } })),
 
   // Agent Probe: AI ajan ürünleri ve ajan testi talepleri (011 F6; bu sürümde simülasyon)
   ajanUrunleri: () => istek<AjanUrunleriYaniti>("GET", "/agent-probe/products"),
   ajanTesti: (id: string) => istek<AjanTestiGorunumu>("GET", `/requirements/${yol(id)}/agent-test`),
+  /**
+   * D4: talebin sonucunu işletip görünümü döndürür (`POST …/agent-test/refresh`). Uç yoksa (eski
+   * core: 404/405, uç listesinde yok: 501) eski `GET …/agent-test` ile devam edilir.
+   */
+  ajanTestiYenile: async (id: string): Promise<AjanTestiGorunumu> => {
+    try {
+      return await istek<AjanTestiGorunumu>("POST", `/requirements/${yol(id)}/agent-test/refresh`, {
+        kaynak: ["GET", `/requirements/${yol(id)}/agent-test`],
+      });
+    } catch (e) {
+      if (e instanceof ApiError && [404, 405, 501].includes(e.status)) return api.ajanTesti(id);
+      throw e;
+    }
+  },
   ajanUrunuBagla: (id: string, urunKodu: string | null) =>
     istek<AjanTestiGorunumu>("PUT", `/requirements/${yol(id)}/agent-product`, { govde: { urun_kodu: urunKodu } }),
   ajanTestiBaslat: (id: string) => istek<AjanTestiGorunumu>("POST", `/requirements/${yol(id)}/agent-test`),

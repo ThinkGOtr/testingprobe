@@ -79,7 +79,9 @@ describe("GherkinIndir düğmesi", () => {
     const tik = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
     const cagri = vi.spyOn(api, "gherkin");
     sar(<GherkinIndir requirementId={V3_GEREKSINIM_ID} anahtar="TPD-9" caseler={liste} />);
-    expect(screen.getByTestId("gherkin-sayisi").textContent).toMatch(/1 case dahil · \d+ case onay\/hazırlık bekliyor/);
+    // UX-14: kısa sayı metni düğmeye aria-describedby ile bağlı.
+    expect(screen.getByTestId("gherkin-sayisi").textContent).toMatch(/^\s*1\/6 case dahil/);
+    expect(screen.getByRole("button", { name: "Gherkin indir" })).toHaveAccessibleDescription(/1\/6 case dahil/);
     await userEvent.click(screen.getByRole("button", { name: "Gherkin indir" }));
     await waitFor(() => expect(tik).toHaveBeenCalledTimes(1));
     expect(cagri).toHaveBeenCalledWith(V3_GEREKSINIM_ID);
@@ -87,6 +89,24 @@ describe("GherkinIndir düğmesi", () => {
     expect(birak).toHaveBeenCalledWith("blob:gherkin");
     const a = tik.mock.instances[0] as unknown as HTMLAnchorElement;
     expect(a.download).toBe("TPD-9.feature");
+  });
+
+  it("indirme sonrası bildirim: dosya adı ve case sayısı", async () => {
+    await oturumAc("analist");
+    birHazirOnayla();
+    const liste = await caseler();
+    Object.assign(URL, { createObjectURL: vi.fn(() => "blob:g"), revokeObjectURL: vi.fn() });
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    sar(<GherkinIndir requirementId={V3_GEREKSINIM_ID} anahtar="TPD-1" caseler={liste} />);
+    await userEvent.click(screen.getByRole("button", { name: "Gherkin indir" }));
+    expect(await screen.findByText("Gherkin dosyası indirildi: TPD-1.feature · 1 case")).toBeInTheDocument();
+  });
+
+  it("caseler verilmezse (gereksinim sayfası) sayı yok, düğme açık", async () => {
+    await oturumAc("analist");
+    sar(<GherkinIndir requirementId={V3_GEREKSINIM_ID} anahtar="TPD-1" />);
+    expect(screen.getByRole("button", { name: "Gherkin indir" })).toBeEnabled();
+    expect(screen.queryByTestId("gherkin-sayisi")).toBeNull();
   });
 
   it("case review sayfasında yer alır", async () => {

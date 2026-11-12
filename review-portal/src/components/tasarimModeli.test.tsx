@@ -1,5 +1,6 @@
 // İki tur (011 F3, K1): üretim kipi formu, tasarım modeli paneli (tablolar, Onayla engeli, alan bazlı
-// Düzelt, Reddet), onaydan sonra "Case'leri üret" ve mock uç sözleşmesi.
+// Düzelt, Reddet, sıradaki adım, yer tutucu engeli, yeniden üretim onayı), K20/D1: onaydan sonra tur 2
+// otomatik (alan yoksa eski "Case'leri üret") ve mock uç sözleşmesi.
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
@@ -13,7 +14,7 @@ import type { GereksinimDetay as Detay } from "../api/types";
 import type { DesignModel, TasarimModeliKaydi } from "../api/tasarimModeliTipleri";
 import { modelTamamla } from "../api/tasarimModeliTipleri";
 import { OturumProvider } from "../auth";
-import { modelSorunlari } from "../lib/tasarimModeli";
+import { modelSorunlari, tur2Uyarla, YER_TUTUCU_NEDENI } from "../lib/tasarimModeli";
 import { oturumAc, sar } from "../test/yardimci";
 import { BildirimProvider } from "./Bildirim";
 import { gecerlilikDegistir, ogeSil, TasarimModeliDuzenleyici } from "./TasarimModeliDuzenleyici";
@@ -194,7 +195,7 @@ describe("alan bazlı düzeltme", () => {
 });
 
 describe("iki tur akışı (gereksinim detayı + mock)", () => {
-  it("üretim formunda varsayılan iki tur; 'Case üret' kipi açıkça gönderir ve model üretilir", async () => {
+  it("üretim formunda varsayılan iki tur; üst düğme kipi söyler ve kipi açıkça gönderir, model üretilir", async () => {
     await oturumAc("analist");
     const g = poOnayli();
     const spy = vi.spyOn(api, "caseUret");
@@ -203,7 +204,8 @@ describe("iki tur akışı (gereksinim detayı + mock)", () => {
     const form = await screen.findByTestId("uretim-kipi", undefined, BEKLE);
     expect(within(form).getByRole("radio", { name: /İki tur \(önerilen\)/ })).toBeChecked();
     expect(within(form).getByRole("radio", { name: /Tek tur \(hızlı\)/ })).not.toBeChecked();
-    await u.click(screen.getByRole("button", { name: "Case üret" }));
+    expect(screen.queryByRole("button", { name: "Case üret (tek tur)" })).not.toBeInTheDocument();
+    await u.click(screen.getByRole("button", { name: "Tasarım modelini üret (iki tur)" }));
     await waitFor(() => expect(spy).toHaveBeenCalledWith("req-tpd-1", "iki_tur"), BEKLE);
     await bekleIsler();
     await waitFor(() => expect(g.durum).toBe("model_ready"), BEKLE);
@@ -211,6 +213,9 @@ describe("iki tur akışı (gereksinim detayı + mock)", () => {
     expect(await within(panel).findByTestId("model-ogeler", undefined, BEKLE)).toBeInTheDocument();
     expect(within(panel).getByRole("button", { name: "Modeli onayla" })).toBeEnabled();
     expect(within(panel).queryByRole("button", { name: "Case'leri üret" })).not.toBeInTheDocument();
+    expect(within(panel).getByTestId("model-siradaki-adim")).toHaveTextContent(
+      "Sıradaki adım: modeli inceleyip onaylayın — onaydan sonra case'ler otomatik üretilir",
+    );
     spy.mockRestore();
   }, AGIR);
 
@@ -221,29 +226,107 @@ describe("iki tur akışı (gereksinim detayı + mock)", () => {
     const u = userEvent.setup();
     uygulama("/gereksinimler/req-tpd-1");
     await u.click(await screen.findByRole("radio", { name: /Tek tur \(hızlı\)/ }, BEKLE));
-    await u.click(screen.getByRole("button", { name: "Case üret" }));
+    await u.click(screen.getByRole("button", { name: "Case üret (tek tur)" }));
     await waitFor(() => expect(spy).toHaveBeenCalledWith("req-tpd-1", "tek_tur"), BEKLE);
     await bekleIsler();
     await waitFor(() => expect(g.durum).toBe("cases_ready"), BEKLE);
     spy.mockRestore();
   }, AGIR);
 
-  it("onay → 'Case'leri üret' görünür; tıklanınca onaylı modelden case üretilir", async () => {
+  it("K20: onay tur 2'yi otomatik başlatır — bildirim ve panel durumu; 'Case'leri üret' görünmez", async () => {
     await oturumAc("analist");
     const g = poOnayli();
     await api.caseUret("req-tpd-1", "iki_tur");
     await bekleIsler();
+    ayar.isAdimiMs = 200; // tur 2 sürerken panel durumu görünsün
+    const caseUret = vi.spyOn(api, "caseUret");
     const u = userEvent.setup();
     uygulama("/gereksinimler/req-tpd-1");
     const panel = await screen.findByTestId("tasarim-modeli-paneli", undefined, BEKLE);
     await u.click(await within(panel).findByRole("button", { name: "Modeli onayla" }, BEKLE));
+    expect(await screen.findByText(/Tasarım modeli onaylandı\. Case üretimi otomatik başladı \(üretim \d+\)\./, undefined, BEKLE)).toBeInTheDocument();
+    expect(await within(panel).findByTestId("model-tur2-durumu", undefined, BEKLE)).toHaveTextContent(/Case üretimi otomatik başladı \(üretim \d+\)\./);
+    expect(within(panel).queryByRole("button", { name: "Case'leri üret" })).not.toBeInTheDocument();
+    // Tur 2 portaldan ayrı bir generate-cases çağrısı gerektirmez.
+    expect(caseUret).not.toHaveBeenCalled();
+    ayar.isAdimiMs = 0;
+    await bekleIsler();
+    await waitFor(() => expect(g.durum).toBe("cases_ready"), BEKLE);
+    caseUret.mockRestore();
+  }, AGIR);
+
+  it("onay yanıtında tur 2 alanı yoksa (eski core) 'Case'leri üret' görünür; tıklanınca onaylı modelden case üretilir", async () => {
+    await oturumAc("analist");
+    const g = poOnayli();
+    await api.caseUret("req-tpd-1", "iki_tur");
+    await bekleIsler();
+    // Eski core: onay yalnız modeli onaylar (gereksinim model_ready kalır), yanıtta tur2 yok.
+    const karar = vi.spyOn(api, "tasarimModeliKarari").mockImplementation(async (modelId) => {
+      const kayit = mockVerisi().tasarimModelleri!["req-tpd-1"].find((m) => m.id === modelId)!;
+      kayit.durum = "approved";
+      kayit.onaylanan_hash = kayit.icerik_hash;
+      return { ...kayit, tur2: null };
+    });
+    const u = userEvent.setup();
+    uygulama("/gereksinimler/req-tpd-1");
+    const panel = await screen.findByTestId("tasarim-modeli-paneli", undefined, BEKLE);
+    await u.click(await within(panel).findByRole("button", { name: "Modeli onayla" }, BEKLE));
+    expect(await screen.findByText("Tasarım modeli onaylandı.", undefined, BEKLE)).toBeInTheDocument();
     const uret = await within(panel).findByRole("button", { name: "Case'leri üret" }, BEKLE);
+    expect(within(panel).getByTestId("model-siradaki-adim")).toHaveTextContent("'Case'leri üret' ile onaylı modelden case üretin.");
+    karar.mockRestore();
     const spy = vi.spyOn(api, "caseUret");
     await u.click(uret);
     await waitFor(() => expect(spy).toHaveBeenCalledWith("req-tpd-1", "iki_tur"), BEKLE);
     await bekleIsler();
     await waitFor(() => expect(g.durum).toBe("cases_ready"), BEKLE);
     spy.mockRestore();
+  }, AGIR);
+
+  it("REPLAY-MISS yer tutucu model onaylanamaz: Onayla ve Düzelt pasif, neden görünür; sıradaki adım yeniden üretim", async () => {
+    await oturumAc("analist");
+    poOnayli();
+    await api.caseUret("req-tpd-1", "iki_tur");
+    await bekleIsler();
+    const kayit = mockVerisi().tasarimModelleri!["req-tpd-1"].at(-1) as TasarimModeliKaydi;
+    kayit.uretim_modu = "replay_miss";
+    uygulama("/gereksinimler/req-tpd-1");
+    const panel = await screen.findByTestId("tasarim-modeli-paneli", undefined, BEKLE);
+    const onayla = await within(panel).findByRole("button", { name: "Modeli onayla" }, BEKLE);
+    expect(onayla).toBeDisabled();
+    expect(onayla).toHaveAccessibleDescription(YER_TUTUCU_NEDENI);
+    expect(within(panel).getByRole("button", { name: "Düzelt" })).toBeDisabled();
+    expect(within(panel).getByRole("button", { name: "Reddet" })).toBeEnabled();
+    expect(within(panel).getByTestId("model-yer-tutucu")).toHaveTextContent("Yer tutucu model — onaylanamaz");
+    expect(within(panel).getByTestId("model-siradaki-adim")).toHaveTextContent("modeli yeniden üretin — yer tutucu model onaylanamaz");
+    // Mock sözleşmesi: yer tutucu dışında core yine kontrolleri uygular; portal onay isteği göndermez.
+    expect(within(panel).getByRole("button", { name: "Modeli yeniden üret…" })).toBeEnabled();
+  }, AGIR);
+
+  it("'Modeli yeniden üret…' sayfa içi onay ister; Vazgeç istek göndermez, onay modeli yeniden üretir", async () => {
+    await oturumAc("analist");
+    const g = poOnayli();
+    await api.caseUret("req-tpd-1", "iki_tur");
+    await bekleIsler();
+    const uret = vi.spyOn(api, "tasarimModeliUret");
+    const u = userEvent.setup();
+    uygulama("/gereksinimler/req-tpd-1");
+    const panel = await screen.findByTestId("tasarim-modeli-paneli", undefined, BEKLE);
+    const dugme = await within(panel).findByRole("button", { name: "Modeli yeniden üret…" }, BEKLE);
+    await u.click(dugme);
+    const onay = within(panel).getByTestId("model-yeniden-uret-onayi");
+    expect(onay).toHaveTextContent("Mevcut taslak (sürüm 1) geçersiz olur");
+    expect(within(onay).getByRole("button", { name: "Vazgeç" })).toHaveFocus();
+    await u.click(within(onay).getByRole("button", { name: "Vazgeç" }));
+    expect(within(panel).queryByTestId("model-yeniden-uret-onayi")).not.toBeInTheDocument();
+    expect(uret).not.toHaveBeenCalled();
+    await u.click(within(panel).getByRole("button", { name: "Modeli yeniden üret…" }));
+    await u.click(within(within(panel).getByTestId("model-yeniden-uret-onayi")).getByRole("button", { name: "Evet, yeniden üret" }));
+    await waitFor(() => expect(uret).toHaveBeenCalledWith("req-tpd-1"), BEKLE);
+    await bekleIsler();
+    await waitFor(() => expect(mockVerisi().tasarimModelleri!["req-tpd-1"].filter((m) => m.durum === "draft")).toHaveLength(1), BEKLE);
+    expect(g.durum).toBe("model_ready");
+    uret.mockRestore();
   }, AGIR);
 
   it("model kontrolü ihlali varsa 'Modeli onayla' pasif ve nedeni yazılı; Düzelt açılır", async () => {
@@ -263,7 +346,7 @@ describe("iki tur akışı (gereksinim detayı + mock)", () => {
     expect(within(panel).getByTestId("model-duzenleyici")).toBeInTheDocument();
   }, AGIR);
 
-  it("Reddet: ret nedeniyle kaydedilir; ardından 'Modeli yeniden üret'", async () => {
+  it("Reddet: ret nedeniyle kaydedilir; ardından 'Modeli yeniden üret…'", async () => {
     await oturumAc("analist");
     poOnayli();
     await api.caseUret("req-tpd-1", "iki_tur");
@@ -279,7 +362,9 @@ describe("iki tur akışı (gereksinim detayı + mock)", () => {
     await waitFor(() =>
       expect(spy).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ karar: "reject", ret_nedeni: "out_of_scope", icerik_hash: expect.any(String) })),
     );
-    expect(await within(panel).findByRole("button", { name: "Modeli yeniden üret" }, BEKLE)).toBeEnabled();
+    expect(await screen.findByText("Tasarım modeli reddedildi.", undefined, BEKLE)).toBeInTheDocument();
+    expect(await within(panel).findByRole("button", { name: "Modeli yeniden üret…" }, BEKLE)).toBeEnabled();
+    expect(within(panel).getByTestId("model-siradaki-adim")).toHaveTextContent("Sıradaki adım: modeli yeniden üretin.");
     spy.mockRestore();
   }, AGIR);
 });
@@ -302,9 +387,33 @@ describe("mock uç sözleşmesi", () => {
     const k = await api.tasarimModeliKarari(m.id, { karar: "edit", icerik_hash: m.icerik_hash, icerik: yeni });
     expect(k.durum).toBe("approved");
     expect(k.onaylanan_hash).toBe(k.icerik_hash);
-    expect((await api.tasarimModeli(g.id)).case_uretimi_hazir).toBe(true);
-    // Onaylı modelle iki tur: ikinci aşama case üretimi.
-    const c = await api.caseUret("req-tpd-1", "iki_tur");
-    expect(c).toMatchObject({ kip: "iki_tur", asama: "case" });
+    // D1/K20: onay tur 2'yi (onaylı modelden case üretimi) otomatik başlatır.
+    expect(k.tur2).toMatchObject({ basladi: true, uretim_no: expect.any(Number) });
+    expect(g.durum).toBe("generating");
+    expect((await api.tasarimModeli(g.id)).case_uretimi_hazir).toBe(false);
+    await bekleIsler();
+    expect(g.durum).toBe("cases_ready");
+    expect(mockVerisi().caseler.some((c) => c.requirement_id === g.id && c.durum === "draft")).toBe(true);
+  });
+
+  it("ret tur 2 başlatmaz (yanıtta tur2 yok)", async () => {
+    await oturumAc("analist");
+    const g = poOnayli();
+    await api.caseUret("req-tpd-1", "iki_tur");
+    await bekleIsler();
+    const m = (await api.tasarimModeli(g.id)).model!;
+    const k = await api.tasarimModeliKarari(m.id, { karar: "reject", icerik_hash: m.icerik_hash, ret_nedeni: "missing_ac" });
+    expect(k.tur2).toBeNull();
+    expect(g.durum).toBe("model_ready");
+  });
+});
+
+describe("tur 2 yanıt uyarlaması (D1)", () => {
+  it("tur2 nesnesi, düz tur2_basladi ve alan yokluğu", () => {
+    expect(tur2Uyarla({ tur2: { basladi: true, job_id: "j1", uretim_no: 3, mesaj: "m" } })).toEqual({ basladi: true, job_id: "j1", uretim_no: 3, mesaj: "m" });
+    expect(tur2Uyarla({ tur2_basladi: true })).toEqual({ basladi: true, job_id: null, uretim_no: null, mesaj: null });
+    expect(tur2Uyarla({ tur2_basladi: false })).toMatchObject({ basladi: false });
+    expect(tur2Uyarla({ tur2: null })).toBeNull();
+    expect(tur2Uyarla({ id: "m1" })).toBeNull();
   });
 });

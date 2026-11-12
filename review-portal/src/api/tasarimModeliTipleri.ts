@@ -120,7 +120,7 @@ export interface TasarimModeliKarari {
   kullanici: string | null;
   zaman: string;
   gerekce: string | null;
-  ret_nedeni: RetNedeni | null;
+  ret_nedeni: ModelRetNedeni | RetNedeni | null;
 }
 
 export interface TasarimModeliOzeti {
@@ -176,9 +176,19 @@ export interface TasarimModeliKararGirdisi {
   karar: "approve" | "edit" | "reject";
   icerik_hash: string;
   icerik?: DesignModel;
-  ret_nedeni?: RetNedeni;
+  ret_nedeni?: ModelRetNedeni;
   gerekce?: string;
 }
+
+/** D1: tasarım modeli ret nedenleri (case ret nedenlerinden ayrı; core case nedenine 422 döner). */
+export type ModelRetNedeni =
+  | "wrong_technique"
+  | "missing_condition"
+  | "wrong_coverage_item"
+  | "wrong_boundary"
+  | "invented_rule"
+  | "missing_ac"
+  | "out_of_scope";
 
 /** Üretim kipi (011 K1): iki tur varsayılan; tek tur hızlı yol. */
 export type UretimKipi = "iki_tur" | "tek_tur";

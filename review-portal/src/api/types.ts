@@ -481,6 +481,16 @@ export interface TestCase {
   uretim_no?: number;
   /** 011 K16: atıf yaptığı soru PO tarafından yanıtlandı → düzelt / yeniden üret önerisi. */
   po_yanit_onerisi?: { eylem: "duzelt_veya_yeniden_uret"; etiketler: string[]; mesaj: string } | null;
+  /** D6 (K16): atıf yapılan soru/varsayımların PO'ya gönderim durumu (kaynak kimliği → durum). */
+  po_sorulari?: Record<string, CasePoSorusu>;
+}
+
+/** D6: case'in atıf yaptığı açık soru/varsayımın PO tarafı (Jira yorumu etiketi CQn / CAn). */
+export interface CasePoSorusu {
+  tur: "soru" | "varsayim";
+  po_etiketi: string | null;
+  po_durumu: "gonderilmedi" | "gonderildi" | "yanitlandi";
+  po_yaniti: { metin: string; yazar: string | null; zaman: string | null } | null;
 }
 
 export interface CaseAlanFarki {
@@ -604,6 +614,8 @@ export interface KapsamSatiri {
    * arasında tekil değildir. Alan yoksa yalnız `covered_by` sıra numaraları gösterilir.
    */
   kapsayanlar?: KapsayanCase[];
+  /** D3: öğeyi kapsayan HAZIR case'lerin sıra numaraları; alan yoksa (eski core) gösterilmez. */
+  covered_by_ready?: number[];
 }
 
 export interface KapsayanCase {
@@ -630,7 +642,8 @@ export interface CaseKapsamOzeti {
   /** Güncel case'lerden eski (v2) şemalı olanların sayısı. */
   legacy_case_sayisi?: number;
   kapsam_matrisi: KapsamSatiri[];
-  oranlar: { gereksinim_kapsami: KapsamOrani; oge_kapsami: KapsamOrani; negatif_karar_kapsami: KapsamOrani };
+  /** D3: ek oranlar (ör. `hazir_gereksinim_kapsami`, `hazir_oge_kapsami`) aynı nesnede gelir; yoksa gösterilmez. */
+  oranlar: { gereksinim_kapsami: KapsamOrani; oge_kapsami: KapsamOrani; negatif_karar_kapsami: KapsamOrani } & Record<string, KapsamOrani>;
   teknik_dagilimi: Record<string, number>;
   readiness_dagilimi: Record<string, number>;
   kapsanmayan: { item: string; tur?: "ac" | "oge"; tanim?: string; karar?: string | null; gerekce: string }[];
@@ -656,7 +669,7 @@ export interface YayinOnizlemeKalemi {
     | "blocked_not_approved"
     | "blocked_no_story"
     | "blocked_requirement_changed"
-    /** Onaylı ama hazır olmayan (varsayıma bağlı / engelli) case yayınlanmaz (011 §4.7, K6). */
+    /** Onaylı ama hazır olmayan (varsayıma bağlı / soru bekliyor) case yayınlanmaz (011 §4.7, K6). */
     | "blocked_not_ready"
     /** Denetim kapısı (011 §4.7, K3): setin güncel içeriği için KABUL yok. */
     | "blocked_gate";
@@ -1538,6 +1551,8 @@ export interface EkBilgiAlani {
 
 /** `GET /requirements/{id}/generation-options`. */
 export interface UretimSecenekleriYaniti {
+  /** D1: gereksinimde kayıtlı üretim kipi tercihi (`kayitli.kip` / `secenekler.kip`); yoksa alan yok. */
+  kip?: "iki_tur" | "tek_tur";
   /** Gereksinimde kayıtlı son seçenekler (yoksa null). */
   secenekler: UretimSecenekleri | null;
   varsayilan: UretimSecenekleri;
@@ -1721,7 +1736,7 @@ export interface CaseDenetimGorunumu {
   /** Güncel set için son tamamlanmış karar (yayın kapısı bunu okur). */
   guncel_karar: CaseDenetimKaydi | null;
   calisiyor: boolean;
-  /** "Denetime gönder" neden kapalı (null = gönderilebilir). */
+  /** "Agent Probe'a gönder" neden kapalı (null = gönderilebilir). */
   gonder_engeli: string | null;
   kapi_acik: boolean;
   /** Yayın kapısının bu set için engeli (null = yayına açık). */
@@ -1736,6 +1751,8 @@ export interface AjanUrunu {
   ad: string;
   aciklama: string;
   hazir: boolean;
+  /** Bu ürüne bağlı gereksinimler (UX-11; core sunmuyorsa alan yok → "—"). */
+  bagli_gereksinimler?: { id: string; jira_key?: string | null; baslik?: string | null }[];
 }
 
 export interface AjanUrunleriYaniti {
@@ -1767,7 +1784,8 @@ export interface AjanTestiTalebi {
   guncelleme: string;
   islenme: string | null;
   /** Testing Probe'un sonuca göre sürdürdüğü süreç. */
-  surec: "tamamlandi" | "bulgu" | "onay_gecersiz" | "hata" | null;
+  /** D4: "simule" = simüle sonuç; gereksinimi done yapmaz. */
+  surec: "tamamlandi" | "bulgu" | "onay_gecersiz" | "hata" | "simule" | null;
   surec_notu: string | null;
 }
 
@@ -1782,4 +1800,100 @@ export interface AjanTestiGorunumu {
   engel: string | null;
   talep: AjanTestiTalebi | null;
   gecmis: AjanTestiTalebi[];
+  /** D4: true iken analist oturumu `POST …/agent-test/refresh` ile sonucu işletir (yoksa eski kural: talep bitmemişse). */
+  yenilenebilir?: boolean;
+  /** D4: simülatör sonucu tamamlar (gerçek Agent Probe değil). */
+  sim_tamamlar?: boolean;
+}
+
+/* ---- K21: Kontrol Kulesi "Case kalitesi" (GET /control-tower/case-quality[?requirement_id=]) ---- */
+
+export type CaseKalitesiKarar = "KABUL" | "DUZELTME_GEREKLI" | "ENGELLE";
+
+export interface CaseKalitesi {
+  requirement_id: string | null;
+  kapsam: {
+    gereksinim: number | null;
+    oge: number | null;
+    negatif_karar: number | null;
+    hazir_gereksinim: number | null;
+    hazir_oge: number | null;
+    n_gereksinim: number;
+    kapsam_yontemi: "toplam" | "gereksinim_ortalamasi" | string;
+  };
+  /** P8 case seti review: yüzde = skor / 12 × 100. */
+  review: {
+    n: number;
+    ortalama: number | null;
+    ortalama_skor: number | null;
+    olcek: string;
+    bayat: number;
+    dagilim: { aralik: string; n: number }[];
+  };
+  /** P9 Agent Probe denetimi: kod kararı (deterministik sertleştirme sonrası) ve model kararı ayrı. */
+  denetim: {
+    n: number;
+    kod: Record<CaseKalitesiKarar, number>;
+    model: Record<CaseKalitesiKarar, number>;
+    hata: number;
+    bekliyor: number;
+  };
+  tekrar: { oneri: number; case: number; etkilenen_case: number; oran: number | null };
+  readiness: { ready: number; assumption_dependent: number; blocked: number; legacy: number };
+  teknik: Record<string, number>;
+  icerik_kontrolu: {
+    n: number;
+    gec: number;
+    uyar: number;
+    engelle: number;
+    engel_orani: number | null;
+    uyari_orani: number | null;
+    yon: Record<string, number>;
+  };
+  surumler: {
+    surum: string;
+    uretim: number;
+    case: number;
+    review_ortalama: number | null;
+    review_n: number;
+    kabul: number;
+    duzeltme: number;
+    engel: number;
+    tekrar_orani: number | null;
+  }[];
+  /** Ekip hedefi, standart değil: eşik/kapı uygulanmaz. */
+  hedefler: { ad: string; metrik?: string; hedef: string | number; not?: string }[];
+  kaynaklar: Record<string, string>;
+  uyarilar: string[];
+}
+
+// ---------------------------------------------------------------- D5: toplu onay ve "Varsayım doğrulandı" (K20)
+
+/** `POST /cases/{id}/assumption-verified` gövdesi: görülen içeriğin hash'i ve doğrulanan varsayım(lar). */
+export interface VarsayimDogrulamaGirdisi {
+  icerik_hash: string;
+  varsayim_id: string | string[];
+  gerekce?: string;
+}
+
+/** `POST /cases/bulk-decision` kalemi: her case kendi görülen içerik hash'iyle ayrı onaylanır. */
+export interface TopluOnayKalemi {
+  case_id: string;
+  icerik_hash: string;
+}
+
+export interface TopluOnayKalemSonucu {
+  case_id: string;
+  basarili: boolean;
+  hata: string | null;
+  /** Kalem hatasının HTTP karşılığı (409 bayat içerik, 422 hazır değil …); başarılıysa null. */
+  kod: number | null;
+  case: TestCase | null;
+}
+
+export interface TopluOnaySonucu {
+  karar: "approve";
+  onaylanan: number;
+  basarisiz: number;
+  sonuclar: TopluOnayKalemSonucu[];
 }

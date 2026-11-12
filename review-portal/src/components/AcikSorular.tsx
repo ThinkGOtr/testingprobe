@@ -10,10 +10,12 @@ import {
 import { api } from "../api/client";
 import { ApiError } from "../api/http";
 import type { AcikSoru, PoSoruDurumu, TestCase, Varsayim } from "../api/types";
-import { useVeri } from "../hooks";
+import { useIslem, useVeri } from "../hooks";
+import { useBildirim } from "./Bildirim";
 import { CASE_HAZIRLIK, SORU_SAHIBI } from "../lib/etiketler";
 import { tarih } from "../lib/format";
 import {
+  AlanHatasi,
   BosDurum,
   Cip,
   HataKutusu,
@@ -324,5 +326,35 @@ export function AcikSorularPaneli({
         </>
       )}
     </Kart>
+  );
+}
+
+/**
+ * D5 × D6: soru bekleyen case kartındaki "Neden onaylanamıyor" kutusunun eylemi (`poyaGonder`
+ * yuvası). Case'in atıf yaptığı sorulardan biri henüz gönderilmediyse "Açık soruları PO'ya gönder"
+ * gereksinimin gönderilmemiş sorularını story'ye tek Jira yorumu olarak yollar; sonra liste yenilenir.
+ * Hepsi gönderildiyse/yanıtlandıysa eylem çizilmez (durum kutunun metninde).
+ */
+export function PoyaGonderEylemi({ tc, tamamlandi }: { tc: TestCase; tamamlandi?: () => void }) {
+  const islem = useIslem();
+  const bildir = useBildirim();
+  const sorular = tc.icerik.open_question_refs ?? [];
+  const po = tc.po_sorulari;
+  const gonderilmemis = sorular.filter((q) => !po || (po[q]?.po_durumu ?? "gonderilmedi") === "gonderilmedi");
+  if (sorular.length === 0 || gonderilmemis.length === 0) return null;
+  const gonder = async () => {
+    const y = await islem.calistir(() => api.acikSorulariGonder(tc.requirement_id));
+    if (y) {
+      bildir(`Açık sorular PO'ya gönderildi (${gonderilmemis.join(", ")}); yanıt gelince case'e bağlanır.`);
+      tamamlandi?.();
+    }
+  };
+  return (
+    <div className="eylemler">
+      <IslemDugmesi roller={["analyst"]} kucuk tur="ikincil" calisiyor={islem.calisiyor} title={GONDER_ACIKLAMASI} nedenGizli onClick={() => void gonder()}>
+        Açık soruları PO'ya gönder
+      </IslemDugmesi>
+      {islem.hata && <AlanHatasi asistan={{ hata: islem.hata, kaynak: islem.hataNesnesi }}>{islem.hata}</AlanHatasi>}
+    </div>
   );
 }

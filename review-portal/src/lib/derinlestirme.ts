@@ -34,6 +34,10 @@ export function derinlestirmeDurumuUyarla(ham: unknown): DerinlestirmeDurumu {
 }
 
 export const DERINLESTIRME_SURUYOR = "Derinleştirme sürüyor; bitince yeni taslaklar listeye eklenir.";
+/** İki derinleştirme düğmesinden biri sürerken diğerinin pasiflik nedeni (core tek iş tutar: 409). */
+export const DIGER_DERINLESTIRME_SURUYOR = "Diğer derinleştirme sürüyor";
+/** Yoklama bu kadar ardışık okuma hatasında durur; kullanıcı "Tekrar dene" ile sürdürür. */
+export const YOKLAMA_HATA_SINIRI = 3;
 
 /**
  * Düğmeler neden pasif (null: etkin). Rol kontrolü düğmenin kendisinde (yalnız analist); burada
@@ -42,7 +46,7 @@ export const DERINLESTIRME_SURUYOR = "Derinleştirme sürüyor; bitince yeni tas
 export function derinlestirmeEngeli(gereksinimDurumuKodu: string | undefined, d: Pick<DerinlestirmeDurumu, "durum"> | null | undefined): string | null {
   if (!gereksinimDurumuKodu) return "Gereksinim yükleniyor";
   if (gereksinimDurumuKodu !== "cases_ready") {
-    return `Derinleştirme yalnız case'leri hazır gereksinimde yapılabilir (şu an: ${gereksinimDurumu(gereksinimDurumuKodu).etiket}).`;
+    return `Derinleştirme yalnız "Case review aşamasında" olan gereksinimde yapılabilir (şu an: ${gereksinimDurumu(gereksinimDurumuKodu).etiket}).`;
   }
   if (d?.durum === "calisiyor") return DERINLESTIRME_SURUYOR;
   return null;

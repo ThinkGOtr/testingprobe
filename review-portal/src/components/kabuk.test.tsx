@@ -240,3 +240,15 @@ describe("Olculmedi taşıma", () => {
     expect(screen.getByText("ölçülmedi")).toHaveClass("olculmedi");
   });
 });
+
+describe("Menü adı (K22)", () => {
+  it('denetim olayları menüde "Denetim kaydı"; sayfa başlığı da aynı ad', async () => {
+    const k = userEvent.setup();
+    uygulama("/kosular");
+    const menu = await screen.findByRole("navigation", { name: "Ana menü" });
+    const baglanti = within(menu).getByRole("link", { name: "Denetim kaydı" });
+    expect(within(menu).queryByRole("link", { name: "Denetim" })).toBeNull();
+    await k.click(baglanti);
+    expect(await screen.findByRole("heading", { name: "Denetim kaydı", level: 1 })).toBeInTheDocument();
+  });
+});

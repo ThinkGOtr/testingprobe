@@ -7,7 +7,8 @@
 // gelir; o yoksa aynı story'nin case_generation golden'ının üst listelerinden türetilir
 // (coverage_items / open_questions / assumptions birebir aynı kalır: tur-2 eşitlik kuralı).
 import { ApiError } from "../http";
-import type { CaseUretimOzeti, GereksinimDetay, IsYaniti, Kullanici, RetNedeni, Rol } from "../types";
+import type { CaseUretimOzeti, GereksinimDetay, IsYaniti, Kullanici, Rol } from "../types";
+import type { ModelRetNedeni } from "../tasarimModeliTipleri";
 import {
   modelTamamla,
   type DesignModel,
@@ -36,6 +37,15 @@ export interface ModelBaglami {
   denetimEkle: (eylem: string, nesne: string, ozet: string, aktor?: string) => void;
   gereksinimOlayi: (g: GereksinimDetay) => void;
   is: (durum: string, mesaj?: string) => IsYaniti;
+  /** D1/K20: onaydan sonra tur 2'yi (onaylı modelden case üretimi) başlatır; yoksa tur 2 elle başlar. */
+  turIkiBaslat?: (g: GereksinimDetay) => IsYaniti;
+}
+
+/** D1 onay yanıtının tur 2 bilgisi (approve/edit sonrası; ret ve eski core'da alan yok). */
+export interface Tur2Yaniti {
+  tur2_baslatildi: boolean;
+  tur2: { job_id: string | null; workflow_id: string | null; uretim_no: number | null; kip: "iki_tur"; asama: "case" } | null;
+  tur2_engeli: string | null;
 }
 
 export const MODEL_ISI = "model.generate";
@@ -222,9 +232,10 @@ function yanit(v: MockVeri, g: GereksinimDetay): TasarimModeliYaniti {
   };
 }
 
-const RET_NEDENLERI: RetNedeni[] = ["hallucinated_step", "missing_ac", "wrong_test_data", "out_of_scope", "duplicate", "wrong_element"];
+// D1: model ret nedenleri modele özgüdür (case nedenleri 422).
+const RET_NEDENLERI: ModelRetNedeni[] = ["wrong_technique", "missing_condition", "wrong_coverage_item", "wrong_boundary", "invented_rule", "missing_ac", "out_of_scope"];
 
-function karar(ctx: ModelBaglami, modelId: string, govde: unknown): TasarimModeliKaydi {
+function karar(ctx: ModelBaglami, modelId: string, govde: unknown): TasarimModeliKaydi & Partial<Tur2Yaniti> {
   const k = ctx.rolGerekli("analyst");
   const v = ctx.veri();
   let m: TasarimModeliKaydi | undefined;
@@ -267,7 +278,22 @@ function karar(ctx: ModelBaglami, modelId: string, govde: unknown): TasarimModel
   m.kararlar.push({ karar: b.karar, kullanici: k.kullanici_adi, zaman: m.guncelleme, gerekce: b.gerekce ?? null, ret_nedeni: b.karar === "reject" ? (b.ret_nedeni ?? null) : null });
   ctx.denetimEkle(`review.${b.karar}`, `design_model:${m.id}`, `Tasarım modeli kararı · ${m.icerik_hash}`);
   ctx.gereksinimOlayi(g);
-  return m;
+  if (m.durum !== "approved" || !ctx.turIkiBaslat) return m;
+  // D1/K20: onay tur 2'yi otomatik başlatır (gereksinim generating → cases_ready). Başlatılamazsa
+  // onay geçerli kalır; yanıt nedeni taşır ve tur 2 elle başlatılır.
+  // Yanıt D1 sözleşmesiyle: `tur2_baslatildi`, `tur2` (iş bilgisi) ya da null, `tur2_engeli`.
+  let tur2: Tur2Yaniti;
+  try {
+    const y = ctx.turIkiBaslat(g);
+    tur2 = {
+      tur2_baslatildi: true,
+      tur2: { job_id: y.job_id ?? null, workflow_id: null, uretim_no: typeof y.uretim_no === "number" ? y.uretim_no : null, kip: "iki_tur", asama: "case" },
+      tur2_engeli: null,
+    };
+  } catch (e) {
+    tur2 = { tur2_baslatildi: false, tur2: null, tur2_engeli: e instanceof Error ? e.message : String(e) };
+  }
+  return { ...m, ...tur2 };
 }
 
 export function tasarimModeliRotalari(ctx: ModelBaglami): Rota[] {

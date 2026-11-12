@@ -13,6 +13,7 @@ import { KosuTablosu } from "./Kosular";
 import { OnerilerOlcumKarti } from "../components/asistan/OnerilerOlcumKarti";
 import { tumuReplayMi } from "../lib/aiMaliyet";
 import { KaynakIpucu } from "../components/KaynakIpucu";
+import { CaseKalitesiBolumu } from "../components/CaseKalitesi";
 import { PlatformSuzgeci } from "../components/Platform";
 import type { Script } from "../api/types";
 import { PLATFORMLAR, PLATFORM_ETIKETI, platformaGoreSuz, platformSecimiOku, type Platform, type PlatformSecimi } from "../lib/platform";
@@ -318,6 +319,9 @@ export function KontrolKulesi() {
       </div>
 
       {k.hazirlik.length > 0 && <HazirlikKarti k={k} kazanc={kazanc} />}
+
+      {/* 011 K21: case kalitesi (uç yoksa bölüm çizilmez). */}
+      <CaseKalitesiBolumu />
 
       <Kart baslik="Karne (story ve uygulama alanı)" eylemler={<KaynakIpucu kaynak={k.kaynaklar.karne} />}>
         {k.karne.length === 0 ? (

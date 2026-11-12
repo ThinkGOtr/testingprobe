@@ -14,6 +14,7 @@ import type {
   SoruTuru,
   Tetik,
 } from "../api/types";
+import type { ModelRetNedeni } from "../api/tasarimModeliTipleri";
 
 export type Ton = "notr" | "bilgi" | "basari" | "uyari" | "hata" | "vurgu";
 
@@ -36,7 +37,7 @@ export const GEREKSINIM_DURUMU: Record<GereksinimDurumu, { etiket: string; ton: 
   modeling: { etiket: "Tasarım modeli üretiliyor", ton: "bilgi" },
   model_ready: { etiket: "Tasarım modeli onayı bekliyor", ton: "uyari" },
   generating: { etiket: "Case üretiliyor", ton: "bilgi" },
-  cases_ready: { etiket: "Case review", ton: "bilgi" },
+  cases_ready: { etiket: "Case review aşamasında", ton: "bilgi" },
   done: { etiket: "Case'ler yayınlandı", ton: "basari" },
   failed: { etiket: "Hata", ton: "hata" },
 };
@@ -134,7 +135,7 @@ export const CASE_HAZIRLIK: Record<string, { etiket: string; ton: Ton; isaret: s
     isaret: "⚠",
     aciklama: "Beklenen sonuç bir varsayıma dayanıyor; varsayım doğrulanmadan onaylanamaz.",
   },
-  blocked: { etiket: "Engelli", ton: "hata", isaret: "✗", aciklama: "Açık soru yanıtlanmadan beklenen sonuç yazılamıyor; onaylanamaz." },
+  blocked: { etiket: "Soru bekliyor", ton: "uyari", isaret: "?", aciklama: "Açık soru PO yanıtını bekliyor; yanıt gelmeden beklenen sonuç yazılamaz ve case onaylanamaz." },
 };
 
 export const CASE_ONCELIGI: Record<string, { etiket: string; ton: Ton; aciklama: string }> = {
@@ -186,6 +187,17 @@ export const RET_NEDENI: Record<RetNedeni, string> = {
   out_of_scope: "Kapsam dışı",
   duplicate: "Tekrar",
   wrong_element: "Yanlış eleman/aksiyon",
+};
+
+/** D1: tasarım modeli ret nedenleri (modele özgü). */
+export const MODEL_RET_NEDENI: Record<ModelRetNedeni, string> = {
+  wrong_technique: "Yanlış teknik",
+  missing_condition: "Eksik koşul",
+  wrong_coverage_item: "Yanlış kapsam öğesi",
+  wrong_boundary: "Yanlış sınır değer",
+  invented_rule: "Uydurulmuş kural",
+  missing_ac: "Eksik kabul kriteri",
+  out_of_scope: "Kapsam dışı",
 };
 
 /** core `script` makinesinin her durumu (eksik anahtar derleme hatasıdır). */

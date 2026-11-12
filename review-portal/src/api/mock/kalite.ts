@@ -7,9 +7,11 @@
  * - Review üretimden sonra otomatik: üretim golden'ı (`case_generation`) adıyla `case_review`
  *   golden'ı (golden/kaynaklar.json) — set üretimdeki hâliyle aynıysa REPLAY, değilse dürüst
  *   REPLAY-MISS (`hata`; "review çalışmadı, yeniden dene").
- * - Denetim "Denetime gönder" ile; koşul core'daki gibi: güncel setin review'u tamamlanmış ya da en
+ * - Denetim "Agent Probe'a gönder" ile; koşul core'daki gibi: güncel setin review'u tamamlanmış ya da en
  *   az bir onaylı v3 case var. Karar `case_audit` golden'ı (set üretimdeki hâliyle aynıysa).
  * - Yayın kapısı (`yayinEngeli`): v3 case için güncel setin son tamamlanmış kararı KABUL değilse engel.
+ *   Engel metinleri core gibi "Yayınlanamaz: " önekiyle gelir (K22); portal öneki ikinci kez yazmaz.
+ * - Denetim hatası core gibi ham istisna sınıfı önekiyle gelir (`ReplayNoOutput: …`); portal ayıklar.
  */
 import type {
   CaseDenetimGorunumu,
@@ -23,6 +25,7 @@ import type {
   TestCase,
 } from "../types";
 import { caseEski } from "../../lib/caseV3";
+import { YAYINLANAMAZ } from "../../lib/kalite";
 import { KAYNAK } from "./fixtures";
 
 export interface KaliteKaydi {
@@ -118,12 +121,12 @@ export function reviewGorunumu(k: KaliteKaydi | undefined, caseler: TestCase[], 
 const sonTamamlanan = (k: KaliteKaydi | undefined, imza: string | null) =>
   imza ? [...(k?.denetimler ?? [])].reverse().find((d) => d.set_hash === imza && d.durum === "tamamlandi") ?? null : null;
 
-/** "Denetime gönder" neden kapalı (null = gönderilebilir); core `submit_block`. */
+/** "Agent Probe'a gönder" neden kapalı (null = gönderilebilir); core `submit_block`. */
 export function gonderEngeli(k: KaliteKaydi | undefined, caseler: TestCase[], rid: string, gereksinimDurumu: string): string | null {
-  if (!["cases_ready", "done"].includes(gereksinimDurumu)) return `Denetim yalnızca case'leri hazır gereksinimde istenir (durum: ${gereksinimDurumu})`;
+  if (!["cases_ready", "done"].includes(gereksinimDurumu)) return `Agent Probe denetimi yalnız "Case review aşamasında" olan gereksinimde istenir (durum: ${gereksinimDurumu})`;
   const imza = setImzasi(caseler, rid);
   if (!imza) return "Gereksinimin güncel v3 case'i yok; denetlenecek set boş";
-  if (k?.review?.set_hash === imza && k.review.durum === "bekliyor") return "Bu set için review sürüyor; review bitince denetime gönderin";
+  if (k?.review?.set_hash === imza && k.review.durum === "bekliyor") return "Bu set için review sürüyor; review bitince Agent Probe'a gönderin";
   if (k?.review?.set_hash === imza && k.review.durum === "tamamlandi") return null;
   if (setCaseleri(caseler, rid).some((c) => c.durum === "approved" || c.durum === "published")) return null;
   return "Bu setin review'u tamamlanmadı ve onaylı case yok: review'u yeniden çalıştırın ya da en az bir case'i inceleyip onaylayın";
@@ -155,7 +158,8 @@ export function denetimTamamla(k: KaliteKaydi, kayit: CaseDenetimKaydi, caseler:
   kayit.guncelleme = simdi;
   if (!golden || kayit.set_hash !== k.uretimImzasi) {
     kayit.durum = "hata";
-    kayit.hata = "REPLAY-MISS: bu set için kayıtlı denetim çıktısı yok (ReplayNoOutput)";
+    // Core hata metni ham istisna sınıfıyla başlar (`f"{type(e).__name__}: {e}"`); portal ayıklar.
+    kayit.hata = "ReplayNoOutput: bu set için kayıtlı denetim çıktısı yok (REPLAY-MISS)";
     return;
   }
   kayit.durum = "tamamlandi";
@@ -182,14 +186,14 @@ export function yayinEngeli(k: KaliteKaydi | undefined, caseler: TestCase[], rid
   const karar = sonTamamlanan(k, imza);
   if (!karar) {
     const son = k?.denetimler?.at(-1);
-    if (!son) return "Denetim kararı yok: set Agent Probe denetiminden geçmedi ('Denetime gönder')";
-    if (son.set_hash === imza && son.durum === "bekliyor") return "Denetim bekliyor: bu set için Agent Probe kararı henüz gelmedi";
-    if (son.set_hash === imza && son.durum === "hata") return `Denetim yapılamadı: ${kisa(son.hata, 160)}; yeniden denetime gönderin`;
-    return "Denetim kararı bayat: set son denetimden sonra değişti (case eklendi, düzeltildi ya da reddedildi); yeniden denetime gönderin";
+    if (!son) return `${YAYINLANAMAZ}Agent Probe denetimi kararı yok; seti "Agent Probe'a gönder" ile denetletin`;
+    if (son.set_hash === imza && son.durum === "bekliyor") return `${YAYINLANAMAZ}Agent Probe denetimi sürüyor; bu set için karar henüz gelmedi`;
+    if (son.set_hash === imza && son.durum === "hata") return `${YAYINLANAMAZ}Agent Probe denetimi yapılamadı (${kisa(son.hata, 160)}); yeniden gönderin`;
+    return `${YAYINLANAMAZ}Agent Probe denetimi kararı bayat — set son denetimden sonra değişti (case eklendi, düzeltildi ya da reddedildi); yeniden gönderin`;
   }
   if (karar.karar === "KABUL") return null;
   const g = kisa(karar.icerik.decision_rationale);
-  return g ? `${karar.karar}: ${g}` : String(karar.karar);
+  return `${YAYINLANAMAZ}${g ? `${karar.karar} — ${g}` : String(karar.karar)}`;
 }
 
 export function denetimGorunumu(k: KaliteKaydi | undefined, caseler: TestCase[], rid: string, gereksinimDurumu: string): CaseDenetimGorunumu {

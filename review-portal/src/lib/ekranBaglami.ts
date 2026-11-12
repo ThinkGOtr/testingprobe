@@ -41,7 +41,7 @@ export const EKRAN_ADLARI: Record<string, string> = {
   "/bug-taslaklari/:id": "Bug taslağı",
   "/kontrol-kulesi": "Kontrol Kulesi",
   "/yol-haritasi": "Demo yol haritası",
-  "/denetim": "Denetim",
+  "/denetim": "Denetim kaydı",
   "/ajan-urunleri": "Ajan ürünleri",
   "/claude-code": "Claude Code kanalı",
   "/demo": "Demo kontrolleri",

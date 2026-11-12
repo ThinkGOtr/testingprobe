@@ -21,7 +21,7 @@ export function Denetim() {
   return (
     <>
       <SayfaBasligi
-        baslik="Denetim"
+        baslik="Denetim kaydı"
         aciklama="Her AI çağrısı, araç çağrısı, onay ve ret append-only kayıttadır; her olay bir öncekinin hash'ine zincirlenir."
         eylemler={
           <IslemDugmesi tur="ikincil" calisiyor={v.yukleniyor} onClick={() => void v.yenile()}>

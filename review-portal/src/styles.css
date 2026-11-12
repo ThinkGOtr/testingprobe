@@ -4982,3 +4982,331 @@ td > .satir-baglanti + .cip,
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* Sayfa içi onay (011 D5): tarayıcı confirm yerine; eylemler kutunun altında. */
+.sayfa-ici-onay .sayfa-ici-onay-eylemler {
+  margin-top: 0.5rem;
+}
+
+/* ---- Şerit C (011 K21): Kontrol Kulesi "Case kalitesi" bölümü. Tek seri yatay çubuk (--chart-bar);
+   değer her satırda metin, renk anlam taşımaz. Koyu/açık tema token'larla gelir. ---- */
+.case-kalitesi .ck-kpi {
+  margin-top: 12px;
+}
+.ck-izgara {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 16px 0;
+}
+@media (max-width: 960px) {
+  .ck-izgara {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.ck-panel {
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  min-width: 0;
+}
+.ck-panel-baslik {
+  font-size: 0.95rem;
+  margin: 0 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ck-alt-baslik {
+  font-size: 0.8rem;
+  color: var(--text-2);
+  margin: 0 0 4px;
+  font-weight: 600;
+}
+.ck-ozet {
+  margin: 0 0 8px;
+}
+.ck-yan-yana {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+@media (max-width: 520px) {
+  .ck-yan-yana {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.ck-dagilim {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.ck-dagilim-satir {
+  display: grid;
+  grid-template-columns: minmax(5.5rem, max-content) minmax(40px, 1fr) minmax(4.5rem, max-content);
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+}
+.ck-dagilim-etiket {
+  color: var(--text-2);
+}
+.ck-dagilim-iz {
+  position: relative;
+  height: 8px;
+  border-radius: 0 4px 4px 0;
+  background: var(--surface-3);
+}
+.ck-dagilim-cubuk {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: 0 4px 4px 0;
+  background: var(--chart-bar);
+}
+.ck-dagilim-deger {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ck-surumler tbody th {
+  background: none;
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding: 12px 14px;
+}
+.ck-hedefler {
+  margin-top: 16px;
+}
+@media (forced-colors: active) {
+  .ck-dagilim-cubuk {
+    background: CanvasText;
+  }
+  .ck-dagilim-iz {
+    outline: 1px solid GrayText;
+  }
+}
+
+/* ---- Şerit A1 (011 D5, UX-3/UX-5/UX-7): case review durum şeridi, daralan kalite panelleri,
+   karar sonrası yönlendirme ve bağlantı görünümlü düğme. Renk tek başına anlam taşımaz: durum metinde. ---- */
+.durum-seridi {
+  margin: 0 0 1rem;
+}
+.durum-seridi ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  align-items: center;
+}
+.durum-seridi li {
+  display: inline-flex;
+  align-items: center;
+}
+.durum-seridi li + li::before {
+  content: "·" / "";
+  color: var(--text-2);
+  padding: 0 0.6rem;
+}
+.durum-seridi a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  font-weight: 600;
+}
+.durum-seridi-uyari a::before,
+.durum-seridi-hata a::before,
+.durum-seridi-basari a::before {
+  content: "";
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border-radius: 50%;
+  margin-inline-end: 0.4rem;
+  background: currentColor;
+}
+.durum-seridi-uyari a::before {
+  background: var(--warn);
+}
+.durum-seridi-hata a::before {
+  background: var(--err);
+}
+.durum-seridi-basari a::before {
+  background: var(--ok);
+}
+.kalite-ozet-satiri {
+  margin-bottom: 0.4rem;
+}
+.kalite-ayrinti-dugmesi {
+  margin: 0.25rem 0 0.25rem -0.5rem;
+}
+.kalite-ayrinti:not([hidden]) {
+  margin-top: 0.5rem;
+}
+.kalite-yonlendirme {
+  margin: 0 0 0.4rem;
+  padding-inline-start: 0.6rem;
+  border-inline-start: 3px solid var(--border-strong);
+}
+.kalite-yonlendirme-yayin {
+  border-inline-start-color: var(--ok);
+}
+.kalite-yonlendirme-duzelt,
+.kalite-yonlendirme-bayat {
+  border-inline-start-color: var(--warn);
+}
+.kalite-yonlendirme-engelle {
+  border-inline-start-color: var(--err);
+}
+.baglanti-dugme {
+  background: none;
+  border: 0;
+  padding: 0;
+  min-height: 24px;
+  font: inherit;
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: from-font;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.baglanti-dugme:hover {
+  color: var(--accent-hover);
+}
+.bolum-basligi-case {
+  margin: 1.5rem 0 0.5rem;
+  font-size: 1.1rem;
+  scroll-margin-top: 1rem;
+}
+#denetim,
+#review-bulgulari {
+  scroll-margin-top: 1rem;
+}
+
+/* ===== Şerit B (D5): gereksinim sayfası, tasarım modeli paneli, Ürün AI ajanı ===== */
+/* Tasarım modeli eylemleri (Onayla/Düzelt/Reddet) uzun tablolarda görünür kalsın: panelin altında
+   yapışkan çubuk; panel görünümdeyken ekranın altına yapışır. */
+.model-eylemler-yapiskan {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  margin-top: 12px;
+  padding: 12px 0;
+  background: var(--surface);
+  border-top: 1px solid var(--border-soft);
+}
+.model-eylemler-yapiskan:empty {
+  display: none;
+}
+.model-siradaki-adim {
+  margin: 8px 0;
+}
+/* Bağlı olmayan "Ürün AI ajanı": tek satırlık özet (UX-11). */
+.ajan-daraltilmis .kart-baslik {
+  margin-bottom: 0;
+}
+.ajan-daraltilmis {
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+.ajan-daraltilmis > div:not(.kart-baslik) {
+  margin-top: 12px;
+}
+
+/* ---------------------------------------------------------------- A2 (D5): case listesi, toplu onay, hazırlık yönlendirmesi */
+/* Sayfa altındaki yüzen asistan düğmesi son kartın eylemlerini örtmesin. */
+.case-liste-alani {
+  padding-bottom: 5rem;
+}
+.case-suzgec {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+.toplu-onay {
+  margin: 0.5rem 0 0.75rem;
+}
+.toplu-onay-satir {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+}
+.toplu-onay-tumu {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 24px;
+  cursor: pointer;
+}
+.toplu-onay-sayi:empty {
+  display: none;
+}
+.toplu-onay-hatalar {
+  margin: 0 0 0.5rem;
+  padding-left: 1.2rem;
+}
+.toplu-onay-hatalar li {
+  overflow-wrap: anywhere;
+}
+.toplu-secim {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+/* Dokunmatik/işaretçi hedefi en az 24 px (WCAG 2.5.8). */
+.toplu-secim-kutu {
+  width: 1.25rem;
+  height: 1.25rem;
+  min-width: 24px;
+  min-height: 24px;
+  margin: 0;
+  cursor: pointer;
+}
+.toplu-secim-kutu:disabled {
+  cursor: not-allowed;
+}
+.hazirlik-yonlendirme {
+  margin: 0.5rem 0;
+}
+.hazirlik-yonlendirme-metin {
+  margin: 0 0 0.4rem;
+}
+.hazirlik-yonlendirme .sayfa-ici-onay {
+  margin-top: 0.5rem;
+}
+.teknik-sade {
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+.dagilim-dugme {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 24px;
+  padding: 0.1rem 0.3rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.dagilim-dugme:hover {
+  border-color: var(--border, currentColor);
+}
+.kapsam-hazir {
+  display: block;
+  margin-top: 0.2rem;
+}
+
+/* D5: "Case kararları" çapası programatik odak alır (durum şeridinden geçiş); başlıkta kalın çerçeve çizilmez. */
+#case-kararlari:focus:not(:focus-visible),
+#case-kararlari[tabindex="-1"]:focus {
+  outline: none;
+}

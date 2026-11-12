@@ -1,10 +1,29 @@
-// Asistan denetimi gösterimi (011 F7, K11). Soru asistan modeline gitmeden, cevap kullanıcıya
-// gösterilmeden önce Agent Probe portu arkasında puanlanır; kararı core'daki kod verir. Kart
-// kullanıcıya kısa ve anlaşılır bir özet gösterir ("Denetim 92/100"); kategoriler, gerekçe ve
-// kaynak ayrıntı ipucundadır. Engellenen soru/cevapta ve denetim çalışmıyorken açıklama kutusu.
+// Asistan içerik kontrolü gösterimi (011 F7, K11; UX-9). Soru asistan modeline gitmeden, cevap
+// kullanıcıya gösterilmeden önce Agent Probe portu arkasında puanlanır; kararı core'daki kod verir.
+// Kullanıcıya puan gösterilmez: geçen cevapta işaret yok; uyarı/engelde kısa başlık + kategori,
+// puan/gerekçe/kaynak <details> içindeki ayrıntıda (dokunmatik ve klavyeyle açılır). Engel ve uyarı
+// açıklama metni backend'dedir (cevap bloğu / "Denetim uyarısı" notu); kutu aynı açıklamayı tekrar yazmaz.
 import type { CevapDenetimi, DenetimOzeti } from "../../api/asistan";
 import { DENETIM_KAYNAGI, kategoriEtiketi } from "../../lib/ajanProbe";
 import { Cip } from "../ui";
+
+/** Backend'in uyarı notu öneki (core assistant/denetim.py NOT_ONEKI; D4: "İçerik kontrolü uyarısı"). */
+export const DENETIM_NOT_ONEKI = "İçerik kontrolü uyarısı";
+/** Önceki core sürümünün öneki (geriye uyum). */
+const ESKI_NOT_ONEKI = "Denetim uyarısı";
+const NOT_ONEKI_RE = new RegExp(`^(?:${DENETIM_NOT_ONEKI}|${ESKI_NOT_ONEKI}):?\\s*`);
+
+export function denetimNotuMu(n: string): boolean {
+  return n.startsWith(DENETIM_NOT_ONEKI) || n.startsWith(ESKI_NOT_ONEKI);
+}
+
+/** Engel / çalışmıyor kutusunun başlığı: backend `baslik`, yoksa yönüne göre varsayılan (D4 metinleri). */
+export function denetimBasligi(d: CevapDenetimi): string | null {
+  if (d.baslik?.trim()) return d.baslik.trim();
+  if (d.karar === "calismiyor") return "Şu an yanıt veremiyorum";
+  if (d.karar === "engelle") return d.engellenen === "cevap" ? "Bu cevabı gösteremiyorum" : "Bu soruyu yanıtlayamıyorum";
+  return null;
+}
 
 /** Gösterilecek kategoriler: "temiz" yalnız başınaysa anlamlıdır. */
 function anlamliKategoriler(o: DenetimOzeti | null): string[] {
@@ -12,85 +31,114 @@ function anlamliKategoriler(o: DenetimOzeti | null): string[] {
   return k.filter((x) => x !== "temiz");
 }
 
-function ipucu(yon: string, o: DenetimOzeti): string {
-  const kat = anlamliKategoriler(o).map(kategoriEtiketi);
-  return [
-    `${yon}: ${o.puan}/100`,
-    `Kategoriler: ${kat.length ? kat.join(", ") : "Temiz"}`,
-    o.gerekce ? `Gerekçe: ${o.gerekce}` : null,
-    `Kaynak: ${DENETIM_KAYNAGI[o.kaynak] ?? o.kaynak}`,
-  ]
-    .filter(Boolean)
-    .join("\n");
+const KARAR_METNI: Record<string, string> = { gec: "Geçti", uyar: "Uyarı", engelle: "Engel" };
+
+/** İki yönün düşük puanı (en riskli olan); yalnız ayrıntı ve testler için. */
+export function denetimPuani(d: CevapDenetimi): { puan: number } | null {
+  const puanlar = [d.soru, d.cevap].filter((o): o is DenetimOzeti => !!o).map((o) => o.puan);
+  return puanlar.length ? { puan: Math.min(...puanlar) } : null;
 }
 
-/** Kart üstündeki kısa puan: iki yönün düşüğü (en riskli olan). */
-export function denetimPuani(d: CevapDenetimi): { puan: number; ipucu: string } | null {
-  const parcalar: [string, DenetimOzeti][] = [];
-  if (d.soru) parcalar.push(["Soru", d.soru]);
-  if (d.cevap) parcalar.push(["Cevap", d.cevap]);
-  if (parcalar.length === 0) return null;
-  return {
-    puan: Math.min(...parcalar.map(([, o]) => o.puan)),
-    ipucu: parcalar.map(([y, o]) => ipucu(y, o)).join("\n\n"),
-  };
-}
-
+/** Kart üstü işaret: yalnız uyarıda (engelde kutu ve "İçerik kontrolü" kaynak notu zaten var; geçende işaret yok). */
 export function DenetimRozeti({ denetim }: { denetim: CevapDenetimi }) {
-  const p = denetimPuani(denetim);
-  if (!p) return null;
-  const ton = denetim.karar === "engelle" ? "hata" : denetim.karar === "uyar" ? "uyari" : "notr";
+  if (denetim.karar !== "uyar") return null;
   return (
     <span data-testid="denetim-rozeti">
-      <Cip ton={ton} title={p.ipucu}>
-        Denetim {p.puan}/100
-      </Cip>
+      <Cip ton="uyari">İçerik kontrolü</Cip>
     </span>
   );
 }
 
-export function DenetimKutusu({ denetim }: { denetim: CevapDenetimi | null | undefined }) {
+function Ayrinti({ denetim }: { denetim: CevapDenetimi }) {
+  const yonler: [string, DenetimOzeti][] = [];
+  if (denetim.soru) yonler.push(["Soru", denetim.soru]);
+  if (denetim.cevap) yonler.push(["Cevap", denetim.cevap]);
+  if (yonler.length === 0) return null;
+  return (
+    <details className="asistan-denetim-ayrinti" data-testid="denetim-ayrinti">
+      <summary>Kontrol ayrıntısı</summary>
+      <dl>
+        {yonler.map(([yon, o]) => {
+          const kat = anlamliKategoriler(o).map(kategoriEtiketi);
+          return (
+            <div key={yon}>
+              <dt>{yon}</dt>
+              <dd>
+                {KARAR_METNI[o.karar] ?? o.karar} · puan {o.puan}/100 · {kat.length ? kat.join(", ") : "Temiz"}
+                {o.gerekce && <div>Gerekçe: {o.gerekce}</div>}
+                <div className="soluk">Kaynak: {DENETIM_KAYNAGI[o.kaynak] ?? o.kaynak}</div>
+              </dd>
+            </div>
+          );
+        })}
+      </dl>
+    </details>
+  );
+}
+
+function Kategoriler({ etiketler }: { etiketler: string[] }) {
+  if (etiketler.length === 0) return null;
+  return (
+    <span className="satir-ogeler" aria-label="Kategori">
+      {etiketler.map((k) => (
+        <Cip key={k} ton="uyari">
+          {k}
+        </Cip>
+      ))}
+    </span>
+  );
+}
+
+/**
+ * `notlar`: backend'in "Denetim uyarısı" notları. Verilirse uyarı kutusunun gövdesi bunlardır (CevapKarti
+ * aynı notu ayrıca yazmaz); verilmezse kategori etiketleri gösterilir.
+ */
+export function DenetimKutusu({
+  denetim,
+  notlar = [],
+  bloklardaAciklama = false,
+}: {
+  denetim: CevapDenetimi | null | undefined;
+  notlar?: string[];
+  /** Cevap blokları açıklamayı zaten taşıyor (D4 engel/çalışmıyor cevabı). */
+  bloklardaAciklama?: boolean;
+}) {
   if (!denetim) return null;
   if (denetim.karar === "calismiyor") {
     return (
       <div className="uyari-kutusu uyari-hata asistan-denetim" role="alert" data-testid="denetim-kutusu">
-        <strong>Denetim çalışmıyor</strong>
-        <div>Asistan denetimi şu an erişilemiyor; güvenlik gereği cevap verilmedi. Biraz sonra yeniden deneyin.</div>
+        <strong>{denetimBasligi(denetim)}</strong>
+        {/* D4: açıklama cevap bloğundaysa (paragraf) kutu tekrar yazmaz; yalnız blok yoksa varsayılan metin. */}
+        {!denetim.aciklama && !bloklardaAciklama && <div>İçerik kontrolü şu an erişilemiyor; güvenlik gereği cevap verilmedi. Biraz sonra yeniden deneyin.</div>}
       </div>
     );
   }
   if (denetim.karar === "engelle") {
     const o = denetim.engellenen === "cevap" ? denetim.cevap : denetim.soru;
-    const kat = anlamliKategoriler(o).map(kategoriEtiketi);
-    const baslik = denetim.engellenen === "cevap" ? "Cevap gösterilmedi" : "Soru engellendi";
+    // Açıklama cevap bloğunda (backend); kutu yalnız başlık, kategori ve ayrıntı taşır.
     return (
-      <div className="uyari-kutusu uyari-hata asistan-denetim" role="alert" data-testid="denetim-kutusu">
-        <strong>{baslik}</strong>
-        <div>
-          {denetim.engellenen === "cevap"
-            ? "Asistanın cevabı denetimden geçmedi ve size gösterilmedi."
-            : "Soru denetimden geçmedi; asistana iletilmedi."}
-          {kat.length > 0 && (
-            <span className="satir-ogeler">
-              {kat.map((k) => (
-                <Cip key={k} ton="hata">
-                  {k}
-                </Cip>
-              ))}
-            </span>
-          )}
-        </div>
+      <div className="uyari-kutusu uyari-uyari asistan-denetim" role="note" data-testid="denetim-kutusu">
+        <strong>{denetimBasligi(denetim)}</strong>
+        <Kategoriler etiketler={denetim.kategori_etiketi ? [denetim.kategori_etiketi] : anlamliKategoriler(o).map(kategoriEtiketi)} />
+        <Ayrinti denetim={denetim} />
       </div>
     );
   }
   if (denetim.karar === "uyar") {
     const kat = [...new Set([...anlamliKategoriler(denetim.soru), ...anlamliKategoriler(denetim.cevap)])].map(kategoriEtiketi);
+    const govde = notlar.map((n) => n.replace(NOT_ONEKI_RE, "")).filter(Boolean);
     return (
       <div className="uyari-kutusu uyari-uyari asistan-denetim" role="note" data-testid="denetim-kutusu">
-        <strong>Denetim uyarısı</strong>
-        <div>
-          Bu içerik dikkatle değerlendirilmeli{kat.length ? `: ${kat.join(", ")}` : ""}.
-        </div>
+        <strong>İçerik kontrolü uyarısı</strong>
+        {govde.length > 0 ? (
+          govde.map((n, i) => <div key={i}>{n}</div>)
+        ) : (
+          <>
+            <div>Bu cevabı dikkatle değerlendirin.</div>
+            <Kategoriler etiketler={kat} />
+          </>
+        )}
+        <Ayrinti denetim={denetim} />
       </div>
     );
   }

@@ -1,6 +1,7 @@
 // Mock arka uç: §5 uçlarının süreç içi uygulaması. Durum makinesi kuralları ve rol kontrolleri
 // gerçek API'yi taklit eder (insan kapıları atlanamaz), böylece ekranlar arka uç olmadan
 // demo edilebilir ve ekran testine girebilir. Tüm üretilen çıktılar mode alanıyla işaretlidir.
+import { mockCaseKalitesi } from "./caseKalitesi";
 import { ApiError, mockOturumu, mockOturumuAyarla } from "../http";
 import type {
   AjanAdimi,
@@ -674,6 +675,7 @@ function caseUret(id: string, govde?: unknown): IsYaniti {
     // core gibi: seçenekler model aşamasında da saklanır; tur 2 aynı seçenekleri kullanır.
     const sonuc = modelUretimiBaslat(modelBaglami, g);
     if (secenekler) (veri.uretimSecenekleri ??= {})[id] = secenekler;
+    (veri.uretimKipleri ??= {})[id] = kip;
     return sonuc;
   }
   if (kip === "iki_tur" && !onayliModel(veri, g)) {
@@ -683,12 +685,14 @@ function caseUret(id: string, govde?: unknown): IsYaniti {
   if (g.ac_missing) throw new ApiError(409, "Kabul kriteri olmayan story case üretimine gönderilmez.");
   // core URETIM_BASLANGIC: düşen case üretimi (failed) yeniden denenebilir; PO güncelliği yukarıda.
   const uretimHatasi = g.durum === "failed" && ["cases.generate", "model.generate"].includes(g.son_hata?.job_tur ?? "");
-  if (!["po_approved", "cases_ready", "model_ready"].includes(g.durum) && !uretimHatasi) throw new ApiError(409, "Bu durumda case üretilemez.");
+  if (!["po_approved", "cases_ready", "model_ready"].includes(g.durum) && !uretimHatasi) throw new ApiError(409, `Bu durumda case üretilemez (durum: ${g.durum}).`);
   if (g.po.onaylanan_hash && g.icerik_hash && g.po.onaylanan_hash !== g.icerik_hash) {
     throw new ApiError(409, "İçerik PO onayından sonra değişmiş; yeniden PO teyidi gerekir.");
   }
   // Seçenekler gereksinimde saklanır; sonraki generation-options'ta `secenekler` olarak döner.
   if (secenekler) (veri.uretimSecenekleri ??= {})[id] = secenekler;
+  // D1: açıkça gönderilen kip tercihi saklanır (gövdesiz eski çağrı tercihi değiştirmez).
+  if ((govde as { kip?: unknown } | null | undefined)?.kip) (veri.uretimKipleri ??= {})[id] = kip;
   gecir("requirement", g, "generating");
   delete g.son_hata;
   gereksinimOlayi(g);
@@ -797,6 +801,8 @@ const modelBaglami: ModelBaglami = {
   denetimEkle,
   gereksinimOlayi,
   is,
+  // D1/K20: model onayı tur 2'yi (onaylı modelden case üretimi) otomatik başlatır.
+  turIkiBaslat: (g) => caseUret(g.id, { kip: "iki_tur" }),
 };
 
 function caseKarari(id: string, govde: unknown): TestCase {
@@ -930,6 +936,75 @@ function caseYenidenAc(id: string, govde: unknown): TestCase {
   return caseCikti(c);
 }
 
+/**
+ * D5 / K20 core `POST /cases/{id}/assumption-verified`: analist case'in varsayım(lar)ını doğruladı.
+ * Görülen içerik (hash) varsayım atıfları boşaltılıp "hazır" yapılır ve onaylanır; review kaydı
+ * düzeltmedir (ölçüde `varsayim_dogrulandi`). Başka varsayım/soru atfı kalırsa 422, bayat hash 409.
+ */
+function varsayimDogrulandi(id: string, govde: unknown): TestCase {
+  const k = rolGerekli("analyst");
+  const c = bul(veri.caseler, id, "Case");
+  hashGerekli(govde, c.icerik_hash);
+  if (eskiIcerik(c.icerik)) throw new ApiError(422, "Eski şemalı case'te varsayım yok.");
+  if (!yolGecerli("test_case", c.durum, ["approved"])) throw new ApiError(409, GECIS_YOK);
+  const g = (govde ?? {}) as { varsayim_id?: unknown; gerekce?: unknown };
+  const istenen = (Array.isArray(g.varsayim_id) ? g.varsayim_id : [g.varsayim_id]).filter((x): x is string => typeof x === "string" && x.trim() !== "").map((x) => x.trim().toUpperCase());
+  if (istenen.length === 0) throw new ApiError(422, "Doğrulanan varsayım (varsayim_id) belirtilmeli.");
+  const refler = c.icerik.assumption_refs ?? [];
+  const yabanci = istenen.filter((x) => !refler.includes(x));
+  if (yabanci.length) throw new ApiError(422, `Case bu varsayıma atıf yapmıyor: ${yabanci.join(", ")}`);
+  const kalan = [...refler.filter((x) => !istenen.includes(x)), ...(c.icerik.open_question_refs ?? [])];
+  if (kalan.length) throw new ApiError(422, `Case'in başka varsayımı/sorusu var (${kalan.join(", ")}); önce onları çözün ya da 'Düzelt' kullanın`);
+  const yeni: TestCaseIcerik = { ...c.icerik, readiness: "ready", assumption_refs: [] };
+  const sorunlar = tutarlilikSorunlari(yeni, birlesikOzet(veri.caseUretimleri?.[c.requirement_id]));
+  if (sorunlar.length) throw new ApiError(422, `Varsayım doğrulansa da case hazır olamıyor — ${JSON.stringify(sorunlar)}`);
+  const once = kanonikJson(c.icerik);
+  c.icerik = yeni;
+  c.surum += 1;
+  c.icerik_hash = icerikHash(yeni);
+  c.onaylanan_hash = c.icerik_hash;
+  c.duzeltme_olcusu = Math.round(duzeltmeOlcusu(once, kanonikJson(yeni)) * 100) / 100;
+  // Beklenen sonuç değişmedi: yalnız hazır olma durumu güncellendi (küçük düzeltme sayılır).
+  c.kucuk_duzeltme = true;
+  const gerekce = typeof g.gerekce === "string" && g.gerekce.trim() ? ` Gerekçe: ${g.gerekce.trim()}` : "";
+  c.duzeltme_nedeni = `Varsayım doğrulandı (${istenen.join(", ")}): beklenen sonuç değişmedi, case hazır yapılıp onaylandı.${gerekce}`;
+  gecir("test_case", c, "approved");
+  c.ret_nedeni = null;
+  c.karar = "edit";
+  c.karar_veren = k.kullanici_adi;
+  c.karar_zamani = simdi();
+  c.review_sure_ms = c.goruntulenme ? Math.max(0, Date.parse(c.karar_zamani) - Date.parse(c.goruntulenme)) : null;
+  denetimEkle("case.decision", c.id, `edit (varsayim_dogrulandi: ${istenen.join(", ")})`);
+  const req = veri.gereksinimler.find((r) => r.id === c.requirement_id);
+  if (req) gereksinimOlayi(req);
+  else kaydet();
+  return caseCikti(c);
+}
+
+/**
+ * D5 / K20 core `POST /cases/bulk-decision`: toplu onay kalem bazlıdır. Her kalem tek case kararı
+ * gibi işlenir (kendi hash'i, ayrı review kaydı); hazır olmayan 422, bayat hash 409 kalem hatası olur.
+ */
+function topluKarar(govde: unknown) {
+  rolGerekli("analyst");
+  const g = (govde ?? {}) as { karar?: unknown; kalemler?: unknown };
+  if (g.karar !== "approve") throw new ApiError(422, "Toplu kararda yalnız onay (approve) desteklenir.");
+  if (!Array.isArray(g.kalemler) || g.kalemler.length === 0) throw new ApiError(422, "En az bir kalem (case_id, icerik_hash) gerekir.");
+  const sonuclar = g.kalemler.map((x) => {
+    const kalem = (x ?? {}) as { case_id?: unknown; icerik_hash?: unknown };
+    const caseId = typeof kalem.case_id === "string" ? kalem.case_id : "";
+    try {
+      const c = caseKarari(caseId, { karar: "approve", icerik_hash: kalem.icerik_hash });
+      return { case_id: caseId, basarili: true, hata: null, kod: null, case: c };
+    } catch (e) {
+      if (!(e instanceof ApiError)) throw e;
+      return { case_id: caseId, basarili: false, hata: e.message, kod: e.status, case: null };
+    }
+  });
+  const onaylanan = sonuclar.filter((s) => s.basarili).length;
+  return cikti({ karar: "approve", onaylanan, basarisiz: sonuclar.length - onaylanan, sonuclar });
+}
+
 /** core `serialize_cases`: case + readiness, legacy, çözülmüş açık soru/varsayım atıfları, tutarlılık uyarıları. */
 function caseCikti(c: TestCase): TestCase {
   return cikti(caseZengin(c));
@@ -991,7 +1066,7 @@ function caseDenetimGonder(rid: string) {
   const engel = gonderEngeli(kayit, veri.caseler, rid, g.durum);
   if (engel) throw new ApiError(409, engel);
   const d = denetimBaslat(kayit, veri.caseler, rid, simdi(), k.kullanici_adi);
-  denetimEkle("cases.audit_requested", rid, `Denetime gönderildi · ${d.set_hash}`, k.kullanici_adi);
+  denetimEkle("cases.audit_requested", rid, `Agent Probe'a gönderildi · ${d.set_hash}`, k.kullanici_adi);
   arkaPlan([
     () => {
       denetimTamamla(kayit, d, veri.caseler, rid, simdi());
@@ -1966,7 +2041,7 @@ const ROTALAR: Rota[] = [
   // Öneri düğmesi (§17, uç 10–11): api/mock/oneri.ts.
   ...oneriRotalari(girisGerekli, () => veri),
   // Agent Probe ajan ürünleri ve testleri (011 F6; simülasyon): api/mock/ajanProbe.ts.
-  ...ajanProbeRotalari(rolGerekli, girisGerekli),
+  ...ajanProbeRotalari(rolGerekli, girisGerekli, (id) => veri.gereksinimler.find((g) => g.id === id)),
   ["POST", /^\/auth\/login$/, (_m, _q, g) => login(g)],
   ["POST", /^\/auth\/logout$/, () => logout()],
   ["GET", /^\/auth\/me$/, () => girisGerekli()],
@@ -2055,6 +2130,8 @@ const ROTALAR: Rota[] = [
   ],
   ["POST", /^\/cases\/([^/]+)\/decision$/, (m, _q, g) => caseKarari(decodeURIComponent(m[1]), g)],
   ["POST", /^\/cases\/([^/]+)\/viewed$/, (m) => caseGoruntulendi(decodeURIComponent(m[1]))],
+  ["POST", /^\/cases\/bulk-decision$/, (_m, _q, g) => topluKarar(g)],
+  ["POST", /^\/cases\/([^/]+)\/assumption-verified$/, (m, _q, g) => varsayimDogrulandi(decodeURIComponent(m[1]), g)],
   ["GET", /^\/requirements\/([^/]+)\/case-metrics$/, (m) => caseMetrikleri(decodeURIComponent(m[1]))],
   ["GET", /^\/requirements\/([^/]+)\/case-summary$/, (m) => caseSummary(decodeURIComponent(m[1]))],
   ["GET", /^\/requirements\/([^/]+)\/cases\.feature$/, (m, q) => gherkinOrnegi(decodeURIComponent(m[1]), q)],
@@ -2167,6 +2244,14 @@ const ROTALAR: Rota[] = [
     },
   ],
   ["GET", /^\/control-tower$/, () => kontrolKulesi()],
+  [
+    "GET",
+    /^\/control-tower\/case-quality$/,
+    (_m, q) => {
+      girisGerekli();
+      return mockCaseKalitesi(q.get("requirement_id"));
+    },
+  ],
   ["GET", /^\/audit$/, (_m, q) => denetim(q)],
   ["POST", /^\/tokens$/, (_m, _q, g) => tokenOlustur(g)],
   [

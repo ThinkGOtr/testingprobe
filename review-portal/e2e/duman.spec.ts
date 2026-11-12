@@ -64,7 +64,7 @@ const ROTALAR: { yol: string; ad: string; baslik: RegExp }[] = [
   { yol: "/bug-taslaklari", ad: "13-bug-taslaklari", baslik: /^Bug taslakları$/ },
   { yol: "/bug-taslaklari/bug-1", ad: "14-bug-taslak-detay", baslik: /7 adet Portakal Gazozu/ },
   { yol: "/kontrol-kulesi", ad: "15-kontrol-kulesi", baslik: /^Kontrol Kulesi$/ },
-  { yol: "/denetim", ad: "16-denetim", baslik: /^Denetim$/ },
+  { yol: "/denetim", ad: "16-denetim", baslik: /^Denetim kaydı$/ },
   { yol: "/claude-code", ad: "17-claude-code", baslik: /^Claude Code kanalı$/ },
   { yol: "/hatalar/fail-4", ad: "40-triage-c3-defect", baslik: /^Triage sonucu$/ },
   { yol: "/hatalar/fail-3", ad: "41-triage-ortam", baslik: /^Triage sonucu$/ },
@@ -320,7 +320,7 @@ test("mobil menü kapalıyken Tab sırasına girmez (dikey ve yatay telefon); me
     await expect(page.getByRole("heading", { name: "Koşular", level: 1 })).toBeVisible();
     const menu = page.locator("#yan-menu");
     const menuDugmesi = page.getByRole("button", { name: "Menü" });
-    await expect(menu.getByRole("link", { name: "Denetim" })).toBeHidden();
+    await expect(menu.getByRole("link", { name: "Denetim kaydı" })).toBeHidden();
     const menudeOdak = () => page.evaluate(() => !!document.activeElement?.closest("#yan-menu"));
     for (let i = 0; i < 12; i++) {
       await page.keyboard.press("Tab");
@@ -331,12 +331,12 @@ test("mobil menü kapalıyken Tab sırasına girmez (dikey ve yatay telefon); me
     const baslatici = page.getByRole("button", { name: "Asistanı aç", exact: true });
     await expect(baslatici).toBeVisible();
     await menuDugmesi.click();
-    await expect(menu.getByRole("link", { name: "Denetim" })).toBeVisible();
+    await expect(menu.getByRole("link", { name: "Denetim kaydı" })).toBeVisible();
     await expect(baslatici).toBeHidden();
     expect(await page.locator(".asistan-baslatici").evaluate((e) => (e as HTMLElement).inert)).toBe(true);
     await page.keyboard.press("Escape");
     await expect(menuDugmesi).toBeFocused();
-    await expect(menu.getByRole("link", { name: "Denetim" })).toBeHidden();
+    await expect(menu.getByRole("link", { name: "Denetim kaydı" })).toBeHidden();
     await expect(baslatici).toBeVisible();
     // Açık menü kipsel (WCAG 2.4.11): açılışta odak ilk bağlantıda; Tab / Shift+Tab yalnız menü ile menü
     // düğmesi arasında dolaşır, menünün altında kalan içeriğe geçmez.
@@ -363,15 +363,15 @@ test("mobil menü kapalıyken Tab sırasına girmez (dikey ve yatay telefon); me
     await expect(menuDugmesi).toBeFocused();
     // Perdeye (menünün sağındaki karartılmış içerik) dokunmak menüyü kapatır; odak menü düğmesine döner.
     await menuDugmesi.click();
-    await expect(menu.getByRole("link", { name: "Denetim" })).toBeVisible();
+    await expect(menu.getByRole("link", { name: "Denetim kaydı" })).toBeVisible();
     await page.mouse.click(genislik - 10, yukseklik - 20);
     await expect(menuDugmesi).toHaveAttribute("aria-expanded", "false");
     await expect(menuDugmesi).toBeFocused();
-    await expect(menu.getByRole("link", { name: "Denetim" })).toBeHidden();
+    await expect(menu.getByRole("link", { name: "Denetim kaydı" })).toBeHidden();
     await expect(page.locator("#ana-icerik")).not.toHaveAttribute("inert", "");
     await menuDugmesi.click();
-    await menu.getByRole("link", { name: "Denetim" }).click();
-    await expect(page.getByRole("heading", { name: "Denetim", level: 1 })).toBeVisible();
+    await menu.getByRole("link", { name: "Denetim kaydı" }).click();
+    await expect(page.getByRole("heading", { name: "Denetim kaydı", level: 1 })).toBeVisible();
     await expect(menuDugmesi).toHaveAttribute("aria-expanded", "false");
     await expect(page.locator("#ana-icerik")).toBeFocused();
   }
@@ -753,13 +753,13 @@ test("%125 zoom eşdeğeri (1152×720): Script detayında Kırarak doğrula kart
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1152);
 });
 
-test("%125 zoom eşdeğeri (1152×720): TPD-1 'Case üret' görünür pasiflik nedenleriyle de sağ üstte; düğme aralıkları 8 px", async ({ page }) => {
+test("%125 zoom eşdeğeri (1152×720): TPD-1 üretim düğmesi görünür pasiflik nedenleriyle de sağ üstte; düğme aralıkları 8 px", async ({ page }) => {
   await page.setViewportSize({ width: 1152, height: 720 });
   // Analistte iki başlık düğmesi pasif ve nedenleri görünür (.dugme-neden): nedenler grubu genişletmemeli.
   await girisYap(page, "analist");
   await page.goto("/gereksinimler/req-tpd-1");
   const baslik = page.locator(".sayfa-basligi");
-  const caseUret = baslik.getByRole("button", { name: "Case üret" });
+  const caseUret = baslik.getByRole("button", { name: "Tasarım modelini üret (iki tur)" });
   await expect(caseUret).toBeVisible();
   await expect(baslik.locator(".dugme-neden").first()).toBeVisible();
   await fontlariBekle(page);

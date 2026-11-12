@@ -1,6 +1,7 @@
 // Mock Agent Probe (011 F6, K10): ajan ürünleri ve ajan testi talepleri. Core'daki süreç içi
 // simülatörün (integrations/agent_probe/sim.py) örnek veri karşılığı: yalnız `hazir` ürünler
-// listelenir; talep ilerlemesi istek sayısına bağlıdır (queued → running → passed|failed).
+// listelenir; talep ilerlemesi `POST …/agent-test/refresh` sayısına bağlıdır (queued → running →
+// passed|failed; D4). `GET …/agent-test` yalnız okur.
 import { ApiError } from "../http";
 import type { AjanTestiGorunumu, AjanTestiTalebi, AjanUrunu, Kullanici, Rol } from "../types";
 
@@ -127,22 +128,57 @@ function gorunum(requirementId: string, yenile: boolean): AjanTestiGorunumu {
     engel,
     talep: son ? talepCiktisi(son) : null,
     gecmis: kendi.slice(0, -1).reverse().map(talepCiktisi),
+    // D4: talep sürerken analist refresh ile işletir; sonucu simülatör tamamlar.
+    yenilenebilir: !!aktif,
+    sim_tamamlar: true,
   };
 }
 
-export function ajanProbeRotalari(rolGerekli: (...roller: Rol[]) => Kullanici, girisGerekli: () => Kullanici): Rota[] {
+/** Ürüne bağlı gereksinimler (UX-11 "Bağlı gereksinim" sütunu). */
+function bagliGereksinimler(kod: string, bul?: GereksinimBulucu): NonNullable<AjanUrunu["bagli_gereksinimler"]> {
+  return Object.entries(baglantilar)
+    .filter(([, b]) => b.urun_kodu === kod)
+    .map(([id]) => {
+      const g = bul?.(id);
+      return { id, jira_key: g?.jira_key ?? null, baslik: g?.baslik ?? null };
+    });
+}
+
+type GereksinimBulucu = (id: string) => { jira_key: string | null; baslik: string; durum?: string } | undefined;
+
+/** D4: bu durumlarda ürün bağlanamaz/kaldırılamaz (core 409 `ajan_urunu_baglanamaz`). */
+const BAGLAMA_KAPALI: ReadonlySet<string> = new Set(["generating", "cases_ready", "modeling", "model_ready", "done"]);
+
+export function ajanProbeRotalari(
+  rolGerekli: (...roller: Rol[]) => Kullanici,
+  girisGerekli: () => Kullanici,
+  gereksinimBul?: GereksinimBulucu,
+): Rota[] {
   return [
     [
       "GET",
       /^\/agent-probe\/products$/,
       () => {
         girisGerekli();
-        return { kip: "sim", simulasyon: true, urunler: MOCK_AJAN_URUNLERI.filter((u) => u.hazir).map(urunOzeti) };
+        return {
+          kip: "sim",
+          simulasyon: true,
+          urunler: MOCK_AJAN_URUNLERI.filter((u) => u.hazir).map((u) => ({ ...urunOzeti(u), bagli_gereksinimler: bagliGereksinimler(u.kod, gereksinimBul) })),
+        };
       },
     ],
     [
       "GET",
       /^\/requirements\/([^/]+)\/agent-test$/,
+      (m) => {
+        girisGerekli();
+        // D4: GET yalnız okur; sonuç işleme `POST …/agent-test/refresh` ile.
+        return gorunum(decodeURIComponent(m[1]), false);
+      },
+    ],
+    [
+      "POST",
+      /^\/requirements\/([^/]+)\/agent-test\/refresh$/,
       (m) => {
         girisGerekli();
         return gorunum(decodeURIComponent(m[1]), true);
@@ -155,6 +191,10 @@ export function ajanProbeRotalari(rolGerekli: (...roller: Rol[]) => Kullanici, g
         const k = rolGerekli("analyst");
         const id = decodeURIComponent(m[1]);
         const kod = (govde as { urun_kodu?: string | null } | null)?.urun_kodu ?? null;
+        const durum = gereksinimBul?.(id)?.durum;
+        if (durum && BAGLAMA_KAPALI.has(durum)) {
+          throw new ApiError(409, "Case akışı başlamış ya da tamamlanmış gereksinimde ajan ürünü bağlantısı değiştirilemez.", { kod: "ajan_urunu_baglanamaz" });
+        }
         const son = talepler.filter((t) => t.requirement_id === id).pop();
         if (son && (son.durum === "queued" || son.durum === "running")) {
           throw new ApiError(409, "Süren bir ajan testi varken ürün bağlantısı değiştirilemez.", { kod: "ajan_urunu_baglanamaz" });

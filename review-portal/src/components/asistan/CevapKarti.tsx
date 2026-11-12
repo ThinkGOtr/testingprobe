@@ -12,7 +12,7 @@ import { uygulamaRotasiMi } from "../../lib/rotalar";
 import { Ikon } from "../Ikon";
 import { Cip, DisBaglanti } from "../ui";
 import { AiOneriKarti } from "./OneriKarti";
-import { DenetimKutusu, DenetimRozeti } from "./DenetimKutusu";
+import { DenetimKutusu, DenetimRozeti, denetimBasligi, denetimNotuMu } from "./DenetimKutusu";
 
 // Renk disiplini (TASARIM-YENILEME-PLANI §3.2, §4.6): kırmızı yalnız hata/engel, indigo yalnız etkileşim/süren.
 // "Emin değil" bir hata değil, dikkat çağrısıdır (doğrulayın) → amber; "Genel bilgi" kategoriktir → nötr.
@@ -34,7 +34,7 @@ const KAYNAK_NOTU: Record<string, string> = {
   sozluk: "Hazır cevap · hata sözlüğü",
   sablon: "Hazır cevap · kayıt durumu",
   kapali: "Hazır cevap",
-  denetim: "Denetim",
+  denetim: "İçerik kontrolü",
 };
 
 /** Göreli zaman tek yerde (lib/format); eski içe aktarımlar için yeniden dışa aktarılır. */
@@ -270,14 +270,22 @@ export function CevapKarti({ mesaj, baslik, derinIncelenebilir: derinIstegi, der
           </span>
         )}
       </div>
-      <DenetimKutusu denetim={c.denetim} />
-      <Bloklar bloklar={c.cevap_bloklari ?? []} />
+      {/* Uyarı kutusu backend'in "Denetim uyarısı" notunu gövde olarak gösterir; not aşağıda tekrar yazılmaz (UX-9). */}
+      <DenetimKutusu
+        denetim={c.denetim}
+        notlar={c.denetim?.karar === "uyar" ? (c.notlar ?? []).filter(denetimNotuMu) : []}
+        bloklardaAciklama={(c.cevap_bloklari ?? []).some((b) => b.tur === "paragraf")}
+      />
+      {/* D4: engel/çalışmıyor cevabının başlık bloğu kutunun başlığıyla aynıysa iki kez yazılmaz. */}
+      <Bloklar bloklar={(c.cevap_bloklari ?? []).filter((b) => !(c.denetim && b.tur === "baslik" && b.metin === denetimBasligi(c.denetim)))} />
       {c.eylem_reddi && <p className="asistan-not">Asistan işlem yapmaz; bu işlemi ilgili ekranda siz yaparsınız.</p>}
-      {(c.notlar ?? []).map((n, i) => (
-        <p key={i} className={n.startsWith("Denetim uyarısı") ? "asistan-not asistan-not-denetim" : "asistan-not"}>
-          {n}
-        </p>
-      ))}
+      {(c.notlar ?? [])
+        .filter((n) => !(c.denetim?.karar === "uyar" && denetimNotuMu(n)))
+        .map((n, i) => (
+          <p key={i} className={denetimNotuMu(n) ? "asistan-not asistan-not-denetim" : "asistan-not"}>
+            {n}
+          </p>
+        ))}
       {(c.oneriler ?? []).length > 0 && (
         <div className="asistan-oneriler">
           <div className="asistan-alt-baslik">Ek öneriler</div>

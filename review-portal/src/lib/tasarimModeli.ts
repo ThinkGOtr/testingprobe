@@ -110,3 +110,49 @@ export function bagliOgeler(m: DesignModel): Set<string> {
     ...m.flows.map((f) => f.item_id),
   ]);
 }
+
+/**
+ * D1/K20: model onayı (approve/edit) tur 2'yi (case üretimi) otomatik başlatır; onay yanıtı bunu
+ * `tur2: {basladi, job_id?, uretim_no?, mesaj?}` ya da düz `tur2_basladi: boolean` ile bildirir.
+ * Alan yoksa (eski core) null: panel eski "Case'leri üret" düğmesini gösterir.
+ */
+export interface Tur2Bilgisi {
+  basladi: boolean;
+  job_id: string | null;
+  uretim_no: number | null;
+  mesaj: string | null;
+}
+
+export function tur2Uyarla(ham: unknown): Tur2Bilgisi | null {
+  if (!ham || typeof ham !== "object") return null;
+  const h = ham as Record<string, unknown>;
+  const t = h.tur2 && typeof h.tur2 === "object" && !Array.isArray(h.tur2) ? (h.tur2 as Record<string, unknown>) : null;
+  const engel = typeof h.tur2_engeli === "string" && h.tur2_engeli.trim() ? h.tur2_engeli : null;
+  // D1 kesin sözleşme: `tur2_baslatildi: bool`, `tur2: {job_id, workflow_id, uretim_no, kip, asama} | null`,
+  // `tur2_engeli: str | null`. Önceki taslak biçimler (`tur2.basladi`, `tur2_basladi`) de okunur.
+  const bayrak =
+    typeof h.tur2_baslatildi === "boolean" ? h.tur2_baslatildi : typeof h.tur2_basladi === "boolean" ? h.tur2_basladi : t && typeof t.basladi === "boolean" ? t.basladi : null;
+  if (bayrak === null && !t && engel === null) return null;
+  return {
+    basladi: bayrak ?? !!t,
+    job_id: t && typeof t.job_id === "string" ? t.job_id : null,
+    uretim_no: t && typeof t.uretim_no === "number" ? t.uretim_no : null,
+    mesaj: engel ?? (t && typeof t.mesaj === "string" ? t.mesaj : null),
+  };
+}
+
+/** Onaydan sonra tur 2 başladıysa gösterilen bildirim. */
+export function tur2Bildirimi(t: Tur2Bilgisi): string {
+  return t.uretim_no !== null ? `Case üretimi otomatik başladı (üretim ${t.uretim_no}).` : "Case üretimi otomatik başladı.";
+}
+
+/**
+ * REPLAY-MISS modeli yer tutucudur: kayıtlı model çıktısı yoktu, kabul kriterlerinden asgari bir
+ * iskelet yazıldı. Gerçek bir tasarım modeli değildir; onaylanamaz (case üretiminin girdisi olamaz).
+ */
+export function yerTutucuModelMi(m: { uretim_modu: string | null } | null | undefined): boolean {
+  return m?.uretim_modu === "replay_miss";
+}
+
+export const YER_TUTUCU_NEDENI =
+  "Yer tutucu model (REPLAY-MISS): bu girdi için kayıtlı model çıktısı yok; kabul kriterlerinden kurulan iskelet onaylanamaz. Modeli canlı modelle yeniden üretin.";
