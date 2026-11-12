@@ -54,8 +54,12 @@
       Surefire test JVM'i: yığın sınırı (test-runner 3 GB kapsayıcı sınırı; Maven JVM ve test JVM
       aynı kapsayıcıda) ve kodlama. file.encoding JVM başlarken verilmelidir;
       sistem özelliği olarak verilirse JDK uyarır ve yok sayar. -DargLine=… ile değiştirilebilir.
+      java.io.tmpdir: JVM Linux'ta TMPDIR'i okumaz; geçici dosyalar (Playwright sürücüsü dahil)
+      tp.java.tmpdir altına açılır. Varsayılan Maven JVM'inin java.io.tmpdir'i; toolchain koşusu
+      -Dtp.java.tmpdir=<koşu>/tmp verir.
     -->
-    <argLine>-Xmx512m -Dfile.encoding=UTF-8</argLine>
+    <tp.java.tmpdir>${java.io.tmpdir}</tp.java.tmpdir>
+    <argLine>-Xmx512m -Dfile.encoding=UTF-8 -Djava.io.tmpdir=${tp.java.tmpdir}</argLine>
   </properties>
 
   <dependencyManagement>

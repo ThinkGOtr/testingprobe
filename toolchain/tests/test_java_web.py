@@ -416,7 +416,7 @@ def test_web_java_run_repeat_env_health_and_reports(
         "PLATFORM": None,
         "APP_ID": None,
         "MAVEN_SKIP_RC": "1",
-        "MAVEN_OPTS": "-Xmx384m",
+        "MAVEN_OPTS": f"-Xmx384m -Djava.io.tmpdir={env / 'runs' / 'w1' / 'tmp'}",
         "JAVA_TOOL_OPTIONS": None,
         "ANTHROPIC_API_KEY": None,
         "TP_RUN_ID": "w1",
@@ -426,6 +426,8 @@ def test_web_java_run_repeat_env_health_and_reports(
     tmp = env / "runs" / "w1" / "tmp"
     assert all(c["tmp"] == [str(tmp), True] for c in calls)
     assert not tmp.exists()
+    # OPS-O2: Surefire çatalının java.io.tmpdir'i (pom argLine `${tp.java.tmpdir}`).
+    assert all(f"-Dtp.java.tmpdir={tmp}" in c["argv"] for c in calls)
     # Artefakt listesi: kanıt (target/kanit/**), Allure, Extent, Surefire, junit.
     rep = data["reports"]
     assert rep["kanit"]["rel"] == "runs/w1/src/e2e-java/target/kanit" and rep["kanit"]["exists"]

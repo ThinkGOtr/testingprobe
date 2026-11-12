@@ -3,6 +3,7 @@ package com.antreklabs.bayi.altyapi;
 import io.qameta.allure.Allure;
 import java.util.AbstractMap.SimpleImmutableEntry;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Level;
@@ -19,8 +20,10 @@ import java.util.regex.Pattern;
  * <ul>
  *   <li><b>Extent:</b> kategori = {@code tp-case-*} dışındaki gruplar (her case ayrı kategori
  *       olmasın); case kimliği test ayrıntısında ayrı bir satırdır ({@link ExtentRaporu}).
- *   <li><b>Allure:</b> her grup {@code tag}; Jira anahtarı biçimindeki grup {@code story};
- *       {@code tp-case-<uuid>} ayrıca {@code tp-case=<uuid>} etiketi ({@link #allureyeEkle}).
+ *   <li><b>Allure:</b> her grup {@code tag}; Jira anahtarı biçimindeki grup — yalnız
+ *       {@value #URETILEN} grubundaki (Testing Probe'un ürettiği) testte — {@code story}; elle
+ *       yazılmış testin {@code ABC-1} biçimli grubu yalnız {@code tag}'dir. {@code tp-case-<uuid>}
+ *       ayrıca {@code tp-case=<uuid>} etiketi ({@link #allureyeEkle}).
  * </ul>
  */
 public final class TestGruplari {
@@ -29,6 +32,8 @@ public final class TestGruplari {
   public static final String CASE_ONEK = "tp-case-";
   /** Allure'da case kimliğinin etiket adı (makine okunur; değer yalnız uuid). */
   public static final String CASE_ETIKETI = "tp-case";
+  /** Testing Probe'un ürettiği testlerin grubu; story etiketi yalnız bu gruptaki testlere verilir. */
+  public static final String URETILEN = "uretilen";
 
   /** Jira anahtarı (story): {@code PROJE-123}. */
   private static final Pattern JIRA_ANAHTARI = Pattern.compile("[A-Z][A-Z0-9_]*-[0-9]+");
@@ -74,20 +79,21 @@ public final class TestGruplari {
   }
 
   /**
-   * Allure etiketleri (ad, değer): her grup {@code tag}; Jira anahtarı {@code story}; case
-   * {@code tp-case}=uuid.
+   * Allure etiketleri (ad, değer): her grup {@code tag}; üretilen testte Jira anahtarı
+   * {@code story}; case {@code tp-case}=uuid.
    */
   public static List<Map.Entry<String, String>> allureEtiketleri(String[] gruplar) {
     List<Map.Entry<String, String>> out = new ArrayList<>();
     if (gruplar == null) {
       return out;
     }
+    boolean uretilen = Arrays.asList(gruplar).contains(URETILEN);
     for (String g : gruplar) {
       if (g == null || g.isBlank()) {
         continue;
       }
       ekle(out, "tag", g);
-      if (storyGrubu(g)) {
+      if (uretilen && storyGrubu(g)) {
         ekle(out, "story", g);
       }
       if (caseGrubu(g)) {

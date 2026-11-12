@@ -189,7 +189,7 @@ def test_java_run_passed_hardening_and_layout(
         "DEMOAPP_TEST_TOKEN": "test-belirteci",
         "BREAK_CAMPAIGN": "",
         "MAVEN_SKIP_RC": "1",
-        "MAVEN_OPTS": "-Xmx384m",
+        "MAVEN_OPTS": f"-Xmx384m -Djava.io.tmpdir={run_dir / 'tmp'}",
         "JAVA_TOOL_OPTIONS": None,
         "ANTHROPIC_API_KEY": None,
         "TP_RUN_ID": "j1",
@@ -197,6 +197,9 @@ def test_java_run_passed_hardening_and_layout(
     }
     # OPS-O6: TMPDIR koşu dizini altında (`<run>/tmp`), koşu sonunda silinir.
     assert call["tmp"] == [str(run_dir / "tmp"), True] and not (run_dir / "tmp").exists()
+    # OPS-O2: JVM Linux'ta TMPDIR okumaz; Maven JVM'i (MAVEN_OPTS) ve Surefire çatalı
+    # (pom argLine `${tp.java.tmpdir}`) java.io.tmpdir'i koşu dizinine alır.
+    assert f"-Dtp.java.tmpdir={run_dir / 'tmp'}" in call["argv"]
 
 
 def test_java_run_failures_classified_and_break_restored(

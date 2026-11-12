@@ -91,7 +91,9 @@ SUREFIRE_DIR = "surefire-reports"
 # Chromium). Maven JVM'inin yığını sabittir (ortamdaki MAVEN_OPTS geçmez; bu değer verilir);
 # Surefire çatalının sınırı pom'un `argLine`'ıdır.
 MAVEN_OPTS = "-Xmx384m"
-# Koşunun geçici dosyaları (JVM, Playwright sürücüsü) koşu dizini altında: `<run>/tmp`.
+# Koşunun geçici dosyaları (JVM, Playwright sürücüsü) koşu dizini altında: `<run>/tmp`. JVM Linux'ta
+# TMPDIR okumaz (OPS-O2): Maven JVM'ine `MAVEN_OPTS` ile, Surefire çatalına pom `argLine`'ındaki
+# `${tp.java.tmpdir}` ile `-Djava.io.tmpdir` verilir.
 RUN_TMP_DIR = "tmp"
 EXTENT_REPORT_DIR = "extent-report"
 
@@ -180,6 +182,7 @@ def maven_argv(
     compile_first: bool,
     repeat_count: int = 1,
     kok: javayol.JavaKok | None = None,
+    tmp_dir: Path | None = None,
 ) -> list[str]:
     kok = kok or javayol.java_kok(cfg, platform)
     argv = [
@@ -199,6 +202,9 @@ def maven_argv(
         # Extent raporu tekrarlar arasında ortak dizine yazılır (dinleyici birleştirir).
         f"-Dextent.rapor.dizini={allure_dir.parent / EXTENT_REPORT_DIR}",
     ]
+    if tmp_dir is not None:
+        # Surefire çatalının java.io.tmpdir'i (pom argLine: -Djava.io.tmpdir=${tp.java.tmpdir}).
+        argv.append(f"-Dtp.java.tmpdir={tmp_dir}")
     if repeat_count > 1:
         argv.append(f"-Dextent.tekrar={rep.index + 1}/{repeat_count}")
     if test_files:
@@ -212,11 +218,13 @@ def maven_env(
 ) -> dict[str, str]:
     """İzin listesi: sistem + proje ayarları (ortamdaki MAVEN_*/JVM seçenekleri geçmez).
     `MAVEN_OPTS` sabittir (bellek sınırı, OPS-O6); `tmp_dir` verilirse `TMPDIR` odur (koşu
-    dizini altı; ortamdaki TMPDIR'in yerine geçer)."""
+    dizini altı; ortamdaki TMPDIR'in yerine geçer) ve Maven JVM'inin `java.io.tmpdir`'i de odur
+    (JVM Linux'ta TMPDIR okumaz, OPS-O2)."""
     env = {k: os.environ[k] for k in PASS_ENV if k in os.environ}
     env["MAVEN_OPTS"] = MAVEN_OPTS
     if tmp_dir is not None:
         env["TMPDIR"] = str(tmp_dir)
+        env["MAVEN_OPTS"] = f"{MAVEN_OPTS} -Djava.io.tmpdir={tmp_dir}"
     if platform == WEB:
         env.update(
             {
@@ -458,7 +466,9 @@ def _run_maven(
         tmp_dir.mkdir(parents=True, exist_ok=True)
     env = maven_env(cfg, req, platform, tmp_dir)
     try:
-        return _run_repeats(cfg, req, platform, root, repeats, allure_dir, log_parts, kok, env)
+        return _run_repeats(
+            cfg, req, platform, root, repeats, allure_dir, log_parts, kok, env, tmp_dir
+        )
     finally:
         if tmp_dir is not None:
             # Geçici dosyalar kanıt değildir: koşu dizininde (artefakt) kalmaz.
@@ -475,6 +485,7 @@ def _run_repeats(
     log_parts: list[str],
     kok: javayol.JavaKok | None,
     env: dict[str, str],
+    tmp_dir: Path | None = None,
 ) -> tuple[int | None, bool, int]:
     deadline = time.monotonic() + cfg.run_timeout_s
     exit_code: int | None = 0
@@ -486,7 +497,7 @@ def _run_repeats(
                 return None, True, total_ms
             argv = maven_argv(
                 cfg, root, Path(head_repo), platform, rep, allure_dir, req.test_files,
-                compile_first=i == 0, repeat_count=len(repeats), kok=kok,
+                compile_first=i == 0, repeat_count=len(repeats), kok=kok, tmp_dir=tmp_dir,
             )  # fmt: skip
             res = proc.run(argv, cwd=root, env=env, timeout_s=left)
             total_ms += res.duration_ms

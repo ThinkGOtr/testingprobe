@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.testng.IClass;
 import org.testng.ITestNGMethod;
@@ -43,6 +44,18 @@ public class ExtentRaporuBirimTesti {
   /** Sahte TestNG sonucu: açıklama ve gruplarla. */
   private static ITestResult sonuc(
       Class<?> sinif, String metot, String aciklama, String[] gruplar, Throwable hata, long baslangic) {
+    return sonuc(sinif, metot, aciklama, gruplar, hata, baslangic, new Object[0]);
+  }
+
+  /** Sahte TestNG sonucu: açıklama, gruplar ve test parametreleriyle. */
+  private static ITestResult sonuc(
+      Class<?> sinif,
+      String metot,
+      String aciklama,
+      String[] gruplar,
+      Throwable hata,
+      long baslangic,
+      Object[] parametreler) {
     ClassLoader cl = ExtentRaporuBirimTesti.class.getClassLoader();
     IClass testSinifi =
         (IClass)
@@ -80,7 +93,7 @@ public class ExtentRaporuBirimTesti {
                   case "getTestClass" -> testSinifi;
                   case "getMethod" -> testMetodu;
                   case "getThrowable" -> hata;
-                  case "getParameters" -> new Object[0];
+                  case "getParameters" -> parametreler;
                   case "getStartMillis" -> baslangic;
                   case "getEndMillis" -> baslangic + 1500;
                   case "hashCode" -> System.identityHashCode(v);
@@ -205,9 +218,6 @@ public class ExtentRaporuBirimTesti {
     ITestResult yesil = sonuc(ExtentRaporuBirimTesti.class, "yesil", null, simdi);
     d.onTestStart(yesil);
     d.onTestSuccess(yesil);
-    // Her testten sonra yazılır: koşu yarıda kesilse de o ana kadarki rapor tek dosya ve çevrimdışıdır.
-    assertFalse(DIS_YUKLEME.matcher(oku(rapor)).find());
-    assertFalse(oku(rapor).contains("spark/"));
     ITestResult kirmizi =
         sonuc(ExtentRaporuBirimTesti.class, "kirmizi", new AssertionError("'cart-total' metni: beklenen <150,00 TL>"), simdi);
     d.onTestStart(kirmizi);
@@ -425,5 +435,139 @@ public class ExtentRaporuBirimTesti {
     assertTrue(s.contains("<script src=\"yok.js\"></script>"));
     assertFalse(Files.exists(rapor.resolve("spark")), "gömülen kaynak dizini silinir");
     assertTrue(Files.exists(kok.resolve("disari.css")));
+  }
+
+  /** Spark zaman çizelgesi: {@code <script>var timeline = {"<ad>":<süre>,…};</script>}. */
+  private static final Pattern ZAMAN_CIZELGESI_BETIGI =
+      Pattern.compile("<script>((?:(?!</script>).)*?var timeline(?:(?!</script>).)*)</script>", Pattern.DOTALL);
+  /** Zaman çizelgesi betiğinin beklenen tam yapısı: dize anahtarlı, sayı değerli tek bir nesne. */
+  private static final Pattern ZAMAN_CIZELGESI_YAPISI =
+      Pattern.compile(
+          "\\s*var timeline = \\{\\s*(?:\"[^\"\\\\\\r\\n\\u2028\\u2029]*\"\\s*:\\s*[0-9.]+\\s*(?:,\\s*\"[^\"\\\\\\r\\n\\u2028\\u2029]*\"\\s*:\\s*[0-9.]+\\s*)*)?\\};\\s*");
+
+  @Test(groups = "birim")
+  public void tirnakVeTersBoluZamanCizelgesiBetigindenCikamaz() throws Exception {
+    // GÜV-Y1 / QA-Y3: Spark test adını <script> içinde çift tırnaklı JS dizesine kaçışsız yazar.
+    Path rapor = Files.createTempDirectory("extent-birim-");
+    ExtentRaporu d = new ExtentRaporu(rapor, rapor.resolve("kanit"), null);
+    d.onExecutionStart();
+    List<String> basliklar =
+        List.of(
+            "Sepet\":0};alert('XSS-TP');var q={\"x",
+            "ters \\\" bölü \\u0022 ve \\\\ sonu \\",
+            "satır\nsonu ayraç '); alert(\"2\") //",
+            "7 adet kampanyalı üründe 1 adet bedava verilir");
+    String[] gruplar = {"uretilen", "grup\"x'y\\z", "TPD-1"};
+    for (int i = 0; i < basliklar.size(); i++) {
+      ITestResult s = sonuc(ExtentRaporuBirimTesti.class, "m" + i, basliklar.get(i), gruplar, null, System.currentTimeMillis());
+      d.onTestStart(s);
+      d.onTestSuccess(s);
+    }
+    d.onExecutionFinish();
+    assertFalse(d.kapali());
+    String html = oku(rapor);
+
+    Matcher betik = ZAMAN_CIZELGESI_BETIGI.matcher(html);
+    assertTrue(betik.find(), "zaman çizelgesi betiği raporda");
+    String govde = betik.group(1);
+    assertTrue(ZAMAN_CIZELGESI_YAPISI.matcher(govde).matches(), "zaman çizelgesi ayrıştırılabilir kalmalı: " + govde);
+    assertEquals(govde.split("\"\\s*:\\s*[0-9.]+", -1).length - 1, basliklar.size(), "her test tek bir anahtar: " + govde);
+    assertFalse(betik.find(), "tek zaman çizelgesi betiği");
+    assertFalse(html.contains("alert('XSS-TP')"), "başlık betik olarak çalışamaz");
+    assertFalse(html.contains("alert(\"2\")"));
+    assertFalse(html.contains("grup\"x"), "kategori öznitelikten çıkamaz");
+    // Kaçışlı ad tarayıcıda olduğu gibi okunur (&quot; → ", &#39; → ', &#92; → \).
+    assertTrue(html.contains("Sepet&quot;:0};alert(&#39;XSS-TP&#39;);var q={&quot;x"), "kaçışlı ad");
+    assertTrue(html.contains("ters &#92;&quot; bölü"), "ters bölü kaçışlı");
+    assertTrue(html.contains("satır sonu ayraç"), "satır sonu tek boşluk");
+    assertTrue(html.contains("7 adet kampanyalı üründe 1 adet bedava verilir"), "normal Türkçe başlık okunur kalır");
+  }
+
+  @Test(groups = "birim")
+  public void araYazimSeyrekTekDosyaKosuSonunda() throws Exception {
+    Path rapor = Files.createTempDirectory("extent-birim-");
+    ExtentRaporu d = new ExtentRaporu(rapor, rapor.resolve("kanit"), null);
+    d.onExecutionStart();
+    long simdi = System.currentTimeMillis();
+    for (int i = 0; i < ExtentRaporu.ARA_YAZIM_TEST - 1; i++) {
+      ITestResult s = sonuc(ExtentRaporuBirimTesti.class, "ara" + i, null, simdi);
+      d.onTestStart(s);
+      d.onTestSuccess(s);
+    }
+    assertFalse(
+        Files.exists(rapor.resolve("index.html")) && oku(rapor).contains("ExtentRaporuBirimTesti › ara0<"),
+        "her testten sonra yazılmaz");
+    ITestResult son = sonuc(ExtentRaporuBirimTesti.class, "ara" + (ExtentRaporu.ARA_YAZIM_TEST - 1), null, simdi);
+    d.onTestStart(son);
+    d.onTestSuccess(son);
+    // N. testte ara yazım: rapor güncel; css/js henüz yanındaki dizinde (tek dosya koşu sonunda).
+    String ara = oku(rapor);
+    assertTrue(ara.contains("ExtentRaporuBirimTesti › ara0<"), "ara rapor yazıldı");
+    assertTrue(ara.contains("ExtentRaporuBirimTesti › ara" + (ExtentRaporu.ARA_YAZIM_TEST - 1) + "<"));
+    assertTrue(ara.contains("spark/"), "ara yazım gömme yapmaz");
+    d.onExecutionFinish();
+    String html = oku(rapor);
+    assertFalse(html.contains("spark/"), "koşu sonunda tek dosya");
+    assertFalse(DIS_YUKLEME.matcher(html).find());
+    assertEquals(dosyalar(rapor), List.of("extent.json", "index.html"));
+  }
+
+  @Test(groups = "birim")
+  public void gomuluEkranSayisiSinirli() throws Exception {
+    Path kok = Files.createTempDirectory("extent-birim-");
+    Path rapor = kok.resolve("extent-report");
+    Path kanit = kok.resolve("kanit");
+    int fazla = 5;
+    int toplam = ExtentRaporu.EN_COK_GOMULU_EKRAN + fazla;
+    long simdi = System.currentTimeMillis();
+    for (int i = 0; i < toplam; i++) {
+      Path k = Kanit.dizin(kanit, "ExtentRaporuBirimTesti", "kirmizi" + i);
+      Files.createDirectories(k);
+      Files.write(k.resolve(Kanit.EKRAN), PNG);
+    }
+    ExtentRaporu d = new ExtentRaporu(rapor, kanit, null);
+    d.onExecutionStart();
+    for (int i = 0; i < toplam; i++) {
+      ITestResult s = sonuc(ExtentRaporuBirimTesti.class, "kirmizi" + i, new AssertionError("x" + i), simdi);
+      d.onTestStart(s);
+      d.onTestFailure(s);
+    }
+    d.onExecutionFinish();
+    String html = oku(rapor);
+    assertEquals(html.split(Pattern.quote(PNG_B64), -1).length - 1, ExtentRaporu.EN_COK_GOMULU_EKRAN, "gömülü ekran sayısı");
+    assertEquals(html.split("rapora gömülmedi", -1).length - 1, fazla, "fazlası açıklama satırı");
+    String bag = "../kanit/" + Kanit.dizin(Path.of(""), "ExtentRaporuBirimTesti", "kirmizi" + (toplam - 1)).resolve(Kanit.EKRAN);
+    assertTrue(html.contains("href=\"" + bag.replace('\\', '/') + "\""), "göreli kanıt bağlantısı: " + bag);
+  }
+
+  @Test(groups = "birim")
+  public void bellekYetersizligiRaporuKapatirKosuyuDusurmez() throws Exception {
+    Path rapor = Files.createTempDirectory("extent-birim-");
+    ExtentRaporu d = new ExtentRaporu(rapor, rapor.resolve("kanit"), null);
+    d.onExecutionStart();
+    ITestResult yesil = sonuc(ExtentRaporuBirimTesti.class, "yesil", null, System.currentTimeMillis());
+    d.onTestStart(yesil);
+    d.onTestSuccess(yesil);
+    // Rapor üretimi sırasında OutOfMemoryError (büyük rapor): dinleyici fırlatmamalı.
+    Object bellekYiyen =
+        new Object() {
+          @Override
+          public String toString() {
+            throw new OutOfMemoryError("Java heap space (deney)");
+          }
+        };
+    ITestResult s =
+        sonuc(ExtentRaporuBirimTesti.class, "kirmizi", null, new String[] {"duman"}, new AssertionError("x"), System.currentTimeMillis(), new Object[] {bellekYiyen});
+    d.onTestStart(s);
+    d.onTestFailure(s);
+    assertTrue(d.kapali(), "rapor kapatıldı");
+    ITestResult sonraki = sonuc(ExtentRaporuBirimTesti.class, "sonraki", null, System.currentTimeMillis());
+    d.onTestStart(sonraki);
+    d.onTestSuccess(sonraki);
+    d.onExecutionFinish();
+    String html = oku(rapor);
+    assertTrue(html.contains("Extent raporu üretilemedi"), "açıklama sayfası: " + html);
+    assertTrue(html.contains("OutOfMemoryError"));
+    assertFalse(Files.exists(rapor.resolve("index.html.tmp")));
   }
 }
