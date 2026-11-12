@@ -206,6 +206,22 @@ kayitlar:
     neden: Case'in beklenen değeri onaydan önce karar tablosuyla karşılaştırılır. Yüksek riskte uyuşmazlık onayı engeller; orta ve düşük riskte yalnız uyarı verilir.
     cozum: Karşılaştırma tablosundaki farkı inceleyin. Case yanlışsa düzeltip onaylayın; tablo yanlışsa karar tablosunu düzelttirip PO'ya yeniden onaylatın. Fark bilinçliyse gerekçe yazarak istisnayla onaylayın.
     rota: /gereksinimler/:id/caseler
+  - id: oracle-kontrolsuz
+    kodlar: [oracle_kontrolsuz]
+    metinler: []
+    baslik: Beklenen değerler karar tablosuyla kontrol edilemedi
+    anlam: Yüksek riskli case'i kapsayan onaylı bir karar tablosu var ama case'ten tabloyla karşılaştırılabilir değer çıkarılamadı (ya da model çağrısı başarısız oldu); case gerekçesiz onaylanamaz.
+    neden: Kontrol edilemeyen yüksek riskli bir case sessizce onaylanırsa karar tablosu kapısı atlanmış olur. Bu yüzden onay, gerekçe yazılarak ("kontrolsüz onay") verilir ve Kontrol Kulesi'nde sayılır.
+    cozum: Case'in beklenen değerlerini tablo kolonlarına uyan, açık bir dille yazın ve kontrolü yeniden çalıştırın; olmuyorsa en az 20 karakterlik (10 harf) bir gerekçeyle onaylayın.
+    rota: /gereksinimler/:id/caseler
+  - id: oracle-kontrol-siniri
+    kodlar: [oracle_kontrol_siniri]
+    metinler: []
+    baslik: Çok fazla karar tablosu kontrolü istendi
+    anlam: Aynı case için kısa sürede izin verilenden fazla kontrol istendi.
+    neden: Her kontrol bir model çağrısı yapabilir; hız sınırı maliyeti ve kuyruğu korur.
+    cozum: Bir dakika bekleyip yeniden deneyin; önceki kontrolün sonucu gelince ekran kendiliğinden güncellenir.
+    rota: /gereksinimler/:id/caseler
   - id: oracle-bekleniyor
     kodlar: [oracle_bekleniyor]
     metinler: []

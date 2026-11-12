@@ -57,6 +57,8 @@ class CaseKararGirdisi(BaseModel):
     beklenen_anlam_degisti: bool | None = None
     # 012 §4.3: karar tablosu uyuşmazlığına gerekçeli istisna (en az 20 karakter; V1).
     oracle_istisna_gerekce: str | None = Field(default=None, max_length=2000)
+    # 012 §13.2: `uyumsuz` (tabloya rağmen) | `kontrolsuz` (kontrol edilemedi); verilmezse sonuçtan.
+    oracle_istisna_turu: Literal["uyumsuz", "kontrolsuz"] | None = None
 
 
 @router.post(
@@ -105,6 +107,7 @@ def decide(
         gerekce=body.gerekce,
         beklenen_anlam_degisti=body.beklenen_anlam_degisti,
         oracle_istisna_gerekce=body.oracle_istisna_gerekce,
+        oracle_istisna_turu=body.oracle_istisna_turu,
     )
     session.flush()
     return service.serialize_cases(session, [tc])[0]

@@ -67,7 +67,10 @@ ASISTAN_ONERI_DEGER = frozenset({-1, 1, 2})
 # 012 test kalite doğrulama (0022; specs/012-test-kalite-dogrulama/ANALIZ.md §4–§5).
 # Karar tablosu kolon türleri (`icerik.girdiler[].tur`, `icerik.ciktilar[].tur`).
 KARAR_TABLOSU_TUR = frozenset({"sayi", "metin", "mantiksal"})
-ORACLE_SONUC = frozenset({"uyumlu", "uyumsuz", "kapsam_disi", "kontrol_edilemedi"})
+ORACLE_SONUC = frozenset({"uyumlu", "uyumsuz", "kismen", "kapsam_disi", "kontrol_edilemedi"})
+# `oracle_istisna.tur` (review 1 K10/V10): uyuşmazlığa ya da kontrol edilemeyen yüksek riskli
+# case'e verilen gerekçeli onay.
+ORACLE_ISTISNA_TUR = frozenset({"uyumsuz", "kontrolsuz"})
 TURETME_SONUC = frozenset({"turetildi", "iliski_gecersiz", "belirsiz_alinti", "olgu_yok"})
 # `hata_kosusu.durum` workflow.MACHINES'e konmaz (insan kapısı yok; iş kendi yazar).
 HATA_KOSUSU_DURUM = frozenset({"queued", "running", "done", "failed", "cancelled"})

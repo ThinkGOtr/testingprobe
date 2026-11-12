@@ -6,7 +6,10 @@
 | POST | `/cases/{id}/oracle-check` `{icerik?}` | analyst — 202 `{job_id, icerik_hash}`) |
 
 `POST` önerilen içeriği case içerik doğrulamasıyla (şema + AC atıfları) denetler; içerik case'e
-yazılmaz. Sonuç `oracle.checked` olayıyla duyurulur, `GET` ile okunur.
+yazılmaz. Sonuç `oracle.checked` olayıyla duyurulur, `GET` ile okunur. Önerilen içerik kapıyla
+aynı biçimde saklı ∪ önerilen AC ref'leriyle kontrol edilir (V11). İş `(case, hash, tablo kümesi,
+kayıt sürümü)` anahtarlıdır (aynı istek yeni model çağrısı açmaz); case başına dakikada
+`DAKIKA_SINIRI` yeni iş (aşılırsa 429 `oracle_kontrol_siniri`; review 1 güvenlik 10).
 """
 
 from __future__ import annotations
@@ -16,15 +19,20 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
+from sqlalchemy import text
 
 from tp_core.audit import content_hash
 from tp_core.auth.deps import CurrentUser, DbSession, require_role
 from tp_core.features.cases import service as cases_service
 from tp_core.features.cases.schema import content_errors
+from tp_core.features.karar_tablosu.hatalar import OracleKontrolSiniri
 from tp_core.features.oracle import service
+from tp_core.features.oracle.tablolar import tablo_hashleri
 from tp_core.workflow.service import Principal
 
 router = APIRouter(tags=["oracle"])
+
+DAKIKA_SINIRI = 10
 
 Analyst = Annotated[Principal, Depends(require_role("analyst"))]
 
@@ -61,5 +69,42 @@ def oracle_check(
         h = content_hash(dict(icerik))
     else:
         h = tc.icerik_hash
-    job_id = service.kontrol_kuyruga_al(session, tc.id, h, icerik if h != tc.icerik_hash else None)
+    gonderilen = icerik if h != tc.icerik_hash else None
+    ac_refs = service.ac_refleri(tc.icerik, gonderilen) if gonderilen is not None else None
+    kapsayan = service.kapsayan_tablolar(session, tc, gonderilen, ac_refs=ac_refs)
+    anahtar = service.kontrol_anahtari(
+        "istek",
+        tc.id,
+        h,
+        service.tablo_ozeti(tablo_hashleri(kapsayan)),
+        service.kayit_damgasi(service.kayit_bul(session, tc.id, h)),
+    )
+    _hiz_siniri(session, tc.id, anahtar)
+    job_id = service.kontrol_kuyruga_al(
+        session, tc.id, h, gonderilen, ac_refs=ac_refs, idempotency_key=anahtar
+    )
     return KontrolYaniti(job_id=job_id, icerik_hash=h)
+
+
+def _hiz_siniri(session: DbSession, case_id: uuid.UUID, anahtar: str) -> None:
+    """Var olan anahtarın işi yeniden döner (sınıra takılmaz); yeni iş için son bir dakikada aynı
+    case'e açılmış `oracle.check_case` işleri sayılır."""
+    conn = session.connection()
+    if conn.execute(
+        text(
+            "SELECT 1 FROM job WHERE idempotency_key = :k AND durum NOT IN ('failed', 'cancelled')"
+        ),
+        {"k": anahtar},
+    ).first():
+        return
+    son = conn.execute(
+        text(
+            "SELECT count(*) FROM job WHERE tur = :t AND yuk->>'case_id' = :c "
+            "AND olusturma > now() - interval '1 minute'"
+        ),
+        {"t": service.CHECK_CASE_JOB, "c": str(case_id)},
+    ).scalar_one()
+    if son >= DAKIKA_SINIRI:
+        raise OracleKontrolSiniri(
+            f"Bu case için son bir dakikada {son} kontrol istendi; biraz bekleyip yeniden deneyin"
+        )

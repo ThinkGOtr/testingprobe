@@ -9,12 +9,16 @@ migrasyon 0022.
 - `metamorfik_iliski`: onaylı metamorfik ilişki (§4.5); aynı durum makinesi. `karar_tablosu_id`
   ilişkinin kolon adlarını aldığı tablodur (`icerik.tablo_ref` çözülmüş hali; olmayabilir).
 - `case_oracle_kontrol`: bir case içeriğinin (hash'iyle) karar tablolarına göre kontrol sonucu
-  (§4.3) ve varsa gerekçeli istisna. Anahtar `(test_case_id, icerik_hash)`.
+  (§4.3). Anahtar `(test_case_id, icerik_hash)`. Satır yeniden kontrolde güncellenir
+  (`guncelleme`); `olusturma` ilk yazımdır. İstisna kolonları geriye uyum içindir.
+- `oracle_istisna`: gerekçeli istisnaların append-only kaydı (review 1 V10; §13.2). Sayaçlar
+  buradan yapılır; `tp_app` yalnız INSERT/SELECT yapar.
 - `metamorfik_turetme`: (ilişki, kaynak case) çifti başına tek türetme kaydı (§4.5).
 - `hata_kosusu` / `hata_kosusu_adim`: ekilmiş hata koşusu ve platform × hata adımları (§4.6).
   `hata_kosusu.durum` iş durumudur (workflow.MACHINES'te değildir).
 
-`tp_app` bu tablolarda SELECT, INSERT, UPDATE yapabilir; DELETE yoktur.
+`tp_app` bu tablolarda SELECT, INSERT, UPDATE yapabilir (`oracle_istisna`'da yalnız SELECT,
+INSERT); DELETE yoktur.
 """
 
 from __future__ import annotations
@@ -125,6 +129,31 @@ class CaseOracleKontrol(Base):
     istisna_veren_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("app_user.id"))
     istisna_zamani: Mapped[datetime | None]
     olusturma: Mapped[datetime] = olusturma_col()
+    # Son yeniden hesaplama zamanı (iş anahtarının sürüm damgası; `olusturma` değişmez).
+    guncelleme: Mapped[datetime] = guncelleme_col()
+
+
+class OracleIstisna(Base):
+    """Gerekçeli istisna (append-only; §13.2). `tur`: `uyumsuz` (tabloya rağmen onay) ya da
+    `kontrolsuz` (kontrol edilemeyen yüksek riskli case'in onayı). `tablo_hashleri` istisnanın
+    verildiği karşılaştırmanın tablolarıdır: tablo değişince istisna geçerliliğini yitirir."""
+
+    __tablename__ = "oracle_istisna"
+    __table_args__ = (
+        in_check("tur", enums.ORACLE_ISTISNA_TUR, "oracle_istisna_tur_ck"),
+        Index("oracle_istisna_case_ix", "test_case_id", "icerik_hash"),
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    test_case_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("test_case.id", ondelete="CASCADE"))
+    icerik_hash: Mapped[str]
+    tur: Mapped[str]
+    gerekce: Mapped[str]
+    veren_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("app_user.id"))
+    tablo_hashleri: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, server_default=EMPTY_OBJ, default=dict
+    )
+    zaman: Mapped[datetime] = olusturma_col()
 
 
 class MetamorfikTuretme(Base):
