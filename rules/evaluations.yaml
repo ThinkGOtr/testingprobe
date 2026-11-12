@@ -49,20 +49,46 @@ bundles:
       Canlı değerlendirme yapılmadı; onaylı istisna yok.'
   case-generation:
     version: 3
-    status: pending
-    note: "011 (test üretimi v3): şema ve prompt v3 (teknik, kapsam öğeleri, öncelik, hazır olma durumu, açık soru / varsayım, negatif kapsam kararı, test verisi, temizlik). Golden çıktıları elle hazırlandı (v3 alanları dahil). Değerlendirme seti: rules/evaluation/case-generation.json (§12: 5 story × 3 koşu; AC kapsamı, 011 §4.2 deterministik kuralları, uydurma belirteçleri, readiness beklentisi; rapor readiness ve teknik dağılımını taşır). Canlı değerlendirme yapılmadı; onaylı istisna yok. 011 D2 (sürüm aynı; canlı değerlendirilmedi): risk alanı kaldırıldı (K18, öncelik gerekçesi; P1 seçiciliği), story başına ≤ 15 case ve kurulamayan sınırda en yakın değer / test verisi hazırlığı (K17), CL tekniği ve a11y/security etiketleri (K19), ST-T/ST-X kimlikleri, BVA kipi / Risk notları / Hata geçmişi girdi satırları."
+    status: evaluated
+    note: 'Canlı değerlendirme 2026-11-12, claude-sonnet-5-5 (anthropic), 18/18 vaka geçti: evaluation/results/case-generation-v3-2026-11-12.json'
+    evaluation:
+      date: '2026-11-12'
+      model: claude-sonnet-5-5
+      provider: anthropic
+      results: evaluation/results/case-generation-v3-2026-11-12.json
+      guardrails_version: 1
+      calls: evaluation/results/case-generation-v3-2026-11-12.calls.jsonl
   design-model:
     version: 1
     status: pending
-    note: "011 F3 (iki tur — tur 1): test tasarım modeli v1 (koşullar, teknikler, kapsam öğeleri, ayrıntılı modeller, model sorunları, açık soru / varsayım). Golden çıktıları elle hazırlandı; coverage_items / open_questions / assumptions case_generation golden'larıyla birebir aynı. Değerlendirme seti: rules/evaluation/design-model.json (5 story; AC kapsamı, model kontrolleri, sessiz noktalar için açık soru beklentisi, uydurma belirteçleri). Canlı değerlendirme yapılmadı; onaylı istisna yok. 011 D2 (sürüm aynı; canlı değerlendirilmedi): risk ölçeği P1/P2/P3 ile hizalı, CL tekniği, durumlar kimlikli (S1..) ve geçiş (durum, olay) ikilisi (ST-T/ST-X), BVA kipi / Risk notları / Hata geçmişi; TPD-1 karma sepet DT + Q1, TPD-4 kayıtlı olmayan kullanıcı Q1."
+    note: '011 F3 (iki tur — tur 1): test tasarım modeli v1 (koşullar, teknikler, kapsam öğeleri, ayrıntılı
+      modeller, model sorunları, açık soru / varsayım). Golden çıktıları elle hazırlandı; coverage_items
+      / open_questions / assumptions case_generation golden''larıyla birebir aynı. Değerlendirme seti:
+      rules/evaluation/design-model.json (5 story; AC kapsamı, model kontrolleri, sessiz noktalar için
+      açık soru beklentisi, uydurma belirteçleri). Canlı değerlendirme yapılmadı; onaylı istisna yok.
+      011 D2 (sürüm aynı; canlı değerlendirilmedi): risk ölçeği P1/P2/P3 ile hizalı, CL tekniği, durumlar
+      kimlikli (S1..) ve geçiş (durum, olay) ikilisi (ST-T/ST-X), BVA kipi / Risk notları / Hata geçmişi;
+      TPD-1 karma sepet DT + Q1, TPD-4 kayıtlı olmayan kullanıcı Q1.'
   case-review:
     version: 1
     status: pending
-    note: "011 D şeridi (P8): üretimden sonra otomatik çalışan eleştirmen turu (12 madde, skor kodda sayılır, tavsiye niteliğinde). Golden çıktıları elle hazırlandı (TPD-1, f2-kod-hatasi/TPD-1, TPD-3, TPD-4, SERBEST; girdi beyanı set_hash'e bağlı). Değerlendirme seti: rules/evaluation/case-review.json (golden v3 setlerinden bozma yoluyla: tekrar case, uydurma beklenen, kapsanmayan AC, ölçülemeyen sonuç; `review_set_problems`). Canlı değerlendirme yapılmadı; onaylı istisna yok. 011 D2 (sürüm aynı; canlı değerlendirilmedi): madde 3 (P1 sınırı out_of_scope en az ACIK_BILGI_GEREKLI), madde 4 (tanımsız birleşim ACIK_BILGI_GEREKLI), madde 9 Data, madde 11 P1 seçiciliği; C10 reddedilmiş TPD-1 seti için ayrı golden."
+    note: '011 D şeridi (P8): üretimden sonra otomatik çalışan eleştirmen turu (12 madde, skor kodda sayılır,
+      tavsiye niteliğinde). Golden çıktıları elle hazırlandı (TPD-1, f2-kod-hatasi/TPD-1, TPD-3, TPD-4,
+      SERBEST; girdi beyanı set_hash''e bağlı). Değerlendirme seti: rules/evaluation/case-review.json
+      (golden v3 setlerinden bozma yoluyla: tekrar case, uydurma beklenen, kapsanmayan AC, ölçülemeyen
+      sonuç; `review_set_problems`). Canlı değerlendirme yapılmadı; onaylı istisna yok. 011 D2 (sürüm
+      aynı; canlı değerlendirilmedi): madde 3 (P1 sınırı out_of_scope en az ACIK_BILGI_GEREKLI), madde
+      4 (tanımsız birleşim ACIK_BILGI_GEREKLI), madde 9 Data, madde 11 P1 seçiciliği; C10 reddedilmiş
+      TPD-1 seti için ayrı golden.'
   case-audit:
     version: 1
     status: pending
-    note: "011 D şeridi (P9, Agent Probe denetimi; claude-opus-5-5): KABUL / DÜZELTME_GEREKLİ / ENGELLE, deterministik sertleştirme kodda. Golden çıktıları elle hazırlandı (TPD-1 KABUL, TPD-3 DÜZELTME_GEREKLİ, TPD-4 KABUL, SERBEST KABUL). Değerlendirme seti: rules/evaluation/case-audit.json (belgedeki 9 kategori, 5 koşu; `audit_problems`: yanlış engelleme, kaçırma, karar tutarlılığı). Canlı değerlendirme yapılmadı; onaylı istisna yok. 011 D2 (sürüm aynı; canlı değerlendirilmedi): kontrol 9: ready case'te AÇIK NOKTA; C10 reddedilmiş TPD-1 seti için ayrı golden."
+    note: '011 D şeridi (P9, Agent Probe denetimi; claude-opus-5-5): KABUL / DÜZELTME_GEREKLİ / ENGELLE,
+      deterministik sertleştirme kodda. Golden çıktıları elle hazırlandı (TPD-1 KABUL, TPD-3 DÜZELTME_GEREKLİ,
+      TPD-4 KABUL, SERBEST KABUL). Değerlendirme seti: rules/evaluation/case-audit.json (belgedeki 9 kategori,
+      5 koşu; `audit_problems`: yanlış engelleme, kaçırma, karar tutarlılığı). Canlı değerlendirme yapılmadı;
+      onaylı istisna yok. 011 D2 (sürüm aynı; canlı değerlendirilmedi): kontrol 9: ready case''te AÇIK
+      NOKTA; C10 reddedilmiş TPD-1 seti için ayrı golden.'
   verify-and-map:
     version: 3
     status: pending
@@ -74,10 +100,10 @@ bundles:
   verify-and-map-app:
     version: 1
     status: pending
-    note: '009 Ş6: mobil/masaüstü (app-mcp/Appium) doğrulama ve eşleme paketi v1. REPLAY golden''ı
-      (verify_and_map_app/golden/TPD-1-C2-android) elle hazırlandı; araç adımları app-mcp sözleşmesine
-      (docs/CIHAZ-ALTYAPISI.md §6) göre yazıldı, canlı cihazda kaydedilmedi. Bu model değerlendirmesi
-      değildir. Canlı değerlendirme yapılmadı; onaylı istisna yok.'
+    note: '009 Ş6: mobil/masaüstü (app-mcp/Appium) doğrulama ve eşleme paketi v1. REPLAY golden''ı (verify_and_map_app/golden/TPD-1-C2-android)
+      elle hazırlandı; araç adımları app-mcp sözleşmesine (docs/CIHAZ-ALTYAPISI.md §6) göre yazıldı, canlı
+      cihazda kaydedilmedi. Bu model değerlendirmesi değildir. Canlı değerlendirme yapılmadı; onaylı istisna
+      yok.'
   triage:
     version: 2
     status: evaluated
@@ -163,40 +189,62 @@ bundles:
   platform-common:
     version: 1
     status: pending
-    note: "011 F4: Ortak platform eki kuralları (kontrol listesi/kota değil, benimsenen standart → beklenen sonuç, aksi gözlem, config_matrix satırsız, requires_real_device, testability_gaps, test türü kuralları). Seti: evaluation/platform-common.json (çağrı case-generation ile; ek metni girdide). İçerik hash'i ek + ev sahibi prompt + şema + case_generation ayarını kapsar. Canlı değerlendirme yapılmadı; onaylı istisna yok. 011 D2 (sürüm aynı; canlı değerlendirilmedi): kategoriler CL-n kapsam öğesi, a11y/security etiketleri, ≤ 15 case."
+    note: '011 F4: Ortak platform eki kuralları (kontrol listesi/kota değil, benimsenen standart → beklenen
+      sonuç, aksi gözlem, config_matrix satırsız, requires_real_device, testability_gaps, test türü kuralları).
+      Seti: evaluation/platform-common.json (çağrı case-generation ile; ek metni girdide). İçerik hash''i
+      ek + ev sahibi prompt + şema + case_generation ayarını kapsar. Canlı değerlendirme yapılmadı; onaylı
+      istisna yok. 011 D2 (sürüm aynı; canlı değerlendirilmedi): kategoriler CL-n kapsam öğesi, a11y/security
+      etiketleri, ≤ 15 case.'
   platform-web:
     version: 1
     status: pending
-    note: "011 F4: P1 Web eki. Golden: replay/case_generation/golden/platform-web/TPD-4.json (elle hazırlandı). Seti: evaluation/platform-web.json. Canlı değerlendirme yapılmadı; onaylı istisna yok. 011 D2 (sürüm aynı; canlı değerlendirilmedi): iki değerli BVA (timeout, kırılım), girdi güvenliği beklentisi; golden'da CL ve işaretli SQLi case'i."
+    note: '011 F4: P1 Web eki. Golden: replay/case_generation/golden/platform-web/TPD-4.json (elle hazırlandı).
+      Seti: evaluation/platform-web.json. Canlı değerlendirme yapılmadı; onaylı istisna yok. 011 D2 (sürüm
+      aynı; canlı değerlendirilmedi): iki değerli BVA (timeout, kırılım), girdi güvenliği beklentisi;
+      golden''da CL ve işaretli SQLi case''i.'
   platform-mobile:
     version: 1
     status: pending
-    note: "011 F4: P2 Mobil eki. Golden yok (REPLAY duman koşusu REPLAY-MISS verir). Seti: evaluation/platform-mobile.json. Canlı değerlendirme yapılmadı; onaylı istisna yok. 011 D2 (sürüm aynı; canlı değerlendirilmedi): CL-n bağlantısı."
+    note: '011 F4: P2 Mobil eki. Golden yok (REPLAY duman koşusu REPLAY-MISS verir). Seti: evaluation/platform-mobile.json.
+      Canlı değerlendirme yapılmadı; onaylı istisna yok. 011 D2 (sürüm aynı; canlı değerlendirilmedi):
+      CL-n bağlantısı.'
   platform-desktop:
     version: 1
     status: pending
-    note: "011 F4: P3 Desktop eki. Golden yok. Seti: evaluation/platform-desktop.json. Canlı değerlendirme yapılmadı; onaylı istisna yok. 011 D2 (sürüm aynı; canlı değerlendirilmedi): iki değerli BVA (yol uzunluğu)."
+    note: '011 F4: P3 Desktop eki. Golden yok. Seti: evaluation/platform-desktop.json. Canlı değerlendirme
+      yapılmadı; onaylı istisna yok. 011 D2 (sürüm aynı; canlı değerlendirilmedi): iki değerli BVA (yol
+      uzunluğu).'
   platform-api:
     version: 1
     status: pending
-    note: "011 F4: P4 API eki. Golden yok. Seti: evaluation/platform-api.json. Canlı değerlendirme yapılmadı; onaylı istisna yok. 011 D2 (sürüm aynı; canlı değerlendirilmedi): CL-n bağlantısı."
+    note: '011 F4: P4 API eki. Golden yok. Seti: evaluation/platform-api.json. Canlı değerlendirme yapılmadı;
+      onaylı istisna yok. 011 D2 (sürüm aynı; canlı değerlendirilmedi): CL-n bağlantısı.'
   platform-data:
     version: 1
     status: pending
-    note: "011 F4: P4.5 Data/entegrasyon eki. Golden yok. Seti: evaluation/platform-data.json. Canlı değerlendirme yapılmadı; onaylı istisna yok. 011 D2 (sürüm aynı; canlı değerlendirilmedi): iki değerli BVA (batch size)."
+    note: '011 F4: P4.5 Data/entegrasyon eki. Golden yok. Seti: evaluation/platform-data.json. Canlı değerlendirme
+      yapılmadı; onaylı istisna yok. 011 D2 (sürüm aynı; canlı değerlendirilmedi): iki değerli BVA (batch
+      size).'
   case-negative:
     version: 1
     status: pending
-    note: "011 F4: P5 negatif kapsam genişletme (amaç case_deepening). Golden: replay/case_deepening/golden/negatif/TPD-1.json (elle hazırlandı). Seti: evaluation/case-negative.json. Canlı değerlendirme yapılmadı; onaylı istisna yok. 011 D2 (sürüm aynı; canlı değerlendirilmedi): blocked case tested sayılmaz (out_of_scope + soru), AÇIK NOKTA yalnız varsayıma bağlı case'te, mevcut soru/varsayım aynı kimlik ve metinle tekrarlanır, Risk notları / Hata geçmişi."
+    note: '011 F4: P5 negatif kapsam genişletme (amaç case_deepening). Golden: replay/case_deepening/golden/negatif/TPD-1.json
+      (elle hazırlandı). Seti: evaluation/case-negative.json. Canlı değerlendirme yapılmadı; onaylı istisna
+      yok. 011 D2 (sürüm aynı; canlı değerlendirilmedi): blocked case tested sayılmaz (out_of_scope +
+      soru), AÇIK NOKTA yalnız varsayıma bağlı case''te, mevcut soru/varsayım aynı kimlik ve metinle tekrarlanır,
+      Risk notları / Hata geçmişi.'
   case-technique:
     version: 1
     status: pending
-    note: "011 F4: P6 teknikle derinleştirme (amaç case_deepening). Golden: replay/case_deepening/golden/teknik-ep/TPD-4.json (elle hazırlandı). Seti: evaluation/case-technique.json. Canlı değerlendirme yapılmadı; onaylı istisna yok. 011 D2 (sürüm aynı; canlı değerlendirilmedi): dahil/hariç sessizliği açık soru, iki değerli BVA [Ekip] seçimi (BVA kipi), ST-T/ST-X, [Ekip] etiketleri, Hata geçmişi."
+    note: '011 F4: P6 teknikle derinleştirme (amaç case_deepening). Golden: replay/case_deepening/golden/teknik-ep/TPD-4.json
+      (elle hazırlandı). Seti: evaluation/case-technique.json. Canlı değerlendirme yapılmadı; onaylı istisna
+      yok. 011 D2 (sürüm aynı; canlı değerlendirilmedi): dahil/hariç sessizliği açık soru, iki değerli
+      BVA [Ekip] seçimi (BVA kipi), ST-T/ST-X, [Ekip] etiketleri, Hata geçmişi.'
   assistant-guard:
     version: 1
     status: pending
     note: '011 F7 asistan denetimi (Agent Probe portu, purpose assistant_guard, Haiku 5.5): soru/cevap
       puanı + kategoriler; karar kodda (eşikler 40/70 + kategori tabanları). Golden çıktıları elle hazırlandı.
       Değerlendirme seti: rules/evaluation/assistant-guard.json (17 Türkçe vaka; karar beklentisi, yanlış
-      engelleme ve kaçırma sayımı, güvenlik/gizlilik kaçırma hedefi 0). Canlı değerlendirme yapılmadı; onaylı
-      istisna yok.'
+      engelleme ve kaçırma sayımı, güvenlik/gizlilik kaçırma hedefi 0). Canlı değerlendirme yapılmadı;
+      onaylı istisna yok.'
