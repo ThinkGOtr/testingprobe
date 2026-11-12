@@ -8,10 +8,11 @@ Mevcut veri değişmez: `approved` / `published` / `draft` / `rejected` case'ler
 eski `approve` kayıtları (analist kararı) yayın kapısı için geçerlidir.
 
 Not (birleştirme): dev'deki 011 göçleri (0021 `script_dil`, 0022 `pr_zorunlu_checkler`) önce
-gelir; 012 göçleri 0023 (roller) → 0024 (bu) → 0025 olarak ardından zincirlenir (tek baş).
+gelir; ardından dev'deki 013 göçü 0023 (`asistan_guvenlik`); 012 göçleri 0024 (roller) → 0025 (bu)
+→ 0026 olarak ardından zincirlenir (tek baş).
 
-Revision ID: 0024
-Revises: 0023
+Revision ID: 0025
+Revises: 0024
 Create Date: 2026-11-11
 """
 
@@ -19,8 +20,8 @@ from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "0024"
-down_revision: str | None = "0023"
+revision: str = "0025"
+down_revision: str | None = "0024"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

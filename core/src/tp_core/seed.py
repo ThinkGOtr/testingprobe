@@ -1,7 +1,7 @@
 """Deterministik başlangıç verisi: rol başına bir demo kullanıcısı + `seed.applied` denetim kaydı.
 
 Roller specs/012-rol-yetki §3'tedir. Sistem Yöneticisi hesabı `sunucu`dur: mevcut kurulumlarda
-`presenter` rolüyle vardır ve 0021 göçüyle `admin` olur; yeni kurulumlarda doğrudan `admin` açılır.
+`presenter` rolüyle vardır ve 0024 göçüyle `admin` olur; yeni kurulumlarda doğrudan `admin` açılır.
 """
 
 import uuid

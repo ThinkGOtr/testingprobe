@@ -75,10 +75,10 @@ def _bayt(deger: Any) -> int:
 # ------------------------------------------------------------------ rota indirgeme
 
 
-def _rotalar_dosyasi() -> Path:
+def _rotalar_dosyasi(rules_dir: Path | None = None) -> Path:
     from tp_core.gateway.config import find_rules_dir
 
-    return find_rules_dir() / "assistant" / "rotalar.json"
+    return find_rules_dir(rules_dir) / "assistant" / "rotalar.json"
 
 
 @lru_cache(maxsize=4)
@@ -99,12 +99,15 @@ def _kaliplar(yol: str) -> tuple[tuple[str, str | None, re.Pattern[str]], ...]:
     return tuple(out)
 
 
-def rota_indirge(rota: str | None) -> tuple[str, str | None] | None:
-    """Rota veya kalıp → (`rotalar.json` kalıbı, ekran adı); eşleşme yoksa None."""
+def rota_indirge(
+    rota: str | None, *, rules_dir: Path | None = None
+) -> tuple[str, str | None] | None:
+    """Rota veya kalıp → (`rotalar.json` kalıbı, ekran adı); eşleşme yoksa None. `rules_dir`
+    verilmezse `find_rules_dir()`."""
     if not rota:
         return None
     yol = rota.split("?", 1)[0].split("#", 1)[0]
-    kaliplar = _kaliplar(str(_rotalar_dosyasi()))
+    kaliplar = _kaliplar(str(_rotalar_dosyasi(rules_dir)))
     for kalip, ekran, _ in kaliplar:
         if yol == kalip:
             return kalip, ekran
@@ -128,12 +131,13 @@ def _roller(yol: str) -> dict[str, frozenset[str] | None]:
     return out
 
 
-def rota_rolleri(rota: str | None) -> frozenset[str] | None:
-    """Rotanın ekranını açabilen roller (`rotalar.json` `roller`); None → tüm roller/kalıp yok."""
-    eslesme = rota_indirge(rota)
+def rota_rolleri(rota: str | None, *, rules_dir: Path | None = None) -> frozenset[str] | None:
+    """Rotanın ekranını açabilen roller (`rotalar.json` `roller`); None → tüm roller/kalıp yok.
+    `rules_dir` verilmezse `find_rules_dir()` (kalıp eşleşmesi de aynı dizinden)."""
+    eslesme = rota_indirge(rota, rules_dir=rules_dir)
     if eslesme is None:
         return None
-    return _roller(str(_rotalar_dosyasi())).get(eslesme[0])
+    return _roller(str(_rotalar_dosyasi(rules_dir))).get(eslesme[0])
 
 
 def baglam_dogrula(ham: Any) -> dict[str, Any] | None:

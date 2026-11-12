@@ -167,7 +167,7 @@ def test_testci_kabulu_yayin_kapisini_acmaz(session: Session, make_user: MakeUse
 
 
 def test_eski_analist_edit_onayi_yayin_kapisini_acar(session: Session, make_user: MakeUser) -> None:
-    """012 öncesi: 0023 göçünün işaretlediği (`eski_onay`) analist `edit`'i `approve` sayılır;
+    """012 öncesi: 0026 göçünün işaretlediği (`eski_onay`) analist `edit`'i `approve` sayılır;
     işaretsiz `edit` (Testçinin ya da göçten sonraki) sayılmaz. Hash eşleşmesi yine şarttır."""
     from tp_core.models import Review
 

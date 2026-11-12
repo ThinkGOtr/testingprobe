@@ -2,7 +2,14 @@
 
 Yeni araçlar ham metin döndürür; sır temizleme (`scrub_secret_patterns`), maskeleme, kanıt havuzu
 ve `<untrusted>` sarma ortak sarmalayıcıdadır (`tools.base`, §5.0). Rol kısıtı araç uygulamasında,
-iş yükündeki kullanıcıyla (asla argümandan). Tüm roller aynı araç listesini görür.
+iş yükündeki kullanıcıyla (asla argümandan).
+
+Rol bazlı araç daraltma (spec 013 §4, `rol_politikasi`): model yalnız rolünün izinli araçlarının
+tanımını görür; yürütücü her çağrıda yeniden denetler (izinsiz çağrı `AracHatasi`, iş düşmez).
+Politika yetki kataloğuyla kesişir (012, `auth/yetki.py`): kod araçları `code.read`, veri araçları
+`requirement.read` ister.
+`TP_ASISTAN_VERI_ROLLERI` DB araçları için ek daraltmadır; müşteri verisi kurulumunda
+(`TP_ASISTAN_MUSTERI_VERISI=1`) boşsa DB araçları hiçbir role verilmez (K6).
 
 - `product` — `product_search`, `product_read`: core-worker'a salt okunur bağlanan ürün bilgi
   paketi (`/opt/tp-bilgi`, MANIFEST birebir).
@@ -28,6 +35,7 @@ import os
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -76,22 +84,22 @@ VERI_IZNI = "requirement.read"
 KOD_IZNI = "code.read"
 
 
-def veri_rolleri(environ: Mapping[str, str] | None = None) -> frozenset[str]:
-    """`db_*` araçlarının izinli rolleri: katalogda `requirement.read` sahibi roller.
+def veri_rolleri(environ: Mapping[str, str] | None = None) -> frozenset[str] | None:
+    """`TP_ASISTAN_VERI_ROLLERI` (virgüllü portal rolü listesi; eski `presenter` → `admin`).
 
-    `TP_ASISTAN_VERI_ROLLERI` (virgüllü rol listesi) tanımlıysa bu kümeyi yalnız daraltır;
-    katalogda okuma izni olmayan rol ortamla genişletilemez.
+    Boş/tanımsız → None (ek daraltma yok; müşteri verisi kurulumunda bu durumda DB araçları
+    kapalı, K6). Tanımlıysa katalogda `requirement.read` sahibi rollerle kesişir: okuma izni
+    olmayan rol ortamla genişletilemez (012).
     """
     from tp_core.auth.yetki import normalize_rol, roller_icin
 
-    katalog = roller_icin(VERI_IZNI)
     env = os.environ if environ is None else environ
     roller = frozenset(
         normalize_rol(r.strip())
         for r in (env.get(VERI_ROLLERI_ORTAM) or "").split(",")
         if r.strip()
     )
-    return (roller & katalog) if roller else katalog
+    return (roller & roller_icin(VERI_IZNI)) if roller else None
 
 
 def arac_baglami(
@@ -170,15 +178,65 @@ def _kurucu(deger: Any, metot: str, varsayilan: Callable[[], Any]) -> Callable[[
     return deger
 
 
-def _rol_kisitli(ad: str, izinli: frozenset[str], rol: str, asil: MevcutArac) -> MevcutArac:
+def musteri_verisi_kurulumu(environ: Mapping[str, str] | None = None) -> bool:
+    """`TP_ASISTAN_MUSTERI_VERISI` (varsayılan kapalı; `durum.durum_hesapla` ile aynı okuma)."""
+    from tp_core.features.assistant.durum import ORTAM_MUSTERI_VERISI, _bayrak
+
+    return _bayrak(ORTAM_MUSTERI_VERISI, False, environ)
+
+
+def katalog_araclari(rol: str | None) -> frozenset[str]:
+    """Yetki kataloğunun rol için açtığı araçlar (012): kod araçları `code.read`, veri araçları
+    `requirement.read` ister; diğerleri (ürün, probe, Jira, CI) `assistant.use` ile açıktır ve
+    kendi içlerinde rol süzgeci uygular."""
+    from tp_core.auth.yetki import izinli
+
+    kapali: set[str] = set()
+    if not izinli(rol, KOD_IZNI):
+        kapali |= set(KOD_ARACLARI)
+    if not izinli(rol, VERI_IZNI):
+        kapali |= set(VERI_ARACLARI)
+    return frozenset(ARAC_ADLARI) - kapali
+
+
+def izinli_arac_adlari(
+    rol: str,
+    *,
+    veri_rol_listesi: frozenset[str] | None = None,
+    musteri_verisi: bool = False,
+    rules_dir: Path | None = None,
+) -> frozenset[str]:
+    """Rolün araçları: politika ∩ yetki kataloğu ∩ DB daraltması (§4, K6; 012).
+
+    `veri_rol_listesi` portal rolü adları içerir (eski `presenter` → `admin`); verilmişse rol
+    listede değilse `db_*` düşer (boş küme → herkese kapalı). Liste yoksa (None) müşteri verisi
+    kurulumunda `db_*` herkese kapalı. Katalog kesişimi politika dosyası hatalı olsa bile kod
+    araçlarını `code.read`, veri araçlarını `requirement.read` sahibine sınırlar.
+    """
     from tp_core.auth.yetki import normalize_rol
+    from tp_core.features.assistant import rol_politikasi
 
-    rol = normalize_rol(rol)
+    rol = normalize_rol(rol or "")
+    izinli = set(rol_politikasi.izinli_araclar(rol, rules_dir=rules_dir)) & katalog_araclari(rol)
+    if veri_rol_listesi is not None:
+        veri_acik = rol in {normalize_rol(r) for r in veri_rol_listesi}
+    else:
+        veri_acik = not musteri_verisi
+    if not veri_acik:
+        izinli -= set(VERI_ARACLARI)
+    return frozenset(izinli)
 
-    def cagir(args: dict[str, Any]) -> str:
-        if rol not in izinli:
-            raise AracHatasi(f"{ad} bu kurulumda rolünüze açık değil")
-        return asil(args)
+
+def _kapali_yeni(ad: str) -> Arac:
+    def cagir(_baglam: AracBaglami, **_arg: Any) -> AracSonucu:
+        raise AracHatasi(f"{ad} rolünüze açık değil")
+
+    return cagir
+
+
+def _kapali_mevcut(ad: str) -> MevcutArac:
+    def cagir(_args: dict[str, Any]) -> str:
+        raise AracHatasi(f"{ad} rolünüze açık değil")
 
     return cagir
 
@@ -247,16 +305,22 @@ def arac_seti(
     veri: Callable[[], Any] | Any = None,
     yeni_araclar: Mapping[str, Arac] | None = None,
     veri_rol_listesi: frozenset[str] | None = None,
+    musteri_verisi: bool | None = None,
+    rules_dir: Path | None = None,
 ) -> AracSeti:
-    """Rol ve bağlamla 13 araçlık set: aynı tanımlar her role; rol kısıtı uygulamada.
+    """Rolün araç seti (spec 013 §4): `specs` yalnız izinli araçlar; yürütücü 13 adı tanır ama
+    izinsiz olanlar `AracHatasi("<ad> rolünüze açık değil")` döner (savunma derinliği).
 
     - `urun`: `UrunBilgisi` (vars. `/opt/tp-bilgi`).
     - `kod`, `veri`: `CodeTools`/`DataTools` nesnesi ya da onu kuran fonksiyon (vars. §5.3
       kurulumu; ilk çağrıda kurulur). `veri` verilmezse mesajın oturumuyla `DataTools`.
     - `yeni_araclar`: testler/eval için yeni araç uygulamalarını değiştirir (ör. sahte
       `jira_issue`).
-    - `veri_rol_listesi`: `db_*` araçlarının izinli rolleri (vars. `veri_rolleri()`: katalog,
-      `TP_ASISTAN_VERI_ROLLERI` ile daraltılabilir). Kod araçları her zaman `code.read` ister.
+    - `veri_rol_listesi`: `db_*` araçlarının izinli portal rolleri (vars.
+      `TP_ASISTAN_VERI_ROLLERI`; katalogda `requirement.read` sahibi rollerle kesişir). Kod
+      araçları her zaman `code.read` ister (yetki kataloğu).
+    - `musteri_verisi`: müşteri verisi kurulumu (vars. `TP_ASISTAN_MUSTERI_VERISI`).
+    - `rules_dir`: rol politikasının kural dizini (vars. `find_rules_dir()`).
     """
     from tp_core.features.assistant.tools import ci, jira, probe
     from tp_core.features.assistant.tools.product import ProductToolError, UrunBilgisi
@@ -280,13 +344,19 @@ def arac_seti(
         "db_schema": veri_t.metot("db_schema"),
         "db_query": veri_t.metot("db_query"),
     }
-    from tp_core.auth.yetki import roller_icin
-
-    izinli = veri_rol_listesi if veri_rol_listesi is not None else veri_rolleri()
-    for ad in VERI_ARACLARI:
-        mevcut[ad] = _rol_kisitli(ad, izinli, baglam.rol, mevcut[ad])
-    for ad in KOD_ARACLARI:
-        mevcut[ad] = _rol_kisitli(ad, roller_icin(KOD_IZNI), baglam.rol, mevcut[ad])
+    izinli = izinli_arac_adlari(
+        baglam.rol,
+        veri_rol_listesi=veri_rol_listesi if veri_rol_listesi is not None else veri_rolleri(),
+        musteri_verisi=(
+            musteri_verisi if musteri_verisi is not None else musteri_verisi_kurulumu()
+        ),
+        rules_dir=rules_dir,
+    )
+    for ad in set(ARAC_ADLARI) - izinli:
+        if ad in yeni:
+            yeni[ad] = _kapali_yeni(ad)
+        if ad in mevcut:
+            mevcut[ad] = _kapali_mevcut(ad)
 
     havuz = KanitHavuzu()
     execute = AracSarmalayici(
@@ -297,9 +367,9 @@ def arac_seti(
         guvenli_hatalar=(ProductToolError, CodeToolError, DataToolError, QueryRejected),
         havuz=havuz,
     )
-    specs = tool_specs()
     if execute.adlar != frozenset(ARAC_ADLARI):
         raise RuntimeError("asistan araç seti tanımlarla uyuşmuyor")
+    specs = [s for s in tool_specs() if s.name in izinli]
     return AracSeti(specs=specs, execute=execute, havuz=havuz)
 
 
@@ -313,7 +383,9 @@ __all__ = [
     "KanitHavuzu",
     "arac_baglami",
     "arac_seti",
+    "izinli_arac_adlari",
     "kod_araclari",
+    "musteri_verisi_kurulumu",
     "tool_specs",
     "veri_araclari",
     "veri_rolleri",

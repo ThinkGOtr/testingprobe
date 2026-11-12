@@ -10,7 +10,10 @@ export interface AsistanDurumu {
   /** `etkin=false` nedeni: `worker_yok`, `maskeleme_kapali`, `kapali` … */
   neden?: string | null;
   mod: "live" | "off";
+  /** `assistant` amacının model kimliği (ör. `claude-haiku-5-5`); kip rozeti kısa adını gösterir (013 §7). */
   varsayilan_model?: string | null;
+  /** `assistant_deep` amacının model kimliği; core yazmıyorsa derin cevap rozeti yalnız `CANLI` der. */
+  derin_model?: string | null;
   degerlendirme?: Degerlendirme | null;
   paket_commit?: string | null;
   /** Kullanıcının bu saat kalan yaklaşık soru hakkı (core `SAATLIK_SORU - saatlik_soru`; günlük sayaç yok). */
@@ -96,6 +99,12 @@ export interface AsistanCevabi {
   derin_onerilir?: boolean;
   /** Mock arka uç cevabı: arayüz "ÖRNEK VERİ" gösterir. */
   ornek_veri?: boolean;
+  /** Cevabı üreten model kimliği (ör. `claude-haiku-5-5`); kip rozeti önce bunu kullanır (013 §7). */
+  model?: string | null;
+  /** Sızıntı yerine gelen sabit cevap (013 §6): kartta güven rozeti gösterilmez. */
+  sizinti?: boolean;
+  /** Eski sürüm alanı: core artık istemciye döndürmez; arayüz kullanmaz. */
+  sinyaller?: string[];
 }
 
 export interface AsistanMesaji {
@@ -156,6 +165,64 @@ export function kaynakDogrulandi(c: Pick<AsistanCevabi, "dogrulama">, k: CevapKa
   return d ? d.dogrulandi : undefined;
 }
 
+/**
+ * Model kimliğinden kısa ad: `claude-haiku-5-5` → "Haiku 5.5", `claude-sonnet-4-6-20260101` →
+ * "Sonnet 4.6", `us.anthropic.claude-opus-5-v1:0` → "Opus 5". Tanınmazsa null (rozet yalnız `CANLI`).
+ */
+export function modelKisaAdi(model: string | null | undefined): string | null {
+  if (!model) return null;
+  const m = /(haiku|sonnet|opus)(?:[-_.](\d{1,2})(?!\d))?(?:[-_.](\d{1,2})(?!\d))?/i.exec(model);
+  if (!m) return null;
+  const aile = m[1][0].toUpperCase() + m[1].slice(1).toLowerCase();
+  const surum = m[2] ? (m[3] ? `${m[2]}.${m[3]}` : m[2]) : "";
+  return surum ? `${aile} ${surum}` : aile;
+}
+
+export type KipRozetTuru = "canli" | "sablon" | "kapali";
+
+export interface KipRozeti {
+  tur: KipRozetTuru;
+  /** Görünen rozet metni: `CANLI · Haiku 5.5` / `CANLI` / `ŞABLON` / `MODEL KAPALI`. */
+  metin: string;
+  /** Kartta rozetin altında görünen açıklama (ortak metin, 013 inceleme turu 1). */
+  aciklama: string;
+}
+
+/** Kip rozeti açıklamaları (backend ve portal birebir aynı metinler). */
+export const KIP_ACIKLAMALARI: Record<KipRozetTuru, string> = {
+  canli: "Bu cevabı yapay zekâ modeli üretti; hatalı olabilir.",
+  sablon: "Yapay zekâ kullanılmadı; hazır açıklama.",
+  kapali: "Model kapalı; yapay zekâ kullanılmadı, hazır açıklama.",
+};
+
+/**
+ * Cevap kartının kip rozeti (013 §7, K12). `model` → `CANLI · <kısa ad>`: model adı önce cevabın
+ * kendi `cevap.model` alanından, yoksa status'tan (derin cevapta derin model; status bildirmiyorsa
+ * yalnız `CANLI`); `sozluk|sablon` → `ŞABLON`; `kapali` → `MODEL KAPALI`. Sızıntı yerine gelen
+ * cevapta (`cevap.sizinti`) rozet yoktur: gösterilen metin modelin cevabı değildir (013 inceleme
+ * turu 2, BE2-3; core da bu cevaba `model` yazmaz).
+ */
+export function kipRozeti(
+  m: Pick<AsistanMesaji, "kaynak" | "amac"> & { cevap?: Pick<AsistanCevabi, "model" | "sizinti"> | null },
+  durum?: Pick<AsistanDurumu, "varsayilan_model" | "derin_model"> | null,
+): KipRozeti | null {
+  if (m.cevap?.sizinti) return null;
+  switch (m.kaynak) {
+    case "model": {
+      const ad =
+        modelKisaAdi(m.cevap?.model) ?? modelKisaAdi(m.amac === "assistant_deep" ? durum?.derin_model : durum?.varsayilan_model);
+      return { tur: "canli", metin: ad ? `CANLI · ${ad}` : "CANLI", aciklama: KIP_ACIKLAMALARI.canli };
+    }
+    case "sozluk":
+    case "sablon":
+      return { tur: "sablon", metin: "ŞABLON", aciklama: KIP_ACIKLAMALARI.sablon };
+    case "kapali":
+      return { tur: "kapali", metin: "MODEL KAPALI", aciklama: KIP_ACIKLAMALARI.kapali };
+    default:
+      return null;
+  }
+}
+
 /** Bitmemiş mesaj (bekleme göstergesi, yoklama). */
 export function bekliyor(m: Pick<AsistanMesaji, "durum">): boolean {
   return m.durum === "pending" || m.durum === "running";
@@ -208,10 +275,55 @@ export function mesajHataMetni(kod: string | null | undefined): string {
 /** Yanıt bekleyen soru varken yeni soru (409 bekleyen_var ya da istemcide önceden engellenen). */
 export const BEKLEYEN_VAR_METNI = "Yanıt bekleyen bir sorunuz var (bu ya da başka bir sekmede). O cevap gelince yeniden sorun.";
 
+/**
+ * Gönderim hatası kodları (`ApiError.kod`). 013: `donduruldu` (429, gövdede `kalan_s`: art arda
+ * engellenen istekler sonrası dondurma) ve `kisisel_veri` (422, soruda kart numarası).
+ */
+export type GonderimHataKodu =
+  | "bekleyen_var"
+  | "zaten_derin"
+  | "hiz_siniri"
+  | "mesgul"
+  | "butce_asildi"
+  | "sir_icerik"
+  | "kisisel_veri"
+  | "donduruldu"
+  | "asistan_kapali"
+  | "oneri_gecersiz"
+  | "gecersiz_istek"
+  | "bulunamadi";
+
+/** Core `DONDURMA_SURE_S` (013 §6.2): gövdede `kalan_s` yoksa istemci bu süreyi varsayar. */
+export const DONDURMA_SURE_S = 600;
+
+/** 422 `kisisel_veri` (ortak metin, backend ile birebir). */
+export const KISISEL_VERI_METNI =
+  "Soru ya da eklenen ekran bilgisi bir kart numarası içeriyor. Numarayı silin ya da maskeleyin (ör. 5105 **** **** 5100) ve yeniden gönderin.";
+
+/** Sızıntı yerine gelen cevap (ortak metin; `cevap.sizinti: true`). */
+export const SIZINTI_METNI =
+  "Bu cevap gösterilemedi. Sorunuzu ekran, kayıt ya da koşu adıyla yeniden sorabilirsiniz; neler yapabildiğimi görmek için 'Ne yapabilirsin?' yazın.";
+
+/** Dondurma bittiğinde (role="status"). */
+export const DONDURMA_BITTI_METNI = "Asistan yeniden kullanılabilir.";
+
+/** 429 `donduruldu` metni (ortak metin): N = ⌈kalan_s / 60⌉ dk (en az 1). */
+export function dondurulduMetni(kalanS: number): string {
+  const dk = Math.max(1, Math.ceil((Number.isFinite(kalanS) ? kalanS : DONDURMA_SURE_S) / 60));
+  return `Art arda engellenen istekler nedeniyle asistan geçici olarak durduruldu. Yaklaşık ${dk} dk sonra yeniden sorabilirsiniz; sorunuz kutuda duruyor.`;
+}
+
+/** 429 `donduruldu` ise kalan saniye (gövdedeki `kalan_s`, yoksa `DONDURMA_SURE_S`); değilse null. */
+export function dondurmaKalanS(e: unknown): number | null {
+  if (!(e instanceof ApiError) || e.kod !== "donduruldu") return null;
+  const k = e.ek.kalan_s;
+  return typeof k === "number" && Number.isFinite(k) && k > 0 ? k : DONDURMA_SURE_S;
+}
+
 /** Gönderim hatası (`ApiError.kod`) → kullanıcı metni. */
 export function gonderimHataMetni(e: unknown): string {
   if (!(e instanceof ApiError)) return e instanceof Error ? e.message : "Soru gönderilemedi.";
-  switch (e.kod) {
+  switch (e.kod as GonderimHataKodu | undefined) {
     case "bekleyen_var":
       // Core iki gerekçe yazar (api.py `_bekleyen_var`): bekleyen soru (genel metin) ya da az önce
       // durdurulan cevabın işi hâlâ kapanıyor. İkincisinde sunucu metni gösterilir: kullanıcının
@@ -229,6 +341,10 @@ export function gonderimHataMetni(e: unknown): string {
       return e.detail?.trim() || MESAJ_HATALARI.butce_asildi;
     case "sir_icerik":
       return "Soru veya bağlam parola/token benzeri bir değer içeriyor. O kısmı çıkarıp yeniden sorun.";
+    case "kisisel_veri":
+      return KISISEL_VERI_METNI;
+    case "donduruldu":
+      return dondurulduMetni(dondurmaKalanS(e) ?? DONDURMA_SURE_S);
     case "asistan_kapali":
       return "Asistan şu an kapalı.";
     case "oneri_gecersiz":

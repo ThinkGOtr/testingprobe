@@ -16,11 +16,13 @@ dahil edilir.
   kaynağını görür; başkasının ya da silinmiş sohbetin kaynağına her uç 404 (`ust_mesaj_id` dahil).
 - core-api model anahtarını ve kipini **bilmez** (İlke II): durum worker'ın yazdığı `asistan_durum`
   satırından okunur. Model gerekip gerekmediğine (sözlük/şablon) worker karar verir.
-- POST mesaj transaction sırası: doğrulama (422, sır → `sir_icerik`) → sahiplik (404) → hizmet
-  durumu (503) → öneri geçerliliği (409 `oneri_gecersiz`) → saatlik hak (429 `hiz_siniri`) → bütçe
-  (402) → `budget.global_kilit` → kullanıcı işi (409 `bekleyen_var`) ve global sayaç (429 `mesgul`)
-  → mesaj INSERT (kısıt ihlali kısıt adına göre 409) → `assistant.answer` işi (aynı transaction).
-  Kilit, otomatik yükseltme transaction'ıyla aynı anahtardır ve ilk yazımdan önce alınır.
+- POST mesaj transaction sırası: dondurma (429 `donduruldu` + `kalan_s`; specs/013 §6.2) → doğrulama
+  (422, sır → `sir_icerik` + ciddi güvenlik olayı, kart → `kisisel_veri` + ciddi olmayan olay;
+  olaylar ayrı bağlantıda, yazım hatası 422/429'u değiştirmez) → sahiplik (404) → hizmet durumu
+  (503) → öneri geçerliliği (409 `oneri_gecersiz`) → saatlik hak (429 `hiz_siniri`) → bütçe (402) →
+  `budget.global_kilit` → kullanıcı işi (409 `bekleyen_var`) ve global sayaç (429 `mesgul`) → mesaj
+  INSERT (kısıt ihlali kısıt adına göre 409) → `assistant.answer` işi (aynı transaction). Kilit,
+  otomatik yükseltme transaction'ıyla aynı anahtardır ve ilk yazımdan önce alınır.
 - İş yükü daima `{mesaj_id, kullanici_id, tetik}`; idempotency anahtarı `assistant.answer:<id>`.
 """
 
@@ -29,6 +31,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Annotated, Any
@@ -42,7 +45,7 @@ from tp_core.api.errors import IC_HATA, SUNUCU_HATASI_METNI, KodluHata
 from tp_core.auth.deps import DbSession
 from tp_core.auth.yetki import izin
 from tp_core.events import publish_tx
-from tp_core.features.assistant import budget, hiz
+from tp_core.features.assistant import budget, hiz, olay
 from tp_core.features.assistant import oneri_api as _oneri_api
 from tp_core.features.assistant.schemas import (
     ONERI_SORUSU,
@@ -100,8 +103,21 @@ def sohbet_ozeti(s: AsistanSohbet) -> dict[str, Any]:
     }
 
 
+# Saklanan cevabın istemciye gitmeyen iç alanları (specs/013 §5.2: girdi sinyali kimlikleri DB'de
+# ve güvenlik olayında kalır; istemciye dönseler dedektörün neyi yakaladığı deneme yanılmayla
+# öğrenilirdi).
+CEVAP_IC_ALANLARI = frozenset({"sinyaller"})
+
+
+def _istemci_cevabi(cevap: Any) -> Any:
+    if not isinstance(cevap, dict):
+        return cevap
+    return {k: v for k, v in cevap.items() if k not in CEVAP_IC_ALANLARI}
+
+
 def mesaj_ozeti(m: AsistanMesaj) -> dict[str, Any]:
-    """Portalın `AsistanMesaji` biçimi. İç alanlar (`job_id`, `ai_call_id`, token) yazılmaz."""
+    """Portalın `AsistanMesaji` biçimi. İç alanlar (`job_id`, `ai_call_id`, token, cevaptaki
+    `sinyaller`) yazılmaz."""
     return {
         "id": str(m.id),
         "sohbet_id": str(m.sohbet_id),
@@ -109,7 +125,7 @@ def mesaj_ozeti(m: AsistanMesaj) -> dict[str, Any]:
         "rol": m.rol,
         "ust_mesaj_id": str(m.ust_mesaj_id) if m.ust_mesaj_id else None,
         "icerik": m.icerik,
-        "cevap": m.cevap,
+        "cevap": _istemci_cevabi(m.cevap),
         "durum": m.durum,
         "hata_kodu": m.hata_kodu,
         "kaynak": m.kaynak,
@@ -184,11 +200,11 @@ def _db_simdi(session: Session) -> datetime:
     return session.execute(text("SELECT now()")).scalar_one()
 
 
-def _varsayilan_model() -> str | None:
+def _varsayilan_model(amac: str = "assistant") -> str | None:
     try:
         from tp_core.gateway.config import find_rules_dir, load_model_table
 
-        return load_model_table(find_rules_dir()).purpose("assistant").model
+        return load_model_table(find_rules_dir()).purpose(amac).model
     except Exception:  # kural dosyası yoksa durum ucu yine yanıt verir
         return None
 
@@ -216,6 +232,8 @@ def durum(session: DbSession, user: AsistanKullanicisi) -> dict[str, Any]:
         "mod": satir.mod if satir is not None else "off",
         "model_hazir": bool(satir is not None and satir.model_hazir and neden is None),
         "varsayilan_model": _varsayilan_model(),
+        # 013 §7: derin cevabın kip rozeti ("CANLI · Sonnet 5.5") bu modeli gösterir.
+        "derin_model": _varsayilan_model("assistant_deep"),
         "degerlendirme": _degerlendirme(),
         "paket_commit": satir.paket_commit if satir is not None else None,
         "kalan_soru": budget.kalan_soru(session.connection(), user.id),
@@ -310,24 +328,96 @@ def mesajlar(
 KISMI_SIR = "known_value_partial"  # `gateway.masking.find_secret_patterns` bulgu adı
 
 
-def _sir_kontrol(*metinler: str) -> None:
+SIR_METNI = (
+    "Soru veya bağlam gizli bilgi (token, parola, anahtar) içeriyor; çıkarıp yeniden deneyin."
+)
+KISISEL_VERI_METNI = (
+    "Soru ya da eklenen ekran bilgisi bir kart numarası içeriyor. Numarayı silin ya da maskeleyin "
+    "(ör. 5105 **** **** 5100) ve yeniden gönderin."
+)
+DONDURMA_METNI = (
+    "Art arda engellenen istekler nedeniyle asistan geçici olarak durduruldu. Yaklaşık {dakika} dk "
+    "sonra yeniden sorabilirsiniz; sorunuz kutuda duruyor."
+)
+
+
+def _sir_kontrol(*metinler: str, olay_yaz: Callable[[str], None] | None = None) -> None:
     """Soru/bağlamda sır deseni ya da çalışma anı sır değeri → 422 `sir_icerik` (değer yazılmaz).
 
     Kullanıcı girdisinde yalnız biçim desenleri ve TAM değer aranır: kesme sınırı koruması
     (`known_value_partial`, öneki ≥ 8 karakter) kırpılmış araç çıktısı içindir; burada 422'yi
-    karakter karakter tahminle sır çıkaran bir doğrulama aracına (oracle) çevirirdi."""
+    karakter karakter tahminle sır çıkaran bir doğrulama aracına (oracle) çevirirdi.
+
+    `olay_yaz(desen_adi)`: reddi güvenlik olayına yazar (dondurma sayacı; yalnız desen adı)."""
     from tp_core.gateway.factory import known_secret_values
     from tp_core.gateway.masking import find_secret_patterns
 
     degerler = known_secret_values()
     for metin in metinler:
-        if metin and any(f.name != KISMI_SIR for f in find_secret_patterns(metin, degerler)):
-            raise KodluHata(
-                422,
-                "sir_icerik",
-                "Soru veya bağlam gizli bilgi (token, parola, anahtar) içeriyor; "
-                "çıkarıp yeniden deneyin.",
-            )
+        bulgular = [f for f in find_secret_patterns(metin, degerler) if f.name != KISMI_SIR]
+        if metin and bulgular:
+            if olay_yaz is not None:
+                olay_yaz(bulgular[0].name)
+            raise KodluHata(422, "sir_icerik", SIR_METNI)
+
+
+def _ayri_olay(session: Session, user: Principal, tur: str, **ayrinti: Any) -> None:
+    """Ret yolundaki güvenlik olayı: 422/429 isteği geri alır, olay ayrı ve hemen commit edilen
+    bağlantıda yazılır (§6.2). Yazım hatası reddi 500'e çevirmez: kayda yalnız sınıf adı."""
+    try:
+        with session.get_bind().begin() as conn:
+            olay.olay_yaz(conn, user.id, tur, ayrinti=ayrinti or None)
+    except Exception as exc:
+        log.warning("asistan güvenlik olayı yazılamadı (%s, %s)", tur, type(exc).__name__)
+
+
+def _sir_olayi(session: Session, user: Principal) -> Callable[[str], None]:
+    def yaz(desen: str) -> None:
+        _ayri_olay(session, user, olay.TUR_SIR, desen=desen)
+
+    return yaz
+
+
+def _dondurma_kontrol(session: Session, user: Principal) -> None:
+    """Ardışık ciddi olay dondurması (specs/013 §6.2) → 429 `donduruldu` + `kalan_s`.
+
+    Sır taramasından ÖNCE: donmuş kullanıcı sır denemesiyle sayacı büyütemez, deneme bilgisi de
+    sızmaz. Dondurmanın ilk reddinde `donduruldu` olayı ve `asistan.supheli` denetimi ayrı, hemen
+    commit edilen bağlantıda yazılır (429 isteği geri alır); yazım hatası 429'u değiştirmez."""
+    conn = session.connection()
+    kalan = olay.dondurma_kalan_s(conn, user.id, _db_simdi(session))
+    if kalan is None:
+        return
+    try:
+        with session.get_bind().begin() as ayri:
+            olay.dondurma_baslat(ayri, user.id)
+    except Exception as exc:
+        log.warning("asistan dondurma kaydı yazılamadı (%s)", type(exc).__name__)
+    dakika = max(1, -(-kalan // 60))
+    raise KodluHata(
+        429,
+        "donduruldu",
+        DONDURMA_METNI.format(dakika=dakika),
+        {"Retry-After": str(kalan)},
+        ek={"kalan_s": kalan},
+    )
+
+
+def _kisisel_veri_kontrol(session: Session, user: Principal, soru: str, baglam_json: str) -> None:
+    """Soru/bağlamda Luhn'lu kart numarası → 422 `kisisel_veri` (değer yazılmaz; specs/013 §5.1).
+
+    Olay ciddi değildir, dondurma sayacına girmez (K11); ayrı bağlantıda yazılır. TCKN/IBAN
+    reddedilmez, worker'da her zaman maskelenir."""
+    from tp_core.features.assistant.guvenlik import kart_bul
+
+    alanlar = []
+    if soru and kart_bul(soru, baglam=False):
+        alanlar.append("soru")
+    if baglam_json and kart_bul(baglam_json, baglam=True):
+        alanlar.append("baglam")
+    if alanlar:
+        _ayri_olay(session, user, olay.TUR_KISISEL, alan=alanlar)
+        raise KodluHata(422, "kisisel_veri", KISISEL_VERI_METNI)
 
 
 def oneri_gecerli_mi(
@@ -454,6 +544,7 @@ def _hizmet_kontrol(session: Session) -> None:
 def soru_gonder(
     sohbet_id: uuid.UUID, govde: SoruGonder, session: DbSession, user: AsistanKullanicisi
 ) -> dict[str, str]:
+    _dondurma_kontrol(session, user)
     derin = govde.ust_mesaj_id is not None
     soru = govde.soru
     if not derin:
@@ -461,10 +552,9 @@ def soru_gonder(
             soru = ONERI_SORUSU
         if not soru:
             raise KodluHata(422, "gecersiz_istek", "Soru boş olamaz.")
-        _sir_kontrol(
-            soru,
-            json.dumps(govde.baglam, ensure_ascii=False) if govde.baglam else "",
-        )
+        baglam_json = json.dumps(govde.baglam, ensure_ascii=False) if govde.baglam else ""
+        _sir_kontrol(soru, baglam_json, olay_yaz=_sir_olayi(session, user))
+        _kisisel_veri_kontrol(session, user, soru, baglam_json)
 
     s = _sohbet(session, sohbet_id, user, kilitle=True)
     ust = _derin_ust(session, s, user, govde.ust_mesaj_id) if govde.ust_mesaj_id else None

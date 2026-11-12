@@ -245,7 +245,7 @@ class Review(Base):
     sonra: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     duzeltme_olculeri: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     onaylanan_hash: Mapped[str]
-    # 012 öncesi analist `edit`'i (son onay); yalnız 0023 göçü işaretler (yeni kayıtlarda false).
+    # 012 öncesi analist `edit`'i (son onay); yalnız 0026 göçü işaretler (yeni kayıtlarda false).
     eski_onay: Mapped[bool] = mapped_column(Boolean, server_default=false(), default=False)
     # Kesin sıra: aynı işlemdeki kararlar `zaman` ile ayrılamaz; son karar = en büyük `sira`.
     sira: Mapped[int] = mapped_column(BigInteger, Identity(always=True), unique=True)

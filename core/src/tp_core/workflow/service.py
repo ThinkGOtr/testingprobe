@@ -178,7 +178,7 @@ def approved_hash_matches(
 def eski_analist_onayi(session: Session, review: Review) -> bool:
     """012 öncesi son onay: analist hesabının test_case `edit` kararı.
 
-    0023 göçü, göç anında var olan analist `edit` kayıtlarını `review.eski_onay` ile işaretler;
+    0026 göçü, göç anında var olan analist `edit` kayıtlarını `review.eski_onay` ile işaretler;
     yayın / kod üretimi kapısında `approve` sayılır (hash eşleşmesi yine şarttır). Karar verenin
     güncel rolüne bakılmaz: hesabın rolü sonradan değişse de sonuç değişmez. Yeni kayıtlar
     (Testçi `edit`'i) işaretsizdir. `session` imza uyumu için kalır.

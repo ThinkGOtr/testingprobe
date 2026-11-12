@@ -280,6 +280,20 @@ yalnız worker yazar), `asistan_oneri_geri_bildirim`, `asistan_hiz` (`unique nul
 `ai_call.ek = {kanal:"asistan", kullanici_id, mesaj_id}`. `asistan_mesaj.durum` durum makinesinde değildir
 (insan kapısı yok). Saklama 90 gün (`TP_ASISTAN_SAKLAMA_GUN`); `ai_call`/`tool_call` etkilenmez.
 
+**Asistan güvenlik olayı (0023 `asistan_guvenlik`, ayrıntı `specs/013-asistan-guvenlik/ANALIZ.md`
+§6):** `asistan_guvenlik_olay(id, kullanici_id, mesaj_id null, tur, ciddi, ayrinti jsonb, zaman)`;
+indeksler `(kullanici_id, zaman desc)` ve kısmi `(mesaj_id) WHERE mesaj_id IS NOT NULL`; tp_app
+yalnız `SELECT, INSERT, DELETE` (UPDATE yok). `tur` ∈ `sir_icerik|kisisel_veri|kanarya|
+istem_sizintisi|sinyal|donduruldu`; `ciddi` = `sir_icerik|kanarya|istem_sizintisi`. `mesaj_id`
+olayın kullanıcı sorusudur (derin cevaptaki sızıntı da kök soruya; sızan cevabın kimliği
+`ayrinti.cevap`). `ayrinti` yalnız kimlik/sayı (soru metni, değer, eşleşen parça asla). Dondurma
+(K11): son temiz kabul edilen sorudan (ilk cevabında ciddi olay olmayan) sonraki ciddi olay ≥ 3 ve
+sonuncusu ≤ 10 dk → 429 `donduruldu`; aynı sorudaki tekrarlanan `istem_sizintisi` bir kez sayılır,
+derin cevaptaki sızıntı önceki sıfırlamayı geri almaz. Girdide ya da araç sonucunda geçen yabancı
+kanarya/iz cümlesi alıntıdır, sızıntı sayılmaz (yalnız bu sürecin kanaryası her zaman). Denetim:
+dondurmanın ilk reddinde bir kez `asistan.supheli` (aktör ve nesne `app_user:<uuid>` takma adı;
+`{ardisik_ciddi, sure_s}`). Saklama 90 gün (`temizlik.py`).
+
 ## 5. HTTP API (core-api, portal `/api/` önekiyle erişir)
 
 Tüm yanıtlar JSON; hata `{"detail": "...", "kod": "..."}` (`kod` sabit enum, aşağıda "Hata `kod`
@@ -382,7 +396,7 @@ gönderilir ve akış kapanır. Portal bunu alınca yeniden bağlanmaz, giriş e
 | GET · POST | `/assistant/conversations` | `assistant.use` (kendi) | Son 50 sohbet · yeni sohbet |
 | DELETE | `/assistant/conversations/{id}` | `assistant.use` (kendi) | Yumuşak silme |
 | GET | `/assistant/conversations/{id}/messages` | `assistant.use` (kendi) | Mesajlar (bekleyen dahil) |
-| POST | `/assistant/conversations/{id}/messages` `{soru ≤ 2000, baglam ≤ 2 KB, kip?: soru\|oneri, oneri_kural_id?}` veya `{ust_mesaj_id}` | `assistant.use` (kendi) | 202 `{mesaj_id}`; 422 `gecersiz_istek`/`sir_icerik`, 404, 409 `bekleyen_var`/`zaten_derin`/`oneri_gecersiz`, 429 `hiz_siniri`/`mesgul`, 402 `butce_asildi`, 503 `asistan_kapali` (+`neden`: `worker_yok`\|`maskeleme_kapali`) |
+| POST | `/assistant/conversations/{id}/messages` `{soru ≤ 2000, baglam ≤ 2 KB, kip?: soru\|oneri, oneri_kural_id?}` veya `{ust_mesaj_id}` | `assistant.use` (kendi) | 202 `{mesaj_id}`; 422 `gecersiz_istek`/`sir_icerik`/`kisisel_veri`, 404, 409 `bekleyen_var`/`zaten_derin`/`oneri_gecersiz`, 429 `hiz_siniri`/`mesgul`/`donduruldu` (+`kalan_s`), 402 `butce_asildi`, 503 `asistan_kapali` (+`neden`: `worker_yok`\|`maskeleme_kapali`) |
 | GET | `/assistant/messages/{id}` | `assistant.use` (kendi) | Tek mesaj (SSE yokken yoklama) |
 | POST | `/assistant/messages/{id}/cancel` · `/feedback` `{deger: -1\|1}` | `assistant.use` (kendi) | İptal (`pending` ücretsiz; `running` harcanan yazılır) · 👍/👎 |
 | GET | `/assistant/suggestions?rota=&varlik_tur=&varlik_id=` | `assistant.use` | Kural tabanlı öneriler (modelsiz, `ai_call` yazmaz): `{oneriler[{kural_id, baslik, neden, oncelik, eylem}], hesaplandi, ekranda_kural_var, bastirilan, diger_ekranlar}`; varlık yok/role kapalı 404; 60/dk |
@@ -434,6 +448,8 @@ korunur. Yeni değer yalnız bu tabloya eklenerek kullanılır; asistanın hata 
 | `butce_asildi` | 402 | `BudgetExceeded`; asistan bütçe ön kontrolü |
 | `kaynak_reddi` | 403 | CSRF/Origin reddi (`api/csrf.py`, ara katman) |
 | `sir_icerik` | 422 | asistan: soru/bağlamda sır deseni (değer yanıtta tekrarlanmaz) |
+| `donduruldu` | 429 | asistan: ardışık ciddi güvenlik olayı dondurması (specs/013 §6.2); gövdede `kalan_s` |
+| `kisisel_veri` | 422 | asistan: soru/bağlamda Luhn'lu, bilinen kart ağı önekli 13–19 haneli numara (herkese açık test kartı ve URL/yol/sorgu dizesi hariç); ekran bağlamında (JSON) ayrıca numaranın yakınında "kart"/"card"/"kredi"/"pan" kelimesi şart (değer yanıtta tekrarlanmaz; spec 013 §5.1) |
 | `bekleyen_var` | 409 | asistan: kullanıcının yanıt bekleyen sorusu var |
 | `zaten_derin` | 409 | asistan: bu mesaj için ayrıntılı inceleme zaten var |
 | `oneri_gecersiz` | 409 | asistan: `oneri_kural_id` artık geçerli değil |

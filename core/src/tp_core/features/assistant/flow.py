@@ -42,10 +42,12 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import threading
 import time
+import unicodedata
 import uuid
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
@@ -54,11 +56,17 @@ from typing import Any, Final, cast
 from sqlalchemy import Connection, Engine, text
 from sqlalchemy.orm import Session
 
-from tp_core.auth import yetki as _yetki
 from tp_core.events import publish_tx
 from tp_core.features.assistant import budget as asistan_budget
 from tp_core.features.assistant import durum as mesaj_durumu
-from tp_core.features.assistant import siniflandir, sonislem, sozluk
+from tp_core.features.assistant import (
+    guvenlik_cikti,
+    olay,
+    rol_politikasi,
+    siniflandir,
+    sonislem,
+    sozluk,
+)
 from tp_core.features.assistant.sablon import sablon_cevabi
 from tp_core.features.assistant.tools.base import sir_temizle
 from tp_core.gateway.errors import AgentDeadlineExceeded, AgentStopped, BudgetExceeded
@@ -102,13 +110,6 @@ KAPALI_CIPLERI: Final = (
 KAPALI_DURUM_CIPI: Final = "{anahtar} neden bekliyor?"
 KAPALI_DURUM_GENEL: Final = "<Jira anahtarı> neden bekliyor?"
 ONERI_KAPALI_METNI: Final = "Ek öneri için canlı model gerekir; kural önerileri yukarıda."
-
-# Modele giden rol etiketi: izin kataloğunun etiketleri (specs/012-rol-yetki §3); PO açık adla.
-ROL_ETIKETI: Final = {
-    **{eski: _yetki.ROL_ETIKETLERI[yeni] for eski, yeni in _yetki.ESKI_ROLLER.items()},
-    **_yetki.ROL_ETIKETLERI,
-    _yetki.PO: "Ürün sahibi (PO)",
-}
 
 SessionFactory = Callable[[], Session]
 GatewayFactory = Callable[..., Any]
@@ -386,6 +387,92 @@ def _blok(veri: Any, *, kaynak: str, tur: str) -> str:
     return wrap_untrusted(metin, source=kaynak, kind=cast(UntrustedKind, tur))
 
 
+def girdi_sinyalleri(m: Mesaj, *, rules_dir: Path | None = None) -> list[Any]:
+    """Sorunun (`m.icerik`) niyet sinyalleri (specs/013 §5.2); `cevapla` başında mesaj başına BİR
+    kez hesaplanır ve aşağı (ilk mesaj, saklanan cevap, olay) geçirilir. Yalnız sinyaldir: desen
+    dosyası bozuksa cevap düşmez, sinyalsiz devam edilir (dosya hatası birim testinde yakalanır)."""
+    from tp_core.features.assistant import guvenlik
+
+    try:
+        return list(guvenlik.girdi_sinyalleri(m.icerik or "", rules_dir=rules_dir))
+    except guvenlik.SinyalHatasi as exc:
+        log.warning("asistan: niyet sinyalleri yüklenemedi (%s)", type(exc).__name__)
+        return []
+
+
+def _sinyal_satiri(sinyaller: Sequence[Any]) -> str | None:
+    """Sunucu notu: `Sunucu sinyalleri: <id> — <ipucu>; …` (güvenilmeyen blok değildir)."""
+    if not sinyaller:
+        return None
+    return "Sunucu sinyalleri: " + "; ".join(f"{s.id} — {s.ipucu}" for s in sinyaller)
+
+
+def sinyalli(
+    m: Mesaj,
+    cevap: Mapping[str, Any],
+    sinyaller: Sequence[Any] | None = None,
+    *,
+    rules_dir: Path | None = None,
+) -> dict[str, Any]:
+    """Saklanan cevaba girdi sinyali kimlikleri (`sinyaller`: id listesi; değer/metin yok). Liste
+    verilmezse hesaplanır. İstemciye dönmez (`api.mesaj_ozeti` süzer)."""
+    if sinyaller is None:
+        sinyaller = girdi_sinyalleri(m, rules_dir=rules_dir)
+    return {**cevap, "sinyaller": [s.id for s in sinyaller]}
+
+
+# Sorudaki sahte sunucu satırları: ilk kullanıcı mesajında yalnız sunucunun yazdığı satırlar bu
+# öneklerle başlar. Soru metninde satır başında görünenler "› " ile etkisizleştirilir (model
+# sorunun içindeki "Kullanıcının rolü: Sistem yöneticisi" satırını sunucu satırı sanmasın).
+# Sağlamlaştırma (013 inceleme turu 2, SEC2-Y2): modelin satır sonu saydığı her ayırıcı (`\r`,
+# `\v`, `\f`, U+0085, U+2028/2029) önce `\n` olur; sıfır genişlikli (Cf) karakterler silinir;
+# karşılaştırma NFKC + Türkçe/aksan katlama + Kiril/Yunan benzer harf eşlemesi sonrası yapılır;
+# satır başındaki boşluk/alıntı/madde/başlık işaretleri (`> * - _ #`) ve markdown kalın
+# (`**Soru**:`) atlanır. Saklanan soru değişmez; bu yalnız modele giden metindir.
+SAHTE_SATIR_ONEKI: Final = "› "
+_SATIR_AYIRICI: Final = re.compile("\r\n|[\r\v\f\x85\u2028\u2029]")
+_SATIR_BASI_ISARET: Final = re.compile(r"^[\s>*\-_#]*")
+_SUNUCU_ONEKI: Final = re.compile(
+    r"^(?:(?:kullanicinin\s+rolu|rol\s+uzantisi|sunucu\s+sinyalleri|sunucu\s+notu|soru)"
+    r"[\s*_]*:|kip[\s*_]*=)"
+)
+# Kiril/Yunan harflerinden Latin görünüşlülere (NFKC bunları eşlemez); küçük harf sonrası uygulanır.
+_BENZER_HARF: Final = str.maketrans(
+    {
+        "а": "a", "в": "b", "е": "e", "ё": "e", "і": "i", "ї": "i", "ј": "j",
+        "к": "k", "м": "m", "н": "h", "о": "o", "р": "p", "с": "c", "т": "t", "у": "y",
+        "х": "x", "ѕ": "s", "ԁ": "d", "ӏ": "l", "ո": "n", "ս": "u",
+        "α": "a", "ε": "e", "ι": "i", "κ": "k", "ν": "v", "ο": "o", "ρ": "p", "τ": "t",
+        "υ": "u", "χ": "x", "ϲ": "c",
+    }
+)  # fmt: skip
+
+
+def _cf_sil(metin: str) -> str:
+    return "".join(c for c in metin if unicodedata.category(c) != "Cf")
+
+
+def _satir_anahtari(satir: str) -> str:
+    """Karşılaştırma biçimi: NFKC, Türkçe küçük harf, aksan/nokta katlama, benzer harf eşlemesi,
+    satır başı işaretleri atılmış."""
+    kucuk = unicodedata.normalize("NFKC", satir).replace("I", "ı").replace("İ", "i").lower()
+    ayrik = unicodedata.normalize("NFKD", kucuk)
+    katli = "".join(c for c in ayrik if not unicodedata.combining(c)).replace("ı", "i")
+    katli = katli.translate(_BENZER_HARF)
+    return _SATIR_BASI_ISARET.sub("", katli, count=1)
+
+
+def sunucu_satirlarini_notrle(metin: str) -> str:
+    """Satır başındaki sunucu satırı öneklerini (`Kullanıcının rolü:`, `Rol uzantısı:`, `Sunucu
+    sinyalleri:`, `Sunucu notu:`, `Soru:`, `kip=`) `› ` ile etkisizleştirir. Satır ayırıcıları
+    `\n`'e çevrilir ve sıfır genişlikli karakterler silinir; geri kalan metin değişmez."""
+    satirlar = _SATIR_AYIRICI.sub("\n", _cf_sil(metin)).split("\n")
+    return "\n".join(
+        SAHTE_SATIR_ONEKI + satir if _SUNUCU_ONEKI.match(_satir_anahtari(satir)) else satir
+        for satir in satirlar
+    )
+
+
 def ilk_mesaj(
     m: Mesaj,
     *,
@@ -393,16 +480,30 @@ def ilk_mesaj(
     kural_onerileri: list[Mapping[str, Any]] | None,
     gecmis: str | None,
     sir_degerleri: Iterable[str] = (),
+    sinyaller: Sequence[Any] | None = None,
+    rules_dir: Path | None = None,
 ) -> list[ModelMessage]:
-    """Rol ve bağlam sabit önekte değil ilk kullanıcı mesajında (§6.5 önbellek).
+    """Rol ve bağlam sabit önekte değil ilk kullanıcı mesajında (§6.5 önbellek). Sorunun niyet
+    sinyalleri (`sinyaller`; verilmezse hesaplanır) varsa rol satırının altına sunucu notu olarak
+    eklenir (specs/013 §5.2).
+
+    Rol satırı politika etiketiyle (`rol_politikasi`, spec 013 §4); altındaki rol uzantısı sunucu
+    metnidir (güvenilmeyen blok değil). Sunucu satırları yalnız sunucunun yazdığı yerdedir: soru
+    metnindeki aynı önekli satırlar etkisizleştirilir (`sunucu_satirlarini_notrle`).
 
     Bütün metin worker'ın sır değerleriyle (`sir_temizle`) bir kez daha süzülür: core-api'nin
     422 `sir_icerik` taraması yalnız kendi ortamındaki değerleri bilir (Jira/GitHub okuma
     token'ları yalnız worker'dadır); soru, bağlam ve geçmiş modele sırsız gider."""
+    if sinyaller is None:
+        sinyaller = girdi_sinyalleri(m, rules_dir=rules_dir)
     parcalar = [
-        f"Kullanıcının rolü: {ROL_ETIKETI.get(m.rol, m.rol)}",
-        f"kip={m.kip}",
+        f"Kullanıcının rolü: {rol_politikasi.etiket(m.rol, rules_dir=rules_dir)}",
+        f"Rol uzantısı: {rol_politikasi.rol_eki(m.rol, rules_dir=rules_dir)}",
     ]
+    sinyal_satiri = _sinyal_satiri(sinyaller)
+    if sinyal_satiri:
+        parcalar.append(sinyal_satiri)
+    parcalar.append(f"kip={m.kip}")
     if m.derin:
         parcalar.append(
             "Bu soru daha önce kısa yoldan cevaplandı; şimdi ayrıntılı ve kaynakla doğrulayarak "
@@ -414,7 +515,7 @@ def ilk_mesaj(
         parcalar.append(_blok(kural_onerileri, kaynak="kural_onerileri", tur="oneriler"))
     if gecmis:
         parcalar.append(_blok(gecmis, kaynak="sohbet_gecmisi", tur="text"))
-    parcalar.append(f"Soru: {m.icerik or ''}")
+    parcalar.append(f"Soru: {sunucu_satirlarini_notrle(m.icerik or '')}")
     icerik = sir_temizle("\n\n".join(parcalar), sir_degerleri)
     return [ModelMessage(role="user", content=icerik)]
 
@@ -528,11 +629,25 @@ def harcama_oku(engine: Engine, call_id: uuid.UUID, gw: Any = None) -> Harcama:
 # ------------------------------------------------------------------ otomatik yükseltme
 
 
-def otomatik_tetik(m: Mesaj, cevap: Mapping[str, Any]) -> bool:
+# Bu girdi sinyalleri varken cevap "emin değil" olsa da otomatik yükseltme yapılmaz: istem
+# saldırısı reddedilir; Sonnet sınıfı modele yeniden göndermek yalnız maliyet ve ikinci deneme
+# yüzeyidir (013).
+YUKSELTMEYEN_SINYALLER: Final = frozenset({"prompt_saldirisi"})
+
+
+def otomatik_tetik(
+    m: Mesaj, cevap: Mapping[str, Any], sinyaller: Sequence[Any] | None = None
+) -> bool:
     """§6.2 tetik (deterministik, son işlemden sonra). Ön koşullar ayrıca (`otomatik_on_kosul`)."""
     if m.hedef_amac != VARSAYILAN_AMAC or m.kip != "soru" or not _otomatik_derin_acik():
         return False
     if cevap.get("eylem_reddi"):
+        return False
+    if sinyaller is None:
+        # Saklanan cevap sinyal kimliklerini taşır (`sinyalli`); eval ve yeniden değerlendirme
+        # aynı kararı versin diye sinyal verilmezse oradan okunur.
+        sinyaller = cevap.get("sinyaller") or ()
+    if any(getattr(s, "id", s) in YUKSELTMEYEN_SINYALLER for s in sinyaller):
         return False
     gosterim = cevap.get("guven_gosterimi")
     return (
@@ -590,9 +705,18 @@ def model_cevabini_yaz(
     m: Mesaj,
     cevap: dict[str, Any],
     harcama: Harcama,
+    *,
+    sinyaller: Sequence[Any] | None = None,
+    model: str | None = None,
 ) -> str:
-    """Canlı cevabın tek transaction'ı (§6.2 sırası). Dönüş: mesajın son durumu."""
-    tetik = otomatik_tetik(m, cevap)
+    """Canlı cevabın tek transaction'ı (§6.2 sırası). Dönüş: mesajın son durumu.
+
+    `model`: yanıtı gerçekten üreten model (`yanitlayan_model`: son turun `ai_call.model`'i; ret
+    yedeğinde yedek model); cevaba `model` olarak yazılır (portal kip rozeti bunu tercih eder).
+    Sızıntı cevabında None (rozet modeli göstermez)."""
+    if model:
+        cevap = {**cevap, "model": model}
+    tetik = otomatik_tetik(m, cevap, sinyaller)
     kok: uuid.UUID | None = None
     kalan: asistan_budget.Kalanlar | None = None
     if tetik:
@@ -615,7 +739,12 @@ def model_cevabini_yaz(
             sure_ms=_sure_ms(conn, m.id),
         )
         yazildi = mesaj_durumu.sonuc_yaz(
-            conn, m.id, durum="done", cevap=cevap, kaynak="model", amac=m.hedef_amac
+            conn,
+            m.id,
+            durum="done",
+            cevap=sinyalli(m, cevap, sinyaller),
+            kaynak="model",
+            amac=m.hedef_amac,
         )  # (2)
         if not yazildi:  # kullanıcı iptal etti / uzlaştırıldı: yalnız harcama kalır
             son = _mevcut_durum(conn, m.id) or "iptal"
@@ -643,13 +772,22 @@ def model_cevabini_yaz(
 
 
 def _modelsiz_yaz(
-    session_factory: SessionFactory, m: Mesaj, cevap: dict[str, Any], kaynak: str
+    session_factory: SessionFactory,
+    m: Mesaj,
+    cevap: dict[str, Any],
+    kaynak: str,
+    sinyaller: Sequence[Any] | None = None,
 ) -> str:
     with session_factory() as s:
         conn = s.connection()
         mesaj_durumu.harcama_yaz(conn, m.id, sure_ms=_sure_ms(conn, m.id))
         yazildi = mesaj_durumu.sonuc_yaz(
-            conn, m.id, durum="done", cevap=cevap, kaynak=kaynak, ai_call_id=None
+            conn,
+            m.id,
+            durum="done",
+            cevap=sinyalli(m, cevap, sinyaller),
+            kaynak=kaynak,
+            ai_call_id=None,
         )
         if not yazildi:
             son = _mevcut_durum(conn, m.id) or "iptal"
@@ -687,6 +825,94 @@ def _hata_yaz(
             son = "iptal"
         s.commit()
     return son
+
+
+# ------------------------------------------------------------------ güvenlik olayı, model
+
+
+def _olay_yaz(
+    session_factory: SessionFactory,
+    m: Mesaj,
+    tur: str,
+    *,
+    ayrinti: Mapping[str, Any] | None = None,
+) -> None:
+    """Güvenlik olayı kendi transaction'ında, mesajın kullanıcı sorusuna bağlı (`olay.soru_kimligi`;
+    derin çocukta zincirin kök sorusu). Kayıt hatası cevabı düşürmez: kayda yalnız sınıf adı."""
+    try:
+        with session_factory() as s:
+            conn = s.connection()
+            olay.olay_yaz(
+                conn,
+                m.kullanici_id,
+                tur,
+                mesaj_id=olay.soru_kimligi(conn, m.id),
+                ayrinti=ayrinti,
+            )
+            s.commit()
+    except Exception as exc:
+        log.warning("asistan güvenlik olayı yazılamadı (%s, %s)", tur, type(exc).__name__)
+
+
+def sizinti_kaniti(
+    m: Mesaj,
+    ekran: Mapping[str, Any] | None,
+    kural_onerileri: Sequence[Mapping[str, Any]] | None,
+    gecmis: str | None,
+    havuz: Iterable[Any],
+) -> list[str]:
+    """Modele kullanıcıdan ya da dış kaynaktan giren metinler (soru, ekran bağlamı, kural
+    önerileri, sohbet geçmişi, araç sonuçları): cevaptaki yabancı kanarya/iz bunlarda geçiyorsa
+    alıntıdır (`guvenlik_cikti.sizinti_var`). Sunucunun yazdığı satırlar (rol uzantısı, sinyal
+    notu) dahil DEĞİL: istem metni oradan gelebilir, alıntı sayılmamalı."""
+    out: list[str] = [m.icerik or "", gecmis or ""]
+    out.extend(guvenlik_cikti.gorunur_dizgeler(ekran or {}))
+    out.extend(guvenlik_cikti.gorunur_dizgeler(list(kural_onerileri or [])))
+    out.extend(str(getattr(k, "metin", "") or "") for k in havuz)
+    return [x for x in out if x]
+
+
+def yanitlayan_model(
+    engine: Engine | None, sonuc: Any, gw: Any, amac: str, rules_dir: Path | None
+) -> str | None:
+    """Yanıtı gerçekten üreten model: son turun `ai_call.model`'i (ret yedeğine geçişte yedek
+    model; `core._fallback_fields`). Bellek içi kayıtçıda (eval) onun satırı; çağrı kimliği ya da
+    satır yoksa amaç modeli (`_amac_modeli`). Okuma hatası cevabı düşürmez."""
+    kimlikler = list(getattr(sonuc, "call_ids", None) or [])
+    if kimlikler:
+        son = kimlikler[-1]
+        try:
+            satirlar = getattr(getattr(gw, "recorder", None), "ai_calls", None)
+            if isinstance(satirlar, list):
+                model = next((r.get("model") for r in satirlar if r.get("id") == son), None)
+            elif engine is not None:
+                with engine.connect() as conn:
+                    model = conn.execute(
+                        text("SELECT model FROM ai_call WHERE id = :i"), {"i": son}
+                    ).scalar_one_or_none()
+            else:
+                model = None
+        except Exception as exc:
+            log.debug("asistan yanıtlayan model okunamadı (%s)", type(exc).__name__)
+            model = None
+        if isinstance(model, str) and model:
+            return model
+    return _amac_modeli(gw, amac, rules_dir)
+
+
+def _amac_modeli(gw: Any, amac: str, rules_dir: Path | None) -> str | None:
+    """Cevabı üreten amaç modeli: geçidin model tablosu, yoksa `models.yaml`; okunamazsa None."""
+    try:
+        tablo = getattr(gw, "models", None)
+        if tablo is None:
+            from tp_core.gateway.config import find_rules_dir, load_model_table
+
+            tablo = load_model_table(find_rules_dir(rules_dir))
+        model = tablo.purpose(amac).model
+    except Exception as exc:
+        log.debug("asistan amaç modeli okunamadı (%s)", type(exc).__name__)
+        return None
+    return model if isinstance(model, str) and model else None
 
 
 # ------------------------------------------------------------------ giriş noktası
@@ -745,6 +971,13 @@ def cevapla(
     if basla is None:
         return None
     m, model_hazir, musteri_verisi = basla
+    # Niyet sinyalleri mesaj başına bir kez (ilk mesaj, saklanan cevap ve olay aynı listeyi
+    # kullanır); olay kök soruda yazılır (derin çocuk aynı soruyu yeniden saymaz).
+    sinyaller = girdi_sinyalleri(m, rules_dir=rules_dir)
+    if sinyaller and not m.derin:
+        _olay_yaz(
+            session_factory, m, olay.TUR_SINYAL, ayrinti={"sinyaller": [s.id for s in sinyaller]}
+        )
     cid = _cagri_kimligi(m)
     canli = False
     gw: Any = None
@@ -772,19 +1005,25 @@ def cevapla(
                 cevap = sozluk.cevap(kayit, m.baglam, rules_dir=rules_dir)
                 if musteri_verisi:
                     cevap, _ = oturum.mask(cevap)
-                return _modelsiz_yaz(session_factory, m, cevap, "sozluk")
+                return _modelsiz_yaz(session_factory, m, cevap, "sozluk", sinyaller)
 
         # (3) Şablon
         if dogrudan:
             sablon = sablon_cevabi(
-                ab, m.icerik, jira_adresi=jira.kayit, musteri_verisi=musteri_verisi
+                ab,
+                m.icerik,
+                jira_adresi=jira.kayit,
+                musteri_verisi=musteri_verisi,
+                rules_dir=rules_dir,
             )
             if sablon is not None:
-                return _modelsiz_yaz(session_factory, m, sablon.cevap, "sablon")
+                return _modelsiz_yaz(session_factory, m, sablon.cevap, "sablon", sinyaller)
 
         # (4) Kapalı kip: geçit kurulmaz.
         if not model_hazir:
-            return _modelsiz_yaz(session_factory, m, kapali_cevabi(m.kip, m.baglam), "kapali")
+            return _modelsiz_yaz(
+                session_factory, m, kapali_cevabi(m.kip, m.baglam), "kapali", sinyaller
+            )
 
         # (5) Canlı
         canli = True
@@ -797,7 +1036,10 @@ def cevapla(
         butce = asistan_budget.AsistanBudget(engine, kullanici_id=m.kullanici_id, kok_id=kok)
         gw = (gateway_factory or varsayilan_gecit_fabrikasi(engine))(budget=butce)
         if arac_seti_fabrikasi is None:
-            araclar, varsayilan_dogrulayici = varsayilan_araclar(ab)
+            # Müşteri verisi tek kaynak: `asistan_durum` (worker'ın yazdığı) değeri (BE10).
+            araclar, varsayilan_dogrulayici = varsayilan_araclar(
+                ab, musteri_verisi=musteri_verisi, rules_dir=rules_dir
+            )
         else:
             araclar, varsayilan_dogrulayici = arac_seti_fabrikasi(ab), None
         from tp_core.gateway.bundle import load_schema
@@ -813,16 +1055,19 @@ def cevapla(
             except Exception as exc:  # olay yayını cevabı düşürmez
                 log.debug("asistan adım olayı yayınlanamadı (%s)", type(exc).__name__)
 
+        ekran = _ekran_baglami(m, oneri_baglami)
         try:
             sonuc = gw.run_agent(
                 m.hedef_amac,
                 BUNDLE,
                 ilk_mesaj(
                     m,
-                    ekran=_ekran_baglami(m, oneri_baglami),
+                    ekran=ekran,
                     kural_onerileri=kural_onerileri,
                     gecmis=gecmis,
                     sir_degerleri=ab.sir_degerleri,
+                    sinyaller=sinyaller,
+                    rules_dir=rules_dir,
                 ),
                 araclar.specs,
                 araclar.execute,
@@ -840,6 +1085,7 @@ def cevapla(
                 bitis=bitis,
                 should_stop=mesaj_durumu.durdurma_kontrolu(engine, m.id),
                 toparlama=True,
+                sistem_eki=guvenlik_cikti.sistem_eki(),
             )
             with engine.begin() as conn:
                 _adim(conn, m, ADIM_DOGRULANIYOR)
@@ -869,11 +1115,44 @@ def cevapla(
                 rol=m.rol,
                 soru=m.icerik,
                 baglam=m.baglam if isinstance(m.baglam, Mapping) else None,
+                izinli_araclar=araclar.adlar,
+                rules_dir=rules_dir,
             )
             cevap = sonislem.isle(sonuc.output, sb)
+            # Kanarya / istem sızıntısı (specs/013 §6.3): cevabın bütün dizgeleri taranır; cevap
+            # değişir, ciddi olay kök soruya yazılır (sızan cevabın kimliği ayrıntıda). Girdide
+            # ya da araç sonucunda zaten geçen yabancı kanarya/iz alıntıdır, sızıntı değildir.
+            # İki ayrı karar (013 tur 3): (a) cevapta kanarya ya da iz cümlesi varsa cevap HER
+            # durumda değişir — saldırgan bütün iz cümlelerini girdiye koyup istemin tamamını
+            # tekrarlatsa da istem gösterilmez; (b) ciddi olay (dondurma sayacı) yalnız kanıtta
+            # geçmeyen sızıntıda yazılır — kayda yerleştirilmiş metni alıntılayan kullanıcı
+            # cezalandırılmaz (SEC2-Y1). Bu sürecin kanaryası her iki kararda da sızıntıdır.
+            izler = guvenlik_cikti.izleri_yukle(rules_dir)
+            kanarya_degeri = guvenlik_cikti.kanarya()
+            sizinti = guvenlik_cikti.sizinti_var(
+                cevap,
+                kanarya_degeri,
+                izler,
+                sizinti_kaniti(m, ekran, kural_onerileri, gecmis, araclar.havuz),
+            )
+            ham_sizinti = sizinti or guvenlik_cikti.sizinti_var(cevap, kanarya_degeri, izler)
+            if ham_sizinti is not None:
+                cevap = guvenlik_cikti.istem_sizintisi_cevabi()
+            if sizinti is not None:
+                _olay_yaz(session_factory, m, sizinti, ayrinti={"cevap": str(m.id)})
         finally:
             araclar.havuz.temizle()
-        return model_cevabini_yaz(session_factory, m, cevap, harcama)
+        return model_cevabini_yaz(
+            session_factory,
+            m,
+            cevap,
+            harcama,
+            sinyaller=sinyaller,
+            # Sızıntı yerine gelen cevap modelin cevabı değildir: `model` yazılmaz (BE2-3).
+            model=None
+            if ham_sizinti is not None
+            else yanitlayan_model(engine, sonuc, gw, m.hedef_amac, rules_dir),
+        )
     except Exception as exc:
         kod = hata_kodu(exc)
         # Kayda yalnız sınıf adı (`str(exc)` soru/araç metni taşıyabilir).
@@ -905,19 +1184,23 @@ def _tek_sefer(kur: Callable[[], Any]) -> Callable[[], Any]:
     return al
 
 
-def varsayilan_araclar(ab: Any) -> tuple[Any, sonislem.VarsayilanDogrulayici]:
+def varsayilan_araclar(
+    ab: Any, *, musteri_verisi: bool | None = None, rules_dir: Path | None = None
+) -> tuple[Any, sonislem.VarsayilanDogrulayici]:
     """Üretim araç seti + aynı kaynakları paylaşan doğrulayıcı.
 
     §7.3 "aynı sha'da": test edilen uygulamanın `CodeTools`'u (forge + `head_sha`) araçla
     doğrulama arasında paylaşılır ve yalnız gerektiğinde bir kez kurulur; ürün bilgi paketi de
-    aynı nesnedir.
+    aynı nesnedir. `musteri_verisi` (işleyicide `asistan_durum` değeri; None → ortam) ve
+    `rules_dir` (rol politikası) araç setine geçer.
     """
     from tp_core.features.assistant.tools import arac_seti, kod_araclari
     from tp_core.features.assistant.tools.product import UrunBilgisi
 
     urun = UrunBilgisi()
     kod = _tek_sefer(kod_araclari)
-    return arac_seti(ab, urun=urun, kod=kod), sonislem.VarsayilanDogrulayici(urun=urun, kod=kod)
+    araclar = arac_seti(ab, urun=urun, kod=kod, musteri_verisi=musteri_verisi, rules_dir=rules_dir)
+    return araclar, sonislem.VarsayilanDogrulayici(urun=urun, kod=kod)
 
 
 def _gereksinim_kimligi(ab: Any) -> Callable[[str], str | None]:

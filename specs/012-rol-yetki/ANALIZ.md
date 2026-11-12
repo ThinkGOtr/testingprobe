@@ -196,7 +196,7 @@ Kapsam dışı kalan uçlar: `/auth/*`, `/api/auth/aiprobe/*` (giriş akışı),
   `draft` kalır. Eski `approve` kayıtları (Analist kararı) yayın kapısı için geçerli kalır.
 - Ölçümler (`metrics.py`, kabul/düzeltme oranları) Testçi kararlarını (`accept`/`edit`/`reject`)
   sayar; `approve` / `send_back` ayrı "son onay" metriği olur.
-- Eski analist onayı (0023): göç anında var olan, analist hesabının test_case `edit` kayıtları
+- Eski analist onayı (0026): göç anında var olan, analist hesabının test_case `edit` kayıtları
   `review.eski_onay = true` işaretlenir ve yayın / kod üretimi kapısında `approve` sayılır;
   kararı verenin güncel rolüne bakılmaz.
 - Gösterilen son onay (`son_onay`): en son Analist kararı, ancak ondan sonra Testçi kararı

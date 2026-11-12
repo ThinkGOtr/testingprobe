@@ -164,6 +164,7 @@ def test_status_alanlari_ve_eski_kalp_atisi(client: TestClient, make_user, engin
     assert d["mod"] == "live" and d["model_hazir"] is True
     assert d["paket_commit"] == "abc123"
     assert d["varsayilan_model"] == "claude-haiku-5-5"
+    assert d["derin_model"] == "claude-sonnet-5-5"
     assert d["degerlendirme"]["paket"] == "assistant"
     assert "hata" not in d["degerlendirme"]
     kalp_atisi(engine, yas_s=121, mod="live", model_hazir=True)

@@ -168,7 +168,7 @@ def _son_kayit_edit(case_id: str, user_id: uuid.UUID, *, eski_onay: bool = False
                 kanal="portal",
                 karar="edit",
                 onaylanan_hash=content_hash_of(tc),
-                eski_onay=eski_onay,  # 0023 göçünün işareti (göç anındaki analist edit'i)
+                eski_onay=eski_onay,  # 0026 göçünün işareti (göç anındaki analist edit'i)
             )
         )
 

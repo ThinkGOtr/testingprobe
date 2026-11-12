@@ -18,6 +18,7 @@ import json
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Final
 
 from tp_core.features.assistant import siniflandir
@@ -252,9 +253,17 @@ def sablon_cevabi(
     kaydedici: Callable[[Mapping[str, Any]], Any] | None = None,
     jira_adresi: Callable[[str], str | None] | None = None,
     musteri_verisi: bool = False,
+    rules_dir: Path | None = None,
 ) -> SablonCevabi | None:
-    """Sorunun şablon sınıfı varsa modelsiz cevap; yoksa None."""
-    anahtar = siniflandir.durum_sorusu(soru)
+    """Sorunun şablon sınıfı varsa modelsiz cevap; yoksa None.
+
+    Şablon, modelin kullanacağı aracı doğrudan çağırır; bu yüzden rol politikası (013 §4)
+    burada da uygulanır: araç rolün izinli kümesinde değilse şablon atlanır (model dalı da o
+    aracı görmez). `rules_dir`: rol politikasının kural dizini (vars. `find_rules_dir()`)."""
+    from tp_core.features.assistant.rol_politikasi import izinli_araclar
+
+    izinli = izinli_araclar(baglam.rol, rules_dir=rules_dir)
+    anahtar = siniflandir.durum_sorusu(soru) if "probe_get" in izinli else None
     if anahtar is not None:
         cevap = durum_cevabi(
             baglam,
@@ -265,7 +274,7 @@ def sablon_cevabi(
         )
         if cevap is not None:
             return cevap
-    if siniflandir.kuyruk_sorusu(soru):
+    if "probe_my_queue" in izinli and siniflandir.kuyruk_sorusu(soru):
         return kuyruk_cevabi(baglam, kaydedici=kaydedici, musteri_verisi=musteri_verisi)
     return None
 
