@@ -35,6 +35,7 @@ Hedef:
 | K5 | Rol ataması | AI Probe platformunda. Paketteki "Kullanıcı ve rol yönetimi" sayfası ve `access.assign` TP'ye yazılmaz; Erişim Yöneticisi rolü TP'de yoktur |
 | K6 | PO onayı | Dokümandaki gibi Jira: etiketi koyan aktör PO listesinde, içerik hash'i eşleşir. Jira kaynaklı gereksinimde portal PO onay ucu 410 döner, düğmesi kalkar. İstisna (2026-11-11 ek karar): serbest metin gereksinimde (`kaynak == free_text`, Jira'da story yok) portal PO onayı kalır (`requirement.po_approve_free_text`, hash kontrolü bugünkü gibi) |
 | K7 | Paketin kapsamadığı özellikler | Sahibi PO (baz değer). Doküman düzeltmesini Jira'ya uygulama ve "Son hal olarak onayla" Analist'te kalır (2026-11-11 ek karar; `requirement.review`). İstisna: locator onarımı → Automation Engineer, Claude Code yayın token'ı → Testçi |
+| K8 | Yayınlanmış case'te değişiklik | Paketteki T09 "yayınlanmış case'ten yeni sürüm" uygulanmaz: yayınlanmış sürüm değişmez, değişiklik gereksinimden yeniden üretimle gelir (2026-11-12) |
 
 Uygulama sırasında verilen teknik kararlar (ürün kararı değil; gerekçesiyle):
 
@@ -199,7 +200,7 @@ Kapsam dışı kalan uçlar: `/auth/*`, `/api/auth/aiprobe/*` (giriş akışı),
 - Gösterilen son onay (`son_onay`): en son Analist kararı, ancak ondan sonra Testçi kararı
   (`accept`/`edit`/`reject`/`reopen`) yoksa. "Taslağa al" ya da yeni kabul eski `approve`'u gizler;
   `send_back` gerekçesi Testçinin bir sonraki kararına kadar görünür.
-- **Paketten sapma — K8 (öneri, ürün sahibi onayı bekliyor):** paketteki T09 "yayınlanmış case
+- **Paketten sapma — K8 (ürün sahibi kararı, 2026-11-12):** paketteki T09 "yayınlanmış case
   yeniden açılır" uygulanmaz. Yayınlanmış sürüm değişmezdir (Jira/Xray'deki test ile bağ korunur);
   değişiklik yeniden üretimle (yeni sürüm, eskisi `superseded`) gelir.
 
