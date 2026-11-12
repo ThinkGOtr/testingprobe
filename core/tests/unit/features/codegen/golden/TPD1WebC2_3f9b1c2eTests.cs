@@ -4,7 +4,7 @@
 // Case: TPD-1 C2 (3f9b1c2e-0000-5000-8000-0000000000c2) · Story: TPD-1 · Jira Test: TPD-12
 // Onaylı case hash: 945c89ca5f30204174eb8922157a74aa16ea6d05258f1a073abb49005814dffd
 // Eşleme: verify_and_map · platform: web · dil: csharp (Playwright .NET + NUnit) · mod: replay · bundle: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-// Eşleme hash: cf31f88a3e9573641b0cbbbbbedc4af4af58f8eee0c9432845c6a88b9611c17f · şablon: ec12586748d391e83017df7a5c21c160a93195b7173faab8267ea29175eb00fc
+// Eşleme hash: cf31f88a3e9573641b0cbbbbbedc4af4af58f8eee0c9432845c6a88b9611c17f · şablon: e24458169a8242f032cb780a7f503819586c0053d20dc6ef4b384d3610dbb7b6
 //
 // Varsayılan page object imzaları (Antreklabs.Bayi.Pages; kurucu: new <Sınıf>(IPage page)):
 //   CartPage
@@ -19,6 +19,13 @@
 //   LoginPage
 //     Task GotoAsync()
 //     Task LoginAsync(string username, string password)
+//
+// Taban adres: PageTest kullanıyorsanız göreli GotoAsync() çağrıları için ContextOptions() içinde
+// BaseURL verin, ör.:
+//   public override BrowserNewContextOptions ContextOptions() =>
+//       new() { BaseURL = Environment.GetEnvironmentVariable("BASE_URL") };
+// [Property("dealerUsername")] testin sabitlendiği e2e bayisidir (giriş bilgisi değil); kendi
+// fikstürünüzde TestContext.CurrentContext.Test.Properties.Get("dealerUsername") ile okuyun.
 using System.Threading.Tasks;
 using Antreklabs.Bayi.Pages;
 using Microsoft.Playwright.NUnit;

@@ -36,6 +36,7 @@ from tp_core.integrations.forge import (
     GITHUB_REQUIRED_CHECKS,
     LOCAL_REQUIRED_CHECKS,
     REQUIRED_CHECKS_ENV,
+    WEB_JAVA_CHECK,
     ForgeValidationError,
     etkin_platformlar,
     etkin_web_dilleri,
@@ -137,18 +138,23 @@ def yerel_zorunlu_checkler(
     degisen: Sequence[str],
     platform: str | None = None,
     dil: str | None = None,
+    repodaki_web_dilleri: Sequence[str] = (platformlar.TS,),
 ) -> tuple[tuple[str, ...], str | None]:
     """LocalForge merge kapısıyla AYNI kural (`forge.local_required_checks`): portal ve
     `merge_pr` aynı zorunlu listeyi görür. Script'in kendi check'i (`platform.check_adi`:
     uygulama `local-ci-<platform>`, web + Java `local-ci-web-java`; K-T1) henüz kaydedilmemişse
-    de zorunlu listeye girer ("yok"): kapı da aynısını bekler."""
+    de zorunlu listeye girer ("yok"): kapı da aynısını bekler. Test kökleri dışında değişiklik
+    varsa `repodaki_web_dilleri`'nin her birinin check'i zorunludur (K-T11; script PR'ı yalnız
+    üretilen test dosyasını değiştirdiğinden portalda bu dal pratikte tetiklenmez)."""
     kosular = [k for k in (_check_run(c) for c in ham) if k is not None]
     kendi = platformlar.check_adi(platform, platformlar.dil(platform, dil))
     beklenen = kendi if kendi != LOCAL_REQUIRED_CHECKS[0] else None
     if beklenen and beklenen not in {k.name for k in kosular}:
         kosular.append(CheckRun(name=beklenen, status="queued"))
     try:
-        return local_required_checks(required_checks(), kosular, list(degisen))
+        return local_required_checks(
+            required_checks(), kosular, list(degisen), repodaki_web_dilleri
+        )
     except ForgeValidationError:
         return required_checks(), None
 
@@ -178,6 +184,14 @@ def pr_checks(
             # edilebilir" göstermesin.
             ek_engel = f"Yapılandırma hatası: {exc}"
         ham = github_checks(sha, kayit)
+        if (
+            ham is not None
+            and WEB_JAVA_CHECK not in zorunlu
+            and any(c["name"] == WEB_JAVA_CHECK for c in ham)
+        ):
+            # K-T10: `web-java` check'i koştuysa iş akışı depodadır → her zaman zorunlu
+            # (GitHubForge.zorunlu_checkler ile aynı; iş akışı ilgisiz PR'da no-op ile yeşil).
+            zorunlu = (*zorunlu, WEB_JAVA_CHECK)
         if ham is None:
             if not sha:
                 return (

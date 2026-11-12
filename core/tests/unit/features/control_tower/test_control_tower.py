@@ -529,7 +529,9 @@ def test_dogrulanmamis_script_review_paydasina_girmez(
     assert so["script_dogrulanmamis"] == 2
     assert (so["script_ilk_review"], so["script_review_sayisi"]) == (1.0, 1)
     assert (so["pass_at_1"], so["pass_at_1_sayisi"]) == (1.0, 1)
-    assert so["script_birim_sayisi"] == 1 and so["script_uretim_sayisi"] == 4
+    # Tur 2 (MİM-L3): üretim sayısı da tam hat üretimleridir; doğrulanmamış dildeki kayıtlar
+    # (unverified + kapanmış eski) yalnız `script_dogrulanmamis`'ta görünür.
+    assert so["script_birim_sayisi"] == 1 and so["script_uretim_sayisi"] == 1
     # API yanıtı (`GET /control-tower` `ai_katkisi`) alanı taşır.
     assert k["ai_katkisi"]["script_dogrulanmamis"] == 2
 

@@ -177,6 +177,49 @@ def test_dom_dugumleri_derin_zincir_sinirli_kopya() -> None:
     assert [(x.kimlik, x.kapsayicilar) for x in d] == [("a", ()), ("b", ("a",)), ("c", ())]
 
 
+def _sure_olc(html: str) -> tuple[Any, float]:
+    """Yalnız süre (tracemalloc ayrıştırıcıyı kat kat yavaşlatır; süre ölçümünü bozar)."""
+    import time
+
+    t0 = time.perf_counter()
+    try:
+        sonuc: Any = jw.dom_dugumleri(html)
+    except jw.DomHatasi as exc:
+        sonuc = exc
+    return sonuc, time.perf_counter() - t0
+
+
+def test_dom_dugumleri_eslesmeyen_kapanis_seli_hizli_reddedilir() -> None:
+    """GÜV-Y4 regresyonu: 511 iç içe <div> + 1.047.934 `</q>` (4,19 MB) eskiden her `</q>` için
+    511'lik yığını tarıyordu (~10,8 sn). Aynı sınıf girdi (daha küçük ölçek): olay sınırına
+    takılıp hızla `DomHatasi`; sınır altındaki sel de yığın taranmadan hızlı ayrıştırılır."""
+    html = "<div>" * 511 + "</q>" * (jw.MAX_OLAY + 10_000)
+    assert len(html.encode()) < jw.MAX_DOM
+    sonuc, sure = _sure_olc(html)
+    assert isinstance(sonuc, jw.DomHatasi) and "olay" in str(sonuc)
+    assert sure < 1.5, f"süre {sure:.2f} sn"
+    # Sınırın altında: eşleşmeyen kapanışlar O(1) yok sayılır; açık öğeler bozulmaz.
+    alt = '<div data-testid="a">' + "<div>" * 510 + "</q>" * 150_000 + '<b data-testid="b">x</b>'
+    sonuc, sure = _sure_olc(alt)
+    assert isinstance(sonuc, list) and [(d.kimlik, d.kapsayicilar) for d in sonuc] == [
+        ("a", ()),
+        ("b", ("a",)),
+    ]
+    assert sure < 1.5, f"süre {sure:.2f} sn"
+
+
+def test_dom_dugumleri_metin_olaylari_sayilir(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Kapanış ve metin olayları da olay sınırına ve süre bütçesine girer (yalnız başlangıç
+    etiketleri değil)."""
+    monkeypatch.setattr(jw, "MAX_OLAY", 1_000)
+    with pytest.raises(jw.DomHatasi, match="olay"):
+        jw.dom_dugumleri("<p>" + "x&amp;<!-- -->" * 2_000)
+    monkeypatch.setattr(jw, "MAX_OLAY", 10**9)
+    monkeypatch.setattr(jw, "MAX_SURE_S", -1.0)
+    with pytest.raises(jw.DomHatasi, match="süre"):
+        jw.dom_dugumleri("</q>" * 2_000)
+
+
 def test_dom_dugumleri_sure_butcesi(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(jw, "MAX_SURE_S", -1.0)  # bütçe baştan dolmuş
     with pytest.raises(jw.DomHatasi, match="süre"):

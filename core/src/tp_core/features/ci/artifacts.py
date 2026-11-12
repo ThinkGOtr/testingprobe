@@ -126,7 +126,7 @@ def link_token(run_id: uuid.UUID, simdi: float) -> str | None:
 
 
 def token_gecerli_mi(run_id: uuid.UUID, token: str, simdi: float) -> bool:
-    m = _TOKEN_RE.match(token or "")
+    m = _TOKEN_RE.fullmatch(token or "")
     anahtar = _imza_anahtari()
     if m is None or anahtar is None:
         return False
@@ -181,7 +181,7 @@ def coz(kok: Path, istek: str) -> Path:
     if not parcalar:
         raise YolHatasi("geçersiz yol")
     for oge in parcalar:
-        if oge in (".", "..") or oge.startswith(".") or not _OGE_RE.match(oge):
+        if oge in (".", "..") or oge.startswith(".") or not _OGE_RE.fullmatch(oge):
             raise YolHatasi("geçersiz yol")
     if not izinli_mi(parcalar):
         raise YolHatasi("bu yol sunulmaz")

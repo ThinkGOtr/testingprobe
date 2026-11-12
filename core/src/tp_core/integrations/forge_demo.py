@@ -114,15 +114,12 @@ MAX_BREAK_FILES = 5
 
 
 class DemoForge(ForgePort, Protocol):
-    """`merge_pr_detailed`, `merge_base`, `changed_paths` sunan forge (LocalForge, GitHubForge)."""
+    """`merge_pr_detailed` sunan forge (LocalForge, GitHubForge); `merge_base` / `changed_paths`
+    `ForgePort`'tadır."""
 
     def merge_pr_detailed(
         self, number: int, actor: str, *, expected_head_sha: str | None = None
     ) -> MergeResult: ...
-
-    def merge_base(self, a: str, b: str) -> str: ...
-
-    def changed_paths(self, base: str, head: str) -> list[str] | None: ...
 
 
 class DemoOutcome(BaseModel):

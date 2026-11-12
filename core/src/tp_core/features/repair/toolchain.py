@@ -127,11 +127,12 @@ class RepairToolchain:
         kontrolü kırmızıya çevirmez; tek bir ilgisiz flake onarımı düşürmez.
 
         `record_check` verilmez (None): tam kapsamlı, kırılmasız kontrol toolchain tarafından
-        `local-ci` olarak kaydedilir; LocalForge merge kapısı bu head için onu okur.
+        `platform.check_adi` adıyla (web + TS `local-ci`) kaydedilir; LocalForge merge kapısı bu
+        head için onu okur.
 
         `platform` (android | ios | windows): Java yolu (`app → deps → guard → compile → run`,
         test-runner cihazda koşar); `lang="java"` + web: web + Java yolu (`{lang: java,
-        platform: web}`, kayıt `local-ci`; 011 §2.6); web/None → mevcut Playwright yolu.
+        platform: web}`, kayıt `local-ci-web-java`; 011 K-T1); web/None → mevcut Playwright yolu.
         """
         govde: dict[str, Any] = {
             "sha": sha,

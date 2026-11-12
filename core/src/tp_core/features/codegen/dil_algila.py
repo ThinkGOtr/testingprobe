@@ -15,7 +15,11 @@ ve derleme çıktısı dizinleri (`node_modules`, `.venv`, `bin`, `obj`, `target
 
 Java test kalıbı: `*Test.java`, `*Testi.java`, `*Tests.java`, `*IT.java`; algılama sinyali olarak
 `*Test.kt` de. `<e2e-java>/src/test/**` her zaman sayılır; başka bir `src/test/**` ağacı (ör. kökte
-standart Maven / Gradle) yalnız Playwright'a başvuran `pom.xml` / `build.gradle(.kts)` altındaysa.
+standart Maven / Gradle) yalnız Playwright for Java'ya **bağımlı** `pom.xml` / `build.gradle(.kts)`
+altındaysa (`<dependencies>` altında `com.microsoft.playwright`; `<playwright.version>` özelliği
+ya da `dependencyManagement` değil) **ve** test dosyası `com.microsoft.playwright` içe aktarıyorsa
+(dizin başına bir dosya okunarak; QA-Y1 tur 2). Soyut taban sınıflar (`BaseTest`, `Abstract*`,
+`*TestBase`, içerikte `abstract class`) test sayılmaz (QA-Y7).
 
 `<e2e-app>` (Appium) ve `<e2e-java>` ağaçları C# / Python sayımına girmez; `<e2e-app>` web Java
 sayımına da girmez. En çok dosyası olan dil seçilir; eşitlikte öncelik `ts > java > csharp >
@@ -26,8 +30,9 @@ tek dil Java'dır (`<e2e-app>/src/test/**` Java test kalıbı sayılır; el test
 sayılır (proje dosyasının içeriğinde `playwright`). Ham `**/test_*.py` sayımı uygulamanın kendi
 birim testlerini (ör. `api/tests/test_*.py`) uçtan uca test sanırdı. Uygulama kökündeki bağımlılık
 bildirimi (`pyproject.toml`, `requirements*.txt`, …) tüm depoyu kapsadığı için zayıf işarettir:
-yalnız `conftest.py` (herhangi bir dizinde) ya da test dosyasının kendi içeriği Playwright'a
-başvuruyorsa o testler sayılır.
+yalnız `conftest.py` (herhangi bir dizinde) ya da test dosyasının kendi içeriği Playwright'ı
+kullanıyorsa (`from/import playwright` ya da `page: Page`; `page: int` değil, QA-Y2 tur 2) o testler
+sayılır.
 
 **Okuma bütçesi:** işaret/test dosyası okuması (GitHub kipinde her biri bir API çağrısı) **dil
 başına** `MAX_ISARET_OKUMA` ile sınırlıdır. Yalnız altında o dilin test dosyası bulunan proje
@@ -49,7 +54,7 @@ import re
 import threading
 import time
 from collections import OrderedDict
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -77,8 +82,28 @@ _UCTAN_UCA_DIZIN_RE = re.compile(r"e2e|ui|playwright|browser|web|acceptance", re
 # Dil başına okunan işaret / test dosyası sınırı (GitHub kipinde her okuma bir API çağrısıdır).
 MAX_ISARET_OKUMA = 20
 PLAYWRIGHT = "playwright"
-# Test dosyasının kendisinde Playwright kullanımı (kökte yalnız bağımlılık bildirimi varken).
-_PY_PLAYWRIGHT_RE = re.compile(r"playwright|\bpage\s*:", re.IGNORECASE)
+# Test dosyasının kendisinde Playwright kullanımı (kökte yalnız bağımlılık bildirimi varken;
+# QA-Y2 tur 2): `from playwright…` / `import playwright…` ya da `page: Page` tür açıklaması.
+# Dosyada geçen `playwright` sözcüğü ya da `page: int` gibi bir parametre işaret değildir.
+_PY_PLAYWRIGHT_RE = re.compile(
+    r"^\s*(?:from|import)\s+playwright\b|\bpage\s*:\s*(?:[\w.]+\.)?Page\b", re.MULTILINE
+)
+# Java/Kotlin test dosyasında Playwright for Java kullanımı (QA-Y1 tur 2).
+_JAVA_PLAYWRIGHT_RE = re.compile(r"^\s*import\s+(?:static\s+)?com\.microsoft\.playwright\b", re.M)
+JAVA_PLAYWRIGHT_GRUBU = "com.microsoft.playwright"
+# Maven pom'unda bağımlılık sayılmayan bölümler: yorumlar, `dependencyManagement` (yalnız sürüm
+# sabitler), `build` (eklenti bağımlılıkları), `properties` (`<playwright.version>`).
+_POM_HARIC_RE = re.compile(
+    r"<!--.*?-->|<(dependencyManagement|build|properties)\b.*?</\1\s*>", re.DOTALL
+)
+_POM_BAGIMLILIK_RE = re.compile(r"<dependency\b.*?</dependency\s*>", re.DOTALL)
+_POM_GRUP_RE = re.compile(r"<groupId>\s*com\.microsoft\.playwright\s*</groupId>")
+# Soyut taban sınıf adı (QA-Y7): `Abstract*`, `Base*`, `Taban*`, `*BaseTest(s)`, `*TestBase`.
+_TABAN_AD_RE = re.compile(
+    r"(?:Abstract|Base|Taban[iı]?)(?=[A-Z0-9_]|$)|[A-Za-z0-9_]*(?:Base|Taban[iı]?)"
+    r"(?:Tests?|Testi|IT)$|[A-Za-z0-9_]*TestBase$"
+)
+_SOYUT_SINIF_RE = re.compile(r"\babstract\s+(?:\w+\s+)*class\b")
 HEAD_TTL_S = 60.0
 HATA_TTL_S = 15.0
 
@@ -182,11 +207,21 @@ class _Butce:
             return ""
 
 
+def _playwright_icerir(yol: str, icerik: str) -> bool:
+    return PLAYWRIGHT in icerik.lower()
+
+
 def _isaretli_dizinler(
-    forge: Any, sha: str, adaylar: Sequence[str], testler: Sequence[str], butce: _Butce
+    forge: Any,
+    sha: str,
+    adaylar: Sequence[str],
+    testler: Sequence[str],
+    butce: _Butce,
+    isaret: Callable[[str, str], bool] = _playwright_icerir,
 ) -> list[str]:
-    """İçeriği Playwright'a başvuran aday proje dosyalarının dizinleri. Yalnız altında en az bir
-    test dosyası bulunan adaylar okunur (`_oncelik` sırasıyla, bütçe kadar)."""
+    """İçeriği Playwright'a başvuran (`isaret(yol, içerik)`) aday proje dosyalarının dizinleri.
+    Yalnız altında en az bir test dosyası bulunan adaylar okunur (`_oncelik` sırasıyla, bütçe
+    kadar)."""
     dizinler: list[str] = []
     ilgili = [y for y in adaylar if any(_kapsar(posixpath.dirname(y), t) for t in testler)]
     for yol in sorted(ilgili, key=_oncelik):
@@ -196,7 +231,7 @@ def _isaretli_dizinler(
         icerik = butce.oku(forge, sha, yol)
         if icerik is None:
             break
-        if PLAYWRIGHT in icerik.lower():
+        if isaret(yol, icerik):
             dizinler.append(dizin)
     return dizinler
 
@@ -217,9 +252,21 @@ def _ts_say(dosyalar: Sequence[str], e2e: str) -> int:
     return n
 
 
+def _taban_adi_mi(yol: str) -> bool:
+    """Ad soyut taban sınıfı gibi mi (QA-Y7: `BaseTest.java`, `AbstractUiTest.java`,
+    `PageTestBase.cs`)? Bunlar test değil, testlerin türediği sınıflardır."""
+    kok = posixpath.basename(yol).rsplit(".", 1)[0]
+    return bool(_TABAN_AD_RE.match(kok))
+
+
 def _java_testi(yol: str) -> bool:
-    """`src/test/` ağacındaki elle yazılmış Java (ya da Kotlin) testi mi? (K-T7 tek kalıbı)"""
-    return "/src/test/" in "/" + yol and platformlar.java_test_dosyasi_mi(yol, kotlin=True)
+    """`src/test/` ağacındaki elle yazılmış Java (ya da Kotlin) testi mi? (K-T7 tek kalıbı;
+    soyut taban sınıf adları sayılmaz, QA-Y7)"""
+    return (
+        "/src/test/" in "/" + yol
+        and platformlar.java_test_dosyasi_mi(yol, kotlin=True)
+        and not _taban_adi_mi(yol)
+    )
 
 
 def _java_say(dosyalar: Sequence[str], kok: str) -> int:
@@ -234,26 +281,80 @@ def _java_say(dosyalar: Sequence[str], kok: str) -> int:
     )
 
 
+def _java_proje_isareti(yol: str, icerik: str) -> bool:
+    """Java proje dosyası Playwright for Java'ya **bağımlı** mı (QA-Y1 tur 2)? Maven: yorum,
+    `dependencyManagement`, `build` ve `properties` dışındaki bir `<dependency>`'nin `groupId`'si
+    `com.microsoft.playwright` (yalnız `<playwright.version>` özelliği ya da sürüm yönetimi işaret
+    değildir). Gradle: `com.microsoft.playwright` koordinatı."""
+    if posixpath.basename(yol) != "pom.xml":
+        return JAVA_PLAYWRIGHT_GRUBU in icerik
+    govde = _POM_HARIC_RE.sub("", icerik)
+    return any(_POM_GRUP_RE.search(b) for b in _POM_BAGIMLILIK_RE.findall(govde))
+
+
+def _icerikle_say(
+    forge: Any,
+    sha: str,
+    testler: Sequence[str],
+    butce: _Butce,
+    kullanir: Callable[[str], bool],
+) -> int:
+    """Test dosyalarını dizin dizin örnekleyerek sayar: uçtan uca adlı dizinler önce; her
+    dizinde ilk soyut olmayan dosya okunur, Playwright kullanıyorsa dizinin (okunup soyut çıkanlar
+    dışındaki) tüm testleri sayılır, kullanmıyorsa dizin sayılmaz. Dizin başına tek okuma: 200
+    birim testli bir servis bütçeyi tüketmez, Playwright testleri de bütçe kadarıyla sınırlanmaz.
+    Bütçe biterse okunmamış dizinler sayılmaz (alt sınır)."""
+    gruplar: dict[str, list[str]] = {}
+    for yol in testler:
+        gruplar.setdefault(posixpath.dirname(yol), []).append(yol)
+    n = 0
+    for dizin in sorted(
+        gruplar, key=lambda d: (0 if _UCTAN_UCA_DIZIN_RE.search(d) else 1, *_oncelik(d + "/"))
+    ):
+        soyut = 0
+        for yol in sorted(gruplar[dizin]):
+            icerik = butce.oku(forge, sha, yol)
+            if icerik is None:
+                return n
+            if _SOYUT_SINIF_RE.search(icerik):
+                soyut += 1  # soyut taban sınıf (QA-Y7): sayılmaz, dizinin sonraki dosyasına bak
+                continue
+            if kullanir(icerik):
+                n += len(gruplar[dizin]) - soyut
+            break
+    return n
+
+
 def _java_diger_say(
     forge: Any, sha: str, dosyalar: Sequence[str], haric: Sequence[str], butce: _Butce
 ) -> int:
-    """`e2e-java` / `e2e-app` dışındaki Java testleri (ör. kökte standart Maven / Gradle):
-    yalnız Playwright'a başvuran proje dosyasının altındakiler."""
+    """`e2e-java` / `e2e-app` dışındaki Java testleri (ör. kökte standart Maven / Gradle;
+    QA-Y1 tur 2): yalnız Playwright for Java'ya **bağımlı** proje dosyasının altındakiler ve
+    bunlardan da yalnız `com.microsoft.playwright` içe aktaranlar (zayıf işaret yolu, Python'daki
+    gibi). Kökte Playwright bağımlılığı olan bir Spring Boot projesinin servis birim testleri
+    sayılmaz; üst pom'da yalnız `<playwright.version>` özelliği tüm modülleri işaretlemez."""
     testler = [y for y in dosyalar if _izlenir(y, haric) and _java_testi(y)]
     if not testler:
         return 0
     adaylar = [
         y for y in dosyalar if posixpath.basename(y) in JAVA_PROJE_DOSYALARI and _izlenir(y, haric)
     ]
-    dizinler = _isaretli_dizinler(forge, sha, adaylar, testler, butce)
-    return sum(_proje_altinda(y, dizinler) for y in testler)
+    dizinler = _isaretli_dizinler(forge, sha, adaylar, testler, butce, _java_proje_isareti)
+    adaylar_t = [y for y in testler if _proje_altinda(y, dizinler)]
+    return _icerikle_say(
+        forge, sha, adaylar_t, butce, lambda i: bool(_JAVA_PLAYWRIGHT_RE.search(i))
+    )
 
 
 def _csharp_say(
     forge: Any, sha: str, dosyalar: Sequence[str], haric: Sequence[str], butce: _Butce
 ) -> int:
     testler = [
-        y for y in dosyalar if _CS_TEST_RE.fullmatch(posixpath.basename(y)) and _izlenir(y, haric)
+        y
+        for y in dosyalar
+        if _CS_TEST_RE.fullmatch(posixpath.basename(y))
+        and _izlenir(y, haric)
+        and not _taban_adi_mi(y)
     ]
     if not testler:
         return 0

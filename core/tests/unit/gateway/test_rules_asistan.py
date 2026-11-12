@@ -200,7 +200,11 @@ def _normalize(metin: str) -> str:
 
 def _bilinen_kodlar() -> set[str]:
     from tp_core.api import csrf, errors
+    from tp_core.api import main as _api_main  # noqa: F401  (özellik router'larını yükler)
     from tp_core.workflow import service
+
+    # Kodlu WorkflowError alt sınıfları özellik modüllerinde tanımlıdır (ör. codegen
+    # `DilCakismasi`); API modülü hepsini içe aktarır, dosya tek başına koşsa da görünür.
 
     def alt_siniflar(cls: type) -> Iterator[type]:
         for alt in cls.__subclasses__():

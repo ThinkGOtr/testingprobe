@@ -31,7 +31,7 @@ from sqlalchemy import Engine, select, text
 
 from tests.unit.features.cases.helpers import run_jobs
 from tests.unit.features.codegen.conftest import REPO, git
-from tp_core.features.codegen import dil_algila, render
+from tp_core.features.codegen import dil_algila, render, views
 from tp_core.models import AiCall, AuditEvent, Script, StepMapping, session_scope
 from tp_core.models.codegen_feature import ScriptCodegen
 
@@ -200,7 +200,16 @@ def test_web_java_case_den_pr_a(
 
     detay = api.get(f"/scripts/{sid}").json()
     assert detay["dil"] == "java" and detay["dogrulanmamis"] is False
-    assert detay["pr"]["checks"][0]["ad"] == "local-ci"
+    # MİM-B2: toolchain web + Java kaydını `local-ci-web-java` adıyla yazar (K-T1).
+    assert [c["ad"] for c in detay["pr"]["checks"]] == ["local-ci-web-java"]
+    assert detay["pr"]["checks"][0]["durum"] == "passed"
+    with session_scope() as s:
+        sc = s.get(Script, sid)
+        zorunlu, ek = views.yerel_zorunlu_checkler(
+            views.read_checks(head), views.pr_degisen_yollari(sc), sc.platform, sc.dil
+        )
+        assert (zorunlu, ek) == (("local-ci-web-java",), None)
+        assert views.merge_engelleri(sc, s.get(ScriptCodegen, sid)) == []
     assert [a["ad"] for a in detay["yerel_kontrol"]["adimlar"]] == ["deps", "guard", "compile"]
     assert all(a["durum"] == "passed" for a in detay["yerel_kontrol"]["adimlar"])
 
@@ -232,6 +241,11 @@ def test_web_java_case_den_pr_a(
     assert ts["durum"] == "started" and ts["dil"] == "ts"
     with session_scope() as s:
         assert s.get(Script, sid).durum == "closed"
+
+    # Merge kapısının kendisi (LocalForge): head'de yalnız `local-ci-web-java` kaydı var ve
+    # yeşil → e2e-java/ değiştiren PR merge edilir (kapı `local-ci`'ı beklemez).
+    assert [c.name for c in o.forge.checks(head)] == ["local-ci-web-java"]
+    assert o.forge.merge_pr(pr_no, "muhendis", expected_head_sha=head)
 
 
 def test_dogrulanmamis_dil_unverified_ve_yeniden_uretim(
@@ -354,6 +368,16 @@ def test_dogrulanmamis_uretim_tam_hat_scriptine_dokunmaz_ve_merge_cakismasi_409(
     assert r.status_code == 409, r.text
     assert "TypeScript ile merge edildi" in r.text and "önce mevcut testi kaldırın" in r.text
     assert r.json().get("kod") in (None, "dil_cakismasi")
+    assert "silen bir PR'ı merge edin, sonra yeniden üretin" in r.json()["detail"]
+    # K-T12: toplu istekte çakışan case sessizce kaybolmaz; sayı ve neden yanıtta.
+    diger = hazir["cases"][1]
+    r = api.post("/code/generate", json={"case_ids": [str(cid), str(diger)], "dil": "java"})
+    assert r.status_code == 202, r.text
+    toplu = r.json()
+    assert toplu["cakisma_sayisi"] == 1 and len(toplu["script_ids"]) == 1
+    assert "1 case başka dilde merge edilmiş testi olduğu için üretilmedi" in toplu["mesaj"]
+    (cakisan,) = [x for x in toplu["sonuclar"] if x["durum"] == "cakisma"]
+    assert cakisan["case_id"] == str(cid) and "TypeScript ile merge edildi" in cakisan["neden"]
     with session_scope() as s:
         assert s.get(Script, ts_sid).durum == "merged"
         assert s.get(Script, cs_sid).durum == "unverified"
