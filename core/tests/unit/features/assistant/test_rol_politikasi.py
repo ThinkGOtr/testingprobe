@@ -133,7 +133,7 @@ def test_etiket_ve_ek() -> None:
     assert etiket("analyst") == "Analist"
     assert etiket("po") == "Ürün sahibi (PO)"
     assert etiket("tester") == "Testçi"
-    assert etiket("presenter") == "Sunucu (sunum yapan)"
+    assert etiket("presenter") == "Sunucu"
     assert etiket("bilinmeyen") == "Görüntüleyici"
     p = politika_coz(_ham())
     for kural in p.roller.values():
@@ -444,8 +444,8 @@ def _mesaj(rol: str) -> flow.Mesaj:
         ("analyst", "Analist"),
         ("po", "Ürün sahibi (PO)"),
         ("tester", "Testçi"),
-        ("engineer", "Otomasyon mühendisi"),
-        ("presenter", "Sunucu (sunum yapan)"),
+        ("engineer", "Mühendis"),
+        ("presenter", "Sunucu"),
         ("bilinmeyen", "Görüntüleyici"),
     ],
 )

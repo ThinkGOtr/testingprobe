@@ -1570,7 +1570,7 @@ def test_principal_ve_rol_oturumdan(client: TestClient, make_user, engine: Engin
     )
     gecit = Gecit(engine, [bitir()])
     assert cevapla(engine, mid, gecit) == "done"
-    assert "Kullanıcının rolü: Sunucu (sunum yapan)" in gecit.ilk_istek()
+    assert "Kullanıcının rolü: Sunucu" in gecit.ilk_istek()
 
 
 # ------------------------------------------------------------------ spec 013 inceleme turu 1
