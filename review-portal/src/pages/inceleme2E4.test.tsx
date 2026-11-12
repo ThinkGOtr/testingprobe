@@ -94,7 +94,9 @@ describe("MİM-B1: dil algılanamadı (depo okunamadı)", () => {
     const bilgi = await screen.findByTestId("dil-bilgi");
     expect(bilgi).toHaveTextContent(DEPO_OKUNAMADI);
     expect(bilgi).not.toHaveTextContent("Kullanılamıyor");
-    expect(within(bilgi).getByTestId("dil-notu")).toHaveTextContent("Depo okunamadığı için dil algılanamadı; varsayılan: Java.");
+    // Tek seçenek: elle seçim önerisi yok; metin parçalardan kurulur (kırpma yok).
+    expect(within(bilgi).getByTestId("dil-notu").textContent).toBe("Depo okunamadığı için dil algılanamadı; varsayılan: Java.");
+    expect(algilanamadiMesaji("Java", false)).toBe("Depo okunamadığı için dil algılanamadı; varsayılan: Java.");
     expect(bilgi).not.toHaveTextContent("elle seçebilirsiniz");
   });
 });
