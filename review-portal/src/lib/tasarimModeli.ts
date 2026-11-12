@@ -12,10 +12,11 @@ export const TEKNIK_ADI: Record<Teknik, string> = {
   PW: "Pairwise",
   UC: "Kullanım senaryosu",
   EG: "Hata tahmini",
+  CL: "Kontrol listesi",
 };
 
 /** Teknik → kapsam öğesi kimliği öneki (case-generation v3 ile aynı). */
-export const TEKNIK_ONEKI: Record<Teknik, string> = { EP: "EP-", BVA: "BV-", DT: "DT-", ST: "ST-", PW: "PW-", UC: "UC-", EG: "EG-" };
+export const TEKNIK_ONEKI: Record<Teknik, string> = { EP: "EP-", BVA: "BV-", DT: "DT-", ST: "ST-", PW: "PW-", UC: "UC-", EG: "EG-", CL: "CL-" };
 
 export const RISK_ETIKETI: Record<string, { etiket: string; ton: Ton }> = {
   high: { etiket: "yüksek", ton: "hata" },
@@ -47,7 +48,7 @@ export const MODEL_DURUMU: Record<string, { etiket: string; ton: Ton }> = {
 
 export const SAHIP: Record<string, string> = { PO: "PO", analyst: "Analist", developer: "Geliştirici", "": "—" };
 
-export const OGE_KIMLIGI = /^(EP-[VI][0-9]+|BV-[0-9]+|DT-R[0-9]+|ST-S[0-9]+>S[0-9]+|PW-[0-9]+|UC-(MF|AF[0-9]+|EF[0-9]+)|EG-[0-9]+)$/;
+export const OGE_KIMLIGI = /^(EP-[VI][0-9]+|BV-[0-9]+|DT-R[0-9]+|ST-[TX][0-9]+|PW-[0-9]+|UC-(MF|AF[0-9]+|EF[0-9]+)|EG-[0-9]+|CL-[0-9]+)$/;
 
 const cift = (liste: string[]) => [...new Set(liste.filter((x, i) => liste.indexOf(x) !== i))].sort();
 

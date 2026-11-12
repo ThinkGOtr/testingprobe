@@ -330,7 +330,7 @@ export interface TestAdimi {
 }
 
 /** Test tasarım teknikleri (şema v3 `technique[]`): kısaltmalar ISTQB adlarının karşılığıdır. */
-export const CASE_TEKNIKLERI = ["EP", "BVA", "DT", "ST", "PW", "UC", "EG"] as const;
+export const CASE_TEKNIKLERI = ["EP", "BVA", "DT", "ST", "PW", "UC", "EG", "CL"] as const;
 export type CaseTeknigi = (typeof CASE_TEKNIKLERI)[number];
 
 export const CASE_ONCELIKLERI = ["P1", "P2", "P3"] as const;
@@ -555,7 +555,7 @@ export interface CaseKararGirdisi {
 
 // ---------------------------------------------------------------- Case özeti (kapsam ve açık noktalar)
 
-/** Kapsam öğesi (`coverage_items[]`). Kimlik biçimi: EP-V1, EP-I2, BV-3, DT-R2, ST-S1>S2, PW-1, UC-MF, EG-1. */
+/** Kapsam öğesi (`coverage_items[]`). Kimlik biçimi: EP-V1, EP-I2, BV-3, DT-R2, ST-T1 / ST-X1, PW-1, UC-MF, EG-1, CL-1. */
 export interface KapsamOgesi {
   id: string;
   ac_ref: string | null;

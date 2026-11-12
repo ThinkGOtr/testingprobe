@@ -443,7 +443,7 @@ export function DerinlestirmeRozeti({ tur, uretimNo }: { tur?: string; uretimNo?
 function CaseOzellikleri({ tc, uretimTuru, children }: { tc: TestCase; uretimTuru?: string; children?: ReactNode }) {
   const i = tc.icerik;
   const eski = caseEski(tc);
-  const r = eski ? RISK[i.risk] : undefined;
+  const r = eski && i.risk ? RISK[i.risk] : undefined;
   const kaynakVar = tc.kanal === "ide" || tc.mode === "replay" || tc.mode === "replay_miss" || (!!uretimTuru && uretimTuru !== "uretim");
   return (
     <dl className="case-ozellik kucuk" data-testid="case-ozellikler">

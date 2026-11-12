@@ -60,7 +60,7 @@ export function TasarimModeliDuzenleyici({
   const yeniOgeHatasi = !yeniOge.id
     ? null
     : !OGE_KIMLIGI.test(yeniOge.id)
-      ? "Kimlik deseni: EP-V1, EP-I1, BV-1, DT-R1, ST-S1>S2, PW-1, UC-MF/AF1/EF1, EG-1"
+      ? "Kimlik deseni: EP-V1, EP-I1, BV-1, DT-R1, ST-T1, ST-X1, PW-1, UC-MF/AF1/EF1, EG-1, CL-1"
       : m.coverage_items.some((o) => o.id === yeniOge.id)
         ? "Bu kimlik zaten var"
         : null;

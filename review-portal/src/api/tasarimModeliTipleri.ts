@@ -4,7 +4,7 @@
 // verir. Analist onaylayınca case üretimi (tur 2) yalnızca bu modelden yapılır.
 import type { CiktiModu, RetNedeni } from "./types";
 
-export type Teknik = "EP" | "BVA" | "DT" | "ST" | "PW" | "UC" | "EG";
+export type Teknik = "EP" | "BVA" | "DT" | "ST" | "PW" | "UC" | "EG" | "CL";
 export type Risk = "high" | "medium" | "low";
 export type SoruSahibi = "PO" | "analyst" | "developer" | "";
 
@@ -48,6 +48,14 @@ export interface SinirDegeri {
   side: SinirTarafi;
   expected: SinirBeklenen;
   inclusive_source: string | null;
+  /** Sınır sonucu açık soruysa (`expected: open_question`) bağlı soru (Qn); değilse null. */
+  question_ref?: string | null;
+}
+
+/** Kaynağın tanımlamadığı kombinasyon / geçiş; her biri bir açık soruya bağlıdır. */
+export interface TanimsizKayit {
+  description: string;
+  question_ref: string;
 }
 
 export interface KararTablosu {
@@ -55,15 +63,16 @@ export interface KararTablosu {
   conditions: string[];
   actions: string[];
   rules: { item_id: string; condition_values: { condition: string; value: string }[]; actions: string[] }[];
-  undefined_combinations: string[];
+  undefined_combinations: TanimsizKayit[];
 }
 
 export interface DurumModeli {
   id: string;
-  states: string[];
+  /** Kimlikli durumlar (S1, S2, …); geçişler kimliğe bağlanır. */
+  states: { id: string; name: string }[];
   valid_transitions: { item_id: string; from: string; event: string; to: string }[];
   invalid_transitions: { item_id: string; from: string; event: string }[];
-  undefined_transitions: string[];
+  undefined_transitions: TanimsizKayit[];
 }
 
 export interface Akis {

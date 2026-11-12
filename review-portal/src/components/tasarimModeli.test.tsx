@@ -73,7 +73,7 @@ const ORNEK: DesignModel = modelTamamla({
       conditions: ["Kampanyalı", "Tutar"],
       actions: ["Uyarı"],
       rules: [{ item_id: "DT-R1", condition_values: [{ condition: "Kampanyalı", value: "hayır" }, { condition: "Tutar", value: "< 750" }], actions: ["Uyarı göster"] }],
-      undefined_combinations: ["Kampanyalı ve kampanyasız ürün birlikte"],
+      undefined_combinations: [{ description: "Kampanyalı ve kampanyasız ürün birlikte", question_ref: "Q1" }],
     },
   ],
   model_issues: [{ kind: "undefined_combination", detail: "Karışık sepet tanımsız" }],
@@ -141,7 +141,7 @@ describe("tasarım modeli tabloları", () => {
     const dt = screen.getByTestId("model-karar-tablosu");
     expect(within(dt).getByRole("columnheader", { name: "Kampanyalı" })).toBeInTheDocument();
     expect(within(dt).getByText("Uyarı göster")).toBeInTheDocument();
-    expect(screen.getByTestId("model-tanimsiz-kombinasyon")).toHaveTextContent("Kampanyalı ve kampanyasız ürün birlikte");
+    expect(screen.getByTestId("model-tanimsiz-kombinasyon")).toHaveTextContent("Kampanyalı ve kampanyasız ürün birlikte (Q1)");
     expect(screen.getByTestId("model-sorunlari")).toHaveTextContent("Tanımsız kombinasyon");
     expect(screen.getByTestId("model-acik-sorular")).toHaveTextContent("Karışık sepette minimum aranır mı?");
     expect(screen.queryByTestId("model-durum-modeli")).not.toBeInTheDocument();
@@ -187,9 +187,9 @@ describe("alan bazlı düzeltme", () => {
     expect(screen.getByRole("button", { name: "Öğe ekle" })).toBeDisabled();
     // ST öğesi eklenir ama ST tekniği seçilmemiş: model kontrolü uyarısı, kaydet pasif.
     await u.clear(screen.getByLabelText("Yeni öğe kimliği"));
-    await u.type(screen.getByLabelText("Yeni öğe kimliği"), "ST-S1>S2");
+    await u.type(screen.getByLabelText("Yeni öğe kimliği"), "ST-T1");
     await u.click(screen.getByRole("button", { name: "Öğe ekle" }));
-    expect(screen.getByTestId("duzen-sorunlar")).toHaveTextContent("ST-S1>S2: tekniği (ST)");
+    expect(screen.getByTestId("duzen-sorunlar")).toHaveTextContent("ST-T1: tekniği (ST)");
     expect(screen.getByRole("button", { name: "Düzeltmeyi kaydet ve onayla" })).toBeDisabled();
   });
 });

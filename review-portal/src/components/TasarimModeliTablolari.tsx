@@ -102,7 +102,9 @@ export function TasarimModeliTablolari({ m }: { m: DesignModel }) {
               <td data-etiket="Beklenen">
                 <Cip ton={SINIR_BEKLENEN[b.expected]?.ton ?? "notr"}>{SINIR_BEKLENEN[b.expected]?.etiket ?? b.expected}</Cip>
               </td>
-              <td data-etiket="Dahil/hariç kaynağı">{b.inclusive_source ?? <span className="soluk">kaynak sessiz</span>}</td>
+              <td data-etiket="Dahil/hariç kaynağı">
+                {b.inclusive_source ?? <span className="soluk">kaynak sessiz{b.question_ref ? ` (${b.question_ref})` : ""}</span>}
+              </td>
             </tr>
           ))}
         </Tablo>
@@ -142,7 +144,9 @@ export function TasarimModeliTablolari({ m }: { m: DesignModel }) {
               <strong>Tanımsız kombinasyonlar (açık soru):</strong>
               <ul>
                 {d.undefined_combinations.map((u) => (
-                  <li key={u}>{u}</li>
+                  <li key={`${u.question_ref}-${u.description}`}>
+                    {u.description} <span className="mono">({u.question_ref})</span>
+                  </li>
                 ))}
               </ul>
             </div>
@@ -152,7 +156,7 @@ export function TasarimModeliTablolari({ m }: { m: DesignModel }) {
       {m.state_models.map((s) => (
         <section key={s.id} aria-label={`Durum modeli ${s.id}`} data-testid="model-durum-modeli" className="model-bolum">
           <h3>Durum modeli {s.id}</h3>
-          <p className="kucuk">Durumlar: {s.states.join(", ")}</p>
+          <p className="kucuk">Durumlar: {s.states.map((d) => `${d.id} ${d.name}`).join(", ")}</p>
           <div className="tablo-sarici" tabIndex={0} role="region" aria-label={`Durum modeli ${s.id} geçişleri`}>
             <table className="tablo tablo-sik tablo-yigin">
               <thead>
@@ -190,7 +194,9 @@ export function TasarimModeliTablolari({ m }: { m: DesignModel }) {
               <strong>Tanımsız geçişler (açık soru):</strong>
               <ul>
                 {s.undefined_transitions.map((u) => (
-                  <li key={u}>{u}</li>
+                  <li key={`${u.question_ref}-${u.description}`}>
+                    {u.description} <span className="mono">({u.question_ref})</span>
+                  </li>
                 ))}
               </ul>
             </div>
