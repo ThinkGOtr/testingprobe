@@ -146,9 +146,42 @@ def test_uc_saniye_dolmadan_gorulmus_sayilmaz(api: TestClient, hazir) -> None:
     assert api.get(f"/cases/{a['id']}").json()["goruldu"] is False
     out = _toplu(api, [(a["id"], a["icerik_hash"])]).json()
     assert out["sonuclar"][0]["durum"] == "atlandi"
-    assert out["sonuclar"][0]["neden"] == "Case en az 3 saniye ekranda kalmadı"
+    # K13': görüntüleme var ama süre dolmadı → ayrı neden (yeniden denemede geçer).
+    assert out["sonuclar"][0]["neden"] == (
+        "Görüntüleme yeni kaydedildi; birkaç saniye sonra yeniden deneyin"
+    )
     assert out["otomatik_kod"] == {"durum": "yok", "job_id": None, "case_sayisi": 0}
     assert _durum(a["id"]) == "draft"
+
+
+def test_karardan_sonra_gelen_goruntuleme_pencere_acmaz(api: TestClient, hazir, db) -> None:
+    """Karar ile görüntüleme çakışması: karardan sonra gelen `viewed` karar verilmiş case'e kayıt
+    açmaz; taslağa alınınca yeni görüntüleme gerekir ve review süresi ondan ölçülür."""
+    from tp_core.models import CaseGoruntuleme
+
+    rid, _ = hazir
+    a = latest_cases(api, rid)[0]
+    goruntule(api, db, a["id"])
+    assert _toplu(api, [(a["id"], a["icerik_hash"])]).json()["ozet"]["onaylandi"] == 1
+    r = api.post(f"/cases/{a['id']}/viewed")
+    assert r.status_code == 200
+    assert r.json() == {"case_id": a["id"], "ilk_goruntuleme": None, "yeni": False}
+    with session_scope() as s:
+        assert len(s.scalars(select(CaseGoruntuleme)).all()) == 1
+    assert api.get(f"/cases/{a['id']}").json()["goruldu"] is False
+    r = api.post(
+        f"/cases/{a['id']}/decision", json={"karar": "reopen", "icerik_hash": a["icerik_hash"]}
+    )
+    assert r.status_code == 200, r.text
+    out = _toplu(api, [(a["id"], a["icerik_hash"])]).json()
+    assert out["sonuclar"][0]["neden"] == "Case en az 3 saniye ekranda kalmadı"
+    # Review süresi görüntülemenin başından ölçülür (K13'): 7 sn önceki görüntüleme → ≥ 7 sn.
+    b = latest_cases(api, rid)[1]
+    goruntule(api, db, b["id"], once_s=7)
+    assert _toplu(api, [(b["id"], b["icerik_hash"])]).json()["ozet"]["onaylandi"] == 1
+    with session_scope() as s:
+        [rv] = s.scalars(select(Review).where(Review.nesne_id == uuid.UUID(b["id"]))).all()
+        assert rv.duzeltme_olculeri["review_sure_ms"] >= 7000
 
 
 def test_kilit_sirasi_case_id_yanit_sirasi_istek(

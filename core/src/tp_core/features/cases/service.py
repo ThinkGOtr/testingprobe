@@ -1010,10 +1010,20 @@ def submit_drafts(
 
 
 def mark_viewed(session: Session, cid: uuid.UUID, user: Principal) -> dict[str, Any]:
-    """İlk görüntüleme kaydı: kullanıcının bu case'teki son karardan sonraki ilk görüntülemesi."""
-    tc = get_case(session, cid)
+    """İlk görüntüleme kaydı: kullanıcının bu case'teki son karardan sonraki ilk görüntülemesi.
+
+    K13': portal bunu görünürlüğün BAŞINDA gönderir; review süresi bu andan ölçülür, toplu onay
+    bu andan `GORULME_MIN_S` sn sonra açılır. Yalnız taslak case'te kayıt açılır: karar ile
+    çakışan (karardan sonra gelen) istek case satırında karar işlemini bekler (FOR SHARE) ve
+    karar verilmiş case için yeni pencere başlatmaz (`yeni: False`, `ilk_goruntuleme: null`).
+    """
     if user.id is None:
         raise InvalidDecision("görüntüleme yalnızca oturumlu kullanıcıyla kaydedilir")
+    tc = session.get(TestCase, cid, with_for_update={"read": True})
+    if tc is None:
+        raise CaseNotFound("Case bulunamadı")
+    if tc.durum != "draft":
+        return {"case_id": str(tc.id), "ilk_goruntuleme": None, "yeni": False}
     son = latest_review(session, "test_case", tc.id)
     esik = son.zaman if son is not None else None
     q = select(func.min(CaseGoruntuleme.zaman)).where(
@@ -1143,6 +1153,10 @@ def decide(
         raise InvalidDecision("İçerik yalnızca 'edit' kararında gönderilir")
     elif karar == "approve":
         olculer = {"mesafe": 0.0, "kucuk_duzeltme": True, "degisen_alanlar": []}
+    if karar in ("approve", "edit"):
+        # K10 case yarısı: onaylanan içeriğin atıfladığı test verisinin değer özetleri.
+        onaylanan = icerik if karar == "edit" and icerik is not None else tc.icerik
+        olculer["veri_izi"] = testveri.guncel_ozetler(session, atif.case_atiflari(onaylanan))
     olculer["review_sure_ms"] = _review_sure_ms(session, tc, user)
     olculer["ilk_karar"] = latest_review(session, "test_case", tc.id) is None
     if toplu:
@@ -1213,6 +1227,8 @@ TOPLU_KARAR_MAX = 200
 # K13: görüntüleme ile karar arasındaki en kısa süre (sn); `goruldu` ve toplu onay şartı.
 GORULME_MIN_S = 3
 GORULMEDI_NEDENI = f"Case en az {GORULME_MIN_S} saniye ekranda kalmadı"
+# K13': görüntüleme var ama `GORULME_MIN_S` sn dolmamış (portal görüntülemeyi başta gönderir).
+YENI_GORUNTULEME_NEDENI = "Görüntüleme yeni kaydedildi; birkaç saniye sonra yeniden deneyin"
 DB_HATA_NEDENI = "Veritabanı hatası (kilit/eşzamanlılık); bu case için yeniden deneyin"
 BEKLENMEYEN_HATA_NEDENI = "Beklenmeyen hata; bu case için yeniden deneyin"
 
@@ -1222,8 +1238,9 @@ def bulk_decide(
 ) -> dict[str, Any]:
     """Toplu onay (013 §3.2, K3/K13/K16): her öğe kendi SAVEPOINT'inde tekli `decide(approve)`.
 
-    - Görülme şartı (K13): kullanıcının son karardan sonraki görüntülemesi en az
-      `GORULME_MIN_S` sn önce olmalı (`goruldu_kumesi`); yoksa `atlandi`.
+    - Görülme şartı (K13/K13'): kullanıcının son karardan sonraki görüntülemesi en az
+      `GORULME_MIN_S` sn önce olmalı; yoksa `atlandi` (görüntüleme hiç yoksa
+      `GORULMEDI_NEDENI`, var ama süre dolmamışsa `YENI_GORUNTULEME_NEDENI`).
     - Kilitler case_id sırasıyla alınır (eşzamanlı toplu onaylarda deadlock yok); yanıt istek
       sırasındadır. Bir öğenin hatası (iş kuralı, DB hatası, beklenmeyen) yalnız o öğeyi düşürür.
     - Kod üretimi onaydan ayrıdır (K16): onaylananlar için tek `codegen.otomatik` işi kuyruğa
@@ -1235,7 +1252,7 @@ def bulk_decide(
         raise InvalidDecision(f"Toplu kararda 1..{TOPLU_KARAR_MAX} case olmalı")
     if user.id is None:
         raise InvalidDecision("toplu karar yalnızca oturumlu kullanıcıyla verilir")
-    gorulen = goruldu_kumesi(session, [cid for cid, _ in ogeler], user.id)
+    goruntuleme = goruntuleme_durumlari(session, [cid for cid, _ in ogeler], user.id)
     sonuclar: list[dict[str, Any]] = []
     islenecek: list[tuple[uuid.UUID, str, dict[str, Any]]] = []
     islenen: set[uuid.UUID] = set()
@@ -1247,8 +1264,11 @@ def bulk_decide(
             sonuc.update(durum="atlandi", neden="Case istekte birden çok kez var")
             continue
         islenen.add(cid)
-        if cid not in gorulen:
+        if cid not in goruntuleme:
             sonuc.update(durum="atlandi", neden=GORULMEDI_NEDENI)
+            continue
+        if not goruntuleme[cid]:
+            sonuc.update(durum="atlandi", neden=YENI_GORUNTULEME_NEDENI)
             continue
         islenecek.append((cid, icerik_hash, sonuc))
     onaylanan: list[uuid.UUID] = []
@@ -1349,13 +1369,13 @@ def _usernames(session: Session, ids: set[uuid.UUID]) -> dict[uuid.UUID, str]:
     )  # type: ignore[arg-type]
 
 
-def goruldu_kumesi(
+def goruntuleme_durumlari(
     session: Session, ids: Sequence[uuid.UUID], kullanici_id: uuid.UUID | None
-) -> set[uuid.UUID]:
-    """Kullanıcının son karardan (reopen dahil; `mark_viewed` ile aynı eşik) SONRA görüntülediği ve
-    görüntülemesi en az `GORULME_MIN_S` sn önce olan case'ler (013 §3.2 görülme şartı, K13)."""
+) -> dict[uuid.UUID, bool]:
+    """Kullanıcının son karardan (reopen dahil; `mark_viewed` ile aynı eşik) SONRA görüntülediği
+    case'ler → görüntülemesi en az `GORULME_MIN_S` sn önce mi (K13'; tek sorgu)."""
     if kullanici_id is None or not ids:
-        return set()
+        return {}
     son_karar = (
         select(Review.zaman)
         .where(Review.nesne_turu == "test_case", Review.nesne_id == CaseGoruntuleme.test_case_id)
@@ -1364,18 +1384,29 @@ def goruldu_kumesi(
         .correlate(CaseGoruntuleme)
         .scalar_subquery()
     )
-    return set(
-        session.scalars(
-            select(CaseGoruntuleme.test_case_id)
-            .where(
-                CaseGoruntuleme.user_id == kullanici_id,
-                CaseGoruntuleme.test_case_id.in_(ids),
-                (son_karar.is_(None)) | (CaseGoruntuleme.zaman > son_karar),
-                CaseGoruntuleme.zaman <= func.now() - timedelta(seconds=GORULME_MIN_S),
-            )
-            .distinct()
+    satirlar = session.execute(
+        select(
+            CaseGoruntuleme.test_case_id,
+            func.min(CaseGoruntuleme.zaman) <= func.now() - timedelta(seconds=GORULME_MIN_S),
         )
+        .where(
+            CaseGoruntuleme.user_id == kullanici_id,
+            CaseGoruntuleme.test_case_id.in_(ids),
+            (son_karar.is_(None)) | (CaseGoruntuleme.zaman > son_karar),
+        )
+        .group_by(CaseGoruntuleme.test_case_id)
     )
+    return {cid: bool(tamam) for cid, tamam in satirlar}
+
+
+def goruldu_kumesi(
+    session: Session, ids: Sequence[uuid.UUID], kullanici_id: uuid.UUID | None
+) -> set[uuid.UUID]:
+    """Son karardan SONRAKİ görüntülemesi en az `GORULME_MIN_S` sn önce olan case'ler (013 §3.2
+    görülme şartı, K13; `serialize_cases.goruldu`)."""
+    return {
+        cid for cid, tamam in goruntuleme_durumlari(session, ids, kullanici_id).items() if tamam
+    }
 
 
 def serialize_cases(
@@ -1384,7 +1415,9 @@ def serialize_cases(
     """Portal `TestCase` biçimi (review-portal/src/api/types.ts) + ek alanlar.
 
     `goruldu`: `kullanici_id` bu case'i son karardan sonra en az `GORULME_MIN_S` sn önce görüntüledi
-    mi (verilmezse False). `onay_engeli`: `decide(approve)`'un reddedeceği neden (`onay_engeli`)."""
+    mi (verilmezse False). `onay_engeli`: `decide(approve)`'un reddedeceği neden (`onay_engeli`).
+    `veri_onaydan_sonra_degisen`: onaylı/yayınlı case'te onay anındaki veri izinden değeri değişen,
+    silinen ya da çözülemeyen anahtarlar (K10 case yarısı; tüm liste için tek sorgu)."""
     ids = [c.id for c in cases]
     gorulen = goruldu_kumesi(session, ids, kullanici_id)
     reviews = _reviews_by_case(session, ids)
@@ -1407,6 +1440,19 @@ def serialize_cases(
         eski |= old_content_case_ids(session, r)
     veri_haritasi = testveri.veri_haritasi(session)
     katalog_anahtarlari = testveri.anahtarlar(session)
+    onay_izleri: dict[uuid.UUID, Mapping[str, Any]] = {}
+    for c in cases:
+        if c.durum not in ("approved", "published"):
+            continue
+        son_onay = next(
+            (r for r in reversed(reviews.get(c.id, [])) if r.karar in ("approve", "edit")), None
+        )
+        iz = (son_onay.duzeltme_olculeri or {}).get("veri_izi") if son_onay else None
+        if isinstance(iz, Mapping) and iz:
+            onay_izleri[c.id] = iz
+    guncel_ozetler = testveri.guncel_ozetler(
+        session, (a for iz in onay_izleri.values() for a in iz)
+    )
     out = []
     for c in cases:
         rs = reviews.get(c.id, [])
@@ -1476,6 +1522,9 @@ def serialize_cases(
                 "onay_engeli": onay_engeli(c, req, katalog_anahtarlari),
                 # 013 §3.3: case'in test verisi atıfları (gizli → deger null).
                 "veri": testveri.case_verisi(veri_haritasi, c.icerik),
+                "veri_onaydan_sonra_degisen": testveri.degisen_anahtarlar(
+                    session, onay_izleri.get(c.id), guncel_ozetler
+                ),
             }
         )
     return out

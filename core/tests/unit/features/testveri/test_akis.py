@@ -166,6 +166,8 @@ def test_katalog_degisince_onay_dusmez_veri_guncel(
     assert r.status_code == 200
     (c2,) = latest_cases(api, rid)
     assert c2["durum"] == "approved" and c2["icerik_hash"] == c["icerik_hash"]
+    # K10 case yarısı: onay anındaki veri izine göre değişen anahtar.
+    assert c2["veri_onaydan_sonra_degisen"] == ["bayi.bayi1.kullanici_adi"]
     assert c2["veri"]["bayi.bayi1.kullanici_adi"] == {
         "deger": "bayi1x",
         "gizli": False,
@@ -260,3 +262,57 @@ def test_eslemeden_sonra_silinen_anahtar_atfi_duz_icerige_doner(
         )
         assert "bayi.bayi1.kullanici_adi" not in str(tc.icerik)
         assert tc.icerik == case_icerik() and tc.icerik_hash == content_hash(case_icerik())
+
+
+def test_onay_veri_izi_yazilir_degisen_anahtar_listelenir(
+    api: TestClient, engine: Engine, make_user, make_requirement, fake_gateway, katalog
+) -> None:
+    """K10 case yarısı: approve/edit anında atıflanan anahtarların değer özeti review'a yazılır;
+    yalnız onaylı case'te güncel özetle farklı olanlar `veri_onaydan_sonra_degisen`'de."""
+    from tp_core.models import Review
+
+    ikinci = case_icerik(title="Hatalı parola mesajı", ref="AC2", type="negative")
+    rid, _ = _uret(api, engine, make_user, make_requirement, fake_gateway, [case_icerik(), ikinci])
+    a, b = latest_cases(api, rid)
+    assert a["veri_onaydan_sonra_degisen"] == [] and b["veri_onaydan_sonra_degisen"] == []
+    r = api.post(
+        f"/cases/{a['id']}/decision", json={"karar": "approve", "icerik_hash": a["icerik_hash"]}
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["veri_onaydan_sonra_degisen"] == []
+    yeni = dict(b["icerik"], expected_result="{veri:bayi.bayi1.ad} kataloğu açılır")
+    assert _duzelt(api, b, yeni).status_code == 200
+    with session_scope() as s:
+        izler = {
+            str(rv.nesne_id): rv.duzeltme_olculeri["veri_izi"]
+            for rv in s.scalars(select(Review).where(Review.nesne_turu == "test_case"))
+        }
+    assert set(izler[a["id"]]) == {"bayi.bayi1.kullanici_adi", "ortak.demo_parola"}
+    assert DEMO_PAROLA not in str(izler)
+    assert "bayi.bayi1.ad" in izler[b["id"]]
+
+    kayitlar = {x["anahtar"]: x for x in api.get("/test-data").json()}
+    k = kayitlar["bayi.bayi1.ad"]
+    r = api.put(f"/test-data/{k['id']}", json={"deger": "Merkez Bayi 2", "beklenen_surum": 1})
+    assert r.status_code == 200, r.text
+    son = {x["id"]: x for x in latest_cases(api, rid)}
+    assert son[a["id"]]["veri_onaydan_sonra_degisen"] == []
+    assert son[b["id"]]["veri_onaydan_sonra_degisen"] == ["bayi.bayi1.ad"]
+    # Açıklama değişimi "veri değişti" saymaz.
+    k = kayitlar["bayi.bayi1.kullanici_adi"]
+    r = api.put(f"/test-data/{k['id']}", json={"aciklama": "yeni açıklama", "beklenen_surum": 1})
+    assert r.status_code == 200, r.text
+    assert latest_cases(api, rid)[0]["veri_onaydan_sonra_degisen"] == []
+
+    # Taslağa alınan case uyarı taşımaz (onaylı değil); yeniden onay izi tazeler.
+    r = api.post(
+        f"/cases/{b['id']}/decision",
+        json={"karar": "reopen", "icerik_hash": son[b["id"]]["icerik_hash"]},
+    )
+    assert r.status_code == 200, r.text
+    b2 = next(x for x in latest_cases(api, rid) if x["id"] == b["id"])
+    assert b2["veri_onaydan_sonra_degisen"] == []
+    r = api.post(
+        f"/cases/{b['id']}/decision", json={"karar": "approve", "icerik_hash": b2["icerik_hash"]}
+    )
+    assert r.status_code == 200 and r.json()["veri_onaydan_sonra_degisen"] == []
