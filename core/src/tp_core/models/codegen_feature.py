@@ -49,6 +49,7 @@ ENGEL_TURU = frozenset(
         "flaky",  # tekrarların bir kısmı geçti, bir kısmı kırmızı (defect adayı değil)
         "human_rejected",  # mühendis PR'ı reddetti / değişiklik istedi (POST /prs/{n}/review)
         "case_changed",  # case onaydan sonra değişti
+        "test_verisi",  # 013 K19: test verisi atfı çözülemedi (sır tanımsız / katalogda yok)
     }
 )
 BREAK_DURUM = frozenset({"not_started", "running", "passed", "weak", "failed"})

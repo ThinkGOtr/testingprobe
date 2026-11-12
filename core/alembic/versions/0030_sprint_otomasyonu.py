@@ -5,8 +5,12 @@
   durum ve gereksinimin tetikle otomatik akışa alındığı an (NULL = elle akış).
 - `test_verisi` + `test_verisi_surum`: merkezi test verisi kataloğu; case metni değeri değil
   `{veri:anahtar}` atfını taşır. Gizli kayıtta değer tutulmaz, yalnız ortam sırrının adı.
-- `script_codegen.veri_izi`: üretimde çözülen anahtarların sürümleri ({anahtar: surum});
-  `script_codegen.tetik`: üretimi kim başlattı (`elle` | `otomatik`).
+- `script_codegen.veri_izi`: üretimde çözülen anahtarların değer özetleri
+  ({anahtar: sha256(değer)[:12]}); `script_codegen.tetik`: üretimi kim başlattı
+  (`elle` | `otomatik`);
+  `script_codegen_engel_ck`'ye `test_verisi` engel türü (sır tanımsız / katalogda olmayan atıf).
+- Geçmiş değişmez: `test_verisi_surum` FK `ON DELETE RESTRICT`; tp_app `test_verisi`yi silemez
+  (silme yumuşaktır, `silindi`).
 
 Revision kimliği diğer açık dalların 0021/0022'siyle çakışmasın diye 0030'dur; dev'e birleşirken
 `down_revision` zincirin son halkasına çekilir.
@@ -24,6 +28,34 @@ revision: str = "0030"
 down_revision: str | None = "0020"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
+
+
+# 0009'daki `script_codegen_engel_ck` listesi (bu migration `test_verisi` ekler).
+ENGEL_TURLERI: tuple[str, ...] = (
+    "agent_error",
+    "case_changed",
+    "check_unknown",
+    "defect_candidate",
+    "environment",
+    "flaky",
+    "human_rejected",
+    "locator",
+    "missing_method",
+    "replay_miss",
+    "static",
+    "unknown_method",
+    "unsourced_value",
+    "unverified_step",
+)
+
+
+def _engel_ck(turler: Sequence[str]) -> str:
+    liste = ", ".join(f"'{t}'" for t in sorted(turler))
+    return (
+        "ALTER TABLE script_codegen DROP CONSTRAINT script_codegen_engel_ck, "
+        "ADD CONSTRAINT script_codegen_engel_ck "
+        f"CHECK (engel_turu IS NULL OR engel_turu IN ({liste}))"
+    )
 
 
 def upgrade() -> None:
@@ -65,7 +97,7 @@ CREATE TABLE test_verisi (
         """
 CREATE TABLE test_verisi_surum (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    test_verisi_id UUID NOT NULL REFERENCES test_verisi(id) ON DELETE CASCADE,
+    test_verisi_id UUID NOT NULL REFERENCES test_verisi(id) ON DELETE RESTRICT,
     surum INTEGER NOT NULL,
     islem TEXT NOT NULL,
     deger TEXT,
@@ -86,12 +118,19 @@ CREATE TABLE test_verisi_surum (
         "ALTER TABLE script_codegen ADD CONSTRAINT script_codegen_tetik_ck "
         "CHECK (tetik IN ('elle', 'otomatik'))"
     )
-    op.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON otomasyon_ayari, test_verisi TO tp_app")
+    op.execute(_engel_ck((*ENGEL_TURLERI, "test_verisi")))
+    op.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON otomasyon_ayari TO tp_app")
+    # Katalog silmesi yumuşaktır: tp_app satır silemez (sürüm geçmişi de RESTRICT ile korunur).
+    op.execute("GRANT SELECT, INSERT, UPDATE ON test_verisi TO tp_app")
     # Sürüm geçmişi geriye dönük değiştirilemez (case_goruntuleme gibi).
     op.execute("GRANT SELECT, INSERT ON test_verisi_surum TO tp_app")
 
 
 def downgrade() -> None:
+    op.execute(
+        "UPDATE script_codegen SET engel_turu = 'unsourced_value' WHERE engel_turu = 'test_verisi'"
+    )
+    op.execute(_engel_ck(ENGEL_TURLERI))
     op.execute("ALTER TABLE script_codegen DROP CONSTRAINT script_codegen_tetik_ck")
     op.execute("ALTER TABLE script_codegen DROP COLUMN tetik")
     op.execute("ALTER TABLE script_codegen DROP COLUMN veri_izi")

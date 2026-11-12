@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, text
 
 from tests.unit.features.cases.helpers import login, run_jobs
 from tests.unit.features.codegen.conftest import golden_cases, tpd1_acs
@@ -92,31 +92,54 @@ def test_atifli_case_cozulmus_gider_replay_eslesir_veri_izi(
     # REPLAY golden'ı (input_match.case_text) çözülmüş metinle eşleşti: PR açıldı.
     assert sc.durum == "pr_open", cg.engel_nedeni
     assert cg.uretim_modu == "replay"
-    assert cg.veri_izi == {a: 1 for a in atiflar}
+    with session_scope() as s:
+        degerler, _ = service.cozum_degerleri(s)
+    assert cg.veri_izi == {a: service.deger_ozeti(degerler[a]) for a in atiflar}
     assert 'await cartPage.expectFreeQuantity("P-001", 1);' in sc.icerik
     assert "{veri:" not in sc.icerik
+    # K19: gizli değer kodda ortamdan okunur; PR/commit içeriğinde düz parola yok.
+    assert 'await loginPage.login("bayi1", process.env.TP_TESTVERI_DEMO_PAROLA);' in sc.icerik
+    assert DEMO_PAROLA not in sc.icerik
     pr = codegen.forge.find_open_pr(f"tp/case-{cid}")
     assert pr is not None and "{veri:" not in pr.body
+    assert DEMO_PAROLA not in pr.body and DEMO_PAROLA not in pr.title
 
     liste = api.get("/scripts").json()
-    assert liste[0]["veri_izi"] == cg.veri_izi and liste[0]["veri_degisti"] is False
-    # Aynı içerik + aynı veri sürümü: açık PR varken yeniden üretim atlanır.
+    assert liste[0]["veri_izi"] == cg.veri_izi
+    assert liste[0]["veri_degisti"] is False and liste[0]["veri_degisen"] == []
+    # API (adım argümanı / ham çıktı / eşleme argümanları) bilinen gizli değeri göstermez.
+    detay = api.get(f"/scripts/{sid}")
+    assert DEMO_PAROLA not in detay.text and "•••" in detay.text
+    with engine.connect() as c:
+        adimlar = c.execute(
+            text("SELECT arguman::text, ozet, ham FROM script_adim WHERE script_id = :s"),
+            {"s": sid},
+        ).all()
+    assert adimlar and DEMO_PAROLA not in str(adimlar)
+    # Aynı içerik + aynı veri değeri: açık PR varken yeniden üretim atlanır.
     tekrar = _uret(api, cid).json()
     assert tekrar["durum"] == "none" and tekrar["sonuclar"][0]["durum"] == "pr_acik"
 
-    # Kullanılan kaydın sürümü değişir (değer aynı): uyarı + yeniden üretime izin (K10).
+    # Yalnız açıklama değişir (değer aynı): "veri değişti" sayılmaz, açık PR atlatmaz.
     with session_scope() as s:
         k = s.scalars(select(TestVerisi).where(TestVerisi.anahtar == "urun.p_001.kod")).one()
         service.guncelle(s, k.id, {"aciklama": "Kampanyalı ürün"}, 1, "analist")
     d = api.get(f"/scripts/{sid}").json()
-    assert d["veri_degisti"] is True and d["veri_izi"]["urun.p_001.kod"] == 1
-    yeni = _uret(api, cid).json()
-    assert yeni["durum"] == "started", yeni
-    run_jobs(engine)
-    sc2, cg2 = _script(yeni["script_ids"][0])
-    assert sc2.durum == "pr_open", cg2.engel_nedeni
-    assert cg2.veri_izi["urun.p_001.kod"] == 2
-    assert _script(sid)[0].durum == "closed"
+    assert d["veri_degisti"] is False and d["veri_degisen"] == []
+    assert _uret(api, cid).json()["sonuclar"][0]["durum"] == "pr_acik"
+
+    # Değer değişir: uyarı (K10); aynı değere geri dönünce uyarı kalkar (değer özeti).
+    with session_scope() as s:
+        k = s.scalars(select(TestVerisi).where(TestVerisi.anahtar == "urun.p_001.kod")).one()
+        service.guncelle(s, k.id, {"deger": "P-001X"}, 2, "analist")
+    d = api.get(f"/scripts/{sid}").json()
+    assert d["veri_degisti"] is True and d["veri_degisen"] == ["urun.p_001.kod"]
+    assert api.get("/scripts").json()[0]["veri_degisen"] == ["urun.p_001.kod"]
+    with session_scope() as s:
+        k = s.scalars(select(TestVerisi).where(TestVerisi.anahtar == "urun.p_001.kod")).one()
+        service.guncelle(s, k.id, {"deger": "P-001"}, 3, "analist")
+    d = api.get(f"/scripts/{sid}").json()
+    assert d["veri_degisti"] is False
 
 
 def test_sir_tanimsiz_ya_da_silinmis_anahtar_uretimi_reddeder(
@@ -145,7 +168,8 @@ def test_sir_tanimsiz_ya_da_silinmis_anahtar_uretimi_reddeder(
     monkeypatch.delenv(service.DEMO_PAROLA_SIRRI)
     run_jobs(engine)
     sc, cg = _script(sid)
-    assert sc.durum == "failed" and cg.engel_turu == "unsourced_value"
+    # K19: ayrı engel türü (model hatası sayılmaz).
+    assert sc.durum == "failed" and cg.engel_turu == "test_verisi"
     assert "test verisi sırrı tanımsız: ortak.demo_parola" in cg.engel_nedeni
 
     # Silinmiş (katalogda olmayan) anahtar.

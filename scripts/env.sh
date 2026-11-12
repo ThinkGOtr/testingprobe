@@ -62,6 +62,23 @@ if [ -n "${PLAYWRIGHT_VERSION:-}" ] && [ "$(env_get PLAYWRIGHT_VERSION)" != "$PL
   echo "PLAYWRIGHT_VERSION=$PLAYWRIGHT_VERSION .env'e yazıldı (.playwright-version)"
 fi
 
+# Test verisi sırları (specs/013 K19; `TP_TESTVERI_*`): compose'da varsayılan YOK, değer .env'den
+# gelir. Daha önce üretilmiş .env'de anahtar hiç yoksa .env.example'daki demo değeri eklenir
+# (var olan satıra — boş da olsa — dokunulmaz).
+while IFS= read -r line; do
+  key="${line%%=*}"
+  if ! grep -Eq "^[[:space:]]*${key}[[:space:]]*=" .env; then
+    tmp="$(mktemp .env.tmp.XXXXXX)"
+    cat .env > "$tmp"
+    if [ -s "$tmp" ] && [ "$(tail -c 1 "$tmp" | od -An -c | tr -d ' ')" != '\n' ]; then
+      printf '\n' >> "$tmp"
+    fi
+    printf '%s\n' "$line" >> "$tmp"
+    mv "$tmp" .env
+    echo "$key .env'e eklendi (.env.example)"
+  fi
+done < <(grep -E '^TP_TESTVERI_[A-Z0-9_]+=' .env.example 2>/dev/null || true)
+
 chmod 600 .env
 
 if [ -n "$filled" ]; then

@@ -51,8 +51,9 @@ x-core-env: &core-env
   JIRA_BROWSE_URL: ${JIRA_BROWSE_URL:-http://127.0.0.1:${JIRA_SIM_PORT:-8090}}
   JIRA_PROJECT: ${JIRA_PROJECT:-TPD}
   # Test verisi kataloğunun gizli kaydı `ortak.demo_parola` (specs/013 §3.3): değer kataloğa
-  # yazılmaz, bu ortam sırrından okunur (eşleme core-api/worker, çözüm kod üretimi).
-  TP_TESTVERI_DEMO_PAROLA: ${TP_TESTVERI_DEMO_PAROLA:-Demo123!}
+  # yazılmaz, bu ortam sırrından okunur (eşleme core-api/worker, çözüm kod üretimi). Varsayılan
+  # YOK (K19): değer .env'den (`make env`, .env.example); tanımsızsa portal "sır tanımsız" gösterir.
+  TP_TESTVERI_DEMO_PAROLA: ${TP_TESTVERI_DEMO_PAROLA:-}
   JIRA_READ_EMAIL: ${JIRA_READ_EMAIL:-reader@sim.local}
   JIRA_READ_TOKEN: ${JIRA_READ_TOKEN:-sim}
   TP_TEST_MGMT: ${TP_TEST_MGMT:-jira}
@@ -362,6 +363,9 @@ services:
       DEMOAPP_TEST_TOKEN: ${DEMOAPP_TEST_TOKEN:?make env çalıştırın}
       TP_FORGE_MIRROR_PATH: /forge-mirror/demo-app.git
       TP_E2E_ROOT: ${TP_E2E_ROOT:-e2e}
+      # 013 K19: üretilen testler gizli test verisini ortamdan okur (`process.env.TP_TESTVERI_*`,
+      # `System.getenv`); runner yalnız `TP_TESTVERI_*` adlarını test sürecine geçirir.
+      TP_TESTVERI_DEMO_PAROLA: ${TP_TESTVERI_DEMO_PAROLA:-}
       # Java (Appium) koşusu (009 §2.7, runner/java_run.py): e2e-app kökü ve platform başına Appium.
       # Appium hostta; test-runner ona yalnızca appium-gw (TCP yönlendirici, `mobil` profili)
       # üzerinden ulaşır. Boş = o platformun Java koşusu sağlık kontrolünde `error`. Windows (GCP

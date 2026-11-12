@@ -135,44 +135,45 @@ def set_query_factory(fabrika: Callable[[], Sorgu | None] | None) -> None:
     _sorgu_fabrikasi = fabrika or demo_db_query
 
 
+def model_kipi() -> str | None:
+    """Geçidin yapılandırılmış kipi (`live` | `replay` | `record`); okunamazsa None."""
+    try:
+        from tp_core.gateway.config import GatewaySettings, resolve_mode
+
+        return resolve_mode(GatewaySettings())
+    except Exception as exc:  # pragma: no cover - yapılandırma okunamazsa eski yol
+        log.warning("Model kipi okunamadı: %s", exc)
+        return None
+
+
 def block(session: Session | None = None) -> str:
     """Modele giden güvenilmeyen veri bloğu (kaynak `testdata:demo-app`).
 
-    `session` verilir ve test verisi kataloğu doluysa (specs/013 §3.3) metin katalogdan kurulur;
-    ancak model girdisi (replay anahtarları) değişmesin diye DB tabanlı metinle birebir aynı
-    olmalıdır. Farklıysa (katalog düzenlenmiş, demo DB okunamıyor vb.) eski metin kullanılır ve
-    uyarı loglanır.
+    K17 (specs/013 §9): model kipi `live`/`record` ve `session` verilmişse blok **test verisi
+    kataloğundan** kurulur (yeni kayıtlar ve değişen değerler dahil; biçim DB bloğuyla aynı
+    kurallar). `replay`'de (ve katalog kurulamazsa) bugünkü demo DB bloğu kullanılır: REPLAY
+    girdileri / golden'lar değişmez.
     """
     from tp_core.gateway import wrap_untrusted
 
+    if session is not None and model_kipi() in ("live", "record"):
+        katalogdan = _katalog_metni(session)
+        if katalogdan is not None:
+            return wrap_untrusted(katalogdan, source=KAYNAK, kind="data")
+        log.warning("Test verisi bloğu katalogdan kurulamadı; model girdisi demo DB'den")
     try:
         sorgu = _sorgu_fabrikasi()
     except Exception as exc:
         log.warning("Test verisi kaynağı açılamadı: %s", exc)
         sorgu = None
-    metin = build_text(sorgu)
-    if session is not None:
-        metin = _katalog_metni_ya_da(session, metin)
-    return wrap_untrusted(metin, source=KAYNAK, kind="data")
+    return wrap_untrusted(build_text(sorgu), source=KAYNAK, kind="data")
 
 
-def _katalog_metni_ya_da(session: Session, eski: str) -> str:
+def _katalog_metni(session: Session) -> str | None:
     from tp_core.features.testveri.service import blok_metni
 
     try:
-        katalogdan = blok_metni(session)
-    except Exception as exc:  # katalog okunamazsa model girdisi yine eski yoldan
+        return blok_metni(session)
+    except Exception as exc:  # katalog okunamazsa model girdisi eski yoldan
         log.warning("Test verisi bloğu katalogdan kurulamadı: %s", exc)
-        return eski
-    if katalogdan is None:
-        return eski
-    if katalogdan != eski:
-        if VERITABANI_YOK in eski:  # demo DB'siz süreç (core-api): beklenen fark, uyarı değil
-            log.info("Test verisi bloğu: demo DB okunamadı; model girdisi eski yoldan")
-            return eski
-        log.warning(
-            "Test verisi kataloğu demo DB bloğundan farklı; model girdisi eski yoldan kuruldu "
-            "(replay anahtarları korunur)"
-        )
-        return eski
-    return katalogdan
+        return None

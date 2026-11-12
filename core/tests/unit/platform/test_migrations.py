@@ -299,3 +299,30 @@ def test_0008_downgrade_reopen_kararini_silmez(pg: PgServer) -> None:
     finally:
         with pg.super_conn() as c:
             c.execute(f'DROP DATABASE IF EXISTS "{ad}" WITH (FORCE)')
+
+
+def test_0030_test_verisi_gecmisi_silinemez_ve_engel_turu(db: Db) -> None:
+    """013 §9: tp_app test_verisi'ni silemez; sürüm FK RESTRICT; `test_verisi` engel türü."""
+    kid = uuid.uuid4()
+    with _app(db) as c:
+        c.execute(
+            "INSERT INTO test_verisi (id, anahtar, deger, guncelleyen) "
+            "VALUES (%s, 'a.b', 'x', 't')",
+            (kid,),
+        )
+        c.execute(
+            "INSERT INTO test_verisi_surum (test_verisi_id, surum, islem, deger, gizli, "
+            "degistiren) VALUES (%s, 1, 'olustur', 'x', false, 't')",
+            (kid,),
+        )
+        c.execute("UPDATE test_verisi SET silindi = true WHERE id = %s", (kid,))
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            c.execute("DELETE FROM test_verisi WHERE id = %s", (kid,))
+    with psycopg.connect(db.owner_url.replace("+psycopg", ""), autocommit=True) as c:
+        with pytest.raises(psycopg.errors.ForeignKeyViolation):
+            c.execute("DELETE FROM test_verisi WHERE id = %s", (kid,))
+        tanim = c.execute(
+            "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+            "WHERE conname = 'script_codegen_engel_ck'"
+        ).fetchone()[0]
+    assert "'test_verisi'" in tanim and "'unsourced_value'" in tanim

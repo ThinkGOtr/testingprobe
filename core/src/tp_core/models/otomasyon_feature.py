@@ -71,7 +71,7 @@ class TestVerisiSurum(Base):
 
     id: Mapped[uuid.UUID] = uuid_pk()
     test_verisi_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("test_verisi.id", ondelete="CASCADE")
+        ForeignKey("test_verisi.id", ondelete="RESTRICT")
     )
     surum: Mapped[int] = mapped_column(Integer)
     islem: Mapped[str]

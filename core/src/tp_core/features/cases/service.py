@@ -505,6 +505,7 @@ def store_cases(
     # 013 §3.3: katalogdaki test verisi değerleri `{veri:anahtar}` atfına çevrilir (K9; katalog
     # boşsa içerik aynen kalır). Hash eşlenmiş içerikten.
     esleme = testveri.eslem_katalogu(session)
+    esli: dict[uuid.UUID, Mapping[str, Any]] = {}
     eklenen: list[TestCase] = []
     tekrar: list[int] = []
     for sira, icerik in enumerate(cases, start=1):
@@ -513,6 +514,7 @@ def store_cases(
         if var is not None:
             eklenen.append(var)
             continue
+        ham = icerik
         ham_h = content_hash(dict(icerik))
         if esleme:
             icerik = atif.case_esle(icerik, esleme)
@@ -536,6 +538,16 @@ def store_cases(
         session.add(tc)
         mevcut_hashler.add(h)
         eklenen.append(tc)
+        if esleme:
+            esli[cid] = ham
+    if esli:
+        # Silme yarışı (review B11): eşleme sırasında silinen anahtara atıf yazılmasın; katalog
+        # yeniden okunur, bilinmeyen atıflı case eşlenmemiş (düz) içeriğe döner.
+        bilinen = testveri.anahtarlar(session)
+        for tc in eklenen:
+            if tc.id in esli and atif.bilinmeyen_atiflar(tc.icerik, bilinen):
+                tc.icerik = dict(esli[tc.id])
+                tc.icerik_hash = content_hash(tc.icerik)
     session.flush()
     return eklenen, tekrar
 

@@ -160,8 +160,8 @@ def test_silme_atif_yapan_etkin_case_varsa_409_listeli(
     govde = r.json()
     assert govde["kod"] == "cakisma" and "atıf" in govde["detail"]
     assert govde["kullanan"] == [
-        {"case_id": c["id"], "case_ref": "TPD-4-C1", "baslik": c["icerik"]["title"],
-         "durum": "draft"}
+        {"case_id": c["id"], "case_ref": "TPD-4-C1", "requirement_id": str(rid),
+         "baslik": c["icerik"]["title"], "durum": "draft"}
     ]  # fmt: skip
     assert _denetim(engine, "testveri.sil") == []
     # Kullanılmayan kayıt silinebilir.
@@ -229,26 +229,81 @@ def test_on_worker_start_tohumlar(engine: Engine, monkeypatch: pytest.MonkeyPatc
     assert len(_denetim(engine, "testveri.tohumla")) == 1
 
 
+def _kip(monkeypatch: pytest.MonkeyPatch, kip: str) -> None:
+    monkeypatch.setattr(testdata, "model_kipi", lambda: kip)
+
+
 def test_block_katalogdan_ayni_metin(
-    engine: Engine, katalog, caplog: pytest.LogCaptureFixture
+    engine: Engine, katalog, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Katalog demo DB'yle aynıyken her kipte blok birebir aynı (replay anahtarları korunur)."""
     testdata.set_query_factory(lambda: seed_sorgu)
     try:
         eski = testdata.block()
         with session_scope() as s:
             assert service.blok_metni(s) == testdata.build_text(seed_sorgu)
-            with caplog.at_level(logging.WARNING):
-                assert testdata.block(s) == eski
-        assert "farklı" not in caplog.text
+            for kip in ("replay", "live", "record"):
+                _kip(monkeypatch, kip)
+                with caplog.at_level(logging.WARNING):
+                    assert testdata.block(s) == eski
+        assert "kurulamadı" not in caplog.text
+    finally:
+        testdata.set_query_factory(None)
 
-        # Katalog değişirse model girdisi değişmez: eski yol + uyarı.
+
+def test_block_k17_live_katalogdan_replay_demo_dbden(
+    engine: Engine, katalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """K17: live/record'da değişen değer ve yeni kayıtlar modele gider; replay'de DB bloğu."""
+    testdata.set_query_factory(lambda: seed_sorgu)
+    try:
+        eski = testdata.block()
         with session_scope() as s:
             k = s.scalars(select(TestVerisi).where(TestVerisi.anahtar == "urun.p_001.fiyat")).one()
             service.guncelle(s, k.id, {"deger": "26,00 TL"}, 1, "analist")
-        with session_scope() as s, caplog.at_level(logging.WARNING):
-            assert service.blok_metni(s) != testdata.build_text(seed_sorgu)
+            for anahtar, deger in (
+                ("bayi.bayi9.kullanici_adi", "bayi9"),
+                ("bayi.bayi9.ad", "Dağ Bayi"),
+                ("bayi.bayi9.kredi_limiti", "2.000,00 TL"),
+                ("urun.p_009.kod", "P-009"),  # eksik alanlı ürün: "Diğer" bölümüne
+                ("musteri.vergi_no", "1234567890"),
+                ("ayar.yeni_esik", "10"),
+            ):
+                service.olustur(s, {"anahtar": anahtar, "deger": deger}, "analist")
+        with session_scope() as s:
+            _kip(monkeypatch, "replay")
             assert testdata.block(s) == eski
-        assert "demo DB bloğundan farklı" in caplog.text
+            for kip in ("live", "record"):
+                _kip(monkeypatch, kip)
+                blok = testdata.block(s)
+                assert blok != eski
+                assert '- P-001 · "Portakal Gazozu 1L" · 26,00 TL' in blok
+                assert "25,00 TL" not in blok.split("Uygulama ayarları")[0]
+                assert '- bayi9 / Demo123! — bayi adı "Dağ Bayi", kredi limiti 2.000,00 TL' in blok
+                assert "- yeni_esik = 10" in blok
+                assert "Diğer test verileri (anahtar = değer):" in blok
+                assert "- urun.p_009.kod = P-009" in blok
+                assert "- musteri.vergi_no = 1234567890" in blok
+            # Biçim kuralları aynı: bölüm sırası ve son satırlar.
+            metin = service.blok_metni(s)
+            assert metin is not None
+            assert metin.splitlines()[:2] == testdata.build_text(seed_sorgu).splitlines()[:2]
+            assert metin.endswith("Tutar biçimi: 1.250,00 TL (tr-TR, iki ondalık).")
+    finally:
+        testdata.set_query_factory(None)
+
+
+def test_block_live_katalog_kurulamazsa_demo_db(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with session_scope() as s:
+        service.tohumla(s, seed_sorgu)
+    monkeypatch.delenv(service.DEMO_PAROLA_SIRRI, raising=False)
+    _kip(monkeypatch, "live")
+    testdata.set_query_factory(lambda: seed_sorgu)
+    try:
+        with session_scope() as s:
+            assert testdata.block(s) == testdata.block()
     finally:
         testdata.set_query_factory(None)
 

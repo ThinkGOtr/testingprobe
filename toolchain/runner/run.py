@@ -59,6 +59,17 @@ from toolchain_common.validation import RUN_ID_RE
 RUN_LOCK = threading.Lock()
 
 PASS_ENV = ("PATH", "HOME", "LANG", "LC_ALL", "TZ", "PLAYWRIGHT_BROWSERS_PATH", "TMPDIR")
+# Gizli test verisi (K19, 013 ANALIZ §9): üretilen test parolayı koda yazmaz,
+# `process.env.TP_TESTVERI_<AD>` okur. Yalnızca bu dar ada uyan değişkenler test sürecine geçer;
+# başka her değişken (API anahtarları, belirteçler) PASS_ENV izin listesinde değilse geçmez.
+TESTVERI_ENV_RE = re.compile(r"^TP_TESTVERI_[A-Z0-9_]{1,64}$")
+
+
+def testveri_env() -> dict[str, str]:
+    """Ortamdaki gizli test verisi değişkenleri (`TP_TESTVERI_*`, dar ad deseni)."""
+    return {k: v for k, v in os.environ.items() if TESTVERI_ENV_RE.fullmatch(k)}
+
+
 DAY_S = 86_400
 # Rapor türü → config'teki yer (`results/` altında) ve varlığının işareti olan dosya.
 REPORTS = {
@@ -127,6 +138,7 @@ def playwright_argv(cfg: Settings, e2e: Path, req: RunRequest) -> list[str]:
 
 def playwright_env(cfg: Settings, req: RunRequest) -> dict[str, str]:
     env = {k: os.environ[k] for k in PASS_ENV if k in os.environ}
+    env.update(testveri_env())
     env.update(
         {
             "CI": "1",
