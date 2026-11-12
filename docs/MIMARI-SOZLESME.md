@@ -235,9 +235,8 @@ yalnız worker yazar), `asistan_oneri_geri_bildirim`, `asistan_hiz` (`unique nul
 `ai_call.ek = {kanal:"asistan", kullanici_id, mesaj_id}`. `asistan_mesaj.durum` durum makinesinde değildir
 (insan kapısı yok). Saklama 90 gün (`TP_ASISTAN_SAKLAMA_GUN`); `ai_call`/`tool_call` etkilenmez.
 
-**012 kalite doğrulama tabloları (0022 `kalite_dogrulama`, `down_revision="0020"`; `feat/case-gen-v3`
-ile birleşince `0029`, `down_revision="0028"` — ANALIZ §14; ayrıntı
-`specs/012-test-kalite-dogrulama/ANALIZ.md` §5, §11.3, §12, §13.2):** `karar_tablosu` ve `metamorfik_iliski`
+**012 kalite doğrulama tabloları (0022 `kalite_dogrulama`, `down_revision="0020"`; ayrıntı
+`specs/012-test-kalite-dogrulama/ANALIZ.md` §5, §11.3, §12):** `karar_tablosu` ve `metamorfik_iliski`
 (içerik JSONB, `icerik_hash`, `onaylanan_hash`, `durum` draft|pending_po|approved|superseded — iş akışı
 makinesi, onay `record_approval` + görülen hash; `gereksinim_hash` ile bayatlık; `UNIQUE
 (requirement_id, sira_no)`), `case_oracle_kontrol` (`UNIQUE (test_case_id, icerik_hash)`; `sonuc`
@@ -309,7 +308,7 @@ gönderilir ve akış kapanır. Portal bunu alınca yeniden bağlanmaz, giriş e
 | POST | `/requirements/{id}/review-complete` | analyst | Taslak kalmadıysa review'ı kapatır (denetim olayı); taslak varsa 409 |
 | GET | `/cases?requirement_id=` · `/cases/{id}` | herkes | |
 | POST | `/cases/{id}/viewed` | analyst | Kartın ilk görüntülenmesi (review süresi ölçümü) |
-| POST | `/cases/{id}/decision` `{karar: approve\|edit\|reject\|reopen, icerik_hash, icerik?, ret_nedeni?, gerekce?, beklenen_anlam_degisti?, oracle_istisna_gerekce?, oracle_istisna_turu?}` | analyst | `reopen` ("Taslağa al"): approved/rejected → draft; kayıtlı, onaylamayan karar. 012: approve/edit karar tablosu onay kapısından geçer (yüksek riskli uyuşmazlık 422 `oracle_uyumsuz`, kontrol edilemeyen 422 `oracle_kontrolsuz`; `oracle_istisna_gerekce` ≥ 20 karakter / 10 harf + `oracle_istisna_turu?: uyumsuz\|kontrolsuz` ile istisna, `oracle_istisna` tablosuna eklenir; kontrol bitmemişse 409 `oracle_bekleniyor`; ANALIZ §13.2); case nesneleri `oracle {sonuc, icerik_hash, ozet, karsilastirmalar, karsilastirilamayan, istisna, kontrol_suruyor} \| null` taşır |
+| POST | `/cases/{id}/decision` `{karar: approve\|edit\|reject\|reopen, icerik_hash, icerik?, ret_nedeni?, gerekce?, beklenen_anlam_degisti?, oracle_istisna_gerekce?}` | analyst | `reopen` ("Taslağa al"): approved/rejected → draft; kayıtlı, onaylamayan karar. 012: approve/edit karar tablosu onay kapısından geçer (yüksek riskli uyuşmazlık 422 `oracle_uyumsuz`, `oracle_istisna_gerekce` ≥ 20 karakterle istisna; kontrol bitmemişse 409 `oracle_bekleniyor`); case nesneleri `oracle {sonuc, icerik_hash, ozet, karsilastirmalar, karsilastirilamayan, istisna, kontrol_suruyor} \| null` taşır |
 | GET | `/cases/{id}/oracle?icerik_hash=` | herkes | 012: güncel (ya da önerilen) içeriğin karar tablosu kontrolü `{case_id, icerik_hash, guncel_icerik, kapsayan_tablolar, oracle}` |
 | POST | `/cases/{id}/oracle-check` `{icerik?}` | analyst | 012: önerilen düzeltme içeriği için kontrol (şema denetimli) → 202 `{icerik_hash, job_id}` |
 | GET | `/requirements/{id}/decision-tables` | herkes | 012: `{tablolar, iliskiler, son_taslak}` (durum, `bayat`, hash, onaylayan) |
@@ -408,8 +407,6 @@ korunur. Yeni değer yalnız bu tabloya eklenerek kullanılır; asistanın hata 
 | `asistan_kapali` | 503 | asistan: `neden` = `worker_yok` \| `maskeleme_kapali` |
 | `oracle_uyumsuz` | 422 | 012: yüksek riskli case'in beklenen değeri onaylı karar tablosuyla uyuşmuyor (istisna gerekçesiyle aşılır) |
 | `oracle_bekleniyor` | 409 | 012: yüksek riskli, tablo kapsamındaki case'in kontrolü bitmedi (kontrol kuyruğa alındı) |
-| `oracle_kontrolsuz` | 422 | 012: yüksek riskli, tablo kapsamındaki case kontrol edilemedi (gerekçeli `kontrolsuz` istisnasıyla aşılır) |
-| `oracle_kontrol_siniri` | 429 | 012: `oracle-check` case başına dakikalık iş sınırı aşıldı |
 | `karar_tablosu_gecersiz` | 422 | 012: tablo içeriği şemaya / ifade diline uymuyor (`hatalar` mesajda) |
 | `iliski_gecersiz` | 422 | 012: metamorfik ilişki geçersiz ya da türetme için uygun değil |
 | `hata_kosusu_suruyor` | 409 | 012: süren ekilmiş hata koşusu var |

@@ -56,9 +56,8 @@ KATALOG: tuple[Hata, ...] = (
         KAMPANYA_TEK_BEDAVA,
         TUR_KOD,
         "Kampanya: en çok 1 bedava",
-        "Ayırt edici girdi 14 adet: doğru 2 bedava, hatalı 1. Bedava adet en çok 1 verilir "
-        "(min(1, adet // 6)); hatasız uygulamayla 6 ve 7 adette aynı sonucu verir, 14 adette "
-        "(7'nin 2 katı) ayrılır.",
+        "Bedava adet en çok 1 verilir (min(1, adet // 6)): 6 ve 7 adette doğru görünür, 12 ve "
+        "üstünde eksik kalır (14 adette 2 yerine 1).",
     ),
     Hata(
         KAMPANYA_CIFT_INDIRIM,

@@ -1,8 +1,6 @@
 """012 test kalite doğrulama hata sınıfları (ANALIZ §5; MIMARI-SOZLESME §5 `kod` sözleşmesi).
 
-Ortak modül: karar tablosu, oracle ve metamorfik şeritleri buradan içe aktarır. Hata koşusu hatası
-(`HataKosusuSuruyor`) kendi özelliğindedir (`hata_kosusu.hatalar`); burada geriye uyum için tembel
-olarak verilir.
+Tek ortak modül: karar tablosu, oracle, metamorfik ve hata koşusu şeritleri buradan içe aktarır.
 `kod` sınıf başına sabittir; anlamları `rules/assistant/hata-sozlugu.yaml`'dadır (kural testi
 `WorkflowError` alt sınıflarını bu sözlükle karşılaştırır).
 """
@@ -10,7 +8,6 @@ olarak verilir.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
 
 from tp_core.workflow.service import WorkflowError
 
@@ -49,6 +46,14 @@ class OracleKontrolSiniri(WorkflowError):
     kod = "oracle_kontrol_siniri"
 
 
+class OracleKayitDegisti(WorkflowError):
+    """Kararla gelen `oracle_kayit_damgasi` güncel kontrol kaydının damgasına uymuyor: analistin
+    gördüğü kayıt karar verilirken yeniden hesaplandı (review 2 g2 Y9)."""
+
+    status_code = 409
+    kod = "oracle_kayit_degisti"
+
+
 class KararTablosuGecersiz(WorkflowError):
     """Karar tablosu içeriği şemaya ya da ifade diline uymuyor; `hatalar` ayrıntıları taşır."""
 
@@ -71,21 +76,19 @@ class IliskiGecersiz(WorkflowError):
         self.hatalar = list(hatalar)
 
 
-def __getattr__(ad: str) -> Any:
-    """Geriye uyum: `HataKosusuSuruyor` `hata_kosusu.hatalar`'a taşındı (döngüsel içe aktarma
-    olmasın diye tembel)."""
-    if ad == "HataKosusuSuruyor":
-        from tp_core.features.hata_kosusu.hatalar import HataKosusuSuruyor
+class HataKosusuSuruyor(WorkflowError):
+    """Süren (queued | running) bir ekilmiş hata koşusu varken yenisi başlatılamaz."""
 
-        return HataKosusuSuruyor
-    raise AttributeError(f"module {__name__!r} has no attribute {ad!r}")
+    status_code = 409
+    kod = "hata_kosusu_suruyor"
 
 
 __all__ = [
-    "HataKosusuSuruyor",  # noqa: F822  (tembel; modül __getattr__)
+    "HataKosusuSuruyor",
     "IliskiGecersiz",
     "KararTablosuGecersiz",
     "OracleBekleniyor",
+    "OracleKayitDegisti",
     "OracleKontrolSiniri",
     "OracleKontrolsuz",
     "OracleUyumsuz",

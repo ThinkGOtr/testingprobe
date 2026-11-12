@@ -724,15 +724,14 @@ Kaynak: therafi.ai ve testinium.com pazarlama sayfaları (teknik doküman yok; i
 ## 20.2 Test kalite doğrulama (012)
 
 Ayrıntı ve kararlar: [specs/012-test-kalite-dogrulama/ANALIZ.md](../specs/012-test-kalite-dogrulama/ANALIZ.md)
-(birleştirme notları §12, review kararları ve güncel sözleşme §13, `feat/case-gen-v3` ile
-birleştirme planı §14). AI'ın ürettiği testlerin doğru şeyi beklediğini ve hata yakaladığını
+(birleştirme notları §12). AI'ın ürettiği testlerin doğru şeyi beklediğini ve hata yakaladığını
 kanıtlayan beş parça; hepsi Postgres'te, okuma anında hesaplanır, canlı model REPLAY'dir:
 
 | Parça | Ne yapar | Kod |
 |---|---|---|
-| F1 karar tablosu | AI story'den taslak çıkarır (`decision_table_draft`; yalnız onaylı gereksinim metni), analist düzenler, PO görülen hash'le onaylar; gereksinim değişince tablo bayat. Case'in beklenen değerleri `case_facts` ile alıntısıyla çıkarılır, LLM'siz doğrulanır ve sınırlı ifade diliyle hesaplanan tabloyla karşılaştırılır. Onay kapısı: yüksek riskli uyuşmazlık 422 `oracle_uyumsuz`, kontrol edilemeyen 422 `oracle_kontrolsuz` (ikisi de gerekçeli istisnayla; istisna formu "Case doğru" / "Tablo yanlış" iki yol), `kismen` yalnız uyarı, kontrol bitmemişse 409 `oracle_bekleniyor` | `features/karar_tablosu`, `features/oracle` |
+| F1 karar tablosu | AI story'den taslak çıkarır (`decision_table_draft`; yalnız onaylı gereksinim metni), analist düzenler, PO görülen hash'le onaylar; gereksinim değişince tablo bayat. Case'in beklenen değerleri `case_facts` ile alıntısıyla çıkarılır, LLM'siz doğrulanır ve sınırlı ifade diliyle hesaplanan tabloyla karşılaştırılır. Onay kapısı: yüksek riskli uyuşmazlık 422 `oracle_uyumsuz` (gerekçeli istisna), kontrol bitmemişse 409 `oracle_bekleniyor` | `features/karar_tablosu`, `features/oracle` |
 | F2 triage ayrımı | Assertion farkı onaylı tabloyla karşılaştırılır: beklenti = tablo → `product_defect` (`karar_tablosu_uyumlu`); gerçekleşen = tablo → `test_maintenance/beklenti` (bug taslağı ve locator onarımı yok) | `features/triage/rules.py` |
-| F3 ekilmiş hata koşusu | Demo uygulamaya test kipinde bayi bazında hata konur, onaylı suite koşar; hata yakalama oranı = yakalanan / (yakalanan + kaçan); yalnız temelde yeşil testin assertion kırmızısı sayılır, ana oran yalnız üretilen testlerden (el yazısı suite ayrı) | `features/hata_kosusu`, `demo-app/api/.../faults.py` |
+| F3 ekilmiş hata koşusu | Demo uygulamaya test kipinde bayi bazında hata konur, onaylı suite koşar; hata yakalama oranı = yakalanan / (yakalanan + kaçan) | `features/hata_kosusu`, `demo-app/api/.../faults.py` |
 | F4 beklenti doğruluğu | AI içeriğinin (insan düzeltmesinden önce) tabloyla uyuşma oranı; Kontrol Kulesi ve case metrikleri | `features/oracle/metrik.py` |
 | F5 ilişki tabanlı ek case | PO onaylı metamorfik ilişkiden deterministik türetilen `draft` case (metriğe girmez) | `features/metamorfik` |
 

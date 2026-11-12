@@ -16,23 +16,10 @@ Kontrol Kulesi'nden elle başlatılır (K5; `engineer`, `presenter` — V4). Se�
    geçersizse) hataların geri alındığı doğrulanamaz: o platformun `yakalandi`/`kacti` adımları
    `gecersiz` olur ve koşu `uyarilar`'a not düşer.
 
-Kıran testin kaynağı (`kaynak`): testin kendi dosyası (`t.file`; failure konumu değil) o platformda
-onaylı bir case'in onaylı içerik hash'inden üretilmiş bir `script_codegen` kaydının dosyasıysa `ai`,
-değilse `el` (yol adı taklit edilemez; codegen kaydı yoksa her test `el`). Ana oran yalnız `ai`
-testlerden hesaplanır (K12); el yazısı suite `el_yazisi` altında ayrı verilir. Kaynak envanteri
-yalnız **temelde yeşil** testlerden sayılır: platformun temel koşusunda o kaynaktan yeşil test yoksa
-o kaynağın oranı ölçülmez (`null`; ör. üretilen testlerin hepsi temelde kırmızıysa AI oranı %0
-değil "ölçülmedi").
-
-"Temelde yeşil" üyelikle denetlenir: temel koşudaki yeşil testlerin anahtar kümesi saklanır
-(`_ic.temel.<platform>.yesil`) ve bir hata ancak bu kümedeki bir testle yakalanır; temelde
-görülmeyen (atlanan, yeni, başlığı değişen) kırmızı test kanıt sayılmaz. Temelde kırmızı test
-sayısı `MAX_TEMEL_KIRMIZI`'yı (ya da yeşil sayısı `MAX_TEMEL_YESIL`'i) aşarsa platform `gecersiz`
-olur.
-
-Adım `neden`'i kategorize Türkçe metindir: ham toolchain/istisna metni ve Appium adresleri
-`neden`'e yazılmaz, yalnız denetim kaydına (`hata_kosusu.adim_detayi`, `hata_kosusu.finished`
-`detay`) gider.
+Kıran testin kaynağı (`kaynak`): onaylı case'lerden üretilen test (`ai`: web `tests/generated/`,
+Java `…/bayi/uretilen/`) ya da el yazısı suite (`el`). Ana oran yalnız `ai` testlerden hesaplanır
+(K12); el yazısı suite `el_yazisi` altında ayrı verilir. Platformun temel koşusunda o kaynaktan
+test yoksa o kaynağın oranı ölçülmez (`null`).
 
 Yeniden koşu (kıran testleri hatasız tekrar koşup kararlılığı doğrulamak) yapılmaz: her biri ayrı
 bir `/check` (uygulama derlemesi + koşu) demektir. Yerine iki koruma vardır: kıran test temelde
@@ -52,10 +39,6 @@ tarama işinde (`hata_kosusu.tarama`) yapılır; GET uçları salt okunurdur.
 (`done | failed | cancelled`) koşunun durumu hiçbir yoldan değişmez: her yazma satırı kilitleyip
 (`populate_existing`) durumu yeniden okur.
 
-Adım işinde DB/taşıma hatası (`DBAPIError`, `httpx.TransportError`, bağlantı/zaman aşımı) yeniden
-fırlatılır: iş kuyruğun yeniden deneme kuralıyla aynı adımdan sürer (adım `bekliyor` kalır); koşu
-yalnız son denemede `failed` kapanır. İptal istenmişken beklenmeyen hata koşuyu `cancelled` kapatır.
-
 İş durumu (iptal işareti, temel koşunun test envanteri ve temelde kırmızı testleri, adımların
 `temelde_kirmizi` listesi) `hata_kosusu.ozet._ic`'te tutulur; API bunu `iptal_istendi` ve adım
 `temelde_kirmizi` alanlarıyla verir, `ozet`'te göstermez.
@@ -74,7 +57,6 @@ from __future__ import annotations
 
 import copy
 import logging
-import os
 import time
 import uuid
 from collections.abc import Iterable, Mapping, Sequence
@@ -82,10 +64,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-import httpx
-from sqlalchemy import func, select, text
+from sqlalchemy import select, text
 from sqlalchemy.engine import Connection
-from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from tp_core.audit import audit_on_commit
@@ -94,18 +74,8 @@ from tp_core.features.ci import services as ci_services
 from tp_core.features.ci.clients import ToolchainError, check_timeout_s
 from tp_core.features.codegen.classify import classify, java_raporu_mu, test_error_kind
 from tp_core.features.hata_kosusu import katalog as kat
-from tp_core.features.hata_kosusu.hatalar import HataKosusuSuruyor
-from tp_core.models import (
-    AppUser,
-    HataKosusu,
-    HataKosusuAdim,
-    Run,
-    Script,
-    TestCase,
-    enums,
-    session_scope,
-)
-from tp_core.models.codegen_feature import ScriptCodegen
+from tp_core.features.karar_tablosu.hatalar import HataKosusuSuruyor
+from tp_core.models import AppUser, HataKosusu, HataKosusuAdim, Run, enums, session_scope
 from tp_core.workflow import jobs as jobq
 from tp_core.workflow.jobs import JobContext, PermanentJobError
 from tp_core.workflow.service import Principal, WorkflowError
@@ -130,21 +100,9 @@ GECEN = ("passed", "expected", "flaky")
 MAX_NEDEN = 500
 MAX_KIRAN = 50
 MAX_TEMEL_KIRMIZI = 500
-MAX_TEMEL_YESIL = 5000
-MAX_DETAY = 2000
 IC = "_ic"
-ONAYLI_CASE = ("approved", "published")
-# Kule: koşu ancak her platformda geçerli (yakalandi | kacti) hata adımı kataloğun bu oranına
-# ulaşırsa oran verir (Y10); `TP_HATA_KOSUSU_GECERLI_ESIK` (0–1) ile ayarlanır.
-GECERLI_ESIK_ENV = "TP_HATA_KOSUSU_GECERLI_ESIK"
-GECERLI_ESIK = 0.5
-# Yeniden denenecek (geçici) hatalar: DB ve ağ taşıma katmanı (N4).
-GECICI_HATALAR: tuple[type[BaseException], ...] = (
-    DBAPIError,
-    httpx.TransportError,
-    ConnectionError,
-    TimeoutError,
-)
+URETILEN_IZLERI = ("tests/generated/", "/uretilen/")
+URETILEN_ONEKLERI = ("generated/", "uretilen/")
 
 
 class GecersizIstek(ValueError):
@@ -167,24 +125,6 @@ def _kirp(metin: Any, n: int = MAX_NEDEN) -> str | None:
 
 def _oran(pay: int, payda: int) -> float | None:
     return round(pay / payda, 4) if payda else None
-
-
-def gecerli_esik() -> float:
-    """Kule ölçüsü için platform başına geçerli hata adımı alt oranı (varsayılan 0,5)."""
-    try:
-        v = float(os.environ.get(GECERLI_ESIK_ENV) or GECERLI_ESIK)
-    except ValueError:
-        return GECERLI_ESIK
-    return min(max(v, 0.0), 1.0)
-
-
-def gecici_mi(exc: BaseException) -> bool:
-    """DB/taşıma hatası: iş yeniden denenir (adım `bekliyor` kalır)."""
-    return isinstance(exc, GECICI_HATALAR)
-
-
-def _detay(exc: BaseException) -> str:
-    return _kirp(f"{type(exc).__name__}: {exc}", MAX_DETAY) or type(exc).__name__
 
 
 def adim_zaman_asimi_s() -> int:
@@ -273,24 +213,18 @@ def is_anahtari(kosu_id: uuid.UUID, sira: int = 0) -> str:
     return f"{JOB}:{kosu_id}:{sira}"
 
 
-def is_anahtarlari(session: Session, kosu_id: uuid.UUID) -> list[str]:
-    """Koşunun olası tüm adım işi anahtarları (`sira` 0…adım sayısı-1)."""
-    n = session.scalar(
-        select(func.count()).select_from(HataKosusuAdim).where(HataKosusuAdim.kosu_id == kosu_id)
-    )
-    return [is_anahtari(kosu_id, i) for i in range(max(int(n or 0), 1))]
+def _is_oneki(kosu_id: uuid.UUID) -> str:
+    return f"{JOB}:{kosu_id}:%"
 
 
 def _isler(session: Session, kosu_id: uuid.UUID) -> list[Any]:
-    """Koşunun adım işleri: tam anahtar listesiyle `job_idempotency_uq` (kısmi tekil indeks)
-    üzerinden okunur (N10; `LIKE` taraması yok)."""
     return list(
         session.execute(
             text(
-                "SELECT id, durum, son_hata FROM job WHERE idempotency_key = ANY(:k) "
+                "SELECT id, durum, son_hata FROM job WHERE idempotency_key LIKE :k "
                 "ORDER BY olusturma, id"
             ),
-            {"k": is_anahtarlari(session, kosu_id)},
+            {"k": _is_oneki(kosu_id)},
         ).all()
     )
 
@@ -440,9 +374,8 @@ def kurtar(session: Session, kosu: HataKosusu) -> bool:
     if neden is None:
         return False
     if _ic(kosu).get("iptal_istendi"):
-        return _kapat(session, kosu, "cancelled", detay=neden)
-    # İşin son hatası ham istisna metnidir: yalnız denetim kaydına (güvenlik-12).
-    return _kapat(session, kosu, "failed", f"{YARIM_KALDI}.", detay=_kirp(neden, MAX_DETAY))
+        return _kapat(session, kosu, "cancelled")
+    return _kapat(session, kosu, "failed", f"{YARIM_KALDI}: {_kirp(neden, 300)}")
 
 
 def kurtar_hepsi(session: Session) -> int:
@@ -458,17 +391,8 @@ def kurtar_hepsi(session: Session) -> int:
     return n
 
 
-def _kapat(
-    session: Session,
-    kosu: HataKosusu,
-    durum: str,
-    uyari: str | None = None,
-    *,
-    detay: str | None = None,
-) -> bool:
-    """Süren koşuyu `durum`'a kapatır; bitmiş koşuya dokunmaz (False). Satır kilitli olmalı.
-
-    `uyari` koşuda görünür (kategorize Türkçe metin); `detay` (ham hata) yalnız denetime gider."""
+def _kapat(session: Session, kosu: HataKosusu, durum: str, uyari: str | None = None) -> bool:
+    """Süren koşuyu `durum`'a kapatır; bitmiş koşuya dokunmaz (False). Satır kilitli olmalı."""
     if kosu.durum not in enums.HATA_KOSUSU_SUREN:
         return False
     kosu.durum = durum
@@ -483,7 +407,7 @@ def _kapat(
         "system",
         "hata_kosusu.finished",
         f"hata_kosusu:{kosu.id}",
-        {"durum": durum, "uyari": uyari, "detay": detay, "oran": kosu.ozet.get("oran")},
+        {"durum": durum, "uyari": uyari, "oran": kosu.ozet.get("oran")},
     )
     _olay(session, kosu)
     return True
@@ -664,11 +588,7 @@ def ozet_hesapla(
     kıran test varsa `yakalanan`, yoksa `kacan`. Kaynak platformun temel koşusunda hiç test
     taşımıyorsa o platformda ölçülmez. `oran` = AI (üretilen testler) oranı; `el_yazisi` el yazısı
     suite; `tum_testler` iki kaynak birlikte (adımın kendi sonucu). `gecersiz` paydaya girmez.
-    `kapsam.tam_katalog` koşu kataloğun tüm hatalarını içeriyorsa doğrudur. `kacanlar`: hiçbir
-    testin yakalamadığı (`kacti`) hatalar; `ai_kacanlar`: AI ölçülen platformda üretilen testlerin
-    kaçırdığı hatalar (el yazısı yakalamış olabilir). `kapsam.yeterli`:
-    her platformda geçerli hata adımı ≥ `esik` × katalog (Y10; Kule yalnız bu durumda oran verir);
-    değilse `kapsam.not` nedeni söyler.
+    `kapsam.tam_katalog` koşu kataloğun tüm hatalarını içeriyorsa doğrudur.
     """
     ic = ic or {}
     temel_env = ic.get("temel") or {}
@@ -676,14 +596,10 @@ def ozet_hesapla(
     adlar = _adlar()
     out_pl: list[dict[str, Any]] = []
     kacanlar: list[dict[str, Any]] = []
-    ai_kacanlar: list[dict[str, Any]] = []
     top_ai: dict[str, int] | None = None
     top_el: dict[str, int] | None = None
     top_tum = _sayac()
     top = {"gecersiz": 0, "bekleyen": 0}
-    katalog = kat.kodlar()
-    esik = gecerli_esik()
-    yetersiz: list[str] = []
     for p in sira:
         pa = [a for a in adimlar if a.platform == p]
         hatalar = [a for a in pa if a.asama == "hata"]
@@ -706,15 +622,14 @@ def ozet_hesapla(
             for kaynak, s in (("ai", ai), ("el", el)):
                 if s is not None:
                     s["yakalanan" if kaynak in kaynaklar else "kacan"] += 1
-            kayit = {
-                "hata_kodu": a.hata_kodu,
-                "ad": adlar.get(a.hata_kodu or "", a.hata_kodu),
-                "platform": p,
-            }
-            if a.sonuc == "kacti":
-                kacanlar.append(kayit)  # hiçbir test (hiçbir kaynak) yakalamadı
             if ai is not None and "ai" not in kaynaklar:
-                ai_kacanlar.append(kayit)  # üretilen testler ölçülen platformda kaçırdı
+                kacanlar.append(
+                    {
+                        "hata_kodu": a.hata_kodu,
+                        "ad": adlar.get(a.hata_kodu or "", a.hata_kodu),
+                        "platform": p,
+                    }
+                )
         for k in top:
             top[k] += say[k]
         for k in top_tum:
@@ -728,9 +643,6 @@ def ozet_hesapla(
             for k in top_el:
                 top_el[k] += el[k]
         ai_o, el_o = _olcu(ai), _olcu(el)
-        gecerli_p = tum["yakalanan"] + tum["kacan"]
-        if gecerli_p < esik * len(katalog) or gecerli_p == 0:
-            yetersiz.append(f"{p} {gecerli_p}/{len(katalog)}")
         out_pl.append(
             {
                 "platform": p,
@@ -744,10 +656,10 @@ def ozet_hesapla(
                 "el_test": None if env is None else int(env.get("el") or 0),
                 "temel": next((a.sonuc for a in pa if a.asama == "temel"), None),
                 "kapanis": next((a.sonuc for a in pa if a.asama == "kapanis"), None),
-                "gecerli_adim": gecerli_p,
             }
         )
     ai_t, el_t = _olcu(top_ai), _olcu(top_el)
+    katalog = kat.kodlar()
     kosulan = {a.hata_kodu for a in adimlar if a.asama == "hata" and a.sonuc != "bekliyor"}
     return {
         "oran": ai_t["oran"],
@@ -762,20 +674,9 @@ def ozet_hesapla(
             "platformlar": sira,
             "tam_katalog": set(katalog) <= kosulan,
             "gecerli_adim": top_tum["yakalanan"] + top_tum["kacan"],
-            "esik": esik,
-            "yeterli": not yetersiz,
-            "not": (
-                None
-                if not yetersiz
-                else (
-                    f"Geçerli hata adımı kataloğun %{round(esik * 100)}'inin altında "
-                    f"({'; '.join(yetersiz)}); oran ölçü sayılmaz."
-                )
-            ),
         },
         "platformlar": out_pl,
         "kacanlar": kacanlar,
-        "ai_kacanlar": ai_kacanlar,
     }
 
 
@@ -786,19 +687,13 @@ def hata_yakalama_ozeti(session: Session) -> dict[str, Any] | None:
     """Kontrol Kulesi `hata_yakalama` (§4.7, §13.2): ölçüye giren son tamamlanmış koşu.
 
     Ölçüye giren koşu: `done`, kataloğun tamamını koşmuş (`kapsam.tam_katalog`) ve ≥ 1 geçerli
-    adımı olan koşudur; kısmi ya da boş koşu önceki ölçünün yerini almaz. Yoksa None. Bu koşuda
-    bir platformun geçerli hata adımı kataloğun `esik` oranının altındaysa (`kapsam.yeterli`
-    false, Y10) sayılar gösterilir ama tüm `oran` alanları null olur ve `kapsam.not` nedeni
-    söyler.
+    adımı olan koşudur; kısmi ya da boş koşu önceki ölçünün yerini almaz. Yoksa None.
 
     Şekil: `{son_kosu: {id, bitis, durum}, oran, yakalanan, kacan, gecersiz, el_yazisi: {oran,
     yakalanan, kacan}, tum_testler: {…}, kapsam: {kosulan_hata, katalog, platformlar,
-    tam_katalog, gecerli_adim, esik, yeterli, not}, platformlar: [{platform, oran, yakalanan,
-    kacan, gecersiz, el_yazisi}], kacanlar: [{hata_kodu, ad, platform}], ai_kacanlar: […],
-    kaynak}` (`kaynak`'ı Kule `kaynaklar`'a taşır). `kacanlar`: hiçbir testin (hiçbir kaynak)
-    yakalamadığı hatalar (`kacti`; kabul senaryosu 12); `ai_kacanlar`: üretilen testlerin
-    ölçüldüğü platformlarda üretilen testlerin kaçırdığı hatalar. Sayılar okuma anında
-    `hata_kosusu_adim` satırlarından hesaplanır.
+    tam_katalog, gecerli_adim}, platformlar: [{platform, oran, yakalanan, kacan, gecersiz,
+    el_yazisi}], kacanlar: [{hata_kodu, ad, platform}], kaynak}` (`kaynak`'ı Kule `kaynaklar`'a
+    taşır). Sayılar okuma anında `hata_kosusu_adim` satırlarından hesaplanır.
     """
     kosular = session.scalars(
         select(HataKosusu)
@@ -817,24 +712,8 @@ def _yuzde(o: float | None) -> str:
     return f"%{round(o * 100)}" if o is not None else "ölçülmedi"
 
 
-def _orani_sil(d: Mapping[str, Any]) -> dict[str, Any]:
-    return {**d, "oran": None}
-
-
 def _kule_sekli(kosu: HataKosusu, oz: Mapping[str, Any]) -> dict[str, Any]:
     tarih = kosu.bitis.astimezone(_istanbul()).strftime("%Y-%m-%d %H:%M") if kosu.bitis else "?"
-    if not oz["kapsam"].get("yeterli", True):
-        # Y10: geçerli adım az; sayılar gösterilir, oranlar ölçü sayılmaz.
-        oz = {
-            **oz,
-            "oran": None,
-            "el_yazisi": _orani_sil(oz["el_yazisi"]),
-            "tum_testler": _orani_sil(oz["tum_testler"]),
-            "platformlar": [
-                {**p, "oran": None, "el_yazisi": _orani_sil(p["el_yazisi"])}
-                for p in oz["platformlar"]
-            ],
-        }
     el = oz["el_yazisi"]
     kaynak = (
         f"Son tam ekilmiş hata koşusu ({tarih}; {', '.join(kosu.platformlar or [])}; "
@@ -845,8 +724,6 @@ def _kule_sekli(kosu: HataKosusu, oz: Mapping[str, Any]) -> dict[str, Any]:
         "kırmızıya dönen testle yakalanmış sayılır; geçersiz adımlar paydaya girmez; kısmi "
         "koşular ölçüye girmez (hata_kosusu, hata_kosusu_adim)."
     )
-    if oz["kapsam"].get("not"):
-        kaynak += f" {oz['kapsam']['not']}"
     return {
         "son_kosu": {"id": str(kosu.id), "bitis": _iso(kosu.bitis), "durum": kosu.durum},
         "oran": oz["oran"],
@@ -861,7 +738,6 @@ def _kule_sekli(kosu: HataKosusu, oz: Mapping[str, Any]) -> dict[str, Any]:
             for p in oz["platformlar"]
         ],
         "kacanlar": oz["kacanlar"],
-        "ai_kacanlar": oz["ai_kacanlar"],
         "kaynak": kaynak,
     }
 
@@ -881,13 +757,9 @@ class AdimSonucu:
     neden: str | None = None
     kiran_testler: list[dict[str, Any]] = field(default_factory=list)
     temelde_kirmizi: list[str] = field(default_factory=list)
-    # Yalnız temel: temelde yeşil {ai, el} test sayısı, kırmızı test anahtarları (sonraki
-    # adımlarda hariç) ve yeşil test anahtarları (sonraki adımlarda kanıt için üyelik şartı).
+    # Yalnız temel: {ai, el} test sayısı ve kırmızı test anahtarları (sonraki adımlarda hariç).
     envanter: dict[str, int] | None = None
     temel_kirmizi_anahtarlari: list[str] = field(default_factory=list)
-    temel_yesil_anahtarlari: list[str] = field(default_factory=list)
-    # Ham ayrıntı (toolchain/istisna metni, Appium adresi): `neden`'e değil denetime yazılır.
-    detay: str | None = None
 
 
 def _testler(report: Mapping[str, Any]) -> list[Mapping[str, Any]]:
@@ -897,10 +769,6 @@ def _testler(report: Mapping[str, Any]) -> list[Mapping[str, Any]]:
 
 def _kirmizilar(report: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     return [t for t in _testler(report) if t.get("status") not in (*GECEN, "skipped")]
-
-
-def _yesiller(report: Mapping[str, Any]) -> list[Mapping[str, Any]]:
-    return [t for t in _testler(report) if t.get("status") in GECEN]
 
 
 def _failure(t: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -929,110 +797,68 @@ def test_anahtari(t: Mapping[str, Any]) -> str:
     return f"{t.get('file') or ''}::{_ad(t)}"
 
 
-def _yol(y: Any) -> str:
-    return str(y or "").replace("\\", "/").strip().lstrip("./")
-
-
-def uretilen_dosyalar(session: Session, platform: str) -> frozenset[str]:
-    """Platformda onaylı case'lerden üretilmiş testlerin dosyaları (Y7).
-
-    Kayıt: `script_codegen` (+ `script.tur='test'`, aynı platform) ki case `approved | published`
-    ve `script_codegen.case_hash == test_case.onaylanan_hash` (onaylı içerikten üretilmiş). Her
-    dosya rapordaki olası biçimleriyle verilir: forge yolu, toolchain `test_files` yolu
-    (`e2e_goreli`) ve web'de Playwright `testDir`'ine (`tests/`) göre yol."""
-    from tp_core.features.codegen.service import e2e_goreli
-
-    satirlar = session.execute(
-        select(Script.dosya_yolu, Script.platform)
-        .join(ScriptCodegen, ScriptCodegen.script_id == Script.id)
-        .join(TestCase, TestCase.id == ScriptCodegen.test_case_id)
-        .where(
-            Script.tur == "test",
-            Script.platform == platform,
-            TestCase.durum.in_(ONAYLI_CASE),
-            TestCase.onaylanan_hash == ScriptCodegen.case_hash,
-        )
-    ).all()
-    out: set[str] = set()
-    for dosya, pl in satirlar:
-        if not dosya:
+def test_kaynagi(t: Mapping[str, Any]) -> str:
+    """`ai`: onaylı case'ten üretilen test (web `tests/generated/`, Java `…/uretilen/`); `el`."""
+    yollar = [t.get("file")]
+    f = _failure(t)
+    for k in ("location", "test_location"):
+        konum = f.get(k)
+        if isinstance(konum, Mapping):
+            yollar.append(konum.get("file"))
+    for y in yollar:
+        if not isinstance(y, str) or not y:
             continue
-        goreli = _yol(e2e_goreli(dosya, pl))
-        out |= {_yol(dosya), goreli}
-        if goreli.startswith("tests/"):
-            out.add(goreli[len("tests/") :])
-    out.discard("")
-    return frozenset(out)
+        y = y.replace("\\", "/")
+        if any(iz in y for iz in URETILEN_IZLERI) or y.startswith(URETILEN_ONEKLERI):
+            return "ai"
+    return "el"
 
 
-def test_kaynagi(t: Mapping[str, Any], ai_dosyalari: frozenset[str] = frozenset()) -> str:
-    """`ai`: testin kendi dosyası (`t.file`; failure konumu bakılmaz) onaylı case'ten üretilmiş
-    bir testin dosyası (`uretilen_dosyalar`); değilse `el`. Yol adı tek başına yetmez."""
-    dosya = _yol(t.get("file"))
-    return "ai" if dosya and dosya in ai_dosyalari else "el"
-
-
-def _kiran(
-    testler: Iterable[Mapping[str, Any]], ai_dosyalari: frozenset[str]
-) -> list[dict[str, Any]]:
+def _kiran(testler: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
     gorulen: dict[str, dict[str, Any]] = {}
     for t in testler:
-        gorulen.setdefault(
-            test_anahtari(t), {"test": _ad(t), "kaynak": test_kaynagi(t, ai_dosyalari)}
-        )
+        gorulen.setdefault(test_anahtari(t), {"test": _ad(t), "kaynak": test_kaynagi(t)})
     return list(gorulen.values())[:MAX_KIRAN]
 
 
-def _envanter(report: Mapping[str, Any], ai_dosyalari: frozenset[str]) -> dict[str, int]:
-    """Kaynak başına **temelde yeşil** test sayısı (N3): temelde kırmızı ya da atlanan test
-    kaynağı ölçülebilir yapmaz."""
+def _envanter(report: Mapping[str, Any]) -> dict[str, int]:
     env = {"ai": 0, "el": 0}
     gorulen: set[str] = set()
-    for t in _yesiller(report):
-        if test_anahtari(t) in gorulen:
+    for t in _testler(report):
+        if t.get("status") == "skipped" or test_anahtari(t) in gorulen:
             continue
         gorulen.add(test_anahtari(t))
-        env[test_kaynagi(t, ai_dosyalari)] += 1
+        env[test_kaynagi(t)] += 1
     return env
 
 
-def ortam_nedeni(report: Mapping[str, Any], sinif: Any) -> tuple[str, str | None]:
-    """`classify` sonucu `ortam`/`derleme` olan koşunun kategorize Türkçe nedeni ve ham ayrıntısı
-    (`(neden, detay)`). Ham metin (toolchain hatası, Appium adresi, test hata satırı) yalnız
-    `detay`'dadır (güvenlik-12)."""
+def ortam_nedeni(report: Mapping[str, Any], sinif: Any) -> str:
+    """`classify` sonucu `ortam`/`derleme` olan koşunun Türkçe nedeni (sağlık bilgisi dahil)."""
     rr = report.get("run") if isinstance(report.get("run"), Mapping) else None
     app = report.get("app")
     if isinstance(app, Mapping) and not app.get("skipped") and app.get("ok") is False:
-        return (
-            "Çalışan uygulama koşulan commit'le eşleşmiyor ya da doğrulanamadı.",
-            _kirp(sinif.hata, MAX_DETAY),
-        )
+        return f"Çalışan uygulama koşulan commit'le eşleşmiyor ya da doğrulanamadı: {sinif.hata}"
     if sinif.sinif == "derleme":
-        return "Derleme/statik kontrol başarısız; testler koşmadı.", _kirp(sinif.hata, MAX_DETAY)
+        return f"Derleme/statik kontrol başarısız ({sinif.hata}); testler koşmadı."
     if not rr:
-        return "Toolchain raporunda test koşusu yok.", _kirp(report.get("summary"), MAX_DETAY)
+        return f"Toolchain raporunda test koşusu yok: {_kirp(report.get('summary'), 300) or '?'}"
     saglik = rr.get("saglik") if isinstance(rr.get("saglik"), Mapping) else None
     if saglik and saglik.get("ok") is False:
         appium = saglik.get("appium") if isinstance(saglik.get("appium"), Mapping) else None
         if appium and appium.get("hata"):
-            ham = f"{appium.get('url') or '-'}: {appium['hata']}"
-            if not appium.get("url"):
-                return "Cihaz/Appium erişilemiyor: adres yapılandırılmamış.", _kirp(ham, MAX_DETAY)
-            return "Cihaz/Appium erişilemiyor.", _kirp(ham, MAX_DETAY)
-        return "Uygulama sağlık kontrolü başarısız.", _kirp(saglik.get("hata"), MAX_DETAY)
+            url = f" ({appium['url']})" if appium.get("url") else ""
+            return f"Cihaz/Appium erişilemiyor{url}: {appium['hata']}"
+        return str(saglik.get("hata") or "Uygulama sağlık kontrolü başarısız.")
     if rr.get("status") == "error":
-        return "Test koşucusu hata verdi.", _kirp(
-            rr.get("error") or report.get("summary"), MAX_DETAY
-        )
+        return f"Test koşucusu hata verdi: {rr.get('error') or report.get('summary') or '?'}"
     java = java_raporu_mu(report)
     for t in _kirmizilar(report):
         if _test_turu(t, java) == "ortam":
             return (
-                f"Test ortamı/kurulum hatası ({_ad(t)}) — hata uygulanamamış ya da uygulama "
-                "erişilemiyor olabilir.",
-                _kirp(_ilk_satir(t), MAX_DETAY),
+                f"Test ortamı/kurulum hatası ({t.get('title') or '?'}): {_ilk_satir(t)} — hata "
+                "uygulanamamış ya da uygulama erişilemiyor olabilir."
             )
-    return str(sinif.aciklama), _kirp(sinif.hata, MAX_DETAY)
+    return str(sinif.aciklama)
 
 
 def _adlar_metni(testler: Sequence[Mapping[str, Any]], n: int = 5) -> str:
@@ -1044,129 +870,91 @@ def siniflandir(
     report: Mapping[str, Any] | None,
     hata: str | None,
     temel_kirmizi: Iterable[str] = (),
-    *,
-    temel_yesil: Iterable[str] | None = None,
-    ai_dosyalari: frozenset[str] = frozenset(),
 ) -> AdimSonucu:
-    """Bir adımın sonucu (K12, Y8).
+    """Bir adımın sonucu (K12).
 
     - Temel: `yesil` | `kirmizi` (kırmızı testler listelenir, platform sürer) | `gecersiz`
-      (ortam/altyapı/derleme, toolchain'e ulaşılamadı, test bilgisi olmadan kırmızı, temelde
-      kırmızı test sayısı `MAX_TEMEL_KIRMIZI`'yı ya da yeşil sayısı `MAX_TEMEL_YESIL`'i aşıyor).
-    - Hata: kanıt yalnız temelde yeşil (`temel_yesil` kümesinde) olup kırmızıya dönen testtir;
-      temelde kırmızı ya da temelde görülmeyen testler sayılmaz. ≥ 1 assertion → `yakalandi`;
-      temelde yeşil kırmızı yok → `kacti`; yalnız assertion dışı kırmızı ya da ortam →
-      `gecersiz`. `temel_yesil` None ise (eski kayıt) temelde kırmızı olmayan her test sayılır.
-    - Kapanış: temelde kırmızı olmayan kırmızı test → `kirmizi`; yoksa `yesil`; ortam →
-      `gecersiz`.
+      (ortam/altyapı/derleme, toolchain'e ulaşılamadı, test bilgisi olmadan kırmızı).
+    - Hata: temelde kırmızı testler (`temel_kirmizi`, `test_anahtari`) sayılmaz. Kalan
+      kırmızılardan ≥ 1 assertion → `yakalandi`; kalan kırmızı yok → `kacti`; yalnız assertion
+      dışı kırmızı ya da ortam → `gecersiz`.
+    - Kapanış: temelde yeşil olup kırmızı olan test → `kirmizi`; yoksa `yesil`; ortam → `gecersiz`.
     """
     if report is None:
         return AdimSonucu(
-            "gecersiz",
-            "Toolchain'e ulaşılamadı ya da istek reddedildi.",
-            detay=_kirp(hata, MAX_DETAY),
+            "gecersiz", _kirp(f"Toolchain'e ulaşılamadı ya da istek reddedildi: {hata or '?'}")
         )
     s = classify(report)
     if s.sinif in ("ortam", "derleme"):
-        neden, detay = ortam_nedeni(report, s)
-        return AdimSonucu(
-            "gecersiz", _kirp(neden), _kiran(_kirmizilar(report), ai_dosyalari), detay=detay
-        )
+        return AdimSonucu("gecersiz", _kirp(ortam_nedeni(report, s)), _kiran(_kirmizilar(report)))
     kirmizi = _kirmizilar(report)
     if asama == "temel":
-        env = _envanter(report, ai_dosyalari)
-        yesil = list(dict.fromkeys(test_anahtari(t) for t in _yesiller(report)))
-        if len(yesil) > MAX_TEMEL_YESIL:
-            return AdimSonucu(
-                "gecersiz",
-                f"Temelde {len(yesil)} yeşil test var (sınır {MAX_TEMEL_YESIL}); temel küme "
-                "saklanamadı.",
-                envanter=env,
-            )
+        env = _envanter(report)
         if s.sinif == "gecti" and not kirmizi:
-            return AdimSonucu("yesil", envanter=env, temel_yesil_anahtarlari=yesil)
+            return AdimSonucu("yesil", envanter=env)
         if not kirmizi:
             return AdimSonucu(
                 "gecersiz",
-                "Temel koşu kırmızı ama başarısız test bilgisi yok.",
+                _kirp(
+                    "Temel koşu kırmızı ama başarısız test bilgisi yok: "
+                    f"{report.get('summary') or s.aciklama}"
+                ),
                 envanter=env,
-                detay=_kirp(report.get("summary") or s.aciklama, MAX_DETAY),
             )
         anahtarlar = list(dict.fromkeys(test_anahtari(t) for t in kirmizi))
-        if len(anahtarlar) > MAX_TEMEL_KIRMIZI:
-            return AdimSonucu(
-                "gecersiz",
-                f"Temelde {len(anahtarlar)} test kırmızı (sınır {MAX_TEMEL_KIRMIZI}); platform "
-                "ölçülemez.",
-                _kiran(kirmizi, ai_dosyalari),
-                envanter=env,
-            )
         return AdimSonucu(
             "kirmizi",
             _kirp(
                 f"Temelde {len(anahtarlar)} test kırmızı; bu testler hata adımlarında sayılmaz: "
                 f"{_adlar_metni(kirmizi)}"
             ),
-            _kiran(kirmizi, ai_dosyalari),
+            _kiran(kirmizi),
             envanter=env,
-            temel_kirmizi_anahtarlari=anahtarlar,
-            temel_yesil_anahtarlari=yesil,
+            temel_kirmizi_anahtarlari=anahtarlar[:MAX_TEMEL_KIRMIZI],
         )
     haric = set(temel_kirmizi)
     temelde = [t for t in kirmizi if test_anahtari(t) in haric]
+    yeni = [t for t in kirmizi if test_anahtari(t) not in haric]
     temelde_adlar = list(dict.fromkeys(_ad(t) for t in temelde))[:MAX_KIRAN]
     if asama == "kapanis":
-        yeni = [t for t in kirmizi if test_anahtari(t) not in haric]
         if not yeni:
             return AdimSonucu("yesil", temelde_kirmizi=temelde_adlar)
         return AdimSonucu(
             "kirmizi",
-            _kirp(f"Temelde kırmızı olmayan {len(yeni)} test kırmızı: {_adlar_metni(yeni)}"),
-            _kiran(yeni, ai_dosyalari),
+            _kirp(f"Temelde yeşil {len(yeni)} test kırmızı: {_adlar_metni(yeni)}"),
+            _kiran(yeni),
             temelde_adlar,
-        )
-    if temel_yesil is None:
-        yeni = [t for t in kirmizi if test_anahtari(t) not in haric]
-        gorulmeyen: list[Mapping[str, Any]] = []
-    else:
-        yesil_kume = set(temel_yesil)
-        yeni = [t for t in kirmizi if test_anahtari(t) in yesil_kume]
-        gorulmeyen = [t for t in kirmizi if test_anahtari(t) not in yesil_kume | haric]
-    ek = ""
-    if gorulmeyen:
-        ek = (
-            f" Temel koşuda yeşil görülmeyen {len(gorulmeyen)} kırmızı test kanıt sayılmadı: "
-            f"{_adlar_metni(gorulmeyen)}"
         )
     if not yeni:
         if s.sinif != "gecti" and not kirmizi:
             return AdimSonucu(
                 "gecersiz",
-                "Koşu kırmızı ama başarısız test bilgisi yok.",
-                detay=_kirp(report.get("summary") or s.aciklama, MAX_DETAY),
+                _kirp(
+                    "Koşu kırmızı ama başarısız test bilgisi yok: "
+                    f"{report.get('summary') or s.aciklama}"
+                ),
             )
         neden = "Temelde yeşil testlerin hiçbiri kırmızıya dönmedi: hata yakalanmadı."
         if temelde_adlar:
             neden += f" (Temelde zaten kırmızı {len(temelde_adlar)} test sayılmadı.)"
-        return AdimSonucu("kacti", _kirp(neden + ek), temelde_kirmizi=temelde_adlar)
+        return AdimSonucu("kacti", neden, temelde_kirmizi=temelde_adlar)
     java = java_raporu_mu(report)
     assertion = [t for t in yeni if _test_turu(t, java) == "assertion"]
     if assertion:
         diger = [t for t in yeni if t not in assertion]
-        parcalar = []
+        neden = None
         if diger:
-            parcalar.append(
+            neden = _kirp(
                 f"Assertion dışı kırmızı {len(diger)} test kanıt sayılmadı: {_adlar_metni(diger)}"
             )
-        neden = _kirp(" ".join(parcalar) + ek) if parcalar or ek else None
-        return AdimSonucu("yakalandi", neden, _kiran(assertion, ai_dosyalari), temelde_adlar)
+        return AdimSonucu("yakalandi", neden, _kiran(assertion), temelde_adlar)
     return AdimSonucu(
         "gecersiz",
         _kirp(
             "Kırmızı testlerin hiçbiri assertion ile kalmadı (locator/zaman aşımı/belirsiz); "
-            f"hata yakalama kanıtı sayılmaz: {_adlar_metni(yeni)}{ek}"
+            f"hata yakalama kanıtı sayılmaz: {_adlar_metni(yeni)}"
         ),
-        _kiran(yeni, ai_dosyalari),
+        _kiran(yeni),
         temelde_adlar,
     )
 
@@ -1175,45 +963,26 @@ def siniflandir(
 
 
 def calistir(ctx: JobContext) -> dict[str, Any]:
-    """`hata_kosusu.calistir` gövdesi: bir adım.
-
-    DB/taşıma hatası (`gecici_mi`) son deneme değilse yeniden fırlatılır: iş yeniden denenir,
-    adım `bekliyor` kalır (N4). Diğer beklenmeyen hatalar ve son denemedeki geçici hata koşuyu
-    kapatır: iptal istenmişse `cancelled` (Y15), değilse `failed`. Görünen uyarı kategorize
-    metindir; istisna metni yalnız denetime gider (güvenlik-12)."""
+    """`hata_kosusu.calistir` gövdesi: bir adım. Beklenmeyen hata koşuyu `failed` + nedenle
+    kapatır (yeniden denenmez)."""
     try:
         kosu_id = uuid.UUID(str((ctx.yuk or {})["kosu_id"]))
     except (KeyError, ValueError) as exc:
         raise PermanentJobError("iş yükünde geçerli kosu_id yok") from exc
     try:
-        return _adim_isle(kosu_id, son_deneme=ctx.son_deneme)
+        return _adim_isle(kosu_id)
     except PermanentJobError:
         raise
     except Exception as exc:
-        gecici = gecici_mi(exc)
-        if gecici and not ctx.son_deneme:
-            log.warning(
-                "hata koşusu %s adımı geçici hatayla kesildi (deneme %d/%d); yeniden denenecek",
-                kosu_id,
-                ctx.deneme,
-                ctx.max_deneme,
-            )
-            raise
         try:
             with session_scope() as s:
                 kosu = _kilitle(s, kosu_id)
                 if kosu is not None:
-                    if _ic(kosu).get("iptal_istendi"):
-                        _kapat(s, kosu, "cancelled", detay=_detay(exc))
-                    else:
-                        uyari = (
-                            "Koşu veritabanı/ağ hatası nedeniyle yeniden denemelerden sonra durdu."
-                            if gecici
-                            else "Koşu beklenmeyen bir iç hatayla durdu."
-                        )
-                        _kapat(s, kosu, "failed", uyari, detay=_detay(exc))
+                    _kapat(
+                        s, kosu, "failed", _kirp(f"Beklenmeyen hata: {type(exc).__name__}: {exc}")
+                    )
         except Exception:  # asıl hata yüzeye çıksın; kalan koşuyu tarama kapatır
-            log.exception("hata koşusu %s kapatılamadı", kosu_id)
+            log.exception("hata koşusu %s failed olarak kapatılamadı", kosu_id)
         raise PermanentJobError(f"{type(exc).__name__}: {exc}") from exc
 
 
@@ -1227,33 +996,21 @@ class _Plan:
     sha: str
     isteyen: str
     temel_kirmizi: tuple[str, ...]
-    temel_yesil: tuple[str, ...] | None
-    ai_dosyalari: frozenset[str]
 
 
 def _ilk_bekleyen(adimlar: Sequence[HataKosusuAdim]) -> HataKosusuAdim | None:
     return next((a for a in adimlar if a.sonuc == "bekliyor"), None)
 
 
-def _commit_coz(son_deneme: bool) -> tuple[str | None, str | None]:
-    """`main`'in commit'i — satır kilidi alınmadan önce (N12: ağ çağrısı iptali bekletmez).
-    `(sha, hata ayrıntısı)`; geçici hata son deneme değilse yeniden fırlatılır."""
+def _baslangic(s: Session, kosu: HataKosusu) -> bool:
+    """`queued` → `running`: koşulacak commit çözülür. Çözülemezse koşu `failed` (False)."""
     try:
         sha = ci_services.forge().head_sha("main")
     except Exception as exc:
-        if gecici_mi(exc) and not son_deneme:
-            raise
-        return None, _detay(exc)
+        _kapat(s, kosu, "failed", _kirp(f"Koşulacak commit çözülemedi (main): {exc}"))
+        return False
     if not sha:
-        return None, "main boş döndü"
-    return str(sha), None
-
-
-def _baslangic(s: Session, kosu: HataKosusu, sha: str | None, hata: str | None) -> bool:
-    """`queued` → `running` (kilitli satır; commit önceden çözülmüştür). Çözülemediyse koşu
-    `failed` (False); ayrıntı yalnız denetime."""
-    if not sha:
-        _kapat(s, kosu, "failed", "Koşulacak commit çözülemedi (main).", detay=hata)
+        _kapat(s, kosu, "failed", "Koşulacak commit çözülemedi (main boş döndü).")
         return False
     kosu.commit = sha
     kosu.durum = "running"
@@ -1263,14 +1020,7 @@ def _baslangic(s: Session, kosu: HataKosusu, sha: str | None, hata: str | None) 
     return True
 
 
-def _adim_isle(kosu_id: uuid.UUID, *, son_deneme: bool = True) -> dict[str, Any]:
-    sha: str | None = None
-    sha_hatasi: str | None = None
-    with session_scope() as s:
-        # Kilitsiz bakış: başlangıçta commit kilit dışında çözülür (N12).
-        durum = s.scalar(select(HataKosusu.durum).where(HataKosusu.id == kosu_id))
-    if durum == "queued":
-        sha, sha_hatasi = _commit_coz(son_deneme)
+def _adim_isle(kosu_id: uuid.UUID) -> dict[str, Any]:
     with session_scope() as s:
         kosu = _kilitle(s, kosu_id)
         if kosu is None:
@@ -1280,11 +1030,8 @@ def _adim_isle(kosu_id: uuid.UUID, *, son_deneme: bool = True) -> dict[str, Any]
         if _ic(kosu).get("iptal_istendi"):
             _kapat(s, kosu, "cancelled")
             return {"durum": kosu.durum}
-        if kosu.durum == "queued":
-            if sha is None and sha_hatasi is None:  # bakıştan sonra durum değişti (yarış)
-                sha, sha_hatasi = None, "commit kilitten önce çözülmedi"
-            if not _baslangic(s, kosu, sha, sha_hatasi):
-                return {"durum": kosu.durum}
+        if kosu.durum == "queued" and not _baslangic(s, kosu):
+            return {"durum": kosu.durum}
         adim = _ilk_bekleyen(_adimlar(s, kosu_id))
         if adim is None:
             _kapat(s, kosu, "done")
@@ -1296,7 +1043,6 @@ def _adim_isle(kosu_id: uuid.UUID, *, son_deneme: bool = True) -> dict[str, Any]
                 or "system"
             )
         temel = (_ic(kosu).get("temel") or {}).get(adim.platform) or {}
-        yesil = temel.get("yesil")
         plan = _Plan(
             adim.id,
             adim.platform,
@@ -1306,8 +1052,6 @@ def _adim_isle(kosu_id: uuid.UUID, *, son_deneme: bool = True) -> dict[str, Any]
             str(kosu.commit),
             isteyen,
             tuple(temel.get("kirmizi") or ()),
-            tuple(yesil) if isinstance(yesil, list) else None,
-            uretilen_dosyalar(s, adim.platform),
         )
         _olay(s, kosu, platform=plan.platform, hata_kodu=plan.kod, asama=plan.asama, sonuc=None)
     # `/check` kilit dışında koşar (dakikalar sürebilir; iptal ve okuma beklemez).
@@ -1337,7 +1081,7 @@ def _adim_yaz(
     sure_ms: int | None,
 ) -> None:
     a.sonuc = sonuc.sonuc
-    a.neden = _kirp(sonuc.neden)
+    a.neden = sonuc.neden
     a.kiran_testler = list(sonuc.kiran_testler)
     a.run_id = run_id
     a.sure_ms = sure_ms
@@ -1348,25 +1092,9 @@ def _adim_yaz(
         ic.setdefault("temel", {})[a.platform] = {
             **(sonuc.envanter or {"ai": 0, "el": 0}),
             "kirmizi": list(sonuc.temel_kirmizi_anahtarlari),
-            "yesil": list(sonuc.temel_yesil_anahtarlari),
         }
     _ic_yaz(kosu, ic)
     s.flush()
-    if sonuc.detay:
-        audit_on_commit(
-            s,
-            "system",
-            "hata_kosusu.adim_detayi",
-            f"hata_kosusu:{kosu.id}",
-            {
-                "adim_id": str(a.id),
-                "platform": a.platform,
-                "hata_kodu": a.hata_kodu,
-                "asama": a.asama,
-                "sonuc": a.sonuc,
-                "detay": sonuc.detay,
-            },
-        )
     _olay(s, kosu, platform=a.platform, hata_kodu=a.hata_kodu, asama=a.asama, sonuc=a.sonuc)
     platform_adimlari = [x for x in _adimlar(s, kosu.id) if x.platform == a.platform]
     if a.asama == "temel" and a.sonuc == "gecersiz":
@@ -1438,14 +1166,7 @@ def _adim_kos(kosu_id: uuid.UUID, plan: _Plan) -> tuple[AdimSonucu, uuid.UUID | 
     except ToolchainError as exc:
         hata = str(exc)
     sure_ms = int((time.monotonic() - t0) * 1000)
-    sonuc = siniflandir(
-        plan.asama,
-        report,
-        hata,
-        plan.temel_kirmizi,
-        temel_yesil=plan.temel_yesil,
-        ai_dosyalari=plan.ai_dosyalari,
-    )
+    sonuc = siniflandir(plan.asama, report, hata, plan.temel_kirmizi)
     run_id = _kosu_kaydet(kosu_id, plan, report, hata, baslama)
     return sonuc, run_id, sure_ms
 

@@ -1041,6 +1041,7 @@ def decide(
     beklenen_anlam_degisti: bool | None = None,
     oracle_istisna_gerekce: str | None = None,
     oracle_istisna_turu: str | None = None,
+    oracle_kayit_damgasi: str | None = None,
 ) -> TestCase:
     """Portal kararı (Constitution I): görülen hash ile `review` kaydı + durum geçişi."""
     if karar not in KARARLAR:
@@ -1095,8 +1096,15 @@ def decide(
     # --- 012 oracle kancası: karar tablosu onay kapısı (features/oracle/kapi.py) ---
     if karar in ("approve", "edit"):
         from tp_core.features.oracle import kapi as oracle_kapi
+        from tp_core.workflow.service import OnayHashUyusmuyor
 
-        oracle_uyarilari = oracle_kapi.onay_denetimi(
+        # Görülen hash kapıdan ÖNCE denetlenir (review 2 t2 N14): bayat istek kontrol işi,
+        # düşürme denetimi ya da ikinci bağlantı açmaz (record_approval aynı denetimi yineler).
+        if icerik_hash != tc.icerik_hash:
+            raise OnayHashUyusmuyor(
+                "test_case: içerik siz görüntüledikten sonra değişmiş; yenileyip tekrar karar verin"
+            )
+        kapi_sonucu = oracle_kapi.onay_denetimi(
             session,
             tc,
             content_hash(dict(icerik)) if icerik is not None else tc.icerik_hash,
@@ -1104,9 +1112,14 @@ def decide(
             user,
             icerik=icerik,
             istisna_turu=oracle_istisna_turu,
+            kayit_damgasi=oracle_kayit_damgasi,
         )
-        if oracle_uyarilari:
-            olculer["oracle_uyarilari"] = oracle_uyarilari
+        if kapi_sonucu.uyarilar:
+            olculer["oracle_uyarilari"] = kapi_sonucu.uyarilar
+        if kapi_sonucu.istisna_id is not None:  # yeni ya da yeniden kullanılan (g2 Y11)
+            olculer["oracle_istisna_id"] = str(kapi_sonucu.istisna_id)
+            if kapi_sonucu.istisna_yeniden:
+                olculer["oracle_istisna_yeniden"] = True
     # --- /012 ---
     olculer["review_sure_ms"] = _review_sure_ms(session, tc, user)
     olculer["ilk_karar"] = latest_review(session, "test_case", tc.id) is None
