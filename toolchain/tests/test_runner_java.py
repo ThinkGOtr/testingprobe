@@ -69,7 +69,7 @@ def fake_mvn(tmp_path: Path, xml: str | None, exit_code: int = 0) -> Path:
         log = pathlib.Path({str(tmp_path / "mvn.log")!r})
         keys = ("PLATFORM", "APPIUM_URL", "APP_ID", "APP_ACTIVITY", "DEMO_API_URL",
                 "DEMOAPP_TEST_TOKEN", "BREAK_CAMPAIGN", "MAVEN_SKIP_RC", "MAVEN_OPTS",
-                "JAVA_TOOL_OPTIONS", "ANTHROPIC_API_KEY", "TP_RUN_ID", "CI")
+                "JAVA_TOOL_OPTIONS", "ANTHROPIC_API_KEY", "TP_RUN_ID", "CI", "TP_FAULT")
         with log.open("a") as fh:
             fh.write(json.dumps({{"argv": args, "cwd": os.getcwd(),
                                   "env": {{k: os.environ.get(k) for k in keys}}}}) + "\\n")
@@ -176,7 +176,9 @@ def test_java_run_passed_hardening_and_layout(
         "ANTHROPIC_API_KEY": None,
         "TP_RUN_ID": "j1",
         "CI": "1",
+        "TP_FAULT": "",
     }
+    assert data["fault"] is None and data["kirmizi_denetimi"] is None
 
 
 def test_java_run_failures_classified_and_break_restored(
@@ -226,6 +228,45 @@ def test_java_run_failures_classified_and_break_restored(
     assert call["env"]["BREAK_CAMPAIGN"] == "1"
     assert not any(a.startswith("-Dtest=") for a in call["argv"])  # tam kapsam: testng.xml
     assert (env / "runs" / "j1" / ".keep").is_file()
+
+
+def test_java_fault_run_env_red_check_and_restore(
+    java_runner: DemoApi, forge: Forge, env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ekilmiş hata Java koşusunda kırılmayla aynı kurallara tabidir: TP_FAULT Maven sürecine
+    geçer, kırmızı denetimi üretilir, koşu sonunda her bayi için geri alınır."""
+    monkeypatch.setenv("TP_MVN", str(fake_mvn(tmp_path, XML_FAILED, exit_code=1)))
+    head = forge.commit("tp/case-h", e2e_app_files())
+    data = _run(sha=head, fault="min_siparis_1000").json()
+    assert data["status"] == "failed"
+    assert (data["fault"], data["break_campaign"]) == ("min_siparis_1000", False)
+    (call,) = mvn_calls(tmp_path)
+    assert (call["env"]["TP_FAULT"], call["env"]["BREAK_CAMPAIGN"]) == ("min_siparis_1000", "")
+    assert [c["body"] for c in java_runner.calls] == [
+        {"kullanici_adi": "bayi1", "kampanya": False},
+        {"kullanici_adi": "bayi2", "kampanya": False},
+    ]
+    assert data["break_restore"]["ok"] is True
+    red = data["kirmizi_denetimi"]
+    assert red["ok"] is False and red["kirmizi"] == ["SepetTesti › kampanya"]
+    kayit = json.loads((env / "runs" / "j1" / "run.json").read_text())
+    assert kayit["fault"] == "min_siparis_1000"
+
+
+def test_java_fault_requires_token_and_restore_failure_is_error(
+    java_runner: DemoApi, forge: Forge, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TP_MVN", str(fake_mvn(tmp_path, XML_FAILED, exit_code=1)))
+    head = forge.commit("tp/case-h2", e2e_app_files())
+    java_runner.status = 500
+    data = _run(sha=head, env={"TP_FAULT": "min_siparis_1000"}).json()
+    assert data["status"] == "error"
+    assert data["error"].endswith("Ekilmiş hata geri alınamadı.")
+
+    monkeypatch.setenv("DEMOAPP_TEST_TOKEN", "")
+    resp = _run(sha=head, run_id="j2", fault="min_siparis_1000")
+    assert resp.status_code == 422
+    assert "Ekilmiş hata koşusu için DEMOAPP_TEST_TOKEN" in resp.json()["detail"]
 
 
 def test_java_run_repeat_each(

@@ -19,6 +19,8 @@ TEST_FILE_RE = re.compile(
 TESTID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]*\Z")
 ROLE_RE = re.compile(r"^[a-z]{1,40}\Z")
 URL_PATH_RE = re.compile(r"^/[A-Za-z0-9_\-./~%?=&]*\Z")
+# Ekilmiş hata kodu (012 §4.6): demo API kataloğundaki kod; test sürecine `TP_FAULT` olarak geçer.
+FAULT_RE = re.compile(r"^[a-z0-9_]{1,40}\Z")
 
 MAX_TEST_FILES = 200
 MAX_GREP_LEN = 300
@@ -77,6 +79,24 @@ def validate_grep(value: str | None) -> str | None:
         raise ValueError(f"grep en çok {MAX_GREP_LEN} karakter olabilir")
     _no_control(value, "grep")
     return value
+
+
+def validate_fault(value: str | None) -> str | None:
+    """Ekilmiş hata kodu; boş/None = hata yok. Kodun katalogda olup olmadığına demo API karar
+    verir (bilinmeyen kod → fixture'ın `/test/break` çağrısı 422, test `test_data` ile kalır)."""
+    if value is None or value == "":
+        return None
+    if not isinstance(value, str) or not FAULT_RE.match(value):
+        raise ValueError(f"geçersiz fault: {value!r} (beklenen biçim: ^[a-z0-9_]{{1,40}}$)")
+    return value
+
+
+def resolve_fault(fault: str | None, env: dict[str, str]) -> str | None:
+    """Gövdedeki `fault` ile `env.TP_FAULT` eş anlamlıdır; ikisi de verilmişse aynı olmalıdır."""
+    env_fault = validate_fault(env.get("TP_FAULT"))
+    if fault and env_fault and fault != env_fault:
+        raise ValueError("fault ile env.TP_FAULT farklı; yalnızca birini verin")
+    return fault or env_fault
 
 
 def validate_test_id(value: str | None, what: str = "test_id") -> str | None:

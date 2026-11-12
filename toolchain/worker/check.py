@@ -26,7 +26,8 @@ raporudur; `reports` ad → rapor eşlemesidir.
 Hangi kontrol `local-ci` kaydı olur (`record_check`):
 
 - varsayılan (`None`): yalnızca **tam kapsamlı** kontrol — `test_files` ve `grep` yok, kırılma
-  yok. Bu, GitHub'daki PR CI'ının (tüm testler) yerel karşılığıdır; merge kapısı bunu okur.
+  ve ekilmiş hata yok. Bu, GitHub'daki PR CI'ının (tüm testler) yerel karşılığıdır; merge kapısı
+  bunu okur.
 - `True`: varsayılanla aynı; kapsamlı (test_files / grep) ya da kırılmalı bir kontrolle birlikte
   verilemez (API 422). Kapsamlı yeşil bir koşu head'in tüm testlerinin sonucunu temsil etmez;
   kayıt olsaydı merge kapısı onu `success` sayardı (LocalForge yalnızca `conclusion`'a bakar).
@@ -35,8 +36,9 @@ Hangi kontrol `local-ci` kaydı olur (`record_check`):
 Savunma derinliği: `records_check()` kapsamlı kontrolde her durumda False döner ve her CheckRun
 girdisi `tam: true` taşır (core isterse yalnızca tam kapsamlıları sayabilir).
 
-Kırılma istenen kontrol ("kırarak doğrula", BREAK_CAMPAIGN) bilerek kırmızı beklenen bir
-denemedir; commit'in CI sonucu değildir, bu yüzden asla yazılmaz.
+Kırılma istenen kontrol ("kırarak doğrula", BREAK_CAMPAIGN) ve ekilmiş hata koşusu (`fault`,
+TP_FAULT; 012 §4.6) bilerek kırmızı beklenen denemelerdir; commit'in CI sonucu değildir, bu yüzden
+asla yazılmaz (`local-ci` da `local-ci-<platform>` da).
 
 Rapor, test-runner'ın test bazındaki `failure` girdilerini (`failures`) ve koşu öncesi sağlık
 kontrolünü (`saglik`) üst düzeyde taşır: kod üretiminin "locator/eşleme → 1 düzeltme turu" ile
@@ -85,6 +87,8 @@ class CheckRequest:
     repeat_each: int = 3
     retries: int = 0
     break_campaign: bool = False
+    # Ekilmiş hata kodu (012 §4.6); test-runner'a env.TP_FAULT olarak iletilir.
+    fault: str | None = None
     grep: str | None = None
     base_sha: str | None = None
     ast_guard_mode: str = "pr"
@@ -116,9 +120,19 @@ class CheckRequest:
     def full_scope(self) -> bool:
         return not self.test_files and not self.grep and not self.affected_by
 
+    @property
+    def breaks_app(self) -> bool:
+        """Kontrol demo uygulamayı bilerek bozuyor mu (kampanya kırılması ya da ekilmiş hata)."""
+        return self.break_campaign or bool(self.fault)
+
+    def runner_env(self) -> dict[str, str]:
+        """test-runner `/run` gövdesindeki `env` (yalnızca istenen kırılma değişkenleri)."""
+        env = {"BREAK_CAMPAIGN": "1"} if self.break_campaign else {}
+        return {**env, "TP_FAULT": self.fault} if self.fault else env
+
     def records_check(self) -> bool:
         # Merge kapısına yalnızca tam kapsamlı, kırılmasız kontrol yazılır (record_check ne olursa).
-        if self.break_campaign or not self.full_scope or self.check_name is None:
+        if self.breaks_app or not self.full_scope or self.check_name is None:
             return False
         return self.record_check is not False
 
@@ -130,6 +144,7 @@ class CheckRequest:
             "repeat_each": self.repeat_each,
             "retries": self.retries,
             "break_campaign": self.break_campaign,
+            "fault": self.fault,
             "affected_by": list(self.affected_by),
         }
 
@@ -350,6 +365,7 @@ def _execute_locked(
             report["duration_ms"] = int((time.monotonic() - started) * 1000)
             report["checks_path"] = str(path) if path is not None else None
             report["break_campaign"] = req.break_campaign
+            report["fault"] = req.fault
             report["kapsam"] = {**req.scope(), "etkilenen": steps.get("affected")}
             report["check_recorded"] = path is not None
             report["kaynak"] = head.kaynak
@@ -471,7 +487,7 @@ def _run_steps(
         "repeat_each": req.repeat_each,
         "retries": req.retries,
         "test_files": test_files,
-        "env": {"BREAK_CAMPAIGN": "1"} if req.break_campaign else {},
+        "env": req.runner_env(),
         "keep": req.keep,
     }
     if req.grep:
@@ -532,7 +548,7 @@ def _run_java_steps(
         "repeat_each": req.repeat_each,
         "retries": req.retries,
         "test_files": list(req.test_files),
-        "env": {"BREAK_CAMPAIGN": "1"} if req.break_campaign else {},
+        "env": req.runner_env(),
         "keep": req.keep,
         # test-runner'ın Java yolu (Ş8): dil + platform (Appium sürücüsü seçimi).
         "lang": "java",

@@ -62,6 +62,34 @@ def test_postgres_bayi_kapsamli_kirilma(pg):
     assert pg.get("/cart").json()["indirim"] == "25.00"
 
 
+def test_postgres_ekilmis_hata_ve_eski_sema(pg):
+    """Veri hatası Postgres'te de bayi kapsamlıdır; `hata` kolonu olmayan (önceki sürümle
+    kurulmuş) veritabanına kolon açılışta eklenir ve salt okuma yetkileri yerinde kalır."""
+    h = {"X-Demoapp-Test-Token": "pg-test-tokeni"}
+    motor = db.get_engine()
+    with motor.begin() as c:
+        c.execute(text("ALTER TABLE test_kirilma DROP COLUMN hata"))
+    assert db.kolonlari_tamamla(motor) == ["test_kirilma.hata"]
+    assert db.kolonlari_tamamla(motor) == []  # idempotent
+    db.init_db()  # yetkiler yeniden verilir; hata vermez
+
+    kir = pg.post(
+        "/test/break", json={"kullanici_adi": "bayi1", "hata": "fiyat_p004_31"}, headers=h
+    )
+    assert kir.json() == {"kullanici_adi": "bayi1", "kampanya": False, "hata": "fiyat_p004_31"}
+    assert pg.post("/auth/login", json={"kullanici_adi": "bayi1", "parola": "Demo123!"}).is_success
+    fiyat = {u["kod"]: u["fiyat"] for u in pg.get("/products").json()}
+    assert fiyat["P-004"] == "31.00"
+    pg.post("/cart/lines", json={"urun_kod": "P-004", "adet": 25})
+    assert pg.get("/cart").json()["toplam"] == "775.00"
+    with motor.connect() as c:  # tabloya yazılmadı
+        assert str(c.execute(text("SELECT fiyat FROM urun WHERE kod='P-004'")).scalar()) == "30.00"
+    pg.post("/test/break", json={"kullanici_adi": "bayi1", "hata": None}, headers=h)
+    assert pg.get("/cart").json()["toplam"] == "750.00"
+    assert pg.get("/test/faults", headers=h).status_code == 200
+    test_salt_okuma_rolu(pg)
+
+
 def test_salt_okuma_rolu(pg):
     ro = create_engine(RO_URL)
     try:

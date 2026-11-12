@@ -68,6 +68,7 @@ def test_scoped_check_is_not_recorded_by_default(
         "repeat_each": 3,
         "retries": 0,
         "break_campaign": False,
+        "fault": None,
         "affected_by": [],
         "etkilenen": None,
     }
@@ -115,6 +116,121 @@ def test_api_rejects_record_check_with_break(env: Path, forge: Forge) -> None:
         resp = client.post("/check", json=body)
         assert resp.status_code == 422, resp.text
         assert "local-ci" in resp.json()["detail"]
+
+
+# ------------------------------------------------------------------ ekilmiş hata (012 §4.6)
+
+
+def test_fault_check_passes_env_and_is_never_recorded(
+    env: Path, forge: Forge, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ekilmiş hata koşusu bilerek kırmızı beklenen denemedir: kırılmalı kontrolün bütün kuralları
+    geçerlidir (record_check ne olursa olsun kayıt yok); kod test-runner'a env.TP_FAULT ile gider.
+    """
+    monkeypatch.setenv("TP_NODE", str(fake_tools(tmp_path)))
+    report, calls = _execute(
+        sha=forge.main,
+        fault="kampanya_esik_7",
+        record_check=True,
+        response={**RUN_OK, "status": "failed"},
+    )
+    assert calls[0]["body"]["env"] == {"TP_FAULT": "kampanya_esik_7"}
+    assert (report["fault"], report["break_campaign"]) == ("kampanya_esik_7", False)
+    assert report["kapsam"]["fault"] == "kampanya_esik_7" and report["kapsam"]["tam"] is True
+    assert report["check_recorded"] is False and report["checks_path"] is None
+    assert not (env / "checks").exists()
+
+
+def test_fault_and_break_check_env_and_report_without_fault(
+    env: Path, forge: Forge, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TP_NODE", str(fake_tools(tmp_path)))
+    report, calls = _execute(
+        sha=forge.main, fault="fiyat_p004_31", break_campaign=True, response={**RUN_OK}
+    )
+    assert calls[0]["body"]["env"] == {"BREAK_CAMPAIGN": "1", "TP_FAULT": "fiyat_p004_31"}
+    assert report["check_recorded"] is False
+
+    # Hatasız kontrol: alan raporda None, test-runner'a TP_FAULT gitmez.
+    report, calls = _execute(sha=forge.main, record_check=False, response={**RUN_OK})
+    assert report["fault"] is None and report["kapsam"]["fault"] is None
+    assert calls[0]["body"]["env"] == {}
+
+
+@pytest.mark.parametrize(
+    ("lang", "platform", "ad"),
+    [
+        ("ts", None, "local-ci"),
+        ("java", "android", "local-ci-android"),
+        ("java", "ios", "local-ci-ios"),
+    ],
+)
+def test_fault_request_never_records_any_check_name(
+    lang: str, platform: str | None, ad: str
+) -> None:
+    temiz = checks.CheckRequest(sha="main", lang=lang, platform=platform)
+    assert temiz.check_name == ad and temiz.records_check() is True
+    hatali = checks.CheckRequest(sha="main", lang=lang, platform=platform, fault="min_siparis_500")
+    assert hatali.breaks_app is True
+    assert hatali.records_check() is False
+    assert (
+        checks.CheckRequest(
+            sha="main", lang=lang, platform=platform, fault="min_siparis_500", record_check=True
+        ).records_check()
+        is False
+    )
+    assert hatali.runner_env() == {"TP_FAULT": "min_siparis_500"}
+
+
+def test_api_rejects_record_check_with_fault_and_invalid_fault(env: Path, forge: Forge) -> None:
+    client = TestClient(app)
+    for body in (
+        {"sha": forge.main, "fault": "min_siparis_500", "record_check": True},
+        {"sha": forge.main, "env": {"TP_FAULT": "min_siparis_500"}, "record_check": True},
+        {"sha": forge.main, "lang": "java", "platform": "android", "fault": "min_siparis_500",
+         "record_check": True},
+    ):  # fmt: skip
+        resp = client.post("/check", json=body)
+        assert resp.status_code == 422, resp.text
+        assert "local-ci" in resp.json()["detail"]
+    for body in (
+        {"sha": forge.main, "fault": "Min-Siparis"},
+        {"sha": forge.main, "fault": "x" * 41},
+        {"sha": forge.main, "env": {"TP_FAULT": "a b"}},
+        {"sha": forge.main, "env": {"NODE_OPTIONS": "x"}},
+        {"sha": forge.main, "fault": "min_siparis_500", "env": {"TP_FAULT": "min_siparis_1000"}},
+    ):
+        resp = client.post("/check", json=body)
+        assert resp.status_code == 422, resp.text
+
+
+@pytest.mark.parametrize(
+    ("govde", "beklenen"),
+    [
+        ({"fault": "kampanya_esik_7"}, ("kampanya_esik_7", False)),
+        ({"env": {"TP_FAULT": "kampanya_esik_7"}}, ("kampanya_esik_7", False)),
+        ({"fault": "kampanya_esik_7", "break": True}, ("kampanya_esik_7", True)),
+        ({"fault": None}, (None, False)),
+        ({}, (None, False)),
+    ],
+)
+def test_api_passes_fault_to_check_request(
+    env: Path,
+    forge: Forge,
+    monkeypatch: pytest.MonkeyPatch,
+    govde: dict[str, Any],
+    beklenen: tuple[str | None, bool],
+) -> None:
+    gorulen: list[checks.CheckRequest] = []
+
+    def sahte(cfg: Any, req: checks.CheckRequest, **_: Any) -> dict[str, Any]:
+        gorulen.append(req)
+        return {"ok": True}
+
+    monkeypatch.setattr(checks, "execute", sahte)
+    resp = TestClient(app).post("/check", json={"sha": forge.main, **govde})
+    assert resp.status_code == 200, resp.text
+    assert [(r.fault, r.break_campaign) for r in gorulen] == [beklenen]
 
 
 # ------------------------------------------------------------------ üretilen test dosyaları

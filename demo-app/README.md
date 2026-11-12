@@ -44,7 +44,8 @@ siler; tam sıfırlama (`{}`) bayi3'ü de yeniden kurar. Ajan tarayıcısı `/ap
 | POST | `/orders` | 201; minimum altı (kampanyasız sipariş) / boş sepet 422 |
 | GET | `/orders` · `/orders/{numara}` | Yalnızca kendi siparişleri |
 | POST | `/test/reset` `{kullanici_adi?}` | Yalnızca `DEMOAPP_TEST_MODE=1` **ve** `DEMOAPP_TEST_TOKEN` tanımlıyken (aksi halde 404); `X-Demoapp-Test-Token` başlığı eşleşmezse 403. Kullanıcı verilirse yalnızca onun sepeti/siparişleri/kırılması; yoksa tam sıfırlama. Web nginx'i `/api/test/` yolunu dışarı açmaz (404) |
-| POST | `/test/break` `{kullanici_adi, kampanya}` | Aynı koruma. **Bayi kapsamlı** demo kırılması ("kırarak doğrula"): `kampanya=true` iken yalnızca o bayinin sepet/sipariş hesabında indirim uygulanmaz (`test_kirilma` tablosu); diğer bayiler, paylaşılan uygulama ve MCP etkilenmez. `/test/reset` kırılmayı da kaldırır |
+| POST | `/test/break` `{kullanici_adi, kampanya?, hata?}` | Aynı koruma. **Bayi kapsamlı** demo kırılması ("kırarak doğrula") ve ekilmiş hata: `hata=<kod>` yalnızca o bayinin katalog/sepet/sipariş hesabını o hatayla çalıştırır (`test_kirilma.hata`; bayi başına tek hata); `kampanya=true` geriye uyumludur ve `hata="kampanya_bedava_yok"` ile aynıdır; `hata=null` / `kampanya=false` kaldırır. Bilinmeyen kod 422. Yanıt `{kullanici_adi, kampanya, hata}`. Diğer bayiler, paylaşılan uygulama ve MCP etkilenmez. `/test/reset` kırılmayı da kaldırır |
+| GET | `/test/faults` | Aynı koruma. Ekilmiş hata kataloğu `{hatalar: [{kod, tur, ad, aciklama}]}` (bkz. "Ekilmiş hatalar") |
 
 Tutarlar JSON'da `"1250.00"` metni; arayüzde `1.250,00 TL` (tr-TR).
 
@@ -99,6 +100,9 @@ oturum tabloları ve parola özeti kapalıdır.
     testler dışlanır. Aynı uygulamaya karşı eşzamanlı iki koşu desteklenmez (bayi1/bayi2 paylaşılır).
   - `BREAK_CAMPAIGN=1`: fixture, koşunun bayisi için `/test/break` ile kırılmayı açar ve test
     sonunda kapatır (token gerekir). Her iki modda aynı yol; API sürecine env geçirilmez.
+  - `TP_FAULT=<kod>` (`^[a-z0-9_]{1,40}$`): aynı yerde `/test/break {hata: kod}` açılır, test
+    sonunda `{hata: null}` ile kaldırılır (token gerekir). `BREAK_CAMPAIGN=1` ile birlikteyse
+    `TP_FAULT` geçerlidir. Java (`e2e-app`, `TestTabani`) aynı kuralı uygular.
   `signedInTest` API ile oturum açar.
   Üretilen testler de bu fikstürleri kullanır (bkz. "Üretilen testler için sözleşme").
 - `dealers` (bayi seçimi, sabitleme ve kilit), `page-objects` (yukarıda), `login`, `cart`, `order`, `mobile` (390 px: sepet satırı tutarı ve "Kaldır" kaydırmasız görünür), `a11y` (`@axe-core/playwright`, ihlaller ek olarak; yalnızca
@@ -223,6 +227,47 @@ olarak döner (`Cache-Control: no-store`). Compose'un çalışma ağacı derleme
 Onarım PR'ı yalnızca `e2e/` değiştirdiği için `web/` ağacı (ve dolayısıyla çalışan uygulama) aynı kalır:
 `web_tree` karşılaştırması merge sonrası yeniden derlemeye gerek olmadığını gösterir.
 
+## Ekilmiş hatalar
+
+Hata kataloğu `api/src/demoapp_api/faults.py` (012 §4.6; `GET /test/faults`). Her hata **bayi
+bazında** `POST /test/break {kullanici_adi, hata}` ile açılır; yalnızca o bayinin katalog, sepet ve
+sipariş hesabı etkilenir (diğer bayiler, `bayi3` ve test modu dışı süreçler etkilenmez). `kod`
+hataları hesap kuralını değiştirir; `veri` hataları okunan değeri o bayi için ezer, `ayar` / `urun`
+/ `kampanya` tablolarına yazmaz. `/test/reset` hatayı da kaldırır. `test_kirilma.hata` kolonu,
+kolonsuz eski veritabanında açılışta eklenir (SQLite ve Postgres). Test süreçleri `TP_FAULT=<kod>`
+ile çalışır (web fixture, Java `TestTabani`, toolchain `/run` ve `/check` `fault`).
+
+| Kod | Tür | Etki |
+|---|---|---|
+| `kampanya_bedava_yok` | kod | Bedava adet 0 (`kampanya: true` ile aynı) |
+| `kampanya_esik_7` | kod | Bedava adet `adet // 7` |
+| `kampanya_cift_indirim` | kod | Kampanya indirimi iki kez düşülür |
+| `min_siparis_haric` | kod | Minimum sınır dahil değil (`toplam > min`) |
+| `min_siparis_muafiyet_yok` | kod | Kampanyalı sepet de minimuma tabi |
+| `min_siparis_500` | veri | Minimum 750,00 → 500,00 |
+| `min_siparis_1000` | veri | Minimum 750,00 → 1.000,00 |
+| `fiyat_p004_31` | veri | P-004 fiyatı 30,00 → 31,00 |
+| `kampanya_urunu_p002` | veri | Kampanyalı ürün P-001 → P-002 |
+
+**Hata → kırmızı test matrisi** (el yazımı web testleri, 33 test, Chromium, webServer + SQLite,
+`workers: 2` → bayi1 ve bayi2; `TP_FAULT=<kod> npx playwright test`; hatasız temel ve kapanış
+koşuları 33/33 yeşil; 2026-11-11):
+
+| Kod | Kırmızı | Kıran testler |
+|---|---|---|
+| `kampanya_bedava_yok` | 3 | cart `kampanya: 7 adet P-001 → 1 bedava`; order `onaylanan sipariş numarasıyla gösterilir…`; page-objects `7 adet Portakal Gazozu sepette 1 bedava…` |
+| `kampanya_esik_7` | 0 — **kaçtı** | — (el yazımı testler bilerek 6. adet sınırını doğrulamaz: `tools/scenario-neutral-check.js`; 7 ve 14 adette iki kural aynı sonucu verir) |
+| `kampanya_cift_indirim` | 2 | cart `kampanya: 7 adet P-001…`; order `onaylanan sipariş numarasıyla…` |
+| `min_siparis_haric` | 2 | cart `minimum tutara ulaşınca uyarı kalkar…`; page-objects `onaylanan sipariş geçmişte numarasıyla bulunur` (onay butonu pasif → `locator.click` zaman aşımı, assertion değil) |
+| `min_siparis_muafiyet_yok` | 1 | cart `kampanyalı siparişte minimum tutar aranmaz` |
+| `min_siparis_500` | 4 | a11y `sepet sayfası (uyarı ve satırlarla)`; cart `kampanyasız siparişte minimum tutar altında uyarı…`; order `minimum tutarın altındaki sepet API'de de reddedilir`; page-objects `indirimsiz sepette minimum tutar uyarısı…` |
+| `min_siparis_1000` | 7 | a11y `sepet sayfası…`; cart `kampanyasız siparişte minimum…`, `minimum tutara ulaşınca…`; order `minimum tutarın altındaki sepet…`; page-objects `indirimsiz sepette…`, `onaylanan sipariş geçmişte…` (click zaman aşımı); locators `menü, katalog, sepet ve sipariş sayfaları` (click zaman aşımı) |
+| `fiyat_p004_31` | 5 | cart `katalog ürünleri ve fiyatları…`, `minimum tutara ulaşınca…`; mobile `satır tutarı ve Kaldır butonu…`; order `onaylanan sipariş numarasıyla…`; page-objects `onaylanan sipariş geçmişte…` |
+| `kampanya_urunu_p002` | 8 | a11y `sepet sayfası…`; cart `katalog ürünleri…`, `kampanya: 7 adet P-001…`, `kampanyasız üründe bedava adet verilmez`, `kampanyasız siparişte minimum…`, `kampanyalı siparişte minimum tutar aranmaz`; order `onaylanan sipariş numarasıyla…`; page-objects `7 adet Portakal Gazozu…` |
+
+Yakalanan 8/9; kaçan `kampanya_esik_7` (el yazımı testler bu hatayı yakalamak için değiştirilmez;
+sınır vakası üretilen testlerin işidir).
+
 ## Yerel çalıştırma
 
 ```bash
@@ -236,6 +281,7 @@ DEMOAPP_TEST_PG_RO_URL=postgresql+psycopg://demoapp_ro:…@127.0.0.1:55432/demoa
 cd e2e && npx playwright install chromium
 bash ../ci/run-checks.sh                       # web önizleme portu 18081 (compose'un 8081'iyle çakışmaz)
 npm run break-verify                           # yeşil → kırmızı (yalnızca kampanya testleri, assertion ile) → yeşil
+TP_FAULT=min_siparis_500 npx playwright test   # ekilmiş hata (bkz. "Ekilmiş hatalar"); bayi kapsamlı
 bash ../ci/locator-break-verify.sh             # locator kırılması: kırmızı (yalnızca getByTestId('add-to-cart')
                                                # locator hatası) → locators.ts testId onarımı → tamamı yeşil
 npm run lint:generated-selftest                # üretilen test ESLint sözleşmesinin öz denetimi

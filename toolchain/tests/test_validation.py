@@ -6,6 +6,8 @@ import pytest
 
 from toolchain_common.artifacts import checks_file, ensure_inside, run_dir
 from toolchain_common.validation import (
+    resolve_fault,
+    validate_fault,
     validate_grep,
     validate_ref,
     validate_role,
@@ -128,3 +130,26 @@ def test_artifact_paths_stay_inside(tmp_path: Path) -> None:
     (tmp_path / "runs" / "link").symlink_to("/etc", target_is_directory=True)
     with pytest.raises(ValueError):
         ensure_inside(tmp_path, tmp_path / "runs" / "link")
+
+
+def test_fault() -> None:
+    """Ekilmiş hata kodu: ^[a-z0-9_]{1,40}$ (012 §4.6); boş = hata yok."""
+    assert validate_fault(None) is None and validate_fault("") is None
+    for ok in ("kampanya_bedava_yok", "fiyat_p004_31", "a", "x" * 40, "7_"):
+        assert validate_fault(ok) == ok
+    for bad in ("Kampanya", "a-b", "a b", "a.b", "x" * 41, "a\n", "ğ", "--x", "../a", 7):
+        with pytest.raises(ValueError, match="geçersiz fault"):
+            validate_fault(bad)  # type: ignore[arg-type]
+
+
+def test_resolve_fault() -> None:
+    assert resolve_fault(None, {}) is None
+    assert resolve_fault("a_1", {}) == "a_1"
+    assert resolve_fault(None, {"TP_FAULT": "a_1"}) == "a_1"
+    assert resolve_fault("a_1", {"TP_FAULT": "a_1"}) == "a_1"
+    assert resolve_fault("a_1", {"TP_FAULT": ""}) == "a_1"
+    assert resolve_fault(None, {"TP_FAULT": "", "BREAK_CAMPAIGN": "1"}) is None
+    with pytest.raises(ValueError, match="farklı"):
+        resolve_fault("a_1", {"TP_FAULT": "b_2"})
+    with pytest.raises(ValueError, match="geçersiz fault"):
+        resolve_fault(None, {"TP_FAULT": "A"})

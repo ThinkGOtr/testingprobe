@@ -1,8 +1,8 @@
 """Bayi Sipariş Portalı API.
 
 Uçlar: /health · /auth/{login,logout,me} · /products · /cart (+ /cart/lines) · /orders ·
-/test/reset · /test/break (yalnızca DEMOAPP_TEST_MODE=1 ve DEMOAPP_TEST_TOKEN tanımlıyken;
-istek `X-Demoapp-Test-Token` başlığında aynı değeri taşımalıdır). Web arayüzü bu uçlara `/api/`
+/test/reset · /test/break · /test/faults (yalnızca DEMOAPP_TEST_MODE=1 ve DEMOAPP_TEST_TOKEN
+tanımlıyken; istek `X-Demoapp-Test-Token` başlığında aynı değeri taşımalıdır). Web arayüzü `/api/`
 önekiyle erişir (nginx ya da vite proxy öneki kaldırır; nginx /api/test/ yolunu dışarı açmaz).
 """
 
@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from demoapp_api import __version__, db, seed
+from demoapp_api import __version__, db, faults, seed
 from demoapp_api.campaign import KAMPANYA_ADI
 from demoapp_api.models import (
     Ayar,
@@ -151,28 +151,27 @@ def sepet_al(s: Session, bayi: Bayi, olustur: bool = True) -> Sepet | None:
     return sepet
 
 
-def kampanya_bozuk_mu(s: Session, bayi: Bayi) -> bool:
-    """Bu bayi için demo kırılması (`POST /test/break`) açık mı? Test modu dışında hep False."""
-    if not test_modu():
-        return False
-    row = s.get(TestKirilma, bayi.id)
-    return bool(row and row.kampanya)
+def aktif_hata(s: Session, bayi: Bayi) -> str | None:
+    """Bu bayi için ekilmiş hata kodu (`POST /test/break`, `faults.py`); yoksa None.
+    Test modu dışında hep None: kırılma kaydı kalmış olsa bile hesap etkilenmez."""
+    return faults.satir_hatasi(s.get(TestKirilma, bayi.id)) if test_modu() else None
 
 
 def sepet_hesabi(s: Session, bayi: Bayi, sepet: Sepet | None) -> SepetSonuc:
-    kampanyali = kampanyali_urun_idleri(s)
+    """Sepet tutarları, bayinin gördüğü değerlerle (ekilmiş veri hatası fiyatı/minimumu ezer)."""
+    hata, kampanyali = bayi_gorunumu(s, bayi)
     satirlar = sorted(sepet.satirlar, key=lambda x: x.urun.sira) if sepet else []
     girdiler = [
         SatirGirdi(
             urun_kod=x.urun.kod,
             urun_ad=x.urun.ad,
-            birim_fiyat=x.urun.fiyat,
+            birim_fiyat=faults.fiyat(hata, x.urun.kod, x.urun.fiyat),
             adet=x.adet,
             kampanyali=x.urun_id in kampanyali,
         )
         for x in satirlar
     ]
-    return sepet_hesapla(girdiler, min_siparis_tutari(s), kampanya_bozuk_mu(s, bayi))
+    return sepet_hesapla(girdiler, faults.min_siparis(hata, min_siparis_tutari(s)), hata)
 
 
 def sepet_json(h: SepetSonuc) -> dict:
@@ -253,9 +252,10 @@ class SifirlaIstegi(BaseModel):
     kullanici_adi: str | None = Field(default=None, max_length=64)
 
 
-class KirIstegi(BaseModel):
+class KirIstegi(BaseModel):  # `kampanya: true` = `hata: "kampanya_bedava_yok"` (geriye uyumlu)
     kullanici_adi: str = Field(min_length=1, max_length=64)
-    kampanya: bool
+    kampanya: bool | None = None
+    hata: str | None = Field(default=None, max_length=faults.KOD_UZUNLUGU)
 
 
 # --------------------------------------------------------------------------- uçlar
@@ -329,13 +329,13 @@ def session_probe(s: SessionDep, bayi_oturum: Annotated[str | None, Cookie()] = 
 
 @app.get("/products")
 def products(s: SessionDep, _bayi: BayiDep) -> list[dict]:
-    kampanyali = kampanyali_urun_idleri(s)
+    hata, kampanyali = bayi_gorunumu(s, _bayi)
     urunler = s.scalars(select(Urun).where(Urun.aktif.is_(True)).order_by(Urun.sira, Urun.kod))
     return [
         {
             "kod": u.kod,
             "ad": u.ad,
-            "fiyat": tutar_str(u.fiyat),
+            "fiyat": tutar_str(faults.fiyat(hata, u.kod, u.fiyat)),
             "kampanya": KAMPANYA_ADI if u.id in kampanyali else None,
         }
         for u in urunler
@@ -473,20 +473,58 @@ def test_reset(s: SessionDep, istek: Annotated[SifirlaIstegi | None, Body()] = N
 
 @app.post("/test/break", dependencies=[Depends(test_ucu_yetkisi)])
 def test_break(istek: KirIstegi, s: SessionDep) -> dict:
-    """Bayi kapsamlı demo kırılması ("kırarak doğrula"). `kampanya=true` iken bu bayinin
-    sepet ve sipariş hesabında kampanya indirimi uygulanmaz; diğer bayiler etkilenmez.
-    `/test/reset` (bayi ya da tümü) kırılmayı da kaldırır."""
+    """Bayi kapsamlı ekilmiş hata ("kırarak doğrula", "ekilmiş hata koşusu").
+
+    `hata`: `faults.KATALOG` kodu; bu bayinin sepet, katalog ve sipariş hesabı o hatayla çalışır,
+    diğer bayiler etkilenmez. Bir bayide en çok bir hata etkindir (yenisi öncekinin yerini alır).
+    `kampanya: true` geriye uyumludur ve `hata: "kampanya_bedava_yok"` ile eşanlamlıdır; ikisi
+    birlikte verilirse `hata` geçerlidir. `hata: null` / `kampanya: false` hatayı kaldırır.
+    `/test/reset` (bayi ya da tümü) hatayı da kaldırır."""
+    if not istek.model_fields_set & {"kampanya", "hata"}:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, "kampanya ya da hata alanı verilmelidir"
+        )
+    kod = istek.hata or (faults.KAMPANYA_BEDAVA_YOK if istek.kampanya else None)
+    if kod is not None and not faults.gecerli(kod):
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, faults.bilinmeyen_kod_mesaji(kod)
+        )
     bayi = s.scalar(select(Bayi).where(Bayi.kullanici_adi == istek.kullanici_adi))
     if bayi is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Bayi bulunamadı")
     row = s.get(TestKirilma, bayi.id)
-    if istek.kampanya:
+    if kod is not None:
         if row is None:
             row = TestKirilma(bayi_id=bayi.id)
             s.add(row)
-        row.kampanya = True
+        row.hata = kod
+        row.kampanya = kod == faults.KAMPANYA_BEDAVA_YOK
         row.guncelleme = datetime.now(UTC)
     elif row is not None:
         s.delete(row)
     s.flush()
-    return {"kullanici_adi": bayi.kullanici_adi, "kampanya": istek.kampanya}
+    return {
+        "kullanici_adi": bayi.kullanici_adi,
+        "kampanya": kod == faults.KAMPANYA_BEDAVA_YOK,
+        "hata": kod,
+    }
+
+
+@app.get("/test/faults", dependencies=[Depends(test_ucu_yetkisi)])
+def test_faults() -> dict:
+    """Ekilmiş hata kataloğu: `{"hatalar": [{kod, tur, ad, aciklama}]}` (`faults.KATALOG`)."""
+    return {"hatalar": faults.katalog_json()}
+
+
+# --------------------------------------------------------------------------- ekilmiş hata
+# Sabitlenen satırları (core testleri: main.py:331, main.py:450) kaydırmamak için dosya sonunda.
+def bayi_gorunumu(s: Session, bayi: Bayi) -> tuple[str | None, set[int]]:
+    """Bu bayinin (etkin hata kodu, kampanyalı ürün id'leri) ikilisi.
+
+    Kampanyalı ürün ekilmiş veri hatasıyla ezilmişse `kampanya` tablosu yerine o ürün döner;
+    tabloya yazılmaz, bu yüzden diğer bayiler ve `/test/reset` etkilenmez."""
+    hata = aktif_hata(s, bayi)
+    urun_kod = faults.kampanya_urunu(hata)
+    if urun_kod is None:
+        return hata, kampanyali_urun_idleri(s)
+    return hata, set(s.scalars(select(Urun.id).where(Urun.kod == urun_kod, Urun.aktif.is_(True))))

@@ -12,6 +12,9 @@
 // - BREAK_CAMPAIGN=1: "kırarak doğrula". Yalnızca bu koşunun bayisi için kampanya kuralı
 //   POST /test/break ile bozulur, test sonunda geri alınır (token gerekir). Paylaşılan uygulama
 //   örneği, diğer bayiler ve playwright-mcp etkilenmez.
+// - TP_FAULT=<kod>: "ekilmiş hata koşusu". Aynı yol, aynı yer: koşunun bayisi için katalogdaki
+//   hata (demo API `faults.py`, GET /test/faults) POST /test/break {hata} ile açılır, test sonunda
+//   kaldırılır (token gerekir). BREAK_CAMPAIGN=1 ile birlikte verilirse TP_FAULT geçerlidir.
 // - `signedIn` istenirse bayi API üzerinden oturum açar (çerez sayfa bağlamıyla paylaşılır).
 // - `dealerUsername` (test.use ile, isteğe bağlı): testi işçinin bayisi yerine belirli bir e2e
 //   bayisine sabitler (ör. case metni "bayi2 / Demo123!" ile giriş yapıp bayiye özgü değer
@@ -132,12 +135,43 @@ export async function acquireDealer(dir: string, username: string, waitMs = LOCK
 /** "Kırarak doğrula": kampanya kuralı yalnızca bu koşunun bayileri için bozulur. */
 export const BREAK_CAMPAIGN = process.env.BREAK_CAMPAIGN === "1";
 
+/** Ekilmiş hata kodunun biçimi (toolchain `/run` ve `/check` gövdesindeki `fault` ile aynı). */
+export const FAULT_PATTERN = /^[a-z0-9_]{1,40}$/;
+
+/** Bayi kapsamlı kırılma: testten önce `on`, testten sonra `off` gövdesiyle POST /test/break. */
+export interface DealerBreak {
+  on: Record<string, unknown>;
+  off: Record<string, unknown>;
+}
+
+/**
+ * Ortamdan bu koşunun kırılması: TP_FAULT=<kod> (ekilmiş hata) ya da BREAK_CAMPAIGN=1 (kampanya);
+ * ikisi birlikteyse TP_FAULT geçerlidir. Hiçbiri yoksa undefined. Biçimi bozuk kod açıklayıcı
+ * hatayla durur (kodun katalogda olup olmadığına API karar verir: bilinmeyen kod → 422).
+ */
+export function dealerBreak(env: NodeJS.ProcessEnv = process.env): DealerBreak | undefined {
+  const fault = env.TP_FAULT;
+  if (fault) {
+    if (!FAULT_PATTERN.test(fault)) {
+      throw new Error(`TP_FAULT geçersiz: '${fault}' (beklenen biçim: ${FAULT_PATTERN.source})`);
+    }
+    return { on: { hata: fault }, off: { hata: null } };
+  }
+  if (env.BREAK_CAMPAIGN === "1") return { on: { kampanya: true }, off: { kampanya: false } };
+  return undefined;
+}
+
 type IsolationMode = { kind: "reset"; token: string } | { kind: "cart-only" };
 
 /** Veri yalıtım modunu ortamdan seçer; geçersiz birleşimlerde açıklayıcı hatayla durur. */
 export function isolationMode(env: NodeJS.ProcessEnv = process.env): IsolationMode {
   const token = env.DEMOAPP_TEST_TOKEN;
   if (token) return { kind: "reset", token };
+  if (env.TP_FAULT) {
+    throw new Error(
+      "TP_FAULT için DEMOAPP_TEST_TOKEN gerekir (ekilmiş hata POST /test/break ile bayi kapsamında açılır).",
+    );
+  }
   if (env.BREAK_CAMPAIGN === "1") {
     throw new Error(
       "BREAK_CAMPAIGN=1 için DEMOAPP_TEST_TOKEN gerekir (kırılma POST /test/break ile bayi kapsamında açılır).",
@@ -257,17 +291,18 @@ export const test = base.extend<Fixtures & Options>({
       const release = await acquireDealer(lockDir(testInfo), dealer.username);
       try {
         const mode = isolationMode();
+        const kirilma = dealerBreak();
         if (mode.kind === "reset") {
           await testApi(baseURL, mode.token, "reset", { kullanici_adi: dealer.username }, browser);
-          if (BREAK_CAMPAIGN) {
-            await testApi(baseURL, mode.token, "break", { kullanici_adi: dealer.username, kampanya: true }, browser);
+          if (kirilma) {
+            await testApi(baseURL, mode.token, "break", { kullanici_adi: dealer.username, ...kirilma.on }, browser);
           }
         } else {
           await clearCartViaPublicApi(request, dealer);
         }
         await use(dealer);
-        if (mode.kind === "reset" && BREAK_CAMPAIGN) {
-          await testApi(baseURL, mode.token, "break", { kullanici_adi: dealer.username, kampanya: false }, browser);
+        if (mode.kind === "reset" && kirilma) {
+          await testApi(baseURL, mode.token, "break", { kullanici_adi: dealer.username, ...kirilma.off }, browser);
         }
       } finally {
         release();
