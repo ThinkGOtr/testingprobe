@@ -274,6 +274,23 @@ def test_bilinmeyen_beklenti_ve_bos_cikti() -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    "metin",
+    [
+        "Bu akış KVKK’ya tam uyumlu.",  # kıvrık kesme (U+2019)
+        "Bu akış KVKK‘ya tam uyumlu.",
+        "Bu akış KVKKʼya tam uyumlu.",
+        "Bu akış KVKK'ya  tam\nuyumlu.",  # çift boşluk, satır kırma
+    ],
+)
+def test_not_contains_kesme_ve_bosluk_normalize(metin: str) -> None:
+    cikti = _cevap(cevap_bloklari=[{"tur": "paragraf", "metin": metin, "maddeler": []}])
+    f = check_output("assistant", {"not_contains": ["kvkk'ya tam uyumlu"]}, cikti)
+    assert f == ["cevap 'kvkk'ya tam uyumlu' içermemeli"]
+    # `contains` da aynı normalizasyonu kullanır (beklenti tarafındaki kıvrık kesme de düzleşir)
+    assert check_output("assistant", {"contains": ["KVKK’ya tam uyumlu"]}, cikti) == []
+
+
 def test_gorunur_metin_ve_rota_kalibi() -> None:
     metin = asistan_metni(
         {

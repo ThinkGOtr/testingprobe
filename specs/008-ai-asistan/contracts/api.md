@@ -71,7 +71,7 @@ Her hata: `{"detail": "<Türkçe metin>", "kod": "<enum>"}` (+ uca özgü ek ala
 | Bütçe | `butce_asildi` | 402 | `BudgetExceeded` ve asistan bütçe ön kontrolü |
 | CSRF | `kaynak_reddi` | 403 | `api/csrf.py` (ara katman, gövdeye doğrudan) |
 | Asistan (`KodluHata`) | `sir_icerik` | 422 | soru/bağlamda sır deseni; değer yanıtta yok |
-| | `kisisel_veri` | 422 | soru/bağlamda Luhn'lu kart numarası; değer yanıtta yok (spec 013) |
+| | `kisisel_veri` | 422 | soruda Luhn'lu kart numarası; bağlamda (ekran JSON'u) ayrıca çevrede kart kelimesi şartı; değer yanıtta yok (specs/013 §5.1) |
 | | `bekleyen_var` | 409 | kullanıcının bekleyen mesajı var |
 | | `zaten_derin` | 409 | `ust_mesaj_id` tekilliği |
 | | `oneri_gecersiz` | 409 | `oneri_kural_id` artık geçerli değil |

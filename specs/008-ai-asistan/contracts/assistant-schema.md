@@ -95,3 +95,8 @@ aracı çağırdı.
 Şema çıktısı (son işlenmiş) + `{"guven_gosterimi": "...", "dogrulama": {"<ref>": {"dogrulandi":
 bool, "sha256": "..."}}, "urune_ozgu": bool, "toparlama": bool}`. Portal yalnız bu nesneyi çizer
 (HTML yok, blok render).
+
+Spec 013 ekleri: `sinyaller` (girdi niyet sinyali kimlikleri; yalnız DB'de, `mesaj_ozeti` istemciye
+döndürmez), `model` (cevabı üreten amaç modeli; portal kip rozeti önce bunu kullanır) ve istem
+sızıntısı yerine gelen cevapta `sizinti: true` (portal güven rozetini göstermez). Ayrıntı:
+[013 ANALIZ §5.2, §6.3, §7](../../013-asistan-guvenlik/ANALIZ.md).
