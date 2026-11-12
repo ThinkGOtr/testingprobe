@@ -44,10 +44,10 @@ def _kisi(rol: str) -> Principal:
 # ------------------------------------------------------------------ yükleyici
 
 
-def test_kural_seti_yuklenir_ve_ilk_set_26_kural() -> None:
+def test_kural_seti_yuklenir_ve_27_kural() -> None:
     ks = _ks()
-    assert len(ks.kurallar) == 26
-    assert len({k.id for k in ks.kurallar}) == 26
+    assert len(ks.kurallar) == 27
+    assert len({k.id for k in ks.kurallar}) == 27
     assert set(ks.taslaklar) == {
         "po-hatirlatma",
         "ac-eksik",
@@ -475,7 +475,7 @@ def test_rol_hizalama_rota_eylemi_ucun_require_role_ve_onay_rolleri_alt_kumesi()
     uclar = _uc_rolleri()
     assert uclar["POST /requirements/{req_id}/po-approve"] == {"po"}
     rota_kurallari = [k for k in _ks().kurallar if k.eylem_turu == "rota"]
-    assert len(rota_kurallari) == 12
+    assert len(rota_kurallari) == 13
     for k in rota_kurallari:
         uc = k.eylem["yetki"]["uc"]
         assert uc in uclar, (k.id, uc)

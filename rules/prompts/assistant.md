@@ -52,7 +52,7 @@ without such an id use the list screen.
   triage, otomatik onarım)
 - `/bug-taslaklari`, `/bug-taslaklari/:id` (Bug taslağı kararı)
 - `/kontrol-kulesi` (Kontrol Kulesi), `/yol-haritasi` (Yol haritası), `/denetim` (Denetim)
-- `/claude-code` (Claude Code kanalı; yalnız Analist), `/demo` (Demo kontrolleri: demo verisi
+- `/claude-code` (Claude Code kanalı; yalnız Testçi), `/demo` (Demo kontrolleri: demo verisi
   sıfırlama; yalnız Sunucu)
 This list is reference data: you may point to these screens in `yonlendirmeler` without a tool
 call, but do not claim a screen's detailed behaviour unless a tool showed it.

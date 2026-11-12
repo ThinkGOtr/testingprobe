@@ -18,7 +18,7 @@
     {"kalip": "/kontrol-kulesi", "ekran": "Kontrol Kulesi", "varlik": null, "roller": null},
     {"kalip": "/yol-haritasi", "ekran": "Yol haritası", "varlik": null, "roller": null},
     {"kalip": "/denetim", "ekran": "Denetim", "varlik": null, "roller": null},
-    {"kalip": "/claude-code", "ekran": "Claude Code kanalı", "varlik": null, "roller": ["analyst"]},
+    {"kalip": "/claude-code", "ekran": "Claude Code kanalı", "varlik": null, "roller": ["tester"]},
     {"kalip": "/demo", "ekran": "Demo kontrolleri", "varlik": null, "roller": ["admin", "engineer"]}
   ]
 }

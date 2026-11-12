@@ -211,7 +211,7 @@ def test_karar_rolleri_karara_gore(session: Session, make_user: MakeUser) -> Non
     ):
         with pytest.raises(ApprovalNotAllowed, match="rolü"):
             record_approval(session, c, analist, karar, **kw)
-    for rol in ("po", "engineer", "presenter"):
+    for rol in ("po", "engineer", "admin"):
         with pytest.raises(ApprovalNotAllowed):
             record_approval(session, c, make_user(rol), "accept")
     assert _review_sayisi(session) == 0

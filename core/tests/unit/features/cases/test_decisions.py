@@ -344,7 +344,7 @@ def test_po_rolu_karar_veremez(api: TestClient, make_user, hazir) -> None:
 
 def test_okuma_izni_ve_uretim_izni(api: TestClient, make_user, hazir) -> None:
     rid, _, _ = hazir
-    for rol in ("po", "engineer", "analyst", "presenter"):
+    for rol in ("po", "engineer", "analyst", "admin"):
         rol_ol(api, make_user(rol))
         assert api.get("/cases", params={"requirement_id": str(rid)}).status_code == 200, rol
         assert api.get(f"/requirements/{rid}/case-metrics").status_code == 200, rol

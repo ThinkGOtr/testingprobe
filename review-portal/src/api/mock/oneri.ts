@@ -206,7 +206,7 @@ export const MOCK_KURALLAR: MockKural[] = [
     neden: "Onaylı içerikten case üretilmeden inceleme, yayın ve otomasyon adımları başlayamaz.",
     eylem: { tur: "rota", rota: "/gereksinimler/:id", capa: "case-uret" },
     aciklama:
-      "PO gereksinimin bu hâlini onayladı. Case üretimi yalnızca onaylı içerikten yapılır; üretim bitince case'ler inceleme ekranına düşer ve kararınızı bekler.",
+      "PO gereksinimin bu hâlini onayladı. Case üretimi yalnızca onaylı içerikten yapılır; üretim bitince case'ler inceleme ekranına düşer ve kararınızı bekler; Analist son onayı verir.",
   },
   {
     id: "gereksinim-basarisiz",
@@ -227,47 +227,47 @@ export const MOCK_KURALLAR: MockKural[] = [
     kosul: (o) => Number(o.inceleme_bekleyen_case) >= 1,
     oncelik: 90,
     baslik: "{inceleme_bekleyen_case} case kararınızı bekliyor",
-    neden: "Kabul edilmeyen case Analist onayına gidemez; onaylanmayan case yayımlanamaz ve otomasyona geçemez.",
+    neden: "Kararınız verilmeyen case Analist'in son onayına gidemez; yayın ve otomasyon bekler.",
     eylem: { tur: "rota", rota: "/gereksinimler/:id/caseler" },
     aciklama:
-      "Üretilen case'ler taslak durumunda. Her case'i kabul edin, düzelterek kabul edin ya da gerekçesiyle reddedin. Kabul edilen case'ler Analist son onayına gider; yayın ve otomasyon yalnızca onaylı case'lerle yapılır.",
+      "Üretilen case'ler taslak durumunda. Her case'i kabul edin, düzelterek kabul edin ya da gerekçesiyle reddedin. Kabul edilen case'ler Analist'in son onayına gider; yayın ve otomasyon yalnızca son onaylı case'lerle yapılır.",
   },
   {
     id: "case-son-onay-bekliyor",
     ekran: "/gereksinimler/:id/caseler",
     roller: ["analyst"],
-    kosul: (o) => Number(o.onay_bekleyen_case) >= 1,
+    kosul: (o) => Number(o.son_onay_bekleyen_case) >= 1,
     oncelik: 90,
-    baslik: "{onay_bekleyen_case} case son onayınızı bekliyor",
-    neden: "Testçinin kabul ettiği case'ler Analist onayı olmadan yayımlanamaz.",
+    baslik: "{son_onay_bekleyen_case} case son onayınızı bekliyor",
+    neden: "Son onay verilmeyen case yayımlanamaz ve otomasyona geçemez.",
     eylem: { tur: "rota", rota: "/gereksinimler/:id/caseler" },
     aciklama:
-      "Testçi bu case'leri kabul etti; durumları 'Onaya hazır'. Her case'i onaylayın ya da gerekçesiyle Testçiye geri gönderin. Onaylanan case'leri Testçi yayımlar.",
+      "Testçi bu case'leri kabul etti; onaya hazır durumdalar. Her case'i onaylayın ya da gerekçesiyle Testçi'ye geri gönderin. Yalnızca onayladığınız case'ler yayımlanabilir.",
   },
   {
     id: "case-yayina-hazir",
     ekran: "/gereksinimler/:id/caseler",
     roller: ["tester"],
     kosul: (o) =>
-      o.durum === "cases_ready" && Number(o.inceleme_bekleyen_case) === 0 && Number(o.onay_bekleyen_case ?? 0) === 0 && Number(o.onayli_case) >= 1,
+      o.durum === "cases_ready" && Number(o.inceleme_bekleyen_case) === 0 && Number(o.son_onay_bekleyen_case ?? 0) === 0 && Number(o.onayli_case) >= 1,
     oncelik: 85,
     baslik: "İnceleme tamam; yayına hazır",
     neden: "Onaylı case'ler yayımlanınca test yönetimine geçer ve otomasyon üretimi başlayabilir.",
     eylem: { tur: "rota", rota: "/gereksinimler/:id/yayin" },
     aciklama:
-      "Bu gereksinimin bütün case'leri kararlaştırıldı ve Analist onayından geçti. Yayın ekranında onaylı case'leri seçip yayımlayın; yayın Testing Probe'un kendi onaylı hattıyla yapılır.",
+      "Bu gereksinimin bütün case'leri kararlaştırıldı. Yayın ekranında onaylı case'leri seçip yayımlayın; yayın Testing Probe'un kendi onaylı hattıyla yapılır.",
   },
   {
     id: "case-inceleme-analistte",
     ekran: "/gereksinimler/:id/caseler",
     roller: ["tester"],
-    kosul: (o) => Number(o.inceleme_bekleyen_case) === 0 && Number(o.onay_bekleyen_case) >= 1,
+    kosul: (o) => Number(o.son_onay_bekleyen_case) >= 1,
     oncelik: 40,
-    baslik: "Case'ler Analist son onayında",
-    neden: "Son onayı Analist verir; onaylanan case'leri siz yayımlarsınız.",
+    baslik: "{son_onay_bekleyen_case} case Analist'in son onayında",
+    neden: "Son onayı Analist verir; onaylanan case'leri yayımlayabilirsiniz.",
     eylem: { tur: "bilgi" },
     aciklama:
-      "Bu gereksinimin kabul ettiğiniz case'leri Analist son onayında ('Onaya hazır'). Analist onaylayınca yayın ekranından yayımlayabilirsiniz; geri gönderilen case gerekçesiyle taslağa döner.",
+      "Kabul ettiğiniz case'ler Analist'in son onayını bekliyor. Analist onaylarsa yayın ekranından yayımlayabilirsiniz; geri gönderirse case gerekçesiyle taslağa döner.",
   },
   {
     id: "script-kirarak-dogrula",
@@ -530,7 +530,7 @@ function olgular(veri: MockVeri, tur: string | null, id: string | null, simdi: n
       po_bekleme_saat: g.durum === "pending_po" ? saatFarki(g.cekim_zamani, simdi) : null,
       acik_bulgu_sayisi: veri.bulgular.filter((b) => b.requirement_id === id && b.durum === "open").length,
       inceleme_bekleyen_case: caseler.filter((c) => c.durum === "draft").length,
-      onay_bekleyen_case: caseler.filter((c) => c.durum === "ready").length,
+      son_onay_bekleyen_case: caseler.filter((c) => c.durum === "ready").length,
       onayli_case: caseler.filter((c) => c.durum === "approved").length,
     };
   }

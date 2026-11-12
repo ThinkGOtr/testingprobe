@@ -278,6 +278,14 @@ def _case_bekliyor(t: Tohum, n: datetime) -> Ekran:
     return _ci(req, n)
 
 
+def _case_son_onayda(t: Tohum, n: datetime) -> Ekran:
+    """Testçi kabul etti (`ready`); Analist'in son onayını bekler."""
+    req = t.gereksinim("cases_ready")
+    t.case(req, "ready")
+    t.case(req, "approved")
+    return _ci(req, n)
+
+
 def _case_bitti(t: Tohum, n: datetime) -> Ekran:
     req = t.gereksinim("cases_ready")
     t.case(req, "approved")
@@ -406,14 +414,15 @@ VAKALAR: dict[str, tuple[str, Kurulum, Kurulum]] = {
         _po("jira", 1, durum="doc_final"),
     ),
     "gereksinim-case-uret": (
-        "analyst",
+        "tester",
         _gereksinim("po_approved"),
         _gereksinim("po_approved", ac_missing=True),
     ),
     "gereksinim-basarisiz": ("analyst", _gereksinim("failed"), _gereksinim("done")),
-    "case-inceleme-bekliyor": ("analyst", _case_bekliyor, _case_bitti),
-    "case-yayina-hazir": ("analyst", _case_hazir_olumlu, _case_hazir_olumsuz),
-    "case-inceleme-analistte": ("tester", _case_bekliyor, _case_bitti),
+    "case-inceleme-bekliyor": ("tester", _case_bekliyor, _case_bitti),
+    "case-son-onay-bekliyor": ("analyst", _case_son_onayda, _case_bitti),
+    "case-yayina-hazir": ("tester", _case_hazir_olumlu, _case_son_onayda),
+    "case-inceleme-analistte": ("tester", _case_son_onayda, _case_bitti),
     "script-kirarak-dogrula": (
         "engineer",
         _script("pr_open", "weak"),

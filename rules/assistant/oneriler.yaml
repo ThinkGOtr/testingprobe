@@ -262,7 +262,7 @@ kurallar:
     kosul: {durum_in: [pending_po], po_kanal_esit: portal}
     oncelik: 95
     baslik: Onayınız bekleniyor; case üretimi buna bağlı
-    neden: Analist case üretimini ancak sizin onayınızdan sonra başlatabilir; onay içeriğin bu hâline bağlanır.
+    neden: Testçi case üretimini ancak sizin onayınızdan sonra başlatabilir; onay içeriğin bu hâline bağlanır.
     eylem:
       tur: rota
       rota: /gereksinimler/:id
@@ -279,7 +279,7 @@ kurallar:
     kosul: {durum_in: [pending_po], po_kanal_esit: jira, jira_key_var: true}
     oncelik: 95
     baslik: Onayınız bekleniyor; case üretimi buna bağlı
-    neden: Analist case üretimini ancak sizin onayınızdan sonra başlatabilir; bu gereksinimde onay Jira'dan verilir.
+    neden: Testçi case üretimini ancak sizin onayınızdan sonra başlatabilir; bu gereksinimde onay Jira'dan verilir.
     eylem: {tur: jira_kaydi}
     aciklama: >-
       Bu gereksinimde PO onayı Jira kanalından alınır. Jira kaydını açıp onayınızı orada verin;
@@ -288,7 +288,7 @@ kurallar:
   - id: gereksinim-case-uret                                        # §17.3 #8
     ekran: /gereksinimler/:id
     varlik: requirement
-    roller: [analyst]
+    roller: [tester]
     kosul: {durum_in: [po_approved], ac_eksik_esit: false}
     oncelik: 90
     baslik: PO onayladı; case üretimini başlatın
@@ -300,7 +300,7 @@ kurallar:
       yetki: {uc: "POST /requirements/{requirement_id}/generate-cases"}
     aciklama: >-
       PO gereksinimin bu hâlini onayladı. Case üretimi yalnızca onaylı içerikten yapılır; üretim
-      bitince case'ler inceleme ekranına düşer ve kararınızı bekler.
+      bitince case'ler inceleme ekranına düşer ve kararınızı bekler; Analist son onayı verir.
 
   - id: gereksinim-basarisiz                                        # §17.3 #9
     ekran: /gereksinimler/:id
@@ -320,24 +320,41 @@ kurallar:
   - id: case-inceleme-bekliyor                                      # §17.3 #10
     ekran: /gereksinimler/:id/caseler
     varlik: requirement
-    roller: [analyst]
+    roller: [tester]
     kosul: {inceleme_bekleyen_case_gte: 1}
     oncelik: 90
     baslik: "{inceleme_bekleyen_case} case kararınızı bekliyor"
-    neden: Onaylanmayan case yayımlanamaz ve otomasyona geçemez.
+    neden: Kararınız verilmeyen case Analist'in son onayına gidemez; yayın ve otomasyon bekler.
     eylem:
       tur: rota
       rota: /gereksinimler/:id/caseler
       yetki: {uc: "POST /cases/{case_id}/decision", onay_varligi: test_case}
     aciklama: >-
-      Üretilen case'ler taslak durumunda. Her case'i onaylayın, düzenleyerek onaylayın ya da
-      gerekçesiyle reddedin. Yayın ve otomasyon yalnızca onaylı case'lerle yapılır.
+      Üretilen case'ler taslak durumunda. Her case'i kabul edin, düzelterek kabul edin ya da
+      gerekçesiyle reddedin. Kabul edilen case'ler Analist'in son onayına gider; yayın ve
+      otomasyon yalnızca son onaylı case'lerle yapılır.
+
+  - id: case-son-onay-bekliyor                                      # 012
+    ekran: /gereksinimler/:id/caseler
+    varlik: requirement
+    roller: [analyst]
+    kosul: {son_onay_bekleyen_case_gte: 1}
+    oncelik: 90
+    baslik: "{son_onay_bekleyen_case} case son onayınızı bekliyor"
+    neden: Son onay verilmeyen case yayımlanamaz ve otomasyona geçemez.
+    eylem:
+      tur: rota
+      rota: /gereksinimler/:id/caseler
+      yetki: {uc: "POST /cases/{case_id}/decision", onay_varligi: test_case}
+    aciklama: >-
+      Testçi bu case'leri kabul etti; onaya hazır durumdalar. Her case'i onaylayın ya da
+      gerekçesiyle Testçi'ye geri gönderin. Yalnızca onayladığınız case'ler yayımlanabilir.
 
   - id: case-yayina-hazir                                           # §17.3 #11
     ekran: /gereksinimler/:id/caseler
     varlik: requirement
-    roller: [analyst]
-    kosul: {durum_in: [cases_ready], inceleme_bekleyen_case_esit: 0, onayli_case_gte: 1}
+    roller: [tester]
+    kosul: {durum_in: [cases_ready], inceleme_bekleyen_case_esit: 0, son_onay_bekleyen_case_esit: 0, onayli_case_gte: 1}
     oncelik: 85
     baslik: İnceleme tamam; yayına hazır
     neden: Onaylı case'ler yayımlanınca test yönetimine geçer ve otomasyon üretimi başlayabilir.
@@ -353,14 +370,14 @@ kurallar:
     ekran: /gereksinimler/:id/caseler
     varlik: requirement
     roller: [tester]
-    kosul: {inceleme_bekleyen_case_gte: 1}
+    kosul: {son_onay_bekleyen_case_gte: 1}
     oncelik: 40
-    baslik: Case'ler analist incelemesinde
-    neden: Case kararını Analist verir; onaylanan case'ler yayımlanınca test planına girer.
+    baslik: "{son_onay_bekleyen_case} case Analist'in son onayında"
+    neden: Son onayı Analist verir; onaylanan case'leri yayımlayabilirsiniz.
     eylem: {tur: bilgi}
     aciklama: >-
-      Bu gereksinimin case'leri henüz analist incelemesinde. Case kararı Analist rolündedir;
-      onaylanıp yayımlanınca test çalışmasına alınabilir.
+      Kabul ettiğiniz case'ler Analist'in son onayını bekliyor. Analist onaylarsa yayın ekranından
+      yayımlayabilirsiniz; geri gönderirse case gerekçesiyle taslağa döner.
 
   # ------------------------------------------------------------------ Script detay
   - id: script-kirarak-dogrula                                      # §17.3 #13
@@ -586,7 +603,7 @@ kurallar:
 bos_ekranlar:
   - {ekran: /, roller: [admin, auditor, analyst, po, tester, engineer, developer, viewer]}
   - {ekran: /gereksinimler, roller: [admin, auditor, analyst, po, tester, engineer, developer, viewer]}
-  - {ekran: /gereksinimler/:id, roller: [admin, auditor, tester, engineer, developer, viewer]}
+  - {ekran: /gereksinimler/:id, roller: [admin, auditor, engineer, developer, viewer]}
   - {ekran: /gereksinimler/:id/caseler, roller: [admin, auditor, po, engineer, developer, viewer]}
   - {ekran: /gereksinimler/:id/yayin, roller: [admin, auditor, analyst, po, tester, engineer, developer, viewer]}
   - {ekran: /kod, roller: [admin, auditor, analyst, po, tester, engineer, developer, viewer]}
@@ -599,5 +616,5 @@ bos_ekranlar:
   - {ekran: /kontrol-kulesi, roller: [auditor, analyst, po, tester, engineer, developer, viewer]}
   - {ekran: /yol-haritasi, roller: [admin, auditor, analyst, po, tester, engineer, developer, viewer]}
   - {ekran: /denetim, roller: [admin, auditor, analyst, po, tester, engineer, developer, viewer]}
-  - {ekran: /claude-code, roller: [analyst]}
+  - {ekran: /claude-code, roller: [tester]}
   - {ekran: /demo, roller: [admin, engineer]}

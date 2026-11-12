@@ -247,19 +247,6 @@ def _api_rotalari(rotalar: Any) -> Iterator[Any]:
             yield from _api_rotalari(r.original_router.routes)
 
 
-# S2 şeridinin (case/yayın) uçları birleşmeye kadar `require_role` taşır; hizalama onlar için
-# S2 birleşince sıkılaşır (bu işaret kalkar).
-S2_BEKLIYOR: frozenset[str] = frozenset({"<s2>"})
-S2_YOLLARI = frozenset({"/cases", "/cases/{case_id}", "/publish/preview"})
-
-
-def _izinli_mi(dep: Any) -> bool:
-    cagri = dep.call
-    if cagri is not None and (hasattr(cagri, "izin_adi") or hasattr(cagri, "izin_adlari")):
-        return True
-    return any(_izinli_mi(d) for d in dep.dependencies)
-
-
 def _route_rolleri() -> dict[str, frozenset[str] | None]:
     from tp_core.api.main import create_app
     from tp_core.auth import yetki
@@ -279,10 +266,6 @@ def _route_rolleri() -> dict[str, frozenset[str] | None]:
             if izinler:
                 kume = frozenset().union(*(yetki.roller_icin(i) for i in izinler))
                 roller = None if kume == yetki.ROLLER else kume
-            elif getattr(cagri, "__name__", "").startswith("require_role_"):
-                roller = S2_BEKLIYOR  # S2 (case/yayın) birleşene kadar eski rol bağımlılığı
-        if roller is None and r.path in S2_YOLLARI and not _izinli_mi(r.dependant):
-            roller = S2_BEKLIYOR
         out[f"GET {r.path}"] = roller
     return out
 
@@ -291,8 +274,6 @@ def test_uc_rolleri_routerla_ayni(db: Any) -> None:
     rotalar = _route_rolleri()
     for uc, roller in probe.UC_ROLLERI.items():
         assert uc in rotalar, uc
-        if rotalar[uc] is S2_BEKLIYOR:
-            continue
         assert rotalar[uc] == roller, uc
 
 
