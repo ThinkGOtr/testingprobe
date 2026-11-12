@@ -1571,3 +1571,103 @@ def test_principal_ve_rol_oturumdan(client: TestClient, make_user, engine: Engin
     gecit = Gecit(engine, [bitir()])
     assert cevapla(engine, mid, gecit) == "done"
     assert "Kullanıcının rolü: Sunucu (sunum yapan)" in gecit.ilk_istek()
+
+
+def _saf_mesaj(**ek: Any) -> flow.Mesaj:
+    alanlar: dict[str, Any] = {
+        "id": uuid.uuid4(),
+        "sohbet_id": uuid.uuid4(),
+        "kullanici_id": uuid.uuid4(),
+        "kullanici_adi": "t",
+        "rol": "tester",
+        "sira": 1,
+        "icerik": "Kontrol Kulesi'ndeki pass@1 bu hafta neden düştü?",
+        "baglam": None,
+        "kip": "soru",
+        "tetik": "kullanici",
+        "amac": None,
+        "ust_mesaj_id": None,
+        "job_id": None,
+        "oneri_kural_id": None,
+    }
+    alanlar.update(ek)
+    return flow.Mesaj(**alanlar)
+
+
+def _dogrulanmis_cevap(metin: str, *, urune_ozgu: bool = True, **ek: Any) -> dict[str, Any]:
+    return {
+        **sonislem.bos_cevap(),
+        "guven": "orta",
+        "guven_gosterimi": sonislem.DOGRULANDI,
+        "urune_ozgu": urune_ozgu,
+        "cevap_bloklari": [{"tur": "paragraf", "metin": metin, "maddeler": []}],
+        **ek,
+    }
+
+
+@pytest.mark.parametrize(
+    "metin",
+    [
+        # Canlı eval s13 (Haiku, 2026-11-12): güven orta + rozet doğrulandı + metinde belirsizlik.
+        "Hariç tutulanları kodda doğruladım. Düşüşün nedenini araçlarla doğrulayamadım; emin "
+        "değilim.",
+        "EMİN DEĞİLİM: haftalık veriyi göremedim.",
+        "Bu ayrıntıyı teyit edemedim.",
+        "Nedenini bilmiyorum.",
+    ],
+)
+def test_otomatik_tetik_metindeki_belirsizlik(monkeypatch: pytest.MonkeyPatch, metin: str) -> None:
+    monkeypatch.delenv(flow.ORTAM_OTOMATIK_DERIN, raising=False)
+    assert flow.otomatik_tetik(_saf_mesaj(), _dogrulanmis_cevap(metin)) is True
+
+
+def test_otomatik_tetik_madde_icindeki_belirsizlik(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(flow.ORTAM_OTOMATIK_DERIN, raising=False)
+    cevap = _dogrulanmis_cevap("Adımlar:")
+    cevap["cevap_bloklari"][0]["maddeler"] = ["Payda kuralı doğrulandı.", "Düşüşten emin değilim."]
+    assert flow.otomatik_tetik(_saf_mesaj(), cevap) is True
+
+
+@pytest.mark.parametrize(
+    ("metin", "ek", "mesaj_ek"),
+    [
+        # Belirsizlik yok.
+        ("Hariç tutulanlar kodda doğrulandı.", {}, {}),
+        # Kullanıcıya yönelik kalıp birinci tekil belirsizlik değildir.
+        ("Emin değilseniz Kontrol Kulesi'ne bakın.", {}, {}),
+        # Genel (ürüne özgü olmayan) soru: metin tetiklemez.
+        ("Emin değilim.", {"urune_ozgu": False}, {}),
+        # Eylem reddi tetiklemez.
+        ("Emin değilim.", {"eylem_reddi": True}, {}),
+        # Derin (ayrıntılı) cevap ve öneri kipi tetiklemez.
+        ("Emin değilim.", {}, {"amac": flow.DERIN_AMAC}),
+        ("Emin değilim.", {}, {"kip": "oneri"}),
+    ],
+)
+def test_otomatik_tetik_belirsizlik_disi(
+    monkeypatch: pytest.MonkeyPatch, metin: str, ek: dict[str, Any], mesaj_ek: dict[str, Any]
+) -> None:
+    monkeypatch.delenv(flow.ORTAM_OTOMATIK_DERIN, raising=False)
+    urune_ozgu = ek.pop("urune_ozgu", True)
+    cevap = _dogrulanmis_cevap(metin, urune_ozgu=urune_ozgu, **ek)
+    assert flow.otomatik_tetik(_saf_mesaj(**mesaj_ek), cevap) is False
+
+
+def test_otomatik_tetik_son_islem_notu_sayilmaz(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Son işlemin eklediği not (`notlar`) modelin belirsizliği değildir; yalnız bloklar sayılır."""
+    monkeypatch.delenv(flow.ORTAM_OTOMATIK_DERIN, raising=False)
+    cevap = _dogrulanmis_cevap("Doğrulandı.", notlar=[sonislem.NOT_EMIN_DEGILIM])
+    assert flow.otomatik_tetik(_saf_mesaj(), cevap) is False
+
+
+def test_otomatik_tetik_ortamdan_kapali(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(flow.ORTAM_OTOMATIK_DERIN, "off")
+    assert flow.otomatik_tetik(_saf_mesaj(), _dogrulanmis_cevap("Emin değilim.")) is False
+
+
+def test_derin_mesaj_fonksiyon_tanimi_yonergesi() -> None:
+    derin = _saf_mesaj(ust_mesaj_id=uuid.uuid4(), amac=flow.DERIN_AMAC)
+    icerik = flow.ilk_mesaj(derin, ekran=None, kural_onerileri=None, gecmis=None)[0].content
+    assert "çağrılan fonksiyonların tanımını açıp kaynak göster" in icerik
+    kisa = flow.ilk_mesaj(_saf_mesaj(), ekran=None, kural_onerileri=None, gecmis=None)[0].content
+    assert "tanımını açıp" not in kisa

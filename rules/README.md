@@ -281,8 +281,8 @@ varsa çıkış 1. Bu tablo kayıtla aynı olmalıdır (`test_evaluation_status.
 | `triage` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
 | `bug-draft` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
 | `dup-rank` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
-| `assistant` (portal asistanı; `assistant` + `assistant_deep` amaçları, `assistant/*` kuralları) | v1 | **değerlendirme sonrası içerik değişti (içerik hash'i uyuşmuyor)** — 2026-11-04 canlı değerlendirildi (Haiku 38/40, Sonnet 40/40); 011 ile `/ajan-urunleri` rotası ve asistan denetimi (`assistant-guard`) eklendi, denetim açık `--via-flow` yeniden koşusu gerekir |
-| `assistant-guard` (011 F7 asistan denetimi; Agent Probe portu) | v1 | **canlı değerlendirildi** (2026-11-12; `evaluation/results/assistant-guard-v1-2026-11-12.json`) |
+| `assistant` (portal asistanı; `assistant` + `assistant_deep` amaçları, `assistant/*` kuralları) | v1 | **değerlendirme sonrası içerik değişti (içerik hash'i uyuşmuyor)** — 2026-11-04 canlı değerlendirildi (Haiku 38/40, Sonnet 40/40); 011 ile `/ajan-urunleri` rotası ve asistan denetimi (`assistant-guard`) eklendi, denetim açık `--via-flow` 2026-11-12 koşusu Haiku 38/40, Sonnet 38/40 (eylem/injection eşiği Haiku'da 0,95); ardından belirsizlik → `guven=dusuk`, çağrılan fonksiyon tanımını açma, bilgi sorusunda `eylem_reddi` yok, kaynaksız rol/AC iddiası yok yönergeleri eklendi, yeniden koşu gerekir |
+| `assistant-guard` (011 F7 asistan denetimi; Agent Probe portu) | v1 | **değerlendirme sonrası içerik değişti (içerik hash'i uyuşmuyor)** — 2026-11-12 canlı değerlendirildi (`evaluation/results/assistant-guard-v1-2026-11-12.json`); ardından cevaptaki injection reddi/bildirimi `prompt_injection` sayılmaz netleştirmesi ve `injection-reddi-cevap` vakası eklendi, yeniden koşu gerekir |
 
 2026-11-01'de `requirement-review` v3, `triage`, `bug-draft` ve `dup-rank` v2 canlı modelle
 (`make eval-live A='--bundle … --update-status'`, sert bütçe tavanı 1,50 USD, gerçek harcama

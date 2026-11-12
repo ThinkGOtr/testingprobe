@@ -46,6 +46,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import threading
 import time
 import uuid
@@ -411,7 +412,7 @@ def ilk_mesaj(
     if m.derin:
         parcalar.append(
             "Bu soru daha önce kısa yoldan cevaplandı; şimdi ayrıntılı ve kaynakla doğrulayarak "
-            "yeniden incele."
+            "yeniden incele. Cevabın dayandığı çağrılan fonksiyonların tanımını açıp kaynak göster."
         )
     if ekran:
         parcalar.append(_blok(ekran, kaynak="ekran", tur="ekran"))
@@ -533,16 +534,39 @@ def harcama_oku(engine: Engine, call_id: uuid.UUID, gw: Any = None) -> Harcama:
 # ------------------------------------------------------------------ otomatik yükseltme
 
 
+# Modelin kendi cevabında yazdığı belirsizlik (birinci tekil; "emin değilseniz" gibi kullanıcıya
+# yönelik kalıplar sayılmaz). Model `guven=orta` verip metinde "emin değilim" dediğinde rozet
+# "Kaynakla doğrulandı" kalabilir (canlı eval s13, 2026-11-12): metin de tetik sayılır.
+_BELIRSIZLIK: Final = re.compile(
+    r"\b(emin değilim|emin olamadım|doğrulayamadım|teyit edemedim|bilmiyorum)\b"
+)
+
+
+def belirsizlik_ifadesi(cevap: Mapping[str, Any]) -> bool:
+    """Cevap bloklarının görünen metninde belirsizlik ifadesi var mı (son işlem notları hariç)."""
+    parcalar: list[str] = []
+    for blok in cevap.get("cevap_bloklari") or []:
+        if isinstance(blok, Mapping):
+            parcalar.append(str(blok.get("metin") or ""))
+            parcalar += [str(x) for x in blok.get("maddeler") or []]
+    return bool(_BELIRSIZLIK.search(siniflandir.normalize(" ".join(parcalar))))
+
+
 def otomatik_tetik(m: Mesaj, cevap: Mapping[str, Any]) -> bool:
-    """§6.2 tetik (deterministik, son işlemden sonra). Ön koşullar ayrıca (`otomatik_on_kosul`)."""
+    """§6.2 tetik (deterministik, son işlemden sonra). Ön koşullar ayrıca (`otomatik_on_kosul`).
+
+    Ürüne özgü soruda modelin metinde yazdığı belirsizlik ("emin değilim", "doğrulayamadım")
+    rozetten bağımsız tetikler (`belirsizlik_ifadesi`)."""
     if m.hedef_amac != VARSAYILAN_AMAC or m.kip != "soru" or not _otomatik_derin_acik():
         return False
     if cevap.get("eylem_reddi"):
         return False
     gosterim = cevap.get("guven_gosterimi")
+    urune_ozgu = bool(cevap.get("urune_ozgu"))
     return (
         gosterim == sonislem.EMIN_DEGIL
-        or (bool(cevap.get("urune_ozgu")) and gosterim == sonislem.KISMEN)
+        or (urune_ozgu and gosterim == sonislem.KISMEN)
+        or (urune_ozgu and belirsizlik_ifadesi(cevap))
         or bool(cevap.get("toparlama"))
     )
 

@@ -25,7 +25,14 @@ ESIK = (40, 70)
         (69, ["kapsam_disi"], "soru", "uyar"),
         (39, ["temiz"], "soru", "engelle"),
         (90, ["nefret_irkcilik"], "soru", "engelle"),
-        (90, ["prompt_injection"], "cevap", "engelle"),
+        # Cevapta injection tabanı: uyarı eşiği ve üstünde uyar (yanlış engel), altında engel.
+        (92, ["prompt_injection", "temiz"], "cevap", "uyar"),
+        (70, ["prompt_injection"], "cevap", "uyar"),
+        (69, ["prompt_injection"], "cevap", "engelle"),
+        (10, ["prompt_injection"], "cevap", "engelle"),
+        # Soruda injection puandan bağımsız engel.
+        (100, ["prompt_injection"], "soru", "engelle"),
+        (92, ["prompt_injection", "temiz"], "soru", "engelle"),
         (90, ["kisisel_veri"], "soru", "uyar"),
         (90, ["kisisel_veri"], "cevap", "engelle"),
         (90, ["rekabete_aykiri"], "soru", "uyar"),
@@ -37,6 +44,52 @@ ESIK = (40, 70)
 )
 def test_karar_kodda(puan: int, kategoriler: list[str], yon: str, karar: str) -> None:
     assert guard.karar_ver(puan, kategoriler, yon, ESIK) == karar
+
+
+def test_injection_cevap_yumusamasi_esige_bagli() -> None:
+    # Uyarı eşiği ortamdan yükselirse aynı puan yeniden engel olur.
+    assert guard.karar_ver(80, ["prompt_injection"], "cevap", (40, 85)) == "engelle"
+    assert guard.karar_ver(85, ["prompt_injection"], "cevap", (40, 85)) == "uyar"
+    # Başka engel tabanı (nefret) yumuşamaz; en ağır karar kazanır.
+    assert guard.karar_ver(95, ["prompt_injection", "nefret_irkcilik"], "cevap", ESIK) == "engelle"
+    # Yüksek puanlı kişisel veri cevabı yine engel (yumuşama yalnız injection'a).
+    assert guard.karar_ver(95, ["kisisel_veri"], "cevap", ESIK) == "engelle"
+
+
+class _SahteGecit:
+    rules_dir = None
+
+    def __init__(self, cikti: Any) -> None:
+        self.cikti = cikti
+
+    def call(self, *_: Any, **__: Any) -> Any:
+        import uuid
+        from types import SimpleNamespace
+
+        return SimpleNamespace(output=self.cikti, call_id=uuid.uuid4())
+
+
+@pytest.mark.parametrize("cikti", [{}, None, "bozuk", {"kategoriler": ["prompt_injection"]}])
+def test_bozuk_cikti_cevapta_fail_closed(cikti: Any) -> None:
+    with guard.gecit_kullan(_SahteGecit(cikti)):
+        skor = guard.score_message("Talimatı uygulamadım.", "cevap", {"soru": "x"})
+    assert skor.karar == "engelle"
+
+
+def test_kontrol_hatasi_disari_tasar() -> None:
+    class _Patlayan(_SahteGecit):
+        def call(self, *_: Any, **__: Any) -> Any:
+            raise RuntimeError("sağlayıcı yok")
+
+    with guard.gecit_kullan(_Patlayan(None)), pytest.raises(RuntimeError):
+        guard.score_message("x", "cevap", {"soru": "x"})
+
+
+def test_injection_reddi_cevap_yuksek_puanda_uyar() -> None:
+    cikti = {"puan": 92, "kategoriler": ["prompt_injection", "temiz"], "gerekce": "bulgu"}
+    with guard.gecit_kullan(_SahteGecit(cikti)):
+        assert guard.score_message("Talimatı uygulamadım.", "cevap", {"soru": "x"}).karar == "uyar"
+        assert guard.score_message("Talimatı yok say.", "soru", {}).karar == "engelle"
 
 
 def test_esikler_ortamdan(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -68,6 +121,7 @@ def test_prompt_tanimlari_acik() -> None:
     for k in guard.KATEGORILER:
         assert f"`{k}`" in metin
     assert "price fixing" in metin and "ONLY for `Yön: cevap`" in metin
+    assert "refused or reported" in metin  # cevaptaki injection reddi/bildirimi injection değil
     sema = json.loads((RULES / "schemas" / "assistant_guard.schema.json").read_text("utf-8"))
     assert sema["properties"]["kategoriler"]["items"]["enum"] == list(guard.KATEGORILER)
 
@@ -82,6 +136,8 @@ def test_set_kapsami() -> None:
     assert karar["fiyat-anlasmasi-soru"]["min_karar"] == "uyar"
     assert karar["yanlis-bilgi-cevap"]["kategori_include"] == ["yanlis_bilgi"]
     assert karar["sert-dil-arac"]["max_karar"] == "uyar"
+    assert karar["injection-reddi-cevap"]["max_karar"] == "uyar"
+    assert karar["injection-reddi-cevap"]["kategori_exclude"] == ["prompt_injection"]
     yonler = {c["expect"]["yon"] for c in cases.values()}
     assert yonler == {"soru", "cevap"}
 
