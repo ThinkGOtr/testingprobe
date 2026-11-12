@@ -875,7 +875,14 @@ def ci_tetikleri(b: Baglam) -> None:
         b,
         "son merge'ün push CI'ı bitti",
         lambda ks: next(
-            (k for k in ks if k.get("tetik") == "push" and k.get("commit") == sha), None
+            (
+                k
+                for k in ks
+                if k.get("tetik") == "push"
+                and k.get("commit") == sha
+                and (k.get("dil") or "ts") == "ts"
+            ),
+            None,
         ),
         300,
     )
@@ -1408,6 +1415,10 @@ def _kirmizi_push(ks: list[dict[str, Any]], sha: str | None) -> dict[str, Any] |
     for k in ks:
         if k.get("tetik") != "push":
             continue
+        # 011: aynı commit'e web paketinin Java kardeş koşusu da düşer; locator senaryosunun
+        # beklenen kırmızı sayısı (LOCATOR_KIRMIZI) TS (ana) paketinindir.
+        if (k.get("dil") or "ts") != "ts":
+            continue
         if sha and k.get("commit") == sha:
             return k
         if not sha and k.get("durum") == "failed" and k.get("basarisiz") in LOCATOR_KIRMIZI:
@@ -1579,7 +1590,14 @@ def ci_yesil(b: Baglam) -> None:
         b,
         "onarım merge'ünün push CI'ı bitti",
         lambda ks: next(
-            (x for x in ks if x.get("tetik") == "push" and x.get("commit") == sha), None
+            (
+                x
+                for x in ks
+                if x.get("tetik") == "push"
+                and x.get("commit") == sha
+                and (x.get("dil") or "ts") == "ts"
+            ),
+            None,
         ),
         300,
     )

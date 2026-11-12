@@ -202,3 +202,16 @@ def test_a6_uretim_testci_oturumuyla(baglam, monkeypatch):
     api.cs["c3"]["icerik"]["title"] = steps.C3_BASLIK
     steps.case_uret(b)
     assert ("testci", "POST", f"/requirements/{REQ}/generate-cases") in api.cagrilar
+
+
+def test_d2_java_kardes_kosuyu_atlar() -> None:
+    """011: aynı commit'in Java kardeş koşusu locator sayısı için okunmaz; TS (ana) koşu seçilir."""
+    from tp_rehearsal.steps import _kirmizi_push
+
+    ks = [
+        {"tetik": "push", "commit": "abc", "dil": "java", "durum": "failed", "basarisiz": 10},
+        {"tetik": "push", "commit": "abc", "dil": "ts", "durum": "failed", "basarisiz": 19},
+    ]
+    assert _kirmizi_push(ks, "abc")["dil"] == "ts"
+    assert _kirmizi_push(ks, None)["basarisiz"] == 19
+    assert _kirmizi_push([{"tetik": "push", "commit": "abc", "durum": "failed", "basarisiz": 19}], "abc")
