@@ -271,3 +271,28 @@ uyumu). Bulgu → düzeltme → yeniden review; kritik/yüksek bulgu kalmayınca
 - v3 ve uretim-dili dev'e girince: migration zinciri (`0030` → son halka), v3'ün case şemasındaki
   "test verisi" alanının katalog atfıyla ilişkisi, uretim-dili'nin `POST /code/generate` gövdesindeki
   `dil` alanı (otomatik kodda `null` = algılanan).
+
+## 9. Review turu 1 (2026-11-12) — kararlar ve düzeltme sözleşmeleri
+
+Beş rol (QA, güvenlik, backend, frontend, ürün sahibi) ~70 bulgu verdi; ürün kararı gerekenler:
+
+| # | Konu | Karar |
+|---|---|---|
+| K13 | "Görüldü" | Kart **en az 3 sn kesintisiz görünür** kalınca görüldü sayılır (portal 3 sn sonra `POST /viewed`). Sunucu: toplu onayda görüntüleme ile karar arasında ≥ 3 sn şartı. Metinler tek dil: "en az 3 saniye ekranda kalan case'ler" |
+| K14 | Tetik güvenliği | `jira_tetik.acik` varsayılanı **sim'de açık, gerçek Jira'da kapalı**. Açılınca (ve ilk turda) o anda durumda bekleyenler yalnız **işaretlenir** (`jira_durumu` yazılır, tetiklenmez); yalnız sonradan duruma **giren** story tetiklenir. Tur başına en çok **10** tetik. `durum` alanını yalnız **engineer** değiştirir. Otomasyon sayfası Jira'ya yazımı açıkça söyler |
+| K15 | Tetik kapsamı | (a) Tetikle alınmış story içeriği değişip `new`'e dönerse yeniden ön incelemeye girer. (b) QA To Do'ya giren, `po_approved` ve etkin case'i olmayan story'de case üretimi hemen başlar. Gereksinim serileştirmesinde `otomatik_akis` rozeti (sürüyor / durdu + neden) |
+| K16 | Açık PR / toplu | Otomatik üretim `pr_open` (ve süren) script'e **dokunmaz**: `atlandi` "Açık PR var; yeniden üretim mühendis kararıyla". Toplu onayda kod üretimi onay isteğinden ayrılır: tek `codegen.otomatik` arka plan işi, 20'lik parçalar. Teyit metni "n case için web kodu üretilecek" |
+| K17 | Katalog → üretim | Model kipi **live/record**'da modele giden test verisi bloğu **katalogdan**; **replay**'de bugünkü DB bloğu. Test verisi sayfası bunu açıkça yazar |
+| K18 | Eşleme kapsamı | Yalnız `bayi.*`, `urun.*`, `kampanya.*`, `ortak.*` (parola) eşlenir; `etiket.*` ve `ayar.*` eşlenmez. Tutar biçimli değerler (`… TL`, sayı) yalnız `steps[].data` ve `preconditions`'ta eşlenir |
+| K19 | Gizli veri | Üretilen kod gizli değeri **ortam değişkeninden** okur (TS `process.env.<SIR>`, Java `System.getenv("<SIR>")`); PR/commit'te düz değer yok. Bug taslağı, `ScriptAdim` kayıtları, API/ekranlar **maskeler** (`•••`). Model/ajan girdisi çözülmüş kalır (REPLAY). Sır tanımsızsa ayrı engel türü **`test_verisi`** ("Test verisi sırrı tanımsız: <anahtar>") |
+
+Düzeltme sözleşmeleri (şeritler bunlara uyar):
+- `serialize_cases`: `onay_engeli: str | null` (approve'un reddedeceği neden: durum/RequirementChanged/bilinmeyen AC/katalogda olmayan atıf), `goruldu` K13'e göre (bu kullanıcının son karardan sonraki görüntülemesi ≥ 3 sn önce).
+- `POST /cases/bulk-decision` yanıtı: öğe `otomatik_kod` artık `null`; üst düzey `otomatik_kod: {durum: "kuyrukta"|"kapali"|"yok", job_id|null, case_sayisi}`. Kilit sırası case_id'ye göre; `DBAPIError` öğe `hata`. Denetim özetinde öğe listesi (case_id, durum, neden); review'a `kanal: "toplu"` işareti.
+- Tekli karar `otomatik_kod` aynen; açık PR'da `atlandi` (K16).
+- `veri_izi`: `{anahtar: "<değer özeti sha256[:12]>"}` (sürüm değil); script serileştirmesi `veri_degisen: [anahtar]`, `veri_degisti = len(veri_degisen) > 0`. Açıklama/grup değişimi "veri değişti" saymaz.
+- `script_codegen.engel_turu` CHECK'ine `test_verisi` (migration 0030 içinde).
+- `test_verisi_surum` FK `ON DELETE RESTRICT`; tp_app'te `test_verisi` için DELETE yok.
+- Gereksinim serileştirmesi: `otomatik_akis: {tetik_zamani, durum: "suruyor"|"durdu"|"tamam", neden: str|null} | null`.
+- `GET /automation/jira-trigger` `son_tur`'a `sonuclar: [{jira_key, sonuc, neden}]` (hata metni sabit Türkçe; istisna ayrıntısı yalnız log).
+- `PUT /automation-settings/jira_tetik` gövdesinde `durum` varsa engineer değilse 403.
