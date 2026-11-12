@@ -43,11 +43,16 @@ Each value is an object `{column, value, field, quote}`:
   (`"150.00"`, `"7"`, `"-25.00"`); booleans as `true` / `false`; text exactly as written.
 
 Also return `ignored[]`: every number written in an expected field (`steps[i].expected`,
-`expected_result`, `verification_point`) that belongs to none of the columns, as
-`{field, quote, reason}` (e.g. a cart counter or an ordinal: `{"field": "steps[2].expected",
-"quote": "Sepet sayacı 10", "reason": "sepetteki ürün sayısı; tabloda kolonu yok"}`). Use an
-empty list when there is none. Every number in those fields must appear either in a value's
-quote or in `ignored`; a number that appears in neither is treated as an unchecked expectation.
+`expected_result`, `verification_point`), in the title or in an input field (`steps[i].data`,
+`test_data[i].value`) that belongs to none of the columns, as `{field, quote, reason}` (e.g. a
+cart counter: `{"field": "steps[2].expected", "quote": "Sepet sayacı 10", "reason": "sepetteki
+ürün sayısı; tabloda kolonu yok"}`). Use an empty list when there is none. Every number in those
+fields — also a number glued to a unit (`45,00TL`) — must appear either in a value's quote or in
+`ignored`; a number that appears in neither is treated as an unchecked expectation. Codes such as
+`P-001`, `S1`, `AC2` and ordinals (`7. adette`) are not numbers. A quote in `ignored` that carries
+an output column's unit (e.g. `TL`, `%`) or name is rejected: such a value belongs to that column
+and must be extracted. Every accepted `ignored` entry marks the check as only partial, so list
+only numbers that truly belong to no column.
 
 Rules:
 - Extract only what is written in the case. Do not compute, derive or infer a value that is not

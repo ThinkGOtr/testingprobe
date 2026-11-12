@@ -57,6 +57,11 @@
     ],
     "ignored": [
       {
+        "field": "steps[2].data",
+        "quote": "P-004 × 25",
+        "reason": "ürün kodu ve adedi; tabloda kolonu yok"
+      },
+      {
         "field": "steps[2].expected",
         "quote": "Sepet sayacı 25",
         "reason": "sepetteki ürün adedi; tabloda kolonu yok"
