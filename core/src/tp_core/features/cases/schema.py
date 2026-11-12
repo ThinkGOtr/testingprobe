@@ -378,6 +378,10 @@ def consistency_problems(case: Mapping[str, Any], ozet: Mapping[str, Any] | None
     return sorunlar
 
 
+# Platform eki kategorisi (`Web:Responsive`): not_covered'da kapsam öğesi gibi geçerlidir.
+PLATFORM_KATEGORISI = re.compile(r"(Web|Mobil|Desktop|API|Data):[^\n]{1,32}")
+
+
 def set_problems(
     cases: Sequence[Mapping[str, Any]],
     ozet: Mapping[str, Any] | None,
@@ -417,6 +421,20 @@ def set_problems(
 
     for kimlik in sorted(set(karar_sayisi) - tanimli):
         sorunlar.append(f"negative_coverage: tanımlı olmayan kapsam öğesi: {kimlik}")
+    # not_covered.item: tanımlı kapsam öğesi, kabul kriteri (ACn) ya da platform kategorisi
+    # (`Web:Responsive`); soru/varsayım kimliği değildir (soru open_questions'ta durur).
+    for x in oz.get("not_covered") or []:
+        item = str(x.get("item")) if isinstance(x, Mapping) else ""
+        if (
+            item
+            and item not in tanimli
+            and not re.fullmatch(r"AC[0-9]+", _ac_ya_da_oge(item))
+            and not PLATFORM_KATEGORISI.fullmatch(item)
+        ):
+            sorunlar.append(
+                f"not_covered: '{item}' bir kapsam öğesi ya da kabul kriteri değil (soru/varsayım "
+                "kimliği yazılmaz; kapsam öğesini ya da ACn'yi yazın)"
+            )
     for o in ogeler:
         kimlik = str(o.get("id"))
         n = karar_sayisi.get(kimlik, 0)
