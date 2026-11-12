@@ -95,6 +95,15 @@ _PLATFORM_EKLERI = (
 )
 # 011 P5/P6 derinleştirme: prompt + kendi şeması (case_generation kopyası) + amaç ayarı.
 _DERINLESTIRME = ("case-negative", "case-technique")
+# 011 case üretimi ve tasarım modeli (iki tur): prompt + şema + amaç ayarı. Prompt örnekleri
+# sürüm yükseltmeden düzeltilebildiği için (3. tur #2: eval'den alınmış örneklerin yeniden
+# yazımı) `evaluated` kaydı içerik hash'iyle bağlanır; hash'siz eski kayıt `icerik_degisti` olur.
+# `case-review` (tur 3 #6: `not_covered.question_ref` soru bağı anlatımı) de aynı nedenle.
+_URETIM = {
+    "case-generation": "case_generation",
+    "design-model": "design_model",
+    "case-review": "case_review",
+}
 
 # 011 F7 asistan içerik kontrolü (`assistant-guard`) KENDİ içerik hash'iyle kapılanır (prompt,
 # şema, `assistant_guard` amaç ayarı); asistan içeriğine dahil edilmez (D4 kararı). Gerekçe: kontrol
@@ -130,6 +139,13 @@ ICERIK_KAYNAKLARI: Mapping[str, IcerikKaynagi] = {
             model_amaclari=("case_deepening",),
         )
         for paket in _DERINLESTIRME
+    },
+    **{
+        paket: IcerikKaynagi(
+            dosyalar=(f"prompts/{paket}.md", f"schemas/{amac}.schema.json"),
+            model_amaclari=(amac,),
+        )
+        for paket, amac in _URETIM.items()
     },
 }
 

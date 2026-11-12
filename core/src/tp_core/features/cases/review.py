@@ -127,11 +127,17 @@ def set_hash(session: Session, req: Requirement) -> str | None:
 
 def snapshot(session: Session, req: Requirement) -> SetGirdisi:
     """Güncel v3 setin review/denetim girdisi (matris covered_by = set numaraları)."""
+    from tp_core.features.cases.acik_sorular import closed_question_ids
     from tp_core.features.cases.ozet import merged_summary
 
     cases = current_cases(session, req)
     ozet = merged_summary(session, req, cases)
-    matris = coverage_matrix([tc.icerik for tc in cases], ozet, req.kabul_kriterleri)
+    matris = coverage_matrix(
+        [tc.icerik for tc in cases],
+        ozet,
+        req.kabul_kriterleri,
+        kapanan=closed_question_ids(session, req, ozet),
+    )
     return SetGirdisi(
         req=req,
         cases=cases,
@@ -186,6 +192,9 @@ def matrix_text(matris: Sequence[Mapping[str, Any]], oranlar: Mapping[str, Any])
             ek.append(f"karar {_kimlik(s['karar'])}")
         if s.get("gerekce"):
             ek.append("gerekçe kayıtlı")
+        if s.get("bekleyen_sorular"):
+            # Soru bağı (tur 3 #6): kapsanan satırın bir kombinasyonu PO yanıtını bekliyor.
+            ek.append("soru bekliyor " + ",".join(_kimlik(q) for q in s["bekleyen_sorular"]))
         satirlar.append(
             f"- {_kimlik(s.get('item'))} [{s.get('tur')}{'; ' + '; '.join(ek) if ek else ''}] "
             f"kapsayan: {kapsayan}"

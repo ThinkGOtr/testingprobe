@@ -265,7 +265,11 @@ class CaseSetAuditRequest(BaseModel):
     review_result: Mapping[str, Any] | None = None
     policies: Sequence[str] = ()
     # Üretime verilen test verisi bloğu (güvenilmeyen; kullanıcı, bayi adı, fiyat, UI etiketi
-    # kaynağıdır) ve izinli test ortamları. Yoksa girdi eskisiyle aynıdır (golden'lar değişmez).
+    # kaynağıdır) ve izinli test ortamları (`synthetic: true` parola muafiyeti yalnız bunlarda).
+    # Denetim akışı (`denetim_akisi`) ikisini de doldurur; değerlendirme seti (`case-audit.json`)
+    # bu bölümlerle kurulur. Boş bırakılırsa bölümler denetim girdisine hiç yazılmaz (girdi,
+    # dolayısıyla replay anahtarı, bölümsüz biçimdir) — "golden'lar değişmez" güvencesi yalnız
+    # bu boş durum içindir.
     test_data_block: str | None = None
     allowed_hosts: Sequence[str] = ()
 

@@ -66,8 +66,15 @@ def _clean_env(monkeypatch: pytest.MonkeyPatch, rules_dir: Path) -> None:
     monkeypatch.setenv("TP_RULES_DIR", str(rules_dir))
 
 
-# Golden'ı olmayan (yalnız canlı ölçülen) sentetik vakalar: REPLAY'de dürüstçe iskalar.
-GOLDENSIZ = {"hesap-kilidi-st"}
+# Golden'ı olmayan (yalnız canlı ölçülen) sentetik vakalar: REPLAY'de dürüstçe iskalar. Bekletme
+# (holdout) vakalarının golden'ı bilerek yoktur (elle hazırlanmış çıktı ayar sayılırdı).
+BEKLETME = {
+    "holdout-kutuphane-odunc",
+    "holdout-otopark-ucret",
+    "holdout-police-yenileme",
+    "holdout-kirtasiye-teslimat",
+}
+GOLDENSIZ = {"hesap-kilidi-st", *BEKLETME}
 
 
 def _golden_output(rules_dir: Path, data: dict[str, Any], case: dict[str, Any]) -> Any:
@@ -93,11 +100,14 @@ def test_every_prompt_bundle_except_guardrails_has_an_eval_set() -> None:
 
 def test_case_generation_set_is_five_stories_times_three_runs() -> None:
     """TEKNİK-TASARIM §12: 5 story × 3 koşu + golden'sız durum geçişli (ST) sentetik story;
-    girdi üretimin kurucusuyla (test verisi dahil)."""
+    girdi üretimin kurucusuyla (test verisi dahil). Bekletme bölümü (4 story) aynı koşuda."""
     data = load_set(RULES, "case-generation")
-    assert data["runs"] == 3 and len(data["cases"]) == 6
-    keys = {c["replay_key"]["name"] for c in data["cases"]}
+    assert data["runs"] == 3 and len(data["cases"]) == 10
+    assert "holdout_cases" not in data  # load_set bölümü `cases`'e katar
+    ayar = [c for c in data["cases"] if c["id"] not in BEKLETME]
+    keys = {c["replay_key"]["name"] for c in ayar}
     assert keys == {"TPD-1", "TPD-3", "TPD-4", "SERBEST", "HESAP-KILIDI"}
+    assert {c["id"] for c in data["cases"] if c.get("alt_kume") == "holdout"} == BEKLETME
     for case in data["cases"]:
         if case["id"] in GOLDENSIZ:
             continue

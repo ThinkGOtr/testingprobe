@@ -136,7 +136,8 @@ def merged_summary(
 
 
 def definition_conflicts(ozetler: Sequence[tuple[int, Mapping[str, Any]]]) -> list[str]:
-    """Aynı kapsam öğesi kimliği farklı üretimlerde farklı tanımlıysa uyarı satırları."""
+    """Aynı kapsam öğesi ya da açık soru kimliği farklı üretimlerde farklı tanımlıysa uyarı
+    satırları."""
     tanim: dict[str, Any] = {}
     out: list[str] = []
     for uretim_no, ozet in ozetler:
@@ -150,6 +151,21 @@ def definition_conflicts(ozetler: Sequence[tuple[int, Mapping[str, Any]]]) -> li
                     f"üretimin (#{uretim_no}) tanımını gösterir."
                 )
             tanim[kim] = o.get("definition")
+    # Tur 3 #12: farklı üretimlerin `Q1`'leri kimlikle birleşir (sonraki geçerli). Case atfı ve
+    # yetim soru hesabı kimlikle eşleştiği için metni farklı aynı kimlik yanlış eşleşebilir:
+    # görünür uyarı (açık soru listesi `acik_sorular.current_items` metinle eşleştirir).
+    soru: dict[str, str] = {}
+    for uretim_no, ozet in ozetler:
+        for q in ozet.get("open_questions") or []:
+            if not isinstance(q, Mapping):
+                continue
+            kim, metin = str(q.get("id")), " ".join(str(q.get("question") or "").split())
+            if kim in soru and soru[kim] != metin:
+                out.append(
+                    f"Açık soru {kim} farklı üretimlerde farklı soru; birleşik özet son üretimin "
+                    f"(#{uretim_no}) sorusunu gösterir, yetim soru hesabı kimlikle eşleşir."
+                )
+            soru[kim] = metin
     return out
 
 

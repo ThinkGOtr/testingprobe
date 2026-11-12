@@ -48,6 +48,11 @@
     (`eval_agents.asistan_problems`). Set `esikler` taşıyorsa geçiş vaka vaka değil eşiklerle
     ölçülür (`asistan_olcumleri`).
 - Vaka düzeyi `replay_key` setinkini geçersiz kılar (story başına golden kökü).
+- Alt küme (`alt_kume`, vaka düzeyi; yoksa `ayar`): prompt ayarında hiç kullanılmamış bekletme
+  vakaları setin `holdout_cases` bölümündedir; `load_set` onları `alt_kume: holdout` ile
+  `cases`'e ekler (011 test mimarı 3. tur #2). Set geçişi her vakayı ister (bekletme
+  bağlayıcıdır); rapor alt kümeleri ayrı satırda taşır (`alt_kumeler`, `alt_kume_ozeti`) ve ham
+  geçiş ölçümü alt küme başına da verilir (`olcumler.alt_kumeler`).
 - Koşturucu: geçit **canlı** (`live`/`record`) olmalıdır; REPLAY'de koşu yalnızca duman testi
   sayılır (`--allow-replay`) ve durum kaydını asla `evaluated` yapmaz. Sonuç raporu
   `rules/evaluation/results/<paket>-v<sürüm>-<tarih>.json`'a yazılır; `--update-status` ile tüm
@@ -92,12 +97,16 @@ from tp_core.gateway.eval_agents import (
     mapping_problems,
     review_problems,
     review_set_problems,
+    sepet_okunamadi_sayisi,
 )
 from tp_core.gateway.evaluation import EVALUATIONS_FILE, prompt_versions
 from tp_core.ports import ModelMessage
 
 EVAL_DIR = "evaluation"
 RESULTS_DIR = "results"
+# Vaka alt kümeleri: `ayar` (prompt ayarında kullanılan vakalar) ve `holdout` (bekletme).
+AYAR = "ayar"
+HOLDOUT = "holdout"
 LIVE_MODES = ("live", "record")
 
 
@@ -125,6 +134,11 @@ def load_set(rules_dir: Path, bundle: str) -> dict[str, Any]:
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict) or data.get("bundle") != bundle or not data.get("cases"):
         raise GatewayConfigError(f"{path}: geçersiz değerlendirme seti")
+    # Bekletme (holdout) bölümü aynı koşuda koşar; vakalar `alt_kume: holdout` taşır.
+    bekletme = data.pop("holdout_cases", None) or []
+    if not isinstance(bekletme, list):
+        raise GatewayConfigError(f"{path}: 'holdout_cases' liste olmalı")
+    data["cases"] = [*data["cases"], *({**c, "alt_kume": HOLDOUT} for c in bekletme)]
     ids = [c.get("id") for c in data["cases"]]
     if len(set(ids)) != len(ids) or not all(isinstance(i, str) and i for i in ids):
         raise GatewayConfigError(f"{path}: vaka kimlikleri benzersiz ve dolu olmalı")
@@ -225,6 +239,46 @@ def runs_of(data: Mapping[str, Any]) -> int:
 
 def run_id(case: Mapping[str, Any], run: int, runs: int) -> str:
     return str(case["id"]) if runs == 1 else f"{case['id']}#k{run}"
+
+
+def alt_kume(case: Mapping[str, Any]) -> str:
+    """Vakanın alt kümesi: `holdout` (bekletme; prompt ayarında kullanılmadı) ya da `ayar`."""
+    return str(case.get("alt_kume") or AYAR)
+
+
+def kosu_alt_kumeleri(data: Mapping[str, Any]) -> dict[str, str]:
+    """Koşu kimliği (`run_id`) → alt küme."""
+    runs = runs_of(data)
+    return {
+        run_id(c, k, runs): alt_kume(c) for c in data.get("cases") or [] for k in range(1, runs + 1)
+    }
+
+
+def alt_kume_ozeti(data: Mapping[str, Any], results: Sequence[CaseResult]) -> dict[str, Any]:
+    """Alt küme başına geçen/toplam koşu ve kalan koşular; set tek alt kümeliyse boş sözlük
+    (rapora eklenmez). Bekletme satırı ayar setinin 18/18'i yanında ayrı okunur."""
+    eslem = kosu_alt_kumeleri(data)
+    if len(set(eslem.values())) < 2:
+        return {}
+    out: dict[str, Any] = {}
+    for ad in sorted(set(eslem.values()), key=lambda a: (a != AYAR, a)):
+        rs = [r for r in results if eslem.get(r.id) == ad]
+        out[ad] = {
+            "vaka": sum(1 for c in data["cases"] if alt_kume(c) == ad),
+            "gecen": sum(r.ok for r in rs),
+            "toplam": len(rs),
+            "kalan": sorted(r.id for r in rs if not r.ok),
+        }
+    return out
+
+
+def alt_kume_satirlari(ozet: Mapping[str, Any]) -> list[str]:
+    """Konsol satırları: `alt küme holdout: 11/12 geçti (kalan: …)`."""
+    return [
+        f"alt küme {ad}: {v['gecen']}/{v['toplam']} geçti"
+        + (f" (kalan: {', '.join(v['kalan'])})" if v["kalan"] else "")
+        for ad, v in ozet.items()
+    ]
 
 
 def case_messages(case: Mapping[str, Any]) -> list[ModelMessage]:
@@ -509,10 +563,17 @@ def kural_yeniden_isteme_olcumleri(
     - `ek_maliyet_usd` (+ oran) ve `ek_sure_ms` (p50/p95): 2. ve sonraki denemelerin payı;
     - `kural_turu_histogrami`: 1. denemedeki ihlallerin türleri.
     Eşik: `ilk_deneme_gecis_orani ≥ ham_gecis_alt_siniri` (setteki alan bağlayıcıdır; yoksa
-    varsayılan %70 yalnız bilgi olarak raporlanır)."""
+    varsayılan %70 yalnız bilgi olarak raporlanır). `alt_kumeler`: aynı ölçüm alt küme başına
+    (ayar / bekletme); bağlayıcı eşik setin tamamına uygulanır.
+
+    İlk deneme son sonuçla AYNI girdiyle puanlanır (3. tur #7): 1. deneme şemaya uyup kural
+    ihlalsizse geçit yeniden istemez, yani 1. deneme vakanın son çıktısıdır; puanlama satırdaki
+    maskeli `cikti` yerine maskesiz son çıktıyla (`CaseResult.output`) yapılır. Maskeli satıra
+    yalnız son çıktı yoksa düşülür (`ilk_deneme_maskeli_puanlama` sayar; hedef 0)."""
     runs = runs_of(data)
     vakalar = {run_id(c, k, runs): c for c in data["cases"] for k in range(1, runs + 1)}
-    vaka_sayisi = gecen_ilk = kural_yi = sema_yi = duzelen = kalan = 0
+    vaka_sayisi = gecen_ilk = kural_yi = sema_yi = duzelen = kalan = maskeli = 0
+    alt: dict[str, list[int]] = {}  # alt küme → [vaka, ilk deneme geçen]
     ek_maliyet = toplam_maliyet = 0.0
     ek_sureler: list[float] = []
     histogram: dict[str, int] = {}
@@ -532,12 +593,17 @@ def kural_yeniden_isteme_olcumleri(
             tur = _kural_turu(h)
             histogram[tur] = histogram.get(tur, 0) + 1
         case = vakalar.get(r.id) or {}
-        if ilk.get("sema_gecerli") and not ilk_kural:
-            sorun = check_output(
-                purpose, case.get("expect") or {}, ilk.get("cikti"), kaynak=case_source(case)
-            )
-            gecen_ilk += not sorun
         denemeler = [x for x, e in zip(satirlar, ek_of, strict=True) if "secilen_deneme" not in e]
+        sayac = alt.setdefault(alt_kume(case), [0, 0])
+        sayac[0] += 1
+        if ilk.get("sema_gecerli") and not ilk_kural:
+            if len(denemeler) == 1 and r.output is not None:
+                cikti = r.output  # 1. deneme = son çıktı (maskesiz; son sonuçla aynı girdi)
+            else:
+                cikti, maskeli = ilk.get("cikti"), maskeli + 1
+            sorun = check_output(purpose, case.get("expect") or {}, cikti, kaynak=case_source(case))
+            gecen_ilk += not sorun
+            sayac[1] += not sorun
         yeniden = len(denemeler) > 1
         if yeniden and ilk.get("sema_gecerli"):
             kural_yi += 1
@@ -580,6 +646,21 @@ def kural_yeniden_isteme_olcumleri(
         "ek_maliyet_orani": round(ek_maliyet / toplam_maliyet, 4) if toplam_maliyet else None,
         "ek_sure_ms": {"p50": _yuzdelik(ek_sureler, 0.5), "p95": _yuzdelik(ek_sureler, 0.95)},
         "kural_turu_histogrami": dict(sorted(histogram.items(), key=lambda kv: (-kv[1], kv[0]))),
+        "ilk_deneme_maskeli_puanlama": maskeli,
+        **(
+            {
+                "alt_kumeler": {
+                    ad: {
+                        "vaka": v,
+                        "ilk_deneme_gecis": g,
+                        "ilk_deneme_gecis_orani": oran(g, v),
+                    }
+                    for ad, (v, g) in sorted(alt.items(), key=lambda kv: (kv[0] != AYAR, kv[0]))
+                }
+            }
+            if len(alt) > 1
+            else {}
+        ),
         "esikler": [
             {
                 "ad": "ham_gecis_alt_siniri" if bagliyici else "ham_gecis_alt_siniri (bilgi)",
@@ -646,6 +727,8 @@ def write_report(
         "cases": [r.__dict__ for r in results],
         **dict(extra or {}),
     }
+    if alt := alt_kume_ozeti(data, results):
+        report["alt_kumeler"] = alt
     if data.get("purpose") == "case_generation":
         report["dagilim"] = uretim_dagilimi(results)
     if data.get("purpose") == "case_audit":
@@ -659,7 +742,11 @@ def uretim_dagilimi(results: Sequence[CaseResult]) -> dict[str, Any]:
     """case_generation raporu: koşu başına ve toplamda case sayısı, readiness ve teknik dağılımı,
     öncelik dağılımı ve P1 oranı (`max_p1_orani` beklentisi), kapsam öğesi sayıları ve yetim
     açık soru sayısı (`yetim_soru`; `eval_agents.generation_stats`) ve uydurma/readiness
-    beklentisine takılan koşular. Çıktısı olmayan koşu (geçit hatası) sayılmaz."""
+    beklentisine takılan koşular. Çıktısı olmayan koşu (geçit hatası) sayılmaz.
+
+    `sepet_okunamadi`: tutarı case sepetiyle doğrulanamayan ama sepeti okunamadığı için uydurma
+    sayılmayan koşular (`eval_agents.SEPET_OKUNAMADI`; 3. tur #3) — `uydurma` listesine girmez,
+    ayrı görünür; `toplam.sepet_okunamadi` bu kayıtların sayısıdır."""
     kosular = {r.id: generation_stats(r.output) for r in results if isinstance(r.output, Mapping)}
     toplam: dict[str, Any] = {
         "kosu": len(kosular),
@@ -687,6 +774,7 @@ def uretim_dagilimi(results: Sequence[CaseResult]) -> dict[str, Any]:
     toplam["priority"] = dict(sorted(toplam["priority"].items()))
     p1 = toplam["priority"].get("P1", 0)
     toplam["p1_orani"] = round(p1 / toplam["case"], 4) if toplam["case"] else None
+    toplam["sepet_okunamadi"] = sum(sepet_okunamadi_sayisi(r.failures) for r in results)
     return {
         "toplam": toplam,
         "kosular": kosular,
@@ -698,6 +786,7 @@ def uretim_dagilimi(results: Sequence[CaseResult]) -> dict[str, Any]:
         "readiness_ihlali": sorted(
             r.id for r in results if any("hazır (ready) case" in f for f in r.failures)
         ),
+        "sepet_okunamadi": sorted(r.id for r in results if sepet_okunamadi_sayisi(r.failures)),
     }
 
 
@@ -867,6 +956,8 @@ def main(argv: list[str] | None = None) -> int:
     for r in results:
         print(f"{'GEÇTİ' if r.ok else 'KALDI'}\t{r.id}\t{'; '.join(r.failures)}")
     passed = all(r.ok for r in results)
+    for satir in alt_kume_satirlari(alt_kume_ozeti(data, results)):
+        print(satir)
     print(f"{sum(r.ok for r in results)}/{len(results)} → {report}")
     if args.update_status and passed and mode in LIVE_MODES:
         mark_evaluated(

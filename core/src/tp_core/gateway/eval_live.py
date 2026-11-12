@@ -92,6 +92,8 @@ from tp_core.gateway.eval_set import (
     GUARDRAILS,
     OUTPUT_CHECK_PURPOSES,
     CaseResult,
+    alt_kume_ozeti,
+    alt_kume_satirlari,
     asistan_olcumleri,
     call_bundle,
     case_messages,
@@ -947,6 +949,10 @@ def run_live(
                 f"{r.cost_usd:.4f} USD, {status}{note}"
                 + (f" → {r.report.relative_to(rules_dir)}" if r.report else "")
             )
+            # Bekletme (holdout) alt kümesi ayrı satırda (3. tur #2): ayar setinin geçişiyle
+            # karıştırılmasın.
+            for satir in alt_kume_satirlari(alt_kume_ozeti(data, r.results)):
+                out(f"    {satir}")
             if r.olcum:
                 for e in r.olcum.get("esikler") or []:
                     out(

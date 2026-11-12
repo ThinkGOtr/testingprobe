@@ -212,6 +212,50 @@ def test_po_yaniti_soruya_baglanir_ve_case_duzeltilir(
         assert "5 hatalı denemede" not in str(kayit.ozet)
 
 
+def test_duzeltmeyle_kapanan_soru_yetim_sayilmaz(
+    api: TestClient, ortam: uuid.UUID, sim: TestClient
+) -> None:
+    """Tur 3 inceleme #1: PO yanıtı + atfı kaldıran düzeltme doğru kapanıştır. Soru birleşik
+    özette kalır ama artık hiçbir yerde anılmaz; liste "yeniden üret" önermez, kapsam özeti ve
+    Kontrol Kulesi onu yetim saymaz."""
+    from tp_core.features.control_tower.case_kalitesi import case_kalitesi
+
+    def _durum() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+        soru = api.get(f"/requirements/{ortam}/open-questions").json()["sorular"][0]
+        ozet = api.get(f"/requirements/{ortam}/case-summary").json()
+        with session_scope() as s:
+            kule = case_kalitesi(s, ortam)["yetim_soru"]
+            durum = service._coverage_state(s, s.get(Requirement, ortam))["acik_sorular"]
+        return soru, ozet, {**kule, "durum": durum}
+
+    assert api.post(f"/requirements/{ortam}/open-questions/send").status_code == 200
+    _po_yorumu(sim, "CQ1: 5 hatalı denemede hesap 15 dakika kilitlenir.")
+    assert api.post(f"/requirements/{ortam}/open-questions/refresh").status_code == 200
+    soru, _, kule = _durum()
+    assert soru["kapandi"] is False and soru["oneri"]["eylem"] == "duzelt_veya_yeniden_uret"
+    assert kule["yetim"] == 0 and kule["durum"] == {"toplam": 1, "yetim": []}
+
+    _, _, engelli = latest_cases(api, ortam)
+    tam = {
+        **engelli["icerik"],
+        "readiness": "ready",
+        "open_question_refs": [],
+        "expected_result": "5. hatalı denemede hesap 15 dakika kilitlenir",
+    }
+    r = api.post(
+        f"/cases/{engelli['id']}/decision",
+        json={"icerik_hash": engelli["icerik_hash"], "karar": "edit", "icerik": tam},
+    )
+    assert r.status_code == 200, r.text
+
+    soru, ozet, kule = _durum()
+    assert soru["durum"] == "yanitlandi" and soru["bekleyen_caseler"] == []
+    assert soru["kapandi"] is True and soru["oneri"] is None  # "yeniden_uret" değil
+    assert not [u for u in ozet["uyarilar"] if "Q1" in u and "yetim" in u], ozet["uyarilar"]
+    assert kule["durum"] == {"toplam": 1, "yetim": []}
+    assert (kule["yetim"], kule["yetim_gereksinim"]) == (0, 0)
+
+
 def test_periyodik_okuma_ve_gonderimden_onceki_yorum_sayilmaz(
     api: TestClient, ortam: uuid.UUID, sim: TestClient, jira: RestJira
 ) -> None:

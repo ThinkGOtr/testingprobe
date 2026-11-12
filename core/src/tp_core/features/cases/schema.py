@@ -19,7 +19,7 @@ import copy
 import json
 import re
 from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -410,13 +410,22 @@ def soru_aniliyor(metin: Any, kimlik: str) -> bool:
 
 
 def orphan_questions(
-    cases: Sequence[Mapping[str, Any]], ozet: Mapping[str, Any] | None
+    cases: Sequence[Mapping[str, Any]],
+    ozet: Mapping[str, Any] | None,
+    *,
+    kapanan: Iterable[str] = (),
 ) -> list[str]:
     """Hiçbir yerde anılmayan (yetim) açık sorular (011 K16; tur 2 inceleme #1). Bir soru şu
     yerlerden en az birinde anılmalıdır: bir case'in `open_question_refs`'i, `not_covered`
     kaydının `question_ref`'i, bir `negative_coverage` kararının gerekçesi (ör. `out_of_scope`:
     "PO'ya soruldu (Q1)") ya da bir kapsam öğesinin tanımı ("sonuç kaynakta tanımsız, Q1").
-    Yetim soru PO yanıtından sonra hiçbir case'e ya da karara dönmez; döngü kopar."""
+    Yetim soru PO yanıtından sonra hiçbir case'e ya da karara dönmez; döngü kopar.
+
+    `kapanan`: PO yanıtıyla kapanmış sorular (yanıtlandı + düzeltme kaydı "kaynak: PO yanıtı
+    CQn", `acik_sorular.closed_question_ids`; tur 3 inceleme #1). Doğru kapanışta analist atfı
+    kaldırır; soru artık anılmaz ama döngü kapanmıştır: yetim sayılmaz. Değerlendirme çıktısında
+    PO yanıtı yoktur (boş)."""
+    kapali = {str(q) for q in kapanan}
     oz = ozet or {}
     sorular = [str(q.get("id")) for q in oz.get("open_questions") or [] if isinstance(q, Mapping)]
     anilan = {str(r) for c in cases for r in (c.get("open_question_refs") or [])}
@@ -429,7 +438,9 @@ def orphan_questions(
         k.get("rationale") for k in oz.get("negative_coverage") or [] if isinstance(k, Mapping)
     ] + [o.get("definition") for o in oz.get("coverage_items") or [] if isinstance(o, Mapping)]
     return [
-        q for q in sorular if q not in anilan and not any(soru_aniliyor(m, q) for m in metinler)
+        q
+        for q in sorular
+        if q not in anilan and q not in kapali and not any(soru_aniliyor(m, q) for m in metinler)
     ]
 
 
@@ -440,6 +451,7 @@ def set_problems(
     *,
     korunan: Sequence[Mapping[str, Any]] = (),
     negatif_kodlari: bool = False,
+    kapanan: Iterable[str] = (),
 ) -> list[str]:
     """Set düzeyi tutarsızlıklar (§4.2): negatif kapsam kararları ve kapsanmayanların gerekçesi.
 
@@ -460,6 +472,7 @@ def set_problems(
     kabul kriteri kapsamına sayılır (kapsam öğesi kimlikleri kendi üretimlerine aittir).
     `negatif_kodlari`: `not_covered.item` negatif kategori kodu (`N8`) olabilir mi — yalnız
     derinleştirme çıktısı ve onu içeren birleşik özet için True.
+    `kapanan`: PO yanıtıyla kapanmış sorular (`orphan_questions`; yalnız kapsam özetinde dolu).
     """
     oz = ozet or {}
     ogeler = [x for x in oz.get("coverage_items") or [] if isinstance(x, Mapping)]
@@ -544,7 +557,7 @@ def set_problems(
     for ref in uncovered_acs([*cases, *korunan], kabul_kriterleri):
         if ref not in gerekceli:
             sorunlar.append(f"{ref}: hiçbir case kapsamıyor; not_covered'da gerekçesi yok")
-    for q in orphan_questions(cases, oz):
+    for q in orphan_questions(cases, oz, kapanan=kapanan):
         sorunlar.append(
             f"{q}: açık soru hiçbir yerde anılmıyor (yetim); soruyu silmeyin, bağlayın: ona bağlı "
             "case'in open_question_refs'i, out_of_scope kararının gerekçesi ya da not_covered "
@@ -598,6 +611,8 @@ def coverage_matrix(
     cases: Sequence[Mapping[str, Any]],
     ozet: Mapping[str, Any] | None,
     kabul_kriterleri: Sequence[Any],
+    *,
+    kapanan: Iterable[str] = (),
 ) -> dict[str, Any]:
     """Kapsam matrisi (kodda hesaplanır; model yazmaz): `{"satirlar": [...], "oranlar": {...}}`.
 
@@ -608,15 +623,26 @@ def coverage_matrix(
     kapsamı, negatif karar kapsamı (kararı olan `valid: false` öğeler) ve yalnız hazır case'lerle
     hazır gereksinim / öğe kapsamı (varsayıma bağlı ya da soru bekleyen case kapsamı
     tamamlamaz); payda 0 ise oran `None`.
+
+    Soru bağı (tur 3 inceleme #6): `not_covered` kaydı `question_ref` taşıyorsa satır o soruyu
+    bekler (`bekleyen_sorular`; PO yanıtıyla kapanan sorular, `kapanan`, düşülür). Hazır case'i
+    olsa da soru bekleyen satır `hazir_durumu: "kismen_hazir"`dır ve hazır kapsam oranlarına
+    girmez (kapsanan bir AC'nin bir kombinasyonu PO'yu bekliyor; satır "tam hazır" değil).
+    `hazir_durumu`: `hazir` | `kismen_hazir` | `hazir_degil`.
     """
     hazir = {i for i, c in enumerate(cases, start=1) if readiness_of(c) == READY}
     oz = ozet or {}
+    kapali = {str(q) for q in kapanan}
     neden: dict[str, str] = {}
+    bekleyen: dict[str, list[str]] = {}
     for x in oz.get("not_covered") or []:
         if isinstance(x, Mapping):
             # Aynı öğe için birden çok kayıt (ör. iki açık soru) gerekçeleri birleştirir.
             anahtar, metin = _ac_ya_da_oge(x.get("item")), str(x.get("reason") or "")
             neden[anahtar] = "; ".join(m for m in (neden.get(anahtar), metin) if m)
+            soru = str(x.get("question_ref") or "")
+            if soru and soru not in kapali and soru not in bekleyen.get(anahtar, []):
+                bekleyen.setdefault(anahtar, []).append(soru)
     kararlar = {
         str(k.get("item")): k for k in oz.get("negative_coverage") or [] if isinstance(k, Mapping)
     }
@@ -664,6 +690,14 @@ def coverage_matrix(
         )
     for satir in satirlar:
         satir["covered_by_ready"] = [i for i in satir["covered_by"] if i in hazir]
+        satir["bekleyen_sorular"] = bekleyen.get(str(satir["item"]), [])
+        satir["hazir_durumu"] = (
+            "hazir_degil"
+            if not satir["covered_by_ready"]
+            else "kismen_hazir"
+            if satir["bekleyen_sorular"]
+            else "hazir"
+        )
     ac_satirlari, oge_satirlari = satirlar[:ac_sayisi], satirlar[ac_sayisi:]
     return {
         "satirlar": satirlar,
@@ -676,10 +710,10 @@ def coverage_matrix(
             ),
             "negatif_karar_kapsami": _oran(kararli, negatif),
             "hazir_gereksinim_kapsami": _oran(
-                sum(bool(s["covered_by_ready"]) for s in ac_satirlari), ac_sayisi
+                sum(s["hazir_durumu"] == "hazir" for s in ac_satirlari), ac_sayisi
             ),
             "hazir_oge_kapsami": _oran(
-                sum(bool(s["covered_by_ready"]) for s in oge_satirlari), len(oge_satirlari)
+                sum(s["hazir_durumu"] == "hazir" for s in oge_satirlari), len(oge_satirlari)
             ),
         },
     }

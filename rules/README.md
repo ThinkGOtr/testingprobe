@@ -13,6 +13,17 @@ versiyonlanır. Model geçidi (`core/src/tp_core/gateway`) bu dizini çalışma 
   önce deterministik kural setiyle yapılır; model yalnızca kural eşleşmediğinde devreye girer.
 - **Yapılandırılmış çıktı (constitution III):** her model çağrısının çıktısı buradaki şemaya göre
   doğrulanır; uymayan çıktı hata listesiyle en fazla 2 kez yeniden istenir, sonra insana düşer.
+  Şemaya uyan çıktının deterministik kural denetimi (`Gateway.call(output_check=…)`; case üretimi,
+  tasarım modeli tur 2 ve derinleştirmede 011 §4.2 kuralları) AYNI döngüde (en çok 2 yeniden
+  isteme) modelden düzeltme ister; kalan kural ihlali uyarı/onay engeli olur, hata değil. Anahtar
+  `TP_KURAL_YENIDEN_ISTEME` (varsayılan açık; `off` kapatır). Canlı değerlendirmede de açıktır
+  (üretimle aynı sistem ölçülür); ham model ölçümü için `eval-live --no-output-check`. İş içindeki
+  çağrıda geçit işin kalan süresine bakar (`gateway.is_suresi`): bir çağrının en kötü süresine
+  yetmiyorsa yeniden istemez, eldeki çıktıyı uyarıyla döndürür.
+- **Şema sistem mesajında (`params: { output: prompt }`, `models.yaml`):** `case_generation`,
+  `design_model`, `case_deepening` şemaları API'nin yapılandırılmış çıktı dilbilgisi sınırını
+  aşıyor ("compiled grammar is too large"); bu amaçlarda şema sistem mesajının (önbelleklenen) son
+  bloğunda gönderilir, çıktı geçitte tam şemayla doğrulanır ve uymazsa yeniden istenir.
 
 ## Yapı
 
@@ -264,12 +275,12 @@ varsa çıkış 1. Bu tablo kayıtla aynı olmalıdır (`test_evaluation_status.
 | `guardrails` (ortak güvenlik kuralları) | v1 | **canlı değerlendirme bekliyor** |
 | `requirement-review` | v3 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
 | `consistency-check` | v4 | **canlı değerlendirme bekliyor** |
-| `case-generation` | v3 | **canlı değerlendirildi** (2026-11-12; `evaluation/results/case-generation-v3-2026-11-12.json`) |
-| `design-model` (011 F3 iki tur; `design_model` golden'ları) | v1 | **canlı değerlendirildi** (2026-11-12; `evaluation/results/design-model-v1-2026-11-12.json`) |
-| `case-review` (011 P8; `case_review` golden'ları) | v1 | **canlı değerlendirildi** (2026-11-12; `evaluation/results/case-review-v1-2026-11-12.json`) |
+| `case-generation` | v3 | **değerlendirme sonrası içerik değişti (içerik hash'i uyuşmuyor)** — 2026-11-12 canlı değerlendirildi (`evaluation/results/case-generation-v3-2026-11-12.json`, ayar seti 18/18); eval vakalarından alınmış prompt örnekleri kurgusal alanlarla yeniden yazıldı (3. tur #2), sepet yazımı `ürün kodu × adet`, risk temelli P1; set bekletme (holdout) alt kümesi (4 story × 3 koşu) ve bağlayıcı `ham_gecis_alt_siniri` 0,6 ile yeniden koşulacak |
+| `design-model` (011 F3 iki tur; `design_model` golden'ları) | v1 | **değerlendirme sonrası içerik değişti (içerik hash'i uyuşmuyor)** — 2026-11-13 canlı değerlendirildi (`evaluation/results/design-model-v1-2026-11-13.json`, 6/6); eval vakalarından alınmış prompt örnekleri yeniden yazıldı, AC parantez kuralı case-generation ile aynı cümle (3. tur #2, #10); yeniden koşulacak |
+| `case-review` (011 P8; `case_review` golden'ları) | v1 | **değerlendirme sonrası içerik değişti (içerik hash'i uyuşmuyor)** — 2026-11-12 canlı değerlendirildi (`evaluation/results/case-review-v1-2026-11-12.json`); `not_covered.question_ref` soru bağının anlamı (matriste `soru bekliyor Qn`, kısmen hazır) eklendi (3. tur #6); yeniden koşulacak |
 | `case-audit` (011 P9, Agent Probe denetimi; `case_audit` golden'ları) | v1 | **canlı değerlendirildi** (2026-11-12; `evaluation/results/case-audit-v1-2026-11-12.json`) |
 | `platform-common` (011 F4 ortak platform eki; `case-generation` girdisine eklenir) | v1 | **değerlendirme sonrası içerik değişti (içerik hash'i uyuşmuyor)** — 2026-11-12 canlı değerlendirildi (`evaluation/results/platform-common-v1-2026-11-12.json`); tur 2 açık soru bağı (`not_covered.question_ref`) sonrası yeniden koşulacak |
-| `platform-web` (P1; golden `case_generation/golden/platform-web/TPD-4`) | v1 | **değerlendirme sonrası içerik değişti (içerik hash'i uyuşmuyor)** — 2026-11-12 canlı değerlendirildi (`evaluation/results/platform-web-v1-2026-11-12.json`); tur 2 açık soru bağı (`not_covered.question_ref`) sonrası yeniden koşulacak |
+| `platform-web` (P1; golden `case_generation/golden/platform-web/TPD-4`) | v1 | **değerlendirme sonrası içerik değişti (içerik hash'i uyuşmuyor)** — 2026-11-13 canlı değerlendirildi (`evaluation/results/platform-web-v1-2026-11-13.json`); ev sahibi `case-generation` prompt'u değişti (3. tur #2), yeniden koşulacak |
 | `platform-mobile` (P2) | v1 | **değerlendirme sonrası içerik değişti (içerik hash'i uyuşmuyor)** — 2026-11-12 canlı değerlendirildi (`evaluation/results/platform-mobile-v1-2026-11-12.json`); tur 2 açık soru bağı (`not_covered.question_ref`) sonrası yeniden koşulacak |
 | `platform-desktop` (P3) | v1 | **değerlendirme sonrası içerik değişti (içerik hash'i uyuşmuyor)** — 2026-11-12 canlı değerlendirildi (`evaluation/results/platform-desktop-v1-2026-11-12.json`); tur 2 açık soru bağı (`not_covered.question_ref`) sonrası yeniden koşulacak |
 | `platform-api` (P4) | v1 | **değerlendirme sonrası içerik değişti (içerik hash'i uyuşmuyor)** — 2026-11-12 canlı değerlendirildi (`evaluation/results/platform-api-v1-2026-11-12.json`); tur 2 açık soru bağı (`not_covered.question_ref`) sonrası yeniden koşulacak |
@@ -324,7 +335,8 @@ scripts/eval-live.sh --record                        # kayıt adayları exports/
 - Setler (`evaluation/<paket>.json`, `core/tests/unit/gateway/build_eval_sets.py` üretir; elle
   düzenlenmez): `triage`, `bug-draft`, `dup-rank`, `requirement-review` (demo'nun 5 gereksinimi,
   Jira'daki ilk halleriyle: karar, soru türü, belgede olmayan AC'ye soru yok), `case-generation`
-  (§12: 5 story × 3 koşu, `runs: 3`; her AC en az bir case'te, uydurma AC yok, düzeltilmiş tutarlar),
+  (§12: ayar vakaları + 4 bekletme story'si × 3 koşu, `runs: 3`; her AC en az bir case'te, uydurma
+  AC yok, düzeltilmiş tutarlar; aşağıda "Bekletme"),
   ajanlar `consistency-check` (TPD-1 ve serbest metin 1. tur + tutarlı TPD-4; beklenen belge
   yerleri ve kanıtın üretimin `EvidenceVerifier`'ıyla yeniden doğrulanması) ve `verify-and-map`
   (TPD-1-C3, TPD-4-C1/C2; her adım eşlenmiş, metotlar gerçek sembol tablosunda, beklenen
@@ -338,9 +350,36 @@ scripts/eval-live.sh --record                        # kayıt adayları exports/
   `--update-status` yalnızca set TAMAMEN koşup her vaka geçtiyse yazar; kaydın `note`'u üretilmiş
   satırla değişir ("Canlı değerlendirme <tarih>, <model>, <geçen>/<toplam>: <rapor>").
 - `--dry-run` tahmini: token = karakter/3 (yukarı), girdi önbelleğe yazma fiyatıyla (1,25×), çıktı
-  tam `max_tokens`; "en kötü durum" şema yeniden istemlerini (2) de sayar; ajanlarda `max_turns` ×
-  tam çıktı + amacın girdi tavanı. Yedi setin toplam en kötü durumu ~22 USD'dir (varsayılan 5 USD
-  tavanı aşılır; komut `--budget-usd` önerir); hata setleri < 0,10 USD.
+  tam `max_tokens`; "en kötü durum" yeniden istemleri (2; şema ve kural yeniden istemesi aynı
+  döngüdedir, toplam en çok 3 çağrı) de sayar; ajanlarda `max_turns` × tam çıktı + amacın girdi
+  tavanı. En kötü durum paket başına basılır; güncel değer için `--dry-run` koşun. Örnek:
+  `case-generation` (10 vaka — 6 ayar + 4 bekletme — × 3 koşu, `max_tokens` 32000) tek başına
+  ≤ ~38 USD'dir; 2026-11-12'deki 18 koşunun gerçek harcaması 2,23 USD'dir. Varsayılan 5 USD
+  tavanı aşılır (koşu her vakadan önce "harcanan + vakanın en kötü durumu"na bakar); komut
+  `--budget-usd` önerir. Hata setleri < 0,10 USD.
+- **Ham geçiş ölçümü (`olcumler`):** case üretimi raporu, geçit+model sistemi yanında ham modeli
+  de ölçer (`eval_set.kural_yeniden_isteme_olcumleri`): `ilk_deneme_gecis_orani` (1. denemenin
+  şemaya uyup beklentiyi geçtiği vaka oranı), kural/şema yeniden isteme oranları, `duzelme_orani`,
+  `kalan_kural_ihlali`, ek maliyet/süre ve ilk denemedeki kural türü histogramı. Setin
+  `ham_gecis_alt_siniri` alanı bağlayıcıdır: `case-generation` setinde 0,6 (geçit sınırlı sayıda
+  ve iş süresi yetiyorsa yeniden ister; ham oran 0,6'nın altındaysa geçiş büyük ölçüde yeniden
+  istemeye dayanıyor demektir — ek maliyet, süre ve düzeltilemeyen ihlal riski). Alan yoksa %70
+  yalnız bilgi olarak raporlanır. İlk deneme son sonuçla aynı (maskesiz) çıktıyla puanlanır;
+  maskeli satıra düşülen vaka `ilk_deneme_maskeli_puanlama`'da sayılır (hedef 0).
+- **Bekletme (holdout) alt kümesi:** `case-generation` setinin `holdout_cases` bölümü prompt
+  ayarında hiç kullanılmamış, eval setlerindeki story'lerle örtüşmeyen alanlardan (kütüphane
+  ödünç, otopark ücreti, poliçe yenileme, kırtasiye teslimatı) 4 story ve kendi test verisi
+  bloğudur; beklentiler yalnız genel kurallardır (`ac_coverage`, `ready_ac_coverage`,
+  `source_grounded`, uydurma belirteçleri, `techniques_include` BVA, `max_p1_orani`). Ayrı paket
+  değildir (prompt dosyası olmayan kayıt `evaluations.yaml` kapısında reddedilir): `load_set`
+  vakaları `alt_kume: holdout` ile aynı koşuya katar. **Bağlayıcıdır:** set geçişi her vakayı
+  ister, holdout geçmeden `case-generation` `evaluated` olmaz. Rapor alt kümeleri ayrı taşır
+  (`alt_kumeler: {ayar, holdout}`, `olcumler.alt_kumeler`; konsolda "alt küme holdout: x/y").
+  Kural: bir holdout sonucuna bakılarak prompt değiştirilirse o vaka artık holdout sayılmaz;
+  yeni alandan yeni story ile değiştirilir. Prompt örneklerinin eval/holdout girdileriyle
+  örtüşmediğini `tests/unit/gateway/test_prompt_eval_ortusme.py` denetler. 2026-11-12 sonuçları
+  (18/18) "ayar seti" sonucudur, genelleme kanıtı değildir. Koşu:
+  `make eval-live A='--bundle case-generation --budget-usd 38 --update-status'`.
 - Denetim (constitution VIII): host'ta veritabanı yoktur. Her canlı çağrı (vakalar ve `--ping`)
   geçidin `ai_call` satırı biçiminde, sırlar temizlenmiş olarak ekle-yalnız, hash zincirli deftere
   yazılır: `exports/eval-live/ai_call.jsonl` (`--ledger`; `CallLedger.verify`). Paketin çağrıları

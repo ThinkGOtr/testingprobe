@@ -14,10 +14,14 @@ aynı adlarla buradan kullanır.
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from typing import Any
 
-from tp_core.features.cases.schema import NEGATIF_KATEGORISI, PLATFORM_KATEGORISI
+from tp_core.features.cases.schema import (
+    NEGATIF_KATEGORISI,
+    PLATFORM_KATEGORISI,
+    soru_aniliyor,
+)
 
 # Teknik ↔ kapsam öğesi kimliği öneki (rules/schemas/case_generation.schema.json).
 TEKNIK_ONEKI: dict[str, str] = {
@@ -143,20 +147,13 @@ def case_rule_problems(case: Mapping[str, Any], output: Mapping[str, Any]) -> li
     return sorunlar
 
 
-def _soru_metinde(kimlik: str, metin: Any) -> bool:
-    """`Q1` gerekçede/tanımda tek başına geçiyor mu (`CQ1`, `Q10` sayılmaz)."""
-    for m in re.finditer(re.escape(kimlik), str(metin or "")):
-        once = m.string[m.start() - 1] if m.start() else " "
-        sonra = m.string[m.end()] if m.end() < len(m.string) else " "
-        if not once.isalnum() and not sonra.isdigit():
-            return True
-    return False
-
-
-def yetim_sorular(output: Any) -> list[str]:
+def yetim_sorular(output: Any, *, kapanan: Iterable[str] = ()) -> list[str]:
     """Hiçbir yerde anılmayan açık sorular: case atfı (`open_question_refs`), `not_covered`
     kaydının `question_ref`'i, negatif kapsam kararının gerekçesi ya da kapsam öğesinin tanımı
-    soruyu anmıyor (011 K16; eval `yetim_soru` metriği)."""
+    soruyu anmıyor (011 K16; eval `yetim_soru` metriği). `schema.orphan_questions` ile aynı
+    kural: serbest metin sınırı `schema.soru_aniliyor` (tek tanım; tur 3 #9), PO yanıtıyla
+    kapanan sorular (`kapanan`) yetim değildir (tur 3 #1)."""
+    kapali = {str(q) for q in kapanan}
     out = output if isinstance(output, Mapping) else {}
     anilan: set[str] = set()
     for case in _kayitlar(out.get("cases")):
@@ -169,7 +166,7 @@ def yetim_sorular(output: Any) -> list[str]:
     yetim: list[str] = []
     for soru in _kayitlar(out.get("open_questions")):
         kimlik = str(soru.get("id"))
-        if kimlik in anilan or any(_soru_metinde(kimlik, m) for m in serbest):
+        if kimlik in anilan or kimlik in kapali or any(soru_aniliyor(m, kimlik) for m in serbest):
             continue
         yetim.append(kimlik)
     return yetim
