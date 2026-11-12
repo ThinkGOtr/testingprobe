@@ -8,7 +8,7 @@ import pytest
 
 from tp_rehearsal import __main__ as cli
 from tp_rehearsal.runner import FAIL, PASS, UYARI, Basarisiz
-from tp_rehearsal.steps import acilis_tamam_adimlari, on_kontrol
+from tp_rehearsal.steps import PORTAL_HESAPLARI, acilis_tamam_adimlari, on_kontrol
 
 from .conftest import SahteApi
 
@@ -52,11 +52,24 @@ TEMEL_KOSU = {
 }
 
 
-def _api(hazir: bool = True, kosular=None, kule=None) -> SahteApi:
+class RolluApi(SahteApi):
+    """`/auth/me` hesaba göre rol döner (seed: 012 rol modeli)."""
+
+    def __init__(self, yanitlar, roller=None) -> None:
+        super().__init__(yanitlar)
+        self.roller = dict(PORTAL_HESAPLARI if roller is None else roller)
+
+    def get(self, rol: str, yol: str):
+        if yol == "/auth/me":
+            self.cagrilar.append((rol, "GET", yol))
+            return {"rol": self.roller.get(rol)}
+        return super().get(rol, yol)
+
+
+def _api(hazir: bool = True, kosular=None, kule=None, roller=None) -> SahteApi:
     kosular = [] if kosular is None else kosular
-    return SahteApi(
+    return RolluApi(
         {
-            "/auth/me": {"rol": "x"},
             "/demo/status": _durum(hazir),
             "/requirements": [],
             "/scripts": [],
@@ -64,7 +77,8 @@ def _api(hazir: bool = True, kosular=None, kule=None) -> SahteApi:
             "/runs?limit=200": kosular,
             "/control-tower": kule if kule is not None else {"son_kosular": []},
             "/bug-drafts": [],
-        }
+        },
+        roller,
     )
 
 
@@ -104,6 +118,22 @@ def test_p0_replay_temiz_baslangic_gecer(baglam):
     assert _kontrol(b, "temel push CI yeşil").sonuc == PASS
     assert _kontrol(b, "açılış: yol haritası 0/14").sonuc == PASS
     assert b.kanit["acilis_sayaci"] == "0/14"
+
+
+def test_p0_sekiz_hesap_012_rolleriyle_giris_yapar(baglam):
+    b = _p0(baglam, "replay")
+    on_kontrol(b)
+    assert _kontrol(b, "portal hesabı giriş yaptı").sonuc == PASS
+    assert b.kanit["roller"]["sunucu"] == "admin"
+    assert b.kanit["roller"]["testci"] == "tester"
+    assert {r for r, _y, yol in b.api.cagrilar if yol == "/auth/me"} == set(PORTAL_HESAPLARI)
+
+
+def test_p0_eski_presenter_rolu_kritik_fail(baglam):
+    b = _p0(baglam, "replay", roller=PORTAL_HESAPLARI | {"sunucu": "presenter"})
+    with pytest.raises(Basarisiz, match="012 kataloğuyla"):
+        on_kontrol(b)
+    assert _kontrol(b, "portal hesabı giriş yaptı").sonuc == FAIL
 
 
 def test_p0_temel_kosu_yoksa_bekler_sonra_fail(baglam, saat):

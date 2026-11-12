@@ -41,10 +41,11 @@ olduğunu doğrular (uyuşmazsa FAIL).
 
 | # | Adım | Rol | §2 |
 |---|---|---|---|
-| P0 | Ön kontrol (roller, `TP_MODEL_MODE=replay` + strict, temiz başlangıç, demo-reset temel CI yeşil, açılış sayacı 0/14) | sunucu | — |
+| P0 | Ön kontrol (8 seed hesabı 012 rolleriyle: analist, po, testci, muhendis, sunucu=admin, denetci, gelistirici, izleyici; `TP_MODEL_MODE=replay` + strict, temiz başlangıç, demo-reset temel CI yeşil, açılış sayacı 0/14) | sunucu | — |
 | P1 | Güvenlik (§13): `make security-check` 10/10; bot kimliğiyle main'e doğrudan commit reddedilir, main değişmez (yalnızca prova kipinde denenir) | sunucu | — |
-| A1–A8 | Jira'dan çek → ön inceleme (4 kanıtlı bulgu) → F1/F3 `fix_doc`, F2/F4 `code_defect` → düzeltme + 2. tur → PO etiketi (jira-sim, `po@sim.local`) → 10 case → QA onayı → yayın | analist, po | 1–4 |
-| B1–B5 | Kod üretimi C1/C2/C3/C5 (C3 defect adayı) → kırarak doğrula (C2 yeşil→kırmızı→yeşil, C1/C5 zayıf) → merge C2, C1, C5 (zayıf test açık kabul notu) → push + deploy + nightly → Kontrol Kulesi | muhendis, sunucu | 5–11 |
+| A1–A5 | Jira'dan çek → ön inceleme (4 kanıtlı bulgu) → F1/F3 `fix_doc`, F2/F4 `code_defect` → düzeltme + 2. tur → PO etiketi (jira-sim, `po@sim.local`) | analist, po | 1–3 |
+| A6–A8 | 10 case üretimi (testci) → Testçi 10 `accept` (draft → ready) → Analist son onayı 10 `approve` (ready → approved; görevler ayrılığı) → yayın (testci) | testci, analist | 4 |
+| B1–B5 | Kod üretimi C1/C2/C3/C5 (C3 defect adayı) → kırarak doğrula (C2 yeşil→kırmızı→yeşil, C1/C5 zayıf) → merge C2, C1, C5 (zayıf test açık kabul notu) → push + deploy + nightly (tetik: muhendis) → Kontrol Kulesi | muhendis, sunucu | 5–11 |
 | C1–C5 | C3 triage (kural) → TPD-5'e bağla; F2 → TPD-5'e bağla; F4 → yeni Bug; kırma taslağı (TPD-5 medium, karar verilmez) | testci | 12–14 |
 | C6 | İsteğe bağlı (`--kirma-yayinla`): C2 kırma taslağı → yeni Bug; jira-sim'de Relates TPD-1 + Test (C2'nin Test issue'su) | testci | 14 |
 | D1–D5 | `make demo-break` → push CI kırmızı (19/22, hepsi locator) → onarım PR'ı (tek satır testId) → merge → push CI yeşil | sunucu, muhendis | 8, 12 |
