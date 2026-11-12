@@ -568,7 +568,7 @@ KISA_VERI = 4
 ACIK_NOKTA = re.compile(r"a[çc][ıiİI]k\s+nokta", re.IGNORECASE)
 # Platform ekinde atlanan kategori (011 F4, `platform-common`): `not_covered.item` =
 # `<Platform>:<kategori>`.
-PLATFORM_KATEGORISI = re.compile(r"(Web|Mobil|Desktop|API|Data):[^\n]{1,32}")
+PLATFORM_KATEGORISI = re.compile(r"(Web|Mobil|Desktop|API|Data):[^\n]{1,32}|N(10|[1-9])")
 
 
 def _liste(deger: Any) -> list[Any]:

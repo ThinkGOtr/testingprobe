@@ -1,0 +1,451 @@
+{
+  "bundle": "case-technique",
+  "version": 1,
+  "date": "2026-11-12",
+  "model": "claude-sonnet-5-5",
+  "provider": "anthropic",
+  "mode": "live",
+  "passed": 2,
+  "total": 2,
+  "runs": 1,
+  "cases": [
+    {
+      "id": "tpd-4-ep",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "open_questions": [
+          {
+            "id": "Q2",
+            "question": "Kullanıcı adı veya parola alanı boş bırakılıp \"Giriş yap\" denirse ne olmalı: AC2'deki mesaj mı, alan doğrulama mesajı mı, buton pasif mi? Hangi mesaj metni gösterilir?",
+            "owner": "PO"
+          }
+        ],
+        "assumptions": [],
+        "coverage_items": [
+          {
+            "id": "EP-V2",
+            "ac_ref": "AC1",
+            "definition": "Kayıtlı ikinci bayi (bayi2, \"Sahil Bayi\") geçerli kullanıcı adı ve parolayla: giriş yapılır, ürün kataloğu açılır",
+            "valid": true
+          },
+          {
+            "id": "EP-I3",
+            "ac_ref": "AC2",
+            "definition": "Boş kullanıcı adı, geçerli parola (beklenen sonuç kaynakta tanımsız, Q2)",
+            "valid": false
+          },
+          {
+            "id": "EP-I4",
+            "ac_ref": "AC2",
+            "definition": "Geçerli kullanıcı adı, boş parola (beklenen sonuç kaynakta tanımsız, Q2)",
+            "valid": false
+          }
+        ],
+        "negative_coverage": [
+          {
+            "item": "EP-I3",
+            "decision": "out_of_scope",
+            "rationale": "Boş kullanıcı adında gösterilecek sonuç kaynakta yok, PO'ya soruldu (Q2). Beklenen sonuç uydurulmadı, case yazılmadı."
+          },
+          {
+            "item": "EP-I4",
+            "decision": "out_of_scope",
+            "rationale": "Boş parolada gösterilecek sonuç kaynakta yok, PO'ya soruldu (Q2). Beklenen sonuç uydurulmadı, case yazılmadı."
+          }
+        ],
+        "not_covered": [
+          {
+            "item": "EP-I3",
+            "reason": "Boş kullanıcı adı için beklenen sonuç tanımsız (Q2); yanıt gelince case yazılacak."
+          },
+          {
+            "item": "EP-I4",
+            "reason": "Boş parola için beklenen sonuç tanımsız (Q2); yanıt gelince case yazılacak."
+          }
+        ],
+        "observations": [],
+        "automation_open_points": [],
+        "config_matrix": {
+          "parameters": [],
+          "constraints": []
+        },
+        "testability_gaps": [],
+        "cases": [
+          {
+            "title": "İkinci bayi (Sahil Bayi) geçerli bilgilerle giriş yapar",
+            "type": "positive",
+            "technique": [
+              "EP"
+            ],
+            "covers": [
+              "EP-V2"
+            ],
+            "priority": "P2",
+            "priority_rationale": "Ana giriş akışı farklı bir bayi hesabında da çalışmalı; hata bayinin portala erişimini engeller, ancak ana akış bayi1 ile ayrıca sınanıyor.",
+            "acceptance_criteria_refs": [
+              "AC1"
+            ],
+            "platform": null,
+            "test_level": "SYSTEM",
+            "verification_point": "UI",
+            "requires_real_device": false,
+            "standard_refs": [],
+            "readiness": "ready",
+            "assumption_refs": [],
+            "open_question_refs": [],
+            "preconditions": [
+              "bayi2 kullanıcısı tanımlıdır",
+              "Oturum açık değildir"
+            ],
+            "test_data": [
+              {
+                "name": "ikinci bayi kullanıcı adı ve parola",
+                "value": "bayi2 / Demo123!",
+                "class": "EP-V2",
+                "synthetic": true,
+                "is_attack_payload": false
+              }
+            ],
+            "steps": [
+              {
+                "id": "S1",
+                "action": "Giriş sayfasını aç",
+                "data": null,
+                "expected": "Giriş formu görüntülenir"
+              },
+              {
+                "id": "S2",
+                "action": "Kullanıcı adı ve parolayı gir, \"Giriş yap\" butonuna bas",
+                "data": "bayi2 / Demo123!",
+                "expected": "Ürün kataloğu açılır ve oturum \"Sahil Bayi\" adıyla görüntülenir"
+              }
+            ],
+            "expected_result": "Bayi başarıyla giriş yapar; ürün kataloğu \"Sahil Bayi\" oturumuyla açılır.",
+            "teardown": [
+              "\"Çıkış yap\" ile oturumu kapat"
+            ],
+            "tags": [
+              "AI-generated",
+              "regression"
+            ]
+          }
+        ]
+      },
+      "mode": "live",
+      "error": null,
+      "cost_usd": 0.046426,
+      "sure_ms": 13224
+    },
+    {
+      "id": "tpd-1-bva",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "open_questions": [
+          {
+            "id": "Q2",
+            "question": "Kredi limiti karşılaştırmasında 'sipariş tutarı' kampanya indirimi öncesi ara toplam mı, indirim sonrası toplam mı? Örnek: bayi2 (limit 500,00 TL), P-001 × 23 → ara toplam 575,00 TL, indirim 75,00 TL, toplam 500,00 TL. Limit eşitliğinde sipariş onaylanır mı?",
+            "owner": "PO"
+          },
+          {
+            "id": "Q3",
+            "question": "Sepete ekleme adedi için alt ve üst sınır nedir (0, negatif, azami adet)? Bu adetler kabul mü reddedilir mi, reddedilirse hangi mesaj gösterilir?",
+            "owner": "PO"
+          }
+        ],
+        "assumptions": [],
+        "coverage_items": [
+          {
+            "id": "BV-9",
+            "ac_ref": "AC2",
+            "definition": "17 adet kampanyalı ürün (üçüncü bedava eşiğinin hemen altı): 2 adet bedava",
+            "valid": true
+          },
+          {
+            "id": "BV-10",
+            "ac_ref": "AC2",
+            "definition": "18 adet kampanyalı ürün (üçüncü bedava eşiği, her 6 adette 1 kuralı): 3 adet bedava",
+            "valid": true
+          },
+          {
+            "id": "BV-11",
+            "ac_ref": "AC4",
+            "definition": "Kampanyalı sepette indirim sonrası toplam kredi limitine eşit (bayi2, P-001 × 23: ara toplam 575,00 TL, toplam 500,00 TL, limit 500,00 TL); karşılaştırılan tutar AÇIK NOKTA",
+            "valid": true
+          },
+          {
+            "id": "BV-12",
+            "ac_ref": "AC1",
+            "definition": "Sepete ekleme adedi alt sınırın altında (0 adet): beklenen sonuç kaynakta yok",
+            "valid": false
+          }
+        ],
+        "negative_coverage": [
+          {
+            "item": "BV-12",
+            "decision": "out_of_scope",
+            "rationale": "Adet alanının alt/üst sınırı ve reddedilince verilecek sonuç kaynakta yok; Q3 yanıtlanana kadar case yazılmaz."
+          }
+        ],
+        "not_covered": [
+          {
+            "item": "BV-12",
+            "reason": "Adet alt/üst sınırı kaynakta tanımlı değil (Q3); beklenen sonuç uydurulmadı."
+          }
+        ],
+        "observations": [],
+        "automation_open_points": [],
+        "config_matrix": {
+          "parameters": [],
+          "constraints": []
+        },
+        "testability_gaps": [],
+        "cases": [
+          {
+            "title": "17 adet kampanyalı üründe 2 adet bedava verilir (üçüncü eşiğin altı)",
+            "type": "boundary",
+            "technique": [
+              "BVA"
+            ],
+            "covers": [
+              "BV-9"
+            ],
+            "priority": "P2",
+            "priority_rationale": "Kademeli bedava kuralının üçüncü geçişinde hesap hatası tutar farkı yaratır; kademe sınırları AC2'nin 'her 6 adette 1' kuralından türetilir.",
+            "acceptance_criteria_refs": [
+              "AC2"
+            ],
+            "platform": null,
+            "test_level": "SYSTEM",
+            "verification_point": "UI",
+            "requires_real_device": false,
+            "standard_refs": [],
+            "readiness": "ready",
+            "assumption_refs": [],
+            "open_question_refs": [],
+            "preconditions": [
+              "Sepet boş"
+            ],
+            "test_data": [
+              {
+                "name": "kampanyalı ürün ve adet",
+                "value": "P-001 × 17",
+                "class": "BV-9",
+                "synthetic": true,
+                "is_attack_payload": false
+              }
+            ],
+            "steps": [
+              {
+                "id": "S1",
+                "action": "Giriş sayfasını aç",
+                "data": null,
+                "expected": "Giriş formu görüntülenir"
+              },
+              {
+                "id": "S2",
+                "action": "Bayi kullanıcısıyla giriş yap",
+                "data": "bayi1 / Demo123!",
+                "expected": "Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir"
+              },
+              {
+                "id": "S3",
+                "action": "\"Portakal Gazozu 1L\" (P-001) kartında adedi 17 yapıp \"Sepete ekle\" butonuna bas",
+                "data": "P-001 × 17",
+                "expected": "Sepet sayacı 17 olur"
+              },
+              {
+                "id": "S4",
+                "action": "Üst menüden sepete git",
+                "data": null,
+                "expected": "P-001 satırında adet 17, bedava adet 2; ara toplam 425,00 TL, indirim 50,00 TL, toplam 375,00 TL"
+              }
+            ],
+            "expected_result": "17 adette 2 adet bedava verilir; indirim 50,00 TL, toplam 375,00 TL",
+            "teardown": [
+              "Sepeti boşalt",
+              "Oturumu kapat"
+            ],
+            "tags": [
+              "AI-generated",
+              "regression"
+            ]
+          },
+          {
+            "title": "18 adet kampanyalı üründe 3 adet bedava verilir (üçüncü eşik)",
+            "type": "boundary",
+            "technique": [
+              "BVA"
+            ],
+            "covers": [
+              "BV-10"
+            ],
+            "priority": "P2",
+            "priority_rationale": "Üçüncü bedava eşiğinde kademe atlanmazsa bayi eksik indirim alır; para etkili.",
+            "acceptance_criteria_refs": [
+              "AC2"
+            ],
+            "platform": null,
+            "test_level": "SYSTEM",
+            "verification_point": "UI",
+            "requires_real_device": false,
+            "standard_refs": [],
+            "readiness": "ready",
+            "assumption_refs": [],
+            "open_question_refs": [],
+            "preconditions": [
+              "Sepet boş"
+            ],
+            "test_data": [
+              {
+                "name": "kampanyalı ürün ve adet",
+                "value": "P-001 × 18",
+                "class": "BV-10",
+                "synthetic": true,
+                "is_attack_payload": false
+              }
+            ],
+            "steps": [
+              {
+                "id": "S1",
+                "action": "Giriş sayfasını aç",
+                "data": null,
+                "expected": "Giriş formu görüntülenir"
+              },
+              {
+                "id": "S2",
+                "action": "Bayi kullanıcısıyla giriş yap",
+                "data": "bayi1 / Demo123!",
+                "expected": "Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir"
+              },
+              {
+                "id": "S3",
+                "action": "\"Portakal Gazozu 1L\" (P-001) kartında adedi 18 yapıp \"Sepete ekle\" butonuna bas",
+                "data": "P-001 × 18",
+                "expected": "Sepet sayacı 18 olur"
+              },
+              {
+                "id": "S4",
+                "action": "Üst menüden sepete git",
+                "data": null,
+                "expected": "P-001 satırında adet 18, bedava adet 3; ara toplam 450,00 TL, indirim 75,00 TL, toplam 375,00 TL"
+              }
+            ],
+            "expected_result": "18 adette 3 adet bedava verilir; indirim 75,00 TL, toplam 375,00 TL",
+            "teardown": [
+              "Sepeti boşalt",
+              "Oturumu kapat"
+            ],
+            "tags": [
+              "AI-generated",
+              "regression"
+            ]
+          },
+          {
+            "title": "Kampanyalı sepet indirim sonrası kredi limitine eşitken onay davranışı",
+            "type": "boundary",
+            "technique": [
+              "BVA"
+            ],
+            "covers": [
+              "BV-11"
+            ],
+            "priority": "P1",
+            "priority_rationale": "Kredi limiti kontrolünün indirimli/indirimsiz tutara göre yapılması siparişin onaylanıp onaylanmamasını belirler; para ve limit riski.",
+            "acceptance_criteria_refs": [
+              "AC4"
+            ],
+            "platform": null,
+            "test_level": "SYSTEM",
+            "verification_point": "UI",
+            "requires_real_device": false,
+            "standard_refs": [],
+            "readiness": "blocked",
+            "assumption_refs": [],
+            "open_question_refs": [
+              "Q2"
+            ],
+            "preconditions": [
+              "Sepet boş",
+              "bayi2 kredi limiti 500,00 TL"
+            ],
+            "test_data": [
+              {
+                "name": "bayi2 kampanyalı sepet",
+                "value": "P-001 × 23 (ara toplam 575,00 TL, indirim sonrası 500,00 TL)",
+                "class": "BV-11",
+                "synthetic": true,
+                "is_attack_payload": false
+              }
+            ],
+            "steps": [
+              {
+                "id": "S1",
+                "action": "Giriş sayfasını aç",
+                "data": null,
+                "expected": "Giriş formu görüntülenir"
+              },
+              {
+                "id": "S2",
+                "action": "Bayi kullanıcısıyla giriş yap",
+                "data": "bayi2 / Demo123!",
+                "expected": "Katalog sayfası \"Sahil Bayi\" oturumuyla görüntülenir"
+              },
+              {
+                "id": "S3",
+                "action": "\"Portakal Gazozu 1L\" (P-001) kartında adedi 23 yapıp \"Sepete ekle\" butonuna bas",
+                "data": "P-001 × 23",
+                "expected": "Sepet sayacı 23 olur"
+              },
+              {
+                "id": "S4",
+                "action": "Üst menüden sepete git ve kredi limiti uyarısı ile onay butonu durumunu gözle",
+                "data": null,
+                "expected": ""
+              }
+            ],
+            "expected_result": "",
+            "teardown": [
+              "Sepeti boşalt",
+              "Oturumu kapat"
+            ],
+            "tags": [
+              "AI-generated",
+              "regression"
+            ]
+          }
+        ]
+      },
+      "mode": "live",
+      "error": null,
+      "cost_usd": 0.081969,
+      "sure_ms": 35320
+    }
+  ],
+  "tamamlandi": true,
+  "set_vaka_sayisi": 2,
+  "kosu_sayisi": 2,
+  "maliyet_usd": 0.128395,
+  "butce_usd": 4.0,
+  "calisma_alani_basligi": true,
+  "guardrails_version": 1,
+  "kayit_adaylari": null,
+  "cagri_kaydi": "case-technique-v1-2026-11-12.calls.jsonl",
+  "cagri_sayisi": 2,
+  "cagri_defteri": "/Users/gokhansipahi/projects/agent-probe/tp-wt-v3/exports/eval-live/ai_call.jsonl",
+  "amac": "case_deepening",
+  "via_flow": false,
+  "icerik_hash": "sha256:5efefacd11022c7f0547c564e6244f431de7f57b1a8ce67d37d6872a52636d77",
+  "olcumler": null,
+  "dagilim": {
+    "maliyet_usd": {
+      "medyan": 0.046426,
+      "p90": 0.081969
+    },
+    "sure_ms": {
+      "medyan": 13224,
+      "p90": 35320
+    }
+  }
+}

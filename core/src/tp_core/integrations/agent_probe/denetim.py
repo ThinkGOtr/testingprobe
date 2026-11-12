@@ -113,6 +113,12 @@ def audit_messages(istek: CaseSetAuditRequest) -> list[ModelMessage]:
         "Üretilmiş set (Testing Probe çıktısı; case'ler `no` set numarasıyla):",
         wrap_untrusted(set_json, source=f"tp-set:{kok}", kind="data"),
     ]
+    if istek.test_data_block:
+        parcalar += [
+            "Üretime verilen test verisi (kaynağın parçası: kullanıcılar, bayi adları, fiyatlar, "
+            "ayarlar, arayüz etiketleri):",
+            istek.test_data_block,
+        ]
     if istek.review_result:
         review_json = json.dumps(dict(istek.review_result), ensure_ascii=False, sort_keys=True)
         parcalar += [
@@ -126,6 +132,11 @@ def audit_messages(istek: CaseSetAuditRequest) -> list[ModelMessage]:
         "Kurum politikaları (güvenilir):\n"
         + ("\n".join(f"- {p}" for p in politikalar) if politikalar else "- (tanımlı politika yok)")
     )
+    if istek.allowed_hosts:
+        parcalar.append(
+            "İzinli test ortamları (güvenilir; ortam belirtmeyen case bu ortamlarda koşar): "
+            + ", ".join(istek.allowed_hosts)
+        )
     parcalar.append(SET_HASH_SATIRI + istek.set_hash)
     return [ModelMessage(role="user", content="\n\n".join(parcalar))]
 

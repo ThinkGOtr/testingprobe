@@ -52,7 +52,13 @@ covers it, `covered_by` = an existing case covers it, `out_of_scope` = no runnab
 reason). An item whose outcome the source does not give gets no case: the decision is
 `out_of_scope`, the rationale names the open question, and no case lists the item in `covers` (a
 `blocked` case is not written for it). A category that is meaningless for the story produces no case
-and no coverage item. There is no target number or ratio.
+and no coverage item; when you want to record why, add a `not_covered` entry whose `item` is the
+category code alone (`N8`) and whose `reason` says why it does not apply. There is no target number
+or ratio.
+- `negative_coverage[].item` is always one coverage item id (`EP-I3`, `BV-5`), never a category
+  code, a list of codes (`N3/N4/N5`) or a question id.
+- Every item you list in `coverage_items` with `valid: false` (new or repeated) gets exactly one
+  `negative_coverage` entry in this round.
 
 # Identifiers (do not collide with the existing set)
 - A NEW coverage item, open question or assumption uses the numbers given in

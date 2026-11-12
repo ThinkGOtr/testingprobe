@@ -1,0 +1,404 @@
+{
+  "bundle": "platform-api",
+  "version": 1,
+  "date": "2026-11-12",
+  "model": "claude-sonnet-5-5",
+  "provider": "anthropic",
+  "mode": "live",
+  "passed": 1,
+  "total": 1,
+  "runs": 1,
+  "cases": [
+    {
+      "id": "tpd-4-api",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "open_questions": [
+          {
+            "id": "Q1",
+            "question": "API sözleşmesi (endpoint, yöntem, istek/yanıt şeması, durum kodları) girdide yok; giriş endpoint'i ve yanıt biçimi nedir?",
+            "owner": "developer"
+          },
+          {
+            "id": "Q2",
+            "question": "Geçersiz kullanıcı adı (kayıtlı olmayan) ile giriş denendiğinde de aynı \"Kullanıcı adı veya parola hatalı\" mesajı mı gösterilir?",
+            "owner": "PO"
+          },
+          {
+            "id": "Q3",
+            "question": "Boş kullanıcı adı veya boş parola ile giriş denendiğinde beklenen sonuç ve mesaj nedir?",
+            "owner": "PO"
+          },
+          {
+            "id": "Q4",
+            "question": "Art arda hatalı giriş denemelerinde hesap kilitleme veya hız sınırı uygulanır mı?",
+            "owner": "PO"
+          },
+          {
+            "id": "Q5",
+            "question": "Başarılı girişte ürün kataloğunun API düzeyinde nasıl doğrulanacağı (yönlendirme, yanıt gövdesi) ve oturum çerezinin özellikleri nedir?",
+            "owner": "developer"
+          }
+        ],
+        "assumptions": [],
+        "coverage_items": [
+          {
+            "id": "EP-V1",
+            "ac_ref": "AC1",
+            "definition": "Geçerli kullanıcı adı ve geçerli parola (bayi1 / Demo123!)",
+            "valid": true
+          },
+          {
+            "id": "EP-I1",
+            "ac_ref": "AC2",
+            "definition": "Geçerli kullanıcı adı, hatalı parola",
+            "valid": false
+          },
+          {
+            "id": "EP-I2",
+            "ac_ref": "AC2",
+            "definition": "Kayıtlı olmayan kullanıcı adı; sonuç kaynakta tanımsız (Q2)",
+            "valid": false
+          },
+          {
+            "id": "EP-I3",
+            "ac_ref": "AC2",
+            "definition": "Boş kullanıcı adı veya parola; sonuç kaynakta tanımsız (Q3)",
+            "valid": false
+          },
+          {
+            "id": "UC-MF",
+            "ac_ref": "AC1",
+            "definition": "Ana akış: bayi giriş yapar ve ürün kataloğu açılır",
+            "valid": true
+          },
+          {
+            "id": "UC-EF1",
+            "ac_ref": "AC2",
+            "definition": "İstisna akış: hatalı parola, hata mesajı, giriş yapılmaz",
+            "valid": false
+          },
+          {
+            "id": "CL-1",
+            "ac_ref": "AC2",
+            "definition": "API:Veri güvenliği — hata yanıtında yığın izi/SQL ve parola ifşası yok",
+            "valid": true
+          }
+        ],
+        "negative_coverage": [
+          {
+            "item": "EP-I1",
+            "decision": "tested",
+            "rationale": "AC2 doğrudan tanımlıyor; kimlik doğrulama riski yüksek."
+          },
+          {
+            "item": "EP-I2",
+            "decision": "out_of_scope",
+            "rationale": "Kaynak sonucu tanımlamıyor; Q2 yanıtlanmalı."
+          },
+          {
+            "item": "EP-I3",
+            "decision": "out_of_scope",
+            "rationale": "Kaynak sonucu tanımlamıyor; Q3 yanıtlanmalı."
+          },
+          {
+            "item": "UC-EF1",
+            "decision": "covered_by",
+            "rationale": "Hatalı parola case'i aynı akışı çalıştırır."
+          }
+        ],
+        "not_covered": [
+          {
+            "item": "API:Şema doğrulama",
+            "reason": "Sözleşme yok (Q1); alan kuralları kaynakta tanımsız."
+          },
+          {
+            "item": "API:Eşzamanlılık",
+            "reason": "Story'de eşzamanlılık kuralı yok."
+          },
+          {
+            "item": "API:Sayfalama",
+            "reason": "Story'de sayfalama/filtre yok."
+          },
+          {
+            "item": "API:Dayanıklılık",
+            "reason": "Story'de bağımlı servis davranışı yok."
+          },
+          {
+            "item": "API:Hız sınırı",
+            "reason": "Kaynak tanımlamıyor; Q4."
+          }
+        ],
+        "observations": [],
+        "automation_open_points": [
+          "API sözleşmesi (endpoint, yöntem, gövde alanları, durum kodları) yok; istekler amaçla tarif edildi.",
+          "Otomasyon aracı bilinmiyor.",
+          "Oturum çerezinin adı ve katalog yanıtını doğrulama yöntemi belirsiz."
+        ],
+        "config_matrix": {
+          "parameters": [],
+          "constraints": []
+        },
+        "testability_gaps": [],
+        "cases": [
+          {
+            "title": "Geçerli bayi bilgileriyle giriş yapılınca ürün kataloğu açılır",
+            "type": "positive",
+            "technique": [
+              "EP",
+              "UC"
+            ],
+            "covers": [
+              "EP-V1",
+              "UC-MF"
+            ],
+            "priority": "P1",
+            "priority_rationale": "Giriş ana akıştır; bozulursa bayi portalı kullanamaz, olasılık orta, iş kritikliği yüksek.",
+            "acceptance_criteria_refs": [
+              "AC1"
+            ],
+            "platform": "API",
+            "test_level": "SYSTEM",
+            "verification_point": "API",
+            "requires_real_device": false,
+            "standard_refs": [],
+            "readiness": "ready",
+            "assumption_refs": [],
+            "open_question_refs": [],
+            "preconditions": [
+              "Test ortamında bayi1 hesabı mevcut ve oturum açık değil"
+            ],
+            "test_data": [
+              {
+                "name": "kullanici_adi",
+                "value": "bayi1",
+                "class": "EP-V1",
+                "synthetic": true,
+                "is_attack_payload": false
+              },
+              {
+                "name": "parola",
+                "value": "Demo123!",
+                "class": "EP-V1",
+                "synthetic": true,
+                "is_attack_payload": false
+              }
+            ],
+            "steps": [
+              {
+                "id": "S1",
+                "action": "Giriş isteği kullanıcı adı ve parola ile gönderilir (\"Giriş yap\" eylemi)",
+                "data": "bayi1 / Demo123!",
+                "expected": "Giriş başarılı olur ve oturum çerezi oluşturulur"
+              },
+              {
+                "id": "S2",
+                "action": "Oturumla ürün kataloğu (\"Katalog\") istenir",
+                "data": null,
+                "expected": "Ürün kataloğu açılır; P-001, P-002, P-003, P-004 ürünleri listelenir"
+              }
+            ],
+            "expected_result": "Geçerli kullanıcı adı ve parolayla giriş yapılır ve ürün kataloğu açılır.",
+            "teardown": [
+              "Oturumu kapat (\"Çıkış yap\")"
+            ],
+            "tags": [
+              "AI-generated",
+              "smoke",
+              "security"
+            ]
+          },
+          {
+            "title": "Hatalı parolayla giriş \"Kullanıcı adı veya parola hatalı\" mesajı verir ve giriş yapılmaz",
+            "type": "negative",
+            "technique": [
+              "EP",
+              "UC"
+            ],
+            "covers": [
+              "EP-I1",
+              "UC-EF1"
+            ],
+            "priority": "P1",
+            "priority_rationale": "Hatalı parolayla girişin reddedilmemesi güvenlik açığıdır; olasılık düşük-orta, etki yüksek.",
+            "acceptance_criteria_refs": [
+              "AC2"
+            ],
+            "platform": "API",
+            "test_level": "SYSTEM",
+            "verification_point": "API",
+            "requires_real_device": false,
+            "standard_refs": [],
+            "readiness": "ready",
+            "assumption_refs": [],
+            "open_question_refs": [],
+            "preconditions": [
+              "bayi1 hesabı mevcut ve oturum açık değil"
+            ],
+            "test_data": [
+              {
+                "name": "kullanici_adi",
+                "value": "bayi1",
+                "class": "EP-I1",
+                "synthetic": true,
+                "is_attack_payload": false
+              },
+              {
+                "name": "hatali_parola",
+                "value": "Yanlis456!",
+                "class": "EP-I1",
+                "synthetic": true,
+                "is_attack_payload": false
+              }
+            ],
+            "steps": [
+              {
+                "id": "S1",
+                "action": "Giriş isteği geçerli kullanıcı adı ve hatalı parola ile gönderilir",
+                "data": "bayi1 / Yanlis456!",
+                "expected": "\"Kullanıcı adı veya parola hatalı\" mesajı gösterilir; giriş yapılmaz"
+              },
+              {
+                "id": "S2",
+                "action": "Oluşmuş bir oturum olmadan ürün kataloğu (\"Katalog\") istenir",
+                "data": null,
+                "expected": "Ürün kataloğu açılmaz; kimliği doğrulanmış oturum yoktur"
+              }
+            ],
+            "expected_result": "\"Kullanıcı adı veya parola hatalı\" mesajı gösterilir, giriş yapılmaz ve katalog erişilemez.",
+            "teardown": [],
+            "tags": [
+              "AI-generated",
+              "security"
+            ]
+          },
+          {
+            "title": "Hatalı parola hata yanıtı yığın izi, SQL veya parola içermez",
+            "type": "negative",
+            "technique": [
+              "CL"
+            ],
+            "covers": [
+              "CL-1"
+            ],
+            "priority": "P2",
+            "priority_rationale": "Bilgi sızıntısı saldırıya yardımcı olur; olasılık düşük, ana akışı kırmaz.",
+            "acceptance_criteria_refs": [
+              "AC2"
+            ],
+            "platform": "API",
+            "test_level": "SYSTEM",
+            "verification_point": "API",
+            "requires_real_device": false,
+            "standard_refs": [],
+            "readiness": "ready",
+            "assumption_refs": [],
+            "open_question_refs": [],
+            "preconditions": [
+              "bayi1 hesabı mevcut"
+            ],
+            "test_data": [
+              {
+                "name": "kullanici_adi",
+                "value": "bayi1",
+                "class": null,
+                "synthetic": true,
+                "is_attack_payload": false
+              },
+              {
+                "name": "hatali_parola",
+                "value": "Yanlis456!",
+                "class": "EP-I1",
+                "synthetic": true,
+                "is_attack_payload": false
+              }
+            ],
+            "steps": [
+              {
+                "id": "S1",
+                "action": "Giriş isteği hatalı parola ile gönderilir",
+                "data": "bayi1 / Yanlis456!",
+                "expected": "\"Kullanıcı adı veya parola hatalı\" mesajı gösterilir"
+              },
+              {
+                "id": "S2",
+                "action": "Yanıt gövdesi ve başlıkları incelenir",
+                "data": null,
+                "expected": "Yanıtta yığın izi, SQL metni veya girilen parola yer almaz"
+              }
+            ],
+            "expected_result": "Hata yanıtı yalnızca tanımlı mesajı içerir; teknik detay veya parola ifşa edilmez.",
+            "teardown": [],
+            "tags": [
+              "AI-generated",
+              "security"
+            ]
+          }
+        ]
+      },
+      "mode": "live",
+      "error": null,
+      "cost_usd": 0.09534,
+      "sure_ms": 37064
+    }
+  ],
+  "tamamlandi": true,
+  "set_vaka_sayisi": 1,
+  "kosu_sayisi": 1,
+  "maliyet_usd": 0.09534,
+  "butce_usd": 3.0,
+  "calisma_alani_basligi": true,
+  "guardrails_version": 1,
+  "kayit_adaylari": null,
+  "cagri_kaydi": "platform-api-v1-2026-11-12.calls.jsonl",
+  "cagri_sayisi": 2,
+  "cagri_defteri": "/Users/gokhansipahi/projects/agent-probe/tp-wt-v3/exports/eval-live/ai_call.jsonl",
+  "amac": "case_generation",
+  "via_flow": false,
+  "icerik_hash": "sha256:0f8dec4368ebf2dc1a561683b37882194abecabe6d67efb8882ad05f788facdd",
+  "olcumler": null,
+  "dagilim": {
+    "toplam": {
+      "kosu": 1,
+      "readiness": {
+        "ready": 3
+      },
+      "technique": {
+        "CL": 1,
+        "EP": 2,
+        "UC": 2
+      },
+      "case": 3,
+      "coverage_items": 7,
+      "covered_items": 5,
+      "not_covered": 5,
+      "open_questions": 5,
+      "tekrar": 0,
+      "tekrar_orani": 0.0
+    },
+    "kosular": {
+      "tpd-4-api": {
+        "case": 3,
+        "tekrar": 0,
+        "tekrar_ciftleri": [],
+        "readiness": {
+          "ready": 3
+        },
+        "technique": {
+          "CL": 1,
+          "EP": 2,
+          "UC": 2
+        },
+        "coverage_items": 7,
+        "covered_items": 5,
+        "invalid_items": 4,
+        "not_covered": 5,
+        "open_questions": 5,
+        "assumptions": 0
+      }
+    },
+    "uydurma": [],
+    "readiness_ihlali": []
+  }
+}

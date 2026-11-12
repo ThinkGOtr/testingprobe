@@ -105,6 +105,10 @@ approves; in round 2 test cases are written only from the approved model.
   limit or state. Idempotency, rate limit, timeout, retry, lockout and similar behaviour appear in
   the model only if the source states them. Hidden limits (column length, integer overflow, leap
   day, midnight) are items only when the source states them.
+- **State durations are questions.** [ISTQB] For a state model, a state's duration, timeout,
+  retry count or automatic exit (for example how long a lock lasts, whether it opens by itself)
+  that the source does not state is an open question; record it even when no transition table
+  row asks for it.
 - **Silence is a question.** When the source does not define an outcome, the item stays in the
   model with its definition saying the outcome is undefined, and an open question records it;
   you do not pick an outcome.

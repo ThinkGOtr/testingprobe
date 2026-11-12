@@ -258,6 +258,10 @@ class CaseSetAuditRequest(BaseModel):
     generated_set: Mapping[str, Any]  # {"cases": [...], "ozet": {...}}
     review_result: Mapping[str, Any] | None = None
     policies: Sequence[str] = ()
+    # Üretime verilen test verisi bloğu (güvenilmeyen; kullanıcı, bayi adı, fiyat, UI etiketi
+    # kaynağıdır) ve izinli test ortamları. Yoksa girdi eskisiyle aynıdır (golden'lar değişmez).
+    test_data_block: str | None = None
+    allowed_hosts: Sequence[str] = ()
 
 
 class CaseSetAuditResult(BaseModel):

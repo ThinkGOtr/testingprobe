@@ -292,6 +292,13 @@ def _output_check(purpose: str, expect: Mapping[str, Any]) -> dict[str, Any]:
         from tp_core.features.cases.schema import generation_output_problems
 
         return {"output_check": lambda o: generation_output_problems(o, acs)}
+    if purpose == "case_deepening":
+        from tp_core.gateway.eval_agents import generation_rule_problems
+
+        def derin_check(o: Any) -> list[str]:
+            return generation_rule_problems(o, ek_set=True) if isinstance(o, dict) else []
+
+        return {"output_check": derin_check}
     if purpose == "design_model":
         from tp_core.features.cases.model import model_problems
 

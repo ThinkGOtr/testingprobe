@@ -264,25 +264,25 @@ varsa çıkış 1. Bu tablo kayıtla aynı olmalıdır (`test_evaluation_status.
 | `guardrails` (ortak güvenlik kuralları) | v1 | **canlı değerlendirme bekliyor** |
 | `requirement-review` | v3 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
 | `consistency-check` | v4 | **canlı değerlendirme bekliyor** |
-| `case-generation` | v3 | **canlı değerlendirme bekliyor** |
+| `case-generation` | v3 | **canlı değerlendirildi** (2026-11-12; `evaluation/results/case-generation-v3-2026-11-12.json`) |
 | `design-model` (011 F3 iki tur; `design_model` golden'ları) | v1 | **canlı değerlendirme bekliyor** |
-| `case-review` (011 P8; `case_review` golden'ları) | v1 | **canlı değerlendirme bekliyor** |
+| `case-review` (011 P8; `case_review` golden'ları) | v1 | **canlı değerlendirildi** (2026-11-12; `evaluation/results/case-review-v1-2026-11-12.json`) |
 | `case-audit` (011 P9, Agent Probe denetimi; `case_audit` golden'ları) | v1 | **canlı değerlendirme bekliyor** |
 | `platform-common` (011 F4 ortak platform eki; `case-generation` girdisine eklenir) | v1 | **canlı değerlendirme bekliyor** |
 | `platform-web` (P1; golden `case_generation/golden/platform-web/TPD-4`) | v1 | **canlı değerlendirme bekliyor** |
-| `platform-mobile` (P2) | v1 | **canlı değerlendirme bekliyor** |
-| `platform-desktop` (P3) | v1 | **canlı değerlendirme bekliyor** |
-| `platform-api` (P4) | v1 | **canlı değerlendirme bekliyor** |
-| `platform-data` (P4.5) | v1 | **canlı değerlendirme bekliyor** |
+| `platform-mobile` (P2) | v1 | **canlı değerlendirildi** (2026-11-12; `evaluation/results/platform-mobile-v1-2026-11-12.json`) |
+| `platform-desktop` (P3) | v1 | **canlı değerlendirildi** (2026-11-12; `evaluation/results/platform-desktop-v1-2026-11-12.json`) |
+| `platform-api` (P4) | v1 | **canlı değerlendirildi** (2026-11-12; `evaluation/results/platform-api-v1-2026-11-12.json`) |
+| `platform-data` (P4.5) | v1 | **canlı değerlendirildi** (2026-11-12; `evaluation/results/platform-data-v1-2026-11-12.json`) |
 | `case-negative` (P5; `case_deepening`) | v1 | **canlı değerlendirme bekliyor** |
-| `case-technique` (P6; `case_deepening`) | v1 | **canlı değerlendirme bekliyor** |
+| `case-technique` (P6; `case_deepening`) | v1 | **canlı değerlendirildi** (2026-11-12; `evaluation/results/case-technique-v1-2026-11-12.json`) |
 | `verify-and-map` (+ `verify_and_map` golden'ları) | v3 | **canlı değerlendirme bekliyor** |
 | `verify-and-map-app` (+ `verify_and_map_app` golden'ları; 009 mobil/masaüstü) | v1 | **canlı değerlendirme bekliyor** |
 | `triage` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
 | `bug-draft` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
 | `dup-rank` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
 | `assistant` (portal asistanı; `assistant` + `assistant_deep` amaçları, `assistant/*` kuralları) | v1 | **değerlendirme sonrası içerik değişti (içerik hash'i uyuşmuyor)** — 2026-11-04 canlı değerlendirildi (Haiku 38/40, Sonnet 40/40); 011 ile `/ajan-urunleri` rotası ve asistan denetimi (`assistant-guard`) eklendi, denetim açık `--via-flow` yeniden koşusu gerekir |
-| `assistant-guard` (011 F7 asistan denetimi; Agent Probe portu) | v1 | **canlı değerlendirme bekliyor** |
+| `assistant-guard` (011 F7 asistan denetimi; Agent Probe portu) | v1 | **canlı değerlendirildi** (2026-11-12; `evaluation/results/assistant-guard-v1-2026-11-12.json`) |
 
 2026-11-01'de `requirement-review` v3, `triage`, `bug-draft` ve `dup-rank` v2 canlı modelle
 (`make eval-live A='--bundle … --update-status'`, sert bütçe tavanı 1,50 USD, gerçek harcama

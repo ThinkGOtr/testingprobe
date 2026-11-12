@@ -71,15 +71,15 @@ bundles:
       TPD-1 karma sepet DT + Q1, TPD-4 kayıtlı olmayan kullanıcı Q1.'
   case-review:
     version: 1
-    status: pending
-    note: '011 D şeridi (P8): üretimden sonra otomatik çalışan eleştirmen turu (12 madde, skor kodda sayılır,
-      tavsiye niteliğinde). Golden çıktıları elle hazırlandı (TPD-1, f2-kod-hatasi/TPD-1, TPD-3, TPD-4,
-      SERBEST; girdi beyanı set_hash''e bağlı). Değerlendirme seti: rules/evaluation/case-review.json
-      (golden v3 setlerinden bozma yoluyla: tekrar case, uydurma beklenen, kapsanmayan AC, ölçülemeyen
-      sonuç; `review_set_problems`). Canlı değerlendirme yapılmadı; onaylı istisna yok. 011 D2 (sürüm
-      aynı; canlı değerlendirilmedi): madde 3 (P1 sınırı out_of_scope en az ACIK_BILGI_GEREKLI), madde
-      4 (tanımsız birleşim ACIK_BILGI_GEREKLI), madde 9 Data, madde 11 P1 seçiciliği; C10 reddedilmiş
-      TPD-1 seti için ayrı golden.'
+    status: evaluated
+    note: 'Canlı değerlendirme 2026-11-12, claude-sonnet-5-5 (anthropic), 5/5 vaka geçti: evaluation/results/case-review-v1-2026-11-12.json'
+    evaluation:
+      date: '2026-11-12'
+      model: claude-sonnet-5-5
+      provider: anthropic
+      results: evaluation/results/case-review-v1-2026-11-12.json
+      guardrails_version: 1
+      calls: evaluation/results/case-review-v1-2026-11-12.calls.jsonl
   case-audit:
     version: 1
     status: pending
@@ -204,27 +204,52 @@ bundles:
       golden''da CL ve işaretli SQLi case''i.'
   platform-mobile:
     version: 1
-    status: pending
-    note: '011 F4: P2 Mobil eki. Golden yok (REPLAY duman koşusu REPLAY-MISS verir). Seti: evaluation/platform-mobile.json.
-      Canlı değerlendirme yapılmadı; onaylı istisna yok. 011 D2 (sürüm aynı; canlı değerlendirilmedi):
-      CL-n bağlantısı.'
+    status: evaluated
+    note: 'Canlı değerlendirme 2026-11-12, claude-sonnet-5-5 (anthropic), 1/1 vaka geçti: evaluation/results/platform-mobile-v1-2026-11-12.json'
+    evaluation:
+      date: '2026-11-12'
+      model: claude-sonnet-5-5
+      provider: anthropic
+      results: evaluation/results/platform-mobile-v1-2026-11-12.json
+      guardrails_version: 1
+      calls: evaluation/results/platform-mobile-v1-2026-11-12.calls.jsonl
+      icerik_hash: sha256:6d4f070f03a843c8f41d9e226f109a61fab646e215cce15997f305e250a80762
   platform-desktop:
     version: 1
-    status: pending
-    note: '011 F4: P3 Desktop eki. Golden yok. Seti: evaluation/platform-desktop.json. Canlı değerlendirme
-      yapılmadı; onaylı istisna yok. 011 D2 (sürüm aynı; canlı değerlendirilmedi): iki değerli BVA (yol
-      uzunluğu).'
+    status: evaluated
+    note: 'Canlı değerlendirme 2026-11-12, claude-sonnet-5-5 (anthropic), 1/1 vaka geçti: evaluation/results/platform-desktop-v1-2026-11-12.json'
+    evaluation:
+      date: '2026-11-12'
+      model: claude-sonnet-5-5
+      provider: anthropic
+      results: evaluation/results/platform-desktop-v1-2026-11-12.json
+      guardrails_version: 1
+      calls: evaluation/results/platform-desktop-v1-2026-11-12.calls.jsonl
+      icerik_hash: sha256:1040b3beddc59d7783a2f08b10ccce119c7c3e8f62311f2a52e3ee95edb3a745
   platform-api:
     version: 1
-    status: pending
-    note: '011 F4: P4 API eki. Golden yok. Seti: evaluation/platform-api.json. Canlı değerlendirme yapılmadı;
-      onaylı istisna yok. 011 D2 (sürüm aynı; canlı değerlendirilmedi): CL-n bağlantısı.'
+    status: evaluated
+    note: 'Canlı değerlendirme 2026-11-12, claude-sonnet-5-5 (anthropic), 1/1 vaka geçti: evaluation/results/platform-api-v1-2026-11-12.json'
+    evaluation:
+      date: '2026-11-12'
+      model: claude-sonnet-5-5
+      provider: anthropic
+      results: evaluation/results/platform-api-v1-2026-11-12.json
+      guardrails_version: 1
+      calls: evaluation/results/platform-api-v1-2026-11-12.calls.jsonl
+      icerik_hash: sha256:0f8dec4368ebf2dc1a561683b37882194abecabe6d67efb8882ad05f788facdd
   platform-data:
     version: 1
-    status: pending
-    note: '011 F4: P4.5 Data/entegrasyon eki. Golden yok. Seti: evaluation/platform-data.json. Canlı değerlendirme
-      yapılmadı; onaylı istisna yok. 011 D2 (sürüm aynı; canlı değerlendirilmedi): iki değerli BVA (batch
-      size).'
+    status: evaluated
+    note: 'Canlı değerlendirme 2026-11-12, claude-sonnet-5-5 (anthropic), 1/1 vaka geçti: evaluation/results/platform-data-v1-2026-11-12.json'
+    evaluation:
+      date: '2026-11-12'
+      model: claude-sonnet-5-5
+      provider: anthropic
+      results: evaluation/results/platform-data-v1-2026-11-12.json
+      guardrails_version: 1
+      calls: evaluation/results/platform-data-v1-2026-11-12.calls.jsonl
+      icerik_hash: sha256:77bd71cc11ec54fca189570c284779ebd4293d364cad744fb9deb445a07e92fb
   case-negative:
     version: 1
     status: pending
@@ -235,16 +260,25 @@ bundles:
       Risk notları / Hata geçmişi.'
   case-technique:
     version: 1
-    status: pending
-    note: '011 F4: P6 teknikle derinleştirme (amaç case_deepening). Golden: replay/case_deepening/golden/teknik-ep/TPD-4.json
-      (elle hazırlandı). Seti: evaluation/case-technique.json. Canlı değerlendirme yapılmadı; onaylı istisna
-      yok. 011 D2 (sürüm aynı; canlı değerlendirilmedi): dahil/hariç sessizliği açık soru, iki değerli
-      BVA [Ekip] seçimi (BVA kipi), ST-T/ST-X, [Ekip] etiketleri, Hata geçmişi.'
+    status: evaluated
+    note: 'Canlı değerlendirme 2026-11-12, claude-sonnet-5-5 (anthropic), 2/2 vaka geçti: evaluation/results/case-technique-v1-2026-11-12.json'
+    evaluation:
+      date: '2026-11-12'
+      model: claude-sonnet-5-5
+      provider: anthropic
+      results: evaluation/results/case-technique-v1-2026-11-12.json
+      guardrails_version: 1
+      calls: evaluation/results/case-technique-v1-2026-11-12.calls.jsonl
+      icerik_hash: sha256:5efefacd11022c7f0547c564e6244f431de7f57b1a8ce67d37d6872a52636d77
   assistant-guard:
     version: 1
-    status: pending
-    note: '011 F7 asistan denetimi (Agent Probe portu, purpose assistant_guard, Haiku 5.5): soru/cevap
-      puanı + kategoriler; karar kodda (eşikler 40/70 + kategori tabanları). Golden çıktıları elle hazırlandı.
-      Değerlendirme seti: rules/evaluation/assistant-guard.json (17 Türkçe vaka; karar beklentisi, yanlış
-      engelleme ve kaçırma sayımı, güvenlik/gizlilik kaçırma hedefi 0). Canlı değerlendirme yapılmadı;
-      onaylı istisna yok.'
+    status: evaluated
+    note: 'Canlı değerlendirme 2026-11-12, claude-haiku-5-5 (anthropic), 17/17 vaka geçti: evaluation/results/assistant-guard-v1-2026-11-12.json'
+    evaluation:
+      date: '2026-11-12'
+      model: claude-haiku-5-5
+      provider: anthropic
+      results: evaluation/results/assistant-guard-v1-2026-11-12.json
+      guardrails_version: 1
+      calls: evaluation/results/assistant-guard-v1-2026-11-12.calls.jsonl
+      icerik_hash: sha256:f106a86989c742f625fff0c0e212c6f8187b1a34fe15cd551f70079270d3e45a

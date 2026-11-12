@@ -612,7 +612,19 @@ def build_request(
         generated_set=review_mod.set_payload([tc.icerik for tc in girdi.cases], girdi.ozet),
         review_result=review_sonucu,
         policies=policies(),
+        test_data_block=_test_verisi_blogu(),
+        allowed_hosts=allowed_hosts(),
     )
+
+
+def _test_verisi_blogu() -> str | None:
+    """Üretime verilen test verisi bloğu (denetçi aynı kaynağı görsün; yoksa None)."""
+    from tp_core.features.cases import testdata
+
+    try:
+        return testdata.block()
+    except Exception:  # veri kaynağı yoksa denetim yine çalışır
+        return None
 
 
 def _requirement_text(req: Any) -> str:

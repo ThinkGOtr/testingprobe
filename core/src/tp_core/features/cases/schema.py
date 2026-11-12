@@ -379,7 +379,7 @@ def consistency_problems(case: Mapping[str, Any], ozet: Mapping[str, Any] | None
 
 
 # Platform eki kategorisi (`Web:Responsive`): not_covered'da kapsam öğesi gibi geçerlidir.
-PLATFORM_KATEGORISI = re.compile(r"(Web|Mobil|Desktop|API|Data):[^\n]{1,32}")
+PLATFORM_KATEGORISI = re.compile(r"(Web|Mobil|Desktop|API|Data):[^\n]{1,32}|N(10|[1-9])")
 
 
 def set_problems(

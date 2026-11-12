@@ -42,6 +42,7 @@ from tp_core.features.cases.schema import (
     acceptance_criteria,
     consistency_problems,
     normalize_ozet,
+    rule_reask_enabled,
     set_problems,
 )
 from tp_core.models import CaseUretim, Requirement, TestCase, WorkflowInstance, session_scope
@@ -375,6 +376,15 @@ def _reddet(rid: uuid.UUID, eylem: str, veri: Mapping[str, Any], neden: str) -> 
     raise PermanentJobError(neden)
 
 
+def _kural_denetimi() -> Any:
+    """Derinleştirme çıktısının deterministik kuralları (§4.2, ek set: AC kapsamı tek başına
+    aranmaz); ihlalde geçit modelden düzeltme ister. Değerlendirme denetleyicisiyle aynı kural
+    (`eval_agents.generation_rule_problems`, çapraz testli)."""
+    from tp_core.gateway.eval_agents import generation_rule_problems
+
+    return lambda o: generation_rule_problems(o, ek_set=True) if isinstance(o, dict) else []
+
+
 def run_deepening(
     ctx: JobContext, engine: Engine, gateway: ModelGateway | None = None
 ) -> dict[str, Any]:
@@ -427,6 +437,7 @@ def run_deepening(
             workflow_id=wf_id,
             call_id=deterministic_call_id(ctx.job_id, PURPOSE),
             ek={"derinlestirme": {"tur": tur, "teknik": teknik, "uretim_no": uretim_no}},
+            output_check=_kural_denetimi() if rule_reask_enabled() else None,
         )
     except ReplayNotFound as exc:
         neden = (

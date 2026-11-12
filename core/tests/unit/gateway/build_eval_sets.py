@@ -483,15 +483,22 @@ TEST_LEVEL = "SYSTEM"
 # Teknik doğruluk (011 #5): sınır/bölüm konusu bir kapsam öğesi tanımında ya da negatif kapsam /
 # kapsanmayan kararında anılmalı (`must_cover_items_like`); story'de seçilmesi beklenen teknikler.
 _ESIK_750 = {"topic": "minimum sipariş tutarı sınırı 750,00 TL", "keywords": ["750,00"]}
+
+
+def _esik(n: str) -> list[str]:
+    """Adet eşiğinin modelin kullandığı yazımları (canlı eval 2026-11-12: "adet 6" de çıktı)."""
+    return [f"{n} adet", f"adedi {n}", f"{n} adette", f"adet {n}"]
+
+
 ITEMS_LIKE: dict[str, list[dict[str, Any]]] = {
     "TPD-1": [
-        {"topic": "bedava eşiğinin altı: 5 adet", "keywords": ["5 adet", "adedi 5", "5 adette"]},
-        {"topic": "bedava eşiği: 6 adet", "keywords": ["6 adet", "adedi 6", "6 adette"]},
+        {"topic": "bedava eşiğinin altı: 5 adet", "keywords": _esik("5")},
+        {"topic": "bedava eşiği: 6 adet", "keywords": _esik("6")},
         _ESIK_750,
     ],
     "f2-kod-hatasi/TPD-1": [
-        {"topic": "bedava eşiğinin altı: 6 adet", "keywords": ["6 adet", "adedi 6", "6 adette"]},
-        {"topic": "bedava eşiği: 7 adet", "keywords": ["7 adet", "adedi 7", "7 adette"]},
+        {"topic": "bedava eşiğinin altı: 6 adet", "keywords": _esik("6")},
+        {"topic": "bedava eşiği: 7 adet", "keywords": _esik("7")},
         _ESIK_750,
     ],
     "SERBEST": [_ESIK_750],
@@ -1041,6 +1048,8 @@ def _audit_vaka(
         generated_set=review.set_payload(cases, ozet),
         review_result=None,
         policies=denetim_akisi.policies(RULES),
+        test_data_block=_test_data_block(),
+        allowed_hosts=denetim_akisi.allowed_hosts(RULES),
     )
     # Üretimdeki deterministik alt sınır (`run_audit`): rapor sertleştirilmiş kararı da ölçer.
     gereksinim = "\n".join(
@@ -1372,8 +1381,9 @@ def platform_cases(bundle: str) -> list[dict[str, Any]]:
         }
         if key in SILENT:
             expect["must_not_be_ready_about"] = SILENT[key]
-        if case_id == "tpd-4-web":
-            expect["observations_min"] = 1
+        # Gözlem yalnız benimsenmeyen bir standart eşiği söz konusuysa gerekir (WCAG burada
+        # benimsenmiş); sayı zorunluluğu konmaz. Benimsenmeyen eşiğin beklenen sonuca girmemesi
+        # `observation_thresholds` ile denetlenir (canlı eval 2026-11-12).
         out.append(
             {
                 "id": case_id,
