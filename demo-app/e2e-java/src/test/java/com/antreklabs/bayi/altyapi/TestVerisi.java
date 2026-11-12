@@ -43,7 +43,14 @@ public final class TestVerisi {
 
   public TestVerisi(Ayarlar ayarlar) {
     this.ayarlar = ayarlar;
-    this.istemci = HttpClient.newBuilder().connectTimeout(ZAMAN_ASIMI).cookieHandler(new CookieManager()).build();
+    // HTTP/1.1: varsayılan HTTP/2 düz http üzerinde h2c yükseltmesi dener; vite preview vekili
+    // (<BASE_URL>/api) bu isteği yanıtsız bırakıp zaman aşımına düşürür.
+    this.istemci =
+        HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_1_1)
+            .connectTimeout(ZAMAN_ASIMI)
+            .cookieHandler(new CookieManager())
+            .build();
   }
 
   /** Ortamdan yalıtım kipi; geçersiz birleşimlerde açıklayıcı hata (web: isolationMode). */
