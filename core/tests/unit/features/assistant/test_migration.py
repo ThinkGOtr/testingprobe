@@ -159,10 +159,13 @@ def test_tp_app_asistan_tablolarinda_tam_dml(c: psycopg.Connection) -> None:
     )
     c.execute(_HIZ_EKLE, (uid,))
     c.execute(_OLAY_EKLE, (uid, mid))
-    c.execute(
-        "UPDATE asistan_guvenlik_olay SET ayrinti = '{\"sayi\": 1}'::jsonb WHERE kullanici_id = %s",
-        (uid,),
-    )
+    # Güvenlik olayı yazıldıktan sonra değiştirilmez: tp_app'te UPDATE yok (0021).
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        c.execute(
+            "UPDATE asistan_guvenlik_olay SET ayrinti = '{\"sayi\": 1}'::jsonb "
+            "WHERE kullanici_id = %s",
+            (uid,),
+        )
     for tablo in sorted(TABLOLAR):
         c.execute(f"DELETE FROM {tablo}")
 
@@ -363,6 +366,11 @@ def test_guvenlik_olay_indeksi_ve_mesaj_silinince_kalir(c: psycopg.Connection) -
         "SELECT indexdef FROM pg_indexes WHERE indexname = 'asistan_guvenlik_olay_kullanici_ix'"
     ).fetchone()
     assert tanim is not None and "(kullanici_id, zaman DESC)" in tanim[0]
+    kismi = c.execute(
+        "SELECT indexdef FROM pg_indexes WHERE indexname = 'asistan_guvenlik_olay_mesaj_ix'"
+    ).fetchone()
+    assert kismi is not None and "(mesaj_id)" in kismi[0]
+    assert "WHERE (mesaj_id IS NOT NULL)" in kismi[0]
 
 
 # ------------------------------------------------------------------ tool_call kanalı

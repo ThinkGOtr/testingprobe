@@ -29,7 +29,7 @@ POLITIKA_DOSYASI: Final = "rol-politikasi.yaml"
 SURUM: Final = 1
 VARSAYILAN_ROL: Final = "goruntuleyici"
 TUM: Final = "tum"
-EK_UST: Final = 450
+EK_UST: Final = 400  # rol-politikasi.yaml "ek ≤ 400 karakter" (ANALIZ §4)
 # K3: kuralların yazıldığı 9 rol (dosyada hepsi zorunlu). `sunucu` geçiş rolüdür (K10).
 POLITIKA_ROLLERI: Final[tuple[str, ...]] = (
     "sistem_yoneticisi",

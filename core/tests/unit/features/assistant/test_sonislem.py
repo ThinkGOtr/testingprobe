@@ -8,6 +8,7 @@ import threading
 import time
 import uuid
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -363,6 +364,80 @@ def test_kisa_alinti_yalniz_tam_satirsa_gecer() -> None:
         SonIslemBaglami(dogrulayici=d),
     )
     assert [k["dogrulandi"] for k in cevap["kaynaklar"]] == [True, False, True, False]
+
+
+def test_rolde_kod_veri_araci_yoksa_kaynak_dogrulanmaz() -> None:
+    """SEC10: rolün okuyamadığı uygulama kodu/verisi için doğrulama evet/hayır kâhini olmasın;
+    `get_file_contents` / `db_query` rolde yoksa dış okuma hiç yapılmaz, "doğrulanmadı" döner."""
+    oturum = _oturum(maske=True)
+    satirlar = [("ABC", 10)]
+    db_cikti = (
+        f"query: SELECT kod FROM kampanya\nresult_digest: {masked_digest(satirlar)}\n<untrusted>…"
+    )
+    havuz = KanitHavuzu()
+    AracSarmalayici(
+        _baglam(oturum),
+        mevcut={"db_query": lambda _a: db_cikti},
+        mevcut_turleri={"db_query": "uygulama_verisi"},
+        havuz=havuz,
+    )("db_query", {})
+
+    class Sayan(SahteDogrulayici):
+        def __init__(self, **kw: Any) -> None:
+            super().__init__(**kw)
+            self.okunan: list[str] = []
+
+        def uygulama_satirlari(self, yol: str) -> list[str] | None:
+            self.okunan.append(yol)
+            return super().uygulama_satirlari(yol)
+
+    kaynaklar = [
+        _kaynak("uygulama_kodu", "src/k.py:1", "x = 1"),
+        _kaynak("uygulama_verisi", "k1", ""),
+    ]
+    d = Sayan(uygulama={"src/k.py": ["x = 1"]}, satirlar=satirlar)
+    kapali = isle(
+        _cikti(kaynaklar=kaynaklar),
+        SonIslemBaglami(
+            havuz=havuz,
+            oturum=oturum,
+            dogrulayici=d,
+            izinli_araclar=frozenset({"product_search", "product_read", "probe_get"}),
+        ),
+    )
+    assert [(k["dogrulandi"], k["neden"]) for k in kapali["kaynaklar"]] == [
+        (False, "doğrulanmadı"),
+        (False, "doğrulanmadı"),
+    ]
+    assert d.okunan == [] and d.sorgular == []
+    acik = isle(
+        _cikti(kaynaklar=kaynaklar),
+        SonIslemBaglami(
+            havuz=havuz,
+            oturum=oturum,
+            dogrulayici=d,
+            izinli_araclar=frozenset({"get_file_contents", "db_query"}),
+        ),
+    )
+    assert [k["dogrulandi"] for k in acik["kaynaklar"]] == [True, True]
+    assert d.okunan == ["src/k.py"] and d.sorgular == ["SELECT kod FROM kampanya"]
+
+
+def test_cikti_sinyalleri_kural_dizininden_ve_bozuk_dosya_kayda_sinif_adi(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    (tmp_path / "assistant").mkdir()
+    (tmp_path / "assistant" / "sinyaller.yaml").write_text(
+        "surum: 1\nsinyaller:\n  - {id: a, yon: cikti, regex: gizli-desen-xyz, ipucu: y}\n",
+        encoding="utf-8",
+    )
+    cikti = _cikti(
+        cevap_bloklari=[{"tur": "paragraf", "metin": "Yapay zeka onayladı.", "maddeler": []}]
+    )
+    with caplog.at_level("WARNING"):
+        cevap = isle(cikti, SonIslemBaglami(rules_dir=tmp_path))
+    assert cevap["notlar"] == []  # varsayılan kurallar değil, verilen (bozuk) dizin kullanıldı
+    assert "SinyalHatasi" in caplog.text and "gizli-desen-xyz" not in caplog.text
 
 
 def test_havuz_kaynagi_turu_uyusmali_ve_500_karakter_sonrasi_alinti_dogrulanir() -> None:

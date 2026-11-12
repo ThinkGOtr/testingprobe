@@ -8,7 +8,7 @@
 #   bunların tanımını görür; yürütücü her çağrıda yeniden denetler.
 # - `etiket`: prompt'taki "Kullanıcının rolü: <etiket>" satırı.
 # - `ek`: rol uzantısı; ilk kullanıcı mesajında rol satırının altına sunucu metni olarak eklenir
-#   (≤ 400 karakter).
+#   (≤ 400 karakter, boşluklar tekleştirildikten sonra; `rol_politikasi.EK_UST` yüklemede zorlar).
 # - Bilinmeyen portal rolü → `goruntuleyici` (en dar; fail-closed).
 # - `TP_ASISTAN_VERI_ROLLERI` (db_schema/db_query) bunun üstüne ek daraltmadır; müşteri verisi
 #   kurulumunda (`TP_ASISTAN_MUSTERI_VERISI=1`) boşsa DB araçları hiçbir role verilmez (K6).

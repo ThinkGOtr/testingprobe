@@ -237,11 +237,18 @@ class AsistanGuvenlikOlay(Base):
             name="asistan_guvenlik_olay_ciddi_ck",
         ),
         Index("asistan_guvenlik_olay_kullanici_ix", "kullanici_id", text("zaman DESC")),
+        # Dondurma sayımı "ciddi olay almış soru" denetimini soru kimliğiyle yapar (K11).
+        Index(
+            "asistan_guvenlik_olay_mesaj_ix",
+            "mesaj_id",
+            postgresql_where=text("mesaj_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
     kullanici_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("app_user.id", ondelete="CASCADE"))
-    # Reddedilen sorunun mesajı yoktur; mesaj saklama temizliğiyle silinince olay kalır.
+    # Olayın ait olduğu kullanıcı sorusu (`rol='user'`; `olay.soru_kimligi`). Reddedilen sorunun
+    # mesajı yoktur; mesaj saklama temizliğiyle silinince olay kalır.
     mesaj_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("asistan_mesaj.id", ondelete="SET NULL")
     )

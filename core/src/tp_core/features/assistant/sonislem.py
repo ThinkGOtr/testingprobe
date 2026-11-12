@@ -17,7 +17,9 @@ adım modele sorulmaz:
   `uygulama_kodu` (aynı sha'da forge), `uygulama_verisi` (havuzdaki SQL yeniden çalıştırılır, en
   çok 5, `bitis` içinde; özet `digest_matches_any`), `probe_verisi`/`jira`/`ci_log` (`kN` türü
   uyuşmalı; alıntı havuzdaki metnin aynı oturumla maskesi açılmış hâlinde, yalnız bellekte).
-  Doğrulanmayan kaynak silinmez, `dogrulandi=false` olur.
+  Doğrulanmayan kaynak silinmez, `dogrulandi=false` olur. `uygulama_kodu` / `uygulama_verisi`
+  yalnız soranın rolünde ilgili araç (`get_file_contents` / `db_query`) varsa doğrulanır; yoksa
+  "doğrulanmadı" döner (doğrulama, rolün okuyamadığı kod/veri için evet/hayır kâhini olmasın).
 - **Öneri eylemleri** (yalnız öneri kipi; soru kipinde `oneriler` boşaltılır): rota dışı → `bilgi`;
   taslak metninde URL "[bağlantı kaldırıldı]", Jira wiki bağlantısı ve mention temizlenir; proje
   daima sunucudaki `JIRA_PROJECT`; bilinmeyen anahtar → null (`jira_yorum`/`jira_kaydi` → `bilgi`);
@@ -42,6 +44,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Final, Protocol
 
 from tp_core.features.assistant.siniflandir import normalize
@@ -77,6 +80,10 @@ URUN_SATIR_AZAMI: Final = 400
 ALINTI_EN_AZ: Final = 8  # requirements/verifier.MIN_SNIPPET ile aynı
 
 BAGLANTI_KALDIRILDI: Final = "[bağlantı kaldırıldı]"
+DOGRULANMADI: Final = "doğrulanmadı"
+# Rolde bu araçlar yoksa uygulama kodu / verisi kaynağı doğrulanmaz (kâhin olmasın; SEC10).
+KOD_ARACI: Final = "get_file_contents"
+VERI_ARACI: Final = "db_query"
 NOT_URUN_KAYNAGI_YOK: Final = "Ürün kaynağıyla doğrulanmadı; genel bilgiye dayanıyor."
 NOT_TOPARLAMA: Final = "Cevap süre/bağlam sınırında eldeki bilgiyle toparlandı."
 # §7.1 "bilmiyorsan 'emin değilim' + nereye bakılacağı": model düşük güvenle ya da kaynaksız cevap
@@ -368,6 +375,9 @@ class SonIslemBaglami:
       düşer (None → rol süzgeci yok).
     - `soru`, `baglam`: soru metni ve doğrulanmış ekran bağlamı; eylem reddinde model geçerli
       yönlendirme vermediyse ekran bağlantısı bunlardan seçilir (`eylem_rotasi`).
+    - `izinli_araclar`: soranın rolüne açık araç adları (`AracSeti.adlar`); `get_file_contents` /
+      `db_query` yoksa uygulama kodu / verisi kaynağı doğrulanmaz (None → süzgeç yok).
+    - `rules_dir`: çıktı sinyallerinin kural dizini (vars. `find_rules_dir()`).
     """
 
     havuz: KanitHavuzu | None = None
@@ -393,6 +403,8 @@ class SonIslemBaglami:
     rota_rolleri: Callable[[Any], frozenset[str] | None] = _rota_rolleri
     soru: str | None = None
     baglam: Mapping[str, Any] | None = None
+    izinli_araclar: frozenset[str] | None = None
+    rules_dir: Path | None = None
     _anahtar_onbellek: dict[str, bool] = field(default_factory=dict, repr=False)
 
     def anahtar_bilinir(self, anahtar: Any) -> bool:
@@ -482,6 +494,10 @@ class _KaynakDogrulayici:
         finally:
             havuz.shutdown(wait=False, cancel_futures=True)
 
+    def _rolde_yok(self, arac: str) -> bool:
+        izinli = self.b.izinli_araclar
+        return izinli is not None and arac not in izinli
+
     def __call__(self, tur: str, ref: str, alinti: Any) -> _Sonuc:
         try:
             if tur in ("urun_kodu", "dokuman"):
@@ -516,6 +532,8 @@ class _KaynakDogrulayici:
         return _Sonuc(True, _sha("\n".join(satirlar)))
 
     def _uygulama(self, ref: str, alinti: Any) -> _Sonuc:
+        if self._rolde_yok(KOD_ARACI):
+            return _Sonuc(False, neden=DOGRULANMADI)
         parca = _satir_ref(ref)
         if parca is None or self.b.dogrulayici is None:
             return _Sonuc(False, neden="ref biçimi geçersiz" if parca is None else "doğrulanamadı")
@@ -532,6 +550,8 @@ class _KaynakDogrulayici:
         return _Sonuc(True, _sha("\n".join(satirlar)))
 
     def _veri(self, ref: str) -> _Sonuc:
+        if self._rolde_yok(VERI_ARACI):
+            return _Sonuc(False, neden=DOGRULANMADI)
         kanit = self.b.havuz.al(ref, "uygulama_verisi") if self.b.havuz is not None else None
         if kanit is None or not kanit.sql or not kanit.result_digest:
             return _Sonuc(False, neden="kanıt yok")
@@ -915,15 +935,15 @@ def _sir_temizle_tum(deger: Any, sirlar: tuple[str, ...]) -> Any:
     return deger
 
 
-def _cikti_sinyali_notlari(out: dict[str, Any]) -> None:
+def _cikti_sinyali_notlari(out: dict[str, Any], rules_dir: Path | None = None) -> None:
     """Görünür cevap metnindeki çıktı sinyallerinin sabit notları (tekil; specs/013 §5.2).
-    Cevap değişmez; desen dosyası bozuksa not eklenmeden devam edilir."""
+    Cevap değişmez; desen dosyası bozuksa not eklenmeden devam edilir (cevap başına tek hesap)."""
     from tp_core.features.assistant import guvenlik
 
     try:
-        sinyaller = guvenlik.cikti_sinyalleri(out)
+        sinyaller = guvenlik.cikti_sinyalleri(out, rules_dir=rules_dir)
     except guvenlik.SinyalHatasi as exc:
-        log.warning("asistan: çıktı sinyalleri yüklenemedi (%s)", exc)
+        log.warning("asistan: çıktı sinyalleri yüklenemedi (%s)", type(exc).__name__)
         return
     for s in sinyaller:
         if s.not_ and s.not_ not in out["notlar"]:
@@ -959,7 +979,7 @@ def isle(cikti: Any, b: SonIslemBaglami) -> dict[str, Any]:
         out["notlar"].append(NOT_TOPARLAMA)
     if emin_degilim_gerekir(out):
         out["notlar"].append(NOT_EMIN_DEGILIM)
-    _cikti_sinyali_notlari(out)
+    _cikti_sinyali_notlari(out, b.rules_dir)
     out = _sir_temizle_tum(out, b.sir_degerleri)
     if b.musteri_verisi and b.oturum is not None:
         out, _ = b.oturum.mask(out)
