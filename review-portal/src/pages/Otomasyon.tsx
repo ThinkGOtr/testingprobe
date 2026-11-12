@@ -25,6 +25,8 @@ export const AKIS_METNI_OTOMATIK =
   "Story bu duruma girerse elle çekilmiş gereksinim de akışa alınır; PO onayından sonra case'ler otomatik üretilir.";
 export const AKIS_METNI_ELLE =
   "Story bu duruma girerse elle çekilmiş gereksinim de akışa alınır; otomatik case kapalıyken PO onayından sonra case üretimini elle başlatın.";
+/** K23: REPLAY kipinde otomatik kod kartındaki uyarı. */
+export const REPLAY_OTOKOD_UYARISI = "Demo kayıtları bu ayara göre değil; açarsanız kod üretimi kayıt bulamaz.";
 export const JIRA_YAZIM_METNI =
   "Tetik Jira'yı okur; başlattığı ön inceleme bulgusuz biterse PO'ya Jira yorumu ve etiketi yazılır.";
 
@@ -60,7 +62,40 @@ function SonGuncelleme({ kim, ne }: { kim: string | null; ne: string | null }) {
   );
 }
 
-function OtomatikKodKarti({ ayar, yetkili, guncellendi }: { ayar: OtomasyonAyarlari["otomatik_kod_uretimi"]; yetkili: boolean; guncellendi: (a: OtomasyonAyarlari) => void }) {
+/**
+ * K23: model geçidi REPLAY kipinde mi. Ayar ucu bildirirse o (`replay`/`model_kipi`); yoksa
+ * `/demo/status` → `model.mod`. Bilinmiyorsa null (uyarı gösterilmez).
+ */
+function useReplayKipi(ayarlar: OtomasyonAyarlari | undefined): boolean | null {
+  const ayardan = ayarlar?.replay;
+  const [demodan, setDemodan] = useState<boolean | null>(null);
+  const bekle = !ayarlar || ayardan !== undefined;
+  useEffect(() => {
+    if (bekle) return;
+    let iptal = false;
+    api
+      .demoDurumu()
+      .then((d) => !iptal && setDemodan(d.model?.mod ? d.model.mod.toLowerCase() === "replay" : null))
+      .catch(() => undefined);
+    return () => {
+      iptal = true;
+    };
+  }, [bekle]);
+  return ayardan !== undefined ? ayardan : demodan;
+}
+
+function OtomatikKodKarti({
+  ayar,
+  yetkili,
+  guncellendi,
+  replay,
+}: {
+  ayar: OtomasyonAyarlari["otomatik_kod_uretimi"];
+  yetkili: boolean;
+  guncellendi: (a: OtomasyonAyarlari) => void;
+  /** K23: REPLAY kipi (bilinmiyorsa null). */
+  replay: boolean | null;
+}) {
   const id = useId();
   const islem = useIslem();
   const bildir = useBildirim();
@@ -87,6 +122,11 @@ function OtomatikKodKarti({ ayar, yetkili, guncellendi }: { ayar: OtomasyonAyarl
         analisttir. Android, iOS ve Windows cihaz gerektirdiği için kendiliğinden başlamaz. <Link to="/kod">Kod üretimi</Link> ekranındaki
         düğme her durumda kalır.
       </p>
+      {replay && (
+        <Uyari ton="uyari" baslik="REPLAY kipi">
+          <span data-testid="replay-otokod-uyarisi">{REPLAY_OTOKOD_UYARISI}</span>
+        </Uyari>
+      )}
       <form onSubmit={(e) => void kaydet(e)} noValidate>
         <fieldset disabled={!yetkili} className="otomasyon-alanlar">
           <legend className="gorunmez">Otomatik kod üretimi ayarı</legend>
@@ -369,15 +409,16 @@ function JiraTetikDurumKarti({
           {d.son_tur && d.son_tur.sonuclar.length > 0 && (
             <TurSonuclari sonuclar={d.son_tur.sonuclar} gereksinimler={gereksinimler} />
           )}
-          <h3 className="kucuk">Son tetiklenen story'ler</h3>
+          <h3 className="kucuk">Story başına son tetik sonucu</h3>
           {d.son_tetiklenenler.length === 0 ? (
-            <BosDurum baslik="Henüz tetiklenen story yok." />
+            <BosDurum baslik="Henüz tetik sonucu yok." />
           ) : (
-            <ul className="duz-liste" aria-label="Son tetiklenen story'ler">
+            <ul className="duz-liste" aria-label="Story başına son tetik sonucu" data-testid="son-tetik-sonuclari">
               {d.son_tetiklenenler.map((s, i) => (
                 <li key={`${s.jira_key}-${i}`} className="satir-ogeler">
                   <StoryBaglantisi jiraKey={s.jira_key} gereksinimler={gereksinimler} />
                   {s.sonuc && <Cip ton={turSonucuEtiketi(s.sonuc).ton}>{turSonucuEtiketi(s.sonuc).etiket}</Cip>}
+                  {s.neden && <span className="kucuk">{s.neden}</span>}
                   <span className="soluk kucuk">{tarih(s.zaman)}</span>
                 </li>
               ))}
@@ -397,6 +438,7 @@ export function Otomasyon() {
   const { kullanici } = useOturum();
   const yetkili = !!kullanici && OTOMASYON_ROLLERI.includes(kullanici.rol);
   const durumYetkili = kullanici?.rol === "engineer";
+  const replay = useReplayKipi(ayarlar.veri);
   const guncellendi = (a: OtomasyonAyarlari) => {
     ayarlar.setVeri(a);
     void tetik.yenile(true);
@@ -415,7 +457,7 @@ export function Otomasyon() {
       ) : (
         ayarlar.veri && (
           <div className="iki-sutun">
-            <OtomatikKodKarti ayar={ayarlar.veri.otomatik_kod_uretimi} yetkili={yetkili} guncellendi={guncellendi} />
+            <OtomatikKodKarti ayar={ayarlar.veri.otomatik_kod_uretimi} yetkili={yetkili} guncellendi={guncellendi} replay={replay} />
             <JiraTetikKarti ayar={ayarlar.veri.jira_tetik} yetkili={yetkili} durumYetkili={durumYetkili} guncellendi={guncellendi} />
           </div>
         )

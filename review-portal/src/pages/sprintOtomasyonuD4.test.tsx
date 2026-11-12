@@ -14,8 +14,19 @@ import { OturumProvider } from "../auth";
 import { BildirimProvider } from "../components/Bildirim";
 import { goruntulenenleriSifirla, YENIDEN_DENEME_MS, YENIDEN_DENEME_SAYISI, yeterinceGorunur } from "../components/CaseKarti";
 import { gozlemciKur } from "../test/gorunurluk";
-import { oturumAc } from "../test/yardimci";
+import { oturumAc, yereldeGorulmus } from "../test/yardimci";
 import { TOPLU_UST_SINIR, topluOnayla } from "./CaseReview";
+
+/** K13' (tur 3): sunucu görüntülemesi + yerel 3 sn kaydı (toplu onay yalnız yereldekine bakar). */
+let yerelGorulen: string[] = [];
+function gor(id: string) {
+  mockGoruntulemeEkle(id, "analist");
+  yerelGorulen.push(id);
+}
+async function analistOturumu() {
+  await oturumAc("analist");
+  await yereldeGorulmus(yerelGorulen);
+}
 
 function uygulama(yol: string) {
   return render(
@@ -61,7 +72,10 @@ async function gosterBekle(g: ReturnType<typeof gozlemciKur>, el: HTMLElement, s
 }
 const ilerlet = (ms: number) => act(async () => void (await vi.advanceTimersByTimeAsync(ms)));
 
-beforeEach(() => goruntulenenleriSifirla());
+beforeEach(() => {
+  yerelGorulen = [];
+  goruntulenenleriSifirla();
+});
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
@@ -90,7 +104,7 @@ describe("K13: kart en az 3 sn kesintisiz görünür kalınca bildirilir", () =>
   it("K13': kayıt görünürlüğün başında gider; 3 sn dolmadan kesilirse yerelde görülmez; dolunca toplu onaya girer", async () => {
     const { rid, caseler } = taslaklariKur();
     const g = gozlemciKur();
-    await oturumAc("analist");
+    await analistOturumu();
     const casus = vi.spyOn(api, "caseGoruntulendi");
     vi.useFakeTimers({ shouldAdvanceTime: true });
     uygulama(`/gereksinimler/${rid}/caseler`);
@@ -125,7 +139,7 @@ describe("K13: kart en az 3 sn kesintisiz görünür kalınca bildirilir", () =>
   it("uzun kart yarım ekranı doldurunca sayılır; çeyreği görünen kısa kart sayılmaz", async () => {
     const { rid, caseler } = taslaklariKur();
     const g = gozlemciKur();
-    await oturumAc("analist");
+    await analistOturumu();
     const casus = vi.spyOn(api, "caseGoruntulendi");
     vi.useFakeTimers({ shouldAdvanceTime: true });
     uygulama(`/gereksinimler/${rid}/caseler`);
@@ -140,7 +154,7 @@ describe("K13: kart en az 3 sn kesintisiz görünür kalınca bildirilir", () =>
   it("POST hata verirse kart görünür kaldıkça zamanlayıcıyla yeniden denenir; 3 sn başarılı kayıttan sayılır", async () => {
     const { rid } = taslaklariKur();
     const g = gozlemciKur();
-    await oturumAc("analist");
+    await analistOturumu();
     const casus = vi.spyOn(api, "caseGoruntulendi").mockRejectedValueOnce(new Error("ağ yok"));
     vi.useFakeTimers({ shouldAdvanceTime: true });
     uygulama(`/gereksinimler/${rid}/caseler`);
@@ -160,7 +174,7 @@ describe("K13: kart en az 3 sn kesintisiz görünür kalınca bildirilir", () =>
   it("yeniden deneme sınırlı; kart görünmüyorsa denenmez", async () => {
     const { rid } = taslaklariKur();
     const g = gozlemciKur();
-    await oturumAc("analist");
+    await analistOturumu();
     const casus = vi.spyOn(api, "caseGoruntulendi").mockRejectedValue(new Error("ağ yok"));
     vi.useFakeTimers({ shouldAdvanceTime: true });
     uygulama(`/gereksinimler/${rid}/caseler`);
@@ -186,7 +200,7 @@ describe("K13: kart en az 3 sn kesintisiz görünür kalınca bildirilir", () =>
       gorunurluk = d;
       act(() => void document.dispatchEvent(new Event("visibilitychange")));
     };
-    await oturumAc("analist");
+    await analistOturumu();
     const casus = vi.spyOn(api, "caseGoruntulendi");
     vi.useFakeTimers({ shouldAdvanceTime: true });
     uygulama(`/gereksinimler/${rid}/caseler`);
@@ -212,7 +226,7 @@ describe("K13: kart en az 3 sn kesintisiz görünür kalınca bildirilir", () =>
   it("karar + yeniden açma sonrası case yeniden görülmeden toplu onaya girmez; yeniden bildirilir", async () => {
     const { rid, caseler } = taslaklariKur();
     const g = gozlemciKur();
-    await oturumAc("analist");
+    await analistOturumu();
     const casus = vi.spyOn(api, "caseGoruntulendi");
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const u = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
@@ -240,7 +254,7 @@ describe("K13: kart en az 3 sn kesintisiz görünür kalınca bildirilir", () =>
   it("IntersectionObserver yoksa görünürlük doğrulanamaz: bildirilmez (güvenli taraf)", async () => {
     const { rid } = taslaklariKur();
     vi.stubGlobal("IntersectionObserver", undefined);
-    await oturumAc("analist");
+    await analistOturumu();
     const casus = vi.spyOn(api, "caseGoruntulendi");
     vi.useFakeTimers({ shouldAdvanceTime: true });
     uygulama(`/gereksinimler/${rid}/caseler`);
@@ -254,8 +268,8 @@ describe("K13: kart en az 3 sn kesintisiz görünür kalınca bildirilir", () =>
 describe("Toplu onay: sonuç, odak, teyit anlık görüntüsü", () => {
   it("tüm taslaklar onaylanınca da sonuç özeti kalır ve odak başlığına gider; teyitte odak kutuya, Vazgeç'te tetikleyene", async () => {
     const { rid, caseler } = taslaklariKur(2);
-    for (const c of caseler) mockGoruntulemeEkle(c.id, "analist");
-    await oturumAc("analist");
+    for (const c of caseler) gor(c.id);
+    await analistOturumu();
     uygulama(`/gereksinimler/${rid}/caseler`);
     const u = userEvent.setup();
     const tumu = await screen.findByRole("button", { name: "Tümünü onayla (2)" });
@@ -279,10 +293,10 @@ describe("Toplu onay: sonuç, odak, teyit anlık görüntüsü", () => {
 
   it("teyit açıkken hedef liste değişirse teyit sıfırlanır", async () => {
     const { rid, caseler } = taslaklariKur(3);
-    mockGoruntulemeEkle(caseler[0].id, "analist");
-    mockGoruntulemeEkle(caseler[1].id, "analist");
+    gor(caseler[0].id);
+    gor(caseler[1].id);
     const g = gozlemciKur();
-    await oturumAc("analist");
+    await analistOturumu();
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const u = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     uygulama(`/gereksinimler/${rid}/caseler`);
@@ -319,8 +333,8 @@ describe("Toplu onay: sonuç, odak, teyit anlık görüntüsü", () => {
 
   it("istek hata verse de sonuç (hata) gösterilir ve liste yenilenir", async () => {
     const { rid, caseler } = taslaklariKur(2);
-    for (const c of caseler) mockGoruntulemeEkle(c.id, "analist");
-    await oturumAc("analist");
+    for (const c of caseler) gor(c.id);
+    await analistOturumu();
     const caseIstekleri: string[] = [];
     yapilandir({
       mock: async (method, path, q, govde) => {
@@ -346,7 +360,7 @@ describe("Gereksinim otomatik akış rozeti (K15)", () => {
   it("durdu ise neden görünür; liste ve detayda", async () => {
     const g = mockVerisi().gereksinimler[0] as unknown as { id: string; otomatik_akis?: unknown };
     g.otomatik_akis = { tetik_zamani: "2026-11-12T09:00:00+03:00", durum: "durdu", neden: "İçerik değişti, ön inceleme yeniden başlatılamadı" };
-    await oturumAc("analist");
+    await analistOturumu();
     const { unmount } = uygulama("/gereksinimler");
     const rozet = await screen.findByTestId("otomatik-akis");
     expect(rozet).toHaveAttribute("data-durum", "durdu");
@@ -359,7 +373,7 @@ describe("Gereksinim otomatik akış rozeti (K15)", () => {
 
 describe("Test verisi düzeltmeleri", () => {
   it("açıklama temizlenince boş metin gider; K17/K18 notları; silme teyidinde ilk odak Vazgeç; grup başlık kimliği boşluksuz", async () => {
-    await oturumAc("analist");
+    await analistOturumu();
     const cagrilar: { method: string; path: string; govde: unknown }[] = [];
     yapilandir({
       mock: async (method, path, q, govde) => {
@@ -394,7 +408,7 @@ describe("Test verisi düzeltmeleri", () => {
 
   it("Test verisi ekle: atfın alanı olan adım silinince ekleme yapılmaz", async () => {
     const { rid } = taslaklariKur(1);
-    await oturumAc("analist");
+    await analistOturumu();
     uygulama(`/gereksinimler/${rid}/caseler`);
     const k = await kart("Taslak 1");
     const u = userEvent.setup();

@@ -863,10 +863,11 @@ export function JiraDurumKarti() {
       .otomasyonAyarlari()
       .then((a) => !iptal && setAyar({ acik: a.jira_tetik.acik, durum: a.jira_tetik.durum, otomatik_case: a.jira_tetik.otomatik_case }))
       .catch(() => undefined);
-    // Taban turu: henüz hiç tur koşmadıysa ilk tur yalnız işaretler (okunamazsa bilinmiyor).
+    // Taban turu: core bildirirse (`taban_bekleniyor`/`taban_kurulu`; ayar değişince taban yeniden kurulur) o;
+    // yoksa tahmin: hiç tur koşmadıysa ilk tur yalnız işaretler (okunamazsa bilinmiyor).
     void api
       .jiraTetikDurumu()
-      .then((d) => !iptal && setTabanBekleniyor(d.acik && d.son_tur === null))
+      .then((d) => !iptal && setTabanBekleniyor(d.taban_bekleniyor ?? (d.acik && d.son_tur === null)))
       .catch(() => undefined);
     return () => {
       iptal = true;

@@ -282,11 +282,20 @@ export function atifYapanlarUyarla(govde: unknown): AtifYapanCase[] {
   }));
 }
 
+/** K23: ayar gövdesinden REPLAY kipi (`replay: bool` ya da `model_kipi: "replay"|…`); yoksa undefined. */
+function replayKipi(g: Record<string, unknown>): boolean | undefined {
+  if (typeof g.replay === "boolean") return g.replay;
+  const kip = typeof g.model_kipi === "string" ? g.model_kipi : nesneMi(g.model_kipi) && typeof g.model_kipi.mod === "string" ? g.model_kipi.mod : null;
+  return kip ? kip.trim().toLowerCase() === "replay" : undefined;
+}
+
 export function otomasyonAyarlariUyarla(govde: unknown): OtomasyonAyarlari {
   const g = nesneMi(govde) ? govde : {};
   const k = nesneMi(g.otomatik_kod_uretimi) ? g.otomatik_kod_uretimi : {};
   const j = nesneMi(g.jira_tetik) ? g.jira_tetik : {};
+  const replay = replayKipi(g);
   return {
+    ...(replay !== undefined ? { replay } : {}),
     // K14: eksik ya da bozuk `acik` açık sayılmaz (bilinmiyorsa kapalı gösterilir).
     otomatik_kod_uretimi: { acik: k.acik === true, guncelleyen: metinYaDaNull(k.guncelleyen), guncelleme: metinYaDaNull(k.guncelleme) },
     jira_tetik: {
@@ -303,7 +312,10 @@ export function otomasyonAyarlariUyarla(govde: unknown): OtomasyonAyarlari {
 export function jiraTetikDurumuUyarla(govde: unknown): JiraTetikDurumu {
   const g = nesneMi(govde) ? govde : {};
   const t = nesneMi(g.son_tur) ? g.son_tur : null;
+  const taban =
+    typeof g.taban_bekleniyor === "boolean" ? g.taban_bekleniyor : typeof g.taban_kurulu === "boolean" ? g.acik === true && !g.taban_kurulu : undefined;
   return {
+    ...(taban !== undefined ? { taban_bekleniyor: taban } : {}),
     acik: g.acik === true,
     durum: metin(g.durum, "QA To Do") || "QA To Do",
     aralik_s: sayi(g.aralik_s, 60),
@@ -324,6 +336,7 @@ export function jiraTetikDurumuUyarla(govde: unknown): JiraTetikDurumu {
       jira_key: metin(s.jira_key),
       zaman: metinYaDaNull(s.zaman),
       sonuc: metinYaDaNull(s.sonuc),
+      neden: metinYaDaNull(s.neden),
     })),
   };
 }

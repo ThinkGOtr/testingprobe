@@ -15,10 +15,21 @@ import { OturumProvider } from "../auth";
 import { BildirimProvider } from "../components/Bildirim";
 import { goruntulenenleriSifirla } from "../components/CaseKarti";
 import { ENGEL_TURU } from "../lib/kapi";
-import { oturumAc } from "../test/yardimci";
+import { oturumAc, yereldeGorulmus } from "../test/yardimci";
 import { tetikIpucu } from "./DemoKontrolleri";
 import { AKIS_METNI_ELLE, AKIS_METNI_OTOMATIK } from "./Otomasyon";
 import { GRUP_IPUCU } from "./TestVerisi";
+
+/** K13' (tur 3): sunucu görüntülemesi + yerel 3 sn kaydı (toplu onay yalnız yereldekine bakar). */
+let yerelGorulen: string[] = [];
+function gor(id: string) {
+  mockGoruntulemeEkle(id, "analist");
+  yerelGorulen.push(id);
+}
+async function analistOturumu() {
+  await oturumAc("analist");
+  await yereldeGorulmus(yerelGorulen);
+}
 
 function uygulama(yol: string) {
   return render(
@@ -68,7 +79,7 @@ function taslaklariKur(n = 2, gorulen = n): { rid: string; caseler: TestCase[] }
   })) as TestCase[];
   v.caseler = [...v.caseler.filter((c) => c.requirement_id !== rid), ...caseler];
   v.scriptler = v.scriptler.filter((s) => !s.case_ids.some((id) => id.startsWith("tc-e4-")));
-  for (const c of caseler.slice(0, gorulen)) mockGoruntulemeEkle(c.id, "analist");
+  for (const c of caseler.slice(0, gorulen)) gor(c.id);
   return { rid, caseler };
 }
 
@@ -81,6 +92,7 @@ async function topluOnayVer(u: ReturnType<typeof userEvent.setup>, n: number) {
 }
 
 beforeEach(() => {
+  yerelGorulen = [];
   goruntulenenleriSifirla();
   // Önceki testin `izle` sarmalayıcısı modül düzeyinde kalır: her test düz mock'la başlar.
   yapilandir({ mock: mockIstek });
@@ -93,7 +105,7 @@ afterEach(() => {
 describe("K13' sunucu penceresi (mock core ile aynı)", () => {
   it("görüntüleme kaydından hemen sonra toplu onay ayrı nedenle atlanır; 3 sn sonra geçer", async () => {
     const { caseler } = taslaklariKur(1, 0);
-    await oturumAc("analist");
+    await analistOturumu();
     vi.useFakeTimers({ shouldAdvanceTime: true });
     await api.caseGoruntulendi(caseler[0].id);
     const y1 = await api.topluOnay([caseler[0]]);
@@ -108,13 +120,13 @@ describe("K13' sunucu penceresi (mock core ile aynı)", () => {
 
   it("taslak olmayan case'te görüntüleme kaydı açılmaz", async () => {
     const c = mockVerisi().caseler.find((x) => x.durum !== "draft")!;
-    await oturumAc("analist");
+    await analistOturumu();
     expect(await api.caseGoruntulendi(c.id)).toMatchObject({ ilk_goruntuleme: null, yeni: false });
   });
 
   it("pencere içinde tıklama: sunucu nedeni ve yeniden deneme notu gösterilir", async () => {
     const { rid, caseler } = taslaklariKur(2);
-    await oturumAc("analist");
+    await analistOturumu();
     izle((c) =>
       c.path === "/cases/bulk-decision"
         ? {
@@ -142,7 +154,7 @@ describe("Toplu onay: otomatik kod sayısı, atlananlar ve iş sonucu", () => {
     const v = mockVerisi();
     const sablon = v.scriptler.find((s) => s.durum === "pr_open")!;
     v.scriptler.push({ ...JSON.parse(JSON.stringify(sablon)), id: "scr-e4-acik", case_ids: [caseler[1].id], durum: "pr_open" });
-    await oturumAc("analist");
+    await analistOturumu();
     uygulama(`/gereksinimler/${rid}/caseler`);
     const sonuc = await topluOnayVer(userEvent.setup(), 2);
     expect(within(sonuc).getByTestId("toplu-otokod")).toHaveTextContent(
@@ -173,7 +185,7 @@ describe("Toplu onay: otomatik kod sayısı, atlananlar ve iş sonucu", () => {
 
   it("teyit açılırken otomatik kod ayarı taze okunur; okunamazsa temkinli metin", async () => {
     const { rid } = taslaklariKur(2);
-    await oturumAc("analist");
+    await analistOturumu();
     let ayarHatasi = false;
     izle((c) => {
       if (c.path === "/automation-settings" && c.method === "GET" && ayarHatasi) throw new Error("okunamadı");
@@ -201,7 +213,7 @@ describe("Toplu onay: otomatik kod sayısı, atlananlar ve iş sonucu", () => {
 
   it("Özeti kapat sonrası odak body'ye düşmez", async () => {
     const { rid } = taslaklariKur(3, 2);
-    await oturumAc("analist");
+    await analistOturumu();
     uygulama(`/gereksinimler/${rid}/caseler`);
     const u = userEvent.setup();
     const sonuc = await topluOnayVer(u, 2);
@@ -217,7 +229,7 @@ describe("K10: onaydan sonra değişen test verisi", () => {
     const { rid, caseler } = taslaklariKur(1);
     const tc = mockVerisi().caseler.find((c) => c.id === caseler[0].id)!;
     tc.icerik.steps[0].data = "{veri:urun.p_001.fiyat}";
-    await oturumAc("analist");
+    await analistOturumu();
     await api.caseKarari(tc.id, { karar: "approve", icerik_hash: tc.icerik_hash });
     const kayit = (await api.testVerileri()).find((k) => k.anahtar === "urun.p_001.fiyat")!;
     await api.testVerisiGuncelle(kayit.id, { deger: "999,00 TL", beklenen_surum: kayit.surum });
@@ -259,7 +271,7 @@ describe("K21 metinleri ve etiketler", () => {
   });
 
   it("Otomasyon: akış notu otomatik case ayarına göre", async () => {
-    await oturumAc("analist");
+    await analistOturumu();
     uygulama("/otomasyon");
     const not = await screen.findByTestId("akis-notu");
     expect(not).toHaveTextContent(AKIS_METNI_OTOMATIK);
@@ -287,7 +299,7 @@ describe("K21 metinleri ve etiketler", () => {
 
 describe("Test verisi: grup temizleme", () => {
   it("düzenlemede boş grup \"\" gider ve grup anahtarın ilk parçasına döner", async () => {
-    await oturumAc("analist");
+    await analistOturumu();
     const kayit = (await api.testVerileri()).find((k) => k.anahtar === "urun.p_001.fiyat")!;
     await api.testVerisiGuncelle(kayit.id, { grup: "fiyatlar", beklenen_surum: kayit.surum });
     const cagrilar = izle();

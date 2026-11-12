@@ -753,6 +753,8 @@ function caseKarari(id: string, govde: unknown): TestCase {
     // 013 §3.3: düzeltmede katalogda olmayan atıf reddedilir.
     const bilinmeyen = bilinmeyenAtiflar(g.icerik);
     if (bilinmeyen.length) throw new ApiError(422, `Katalogda olmayan test verisi anahtarı: ${bilinmeyen.join(", ")}`);
+    // K22: maskeli gizli değer (•••) düzeltmede kaydedilmez (core ile aynı metin).
+    if (JSON.stringify(g.icerik).includes("•••")) throw new ApiError(422, "Gizli değer maskeli görünüyor; {veri:…} atfını kullanın");
     const once = kanonikJson(c.icerik);
     // core metrics.edit_metrics: insan beyanı varsa o; yoksa beklenen sonuç metni karşılaştırılır.
     const beklenenDegisti =

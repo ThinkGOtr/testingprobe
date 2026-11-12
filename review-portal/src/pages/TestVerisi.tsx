@@ -431,6 +431,10 @@ function KatalogKapsamNotu() {
           Yalnız bayi, ürün, kampanya ve ortak (parola) grupları case metninde otomatik olarak atfa çevrilir; tutar biçimli değerler yalnız
           adım verisinde ve ön koşullarda. Etiket ve ayar grupları case'e otomatik atfedilmez (gerekirse düzeltirken elle eklenir).
         </li>
+        <li data-testid="katalog-ide-notu">
+          IDE/MCP kanalı (Claude Code, Copilot) her zaman bu kataloğu kullanır; REPLAY kipinde de katalog değişikliği bu kanalda yazılan
+          case'lere yansır. Gizli değerler bu kanala atıf olarak gider.
+        </li>
         <li>Gizli kayıtların değeri hiçbir ekranda gösterilmez; kod üretimi ortam sırrından okur.</li>
       </ul>
     </Uyari>

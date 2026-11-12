@@ -13,12 +13,23 @@ import type { TestCase } from "../api/types";
 import { atifYapanlarUyarla, testVerisiUyarla, topluKararUyarla } from "../api/uyumOtomasyon";
 import { OturumProvider } from "../auth";
 import { BildirimProvider } from "../components/Bildirim";
-import { goruntulenenleriSifirla } from "../components/CaseKarti";
+import { goruntulemeAnahtari, goruntulenenleriSifirla } from "../components/CaseKarti";
 import { AtifliMetin } from "../components/VeriAtfi";
 import { sahteSunucu } from "../test/sahteSunucu";
-import { oturumAc } from "../test/yardimci";
+import { oturumAc, yereldeGorulmus } from "../test/yardimci";
 import { topluOnayAdaylari } from "./CaseReview";
 import { SURUM_CAKISMASI } from "./TestVerisi";
+
+/** K13' (tur 3): sunucu görüntülemesi + yerel 3 sn kaydı (toplu onay yalnız yereldekine bakar). */
+let yerelGorulen: string[] = [];
+function gor(id: string) {
+  mockGoruntulemeEkle(id, "analist");
+  yerelGorulen.push(id);
+}
+async function analistOturumu() {
+  await oturumAc("analist");
+  await yereldeGorulmus(yerelGorulen);
+}
 
 function uygulama(yol: string) {
   return render(
@@ -70,17 +81,18 @@ function taslaklariKur(): { rid: string; caseler: TestCase[] } {
   v.caseler = [...v.caseler.filter((c) => c.requirement_id !== rid), ...caseler];
   v.scriptler = v.scriptler.filter((s) => !s.case_ids.some((id) => id.startsWith("tc-013-")));
   // K13: "görüldü" kişiye bağlı (oturumdaki analist) ve görüntüleme ≥ 3 sn önce.
-  for (const c of caseler.slice(0, 2)) mockGoruntulemeEkle(c.id, "analist");
+  for (const c of caseler.slice(0, 2)) gor(c.id);
   return { rid, caseler };
 }
 
 beforeEach(() => {
+  yerelGorulen = [];
   goruntulenenleriSifirla();
 });
 
-describe("topluOnayAdaylari (K3)", () => {
-  const c = (id: string, ek: Partial<TestCase>) => ({ id, durum: "draft", ...ek }) as TestCase;
-  it("yalnız görülmüş, engelsiz taslaklar; görülmeyen ve engelli sayılır", () => {
+describe("topluOnayAdaylari (K3, K13' tur 3)", () => {
+  const c = (id: string, ek: Partial<TestCase>) => ({ id, durum: "draft", karar: null, karar_zamani: null, ...ek }) as TestCase;
+  it("yalnız yerelde 3 sn görülmüş, engelsiz taslaklar; sunucunun goruldu bayrağı tek başına saymaz", () => {
     const l = [
       c("a", { goruldu: true }),
       c("b", { goruldu: false }),
@@ -88,19 +100,29 @@ describe("topluOnayAdaylari (K3)", () => {
       c("d", { goruldu: true, onay_engeli: "AC yok" }),
       c("e", { goruldu: true, durum: "approved" }),
     ];
-    const t = topluOnayAdaylari(l);
-    expect(t.uygun.map((x) => x.id)).toEqual(["a"]);
-    expect(t.gorulmeyen).toBe(2);
+    // Yerel küme boş (ör. sayfa yenilendi): sunucu "görüldü" dese de hiçbiri uygun değil.
+    expect(topluOnayAdaylari(l).uygun).toEqual([]);
+    expect(topluOnayAdaylari(l).gorulmeyen).toBe(4);
+    const yerel = new Set(["a", "b", "d", "e"].map((id) => goruntulemeAnahtari(l.find((x) => x.id === id)!)));
+    const t = topluOnayAdaylari(l, yerel);
+    expect(t.uygun.map((x) => x.id)).toEqual(["a", "b"]);
+    expect(t.gorulmeyen).toBe(1);
     expect(t.engelli).toBe(1);
-    // Bu oturumda kaydedilen görüntüleme de sayılır.
-    expect(topluOnayAdaylari(l, new Set(["b"])).uygun.map((x) => x.id)).toEqual(["a", "b"]);
+  });
+
+  it("case'in son kararı değişince (başka sekmede onaylanıp yeniden açıldı) yerel kayıt geçersiz", () => {
+    const once = c("a", {});
+    const yerel = new Set([goruntulemeAnahtari(once)]);
+    expect(topluOnayAdaylari([once], yerel).uygun).toHaveLength(1);
+    const yenidenAcildi = c("a", { karar: "approve", karar_zamani: "2026-11-12T10:00:00Z" });
+    expect(topluOnayAdaylari([yenidenAcildi], yerel).uygun).toHaveLength(0);
   });
 });
 
 describe("Case review: toplu onay", () => {
   it("Tümünü onayla yalnız görülenleri gönderir (kendi hash'iyle), görülmeyen notu ve satır içi özet", async () => {
     const { rid, caseler } = taslaklariKur();
-    await oturumAc("analist");
+    await analistOturumu();
     vi.spyOn(api, "caseGoruntulendi").mockRejectedValue(new Error("ölçüm yok"));
     const cagrilar = izle();
     uygulama(`/gereksinimler/${rid}/caseler`);
@@ -142,7 +164,7 @@ describe("Case review: toplu onay", () => {
 
   it("Seçili onayla: seçilen sayısı, atlanan neden ve otomatik kod notu gösterilir", async () => {
     const { rid, caseler } = taslaklariKur();
-    await oturumAc("analist");
+    await analistOturumu();
     vi.spyOn(api, "caseGoruntulendi").mockRejectedValue(new Error("ölçüm yok"));
     const cagrilar = izle((c) =>
       c.path === "/cases/bulk-decision"
@@ -174,12 +196,12 @@ describe("Case review: toplu onay", () => {
 
   it("otomatik kod kapalıysa özet 'kapalı' der; tekli onay kısa bildirim gösterir", async () => {
     const { rid } = taslaklariKur();
-    await oturumAc("analist");
+    await analistOturumu();
     await api.otomasyonAyariKaydet("otomatik_kod_uretimi", { acik: false });
     uygulama(`/gereksinimler/${rid}/caseler`);
     const kart = (await screen.findByRole("heading", { name: "Taslak 1" })).closest("article")!;
     await userEvent.click(within(kart as HTMLElement).getByRole("button", { name: "Onayla" }));
-    expect(await screen.findByText(/Otomatik kod üretimi kapalı/)).toBeInTheDocument();
+    expect(await screen.findByText("Otomatik kod kapalı; kodu Kod üretimi ekranından başlatın.")).toBeInTheDocument();
   });
 
   it("analist olmayan rol toplu onay çubuğunu ve seçim kutularını görmez", async () => {
@@ -197,7 +219,7 @@ describe("Case kartı: test verisi atıfları", () => {
     const { rid, caseler } = taslaklariKur();
     const c = mockVerisi().caseler.find((x) => x.id === caseler[0].id)!;
     c.icerik.steps[0] = { id: "S1", action: "{veri:bayi.bayi1.kullanici_adi} ile giriş yap", data: "{veri:ortak.demo_parola}", expected: "{veri:yok.boyle} görünür" };
-    await oturumAc("analist");
+    await analistOturumu();
     uygulama(`/gereksinimler/${rid}/caseler`);
     const kart = (await screen.findByRole("heading", { name: "Taslak 1" })).closest("article") as HTMLElement;
     const cip = (a: string) => kart.querySelector(`.veri-atif[data-anahtar="${a}"]`) as HTMLElement;
@@ -219,7 +241,7 @@ describe("Case kartı: test verisi atıfları", () => {
 
   it("Düzelt: 'Test verisi ekle' seçilen anahtarı son alanda imlece ekler", async () => {
     const { rid } = taslaklariKur();
-    await oturumAc("analist");
+    await analistOturumu();
     uygulama(`/gereksinimler/${rid}/caseler`);
     const kart = (await screen.findByRole("heading", { name: "Taslak 1" })).closest("article") as HTMLElement;
     const u = userEvent.setup();
@@ -238,7 +260,7 @@ describe("Case kartı: test verisi atıfları", () => {
 
 describe("Test verisi sayfası", () => {
   it("grup tabloları, arama, gizli rozet; analist ekler; aynı anahtar 409", async () => {
-    await oturumAc("analist");
+    await analistOturumu();
     uygulama("/test-verisi");
     expect(await screen.findByRole("heading", { name: /bayi/ })).toBeInTheDocument();
     const parola = document.querySelector('tr[data-anahtar="ortak.demo_parola"]') as HTMLElement;
@@ -264,7 +286,7 @@ describe("Test verisi sayfası", () => {
   });
 
   it("düzenleme beklenen_surum gönderir; araya giren değişiklikte 409 anlaşılır mesaj + güncel sürümü yükle", async () => {
-    await oturumAc("analist");
+    await analistOturumu();
     const cagrilar = izle();
     uygulama("/test-verisi");
     const u = userEvent.setup();
@@ -332,7 +354,7 @@ describe("Test verisi sayfası", () => {
 
 describe("Otomasyon sayfası", () => {
   it("analist otomatik kodu kapatır ve Jira tetiğini kısmi gövdeyle kaydeder; aralık doğrulanır", async () => {
-    await oturumAc("analist");
+    await analistOturumu();
     const cagrilar = izle();
     uygulama("/otomasyon");
     const u = userEvent.setup();
@@ -381,13 +403,13 @@ describe("Otomasyon sayfası", () => {
     await u.click(within(durum.closest("section") as HTMLElement).getByRole("button", { name: "Kaydet" }));
     await screen.findByText("Jira tetiği ayarı kaydedildi.");
     expect(cagrilar.find((c) => c.method === "PUT")?.govde).toEqual({ durum: "QA Ready" });
-    await oturumAc("analist");
+    await analistOturumu();
     await expect(api.otomasyonAyariKaydet("jira_tetik", { durum: "X" })).rejects.toMatchObject({ status: 403 });
   });
 
   it("son tur story sonuçları tablo + gereksinime bağlantı", async () => {
     const g = mockVerisi().gereksinimler.find((x) => x.jira_key)!;
-    await oturumAc("analist");
+    await analistOturumu();
     izle((c) =>
       c.path === "/automation/jira-trigger"
         ? {

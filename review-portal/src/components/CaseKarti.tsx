@@ -25,8 +25,17 @@ export const VERI_ONAYDAN_SONRA_DEGISTI = "Test verisi onaydan sonra değişti";
 /** Toplu onay notu ve seçim engelinde tek dil (K13). */
 export const GORULDU_KURALI = "en az 3 saniye ekranda kalan case'ler";
 
-// Bu oturumda "görüntülendi" kaydı başarıyla yapılan case'ler, kullanıcıya göre (rol/kişi değişimi
-// başka kullanıcının kaydını kullanmaz). Yalnız istek başarılı olunca eklenir.
+/**
+ * Yerel "görüldü" kaydının anahtarı: case + son karar (durum, karar, karar zamanı). Case başka sekmede
+ * ya da başka kullanıcı tarafından karara bağlanıp yeniden açılınca anahtar değişir; eski kayıt geçersiz
+ * kalır ve kart yeniden en az 3 sn görülüp görüntüleme yeniden gönderilir (tur 3 frontend #4).
+ */
+export function goruntulemeAnahtari(tc: Pick<TestCase, "id" | "durum" | "karar" | "karar_zamani">): string {
+  return `${tc.id}|${tc.durum}|${tc.karar ?? ""}|${tc.karar_zamani ?? ""}`;
+}
+
+// Bu oturumda 3 sn kesintisiz görülen (ve görüntülemesi sunucuya kaydedilen) case'ler, kullanıcıya göre
+// (rol/kişi değişimi başka kullanıcının kaydını kullanmaz). Anahtar: `goruntulemeAnahtari`.
 const goruntulenenler = new Map<string, Set<string>>();
 const kullaniciKumesi = (k: string) => {
   let s = goruntulenenler.get(k);
@@ -34,14 +43,24 @@ const kullaniciKumesi = (k: string) => {
   return s;
 };
 
+/** Bu kullanıcının bu oturumda 3 sn kesintisiz gördüğü case anahtarları (toplu onay uygunluğu; K13'). */
+export function goruntulenenKumesi(kullaniciAnahtari: string | null): ReadonlySet<string> {
+  return (kullaniciAnahtari && goruntulenenler.get(kullaniciAnahtari)) || new Set<string>();
+}
+
 /** Testler için: görüntüleme kayıtlarını sıfırlar. */
 export function goruntulenenleriSifirla(): void {
   goruntulenenler.clear();
 }
 
+/** Testler için: case bu kullanıcı için bu oturumda 3 sn görülmüş sayılır (kart açılınca listeye bildirilir). */
+export function goruntulemeyiKaydetTest(kullaniciAnahtari: string, tc: Pick<TestCase, "id" | "durum" | "karar" | "karar_zamani">): void {
+  kullaniciKumesi(kullaniciAnahtari).add(goruntulemeAnahtari(tc));
+}
+
 /** Karar ya da yeniden açma sonrası: sunucuda eşik yeni karar anı olur, case yeniden görülmelidir. */
 export function goruntulemeyiUnut(caseId: string): void {
-  for (const s of goruntulenenler.values()) s.delete(caseId);
+  for (const s of goruntulenenler.values()) for (const k of [...s]) if (k.startsWith(`${caseId}|`)) s.delete(k);
 }
 
 type GorunurlukKaydi = Pick<IntersectionObserverEntry, "isIntersecting" | "intersectionRect" | "boundingClientRect" | "rootBounds">;
@@ -83,21 +102,25 @@ const sekmeGorunur = () => typeof document === "undefined" || document.visibilit
  * kayıt başarısızsa görüldü sayılmaz. Kayıt sonradan (yeniden denemeyle) yapıldıysa 3 sn o andan
  * sayılır: sunucu da görüntüleme kaydı ile karar arasında ≥ 3 sn arar (çift bekleme yok).
  *
+ * Sunucunun `goruldu` bayrağı burada kullanılmaz (tur 3 QA #3): bir an görünen kart da sunucuda kayıt
+ * açar; toplu onay uygunluğu yalnız bu yerel 3 sn kümesine dayanır. Sayfa yenilenince küme boştur ve
+ * kart yeniden 3 sn görülmelidir (görüntüleme isteği idempotenttir; sunucudaki ilk kayıt korunur).
+ *
  * Görünürlük kesilirse ya da sekme gizlenirse sayaç sıfırlanır. POST hata verirse kart görünür kaldıkça
  * zamanlayıcıyla sınırlı sayıda yeniden denenir. IntersectionObserver yoksa görünürlük doğrulanamaz:
  * güvenli taraf seçilir, bildirilmez (case toplu onaya girmez; tekli onay etkilenmez).
  */
-function useGoruntulemeBildir(tc: TestCase, etkin: boolean, kullaniciAnahtari: string | null, goruntulendi?: (id: string) => void) {
+function useGoruntulemeBildir(tc: TestCase, etkin: boolean, kullaniciAnahtari: string | null, goruntulendi?: (anahtar: string) => void) {
   const ref = useRef<HTMLElement | null>(null);
   const geriCagri = useRef(goruntulendi);
   geriCagri.current = goruntulendi;
-  // Sunucu zaten "görüldü" diyorsa bildirilmez; eski core `goruldu` göndermezse ilk görüntüleme zamanına bakılır.
-  const zatenGoruldu = tc.goruldu === true || (tc.goruldu === undefined && !!tc.goruntulenme);
+  const anahtar = goruntulemeAnahtari(tc);
   useEffect(() => {
-    if (!etkin || !kullaniciAnahtari || zatenGoruldu) return;
+    if (!etkin || !kullaniciAnahtari) return;
     const gorulen = kullaniciKumesi(kullaniciAnahtari);
+    if (gorulen.has(anahtar)) return;
     const el = ref.current;
-    if (gorulen.has(tc.id) || !el || typeof IntersectionObserver === "undefined") return;
+    if (!el || typeof IntersectionObserver === "undefined") return;
     let bitti = false;
     /** Gözlemcinin son görünürlük bilgisi (sekme durumundan bağımsız). */
     let kesisiyor = false;
@@ -131,9 +154,9 @@ function useGoruntulemeBildir(tc: TestCase, etkin: boolean, kullaniciAnahtari: s
         sayac = setTimeout(denetle, kalan);
         return;
       }
-      gorulen.add(tc.id);
+      gorulen.add(anahtar);
       bitir();
-      geriCagri.current?.(tc.id);
+      geriCagri.current?.(anahtar);
     };
     const gonder = () => {
       tekrar = null;
@@ -193,16 +216,20 @@ function useGoruntulemeBildir(tc: TestCase, etkin: boolean, kullaniciAnahtari: s
       g.disconnect();
       document.removeEventListener("visibilitychange", sekmeDegisti);
     };
-  }, [tc.id, zatenGoruldu, etkin, kullaniciAnahtari]);
+  }, [tc.id, anahtar, etkin, kullaniciAnahtari]);
   return ref;
 }
+/** K23: otomatik kod kapalıyken tekli onay notu (demoda her onayda çıkar; sade tek satır). */
+export const OTOKOD_KAPALI_NOTU = "Otomatik kod kapalı; kodu Kod üretimi ekranından başlatın.";
+
 /** Onay sonrası otomatik kod üretimi sonucunun kısa Türkçe metni (013 §3.2). */
 export function otomatikKodMetni(o: OtomatikKodSonucu): string {
   switch (o.durum) {
     case "kuyrukta":
       return "Otomatik kod üretimi kuyruğa alındı.";
     case "kapali":
-      return "Otomatik kod üretimi kapalı (Otomasyon ayarı); kodu Kod üretimi ekranından başlatın.";
+      // K23: demoda her tekli onayda çıkar; sade tek satır.
+      return OTOKOD_KAPALI_NOTU;
     case "atlandi":
       return `Otomatik kod üretimi atlandı${o.neden ? `: ${o.neden}` : " (süren ya da açık bir üretim var)"}.`;
     case "reddedildi":
@@ -232,8 +259,8 @@ export function CaseKarti({
   /** 409 (içerik siz görüntüledikten sonra değişti): case listesini yeniden yükler. */
   yenile?: () => void;
   secim?: CaseSecimi;
-  /** Görüntüleme sunucuya kaydedildi (toplu onayda "görüldü" sayılır). */
-  goruntulendi?: (id: string) => void;
+  /** Kart 3 sn kesintisiz görüldü ve görüntüleme kaydedildi (toplu onayda "görüldü" sayılır); `goruntulemeAnahtari`. */
+  goruntulendi?: (anahtar: string) => void;
 }) {
   const [mod, setMod] = useState<Mod>("goster");
   const islem = useIslem();
@@ -331,7 +358,8 @@ export function CaseKarti({
       ) : (
         <>
           <h3 id={`${id}-baslik`} className="case-ad">
-            {tc.icerik.title}
+            {/* K22: başlıktaki gizli değer de `{veri:anahtar}` atfı olarak gelir; çip olarak gösterilir. */}
+            <AtifliMetin metin={tc.icerik.title} veri={tc.veri} />
           </h3>
           {tc.icerik.preconditions.length > 0 && (
             <p className="kucuk">
@@ -495,6 +523,32 @@ export function CaseKarti({
   );
 }
 
+/** K22: case dışı metinlerdeki maske. Case alanlarında gizli değer `{veri:anahtar}` atfı olarak gelir. */
+export const MASKE = "•••";
+
+/** K22: düzeltme formunda maske kalmışsa kaydetmeden önce gösterilen uyarı (sunucu da 422 ile reddeder). */
+export const MASKE_UYARISI =
+  "Formda maskeli gizli değer (•••) var; böyle kaydedilirse gerçek değer kaybolur ve sunucu reddeder. •••'yi silip gizli değeri \"Test verisi ekle\" ile {veri:anahtar} atfı olarak yazın.";
+
+/** K22: sunucunun düzeltme 422'si ("Gizli değer maskeli görünüyor; {veri:…} atfını kullanın") için ek açıklama. */
+export const MASKE_HATASI_IPUCU =
+  "Gizli değerler case'te {veri:anahtar} atfı olarak durur; formdaki ••• yerine \"Test verisi ekle\" ile atfı seçin. Atıf çipleri olduğu gibi kalırsa değer korunur.";
+
+export const maskeHatasiMi = (hata: string | null | undefined) => !!hata && /maskeli/i.test(hata) && /veri:/.test(hata);
+
+/** Düzeltme içeriğinde maske (`•••`) geçen alanların etiketleri. */
+export function maskeliAlanlar(i: TestCaseIcerik): string[] {
+  const l: string[] = [];
+  const var_ = (m: string | null | undefined) => !!m && m.includes(MASKE);
+  if (var_(i.title)) l.push("Başlık");
+  if (i.preconditions.some(var_)) l.push("Ön koşullar");
+  i.steps.forEach((s, j) => {
+    if (var_(s.action) || var_(s.data) || var_(s.expected)) l.push(`S${j + 1}`);
+  });
+  if (var_(i.expected_result)) l.push("Beklenen sonuç");
+  return l;
+}
+
 /** §12 eşiği: düzeltme ölçüsü bu değerin altındaysa (ve beklenen sonuç anlamca değişmediyse) küçük düzeltme. */
 export const KUCUK_DUZELTME_ESIGI = 0.15;
 
@@ -629,7 +683,10 @@ function CaseDuzenleyici({
     else if (alan === "beklenen") setIcerik((c) => ({ ...c, expected_result: deger }));
     else adimGuncelle(Number(alan.slice(1)), alan[0] === "a" ? "action" : alan[0] === "d" ? "data" : "expected", deger);
   };
-  /** Atıf alanlarının odak/imleç izleyicisi (başlık ve AC alanı atıf almaz: core yalnız içerik alanlarını eşler). */
+  /**
+   * Atıf alanlarının odak/imleç izleyicisi (atıf ekleme başlık ve AC alanına yapılmaz; başlıkta gelen
+   * `{veri:…}` atfı (K22) metinde olduğu gibi korunur).
+   */
   const izle = (alan: string) => ({
     onFocus: () => setSonAlan(alan),
     onBlur: (e: { currentTarget: HTMLTextAreaElement }) => {
@@ -683,21 +740,33 @@ function CaseDuzenleyici({
       .filter(Boolean);
     if (acRefleri.length === 0) return setUyari("En az bir kabul kriteri atfı gerekir (ör. AC1).");
     if (beklenenDegisti && !anlamDegisti) return setUyari("Beklenen sonuç anlamca değişti mi? Evet ya da Hayır seçin.");
+    const gonderilecek: TestCaseIcerik = {
+      ...icerik,
+      preconditions: listeyeCevir(onKosulMetni),
+      acceptance_criteria_refs: [...new Set(acRefleri)],
+      steps: icerik.steps.map((s, i) => ({ ...s, id: `S${i + 1}` })),
+    };
+    // K22: maske kaydedilmez (gerçek değer kaybolur; sunucu da 422 ile reddeder).
+    const maskeli = maskeliAlanlar(gonderilecek);
+    if (maskeli.length > 0) return setUyari(`${MASKE_UYARISI} (${maskeli.join(", ")})`);
     setUyari(null);
     kaydet(
-      {
-        ...icerik,
-        preconditions: listeyeCevir(onKosulMetni),
-        acceptance_criteria_refs: [...new Set(acRefleri)],
-        steps: icerik.steps.map((s, i) => ({ ...s, id: `S${i + 1}` })),
-      },
+      gonderilecek,
       // Metin değişmediyse anlam da değişmemiştir; değiştiyse insanın beyanı gönderilir.
       beklenenDegisti ? anlamDegisti === "evet" : false,
     );
   }
 
+  // K22: formda maske görünürse kaydetmeden önce (yazarken) uyarılır.
+  const gorunenMaske = maskeliAlanlar({ ...icerik, preconditions: listeyeCevir(onKosulMetni) });
+
   return (
     <form className="case-duzenle" onSubmit={gonder} noValidate>
+      {gorunenMaske.length > 0 && (
+        <p className="kucuk uyari-metin" role="note" data-testid="maske-uyarisi">
+          {MASKE_UYARISI} ({gorunenMaske.join(", ")})
+        </p>
+      )}
       <div className="alan">
         <label htmlFor={`${id}-baslik`}>Başlık</label>
         <input id={`${id}-baslik`} value={icerik.title} maxLength={120} onChange={(e) => setIcerik({ ...icerik, title: e.target.value })} />
@@ -846,6 +915,11 @@ function CaseDuzenleyici({
       )}
       {(uyari || hata) && (
         <AlanHatasi asistan={uyari ? null : { hata, kaynak: hataKaynagi }}>{uyari ?? hata}</AlanHatasi>
+      )}
+      {!uyari && maskeHatasiMi(hata) && (
+        <p className="kucuk" data-testid="maske-hatasi-ipucu">
+          {MASKE_HATASI_IPUCU}
+        </p>
       )}
       <div className="eylemler">
         <IslemDugmesi roller={["analyst"]} type="submit" kucuk calisiyor={calisiyor}>

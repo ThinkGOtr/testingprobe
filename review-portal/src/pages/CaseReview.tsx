@@ -7,7 +7,7 @@ import { hataMesaji } from "../api/http";
 import { bazKaynagiUyarla, manuelBazUyarla } from "../api/uyumFaz5";
 import { useKisiAdi, useOturum } from "../auth";
 import { BAZ_KAYNAGI } from "../components/BazDegerKarti";
-import { CaseKarti, GORULDU_KURALI, goruntulemeyiUnut, otomatikKodMetni } from "../components/CaseKarti";
+import { CaseKarti, GORULDU_KURALI, goruntulemeAnahtari, goruntulenenKumesi, goruntulemeyiUnut, otomatikKodMetni } from "../components/CaseKarti";
 import { BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, Metrik, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { HedefOlcer } from "../components/Grafikler";
 import { useGeciktirilmis, useVeri } from "../hooks";
@@ -141,12 +141,14 @@ type Filtre = "hepsi" | "bekleyen" | "onayli" | "reddedilen";
 export const TOPLU_UST_SINIR = 200;
 
 /**
- * 013 §3.2/K3/K13 toplu onay adayları: yalnız karar bekleyen (`draft`), bu kullanıcının en az 3 sn
- * görüntülediği (`goruldu` ya da bu oturumda kaydedilen görüntüleme) ve onaya engeli olmayan case'ler.
+ * 013 §3.2/K3/K13' toplu onay adayları: yalnız karar bekleyen (`draft`), bu oturumda kartı en az 3 sn
+ * kesintisiz görünür kalan (yerel küme; anahtar `goruntulemeAnahtari`) ve onaya engeli olmayan case'ler.
+ * Sunucunun `goruldu` bayrağı tek başına uygun saymaz (tur 3 QA #3): kart bir an görünse de sunucuda
+ * kayıt açılır. Sunucu yine kendi ≥ 3 sn şartını uygular.
  */
 export function topluOnayAdaylari(caseler: TestCase[], gorulenler: ReadonlySet<string> = new Set()) {
   const taslaklar = caseler.filter((c) => c.durum === "draft");
-  const goruldu = (c: TestCase) => c.goruldu === true || gorulenler.has(c.id);
+  const goruldu = (c: TestCase) => gorulenler.has(goruntulemeAnahtari(c));
   return {
     taslaklar,
     uygun: taslaklar.filter((c) => goruldu(c) && !c.onay_engeli),
@@ -166,6 +168,8 @@ export interface TopluOnayCiktisi {
   hata: unknown;
   /** Hata yüzünden gönderilemeyen öğe sayısı. */
   gonderilmeyen: number;
+  /** Parça başına açılan `codegen.otomatik` işleri (200'ü aşan onayda birden çok; sırayla). */
+  kodIsleri?: string[];
 }
 
 /** Parçaların üst düzey otomatik kod sonuçlarını birleştirir (K16: parça başına tek iş). */
@@ -186,6 +190,7 @@ export async function topluOnayla(
   gonder: (p: HedefOge[]) => Promise<TopluKararYaniti> = (p) => api.topluOnay(p),
 ): Promise<TopluOnayCiktisi> {
   const yanit: TopluKararYaniti = { sonuclar: [], ozet: { onaylandi: 0, atlandi: 0, hata: 0 }, otomatik_kod: null };
+  const kodIsleri: string[] = [];
   for (let i = 0; i < ogeler.length; i += TOPLU_UST_SINIR) {
     try {
       const y = await gonder(ogeler.slice(i, i + TOPLU_UST_SINIR));
@@ -194,22 +199,25 @@ export async function topluOnayla(
       yanit.ozet.atlandi += y.ozet.atlandi;
       yanit.ozet.hata += y.ozet.hata;
       yanit.otomatik_kod = otokodBirlestir(yanit.otomatik_kod, y.otomatik_kod);
+      const is_ = y.otomatik_kod?.durum === "kuyrukta" ? y.otomatik_kod.job_id : null;
+      if (is_ && !kodIsleri.includes(is_)) kodIsleri.push(is_);
     } catch (e) {
-      return { yanit, hata: e, gonderilmeyen: ogeler.length - i };
+      return { yanit, hata: e, gonderilmeyen: ogeler.length - i, kodIsleri };
     }
   }
-  return { yanit, hata: null, gonderilmeyen: 0 };
+  return { yanit, hata: null, gonderilmeyen: 0, kodIsleri };
 }
 
 const OTOKOD_ETIKET = { kuyrukta: "kuyrukta", kapali: "kapalı", atlandi: "atlandı", reddedildi: "başlatılamadı", hata: "hata" } as const;
 
 /** Toplu onayın kod üretimi notu (K16: tek arka plan işi; eski core öğe başına gönderir). */
-export function topluOtokodMetni(y: TopluKararYaniti): string | null {
+export function topluOtokodMetni(y: TopluKararYaniti, isSayisi = 1): string | null {
   const o = y.otomatik_kod;
   if (o) {
     const m = o.atlanan?.length ?? 0;
     const atlananNotu = m > 0 ? ` ${m} case kod üretimine alınmadı (aşağıda nedeni).` : "";
-    if (o.durum === "kuyrukta") return `Otomatik kod üretimi: ${o.case_sayisi} case için web kodu üretimi kuyruğa alındı (tek arka plan işi).${atlananNotu}`;
+    if (o.durum === "kuyrukta")
+      return `Otomatik kod üretimi: ${o.case_sayisi} case için web kodu üretimi kuyruğa alındı (${isSayisi > 1 ? `${isSayisi} arka plan işi; her 200 case'lik parça için bir iş` : "tek arka plan işi"}).${atlananNotu}`;
     if (o.durum === "kapali") return "Otomatik kod üretimi kapalı (Otomasyon ayarı); kodu Kod üretimi ekranından başlatın.";
     if (m > 0) return `Otomatik kod üretimi başlatılmadı: onaylanan ${m} case'in hiçbiri kod üretimine alınmadı (aşağıda nedeni).`;
     return y.ozet.onaylandi > 0 ? "Otomatik kod üretimi başlatılmadı: üretilecek case yok." : null;
@@ -299,8 +307,22 @@ function KodUretimIsiOzeti({ jobId, ad }: { jobId: string; ad: (id: string) => s
   );
 }
 
-function TopluOnaySonucu({ sonuc, kapat }: { sonuc: TopluSonucDurumu; kapat: () => void }) {
-  const [isAcik, setIsAcik] = useState(false);
+/** Bir kod üretimi işinin açılır özeti (200'ü aşan toplu onayda iş başına bir tane). */
+function KodIsiCekmecesi({ jobId, sira, toplam, ad }: { jobId: string; sira: number; toplam: number; ad: (id: string) => string }) {
+  const [acik, setAcik] = useState(false);
+  const ayrintiId = `toplu-kod-isi-ayrinti-${sira}`;
+  const ek = toplam > 1 ? ` (iş ${sira}/${toplam})` : "";
+  return (
+    <>
+      <button type="button" className="dugme dugme-hayalet dugme-kucuk" aria-expanded={acik} aria-controls={ayrintiId} onClick={() => setAcik((a) => !a)}>
+        {acik ? `Kod üretimi sonucunu gizle${ek}` : `Kod üretimi sonucunu göster${ek}`}
+      </button>
+      <div id={ayrintiId}>{acik && <KodUretimIsiOzeti jobId={jobId} ad={ad} />}</div>
+    </>
+  );
+}
+
+export function TopluOnaySonucu({ sonuc, kapat }: { sonuc: TopluSonucDurumu; kapat: () => void }) {
   const { yanit, hata, gonderilmeyen } = sonuc.cikti;
   const ad = (id: string) => {
     const c = sonuc.caseler.find((x) => x.id === id);
@@ -311,9 +333,11 @@ function TopluOnaySonucu({ sonuc, kapat }: { sonuc: TopluSonucDurumu; kapat: () 
   const otokodSorunlu = yanit.otomatik_kod
     ? []
     : yanit.sonuclar.filter((s) => s.durum === "onaylandi" && s.otomatik_kod && s.otomatik_kod.durum !== "kuyrukta" && s.otomatik_kod.durum !== "kapali");
-  const otokod = topluOtokodMetni(yanit);
+  // Eski çağıranlar `kodIsleri` vermeyebilir: birleşik sonuçtaki tek iş kullanılır.
+  const kodIsleri =
+    sonuc.cikti.kodIsleri ?? (yanit.otomatik_kod?.durum === "kuyrukta" && yanit.otomatik_kod.job_id ? [yanit.otomatik_kod.job_id] : []);
+  const otokod = topluOtokodMetni(yanit, kodIsleri.length);
   const otokodAtlanan = yanit.otomatik_kod?.atlanan ?? [];
-  const jobId = yanit.otomatik_kod?.durum === "kuyrukta" ? yanit.otomatik_kod.job_id : null;
   const yeniGoruntuleme = sorunlu.filter((s) => s.durum === "atlandi" && yeniGoruntulemeMi(s.neden)).length;
   const ton = hata || yanit.ozet.hata > 0 ? "hata" : yanit.ozet.atlandi > 0 ? "uyari" : "basari";
   return (
@@ -358,20 +382,9 @@ function TopluOnaySonucu({ sonuc, kapat }: { sonuc: TopluSonucDurumu; kapat: () 
           ))}
         </ul>
       )}
-      {jobId && (
-        <>
-          <button
-            type="button"
-            className="dugme dugme-hayalet dugme-kucuk"
-            aria-expanded={isAcik}
-            aria-controls="toplu-kod-isi-ayrinti"
-            onClick={() => setIsAcik((a) => !a)}
-          >
-            {isAcik ? "Kod üretimi sonucunu gizle" : "Kod üretimi sonucunu göster"}
-          </button>
-          <div id="toplu-kod-isi-ayrinti">{isAcik && <KodUretimIsiOzeti jobId={jobId} ad={ad} />}</div>
-        </>
-      )}
+      {kodIsleri.map((j, i) => (
+        <KodIsiCekmecesi key={j} jobId={j} sira={i + 1} toplam={kodIsleri.length} ad={ad} />
+      ))}
       {otokodSorunlu.length > 0 && (
         <ul className="duz-liste kucuk" aria-label="Otomatik kod üretimi notları">
           {otokodSorunlu.map((s) => (
@@ -511,6 +524,7 @@ function TopluOnayCubugu({
       <p id={notId} className="soluk kucuk" data-testid="toplu-onay-notu">
         Toplu onaya yalnız {GORULDU_KURALI} ve onaya engeli olmayan taslaklar girer; her case ekranda gördüğünüz içerikle onaylanır.
         {gorulmeyen > 0 && ` ${gorulmeyen} case en az 3 saniye ekranda kalmadığı için dışarıda.`}
+        {" Sayım bu sayfaya özeldir: sayfa yenilenince case'lerin yeniden en az 3 saniye ekranda kalması gerekir."}
         {engelli > 0 && ` ${engelli} case onay engeli nedeniyle dışarıda.`}
       </p>
       {onay && (
@@ -551,9 +565,11 @@ export function CaseReview() {
   // Çekirdek ölçümü yoksa (uç henüz yok / hata) sayaçlar listeden hesaplanır.
   const metrik = useVeri(() => api.caseMetrikleri(id).catch(() => null), [id]);
   const [filtre, setFiltre] = useState<Filtre>("hepsi");
-  // 013 toplu onay: seçim ve bu oturumda sunucuya kaydedilen görüntülemeler.
+  // 013 toplu onay: seçim. "Görüldü" kümesi CaseKarti'nin oturum kaydından okunur (kişiye göre; K13');
+  // küme değişince sayaç yeniden çizimi tetikler.
   const [secili, setSecili] = useState<Set<string>>(new Set());
-  const [gorulenler, setGorulenler] = useState<Set<string>>(new Set());
+  const [, setGorulmeSurumu] = useState(0);
+  const gorulmeDegisti = () => setGorulmeSurumu((n) => n + 1);
   // Toplu onay sonucu çubuktan bağımsız tutulur: tüm taslaklar onaylanınca da görünür kalır.
   const [topluSonuc, setTopluSonuc] = useState<TopluSonucDurumu | null>(null);
   const kisiAdi = useKisiAdi();
@@ -581,11 +597,11 @@ export function CaseReview() {
   const g = gereksinim.veri;
   const { kullanici } = useOturum();
   const kullaniciAnahtari = kullanici ? kullanici.id || kullanici.kullanici_adi : null;
-  // Oturum (kişi/rol) değişince bu oturumda kaydedilen görüntülemeler ve seçim başkasına geçmez.
+  // Oturum (kişi/rol) değişince seçim başkasına geçmez (görüntüleme kaydı zaten kişiye göre).
   useEffect(() => {
-    setGorulenler(new Set());
     setSecili(new Set());
   }, [kullaniciAnahtari]);
+  const gorulenler = goruntulenenKumesi(kullaniciAnahtari);
   const yayinYetkili = kullanici?.rol === "analyst";
   const karar = kullanici?.rol === "analyst";
   const toplu = topluOnayAdaylari(liste, gorulenler);
@@ -748,7 +764,7 @@ export function CaseReview() {
             // Onaylanan case'ler artık taslak değil: görüntüleme kaydı yeni karardan önce kaldı.
             const onaylanan = sonuc.cikti.yanit.sonuclar.filter((x) => x.durum === "onaylandi").map((x) => x.case_id);
             for (const cid of onaylanan) goruntulemeyiUnut(cid);
-            setGorulenler((s) => new Set([...s].filter((x) => !onaylanan.includes(x))));
+            gorulmeDegisti();
             // Başarılı, kısmi ya da hatalı: liste her durumda yenilenir.
             void caseler.yenile(true);
             void metrik.yenile(true);
@@ -790,13 +806,8 @@ export function CaseReview() {
               tc={c}
               guncellendi={(t) => {
                 caseler.setVeri(liste.map((x) => (x.id === t.id ? t : x)));
-                // Karar ya da yeniden açma: bu oturumdaki "görüldü" kaydı geçersiz (sunucuda yeni eşik).
-                setGorulenler((s) => {
-                  if (!s.has(t.id)) return s;
-                  const y = new Set(s);
-                  y.delete(t.id);
-                  return y;
-                });
+                // Karar ya da yeniden açma: "görüldü" kaydı CaseKarti'de silindi (sunucuda yeni eşik).
+                gorulmeDegisti();
               }}
               yenile={() => void caseler.yenile(true)}
               secim={
@@ -814,7 +825,7 @@ export function CaseReview() {
                     }
                   : undefined
               }
-              goruntulendi={(cid) => setGorulenler((s) => new Set(s).add(cid))}
+              goruntulendi={gorulmeDegisti}
             />
           ))}
         </div>

@@ -546,9 +546,14 @@ export interface OtomasyonAyarlari {
     guncelleyen: string | null;
     guncelleme: string | null;
   };
+  /**
+   * K23: model geçidi REPLAY kipinde mi (core ayar ucunda `replay` ya da `model_kipi` verirse).
+   * Bilinmiyorsa yok; portal `/demo/status` → `model.mod`'a düşer.
+   */
+  replay?: boolean;
 }
 
-export type OtomasyonAyarAnahtari = keyof OtomasyonAyarlari;
+export type OtomasyonAyarAnahtari = Exclude<keyof OtomasyonAyarlari, "replay">;
 
 /** `GET /automation/jira-trigger` (013 §3.4). */
 export interface JiraTetikDurumu {
@@ -567,7 +572,13 @@ export interface JiraTetikDurumu {
     /** 013 §9: story başına sonuç (ör. `tetiklendi`, `isaretlendi`, `dokunulmadi`) ve Türkçe neden. */
     sonuclar: JiraTetikTurSonucu[];
   } | null;
-  son_tetiklenenler: { jira_key: string; zaman: string | null; sonuc: string | null }[];
+  /** Story başına son tetik sonucu; `neden` kalıcı Türkçe gerekçe (tur 3; core göndermezse null). */
+  son_tetiklenenler: { jira_key: string; zaman: string | null; sonuc: string | null; neden: string | null }[];
+  /**
+   * Sonraki tur taban turu mu (işaret yok: duruma girenler yalnız işaretlenir). Core `taban_bekleniyor`
+   * ya da `taban_kurulu` verirse; yoksa yok (portal tahmin eder).
+   */
+  taban_bekleniyor?: boolean;
 }
 
 export interface JiraTetikTurSonucu {
