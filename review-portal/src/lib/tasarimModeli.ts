@@ -110,3 +110,48 @@ export function bagliOgeler(m: DesignModel): Set<string> {
     ...m.flows.map((f) => f.item_id),
   ]);
 }
+
+/**
+ * D1/K20: model onayı (approve/edit) tur 2'yi (case üretimi) otomatik başlatır; onay yanıtı bunu
+ * `tur2: {basladi, job_id?, uretim_no?, mesaj?}` ya da düz `tur2_basladi: boolean` ile bildirir.
+ * Alan yoksa (eski core) null: panel eski "Case'leri üret" düğmesini gösterir.
+ */
+export interface Tur2Bilgisi {
+  basladi: boolean;
+  job_id: string | null;
+  uretim_no: number | null;
+  mesaj: string | null;
+}
+
+export function tur2Uyarla(ham: unknown): Tur2Bilgisi | null {
+  if (!ham || typeof ham !== "object") return null;
+  const h = ham as Record<string, unknown>;
+  const t = h.tur2;
+  if (t && typeof t === "object" && !Array.isArray(t)) {
+    const n = t as Record<string, unknown>;
+    return {
+      basladi: n.basladi === true,
+      job_id: typeof n.job_id === "string" ? n.job_id : null,
+      uretim_no: typeof n.uretim_no === "number" ? n.uretim_no : null,
+      mesaj: typeof n.mesaj === "string" ? n.mesaj : null,
+    };
+  }
+  if (typeof h.tur2_basladi === "boolean") return { basladi: h.tur2_basladi, job_id: null, uretim_no: null, mesaj: null };
+  return null;
+}
+
+/** Onaydan sonra tur 2 başladıysa gösterilen bildirim. */
+export function tur2Bildirimi(t: Tur2Bilgisi): string {
+  return t.uretim_no !== null ? `Case üretimi otomatik başladı (üretim ${t.uretim_no}).` : "Case üretimi otomatik başladı.";
+}
+
+/**
+ * REPLAY-MISS modeli yer tutucudur: kayıtlı model çıktısı yoktu, kabul kriterlerinden asgari bir
+ * iskelet yazıldı. Gerçek bir tasarım modeli değildir; onaylanamaz (case üretiminin girdisi olamaz).
+ */
+export function yerTutucuModelMi(m: { uretim_modu: string | null } | null | undefined): boolean {
+  return m?.uretim_modu === "replay_miss";
+}
+
+export const YER_TUTUCU_NEDENI =
+  "Yer tutucu model (REPLAY-MISS): bu girdi için kayıtlı model çıktısı yok; kabul kriterlerinden kurulan iskelet onaylanamaz. Modeli canlı modelle yeniden üretin.";

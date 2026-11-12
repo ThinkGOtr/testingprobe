@@ -407,7 +407,7 @@ function LocatorKirmaKarti({ durum }: { durum: DemoDurumu | null }) {
   const onKosul = durum?.onarim_on_kosulu ?? null;
   // Yeşil temel koşu yoksa core kırılmayı 409 ile reddeder (onarım "son yeşil yok" der): düğme pasif, yönerge görünür.
   const onKosulYok = onKosul?.hazir === false && ld.hal === "baseline";
-  const engelli = ld.hal !== "baseline" || desteksiz || onKosulYok;
+  const kirmaPasif = ld.hal !== "baseline" || desteksiz || onKosulYok;
   const mk = ld.mainKosusu;
   // Kırılmanın kendi koşusu main'in son koşusuysa (henüz onarım yok) ayrıca "son adım" olarak gösterilmez.
   const onarimAdimlari = ld.hal === "onarildi" && mk && (!k || mk.id !== k.id);
@@ -432,7 +432,7 @@ function LocatorKirmaKarti({ durum }: { durum: DemoDurumu | null }) {
             roller={["presenter"]}
             tur="tehlike"
             calisiyor={calisiyor}
-            disabled={(!!d && !d.bitti) || engelli}
+            disabled={(!!d && !d.bitti) || kirmaPasif}
             // Her pasif hâlin (kipte yok, ön koşul yok, zaten kırık, CI sürüyor, onarıldı) kartta kendi
             // görünür notu var; düğme etiketi de hâli söyler. Neden tekrarlanmaz.
             nedenGizli

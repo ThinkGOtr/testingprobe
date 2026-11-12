@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { ApiError } from "../api/http";
@@ -10,8 +10,9 @@ import { BazDegerKarti } from "../components/BazDegerKarti";
 import { useBildirim } from "../components/Bildirim";
 import { BulguKarti, SON_HAL_SONRASI } from "../components/BulguKarti";
 import { UretimFormu } from "../components/UretimFormu";
-import { BosDurum, Cip, DisBaglanti, HataKutusu, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
-import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
+import { BosDurum, Cip, DisBaglanti, HataKutusu, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, SayfaIciOnay, Uyari, Yukleniyor } from "../components/ui";
+import { GherkinIndir } from "../components/GherkinIndir";
+import { useGeciktirilmis, useIslem, useVeri, type IslemDurumu } from "../hooks";
 import { akisAdimi, DENETIM_ISLERI, hataAdimi, URETIM_ISI } from "../lib/akis";
 import { akisKanitlari, guncelAdim } from "../lib/yolHaritasi";
 import { AC_EKSIK, gereksinimDurumu, SORU_TURU } from "../lib/etiketler";
@@ -19,8 +20,9 @@ import { AJAN_URUNU_NEDENI } from "../lib/ajanProbe";
 import { tarih } from "../lib/format";
 import { dokumanBloklari } from "../lib/dokuman";
 import type { UretimKipi } from "../api/tasarimModeliTipleri";
-import { MODEL_ASAMASI, TasarimModeliPaneli } from "../components/TasarimModeliPaneli";
+import { MODEL_ASAMASI, TASARIM_MODELI_BOLUMU, TasarimModeliPaneli } from "../components/TasarimModeliPaneli";
 import { UretimKipiSecici, VARSAYILAN_KIP } from "../components/UretimKipiSecici";
+import { baslangicKipi, kipDugmeMetni, uretimCakismaMesaji } from "../lib/uretimSecenekleri";
 
 /**
  * Onaylı düzeltmeleri uygular. Düzeltme aynı döngüdeki 'bilinçli fark' kararıyla çelişirse core 409
@@ -54,12 +56,31 @@ export function GereksinimDetay() {
   // Gereksinim makinesi `done` ile biter; kod → bug adımları (5–14) yol haritasıyla aynı kanıtlardan.
   const tamamMi = detay.veri?.durum === "done";
   const kanit = useVeri(() => (tamamMi ? akisKanitlari(id) : Promise.resolve(null)), [id, tamamMi]);
-  const islem = useIslem();
+  // Ön inceleme ve üretim ayrı işlemler: birinin bekleme göstergesi ötekinin düğmesinde dönmez.
+  const inceleme = useIslem();
+  const uretim = useIslem();
   const bildir = useBildirim();
-  // 011 K1: üretim kipi (iki tur varsayılan); "Case üret" seçili kipi açıkça gönderir.
-  const [kip, setKip] = useState<UretimKipi>(VARSAYILAN_KIP);
-  // 011 K5: seçenekli üretim formu ("Case üret" düğmesi gövdesiz eski davranışı korur).
+  // 011 K1: üretim kipi; üst düğme seçili kipi adıyla söyler ve kipi açıkça gönderir. İlk değer
+  // gereksinimde kayıtlı tercihten (D1, generation-options `kip`), yoksa iki tur.
+  const [kip, setKipHam] = useState<UretimKipi>(VARSAYILAN_KIP);
+  const kipSecildi = useRef(false);
+  const setKip = useCallback((k: UretimKipi) => {
+    kipSecildi.current = true;
+    setKipHam(k);
+  }, []);
+  const secenekYaniti = useVeri(() => api.uretimSecenekleri(id).catch(() => null), [id]);
+  useEffect(() => {
+    if (!kipSecildi.current && secenekYaniti.veri !== undefined) setKipHam(baslangicKipi(secenekYaniti.veri));
+  }, [secenekYaniti.veri]);
+  // 011 K5: seçenekli üretim formu (üst düğme gövdesiz eski davranışı korur).
   const [uretimFormu, setUretimFormu] = useState(false);
+  // cases_ready'de yeniden üretim sayfa içi onay ister (mevcut case'ler ve onaylar geçersiz olur).
+  const [yenidenOnay, setYenidenOnay] = useState(false);
+  // Bölüm gezgini yalnız çizilen bölümleri listeler (tasarım modeli paneli kendi verisine göre çizilir).
+  const [modelGorunur, setModelGorunur] = useState(false);
+  // Case'ler: Gherkin indir ve yeniden üretim onayındaki sayılar için (yalnız case varsa okunur).
+  const caseVarHam = (detay.veri?.sayaclar.case_toplam ?? 0) > 0;
+  const caseler = useVeri(() => (caseVarHam ? api.caseler(id) : Promise.resolve([])), [id, caseVarHam, detay.veri?.durum]);
 
   const tumunuYenile = useCallback(() => {
     void detay.yenile(true);
@@ -91,7 +112,7 @@ export function GereksinimDetay() {
   const bosBulgu = bosBulguMetni(g, elenen, dogrulaniyor);
   const poCevaplari = g.po_cevaplari ?? [];
 
-  async function eylem<T>(fn: () => Promise<T>, basari: string | ((sonuc: T) => string)) {
+  async function eylem<T>(islem: IslemDurumu, fn: () => Promise<T>, basari: string | ((sonuc: T) => string)) {
     const s = await islem.calistir(fn);
     if (s !== undefined) {
       bildir(typeof basari === "function" ? basari(s as T) : basari);
@@ -119,7 +140,7 @@ export function GereksinimDetay() {
     ((poGuncel && ["po_approved", "cases_ready"].includes(g.durum)) || (uretimHatasi && poYenidenDenemedeGecerli(g)));
   const modelAsamasi = MODEL_ASAMASI.has(g.durum);
   const caseUretNedeni = modelAsamasi
-    ? "İki tur sürüyor: tasarım modeli panelinden ilerleyin (onay → Case'leri üret)"
+    ? "İki tur sürüyor: tasarım modeli panelinden ilerleyin (onaydan sonra case'ler otomatik üretilir)"
     : caseUretilebilir
     ? uretimHatasi
       ? "Case üretimi hata ile bitti; yeniden dener. PO onayının güncelliği sunucuda yeniden doğrulanır."
@@ -132,6 +153,21 @@ export function GereksinimDetay() {
         ? "İçerik PO onayından sonra değişti; yeniden PO teyidi gerekir"
         : "Case üretimi için PO teyidi gerekir";
   const caseVar = g.sayaclar.case_toplam > 0;
+  const caseReviewYolu = `/gereksinimler/${encodeURIComponent(g.id)}/caseler`;
+  // cases_ready: sıradaki adım case review (birincil); yeniden üretim ikincil ve onaylı (UX-4).
+  const reviewAsamasi = g.durum === "cases_ready" && caseVar && !ajanBagli;
+  const guncelCaseler = (caseler.veri ?? []).filter((c) => c.durum !== "superseded");
+  const mevcutCase = caseler.veri ? guncelCaseler.length : g.sayaclar.case_toplam;
+  const onayliCase = caseler.veri ? guncelCaseler.filter((c) => c.durum === "approved" || c.durum === "published").length : g.sayaclar.case_onayli;
+  const yenidenUretimSonucu = `Mevcut ${mevcutCase} case (${onayliCase} onaylı) yerini yenilerine bırakır; onaylar geçersiz olur.`;
+  const uretimBasladiMetni = kip === "iki_tur" ? "Tasarım modeli üretimi başlatıldı (iki tur)." : "Case üretimi başlatıldı.";
+  const uretimiBaslat = () =>
+    eylem(uretim, () => api.caseUret(g.id, kip).catch(caseUretHatasi), uretimBasladiMetni).then(() => setYenidenOnay(false));
+  const ajanGorunur = !!ajan.veri;
+  const bolumler = BOLUMLER.filter((b) => (b.id === BOLUM_ID.model ? modelGorunur : b.id === BOLUM_ID.ajan ? ajanGorunur : true));
+  const gherkin = caseVar && !ajanBagli && caseler.veri && (
+    <GherkinIndir requirementId={g.id} anahtar={g.jira_key ?? g.id} caseler={caseler.veri} />
+  );
 
   return (
     <>
@@ -156,41 +192,59 @@ export function GereksinimDetay() {
               roller={["analyst"]}
               tur={incelemeBaslatilabilir && !(uretimHatasi && caseUretilebilir) ? "birincil" : "ikincil"}
               disabled={!incelemeBaslatilabilir}
-              calisiyor={islem.calisiyor && g.durum === "in_review"}
+              calisiyor={inceleme.calisiyor || g.durum === "in_review"}
               title={
                 incelemeBaslatilabilir
                   ? uretimHatasi
-                    ? "Denetimi baştan başlatır; Jira story'sinde yeni PO teyidi gerekir. Yalnızca case üretimini yeniden denemek için 'Case üret'i kullanın."
+                    ? `Denetimi baştan başlatır; Jira story'sinde yeni PO teyidi gerekir. Yalnızca case üretimini yeniden denemek için 'Case üretimini yeniden dene'yi kullanın.`
                     : g.ac_missing
                     ? "Kabul kriteri yok: ön inceleme eksik kriterleri PO'ya sorar"
                     : undefined
                   : "Bu durumda ön inceleme başlatılamaz"
               }
-              onClick={() => eylem(() => api.incelemeBaslat(g.id), "Ön inceleme başlatıldı.")}
+              onClick={() => eylem(inceleme, () => api.incelemeBaslat(g.id), "Ön inceleme başlatıldı.")}
             >
-              {g.kontrol_turu > 0 ? "Yeniden denetle" : "Ön incelemeyi başlat"}
+              {g.durum === "in_review" ? "Kontrol sürüyor…" : g.kontrol_turu > 0 ? "Yeniden kontrol et" : "Ön incelemeyi başlat"}
             </IslemDugmesi>
-            <IslemDugmesi
-              id="case-uret"
-              roller={["analyst"]}
-              tur={uretimHatasi && caseUretilebilir ? "birincil" : undefined}
-              disabled={!caseUretilebilir}
-              title={caseUretNedeni}
-              onClick={() =>
-                eylem(
-                  () => api.caseUret(g.id, kip).catch(caseUretHatasi),
-                  kip === "iki_tur" ? "Tasarım modeli üretimi başlatıldı (iki tur)." : "Case üretimi başlatıldı.",
-                )
-              }
-            >
-              {uretimHatasi ? "Case üretimini yeniden dene" : "Case üret"}
-            </IslemDugmesi>
+            {reviewAsamasi && (
+              <Link className="dugme dugme-birincil" to={caseReviewYolu}>
+                Case review
+              </Link>
+            )}
+            {reviewAsamasi && gherkin}
+            {reviewAsamasi ? (
+              <IslemDugmesi
+                id="case-uret"
+                roller={["analyst"]}
+                tur="ikincil"
+                disabled={!caseUretilebilir || yenidenOnay}
+                calisiyor={uretim.calisiyor}
+                nedenGizli={yenidenOnay}
+                aria-expanded={yenidenOnay}
+                title={caseUretilebilir ? `${kipDugmeMetni(kip)}: ${yenidenUretimSonucu}` : caseUretNedeni}
+                onClick={() => setYenidenOnay(true)}
+              >
+                Yeniden üret…
+              </IslemDugmesi>
+            ) : (
+              <IslemDugmesi
+                id="case-uret"
+                roller={["analyst"]}
+                tur={uretimHatasi && caseUretilebilir ? "birincil" : undefined}
+                disabled={!caseUretilebilir}
+                calisiyor={uretim.calisiyor}
+                title={caseUretNedeni}
+                onClick={() => void uretimiBaslat()}
+              >
+                {uretimHatasi ? "Case üretimini yeniden dene" : kipDugmeMetni(kip)}
+              </IslemDugmesi>
+            )}
             <IslemDugmesi
               id="uretim-formu-ac"
               roller={["analyst"]}
               tur="ikincil"
               disabled={!caseUretilebilir}
-              title={caseUretilebilir ? "Platform, test seviyesi, standartlar ve kapsam dışı seçerek üretimi başlatır" : caseUretNedeni}
+              title={caseUretilebilir ? "Kip, platform, test seviyesi, standartlar ve kapsam dışı seçerek üretimi başlatır" : caseUretNedeni}
               nedenGizli
               aria-expanded={uretimFormu}
               onClick={() => setUretimFormu((x) => !x)}
@@ -202,34 +256,63 @@ export function GereksinimDetay() {
                 Case review
               </span>
             )}
-            {caseVar && !ajanBagli && (
-              <Link className="dugme dugme-ikincil" to={`/gereksinimler/${encodeURIComponent(g.id)}/caseler`}>
+            {caseVar && !ajanBagli && !reviewAsamasi && (
+              <Link className="dugme dugme-ikincil" to={caseReviewYolu}>
                 Case review
               </Link>
             )}
+            {!reviewAsamasi && gherkin}
           </>
         }
       />
-      {islem.hata && <HataKutusu hata={islem.hata} kaynak={islem.hataNesnesi} />}
+      {inceleme.hata && <HataKutusu hata={inceleme.hata} kaynak={inceleme.hataNesnesi} />}
+      {uretim.hata && <HataKutusu hata={uretim.hata} kaynak={uretim.hataNesnesi} />}
+      {yenidenOnay && reviewAsamasi && caseUretilebilir && (
+        <SayfaIciOnay
+          testId="yeniden-uret-onayi"
+          baslik="Case'ler yeniden üretilsin mi?"
+          onayMetni="Evet, yeniden üret"
+          tehlikeli
+          calisiyor={uretim.calisiyor}
+          onayla={() => void uretimiBaslat()}
+          vazgec={() => {
+            setYenidenOnay(false);
+            requestAnimationFrame(() => document.getElementById("case-uret")?.focus());
+          }}
+        >
+          <p>{yenidenUretimSonucu}</p>
+          <p className="kucuk soluk">
+            Seçili kip: <strong>{kipDugmeMetni(kip)}</strong>
+            {kip === "iki_tur" && " — önce tasarım modeli üretilir; onayınızdan sonra case'ler otomatik üretilir."}
+          </p>
+        </SayfaIciOnay>
+      )}
       {uretimFormu && caseUretilebilir && (
         <UretimFormu
           gereksinimId={g.id}
+          kip={kip}
+          kipDegistir={setKip}
+          uyari={
+            reviewAsamasi && (
+              <Uyari baslik="Mevcut case'ler değişir">{yenidenUretimSonucu}</Uyari>
+            )
+          }
           gonder={(govde) => api.caseUret(g.id, kip, govde).catch(caseUretHatasi)}
           basladi={() => {
             setUretimFormu(false);
-            bildir(kip === "iki_tur" ? "Tasarım modeli üretimi başlatıldı (iki tur)." : "Case üretimi başlatıldı.");
+            bildir(uretimBasladiMetni);
             tumunuYenile();
           }}
           kapat={() => setUretimFormu(false)}
         />
       )}
 
-      {caseUretilebilir && (
+      {caseUretilebilir && !uretimFormu && (
         <Kart>
           <UretimKipiSecici kip={kip} degistir={setKip} />
         </Kart>
       )}
-      <TasarimModeliPaneli g={g} yenile={tumunuYenile} />
+      <TasarimModeliPaneli g={g} yenile={tumunuYenile} gorunurDegisti={setModelGorunur} />
 
       <Kart>
         <AkisAdimlari adim={guncelAdim(g, kanit.veri ?? null, akisAdimi(g.durum, g.adim ?? hataAdimi(g.son_hata?.job_tur)))} kaynak={g.kaynak} />
@@ -256,7 +339,7 @@ export function GereksinimDetay() {
       ))}
 
       <div className="bolum-duzen">
-        <BolumGezgini />
+        <BolumGezgini bolumler={bolumler} />
         <div className="bolum-govde">
           <div className="iki-sutun">
             <Kart baslik="Doküman" id={BOLUM_ID.dokuman}>
@@ -266,7 +349,7 @@ export function GereksinimDetay() {
             <PoKarti g={g} yenile={tumunuYenile} />
           </div>
 
-          <AjanUrunuPaneli id={g.id} ajan={ajan} caseVar={caseVar} degisti={tumunuYenile} />
+          <AjanUrunuPaneli id={g.id} bolumId={BOLUM_ID.ajan} ajan={ajan} caseVar={caseVar} degisti={tumunuYenile} />
 
           <BazDegerKarti
             id={BOLUM_ID.baz}
@@ -372,7 +455,7 @@ export function GereksinimDetay() {
                   <IslemDugmesi
                     roller={["analyst"]}
                     disabled={sonHalAcik ? false : yazilacak === 0 || turSiniri}
-                    calisiyor={islem.calisiyor && g.durum === "in_review"}
+                    calisiyor={inceleme.calisiyor && g.durum === "in_review"}
                     // Tur sınırı nedeni aşağıdaki uyarı kutusunda (yalnız yazılacak düzeltme varken) görünür
                     // yazılı; düğmeye bağlanır. Kutu yoksa neden düğmenin altında yazılır.
                     nedenGizli={turSiniri && yazilacak > 0}
@@ -390,6 +473,7 @@ export function GereksinimDetay() {
                     }
                     onClick={() =>
                       eylem(
+                        inceleme,
                         () => duzeltmeleriUygula(g.id),
                         sonHalAcik
                           ? (r) =>
@@ -491,16 +575,21 @@ export function GereksinimDetay() {
  * değiştirilirse kurallar da değişir (capa.test.tsx denetler). Diğerleri aynı adlandırmayı izler.
  */
 export const BOLUM_ID = {
+  model: TASARIM_MODELI_BOLUMU,
   dokuman: "dokuman",
   po: "po-onay",
+  ajan: "ajan-urunu",
   baz: "baz-deger",
   sorular: "on-inceleme",
   bulgular: "bulgular",
 } as const;
 
-const BOLUMLER: { id: string; ad: string }[] = [
+/** Sayfa sırasıyla bölümler; görünmeyen bölüm (model paneli yok, ajan ucu yok) gezginde de yok. */
+export const BOLUMLER: { id: string; ad: string }[] = [
+  { id: BOLUM_ID.model, ad: "Tasarım modeli" },
   { id: BOLUM_ID.dokuman, ad: "Doküman" },
   { id: BOLUM_ID.po, ad: "PO teyidi" },
+  { id: BOLUM_ID.ajan, ad: "Ürün AI ajanı" },
   { id: BOLUM_ID.baz, ad: "Manuel baz değer" },
   { id: BOLUM_ID.sorular, ad: "Ön inceleme soruları" },
   { id: BOLUM_ID.bulgular, ad: "Tutarlılık bulguları" },
@@ -513,10 +602,10 @@ const BOLUMLER: { id: string; ad: string }[] = [
  * bölümlere atlama yolu. Bağlantı metinleri kart başlıklarıyla aynı: ≥861 px'te testte
  * getByText(kart başlığı).first() bu bağlantıyı bulur → kartlar getByRole("region", { name }) ile aranır (§9).
  */
-function BolumGezgini() {
+function BolumGezgini({ bolumler }: { bolumler: { id: string; ad: string }[] }) {
   return (
     <nav className="bolum-gezgini" aria-label="Sayfa bölümleri">
-      {BOLUMLER.map((b) => (
+      {bolumler.map((b) => (
         <a key={b.id} href={`#${b.id}`}>
           {b.ad}
         </a>
@@ -559,7 +648,7 @@ export function bosBulguMetni(g: Detay, elenenToplam: number, dogrulaniyor: numb
 export const DENETIM_SURUYOR = "Denetim sürüyor… Sonuç gelince bulgular burada görünecek.";
 export const DENETIM_TAMAMLANMADI = "Denetim tamamlanmadı — tutarlılık doğrulanmadı.";
 export const DENETIM_HATALI =
-  "Denetim tamamlanmadı (iş hata ile bitti) — tutarlılık doğrulanmadı. 'Yeniden denetle' ile tekrar başlatın.";
+  "Denetim tamamlanmadı (iş hata ile bitti) — tutarlılık doğrulanmadı. 'Yeniden kontrol et' ile tekrar başlatın.";
 
 export const AC_YOK_CASE_URETILEMEZ = "Kabul kriteri yok; case üretilemez";
 
@@ -594,6 +683,11 @@ export function poYenidenDenemedeGecerli(g: Pick<Detay, "po" | "icerik_hash">): 
 export function caseUretHatasi(e: unknown): never {
   if (e instanceof ApiError && e.status === 422 && /ac_missing|kabul kriter/i.test(e.detail)) {
     throw new ApiError(422, "Kabul kriteri olmayan gereksinimden case üretilemez. Önce PO'dan kabul kriterlerini alın.");
+  }
+  // 409 "… (durum: modeling)": ham durum kodu yerine etiket; üretim sürüyorsa "Üretim zaten başladı (…)".
+  if (e instanceof ApiError && e.status === 409) {
+    const metin = uretimCakismaMesaji(e.detail);
+    if (metin) throw new ApiError(409, metin, { kod: e.kod, method: e.method, yol: e.yol, kayitId: e.kayitId });
   }
   throw e;
 }

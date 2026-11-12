@@ -567,6 +567,8 @@ export function caseKapsamOzetiUyarla(govde: unknown): CaseKapsamOzeti | null {
       gerekce: metinYaDaNull(ilk(k, "gerekce", "reason")),
       karar: metinYaDaNull(k.karar),
       ac_ref: metinYaDaNull(k.ac_ref),
+      // D3: hazır case'lerle kapsam; alan yoksa (eski core) hiç eklenmez, panel gizler.
+      ...(Array.isArray(k.covered_by_ready) ? { covered_by_ready: k.covered_by_ready.filter((n): n is number => typeof n === "number") } : {}),
       ...(Array.isArray(k.covered_by_cases)
         ? {
             kapsayanlar: nesneler(k.covered_by_cases, (c): KapsayanCase => ({
@@ -582,6 +584,8 @@ export function caseKapsamOzetiUyarla(govde: unknown): CaseKapsamOzeti | null {
       gereksinim_kapsami: kapsamOraniUyarla(oran.gereksinim_kapsami),
       oge_kapsami: kapsamOraniUyarla(oran.oge_kapsami),
       negatif_karar_kapsami: kapsamOraniUyarla(oran.negatif_karar_kapsami),
+      // D3: hazır kapsam oranları (anahtarında `hazir` geçen; ör. hazir_oge_kapsami).
+      ...Object.fromEntries(Object.entries(oran).filter(([k, v]) => k.includes("hazir") && nesneMi(v)).map(([k, v]) => [k, kapsamOraniUyarla(v)])),
     },
     teknik_dagilimi: sayiSozlugu(govde.teknik_dagilimi),
     readiness_dagilimi: sayiSozlugu(govde.readiness_dagilimi),

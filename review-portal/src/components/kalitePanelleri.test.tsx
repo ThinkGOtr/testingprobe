@@ -1,8 +1,8 @@
 // 011 D şeridi: P8 review ve P9 denetim — mock arka uç akışı (golden'larla), paneller ve yayın özeti.
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Rotalar } from "../App";
 import { api } from "../api/client";
 import { KAYNAK } from "../api/mock/fixtures";
@@ -11,7 +11,7 @@ import type { CaseDenetimGorunumu, CaseReviewGorunumu } from "../api/types";
 import { OturumProvider } from "../auth";
 import { oturumAc, sar } from "../test/yardimci";
 import { BildirimProvider } from "./Bildirim";
-import { DenetimOzeti, DenetimPaneli, ReviewPaneli } from "./KalitePanelleri";
+import { DenetimOzeti, DenetimPaneli, gonderBirincilMi, ReviewPaneli } from "./KalitePanelleri";
 
 const RID = "req-tpd-4";
 
@@ -60,7 +60,7 @@ describe("mock: review (P8) ve denetim (P9) akışı", () => {
     for (const c of caseler) await api.caseKarari(c.id, { icerik_hash: c.icerik_hash, karar: "approve" });
     let p = await api.yayinOnizleme(RID);
     expect(p.kalemler.map((k) => k.islem)).toEqual(["blocked_gate", "blocked_gate"]);
-    expect(p.kalemler[0].neden).toMatch(/^Denetim kararı yok/);
+    expect(p.kalemler[0].neden).toMatch(/^Yayınlanamaz: Agent Probe denetimi kararı yok/);
 
     const d0 = await api.caseDenetimGonder(RID);
     expect(d0.calisiyor).toBe(true);
@@ -79,14 +79,16 @@ describe("mock: review (P8) ve denetim (P9) akışı", () => {
     const bayat = await api.caseDenetim(RID);
     expect(bayat.guncel_karar).toBeNull();
     expect(bayat.denetim?.guncel).toBe(false);
-    expect(bayat.yayin_engeli).toMatch(/^Denetim kararı bayat/);
+    expect(bayat.yayin_engeli).toMatch(/^Yayınlanamaz: Agent Probe denetimi kararı bayat/);
     expect((await api.caseReview(RID)).bayat).toBe(true);
     // Yeni set golden'a uymaz: dürüst REPLAY-MISS, karar yok.
     await api.caseDenetimGonder(RID);
     await bekleIsler();
     const miss = await api.caseDenetim(RID);
     expect(miss.denetim?.durum).toBe("hata");
-    expect(miss.yayin_engeli).toMatch(/^Denetim yapılamadı/);
+    expect(miss.yayin_engeli).toMatch(/^Yayınlanamaz: Agent Probe denetimi yapılamadı/);
+    // Core gibi ham istisna sınıfıyla gelir; portal ayıklar (KalitePanelleri testleri).
+    expect(miss.denetim?.hata).toMatch(/^ReplayNoOutput: /);
   });
 
   it("denetime gönder koşulu: review tamamlanmadıysa en az bir onaylı case", async () => {
@@ -109,18 +111,66 @@ describe("mock: review (P8) ve denetim (P9) akışı", () => {
     expect(Object.keys(k.case_review)).toHaveLength(5);
   });
 
-  it("case review sayfası: review bulguları ve denetim paneli, Denetime gönder", async () => {
+  it("case review sayfası: daralmış paneller, karar bekleyen varken ikincil + onay ile Agent Probe'a gönder, KABUL yönlendirmesi", async () => {
     await uret();
     const c = mockVerisi().caseler.find((x) => x.requirement_id === RID)!;
     await api.caseKarari(c.id, { icerik_hash: c.icerik_hash, karar: "approve" });
     const u = userEvent.setup();
     uygulama(`/gereksinimler/${RID}/caseler`);
     expect(await screen.findByTestId("review-skor")).toHaveTextContent("11/12");
+    // Review paneli özet satırına daralmış başlar; ayrıntı aria-expanded düğmeyle açılır.
+    const reviewKart = within(document.getElementById("review-bulgulari")!);
+    expect(screen.getByTestId("review-ayrinti")).not.toBeVisible();
+    const ac = reviewKart.getByRole("button", { name: "Ayrıntıları göster" });
+    expect(ac).toHaveAttribute("aria-expanded", "false");
+    await u.click(ac);
+    expect(reviewKart.getByRole("button", { name: "Ayrıntıları gizle" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByTestId("review-ayrinti")).toBeVisible();
     expect(within(screen.getByTestId("review-maddeleri")).getAllByRole("listitem")).toHaveLength(12);
-    await u.click(screen.getByRole("button", { name: "Denetime gönder" }));
+
+    // Bir case hâlâ karar bekliyor: düğme ikincil, tıklayınca sayfa içi onay.
+    const gonder = screen.getByRole("button", { name: "Agent Probe'a gönder" });
+    expect(gonder).toHaveClass("dugme-ikincil");
+    await u.click(gonder);
+    const onay = screen.getByTestId("denetim-gonder-onayi");
+    expect(onay).toHaveTextContent("2 case'ten 1 tanesi hâlâ karar bekliyor. Denetim yalnız bugünkü seti değerlendirir; case'ler değişirse karar bayatlar.");
+    await u.click(within(onay).getByRole("button", { name: "Yine de gönder" }));
     await bekleIsler();
     expect(await screen.findByTestId("denetim-karari", {}, { timeout: 3000 })).toHaveTextContent("KABUL");
+    const yon = screen.getByTestId("denetim-yonlendirme");
+    expect(yon).toHaveTextContent("Yayına hazır: Yayın sayfasına geç");
+    expect(within(yon).getByRole("link", { name: "Yayın sayfasına geç" })).toHaveAttribute("href", `/gereksinimler/${RID}/yayin`);
+    expect(screen.getByTestId("denetim-gerekce")).not.toBeVisible();
+    await u.click(within(document.getElementById("denetim")!).getByRole("button", { name: "Ayrıntıları göster" }));
     expect(screen.getByTestId("denetim-gerekce")).toHaveTextContent("AC1–AC2");
+    expect(screen.getByTestId("serit-denetim")).toHaveTextContent("Agent Probe denetimi: KABUL");
+  });
+
+  it("durum şeridi: sayılar ve bölüm bağlantıları; tek birincil eylem", async () => {
+    await uret();
+    const u = userEvent.setup();
+    uygulama(`/gereksinimler/${RID}/caseler`);
+    const serit = await screen.findByRole("navigation", { name: "Case review durumu" });
+    const bekleyen = within(serit).getByTestId("serit-bekleyen");
+    expect(bekleyen).toHaveTextContent("2 karar bekliyor");
+    expect(bekleyen).toHaveAttribute("href", `/gereksinimler/${RID}/caseler#case-kararlari`);
+    expect(within(serit).getByTestId("serit-hazir-degil")).toHaveTextContent(/^\d+ hazır değil$/);
+    expect(within(serit).getByTestId("serit-hazir-degil")).toHaveAttribute("href", `/gereksinimler/${RID}/caseler?filtre=hazir-degil#case-kararlari`);
+    await waitFor(() => expect(within(serit).getByTestId("serit-denetim")).toHaveTextContent("Agent Probe denetimi: karar yok"));
+    expect(within(serit).getByTestId("serit-denetim")).toHaveAttribute("href", `/gereksinimler/${RID}/caseler#denetim`);
+    expect(within(serit).getByTestId("serit-yayin")).toHaveTextContent("Yayın: kapalı");
+    expect(within(serit).getByTestId("serit-yayin")).toHaveAttribute("href", `/gereksinimler/${RID}/yayin`);
+    expect(document.getElementById("case-kararlari")).not.toBeNull();
+    // Karar bekleyen varken ne gönder ne yayın birincil.
+    expect(screen.getByRole("button", { name: "Agent Probe'a gönder" })).toHaveClass("dugme-ikincil");
+    expect(screen.getByRole("link", { name: "Yayın önizleme" })).toHaveClass("dugme-ikincil");
+
+    // Hepsi onaylandı: gönder birincil olur, yayın önizleme ikincil kalır (sayfada tek birincil).
+    for (const c of mockVerisi().caseler.filter((x) => x.requirement_id === RID)) await api.caseKarari(c.id, { icerik_hash: c.icerik_hash, karar: "approve" });
+    await u.click(within(serit).getByTestId("serit-bekleyen"));
+    await waitFor(() => expect(screen.getByTestId("serit-bekleyen")).toHaveTextContent("Karar bekleyen yok"), { timeout: 3000 });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Agent Probe'a gönder" })).toHaveClass("dugme-birincil"));
+    expect(screen.getByRole("link", { name: "Yayın önizleme" })).toHaveClass("dugme-ikincil");
   });
 });
 
@@ -155,7 +205,7 @@ const DENETIM: CaseDenetimGorunumu = {
   requirement_id: "r",
   set_hash: "h1",
   calisiyor: false,
-  gonder_engeli: "Bu set için review sürüyor; review bitince denetime gönderin",
+  gonder_engeli: "Bu set için review sürüyor; review bitince Agent Probe'a gönderin",
   kapi_acik: true,
   yayin_engeli: "DÜZELTME_GEREKLİ: sentetik değil",
   denetim: null,
@@ -186,34 +236,140 @@ const DENETIM: CaseDenetimGorunumu = {
 describe("paneller", () => {
   it("review: skor, bayat uyarısı, birleştir önerisi case bağlantılı", async () => {
     await oturumAc("analist");
-    sar(<ReviewPaneli gorunum={REVIEW} calistir={() => undefined} />);
+    sar(<ReviewPaneli gorunum={REVIEW} calistir={() => undefined} baslangictaAcik />);
     expect(screen.getByTestId("review-skor")).toHaveTextContent("10/12");
-    expect(screen.getByText("Review bayat")).toBeInTheDocument();
+    expect(screen.getByTestId("review-skor")).toHaveTextContent("bayat — set değişti");
+    expect(screen.getByText("Review bayat")).toBeVisible();
     const refs = within(screen.getByTestId("review-birlestir")).getAllByTestId("case-ref");
     expect(refs.map((a) => a.getAttribute("href"))).toEqual(["#case-c2", "#case-c10"]);
     expect(screen.getByTestId("review-eksik")).toHaveTextContent("12 adet");
   });
 
-  it("review hatası: 'review çalışmadı, yeniden dene'", async () => {
+  it("review hatası: 'review çalışmadı, yeniden dene'; ham sınıf adı ayıklanır, hata tonunda", async () => {
     await oturumAc("analist");
-    sar(<ReviewPaneli gorunum={{ ...REVIEW, bayat: false, review: { ...REVIEW.review!, durum: "hata", hata: "REPLAY-MISS" } }} calistir={() => undefined} />);
-    expect(screen.getByText("Review çalışmadı, yeniden deneyin")).toBeInTheDocument();
+    sar(
+      <ReviewPaneli
+        gorunum={{ ...REVIEW, bayat: false, review: { ...REVIEW.review!, durum: "hata", hata: "REPLAY-MISS: bu set için kayıtlı review çıktısı yok (ReplayNoOutput)" } }}
+        calistir={() => undefined}
+      />,
+    );
+    expect(screen.getByText("Review çalışmadı, yeniden deneyin").closest(".uyari-kutusu")).toHaveClass("uyari-hata");
+    expect(screen.getByTestId("review-hata")).toHaveTextContent(/^REPLAY-MISS: bu set için kayıtlı review çıktısı yok$/);
     await waitFor(() => expect(screen.getByRole("button", { name: "Yeniden çalıştır" })).toBeEnabled());
   });
 
-  it("denetim: sertleştirme, bulgu, kapalı düğmenin nedeni", async () => {
+  it("denetim: sertleştirme, bulgu, kapalı düğmenin nedeni; yayın engeli ayrıntıda Uyari", async () => {
     await oturumAc("analist");
-    sar(<DenetimPaneli gorunum={DENETIM} gonder={() => undefined} />);
+    sar(<DenetimPaneli gorunum={DENETIM} gonder={() => undefined} baslangictaAcik />);
+    expect(screen.getByRole("heading", { name: "Agent Probe denetimi" })).toBeInTheDocument();
     expect(screen.getByTestId("denetim-karari")).toHaveTextContent("DÜZELTME GEREKLİ");
     expect(screen.getByText("Karar kodda sertleştirildi")).toBeInTheDocument();
     expect(screen.getByTestId("denetim-bulgulari")).toHaveTextContent("AP-001");
-    expect(screen.getByRole("button", { name: "Denetime gönder" })).toBeDisabled();
-    expect(await screen.findByText(/review bitince denetime gönderin/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Agent Probe'a gönder" })).toBeDisabled();
+    expect(await screen.findByText(/review bitince Agent Probe'a gönderin/)).toBeInTheDocument();
+    expect(screen.getByTestId("denetim-yayin-engeli")).toHaveTextContent(/^Yayınlanamaz: DÜZELTME_GEREKLİ: sentetik değil$/);
   });
 
-  it("yayın özeti: karar ve engel", async () => {
+  it("yayın özeti: karar ve engel (önek bir kez)", async () => {
     sar(<DenetimOzeti gorunum={DENETIM} reviewYolu="/gereksinimler/r/caseler" />);
     await waitFor(() => expect(screen.getByTestId("yayin-denetim-ozeti")).toHaveTextContent("DÜZELTME GEREKLİ"));
-    expect(screen.getByText("DÜZELTME_GEREKLİ: sentetik değil")).toBeInTheDocument();
+    expect(screen.getByTestId("yayin-denetim-engeli")).toHaveTextContent(/^Yayınlanamaz: DÜZELTME_GEREKLİ: sentetik değil$/);
+    expect(screen.getByRole("link", { name: /Agent Probe'a gönder/ })).toHaveAttribute("href", "/gereksinimler/r/caseler#denetim");
+  });
+
+  it("yayın özeti: core öneki varsa ikinci kez yazılmaz; kapı kapalı metninde ortam değişkeni yok", async () => {
+    sar(<DenetimOzeti gorunum={{ ...DENETIM, yayin_engeli: "Yayınlanamaz: ENGELLE — gerçek kart verisi" }} reviewYolu="/r" />);
+    await waitFor(() => expect(screen.getByTestId("yayin-denetim-engeli")).toHaveTextContent(/^Yayınlanamaz: ENGELLE — gerçek kart verisi$/));
+    cleanup();
+    sar(<DenetimOzeti gorunum={{ ...DENETIM, kapi_acik: false }} reviewYolu="/r" />);
+    await waitFor(() => expect(screen.getByTestId("yayin-denetim-ozeti")).toHaveTextContent("denetim kapısı kapalı"));
+    expect(document.body).toHaveTextContent("Denetim kapısı yönetici tarafından kapatıldı; yayın için denetim kararı aranmıyor.");
+    expect(document.body.textContent).not.toMatch(/TP_DENETIM/);
+  });
+});
+
+describe("DenetimPaneli: gönder, yönlendirme, kapı, hata (UX-7)", () => {
+  const KABUL: CaseDenetimGorunumu = {
+    ...DENETIM,
+    gonder_engeli: null,
+    yayin_engeli: null,
+    guncel_karar: { ...DENETIM.guncel_karar!, karar: "KABUL", model_karari: "KABUL", icerik: { decision_rationale: "uygun" } },
+  };
+  const YOK: CaseDenetimGorunumu = { ...DENETIM, gonder_engeli: null, guncel_karar: null, denetim: null, yayin_engeli: "Yayınlanamaz: karar yok" };
+
+  it("karar bekleyen varken ikincil + sayfa içi onay; vazgeç göndermez", async () => {
+    await oturumAc("analist");
+    const u = userEvent.setup();
+    const gonder = vi.fn();
+    sar(<DenetimPaneli gorunum={YOK} gonder={gonder} bekleyen={4} toplam={6} />);
+    const d = screen.getByRole("button", { name: "Agent Probe'a gönder" });
+    await waitFor(() => expect(d).toBeEnabled());
+    expect(d).toHaveClass("dugme-ikincil");
+    await u.click(d);
+    expect(screen.getByTestId("denetim-gonder-onayi")).toHaveTextContent(
+      "6 case'ten 4 tanesi hâlâ karar bekliyor. Denetim yalnız bugünkü seti değerlendirir; case'ler değişirse karar bayatlar.",
+    );
+    await u.click(screen.getByRole("button", { name: "Vazgeç" }));
+    expect(screen.queryByTestId("denetim-gonder-onayi")).toBeNull();
+    expect(gonder).not.toHaveBeenCalled();
+    await u.click(d);
+    await u.click(screen.getByRole("button", { name: "Yine de gönder" }));
+    expect(gonder).toHaveBeenCalledTimes(1);
+  });
+
+  it("bekleyen yoksa birincil ve doğrudan gönderir; güncel KABUL varken ikincil", async () => {
+    await oturumAc("analist");
+    const u = userEvent.setup();
+    const gonder = vi.fn();
+    const { unmount } = sar(<DenetimPaneli gorunum={YOK} gonder={gonder} bekleyen={0} toplam={6} />);
+    const d = screen.getByRole("button", { name: "Agent Probe'a gönder" });
+    expect(d).toHaveClass("dugme-birincil");
+    expect(gonderBirincilMi(YOK, 0)).toBe(true);
+    await waitFor(() => expect(d).toBeEnabled());
+    await u.click(d);
+    expect(gonder).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId("denetim-gonder-onayi")).toBeNull();
+    unmount();
+    sar(<DenetimPaneli gorunum={KABUL} gonder={gonder} bekleyen={0} yayinYolu="/gereksinimler/r/yayin" />);
+    expect(screen.getByRole("button", { name: "Agent Probe'a gönder" })).toHaveClass("dugme-ikincil");
+    expect(gonderBirincilMi(KABUL, 0)).toBe(false);
+    expect(gonderBirincilMi({ ...YOK, kapi_acik: false }, 0)).toBe(false);
+  });
+
+  it.each([
+    ["KABUL", true, "Sonraki adım: Yayına hazır: Yayın sayfasına geç"],
+    ["DÜZELTME_GEREKLİ", true, "Sonraki adım: Bulgulardaki case'leri düzeltin, sonra yeniden gönderin."],
+    ["ENGELLE", true, "Sonraki adım: Set yayınlanamaz; bulgulardaki engelleri giderip yeniden üretin ya da gönderin."],
+    ["KABUL", false, "Sonraki adım: Case'ler denetimden sonra değişti; yeniden gönderin."],
+  ] as const)("yönlendirme: %s (güncel: %s)", async (karar, guncel, metin) => {
+    await oturumAc("analist");
+    const k = { ...DENETIM.guncel_karar!, karar, guncel };
+    const g: CaseDenetimGorunumu = guncel ? { ...DENETIM, guncel_karar: k } : { ...DENETIM, guncel_karar: null, denetim: k };
+    sar(<DenetimPaneli gorunum={g} gonder={() => undefined} yayinYolu="/gereksinimler/r/yayin" />);
+    expect(screen.getByTestId("denetim-yonlendirme")).toHaveTextContent(metin);
+  });
+
+  it("kapı kapalı: yönetici metni, ortam değişkeni adı yok", async () => {
+    await oturumAc("analist");
+    sar(<DenetimPaneli gorunum={{ ...YOK, kapi_acik: false }} gonder={() => undefined} />);
+    expect(screen.getByTestId("denetim-kapi-kapali")).toHaveTextContent("Denetim kapısı yönetici tarafından kapatıldı; yayın için denetim kararı aranmıyor.");
+    expect(document.body.textContent).not.toMatch(/TP_DENETIM/);
+  });
+
+  it("denetim hatası tek yerde, ham sınıf adı ayıklanmış, hata tonunda; işlem hatası panel içinde", async () => {
+    await oturumAc("analist");
+    const hata: CaseDenetimGorunumu = {
+      ...YOK,
+      yayin_engeli: "Yayınlanamaz: Agent Probe denetimi yapılamadı (ReplayNoOutput: bu set için kayıtlı denetim çıktısı yok (REPLAY-MISS)); yeniden gönderin",
+      denetim: { ...DENETIM.guncel_karar!, durum: "hata", karar: null, hata: "ReplayNoOutput: bu set için kayıtlı denetim çıktısı yok (REPLAY-MISS)", icerik: {} },
+    };
+    sar(<DenetimPaneli gorunum={hata} gonder={() => undefined} islemHata="TimeoutError: Agent Probe 30 sn içinde yanıt vermedi" />);
+    const h = screen.getByTestId("denetim-hata");
+    expect(h).toHaveTextContent(/^Bu set için kayıtlı denetim çıktısı yok \(REPLAY-MISS\)$/);
+    expect(h.closest(".uyari-kutusu")).toHaveClass("uyari-hata");
+    expect(screen.getAllByText(/kayıtlı denetim çıktısı yok/)).toHaveLength(1);
+    expect(screen.queryByTestId("denetim-yayin-engeli")).toBeNull();
+    expect(document.body.textContent).not.toMatch(/ReplayNoOutput|TimeoutError/);
+    expect(screen.getByText("Agent Probe 30 sn içinde yanıt vermedi")).toBeInTheDocument();
   });
 });

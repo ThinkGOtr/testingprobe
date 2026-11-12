@@ -114,13 +114,13 @@ describe("kabul kriteri eksik story (TPD-2): ön inceleme açık, case üretimi 
     expect(gereksinim("req-tpd-2").son_kontrol).toMatchObject({ mode: "replay" });
   });
 
-  it("PO onaylı olsa da 'Case üret' pasif ve nedeni söylenir", async () => {
+  it("PO onaylı olsa da üretim düğmesi pasif ve nedeni söylenir", async () => {
     await oturumAc("analist");
     const g = gereksinim("req-tpd-2");
     g.durum = "po_approved";
     g.po = { durum: "approved", onaylayan: "po", zaman: "2026-10-30T10:00:00Z", kanal: "jira" };
     uygulama("/gereksinimler/req-tpd-2");
-    const dugme = await screen.findByRole("button", { name: "Case üret" });
+    const dugme = await screen.findByRole("button", { name: "Tasarım modelini üret (iki tur)" });
     expect(dugme).toBeDisabled();
     expect(dugme).toHaveAttribute("title", AC_YOK_CASE_URETILEMEZ);
   });

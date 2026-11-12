@@ -1,6 +1,7 @@
 // Mock Agent Probe (011 F6, K10): ajan ürünleri ve ajan testi talepleri. Core'daki süreç içi
 // simülatörün (integrations/agent_probe/sim.py) örnek veri karşılığı: yalnız `hazir` ürünler
-// listelenir; talep ilerlemesi istek sayısına bağlıdır (queued → running → passed|failed).
+// listelenir; talep ilerlemesi `POST …/agent-test/refresh` sayısına bağlıdır (queued → running →
+// passed|failed; D4). `GET …/agent-test` yalnız okur.
 import { ApiError } from "../http";
 import type { AjanTestiGorunumu, AjanTestiTalebi, AjanUrunu, Kullanici, Rol } from "../types";
 
@@ -130,19 +131,48 @@ function gorunum(requirementId: string, yenile: boolean): AjanTestiGorunumu {
   };
 }
 
-export function ajanProbeRotalari(rolGerekli: (...roller: Rol[]) => Kullanici, girisGerekli: () => Kullanici): Rota[] {
+/** Ürüne bağlı gereksinimler (UX-11 "Bağlı gereksinim" sütunu). */
+function bagliGereksinimler(kod: string, bul?: GereksinimBulucu): NonNullable<AjanUrunu["bagli_gereksinimler"]> {
+  return Object.entries(baglantilar)
+    .filter(([, b]) => b.urun_kodu === kod)
+    .map(([id]) => {
+      const g = bul?.(id);
+      return { id, jira_key: g?.jira_key ?? null, baslik: g?.baslik ?? null };
+    });
+}
+
+type GereksinimBulucu = (id: string) => { jira_key: string | null; baslik: string } | undefined;
+
+export function ajanProbeRotalari(
+  rolGerekli: (...roller: Rol[]) => Kullanici,
+  girisGerekli: () => Kullanici,
+  gereksinimBul?: GereksinimBulucu,
+): Rota[] {
   return [
     [
       "GET",
       /^\/agent-probe\/products$/,
       () => {
         girisGerekli();
-        return { kip: "sim", simulasyon: true, urunler: MOCK_AJAN_URUNLERI.filter((u) => u.hazir).map(urunOzeti) };
+        return {
+          kip: "sim",
+          simulasyon: true,
+          urunler: MOCK_AJAN_URUNLERI.filter((u) => u.hazir).map((u) => ({ ...urunOzeti(u), bagli_gereksinimler: bagliGereksinimler(u.kod, gereksinimBul) })),
+        };
       },
     ],
     [
       "GET",
       /^\/requirements\/([^/]+)\/agent-test$/,
+      (m) => {
+        girisGerekli();
+        // D4: GET yalnız okur; sonuç işleme `POST …/agent-test/refresh` ile.
+        return gorunum(decodeURIComponent(m[1]), false);
+      },
+    ],
+    [
+      "POST",
+      /^\/requirements\/([^/]+)\/agent-test\/refresh$/,
       (m) => {
         girisGerekli();
         return gorunum(decodeURIComponent(m[1]), true);

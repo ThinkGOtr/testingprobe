@@ -1,4 +1,4 @@
-import type { MouseEvent } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import type { CaseKapsamOzeti, CaseUretimOzeti, KapsamOrani } from "../api/types";
 import { CASE_HAZIRLIK, CASE_TEKNIGI, NEGATIF_KARAR, SORU_SAHIBI, URETIM_TURU } from "../lib/etiketler";
 import { yuzde } from "../lib/format";
@@ -29,6 +29,36 @@ export function UretimTuruRozeti({ tur }: { tur: string }) {
   );
 }
 
+/**
+ * UX-13: matristeki karar etiketleri (negatif kararlar tablosu da aynı dili kullanır). Bilinçli
+ * kapsam dışı nötrdür; yalnız gerekçesiz kapsanmayan öğe uyarıdır.
+ */
+export const MATRIS_KARARI: Record<string, string> = {
+  tested: "Negatif case ile test edilir",
+  covered_by: "Başka case kapsıyor",
+  out_of_scope: "Kapsam dışı (gerekçeli)",
+};
+
+/** D3 hazır kapsam oranlarının etiketleri; bilinmeyen `hazir_*` anahtarı okunur biçime çevrilir. */
+const HAZIR_ORAN_ETIKETI: Record<string, [string, string]> = {
+  hazir_gereksinim_kapsami: ["Hazır case'lerle gereksinim kapsamı", "en az bir hazır case'in atıf yaptığı kabul kriterleri"],
+  hazir_oge_kapsami: ["Hazır case'lerle öğe kapsamı", "en az bir hazır case'in çalıştırdığı kapsam öğeleri"],
+};
+const hazirOranEtiketi = (k: string): [string, string] => HAZIR_ORAN_ETIKETI[k] ?? [k.replace(/_/g, " ").replace(/^./, (c) => c.toLocaleUpperCase("tr-TR")), "hazır case'lerle"];
+
+/** Dağılım rozetinden case listesi süzgecine (URL parametresi: `hazirlik` ya da `teknik`). */
+export type DagilimFiltresi = Record<"hazirlik", string> | Record<"teknik", string>;
+
+/** Dağılım öğesi: süzgeç bağlıysa düğme (tıklayınca liste o değere süzülür), değilse düz içerik. */
+function DagilimOgesi({ children, etiket, sec }: { children: ReactNode; etiket: string; sec?: () => void }) {
+  if (!sec) return <>{children}</>;
+  return (
+    <button type="button" className="dagilim-dugme" aria-label={etiket} title={etiket} onClick={sec}>
+      {children}
+    </button>
+  );
+}
+
 const oranMetni = (x: KapsamOrani) => (x.oran === null ? <Olculmedi metin="hesaplanamadı" /> : yuzde(x.oran));
 /** "kapsanan/toplam · açıklama" (core sayıları gelmediyse yalnız açıklama). */
 const oranAlt = (x: KapsamOrani, aciklama: string) => (x.kapsanan !== null && x.toplam !== null ? `${x.kapsanan}/${x.toplam} · ${aciklama}` : aciklama);
@@ -56,6 +86,8 @@ export function KapsamPaneli({
   yenile,
   caseSayisi,
   eskiSema,
+  baslangictaAcik = true,
+  filtreSec,
 }: {
   ozet: CaseKapsamOzeti | null | undefined;
   yukleniyor?: boolean;
@@ -66,6 +98,13 @@ export function KapsamPaneli({
   caseSayisi: number;
   /** Gereksinimin tüm case'leri eski (v2) şemalı mı. */
   eskiSema?: boolean;
+  /**
+   * Ayrıntılar (açık sorular, varsayımlar, kapsanmayanlar, matris, kararlar) başta açık mı.
+   * Varsayılan true (her şey açık); false: oranlar, dağılımlar ve uyarılar görünür, ayrıntılar kapalı.
+   */
+  baslangictaAcik?: boolean;
+  /** Dağılım rozetleri case listesini süzer (verilmezse rozetler düz gösterilir). */
+  filtreSec?: (f: DagilimFiltresi) => void;
 }) {
   const baslik = "Kapsam ve açık noktalar";
   if (yukleniyor && ozet === undefined) {
@@ -118,6 +157,8 @@ export function KapsamPaneli({
   const kisitlar = ozet.uretimler.flatMap((u) => u.config_matrix.constraints);
   const teknikler = sirali(ozet.teknik_dagilimi, TEKNIK_SIRASI);
   const hazirliklar = sirali(ozet.readiness_dagilimi, HAZIRLIK_SIRASI);
+  const hazirOranlar = Object.entries(ozet.oranlar).filter((e): e is [string, KapsamOrani] => e[0].includes("hazir") && !!e[1]);
+  const hazirVar = ozet.kapsam_matrisi.some((s) => s.covered_by_ready !== undefined);
   const digerVar = gozlemler.length + otomasyon.length + bosluklar.length + parametreler.length + kisitlar.length > 0;
 
   return (
@@ -155,6 +196,11 @@ export function KapsamPaneli({
           deger={oranMetni(ozet.oranlar.negatif_karar_kapsami)}
           alt={oranAlt(ozet.oranlar.negatif_karar_kapsami, "kararı yazılmış geçersiz öğeler")}
         />
+        {/* D3: hazır case'lerle kapsam (alan yoksa — eski core — gösterilmez). */}
+        {hazirOranlar.map(([k, x]) => {
+          const [etiket, aciklama] = hazirOranEtiketi(k);
+          return <Metrik key={k} etiket={etiket} deger={oranMetni(x)} alt={oranAlt(x, aciklama)} />;
+        })}
       </div>
 
       <div className="kapsam-dagilim">
@@ -166,8 +212,13 @@ export function KapsamPaneli({
             <ul className="satir-ogeler kapsam-cipler">
               {teknikler.map((t) => (
                 <li key={t}>
-                  <TeknikRozeti teknik={t} /> <span className="mono">{ozet.teknik_dagilimi[t]}</span>
-                  <span className="gorunmez"> case</span>
+                  <DagilimOgesi
+                    etiket={`${t}${CASE_TEKNIGI[t] ? ` (${CASE_TEKNIGI[t]})` : ""}: ${ozet.teknik_dagilimi[t]} case — listeyi bu tekniğe süz`}
+                    sec={filtreSec && (() => filtreSec({ teknik: t }))}
+                  >
+                    <TeknikRozeti teknik={t} /> <span className="mono">{ozet.teknik_dagilimi[t]}</span>
+                    <span className="gorunmez"> case</span>
+                  </DagilimOgesi>
                   {!CASE_TEKNIGI[t] && <span className="soluk kucuk"> (bilinmeyen teknik)</span>}
                 </li>
               ))}
@@ -182,8 +233,13 @@ export function KapsamPaneli({
             <ul className="satir-ogeler kapsam-cipler">
               {hazirliklar.map((h) => (
                 <li key={h}>
-                  {CASE_HAZIRLIK[h] ? <HazirlikRozeti durum={h as never} /> : <Cip>{h}</Cip>} <span className="mono">{ozet.readiness_dagilimi[h]}</span>
-                  <span className="gorunmez"> case</span>
+                  <DagilimOgesi
+                    etiket={`${CASE_HAZIRLIK[h]?.etiket ?? h}: ${ozet.readiness_dagilimi[h]} case — listeyi bu duruma süz`}
+                    sec={filtreSec && (() => filtreSec({ hazirlik: h }))}
+                  >
+                    {CASE_HAZIRLIK[h] ? <HazirlikRozeti durum={h as never} /> : <Cip>{h}</Cip>} <span className="mono">{ozet.readiness_dagilimi[h]}</span>
+                    <span className="gorunmez"> case</span>
+                  </DagilimOgesi>
                 </li>
               ))}
             </ul>
@@ -203,6 +259,7 @@ export function KapsamPaneli({
         </div>
       )}
 
+      <AyrintiSarici acik={baslangictaAcik} ozet={`Ayrıntılar: açık sorular (${sorular.length}), varsayımlar (${varsayimlar.length}), kapsanmayanlar (${ozet.kapsanmayan.length}), kapsam matrisi`}>
       {ozetVar && (
         <>
       <section aria-label="Açık sorular" data-testid="kapsam-acik-sorular">
@@ -289,7 +346,9 @@ export function KapsamPaneli({
                     <td data-etiket="Tanım">{s.tanim}</td>
                     <td className={s.valid === null ? "bos-hucre" : undefined} data-etiket="Sınıf">
                       {s.valid === null ? "—" : s.valid ? "Geçerli" : "Geçersiz"}
-                      {s.karar && NEGATIF_KARAR[s.karar] && <span className="soluk kucuk"> · {NEGATIF_KARAR[s.karar].etiket}</span>}
+                      {s.karar && (MATRIS_KARARI[s.karar] || NEGATIF_KARAR[s.karar]) && (
+                        <span className="soluk kucuk"> · {MATRIS_KARARI[s.karar] ?? NEGATIF_KARAR[s.karar].etiket}</span>
+                      )}
                     </td>
                     <td data-etiket="Kapsayan case'ler">
                       {s.kapsayanlar && s.kapsayanlar.length > 0 ? (
@@ -317,9 +376,14 @@ export function KapsamPaneli({
                             </li>
                           ))}
                         </ul>
+                      ) : s.karar === "out_of_scope" ? (
+                        <Cip ton="notr">Kapsam dışı (gerekçeli)</Cip>
+                      ) : s.gerekce ? (
+                        <Cip ton="notr">Kapsanmıyor (gerekçeli)</Cip>
                       ) : (
                         <Cip ton="uyari">⚠ Kapsanmıyor</Cip>
                       )}
+                      {hazirVar && s.covered_by.length > 0 && <HazirKapsayanlar siralar={s.covered_by_ready} />}
                     </td>
                     <td className={s.gerekce ? "kucuk" : "bos-hucre"} data-etiket="Gerekçe">
                       {s.gerekce ?? "—"}
@@ -350,7 +414,8 @@ export function KapsamPaneli({
               </thead>
               <tbody>
                 {kararlar.map((k) => {
-                  const e = NEGATIF_KARAR[k.decision] ?? { etiket: k.decision, ton: "notr" as const };
+                  const n = NEGATIF_KARAR[k.decision] ?? { etiket: k.decision, ton: "notr" as const };
+                  const e = { ...n, etiket: MATRIS_KARARI[k.decision] ?? n.etiket };
                   return (
                     <tr key={`${k.u.uretim_no}-${k.item}`}>
                       <td className="mono" data-etiket="Öğe">
@@ -469,6 +534,34 @@ export function KapsamPaneli({
           )}
         </details>
       )}
+      </AyrintiSarici>
     </Kart>
+  );
+}
+
+/** `baslangictaAcik` false ise ayrıntılar kapalı bir açılır bölümde; true ise olduğu gibi çizilir. */
+function AyrintiSarici({ acik, ozet, children }: { acik: boolean; ozet: string; children: ReactNode }) {
+  if (acik) return <>{children}</>;
+  return (
+    <details className="kapsam-ayrinti kapsam-ayrintilar" data-testid="kapsam-ayrintilar">
+      <summary>{ozet}</summary>
+      {children}
+    </details>
+  );
+}
+
+/** D3: satırı kapsayan hazır case'ler ("hazır case: 2, 5") ya da "hazır case yok" uyarısı. */
+function HazirKapsayanlar({ siralar }: { siralar: number[] | undefined }) {
+  if (siralar === undefined) return null;
+  return siralar.length > 0 ? (
+    <span className="soluk kucuk kapsam-hazir" data-testid="kapsam-hazir-case">
+      hazır case: {siralar.join(", ")}
+    </span>
+  ) : (
+    <span className="kapsam-hazir" data-testid="kapsam-hazir-case">
+      <Cip ton="uyari" title="Bu öğeyi kapsayan case'lerin hiçbiri hazır değil: onaylanmadan kapsam sayılmaz.">
+        ⚠ hazır case yok
+      </Cip>
+    </span>
   );
 }

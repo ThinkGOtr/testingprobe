@@ -3,6 +3,8 @@
 // (mock generate-cases doğrulaması) aynı kuralları buradan kullanır; sınırlar core ile aynıdır
 // (aşılırsa core 422 döner — form göndermeden önce aynı metni gösterir).
 import type { DerinlestirmeTeknigi, EkBilgiAlani, EkBilgiTuru, UretimGovdesi, UretimSecenekleri, UretimSecenekleriYaniti } from "../api/types";
+import type { UretimKipi } from "../api/tasarimModeliTipleri";
+import { gereksinimDurumu } from "./etiketler";
 
 export const URETIM_PLATFORMLARI = ["Web", "Mobil-iOS", "Mobil-Android", "Desktop-Win", "Desktop-macOS", "Desktop-Linux", "API", "Data"] as const;
 export const URETIM_TEST_SEVIYELERI = ["UNIT", "COMPONENT", "INTEGRATION", "SYSTEM", "E2E", "UAT"] as const;
@@ -100,7 +102,10 @@ export function uretimSecenekleriYanitiUyarla(ham: unknown): UretimSecenekleriYa
   }
   const platformlar = metinler(h.platformlar);
   const seviyeler = metinler(h.test_seviyeleri);
+  // D1: kayıtlı üretim kipi `kayitli.kip` ya da `secenekler.kip` olarak gelebilir (yoksa alan yok).
+  const kip = kipUyarla(nesneMi(h.kayitli) ? h.kayitli.kip : undefined) ?? kipUyarla(nesneMi(h.secenekler) ? h.secenekler.kip : undefined);
   return {
+    ...(kip ? { kip } : {}),
     secenekler: nesneMi(h.secenekler) ? seceneklerUyarla(h.secenekler, varsayilan) : null,
     varsayilan,
     platformlar: platformlar.length ? platformlar : [...URETIM_PLATFORMLARI],
@@ -259,4 +264,40 @@ export const DERINLESTIRME_TEKNIKLERI: { kod: DerinlestirmeTeknigi; ad: string }
 /** Derinleştirme golden anahtarı: `negatif/<kök>` ya da `teknik-<teknik küçük harf>/<kök>`. */
 export function derinlestirmeReplayAdi(tur: "negatif" | "teknik", teknik: string | null | undefined, kok: string): string {
   return tur === "negatif" ? `negatif/${kok}` : `teknik-${(teknik ?? "").toLowerCase()}/${kok}`;
+}
+
+// ------------------------------------------------------------------ üretim kipi (011 K1, D1)
+
+/** Kip tercihi kayıtlı değilse varsayılan: iki tur (önerilen). */
+export const VARSAYILAN_URETIM_KIPI: UretimKipi = "iki_tur";
+
+/** Ham kip değeri → kip (tanınmayan değer null). */
+export function kipUyarla(x: unknown): UretimKipi | null {
+  return x === "iki_tur" || x === "tek_tur" ? x : null;
+}
+
+/** Formun ve üst düğmenin ilk kipi: gereksinimde kayıtlı tercih, yoksa iki tur. */
+export function baslangicKipi(y: Pick<UretimSecenekleriYaniti, "kip"> | null | undefined): UretimKipi {
+  return y?.kip ?? VARSAYILAN_URETIM_KIPI;
+}
+
+/** Üretimi başlatan düğmenin metni seçili kipi söyler (UX-4). */
+export function kipDugmeMetni(kip: UretimKipi): string {
+  return kip === "iki_tur" ? "Tasarım modelini üret (iki tur)" : "Case üret (tek tur)";
+}
+
+/** Gereksinimin üretim işi sürerken bulunduğu durumlar ("Üretim zaten başladı"). */
+const URETIM_SURUYOR: ReadonlySet<string> = new Set(["modeling", "generating"]);
+
+/**
+ * core üretim uçlarının 409 mesajı ham durum kodu taşır ("… (durum: modeling)"). Kullanıcıya
+ * durum etiketiyle gösterilir: üretim zaten sürüyorsa "Üretim zaten başladı (Tasarım modeli
+ * üretiliyor)", başka durumda kod yerine etiket. Mesajda durum yoksa null (olduğu gibi gösterilir).
+ */
+export function uretimCakismaMesaji(detay: string): string | null {
+  const m = /\(durum:\s*([A-Za-z_]+)\s*\)/.exec(detay);
+  if (!m) return null;
+  const etiket = gereksinimDurumu(m[1]).etiket;
+  if (URETIM_SURUYOR.has(m[1])) return `Üretim zaten başladı (${etiket})`;
+  return detay.replace(m[0], `(${etiket})`);
 }

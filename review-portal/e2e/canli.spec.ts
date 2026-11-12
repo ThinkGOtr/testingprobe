@@ -146,11 +146,13 @@ test("Demo-A: ön inceleme → 4 doğrulanmış bulgu → düzeltme → Jira PO 
   await jira.getByTestId("po-onayla").click();
   await jira.screenshot({ path: `${EKRAN_DIZINI}/demoa-04-jira-po-onayi.png`, fullPage: true });
 
+  // Demo-A doğrudan case üretir: tek tur seçilir, üst düğme kipi söyler ("Case üret (tek tur)").
   await expect(async () => {
     await page.reload();
-    await expect(page.getByRole("button", { name: "Case üret" })).toBeEnabled({ timeout: 2_000 });
+    await page.getByRole("radio", { name: /Tek tur/ }).check({ timeout: 2_000 });
+    await expect(page.getByRole("button", { name: "Case üret (tek tur)" })).toBeEnabled({ timeout: 2_000 });
   }).toPass({ timeout: 90_000 });
-  await page.getByRole("button", { name: "Case üret" }).click();
+  await page.getByRole("button", { name: "Case üret (tek tur)" }).click();
   await expect(page.getByRole("link", { name: "Case review" })).toBeVisible({ timeout: 120_000 });
   await page.getByRole("link", { name: "Case review" }).click();
   const onayla = page.getByRole("button", { name: "Onayla", exact: true });

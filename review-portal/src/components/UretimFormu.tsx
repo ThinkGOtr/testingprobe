@@ -1,7 +1,8 @@
-import { useEffect, useId, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useId, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { api } from "../api/client";
 import { ApiError } from "../api/http";
 import type { EkBilgiAlani, IsYaniti, UretimGovdesi, UretimSecenekleri } from "../api/types";
+import type { UretimKipi } from "../api/tasarimModeliTipleri";
 import { useIslem, useVeri } from "../hooks";
 import { TEST_SEVIYESI } from "../lib/etiketler";
 import {
@@ -19,6 +20,7 @@ import {
   varsayilanSecenekler,
 } from "../lib/uretimSecenekleri";
 import { Cip, HataKutusu, IslemDugmesi, Kart, Uyari, Yukleniyor } from "./ui";
+import { UretimKipiSecici } from "./UretimKipiSecici";
 
 /** Uç yok (eski core: 404/501): form yerel katalogla açılır, kayıtlı seçenek yoktur. */
 const ucYok = (e: unknown) => e instanceof ApiError && (e.status === 404 || e.status === 501);
@@ -28,14 +30,23 @@ const ucYok = (e: unknown) => e instanceof ApiError && (e.status === 404 || e.st
  * kapsam dışı, roller ve seçili platforma ait ek bilgiler. Açılışta gereksinimde kayıtlı son
  * seçeneklerle (yoksa varsayılanla) dolar; gönderilen seçenekler gereksinimde saklanır.
  * Form durumu ve kuralları `lib/uretimSecenekleri.ts`'tedir (saf, birim testli).
+ * Kip verilirse (gereksinim ekranı) formun ilk alanı kip seçimidir (UX-4); `uyari` gönderimden önce
+ * bilinmesi gereken sonucu (ör. mevcut case'lerin yerini yenilerinin alması) formun başında söyler.
  */
 export function UretimFormu({
   gereksinimId,
   gonder,
   basladi,
   kapat,
+  kip,
+  kipDegistir,
+  uyari,
 }: {
   gereksinimId: string;
+  /** Seçili üretim kipi (sayfayla ortak); verilmezse kip alanı çizilmez. */
+  kip?: UretimKipi;
+  kipDegistir?: (k: UretimKipi) => void;
+  uyari?: ReactNode;
   /** Gövdeli `generate-cases` çağrısı (hata dönüşümü çağıranda). */
   gonder: (govde: UretimGovdesi) => Promise<IsYaniti>;
   basladi: (y: IsYaniti) => void;
@@ -129,6 +140,8 @@ export function UretimFormu({
       className="uretim-formu"
     >
       <form className="form" aria-label="Üretim seçenekleri" onSubmit={(e) => void gonderForm(e)} noValidate data-testid="uretim-formu">
+        {kip && kipDegistir && <UretimKipiSecici kip={kip} degistir={kipDegistir} />}
+        {uyari}
         {y === null && (
           <Uyari ton="bilgi" baslik="Kayıtlı seçenek alınamadı">
             Çekirdek üretim seçeneklerini henüz sunmuyor; form varsayılanlarla açıldı.

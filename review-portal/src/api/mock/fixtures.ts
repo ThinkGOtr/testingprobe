@@ -82,6 +82,8 @@ export interface MockVeri {
   kalite?: Record<string, KaliteKaydi>;
   /** Gereksinimde saklanan son üretim seçenekleri (011 K5; gereksinim kimliği → seçenekler). */
   uretimSecenekleri?: Record<string, UretimSecenekleri>;
+  /** D1: gereksinimde saklanan son üretim kipi (generation-options `kayitli.kip`). */
+  uretimKipleri?: Record<string, "iki_tur" | "tek_tur">;
   /** Son derinleştirmenin durumu (011 P5/P6; gereksinim kimliği → durum). */
   derinlestirmeler?: Record<string, DerinlestirmeDurumu>;
   sayac: number;
@@ -674,9 +676,9 @@ function caseler(): TestCase[] {
 }
 
 /**
- * Şema v3 örnek case'leri (req-ft-2): 1 hazır, 2 varsayıma bağlı, 3 engelli, 4 saldırı verili güvenlik
- * (hepsi taslak); 5 hazır + onaylı; 6 varsayıma bağlı ama onaylı (onay kapısından önceki kayıt:
- * yayın kapısının ayrıca denetlediği `blocked_not_ready` örneği).
+ * Şema v3 örnek case'leri (req-ft-2): 1 hazır, 2 varsayıma bağlı, 3 soru bekliyor, 4 saldırı verili
+ * güvenlik, 6 varsayıma bağlı (hepsi taslak); 5 hazır + onaylı. K6: onaylı case her zaman hazırdır —
+ * varsayıma bağlı case taslakta kalır ("Varsayım doğrulandı" ya da "Düzelt" ile onaylanır).
  */
 function v3Caseler(karar: (id: string, sira_no: number, icerik: TestCaseIcerik, ek: Partial<TestCase> & Pick<TestCase, "durum">) => TestCase): TestCase[] {
   const V = kopyala(V3_ICERIKLER);
@@ -688,7 +690,7 @@ function v3Caseler(karar: (id: string, sira_no: number, icerik: TestCaseIcerik, 
     karar("case-v3-3", 3, V[2], { ...ek, durum: "draft" }),
     karar("case-v3-4", 4, V[3], { ...ek, durum: "draft" }),
     karar("case-v3-5", 5, V[4], { ...ek, ...analist, durum: "approved", karar: "approve", karar_zamani: t(30, "14:02"), duzeltme_olcusu: 0, review_sure_ms: 47000 }),
-    karar("case-v3-6", 6, V[5], { ...ek, ...analist, durum: "approved", karar: "approve", karar_zamani: t(30, "14:06"), duzeltme_olcusu: 0, review_sure_ms: 73000 }),
+    karar("case-v3-6", 6, V[5], { ...ek, durum: "draft" }),
   ];
 }
 

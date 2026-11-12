@@ -489,7 +489,7 @@ function cevapUret(m: MockMesaj): { cevap: AsistanCevabi; kaynak: AsistanMesaji[
       amac: null,
       cevap: bos({
         cevap_bloklari: [
-          { tur: "paragraf", metin: `${ORNEK} Bu soru denetimden geçmedi (Talimat manipülasyonu); asistana iletilmedi. Sorunuzu iş akışıyla ilgili olarak yeniden yazabilirsiniz.` },
+          { tur: "paragraf", metin: `${ORNEK} Bu soru içerik kontrolünden geçmedi (Talimat manipülasyonu) ve asistana iletilmedi. Sorunuzu iş akışıyla ilgili olarak yeniden yazabilirsiniz.` },
         ],
         denetim: {
           karar: "engelle",

@@ -66,8 +66,8 @@ describe("case üretimi hata ile bitti: yeniden denenir, denetim yeniden başlat
     const dugme = await screen.findByRole("button", { name: "Case üretimini yeniden dene" });
     expect(dugme).toBeEnabled();
     expect(dugme).toHaveAttribute("title", expect.stringMatching(/sunucuda yeniden doğrulanır/));
-    // Yeniden denetle ikincil ve yeni PO teyidi gerektirdiğini söyler.
-    expect(screen.getByRole("button", { name: "Yeniden denetle" })).toHaveAttribute("title", expect.stringMatching(/yeni PO teyidi/));
+    // "Yeniden kontrol et" ikincil ve yeni PO teyidi gerektirdiğini söyler.
+    expect(screen.getByRole("button", { name: "Yeniden kontrol et" })).toHaveAttribute("title", expect.stringMatching(/yeni PO teyidi/));
     await u.click(dugme);
     // Üretim formunun kipi açıkça gönderilir (011 K1; varsayılan iki tur → önce tasarım modeli).
     await waitFor(() => expect(spy).toHaveBeenCalledWith("req-tpd-1", "iki_tur"));
@@ -171,7 +171,7 @@ describe("canlı derleme (VITE_MOCK=0): uydurma KPI yok", () => {
     for (const ad of ["Kod üretimi", "Koşular"]) {
       expect(within(menu).getByText(ad).closest("a")).toBeNull();
     }
-    for (const ad of ["Gereksinimler", "Bug taslakları", "Denetim"]) {
+    for (const ad of ["Gereksinimler", "Bug taslakları", "Denetim kaydı"]) {
       expect(within(menu).getByText(ad).closest("a")).not.toBeNull();
     }
   });

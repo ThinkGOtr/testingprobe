@@ -883,3 +883,34 @@ html:has(.asistan-bune-bindirme):has(.asistan-bune-ipucu) {
   border-left: 3px solid var(--warn);
   padding-left: 8px;
 }
+
+/* İçerik kontrolü ayrıntısı (UX-9): puan, gerekçe ve kaynak <details> içinde; özet en az 24 px dokunma
+   hedefi, klavyeyle (Enter/Boşluk) açılır. */
+.asistan-denetim > div,
+.asistan-denetim > .satir-ogeler,
+.asistan-denetim-ayrinti {
+  flex-basis: 100%;
+}
+.asistan-denetim-ayrinti > summary {
+  cursor: pointer;
+  /* display list-item kalır (açılır üçgen işareti görünsün); 0,85rem × 1,5 + 2 × 4 px ≥ 24 px hedef. */
+  padding: 4px 0;
+  width: fit-content;
+  font-size: 0.85rem;
+  color: var(--text-2);
+}
+.asistan-denetim-ayrinti > summary:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.asistan-denetim-ayrinti dl {
+  margin: 6px 0 0;
+  font-size: 0.85rem;
+}
+.asistan-denetim-ayrinti dt {
+  font-weight: 600;
+}
+.asistan-denetim-ayrinti dd {
+  margin: 0 0 6px;
+}

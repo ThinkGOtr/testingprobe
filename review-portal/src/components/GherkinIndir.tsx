@@ -1,11 +1,12 @@
 // "Gherkin indir" (specs/011 F8, K14): onaylı ve hazır güncel case'lerin Türkçe Gherkin'i.
 // Dönüşüm çekirdektedir (`GET /requirements/{id}/cases.feature`, deterministik, model çağrısı yok);
 // portal yalnız kaç case'in dahil olacağını gösterir ve dosyayı indirir.
-import { useState } from "react";
+import { useId, useState } from "react";
 import { api } from "../api/client";
 import { hataMesaji } from "../api/http";
 import type { TestCase } from "../api/types";
 import { caseHazirlik } from "../lib/caseV3";
+import { useBildirim } from "./Bildirim";
 import { IslemDugmesi } from "./ui";
 
 /** Çekirdekle aynı kural: onaylı/yayınlanmış + hazır + güncel (önceki içeriğe ait değil). */
@@ -30,17 +31,26 @@ function indir(metin: string, dosyaAdi: string): void {
   URL.revokeObjectURL(url);
 }
 
-export function GherkinIndir({ requirementId, anahtar, caseler }: { requirementId: string; anahtar: string; caseler: TestCase[] }) {
+/**
+ * "Gherkin indir" düğmesi. Sayfadan bağımsızdır: case review ve gereksinim sayfasında aynı imzayla
+ * kullanılır. `caseler` verilmezse sayı gösterilmez ve düğme açıktır (uygun case yoksa core 404 döner).
+ */
+export function GherkinIndir({ requirementId, anahtar, caseler }: { requirementId: string; anahtar: string; caseler?: TestCase[] }) {
   const [calisiyor, setCalisiyor] = useState(false);
   const [hata, setHata] = useState<string | null>(null);
-  const uygun = caseler.filter(gherkinUygun).length;
-  const disarida = caseler.filter((c) => c.durum !== "superseded" && c.durum !== "rejected").length - uygun;
+  const bildir = useBildirim();
+  const sayiId = useId();
+  const uygun = caseler ? caseler.filter(gherkinUygun).length : null;
+  // Payda: güncel case'ler (reddedilen ve yerini yenisi alan case aktarılmaz, sayılmaz).
+  const guncel = caseler ? caseler.filter((c) => c.durum !== "superseded" && c.durum !== "rejected").length : null;
 
   async function tikla() {
     setCalisiyor(true);
     setHata(null);
     try {
-      indir(await api.gherkin(requirementId), gherkinDosyaAdi(anahtar));
+      const dosya = gherkinDosyaAdi(anahtar);
+      indir(await api.gherkin(requirementId), dosya);
+      bildir(`Gherkin dosyası indirildi: ${dosya}${uygun !== null ? ` · ${uygun} case` : ""}`);
     } catch (e) {
       setHata(hataMesaji(e));
     } finally {
@@ -48,15 +58,24 @@ export function GherkinIndir({ requirementId, anahtar, caseler }: { requirementI
     }
   }
 
+  const sayiVar = uygun !== null && guncel !== null && uygun > 0;
   return (
     <span className="gherkin-indir" data-testid="gherkin-indir">
-      <IslemDugmesi tur="ikincil" disabled={uygun === 0} title={uygun === 0 ? GHERKIN_YOK_NEDENI : undefined} calisiyor={calisiyor} onClick={() => void tikla()}>
+      <IslemDugmesi
+        tur="ikincil"
+        disabled={uygun === 0}
+        title={uygun === 0 ? GHERKIN_YOK_NEDENI : undefined}
+        calisiyor={calisiyor}
+        aria-describedby={sayiVar ? sayiId : undefined}
+        onClick={() => void tikla()}
+      >
         Gherkin indir
       </IslemDugmesi>
-      {uygun > 0 && (
-        <span className="soluk kucuk" data-testid="gherkin-sayisi">
+      {sayiVar && (
+        <span id={sayiId} className="soluk kucuk" data-testid="gherkin-sayisi" title="Yalnız onaylı (ya da yayınlanmış) ve hazır case'ler aktarılır.">
           {" "}
-          {uygun} case dahil{disarida > 0 ? ` · ${disarida} case onay/hazırlık bekliyor (dahil değil)` : ""}
+          {uygun}/{guncel} case dahil
+          <span className="gorunmez"> (yalnız onaylı ve hazır case'ler aktarılır)</span>
         </span>
       )}
       {hata && (

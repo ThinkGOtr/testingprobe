@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type TextareaHTMLAttributes } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode, type TextareaHTMLAttributes } from "react";
 import { api } from "../api/client";
 import { caseKarariVerilebilir, GECIS_YOK, gecisVar, type CaseKarari } from "../api/sozlesme/durumMakinesi";
 import { useKisiAdi, useOturum } from "../auth";
@@ -30,9 +30,11 @@ import {
   RISK,
   SORU_SAHIBI,
   TEST_SEVIYESI,
+  URETIM_TURU,
 } from "../lib/etiketler";
 import { sure, tarih } from "../lib/format";
 import { FarkGorunumu } from "./FarkGorunumu";
+import { HazirlikYonlendirme } from "./HazirlikYonlendirme";
 import { AlanHatasi, Cip, IslemDugmesi, ReplayRozeti, Uyari } from "./ui";
 
 type Mod = "goster" | "duzenle" | "reddet";
@@ -84,11 +86,20 @@ export function CaseKarti({
   tc,
   guncellendi,
   yenile,
+  secim,
+  uretimTuru,
+  poyaGonder,
 }: {
   tc: TestCase;
   guncellendi: (t: TestCase) => void;
   /** 409 (içerik siz görüntüledikten sonra değişti): case listesini yeniden yükler. */
   yenile?: () => void;
+  /** K20 toplu onay: liste seçim kutusu (başlık satırının başında). */
+  secim?: ReactNode;
+  /** Case'i üreten üretimin türü (case-summary `uretimler[].tur`: uretim | negatif | teknik). */
+  uretimTuru?: string;
+  /** D6: açık soruyu PO'ya gönderme eylemi; "Neden onaylanamıyor" kutusuna yerleşir. */
+  poyaGonder?: ReactNode;
 }) {
   const [mod, setMod] = useState<Mod>("goster");
   const islem = useIslem();
@@ -100,7 +111,6 @@ export function CaseKarti({
   // core test_case: approved | rejected → draft (yeniden aç). Yayınlanmış case son durumdur.
   const yenidenAcilabilir = gecisVar("test_case", tc.durum, "draft");
   const d = CASE_DURUMU[tc.durum];
-  const r = RISK[tc.icerik.risk];
   // Son durumlar (core): yayınlanan ve yerini yenisi alan case'e karar verilmez.
   const kilitli = tc.durum === "published" || tc.durum === "superseded";
   // core test_case makinesi: kararlar yalnızca izinli geçişlerde (draft → approved | rejected).
@@ -140,20 +150,14 @@ export function CaseKarti({
 
   return (
     <article ref={kartRef} id={`case-${tc.id}`} tabIndex={-1} className={`case case-${tc.durum}`} aria-labelledby={`${id}-baslik`}>
+      {/* UX-12: başlıkta yalnız durum, hazır olma ve öncelik rozetleri; diğer özellikler aşağıdaki listede. */}
       <header className="case-baslik">
         <div className="satir-ogeler">
+          {secim}
           <span className="mono soluk">#{tc.sira_no}</span>
           <Cip ton={d.ton}>{d.etiket}</Cip>
           {!eski && <HazirlikRozeti durum={hazirlik} />}
-          <Cip ton="notr">{CASE_TURU[tc.icerik.type] ?? tc.icerik.type}</Cip>
-          {r && <Cip ton={r.ton}>{r.etiket}</Cip>}
-          {tc.icerik.acceptance_criteria_refs.map((a) => (
-            <span key={a} className="mono ac-ref">
-              {a}
-            </span>
-          ))}
-          {tc.kanal === "ide" && <Cip ton="notr" title="Claude Code (MCP submit_draft_cases) kanalından geldi">Claude Code</Cip>}
-          <ReplayRozeti mode={tc.mode} />
+          {!eski && <OncelikRozeti tc={tc} />}
           {eski && (
             <span className="soluk kucuk" data-testid="case-eski-sema" title="Bu case önceki şemayla üretildi: teknik, öncelik ve hazır olma bilgisi yok; hazır sayılır.">
               eski şema
@@ -162,6 +166,7 @@ export function CaseKarti({
         </div>
         {tc.jira_test_key && <span className="mono">{tc.jira_test_key}</span>}
       </header>
+      {mod === "goster" && !kilitli && <HazirlikYonlendirme tc={tc} guncellendi={guncellendi} yenile={yenile} poyaGonder={poyaGonder} />}
 
       {mod === "duzenle" ? (
         <CaseDuzenleyici
@@ -186,7 +191,7 @@ export function CaseKarti({
           <h3 id={`${id}-baslik`} className="case-ad">
             {tc.icerik.title}
           </h3>
-          {!eski && <CaseV3Ozeti tc={tc} hazirlik={hazirlik} />}
+          {eski ? <CaseOzellikleri tc={tc} uretimTuru={uretimTuru} /> : <CaseV3Ozeti tc={tc} hazirlik={hazirlik} uretimTuru={uretimTuru} />}
           {tc.icerik.preconditions.length > 0 && (
             <p className="kucuk">
               <strong>Ön koşul:</strong> {tc.icerik.preconditions.join(" · ")}
@@ -368,10 +373,10 @@ export function HazirlikRozeti({ durum }: { durum: CaseHazirlik }) {
 }
 
 /** Teknik rozeti: kısaltma görünür; tam Türkçe ad `title`'da ve erişilebilir adda. */
-export function TeknikRozeti({ teknik }: { teknik: string }) {
+export function TeknikRozeti({ teknik, sade }: { teknik: string; /** Kart özellik listesinde renksiz (UX-12). */ sade?: boolean }) {
   const ad = CASE_TEKNIGI[teknik];
   return (
-    <span className="cip cip-bilgi" title={ad}>
+    <span className={sade ? "mono teknik-sade" : "cip cip-bilgi"} title={ad}>
       {teknik}
       {ad && <span className="gorunmez"> ({ad})</span>}
     </span>
@@ -397,30 +402,102 @@ function AtifListesi({ kayitlar, metin }: { kayitlar: (AcikSoru | Varsayim | { i
   );
 }
 
-/** v3 blokları: öncelik + teknik rozetleri, özellikler ve atıf yapılan açık sorular / varsayımlar. */
-function CaseV3Ozeti({ tc, hazirlik }: { tc: TestCase; hazirlik: CaseHazirlik }) {
+/** Öncelik rozeti (başlık satırında): v3 case'te `priority` varsa. */
+function OncelikRozeti({ tc }: { tc: TestCase }) {
+  const oncelik = tc.icerik.priority ? CASE_ONCELIGI[tc.icerik.priority] : undefined;
+  if (!oncelik) return null;
+  return (
+    <span className={`cip cip-${oncelik.ton}`} title={oncelik.aciklama} data-testid="case-oncelik">
+      {oncelik.etiket}
+      <span className="gorunmez"> ({oncelik.aciklama})</span>
+    </span>
+  );
+}
+
+/**
+ * UX-5: derinleştirmenin eklediği case'in rozeti ("Negatif genişletme · üretim 2"). İlk üretimde
+ * (tur "uretim") ya da tür bilinmiyorsa çizilmez.
+ */
+export function DerinlestirmeRozeti({ tur, uretimNo }: { tur?: string; uretimNo?: number }) {
+  if (!tur || tur === "uretim") return null;
+  return (
+    <Cip ton="bilgi" title="Mevcut sete derinleştirmeyle eklenen taslak">
+      <span data-testid="case-uretim-rozeti">
+        {URETIM_TURU[tur] ?? tur}
+        {uretimNo !== undefined && ` · üretim ${uretimNo}`}
+      </span>
+    </Cip>
+  );
+}
+
+/**
+ * Case özellikleri listesi (UX-12): tür, risk (yalnız eski case; v3'te risk yok), kabul kriterleri,
+ * kaynak; v3 case'te teknik, kapsam, doğrulama noktası, test seviyesi, platform, standartlar.
+ */
+function CaseOzellikleri({ tc, uretimTuru, children }: { tc: TestCase; uretimTuru?: string; children?: ReactNode }) {
   const i = tc.icerik;
-  const oncelik = i.priority ? CASE_ONCELIGI[i.priority] : undefined;
+  const eski = caseEski(tc);
+  const r = eski ? RISK[i.risk] : undefined;
+  const kaynakVar = tc.kanal === "ide" || tc.mode === "replay" || tc.mode === "replay_miss" || (!!uretimTuru && uretimTuru !== "uretim");
+  return (
+    <dl className="case-ozellik kucuk" data-testid="case-ozellikler">
+      <div>
+        <dt>Tür</dt>
+        <dd>{CASE_TURU[i.type] ?? i.type}</dd>
+      </div>
+      {r && (
+        <div>
+          <dt>Risk</dt>
+          <dd>{r.etiket}</dd>
+        </div>
+      )}
+      {i.acceptance_criteria_refs.length > 0 && (
+        <div>
+          <dt>Kabul kriterleri</dt>
+          <dd className="satir-ogeler">
+            {i.acceptance_criteria_refs.map((a) => (
+              <span key={a} className="mono ac-ref">
+                {a}
+              </span>
+            ))}
+          </dd>
+        </div>
+      )}
+      {kaynakVar && (
+        <div>
+          <dt>Kaynak</dt>
+          <dd className="satir-ogeler">
+            <DerinlestirmeRozeti tur={uretimTuru} uretimNo={tc.uretim_no} />
+            {tc.kanal === "ide" && <span title="Claude Code (MCP submit_draft_cases) kanalından geldi">Claude Code</span>}
+            <ReplayRozeti mode={tc.mode} />
+          </dd>
+        </div>
+      )}
+      {children}
+    </dl>
+  );
+}
+
+/** v3 blokları: özellikler (teknik, kapsam, doğrulama noktası …) ve atıf yapılan açık sorular / varsayımlar. */
+function CaseV3Ozeti({ tc, hazirlik, uretimTuru }: { tc: TestCase; hazirlik: CaseHazirlik; uretimTuru?: string }) {
+  const i = tc.icerik;
   const sorular = atiflariCoz(i.open_question_refs, tc.acik_sorular);
   const varsayimlar = atiflariCoz(i.assumption_refs, tc.varsayimlar);
+  // K6: onaylı case hazırdır; eski kayıtta varsayım kaldıysa başlık yalnız bilgi verir.
+  const taslak = tc.durum === "draft";
   return (
     <div className="case-v3" data-testid="case-v3">
-      <div className="satir-ogeler">
-        {oncelik && (
-          <span className={`cip cip-${oncelik.ton}`} title={oncelik.aciklama} data-testid="case-oncelik">
-            {oncelik.etiket}
-            <span className="gorunmez"> ({oncelik.aciklama})</span>
-          </span>
-        )}
+      <CaseOzellikleri tc={tc} uretimTuru={uretimTuru}>
         {(i.technique?.length ?? 0) > 0 && (
-          <span className="satir-ogeler" role="group" aria-label="Test tasarım teknikleri">
-            {i.technique!.map((t) => (
-              <TeknikRozeti key={t} teknik={t} />
-            ))}
-          </span>
+          <div>
+            <dt>Teknikler</dt>
+            <dd className="satir-ogeler" role="group" aria-label="Test tasarım teknikleri">
+              {i.technique!.map((t) => (
+                <TeknikRozeti key={t} teknik={t} sade />
+              ))}
+            </dd>
+          </div>
         )}
-      </div>
-      <dl className="case-ozellik kucuk">
         {i.priority_rationale && (
           <div>
             <dt>Öncelik gerekçesi</dt>
@@ -457,11 +534,7 @@ function CaseV3Ozeti({ tc, hazirlik }: { tc: TestCase; hazirlik: CaseHazirlik })
             <dd>
               {i.platform}
               {i.platform && i.requires_real_device && " · "}
-              {i.requires_real_device && (
-                <Cip ton="uyari" title="Bu case emülatör/simülatörde değil, gerçek cihazda koşulmalı">
-                  Gerçek cihaz gerekir
-                </Cip>
-              )}
+              {i.requires_real_device && <span title="Bu case emülatör/simülatörde değil, gerçek cihazda koşulmalı">Gerçek cihaz gerekir</span>}
             </dd>
           </div>
         )}
@@ -471,7 +544,7 @@ function CaseV3Ozeti({ tc, hazirlik }: { tc: TestCase; hazirlik: CaseHazirlik })
             <dd>{i.standard_refs!.join(" · ")}</dd>
           </div>
         )}
-      </dl>
+      </CaseOzellikleri>
       {sorular.length > 0 && (
         <div data-testid="case-acik-sorular">
           <Uyari baslik={hazirlik === "blocked" ? "Açık sorular (yanıtlanmadan bu case hazır olamaz)" : "Açık sorular"}>
@@ -481,7 +554,7 @@ function CaseV3Ozeti({ tc, hazirlik }: { tc: TestCase; hazirlik: CaseHazirlik })
       )}
       {varsayimlar.length > 0 && (
         <div data-testid="case-varsayimlar">
-          <Uyari ton="bilgi" baslik="Dayandığı varsayımlar (doğrulanmadan onaylanamaz)">
+          <Uyari ton="bilgi" baslik={taslak ? "Dayandığı varsayımlar (doğrulanmadan onaylanamaz)" : "Dayandığı varsayımlar"}>
             <AtifListesi kayitlar={varsayimlar} metin={(k) => (k as Varsayim).statement} />
           </Uyari>
         </div>

@@ -59,7 +59,7 @@ describe("oturum ve yönlendirme", () => {
     await oturumAc("analist");
     const u = userEvent.setup();
     uygulama("/denetim");
-    await screen.findByRole("heading", { name: "Denetim", level: 1 });
+    await screen.findByRole("heading", { name: "Denetim kaydı", level: 1 });
     await u.click(screen.getByRole("button", { name: "Çıkış" }));
     expect(await screen.findByRole("heading", { name: "Oturum aç" })).toBeInTheDocument();
   });
@@ -68,7 +68,7 @@ describe("oturum ve yönlendirme", () => {
     await oturumAc("analist");
     const u = userEvent.setup();
     uygulama("/denetim");
-    await screen.findByRole("heading", { name: "Denetim", level: 1 });
+    await screen.findByRole("heading", { name: "Denetim kaydı", level: 1 });
     const dugme = screen.getByRole("button", { name: "Menü" });
     const menu = screen.getByRole("navigation", { name: "Ana menü" });
     await u.click(dugme);
@@ -89,7 +89,7 @@ describe("oturum ve yönlendirme", () => {
     await oturumAc("analist");
     const u = userEvent.setup();
     uygulama("/denetim");
-    await screen.findByRole("heading", { name: "Denetim", level: 1 });
+    await screen.findByRole("heading", { name: "Denetim kaydı", level: 1 });
     const dugme = screen.getByRole("button", { name: "Menü" });
     const menu = screen.getByRole("navigation", { name: "Ana menü" });
     const ana = document.getElementById("ana-icerik")!;
@@ -111,7 +111,7 @@ describe("oturum ve yönlendirme", () => {
     await oturumAc("analist");
     const u = userEvent.setup();
     uygulama("/denetim");
-    await screen.findByRole("heading", { name: "Denetim", level: 1 });
+    await screen.findByRole("heading", { name: "Denetim kaydı", level: 1 });
     const dugme = screen.getByRole("button", { name: "Menü" });
     const menu = screen.getByRole("navigation", { name: "Ana menü" });
     await u.click(dugme);

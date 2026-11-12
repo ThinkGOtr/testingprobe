@@ -36,6 +36,16 @@ export interface ModelBaglami {
   denetimEkle: (eylem: string, nesne: string, ozet: string, aktor?: string) => void;
   gereksinimOlayi: (g: GereksinimDetay) => void;
   is: (durum: string, mesaj?: string) => IsYaniti;
+  /** D1/K20: onaydan sonra tur 2'yi (onaylı modelden case üretimi) başlatır; yoksa tur 2 elle başlar. */
+  turIkiBaslat?: (g: GereksinimDetay) => IsYaniti;
+}
+
+/** D1 onay yanıtının tur 2 bilgisi (approve/edit sonrası; ret ve eski core'da alan yok). */
+export interface Tur2Yaniti {
+  basladi: boolean;
+  job_id?: string;
+  uretim_no?: number;
+  mesaj?: string;
 }
 
 export const MODEL_ISI = "model.generate";
@@ -224,7 +234,7 @@ function yanit(v: MockVeri, g: GereksinimDetay): TasarimModeliYaniti {
 
 const RET_NEDENLERI: RetNedeni[] = ["hallucinated_step", "missing_ac", "wrong_test_data", "out_of_scope", "duplicate", "wrong_element"];
 
-function karar(ctx: ModelBaglami, modelId: string, govde: unknown): TasarimModeliKaydi {
+function karar(ctx: ModelBaglami, modelId: string, govde: unknown): TasarimModeliKaydi & { tur2?: Tur2Yaniti | null } {
   const k = ctx.rolGerekli("analyst");
   const v = ctx.veri();
   let m: TasarimModeliKaydi | undefined;
@@ -267,7 +277,17 @@ function karar(ctx: ModelBaglami, modelId: string, govde: unknown): TasarimModel
   m.kararlar.push({ karar: b.karar, kullanici: k.kullanici_adi, zaman: m.guncelleme, gerekce: b.gerekce ?? null, ret_nedeni: b.karar === "reject" ? (b.ret_nedeni ?? null) : null });
   ctx.denetimEkle(`review.${b.karar}`, `design_model:${m.id}`, `Tasarım modeli kararı · ${m.icerik_hash}`);
   ctx.gereksinimOlayi(g);
-  return m;
+  if (m.durum !== "approved" || !ctx.turIkiBaslat) return m;
+  // D1/K20: onay tur 2'yi otomatik başlatır (gereksinim generating → cases_ready). Başlatılamazsa
+  // onay geçerli kalır; yanıt nedeni taşır ve tur 2 elle başlatılır.
+  let tur2: Tur2Yaniti;
+  try {
+    const y = ctx.turIkiBaslat(g);
+    tur2 = { basladi: true, ...(y.job_id ? { job_id: y.job_id } : {}), ...(typeof y.uretim_no === "number" ? { uretim_no: y.uretim_no } : {}), mesaj: y.mesaj };
+  } catch (e) {
+    tur2 = { basladi: false, mesaj: e instanceof Error ? e.message : String(e) };
+  }
+  return { ...m, tur2 };
 }
 
 export function tasarimModeliRotalari(ctx: ModelBaglami): Rota[] {

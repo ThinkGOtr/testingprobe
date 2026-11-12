@@ -24,7 +24,7 @@ describe("portal kişi adları (yalnızca gösterim)", () => {
   it("üst çubuk kişi adını ve rolü gösterir", async () => {
     await oturumAc("analist");
     const { container } = uygulama("/denetim");
-    await screen.findByRole("heading", { name: "Denetim", level: 1 });
+    await screen.findByRole("heading", { name: "Denetim kaydı", level: 1 });
     const kutu = container.querySelector(".kullanici") as HTMLElement;
     expect(within(kutu).getByText("Cengizhan Gunaydin")).toHaveAttribute("title", "Cengizhan Gunaydin · Analist (analist)");
     expect(within(kutu).getByText("Analist")).toBeInTheDocument();
@@ -33,7 +33,7 @@ describe("portal kişi adları (yalnızca gösterim)", () => {
   it("adı olmayan sunucu kullanıcı adıyla ve Sunucu rolüyle görünür", async () => {
     await oturumAc("sunucu");
     const { container } = uygulama("/denetim");
-    await screen.findByRole("heading", { name: "Denetim", level: 1 });
+    await screen.findByRole("heading", { name: "Denetim kaydı", level: 1 });
     const kutu = container.querySelector(".kullanici") as HTMLElement;
     expect(kutu).toHaveTextContent("sunucu");
     expect(kutu).toHaveTextContent("Sunucu");

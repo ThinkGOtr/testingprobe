@@ -10,21 +10,22 @@ import { DenetimOzeti } from "../components/KalitePanelleri";
 import { Baglanti, BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import type { Ton } from "../lib/etiketler";
+import { hataMetniniAyikla, yayinlanamazOnekiz } from "../lib/kalite";
 
 const ISLEM: Record<YayinOnizlemeKalemi["islem"], { etiket: string; ton: Ton }> = {
   create: { etiket: "Oluşturulacak", ton: "basari" },
   skip_existing: { etiket: "Zaten yayında", ton: "notr" },
-  blocked_hash_mismatch: { etiket: "Engelli: onaydan sonra değişmiş", ton: "hata" },
-  blocked_not_approved: { etiket: "Engelli: onaylı değil", ton: "uyari" },
-  blocked_no_story: { etiket: "Engelli: Jira story'si yok", ton: "uyari" },
-  blocked_requirement_changed: { etiket: "Engelli: story değişti, PO onayı yenilenmeli", ton: "hata" },
-  blocked_not_ready: { etiket: "Engelli: hazır değil", ton: "uyari" },
-  blocked_gate: { etiket: "Engelli: denetim kapısı", ton: "uyari" },
+  blocked_hash_mismatch: { etiket: "Yayınlanamaz: onaydan sonra değişmiş", ton: "hata" },
+  blocked_not_approved: { etiket: "Yayınlanamaz: onaylı değil", ton: "uyari" },
+  blocked_no_story: { etiket: "Yayınlanamaz: Jira story'si yok", ton: "uyari" },
+  blocked_requirement_changed: { etiket: "Yayınlanamaz: story değişti, PO onayı yenilenmeli", ton: "hata" },
+  blocked_not_ready: { etiket: "Yayınlanamaz: hazır değil", ton: "uyari" },
+  blocked_gate: { etiket: "Yayınlanamaz: Agent Probe denetimi", ton: "uyari" },
 };
 
 /** Core neden metni göndermediyse gösterilen açıklama (011 §4.7: yalnız hazır case yayınlanır). */
 const HAZIR_DEGIL_NEDENI =
-  "Case hazır değil (varsayıma bağlı ya da engelli). Case review ekranında \"Düzelt\" ile hazır yapın ya da reddedin.";
+  "Case hazır değil (varsayıma bağlı ya da soru bekliyor). Case review ekranında \"Düzelt\" ile hazır yapın ya da reddedin.";
 
 const HEDEF = { jira: "Jira (Test issue)", xray: "Xray Cloud" } as const;
 
@@ -243,7 +244,8 @@ function YayinEkrani() {
                             <Cip ton={i.ton}>{i.etiket}</Cip>
                             {(k.neden || k.islem === "blocked_not_ready") && (
                               <span className="yayin-neden soluk kucuk" data-testid="yayin-engel-nedeni">
-                                {k.neden ?? HAZIR_DEGIL_NEDENI}
+                                {/* Çip "Yayınlanamaz: …" der; core nedeni aynı önekle gelirse ikinci kez yazılmaz. */}
+                                {k.neden ? hataMetniniAyikla(yayinlanamazOnekiz(k.neden)) : HAZIR_DEGIL_NEDENI}
                               </span>
                             )}
                             {k.external_key && (

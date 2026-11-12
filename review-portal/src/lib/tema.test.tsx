@@ -161,7 +161,7 @@ describe("Kabuk tema düğmesi", () => {
         </OturumProvider>
       </MemoryRouter>,
     );
-    await screen.findByRole("heading", { name: "Denetim", level: 1 });
+    await screen.findByRole("heading", { name: "Denetim kaydı", level: 1 });
     // Tema, Kabuk'un useEffect'inde uygulanır. Kabuk oturum çözülünce act dışı bir güncellemeyle bağlanır;
     // findByRole başlığı DOM'a yazıldığı anda bulur, pasif efekt henüz çalışmamış olabilir (yük altında
     // ~30 koşuda 1 kez data-theme null görülüyordu). Efekti bekle.
