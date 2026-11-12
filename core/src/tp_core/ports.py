@@ -7,7 +7,7 @@ tiplere bağımlıdır. Değişiklik yalnızca lider (entegrasyon) tarafından y
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 from typing import Any, Literal, Protocol, runtime_checkable
 from uuid import UUID
@@ -196,6 +196,8 @@ class ModelGateway(Protocol):
         workflow_id: UUID | None = None,
         call_id: UUID | None = None,  # deterministik (iş + adım) → yeniden denemede tek çağrı
         ek: Mapping[str, Any] | None = None,  # çağıranın ai_call.ek alanları (011 platform ekleri)
+        # Şemaya uyan çıktının deterministik kural denetimi (ihlalde yeniden istenir; 011 §4.2).
+        output_check: Callable[[Any], list[str]] | None = None,
     ) -> CallResult: ...
 
     def run_agent(

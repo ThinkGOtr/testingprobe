@@ -609,3 +609,37 @@ def content_errors(
     if not legacy:
         hatalar += consistency_problems(icerik, ozet)
     return hatalar
+
+
+def rule_reask_enabled() -> bool:
+    """Kural ihlalinde modelden düzeltme isteme (`Gateway.call(output_check=…)`) açık mı?
+    `TP_KURAL_YENIDEN_ISTEME=off` ile kapatılır (birim testleri bilerek tutarsız sahte çıktı
+    kullanır); varsayılan açık."""
+    import os
+
+    return os.environ.get("TP_KURAL_YENIDEN_ISTEME", "on").strip().lower() != "off"
+
+
+def generation_output_problems(
+    output: Mapping[str, Any],
+    kabul_kriterleri: Sequence[Any],
+    *,
+    korunan: Sequence[Mapping[str, Any]] = (),
+) -> list[str]:
+    """Bir üretim çıktısının (`{cases, …üst listeler}`) deterministik kural ihlalleri: case başına
+    §4.2 tutarlılığı (`C<n>: …` önekiyle), gereksinimde olmayan AC atfı ve set düzeyi kurallar.
+    Geçit bunu canlı çağrıda `output_check` olarak kullanır: ihlal varsa model düzeltmeye
+    yönlendirilir (011 — canlı eval 2026-11-12: dağınık tutarlılık hataları)."""
+    if not isinstance(output, Mapping):
+        return []
+    cases = [c for c in output.get("cases") or [] if isinstance(c, Mapping)]
+    ozet = normalize_ozet({k: v for k, v in output.items() if k != "cases"})
+    out: list[str] = []
+    for n, case in enumerate(cases, start=1):
+        out += [f"C{n}: {p}" for p in consistency_problems(case, ozet)]
+        bilinmeyen = unknown_ac_refs(case, kabul_kriterleri)
+        if bilinmeyen:
+            out.append(f"C{n}: acceptance_criteria_refs: source has no {', '.join(bilinmeyen)}")
+    # Korunan (önceki üretimlerden onaylı/yayınlı) case'lerin kapsadığı AC eksik sayılmaz.
+    out += set_problems(cases, ozet, kabul_kriterleri, korunan=korunan)
+    return out

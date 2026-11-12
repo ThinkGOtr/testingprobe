@@ -278,6 +278,7 @@ class CallLookup(Protocol):
 
 
 MAX_SCHEMA_REASKS = 2  # constitution III
+MAX_RULE_ERRORS = 30  # kural yeniden istemesinde listelenen en çok ihlal (girdi şişmesin)
 DEFAULT_MAX_TOKENS = 4096  # ports.ModelGateway.call varsayılanı
 SUMMARY_LIMIT = 500
 ELIDED_SNAPSHOT = "[önceki sayfa snapshot'ı bağlamdan çıkarıldı; yalnızca son snapshot tutulur]"
@@ -726,10 +727,16 @@ class Gateway:
         workflow_id: UUID | None = None,
         call_id: UUID | None = None,
         ek: Mapping[str, Any] | None = None,
+        output_check: Callable[[Any], list[str]] | None = None,
     ) -> CallResult:
         """`ek`: her `ai_call` satırının `ek`ine eklenen çağıran alanları (ör. case üretiminde
         kullanılan platform ekleri, specs/011 F4; asistan denetiminde `kullanici_id` → kullanıcı
-        günlük bütçesi); geçidin kendi alanları çakışmada önceliklidir. Vars. eski davranış."""
+        günlük bütçesi); geçidin kendi alanları çakışmada önceliklidir. Vars. eski davranış.
+
+        `output_check` (canlı kip): şemaya uyan çıktının deterministik kural denetimi (ör. case
+        tutarlılığı, 011 §4.2). İhlal varsa model aynı yeniden isteme döngüsünde düzeltmeye
+        yönlendirilir (MAX_SCHEMA_REASKS). Döngü bitince yalnız kural ihlali kalırsa çıktı yine
+        döner — çağıran onu uyarı/onay engeliyle işler; şema ihlali ise hata olarak kalır."""
         cfg = self.models.purpose(purpose)
         bnd, session, masked, mask_diff, digest, key = self._key_material(
             purpose, cfg, bundle, schema, messages, replay_key, workflow_id
@@ -834,10 +841,13 @@ class Gateway:
             totals = _add_usage(totals, response.usage)
             output, parse_error = _parse_json(response.text)
             errors = [parse_error] if parse_error else _schema_errors(validator, output)
+            rule_errors: list[str] = []
+            if not errors and output_check is not None:
+                rule_errors = list(output_check(session.unmask(output)))[:MAX_RULE_ERRORS]
             row.update(
                 cikti=output if parse_error is None else response.text,
                 sema_gecerli=not errors,
-                sema_hatalari=errors,
+                sema_hatalari=errors or [f"kural: {e}" for e in rule_errors],
                 yeniden_deneme=retries,
                 girdi_token=response.usage.input_tokens,
                 cikti_token=response.usage.output_tokens,
@@ -847,7 +857,7 @@ class Gateway:
                 sure_ms=int((self._clock() - started) * 1000),
                 hata=None,
             )
-            if not errors and self.mode == "record":
+            if not errors and not rule_errors and self.mode == "record":
                 row["hata"] = self._save_replay(
                     purpose,
                     key,
@@ -870,7 +880,7 @@ class Gateway:
                 )
             row_id = self._record(row)
             first_id = first_id or row_id
-            if not errors:
+            if not errors and (not rule_errors or attempt == MAX_SCHEMA_REASKS + 1):
                 return CallResult(
                     output=session.unmask(output),
                     call_id=row_id,
@@ -882,7 +892,10 @@ class Gateway:
             conversation = [
                 *conversation,
                 {"role": "assistant", "content": response.text or "(boş yanıt)"},
-                {"role": "user", "content": _reask_text(errors)},
+                {
+                    "role": "user",
+                    "content": _reask_text(errors) if errors else _rule_reask_text(rule_errors),
+                },
             ]
         raise SchemaValidationFailed(
             f"'{purpose}' çıktısı {MAX_SCHEMA_REASKS} yeniden istemeden sonra da şemaya uymadı",
@@ -1895,6 +1908,16 @@ def _add_usage(a: Usage, b: Usage) -> Usage:
         output_tokens=a.output_tokens + b.output_tokens,
         cache_read_tokens=a.cache_read_tokens + b.cache_read_tokens,
         cache_write_tokens=a.cache_write_tokens + b.cache_write_tokens,
+    )
+
+
+def _rule_reask_text(errors: list[str]) -> str:
+    listed = "\n".join(f"- {e}" for e in errors)
+    return (
+        "Your previous output matches the JSON schema but breaks these consistency rules from the "
+        f"instructions:\n{listed}\n"
+        "Fix only what these rules require (keep everything else unchanged) and respond again with "
+        "the complete JSON value only."
     )
 
 

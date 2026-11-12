@@ -60,10 +60,12 @@ from tp_core.features.cases.schema import (
     consistency_problems,
     content_errors,
     coverage_matrix,
+    generation_output_problems,
     is_legacy,
     normalize_ozet,
     readiness_of,
     readiness_warnings,
+    rule_reask_enabled,
     set_problems,
     uncovered_acs,
     unknown_ac_refs,
@@ -980,6 +982,8 @@ def run_generation(
         from tp_core.features.cases import acik_sorular
 
         _, korunan_ozet, korunan_kimlikler = preserved_set(s, req)
+        kabul_kriterleri = list(req.kabul_kriterleri or [])
+        korunan_icerikler = preserved_contents(s, req, uretim_no)
         messages = generation_messages(
             req,
             _onaylanan_sorular(s, req.id),
@@ -1010,6 +1014,15 @@ def run_generation(
             replay_key=replay_key,
             workflow_id=wf_id,
             call_id=deterministic_call_id(ctx.job_id, PURPOSE),
+            output_check=(
+                (
+                    lambda o: generation_output_problems(
+                        o, kabul_kriterleri, korunan=korunan_icerikler
+                    )
+                )
+                if rule_reask_enabled()
+                else None
+            ),
             **({"ek": cagri_eki} if cagri_eki else {}),
         )
     except BudgetExceeded as exc:

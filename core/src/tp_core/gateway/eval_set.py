@@ -273,6 +273,7 @@ def run_case(
                 case_messages(case),
                 dict(schema),
                 replay_key=case_replay_key(data, case),
+                **_output_check(purpose, expect),
             )
     except GatewayError as exc:
         return CaseResult(cid, False, [type(exc).__name__], error=str(exc)[:500])
@@ -280,6 +281,25 @@ def run_case(
     if agent and env is not None:
         failures += env.check(res.output, expect)
     return CaseResult(cid, not failures, failures, res.output, res.mode)
+
+
+def _output_check(purpose: str, expect: Mapping[str, Any]) -> dict[str, Any]:
+    """Üretimdeki deterministik kural denetimi (`Gateway.call(output_check=…)`) eval'de de aynı:
+    case üretimi ve tasarım modeli kural ihlalinde modelden düzeltme ister. AC listesi vakanın
+    `ac_coverage` beklentisinden gelir."""
+    acs = [f"{ac}: -" for ac in expect.get("ac_coverage") or []]
+    if purpose == "case_generation":
+        from tp_core.features.cases.schema import generation_output_problems
+
+        return {"output_check": lambda o: generation_output_problems(o, acs)}
+    if purpose == "design_model":
+        from tp_core.features.cases.model import model_problems
+
+        refs = list(expect.get("ac_coverage") or [])
+        return {
+            "output_check": lambda o: model_problems(o, refs or None) if isinstance(o, dict) else []
+        }
+    return {}
 
 
 def is_flow_set(data: Mapping[str, Any]) -> bool:

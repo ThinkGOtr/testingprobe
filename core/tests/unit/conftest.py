@@ -256,3 +256,11 @@ def _canli_model_anahtari_yok(monkeypatch: pytest.MonkeyPatch) -> None:
     hiçbir test yanlışlıkla canlı model yoluna giremez. Anahtar isteyen test kendi sahte değerini
     `monkeypatch.setenv` ile verir (bu fikstür ondan önce çalışır)."""
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _kural_yeniden_isteme_kapali(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Birim testleri bilerek tutarsız sahte model çıktısı kullanır (uyarı / onay engeli akışları);
+    kural ihlalinde yeniden isteme (011) senaryoyu tüketmesin. Mekanizmanın kendisi
+    `test_kural_yeniden_isteme.py`'de açıkça açılarak sınanır."""
+    monkeypatch.setenv("TP_KURAL_YENIDEN_ISTEME", "off")

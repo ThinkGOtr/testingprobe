@@ -41,6 +41,7 @@ from tp_core.features.cases.model import (
     model_stats,
     validate_model,
 )
+from tp_core.features.cases.schema import rule_reask_enabled
 from tp_core.features.cases.service import (
     InvalidCaseContent,
     RequirementChanged,
@@ -314,6 +315,7 @@ def run_model_generation(
         # Korunan (onaylı/yayınlı) case'lerin kimlikleri: tur 2 modelin kimliklerini aynen
         # kopyalar; model bunlarla çakışan kimlik üretmesin (011 D1 #13).
         _, _, korunan_kimlikler = preserved_set(s, req)
+        model_kabul = list(req.kabul_kriterleri or [])
         messages = generation_messages(
             req,
             _onaylanan_sorular(s, req.id),
@@ -346,6 +348,11 @@ def run_model_generation(
             replay_key=replay_key,
             workflow_id=wf_id,
             call_id=deterministic_call_id(ctx.job_id, PURPOSE),
+            output_check=(
+                (lambda o: model_problems(o, model_kabul) if isinstance(o, dict) else [])
+                if rule_reask_enabled()
+                else None
+            ),
             **({"ek": cagri_eki} if cagri_eki else {}),
         )
     except BudgetExceeded as exc:
