@@ -648,3 +648,44 @@ girdisi) eklenmelidir.
 - Portal `karsilastirilamayan` listesini henüz göstermez (yalnız `ozet` cümlesi söyler).
 - `case_facts` ve `decision_table_draft` golden'ları elle hazırlanmıştır; canlı modelle kayıt
   (`TP_MODEL_MODE=record`) ve değerlendirme (`evaluations.yaml` `pending`) ürün sahibi kararıdır.
+
+## 13. Review turu 1 kararları ve düzeltme sözleşmesi (2026-11-12)
+
+Altı rollü review (test, güvenlik, mimari, ön yüz, analist/PO, doğrulama bağımsızlığı) bulguları
+`scratchpad/review1/*.md`'dedir. Bu bölüm düzeltme şeritlerinin uyacağı kararları ve sözleşmeyi
+sabitler; §4–§6 ile çelişirse bu bölüm geçerlidir.
+
+### 13.1 Kararlar
+
+| # | Konu | Karar |
+|---|---|---|
+| K9 | Kaçan hata | `kampanya_esik_7` katalogdan çıkar (story'ye uygun davranış). Yerine `kampanya_tek_bedava`: bedava adet `min(1, adet // 6)` — 6/7 adette doğru görünür, 12+ adette yanlış. Katalog kayıtlarına `ac_refs`, `tablo` (ör. `T1`) ve `ayirt_edici` (girdi + doğru/hatalı çıktı) eklenir |
+| K10 | Kontrol edilemedi | Yüksek riskte, kapsayan geçerli tablo varken `kontrol_edilemedi` → gerekçeli onay (istisna ile aynı gövde alanı, tür `kontrolsuz`); orta/düşükte uyarı. Kule'de "kontrolsüz onay" sayacı. Model çağrısı hatası ayrıca kaydedilir (`neden: cagri_hatasi`) |
+| K11 | Kısmi sonuç | Yeni sonuç `kismen`: fark yok ama kapsanan bir grup değerlendirilemedi, ya da beklenen bir olgu atıldı / karşılaştırılamadı. Kapıda uyarı (yüksek risk dahil engellemez), doğruluk oranına girmez, değer düzeyinde sayım gösterilir |
+| K12 | Yakalama oranı | Ana oran yalnız onaylı case'lerden üretilen testlerle (`tests/generated/`, `uretilen/`); el yazısı suite ayrı sütun. Bir hata ancak şu testle "yakalandı" sayılır: hatasız temelde yeşil, hatalı koşuda assertion kırmızısı. Temelde kırmızı testler koşuyu geçersiz kılmaz, hariç tutulur ve listelenir |
+| V9 | T1 (kampanya) | Girdiler `adet`, `ara_toplam`; çıktılar `bedava_adet`, `indirim = yuvarla(ara_toplam / adet * (adet // 7), 2)`, `toplam = ara_toplam - indirim`. `birim_fiyat` girdisi kalkar (case'lerde yazmıyor; ara toplam yazıyor) |
+| V10 | İstisna yolları | İstisna formu iki yol sunar: "Case doğru, tabloya rağmen onayla" (istisna) ve "Tablo yanlış" (tabloyu yeniden açar, case onaylanmaz). İstisnalar append-only `oracle_istisna` tablosunda tutulur; sayaçlar oradan |
+| V11 | Kapı girdileri | Risk = max(saklı, AI özgün, gönderilen); kapsayan tablolar = saklı ∪ gönderilen AC ref'leri. Risk ya da kapsanan AC düşüren düzeltme audit'e `oracle.dusurme` yazar ve uyuşmazlıkta istisna gerektirir. Yüksek risk tek işlevden: `risk == "high"` ya da (v3 içeriği) `priority == "P1"` |
+| V12 | İleri uyumluluk (v3) | Alan grameri `test_data[i].value`, `verification_point`, `teardown`'u kabul eder. Migrasyon numarası ve `review_nesne_turu_ck` birleşimi `feat/case-gen-v3` ile birleşirken yapılır (§12 + mimari kontrol listesi) |
+
+### 13.2 Sözleşme değişiklikleri
+
+- `ORACLE_SONUC` += `kismen`. `0022` migrasyonu yerinde güncellenir (dal dev'e girmedi; izole yığın
+  yeniden kurulur). Yeni tablo `oracle_istisna(id, test_case_id, icerik_hash, tur: uyumsuz|kontrolsuz,
+  gerekce, veren_id, zaman)`, yalnız INSERT/SELECT.
+- `case_oracle_kontrol` satırı istisna kolonlarını korur (geriye uyum) ama sayımlar `oracle_istisna`'dan
+  yapılır.
+- `oracle` nesnesi: `sonuc ∈ {uyumlu, uyumsuz, kismen, kontrol_edilemedi, kapsam_disi} | null`,
+  `degerler: {uyumlu, uyumsuz, karsilastirilamayan, atilan}` (değer düzeyinde sayım), `istisna`
+  (son kayıt, `tur` ile), `neden` (`cagri_hatasi` vb.).
+- Karar gövdesi: `oracle_istisna_gerekce` (her iki tür için) + `oracle_istisna_turu?`
+  (`uyumsuz|kontrolsuz`; verilmezse sonuca göre çıkarılır). Gerekçe: ≥ 20 karakter ve ≥ 10 harf.
+- `beklenti_dogrulugu`: `{oran, uyumlu, uyumsuz, kismen, kontrol_edilemedi, kapsam_disi, istisna,
+  kontrolsuz_onay, n_case, n_story, tablolu_story, toplam_story, kapsam_orani, golden_kaynakli}`;
+  `kapsam_orani = (uyumlu+uyumsuz+kismen) / AI case toplamı (tablolu story'lerde)`;
+  `golden_kaynakli` = REPLAY ile üretilmiş kayıt sayısı (portal "REPLAY / elle golden" etiketi).
+  Kule ayrıca `onayli_uyumsuz: [{case_id, requirement_id, baslik}]` verir.
+- Hata koşusu adımı: `kiran_testler: [{test, kaynak: "ai"|"el"}]`, `temelde_kirmizi: [test]`;
+  özet ve `hata_yakalama`: `oran` (AI), `el_yazisi: {oran, yakalanan, kacan}`, `kapsam:
+  {kosulan_hata, katalog, platformlar}`; tam katalog ve ≥ 1 geçerli adım olmayan koşu Kule
+  ölçüsüne girmez.
