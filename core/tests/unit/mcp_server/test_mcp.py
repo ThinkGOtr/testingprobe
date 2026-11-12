@@ -178,6 +178,25 @@ def test_yanlis_kapsam_reddedilir_ve_kaydedilir(
     assert tc.izin_verildi is False and tc.cagiran_user_id == u.id
     with session_scope() as s:
         assert s.scalar(select(TestCase.id)) is None
+    assert _redler(u.kullanici_adi) == [
+        ("mcp:submit_draft_cases", "case.generate", "kapsam", "tester")
+    ]
+
+
+def _redler(aktor: str) -> list[tuple[Any, ...]]:
+    from sqlalchemy import text
+
+    with session_scope() as s:
+        return [
+            (n, o["izin"], o["neden"], o["rol"])
+            for n, o in s.execute(
+                text(
+                    "SELECT nesne, ozet FROM audit_event WHERE eylem = 'authz.denied' "
+                    "AND aktor = :a ORDER BY id"
+                ),
+                {"a": aktor},
+            ).all()
+        ]
 
 
 def test_publish_test_cases_portal_onayi_ve_hash_kapisi(
@@ -331,16 +350,20 @@ def test_ide_kanali_testcinin(
 ) -> None:
     """012: IDE taslak/yayın araçları Testçinindir; başka rolün token'ı araç kullanamaz."""
     make_requirement()
-    token = _token(make_user(rol), kapsam)
     arg = (
         {"requirement_key": "TPD-4", "onaylanan_hash": _hash(), "cases": [case_icerik()]}
         if kapsam == "submit"
         else {"case_ids": [str(uuid.uuid4())]}
     )
+    u = make_user(rol)
+    token = _token(u, kapsam)
     sonuc = _cagir(api, token, arac, arg)
     assert sonuc.is_error is True
+    assert "rolü" in sonuc.structured_content["hata"] and f"{rol} rolü" not in str(sonuc)
     (kayit,) = _tool_calls()
     assert kayit.izin_verildi is False
+    izin_adi = "case.generate" if kapsam == "submit" else "case.publish"
+    assert _redler(u.kullanici_adi) == [(f"mcp:{arac}", izin_adi, "rol", rol)]
     with session_scope() as s:
         assert s.scalar(select(TestCase.id)) is None
 

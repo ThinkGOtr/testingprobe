@@ -308,7 +308,7 @@ def test_sozluk_dali_modelsiz_ve_amac_null_derin_kabul(
 def test_sablon_dali_durum_rol_kisiti_ve_tool_call(
     client: TestClient, make_user, engine: Engine, veri: dict[str, Any]
 ) -> None:
-    for rol in ("analyst", "tester"):
+    for rol in ("developer", "tester"):
         u = make_user(rol)
         giris(client, u)
         _, mid = soru_gonder(
@@ -323,7 +323,7 @@ def test_sablon_dali_durum_rol_kisiti_ve_tool_call(
             {"etiket": "Gereksinim ekranı", "rota": f"/gereksinimler/{veri['req']}"}
         ]
         assert m["cevap"]["jira_anahtarlari"] == ["TPD-3"]
-        # Rol kısıtı aracın kendisinde: yayın önizlemesi `case.publish` (Testçi) ister.
+        # Rol kısıtı aracın kendisinde: yayın önizlemesi `publish.preview` ister (developer yok).
         assert ("yayin_onizleme" in metin) is (rol == "tester")
         with engine.connect() as c:
             tc = c.execute(

@@ -25,6 +25,7 @@ Okur = Annotated[Principal, Depends(izin("requirement.read"))]
 IceAktarir = Annotated[Principal, Depends(izin("requirement.import"))]
 Inceler = Annotated[Principal, Depends(izin("requirement.review"))]
 PoSerbestMetin = Annotated[Principal, Depends(izin("requirement.po_approve_free_text"))]
+PoSerbestMetinRed = Annotated[Principal, Depends(izin("requirement.po_reject_free_text"))]
 BazYonetir = Annotated[Principal, Depends(izin("baseline.manage"))]
 BugOkur = Annotated[Principal, Depends(izin("bug.read"))]
 
@@ -50,6 +51,11 @@ class DuzeltmeUygulama(BaseModel):
 
 
 class PoOnayi(BaseModel):
+    icerik_hash: str | None = Field(default=None, max_length=128)
+
+
+class PoReddi(BaseModel):
+    gerekce: str = Field(min_length=1, max_length=2000)
     icerik_hash: str | None = Field(default=None, max_length=128)
 
 
@@ -192,6 +198,29 @@ def po_approve(
             "konmalıdır",
         )
     flow.po_approve_portal(session, req, user, body.icerik_hash)
+    session.flush()
+    return serialize.requirement_detail(session, req)
+
+
+PO_ONAYI_JIRA = (
+    "Jira gereksiniminde PO kararı portaldan verilmez; Jira'da tp-po-approved etiketi konmalıdır"
+)
+
+
+@router.post("/requirements/{req_id}/po-reject")
+def po_reject(
+    req_id: uuid.UUID, body: PoReddi, session: DbSession, user: PoSerbestMetinRed
+) -> dict[str, Any]:
+    """T04: serbest metin gereksiniminde gerekçeli PO reddi (`pending_po` → `new`, Analist'e).
+
+    Jira kaynaklı gereksinimde 410 `po_onayi_jira` (K6). Gerekçe boşsa 422; hash eskiyse 409.
+    """
+    if not body.gerekce.strip():
+        raise HTTPException(422, "PO reddi gerekçe ister")
+    req = _req(session, req_id, kilit=True)
+    if req.kaynak == "jira":
+        raise KodluHata(410, "po_onayi_jira", PO_ONAYI_JIRA)
+    flow.po_reject_portal(session, req, user, body.icerik_hash, body.gerekce.strip())
     session.flush()
     return serialize.requirement_detail(session, req)
 

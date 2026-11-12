@@ -16,9 +16,9 @@
     {"kalip": "/bug-taslaklari", "ekran": "Bug taslakları", "varlik": null, "roller": null},
     {"kalip": "/bug-taslaklari/:id", "ekran": "Bug taslağı", "varlik": "bug_draft", "roller": null},
     {"kalip": "/kontrol-kulesi", "ekran": "Kontrol Kulesi", "varlik": null, "roller": null},
-    {"kalip": "/yol-haritasi", "ekran": "Yol haritası", "varlik": null, "roller": null},
+    {"kalip": "/yol-haritasi", "ekran": "Yol haritası", "varlik": null, "roller": ["admin", "analyst", "engineer", "po", "tester"]},
     {"kalip": "/denetim", "ekran": "Denetim", "varlik": null, "roller": null},
-    {"kalip": "/claude-code", "ekran": "Claude Code kanalı", "varlik": null, "roller": ["tester"]},
+    {"kalip": "/claude-code", "ekran": "Claude Code kanalı", "varlik": null, "roller": ["admin", "analyst", "engineer", "tester"]},
     {"kalip": "/demo", "ekran": "Demo kontrolleri", "varlik": null, "roller": ["admin", "engineer"]}
   ]
 }

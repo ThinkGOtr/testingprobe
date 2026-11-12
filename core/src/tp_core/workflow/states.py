@@ -150,7 +150,9 @@ TEST_CASE_KARAR_IZNI: dict[str, str] = {
     **dict.fromkeys(TEST_CASE_TESTCI_KARARLARI, "case.decide"),
     **dict.fromkeys(TEST_CASE_SON_ONAY_KARARLARI, "case.approve"),
 }
-REQUIREMENT_KARARLARI = frozenset({"po_approve"})
+REQUIREMENT_KARARLARI = frozenset({"po_approve"})  # onaylayan (kapılar)
+# T04: serbest metin gereksiniminde PO reddi (gerekçeli; pending_po → new). Onaylayan değildir.
+REQUIREMENT_RED_KARARLARI = frozenset({"po_reject"})
 BUG_DRAFT_KARARLARI = frozenset({"new", "link", "dismiss"})
 SCRIPT_KARARLARI = frozenset({"merge", "request_changes"})
 FINDING_KARARLARI = frozenset({"fix_doc", "code_defect", "accept_difference"})
@@ -167,7 +169,7 @@ APPROVING: dict[str, frozenset[str]] = {
 
 KARARLAR: dict[str, frozenset[str]] = {
     "test_case": TEST_CASE_KARARLARI,
-    "requirement": REQUIREMENT_KARARLARI,
+    "requirement": REQUIREMENT_KARARLARI | REQUIREMENT_RED_KARARLARI,
     "bug_draft": BUG_DRAFT_KARARLARI,
     "script": SCRIPT_KARARLARI,
     "consistency_finding": FINDING_KARARLARI,
@@ -364,6 +366,7 @@ DECISION_EDIT_REQUIRED: dict[str, frozenset[str]] = {"test_case": frozenset({"ed
 DECISION_GEREKCE_REQUIRED: dict[str, frozenset[str]] = {
     "test_case": frozenset({"send_back"}),
     "consistency_finding": frozenset({"accept_difference"}),
+    "requirement": REQUIREMENT_RED_KARARLARI,
 }
 
 # İçerik hash'ine giren alanlar (kanonik JSON). Onay ve yayın kapıları bunu karşılaştırır.

@@ -139,7 +139,7 @@ Demo story'si mutlaka `add-to-cart` ve kampanya hesabı adımlarını içerir.
 ## 4. Mimari
 
 ```
-            Analist · Mühendis (tarayıcı)          IDE: GitHub Copilot / Claude Code
+            Analist · Automation Engineer (tarayıcı) IDE: GitHub Copilot / Claude Code
                        │                                         │ MCP
           Review Portal (React, nginx) ── REST + SSE ──┐         │
                                                        ▼         ▼

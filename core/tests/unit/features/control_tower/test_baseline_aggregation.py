@@ -47,7 +47,7 @@ def dort_story(
 
 def _kule(engine: Engine) -> dict:
     with Session(engine) as s:
-        return ct.control_tower(s)
+        return ct.control_tower(s, artefakt=True)
 
 
 def test_olcum_varsayilan_olculmedi_ve_kazanc(

@@ -43,7 +43,7 @@ soruda ≈ $4.7 (günlük tavan $10). Varsayılan model, teslim içindeki canlı
 | K2 | Model | Varsayılan Haiku 5.5; Sonnet 5.5 otomatik yükseltme (§6.2) ve istek üzerine; teslim içindeki canlı değerlendirmeyle kesinleşir |
 | K3 | Bütçe/hız | **Kabul.** Asistan günlük $10; kullanıcı günlük $1; soru başı $0.50 (otomatik yükseltme dahil, kök soru başına); kullanıcı saatte 30 soru; kullanıcı başı aynı anda 1 bekleyen; 3 paralel işleyici, global 6 bekleyen |
 | K4 | Saklama | Sohbet (silinenler dahil) 90 gün sonra temizlenir. Soru metni maskeli olarak append-only `ai_call`'da kalıcıdır (İlke VIII); silme talepleri bu kaydı silmez → müşteri kurulumunda maskeleme zorunlu |
-| K5 | Test edilen uygulamanın verisi (`db_query`) | Demo: tüm roller. Müşteri ortamında `TP_ASISTAN_VERI_ROLLERI` ile daraltılabilir |
+| K5 | Test edilen uygulamanın verisi (`db_query`) | Gereksinim okuyabilen roller (`requirement.read`; auditor/viewer hariç, specs/012). Müşteri ortamında `TP_ASISTAN_VERI_ROLLERI` ile daraltılabilir |
 | K6 | Kapsam v1 | **Genişletildi:** ürün kodu/dokümanı, Probe verisi, test edilen uygulama kodu/verisi, genel QA bilgisi **+ canlı Jira okuma (§5.6) + CI log okuma (§5.7) + otomatik model yükseltme (§6.2)** |
 | K7 | Anayasa v1.3.0 | **Kabul.** İlke II'ye: "salt okuma bilgi ve yönlendirme asistanı; eylem yok; çıktısı karar dayanağı değildir" |
 | K8 | Öneri düğmesi | **Yeni (§17).** Kural tabanlı öneri + gerekçe + yönlendirme (portal ekranı / Jira taslağı); model destekli ek öneri isteğe bağlı. Jira'ya yazma yok |

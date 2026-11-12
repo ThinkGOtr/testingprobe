@@ -235,7 +235,7 @@ def test_pr_kosusu_github_dan_alinir(engine: Engine, gh: FakeGitHub) -> None:
     with Session(engine) as s:
         rows = s.scalars(select(TestResult).where(TestResult.run_id == rid)).all()
         assert len(rows) == 9 and {r.kaynak for r in rows} == {"github"}
-        detay = service.run_detail(s, rid)
+        detay = service.run_detail(s, rid, artefakt=True)
     assert detay["sauce_url"].startswith("https://app.eu-central-1.saucelabs.com/")
     assert detay["sauce_durum"] == "passed"  # sauce.json: Sauce gerçekten koştu
     # Artefakt Playwright HTML raporu taşımıyor: rapor bağlantısı GitHub'a düşer; JUnit ve kök
@@ -320,7 +320,7 @@ def test_elle_gece_workflow_dispatch(engine: Engine, gh: FakeGitHub) -> None:
         rid = service.trigger_manual(s, "nightly", "sunucu")["run_id"]
     run_jobs(engine)
     assert gh.dispatchler == [
-        ("workflow_dispatch", {"ref": "main", "inputs": {"tetik": "nightly"}})
+        ("workflow_dispatch", {"ref": "main", "inputs": {"tetik": "nightly", "istek_id": str(rid)}})
     ]
     gh.wr(300, "schedule", conclusion="success")  # zamanlanmış koşu elle tetiğe eşlenmez
     assert service.github_poll(engine, rid, 1)["durum"] == "bekleniyor"
@@ -341,7 +341,7 @@ def test_cron_bekleyen_gece_kosusu_elle_tetiklenince_dispatch_edilir(
     assert (sonuc["run_id"], sonuc["durum"]) == (rid, "queued")
     run_jobs(engine)
     assert gh.dispatchler == [
-        ("workflow_dispatch", {"ref": "main", "inputs": {"tetik": "nightly"}})
+        ("workflow_dispatch", {"ref": "main", "inputs": {"tetik": "nightly", "istek_id": str(rid)}})
     ]
     assert _run(engine, rid).ortam["dispatch"] == "nightly"
     with Session(engine) as s, s.begin():

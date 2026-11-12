@@ -1349,6 +1349,23 @@ def son_onay_kararlari(rs: Sequence[Review]) -> list[Review]:
     return [r for r in rs if r.karar in ("approve", "send_back") and r.id not in eski]
 
 
+def gecerli_son_onay(rs: Sequence[Review]) -> Review | None:
+    """Gösterilecek son onay: en son Analist kararı (`approve`/`send_back`), yalnız ondan SONRA
+    Testçi kararı (`accept`/`edit`/`reject`/`reopen`) yoksa. Böylece "Taslağa al" ya da yeni kabul
+    eski onayı gizler; `send_back` gerekçesi Testçinin bir sonraki kararına kadar görünür kalır."""
+    son_onaylar = son_onay_kararlari(rs)
+    if not son_onaylar:
+        return None
+    son = son_onaylar[-1]
+    sira = {r.id: i for i, r in enumerate(rs)}
+    testci_sonra = any(
+        sira[r.id] > sira[son.id]
+        for r in rs
+        if r.karar in ("accept", "edit", "reject", "reopen") and r.id not in {son.id}
+    )
+    return None if testci_sonra else son
+
+
 def kisitli_gorunum(user: Principal | None) -> bool:
     """Developer kısıtlı görünümü (ANALIZ §4.2): yalnız onaylı/yayınlanmış case, geçmiş yok."""
     return user is not None and normalize_rol(user.rol) == "developer"
@@ -1399,8 +1416,7 @@ def serialize_cases(
         son_genel = kararlar[-1] if kararlar else None
         testci = testci_kararlari(rs)
         son = testci[-1] if testci else None
-        son_onaylar = son_onay_kararlari(rs)
-        son_onay = son_onaylar[-1] if son_onaylar else None
+        son_onay = gecerli_son_onay(rs)
         ref = refs.get(c.id)
         req = reqs.get(c.requirement_id)
         ai_sure, maliyet = ai.get(c.ai_call_id, (0, 0.0)) if c.ai_call_id else (0, 0.0)

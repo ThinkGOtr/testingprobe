@@ -62,6 +62,7 @@ from tp_core.models import (
 from tp_core.models.codegen_feature import ScriptCodegen
 from tp_core.models.enums import FAILURE_SINIF, RUN_SONUC
 from tp_core.ports import ToolSpec
+from tp_core.workflow.service import Principal
 from tp_core.workflow.states import MACHINES
 
 TURLER: tuple[str, ...] = ("requirement", "case", "script", "run", "failure", "bug_draft")
@@ -86,7 +87,6 @@ MODELLER: dict[str, Any] = {
 ROL_ETIKETI: dict[str, str] = {
     **{eski: yetki.ROL_ETIKETLERI[yeni] for eski, yeni in yetki.ESKI_ROLLER.items()},
     **yetki.ROL_ETIKETLERI,
-    yetki.PO: "Ürün sahibi (PO)",
 }
 SISTEM = "sistem"
 
@@ -106,7 +106,7 @@ UC_IZINLERI: dict[str, tuple[str, ...]] = {
     "GET /failures/{failure_id}": ("failure.read",),
     "GET /bug-drafts": ("bug.read",),
     "GET /bug-drafts/{draft_id}": ("bug.read",),
-    "GET /publish/preview": ("case.publish",),
+    "GET /publish/preview": ("publish.preview",),
     "GET /audit": ("audit.read_all", "audit.read_own"),
 }
 
@@ -553,7 +553,7 @@ def _po_cevaplari_ozeti(req: Requirement) -> list[str]:
 
 
 def _yayin_onizleme_ozeti(s: Session, req: Requirement) -> list[str]:
-    """`GET /publish/preview` özeti (yalnız analist; çağıran `_uc_kontrol` ile denetler)."""
+    """`GET /publish/preview` özeti (`publish.preview`; çağıran `uc_izinli` ile denetler)."""
     from tp_core.features.publish import service as publish_service
 
     try:
@@ -602,13 +602,17 @@ def _kapi(tur: str, nesne: Any) -> Kapi | None:
     return BUG_DRAFT_KAPILARI.get(nesne.durum)
 
 
-def _detay_ham(s: Session, tur: str, nesne: Any) -> dict[str, Any]:
+def _detay_ham(s: Session, rol: str, tur: str, nesne: Any) -> dict[str, Any]:
+    """Uçla aynı rol görünümü: developer kısıtlı case/bug görünümü, maskeli koşu (izin yoksa)."""
+    gelistirici = yetki.normalize_rol(rol) == yetki.DEVELOPER
     if tur == "requirement":
         return _requirement_ham(s, nesne)
     if tur == "case":
         from tp_core.features.cases import service as cases_service
 
-        return cases_service.serialize_cases(s, [nesne])[0]
+        kim = Principal(id=None, kullanici_adi="asistan", rol=rol, kanal="assistant")
+        rows = cases_service.serialize_cases(s, [nesne], kim)
+        return rows[0] if rows else {}
     if tur == "script":
         from tp_core.features.codegen import views
 
@@ -619,11 +623,11 @@ def _detay_ham(s: Session, tur: str, nesne: Any) -> dict[str, Any]:
     if tur == "run":
         from tp_core.features.ci import service as ci_service
 
-        return ci_service.serialize_runs(s, [nesne])[0]
+        return ci_service.serialize_runs(s, [nesne], artefakt=yetki.izinli(rol, "run.artifacts"))[0]
     if tur == "failure":
         from tp_core.features.triage import service as triage_service
 
-        return triage_service.get_failure(s, nesne.id) or {}
+        return triage_service.get_failure(s, nesne.id, yalniz_yayinlanmis_bug=gelistirici) or {}
     from tp_core.features.bugs import serialize as bugs_serialize
 
     return bugs_serialize.bug_draft_view(s, nesne)
@@ -650,7 +654,7 @@ def _son_hata(s: Session, tur: str, nesne: Any, ham: Mapping[str, Any]) -> str |
 def probe_detay(s: Session, rol: str, tur: str, nesne: Any) -> list[str]:
     """`probe_get` gövdesi (satırlar). Öneri motoru aynı veriyi buradan okuyabilir."""
     _uc_kontrol(rol, DETAY_UCU[tur])
-    ham = _detay_ham(s, tur, nesne)
+    ham = _detay_ham(s, rol, tur, nesne)
     alanlar = alanlari_sec(ham, DETAY_ALANLARI[tur])
     satirlar = _satirlar(f"{tur} {nesne.id}", alanlar)
     kapi = _kapi(tur, nesne)

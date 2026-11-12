@@ -2,7 +2,7 @@
 
 | Yöntem | Yol | Rol |
 |---|---|---|
-| GET  | `/publish/preview?requirement_id=` | `case.publish` (Testçi) — hedef başına birebir gövde |
+| GET  | `/publish/preview?requirement_id=` | `publish.preview` — hedef başına gövde (dry-run) |
 | POST | `/publish` `{case_ids[]}` | `case.publish` (Testçi) — yayın işini başlatır, sonucu bekler |
 | MCP  | `/mcp` | `Authorization: Bearer tpt_…` — `tp_core.mcp_server` (çerez kullanılmaz) |
 
@@ -32,6 +32,7 @@ from tp_core.workflow.service import Principal
 router = APIRouter(tags=["publish"])
 
 Yayinci = Annotated[Principal, Depends(izin("case.publish"))]
+Onizleyici = Annotated[Principal, Depends(izin("publish.preview"))]
 
 
 class PublishIn(BaseModel):
@@ -39,7 +40,7 @@ class PublishIn(BaseModel):
 
 
 @router.get("/publish/preview")
-def preview(requirement_id: uuid.UUID, session: DbSession, _user: Yayinci) -> dict[str, Any]:
+def preview(requirement_id: uuid.UUID, session: DbSession, _user: Onizleyici) -> dict[str, Any]:
     return service.preview(session, requirement_id)
 
 

@@ -6,8 +6,10 @@
 | POST | `/demo/reset` | `demo.manage` — main → baseline, tp/* PR kapat, uygulama, AI Bug silme |
 | GET  | `/demo/status` | `dashboard.read` — forge main/testid, uygulama commit'i, `onarim_on_kosulu` |
 
-Yazan uçlar yalnız `TP_DEMO_MODE=1` iken çalışır; kapalıyken izinli rol de 403 (`yetki_yok`,
-denetimde `neden: demo_kapali`) alır. `/demo/status` yanıtı `demo_modu` alanını taşır.
+Yazan uçlar yalnız `TP_DEMO_MODE=1` iken çalışır; kapalıyken izinli rol de 403 (`demo_kapali`,
+"Demo kipi kapalı (TP_DEMO_MODE=0)"; denetimde `authz.denied`, `neden: demo_kapali`) alır.
+Worker işleri (`run_break`/`run_reset`) ve host CLI'ı da demo kipi kapalıyken çalışmaz.
+`/demo/status` yanıtı `demo_modu` ve `ortam` (`TP_ORTAM`) alanlarını taşır.
 
 Kırılmadan önce yeşil temel koşu yoksa kırılma 409 + yönerge döner (`zorla=true` bilerek atlar):
 locator onarımı "son yeşil" kanıt ister. GitHub kipinde (TP_FORGE=github) kırılma/sıfırlama insan
@@ -26,8 +28,9 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.concurrency import run_in_threadpool
 
+from tp_core.api.errors import KodluHata
 from tp_core.auth.deps import DbSession
-from tp_core.auth.yetki import izin, reddet
+from tp_core.auth.yetki import denetle_red, izin
 from tp_core.config import get_settings
 from tp_core.db import get_engine
 from tp_core.features.demo import service
@@ -37,6 +40,7 @@ from tp_core.workflow.service import Principal
 router = APIRouter(tags=["demo"])
 
 Okur = Annotated[Principal, Depends(izin("dashboard.read"))]
+DEMO_KAPALI = service.DEMO_KAPALI
 
 
 def demo_yoneticisi(
@@ -46,7 +50,8 @@ def demo_yoneticisi(
 ) -> Principal:
     """`demo.manage` + demo kipi (`TP_DEMO_MODE=1`); kapalıysa 403 ve `authz.denied`."""
     if not get_settings().demo_mode:
-        raise reddet(session, user, "demo.manage", "demo_kapali", request.url.path)
+        denetle_red(session, user, "demo.manage", "demo_kapali", request.url.path)
+        raise KodluHata(403, "demo_kapali", DEMO_KAPALI)
     return user
 
 
@@ -89,4 +94,5 @@ async def reset(user: DemoYoneticisi, response: Response) -> dict[str, Any]:
 @router.get("/demo/status")
 def status(_user: Okur) -> dict[str, Any]:
     with session_scope() as s:
-        return {**service.durum(session=s), "demo_modu": get_settings().demo_mode}
+        ayar = get_settings()
+        return {**service.durum(session=s), "demo_modu": ayar.demo_mode, "ortam": ayar.ortam}

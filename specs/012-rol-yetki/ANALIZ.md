@@ -84,11 +84,12 @@ oturumu ve Jira PO kanalını kabul eder).
 | `requirement.import` | analyst | `POST /requirements/sync`, `POST /requirements/free-text` | |
 | `requirement.review` | analyst | `POST /requirements/{id}/review`, `POST /findings/{id}/decision`, `POST /requirements/{id}/apply-doc-fixes` (düzeltmeleri Jira'ya yaz / "Son hal olarak onayla") | |
 | `requirement.po_approve_free_text` | po | `POST /requirements/{id}/po-approve` | yalnız `kaynak == free_text`; hash kontrolü (mevcut). Jira kaynaklı gereksinimde 410 `po_onayi_jira` (izin kontrolünden sonra) |
+| `requirement.po_reject_free_text` | po | `POST /requirements/{id}/po-reject` `{gerekce (1..2000), icerik_hash}` | T04: yalnız `kaynak == free_text` ve `pending_po`; `review` kararı `po_reject` (gerekçe + hash), `pending_po` → `new` (Analist yeniden inceler; ön inceleme kayıtları geçersizlenir), denetim + `po.rejected` olayı. Jira kaynaklı 410 `po_onayi_jira` |
 | `baseline.manage` | po | `PUT/DELETE /requirements/{id}/baseline`, `POST /baseline-file/apply` | K7 |
 | `case.generate` | tester | `POST /requirements/{id}/generate-cases` | gereksinim PO onaylı (mevcut kapı) |
 | `case.decide` | tester | `POST /cases/{id}/decision` karar ∈ `accept`, `edit`, `reject`, `reopen`; `POST /cases/{id}/viewed` | ret nedeni zorunlu (mevcut) |
 | `case.approve` | analyst | `POST /cases/{id}/decision` karar ∈ `approve`, `send_back`; `POST /requirements/{id}/review-complete` | yalnız `ready` case; `send_back` gerekçe ister |
-| `case.publish` | tester | `POST /publish`, `GET /publish/preview` | onaylı + hash değişmemiş (mevcut kapı) |
+| `case.publish` | tester | `POST /publish` | onaylı + hash değişmemiş (mevcut kapı) |
 | `token.issue` | tester | `POST /tokens` | yayın / IDE gönderim kanalı |
 | `code.generate` | engineer | `POST /code/generate` | onaylı case (mevcut) |
 | `code.break_verify` | engineer | `POST /scripts/{id}/break-verify` | |
@@ -98,7 +99,7 @@ oturumu ve Jira PO kanalını kabul eder).
 | `run.trigger_scheduled` | engineer | `POST /ci/trigger` tetik ∈ `deploy`, `nightly` | |
 | `run.trigger_manual` | engineer, developer | `POST /ci/trigger` tetik = `manual` | developer: `TP_ORTAM≠prod` |
 | `bug.decide` | tester | `POST /bug-drafts/{id}/decision`, `/prepare`, `/publish` | |
-| `demo.manage` | admin, engineer | `POST /demo/break-locator`, `POST /demo/reset` | `TP_DEMO_MODE=1` |
+| `demo.manage` | admin, engineer | `POST /demo/break-locator`, `POST /demo/reset` | `TP_DEMO_MODE=1`; kapalıyken 403 `demo_kapali` ("Demo kipi kapalı (TP_DEMO_MODE=0)", denetimde `authz.denied` `neden: demo_kapali`); worker işleri (`demo.break`/`demo.reset`) ve host CLI (`python -m tp_core.features.demo on-kosul`, `web-istek --eylem break\|baseline`) da reddeder |
 | `audit.verify` | admin, auditor | `GET /audit?verify=true` | |
 
 ### 4.2 Okuma
@@ -118,10 +119,40 @@ oturumu ve Jira PO kanalını kabul eder).
 | `events.read` | admin, analyst, po, tester, engineer, developer | `GET /events` (SSE) |
 | `assistant.use` | hepsi | asistan ve öneriler |
 | `token.read` | hepsi | kendi token'ları (`GET/DELETE /tokens`) |
+| `publish.preview` | admin, analyst, po, tester, engineer | `GET /publish/preview` (dry-run gövde; yayın `case.publish`) |
+| `claude_code.read` | admin, analyst, tester, engineer | Claude Code sayfası (portal; çekirdek ucu yok, token'lar `token.read` ile yalnız kendi) |
+| `demo.read` | admin, analyst, po, tester, engineer | Demo yol haritası sayfası (portal; çekirdek ucu yok) |
+
+Ayar izinleri: `integration.manage` / `system.settings` bu kurulumda uygulanmaz — entegrasyon ve
+sistem ayarları `.env` / sır yöneticisiyle yapılır, portalda ayar ekranı yoktur.
 
 İmzalı, oturumsuz rapor bağlantıları (`GET /artifacts/k/{token}/runs/...`, koşu yanıtındaki `rapor_url`)
 uç düzeyinde izin taşımaz (imza kanıttır); `run.artifacts` izni olmayan role koşu yanıtlarında bu
-bağlantılar hiç dönmez (alan boş/yok).
+bağlantılar hiç dönmez (alan boş/yok). Maskeleme yapısaldır: `serialize_runs` / `run_detail` /
+`control_tower` `artefakt` bayrağını zorunlu alır, her çağıran rolden karar verir (`/runs`,
+`/runs/{id}`, `/control-tower` `son_kosular`, asistan `probe_get`). Maskeli yanıtta her düzeydeki
+`*url` alanı boşalır (artefakt, imzalı rapor, `ci_url`, Sauce, GitHub iş bağlantıları), ekler boş
+liste olur ve denemelerin `stdout`/`stderr`'i çıkarılır.
+
+Denetçi görünümü: `GET /audit` auditor rolünde `ozet` alanını mevcut PII maskeleyicisinden geçirir
+(`features/assistant/maskeleme.py`, `TP_PII_MASKING`'den bağımsız açık; yanıt başına tek oturum).
+Zincir alanları (`hash`, `prev_hash`) ham kayda aittir; doğrulama (`verify=true`) etkilenmez.
+
+Red kaydı (`authz.denied`): aynı (kullanıcı, rol, izin, neden, nesne, karar) 60 sn içinde bir kez
+yazılır; ayrı bağlantıyla yazım eşzamanlı en çok 2'dir (dolu ise beklemeden atlanır, log'a düşer),
+kilit beklemesi 1 sn ile sınırlıdır. `nesne` kontrol karakterlerinden arındırılır ve 200 karaktere
+kırpılır. HTTP katmanını aşan rol retleri de yazılır: `record_approval` (karar rolü; mesaj etiketli,
+ör. "Testçi rolü case için 'Onayla' kararı veremez") ve MCP araç reddi (rol / token kapsamı;
+`nesne: mcp:<araç>`).
+
+Developer okuma süzgeci ayrıca: `GET /failures[/{id}]` yalnız yayınlanmış bug taslağını gösterir;
+SSE akışında `case.generated` ve case / bug taslağı `review.recorded` olayları gitmez,
+`test_case.state` yalnız `approved`/`published`, `bug_draft.state` yalnız `published` hedefinde
+gider; asistan `probe_get` case detayı API'nin kısıtlı görünümüdür (karar/ret nedeni yok) ve öneri
+olgularında taslak / son onay bekleyen case ile karar bekleyen bug taslağı yer almaz. Asistan araç
+izinleri: `jira_issue` anahtarın türüne göre `requirement.read` / `bug.read` / `case.read`;
+`search_code` / `get_file_contents` `code.read`; `db_schema` / `db_query` `requirement.read`
+(auditor/viewer hariç; `TP_ASISTAN_VERI_ROLLERI` yalnız daraltır).
 
 Kapsam dışı kalan uçlar: `/auth/*`, `/api/auth/aiprobe/*` (giriş akışı), `/admin/kimlik-bagi`
 (servis kimliği; değişmez), `/mcp` (bearer token kapsamı; değişmez), `/health`.
@@ -162,6 +193,15 @@ Kapsam dışı kalan uçlar: `/auth/*`, `/api/auth/aiprobe/*` (giriş akışı),
   `draft` kalır. Eski `approve` kayıtları (Analist kararı) yayın kapısı için geçerli kalır.
 - Ölçümler (`metrics.py`, kabul/düzeltme oranları) Testçi kararlarını (`accept`/`edit`/`reject`)
   sayar; `approve` / `send_back` ayrı "son onay" metriği olur.
+- Eski analist onayı (0023): göç anında var olan, analist hesabının test_case `edit` kayıtları
+  `review.eski_onay = true` işaretlenir ve yayın / kod üretimi kapısında `approve` sayılır;
+  kararı verenin güncel rolüne bakılmaz.
+- Gösterilen son onay (`son_onay`): en son Analist kararı, ancak ondan sonra Testçi kararı
+  (`accept`/`edit`/`reject`/`reopen`) yoksa. "Taslağa al" ya da yeni kabul eski `approve`'u gizler;
+  `send_back` gerekçesi Testçinin bir sonraki kararına kadar görünür.
+- **Paketten sapma — K8 (öneri, ürün sahibi onayı bekliyor):** paketteki T09 "yayınlanmış case
+  yeniden açılır" uygulanmaz. Yayınlanmış sürüm değişmezdir (Jira/Xray'deki test ile bağ korunur);
+  değişiklik yeniden üretimle (yeni sürüm, eskisi `superseded`) gelir.
 
 ## 6. Diğer akış değişiklikleri
 

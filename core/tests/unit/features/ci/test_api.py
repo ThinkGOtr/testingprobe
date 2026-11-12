@@ -166,7 +166,7 @@ def test_imzali_rapor_baglantisi_cerezsiz_ve_sinirli(
     with Session(engine) as s:
         from tp_core.features.ci import service
 
-        k = service.list_runs(s)
+        k = service.list_runs(s, artefakt=True)
     assert next(x for x in k if x["id"] == str(rid))["rapor_url"] == (
         f"/api/artifacts/runs/{rid}/src/e2e/results/html/index.html"
     )

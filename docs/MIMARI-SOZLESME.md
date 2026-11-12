@@ -747,7 +747,7 @@ Faz 1 entegrasyonunda eklenenler (boş = yerel simülatör / güvenli varsayıla
   `JIRA_HESAP_ANALIST`, `JIRA_HESAP_PO`, `JIRA_HESAP_MUHENDIS`, `JIRA_HESAP_TESTCI` (accountId; boş = o
   rol bahsedilmez) ile ADF `mention` düğümü olarak aynı satıra yazılır: PO soru yorumu → PO + Analist;
   onay etiketi kaldırıldı / doküman düzeltmesi → PO; yayın özeti (story) → Testçi; mevcut Bug'a bağlama
-  yorumu ve yeni Bug → Mühendis + Testçi (`integrations/jira_notify.py`). Bahsetme yalnızca bildirimdir:
+  yorumu ve yeni Bug → Automation Engineer + Testçi (`integrations/jira_notify.py`). Bahsetme yalnızca bildirimdir:
   yetki vermez, onay sayılmaz; idempotency işaretleri gövdede aynen kalır.
 - Portal görünen adları (core-api): `TP_GORUNEN_ADLAR` (`kullanici_adi=Ad Soyad`, virgülle; boş = seed
   demo varsayılanları; boş ad = yalnızca rol etiketi). Yalnızca gösterim; yetki kararları roldedir.
@@ -780,8 +780,8 @@ Faz 1 entegrasyonunda eklenenler (boş = yerel simülatör / güvenli varsayıla
   `TP_ASISTAN_MODEL_MODE` (`off`; `live` veya `off`, pipeline `TP_MODEL_MODE`'dan bağımsız — **yalnızca
   core-worker**, core-api kipi bilmez), `TP_ASISTAN_OTOMATIK_DERIN` (1; yalnızca core-worker),
   `TP_ASISTAN_MUSTERI_VERISI` (0; 1 iken `TP_PII_MASKING` kapalıysa asistan kapalı — yalnızca
-  core-worker), `TP_ASISTAN_VERI_ROLLERI` (boş = tüm roller; `db_schema`/`db_query` — yalnızca
-  core-worker), `TP_WORKER_ASISTAN_SERIT` (1; 0 → şerit ve kalp atışı yok → `worker_yok`; kalp atışı
+  core-worker), `TP_ASISTAN_VERI_ROLLERI` (boş = `requirement.read` sahibi roller, auditor/viewer hariç; liste
+  yalnız daraltır; `db_schema`/`db_query` — yalnızca core-worker), `TP_WORKER_ASISTAN_SERIT` (1; 0 → şerit ve kalp atışı yok → `worker_yok`; kalp atışı
   2 dk'dan eskiyken genel şerit 30 sn'de bir bekleyen asistan işlerini `cancelled`, mesajlarını
   `error/zaman_asimi` yapar — yalnızca core-worker), `GITHUB_ACTIONS_READ_TOKEN` (**sır**, yalnızca core-worker; `ci_log` için yalnız
   `actions:read`, boşsa mevcut okuma kimliği; `make security-check` 6 aynı denetler). Ortak blokta

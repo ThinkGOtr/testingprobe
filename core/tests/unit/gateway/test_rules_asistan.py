@@ -210,6 +210,8 @@ def _bilinen_kodlar() -> set[str]:
 
     kodlar = set(errors.GENEL_KODLAR.values()) | {errors.IC_HATA, csrf.RED_KODU, "butce_asildi"}
     kodlar |= {"istek_hatasi"}  # listede olmayan 4xx (errors.genel_kod)
+    # 012 rol/yetki `KodluHata` kodları: izin reddi (yetki.reddet), Jira PO kanalı, demo kipi.
+    kodlar |= {"yetki_yok", "po_onayi_jira", "demo_kapali"}
     # Yalnız üründeki alt sınıflar: testlerin tanımladığı sahte WorkflowError alt sınıfları
     # (ör. test_hata_kodlari) __subclasses__() ile sızmasın.
     kodlar |= {

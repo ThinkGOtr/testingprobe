@@ -116,8 +116,14 @@ def test_onizleme_islemleri_ve_gonderilen_govdeyle_ayni(
 
 
 def test_onizleme_ve_yayin_testci_ister(api: TestClient, make_user, engine: Engine, hazir) -> None:
+    """Önizleme `publish.preview` (admin, analyst, po, tester, engineer); yayın `case.publish`."""
     rid, _, a, _ = hazir
-    for rol in ("engineer", "analyst", "po"):
+    for rol in ("engineer", "analyst", "po", "admin"):
+        rol_ol(api, make_user(rol))
+        r = api.get("/publish/preview", params={"requirement_id": str(rid)})
+        assert r.status_code == 200, (rol, r.text)
+        assert api.post("/publish", json={"case_ids": [a["id"]]}).status_code == 403, rol
+    for rol in ("developer", "viewer", "auditor"):
         rol_ol(api, make_user(rol))
         r = api.get("/publish/preview", params={"requirement_id": str(rid)})
         assert r.status_code == 403 and r.json()["kod"] == "yetki_yok", rol
@@ -126,7 +132,7 @@ def test_onizleme_ve_yayin_testci_ister(api: TestClient, make_user, engine: Engi
         izinler = c.execute(
             text("SELECT ozet->>'izin' FROM audit_event WHERE eylem = 'authz.denied'")
         ).scalars()
-        assert set(izinler) == {"case.publish"}
+        assert set(izinler) == {"case.publish", "publish.preview"}
 
 
 def test_yayin_yalnizca_son_onaydan_sonra(
@@ -147,7 +153,7 @@ def test_yayin_yalnizca_son_onaydan_sonra(
     assert sonuc["durum"] == "created", sonuc
 
 
-def _son_kayit_edit(case_id: str, user_id: uuid.UUID) -> None:
+def _son_kayit_edit(case_id: str, user_id: uuid.UUID, *, eski_onay: bool = False) -> None:
     """Approved case'in son kaydı olarak `edit` ekler (append-only tabloya doğrudan; eski akış)."""
     from tp_core.models import Review
     from tp_core.workflow.service import content_hash_of
@@ -162,6 +168,7 @@ def _son_kayit_edit(case_id: str, user_id: uuid.UUID) -> None:
                 kanal="portal",
                 karar="edit",
                 onaylanan_hash=content_hash_of(tc),
+                eski_onay=eski_onay,  # 0023 göçünün işareti (göç anındaki analist edit'i)
             )
         )
 
@@ -171,8 +178,8 @@ def test_eski_akista_analist_edit_onayi_yayinlanir(
 ) -> None:
     """012 öncesi analistin `edit`'i (son kayıt) son onay sayılır; onaylayan o analisttir."""
     _, _, a, _ = hazir
-    eski_analist = make_user("analyst", ad="eski_analist")
-    _son_kayit_edit(a["id"], eski_analist.id)
+    eski_analist = make_user("tester", ad="eski_analist")  # rolü sonradan değişmiş olabilir
+    _son_kayit_edit(a["id"], eski_analist.id, eski_onay=True)
     with session_scope() as s:
         tc = s.get(TestCase, uuid.UUID(a["id"]))
         assert publish._engel(s, tc) is None
@@ -180,6 +187,16 @@ def test_eski_akista_analist_edit_onayi_yayinlanir(
     sonuc = publish.run_publish(_ctx([a["id"]]), engine)["sonuclar"][0]
     assert sonuc["durum"] == "created", sonuc
     assert sonuc["onaylayan"] == "eski_analist"
+
+
+def test_isaretsiz_analist_edit_onay_sayilmaz(
+    engine: Engine, jira: RestJira, targets, hazir, make_user
+) -> None:
+    """Analist rolündeki hesabın işaretsiz (`eski_onay=false`) `edit`'i onay değildir."""
+    _, _, a, _ = hazir
+    _son_kayit_edit(a["id"], make_user("analyst").id)
+    sonuc = publish.run_publish(_ctx([a["id"]]), engine)["sonuclar"][0]
+    assert sonuc["durum"] == "failed" and "Analist son onayı yok" in sonuc["hata"]
 
 
 def test_testci_edit_son_kayitsa_yayin_son_onay_ister(

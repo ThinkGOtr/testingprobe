@@ -157,7 +157,7 @@ def senaryo(engine: Engine, make_requirement_case, monkeypatch: pytest.MonkeyPat
 
 def test_kontrol_kulesi_sayilari_satirlardan(engine: Engine, senaryo) -> None:
     with Session(engine) as s:
-        k = ct.control_tower(s)
+        k = ct.control_tower(s, artefakt=True)
     # Son koşular: yalnızca CI tetikleri (kırma koşusu yok).
     assert [r["id"] for r in k["son_kosular"]] == [str(senaryo["c"]), str(senaryo["a"])]
     # Geçme oranı: A failed + C passed (B hariç).
@@ -213,7 +213,7 @@ def test_manuel_baz_verilirse_kullanilir(
 ) -> None:
     monkeypatch.setenv("TP_MANUAL_BASELINE_S", "3600")
     with Session(engine) as s:
-        k = ct.control_tower(s)
+        k = ct.control_tower(s, artefakt=True)
     # Story'ye özel ölçüm yok: ortam değeri ölçüm sayılmaz, sayı olarak gösterilmez.
     assert k["ai_katkisi"]["manuel_baz_ms"] is None
     assert k["ai_katkisi"]["baz_deger_olculmedi"] is True
@@ -227,7 +227,7 @@ def test_manuel_baz_verilirse_kullanilir(
 
 def test_bos_veritabaninda_uydurma_yok(engine: Engine) -> None:
     with Session(engine) as s:
-        k = ct.control_tower(s)
+        k = ct.control_tower(s, artefakt=True)
     assert k["son_kosular"] == [] and k["flaky"] == [] and k["karne"] == []
     assert k["gecme_orani"]["oran"] is None and k["a11y"] is None
     assert k["ai_katkisi"]["kabul_orani"] is None and k["ai_katkisi"]["pass_at_1"] is None
@@ -343,7 +343,7 @@ def test_script_kpilari_karisik_sonuclar(engine: Engine, make_requirement_case) 
         s.execute(update(TestResult).where(TestResult.run_id == kr).values(commit="d" * 40))
     with Session(engine) as s:
         so = ct.script_olculeri(s)
-        k = ct.control_tower(s)
+        k = ct.control_tower(s, artefakt=True)
     # Payda: U1, U2, U5, U7 = 4; pay: U1.
     assert (so["script_ilk_review"], so["script_review_sayisi"]) == (0.25, 4)
     assert so["script_ilk_review_kabul"] == 1
@@ -427,7 +427,7 @@ def test_betik_onayi_review_suresi_olculmedi(
 
     monkeypatch.setattr(cases, "requirement_metrics", sahte)
     with Session(engine) as s:
-        k = ct.control_tower(s)
+        k = ct.control_tower(s, artefakt=True)
     h = {x["story_key"]: x for x in k["hazirlik"]}
     assert h["TPD-1"]["review_sure_ms"] is None and h["TPD-1"]["review_olculmedi"] is True
     assert h["TPD-1"]["ai_sure_ms"] is None and h["TPD-1"]["toplam_ms"] is None
@@ -457,7 +457,7 @@ def test_karne_uygulama_alani_page_objectlerden(engine: Engine, senaryo) -> None
                 )
             )
     with Session(engine) as s:
-        k = ct.control_tower(s)
+        k = ct.control_tower(s, artefakt=True)
     tpd1 = {x["story_key"]: x for x in k["karne"]}["TPD-1"]
     assert tpd1["alanlar"] == ["CheckoutWizard", "Katalog", "Sepet", "Sipariş"]
     assert tpd1["alan"] == "CheckoutWizard, Katalog, Sepet, Sipariş"

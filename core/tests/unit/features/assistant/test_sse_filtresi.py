@@ -82,6 +82,60 @@ def test_akis_baskasinin_olayini_atlar() -> None:
     assert json.loads(alinan[1]["data"])["data"]["mesaj_id"] == "3"
 
 
+def test_developer_rol_suzgeci() -> None:
+    """specs/012 §4.2: developer yalnız onaylı/yayınlanmış case ve açılmış bug görür."""
+    gor = events_router.rol_gorur_mu
+    taslak = {"event": "case.generated", "data": {"id": "c"}}
+    karar = {"event": "review.recorded", "data": {"nesne_turu": "test_case", "karar": "accept"}}
+    bug_karar = {"event": "review.recorded", "data": {"nesne_turu": "bug_draft"}}
+    script_karar = {"event": "review.recorded", "data": {"nesne_turu": "script"}}
+    hazir = {"event": "test_case.state", "data": {"id": "c", "durum": "ready"}}
+    onayli = {"event": "test_case.state", "data": {"id": "c", "durum": "approved"}}
+    yayinda = {"event": "test_case.state", "data": {"id": "c", "durum": "published"}}
+    bug_taslak = {"event": "bug_draft.state", "data": {"durum": "ready"}}
+    bug_yayinda = {"event": "bug_draft.state", "data": {"durum": "published"}}
+    ci = {"event": "ci.status", "data": {}}
+    for rol in ("developer", "tester", "analyst", None):
+        gorur = {
+            n: gor(o, rol)
+            for n, o in {
+                "taslak": taslak, "karar": karar, "bug_karar": bug_karar,
+                "script_karar": script_karar, "hazir": hazir, "onayli": onayli,
+                "yayinda": yayinda, "bug_taslak": bug_taslak, "bug_yayinda": bug_yayinda,
+                "ci": ci,
+            }.items()
+        }  # fmt: skip
+        if rol == "developer":
+            assert {n for n, v in gorur.items() if v} == {
+                "script_karar", "onayli", "yayinda", "bug_yayinda", "ci",
+            }  # fmt: skip
+        else:
+            assert all(gorur.values()), rol
+
+
+def test_akis_developer_taslak_case_olayini_atlar() -> None:
+    async def kontrol() -> bool:
+        return True
+
+    async def senaryo() -> list[dict[str, Any]]:
+        b = Broadcaster("postgresql://yok")
+        q = b.subscribe()
+        for olay in (
+            {"event": "case.generated", "data": {"id": "c"}},
+            {"event": "test_case.state", "data": {"id": "c", "durum": "ready"}},
+            {"event": "test_case.state", "data": {"id": "c", "durum": "approved"}},
+        ):
+            q.put_nowait(olay)
+        gen = events_router._akis(_SahteIstek(), b, q, kontrol, rol="developer")  # type: ignore[arg-type]
+        alinan = [await anext(gen) for _ in range(2)]
+        await gen.aclose()
+        return alinan
+
+    alinan = asyncio.run(asyncio.wait_for(senaryo(), timeout=10))
+    assert [a["event"] for a in alinan] == ["stream.open", "test_case.state"]
+    assert json.loads(alinan[1]["data"])["data"]["durum"] == "approved"
+
+
 # ------------------------------------------------------------------ gerçek akış
 
 

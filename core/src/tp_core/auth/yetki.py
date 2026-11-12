@@ -12,10 +12,14 @@ UI'da düğme gizlemek kontrol değildir; kontrol buradadır.
 from __future__ import annotations
 
 import logging
+import threading
+import time
+import unicodedata
 from collections.abc import Callable
 from typing import Final
 
 from fastapi import Request
+from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
@@ -70,6 +74,7 @@ IZINLER: Final[dict[str, frozenset[str]]] = {
     "requirement.review": _r(ANALYST),
     # Serbest metin gereksiniminde Jira kaydı yok: PO teyidi portaldan verilir (K6 istisnası).
     "requirement.po_approve_free_text": _r(PO),
+    "requirement.po_reject_free_text": _r(PO),
     "baseline.manage": _r(PO),
     "case.generate": _r(TESTER),
     "case.decide": _r(TESTER),
@@ -100,6 +105,10 @@ IZINLER: Final[dict[str, frozenset[str]]] = {
     "events.read": _IS_ROLLERI,
     "assistant.use": _HEPSI,
     "token.read": _HEPSI,
+    "publish.preview": _r(ADMIN, ANALYST, PO, TESTER, ENGINEER),
+    # Sayfa izinleri (çekirdek ucu yok; portal menü/rota koruması için).
+    "claude_code.read": _r(ADMIN, ANALYST, TESTER, ENGINEER),
+    "demo.read": _r(ADMIN, ANALYST, PO, TESTER, ENGINEER),
 }
 
 # Durum makinesi kapılarında karar verebilecek roller (derinlemesine savunma; workflow/states.py).
@@ -136,28 +145,102 @@ def roller_icin(izin_adi: str) -> frozenset[str]:
 
 
 # ------------------------------------------------------------------ red ve denetim
-def denetle_red(session: Session, p: Principal, izin_adi: str, neden: str, yol: str = "") -> None:
-    """`authz.denied` kaydını isteğin işleminden bağımsız yazar; hata yanıtı engellemez."""
+# Red seli havuzu kilitlemesin: aynı (kullanıcı, rol, izin, neden, nesne) 60 sn içinde bir kez
+# yazılır; eşzamanlı ayrı bağlantı sayısı sınırlıdır (dolu ise kayıt atlanır, log'a düşer).
+RED_TEKRAR_S: Final = 60.0
+RED_ESZAMANLI: Final = 2
+_RED_ONBELLEK_UST: Final = 2048
+NESNE_UST: Final = 200
+_son_redler: dict[tuple[str, ...], float] = {}
+_red_kilidi = threading.Lock()
+_red_yazici = threading.BoundedSemaphore(RED_ESZAMANLI)
+
+
+def red_onbellegini_temizle() -> None:
+    """Tekrar süzgecini boşaltır (testler)."""
+    with _red_kilidi:
+        _son_redler.clear()
+
+
+def _temiz_nesne(yol: str) -> str | None:
+    """Denetim `nesne` alanı: kontrol karakterleri atılır, `NESNE_UST` karaktere kırpılır."""
+    temiz = "".join(c for c in (yol or "") if unicodedata.category(c)[0] != "C")
+    return temiz[:NESNE_UST] or None
+
+
+def _tekrar_mi(anahtar: tuple[str, ...], simdi: float) -> bool:
+    with _red_kilidi:
+        once = _son_redler.get(anahtar)
+        if once is not None and simdi - once < RED_TEKRAR_S:
+            return True
+        if len(_son_redler) >= _RED_ONBELLEK_UST:
+            esik = simdi - RED_TEKRAR_S
+            for k in [k for k, t in _son_redler.items() if t < esik]:
+                del _son_redler[k]
+            if len(_son_redler) >= _RED_ONBELLEK_UST:
+                _son_redler.clear()
+        _son_redler[anahtar] = simdi
+        return False
+
+
+def denetle_red(
+    session: Session | Engine,
+    p: Principal,
+    izin_adi: str,
+    neden: str,
+    yol: str = "",
+    *,
+    karar: str | None = None,
+) -> None:
+    """`authz.denied` kaydını isteğin işleminden bağımsız yazar; hata yanıtı engellemez.
+
+    Aynı red `RED_TEKRAR_S` içinde tekrar yazılmaz; `RED_ESZAMANLI` yazım sürüyorsa beklenmez,
+    kayıt atlanır (red yanıtı her durumda verilir).
+    """
+    nesne = _temiz_nesne(yol)
+    aktor = p.kullanici_adi or "bilinmeyen"
+    anahtar = (aktor, str(p.rol), izin_adi, neden, nesne or "", karar or "")
+    if _tekrar_mi(anahtar, time.monotonic()):
+        return
+    if not _red_yazici.acquire(blocking=False):
+        log.warning("authz.denied yazımı atlandı (eşzamanlı sınır): %s %s", aktor, izin_adi)
+        with _red_kilidi:
+            _son_redler.pop(anahtar, None)
+        return
     try:
-        bind = session.get_bind()
-        engine: Engine = bind if isinstance(bind, Engine) else bind.engine
+        if isinstance(session, Engine):
+            engine = session
+        else:
+            bind = session.get_bind()
+            engine = bind if isinstance(bind, Engine) else bind.engine
         with engine.begin() as conn:
+            # Ayrı bağlantı: isteğin kendi işlemi denetim kilidini tutuyorsa sonsuz beklemesin.
+            conn.execute(text("SET LOCAL lock_timeout = '1s'"))
             append_audit(
                 conn,
-                p.kullanici_adi or "bilinmeyen",
+                aktor,
                 "authz.denied",
-                yol[:200] or None,
-                {"izin": izin_adi, "rol": p.rol, "neden": neden, "kanal": p.kanal},
+                nesne,
+                {"izin": izin_adi, "rol": p.rol, "neden": neden, "kanal": p.kanal}
+                | ({"karar": karar} if karar else {}),
             )
     except Exception:  # pragma: no cover - denetim yazılamazsa red yine verilir
         log.exception("authz.denied denetim kaydı yazılamadı")
+    finally:
+        _red_yazici.release()
 
 
 def reddet(
-    session: Session, p: Principal, izin_adi: str, neden: str = "rol", yol: str = ""
+    session: Session,
+    p: Principal,
+    izin_adi: str,
+    neden: str = "rol",
+    yol: str = "",
+    *,
+    karar: str | None = None,
 ) -> KodluHata:
     """Kaydı yazar ve fırlatılacak 403'ü döner: `raise reddet(...)`."""
-    denetle_red(session, p, izin_adi, neden, yol)
+    denetle_red(session, p, izin_adi, neden, yol, karar=karar)
     return KodluHata(403, "yetki_yok", "Bu işlem için yetkiniz yok")
 
 

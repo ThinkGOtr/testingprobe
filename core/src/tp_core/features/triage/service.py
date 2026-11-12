@@ -1707,10 +1707,23 @@ def _onarim_gorunumu(session: Session, f: Failure) -> dict[str, Any] | None:
     return dict(sonuc) if isinstance(sonuc, Mapping) else None
 
 
-def serialize(session: Session, f: Failure, ek: FailureEk | None, run: Run | None) -> dict:
+def serialize(
+    session: Session,
+    f: Failure,
+    ek: FailureEk | None,
+    run: Run | None,
+    *,
+    yalniz_yayinlanmis_bug: bool = False,
+) -> dict:
+    """Triage kaydı. `yalniz_yayinlanmis_bug=True` (developer, specs/012 §4.2 `bug.read`):
+    yayınlanmamış bug taslağı yanıtta görünmez (kimlik ve özet dahil)."""
     k = (ek.kanit if ek else None) or {}
     oneri: dict[str, Any] | None = None
     bug_id = bug_taslagi_id(session, f.id)
+    if bug_id is not None and yalniz_yayinlanmis_bug:
+        taslak = session.get(BugDraft, bug_id)
+        if taslak is None or taslak.durum != "published":
+            bug_id = None
     if ek is not None and ek.oneri:
         o = ek.oneri
         oneri = {
@@ -1834,11 +1847,19 @@ def serialize(session: Session, f: Failure, ek: FailureEk | None, run: Run | Non
     }
 
 
-def get_failure(session: Session, failure_id: uuid.UUID) -> dict[str, Any] | None:
+def get_failure(
+    session: Session, failure_id: uuid.UUID, *, yalniz_yayinlanmis_bug: bool = False
+) -> dict[str, Any] | None:
     f = session.get(Failure, failure_id)
     if f is None:
         return None
-    return serialize(session, f, session.get(FailureEk, f.id), session.get(Run, f.run_id))
+    return serialize(
+        session,
+        f,
+        session.get(FailureEk, f.id),
+        session.get(Run, f.run_id),
+        yalniz_yayinlanmis_bug=yalniz_yayinlanmis_bug,
+    )
 
 
 def list_failures(
@@ -1852,6 +1873,7 @@ def list_failures(
     script_id: uuid.UUID | None = None,
     kaynak: str | None = None,
     limit: int = 50,
+    yalniz_yayinlanmis_bug: bool = False,
 ) -> list[dict[str, Any]]:
     q = (
         select(Failure, FailureEk, Run)
@@ -1876,7 +1898,10 @@ def list_failures(
     if kosullar:
         q = q.where(and_(*kosullar))
     q = q.order_by(Failure.olusturma.desc(), Failure.test_adi).limit(limit)
-    return [serialize(session, f, ek, run) for f, ek, run in session.execute(q).all()]
+    return [
+        serialize(session, f, ek, run, yalniz_yayinlanmis_bug=yalniz_yayinlanmis_bug)
+        for f, ek, run in session.execute(q).all()
+    ]
 
 
 # ============================================================================= yeniden triage

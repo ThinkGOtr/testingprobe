@@ -284,8 +284,45 @@ def test_arac_seti_tum_rollere_ayni_liste_veri_rol_kisiti_uygulamada() -> None:
 
 
 def test_veri_rolleri_ortamdan() -> None:
-    assert veri_rolleri({}) is None
+    from tp_core.auth.yetki import roller_icin
+
+    # Varsayılan: katalogda `requirement.read` sahibi roller (auditor ve viewer hariç).
+    assert veri_rolleri({}) == roller_icin("requirement.read")
+    assert not {"auditor", "viewer"} & veri_rolleri({})
     assert veri_rolleri({"TP_ASISTAN_VERI_ROLLERI": " analyst, po ,"}) == {"analyst", "po"}
+    # Ortam katalogu genişletemez; eski `presenter` → admin.
+    assert veri_rolleri({"TP_ASISTAN_VERI_ROLLERI": "viewer,presenter"}) == {"admin"}
+
+
+def test_kod_ve_veri_araclari_rol_izni() -> None:
+    class SahteVeri:
+        def db_schema(self, _a: dict[str, Any]) -> str:
+            return wrap_tool_result("db_schema", "x")
+
+        def db_query(self, _a: dict[str, Any]) -> str:
+            return wrap_tool_result("db_query", "x")
+
+    class SahteKod:
+        def search_code(self, _a: dict[str, Any]) -> str:
+            return wrap_tool_result("search_code", "a.ts:1: x")
+
+        def get_file_contents(self, _a: dict[str, Any]) -> str:
+            return wrap_tool_result("get_file_contents", "a.ts")
+
+    def set_(rol: str) -> Any:
+        return arac_seti(_baglam(rol=rol), urun=object(), kod=SahteKod(), veri=SahteVeri())
+
+    # `code.read`: admin, analyst, tester, engineer; developer/po/auditor/viewer değil.
+    for rol in ("developer", "po", "auditor", "viewer"):
+        for arac in ("search_code", "get_file_contents"):
+            with pytest.raises(AracHatasi, match="rolünüze açık değil"):
+                set_(rol).execute(arac, {"query": "x", "path": "a.ts"})
+    assert set_("engineer").execute("search_code", {"query": "x"}).startswith("[kanit:")
+    # Veri araçları: auditor ve viewer kapalı.
+    for rol in ("auditor", "viewer"):
+        with pytest.raises(AracHatasi, match="rolünüze açık değil"):
+            set_(rol).execute("db_query", {"sql": "select 1"})
+    assert set_("developer").execute("db_schema", {}).startswith("[kanit:")
 
 
 def test_maskeleyici_ortamdan(monkeypatch: pytest.MonkeyPatch) -> None:

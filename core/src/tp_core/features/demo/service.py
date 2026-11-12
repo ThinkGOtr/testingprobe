@@ -55,6 +55,7 @@ from sqlalchemy import Engine, select, text
 from sqlalchemy.orm import Session
 
 from tp_core.audit import PgAuditLog, append_audit, audit_on_commit
+from tp_core.config import get_settings
 from tp_core.events.bus import publish_tx
 from tp_core.features.demo import web
 from tp_core.integrations import forge_demo
@@ -468,7 +469,19 @@ def _web_ve_ci(engine: Engine, forge: Any, sha: str, eylem: str, isteyen: str) -
 # ------------------------------------------------------------------------ kırılma
 
 
+DEMO_KAPALI = "Demo kipi kapalı (TP_DEMO_MODE=0)"
+
+
+def demo_kipi_gerekli() -> None:
+    """Demo kontrolleri (kırma/sıfırlama) yalnız `TP_DEMO_MODE=1` iken (specs/012-rol-yetki §6).
+
+    API kapısını atlayan yollar (kuyrukta kalmış iş, host CLI) için ikinci denetim."""
+    if not get_settings().demo_mode:
+        raise PermanentJobError(DEMO_KAPALI)
+
+
 def run_break(ctx: JobContext, engine: Engine) -> dict[str, Any]:
+    demo_kipi_gerekli()
     isteyen = str((ctx.yuk or {}).get("isteyen") or "system")
     forge = _forge()
     if not callable(getattr(forge, "merge_pr_detailed", None)):
@@ -638,6 +651,7 @@ def _prlari_kapat(engine: Engine, forge: Any, isteyen: str) -> list[dict[str, An
 
 
 def run_reset(ctx: JobContext, engine: Engine) -> dict[str, Any]:
+    demo_kipi_gerekli()
     isteyen = str((ctx.yuk or {}).get("isteyen") or "system")
     forge = _forge()
     yerel = _yerel_forge_mu(forge)

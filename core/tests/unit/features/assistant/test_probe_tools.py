@@ -119,7 +119,7 @@ def test_probe_get_anahtarla_kapi_sorumlu_rota_ve_po_cevabi(veri: dict[str, Any]
     cikti = _sar(baglam)("probe_get", {"tur": "requirement", "id_or_key": "TPD-3"})
     assert cikti.startswith("[kanit:k1]\n<untrusted")
     assert "bekleyen_kapi: PO onayı bekleniyor" in cikti
-    assert "sorumlu_rol: po (Ürün sahibi (PO))" in cikti
+    assert "sorumlu_rol: po (PO)" in cikti
     assert f"ekran_rotasi: /gereksinimler/{veri['req']}" in cikti
     assert "jira_key: TPD-3" in cikti
     # PII'li PO cevabı maskeli gider; alıntı aynı oturumla açılınca doğrulanır.
@@ -131,14 +131,35 @@ def test_probe_get_anahtarla_kapi_sorumlu_rota_ve_po_cevabi(veri: dict[str, Any]
         assert yasak not in cikti
 
 
-def test_sablon_rol_kisiti_analist_testciye_ozel_alani_goremez(veri: dict[str, Any]) -> None:
-    """Yayın önizlemesi `case.publish` (Testçi; specs/012-rol-yetki §4.1) izni ister."""
-    analist = _sar(_baglam("analyst"))("probe_get", {"tur": "requirement", "id_or_key": "TPD-3"})
-    testci = _sar(_baglam("tester"))("probe_get", {"tur": "requirement", "id_or_key": "TPD-3"})
-    assert "yayin_onizleme" in testci
-    assert "yayin_onizleme" not in analist
+def test_sablon_rol_kisiti_developer_onizlemeyi_goremez(veri: dict[str, Any]) -> None:
+    """Yayın önizlemesi `publish.preview` (specs/012-rol-yetki §4.1) izni ister: developer yok."""
+    gelistirici = _sar(_baglam("developer"))(
+        "probe_get", {"tur": "requirement", "id_or_key": "TPD-3"}
+    )
+    for rol in ("tester", "analyst", "po"):
+        cikti = _sar(_baglam(rol))("probe_get", {"tur": "requirement", "id_or_key": "TPD-3"})
+        assert "yayin_onizleme" in cikti, rol
+    assert "yayin_onizleme" not in gelistirici
     # Ortak kısım aynı.
-    assert "bekleyen_kapi: PO onayı bekleniyor" in analist
+    assert "bekleyen_kapi: PO onayı bekleniyor" in gelistirici
+
+
+def test_developer_case_detayi_kisitli(veri: dict[str, Any], session: Session) -> None:
+    """Developer: taslak case bulunamaz; onaylı case karar/ret nedeni olmadan döner."""
+    sar = _sar(_baglam("developer", maske=False))
+    with pytest.raises(AracHatasi, match="bulunamadı"):
+        sar("probe_get", {"tur": "case", "id_or_key": str(veri["case"])})
+    with allow_state_write():
+        tc = session.get(TestCase, veri["case"])
+        tc.durum = "approved"
+        session.commit()
+    cikti = sar("probe_get", {"tur": "case", "id_or_key": str(veri["case"])})
+    assert "icerik.title: Sepete ekleme" in cikti
+    assert "karar:" not in cikti and "ret_nedeni" not in cikti and "duplicate" not in cikti
+    testci = _sar(_baglam("tester", maske=False))(
+        "probe_get", {"tur": "case", "id_or_key": str(veri["case"])}
+    )
+    assert "ret_nedeni: duplicate" in testci
 
 
 def test_probe_get_case_script_run_bug(veri: dict[str, Any]) -> None:

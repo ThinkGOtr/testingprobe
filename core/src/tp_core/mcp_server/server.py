@@ -145,7 +145,22 @@ def _tool_list() -> list[types.Tool]:
 
 
 class ToolRefused(Exception):
-    """Kimlik/kapsam nedeniyle araç çalıştırılmadı (`tool_call.izin_verildi = false`)."""
+    """Kimlik/kapsam nedeniyle araç çalıştırılmadı (`tool_call.izin_verildi = false`).
+
+    `izin_adi` verilmişse (rol/kapsam reddi) `authz.denied` denetim kaydı da yazılır."""
+
+    def __init__(self, mesaj: str, *, izin_adi: str | None = None, neden: str = "rol") -> None:
+        super().__init__(mesaj)
+        self.izin_adi = izin_adi
+        self.neden = neden
+
+
+def _red_denetimi(caller: Principal, name: str, exc: ToolRefused) -> None:
+    if exc.izin_adi is None:
+        return
+    from tp_core.auth.yetki import denetle_red
+
+    denetle_red(get_engine(), caller, exc.izin_adi, exc.neden, f"mcp:{name}")
 
 
 def _kisalt(deger: Any) -> str:
@@ -202,11 +217,17 @@ def _check_scope(caller: Principal, name: str) -> None:
     gerekli = KAPSAM[name]
     if caller.kapsam != gerekli:
         raise ToolRefused(
-            f"Bu token'ın kapsamı '{caller.kapsam}'; {name} için '{gerekli}' kapsamlı token gerekir"
+            f"Bu token'ın kapsamı '{caller.kapsam}'; {name} için '{gerekli}' kapsamlı token "
+            "gerekir",
+            izin_adi=KAPSAM_IZNI[gerekli],
+            neden="kapsam",
         )
     # 012: IDE kanalı Testçinindir (taslak gönderimi `case.generate`, yayın `case.publish`).
     if not izinli(caller.rol, KAPSAM_IZNI[gerekli]):
-        raise ToolRefused(f"{caller.rol} rolü {name} aracını kullanamaz")
+        from tp_core.auth.yetki import ROL_ETIKETLERI, normalize_rol
+
+        etiket = ROL_ETIKETLERI.get(normalize_rol(caller.rol), caller.rol)
+        raise ToolRefused(f"{etiket} rolü {name} aracını kullanamaz", izin_adi=KAPSAM_IZNI[gerekli])
 
 
 def _read(args: Mapping[str, Any]) -> dict[str, Any]:
@@ -306,6 +327,7 @@ async def _run_tool(caller: Principal, name: str, args: Mapping[str, Any]) -> ty
                 }
     except ToolRefused as exc:
         izin, hata, sonuc = False, True, {"hata": str(exc)}
+        await anyio.to_thread.run_sync(_red_denetimi, caller, name, exc)
     except WorkflowError as exc:
         hata, sonuc = True, {"hata": str(exc), "kod": exc.status_code}
     except Exception as exc:

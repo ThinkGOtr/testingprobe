@@ -222,13 +222,13 @@ def _izinli(rol: str, izin_adi: str) -> bool:
 def test_rol_matrisi(rol: str, client: TestClient, make_user: MakeUser, engine: Engine) -> None:
     u = make_user(rol)
     _giris(client, u)
-    beklenen_red = 0
+    # Aynı (izin, yol) reddi 60 sn içinde bir kez yazılır (sorgu dizgesi yola girmez).
+    redler: set[tuple[str, str]] = set()
     for yontem, yol, govde, izin_adi in MATRIS:
         r = client.request(yontem, yol, json=govde)
         if _izinli(rol, izin_adi):
             assert r.status_code != 403, (rol, yontem, yol, r.text)
         else:
-            beklenen_red += 1
             assert r.status_code == 403, (rol, yontem, yol, r.status_code, r.text)
             assert r.json()["kod"] == "yetki_yok", r.text
             son = _redler(engine, u.kullanici_adi)[-1]
@@ -236,7 +236,8 @@ def test_rol_matrisi(rol: str, client: TestClient, make_user: MakeUser, engine: 
             if izin_adi == "audit.verify" and not _izinli(rol, "audit.read_all|audit.read_own"):
                 beklenen = "audit.read_all|audit.read_own"  # okuma kapısı önce
             assert son["izin"] == beklenen and son["rol"] == rol, (yol, son)
-    assert len(_redler(engine, u.kullanici_adi)) == beklenen_red
+            redler.add((beklenen, yol.split("?", 1)[0]))
+    assert len(_redler(engine, u.kullanici_adi)) == len(redler)
 
 
 @pytest.mark.parametrize("rol", ["auditor", "viewer"])
@@ -280,6 +281,21 @@ def test_denetim_kapsami_kendi_olaylari(
     assert {"baskasi", analist.kullanici_adi} <= {e["aktor"] for e in r.json()["events"]}
 
 
+def test_denetci_gorunumunde_ozet_maskelidir(
+    client: TestClient, make_user: MakeUser, engine: Engine
+) -> None:
+    from tp_core.audit import append_audit
+
+    with engine.begin() as c:
+        append_audit(c, "biri", "deneme.pii", None, {"not": "iletisim ayse.yilmaz@ornek.com"})
+    _giris(client, make_user("auditor"))
+    ozet = next(e for e in client.get("/audit").json()["events"] if e["eylem"] == "deneme.pii")
+    assert "ayse.yilmaz@ornek.com" not in str(ozet) and "<<PII_EMAIL_1>>" in ozet["ozet"]["not"]
+    _giris(client, make_user("admin"))
+    ozet = next(e for e in client.get("/audit").json()["events"] if e["eylem"] == "deneme.pii")
+    assert ozet["ozet"]["not"] == "iletisim ayse.yilmaz@ornek.com"
+
+
 def _kosu(engine: Engine) -> str:
     with engine.begin() as c:
         return str(
@@ -309,6 +325,134 @@ def test_kosu_maskeli_gorunum_imzali_baglanti_vermez(
         assert "/artifacts/" not in str(govde)
 
 
+def test_kosu_maskesi_ic_ice_url_ve_ham_ciktiyi_atar() -> None:
+    from tp_core.features.ci.service import maskele_kosu
+
+    kosu = {
+        "rapor_url": "/api/artifacts/k/imza/runs/x/html/index.html",
+        "ci_url": "https://github.com/o/r/actions/runs/1",
+        "artefakt_kok": "/api/artifacts/runs/x/",
+        "sauce": {"url": "https://saucelabs.com/x", "urls": ["https://saucelabs.com/y"]},
+        "github": {"isler": [{"ad": "e2e", "url": "https://github.com/o/r/runs/2"}]},
+        "sonuclar": [
+            {
+                "ekler": [{"yol": "a.png", "url": "/api/artifacts/runs/x/a.png"}],
+                "denemeler": [{"durum": "failed", "stdout": "sır", "stderr": "iz"}],
+            }
+        ],
+        "ozet": {"gecen": 1},
+    }
+    m = maskele_kosu(kosu)
+    assert m["maskeli"] is True and m["ozet"] == {"gecen": 1}
+    assert m["rapor_url"] is m["ci_url"] is m["artefakt_kok"] is None
+    assert m["sauce"] == {"url": None, "urls": None}
+    assert m["github"]["isler"] == [{"ad": "e2e", "url": None}]
+    assert m["sonuclar"][0]["ekler"] == []
+    assert m["sonuclar"][0]["denemeler"] == [{"durum": "failed"}]
+    assert "http" not in str(m) and "/api/artifacts" not in str(m)
+
+
+def _zengin_kosu(engine: Engine) -> str:
+    """Bağlantılı (imzalı rapor, CI, Sauce, GitHub işi) ve ham çıktılı bir CI koşusu."""
+    import json
+
+    a = {
+        "dizin": "runs/r1", "html": "html", "junit": "junit.xml", "log": "x.log",
+        "ci_url": "https://github.com/o/r/actions/runs/1",
+        "sauce": {"url": "https://saucelabs.com/x", "durum": "passed"},
+        "github": {"isler": [{"ad": "e2e", "url": "https://github.com/o/r/runs/2"}]},
+    }  # fmt: skip
+    with engine.begin() as c:
+        rid = c.execute(
+            text(
+                "INSERT INTO run (kaynak, tetik, sonuc, artefaktlar) VALUES "
+                "('github', 'deploy', 'failed', CAST(:a AS jsonb)) RETURNING id"
+            ),
+            {"a": json.dumps(a)},
+        ).scalar_one()
+        tr = c.execute(
+            text(
+                "INSERT INTO test_result (run_id, tetik, test_adi, dosya, sonuc) "
+                "VALUES (:r, 'deploy', 't', 'a.spec.ts', 'failed') RETURNING id"
+            ),
+            {"r": rid},
+        ).scalar_one()
+        c.execute(
+            text(
+                "INSERT INTO test_result_ek (test_result_id, ekler, denemeler) VALUES "
+                "(:t, CAST(:e AS jsonb), CAST(:d AS jsonb))"
+            ),
+            {
+                "t": tr,
+                "e": json.dumps([{"yol": "a.png", "ad": "ekran"}]),
+                "d": json.dumps([{"durum": "failed", "stdout": "SIR-CIKTI", "stderr": "IZ"}]),
+            },
+        )
+    return str(rid)
+
+
+@pytest.mark.parametrize("rol", ["auditor", "viewer"])
+def test_maskeli_rol_hicbir_uctan_baglanti_almaz(
+    rol: str, client: TestClient, make_user: MakeUser, engine: Engine
+) -> None:
+    run_id = _zengin_kosu(engine)
+    _giris(client, make_user("engineer"))
+    acik = client.get(f"/runs/{run_id}").json()
+    assert "SIR-CIKTI" in str(acik) and "/artifacts/k/" in str(acik)
+    ct = client.get("/control-tower").json()["son_kosular"]
+    assert any(k["rapor_url"] for k in ct)
+    _giris(client, make_user(rol))
+    govdeler = [
+        client.get(f"/runs/{run_id}").json(),
+        client.get("/runs").json(),
+        client.get("/control-tower").json()["son_kosular"],
+    ]
+    for govde in govdeler:
+        metin = str(govde)
+        for yasak in ("/artifacts/", "http", "SIR-CIKTI", "IZ'"):
+            assert yasak not in metin, (yasak, metin[:300])
+    assert all(k["maskeli"] is True for k in govdeler[2])
+
+
+def test_red_kaydi_tekrar_ve_eszamanlilik_sinirli(engine: Engine, make_user: MakeUser) -> None:
+    u = make_user("viewer")
+    for _ in range(5):
+        yetki.denetle_red(engine, u, "case.read", "rol", "/cases\x00\n" + "x" * 500)
+    yetki.denetle_red(engine, u, "case.read", "rol", "/baska")
+    with engine.connect() as c:
+        nesneler = (
+            c.execute(
+                text("SELECT nesne FROM audit_event WHERE eylem = 'authz.denied' AND aktor = :a"),
+                {"a": u.kullanici_adi},
+            )
+            .scalars()
+            .all()
+        )
+    assert len(nesneler) == 2  # aynı red 60 sn içinde bir kez
+    uzun = next(n for n in nesneler if n != "/baska")
+    assert len(uzun) == yetki.NESNE_UST and "\x00" not in uzun and "\n" not in uzun
+    # Eşzamanlı yazım sınırı doluysa beklenmez, kayıt atlanır.
+    tutulan = [yetki._red_yazici.acquire(blocking=False) for _ in range(yetki.RED_ESZAMANLI)]
+    try:
+        assert all(tutulan)
+        yetki.denetle_red(engine, u, "bug.read", "rol", "/bug-drafts")
+    finally:
+        for _ in tutulan:
+            yetki._red_yazici.release()
+    yetki.denetle_red(engine, u, "bug.read", "rol", "/bug-drafts")  # sınır boşaldı: yazılır
+    with engine.connect() as c:
+        assert (
+            c.execute(
+                text(
+                    "SELECT count(*) FROM audit_event WHERE eylem = 'authz.denied' AND aktor = :a "
+                    "AND nesne = '/bug-drafts'"
+                ),
+                {"a": u.kullanici_adi},
+            ).scalar_one()
+            == 1
+        )
+
+
 def _bug(engine: Engine, durum: str) -> str:
     with engine.begin() as c:
         return str(
@@ -333,6 +477,40 @@ def test_developer_yalniz_yayinlanmis_bugu_gorur(
     assert client.get(f"/bug-drafts/{yayinda}").status_code == 200
     _giris(client, make_user("tester"))
     assert {b["id"] for b in client.get("/bug-drafts").json()} == {taslak, yayinda}
+
+
+def test_developer_hata_detayinda_yayinlanmamis_bug_gormez(
+    client: TestClient, make_user: MakeUser, engine: Engine
+) -> None:
+    with engine.begin() as c:
+        rid = c.execute(
+            text("INSERT INTO run (kaynak, tetik, sonuc) VALUES ('local','deploy','failed') "
+                 "RETURNING id")
+        ).scalar_one()  # fmt: skip
+        fid = c.execute(
+            text(
+                "INSERT INTO failure (run_id, test_adi, hata_imzasi, sinif, oneri_turu) "
+                "VALUES (:r, 't', 'imza', 'product_defect', 'bug_draft') RETURNING id"
+            ),
+            {"r": rid},
+        ).scalar_one()
+        bid = c.execute(
+            text(
+                "INSERT INTO bug_draft (icerik, icerik_hash, durum, failure_id) "
+                "VALUES (CAST(:i AS jsonb), 'h', 'draft', :f) RETURNING id"
+            ),
+            {"i": '{"ozet": "x"}', "f": fid},
+        ).scalar_one()
+    _giris(client, make_user("tester"))
+    acik = client.get(f"/failures/{fid}").json()
+    assert acik["bug_draft_id"] == str(bid) and acik["oneri"]["taslak_durumu"] == "draft"
+    _giris(client, make_user("developer"))
+    for govde in (client.get(f"/failures/{fid}").json(), client.get("/failures").json()[0]):
+        assert govde["bug_draft_id"] is None and govde["oneri"] is None
+        assert str(bid) not in str(govde)
+    with engine.begin() as c:
+        c.execute(text("UPDATE bug_draft SET durum = 'published' WHERE id = :b"), {"b": bid})
+    assert client.get(f"/failures/{fid}").json()["bug_draft_id"] == str(bid)
 
 
 # ------------------------------------------------------------------ PO onayı (K6)
@@ -375,6 +553,48 @@ def test_po_portal_onayi_serbest_metinde_calisir(
     r = client.post(f"/requirements/{rid}/po-approve", json={"icerik_hash": d["icerik_hash"]})
     assert r.status_code == 200, r.text
     assert r.json()["durum"] == "po_approved" and r.json()["po"]["kanal"] == "portal"
+
+
+def test_po_portal_reddi_serbest_metinde_analiste_doner(
+    client: TestClient, make_user: MakeUser, engine: Engine
+) -> None:
+    jira_rid = _gereksinim(engine, "jira")
+    rid = _gereksinim(engine, "free_text")
+    po = make_user("po")
+    _giris(client, make_user("analyst"))
+    r = client.post(f"/requirements/{rid}/po-reject", json={"gerekce": "x"})
+    assert r.status_code == 403 and r.json()["kod"] == "yetki_yok"
+    _giris(client, po)
+    r = client.post(f"/requirements/{jira_rid}/po-reject", json={"gerekce": "x"})
+    assert r.status_code == 410 and r.json()["kod"] == "po_onayi_jira", r.text
+    d = client.get(f"/requirements/{rid}").json()
+    for govde in ({}, {"gerekce": ""}, {"gerekce": "   ", "icerik_hash": d["icerik_hash"]},
+                  {"gerekce": "x" * 2001}):  # fmt: skip
+        assert client.post(f"/requirements/{rid}/po-reject", json=govde).status_code == 422
+    r = client.post(f"/requirements/{rid}/po-reject", json={"gerekce": "x", "icerik_hash": "e"})
+    assert r.status_code == 409, r.text
+    r = client.post(
+        f"/requirements/{rid}/po-reject",
+        json={"gerekce": "AC2 ölçülebilir değil", "icerik_hash": d["icerik_hash"]},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["durum"] == "new"
+    with engine.connect() as c:
+        rv = c.execute(
+            text("SELECT karar, gerekce, user_id FROM review WHERE nesne_id = :i"), {"i": rid}
+        ).one()
+        assert (rv.karar, rv.gerekce, rv.user_id) == ("po_reject", "AC2 ölçülebilir değil", po.id)
+        eylemler = set(
+            c.execute(
+                text("SELECT eylem FROM audit_event WHERE nesne = :n"), {"n": f"requirement:{rid}"}
+            ).scalars()
+        )
+        assert {"review.po_reject", "requirement.transition"} <= eylemler
+    # Artık PO teyidi beklemiyor: ikinci ret / onay 409.
+    r = client.post(
+        f"/requirements/{rid}/po-reject", json={"gerekce": "x", "icerik_hash": d["icerik_hash"]}
+    )
+    assert r.status_code == 409
 
 
 # ------------------------------------------------------------------ ortam, demo, CI tetik
@@ -460,10 +680,33 @@ def test_demo_kontrolleri_demo_kipi_kapaliyken_403(
     _giris(client, u)
     for yol in ("/demo/reset", "/demo/break-locator"):
         r = client.post(yol)
-        assert r.status_code == 403 and r.json()["kod"] == "yetki_yok", r.text
+        assert r.status_code == 403 and r.json()["kod"] == "demo_kapali", r.text
+        assert "Demo kipi kapalı (TP_DEMO_MODE=0)" in r.text
         assert _redler(engine, u.kullanici_adi)[-1]["neden"] == "demo_kapali"
+    durum = client.get("/demo/status")
+    if durum.status_code == 200:  # forge erişilemezse durum ucu bu testin konusu değil
+        assert durum.json()["demo_modu"] is False and durum.json()["ortam"] == "dev"
     _giris(client, make_user("tester"))
-    assert client.post("/demo/reset").status_code == 403
+    r = client.post("/demo/reset")
+    assert r.status_code == 403 and r.json()["kod"] == "yetki_yok"
+
+
+def test_demo_isleri_ve_cli_demo_kipi_kapaliyken_calismaz(
+    monkeypatch: pytest.MonkeyPatch, db: Db, engine: Engine
+) -> None:
+    from tp_core.features.demo import __main__ as cli
+    from tp_core.features.demo import service as demo
+    from tp_core.workflow.jobs import JobContext, PermanentJobError
+
+    monkeypatch.setenv("TP_DEMO_MODE", "0")
+    get_settings.cache_clear()
+    ctx = JobContext(job_id=uuid.uuid4(), tur="demo.break", yuk={"isteyen": "x"}, deneme=1,
+                     max_deneme=1)  # fmt: skip
+    for fn in (demo.run_break, demo.run_reset):
+        with pytest.raises(PermanentJobError, match="Demo kipi kapalı"):
+            fn(ctx, engine)
+    assert cli.main(["on-kosul", "--isteyen", "t"]) == cli.RED_KODU
+    assert cli.main(["web-istek", "--eylem", "break"]) == cli.RED_KODU
 
 
 # ------------------------------------------------------------------ AI Probe rol eşlemesi
@@ -520,6 +763,55 @@ def test_0021_presenter_admin_olur_ve_geri_alinir(pg: PgServer) -> None:
             assert c.execute(
                 "SELECT rol FROM app_user WHERE kullanici_adi = 'sunucu'"
             ).fetchone() == ("presenter",)
+        run_alembic(owner, "head")
+    finally:
+        with pg.super_conn() as c:
+            c.execute(f'DROP DATABASE IF EXISTS "{ad}" WITH (FORCE)')
+
+
+def test_0023_eski_analist_editi_isaretlenir_ve_po_reject(pg: PgServer) -> None:
+    ad = pg.create_empty_db()
+    owner = pg.url("tp_owner", ad)
+    dsn = owner.replace("+psycopg", "")
+    try:
+        run_alembic(owner, "0022")
+        with psycopg.connect(dsn, autocommit=True) as c:
+            analist, testci = (
+                c.execute(
+                    "INSERT INTO app_user (id, kullanici_adi, rol, parola_hash) VALUES "
+                    "(gen_random_uuid(), %s, %s, 'x') RETURNING id",
+                    (ad_, rol),
+                ).fetchone()[0]
+                for ad_, rol in (("analist", "analyst"), ("testci", "tester"))
+            )
+            for kullanici, karar in ((analist, "edit"), (testci, "edit"), (analist, "approve")):
+                c.execute(
+                    "INSERT INTO review (id, nesne_turu, nesne_id, user_id, karar, "
+                    "onaylanan_hash) VALUES (gen_random_uuid(), 'test_case', gen_random_uuid(), "
+                    "%s, %s, 'h')",
+                    (kullanici, karar),
+                )
+        run_alembic(owner, "0023")
+        with psycopg.connect(dsn, autocommit=True) as c:
+            satirlar = c.execute(
+                "SELECT u.kullanici_adi, r.karar, r.eski_onay FROM review r "
+                "JOIN app_user u ON u.id = r.user_id ORDER BY r.sira"
+            ).fetchall()
+            assert satirlar == [
+                ("analist", "edit", True),
+                ("testci", "edit", False),
+                ("analist", "approve", False),
+            ]
+            c.execute(
+                "INSERT INTO review (id, nesne_turu, nesne_id, user_id, karar, onaylanan_hash, "
+                "gerekce) VALUES (gen_random_uuid(), 'requirement', gen_random_uuid(), %s, "
+                "'po_reject', 'h', 'x')",
+                (analist,),
+            )
+            # Append-only tetikleyicisi göçten sonra yine açık.
+            with pytest.raises(psycopg.errors.InsufficientPrivilege, match="append-only"):
+                c.execute("UPDATE review SET eski_onay = false")
+        run_alembic(owner, "0022", "downgrade")
         run_alembic(owner, "head")
     finally:
         with pg.super_conn() as c:

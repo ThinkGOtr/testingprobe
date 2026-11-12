@@ -437,7 +437,7 @@ def test_ekran_coz_rol_ve_varlik_denetimi() -> None:
     e = oneri.ekran_coz(_kisi("admin"), "/kosular", "run", str(vid))
     assert (e.varlik_tur, e.varlik_id) == (None, None)
     with pytest.raises(oneri.EkranBulunamadi):  # rolüne kapalı ekran
-        oneri.ekran_coz(_kisi("engineer"), "/claude-code", None, None)
+        oneri.ekran_coz(_kisi("po"), "/claude-code", None, None)
     with pytest.raises(oneri.VarlikBulunamadi):  # tür uyuşmazlığı
         oneri.ekran_coz(_kisi("analyst"), f"/gereksinimler/{vid}", "script", None)
     with pytest.raises(oneri.VarlikBulunamadi):  # yol ve parametre farklı varlık
@@ -449,6 +449,20 @@ def test_ekran_coz_rol_ve_varlik_denetimi() -> None:
 
 
 # ------------------------------------------------------------------ kapsam ve rol hizalama
+
+
+def test_sayfa_rolleri_izin_katalogundan() -> None:
+    """Uçsuz sayfaların rolleri portal sayfa izinleriyle aynı (specs/012-rol-yetki §4)."""
+    from tp_core.auth.yetki import roller_icin
+
+    rotalar = {r.kalip: r for r in _ks().rotalar}
+    for kalip, izin_adi in (
+        ("/claude-code", "claude_code.read"),
+        ("/yol-haritasi", "demo.read"),
+        ("/demo", "demo.manage"),
+    ):
+        acan = {rol for rol in ROLLER if rotalar[kalip].acabilir(rol)}
+        assert acan == set(roller_icin(izin_adi)), kalip
 
 
 def test_kapsam_matrisi_ekranda_kural_var_bilincli_bos_ile_tamamlanir() -> None:

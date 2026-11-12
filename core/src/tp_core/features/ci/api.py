@@ -39,16 +39,6 @@ Tetikler = Annotated[
     Principal, Depends(izinlerden_biri("run.trigger_scheduled", "run.trigger_manual"))
 ]
 
-# Maskeli görünümde boşaltılan alanlar (ham artefakt bağlantıları).
-ARTEFAKT_ALANLARI = (
-    "allure_url",
-    "allure_sonuclari_url",
-    "rapor_url",
-    "junit_url",
-    "log_url",
-    "sauce_url",
-    "artefakt_kok",
-)
 TetikSec = Literal["pr", "push", "nightly", "deploy", "break_verify", "local_check", "manual"]
 
 
@@ -106,31 +96,22 @@ def list_runs(
         pr_no=pr_no,
         script_id=script_id,
         limit=limit,
+        artefakt=yetki.izinli(user.rol, "run.artifacts"),
     )
-    if not yetki.izinli(user.rol, "run.artifacts"):
-        kosular = [maskele(k) for k in kosular]
     return kosular
 
 
 @router.get("/runs/{run_id}")
 def get_run(run_id: uuid.UUID, session: DbSession, user: KosuOkur) -> dict[str, Any]:
-    detay = service.run_detail(session, run_id)
+    detay = service.run_detail(session, run_id, artefakt=yetki.izinli(user.rol, "run.artifacts"))
     if detay is None:
         raise HTTPException(404, "Koşu bulunamadı")
-    if not yetki.izinli(user.rol, "run.artifacts"):
-        detay = maskele(detay)
     return detay
 
 
 def maskele(kosu: dict[str, Any]) -> dict[str, Any]:
-    """Ham artefakt bağlantılarını çıkarır (özet alanları kalır); `maskeli: true` işaretler."""
-    out = {**kosu, **dict.fromkeys(ARTEFAKT_ALANLARI)}
-    if isinstance(out.get("sonuclar"), list):
-        out["sonuclar"] = [
-            {**r, "ekler": []} if isinstance(r, dict) else r for r in out["sonuclar"]
-        ]
-    out["maskeli"] = True
-    return out
+    """Geriye dönük ad: `service.maskele_kosu`."""
+    return service.maskele_kosu(kosu)
 
 
 @router.get("/artifacts/k/{token}/runs/{run_id}/{yol:path}", response_model=None)

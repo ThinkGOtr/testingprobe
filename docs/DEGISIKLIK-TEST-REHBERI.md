@@ -41,7 +41,7 @@ Demo reposu: https://github.com/ThinkGOtr/testingprobe-demo-app
 
 | # | Ne yap | Beklenen | ☐ |
 |---|---|---|---|
-| 3.1 | Testçi: TPD-1 sayfası sağ üst **"Case üret"** → sağ üst **"Case review"** düğmesi → **yalnızca C8**'de "Düzelt", gerisini kabul et → Analist: hepsini onayla → Testçi: Case review sayfasında **"Yayın önizleme"** → "Hedef" kartında **"Seçilenleri yayınla (n)"** | Tüm case'ler **"oluşturuldu"**, **yeni** anahtarlar (TPD-8 ve sonrası); "farklı (eski) içerikle açılmış" hatası **yok** | ☐ |
+| 3.1 | Testçi: TPD-1 sayfası sağ üst **"Case üret"** → sağ üst **"Case review"** düğmesi → **yalnızca C8**'de "Düzelterek kabul", gerisini kabul et → Analist: hepsini onayla → Testçi: Case review sayfasında **"Yayın önizleme"** → "Hedef" kartında **"Seçilenleri yayınla (n)"** | Tüm case'ler **"oluşturuldu"**, **yeni** anahtarlar (TPD-8 ve sonrası); "farklı (eski) içerikle açılmış" hatası **yok** | ☐ |
 | 3.2 | Jira'da yayınlanan bir Test'i aç | Açıklama 7 bölümlü şablonda; Test türü/Risk **Türkçe** (pozitif/negatif/sınır değer, yüksek/orta/düşük); Xray'de adımlar Action/Data/Expected | ☐ |
 | 3.3 | Bölüm C'de F4 "Onayla ve Jira'da aç" → açılan Bug'ı aç | Açıklama 7 bölümlü şablonda, ilk satır "🤖 AI Testing Probe:"; Kullanıcı Akışı'nda adımlar, Diğer Bilgiler'de ortam + kanıt bağlantıları | ☐ |
 

@@ -703,14 +703,14 @@ def test_me_gorunen_ad_ve_kisi_eslemesi(
     from tp_core.config import get_settings
 
     analist = make_user("analyst", ad="analist")
-    make_user("admin", ad="yonetici")
+    make_user("admin", ad="sunucu")
     make_user("tester", ad="testci")
     _giris(client, analist)
     me = client.get("/auth/me").json()
     assert me["rol"] == "analyst"
     assert me["gorunen_ad"] == "Cengizhan Gunaydin · Analist"
     assert me["ad_soyad"] == "Cengizhan Gunaydin"
-    assert me["kisiler"]["yonetici"] == "Sistem Yöneticisi"
+    assert me["kisiler"]["sunucu"] == "Sistem Yöneticisi"
     assert me["kisiler"]["testci"] == "Fatih Arslan · Testçi"
 
     # TP_GORUNEN_ADLAR demo varsayılanlarını geçersiz kılar; rol değişmez.

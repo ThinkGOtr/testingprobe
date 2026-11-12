@@ -642,6 +642,13 @@ def _requirement_olgulari(session: Session, req: Any, simdi: datetime) -> dict[s
     return o
 
 
+# Developer yalnız onaylı/yayınlanmış case ve açılmış bug görür (specs/012-rol-yetki §4.2):
+# taslak/son onay bekleyen case sayıları ve karar bekleyen bug taslağı olgularda yer almaz.
+_GELISTIRICI_GIZLI_OLGULAR: Final = frozenset(
+    {"inceleme_bekleyen_case", "son_onay_bekleyen_case", "bug_taslagi_var", "bug_taslagi_id"}
+)
+
+
 def _script_olgulari(session: Session, sc: Any) -> dict[str, Any]:
     from tp_core.models.codegen_feature import ScriptCodegen
 
@@ -802,6 +809,15 @@ def olgular(
     obj = session.get(_model(varlik_tur), varlik_id)
     if obj is None or not _okunabilir(kullanici.rol, varlik_tur, obj):
         raise VarlikBulunamadi("varlık bulunamadı")
+    o = _varlik_olgulari(session, varlik_tur, obj, simdi)
+    if _yetki.normalize_rol(kullanici.rol) == _yetki.DEVELOPER:
+        o = {k: v for k, v in o.items() if k not in _GELISTIRICI_GIZLI_OLGULAR}
+    return o
+
+
+def _varlik_olgulari(
+    session: Session, varlik_tur: str, obj: Any, simdi: datetime
+) -> dict[str, Any]:
     if varlik_tur == "requirement":
         return _requirement_olgulari(session, obj, simdi)
     if varlik_tur == "script":

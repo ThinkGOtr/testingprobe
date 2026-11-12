@@ -34,7 +34,7 @@ from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import UTC, datetime, time, timedelta, timezone
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Final
 
 from sqlalchemy import func, or_, select, text
 from sqlalchemy.engine import Connection, Engine
@@ -1015,7 +1015,9 @@ def _dispatch(engine: Engine, run_id: uuid.UUID) -> None:
         if tetik == "deploy":
             gh.repository_dispatch("deploy", {"tetik": "deploy", "tp_run_id": str(run_id)})
         else:
-            gh.workflow_dispatch(hedef_ref, {"tetik": tetik}, **is_akisi)
+            # `istek_id` koşu adına `[<run_id>]` olarak girer (ci.yml `run-name`): aynı anda
+            # bekleyen elle/gece koşuları `_aday_sec`'te karışmaz.
+            gh.workflow_dispatch(hedef_ref, {"tetik": tetik, "istek_id": str(run_id)}, **is_akisi)
     except Exception as exc:
         # Yanıt okunamadıysa (zaman aşımı/bağlantı koptu) istek GitHub'a ulaşmış olabilir: `hata`
         # yazılmaz → sonraki deneme önce koşuyu arar (kör tekrar yok).
@@ -1075,9 +1077,29 @@ def _olaylar(run: Run) -> tuple[str, ...]:
     return GITHUB_OLAY[run.tetik]
 
 
+_ISTEK_ISARETI = re.compile(r"\[([A-Za-z0-9._-]{1,64})\]\s*$")
+_DISPATCH_OLAYLARI = frozenset({"workflow_dispatch", "repository_dispatch"})
+
+
+def _istek_isareti(aday: Mapping[str, Any]) -> str | None:
+    """Dispatch koşusunun adındaki `[<istek_id>]` (ci.yml `run-name`); yoksa / `elle` ise None."""
+    for alan in ("display_title", "name"):
+        m = _ISTEK_ISARETI.search(str(aday.get(alan) or ""))
+        if m and m.group(1) != "elle":
+            return m.group(1)
+    return None
+
+
 def _aday_sec(
     session: Session, run: Run, adaylar: Iterable[Mapping[str, Any]]
 ) -> dict[str, Any] | None:
+    """Koşuya karşılık gelen GitHub koşusunu seçer.
+
+    Çekirdeğin dispatch ettiği koşular adında `[<run_id>]` taşır (workflow_dispatch `istek_id`,
+    repository_dispatch `tp_run_id`): işaretli aday yalnız kendi koşusuna eşlenir, işaret
+    eşleşirse olay/zaman süzgeci aranmaz. İşaretsiz adaylar (eski workflow, elle tetik) için
+    olay + zaman eşlemesi geriye dönük olarak kalır.
+    """
     kullanilan = set(
         session.scalars(
             select(Run.github_run_id).where(Run.github_run_id.is_not(None), Run.id != run.id)
@@ -1090,6 +1112,11 @@ def _aday_sec(
             continue
         if a.get("event") not in _olaylar(run):
             continue
+        isaret = _istek_isareti(a) if a.get("event") in _DISPATCH_OLAYLARI else None
+        if isaret is not None:
+            if isaret == str(run.id):
+                return dict(a)
+            continue  # başka bir istek / koşunun dispatch'i
         olusma = parse_gh_time(a.get("created_at"))
         if run.tetik in ELLE_TETIKLER and (olusma is None or olusma < alt_sinir):
             continue
@@ -1761,7 +1788,49 @@ def _imzali_url(run_id: uuid.UUID, rel: str | None, dizin: str | None) -> str | 
     return f"{onek}{rel}" if onek else _url(run_id, rel, dizin)
 
 
-def serialize_runs(session: Session, runs: Sequence[Run]) -> list[dict[str, Any]]:
+# Maskeli görünüm (specs/012-rol-yetki §2): `run.artifacts` izni olmayan roller (auditor, viewer).
+# Artefakt bağlantıları (imzalı rapor dahil), ham çıktı ve dış sistem bağlantıları çıkarılır.
+_MASKE_SILINEN: Final = frozenset({"stdout", "stderr"})
+
+
+def _url_alani(anahtar: str) -> bool:
+    k = anahtar.lower()
+    return k == "url" or k.endswith("_url") or k.endswith("url") or k == "urls"
+
+
+def _maskele_deger(deger: Any) -> Any:
+    if isinstance(deger, Mapping):
+        out: dict[str, Any] = {}
+        for k, v in deger.items():
+            if k in _MASKE_SILINEN:
+                continue
+            if _url_alani(str(k)):
+                out[k] = None
+            elif k == "ekler" and isinstance(v, list):
+                out[k] = []
+            else:
+                out[k] = _maskele_deger(v)
+        return out
+    if isinstance(deger, list):
+        return [_maskele_deger(v) for v in deger]
+    return deger
+
+
+def maskele_kosu(kosu: Mapping[str, Any]) -> dict[str, Any]:
+    """Koşu yanıtının maskeli kopyası: her düzeydeki `*url` alanı boşalır, ekler boş liste,
+    `stdout`/`stderr` çıkarılır, `artefakt_kok` boşalır; `maskeli: true` işaretlenir."""
+    out = _maskele_deger(kosu)
+    out["artefakt_kok"] = None
+    out["maskeli"] = True
+    return out
+
+
+def serialize_runs(
+    session: Session, runs: Sequence[Run], *, artefakt: bool
+) -> list[dict[str, Any]]:
+    """Koşu özetleri. `artefakt=False` → maskeli görünüm (çağıran rolün `run.artifacts`'ı yok)."""
+    if not artefakt:
+        return [maskele_kosu(k) for k in serialize_runs(session, runs, artefakt=True)]
     ids = [r.id for r in runs]
     sayac: dict[uuid.UUID, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     if ids:
@@ -1881,6 +1950,7 @@ def list_runs(
     pr_no: int | None = None,
     script_id: uuid.UUID | None = None,
     limit: int = 50,
+    artefakt: bool,
 ) -> list[dict[str, Any]]:
     q = select(Run)
     if tetik:
@@ -1906,7 +1976,7 @@ def list_runs(
             if r.id not in gorulen:
                 runs.append(r)
         runs.sort(key=lambda r: (r.olusturma, str(r.id)), reverse=True)
-    out = serialize_runs(session, runs)
+    out = serialize_runs(session, runs, artefakt=artefakt)
     for o in out:
         o["sabit"] = uuid.UUID(o["id"]) in sabit
     return out
@@ -1936,11 +2006,15 @@ def _defect_adayi_kosulari(session: Session, en_cok: int = 20) -> list[Run]:
     return out
 
 
-def run_detail(session: Session, run_id: uuid.UUID) -> dict[str, Any] | None:
+def run_detail(session: Session, run_id: uuid.UUID, *, artefakt: bool) -> dict[str, Any] | None:
+    """Koşu detayı. `artefakt=False` → maskeli görünüm (`maskele_kosu`)."""
+    if not artefakt:
+        detay = run_detail(session, run_id, artefakt=True)
+        return maskele_kosu(detay) if detay is not None else None
     run = session.get(Run, run_id)
     if run is None:
         return None
-    temel = serialize_runs(session, [run])[0]
+    temel = serialize_runs(session, [run], artefakt=True)[0]
     rows = session.execute(
         select(TestResult, TestResultEk)
         .outerjoin(TestResultEk, TestResultEk.test_result_id == TestResult.id)

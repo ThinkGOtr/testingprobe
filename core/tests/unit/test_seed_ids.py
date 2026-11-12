@@ -18,7 +18,7 @@ def test_seed_kullanicilari() -> None:
     assert dict(KULLANICILAR) == {
         "analist": "analyst",
         "muhendis": "engineer",
-        "yonetici": "admin",
+        "sunucu": "admin",
         "po": "po",
         "testci": "tester",
         "denetci": "auditor",
@@ -42,7 +42,7 @@ def test_seed_gorunen_adlari() -> None:
         "po": "Cengizhan Gunaydin · PO",
         "muhendis": "Gokhan Sipahi · Automation Engineer",
         "testci": "Fatih Arslan · Testçi",
-        "yonetici": "Sistem Yöneticisi",
+        "sunucu": "Sistem Yöneticisi",
         "denetci": "Denetçi",
         "gelistirici": "Developer",
         "izleyici": "Görüntüleyici",

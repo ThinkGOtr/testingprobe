@@ -177,6 +177,27 @@ def test_geri_gonderme_gerekce_ister_ve_taslaga_doner(api: TestClient, hazir) ->
     assert m["ilk_kararlar"] == {"accept": 1}  # geri gönderme Testçi kabul ölçümüne girmez
 
 
+def test_son_onay_sonraki_testci_kararinda_gizlenir(api: TestClient, hazir) -> None:
+    """Taslağa al ya da yeni kabul eski `approve`'u gizler; `send_back` gerekçesi Testçinin
+    sonraki kararına kadar görünür kalır."""
+    rid, testci, analist = hazir
+    c = latest_cases(api, rid)[0]
+    out = onayla(api, c, testci, analist)
+    assert out["son_onay"]["karar"] == "approve"
+    rol_ol(api, testci)
+    out = _karar(api, out, karar="reopen").json()
+    assert out["durum"] == "draft" and out["son_onay"] is None
+    out = _karar(api, out, karar="accept").json()
+    assert out["durum"] == "ready" and out["son_onay"] is None
+    rol_ol(api, analist)
+    out = _karar(api, out, karar="send_back", gerekce="AC1 eksik").json()
+    assert out["durum"] == "draft" and out["son_onay"]["karar"] == "send_back"
+    rol_ol(api, testci)
+    assert latest_cases(api, rid)[0]["son_onay"]["gerekce"] == "AC1 eksik"  # Testçi görür
+    out = _karar(api, out, karar="accept").json()
+    assert out["durum"] == "ready" and out["son_onay"] is None
+
+
 def test_bayat_testci_karariyla_onay_reddedilir(api: TestClient, engine: Engine, hazir) -> None:
     """Testçi kararından sonra içerik değiştiyse (ör. yarış) son onay 409 olur."""
     rid, _, analist = hazir
@@ -351,11 +372,9 @@ def test_okuma_izni_ve_uretim_izni(api: TestClient, make_user, hazir) -> None:
         assert api.post(f"/requirements/{rid}/generate-cases").status_code == 403, rol
 
 
-@pytest.mark.skip(reason="S1 birleşince: 'developer' rolü app_user.rol kısıtında yok")
-def test_developer_yalniz_onayli_caseleri_gecmissiz_gorur(  # pragma: no cover
+def test_developer_yalniz_onayli_caseleri_gecmissiz_gorur(
     api: TestClient, make_user, hazir
 ) -> None:
-    # TODO(012 S1+S2 birleşimi): S1 rol kısıtına 'developer' ekleyince skip kaldırılır.
     rid, testci, analist = hazir
     a, b, _ = latest_cases(api, rid)
     onayla(api, a, testci, analist)

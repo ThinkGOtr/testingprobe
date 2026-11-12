@@ -110,7 +110,7 @@ def decide(
     # İzin karara göre: Testçi kararları `case.decide`, son onay `case.approve` (ANALIZ §4.1).
     izin_adi = TEST_CASE_KARAR_IZNI[body.karar]
     if not izinli(user.rol, izin_adi):
-        raise reddet(session, user, izin_adi, "rol", request.url.path)
+        raise reddet(session, user, izin_adi, "rol", request.url.path, karar=body.karar)
     tc = service.decide(
         session,
         case_id,

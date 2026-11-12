@@ -141,6 +141,7 @@ JOB_PO_REQUEST = "requirements.po_request"
 EV_REQUIREMENT = "requirement.updated"
 EV_FINDING = "finding.verified"
 EV_PO = "po.approved"
+EV_PO_RED = "po.rejected"
 EV_AGENT_STEP = "agent.step"
 
 # Deterministik kimlikler için ad alanı (requirement_review satırı iş akışından türetilir).
@@ -2355,6 +2356,32 @@ def po_approve_portal(
         },
     )
     emit_requirement(s, req, olay="po_approved")
+
+
+def po_reject_portal(
+    s: Session, req: Requirement, user: Principal, icerik_hash: str | None, gerekce: str
+) -> None:
+    """T04: serbest metin gereksiniminde PO reddi (portal, po rolü; specs/012 §4.1).
+
+    Gerekçeli `po_reject` kararı `review`'a içerik hash'iyle yazılır; gereksinim `pending_po` →
+    `new` döner (Analist yeniden inceler; ön inceleme kayıtları geçersizlenir, PO onay alanları
+    temizlenir). Jira kaynaklı gereksinimde ret Jira'dadır.
+    """
+    if req.kaynak == "jira":
+        raise FlowError("Jira yolunda PO kararı Jira'da verilir")
+    if req.durum != "pending_po":
+        raise FlowError(f"Gereksinim PO teyidi beklemiyor (durum: {req.durum})")
+    record_approval(s, req, user, "po_reject", beklenen_hash=icerik_hash, gerekce=gerekce)
+    transition(s, req, "new", user, "pending_po", sebep=f"PO reddi: {gerekce[:200]}")
+    req.kontrol_turu = 0
+    _po_temizle(req)
+    supersede_reviews(s, req.id, user)
+    emit(
+        s,
+        EV_PO_RED,
+        {"id": req.id, "requirement_id": req.id, "reddeden": user.kullanici_adi, "kanal": "portal"},
+    )
+    emit_requirement(s, req, olay="po_rejected")
 
 
 def ensure_po_poll(conn: Connection, *, gecikme_s: float = 0.0) -> uuid.UUID | None:

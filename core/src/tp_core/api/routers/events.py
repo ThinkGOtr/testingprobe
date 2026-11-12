@@ -12,6 +12,11 @@ teslim edilmez. Portal bunu alınca kullanıcıyı /giris'e yönlendirir.
 Kişiye özel olaylar (AI-ASISTAN-PLANI §9): `assistant.*` olayları yalnız `data.kullanici_id`'si
 oturum kullanıcısı olan akışa teslim edilir. Kimlik yoksa, eşleşmiyorsa ya da akışın kullanıcısı
 bilinmiyorsa olay hiç gönderilmez (fail-closed). Diğer olaylar önceki gibi herkese gider.
+
+Rol süzgeci (specs/012-rol-yetki §4.2): developer yalnız onaylı/yayınlanmış case ve açılmış bug
+görür. Akışında `case.generated` (taslak case) yoktur; case ve bug taslağı `review.recorded`
+olayları gitmez; `test_case.state` yalnız hedef durum `approved`/`published`, `bug_draft.state`
+yalnız `published` ise gider.
 """
 
 from __future__ import annotations
@@ -26,6 +31,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sse_starlette.sse import EventSourceResponse
 
+from tp_core.auth import yetki
 from tp_core.auth.deps import Codec
 from tp_core.auth.sessions import SessionData, cookie_name, session_valid
 from tp_core.auth.yetki import izin
@@ -59,6 +65,31 @@ def teslim_edilir_mi(olay: Mapping[str, Any], kullanici_id: object | None) -> bo
     if not isinstance(sahip, str) or not sahip:
         return False
     return sahip.strip().lower() == str(kullanici_id).strip().lower()
+
+
+# Developer akışında süzülen olaylar: ad → (None = hiç gönderilmez | izinli hedef durumlar).
+_GELISTIRICI_DURUM_OLAYLARI: dict[str, frozenset[str]] = {
+    "test_case.state": frozenset({"approved", "published"}),
+    "bug_draft.state": frozenset({"published"}),
+}
+_GELISTIRICI_GIZLI_OLAYLAR = frozenset({"case.generated"})
+_GELISTIRICI_GIZLI_REVIEW = frozenset({"test_case", "bug_draft"})
+
+
+def rol_gorur_mu(olay: Mapping[str, Any], rol: str | None) -> bool:
+    """Olay rolün okuma kapsamında mı? (developer: yalnız onaylı/yayınlanmış case, açılmış bug)."""
+    if rol is None or yetki.normalize_rol(rol) != yetki.DEVELOPER:
+        return True
+    ad = str(olay.get("event") or "")
+    veri = olay.get("data") if isinstance(olay.get("data"), Mapping) else {}
+    if ad in _GELISTIRICI_GIZLI_OLAYLAR:
+        return False
+    if ad == "review.recorded":
+        return veri.get("nesne_turu") not in _GELISTIRICI_GIZLI_REVIEW
+    izinli = _GELISTIRICI_DURUM_OLAYLARI.get(ad)
+    if izinli is not None:
+        return veri.get("durum") in izinli
+    return True
 
 
 def broadcaster_for(request: Request) -> Broadcaster:
@@ -99,6 +130,7 @@ async def _akis(
     kontrol_s: float = OTURUM_KONTROL_S,
     *,
     kullanici_id: object | None = None,
+    rol: str | None = None,
 ) -> AsyncIterator[dict[str, str]]:
     bitti = {"event": OTURUM_BITTI, "data": "{}"}
     try:
@@ -116,7 +148,7 @@ async def _akis(
                         break
                     son_kontrol = time.monotonic()
                 continue
-            if not teslim_edilir_mi(olay, kullanici_id):
+            if not teslim_edilir_mi(olay, kullanici_id) or not rol_gorur_mu(olay, rol):
                 continue
             # Teslimden önce: çıkıştan sonra yayımlanan olay eski bağlantıya ulaşmamalı.
             if not await oturum_gecerli():
@@ -147,7 +179,7 @@ async def events(
         raise HTTPException(503, "Olay akışı şu anda kullanılamıyor") from exc
     q = b.subscribe()
     return EventSourceResponse(
-        _akis(request, b, q, oturum_kontrolu(veri), kullanici_id=user.id),
+        _akis(request, b, q, oturum_kontrolu(veri), kullanici_id=user.id, rol=user.rol),
         ping=PING_S,
         headers={"X-Accel-Buffering": "no"},
     )

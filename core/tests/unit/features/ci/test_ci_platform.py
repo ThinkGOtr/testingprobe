@@ -130,7 +130,7 @@ def test_enqueue_platformu_scriptten_ve_check_govdesi_java(
         assert set(a["checks"]["platformlar"]) == {"local-ci", "local-ci-android"}
         assert a["checks"]["platformlar"]["local-ci-android"]["details_url"] is None
         # Koşu listesi / Kontrol Kulesi platformu taşır.
-        assert service.serialize_runs(s, [run])[0]["platform"] == "android"
+        assert service.serialize_runs(s, [run], artefakt=True)[0]["platform"] == "android"
         assert not any("results.json" in u for u in a["uyarilar"])
         satirlar = {
             r.test_adi: r for r in s.scalars(select(TestResult).where(TestResult.run_id == rid))
@@ -149,7 +149,10 @@ def test_serialize_runs_platformu_eski_kayitta_scriptten(engine: Engine) -> None
                   ortam={}, artefaktlar={})  # fmt: skip
         s.add_all([eski, web])
         s.flush()
-        assert [k["platform"] for k in service.serialize_runs(s, [eski, web])] == ["ios", "web"]
+        assert [k["platform"] for k in service.serialize_runs(s, [eski, web], artefakt=True)] == [
+            "ios",
+            "web",
+        ]
 
 
 def test_web_scripti_ve_scriptsiz_koşu_govdesi_degismez(

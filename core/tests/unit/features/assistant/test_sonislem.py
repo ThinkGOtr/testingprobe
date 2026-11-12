@@ -221,8 +221,9 @@ def test_yalniz_rota_kalibina_uyan_ic_rota_baglanti_olur() -> None:
 @pytest.mark.parametrize(
     ("rol", "beklenen"),
     [
-        ("analyst", ["/kosular"]),  # /demo yalnız admin/engineer, /claude-code yalnız tester
-        ("admin", ["/demo", "/kosular"]),
+        ("po", ["/kosular"]),  # /demo yalnız admin/engineer, /claude-code `claude_code.read`
+        ("analyst", ["/claude-code", "/kosular"]),
+        ("admin", ["/demo", "/claude-code", "/kosular"]),
         ("tester", ["/claude-code", "/kosular"]),
         (None, ["/demo", "/claude-code", "/kosular"]),  # rol bilinmiyor → süzgeç yok
     ],
@@ -723,7 +724,8 @@ def test_modelin_bug_taslagi_her_ekranda_bilgiye_duser(
     [
         ("tester", "/demo", "bilgi"),  # yalnız admin/engineer
         ("admin", "/demo", "rota"),
-        ("analyst", "/claude-code", "bilgi"),  # yalnız tester
+        ("po", "/claude-code", "bilgi"),  # `claude_code.read`: admin, analyst, tester, engineer
+        ("viewer", "/yol-haritasi", "bilgi"),  # `demo.read`
         ("tester", "/claude-code", "rota"),
         ("tester", "/kod/0f3c-1", "rota"),  # roller null → herkes
         (None, "/demo", "rota"),  # rol bilinmiyor → süzgeç yok

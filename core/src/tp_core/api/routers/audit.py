@@ -6,6 +6,10 @@ satır çapaları (`verify_call_anchors`). `verify.ok` ikisi de sağlamsa True'd
 Kapsam (specs/012-rol-yetki §4.2): `audit.read_all` (admin, auditor) tüm kaydı; `audit.read_own`
 (iş rolleri) yalnız `aktor` = kendi kullanıcı adı olan olayları görür. `verify=true`
 `audit.verify` ister (zincir doğrulaması tüm kaydı okur). İkisi de yoksa 403.
+
+Denetçi (auditor) görünümünde `ozet` PII maskeleyicisinden geçer (`features/assistant/maskeleme`,
+`TP_PII_MASKING`'den bağımsız her zaman açık; yanıt başına tek oturum, yer tutucular tutarlı):
+denetçi olayları ve zinciri inceler, kişisel veriyi görmez. `hash`/`prev_hash` ham kayda aittir.
 """
 
 from __future__ import annotations
@@ -93,6 +97,12 @@ def audit(
         {"before": before_id, "limit": limit, "nesne": nesne, "aktor": user.kullanici_adi},
     ).all()
     events = [AuditEventOut.model_validate(r._asdict()) for r in rows]
+    if yetki.normalize_rol(user.rol) == yetki.AUDITOR:
+        from tp_core.features.assistant.maskeleme import maskeleyici
+
+        oturum = maskeleyici(enabled=True).new_session()
+        for e in events:
+            e.ozet = oturum.mask(e.ozet)[0]
     sonuc = AuditOut(
         events=events,
         tip_hash=chain_tip(conn),

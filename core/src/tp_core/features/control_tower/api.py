@@ -7,7 +7,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends
 
 from tp_core.auth.deps import DbSession
-from tp_core.auth.yetki import izin
+from tp_core.auth.yetki import izin, izinli
 from tp_core.features.control_tower import service
 from tp_core.workflow.service import Principal
 
@@ -17,5 +17,6 @@ Okur = Annotated[Principal, Depends(izin("dashboard.read"))]
 
 
 @router.get("/control-tower")
-def control_tower(session: DbSession, _user: Okur) -> dict[str, Any]:
-    return service.control_tower(session)
+def control_tower(session: DbSession, user: Okur) -> dict[str, Any]:
+    # Son koşulardaki artefakt/imzalı rapor bağlantıları yalnız `run.artifacts` sahibine döner.
+    return service.control_tower(session, artefakt=izinli(user.rol, "run.artifacts"))

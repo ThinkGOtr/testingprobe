@@ -167,15 +167,15 @@ def test_testci_kabulu_yayin_kapisini_acmaz(session: Session, make_user: MakeUse
 
 
 def test_eski_analist_edit_onayi_yayin_kapisini_acar(session: Session, make_user: MakeUser) -> None:
-    """012 öncesi: analistin `edit`'i (son kayıt) `approve` sayılır; Testçinin `edit`'i sayılmaz.
-    Hash eşleşmesi yine şarttır."""
+    """012 öncesi: 0023 göçünün işaretlediği (`eski_onay`) analist `edit`'i `approve` sayılır;
+    işaretsiz `edit` (Testçinin ya da göçten sonraki) sayılmaz. Hash eşleşmesi yine şarttır."""
     from tp_core.models import Review
 
     c = _case(session)
     testci, analist = make_user("tester"), make_user("analyst")
     _onayla(session, c, testci, analist)
 
-    def edit_kaydi(user: Principal) -> None:
+    def edit_kaydi(user: Principal, eski_onay: bool = False) -> None:
         session.add(
             Review(
                 nesne_turu="test_case",
@@ -184,13 +184,16 @@ def test_eski_analist_edit_onayi_yayin_kapisini_acar(session: Session, make_user
                 kanal="portal",
                 karar="edit",
                 onaylanan_hash=content_hash_of(c),
+                eski_onay=eski_onay,
             )
         )
         session.flush()
 
     edit_kaydi(testci)
     assert not approved_hash_matches(session, c)
-    edit_kaydi(analist)
+    edit_kaydi(analist)  # işaretsiz: güncel rol analist olsa da onay değil
+    assert not approved_hash_matches(session, c)
+    edit_kaydi(analist, eski_onay=True)
     assert approved_hash_matches(session, c)
     c.icerik = {**CASE, "risk": "low"}  # onaydan sonra değişti
     assert not approved_hash_matches(session, c)
@@ -215,6 +218,31 @@ def test_karar_rolleri_karara_gore(session: Session, make_user: MakeUser) -> Non
         with pytest.raises(ApprovalNotAllowed):
             record_approval(session, c, make_user(rol), "accept")
     assert _review_sayisi(session) == 0
+
+
+def test_rol_reddi_etiketli_mesaj_ve_authz_denied(
+    session: Session, engine: Engine, make_user: MakeUser
+) -> None:
+    """HTTP izin katmanını aşan rol reddi de `authz.denied` bırakır; mesaj rol/karar etiketli."""
+    c = _case(session)
+    testci = make_user("tester")
+    with pytest.raises(ApprovalNotAllowed) as hata:
+        record_approval(session, c, testci, "approve")
+    assert str(hata.value) == "Testçi rolü case için 'Onayla' kararı veremez"
+    analist = make_user("analyst")
+    with pytest.raises(ApprovalNotAllowed, match="Analist rolü case için 'Düzelterek kabul'"):
+        record_approval(session, c, analist, "edit", degisiklik={"icerik": CASE})
+    with engine.connect() as conn:
+        redler = conn.execute(
+            text(
+                "SELECT aktor, nesne, ozet FROM audit_event WHERE eylem = 'authz.denied' "
+                "ORDER BY id"
+            )
+        ).all()
+    assert [(a, n, o["izin"], o["neden"]) for a, n, o in redler] == [
+        (testci.kullanici_adi, f"test_case:{c.id}:approve", "case.approve", "rol"),
+        (analist.kullanici_adi, f"test_case:{c.id}:edit", "case.decide", "rol"),
+    ]
 
 
 def test_geri_gonderme_gerekce_ister_ve_taslaga_doner(

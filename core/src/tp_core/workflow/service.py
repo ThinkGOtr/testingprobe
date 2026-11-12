@@ -178,16 +178,13 @@ def approved_hash_matches(
 def eski_analist_onayi(session: Session, review: Review) -> bool:
     """012 öncesi son onay: analist hesabının test_case `edit` kararı.
 
-    012'den sonra analist `edit` veremez (`record_approval` karar başına izin ister); bu yüzden
-    analist rolündeki hesabın `edit` kaydı tanım gereği eski akışın onayıdır ve yayın / kod
-    üretimi kapısında `approve` sayılır (hash eşleşmesi yine şarttır). Testçi `edit`'i sayılmaz.
+    0023 göçü, göç anında var olan analist `edit` kayıtlarını `review.eski_onay` ile işaretler;
+    yayın / kod üretimi kapısında `approve` sayılır (hash eşleşmesi yine şarttır). Karar verenin
+    güncel rolüne bakılmaz: hesabın rolü sonradan değişse de sonuç değişmez. Yeni kayıtlar
+    (Testçi `edit`'i) işaretsizdir. `session` imza uyumu için kalır.
     """
-    if review.nesne_turu != "test_case" or review.karar != "edit" or review.user_id is None:
-        return False
-    from tp_core.models import AppUser
-
-    rol = session.scalar(select(AppUser.rol).where(AppUser.id == review.user_id))
-    return rol == "analyst"
+    del session
+    return review.nesne_turu == "test_case" and review.karar == "edit" and review.eski_onay
 
 
 # Jira simülatörünün bot kimlikleri: yapılandırmadan bağımsız olarak her zaman ayrılmıştır.
@@ -247,6 +244,56 @@ def _rol_karar_verebilir(rol: str, kind: str, karar: str) -> bool:
     from tp_core.auth.yetki import normalize_rol
 
     return normalize_rol(rol) in karar_rolleri(kind, karar)
+
+
+# Derinlemesine savunma mesajları (portal düğme adlarıyla).
+NESNE_ETIKETLERI: dict[str, str] = {
+    "test_case": "case",
+    "requirement": "gereksinim",
+    "bug_draft": "bug taslağı",
+    "script": "script",
+    "consistency_finding": "tutarlılık bulgusu",
+}
+KARAR_ETIKETLERI: dict[str, str] = {
+    "accept": "Olduğu gibi kabul",
+    "edit": "Düzelterek kabul",
+    "reject": "Reddet",
+    "reopen": "Taslağa al",
+    "approve": "Onayla",
+    "send_back": "Geri gönder",
+    "po_approve": "PO onayı",
+    "po_reject": "PO reddi",
+    "new": "Yeni bug aç",
+    "link": "Mevcut bug'a bağla",
+    "dismiss": "Yoksay",
+    "merge": "Merge",
+    "request_changes": "Değişiklik iste",
+    "fix_doc": "Dokümanı düzelt",
+    "code_defect": "Kod hatası",
+    "accept_difference": "Farkı kabul et",
+}
+
+
+def karar_red_mesaji(rol: str, kind: str, karar: str) -> str:
+    """Ör. "Testçi rolü case için 'Onayla' kararı veremez"."""
+    from tp_core.auth.yetki import ROL_ETIKETLERI, normalize_rol
+
+    rol_etiketi = ROL_ETIKETLERI.get(normalize_rol(rol), rol)
+    nesne = NESNE_ETIKETLERI.get(kind, kind)
+    return f"{rol_etiketi} rolü {nesne} için '{KARAR_ETIKETLERI.get(karar, karar)}' kararı veremez"
+
+
+def karar_izni(kind: str, karar: str) -> str:
+    """Kararın katalog izni (denetim kaydı için); bilinmiyorsa `<tür>.decide`."""
+    from tp_core.auth.yetki import KARAR_IZNI
+
+    if kind == "test_case":
+        return TEST_CASE_KARAR_IZNI.get(karar, "case.decide")
+    if kind == "requirement":
+        if karar == "po_reject":
+            return "requirement.po_reject_free_text"
+        return "requirement.po_approve_free_text"
+    return KARAR_IZNI.get(kind, f"{kind}.decide")
 
 
 def _uygula_degisiklik(
@@ -340,7 +387,13 @@ def record_approval(
         if user is None or user.id is None or user.kanal != "portal":
             raise ApprovalNotAllowed("onay yalnızca portalda oturum açmış bir kullanıcıyla verilir")
         if not _rol_karar_verebilir(user.rol, kind, karar):
-            raise ApprovalNotAllowed(f"{user.rol} rolü {kind} için '{karar}' kararı veremez")
+            # Rol nedeniyle red: HTTP izin katmanını aşan istek de `authz.denied` bırakır.
+            from tp_core.auth.yetki import denetle_red
+
+            denetle_red(
+                session, user, karar_izni(kind, karar), "rol", f"{kind}:{entity.id}:{karar}"
+            )
+            raise ApprovalNotAllowed(karar_red_mesaji(user.rol, kind, karar))
         aktor = user.kullanici_adi
         user_id = user.id
     else:

@@ -112,11 +112,11 @@ def _oran(pay: int, payda: int) -> float | None:
 # ------------------------------------------------------------------------------ koşular
 
 
-def son_kosular(session: Session, n: int) -> list[dict[str, Any]]:
+def son_kosular(session: Session, n: int, *, artefakt: bool) -> list[dict[str, Any]]:
     runs = session.scalars(
         select(Run).where(Run.tetik.in_(CI_TETIKLER)).order_by(Run.olusturma.desc()).limit(n)
     ).all()
-    return ci.serialize_runs(session, list(runs))
+    return ci.serialize_runs(session, list(runs), artefakt=artefakt)
 
 
 def gecme_orani(session: Session, n: int) -> dict[str, Any]:
@@ -913,12 +913,13 @@ def a11y(session: Session) -> dict[str, Any] | None:
 # ------------------------------------------------------------------------------ toplam
 
 
-def control_tower(session: Session) -> dict[str, Any]:
+def control_tower(session: Session, *, artefakt: bool) -> dict[str, Any]:
+    """`artefakt=False` (rolde `run.artifacts` yok) → `son_kosular` maskeli (bağlantısız)."""
     n = _n("TP_CT_SON_KOSU", 20)
     gun = _n("TP_CT_FLAKY_GUN", 30)
     trend = _n("TP_CT_TREND_GUN", 14)
     katki, hazirlik, uyarilar = ai_katkisi(session)
-    kosular = son_kosular(session, n)
+    kosular = son_kosular(session, n, artefakt=artefakt)
     if not kosular:
         uyarilar.append("Henüz CI koşusu yok: geçme oranı, flaky ve son sonuçlar boş.")
     a = a11y(session)

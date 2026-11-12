@@ -1,7 +1,7 @@
 """Deterministik başlangıç verisi: rol başına bir demo kullanıcısı + `seed.applied` denetim kaydı.
 
-Roller specs/012-rol-yetki §3'tedir. Eski `sunucu` (presenter) hesabı 0021 göçüyle `admin` olur ve
-kurulumda kalır; yeni kurulumlarda Sistem Yöneticisi hesabı `yonetici`dir.
+Roller specs/012-rol-yetki §3'tedir. Sistem Yöneticisi hesabı `sunucu`dur: mevcut kurulumlarda
+`presenter` rolüyle vardır ve 0021 göçüyle `admin` olur; yeni kurulumlarda doğrudan `admin` açılır.
 """
 
 import uuid
@@ -19,7 +19,7 @@ NAMESPACE_TP: Final = uuid.UUID("6f1d2c3a-8b4e-5f60-9a7b-1c2d3e4f5a6b")
 KULLANICILAR: Final[tuple[tuple[str, str], ...]] = (
     ("analist", "analyst"),
     ("muhendis", "engineer"),
-    ("yonetici", "admin"),
+    ("sunucu", "admin"),
     ("po", "po"),
     ("testci", "tester"),
     ("denetci", "auditor"),
@@ -35,7 +35,7 @@ GORUNEN_ADLAR: Final[dict[str, str]] = {
     "po": "Cengizhan Gunaydin",
     "muhendis": "Gokhan Sipahi",
     "testci": "Fatih Arslan",
-    "yonetici": "",
+    "sunucu": "",
     "denetci": "",
     "gelistirici": "",
     "izleyici": "",
