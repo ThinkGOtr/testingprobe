@@ -275,7 +275,13 @@ def test_eslemeden_sonra_silinen_anahtar_atfi_duz_icerige_doner(
             s, req, [case_icerik()], uretim_no=1, kanal="portal", ai_call_id=None, uretim_modu=None
         )
         assert "bayi.bayi1.kullanici_adi" not in str(tc.icerik)
-        assert tc.icerik == case_icerik() and tc.icerik_hash == content_hash(case_icerik())
+        # Güvenlik tur 3 / K22: geri dönüşte gizli değer yine atıf (düz parola içeriğe dönmez).
+        beklenen = case_icerik()
+        beklenen["steps"][1]["data"] = beklenen["steps"][1]["data"].replace(
+            DEMO_PAROLA, PAROLA_ATFI
+        )
+        assert tc.icerik == beklenen and tc.icerik_hash == content_hash(beklenen)
+        assert DEMO_PAROLA not in str(tc.icerik)
 
 
 def test_onay_veri_izi_yazilir_degisen_anahtar_listelenir(

@@ -511,6 +511,8 @@ def store_cases(
     # boşsa içerik aynen kalır). Hash eşlenmiş içerikten.
     esleme = testveri.eslem_katalogu(session)
     takma = testveri.takma_degerler(session)
+    # K22: gizli değerler başlık / etiketler dahil tüm metin alanlarında atfa çevrilir.
+    gizli_anahtarlari = testveri.gizli_anahtarlar(session)
     esli: dict[uuid.UUID, Mapping[str, Any]] = {}
     eklenen: list[TestCase] = []
     tekrar: list[int] = []
@@ -523,7 +525,7 @@ def store_cases(
         ham = icerik
         ham_h = content_hash(dict(icerik))
         if esleme or takma:
-            icerik = atif.case_esle(icerik, esleme, takma)
+            icerik = atif.case_esle(icerik, esleme, takma, gizli_anahtarlari)
         h = content_hash(dict(icerik))
         # Katalogdan önce yazılmış (eşlenmemiş) aynı içerik de tekrar sayılır.
         if h in mevcut_hashler or ham_h in mevcut_hashler:
@@ -550,14 +552,27 @@ def store_cases(
         # Silme yarışı (review B11, mimar tur 2 #5): atıf yazılan anahtarların katalog satırları
         # bu işlemde `FOR SHARE` ile kilitlenir (`sil` `FOR UPDATE` alır: iki işlem sıralanır).
         # Silinmiş anahtara atıf yapan case eşlenmemiş (düz) içeriğe döner.
-        istenen = {a for tc in eklenen if tc.id in esli for a in atif.case_atiflari(tc.icerik)}
+        # Başlık / etiket atıfları (K22, gizli) da kilitlenir; geri dönüşte gizli değer yine
+        # yalnız hâlâ etkin anahtarlarla atfa çevrilir (düz parola içeriğe dönmez).
+        istenen = {a for tc in eklenen if tc.id in esli for a in atif.case_tum_atiflari(tc.icerik)}
         bilinen = testveri.kilitli_anahtarlar(session, istenen)
+        gizli_kalan = {
+            d: a
+            for d, a in atif.gizli_eslem(esleme, gizli_anahtarlari, takma).items()
+            if a in bilinen
+        }
         for tc in eklenen:
-            if tc.id in esli and atif.bilinmeyen_atiflar(tc.icerik, bilinen):
-                tc.icerik = dict(esli[tc.id])
+            if tc.id in esli and set(atif.case_tum_atiflari(tc.icerik)) - bilinen:
+                tc.icerik = atif.case_gizli_esle(esli[tc.id], gizli_kalan)
                 tc.icerik_hash = content_hash(tc.icerik)
     session.flush()
     return eklenen, tekrar
+
+
+def _baslik_gorunumu(session: Session) -> Callable[[Any], Any]:
+    """K22: olaylardaki case başlığı; gizli değer atıf, atfa dönemeyen `•••`."""
+    eslem, gizliler = testveri.gizli_eslemi(session), testveri.gizli_degerler(session)
+    return lambda t: atif.metin_gorunum(t, eslem, gizliler) if isinstance(t, str) else t
 
 
 def _original_content_hashes(session: Session, case_ids: Mapping[uuid.UUID, str]) -> set[str]:
@@ -824,6 +839,7 @@ def run_generation(
                 "onceki_icerik_case_ids": onceki_icerik,
             },
         )
+        baslik = _baslik_gorunumu(s)
         for tc in eklenen:
             _olay(
                 s,
@@ -831,7 +847,7 @@ def run_generation(
                 {
                     "id": tc.id,
                     "requirement_id": req.id,
-                    "title": tc.icerik.get("title"),
+                    "title": baslik(tc.icerik.get("title")),
                     "kanal": tc.kanal,
                     "mode": tc.uretim_modu,
                 },
@@ -986,6 +1002,7 @@ def submit_drafts(
             "onceki_icerik_case_ids": onceki_icerik,
         },
     )
+    baslik = _baslik_gorunumu(session)
     for tc in eklenen:
         _olay(
             session,
@@ -993,7 +1010,7 @@ def submit_drafts(
             {
                 "id": tc.id,
                 "requirement_id": req.id,
-                "title": tc.icerik.get("title"),
+                "title": baslik(tc.icerik.get("title")),
                 "kanal": "ide",
             },
         )
@@ -1107,6 +1124,10 @@ def onay_engeli(tc: TestCase, req: Requirement | None, katalog_anahtarlari: set[
     return hata.mesaj if isinstance(hata, InvalidCaseContent) else str(hata)
 
 
+MASKELI_DUZELTME_METNI = "Gizli değer maskeli görünüyor; {veri:…} atfını kullanın"
+DUZ_GIZLI_DUZELTME_METNI = "Gizli değer düz yazılmış ve atfa çevrilemedi; {veri:…} atfını kullanın"
+
+
 def decide(
     session: Session,
     cid: uuid.UUID,
@@ -1142,6 +1163,16 @@ def decide(
     if karar == "edit":
         if icerik is None:
             raise InvalidDecision("Düzeltme kararı düzenlenmiş içerikle verilir")
+        # K22: maskeli görünüm geri gönderilmişse kaydedilmez (sır kalıcı `•••` olurdu); analistin
+        # düz yazdığı gizli değer kaydedilmeden atfa çevrilir. Atfa dönemeyen (bitişik) gizli
+        # geçiş de reddedilir. Atfa çevrilen içerik yeni içeriktir (hash ondan).
+        if atif.maske_iceriyor_mu(icerik):
+            raise InvalidCaseContent(MASKELI_DUZELTME_METNI)
+        gizli_eslem = testveri.gizli_eslemi(session)
+        gizliler = testveri.gizli_degerler(session)
+        icerik = atif.case_gizli_esle(icerik, gizli_eslem)
+        if atif.gizli_kalan(icerik, gizliler):
+            raise InvalidCaseContent(DUZ_GIZLI_DUZELTME_METNI)
         hatalar = content_errors(dict(icerik), req.kabul_kriterleri)
         if hatalar:
             raise InvalidCaseContent("Düzenlenen case şemaya uymuyor", hatalar)
@@ -1150,10 +1181,13 @@ def decide(
             raise InvalidCaseContent(
                 "Katalogda olmayan test verisi anahtarı: " + ", ".join(bilinmeyen_veri)
             )
-        if content_hash(dict(icerik)) == tc.icerik_hash:
+        # Analistin gördüğü (K22 görünümü) içerikle aynıysa değişiklik yok: ham içerikte düz
+        # duran gizli değerin atıf olarak geri gelmesi düzeltme sayılmaz.
+        gorunen = atif.case_gorunum(tc.icerik, gizli_eslem, gizliler)
+        if content_hash(dict(icerik)) in (tc.icerik_hash, content_hash(gorunen)):
             raise InvalidDecision("Düzenlenen içerik mevcut içerikle aynı; 'approve' kullanın")
         olculer = metrics.edit_metrics(
-            tc.icerik, icerik, beklenen_anlam_degisti=beklenen_anlam_degisti
+            gorunen, icerik, beklenen_anlam_degisti=beklenen_anlam_degisti
         )
         degisiklik = {"icerik": dict(icerik)}
     elif icerik is not None:
@@ -1454,6 +1488,16 @@ def serialize_cases(
         eski |= old_content_case_ids(session, r)
     veri_haritasi = testveri.veri_haritasi(session)
     katalog_anahtarlari = testveri.anahtarlar(session)
+    # K22: case alanlarında gizli değer `{veri:<anahtar>}` atfı (eski case'ler dahil; yalnız
+    # görünüm, saklanan içerik ve `icerik_hash` değişmez).
+    gizli_eslem = testveri.gizli_eslemi(session)
+    gizliler = testveri.gizli_degerler(session)
+
+    def _gorunum(icerik: Any) -> Any:
+        if not isinstance(icerik, Mapping):
+            return icerik
+        return atif.case_gorunum(icerik, gizli_eslem, gizliler)
+
     onay_izleri: dict[uuid.UUID, Mapping[str, Any]] = {}
     for c in cases:
         if c.durum not in ("approved", "published"):
@@ -1490,9 +1534,10 @@ def serialize_cases(
             )
         # AI özgün içeriği = ilk düzeltme kararından ÖNCEKİ içerik (§8.10 "fark").
         ilk_edit = next((r for r in rs if r.karar == "edit"), None)
-        ai_icerik = (
+        ai_icerik = _gorunum(
             (ilk_edit.once or {}).get("icerik") if ilk_edit is not None and c.ai_generated else None
         )
+        icerik = _gorunum(c.icerik)
         out.append(
             {
                 "id": str(c.id),
@@ -1502,7 +1547,7 @@ def serialize_cases(
                 "uretim_no": c.uretim_no,
                 "kanal": c.kanal,
                 "surum": c.surum,
-                "icerik": c.icerik,
+                "icerik": icerik,
                 "durum": c.durum,
                 "karar": son.karar if son else None,
                 "ret_nedeni": son.ret_nedeni if son else None,
@@ -1527,7 +1572,7 @@ def serialize_cases(
                 "onceki_icerik": c.id in eski,
                 # Düzeltilmiş case: AI özgün içeriği, alan bazlı fark ve küçük düzeltme gerekçesi.
                 "ai_icerik": ai_icerik,
-                "fark": metrics.field_diff(ai_icerik, c.icerik) if ai_icerik else [],
+                "fark": metrics.field_diff(ai_icerik, icerik) if ai_icerik else [],
                 "duzeltme_nedeni": metrics.edit_reason(olcu)
                 if son and son.karar == "edit"
                 else None,
@@ -1535,15 +1580,16 @@ def serialize_cases(
                 "goruldu": c.id in gorulen,
                 "onay_engeli": onay_engeli(c, req, katalog_anahtarlari),
                 # 013 §3.3: case'in test verisi atıfları (gizli → deger null).
-                "veri": testveri.case_verisi(veri_haritasi, c.icerik),
+                "veri": testveri.case_verisi(veri_haritasi, icerik),
                 "veri_onaydan_sonra_degisen": testveri.degisen_anahtarlar(
                     session, onay_izleri.get(c.id), guncel_ozetler
                 ),
             }
         )
-    # 013 K19 / güvenlik #7: API bilinen gizli değeri düz döndürmez (başlık, analistin elle
-    # yazdığı değer, AI özgün içeriği, fark). Onay hash'leri ham içerikten; yapısal alanlar kalır.
-    return testveri.maskele(session, out)
+    # 013 K19 / güvenlik #7: API bilinen gizli değeri düz döndürmez. Case alanları yukarıda atıf
+    # (K22); kalan metinler (uyarılar vb.) `•••`. Onay hash'leri ham içerikten; yapısal alanlar
+    # kalır.
+    return testveri.maskele(session, out, gizliler)
 
 
 def list_cases(

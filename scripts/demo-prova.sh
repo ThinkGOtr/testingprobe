@@ -128,14 +128,25 @@ fi
 # 013 K19: test verisi parola sırrı tanımsızsa kod üretimi `test_verisi` engeliyle durur; farklı
 # değer REPLAY kayıtlarındaki demo parolasıyla uyuşmaz (render taraması PR'ı durdurur).
 # Değer yazdırılmaz. Eksikse: `make env` (.env.example'daki demo değeri eklenir).
+# Güvenlik #7: compose (`${TP_TESTVERI_DEMO_PAROLA:-}`) önce kabuk ortamını, yoksa .env'i kullanır;
+# kontrol de aynı öncelikle yapılır (konteynere giden değer denetlenir).
 ornek_parola="$(env_get TP_TESTVERI_DEMO_PAROLA .env.example)"
-if [ -z "$(env_get TP_TESTVERI_DEMO_PAROLA)" ]; then
+if [ -n "${TP_TESTVERI_DEMO_PAROLA:-}" ]; then
+  parola_kaynagi="kabuk ortamındaki"
+  etkin_parola="$TP_TESTVERI_DEMO_PAROLA"
+else
+  parola_kaynagi=".env"
+  etkin_parola="$(env_get TP_TESTVERI_DEMO_PAROLA)"
+fi
+if [ -z "$etkin_parola" ]; then
   err ".env TP_TESTVERI_DEMO_PAROLA boş ya da yok (013 K19): 'make env' çalıştırın ya da .env.example'daki değeri yazın"
   exit 2
-elif [ -n "$ornek_parola" ] && [ "$(env_get TP_TESTVERI_DEMO_PAROLA)" != "$ornek_parola" ]; then
-  err ".env TP_TESTVERI_DEMO_PAROLA demo değerinden farklı: REPLAY kayıtları demo parolasıyla; prova kod üretiminde durur"
+elif [ -n "$ornek_parola" ] && [ "$etkin_parola" != "$ornek_parola" ]; then
+  err "$parola_kaynagi TP_TESTVERI_DEMO_PAROLA demo değerinden farklı: REPLAY kayıtları demo parolasıyla; prova kod üretiminde durur"
+  [ "$parola_kaynagi" = ".env" ] || err "      Kabukta export edilmiş değeri kaldırın (unset TP_TESTVERI_DEMO_PAROLA) ya da düzeltin."
   exit 2
 fi
+unset etkin_parola
 
 # §13 provası strict REPLAY'dir. compose core-worker'a TP_MODEL_MODE'u kabuk ortamından, yoksa .env'den
 # verir (varsayılan auto). auto/live'da prova gerçek, değerlendirilmemiş model çağrısı yapar ve özet

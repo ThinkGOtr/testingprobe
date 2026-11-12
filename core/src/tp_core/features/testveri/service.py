@@ -40,7 +40,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Text, cast, select
+from sqlalchemy import Text, cast, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -83,6 +83,12 @@ class TestVerisiGecersiz(TestVerisiHatasi):
 
 class TestVerisiCakisma(TestVerisiHatasi):
     status_code = 409
+
+
+class TestVerisiCokDeneme(TestVerisiHatasi):
+    """Güvenlik tur 3 #5: aktörün gizli çakışma reddi sınırı doldu (değerden bağımsız yanıt)."""
+
+    status_code = 429
 
 
 class TestVerisiKullanimda(TestVerisiHatasi):
@@ -363,9 +369,35 @@ def izler_ayni(session: Session, eski: Mapping[str, Any] | None, yeni: Mapping[s
 
 
 def case_esle(session: Session, icerik: Mapping[str, Any]) -> dict[str, Any]:
-    """Case üretimi / IDE kanalı: değerleri atfa çevirir. Katalog boşsa içerik aynen döner."""
+    """Case üretimi / IDE kanalı: değerleri atfa çevirir (K22: gizliler başlık dahil). Katalog
+    boşsa içerik aynen döner."""
     kat, takma = eslem_katalogu(session), takma_degerler(session)
-    return atif.case_esle(icerik, kat, takma) if kat or takma else dict(icerik)
+    if not (kat or takma):
+        return dict(icerik)
+    return atif.case_esle(icerik, kat, takma, gizli_anahtarlar(session))
+
+
+def gizli_eslemi(session: Session) -> dict[str, str]:
+    """K22: gizli değer → anahtar (yalnız gizli kayıtlar + demo parolası takması)."""
+    return atif.gizli_eslem(
+        eslem_katalogu(session), gizli_anahtarlar(session), takma_degerler(session)
+    )
+
+
+def case_gorunum(
+    session: Session,
+    icerik: Mapping[str, Any],
+    *,
+    eslem: Mapping[str, str] | None = None,
+    gizliler: Iterable[str] | None = None,
+) -> dict[str, Any]:
+    """K22 API görünümü: gizli değer `{veri:<anahtar>}` atfı, atfa dönemeyen geçiş `•••`. Yalnız
+    görünüm: saklanan içerik ve `icerik_hash` değişmez (onaylar düşmez)."""
+    return atif.case_gorunum(
+        icerik,
+        gizli_eslemi(session) if eslem is None else eslem,
+        gizli_degerler(session) if gizliler is None else gizliler,
+    )
 
 
 def case_coz(session: Session, icerik: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
@@ -452,6 +484,7 @@ def kullanim(session: Session, anahtar: str | None = None) -> dict[str, list[dic
     """
     out: dict[str, list[dict[str, Any]]] = {}
     gizli = gizli_degerler(session)
+    eslem = gizli_eslemi(session)
     sorgu = (
         select(
             TestCase.id,
@@ -477,7 +510,10 @@ def kullanim(session: Session, anahtar: str | None = None) -> dict[str, list[dic
                     "case_id": str(cid),
                     "case_ref": f"{jira_key or 'SERBEST'}-C{sira}",
                     "requirement_id": str(rid),
-                    "baslik": atif.maskele(str((icerik or {}).get("title") or "")[:200], gizli),
+                    # K22: case başlığı; gizli değer atıf olarak (atfa dönemeyen `•••`).
+                    "baslik": atif.metin_gorunum(
+                        str((icerik or {}).get("title") or ""), eslem, gizli
+                    )[:200],
                     "durum": durum,
                 }
             )
@@ -582,12 +618,42 @@ def _gizli_cakisma_denetimi(aktor: str, anahtar: str | None) -> None:
         log.warning("Test verisi gizli çakışma reddi denetime yazılamadı: %s", type(exc).__name__)
 
 
+# Güvenlik tur 3 #5: aktör başına pencere içindeki gizli çakışma reddi sınırı. Sınır dolunca
+# aktörün tüm açık değer yazımları değerden bağımsız 429 alır: eşitlik kâhini pencere başına
+# en çok bu kadar tahmine iner.
+GIZLI_CAKISMA_SINIRI = 3
+GIZLI_CAKISMA_PENCERESI_DK = 15
+COK_DENEME_METNI = (
+    "Çok sayıda test verisi değeri reddedildi; bir süre sonra yeniden deneyin "
+    "(parola ve benzeri değerleri gizli kayıt olarak tanımlayın)"
+)
+
+
+def _cakisma_freni(session: Session, aktor: str) -> None:
+    """Aktörün son pencerede `GIZLI_CAKISMA_SINIRI` reddi varsa değeri hiç sınamadan 429."""
+    sayi = session.execute(
+        text(
+            "SELECT count(*) FROM audit_event WHERE eylem = 'testveri.gizli_cakisma_reddi' "
+            "AND aktor = :a AND zaman > now() - make_interval(mins => :m)"
+        ),
+        {"a": aktor or "bilinmiyor", "m": GIZLI_CAKISMA_PENCERESI_DK},
+    ).scalar_one()
+    if sayi >= GIZLI_CAKISMA_SINIRI:
+        raise TestVerisiCokDeneme(COK_DENEME_METNI)
+
+
 def _gizliyle_ayni_degil(
     session: Session, deger: str, aktor: str = "", anahtar: str | None = None
 ) -> None:
     """K19: bilinen bir gizli değerle aynı değeri taşıyan gizli olmayan kayıt açılamaz (değer
     katalogda ve API'de düz görünür, maskeleme ile eşleme belirsizleşirdi). Güvenlik #9: metin
-    genel (hangi kayıtla çakıştığını söylemez); her red denetime yazılır (aktör + anahtar)."""
+    genel (hangi kayıtla çakıştığını söylemez); her red denetime yazılır (aktör + anahtar).
+
+    Güvenlik tur 3 #5 kararı: "kaydet + belirsiz say + uyarı" seçeneği reddedildi (uyarı yine
+    kâhindir ve sır açık değer olarak tüm rollere — GET /test-data, geçmiş, denetim `deger` —
+    yayılırdı). Red korunur; kâhin `_cakisma_freni` ile aktör başına pencerede
+    `GIZLI_CAKISMA_SINIRI` tahmine sınırlanır."""
+    _cakisma_freni(session, aktor)
     if deger in gizli_degerler(session):
         _gizli_cakisma_denetimi(aktor or "bilinmiyor", anahtar)
         raise TestVerisiGecersiz(GIZLI_CAKISMA_METNI)
