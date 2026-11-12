@@ -37,6 +37,7 @@ import type {
 import { SCRIPT_DURUMLARI } from "./types";
 import { dizgeler, ilk, kimlik, metin, metinYaDaNull, modUyarla, nesneMi, sayi, sayiYaDaNull, type Ham } from "./uyum";
 import { hazirlikUyarla } from "./uyumFaz5";
+import { scriptOtomasyonAlanlari } from "./uyumOtomasyon";
 import { checkPlatformu, platformUyarla } from "../lib/platform";
 import type { AsistanKuleOlcumu, AsistanliKule, MaliyetGrubu } from "../components/asistan/OnerilerOlcumKarti";
 
@@ -374,6 +375,7 @@ export function scriptUyarla(s: Ham): Script {
     mode: modUyarla(ilk(s, "mode", "uretim_modu")),
     olusturma: metin(s.olusturma),
     hata: metinYaDaNull(ilk(s, "hata", "son_hata")),
+    ...scriptOtomasyonAlanlari(s),
   };
 }
 

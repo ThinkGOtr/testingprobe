@@ -21,6 +21,8 @@ import { Kod } from "./pages/Kod";
 import { KontrolKulesi } from "./pages/KontrolKulesi";
 import { KosuDetay, Kosular } from "./pages/Kosular";
 import { ScriptDetay } from "./pages/ScriptDetay";
+import { Otomasyon } from "./pages/Otomasyon";
+import { TestVerisiSayfasi } from "./pages/TestVerisi";
 import { Yayin } from "./pages/Yayin";
 import { YolHaritasi } from "./pages/YolHaritasi";
 import { ROL } from "./lib/etiketler";
@@ -113,6 +115,8 @@ export function Rotalar() {
         <Route path="kontrol-kulesi" element={<KontrolKulesi />} />
         <Route path="yol-haritasi" element={<YolHaritasi />} />
         <Route path="denetim" element={<Denetim />} />
+        <Route path="test-verisi" element={<TestVerisiSayfasi />} />
+        <Route path="otomasyon" element={<Otomasyon />} />
         <Route
           path="claude-code"
           element={

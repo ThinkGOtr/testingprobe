@@ -12,6 +12,7 @@ import { SCRIPT_DURUMU, scriptIsareti, scriptUretiliyor } from "../lib/etiketler
 import { ENGEL_TURU, kosuKimligiMi, mergeEngelleri, mergeOnayNotu, mergeUyarilari, RET_NEDENI, YEREL_SINIF } from "../lib/kapi";
 import { saat, tarih } from "../lib/format";
 import { PlatformRozeti } from "../components/Platform";
+import { OTOMATIK_TETIK_ACIKLAMA, VERI_DEGISTI_METNI } from "./Kod";
 import { aracEtiketi, checkEtiketi, dikeyEkranMi, uygulamaPlatformuMu, type Platform } from "../lib/platform";
 
 const ASAMA_ADI = { baseline: "Bayraksız (yeşil olmalı)", broken: "BREAK_CAMPAIGN=1 (kırmızı olmalı)", restored: "Bayrak kaldırıldı (yeşil olmalı)" } as const;
@@ -922,6 +923,11 @@ export function ScriptDetay() {
             {sinif && <Cip ton={sinif.ton}>{sinif.etiket}</Cip>}
             <ReplayRozeti mode={s.mode} />
             <PlatformRozeti platform={s.platform} />
+            {s.tetik === "otomatik" && (
+              <Cip ton="bilgi" title={OTOMATIK_TETIK_ACIKLAMA}>
+                Onayla otomatik
+              </Cip>
+            )}
             {s.requirement_key && <span className="mono">{s.requirement_key}</span>}
             <span className="soluk">{tarih(s.olusturma)}</span>
           </span>
@@ -942,6 +948,25 @@ export function ScriptDetay() {
       ) : (
         // Script kaydının saklı hatası API hatası değildir: asistanın "son hata" bağlamına gitmez (§5.5).
         s.hata && <HataKutusu hata={s.hata} kayitDisi />
+      )}
+      {s.veri_degisti && (
+        <Uyari ton="uyari" baslik={VERI_DEGISTI_METNI}>
+          Bu test üretildikten sonra kullandığı test verisi katalogda değişti
+          {s.veri_izi && Object.keys(s.veri_izi).length > 0 && (
+            <>
+              {" "}
+              (üretimde kullanılan:{" "}
+              {Object.entries(s.veri_izi).map(([k, v], i) => (
+                <span key={k}>
+                  {i > 0 && ", "}
+                  <span className="mono">{k}</span> s{v}
+                </span>
+              ))}
+              )
+            </>
+          )}
+          . Kod eski değerle duruyor; <Link to="/kod">Kod üretimi</Link> ekranından yeniden üretin (değerler: <Link to="/test-verisi">Test verisi</Link>).
+        </Uyari>
       )}
       {s.uyarilar.length > 0 && (
         <Uyari ton="bilgi">

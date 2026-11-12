@@ -391,6 +391,132 @@ export interface TestCase {
   duzeltme_nedeni?: string | null;
   /** Case gereksinimin önceki (PO onayı değişmiş) içeriğine ait. */
   onceki_icerik?: boolean;
+  /**
+   * 013 §3.2: bu kullanıcı case'i son karardan sonra görüntüledi mi (`case_goruntuleme`). Toplu onay
+   * yalnız görülmüş taslakları alır; alan yoksa (eski core) görülmemiş sayılır.
+   */
+  goruldu?: boolean;
+  /** Onaya engel (ör. kapsanmayan AC, eski gereksinim içeriği); doluysa toplu onaya girmez. */
+  onay_engeli?: string | null;
+  /** 013 §3.3: içerikteki `{veri:anahtar}` atıflarının katalog karşılığı (anahtar → kayıt). */
+  veri?: Record<string, CaseVeriAtfi>;
+  /** 013 §3.2: tekli karar yanıtındaki otomatik kod üretimi sonucu. */
+  otomatik_kod?: OtomatikKodSonucu | null;
+}
+
+/** Case serileştirmesindeki atıf kaydı (`veri: {anahtar: {deger, gizli, surum, var}}`). */
+export interface CaseVeriAtfi {
+  /** Gizli ya da katalogda yoksa null. */
+  deger: string | null;
+  gizli: boolean;
+  surum: number | null;
+  /** Anahtar katalogda (silinmemiş) var mı. */
+  var: boolean;
+}
+
+/** Onay sonrası otomatik kod üretimi (013 §3.2 `otomatik_kod`). */
+export interface OtomatikKodSonucu {
+  /** `hata`: beklenmeyen hata; onay geçerli kalır, kod elle başlatılır. */
+  durum: "kuyrukta" | "reddedildi" | "kapali" | "atlandi" | "hata";
+  neden: string | null;
+  script_id: string | null;
+}
+
+/** `POST /cases/bulk-decision` öğe sonucu. */
+export interface TopluKararSonucu {
+  case_id: string;
+  durum: "onaylandi" | "atlandi" | "hata";
+  neden: string | null;
+  otomatik_kod: OtomatikKodSonucu | null;
+}
+
+export interface TopluKararYaniti {
+  sonuclar: TopluKararSonucu[];
+  ozet: { onaylandi: number; atlandi: number; hata: number };
+}
+
+/** Test verisi kataloğu kaydı (`GET /test-data`; 013 §3.3). Gizli kayıtta `deger` null. */
+export interface TestVerisi {
+  id: string;
+  anahtar: string;
+  grup: string | null;
+  aciklama: string | null;
+  deger: string | null;
+  gizli: boolean;
+  /** Gizli kaydın ortam sırrı adı (değer kataloğa yazılmaz). */
+  sir_adi: string | null;
+  /** Ortam sırrı tanımlı mı (yalnız gizli kayıtta anlamlı). */
+  sir_tanimli: boolean;
+  surum: number;
+  guncelleyen: string | null;
+  guncelleme: string | null;
+  /** Atıf yapan etkin case sayısı. */
+  kullanim: number;
+}
+
+export interface TestVerisiGirdisi {
+  anahtar: string;
+  grup?: string | null;
+  aciklama?: string | null;
+  deger?: string | null;
+  gizli?: boolean;
+  sir_adi?: string | null;
+}
+
+export interface TestVerisiGuncelleme {
+  deger?: string | null;
+  aciklama?: string | null;
+  grup?: string | null;
+  sir_adi?: string | null;
+  /** İyimser kilit: ekranda görülen sürüm; uyuşmazsa 409. */
+  beklenen_surum: number;
+}
+
+/** `GET /test-data/{id}/history` (gizli değer yok). */
+export interface TestVerisiSurumu {
+  surum: number;
+  islem: "olustur" | "guncelle" | "sil";
+  deger: string | null;
+  gizli: boolean;
+  sir_adi: string | null;
+  degistiren: string | null;
+  zaman: string | null;
+}
+
+/** Silme 409'unda atıf yapan case. */
+export interface AtifYapanCase {
+  id: string;
+  /** Core `case_ref` (ör. "TPD-2 #3"); yoksa null. */
+  case_ref: string | null;
+  durum: string | null;
+  requirement_id: string | null;
+  jira_key: string | null;
+  sira_no: number | null;
+  baslik: string;
+}
+
+/** `GET /automation-settings` (013 §3.1). */
+export interface OtomasyonAyarlari {
+  otomatik_kod_uretimi: { acik: boolean; guncelleyen: string | null; guncelleme: string | null };
+  jira_tetik: {
+    acik: boolean;
+    durum: string;
+    aralik_s: number;
+    otomatik_case: boolean;
+    guncelleyen: string | null;
+    guncelleme: string | null;
+  };
+}
+
+export type OtomasyonAyarAnahtari = keyof OtomasyonAyarlari;
+
+/** `GET /automation/jira-trigger` (013 §3.4). */
+export interface JiraTetikDurumu {
+  acik: boolean;
+  durum: string;
+  aralik_s: number;
+  son_tur: { zaman: string | null; bulunan: number; tetiklenen: number; hata: string | null } | null;
+  son_tetiklenenler: { jira_key: string; zaman: string | null }[];
 }
 
 export interface CaseAlanFarki {
@@ -622,6 +748,12 @@ export interface Script {
   mode: CiktiModu | null;
   olusturma: string;
   hata: string | null;
+  /** 013: üretimi kim başlattı (`otomatik` = case onayıyla kuyruğa alındı). Eski core göndermez. */
+  tetik?: "elle" | "otomatik";
+  /** 013 §3.3: üretimde kullanılan test verisi sürümü güncel değil (yeniden üretilmeli). */
+  veri_degisti?: boolean;
+  /** Üretimde çözülen `{anahtar: surum}`. */
+  veri_izi?: Record<string, number>;
 }
 
 /**

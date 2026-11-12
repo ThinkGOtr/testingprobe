@@ -1,15 +1,15 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
-import type { BazKaynagi, CaseMetrikleri, ManuelBaz, TestCase } from "../api/types";
+import type { BazKaynagi, CaseMetrikleri, ManuelBaz, TestCase, TopluKararYaniti } from "../api/types";
 import { bazKaynagiUyarla, manuelBazUyarla } from "../api/uyumFaz5";
 import { useKisiAdi, useOturum } from "../auth";
 import { BAZ_KAYNAGI } from "../components/BazDegerKarti";
-import { CaseKarti } from "../components/CaseKarti";
+import { CaseKarti, otomatikKodMetni } from "../components/CaseKarti";
 import { BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, Metrik, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { HedefOlcer } from "../components/Grafikler";
-import { useGeciktirilmis, useVeri } from "../hooks";
+import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { dolar, sure, yuzde } from "../lib/format";
 import { YAYIN_ROLU_GEREKLI } from "./Yayin";
 
@@ -136,6 +136,198 @@ export function caseOzeti(caseler: TestCase[], m?: CaseMetrikleri | null) {
 
 type Filtre = "hepsi" | "bekleyen" | "onayli" | "reddedilen";
 
+/** Toplu onay isteğinin üst sınırı (core 1..200 öğe); fazlası sırayla parçalanır. */
+export const TOPLU_UST_SINIR = 200;
+
+/**
+ * 013 §3.2/K3 toplu onay adayları: yalnız karar bekleyen (`draft`), bu kullanıcının görüntülediği
+ * (`goruldu` ya da bu oturumda kaydedilen görüntüleme) ve onaya engeli olmayan case'ler.
+ */
+export function topluOnayAdaylari(caseler: TestCase[], gorulenler: ReadonlySet<string> = new Set()) {
+  const taslaklar = caseler.filter((c) => c.durum === "draft");
+  const goruldu = (c: TestCase) => c.goruldu === true || gorulenler.has(c.id);
+  return {
+    taslaklar,
+    uygun: taslaklar.filter((c) => goruldu(c) && !c.onay_engeli),
+    gorulmeyen: taslaklar.filter((c) => !goruldu(c)).length,
+    engelli: taslaklar.filter((c) => goruldu(c) && !!c.onay_engeli).length,
+    goruldu,
+  };
+}
+
+/** İstekleri 200'lük parçalar halinde sırayla gönderir, sonuçları birleştirir. */
+async function topluOnayla(ogeler: TestCase[]): Promise<TopluKararYaniti> {
+  const toplam: TopluKararYaniti = { sonuclar: [], ozet: { onaylandi: 0, atlandi: 0, hata: 0 } };
+  for (let i = 0; i < ogeler.length; i += TOPLU_UST_SINIR) {
+    const y = await api.topluOnay(ogeler.slice(i, i + TOPLU_UST_SINIR));
+    toplam.sonuclar.push(...y.sonuclar);
+    toplam.ozet.onaylandi += y.ozet.onaylandi;
+    toplam.ozet.atlandi += y.ozet.atlandi;
+    toplam.ozet.hata += y.ozet.hata;
+  }
+  return toplam;
+}
+
+const OTOKOD_ETIKET = { kuyrukta: "kuyrukta", kapali: "kapalı", atlandi: "atlandı", reddedildi: "başlatılamadı", hata: "hata" } as const;
+
+function TopluOnaySonucu({ sonuc, caseler, kapat }: { sonuc: TopluKararYaniti; caseler: TestCase[]; kapat: () => void }) {
+  const baslikRef = useRef<HTMLHeadingElement>(null);
+  const ad = (id: string) => {
+    const c = caseler.find((x) => x.id === id);
+    return c ? `#${c.sira_no} ${c.icerik.title}` : id;
+  };
+  const sorunlu = sonuc.sonuclar.filter((s) => s.durum !== "onaylandi");
+  const otokod = sonuc.sonuclar.filter((s) => s.durum === "onaylandi" && s.otomatik_kod);
+  const otokodSayisi = new Map<string, number>();
+  for (const s of otokod) otokodSayisi.set(s.otomatik_kod!.durum, (otokodSayisi.get(s.otomatik_kod!.durum) ?? 0) + 1);
+  const otokodSorunlu = otokod.filter((s) => s.otomatik_kod!.durum !== "kuyrukta" && s.otomatik_kod!.durum !== "kapali");
+  const ton = sonuc.ozet.hata > 0 ? "hata" : sonuc.ozet.atlandi > 0 ? "uyari" : "basari";
+  return (
+    <div className={`toplu-sonuc toplu-sonuc-${ton}`} data-ton={ton} role="status" data-testid="toplu-onay-sonucu">
+      <h3 ref={baslikRef} tabIndex={-1} className="toplu-sonuc-baslik" id="toplu-onay-sonucu-baslik">
+        Toplu onay: {sonuc.ozet.onaylandi} onaylandı · {sonuc.ozet.atlandi} atlandı{sonuc.ozet.hata > 0 && ` · ${sonuc.ozet.hata} hata`}
+      </h3>
+      {sorunlu.length > 0 && (
+        <ul className="duz-liste kucuk" aria-label="Onaylanmayan case'ler">
+          {sorunlu.map((s) => (
+            <li key={s.case_id}>
+              <Cip ton={s.durum === "hata" ? "hata" : "uyari"}>{s.durum === "hata" ? "hata" : "atlandı"}</Cip> {ad(s.case_id)}
+              {s.neden && <> — {s.neden}</>}
+            </li>
+          ))}
+        </ul>
+      )}
+      {otokod.length > 0 && (
+        <p className="kucuk" data-testid="toplu-otokod">
+          Otomatik kod üretimi:{" "}
+          {[...otokodSayisi.entries()].map(([d, n]) => `${n} ${OTOKOD_ETIKET[d as keyof typeof OTOKOD_ETIKET] ?? d}`).join(" · ")}
+          {otokodSayisi.has("kapali") && " (Otomasyon ayarından kapalı; kodu Kod üretimi ekranından başlatın)"}
+        </p>
+      )}
+      {otokodSorunlu.length > 0 && (
+        <ul className="duz-liste kucuk" aria-label="Otomatik kod üretimi notları">
+          {otokodSorunlu.map((s) => (
+            <li key={s.case_id}>
+              {ad(s.case_id)}: {otomatikKodMetni(s.otomatik_kod!)}
+            </li>
+          ))}
+        </ul>
+      )}
+      <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={kapat}>
+        Özeti kapat
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Toplu onay çubuğu (013 §3.5): "Seçili onayla (n)" ve "Tümünü onayla (n)". Tarayıcı diyaloğu yok;
+ * onay portalın kendi onay kutusuyla verilir. Her case ekranda görülen hash'iyle gönderilir.
+ */
+function TopluOnayCubugu({
+  caseler,
+  gorulenler,
+  secili,
+  setSecili,
+  bitti,
+}: {
+  caseler: TestCase[];
+  gorulenler: ReadonlySet<string>;
+  secili: ReadonlySet<string>;
+  setSecili: (s: Set<string>) => void;
+  bitti: () => void;
+}) {
+  const islem = useIslem();
+  const [onay, setOnay] = useState<"secili" | "tumu" | null>(null);
+  const [anladim, setAnladim] = useState(false);
+  const [sonuc, setSonuc] = useState<TopluKararYaniti | null>(null);
+  const [sonucCaseleri, setSonucCaseleri] = useState<TestCase[]>([]);
+  const { uygun, gorulmeyen, engelli } = topluOnayAdaylari(caseler, gorulenler);
+  const seciliUygun = uygun.filter((c) => secili.has(c.id));
+  const hedef = onay === "tumu" ? uygun : seciliUygun;
+  const notId = "toplu-onay-notu";
+
+  async function onayla() {
+    const gonderilen = hedef;
+    const y = await islem.calistir(() => topluOnayla(gonderilen));
+    if (y) {
+      setSonuc(y);
+      setSonucCaseleri(gonderilen);
+      setOnay(null);
+      setAnladim(false);
+      const onaylanan = new Set(y.sonuclar.filter((s) => s.durum === "onaylandi").map((s) => s.case_id));
+      setSecili(new Set([...secili].filter((x) => !onaylanan.has(x))));
+      bitti();
+      requestAnimationFrame(() => document.getElementById("toplu-onay-sonucu-baslik")?.focus());
+    }
+  }
+
+  return (
+    <section className="kart toplu-onay" aria-label="Toplu onay">
+      <div className="satir-ogeler toplu-onay-cubuk">
+        <IslemDugmesi
+          roller={["analyst"]}
+          kucuk
+          disabled={seciliUygun.length === 0 || onay !== null}
+          title={seciliUygun.length === 0 ? "Onaylanacak case'leri kartlardaki kutularla seçin." : undefined}
+          aria-describedby={notId}
+          onClick={() => {
+            setOnay("secili");
+            setAnladim(false);
+          }}
+        >
+          Seçili onayla ({seciliUygun.length})
+        </IslemDugmesi>
+        <IslemDugmesi
+          roller={["analyst"]}
+          kucuk
+          tur="ikincil"
+          disabled={uygun.length === 0 || onay !== null}
+          title={uygun.length === 0 ? "Görüntülediğiniz ve onaya engeli olmayan taslak yok." : undefined}
+          aria-describedby={notId}
+          onClick={() => {
+            setOnay("tumu");
+            setAnladim(false);
+          }}
+        >
+          Tümünü onayla ({uygun.length})
+        </IslemDugmesi>
+        {secili.size > 0 && (
+          <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={() => setSecili(new Set())}>
+            Seçimi temizle
+          </button>
+        )}
+      </div>
+      <p id={notId} className="soluk kucuk" data-testid="toplu-onay-notu">
+        Toplu onaya yalnız açıp gördüğünüz ve onaya engeli olmayan taslaklar girer; her case ekranda gördüğünüz içerikle onaylanır.
+        {gorulmeyen > 0 && ` ${gorulmeyen} case açılmadığı için dışarıda.`}
+        {engelli > 0 && ` ${engelli} case onay engeli nedeniyle dışarıda.`}
+      </p>
+      {onay && (
+        <div className="onay-kutusu" role="group" aria-label="Toplu onay teyidi">
+          <label className="satir-ogeler">
+            <input type="checkbox" checked={anladim} onChange={(e) => setAnladim(e.target.checked)} />
+            <span>
+              {hedef.length} taslak case onaylanacak ({onay === "tumu" ? "görüntülenen tüm taslaklar" : "seçilenler"}). Her case kendi
+              görüntülenen içeriğiyle onaylanır; içeriği sonradan değişen case atlanır.
+            </span>
+          </label>
+          <div className="satir-ogeler">
+            <IslemDugmesi roller={["analyst"]} calisiyor={islem.calisiyor} disabled={!anladim || hedef.length === 0} onClick={() => void onayla()}>
+              Onayla ({hedef.length})
+            </IslemDugmesi>
+            <button type="button" className="dugme dugme-ikincil" disabled={islem.calisiyor} onClick={() => setOnay(null)}>
+              Vazgeç
+            </button>
+          </div>
+        </div>
+      )}
+      {islem.hata && <HataKutusu hata={islem.hata} kaynak={islem.hataNesnesi} />}
+      {sonuc && <TopluOnaySonucu sonuc={sonuc} caseler={sonucCaseleri} kapat={() => setSonuc(null)} />}
+    </section>
+  );
+}
+
 export function CaseReview() {
   const { id = "" } = useParams();
   const gereksinim = useVeri(() => api.gereksinim(id), [id]);
@@ -143,6 +335,9 @@ export function CaseReview() {
   // Çekirdek ölçümü yoksa (uç henüz yok / hata) sayaçlar listeden hesaplanır.
   const metrik = useVeri(() => api.caseMetrikleri(id).catch(() => null), [id]);
   const [filtre, setFiltre] = useState<Filtre>("hepsi");
+  // 013 toplu onay: seçim ve bu oturumda sunucuya kaydedilen görüntülemeler.
+  const [secili, setSecili] = useState<Set<string>>(new Set());
+  const [gorulenler, setGorulenler] = useState<Set<string>>(new Set());
   const kisiAdi = useKisiAdi();
   const sessiz = useGeciktirilmis(() => {
     void caseler.yenile(true);
@@ -168,6 +363,10 @@ export function CaseReview() {
   const g = gereksinim.veri;
   const { kullanici } = useOturum();
   const yayinYetkili = kullanici?.rol === "analyst";
+  const karar = kullanici?.rol === "analyst";
+  const toplu = topluOnayAdaylari(liste, gorulenler);
+  const secimEngeli = (c: TestCase) =>
+    !toplu.goruldu(c) ? "Toplu onay için önce case'i açıp görün (kart ekranınıza girince kaydedilir)." : c.onay_engeli ? `Onaya engel: ${c.onay_engeli}` : null;
   const mod = aiModu(liste, metrik.veri);
   const aiOlculmedi = mod === "replay" || mod === "replay_miss";
   const baz = caseBazi(metrik.veri);
@@ -310,6 +509,19 @@ export function CaseReview() {
         ))}
       </div>
 
+      {karar && toplu.taslaklar.length > 0 && (
+        <TopluOnayCubugu
+          caseler={liste}
+          gorulenler={gorulenler}
+          secili={secili}
+          setSecili={setSecili}
+          bitti={() => {
+            void caseler.yenile(true);
+            void metrik.yenile(true);
+          }}
+        />
+      )}
+
       {caseler.yukleniyor && !caseler.veri ? (
         <Yukleniyor />
       ) : caseler.hata && !caseler.veri ? (
@@ -328,6 +540,22 @@ export function CaseReview() {
               tc={c}
               guncellendi={(t) => caseler.setVeri(liste.map((x) => (x.id === t.id ? t : x)))}
               yenile={() => void caseler.yenile(true)}
+              secim={
+                karar
+                  ? {
+                      secili: secili.has(c.id),
+                      engel: secimEngeli(c),
+                      degistir: (v) =>
+                        setSecili((s) => {
+                          const y = new Set(s);
+                          if (v) y.add(c.id);
+                          else y.delete(c.id);
+                          return y;
+                        }),
+                    }
+                  : undefined
+              }
+              goruntulendi={(cid) => setGorulenler((s) => new Set(s).add(cid))}
             />
           ))}
         </div>
