@@ -28,7 +28,7 @@ AC2_OZGUN = (
     "(7 adette 1 bedava)."
 )
 AC3_DUZELTME_ONEKI = "Kampanyasız siparişlerde minimum sipariş tutarı 750,00 TL"
-CASE_SAYISI = 10
+CASE_SAYISI = 15  # 011 K17: TPD-1 f2 seti 15 case (C11–C15 sınır case'leri sonda)
 C3_BASLIK = "6 adet kampanyalı üründe bedava ürün verilmez"
 KOD_CASELERI = (1, 2, 3, 5)  # C1 sepet sayacı, C2 7 adet, C3 6 adet, C5 750,00 TL
 PR_CASELERI = (1, 2, 5)
@@ -41,7 +41,7 @@ ONAY_NOTU = (
     "Zayıf test bilinçli kabul (prova): kampanya dışı davranış, BREAK_CAMPAIGN ile kırılmaz."
 )
 # 011 K15: iki tur (tasarım modeli → analist onayı → case), otomatik review (P8), denetim (P9).
-MODEL_OGE_SAYISI = 18  # rules/replay/design_model/golden/f2-kod-hatasi/TPD-1.json coverage_items
+MODEL_OGE_SAYISI = 21  # rules/replay/design_model/golden/f2-kod-hatasi/TPD-1.json coverage_items
 REVIEW_SKORU = 10  # rules/replay/case_review/golden/f2-kod-hatasi/TPD-1.json score
 DENETIM_KARARI = "KABUL"  # rules/replay/case_audit/golden/f2-kod-hatasi/TPD-1.json decision
 SURUYOR = {"pending", "queued", "generating", "verifying", "mapping", "checking", "running"}
@@ -628,7 +628,7 @@ def _uretim_olayi(b: Baglam) -> dict[str, Any] | None:
 
 
 def case_uret(b: Baglam) -> None:
-    """İki tur, tur 2: yalnız onaylı modelden case üretimi (10 case)."""
+    """İki tur, tur 2: yalnız onaylı modelden case üretimi (15 case)."""
     req_id = b.veri["req_id"]
     if b.prova:
         y = b.api.post(
@@ -777,7 +777,7 @@ def qa_kararlari(b: Baglam) -> None:
             )
     cs = caseler(b, req_id)
     onayli = [n for n, c in cs.items() if c["durum"] in ("approved", "published")]
-    b.kontrol("10 case QA onaylı (analist)", len(onayli) == CASE_SAYISI, f"{len(onayli)}/{len(cs)}")
+    b.kontrol(f"{CASE_SAYISI} case QA onaylı (analist)", len(onayli) == CASE_SAYISI, f"{len(onayli)}/{len(cs)}")
     m = b.api.get("analist", f"/requirements/{req_id}/case-metrics")
     b.kanit["kabul_orani"] = m.get("kabul_orani")
     b.kontrol(
@@ -801,7 +801,7 @@ def yayin(b: Baglam) -> None:
     anahtarlar = {n: c.get("jira_test_key") for n, c in sorted(cs.items())}
     b.kanit["test_issuelari"] = anahtarlar
     b.kontrol(
-        "10 case Jira'da Test issue",
+        f"{CASE_SAYISI} case Jira'da Test issue",
         all(anahtarlar.values()) and len(anahtarlar) == CASE_SAYISI,
         str(anahtarlar),
     )
@@ -1920,7 +1920,7 @@ def adimlar(kirma_yayinla: bool = False) -> list[Adim]:
         Adim("A7", "Model onayı (analist, hash'e bağlı)", "analist", "4", 30, model_onayi),
         Adim(
             "A8",
-            "Case üretimi (tur 2, onaylı modelden 10 case)",
+            "Case üretimi (tur 2, onaylı modelden 15 case)",
             "analist",
             "4",
             60,
