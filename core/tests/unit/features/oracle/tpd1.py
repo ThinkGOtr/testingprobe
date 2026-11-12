@@ -55,11 +55,19 @@ def taslak_golden() -> dict[str, Any]:
 
 
 def _tablolar() -> dict[int, dict[str, Any]]:
-    from tp_core.features.karar_tablosu.service import taslak_tablo_icerigi
+    from tp_core.features.karar_tablosu.service import (
+        _po_sorulu,
+        po_sorulari,
+        taslak_tablo_icerigi,
+    )
 
+    # Worker'ın yazdığıyla aynı: taslak notundaki PO sorusu AC'si tutan tablonun açıklamasına
+    # eklenir (T2; birleştirme turu 2).
+    cikti = taslak_golden()["output"]
+    sorular = po_sorulari(cikti.get("notes"))
     out: dict[int, dict[str, Any]] = {}
-    for n, oge in enumerate(taslak_golden()["output"]["tables"], start=1):
-        icerik, hatalar = taslak_tablo_icerigi(oge)
+    for n, oge in enumerate(cikti["tables"], start=1):
+        icerik, hatalar = taslak_tablo_icerigi(_po_sorulu(oge, sorular))
         assert not hatalar, hatalar
         out[n] = icerik
     return out

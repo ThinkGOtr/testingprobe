@@ -748,7 +748,7 @@ golden_kaynakli, tekrar, kaynak}`. `oran = uyumlu / (uyumlu + uyumsuz)` (payda 0
 aynı gereksinimde aynı satırı aynı değerlerle denetleyen, tek sayılan case'ler (paydadan da düşülür);
 `istisna` / `kontrolsuz_onay` = `oracle_istisna`'dan case ve tür başına bir. Kule değeri `kaynak`
 taşımaz (metin `kaynaklar`'dadır); Kule ayrıca `onayli_uyumsuz: [{case_id, requirement_id,
-baslik}]` verir (onaylı/yayınlı, güncel içeriğin geçerli kaydı `uyumsuz`, aynı tablo kümesiyle
+baslik, jira_key, sira_no}]` verir (onaylı/yayınlı, güncel içeriğin geçerli kaydı `uyumsuz`, aynı tablo kümesiyle
 `uyumsuz` istisnası yok).
 
 **Hata koşusu** (`/fault-runs`). Koşu: `{id, durum, iptal_istendi, platformlar, hatalar, commit,
@@ -773,7 +773,14 @@ platformlar: [{platform, oran, yakalanan, kacan, gecersiz, el_yazisi}], kacanlar
 ayirt_edici: {girdi, dogru, hatali}}`; `kampanya_esik_7` yerine `kampanya_tek_bedava` (K9).
 Hatalar: 409 `hata_kosusu_suruyor`, 422 `gecersiz_istek`.
 
-**Karar tablosu ve ilişki.** `GET /decision-tables/{id}/ornekler` → `{ornekler: [{girdiler,
+**Karar tablosu ve ilişki.** Yeniden açma (`POST /decision-tables|relations/{id}/reopen`)
+gövdesiz ya da "Tablo yanlış" yolunda `{icerik_hash, gerekce, case_id}` alır (`case_id` varsa
+gerekçe zorunlu, 422 `gecersiz_karar`; case aynı gereksinimden olmalı); denetim `<tur>.reopened`
+(gerekçe + case) ve `oracle.tablo_yanlis` (`test_case:<id>`). Öğe `gecmis: [{karar: submit|withdraw|
+reopen|approve|request_changes|duzenle, gerekce, kullanici, zaman, icerik_hash, case_id?}]`
+(denetim kayıtlarından) taşır; gerekçeli yeniden açma PO kararından sonraysa `son_karar` odur. AI
+taslağında notlardaki "PO sorusu:" cümleleri AC'si tutan tablonun `aciklama`'sının sonuna "PO
+sorusu (AI taslak notu): …" olarak eklenir (birleştirme turu 2). `GET /decision-tables/{id}/ornekler` → `{ornekler: [{girdiler,
 satir_id, ciktilar, hata}], uyarilar: [{tur: ortusme|hic_eslesmez|golgede|satir_yok|hata|
 ornek_sinirli|gecersiz, mesaj, satirlar?, girdiler?}]}`. İlişki öğesi `karar_tablosu_id` ve
 `tablo_engeli` taşır (onaylı ilişkinin bağlı tablosu onaylandığı sürümde değilse nedeni; o zaman

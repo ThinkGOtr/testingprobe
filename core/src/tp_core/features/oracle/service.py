@@ -1215,7 +1215,8 @@ def case_oracle(session: Session, tc: TestCase, icerik_hash: str | None = None) 
 
 
 def onayli_uyumsuz(session: Session) -> list[dict[str, Any]]:
-    """Kontrol Kulesi `onayli_uyumsuz` (§13.2): onaylı/yayınlı case'lerden güncel içeriğinin
+    """Kontrol Kulesi `onayli_uyumsuz` (§13.2; öğe `{case_id, requirement_id, baslik, jira_key,
+    sira_no}` — portal "TPD-1 · C5" künyesi): onaylı/yayınlı case'lerden güncel içeriğinin
     geçerli kaydı `uyumsuz` olup aynı tablo kümesiyle verilmiş `uyumsuz` istisnası olmayanlar.
 
     Kaydı geçersizleşmiş case (tablosu yeniden açıldı / değişti / bayat) sayılmaz: geçerlilik
@@ -1223,12 +1224,13 @@ def onayli_uyumsuz(session: Session) -> list[dict[str, Any]]:
     Tek sorgu (uyumsuz kayıtlı onaylı case'ler) + yalnız o gereksinimlerin tabloları (işlem
     önbelleğiyle)."""
     satirlar = session.execute(
-        select(TestCase, CaseOracleKontrol)
+        select(TestCase, CaseOracleKontrol, Requirement.jira_key)
         .join(
             CaseOracleKontrol,
             (CaseOracleKontrol.test_case_id == TestCase.id)
             & (CaseOracleKontrol.icerik_hash == TestCase.icerik_hash),
         )
+        .join(Requirement, Requirement.id == TestCase.requirement_id)
         .where(
             TestCase.durum.in_(ONAYLI_DURUMLAR),
             CaseOracleKontrol.sonuc == dogrulama.UYUMSUZ,
@@ -1237,11 +1239,11 @@ def onayli_uyumsuz(session: Session) -> list[dict[str, Any]]:
     ).all()
     if not satirlar:
         return []
-    tablolar = gecerli_tablolar_toplu(session, {tc.requirement_id for tc, _ in satirlar})
-    tabanlar_ = tabanlar(session, [tc for tc, _ in satirlar])
-    istisnalar = _istisna_listeleri(session, [(tc.id, tc.icerik_hash) for tc, _ in satirlar])
+    tablolar = gecerli_tablolar_toplu(session, {tc.requirement_id for tc, _, _ in satirlar})
+    tabanlar_ = tabanlar(session, [tc for tc, _, _ in satirlar])
+    istisnalar = _istisna_listeleri(session, [(tc.id, tc.icerik_hash) for tc, _, _ in satirlar])
     out = []
-    for tc, kayit in satirlar:
+    for tc, kayit, jira_key in satirlar:
         kapsayan = kapsayanlar(
             tablolar[tc.requirement_id], tc.icerik, kontrol_refleri(tabanlar_[tc.id], tc.icerik)
         )
@@ -1254,6 +1256,8 @@ def onayli_uyumsuz(session: Session) -> list[dict[str, Any]]:
                 "case_id": str(tc.id),
                 "requirement_id": str(tc.requirement_id),
                 "baslik": tc.icerik.get("title"),
+                "jira_key": jira_key,
+                "sira_no": tc.sira_no,
             }
         )
     return out

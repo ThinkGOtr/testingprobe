@@ -389,7 +389,8 @@ describe("beklenen sonuç kontrolü ve onay kapısı (§4.3)", () => {
     expect((await caseBul("case-1-9")).oracle?.sonuc).toBe("uyumlu");
     // u2 N2: AI'ın sınır hatası C6 — "tam 750,00 TL'de uyarı görünür"; düzeltilmiş T2 (R3) uyarı yok der.
     expect((await caseBul("case-1-7")).oracle?.ozet).toBe(
-      "2 beklenen değer tabloyla uyuşmuyor; ör. minimum_uyarisi: case “\"Minimum sipariş tutarı 750,00 TL\" uyarısı görünür”, tablo yanlış.",
+      // Tırnakla başlayan alıntı yeniden sarılmaz (core `dogrulama.alinti_metni` ile aynı).
+      "2 beklenen değer tabloyla uyuşmuyor; ör. minimum_uyarisi: case \"Minimum sipariş tutarı 750,00 TL\" uyarısı görünür, tablo yanlış.",
     );
     expect((await caseBul("case-1-7")).oracle?.karsilastirmalar.every((k) => !k.uyumlu && k.satir_id === "R3")).toBe(true);
     // u2 N1: "5/6" — C10 tekrar; uyuşmazlık AI'ın C6'sı.

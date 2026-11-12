@@ -935,7 +935,7 @@ ONAYLI_UYUMSUZ_KAYNAGI = (
 
 
 def kalite_onayli_uyumsuz(session: Session) -> list[dict[str, Any]]:
-    """012 §13.2 `onayli_uyumsuz`: `[{case_id, requirement_id, baslik}]`."""
+    """012 §13.2 `onayli_uyumsuz`: `[{case_id, requirement_id, baslik, jira_key, sira_no}]`."""
     from tp_core.features.oracle import service as oracle_service
 
     return oracle_service.onayli_uyumsuz(session)

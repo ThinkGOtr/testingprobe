@@ -248,19 +248,26 @@ def _kolon_degerleri(olgular: Sequence[Olgu]) -> tuple[dict[str, Any], str | Non
     return degerler, None
 
 
+_EN_AZ_AD = 8
+
+
 def _baslik(baslik: str, ad: str) -> str:
-    """Başlık + ` (ilişki: <ad>)`; 120 karakteri aşarsa önce başlık (en az 20 karakter kalır),
-    sonra ilişki adı `…` ile kısaltılır."""
-    ek = f" (ilişki: {ad})"
-    if len(baslik) + len(ek) <= BASLIK_AZAMI:
-        return baslik + ek
-    pay = max(20, BASLIK_AZAMI - len(ek))
-    if len(baslik) > pay:
-        baslik = baslik[: pay - 1].rstrip() + "…"
-    kalan = BASLIK_AZAMI - len(baslik)
-    if len(ek) > kalan:
-        ek = ek[: kalan - 2] + "…)"
-    return baslik + ek
+    """Başlık + ` (ilişki: <ad>)`, en çok 120 karakter. Review 2 u2 N11: önce ilişki adı `…` ile
+    kısaltılır (case başlığı korunur); ilişki adına en az 8 karakter kalmıyorsa başlık da
+    kısaltılır. Portal mock'u `turetilenBaslik` (review-portal/src/api/mock/kalite.ts) ile aynı
+    kural."""
+
+    def ek(x: str) -> str:
+        return f" (ilişki: {x})"
+
+    if len(baslik) + len(ek(ad)) <= BASLIK_AZAMI:
+        return baslik + ek(ad)
+    bos = len(ek(""))
+    ad_payi = BASLIK_AZAMI - len(baslik) - bos
+    if ad_payi >= _EN_AZ_AD:
+        return baslik + ek(ad[: ad_payi - 1].rstrip() + "…")
+    kisa = baslik[: BASLIK_AZAMI - bos - _EN_AZ_AD - 1].rstrip() + "…"
+    return kisa + ek(ad[: BASLIK_AZAMI - len(kisa) - bos - 1].rstrip() + "…")
 
 
 def _degismez_parcalar(iliski: Mapping[str, Any]) -> list[str]:

@@ -507,6 +507,14 @@ export function turetilenBaslik(baslik: string, ad: string): string {
   return kisaBaslik + ek(`${ad.slice(0, AZAMI - kisaBaslik.length - ek("").length - 1).trimEnd()}…`);
 }
 
+/** Özette alıntı (core `dogrulama.alinti_metni`): “…” ile sarılır; zaten tırnakla başlıyor/bitiyorsa olduğu gibi kalır. */
+export function alintiMetni(metin: unknown): string {
+  const m = String(metin ?? "");
+  const TIRNAK = "\"'“”‘’«»„";
+  if (m && (TIRNAK.includes(m[0]) || TIRNAK.includes(m[m.length - 1]))) return m;
+  return `“${m}”`;
+}
+
 /** İfadede geçen adlar (`ifade.adlar` karşılığı). */
 export function ifadeAdlari(metin: string): Set<string> {
   const kume = new Set<string>();
@@ -636,7 +644,7 @@ export function oracleOzeti(sonuc: OracleSonucu | null, gruplar: Grup[]): string
   if (sonuc === "uyumsuz") {
     const bozuk = karsilastirmalar.filter((k) => !k.uyumlu);
     const ilk = bozuk[0];
-    return `${bozuk.length} beklenen değer tabloyla uyuşmuyor; ör. ${ilk.column}: case “${ilk.alinti}”, tablo ${degerMetni(ilk.tablo_degeri)}.${ek}`;
+    return `${bozuk.length} beklenen değer tabloyla uyuşmuyor; ör. ${ilk.column}: case ${alintiMetni(ilk.alinti)}, tablo ${degerMetni(ilk.tablo_degeri)}.${ek}`;
   }
   if (sonuc === "kismen") {
     const degerlendirilemeyen = gruplar.filter((g) => g.durum === "cikarilamadi" || g.durum === "hata").length;
@@ -953,8 +961,8 @@ export function kaliteRotalari(b: KaliteBagimliliklari): Rota[] {
     const kural = KALITE_GECISLERI[eylem];
     const k = b.rolGerekli(kural.rol);
     if (x.durum !== kural.once) throw new ApiError(409, `Bu durumda ${GECIS_ADI[eylem]} yapılamaz (durum: ${DURUM_ADI[x.durum]}).`, { kod: "eszamanli_gecis" });
-    // withdraw / reopen gövdesiz; submit'te hash isteğe bağlı; PO kararlarında zorunlu.
-    if (eylem === "submit") hashGerekli(govde, x.icerik_hash, false);
+    // withdraw gövdesiz; submit ve reopen ("Tablo yanlış" yolu) hash'i isteğe bağlı (core ile aynı); PO kararlarında zorunlu.
+    if (eylem === "submit" || eylem === "reopen") hashGerekli(govde, x.icerik_hash, false);
     if (eylem === "approve" || eylem === "request-changes") hashGerekli(govde, x.icerik_hash);
     if (eylem === "submit") {
       const h = eksik();

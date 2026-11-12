@@ -324,6 +324,14 @@ def test_replay_golden_tpd1(
     assert uyari(False, "750,01 TL") is False
     assert uyari(True, "100,00 TL") is False
     assert "PO sorusu" in load_golden("decision_table_draft", "TPD-1")["output"]["notes"]
+    # T2 PO sorusu (birleştirme turu 2): taslak notundaki soru AC3'ü tutan T2'nin açıklamasına
+    # eklenir; metin portal mock'unun `T2_PO_SORUSU`'yla birebir aynı. T1'de soru yok.
+    golden_t2 = load_golden("decision_table_draft", "TPD-1")["output"]["tables"][1]
+    assert minimum.icerik["aciklama"] == (
+        golden_t2["aciklama"] + " PO sorusu (AI taslak notu): tam 750,00 TL'lik kampanyasız "
+        "siparişte uyarı gösterilmeli mi? (sınır örneklerinde 750 satırını kontrol edin)"
+    )
+    assert "PO sorusu" not in kampanya.icerik["aciklama"]
 
     (iliski,) = _nesneler(rid, MetamorfikIliski)
     assert iliski.karar_tablosu_id == kampanya.id and iliski.icerik["tablo_ref"] == "T1"

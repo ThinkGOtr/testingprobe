@@ -1039,18 +1039,28 @@ def _eksik_ozeti(ayr: Mapping[str, Any]) -> str:
     if kapsanmayan:
         ilk = kapsanmayan[0]
         parcalar.append(
-            f"{len(kapsanmayan)} sayı hiçbir olguyla kapsanmadı (ör. “{ilk['alinti']}”, "
-            f"{tr_alan(ilk['alan'])})"
+            f"{len(kapsanmayan)} sayı hiçbir olguyla kapsanmadı "
+            f"(ör. {alinti_metni(ilk['alinti'])}, {tr_alan(ilk['alan'])})"
         )
     yok = ayr.get("yok_sayilan") or []
     if yok:
         parcalar.append(
-            f"{len(yok)} sayı model tarafından tabloyla ilgisiz sayıldı (ör. “{yok[0]['alinti']}”)"
+            f"{len(yok)} sayı model tarafından tabloyla ilgisiz sayıldı "
+            f"(ör. {alinti_metni(yok[0]['alinti'])})"
         )
     tablolar = ayr.get("degerlendirilmeyen_tablolar") or []
     if tablolar:
         parcalar.append(f"{', '.join(tablolar)} için değer çıkarılmadı")
     return "; ".join(parcalar)
+
+
+def alinti_metni(metin: Any) -> str:
+    """Özette alıntı: “…” ile sarılır; alıntı zaten tırnakla başlıyor ya da bitiyorsa olduğu gibi
+    kalır (“"750,00 TL"” gibi çift tırnak olmaz; portal mock `alintiMetni` ile aynı)."""
+    m = str(metin)
+    if m and (m[0] in _TIRNAK or m[-1] in _TIRNAK):
+        return m
+    return f"“{m}”"
 
 
 def deger_metni(deger: Any) -> str:
@@ -1088,7 +1098,7 @@ def ozet(sonuc: str | None, ayrintilar: Mapping[str, Any] | None) -> str:
         ilk = bozuk[0]
         return (
             f"{len(bozuk)} beklenen değer tabloyla uyuşmuyor; ör. {ilk['column']}: case "
-            f"“{ilk['alinti']}”, tablo {deger_metni(ilk['tablo_degeri'])}.{ek}"
+            f"{alinti_metni(ilk['alinti'])}, tablo {deger_metni(ilk['tablo_degeri'])}.{ek}"
         )
     if sonuc == KONTROL_EDILEMEDI:
         nedenler = [g.get("neden") for g in ayr.get("gruplar") or [] if g.get("neden")]

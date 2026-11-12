@@ -79,8 +79,9 @@ export const MIN_SIPARIS_DOGRU: KararTablosuIcerik = {
 };
 
 /**
- * AI taslağının PO'ya sorusu: golden `decision_table_draft/TPD-1` `output.notes`'taki soru. Çekirdek taslak notunu
- * tabloya yazmıyor; örnek veride PO'nun görmesi için T2 açıklamasının sonuna eklenir (varsayım, raporda).
+ * AI taslağının PO'ya sorusu: golden `decision_table_draft/TPD-1` `output.notes`'taki soru. Çekirdek taslak
+ * yazarken notlardaki "PO sorusu:" cümlelerini AC'si tutan tablonun açıklamasının sonuna aynı önekle ekler
+ * (`karar_tablosu.service.po_sorulari` / `_po_sorulu`); örnek veri aynı metni taşır.
  */
 export const T2_PO_SORUSU =
   "PO sorusu (AI taslak notu): tam 750,00 TL'lik kampanyasız siparişte uyarı gösterilmeli mi? (sınır örneklerinde 750 satırını kontrol edin)";

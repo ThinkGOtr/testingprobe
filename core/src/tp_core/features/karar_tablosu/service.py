@@ -30,6 +30,7 @@ from __future__ import annotations
 import re
 import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import Engine, func, select, text
@@ -55,6 +56,7 @@ from tp_core.models import (
     MetamorfikIliski,
     Requirement,
     Review,
+    TestCase,
     WorkflowInstance,
     session_scope,
 )
@@ -618,11 +620,45 @@ def geri_cek(session: Session, tur: str, nid: uuid.UUID, user: Principal) -> Any
     return n
 
 
-def yeniden_ac(session: Session, tur: str, nid: uuid.UUID, user: Principal) -> Any:
-    """Analist onaylıyı taslağa açar (`approved → draft`); tablo için kontrol yeniden koşar."""
+def yeniden_ac(
+    session: Session,
+    tur: str,
+    nid: uuid.UUID,
+    user: Principal,
+    icerik_hash: str | None = None,
+    gerekce: str | None = None,
+    case_id: uuid.UUID | None = None,
+) -> Any:
+    """Analist onaylıyı taslağa açar (`approved → draft`); tablo için kontrol yeniden koşar.
+
+    "Tablo yanlış" yolu (review 2 u2 N5): case incelemesinden açılan yeniden açma `case_id` ve
+    zorunlu gerekçe taşır; ikisi de denetime (`<tur>.reopened`) ve case'e bağlı
+    `oracle.tablo_yanlis` kaydına yazılır, PO kaydın geçmişinde (`gecmis`) ve `son_karar`'da
+    görür. Gövdesiz yeniden açma (analistin kendi kararı) eskisi gibi çalışır."""
+    gerekce = (gerekce or "").strip() or None
+    if case_id is not None and gerekce is None:
+        raise InvalidDecision("Tablo yanlış bildirimi için gerekçe yazılmalı")
     n = getir(session, tur, nid, lock=True)
+    if icerik_hash is not None:
+        _hash_denetle(n, icerik_hash)
+    if case_id is not None:
+        tc = session.get(TestCase, case_id)
+        if tc is None or tc.requirement_id != n.requirement_id:
+            raise InvalidDecision("case_id bu kaydın gereksinimine ait bir case değil")
     transition(session, n, "draft", user, "approved")
-    _denetim(session, user, n, "reopened", hash=n.icerik_hash)
+    ek: dict[str, Any] = {}
+    if gerekce is not None:
+        ek["gerekce"] = gerekce
+    if case_id is not None:
+        ek["case_id"] = str(case_id)
+        audit_on_commit(
+            session,
+            _aktor(user),
+            "oracle.tablo_yanlis",
+            f"test_case:{case_id}",
+            {"tur": _tur(n), "nesne_id": str(n.id), "sira_no": n.sira_no, "gerekce": gerekce},
+        )
+    _denetim(session, user, n, "reopened", hash=n.icerik_hash, **ek)
     if isinstance(n, KararTablosu):
         oracle_kontrolu_iste(session, n, "tablo_degisti")
     return n
@@ -787,6 +823,78 @@ def _son_kararlar(session: Session, tur: str, ids: Sequence[uuid.UUID]) -> dict[
     return out
 
 
+# Geçmiş satırı eylemi (portal `KaliteSonKarar.karar`; mock `gecmis` ile aynı adlar).
+_GECMIS_FIILLERI: dict[str, str] = {
+    "submitted": "submit",
+    "withdrawn": "withdraw",
+    "reopened": "reopen",
+    "approved": "approve",
+    "changes_requested": "request_changes",
+    "updated": "duzenle",
+}
+
+
+def _gecmis_satiri(aktor: str, fiil: str, zaman: Any, ozet: Any) -> dict[str, Any]:
+    o = ozet if isinstance(ozet, Mapping) else {}
+    satir: dict[str, Any] = {
+        "karar": _GECMIS_FIILLERI[fiil],
+        "gerekce": o.get("gerekce"),
+        "kullanici": aktor,
+        "zaman": _zaman(zaman),
+        "icerik_hash": o.get("hash"),
+    }
+    if o.get("case_id"):
+        satir["case_id"] = o["case_id"]
+    return satir
+
+
+def gecmisler(session: Session, nesneler: Sequence[Any]) -> dict[str, list[dict[str, Any]]]:
+    """Kayıt başına geçiş geçmişi (eskiden yeniye): `[{karar, gerekce, kullanici, zaman,
+    icerik_hash, case_id?}]`; kaynak `<tur>.<fiil>` denetim kayıtları (aynı işlemde bekleyenler
+    dahil; onların zamanı şimdiki an). Anahtar `<tur>:<id>`."""
+    anahtarlar = {_nesne_anahtari(n): _tur(n) for n in nesneler}
+    out: dict[str, list[dict[str, Any]]] = {a: [] for a in anahtarlar}
+    if not anahtarlar:
+        return out
+    eylemler = {f"{t}.{f}" for t in set(anahtarlar.values()) for f in _GECMIS_FIILLERI}
+    for row in session.execute(
+        select(
+            AuditEvent.aktor, AuditEvent.eylem, AuditEvent.nesne, AuditEvent.zaman, AuditEvent.ozet
+        )
+        .where(AuditEvent.nesne.in_(list(anahtarlar)), AuditEvent.eylem.in_(eylemler))
+        .order_by(AuditEvent.id)
+    ).all():
+        out[row.nesne].append(
+            _gecmis_satiri(row.aktor, row.eylem.rsplit(".", 1)[-1], row.zaman, row.ozet)
+        )
+    simdi = datetime.now(UTC)
+    for aktor, eylem, hedef, ozet in pending_audit(session):
+        if hedef in out and eylem in eylemler:
+            out[hedef].append(_gecmis_satiri(aktor, eylem.rsplit(".", 1)[-1], simdi, ozet))
+    return out
+
+
+def _son_karar(
+    son: Review | None, adlar: Mapping[Any, str], gecmis: Sequence[Mapping[str, Any]]
+) -> dict[str, Any] | None:
+    """PO'nun son kararı; ondan sonra gerekçeli yeniden açma ("Tablo yanlış") varsa o."""
+    for g in reversed(gecmis):
+        if g["karar"] in ("approve", "request_changes"):
+            break
+        if g["karar"] == "reopen" and g.get("gerekce"):
+            return {
+                k: g[k] for k in ("karar", "gerekce", "kullanici", "zaman", "case_id") if k in g
+            }
+    if son is None:
+        return None
+    return {
+        "karar": son.karar,
+        "gerekce": son.gerekce,
+        "kullanici": adlar.get(son.user_id),
+        "zaman": _zaman(son.zaman),
+    }
+
+
 def serialize(
     session: Session, nesneler: Sequence[Any], req: Requirement | None = None
 ) -> list[dict[str, Any]]:
@@ -810,6 +918,7 @@ def serialize(
         if kullanici_ids
         else {}
     )
+    gecmis_ = gecmisler(session, nesneler)
     out = []
     for n in nesneler:
         r = gereksinimler.get(n.requirement_id) or session.get(Requirement, n.requirement_id)
@@ -832,16 +941,8 @@ def serialize(
             "guncelleme": _zaman(n.guncelleme),
             "onaylayan": adlar.get(son.user_id) if onayli and son else None,
             "onay_zamani": _zaman(son.zaman) if onayli and son else None,
-            "son_karar": (
-                {
-                    "karar": son.karar,
-                    "gerekce": son.gerekce,
-                    "kullanici": adlar.get(son.user_id),
-                    "zaman": _zaman(son.zaman),
-                }
-                if son is not None
-                else None
-            ),
+            "son_karar": _son_karar(son, adlar, gecmis_[_nesne_anahtari(n)]),
+            "gecmis": gecmis_[_nesne_anahtari(n)],
         }
         if isinstance(n, MetamorfikIliski):
             oge["karar_tablosu_id"] = str(n.karar_tablosu_id) if n.karar_tablosu_id else None
@@ -1149,6 +1250,42 @@ def _ai_taslaklari_gecersiz_kil(
     return sayi, korunan
 
 
+PO_SORUSU_ONEKI = "PO sorusu (AI taslak notu): "
+_AC_ETIKETI = re.compile(r"(?=\bAC\s*\d+\s*:)")
+_AC_BASI = re.compile(r"(AC\s*\d+)\s*:")
+_PO_SORUSU = re.compile(r"PO sorusu\s*:", re.IGNORECASE)
+ACIKLAMA_AZAMI = 1000
+
+
+def po_sorulari(notes: str | None) -> list[tuple[str | None, str]]:
+    """Taslak notundaki PO soruları: `[(AC, soru)]` (T2 PO sorusu, review 2 u2 N2).
+
+    Not `ACn:` etiketleriyle parçalanır; bir parçadaki her "PO sorusu:" sonrası metin o AC'nin
+    sorusudur (etiketsiz parçada AC `None`)."""
+    out: list[tuple[str | None, str]] = []
+    for parca in _AC_ETIKETI.split(notes or ""):
+        m = _AC_BASI.match(parca.strip())
+        ac = _ac(m.group(1)) if m else None
+        for soru in _PO_SORUSU.split(parca)[1:]:
+            if soru.strip():
+                out.append((ac, soru.strip()))
+    return out
+
+
+def _po_sorulu(oge: Mapping[str, Any], sorular: Sequence[tuple[str | None, str]]) -> Any:
+    """Tablonun AC'lerine (etiketsiz soru: her tabloya) düşen PO sorularını `aciklama`'nın sonuna
+    ekler: PO soruyu tablo ekranında görür (portal mock `MIN_SIPARIS_TABLOSU` ile aynı metin).
+    Açıklama sınırı (1000) aşılmaz."""
+    acler = {_ac(a) for a in oge.get("ac_refs") or [] if isinstance(a, str)}
+    ekler = [PO_SORUSU_ONEKI + soru for ac, soru in sorular if ac is None or ac in acler]
+    if not ekler or not isinstance(oge, Mapping):
+        return oge
+    metin = " ".join([str(oge.get("aciklama") or "").strip(), *ekler]).strip()
+    if len(metin) > ACIKLAMA_AZAMI:
+        metin = metin[: ACIKLAMA_AZAMI - 1].rstrip() + "…"
+    return {**oge, "aciklama": metin}
+
+
 def taslaklari_yaz(
     session: Session,
     req: Requirement,
@@ -1170,9 +1307,10 @@ def taslaklari_yaz(
     atilan: list[dict[str, Any]] = []
     yeni_tablolar: dict[str, KararTablosu] = {}
     tablolar: list[KararTablosu] = []
+    sorular = po_sorulari(str(cikti.get("notes") or ""))
     for i, oge in enumerate(cikti.get("tables") or [], start=1):
         ref = f"T{i}"
-        icerik, hatalar = taslak_tablo_icerigi(oge)
+        icerik, hatalar = taslak_tablo_icerigi(_po_sorulu(oge, sorular))
         if hatalar:
             atilan.append({"tur": TABLO, "ref": ref, "ad": oge.get("ad"), "hatalar": hatalar})
             continue

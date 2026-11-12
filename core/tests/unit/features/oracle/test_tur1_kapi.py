@@ -328,7 +328,13 @@ def test_onaydan_sonra_onaylanan_tablo_onayli_uyumsuz_listesine_duser(
     with session_scope() as s:
         liste = ct.control_tower(s)["onayli_uyumsuz"]
     assert liste == [
-        {"case_id": c["id"], "requirement_id": str(rid), "baslik": c["icerik"]["title"]}
+        {
+            "case_id": c["id"],
+            "requirement_id": str(rid),
+            "baslik": c["icerik"]["title"],
+            "jira_key": c["jira_key"],
+            "sira_no": c["sira_no"],
+        }
     ]
 
 

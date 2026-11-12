@@ -9,7 +9,9 @@ durum, mesaj, uretim_no}` |
 | POST | `/requirements/{id}/decision-tables` | analyst | `{icerik?}` → 201 öğe (boş tablo) |
 | PUT  | `/decision-tables/{id}` | analyst | `{icerik, icerik_hash}` → öğe |
 | POST | `/decision-tables/{id}/submit` | analyst | `{icerik_hash?}` → öğe |
-| POST | `/decision-tables/{id}/withdraw` · `/reopen` | analyst | → öğe |
+| POST | `/decision-tables/{id}/withdraw` | analyst | → öğe |
+| POST | `/decision-tables/{id}/reopen` | analyst | `{icerik_hash?, gerekce?, case_id?}` → öğe
+("Tablo yanlış" yolu: `case_id` verilirse gerekçe zorunlu, 422 `gecersiz_karar`) |
 | POST | `/decision-tables/{id}/approve` | po | `{icerik_hash, gerekce?}` → öğe |
 | POST | `/decision-tables/{id}/request-changes` | po | `{icerik_hash, gerekce}` → öğe |
 | POST | `/decision-tables/{id}/evaluate` | herkes | `{girdiler, icerik?}` → `{satir_id,
@@ -23,10 +25,13 @@ hata}], uyarilar: [{tur, mesaj, satirlar?, girdiler?}]}` (`ifade.sinir_ornekleri
 
 Öğe: `{id, tur, requirement_id, sira_no, durum, icerik, icerik_hash, onaylanan_hash,
 ai_generated, uretim_modu, bayat, olusturma, guncelleme, onaylayan, onay_zamani, son_karar,
-son_duzenleyen}`; ilişkide ek olarak `karar_tablosu_id` ve `tablo_engeli` (onaylı ilişkinin bağlı
-tablosu onaylandığı sürümde değilse nedeni; o zaman `bayat: true`). `son_taslak.hata` ham iş hatası
-değil, sınıflandırılmış metindir (`hata_kodu` ile). `son_karar` = `{karar, gerekce, kullanici,
-zaman} | null` (PO'nun son kararı; "değişiklik iste" gerekçesi buradadır).
+son_duzenleyen, gecmis}`; ilişkide ek olarak `karar_tablosu_id` ve `tablo_engeli` (onaylı
+ilişkinin bağlı tablosu onaylandığı sürümde değilse nedeni; o zaman `bayat: true`).
+`son_taslak.hata` ham iş hatası değil, sınıflandırılmış metindir (`hata_kodu` ile).
+`son_karar` = `{karar, gerekce, kullanici, zaman, case_id?} | null` (PO'nun son kararı;
+"değişiklik iste" gerekçesi buradadır; ondan sonra gerekçeli yeniden açma varsa o).
+`gecmis` = `[{karar: submit|withdraw|reopen|approve|request_changes|duzenle, gerekce,
+kullanici, zaman, icerik_hash, case_id?}]` (eskiden yeniye, denetim kayıtlarından).
 
 Hatalar `{detail, kod}`; içerik doğrulaması 422 `karar_tablosu_gecersiz` / `iliski_gecersiz` ve
 ek olarak `hatalar: [metin]`. Görülen hash eskiyse 409 `onay_hash_uyusmuyor`; içerik taslakta
@@ -75,6 +80,15 @@ class IcerikGuncelle(BaseModel):
 
 class Gonder(BaseModel):
     icerik_hash: str | None = HASH
+
+
+class YenidenAc(BaseModel):
+    """Gövdesiz (analistin kendi kararı) ya da "Tablo yanlış" yolu: `{icerik_hash, gerekce,
+    case_id}` (case_id verilirse gerekçe zorunlu)."""
+
+    icerik_hash: str | None = HASH
+    gerekce: str | None = Field(default=None, max_length=2000)
+    case_id: uuid.UUID | None = None
 
 
 class PoKarari(BaseModel):
@@ -251,8 +265,14 @@ def _gecis_uclari(onek: str, tur: str, ad: str) -> None:
         return _oge(session, service.geri_cek(session, tur, nesne_id, user))
 
     @router.post(f"/{onek}/{{nesne_id}}/reopen", name=f"{ad}_reopen")
-    def reopen(nesne_id: uuid.UUID, session: DbSession, user: Analyst) -> dict[str, Any]:
-        return _oge(session, service.yeniden_ac(session, tur, nesne_id, user))
+    def reopen(
+        nesne_id: uuid.UUID, session: DbSession, user: Analyst, body: YenidenAc | None = None
+    ) -> dict[str, Any]:
+        b = body or YenidenAc()
+        n = service.yeniden_ac(
+            session, tur, nesne_id, user, b.icerik_hash, gerekce=b.gerekce, case_id=b.case_id
+        )
+        return _oge(session, n)
 
     @router.post(f"/{onek}/{{nesne_id}}/approve", name=f"{ad}_approve")
     def approve(

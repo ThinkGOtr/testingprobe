@@ -170,8 +170,25 @@ def test_uzun_baslik_kisaltilir() -> None:
     s = yy.turet(icerik, grup(), {**ILISKI, "ad": "A" * 120})
     assert s.icerik is not None
     assert len(s.icerik["title"]) == 120
-    assert s.icerik["title"].startswith("B" * 19 + "…") and s.icerik["title"].endswith("…)")
+    # İlişki adına 8 karakter kalmıyor: başlık da kısalır (mock `turetilenBaslik` ile aynı).
+    assert s.icerik["title"] == "B" * 100 + "… (ilişki: " + "A" * 7 + "…)"
     assert validate_case(s.icerik) == []
+
+
+def test_uzun_baslikta_once_iliski_adi_kisalir() -> None:
+    """Review 2 u2 N11 (birleştirme): case başlığı korunur, önce ilişki adı kısalır; portal mock
+    testiyle aynı örnekler (`kalite.test.ts` "türetilen başlık")."""
+    assert yy._baslik("Kısa", "İlişki") == "Kısa (ilişki: İlişki)"
+    c2 = yy._baslik(
+        "14 adet kampanyalı üründe 2 adet bedava verilir",
+        "Adet iki katına çıkınca bedava adet ve tutarlar iki katına çıkar",
+    )
+    assert len(c2) <= 120
+    assert c2.startswith("14 adet kampanyalı üründe 2 adet bedava verilir (ilişki: Adet iki katına")
+    assert c2.endswith("…)")
+    uzun = yy._baslik("x" * 115, "y" * 100)
+    assert len(uzun) <= 120
+    assert uzun == "x" * 100 + "… (ilişki: " + "y" * 7 + "…)"
 
 
 @pytest.mark.parametrize(
