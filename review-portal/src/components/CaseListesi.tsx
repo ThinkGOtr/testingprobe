@@ -73,8 +73,11 @@ export function CaseListesi({
   topluSonrasi,
   uretimler,
   varsayimDogrulandi,
+  gonderilmemisSoru = 0,
 }: {
   liste: TestCase[];
+  /** PO'ya gönderilmemiş açık soru sayısı (core listesi): toplu onay onayında uyarı (engel değil). */
+  gonderilmemisSoru?: number;
   /** İlk yükleme sürüyor (henüz veri yok). */
   yukleniyor: boolean;
   /** Liste hiç yüklenemedi. */
@@ -139,7 +142,7 @@ export function CaseListesi({
         )}
       </div>
 
-      {analist && liste.length > 0 && <TopluOnayCubugu gorunen={gorunen} secim={secim} tamamlandi={topluSonrasi} />}
+      {analist && liste.length > 0 && <TopluOnayCubugu gorunen={gorunen} secim={secim} tamamlandi={topluSonrasi} gonderilmemisSoru={gonderilmemisSoru} />}
 
       {yukleniyor ? (
         <Yukleniyor />
@@ -148,7 +151,7 @@ export function CaseListesi({
       ) : gorunen.length === 0 ? (
         <Kart>
           <BosDurum baslik={liste.length ? "Bu filtrede case yok." : "Henüz case üretilmedi."}>
-            {!liste.length && "PO teyidinden sonra gereksinim ekranından 'Case üret' ile başlatın."}
+            {!liste.length && "PO teyidinden sonra gereksinim ekranından 'Tasarım modelini üret (iki tur)' ile başlatın."}
           </BosDurum>
         </Kart>
       ) : (

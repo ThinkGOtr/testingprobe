@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { api } from "../api/client";
+import { ortamAdlariniGizle } from "../api/http";
 import { BosDurum, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { useKisiAdi } from "../auth";
 import { useVeri } from "../hooks";
@@ -85,7 +86,7 @@ export function Denetim() {
                         <td className="tek-satir" title={kisiAdi(o.aktor) !== o.aktor ? o.aktor : undefined}>{kisiAdi(o.aktor)}</td>
                         <td className="mono">{o.eylem}</td>
                         <td className="mono">{o.nesne}</td>
-                        <td>{o.ozet}</td>
+                        <td>{ortamAdlariniGizle(o.ozet)}</td>
                         <td className="mono kucuk" title={`prev ${o.prev_hash}\nhash ${o.hash}`}>
                           {kisaHash(o.hash)}
                         </td>

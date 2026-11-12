@@ -854,7 +854,9 @@ def render_feature(
         "# language: tr",
         "# Testing Probe — onaylı ve hazır case'lerden deterministik dönüşüm (model çağrısı yok).",
         f"# {len(cases)} case · {len(plan)} senaryo "
-        f"({sum(1 for s in plan if isinstance(s, _Taslak))} taslak)",
+        # "taslak" tek başına case durumu (draft) ile karışıyordu (UX4 Bulgu 9): Senaryo taslağı =
+        # örnek tablolu senaryo.
+        f"({sum(1 for s in plan if isinstance(s, _Taslak))} örnek tablolu senaryo)",
         f"Özellik: {tek_satir(anahtar)} — {tek_satir(baslik)}",
     ]
     for ref, metin in acceptance_criteria(kabul_kriterleri):

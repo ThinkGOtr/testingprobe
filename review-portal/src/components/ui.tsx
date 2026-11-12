@@ -40,14 +40,28 @@ export function ReplayRozeti({ mode, degerlendirme }: { mode: CiktiModu | null |
  * değerlendirilmiş paket için not yoktur.
  */
 export function DegerlendirmeNotu({ d }: { d: Degerlendirme | null | undefined }) {
-  if (!d || d.durum === "evaluated") return null;
-  const metin =
-    d.durum === "waived" ? "onaylı istisna (canlı değerlendirme yok)" : d.durum === "pending" ? "canlı değerlendirme bekliyor" : (d.etiket ?? "canlı değerlendirme bekliyor");
+  const n = degerlendirmeNotuMetni(d);
+  if (!n) return null;
   return (
-    <span className="rozet rozet-degerlendirme" title={d.etiket ?? "Prompt paketi canlı modelle değerlendirilmedi (rules/evaluations.yaml)."}>
-      {metin}
+    <span className="rozet rozet-degerlendirme" title={n.aciklama}>
+      {n.metin}
     </span>
   );
+}
+
+/**
+ * Değerlendirme notunun son kullanıcı metni. Core etiketi teknik olabilir (ör. "değerlendirme
+ * sonrası içerik değişti (içerik hash'i uyuşmuyor)", "prompt sürümü değişti"): bayat/eksik kayıt
+ * sade bir ifadeyle söylenir; hash, dosya yolu ya da sürüm ayrıntısı gösterilmez (UX4 Bulgu 6).
+ */
+export function degerlendirmeNotuMetni(d: Degerlendirme | null | undefined): { metin: string; aciklama: string } | null {
+  if (!d || d.durum === "evaluated") return null;
+  if (d.durum === "waived") return { metin: "onaylı istisna (canlı değerlendirme yok)", aciklama: "Bu özellik canlı değerlendirme yerine onaylı bir istisnayla kullanılıyor." };
+  if (d.durum === "pending") return { metin: "canlı değerlendirme bekliyor", aciklama: "Bu özelliğin yapay zekâ ayarları henüz canlı modelle değerlendirilmedi." };
+  return {
+    metin: "değerlendirme güncel değil",
+    aciklama: "Yapay zekâ ayarları son canlı değerlendirmeden sonra değişti ya da değerlendirme kaydı yok; yeniden değerlendirme bekleniyor.",
+  };
 }
 
 export function Cip({ ton = "notr", children, title }: { ton?: Ton; children: ReactNode; title?: string }) {

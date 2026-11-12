@@ -5112,6 +5112,16 @@ td > .satir-baglanti + .cip,
   color: var(--text-2);
   padding: 0 0.6rem;
 }
+/* UX4 Bulgu 9: dar ekranda şerit satır kırar; ayraç "·" yeni satırın başına düşüyordu. Dar ekranda ayraç
+   yerine boşluk (öğelerin durum noktası ve metni zaten ayrık). */
+@media (max-width: 860px) {
+  .durum-seridi ul {
+    gap: 0.25rem 1rem;
+  }
+  .durum-seridi li + li::before {
+    content: none;
+  }
+}
 .durum-seridi a {
   display: inline-flex;
   align-items: center;

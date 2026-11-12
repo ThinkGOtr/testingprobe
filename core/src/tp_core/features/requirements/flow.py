@@ -2561,6 +2561,8 @@ def _po_cevaplari(jira: Any, key: str, hesaplar: frozenset[str], sonra: datetime
             {
                 "id": c.id,
                 "yazar": c.author,
+                # Yalnız gösterim (portal): Jira görünen adı; yetki kimliği `yazar`dır.
+                "yazar_adi": c.author_name,
                 "metin": c.body[:4000],
                 "zaman": c.created.isoformat() if c.created else None,
             }

@@ -55,6 +55,7 @@ export function mockCaseKalitesi(requirementId: string | null): unknown {
     yetim_soru: tek ? { toplam: 1, yetim: 0, yetim_gereksinim: 0, oran: 0 } : { toplam: 9, yetim: 2, yetim_gereksinim: 1, oran: 0.2222 },
     readiness: tek ? { ready: 5, assumption_dependent: 1, blocked: 1, legacy: 0 } : { ready: 24, assumption_dependent: 6, blocked: 3, legacy: 5 },
     teknik: tek ? { BVA: 2, EP: 3, UC: 2 } : { BVA: 9, CL: 4, DT: 5, EP: 14, ST: 3, UC: 7 },
+    oncelik: tek ? { P1: 3, P2: 3, P3: 1, yok: 0 } : { P1: 14, P2: 13, P3: 6, yok: 0 },
     icerik_kontrolu: { n: 40, gec: 34, uyar: 4, engelle: 2, engel_orani: 0.05, uyari_orani: 0.1, yon: { cevap: 20, soru: 20 } },
     surumler: tek
       ? [{ surum: "case-generation@v3", uretim: 1, case: 7, review_ortalama: 91.7, review_n: 1, kabul: 1, duzeltme: 0, engel: 0, tekrar_orani: 0 }]

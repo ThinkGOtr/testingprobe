@@ -140,9 +140,9 @@ export const CASE_HAZIRLIK: Record<string, { etiket: string; ton: Ton; isaret: s
 };
 
 export const CASE_ONCELIGI: Record<string, { etiket: string; ton: Ton; aciklama: string }> = {
-  P1: { etiket: "P1", ton: "hata", aciklama: "Öncelik 1 (en yüksek)" },
-  P2: { etiket: "P2", ton: "uyari", aciklama: "Öncelik 2 (orta)" },
-  P3: { etiket: "P3", ton: "notr", aciklama: "Öncelik 3 (düşük)" },
+  P1: { etiket: "P1", ton: "hata", aciklama: "Öncelik 1, en yüksek" },
+  P2: { etiket: "P2", ton: "uyari", aciklama: "Öncelik 2, orta" },
+  P3: { etiket: "P3", ton: "notr", aciklama: "Öncelik 3, düşük" },
 };
 
 export const DOGRULAMA_NOKTASI: Record<string, string> = {

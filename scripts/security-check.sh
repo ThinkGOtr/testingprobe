@@ -200,14 +200,35 @@ check_audit_role() {
 #     konteynere aktarılır (Colima'da paylaşılmayan dizin sorunu da olmaz). Tarama kopyanın kökünden
 #     (`cd /tmp/scan && gitleaks dir .`) yapılır: .gitleaksignore okunur ve parmak izleri göreli yollu
 #     olur (`dosya:kural:satır`; git geçmişi parmak izlerinde commit öneki vardır).
+# Git worktree'de `.git` bir dosyadır (`gitdir: <ana repo>/.git/worktrees/<ad>`); yalnız worktree
+# dizini bağlanırsa konteyner bu yolu çözemez ve gitleaks "0 commits scanned" deyip geçer. Bu
+# yüzden worktree'de ortak git dizini (git rev-parse --git-common-dir) ve worktree, host'taki
+# mutlak yollarıyla salt okunur bağlanır; gitdir işaretçisi konteynerde de aynı yolu gösterir.
+# Ek güvence: taranan commit sayısı 0 ise (ya da okunamazsa) kontrol geçmez.
 check_secrets() {
-  local ok=1 out
-  if ! out="$(docker run --rm -v "$TP_REPO_ROOT:/repo:ro" \
+  local ok=1 out git_dir common_dir repo_arg n_commits
+  local -a mounts
+  git_dir="$(git -C "$TP_REPO_ROOT" rev-parse --absolute-git-dir 2>/dev/null || true)"
+  common_dir="$(cd "$TP_REPO_ROOT" && cd "$(git rev-parse --git-common-dir 2>/dev/null || echo .git)" 2>/dev/null && pwd -P || true)"
+  if [ -n "$git_dir" ] && [ -n "$common_dir" ] && [ "$(cd "$git_dir" && pwd -P)" != "$common_dir" ]; then
+    info "git worktree algılandı: ortak git dizini $common_dir de salt okunur bağlanıyor"
+    mounts=(-v "$TP_REPO_ROOT:$TP_REPO_ROOT:ro" -v "$common_dir:$common_dir:ro")
+    repo_arg="$TP_REPO_ROOT"
+  else
+    mounts=(-v "$TP_REPO_ROOT:/repo:ro")
+    repo_arg="/repo"
+  fi
+  if ! out="$(docker run --rm "${mounts[@]}" \
         -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' \
-        "$GITLEAKS_IMAGE" git /repo --no-banner --redact --no-color --verbose --exit-code 1 2>&1)"; then
+        "$GITLEAKS_IMAGE" git "$repo_arg" --no-banner --redact --no-color --verbose --exit-code 1 2>&1)"; then
     ok=0; info "git geçmişi:"; printf '%s\n' "$out" | tail -n 30 | while IFS= read -r l; do info "  $l"; done
   else
-    info "git geçmişi: $(printf '%s\n' "$out" | grep -E 'commits scanned' | sed 's/.*INF //' | head -n 1) sızıntı yok"
+    n_commits="$(printf '%s\n' "$out" | grep -Eo '[0-9]+ commits scanned' | head -n 1 | grep -Eo '^[0-9]+' || true)"
+    if [ -z "$n_commits" ] || [ "$n_commits" -eq 0 ]; then
+      ok=0; info "git geçmişi: hiç commit taranmadı (${n_commits:-sayı okunamadı}) — tarama geçersiz sayıldı"
+    else
+      info "git geçmişi: $(printf '%s\n' "$out" | grep -E 'commits scanned' | sed 's/.*INF //' | head -n 1) sızıntı yok"
+    fi
   fi
   if ! out="$(git ls-files -z -co --exclude-standard \
         | while IFS= read -r -d '' f; do [ -f "$f" ] && printf '%s\0' "$f"; done \

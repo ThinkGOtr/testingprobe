@@ -357,6 +357,13 @@ def person(user: Any) -> str:
     return str(user.get("emailAddress") or user.get("displayName") or user.get("accountId") or "")
 
 
+def display_name(user: Any) -> str | None:
+    """Yalnız gösterim için Jira görünen adı (displayName); yoksa None. Yetki için kullanılmaz."""
+    if not isinstance(user, dict):
+        return None
+    return str(user.get("displayName") or "").strip() or None
+
+
 def person_id(user: Any) -> str:
     """Yetki kararı için kişi kimliği: e-posta (görünürse), yoksa accountId.
 
@@ -548,6 +555,7 @@ class RestJira:
                     id=str(c["id"]),
                     author=person(c.get("author")),
                     author_ids=person_ids(c.get("author")),
+                    author_name=display_name(c.get("author")),
                     body=adf_to_text(c.get("body")),
                     created=parse_jira_datetime(c.get("created")),
                 )

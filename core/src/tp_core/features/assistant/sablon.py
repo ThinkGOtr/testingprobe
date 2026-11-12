@@ -15,10 +15,13 @@ temizlenmiş ve mesajın oturumuyla maskelenmiştir.
 from __future__ import annotations
 
 import json
+import re
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Final
+from zoneinfo import ZoneInfo
 
 from tp_core.features.assistant import siniflandir
 from tp_core.features.assistant.sonislem import DOGRULANDI, bos_cevap, rota_gecerli
@@ -41,6 +44,160 @@ TUR_ETIKETI: Final = {
     "case": "Case",
     "script": "Script",
 }
+
+
+# --- okunur kayıt ayrıntısı (UX4 Bulgu 6) -------------------------------------------------
+# Araç metni (`probe_get`) modele giden ham kayıttır ("durum: cases_ready", UUID, ISO zaman,
+# "{ref=AC1, metin=…}"). Hazır cevapta son kullanıcıya bu döküm değil okunur Türkçe satırlar
+# gösterilir; kanıt (hash'li araç çıktısı) aynen kalır.
+ALAN_ETIKETI: Final = {
+    "jira_key": "Jira anahtarı",
+    "kaynak": "Kaynak",
+    "baslik": "Başlık",
+    "durum": "Durum",
+    "ac_missing": "Kabul kriteri eksik",
+    "kabul_kriterleri": "Kabul kriterleri",
+    "po.durum": "PO onayı",
+    "po.kanal": "PO onay kanalı",
+    "po.zaman": "PO onay zamanı",
+    "sayaclar": "Sayaçlar",
+    "kontrol_turu": "Kontrol turu",
+    "kontrol_turu_ust_sinir": "Kontrol turu üst sınırı",
+    "insan_karari_gerekli": "İnsan kararı gerekli",
+    "denetim_guvenilmez": "Denetim güvenilmez",
+    "uyarilar": "Uyarılar",
+    "bulgu_sayaclari": "Bulgu sayaçları",
+    "po_istegi.durum": "PO isteği",
+    "on_inceleme.verdict": "Ön inceleme sonucu",
+    "on_inceleme.durum": "Ön inceleme durumu",
+    "po_cevaplari_ozeti": "PO cevapları",
+    "yayin_onizleme.islemler": "Yayın önizlemesi",
+    "yayin_onizleme.uyarilar": "Yayın önizlemesi uyarıları",
+    "sira_no": "Sıra no",
+    "uretim_no": "Üretim",
+    "kanal": "Kanal",
+    "surum": "Sürüm",
+    "icerik.title": "Başlık",
+    "icerik.type": "Tür",
+    "icerik.risk": "Risk",
+    "karar": "Karar",
+    "ret_nedeni": "Ret nedeni",
+    "jira_test_key": "Jira test anahtarı",
+    "mode": "Üretim modu",
+    "case_toplam": "case",
+    "case_onayli": "onaylı",
+    "case_taslak": "taslak",
+    "case_reddedilen": "reddedilen",
+    "case_yayinli": "yayınlı",
+    "ref": "",
+}
+DURUM_ETIKETI: Final = {
+    "new": "Yeni",
+    "in_review": "Ön inceleme sürüyor",
+    "findings_open": "Bulgular karar bekliyor",
+    "doc_final": "Doküman son hâl",
+    "pending_po": "PO onayı bekleniyor",
+    "po_approved": "PO onayladı",
+    "modeling": "Tasarım modeli üretiliyor",
+    "model_ready": "Tasarım modeli onayı bekliyor",
+    "generating": "Case üretiliyor",
+    "cases_ready": "Case'ler üretildi",
+    "failed": "Başarısız",
+    "done": "Tamamlandı",
+    "draft": "Taslak",
+    "approved": "Onaylı",
+    "rejected": "Reddedildi",
+    "published": "Yayınlandı",
+    "superseded": "Yerini yenisi aldı",
+    "pending": "Bekliyor",
+    "approve": "Onay",
+    "edit": "Düzeltilerek onay",
+    "reject": "Ret",
+    "replay": "REPLAY (kayıtlı çıktı)",
+    "live": "Canlı",
+    "jira": "Jira",
+    "portal": "Portal",
+}
+# Ayrıntıda tekrar edilmeyen (özette ya da bağlantıda olan) ve iç kimlik taşıyan alanlar.
+_ATLANAN_ALANLAR: Final = frozenset(
+    {"id", "bekleyen_kapi", "sorumlu_rol", "son_hata", "ekran_rotasi"}
+)
+_DURUM_KODU = re.compile(r"\b(durum: )([a-z_]+)\b")
+_YAYIN_ISLEMI = re.compile(r"\b(create|skip_existing|blocked_[a-z_]+)=(\d+)")
+
+
+def _yayin_islemi(m: re.Match[str]) -> str:
+    kod, n = m.group(1), m.group(2)
+    if kod == "create":
+        return f"{n} oluşturulacak"
+    if kod == "skip_existing":
+        return f"{n} zaten Jira'da"
+    return f"{n} yayınlanamaz"
+
+
+_UUID = re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", re.I)
+_ISO = re.compile(r"\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?")
+_SOZLUK = re.compile(r"\{([^{}]*)\}")
+_YEREL_SAAT = ZoneInfo("Europe/Istanbul")
+
+
+def _alan_adi(anahtar: str) -> str:
+    if anahtar in ALAN_ETIKETI:
+        return ALAN_ETIKETI[anahtar]
+    ad = anahtar.replace(".", " ").replace("_", " ").strip()
+    return ad[:1].upper() + ad[1:]
+
+
+def _zaman(m: re.Match[str]) -> str:
+    try:
+        z = datetime.fromisoformat(m.group(0).replace("Z", "+00:00"))
+    except ValueError:
+        return m.group(0)
+    if z.tzinfo is not None:
+        z = z.astimezone(_YEREL_SAAT)
+    return z.strftime("%d.%m.%Y %H:%M")
+
+
+def _sozluk(m: re.Match[str]) -> str:
+    """`{ref=AC1, metin=X}` → `AC1: X`; diğer sözlükler `ad: değer` (iç kimlikler atılır)."""
+    parcalar = [p.partition("=") for p in m.group(1).split(", ")]
+    ciftler = [(k.strip(), v.strip()) for k, _, v in parcalar if k.strip()]
+    ciftler = [(k, v) for k, v in ciftler if k != "id" and not k.endswith("_id")]
+    sozluk = dict(ciftler)
+    if "ref" in sozluk and len(sozluk) == 2:
+        diger = next(v for k, v in ciftler if k != "ref")
+        return f"{sozluk['ref']}: {diger}"
+    return ", ".join(
+        f"{_alan_adi(k)} {v}"
+        if k.startswith("case_")
+        else f"{_alan_adi(k)}: {DURUM_ETIKETI.get(v, v)}"
+        for k, v in ciftler
+    )
+
+
+def okunur_ayrinti(satirlar: Sequence[str]) -> list[str]:
+    """Ham araç satırları (`alan: değer`) → okunur Türkçe satırlar. İlk satır (tür + iç kimlik)
+    ve özette/bağlantıda zaten olan alanlar atılır; boş değer ("-") yazılmaz."""
+    out: list[str] = []
+    for satir in list(satirlar)[1:]:
+        anahtar, ayrac, deger = satir.partition(": ")
+        if not ayrac:
+            continue
+        anahtar, deger = anahtar.strip(), deger.strip()
+        if anahtar in _ATLANAN_ALANLAR or anahtar.endswith("_id") or deger in ("", "-"):
+            continue
+        if anahtar.endswith("durum") or anahtar in ("karar", "mode", "kaynak", "kanal"):
+            deger = DURUM_ETIKETI.get(deger, deger)
+        deger = _SOZLUK.sub(_sozluk, deger)
+        deger = _DURUM_KODU.sub(
+            lambda m: m.group(1) + DURUM_ETIKETI.get(m.group(2), m.group(2)), deger
+        )
+        deger = _YAYIN_ISLEMI.sub(_yayin_islemi, deger)
+        deger = _ISO.sub(_zaman, deger)
+        deger = _UUID.sub("", deger).replace(" ;", ";").strip(" ;,")
+        if deger:
+            out.append(f"{_alan_adi(anahtar)}: {deger}")
+    return out
 
 
 @dataclass(frozen=True)
@@ -165,7 +322,9 @@ def _durum_cevabi_kur(
     rota = _satir_degeri(metin, "ekran_rotasi")
     durum = _satir_degeri(metin, "durum")
     out = bos_cevap()
-    baslik = f"{anahtar} · {TUR_ETIKETI[tur]}" + (f" · {durum}" if durum else "")
+    baslik = f"{anahtar} · {TUR_ETIKETI[tur]}" + (
+        f" · {DURUM_ETIKETI.get(durum, durum)}" if durum else ""
+    )
     ozet = []
     if kapi:
         ozet.append(f"Bekleyen kapı: {kapi}.")
@@ -181,7 +340,7 @@ def _durum_cevabi_kur(
         {
             "tur": "liste",
             "metin": "Kayıt ayrıntısı:",
-            "maddeler": _temiz_satirlar(baglam, metin, musteri_verisi),
+            "maddeler": okunur_ayrinti(_temiz_satirlar(baglam, metin, musteri_verisi)),
         },
     ]
     havuz = KanitHavuzu()

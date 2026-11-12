@@ -563,8 +563,35 @@ def _ekran_rotasi(tur: str, nesne: Any) -> str:
     return f"/bug-taslaklari/{nesne.id}"
 
 
-def _kapi(tur: str, nesne: Any) -> Kapi | None:
+def _cases_ready_kapisi(s: Session, req: Requirement) -> Kapi | None:
+    """`cases_ready` gereksinimin gerçek bekleyen kapısı (UX4 Bulgu 6): durum kodu tek başına
+    yetmez. Taslak case varsa case incelemesi; yoksa onaylı case'in yayın engeli (ör. P9 denetimi)
+    ya da yayın; her case yayınlandıysa (ya da reddedildiyse) bekleyen kapı yok."""
+    from tp_core.features.publish.service import _engel
+
+    caseler = s.scalars(
+        select(TestCase).where(
+            TestCase.requirement_id == req.id,
+            TestCase.durum.notin_(("superseded", "rejected")),
+        )
+    ).all()
+    taslak = sum(1 for c in caseler if c.durum == "draft")
+    if taslak:
+        return Kapi(f"Case incelemesi ({taslak} case karar bekliyor)", "analyst")
+    onayli = [c for c in caseler if c.durum == "approved"]
+    if not onayli:
+        return None
+    for c in onayli:
+        engel = _engel(s, c)
+        if engel:
+            return Kapi(f"Yayın engeli: {_kirp(engel, 200)}", "analyst")
+    return Kapi(f"Onaylı {len(onayli)} case'in Jira'ya yayını", "analyst")
+
+
+def _kapi(tur: str, nesne: Any, s: Session | None = None) -> Kapi | None:
     if tur == "requirement":
+        if nesne.durum == "cases_ready" and s is not None:
+            return _cases_ready_kapisi(s, nesne)
         return REQUIREMENT_KAPILARI.get(nesne.durum)
     if tur == "case":
         return CASE_KAPILARI.get(nesne.durum)
@@ -628,7 +655,7 @@ def probe_detay(s: Session, rol: str, tur: str, nesne: Any) -> list[str]:
     ham = _detay_ham(s, tur, nesne)
     alanlar = alanlari_sec(ham, DETAY_ALANLARI[tur])
     satirlar = _satirlar(f"{tur} {nesne.id}", alanlar)
-    kapi = _kapi(tur, nesne)
+    kapi = _kapi(tur, nesne, s)
     satirlar.append(f"bekleyen_kapi: {kapi.ad if kapi else '-'}")
     satirlar.append(f"sorumlu_rol: {_rol_metni(kapi.rol) if kapi else '-'}")
     son_hata = _son_hata(s, tur, nesne, ham)

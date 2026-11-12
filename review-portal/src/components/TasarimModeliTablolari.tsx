@@ -59,7 +59,7 @@ export function TasarimModeliTablolari({ m }: { m: DesignModel }) {
                 {kosulAc.get(t.condition_id) && <span className="soluk kucuk"> ({kosulAc.get(t.condition_id)})</span>}
               </td>
               <td data-etiket="Teknik">
-                <TeknikRozeti teknik={t.technique} /> <span className="kucuk">{TEKNIK_ADI[t.technique] ?? ""}</span>
+                <TeknikRozeti teknik={t.technique} adGorunur={!!TEKNIK_ADI[t.technique]} /> <span className="kucuk">{TEKNIK_ADI[t.technique] ?? ""}</span>
               </td>
               <td data-etiket="Gerekçe">{t.rationale}</td>
             </tr>

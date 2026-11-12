@@ -284,7 +284,7 @@ describe("case kartı sadeliği (UX-12) ve derinleştirme rozeti (UX-5)", () => 
     await oturumAc("analist");
     const { container, unmount } = sar(<CaseKarti tc={await v3Case("case-v3-1")} guncellendi={() => {}} />);
     const baslik = container.querySelector("header.case-baslik")!;
-    expect([...baslik.querySelectorAll(".cip")].map((c) => c.textContent)).toEqual(["Karar bekliyor", "Hazır olma durumu: ✓ Hazır", "P1 (Öncelik 1 (en yüksek))"]);
+    expect([...baslik.querySelectorAll(".cip")].map((c) => c.textContent)).toEqual(["Karar bekliyor", "Hazır olma durumu: ✓ Hazır", "P1 (Öncelik 1, en yüksek)"]);
     const ozellik = within(screen.getByTestId("case-ozellikler"));
     expect(ozellik.getByText("Tür").nextElementSibling).toHaveTextContent("Sınır");
     expect(ozellik.queryByText("Risk")).not.toBeInTheDocument();

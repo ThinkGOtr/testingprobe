@@ -70,7 +70,7 @@ describe("CaseKarti v3: rozetler ve bloklar", () => {
     expect(teknikler).not.toHaveAttribute("aria-label");
     expect(within(teknikler).getByTitle("eşdeğerlik bölümleme")).toHaveTextContent("EP (eşdeğerlik bölümleme)");
     expect(within(teknikler).getByTitle("sınır değer analizi")).toHaveTextContent("BVA (sınır değer analizi)");
-    expect(screen.getByTestId("case-oncelik")).toHaveTextContent("P1 (Öncelik 1 (en yüksek))");
+    expect(screen.getByTestId("case-oncelik")).toHaveTextContent("P1 (Öncelik 1, en yüksek)");
     expect(screen.getByText("Ana akış ve üst sınır: not kaydedilmezse özellik kullanılamaz.")).toBeInTheDocument();
     const ozet = within(screen.getByTestId("case-v3"));
     expect(ozet.getByText("EP-V1")).toBeInTheDocument();

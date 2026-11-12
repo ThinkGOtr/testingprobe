@@ -242,6 +242,7 @@ def test_bos_db_sifir_ve_null(engine: Engine) -> None:
     assert k["tekrar"]["oran"] is None and k["tekrar"]["oneri"] == 0
     assert k["readiness"] == {"ready": 0, "assumption_dependent": 0, "blocked": 0, "legacy": 0}
     assert k["teknik"] == {}
+    assert k["oncelik"] == {"P1": 0, "P2": 0, "P3": 0, "yok": 0}
     ic = k["icerik_kontrolu"]
     assert (ic["n"], ic["gec"], ic["uyar"], ic["engelle"]) == (0, 0, 0, 0)
     assert ic["engel_orani"] is None and ic["uyari_orani"] is None
@@ -265,6 +266,10 @@ def test_proje_geneli(engine: Engine, kurulum: dict[str, uuid.UUID]) -> None:
     # Readiness / teknik: güncel case'ler (superseded hariç); eski case legacy.
     assert k["readiness"] == {"ready": 2, "assumption_dependent": 1, "blocked": 1, "legacy": 1}
     assert k["teknik"] == {"BVA": 1, "DT": 1, "EP": 2, "UC": 1}
+    # UX4 Bulgu 9: öncelik dağılımı güncel v3 case'lerden (eski case hariç).
+    assert sum(k["oncelik"].values()) == 4 and set(k["oncelik"]) == {"P1", "P2", "P3", "yok"}
+    # Geliştirici metni değil: hedef yoksa sade uyarı.
+    assert not any("repoda" in u or "Prompt Seti" in u for u in k["uyarilar"])
 
     # Review: gereksinim başına en güncel tamamlanmış (R1 11/12 = 91.7, R2 5/12 = 41.7).
     r = k["review"]

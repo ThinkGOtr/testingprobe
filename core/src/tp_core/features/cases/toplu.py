@@ -105,7 +105,16 @@ def bulk_approve(
     for sira, (cid, icerik_hash) in enumerate(kalemler):
         try:
             with _kalem_savepoint(session):
-                tc = service.decide(session, cid, user, karar="approve", icerik_hash=icerik_hash)
+                # `toplu_onay`: review süresi ölçüsünde toplu onay ayrı kategoridir (kart başına
+                # insan review süresi değil; betik/API onayı da değil).
+                tc = service.decide(
+                    session,
+                    cid,
+                    user,
+                    karar="approve",
+                    icerik_hash=icerik_hash,
+                    ek_olculer={"toplu_onay": True},
+                )
                 session.flush()
         except WorkflowError as exc:
             sonuclar.append(

@@ -57,3 +57,6 @@ rules/evaluation/results/assistant-v1-assistant_deep-2026-11-04.calls.jsonl:gene
 rules/evaluation/results/assistant-v1-assistant_deep-2026-11-04.calls.jsonl:generic-api-key:77
 rules/evaluation/results/assistant-v1-assistant_deep-2026-11-04.calls.jsonl:generic-api-key:81
 rules/evaluation/results/assistant-v1-assistant_deep-2026-11-04.calls.jsonl:generic-api-key:84
+# eval sonuç metni (assistant-v2 2026-11-12, dev dalı geçmişi): "bekleyen_kapi yok, bulgu_acik=0" düz metin, sır değil.
+f419f311d24075a2881729814fd58d4613a60654:rules/evaluation/results/assistant-v2-assistant-2026-11-12.json:generic-api-key:622
+f419f311d24075a2881729814fd58d4613a60654:rules/evaluation/results/assistant-v2-assistant-2026-11-12.calls.jsonl:generic-api-key:13

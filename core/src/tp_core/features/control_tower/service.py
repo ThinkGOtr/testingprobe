@@ -671,7 +671,7 @@ def ai_katkisi(session: Session) -> tuple[dict[str, Any], list[dict[str, Any]], 
     varsayilan_ms = cases.manual_baseline_ms()
     bazlar = baseline.baselines_for(session, req_ids)
     taban = _review_tabani_ms()
-    review_olculmedi = ai_olculmedi = 0
+    review_olculmedi = review_toplu = ai_olculmedi = 0
     for rid in req_ids:
         m = cases.requirement_metrics(session, rid)
         uretilen += int(m.get("uretilen") or 0)
@@ -687,7 +687,10 @@ def ai_katkisi(session: Session) -> tuple[dict[str, Any], list[dict[str, Any]], 
             rv: int | None = m.get("review_sure_ms")
             if rv is None or int(rv) < taban:
                 rv = None
-                review_olculmedi += 1
+                if m.get("toplu_onay_sayisi"):
+                    review_toplu += 1
+                else:
+                    review_olculmedi += 1
             else:
                 rv = int(rv)
             if ai is not None:
@@ -769,6 +772,11 @@ def ai_katkisi(session: Session) -> tuple[dict[str, Any], list[dict[str, Any]], 
         uyarilar.append(
             f"{review_olculmedi} story'de review süresi {taban // 1000} sn altında ya da yok "
             "(betik/API onayı): insan review süresi ölçülmedi, ortalamaya girmedi."
+        )
+    if review_toplu:
+        uyarilar.append(
+            f"{review_toplu} story'de case'ler toplu onaylandı ve review süresi {taban // 1000} sn "
+            "altında: toplu onay kart başına insan review süresi vermez, ortalamaya girmedi."
         )
     for ad, oran, n in (
         ("Case kabul oranı", _oran(kabul, uretilen), uretilen),

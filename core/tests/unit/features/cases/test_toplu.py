@@ -144,6 +144,10 @@ def test_toplu_onay_her_casee_ayri_review(api: TestClient, cs) -> None:
         assert rev.karar == "approve" and rev.onaylanan_hash == c["icerik_hash"]
         assert rev.duzeltme_olculeri["mesafe"] == 0.0
         assert _denetim(c["id"], "review.approve") == 1
+        # Review süresi ölçüsünde toplu onay ayrı kategori (betik/API onayı sanılmaz).
+        assert rev.duzeltme_olculeri["toplu_onay"] is True
+    rid = a["requirement_id"]
+    assert api.get(f"/requirements/{rid}/case-metrics").json()["toplu_onay_sayisi"] == 2
     # Hepsi başarısız olsa bile 200 + sonuçlar (onaylı case yeniden onaylanamaz: 409).
     r = api.post("/cases/bulk-decision", json={"karar": "approve", "kalemler": [_kalem(a)]})
     assert r.status_code == 200

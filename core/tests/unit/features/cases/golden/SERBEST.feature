@@ -1,6 +1,6 @@
 # language: tr
 # Testing Probe — onaylı ve hazır case'lerden deterministik dönüşüm (model çağrısı yok).
-# 6 case · 6 senaryo (0 taslak)
+# 6 case · 6 senaryo (0 örnek tablolu senaryo)
 Özellik: SERBEST — Sepetten ürün kaldırma
   # AC1: Satırdaki "Kaldır" butonuna basıldığında ürün sepetten çıkar ve sepet sayacı azalır.
   # AC2: Kaldırma sonrası kampanya indirimi her 6 adette 1 bedava kuralıyla yeniden hesaplanır.

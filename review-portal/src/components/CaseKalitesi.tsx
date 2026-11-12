@@ -36,6 +36,14 @@ const HAZIRLIK_SIRASI: { anahtar: keyof Veri["readiness"]; etiket: string }[] = 
   { anahtar: "legacy", etiket: "Eski biçim" },
 ];
 
+/** UX4 Bulgu 9: öncelik dağılımı satırları (P1 en yüksek). */
+const ONCELIK_SIRASI: { anahtar: "P1" | "P2" | "P3" | "yok"; etiket: string }[] = [
+  { anahtar: "P1", etiket: "P1 (en yüksek)" },
+  { anahtar: "P2", etiket: "P2" },
+  { anahtar: "P3", etiket: "P3" },
+  { anahtar: "yok", etiket: "Öncelik yok" },
+];
+
 /** B5: teknik adları tek kaynaktan (tasarım modeli sözlüğü; CL dahil). */
 const teknikAdi = (t: string): string | undefined => (TEKNIK_ADI as Record<string, string>)[t];
 
@@ -100,7 +108,9 @@ export function hedefGuncelDegeri(k: Veri, metrik: string | undefined): string |
   if (d === null || typeof d !== "number") return "ölçülmedi";
   // review.ortalama yüzde (0–100); diğer oranlar 0–1.
   if (metrik === "review.ortalama") return `%${d.toLocaleString("tr-TR", { maximumFractionDigits: 1 })}`;
-  return yuzde(d, 1);
+  // UX4 Bulgu 9: aynı metrik KPI kartında nasıl yuvarlanıyorsa hedef satırında da öyle (kart %92,
+  // hedef satırı %91,7 diyordu). Kapsam oranları kartta tam sayı, tekrar oranı bir ondalık.
+  return metrik.startsWith("kapsam.") ? yuzde(d) : yuzde(d, 1);
 }
 
 function Panel({ baslik, kaynak, children, testId }: { baslik: string; kaynak?: string; children: ReactNode; testId?: string }) {
@@ -283,6 +293,19 @@ export function CaseKalitesiIcerik({ k, baslikId }: { k: Veri; baslikId: string 
             <DagilimCubuklari etiket="Case hazır olma dağılımı" satirlar={HAZIRLIK_SIRASI.map((h) => ({ etiket: h.etiket, n: k.readiness[h.anahtar] }))} />
           )}
         </Panel>
+
+        {k.oncelik && (
+          <Panel baslik="Öncelik dağılımı" kaynak={ky.oncelik} testId="ck-oncelik">
+            {ONCELIK_SIRASI.reduce((a, o) => a + k.oncelik![o.anahtar], 0) === 0 ? (
+              <p className="soluk kucuk">Öncelik bilgisi olan case yok.</p>
+            ) : (
+              <DagilimCubuklari
+                etiket="Case öncelik dağılımı"
+                satirlar={ONCELIK_SIRASI.filter((o) => o.anahtar !== "yok" || k.oncelik!.yok > 0).map((o) => ({ etiket: o.etiket, n: k.oncelik![o.anahtar] }))}
+              />
+            )}
+          </Panel>
+        )}
 
         <Panel baslik="Teknik dağılımı" kaynak={ky.teknik} testId="ck-teknik">
           {teknikler.length === 0 ? (

@@ -271,3 +271,57 @@ def test_kirpma_sinirindaki_yarim_token_maskelenir() -> None:
     cikti = probe._kirp(metin)
     assert cikti.endswith("…") and "***" in cikti and token[:6] not in cikti
     assert probe._kirp("kısa " + token) == "kısa " + token  # kırpılmayan metin aynen (sarmalayıcı)
+
+
+def test_cases_ready_bekleyen_kapi_case_durumundan(engine: Engine) -> None:
+    """UX4 Bulgu 6: `cases_ready` her zaman "Case incelemesi ve yayın" değildir; taslak yoksa
+    yayın (ya da yayın engeli), hepsi yayınlandıysa bekleyen kapı yok."""
+    with session_scope() as s, allow_state_write():
+        req = Requirement(
+            kaynak="jira", jira_key="TPD-7", baslik="Kapı", kabul_kriterleri=["AC1: x"],
+            kaynak_hash="h7", durum="cases_ready",
+        )  # fmt: skip
+        s.add(req)
+        s.flush()
+        tc = TestCase(
+            id=uuid.uuid4(), requirement_id=req.id, sira_no=1,
+            icerik={"title": "t", "steps": []}, icerik_hash="c7",
+        )  # fmt: skip
+        s.add(tc)
+        s.flush()
+        rid, cid = req.id, tc.id
+    with Session(engine) as s:
+        kapi = probe._cases_ready_kapisi(s, s.get(Requirement, rid))
+    assert kapi is not None and kapi.ad == "Case incelemesi (1 case karar bekliyor)"
+    with allow_state_write(), session_scope() as s:
+        s.get(TestCase, cid).durum = "approved"
+    with Session(engine) as s:
+        kapi = probe._cases_ready_kapisi(s, s.get(Requirement, rid))
+    assert kapi is not None and kapi.ad.startswith(("Yayın engeli:", "Onaylı 1 case'in"))
+    with allow_state_write(), session_scope() as s:
+        s.get(TestCase, cid).durum = "published"
+    with Session(engine) as s:
+        assert probe._cases_ready_kapisi(s, s.get(Requirement, rid)) is None
+
+
+def test_okunur_ayrinti_ham_kayit_dokmez() -> None:
+    from tp_core.features.assistant.sablon import okunur_ayrinti
+
+    uid = "61c55dca-ea51-4d03-9090-83f99def8b05"
+    satirlar = okunur_ayrinti(
+        [
+            f"requirement {uid}",
+            f"id: {uid}",
+            "durum: cases_ready",
+            "kabul_kriterleri: {ref=AC1, metin=Sepete eklenir}; {ref=AC2, metin=Kampanya}",
+            "po.zaman: 2026-11-13T09:15:00+00:00",
+            "bekleyen_kapi: -",
+            "yayin_onizleme.islemler: create=15",
+        ]
+    )
+    assert satirlar == [
+        "Durum: Case'ler üretildi",
+        "Kabul kriterleri: AC1: Sepete eklenir; AC2: Kampanya",
+        "PO onay zamanı: 13.11.2026 12:15",
+        "Yayın önizlemesi: 15 oluşturulacak",
+    ]
