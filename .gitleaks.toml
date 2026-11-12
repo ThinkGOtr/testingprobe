@@ -13,3 +13,8 @@ id = "generic-api-key"
   description = "eval çağrı defteri: id_or_key alanı kayıt UUID'si / Jira anahtarıdır, sır değil"
   regexTarget = "match"
   regexes = ['''^id_or_key"\s*:\s*"(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[A-Z][A-Z0-9]+-[0-9]+)"$''']
+
+  [[rules.allowlists]]
+  description = "sayaç alanı (ör. 'bekleyen_kapi yok, bulgu_acik=0' — 'kapi' içindeki 'api' anahtar sözcük sanılır): değer 'ad=küçük sayı', sır olamaz"
+  regexTarget = "secret"
+  regexes = ['''^[a-z_]{3,30}=[0-9]{1,6}\.?$''']
