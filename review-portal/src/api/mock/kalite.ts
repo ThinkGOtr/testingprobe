@@ -69,7 +69,9 @@ interface Grup {
   satir_id: string | null;
   girdiler: Olgu[];
   karsilastirmalar: OracleKarsilastirma[];
-  durum: "uyumlu" | "uyumsuz" | "cikarilamadi" | "satir_yok";
+  /** Seçilen satırda eksik girdiye dayanan çıktıların beklenen olguları (sonuca girmez; çekirdek aynı adla). */
+  karsilastirilamayan: (Omit<Olgu, "index"> & { neden: string })[];
+  durum: "uyumlu" | "uyumsuz" | "cikarilamadi" | "satir_yok" | "hata" | "karsilastirma_yok";
   neden: string | null;
 }
 
@@ -171,6 +173,7 @@ export function kaliteVerisi(v: MockVeri): KaliteVerisi {
           tur: "metamorfik_iliski",
           id: `mi-${i + 1}`,
           karar_tablosu_id: tablo?.id ?? null,
+          ...(r.elle ? { ai_generated: false, uretim_modu: null } : {}),
           icerik: kopya(r.icerik),
           icerik_hash: h,
           onaylanan_hash: r.durum === "approved" ? h : null,
@@ -335,22 +338,109 @@ function tekDeger(olgular: Olgu[], kolon: string): IfadeDegeri | null | undefine
   return d.length === 0 ? undefined : d.length === 1 ? d[0] : null;
 }
 
+/**
+ * core `yeniden_yazim._baslik`: başlık + ` (ilişki: <ad>)`; 120 karakteri aşarsa önce başlık (en az 20
+ * karakter kalır), sonra ilişki adı `…` ile kısaltılır.
+ */
+export function turetilenBaslik(baslik: string, ad: string): string {
+  const AZAMI = 120;
+  let ek = ` (ilişki: ${ad})`;
+  if (baslik.length + ek.length <= AZAMI) return baslik + ek;
+  const pay = Math.max(20, AZAMI - ek.length);
+  if (baslik.length > pay) baslik = `${baslik.slice(0, pay - 1).trimEnd()}…`;
+  const kalan = AZAMI - baslik.length;
+  if (ek.length > kalan) ek = `${ek.slice(0, kalan - 2)}…)`;
+  return baslik + ek;
+}
+
+/** İfadede geçen adlar (`ifade.adlar` karşılığı). */
+export function ifadeAdlari(metin: string): Set<string> {
+  const kume = new Set<string>();
+  const gez = (d: Dugum): void => {
+    if (d.tur === "ad") kume.add(d.ad);
+    else if (d.tur === "tekli") gez(d.sag);
+    else if (d.tur === "ikili") {
+      gez(d.sol);
+      gez(d.sag);
+    } else if (d.tur === "cagri") d.arglar.forEach(gez);
+  };
+  gez(ayristir(metin));
+  return kume;
+}
+
+/**
+ * core `dogrulama.kismi_degerlendir` karşılığı: eksik girdi yalnız onu kullanan koşulu/çıktıyı etkiler.
+ * Satırlar sırayla denenir; koşulu eksik girdi kullanan ilk satırda durulur (`eksik_girdiler`). Seçilen
+ * satırın eksik girdiye dayanan çıktıları `hesaplanamayan`'a (çıktı → eksik girdiler) yazılır.
+ */
+export function kismiDegerlendir(
+  icerik: KararTablosuIcerik,
+  girdiler: Record<string, IfadeDegeri>,
+): { satir_id: string | null; ciktilar: Record<string, IfadeDegeri>; hesaplanamayan: Record<string, string[]>; eksik_girdiler: string[]; hata: string | null } {
+  const eksik = icerik.girdiler.map((g) => g.ad).filter((ad) => girdiler[ad] === undefined);
+  const sirali = (adlar: Set<string>) => eksik.filter((a) => adlar.has(a));
+  for (const s of icerik.satirlar) {
+    try {
+      const gerekli = sirali(ifadeAdlari(s.kosul));
+      if (gerekli.length) return { satir_id: null, ciktilar: {}, hesaplanamayan: {}, eksik_girdiler: gerekli, hata: null };
+      if (hesapla(ayristir(s.kosul), girdiler) !== true) continue;
+    } catch (e) {
+      if (!(e instanceof IfadeHatasi)) throw e;
+      return { satir_id: null, ciktilar: {}, hesaplanamayan: {}, eksik_girdiler: [], hata: `satır ${s.id} koşul: ${e.message}` };
+    }
+    const ciktilar: Record<string, IfadeDegeri> = {};
+    const hesaplanamayan: Record<string, string[]> = {};
+    for (const c of icerik.ciktilar) {
+      const metin = s.cikti[c.ad] ?? "";
+      try {
+        const gerekli = sirali(ifadeAdlari(metin));
+        if (gerekli.length) hesaplanamayan[c.ad] = gerekli;
+        else ciktilar[c.ad] = hesapla(ayristir(metin), girdiler);
+      } catch (e) {
+        if (!(e instanceof IfadeHatasi)) throw e;
+        return { satir_id: s.id, ciktilar: {}, hesaplanamayan: {}, eksik_girdiler: [], hata: `satır ${s.id} çıktı '${c.ad}': ${e.message}` };
+      }
+    }
+    return { satir_id: s.id, ciktilar, hesaplanamayan, eksik_girdiler: [], hata: null };
+  }
+  return { satir_id: null, ciktilar: {}, hesaplanamayan: {}, eksik_girdiler: [], hata: null };
+}
+
+const olguKaydi = ({ index: _i, ...o }: Olgu) => o;
+
+/** core `dogrulama._grup_degerlendir` karşılığı (neden metinleri çekirdekle aynı). */
 function grupHesapla(icerik: TestCaseIcerik, t: TabloKaydi): Grup {
   const girdiOlgulari = olgulariCikar(icerik, t.icerik.girdiler);
   const beklenen = olgulariCikar(icerik, t.icerik.ciktilar);
-  const g: Grup = { tablo_id: t.id, tablo_ad: t.icerik.ad, satir_id: null, girdiler: girdiOlgulari, karsilastirmalar: [], durum: "cikarilamadi", neden: null };
+  const g: Grup = {
+    tablo_id: t.id,
+    tablo_ad: t.icerik.ad,
+    satir_id: null,
+    girdiler: girdiOlgulari,
+    karsilastirmalar: [],
+    karsilastirilamayan: [],
+    durum: "cikarilamadi",
+    neden: null,
+  };
   const girdiler: Record<string, IfadeDegeri> = {};
   for (const k of t.icerik.girdiler) {
     const d = tekDeger(girdiOlgulari, k.ad);
-    if (d === undefined) return { ...g, neden: `Case metninden '${k.ad}' girdisi çıkarılamadı` };
-    if (d === null) return { ...g, neden: `Case metninde '${k.ad}' için çelişen değerler var` };
-    girdiler[k.ad] = d;
+    if (d === null) return { ...g, neden: `çelişkili girdi: ${k.ad}` };
+    if (d !== undefined) girdiler[k.ad] = d;
   }
-  if (beklenen.length === 0) return { ...g, neden: "Case metninden tabloyla karşılaştırılacak beklenen değer çıkarılamadı" };
-  const s = tabloDegerlendir(t.icerik, girdiler);
-  if (s.hata) return { ...g, neden: `Tablo değerlendirilemedi: ${s.hata}` };
-  if (!s.satir_id) return { ...g, durum: "satir_yok", neden: "Tabloda bu girdilerle eşleşen satır yok" };
-  const karsilastirmalar = beklenen.map((o) => {
+  const s = kismiDegerlendir(t.icerik, girdiler);
+  if (s.eksik_girdiler.length) return { ...g, neden: `case'te bulunamayan girdi: ${s.eksik_girdiler.join(", ")}` };
+  if (s.hata) return { ...g, satir_id: s.satir_id, durum: "hata", neden: s.hata };
+  if (!s.satir_id) return { ...g, durum: "satir_yok", neden: "bu girdilerle eşleşen tablo satırı yok" };
+  const karsilastirilamayan = beklenen
+    .filter((o) => o.column in s.hesaplanamayan)
+    .map((o) => ({ ...olguKaydi(o), neden: `case'te bulunamayan girdi: ${s.hesaplanamayan[o.column].join(", ")}` }));
+  const hesaplanan = beklenen.filter((o) => !(o.column in s.hesaplanamayan));
+  if (hesaplanan.length === 0) {
+    if (karsilastirilamayan.length) return { ...g, satir_id: s.satir_id, karsilastirilamayan, neden: karsilastirilamayan[0].neden };
+    return { ...g, satir_id: s.satir_id, durum: "karsilastirma_yok", neden: "case'te doğrulanan beklenen değer yok" };
+  }
+  const karsilastirmalar = hesaplanan.map((o) => {
     const c = t.icerik.ciktilar.find((x) => x.ad === o.column)!;
     const tolerans = c.tolerans ? Number(String(c.tolerans).replace(",", ".")) || 0 : 0;
     return {
@@ -365,29 +455,48 @@ function grupHesapla(icerik: TestCaseIcerik, t: TabloKaydi): Grup {
       satir_id: s.satir_id,
     };
   });
-  return { ...g, satir_id: s.satir_id, karsilastirmalar, durum: karsilastirmalar.every((k) => k.uyumlu) ? "uyumlu" : "uyumsuz" };
+  return {
+    ...g,
+    satir_id: s.satir_id,
+    karsilastirmalar,
+    karsilastirilamayan,
+    durum: karsilastirmalar.every((k) => k.uyumlu) ? "uyumlu" : "uyumsuz",
+  };
+}
+
+/** Python `repr(str)` (çekirdek özet metni alıntıyı `!r` ile yazar). */
+function pyRepr(x: string): string {
+  return x.includes("'") && !x.includes('"') ? `"${x}"` : `'${x.replaceAll("'", "\\'")}'`;
+}
+/** Python `str()` (çekirdek özet metninde tablo değeri): mantıksal `True`/`False`. */
+const pyStr = (x: unknown): string => (x === true ? "True" : x === false ? "False" : String(x));
+
+/** core `dogrulama.ozet` karşılığı: portal çipinin yanındaki tek cümle (metinler çekirdekle aynı). */
+export function oracleOzeti(sonuc: OracleSonucu | null, gruplar: Grup[]): string {
+  if (sonuc === "kapsam_disi") return "Bu case'i kapsayan onaylı karar tablosu yok.";
+  const karsilastirmalar = gruplar.flatMap((g) => g.karsilastirmalar);
+  const disarida = gruplar.flatMap((g) => g.karsilastirilamayan);
+  const ek = disarida.length ? ` ${disarida.length} değer karşılaştırılamadı (${disarida[0].neden}).` : "";
+  if (sonuc === "uyumlu") return `${karsilastirmalar.length} beklenen değer onaylı karar tablosuyla uyumlu.${ek}`;
+  if (sonuc === "uyumsuz") {
+    const bozuk = karsilastirmalar.filter((k) => !k.uyumlu);
+    const ilk = bozuk[0];
+    return `${bozuk.length} beklenen değer tabloyla uyuşmuyor; ör. ${ilk.column}: case ${pyRepr(ilk.alinti)}, tablo ${pyStr(ilk.tablo_degeri)}.${ek}`;
+  }
+  if (sonuc === "kontrol_edilemedi") {
+    const neden = gruplar.find((g) => g.neden)?.neden;
+    return neden ? `Kontrol edilemedi: ${neden}.` : "Kontrol edilemedi: case'ten tabloyla karşılaştırılabilir değer çıkarılamadı.";
+  }
+  return "Tablo kontrolü sürüyor.";
 }
 
 /** `oracle.check`: case içeriğini kapsayan onaylı tablolarla karşılaştırır (case içeriğini değiştirmez). */
 export function kontrolEt(icerik: TestCaseIcerik, tablolar: TabloKaydi[]): Pick<OracleKaydi, "sonuc" | "ozet" | "ayrintilar"> {
-  if (tablolar.length === 0) return { sonuc: "kapsam_disi", ozet: "Kapsayan onaylı karar tablosu yok.", ayrintilar: { gruplar: [], atilan_olgular: 0 } };
+  if (tablolar.length === 0) return { sonuc: "kapsam_disi", ozet: oracleOzeti("kapsam_disi", []), ayrintilar: { gruplar: [], atilan_olgular: 0 } };
   const gruplar = tablolar.map((t) => grupHesapla(icerik, t));
   const hepsi = gruplar.flatMap((g) => g.karsilastirmalar);
-  const farkli = hepsi.filter((k) => !k.uyumlu).length;
-  const adlar = gruplar.filter((g) => g.satir_id).map((g) => `${g.tablo_ad}, satır ${g.satir_id}`).join("; ");
-  let sonuc: OracleSonucu;
-  let ozet: string;
-  if (gruplar.some((g) => g.durum === "uyumsuz")) {
-    sonuc = "uyumsuz";
-    ozet = `${hepsi.length} beklenen değerden ${farkli} tanesi onaylı tablodan farklı (${adlar}).`;
-  } else if (gruplar.some((g) => g.durum === "uyumlu")) {
-    sonuc = "uyumlu";
-    ozet = `${hepsi.length} beklenen değer onaylı tabloyla aynı (${adlar}).`;
-  } else {
-    sonuc = "kontrol_edilemedi";
-    ozet = `${gruplar[0].neden ?? "Değer çıkarılamadı"}.`;
-  }
-  return { sonuc, ozet, ayrintilar: { gruplar, atilan_olgular: 0 } };
+  const sonuc: OracleSonucu = hepsi.some((k) => !k.uyumlu) ? "uyumsuz" : hepsi.length ? "uyumlu" : "kontrol_edilemedi";
+  return { sonuc, ozet: oracleOzeti(sonuc, gruplar), ayrintilar: { gruplar, atilan_olgular: 0 } };
 }
 
 // ------------------------------------------------------------------ uçlar
@@ -476,14 +585,24 @@ export function kaliteRotalari(b: KaliteBagimliliklari): Rota[] {
     bekleyen.delete(`${c.id}|${h}`);
     return kayit;
   };
-  /** Güncel içeriğin kaydı; iş sürüyorsa null, hiç iş yoksa (worker bitirmiş sayılır) okuma anında yazılır. */
+  /** Gereksinimin kontrolde kullanılabilecek tabloları (onaylı, bayat değil). Yoksa kontrol işi açılmaz. */
+  const gecerliTabloVar = (rid: string) => K().tablolar.some((t) => t.requirement_id === rid && t.durum === "approved" && !bayat(t));
+  /**
+   * Güncel içeriğin kaydı; iş sürüyorsa null, hiç iş yoksa (worker bitirmiş sayılır) okuma anında yazılır.
+   * Çekirdek gibi: gereksinimde geçerli tablo yoksa kayıt yazılmaz (`oracle: null`).
+   */
   const hazirKayit = (c: TestCase): OracleKaydi | null =>
-    kayitBul(c, c.icerik, c.icerik_hash) ?? (bekleyen.has(`${c.id}|${c.icerik_hash}`) ? null : kayitYaz(c, c.icerik, c.icerik_hash));
+    kayitBul(c, c.icerik, c.icerik_hash) ??
+    (bekleyen.has(`${c.id}|${c.icerik_hash}`) || !gecerliTabloVar(c.requirement_id) ? null : kayitYaz(c, c.icerik, c.icerik_hash));
   const oracleCikti = (r: OracleKaydi | null): CaseOracle | null =>
     r && {
       sonuc: r.sonuc,
       ozet: r.ozet,
       karsilastirmalar: kopya(r.ayrintilar.gruplar.flatMap((g) => g.karsilastirmalar)),
+      // core `karsilastirilamayanlar`: olgu alanları (`field`/`quote`/`value`) görünümde `alan`/`alinti`/`case_degeri`.
+      karsilastirilamayan: r.ayrintilar.gruplar.flatMap((g) =>
+        g.karsilastirilamayan.map((o) => ({ tablo_id: g.tablo_id, tablo_ad: g.tablo_ad, column: o.column, alan: o.field, alinti: o.quote, case_degeri: degerYaz(o.value), neden: o.neden })),
+      ),
       istisna: r.istisna && { ...r.istisna },
       icerik_hash: r.icerik_hash,
       kontrol_suruyor: false,
@@ -491,16 +610,27 @@ export function kaliteRotalari(b: KaliteBagimliliklari): Rota[] {
   /** İş kuyruktayken: sonuçsuz kayıt (`kontrol_suruyor: true`). */
   const suruyor = (h: string): CaseOracle => ({
     sonuc: null,
-    ozet: "Beklenen sonuç kontrolü sürüyor.",
+    ozet: oracleOzeti(null, []),
     karsilastirmalar: [],
+    karsilastirilamayan: [],
     istisna: null,
     icerik_hash: h,
     kontrol_suruyor: true,
   });
+  /** core `oracle_gorunumu`: kayıt yoksa iş sürüyorsa "sürüyor", gereksinimde geçerli tablo yoksa null. */
   const guncelOracle = (c: TestCase): CaseOracle | null => {
     const r = hazirKayit(c);
-    return r ? oracleCikti(r) : suruyor(c.icerik_hash);
+    if (r) return oracleCikti(r);
+    return bekleyen.has(`${c.id}|${c.icerik_hash}`) ? suruyor(c.icerik_hash) : null;
   };
+  /** `GET /cases/{id}/oracle` gövdesi (core `case_oracle`): `{case_id, icerik_hash, guncel_icerik, kapsayan_tablolar, oracle}`. */
+  const oracleYaniti = (c: TestCase, h: string, oracle: CaseOracle | null, icerik: TestCaseIcerik | null) => ({
+    case_id: c.id,
+    icerik_hash: h,
+    guncel_icerik: h === c.icerik_hash,
+    kapsayan_tablolar: (icerik ? kapsayanlar(c.requirement_id, icerik) : []).map((t) => ({ id: t.id, ref: `T${t.sira_no}`, ad: t.icerik.ad, icerik_hash: t.icerik_hash })),
+    oracle,
+  });
   const oracleli = (c: TestCase): TestCase => ({ ...c, oracle: guncelOracle(c) });
   const kontrolOlayi = (c: TestCase, r: OracleKaydi) =>
     mockOlayYayinla({ type: "oracle.checked", id: c.id, data: { case_id: c.id, requirement_id: c.requirement_id, icerik_hash: r.icerik_hash, sonuc: r.sonuc } });
@@ -758,7 +888,7 @@ export function kaliteRotalari(b: KaliteBagimliliklari): Rota[] {
       const metin = oku(o.field);
       yaz(o.field, metin.slice(0, o.index) + sayiBicimle(yeniDegerler[o.column] as number, o.quote) + metin.slice(o.index + o.quote.length));
     }
-    icerik.title = `${icerik.title} (ilişki: ${r.icerik.ad})`.slice(0, 120);
+    icerik.title = turetilenBaslik(icerik.title, r.icerik.ad);
     icerik.tags = [...new Set([...icerik.tags, "metamorfik"])];
     const kardesler = b.veri().caseler.filter((x) => x.requirement_id === c.requirement_id);
     const yeni: TestCase = {
@@ -1106,9 +1236,10 @@ export function kaliteRotalari(b: KaliteBagimliliklari): Rota[] {
         const c = b.veri().caseler.find((x) => x.id === kimlik(m));
         if (!c) throw new ApiError(404, `Case bulunamadı: ${kimlik(m)}`);
         const h = q.get("icerik_hash");
-        if (!h || h === c.icerik_hash) return guncelOracle(c);
-        if (bekleyen.has(`${c.id}|${h}`)) return suruyor(h);
-        return oracleCikti([...K().kontroller].reverse().find((r) => r.test_case_id === c.id && r.icerik_hash === h) ?? null);
+        if (!h || h === c.icerik_hash) return oracleYaniti(c, c.icerik_hash, guncelOracle(c), c.icerik);
+        // Önerilen içerik saklanmaz: kayıt yoksa kontrol beklenir (çekirdek: `kapsayan_var = True`).
+        const kayit = [...K().kontroller].reverse().find((r) => r.test_case_id === c.id && r.icerik_hash === h) ?? null;
+        return oracleYaniti(c, h, kayit ? oracleCikti(kayit) : suruyor(h), null);
       },
     ],
     [

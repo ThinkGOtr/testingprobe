@@ -5,7 +5,7 @@ import { Link } from "react-router-dom";
 import { api } from "../../api/client";
 import { useOlay } from "../../api/events";
 import { ApiError } from "../../api/http";
-import type { CaseMetrikleri, CaseOracle, KararTablosu, OracleKarsilastirma, TestCase, TestCaseIcerik } from "../../api/types";
+import type { CaseMetrikleri, CaseOracle, KararTablosu, OracleKarsilastirilamayan, OracleKarsilastirma, TestCase, TestCaseIcerik } from "../../api/types";
 import { beklentiDogruluguUyarla } from "../../api/uyumKalite";
 import { useKisiAdi } from "../../auth";
 import { useGeciktirilmis, useVeri } from "../../hooks";
@@ -152,7 +152,17 @@ export function degerMetni(d: string | number | boolean | null | undefined): str
   return /^-?\d+\.\d+$/.test(d) ? d.replace(".", ",") : d;
 }
 
-export function KarsilastirmaTablosu({ satirlar, baslik }: { satirlar: OracleKarsilastirma[]; baslik: string }) {
+export function KarsilastirmaTablosu({
+  satirlar,
+  baslik,
+  karsilastirilamayan = [],
+}: {
+  satirlar: OracleKarsilastirma[];
+  baslik: string;
+  /** Eksik girdi yüzünden karşılaştırılamayan değerler: ayrı, soluk grup; sonuca girmez. */
+  karsilastirilamayan?: OracleKarsilastirilamayan[];
+}) {
+  const nedenler = [...new Set(karsilastirilamayan.map((k) => k.neden))];
   return (
     <div className="tablo-sarici" tabIndex={0} role="region" aria-label={baslik}>
       <table className="tablo tablo-sik tablo-yigin">
@@ -186,6 +196,32 @@ export function KarsilastirmaTablosu({ satirlar, baslik }: { satirlar: OracleKar
             </tr>
           ))}
         </tbody>
+        {nedenler.map((neden) => (
+          <tbody key={neden} className="oracle-karsilastirilamadi" data-testid="oracle-karsilastirilamadi">
+            <tr>
+              <th scope="rowgroup" colSpan={5} className="kucuk">
+                Karşılaştırılamadı: {neden}
+              </th>
+            </tr>
+            {karsilastirilamayan
+              .filter((k) => k.neden === neden)
+              .map((k, i) => (
+                <tr key={`${k.alan}-${k.column}-${i}`}>
+                  <td data-etiket="Alan">
+                    <span className="mono">{k.column}</span> <span className="kucuk">· {alanEtiketi(k.alan)}</span>
+                  </td>
+                  <td data-etiket="Alıntı">“{k.alinti}”</td>
+                  <td className="mono" data-etiket="Case değeri">
+                    {degerMetni(k.case_degeri)}
+                  </td>
+                  <td className="mono" data-etiket="Tablo değeri">
+                    —
+                  </td>
+                  <td data-etiket="Sonuç">Sonuca girmez</td>
+                </tr>
+              ))}
+          </tbody>
+        ))}
       </table>
     </div>
   );
@@ -212,7 +248,8 @@ export function OracleAyrinti({ tc }: { tc: TestCase }) {
   if (!gorunum) return null;
   const o = tc.oracle;
   const satirlar = o?.karsilastirmalar ?? [];
-  const tabloId = satirlar[0]?.tablo_id;
+  const disarida = o?.karsilastirilamayan ?? [];
+  const tabloId = satirlar[0]?.tablo_id ?? disarida[0]?.tablo_id;
   const baglanti = <Link to={kararTablolariYolu(tc.requirement_id, tabloId)}>Karar tablolarını aç</Link>;
   if (gorunum === "tablo_yok" || gorunum === "suruyor") {
     return (
@@ -224,10 +261,13 @@ export function OracleAyrinti({ tc }: { tc: TestCase }) {
   return (
     <details className="oracle-ayrinti" data-testid="oracle-ayrinti" open={gorunum === "uyumsuz" || undefined}>
       <summary className="kucuk">
-        Tablo karşılaştırması{satirlar.length > 0 && ` (${satirlar.length} değer, ${satirlar.filter((k) => !k.uyumlu).length} farklı)`}
+        Tablo karşılaştırması{satirlar.length > 0 && ` (${satirlar.length} değer, ${satirlar.filter((k) => !k.uyumlu).length} farklı`}
+        {satirlar.length > 0 && (disarida.length > 0 ? `, ${disarida.length} karşılaştırılamadı)` : ")")}
       </summary>
       {o?.ozet && <p className="kucuk">{o.ozet}</p>}
-      {satirlar.length > 0 && <KarsilastirmaTablosu satirlar={satirlar} baslik={`Tablo karşılaştırması: ${tc.icerik.title}`} />}
+      {(satirlar.length > 0 || disarida.length > 0) && (
+        <KarsilastirmaTablosu satirlar={satirlar} karsilastirilamayan={disarida} baslik={`Tablo karşılaştırması: ${tc.icerik.title}`} />
+      )}
       {o && <IstisnaNotu oracle={o} />}
       <p className="kucuk">{baglanti}</p>
     </details>
@@ -487,7 +527,9 @@ export function DuzeltmeOnKontrolPaneli({ kontrol, calisiyor }: { kontrol: Duzel
       <Uyari ton="hata" baslik="Önerilen içerik tabloyla uyuşmuyor ✗">
         {ENGEL_UYUMSUZ} Değeri tabloya getirip yeniden gönderin ya da gerekçeli istisna açın.
       </Uyari>
-      {d.oracle.karsilastirmalar.length > 0 && <KarsilastirmaTablosu satirlar={d.oracle.karsilastirmalar} baslik="Önerilen içeriğin tablo karşılaştırması" />}
+      {d.oracle.karsilastirmalar.length > 0 && (
+        <KarsilastirmaTablosu satirlar={d.oracle.karsilastirmalar} karsilastirilamayan={d.oracle.karsilastirilamayan} baslik="Önerilen içeriğin tablo karşılaştırması" />
+      )}
       <IstisnaFormu calisiyor={calisiyor} gonder={kontrol.istisnaylaGonder} vazgec={kontrol.sifirla} dugmeMetni="İstisnayla düzeltip onayla" />
     </div>
   );

@@ -759,10 +759,14 @@ export function HataDetay() {
             <div data-testid="case-duzeltilmeli">
               <Uyari ton="uyari" baslik="Case düzeltilmeli">
                 Case'in beklenen değeri onaylı karar tablosuyla uyuşmuyor; uygulama tabloya uygun. Bug taslağı ve locator onarımı açılmaz.{" "}
+                {/* Çekirdek `GET /failures/{id}` case/gereksinim kimliği vermez (yalnız `script_id`, `run_id`,
+                    `test_adi`); gelirse doğrudan case listesine, yoksa script'e, o da yoksa koşuya bağlanır. */}
                 {h.requirement_id ? (
                   <Link to={`/gereksinimler/${encodeURIComponent(h.requirement_id)}/caseler`}>Case'i aç{h.case_id ? ` (${h.case_id})` : ""}</Link>
                 ) : h.script_id ? (
                   <Link to={`/kod/${encodeURIComponent(h.script_id)}`}>Script ve bağlı case'i aç</Link>
+                ) : h.run_id ? (
+                  <Link to={`/kosular/${encodeURIComponent(h.run_id)}`}>Koşuyu aç ({h.test_adi})</Link>
                 ) : null}
               </Uyari>
             </div>

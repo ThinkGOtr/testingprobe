@@ -118,3 +118,52 @@ describe("ekilmiş hata koşusu uyarlayıcıları", () => {
     expect(ekilmisHataEtiketi(diger)).toBeNull();
   });
 });
+
+describe("012 hizalama: gerçek core şekilleri", () => {
+  it("kaynak metni değerin içinde gelirse (case-metrics biçimi) `kaynaklar`'da yoksa okunur; `kaynaklar` önceliklidir", () => {
+    const k = kontrolKulesiUyarla({
+      beklenti_dogrulugu: { oran: 1, uyumlu: 1, uyumsuz: 0, kapsam_disi: 0, kontrol_edilemedi: 0, istisna: 0, kapsam_orani: 1, kaynak: "değerdeki kaynak" },
+      hata_yakalama: null,
+      kaynaklar: { hata_yakalama: "hata_kosusu + hata_kosusu_adim: henüz yok (ölçülmedi)" },
+    });
+    expect(k.kaynaklar.beklenti_dogrulugu).toBe("değerdeki kaynak");
+    expect(k.kaynaklar.hata_yakalama).toMatch(/henüz yok/);
+    // Değer nesnesine `kaynak` sızmaz.
+    expect(k.beklenti_dogrulugu).not.toHaveProperty("kaynak");
+    const iki = kontrolKulesiUyarla({ beklenti_dogrulugu: { oran: null, kaynak: "iç" }, kaynaklar: { beklenti_dogrulugu: "dış" } });
+    expect(iki.kaynaklar.beklenti_dogrulugu).toBe("dış");
+  });
+
+  it("koşu detayı: adımın `hata_adi`; özet `bekleyen`, platform `temel`/`kapanis`/`bekleyen` (core ozet_hesapla)", () => {
+    const d = hataKosusuDetayUyarla({
+      id: "k1",
+      durum: "cancelled",
+      platformlar: ["web"],
+      hatalar: ["fiyat_p004_31"],
+      ozet: {
+        oran: null,
+        yakalanan: 0,
+        kacan: 0,
+        gecersiz: 0,
+        bekleyen: 1,
+        platformlar: [{ platform: "web", oran: null, yakalanan: 0, kacan: 0, gecersiz: 0, bekleyen: 1, temel: "yesil", kapanis: "bekliyor" }],
+        kacanlar: [],
+      },
+      adimlar: [
+        { id: "a1", platform: "web", hata_kodu: null, hata_adi: null, asama: "temel", sonuc: "yesil", sira: 1 },
+        { id: "a2", platform: "web", hata_kodu: "fiyat_p004_31", hata_adi: "P-004 fiyatı 31", asama: "hata", sonuc: "bekliyor", sira: 2 },
+      ],
+    });
+    expect(d.adimlar.map((a) => a.hata_adi)).toEqual([null, "P-004 fiyatı 31"]);
+    expect(d.ozet).toMatchObject({ bekleyen: 1, platformlar: [{ platform: "web", bekleyen: 1, temel: "yesil", kapanis: "bekliyor" }] });
+    // Kule ölçüsünün platform satırı ek alan taşımaz (alan uydurulmaz).
+    const k = kontrolKulesiUyarla({
+      hata_yakalama: { son_kosu: { id: "k1", durum: "done" }, oran: 1, yakalanan: 1, kacan: 0, gecersiz: 0, platformlar: [{ platform: "web", oran: 1, yakalanan: 1, kacan: 0, gecersiz: 0 }], kacanlar: [] },
+    });
+    expect(k.hata_yakalama!.platformlar[0]).toEqual({ platform: "web", oran: 1, yakalanan: 1, kacan: 0, gecersiz: 0 });
+  });
+
+  it("POST /fault-runs 202 gövdesi `{id, durum}` → kimlik", () => {
+    expect(hataKosusuKimligi({ id: "6f1c", durum: "queued" })).toBe("6f1c");
+  });
+});

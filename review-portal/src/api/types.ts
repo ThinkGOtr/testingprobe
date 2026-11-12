@@ -1399,6 +1399,8 @@ export interface HataKosusuAdimi {
   neden: string | null;
   sure_ms: number | null;
   sira: number;
+  /** Katalogdaki görünen ad (core `hata_adi`); temel/kapanışta ya da core vermezse null. */
+  hata_adi?: string | null;
 }
 
 export interface HataYakalamaPlatformu {
@@ -1408,6 +1410,10 @@ export interface HataYakalamaPlatformu {
   yakalanan: number;
   kacan: number;
   gecersiz: number;
+  /** Koşu özetinde (core `ozet_hesapla`): koşmamış hata adımları ve temel/kapanış sonucu. Kule ölçüsünde yok. */
+  bekleyen?: number;
+  temel?: HataAdimSonucu | null;
+  kapanis?: HataAdimSonucu | null;
 }
 
 export interface KacanHata {
@@ -1422,6 +1428,8 @@ export interface HataKosusuOzeti {
   yakalanan: number;
   kacan: number;
   gecersiz: number;
+  /** Koşmamış (`bekliyor`) hata adımları (core verirse; iptal edilen koşuda > 0 olabilir). */
+  bekleyen?: number;
   platformlar: HataYakalamaPlatformu[];
   kacanlar: KacanHata[];
 }
@@ -1678,6 +1686,20 @@ export interface OracleKarsilastirma {
   satir_id?: string | null;
 }
 
+/**
+ * Case'te doğrulanmış ama tablonun eksik girdi yüzünden hesaplayamadığı beklenen değer (core
+ * `karsilastirilamayanlar`; ör. birim fiyat yazmayan case'te `indirim`). Sonuca girmez.
+ */
+export interface OracleKarsilastirilamayan {
+  tablo_id: string | null;
+  tablo_ad: string | null;
+  column: string;
+  alan: string;
+  alinti: string;
+  case_degeri: string | number | boolean | null;
+  neden: string;
+}
+
 export interface OracleIstisnasi {
   gerekce: string;
   veren: string | null;
@@ -1690,6 +1712,8 @@ export interface CaseOracle {
   sonuc: OracleSonucu | null;
   ozet: string;
   karsilastirmalar: OracleKarsilastirma[];
+  /** Karşılaştırılamayan beklenen değerler (sonucu etkilemez); core vermezse boş. */
+  karsilastirilamayan: OracleKarsilastirilamayan[];
   istisna: OracleIstisnasi | null;
   /** Kontrolün yapıldığı case içeriğinin hash'i (güncel ya da önerilen içerik). */
   icerik_hash: string | null;

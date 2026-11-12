@@ -61,6 +61,7 @@ const oracle = (sonuc: CaseOracle["sonuc"], ek: Partial<CaseOracle> = {}): CaseO
   sonuc,
   ozet: "",
   karsilastirmalar: [],
+  karsilastirilamayan: [],
   istisna: null,
   icerik_hash: "h",
   kontrol_suruyor: false,
@@ -131,8 +132,10 @@ describe("case review: kontrol çipi, karşılaştırma ve metrik", () => {
     expect(within(tablo).getAllByText("Aynı ✓").length).toBeGreaterThan(0);
     expect(within(ayrinti).getByRole("link", { name: "Karar tablolarını aç" })).toHaveAttribute("href", `/gereksinimler/${REQ}/karar-tablolari#tablo-kt-1`);
     expect(within(await kart(C6_BASLIK)).getByText("Tablo yok")).toBeInTheDocument();
-    const c9 = (await screen.findAllByTestId("oracle-cip")).map((x) => x.textContent);
-    expect(c9).toContain("Kontrol edilemedi");
+    // AC6 case'i (C9) yalnız T2 kapsar; T2 başlangıçta taslak → "Tablo yok". Başlangıçta kontrol edilemeyen case yok.
+    const cipler = (await screen.findAllByTestId("oracle-cip")).map((x) => x.textContent);
+    expect(cipler).not.toContain("Kontrol edilemedi");
+    expect(within(await kart(/^Kampanyalı siparişte minimum/)).getByText("Tablo yok")).toBeInTheDocument();
     // Uyumlu / tablo yok case'lerinde onay açık.
     expect(within(await kart(C6_BASLIK)).getByRole("button", { name: "Onayla" })).toBeEnabled();
     // Özet kartı: beklenti doğruluğu (4 uyumlu / 0 uyuşmaz).
@@ -217,9 +220,10 @@ describe("yüksek riskli uyuşmazlık: kapı ve istisna", () => {
   });
 
   it("kontrol edilemeyen yüksek riskli case: Onayla açık, 'Kontrol edilemedi' uyarısı", async () => {
-    await oturumAc("analist");
+    await minSiparisOnayla();
     const c9 = mockVerisi().caseler.find((x) => x.id === "case-1-9")!;
-    c9.icerik = { ...c9.icerik, risk: "high" };
+    // Kampanya bilgisi metinden çıkınca T2'nin ilk koşulu (kampanyali_sepet) karar veremez.
+    c9.icerik = { ...c9.icerik, risk: "high", preconditions: ["Sepet boş"], expected_result: "Toplam 150,00 TL olsa da minimum sipariş uyarısı gösterilmez" };
     c9.icerik_hash = (await api.caseOracleKontrol(c9.id, c9.icerik)).icerik_hash!;
     await isBitsin();
     uygulama(`/gereksinimler/${REQ}/caseler`);
@@ -322,5 +326,32 @@ describe("düzeltme formu: önerilen içerik ön kontrolü", () => {
     await userEvent.click(within(c).getByRole("button", { name: "Düzeltip onayla" }));
     await waitFor(() => expect(mockVerisi().caseler.find((x) => x.id === C6)!.durum).toBe("approved"));
     expect(spy).not.toHaveBeenCalled();
+  });
+});
+
+describe("karşılaştırılamayan değerler (core `karsilastirilamayan`)", () => {
+  it("C2: indirim birim fiyata dayanır → ayrı soluk grup 'Karşılaştırılamadı: …birim_fiyat'; sonuç uyumlu kalır", async () => {
+    await oturumAc("analist");
+    const c2 = (await api.caseler(REQ)).find((c) => c.id === "case-1-2")!;
+    expect(c2.oracle?.sonuc).toBe("uyumlu");
+    expect(c2.oracle?.karsilastirilamayan.map((k) => [k.column, k.alan, k.alinti, k.case_degeri])).toEqual([
+      ["indirim", "steps[3].expected", "25,00 TL", "25"],
+      ["indirim", "expected_result", "25,00 TL", "25"],
+    ]);
+    expect(c2.oracle?.karsilastirilamayan[0]).toMatchObject({ tablo_id: "kt-1", neden: "case'te bulunamayan girdi: birim_fiyat" });
+    // C10 de aynı (7 adet); C3 (6 adet, R2 sabit) karşılaştırılamayan değer taşımaz.
+    expect((await api.caseler(REQ)).find((c) => c.id === "case-1-10")!.oracle?.karsilastirilamayan.map((k) => k.column)).toEqual(["indirim", "indirim"]);
+    expect((await api.caseler(REQ)).find((c) => c.id === "case-1-3")!.oracle?.karsilastirilamayan).toEqual([]);
+
+    uygulama(`/gereksinimler/${REQ}/caseler`);
+    const kartC2 = await kart(/^7 adet kampanyalı/);
+    const ayrinti = within(kartC2).getByTestId("oracle-ayrinti");
+    const ozet = within(ayrinti).getByText(/^Tablo karşılaştırması/, { selector: "summary" });
+    expect(ozet).toHaveTextContent("Tablo karşılaştırması (3 değer, 0 farklı, 2 karşılaştırılamadı)");
+    await userEvent.click(ozet);
+    const grup = within(ayrinti).getByTestId("oracle-karsilastirilamadi");
+    expect(within(grup).getByRole("rowheader", { name: "Karşılaştırılamadı: case'te bulunamayan girdi: birim_fiyat" })).toBeInTheDocument();
+    expect(within(grup).getAllByText("Sonuca girmez")).toHaveLength(2);
+    expect(within(grup).queryByText("Farklı ✗")).toBeNull();
   });
 });

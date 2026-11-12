@@ -4,7 +4,7 @@ import { api, HATA_KOSUSU_SURUYOR, hataKosusuApi } from "../client";
 import { ApiError } from "../http";
 import type { PortalOlayi } from "../types";
 import { oturumAc } from "../../test/yardimci";
-import { mockSifirla } from "./handlers";
+import { mockIstek, mockSifirla } from "./handlers";
 import { kuleAyar, kuleMockIlerlet, kuleMockKosulariBosalt, kuleMockZamanlayiciVar } from "./kule";
 import { HATA_KATALOGU } from "./kuleVerisi";
 import { mockOlaylaraAbone } from "./olaylar";
@@ -46,25 +46,30 @@ describe("katalog ve örnek koşu", () => {
       expect(h.aciklama.length).toBeGreaterThan(10);
       expect(h.yakalayan_kural).toBeTruthy();
     }
-    expect(k.find((h) => h.kod === "fiyat_p004_31")?.yakalayan_kural).toBe("toplam");
+    // core rules/hata-katalogu.yaml ile birebir.
+    expect(k.find((h) => h.kod === "fiyat_p004_31")).toEqual({
+      kod: "fiyat_p004_31",
+      ad: "P-004 fiyatı 31",
+      tur: "veri",
+      aciklama: "P-004 ürününün birim fiyatı 30 yerine 31 okunur.",
+      yakalayan_kural: "Satır ve sepet toplamı",
+    });
   });
 
   it("bitmiş örnek koşu: web + android; yakalanan, kaçan ve android'de bir geçersiz; oran geçersizi saymaz", async () => {
     await oturumAc("analist");
     const [k] = await hataKosusuApi.liste();
     expect(k).toMatchObject({ id: "hk-1", durum: "done", platformlar: ["web", "android"], baslatan: "muhendis" });
-    expect(k.ozet).toMatchObject({ yakalanan: 12, kacan: 5, gecersiz: 1 });
-    expect(k.ozet?.oran).toBeCloseTo(12 / 17);
+    // Web: demo uygulamada ölçülen gerçek matris (8/9; yalnız kampanya_esik_7 kaçar).
+    expect(k.ozet).toMatchObject({ yakalanan: 15, kacan: 2, gecersiz: 1, bekleyen: 0 });
+    expect(k.ozet?.oran).toBeCloseTo(15 / 17);
     expect(k.ozet?.platformlar).toEqual([
-      { platform: "web", oran: 7 / 9, yakalanan: 7, kacan: 2, gecersiz: 0 },
-      { platform: "android", oran: 5 / 8, yakalanan: 5, kacan: 3, gecersiz: 1 },
+      { platform: "web", oran: 8 / 9, yakalanan: 8, kacan: 1, gecersiz: 0, bekleyen: 0, temel: "yesil", kapanis: "yesil" },
+      { platform: "android", oran: 7 / 8, yakalanan: 7, kacan: 1, gecersiz: 1, bekleyen: 0, temel: "yesil", kapanis: "yesil" },
     ]);
-    expect(k.ozet?.kacanlar.map((x) => `${x.platform}:${x.hata_kodu}`)).toEqual([
-      "web:kampanya_esik_7",
-      "web:fiyat_p004_31",
-      "android:kampanya_esik_7",
-      "android:kampanya_cift_indirim",
-      "android:fiyat_p004_31",
+    expect(k.ozet?.kacanlar).toEqual([
+      { hata_kodu: "kampanya_esik_7", ad: "Kampanya eşiği 6 yerine 7", platform: "web" },
+      { hata_kodu: "kampanya_esik_7", ad: "Kampanya eşiği 6 yerine 7", platform: "android" },
     ]);
     const d = await hataKosusuApi.detay("hk-1");
     // Platform başına temel + 9 hata + kapanış.
@@ -77,7 +82,27 @@ describe("katalog ve örnek koşu", () => {
     expect(gecersiz[0].neden).toMatch(/Appium/);
     const yakalanan = d.adimlar.find((a) => a.platform === "web" && a.hata_kodu === "kampanya_bedava_yok");
     expect(yakalanan?.sonuc).toBe("yakalandi");
-    expect(yakalanan?.kiran_testler.length).toBeGreaterThan(0);
+    expect(yakalanan?.kiran_testler).toEqual([
+      "kampanya: 7 adet P-001 → 1 bedava, toplam 150,00 TL",
+      "onaylanan sipariş numarasıyla gösterilir ve geçmişte listelenir",
+      "7 adet Portakal Gazozu sepette 1 bedava adet ve sayaç 7 gösterir",
+    ]);
+    // README "Ekilmiş hatalar" matrisindeki kırmızı test sayıları.
+    const sayilar = Object.fromEntries(d.adimlar.filter((a) => a.platform === "web" && a.asama === "hata").map((a) => [a.hata_kodu, a.kiran_testler.length]));
+    expect(sayilar).toEqual({
+      kampanya_bedava_yok: 3,
+      kampanya_esik_7: 0,
+      kampanya_cift_indirim: 2,
+      min_siparis_haric: 2,
+      min_siparis_muafiyet_yok: 1,
+      min_siparis_500: 4,
+      min_siparis_1000: 7,
+      fiyat_p004_31: 5,
+      kampanya_urunu_p002: 8,
+    });
+    // core `_adim_sozluk`: adımda katalog adı.
+    expect(d.adimlar.find((a) => a.hata_kodu === "fiyat_p004_31")?.hata_adi).toBe("P-004 fiyatı 31");
+    expect(d.adimlar[0].hata_adi).toBeNull();
   });
 
   it("adımın koşu kaydı: tetik break_verify, ortam.hata_kodu → Kosu.hata_kodu; kıran testler kırmızı", async () => {
@@ -101,11 +126,18 @@ describe("katalog ve örnek koşu", () => {
     const k = await api.kontrolKulesi();
     expect(k.beklenti_dogrulugu).toMatchObject({ uyumlu: 5, uyumsuz: 1, istisna: 1 });
     expect(k.beklenti_dogrulugu?.oran).toBeCloseTo(5 / 6);
-    expect(k.hata_yakalama).toMatchObject({ son_kosu: { id: "hk-1", durum: "done" }, yakalanan: 12, kacan: 5, gecersiz: 1 });
-    expect(k.kaynaklar.beklenti_dogrulugu).toMatch(/case_oracle_kontrol/);
-    expect(k.kaynaklar.hata_yakalama).toMatch(/hata_kosusu_adim/);
+    expect(k.hata_yakalama).toMatchObject({ son_kosu: { id: "hk-1", durum: "done" }, yakalanan: 15, kacan: 2, gecersiz: 1 });
+    // core `hata_yakalama_ozeti`: platform satırında yalnız sayılar.
+    expect(k.hata_yakalama?.platformlar[0]).toEqual({ platform: "web", oran: 8 / 9, yakalanan: 8, kacan: 1, gecersiz: 0 });
+    expect(k.kaynaklar.beklenti_dogrulugu).toMatch(/^AI'ın ürettiği case içeriklerinin .*case_oracle_kontrol/);
+    expect(k.kaynaklar.hata_yakalama).toBe(
+      "Son tamamlanan ekilmiş hata koşusu (2026-11-10 14:46; web, android): yakalanan 15, kaçan 2, geçersiz 1; oran %88. " +
+        "Oran = yakalanan / (yakalanan + kaçan); geçersiz adımlar paydaya girmez (hata_kosusu, hata_kosusu_adim).",
+    );
     kuleMockKosulariBosalt();
-    expect((await api.kontrolKulesi()).hata_yakalama).toBeNull();
+    const bos = await api.kontrolKulesi();
+    expect(bos.hata_yakalama).toBeNull();
+    expect(bos.kaynaklar.hata_yakalama).toMatch(/henüz yok \(ölçülmedi\)/);
     expect(await hataKosusuApi.liste()).toEqual([]);
   });
 });
@@ -212,7 +244,7 @@ describe("başlatma, ilerleme, iptal", () => {
     expect(ios[1].neden).toMatch(/Temel koşu yeşil değil/);
     expect(ios.every((a) => a.run_id === null)).toBe(true);
     expect(d.ozet).toMatchObject({ oran: 1, yakalanan: 1, kacan: 0, gecersiz: 1 });
-    expect(d.ozet?.platformlar[1]).toEqual({ platform: "ios", oran: null, yakalanan: 0, kacan: 0, gecersiz: 1 });
+    expect(d.ozet?.platformlar[1]).toEqual({ platform: "ios", oran: null, yakalanan: 0, kacan: 0, gecersiz: 1, bekleyen: 0, temel: "gecersiz", kapanis: "gecersiz" });
     expect(d.uyarilar.join(" ")).toMatch(/temel koşu yeşil değil/);
   });
 
@@ -232,9 +264,18 @@ describe("başlatma, ilerleme, iptal", () => {
     expect(d.adimlar.filter((a) => a.sonuc !== "bekliyor")).toHaveLength(2);
     // İptal edilen koşu Kule ölçüsüne girmez (son bitmiş koşu hâlâ hk-1).
     expect((await api.kontrolKulesi()).hata_yakalama?.son_kosu.id).toBe("hk-1");
-    expect((await hataBekle(hataKosusuApi.iptal("hk-2"))).status).toBe(409);
+    // core: bitmiş koşu → 409 `cakisma`, "Koşu iptal edilemez (durum: …)".
+    expect(await hataBekle(hataKosusuApi.iptal("hk-2"))).toMatchObject({ status: 409, kod: "cakisma", message: "Koşu iptal edilemez (durum: cancelled)." });
     expect((await hataBekle(hataKosusuApi.iptal("hk-1"))).status).toBe(409);
+    expect(d.uyarilar).toContain("muhendis tarafından iptal edildi.");
     expect((await hataBekle(hataKosusuApi.iptal("yok"))).status).toBe(404);
+  });
+
+  it("core gövdeleri: POST /fault-runs ve /cancel yalnız `{id, durum}` döner", async () => {
+    await oturumAc("muhendis");
+    kuleAyar.adimMs = 3_600_000;
+    expect(await mockIstek("POST", "/fault-runs", new URLSearchParams(), { platformlar: ["web"] })).toEqual({ id: "hk-2", durum: "queued" });
+    expect(await mockIstek("POST", "/fault-runs/hk-2/cancel", new URLSearchParams(), undefined)).toEqual({ id: "hk-2", durum: "cancelled" });
   });
 
   it("mockSifirla süren koşunun zamanlayıcısını temizler (testler arasında sızmaz)", async () => {
