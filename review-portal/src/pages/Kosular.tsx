@@ -6,7 +6,7 @@ import type { HataSinifi, Kosu, KosuDetay as KosuDetayTuru, KosuHatasi, KosuKayn
 import { useBildirim } from "../components/Bildirim";
 import { BosDurum, Cip, Baglanti, HataKutusu, IslemDugmesi, Kart, Metrik, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
-import { HATA_SINIFI, KAYNAK, KOSU_DURUMU, TETIK } from "../lib/etiketler";
+import { altTurEtiketi, HATA_SINIFI, KAYNAK, KOSU_DURUMU, TETIK } from "../lib/etiketler";
 import { sure, tarih } from "../lib/format";
 import { CiAdimlari, githubYedekNotu, TestSonuclari } from "./KosuSonuclari";
 import { PlatformRozeti } from "../components/Platform";
@@ -308,7 +308,7 @@ function SinifCipi({ sinif, alt }: { sinif: HataSinifi | null; alt: string | nul
   return (
     <Cip ton={x.ton}>
       {x.etiket}
-      {alt ? ` · ${alt}` : ""}
+      {alt ? ` · ${altTurEtiketi(alt)}` : ""}
     </Cip>
   );
 }

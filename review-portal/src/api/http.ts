@@ -28,6 +28,8 @@ export interface ApiHataEki {
   yol?: string;
   /** Başka bir hatadan dönüştürülen hata, son hata kaydının kimliğini taşır. */
   kayitId?: string;
+  /** Doğrulama hatası listesi (`{"detail", "kod", "hatalar": [...]}`; ör. `karar_tablosu_gecersiz`). */
+  hatalar?: string[];
 }
 
 let kayitSayaci = 0;
@@ -45,6 +47,8 @@ export class ApiError extends Error {
   yol?: string;
   /** Son hata deposundaki kaydın kimliği ("Asistana sor" bu kaydın bağlamıyla açar). */
   readonly kayitId: string;
+  /** Sunucunun alan bazlı doğrulama mesajları (varsa). */
+  hatalar?: string[];
 
   constructor(status: number, detail: string, ek: ApiHataEki = {}) {
     super(detail);
@@ -55,6 +59,7 @@ export class ApiError extends Error {
     this.method = ek.method;
     this.yol = ek.yol;
     this.kayitId = ek.kayitId ?? yeniKayitId();
+    this.hatalar = ek.hatalar;
   }
 }
 
@@ -220,7 +225,7 @@ function sorguMetni(sorgu?: Sorgu): URLSearchParams {
   return p;
 }
 
-export async function detayOku(res: Response): Promise<{ detail: string | null; json: boolean; kod?: string }> {
+export async function detayOku(res: Response): Promise<{ detail: string | null; json: boolean; kod?: string; hatalar?: string[] }> {
   const metin = await res.text().catch(() => "");
   if (!metin) return { detail: null, json: false };
   try {
@@ -228,9 +233,15 @@ export async function detayOku(res: Response): Promise<{ detail: string | null; 
     if (govde && typeof govde === "object") {
       const hamKod = (govde as { kod?: unknown }).kod;
       const kod = typeof hamKod === "string" && hamKod ? hamKod : undefined;
+      // Doğrulama listesi: `hatalar: [metin]` ya da `detail: [metin]` (ör. 422 `karar_tablosu_gecersiz`).
+      const metinListesi = (x: unknown) => (Array.isArray(x) && x.length > 0 && x.every((m) => typeof m === "string") ? (x as string[]) : undefined);
+      const hatalar = metinListesi((govde as { hatalar?: unknown }).hatalar) ?? metinListesi((govde as { detail?: unknown }).detail);
+      if (hatalar && !("detail" in govde && typeof (govde as { detail: unknown }).detail === "string")) {
+        return { detail: hatalar.join("; "), json: true, kod, hatalar };
+      }
       if ("detail" in govde) {
         const d = (govde as { detail: unknown }).detail;
-        if (typeof d === "string") return { detail: d, json: true, kod };
+        if (typeof d === "string") return { detail: d, json: true, kod, hatalar };
         // FastAPI doğrulama hataları: [{loc, msg, type}]
         if (Array.isArray(d)) {
           const mesajlar = d
@@ -367,7 +378,7 @@ async function istekGonder<T>(
     }
   }
 
-  const { detail, json, kod } = await detayOku(res);
+  const { detail, json, kod, hatalar } = await detayOku(res);
   if (res.status === 404 && ayarlar.mockOtomatik && (detail === "Not Found" || !json)) {
     // Kaynağı çekirdekten gelen bir işlem örnek veriye düşmez (bkz. IstekSecenegi.kaynak).
     if (secenek.kaynak && !mockUclar.has(ucuNormallestir(...secenek.kaynak))) throw new ApiError(501, UC_YOK);
@@ -376,7 +387,7 @@ async function istekGonder<T>(
   // Canlı derlemede genel 404 (FastAPI'de rota yok) "bu fazda yok" demektir; ham "Not Found" gösterilmez.
   if (res.status === 404 && !ayarlar.mockOtomatik && (detail === "Not Found" || !json)) throw new ApiError(501, BU_FAZDA_YOK);
   if (res.status === 401 && !path.startsWith("/auth/")) yetkisizDinleyici?.();
-  throw new ApiError(res.status, detail ?? VARSAYILAN_HATA[res.status] ?? `Beklenmeyen hata (HTTP ${res.status}).`, { kod });
+  throw new ApiError(res.status, detail ?? VARSAYILAN_HATA[res.status] ?? `Beklenmeyen hata (HTTP ${res.status}).`, { kod, hatalar });
 }
 
 /** Karar uçlarında 409'un kullanıcıya gösterilen hâli (içerik görüntülendikten sonra değişti). */

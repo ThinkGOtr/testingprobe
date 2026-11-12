@@ -206,3 +206,54 @@ export const SEVERITY: Record<string, string> = {
   minor: "Düşük",
   trivial: "Önemsiz",
 };
+
+// ---------------------------------------------------------------- 012 Ş7: test kalite doğrulama
+import type { KararTablosuDurumu, KolonTuru, TuretmeAtlamaSonucu } from "../api/types";
+
+/** Karar tablosu ve metamorfik ilişki durumları (ANALIZ §4.1). Yeşil yalnız PO onayı (insan kapısı). */
+export const KARAR_TABLOSU_DURUMU: Record<KararTablosuDurumu, { etiket: string; ton: Ton }> = {
+  draft: { etiket: "Taslak", ton: "notr" },
+  pending_po: { etiket: "PO onayı bekliyor", ton: "uyari" },
+  approved: { etiket: "Onaylı", ton: "basari" },
+  superseded: { etiket: "Yerini yenisi aldı", ton: "notr" },
+};
+
+export const KOLON_TURU: Record<KolonTuru, string> = { sayi: "Sayı", metin: "Metin", mantiksal: "Mantıksal" };
+
+/**
+ * Case kartındaki beklenen sonuç kontrolü çipi (ANALIZ §7). "uyumlu" yeşil değildir: makine
+ * karşılaştırmasıdır, insan onayı değil (yeşil yalnız insan kapısı) — bilgi tonu + ✓ işareti.
+ */
+export type OracleGorunumu = "uyumlu" | "uyumsuz" | "kontrol_edilemedi" | "tablo_yok" | "suruyor";
+export const ORACLE_DURUMU: Record<OracleGorunumu, { etiket: string; ton: Ton; aciklama: string }> = {
+  uyumlu: { etiket: "Tabloyla uyumlu ✓", ton: "bilgi", aciklama: "Beklenen değerler onaylı karar tablosuyla aynı." },
+  uyumsuz: { etiket: "Tabloyla uyuşmuyor ✗", ton: "hata", aciklama: "En az bir beklenen değer onaylı karar tablosundan farklı." },
+  kontrol_edilemedi: {
+    etiket: "Kontrol edilemedi",
+    ton: "uyari",
+    aciklama: "Case metninden tabloyla karşılaştırılacak değer çıkarılamadı. Uyuşmazlık değildir; değerleri elle doğrulayın.",
+  },
+  tablo_yok: { etiket: "Tablo yok", ton: "notr", aciklama: "Bu case'in kabul kriterlerini kapsayan onaylı karar tablosu yok." },
+  suruyor: { etiket: "Kontrol sürüyor", ton: "notr", aciklama: "Kapsayan onaylı tablo var; beklenen sonuç kontrolü henüz bitmedi." },
+};
+
+/** "Ek case türet" sonucunda atlanan kaynak case'in nedeni (§4.5). */
+export const TURETME_ATLAMA: Record<TuretmeAtlamaSonucu, string> = {
+  iliski_gecersiz: "ilişki geçersiz",
+  belirsiz_alinti: "belirsiz alıntı",
+  olgu_yok: "olgu yok",
+  zaten_turetildi: "zaten türetildi",
+};
+
+/** 012 Ş3 triage ayrımı (ANALIZ §4.4): alt tür etiketleri; bilinmeyen alt tür ham gösterilir. */
+export const TRIAGE_ALT_TUR: Record<string, string> = {
+  beklenti: "Test beklentisi (karar tablosu)",
+};
+export const altTurEtiketi = (alt: string | null | undefined): string | null => (alt ? (TRIAGE_ALT_TUR[alt] ?? alt) : null);
+
+/** 012 Ş3 karar tablosu sinyalleri (kural `karar_tablosu`). */
+export const KARAR_TABLOSU_SINYALI: Record<string, string> = {
+  karar_tablosu_uyumlu: "Test beklentisi onaylı karar tablosuyla aynı; uygulama tabloya aykırı",
+  karar_tablosu_beklenti_farkli: "Uygulama onaylı karar tablosuyla aynı; test beklentisi farklı",
+  karar_tablosu_ikisi_de_farkli: "Hem test beklentisi hem uygulama onaylı karar tablosundan farklı",
+};
