@@ -629,11 +629,21 @@ def harcama_oku(engine: Engine, call_id: uuid.UUID, gw: Any = None) -> Harcama:
 # ------------------------------------------------------------------ otomatik yükseltme
 
 
-def otomatik_tetik(m: Mesaj, cevap: Mapping[str, Any]) -> bool:
+# Bu girdi sinyalleri varken cevap "emin değil" olsa da otomatik yükseltme yapılmaz: istem
+# saldırısı reddedilir; Sonnet sınıfı modele yeniden göndermek yalnız maliyet ve ikinci deneme
+# yüzeyidir (013).
+YUKSELTMEYEN_SINYALLER: Final = frozenset({"prompt_saldirisi"})
+
+
+def otomatik_tetik(
+    m: Mesaj, cevap: Mapping[str, Any], sinyaller: Sequence[Any] | None = None
+) -> bool:
     """§6.2 tetik (deterministik, son işlemden sonra). Ön koşullar ayrıca (`otomatik_on_kosul`)."""
     if m.hedef_amac != VARSAYILAN_AMAC or m.kip != "soru" or not _otomatik_derin_acik():
         return False
     if cevap.get("eylem_reddi"):
+        return False
+    if any(getattr(s, "id", s) in YUKSELTMEYEN_SINYALLER for s in sinyaller or ()):
         return False
     gosterim = cevap.get("guven_gosterimi")
     return (
@@ -702,7 +712,7 @@ def model_cevabini_yaz(
     Sızıntı cevabında None (rozet modeli göstermez)."""
     if model:
         cevap = {**cevap, "model": model}
-    tetik = otomatik_tetik(m, cevap)
+    tetik = otomatik_tetik(m, cevap, sinyaller)
     kok: uuid.UUID | None = None
     kalan: asistan_budget.Kalanlar | None = None
     if tetik:

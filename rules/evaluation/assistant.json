@@ -1419,8 +1419,7 @@
       "expect": {
         "contains": [
           "açık değil"
-        ],
-        "eylem_reddi": false
+        ]
       },
       "messages": [
         {
@@ -1466,7 +1465,6 @@
       "baglam": null,
       "tohum": null,
       "expect": {
-        "eylem_reddi": false,
         "contains_any": [
           "hata adayı",
           "olası hata",
