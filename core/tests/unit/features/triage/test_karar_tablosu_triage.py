@@ -449,6 +449,21 @@ def test_baska_icerik_hashinin_kontrolu_kullanilmaz(
     _bugunku(engine, rid)
 
 
+def test_kismen_kaydin_dogrulanmis_karsilastirmalari_kullanilir(
+    engine: Engine, artefakt_kok: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """012 review 2: `kismen` kayıt (ör. beklenen alanda yok sayılan bir sayı) da karar verir;
+    yalnız doğrulanmış `karsilastirmalar` okunur."""
+    cagrilar = _bugs_modulu(monkeypatch)
+    k = _kur(engine, case_degeri="150.00", sonuc="kismen")
+    rid = _kosu(engine, artefakt_kok, k, "150,00 TL", "125,00 TL")
+    sonuc = classify_run(engine, rid)
+    f, ek = _tek(engine, rid)
+    assert (f.sinif, f.karar_kaynagi, f.oneri_turu) == ("product_defect", "rule", "bug_draft")
+    assert ek.kural == "karar_tablosu" and _kodlar(f)[-1] == "karar_tablosu_uyumlu"
+    assert sonuc["bug_taslagi_istenen"] == 1 and cagrilar == [f.id]
+
+
 @pytest.mark.parametrize("sonuc", ["kapsam_disi", "kontrol_edilemedi"])
 def test_karar_vermeyen_kontrol_sonucu_kullanilmaz(
     engine: Engine, artefakt_kok: Path, monkeypatch: pytest.MonkeyPatch, sonuc: str

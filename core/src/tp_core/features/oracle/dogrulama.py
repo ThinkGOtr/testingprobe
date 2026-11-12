@@ -49,8 +49,9 @@ sayıları (`7. adette`) hariç — aynı alandaki doğrulanmış bir olgunun ya
 (`title`, `steps[i].data`, `test_data[i].value`) alıntısız sayı doğrulanmış bir değere eşit
 olmalıdır (değilse `celiski`). Yazıyla sayılar (`kırk beş TL`) karşılaştırılamaz (`yaziyla`).
 `ignored` alıntısı bir çıktı kolonunun birimini (`TL`, `%` …) ya da adını taşıyorsa gerekçesiyle
-reddedilir (`reddedilen_yok_sayilan`); kabul edilen her `ignored` kaydı kontrolü en iyi `kismen`
-yapar. Model yanlış değeri hiç çıkarmayarak ya da `ignored`'a yazarak karşılaştırmadan kaçıramaz.
+reddedilir (`reddedilen_yok_sayilan`); beklenen alandaki kabul edilmiş `ignored` kaydı kontrolü en
+iyi `kismen` yapar (başlık/girdi alanındakiler yapmaz; çelişki denetimine tabidir). Model yanlış
+değeri hiç çıkarmayarak ya da `ignored`'a yazarak karşılaştırmadan kaçıramaz.
 Mantıksal yüklemlerin tamlığı denetlenmez.
 
 Genel sonuç: herhangi bir karşılaştırma tutmuyorsa `uyumsuz`; değilse en az bir karşılaştırma
@@ -873,7 +874,8 @@ def kismen_nedenleri(ayr: Mapping[str, Any] | None) -> list[str]:
     - `atilan_olgu`: doğrulanamayıp atılan olgu, hiç değer çıkarılmayan kapsayan tablo, çelişkili
       girdi, eşleşen satırı olmayan ya da hatalı grup (modelin çıktısı kullanılamadı).
     - `kapsanmayan_sayi`: tamlık denetiminde kapsanmayan sayı (`kapsanmayan_sayilar`).
-    - `yok_sayilan`: modelin "hiçbir kolona ait değil" dediği (kabul edilmiş) `ignored` kaydı.
+    - `yok_sayilan`: modelin "hiçbir kolona ait değil" dediği (kabul edilmiş) `ignored` kaydı,
+      yalnız beklenen alandaysa (`steps[i].expected`, `expected_result`, `verification_point`).
 
     Eski kayıtlarda da (`kismen_nedeni` alanı yokken) ayrıntılardan hesaplanır."""
     ayr = ayr or {}
@@ -888,7 +890,9 @@ def kismen_nedenleri(ayr: Mapping[str, Any] | None) -> list[str]:
         nedenler.add(KN_ATILAN_OLGU)
     if ayr.get("kapsanmayan_sayilar"):
         nedenler.add(KN_KAPSANMAYAN_SAYI)
-    if ayr.get("yok_sayilan"):
+    # Yalnız beklenen alandaki `ignored` kontrolü eksik bırakır; girdi/başlık alanındaki yok sayılan
+    # sayı zaten çelişki denetiminden geçer (review 2 koordinatör düzeltmesi).
+    if any(_BEKLENEN_ALAN.match(str(y.get("alan") or "")) for y in ayr.get("yok_sayilan") or []):
         nedenler.add(KN_YOK_SAYILAN)
     return [n for n in KISMEN_NEDENLERI if n in nedenler]
 
@@ -901,7 +905,7 @@ def gerekce_gerekir_mi(sonuc: str | None, ayrintilar: Mapping[str, Any] | None) 
 
 def _genel_sonuc(gruplar: Sequence[Mapping[str, Any]], ayr: Mapping[str, Any]) -> str:
     """Fark varsa `uyumsuz`; karşılaştırma varsa ve `kismen_nedeni` boşsa `uyumlu`, değilse
-    `kismen` (kabul edilmiş `ignored` kaydı da kontrolü en iyi `kismen` yapar; review 2 g2 Y1);
+    `kismen` (beklenen alandaki kabul edilmiş `ignored` kaydı da; review 2 g2 Y1);
     karşılaştırma yoksa `kontrol_edilemedi`."""
     karsilastirmalar = [k for g in gruplar for k in g["karsilastirmalar"]]
     if any(not k["uyumlu"] for k in karsilastirmalar):

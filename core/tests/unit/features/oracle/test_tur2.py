@@ -154,6 +154,25 @@ def test_g2_y1_ignored_dolu_ise_en_iyi_kismen_ve_cikti_birimi_reddedilir() -> No
     assert ayr["reddedilen_yok_sayilan"][0]["neden"] == "çıktı kolonunun adını taşıyor (toplam)"
 
 
+def test_girdi_alanindaki_ignored_kismen_yapmaz() -> None:
+    """Koordinatör düzeltmesi: yalnız beklenen alandaki `ignored` kontrolü kısmen yapar. Girdi
+    alanındaki (ör. "koli 12") yok sayılan sayı serbesttir; yok sayılmazsa çelişki denetimine
+    takılır."""
+    case = basit_case(toplam="30,00")
+    case["steps"][0]["data"] = "koli 12, adet 3"
+    olgu = _basit_olgular(case, toplam_alanlari=("steps[1].expected", "expected_result"))
+    sonuc, ayr = d.degerlendir(case, [BASIT_T], olgu)
+    assert sonuc == d.KISMEN
+    assert ayr["kapsanmayan_sayilar"] == [
+        {"alan": "steps[0].data", "alinti": "12", "tur": "celiski"}
+    ]
+    olgu["ignored"] = [{"field": "steps[0].data", "quote": "koli 12", "reason": "koli adedi"}]
+    sonuc, ayr = d.degerlendir(case, [BASIT_T], olgu)
+    assert sonuc == d.UYUMLU and ayr["kismen_nedeni"] == [] and len(ayr["yok_sayilan"]) == 1
+    # Aynı kayıt beklenen alanda olsaydı kısmen olurdu.
+    assert d.kismen_nedenleri({"yok_sayilan": [{"alan": "expected_result"}]}) == ["yok_sayilan"]
+
+
 def test_g2_y14_baslik_ve_veri_alanlari_cikarilan_girdiyle_celismez() -> None:
     """Başlık "4 adette" derken girdi "adet 3" çıkarılırsa başlıktaki sayı hiçbir doğrulanmış
     değerle eşleşmez → `celiski` → `kismen`. Aynı değeri yineleyen başlık sorun değildir."""
@@ -210,7 +229,11 @@ def test_g2_y4_zorunlu_kapida_kismen_gerekce_ister(api: TestClient, kur) -> None
     `oracle_kontrolsuz`); gerekçe türü `kontrolsuz`. Yalnız eksik girdi → uyarıyla onay."""
     k = kur([basit_case(toplam="30,00")])
     c = latest_cases(api, k["rid"])[0]
-    kayit_yaz(uuid.UUID(c["id"]), "kismen", {"gruplar": [], "yok_sayilan": [{"alinti": "x 1"}]})
+    kayit_yaz(
+        uuid.UUID(c["id"]),
+        "kismen",
+        {"gruplar": [], "yok_sayilan": [{"alan": "expected_result", "alinti": "x 1"}]},
+    )
     o = latest_cases(api, k["rid"])[0]["oracle"]
     assert (o["sonuc"], o["kismen_nedeni"]) == ("kismen", ["yok_sayilan"])
     r = _karar(api, c, karar="approve")

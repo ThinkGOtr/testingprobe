@@ -367,8 +367,9 @@ BEKLENEN_SONUC_ANA_YOL: dict[int, str] = {
     2: "uyumlu",  # bedava 1 = 7 // 7; indirim 25,00 = 175 / 7; toplam 150,00
     3: "uyumlu",  # bedava 0, indirim 0, toplam = ara toplam (uygulama 6 // 6 = 1 → defect adayı)
     4: "uyumlu",
-    # T2 case'leri: sepet sayacı ve ürün adedi `ignored`'da (tabloda kolonu yok); kabul edilmiş
-    # `ignored` kontrolü en iyi `kismen` yapar (review 2 g2 Y1; `kismen_nedeni: [yok_sayilan]`).
+    # T2 case'leri: S3 beklenendeki sepet sayacı ("Sepet sayacı 10") `ignored`'da (tabloda kolonu
+    # yok); beklenen alandaki kabul edilmiş `ignored` kontrolü en iyi `kismen` yapar (review 2 g2
+    # Y1; `kismen_nedeni: [yok_sayilan]`). S3 verisindeki ürün adedi (girdi alanı) etkilemez.
     5: "kismen",
     6: "kismen",
     7: "kapsam_disi",
