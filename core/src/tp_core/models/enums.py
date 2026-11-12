@@ -35,6 +35,9 @@ FINDING_KARAR = KARARLAR["consistency_finding"]
 SCRIPT_TUR = frozenset({"test", "locator_fix"})
 # 009 §2.1: üretilen testin hedef platformu (web = Playwright/TS; diğerleri Appium/Java). 0018.
 PLATFORM = frozenset({"web", "android", "ios", "windows"})
+# 011 §2.1–2.2: üretim dili (platformdan bağımsız boyut) ve dilin nereden geldiği. 0021.
+DIL = frozenset({"ts", "java", "csharp", "python"})
+DIL_KAYNAGI = frozenset({"algilandi", "secildi", "varsayilan"})
 RUN_KAYNAK = frozenset({"local", "github", "sauce"})
 # CI ile ortak liste: .github/workflows/ci.yml `trigger` girdisi (workflow_dispatch → manual).
 RUN_TETIK = frozenset({"pr", "push", "nightly", "deploy", "break_verify", "local_check", "manual"})

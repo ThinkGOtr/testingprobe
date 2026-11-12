@@ -803,3 +803,81 @@ def test_changed_paths(forge: LocalForge) -> None:
     b = forge.commit_files("tp/a", {"b.txt": "3", "c.txt": "4"}, "b", base="tp/a")
     assert forge.changed_paths(a, b) == ["b.txt", "c.txt"]
     assert forge.changed_paths(b, b) == []
+
+
+# ------------------------------------------------- K-T11 uçtan uca (MİM-D7, MİM-O1)
+
+JAVA_WEB_TEST = "e2e-java/src/test/java/com/antreklabs/bayi/LoginTest.java"
+
+
+def _main_e_ekle(forge: LocalForge, dosyalar: dict[str, str]) -> str:
+    """main'e (korunan dal) test kurulum commit'i: dal + PR + demo-admin merge."""
+    forge.commit_files("tp/kurulum", dosyalar, "kurulum")
+    pr = forge.open_pr("tp/kurulum", "kurulum", "b")
+    return forge.merge_pr(pr.number, "demo-admin")
+
+
+def _ci_dilleri(forge: LocalForge, pr_no: int, head: str, monkeypatch: pytest.MonkeyPatch) -> tuple:
+    """CI'ın script'siz PR koşusunda seçeceği web dilleri (`ci.service._web_dilleri`)."""
+    from tp_core.features.ci import service as ci_service
+    from tp_core.features.ci import services
+    from tp_core.models import Run
+
+    monkeypatch.setenv("TP_FORGE_APP_ROOT", "")
+    run = Run(ortam={}, tetik="pr", pr_no=pr_no, commit=head)
+    with services.override(forge=lambda: forge):
+        return ci_service._web_dilleri(run)
+
+
+def test_k_t11_uygulama_pr_repoda_iki_dil_iki_check_ister(
+    forge: LocalForge, artifacts: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """MİM-D7: repoda TS + Java web testi; uygulama kodu PR'ı → CI iki dili koşar, kapı iki
+    check'i ister; yalnız local-ci yeşili yetmez, ikisi yeşilken merge açılır."""
+    _main_e_ekle(
+        forge,
+        {"e2e/tests/login.spec.ts": "test('x', () => {});", JAVA_WEB_TEST: "class LoginTest {}"},
+    )
+    head = forge.commit_files("tp/uyg", {"web/src/App.tsx": "export {};"}, "uygulama")
+    pr = forge.open_pr("tp/uyg", "uygulama", "b")
+    assert _ci_dilleri(forge, pr.number, head, monkeypatch) == ("ts", "java")
+    ci_green(artifacts, head)
+    with pytest.raises(ForgeProtectionError, match="'local-ci-web-java' durumu: yok"):
+        forge.merge_pr(pr.number, "ali")
+    write_checks(
+        artifacts,
+        head,
+        {"checks": [_check("local-ci", "success"), _check("local-ci-web-java", "success")]},
+    )
+    sonuc = forge.merge_pr_detailed(pr.number, "ali", expected_head_sha=head)
+    assert sonuc.bypass is False
+
+
+def test_k_t11_repoda_yalniz_java_uygulama_pr_kilitlenmez(
+    forge: LocalForge, artifacts: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """MİM-O1: repoda `e2e/tests/*.spec.ts` yok, yalnız e2e-java testi; uygulama PR'ında CI
+    yalnız java koşar → kapı yalnız `local-ci-web-java` ister (local-ci beklenmez)."""
+    _main_e_ekle(forge, {JAVA_WEB_TEST: "class LoginTest {}"})
+    head = forge.commit_files("tp/uyg", {"web/src/App.tsx": "export {};"}, "uygulama")
+    pr = forge.open_pr("tp/uyg", "uygulama", "b")
+    assert _ci_dilleri(forge, pr.number, head, monkeypatch) == ("java",)
+    write_checks(artifacts, head, {"checks": [_check("local-ci-web-java", "success")]})
+    assert forge.merge_pr_detailed(pr.number, "ali", expected_head_sha=head).bypass is False
+
+
+def test_k_t11_ortak_ata_yoksa_kapi_kapali(forge: LocalForge, artifacts: Path) -> None:
+    """GÜV: PR dalının main ile ortak atası yok (fark bilinmiyor) → kapı kapalı tarafa düşer:
+    her iki tam hat dilinin check'i zorunlu."""
+    # Yetim dal: main ile ortak geçmişi olmayan commit.
+    work = artifacts.parent / "yetim"
+    git("init", "-q", "-b", "yetim", str(work))
+    (work / "README.md").write_text("yetim\n")
+    git("add", "-A", cwd=work)
+    git("commit", "-q", "-m", "yetim", cwd=work)
+    git("push", "-q", str(forge.path), "yetim:tp/yetim", cwd=work)
+    head = forge.head_sha("tp/yetim")
+    pr = forge.open_pr("tp/yetim", "yetim", "b")
+    ci_green(artifacts, head)
+    with pytest.raises(ForgeProtectionError, match="'local-ci-web-java' durumu: yok"):
+        forge.merge_pr(pr.number, "ali", expected_head_sha=head)

@@ -62,10 +62,16 @@ class TriageToolchain:
             raise ToolchainHatasi(f"toolchain-worker {yol}: yanıt nesne değil", r.status_code)
         return veri
 
-    def symbols(self, sha: str, *, platform: str | None = None) -> dict[str, Any]:
-        """`platform` (android | ios | windows) → Java sembol tablosu (009 §2.5); web/None → TS."""
+    def symbols(
+        self, sha: str, *, platform: str | None = None, lang: str | None = None
+    ) -> dict[str, Any]:
+        """`platform` (android | ios | windows) → Java sembol tablosu (009 §2.5); web/None → TS.
+        `lang="java"` + web → web + Java (`e2e-java`) sembol tablosu (011 §2.6)."""
         govde: dict[str, Any] = {"sha": sha}
-        if platform and platform != "web":
+        if lang == "java" and (platform or "web") == "web":
+            govde["lang"] = "java"
+            govde["platform"] = "web"
+        elif platform and platform != "web":
             govde["platform"] = platform
         return self._post("/symbols", govde, SYMBOLS_TIMEOUT_S)
 

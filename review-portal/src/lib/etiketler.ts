@@ -128,6 +128,8 @@ export const SCRIPT_DURUMU: Record<ScriptDurumu, { etiket: string; ton: Ton }> =
   merged: { etiket: "Birleştirildi", ton: "basari" },
   closed: { etiket: "Kapatıldı", ton: "notr" },
   failed: { etiket: "Başarısız", ton: "hata" },
+  // 011: doğrulanmamış dil (C#, Python) — kod var ama derlenmedi/koşulmadı; başarı değil, dikkat ister.
+  unverified: { etiket: "Doğrulanmamış", ton: "uyari" },
 };
 
 /** Ajan hâlâ çalışıyor mu (adımlar canlı akıyor). */

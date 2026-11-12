@@ -8,6 +8,7 @@
     {"kalip": "/gereksinimler/:id", "ekran": "Gereksinim detay", "varlik": "requirement", "roller": null},
     {"kalip": "/gereksinimler/:id/caseler", "ekran": "Case inceleme", "varlik": "requirement", "roller": null},
     {"kalip": "/gereksinimler/:id/yayin", "ekran": "Yayın", "varlik": "requirement", "roller": null},
+    {"kalip": "/caseler", "ekran": "Test case'leri", "varlik": null, "roller": null},
     {"kalip": "/kod", "ekran": "Kod (scriptler)", "varlik": null, "roller": null},
     {"kalip": "/kod/:id", "ekran": "Script detay", "varlik": "script", "roller": null},
     {"kalip": "/kosular", "ekran": "Koşular", "varlik": null, "roller": null},

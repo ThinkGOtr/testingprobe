@@ -1,11 +1,12 @@
 import { Fragment, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
 import type { AdimEslemesi, AjanAdimi, BreakVerify, PrCheck, PullRequest, RetNedeni, ScriptDetay as Detay, YerelKontrol, YerelKontrolHatasi, YerelKontrolSinifi } from "../api/types";
-import { ajanAdimiUyarla } from "../api/uyumDemoB";
+import { ajanAdimiUyarla, kontrolAdimiGecti } from "../api/uyumDemoB";
 import { useBildirim } from "../components/Bildirim";
 import { KodGorunumu } from "../components/KodGorunumu";
+import { DilCakismasiKutusu, dilCakismasiMi, uretimBildirimi } from "../components/UretimSonuclari";
 import { BosDurum, Cip, Baglanti, HataKutusu, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { SCRIPT_DURUMU, scriptIsareti, scriptUretiliyor } from "../lib/etiketler";
@@ -13,6 +14,10 @@ import { ENGEL_TURU, kosuKimligiMi, mergeEngelleri, mergeOnayNotu, mergeUyarilar
 import { saat, tarih } from "../lib/format";
 import { PlatformRozeti } from "../components/Platform";
 import { aracEtiketi, checkEtiketi, dikeyEkranMi, uygulamaPlatformuMu, type Platform } from "../lib/platform";
+import { DilRozeti } from "../components/Dil";
+import { DIL_CATISI, DIL_ETIKETI, gecerliDiller, KONTROL_ADIMI, kontrolAdimlari, kontrolZinciri, kosuAraci, type Dil } from "../lib/dil";
+import { vurguDili } from "../lib/vurgula";
+import { useCapayaKaydir } from "../lib/capa";
 
 const ASAMA_ADI = { baseline: "Bayraksız (yeşil olmalı)", broken: "BREAK_CAMPAIGN=1 (kırmızı olmalı)", restored: "Bayrak kaldırıldı (yeşil olmalı)" } as const;
 const SONUC = {
@@ -221,7 +226,7 @@ export function KaynakMetni({ metin, args }: { metin: string; args: unknown[] })
   return <q className="kucuk">{tek}</q>;
 }
 
-function EslemeTablosu({ eslemeler }: { eslemeler: AdimEslemesi[] }) {
+function EslemeTablosu({ eslemeler, kosulmaz = false }: { eslemeler: AdimEslemesi[]; kosulmaz?: boolean }) {
   return (
     <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Eşlenen adımlar tablosu">
       <table className="tablo tablo-sik">
@@ -254,7 +259,7 @@ function EslemeTablosu({ eslemeler }: { eslemeler: AdimEslemesi[] }) {
                 {e.beklenen ? (
                   // Doğrulamanın `verified`'ı değerin onaylı case metninde bulunmasıdır (kaynak
                   // denetimi), uygulamada gözlem değil: sonucu yerel kontrol belirler.
-                  <span className="soluk kucuk">yerel kontrolde koşulur</span>
+                  <span className="soluk kucuk">{kosulmaz ? "koşulmadı (doğrulanmamış dil)" : "yerel kontrolde koşulur"}</span>
                 ) : e.verified ? (
                   <span className="ok-metin">✓ {e.dogrulama_notu ?? "doğrulandı"}</span>
                 ) : (
@@ -312,23 +317,41 @@ export function defectOzeti(yk: YerelKontrol | null): string | null {
   return `Yerel kontrol: beklenen ${h.beklenen ?? "—"}, gerçekleşen ${h.gerceklesen ?? "—"}${tekrar}.`;
 }
 
-export function YerelKontrolKarti({ yk, uretiliyor }: { yk: YerelKontrol | null; uretiliyor: boolean }) {
+/**
+ * Yerel kontrolün statik adımları: core `adimlar: [{ad, durum}]` (011, dile göre) varsa o liste; yoksa
+ * eski alanlar (`tsc` / `eslint` / `ast_guard`). Eski alanlar boşken Java dilinde adım adları dilden.
+ */
+export function kontrolSatirlari(yk: YerelKontrol, dil: Dil | null = null): { ad: string; etiket: string; durum: boolean | null }[] {
+  if (yk.adimlar && yk.adimlar.length) return yk.adimlar.map((a) => ({ ad: a.ad, etiket: KONTROL_ADIMI[a.ad] ?? a.ad, durum: kontrolAdimiGecti(a.durum) }));
+  const eski: Record<string, boolean | null> = { tsc: yk.tsc, eslint: yk.eslint, ast_guard: yk.ast_guard };
+  const adlar = dil === "java" && yk.tsc === null && yk.eslint === null && yk.ast_guard === null ? kontrolAdimlari(dil) : ["tsc", "eslint", "ast_guard"];
+  return adlar.map((ad) => ({ ad, etiket: KONTROL_ADIMI[ad] ?? ad, durum: eski[ad] ?? null }));
+}
+
+export function YerelKontrolKarti({
+  yk,
+  uretiliyor,
+  platform = null,
+  dil = null,
+}: {
+  yk: YerelKontrol | null;
+  uretiliyor: boolean;
+  platform?: Platform | null;
+  dil?: Dil | null;
+}) {
   if (!yk) return <BosDurum baslik={uretiliyor ? "Yerel kontrol, eşleme bitince başlar." : "Yerel kontrol yapılmadı."} />;
   const sinif = yk.sinif ? YEREL_SINIF[yk.sinif] : null;
   return (
     <div className="yerel-kontrol">
       <ul className="kontrol-liste" aria-label="Yerel kontrol adımları">
+        {kontrolSatirlari(yk, dil).map((a) => (
+          <li key={a.ad}>
+            <span aria-hidden="true">{ISARET(a.durum)}</span> {a.etiket}
+            <span className="gorunmez">: {a.durum === null ? "sonuç yok" : a.durum ? "geçti" : "kaldı"}</span>
+          </li>
+        ))}
         <li>
-          <span aria-hidden="true">{ISARET(yk.tsc)}</span> tsc --strict
-        </li>
-        <li>
-          <span aria-hidden="true">{ISARET(yk.eslint)}</span> eslint --no-inline-config
-        </li>
-        <li>
-          <span aria-hidden="true">{ISARET(yk.ast_guard)}</span> AST koruması
-        </li>
-        <li>
-          <span aria-hidden="true">{yk.sonuc === null ? "◌" : yk.sonuc === "passed" ? "✓" : "✗"}</span> Playwright
+          <span aria-hidden="true">{yk.sonuc === null ? "◌" : yk.sonuc === "passed" ? "✓" : "✗"}</span> {kosuAraci(platform, dil)}
           {yk.tekrar > 0 && ` --repeat-each=${yk.tekrar}`}
           {yk.toplam !== null && yk.toplam > 0 && <span className="soluk"> · {yk.gecen ?? 0}/{yk.toplam} geçti</span>}
           {yk.sonuc === null && <span className="soluk"> (sürüyor)</span>}
@@ -343,7 +366,11 @@ export function YerelKontrolKarti({ yk, uretiliyor }: { yk: YerelKontrol | null;
       {sinif && (
         <div className={`uyari-kutusu uyari-${sinif.ton === "hata" ? "hata" : sinif.ton === "basari" ? "basari" : "bilgi"}`} role="note" data-testid="yerel-sinif">
           <strong>{sinif.etiket}</strong>
-          <div>{yk.aciklama ?? sinif.aciklama}</div>
+          <div>
+            {yk.aciklama ??
+              // Genel "geçti" metni TypeScript adımlarını sayar; Java web'de zincir dilin adımlarıyla yazılır.
+              (yk.sinif === "gecti" && dil === "java" && platform === "web" ? `${kontrolZinciri(platform, dil)} (repeat-each) geçti.` : sinif.aciklama)}
+          </div>
         </div>
       )}
       {yk.hata && <p className="kucuk">{yk.hata}</p>}
@@ -570,9 +597,88 @@ export function PrAciklamasi({ govde }: { govde: string }) {
 
 const RET_SECENEKLERI = Object.entries(RET_NEDENI) as [RetNedeni, string][];
 
+/** İndirilen dosyanın adı: `dosya_yolu`'nun son parçası (yol yoksa dile göre genel ad). */
+export function indirmeAdi(dosyaYolu: string, dil: Dil | null | undefined): string {
+  const son = dosyaYolu.split(/[\\/]/).filter(Boolean).pop();
+  if (son) return son;
+  return `uretilen-test.${dil === "python" ? "py" : dil === "csharp" ? "cs" : dil === "java" ? "java" : "ts"}`;
+}
+
+/** İstemci tarafı indirme (Blob): kod sunucuya yeniden istenmez; ekrandaki içeriğin aynısı kaydedilir. */
+export function koduIndir(kod: string, dosyaAdi: string): void {
+  const blob = new Blob([kod], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = dosyaAdi;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Tıklama işlendikten sonra adres bırakılır (bazı tarayıcılar eşzamanlı bırakmada indirmeyi iptal eder).
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+/**
+ * Doğrulanmamış (C#, Python) script'in kalıcı bandı: ne yapılmadığını açıkça söyler, kodu indirir ve
+ * başka dilde yeniden üretimi başlatır. Dil seçenekleri core'dan (`GET /code/languages`); uç yoksa
+ * platformun geçerli dilleri.
+ */
+function DogrulanmamisBandi({ s, calisiyor, uret }: { s: Detay; calisiyor: boolean; uret: (dil: Dil) => void }) {
+  const platform: Platform = s.platform ?? "web";
+  const diller = useVeri(() => api.kodDilleri(platform), [platform]);
+  const secenekler = (diller.veri?.secenekler ?? gecerliDiller(platform).map((dil) => ({ dil, etiket: DIL_ETIKETI[dil], kullanilabilir: true, neden: null, hat: "tam" as const })))
+    .filter((x) => x.dil !== s.dil);
+  const ilkTam = secenekler.find((x) => x.kullanilabilir && x.hat === "tam") ?? secenekler.find((x) => x.kullanilabilir);
+  const [hedef, setHedef] = useState<Dil | "">("");
+  const secili = hedef || ilkTam?.dil || "";
+  const dilAdi = s.dil ? DIL_ETIKETI[s.dil] : "Bu dil";
+  const cati = s.dil ? DIL_CATISI(platform, s.dil) : null;
+  return (
+    <div className="dogrulanmamis-bandi" data-testid="dogrulanmamis-bandi">
+      <Uyari ton="uyari" baslik={`Doğrulanmamış kod: ${dilAdi}${cati ? ` (${cati})` : ""}`}>
+        <p>
+          Bu kod derlenmedi ve koşulmadı; PR açılmadı ve merge edilemez. Ajan adımları tarayıcıda doğrulandı, değerler onaylı case metninden şablonla
+          basıldı. Kendi projenizde derleyip koşturmadan önce gözden geçirin.
+        </p>
+        <div className="eylemler dogrulanmamis-eylemler">
+          <button type="button" className="dugme dugme-ikincil" disabled={!s.kod} onClick={() => s.kod && koduIndir(s.kod, indirmeAdi(s.dosya_yolu, s.dil))}>
+            Kodu indir
+          </button>
+          <span className="dil-yeniden">
+            <label className="kucuk">
+              Başka dil{" "}
+              <select value={secili} onChange={(e) => setHedef(e.target.value as Dil)} disabled={calisiyor || secenekler.length === 0}>
+                {secenekler.map((x) => (
+                  <option key={x.dil} value={x.dil} disabled={!x.kullanilabilir}>
+                    {x.etiket}
+                    {x.hat === "dogrulanmamis" ? " (doğrulanmamış)" : ""}
+                    {!x.kullanilabilir ? ` — kullanılamıyor: ${x.neden ?? "bu depoda yok"}` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <IslemDugmesi
+              izin="code.generate"
+              tur="ikincil"
+              calisiyor={calisiyor}
+              disabled={!secili || s.case_ids.length === 0}
+              title={!secili ? "Bu platformda başka dil yok" : undefined}
+              onClick={() => secili && uret(secili)}
+            >
+              Başka dilde yeniden üret
+            </IslemDugmesi>
+          </span>
+        </div>
+      </Uyari>
+    </div>
+  );
+}
+
 export function ScriptDetay() {
   const { id = "" } = useParams();
   const v = useVeri(() => api.script(id), [id]);
+  const git = useNavigate();
   const islem = useIslem();
   const bildir = useBildirim();
   const sessiz = useGeciktirilmis(() => void v.yenile(true), 300);
@@ -598,6 +704,8 @@ export function ScriptDetay() {
     ["agent.step", "pr.opened", "pr.merged", "ci.status", "script.updated"],
     id,
   );
+  // D-2 (tur 3): `/kod/:id#pr` (Test case'leri PR bağlantısı) — PR kartı (`id="pr"`) veri gelince çizilir.
+  useCapayaKaydir(Boolean(v.veri));
 
   if (v.yukleniyor && !v.veri) return <Yukleniyor />;
   if (v.hata && !v.veri) return <HataKutusu hata={v.hata} kaynak={v.hataNesnesi} yenile={() => void v.yenile()} />;
@@ -619,6 +727,18 @@ export function ScriptDetay() {
   const isaret = scriptIsareti(s);
   const uretiliyor = scriptUretiliyor(s.durum);
   const sinif = s.yerel_sinif && s.yerel_sinif !== "gecti" ? YEREL_SINIF[s.yerel_sinif] : null;
+  // 011: doğrulanmamış dil (C#, Python) — PR, kırarak doğrulama ve merge bu dilde yoktur.
+  const dogrulanmamis = s.durum === "unverified" || s.dogrulanmamis === true;
+  const dilAdi = s.dil ? DIL_ETIKETI[s.dil] : null;
+
+  async function baskaDildeUret(dil: Dil) {
+    setHataYeri("genel");
+    const r = await islem.calistir(() => api.kodUret(s!.case_ids, s!.platform ?? "web", dil));
+    if (r) {
+      bildir(uretimBildirimi(r, `${DIL_ETIKETI[dil]} ile yeniden üretim başladı; bu kayıt kapatılır.`));
+      git("/kod");
+    }
+  }
 
   async function eylem(fn: () => Promise<unknown>, mesaj: string | ((r: unknown) => string), yer: "pr" | "genel" = "genel") {
     setHataYeri(yer);
@@ -650,14 +770,18 @@ export function ScriptDetay() {
           Her adım sembol tablosundaki bir metoda eşlendi; doğrulama değerleri onaylı case metninde geçmek zorundadır. Kod bu tablodan şablonla üretilir.
         </p>
         {s.eslemeler.length ? (
-          <EslemeTablosu eslemeler={s.eslemeler} />
+          <EslemeTablosu eslemeler={s.eslemeler} kosulmaz={dogrulanmamis} />
         ) : (
           <BosDurum baslik={uretiliyor ? "Eşleme ajan bitince yazılır." : "Eşleme kaydı yok."} />
         )}
       </Kart>
 
       <Kart baslik="Yerel kontrol">
-        <YerelKontrolKarti yk={s.yerel_kontrol} uretiliyor={uretiliyor} />
+        {dogrulanmamis ? (
+          <BosDurum baslik={`${dilAdi ?? "Bu dil"} için yerel kontrol yok.`}>Doğrulanmamış dilde kod derlenmez, korunmaz ve koşulmaz.</BosDurum>
+        ) : (
+          <YerelKontrolKarti yk={s.yerel_kontrol} uretiliyor={uretiliyor} platform={s.platform} dil={s.dil} />
+        )}
       </Kart>
     </>
   );
@@ -910,6 +1034,16 @@ export function ScriptDetay() {
       </Kart>
     </div>
   );
+  // Doğrulanmamış script'te karar kartları (PR, kırarak doğrula, merge) çizilmez: kısa açıklama yerlerini alır.
+  const kararYerine = (
+    <Kart key="karar" baslik="Pull request ve kırarak doğrulama" id="pr">
+      <BosDurum baslik={`${dilAdi ?? "Bu dil"} için PR, kırarak doğrulama ve merge yok.`}>
+        Doğrulanmamış dilde üretilen kod depoya yazılmaz; PR'a ve merge'e giremez. Tam hat için TypeScript ya da Java ile yeniden üretin.
+      </BosDurum>
+    </Kart>
+  );
+  const karar = dogrulanmamis ? kararYerine : kararKartlari;
+
   return (
     <>
       <SayfaBasligi
@@ -922,6 +1056,7 @@ export function ScriptDetay() {
             {sinif && <Cip ton={sinif.ton}>{sinif.etiket}</Cip>}
             <ReplayRozeti mode={s.mode} />
             <PlatformRozeti platform={s.platform} />
+            <DilRozeti dil={s.dil} platform={s.platform} />
             {s.requirement_key && <span className="mono">{s.requirement_key}</span>}
             <span className="soluk">{tarih(s.olusturma)}</span>
           </span>
@@ -952,16 +1087,23 @@ export function ScriptDetay() {
           </ul>
         </Uyari>
       )}
-      {islem.hata && hataYeri === "genel" && <HataKutusu hata={islem.hata} kaynak={islem.hataNesnesi} />}
+      {dogrulanmamis && <DogrulanmamisBandi s={s} calisiyor={islem.calisiyor} uret={(dil) => void baskaDildeUret(dil)} />}
+      {islem.hata &&
+        hataYeri === "genel" &&
+        (dilCakismasiMi(islem.hataNesnesi) ? <DilCakismasiKutusu hata={islem.hataNesnesi} /> : <HataKutusu hata={islem.hata} kaynak={islem.hataNesnesi} />)}
 
       {/* PR açıldıktan sonra karar kartları (PR + Kırarak doğrula) üste gelir: demo Adım 6–7 kaydırmasız
           (1152×720). Üretim sürerken ajan adımları üstte kalır. Okuma ve sekme sırası görsel sırayla aynı. */}
       {s.pr
-        ? [kararKartlari, <Fragment key="uretim">{uretimKartlari}</Fragment>]
-        : [<Fragment key="uretim">{uretimKartlari}</Fragment>, kararKartlari]}
+        ? [karar, <Fragment key="uretim">{uretimKartlari}</Fragment>]
+        : [<Fragment key="uretim">{uretimKartlari}</Fragment>, karar]}
 
-      <Kart baslik="Üretilen test dosyası">
-        {s.kod ? <KodGorunumu kod={s.kod} dosya={s.dosya_yolu} /> : <BosDurum baslik="Kod henüz üretilmedi." />}
+      <Kart baslik={dogrulanmamis ? "Üretilen test dosyası (doğrulanmamış)" : "Üretilen test dosyası"}>
+        {s.kod ? (
+          <KodGorunumu kod={s.kod} dosya={s.dosya_yolu} dil={vurguDili(s.dil) ?? undefined} />
+        ) : (
+          <BosDurum baslik="Kod henüz üretilmedi." />
+        )}
       </Kart>
     </>
   );

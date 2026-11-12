@@ -4,7 +4,7 @@
   istisna listesindedir (yeni uç izinsiz eklenirse test kırılır; varsayılan ret).
 - Rol × uç matrisi: yasak uç 403 (`yetki_yok`) ve `authz.denied` denetim satırı; izinli uç 403
   değildir.
-- Ortam/demo bayrakları, developer'ın üretimde koşu başlatamaması, `presenter` → `admin`, 0021 göçü.
+- Ortam/demo bayrakları, developer'ın üretimde koşu başlatamaması, `presenter` → `admin`, 0023 göçü.
 """
 
 from __future__ import annotations
@@ -727,21 +727,21 @@ def test_presenter_admin_sayilir_ve_mfa_ister() -> None:
     assert display_name("eski", "presenter", {}) == "eski · Sistem Yöneticisi"
 
 
-# ------------------------------------------------------------------ 0021 göçü
+# ------------------------------------------------------------------ 0023 göçü (rol modeli)
 
 
-def test_0021_presenter_admin_olur_ve_geri_alinir(pg: PgServer) -> None:
+def test_0023_rol_presenter_admin_olur_ve_geri_alinir(pg: PgServer) -> None:
     ad = pg.create_empty_db()
     owner = pg.url("tp_owner", ad)
     try:
-        run_alembic(owner, "0020")
+        run_alembic(owner, "0022")
         with psycopg.connect(owner.replace("+psycopg", ""), autocommit=True) as c:
             c.execute(
                 "INSERT INTO app_user (id, kullanici_adi, rol, parola_hash) VALUES "
                 "(gen_random_uuid(), 'sunucu', 'presenter', 'x'), "
                 "(gen_random_uuid(), 'analist', 'analyst', 'x')"
             )
-        run_alembic(owner, "0021")
+        run_alembic(owner, "0023")
         with psycopg.connect(owner.replace("+psycopg", ""), autocommit=True) as c:
             roller = dict(c.execute("SELECT kullanici_adi, rol FROM app_user").fetchall())
             assert roller == {"sunucu": "admin", "analist": "analyst"}
@@ -755,10 +755,10 @@ def test_0021_presenter_admin_olur_ve_geri_alinir(pg: PgServer) -> None:
                 "VALUES (gen_random_uuid(), 'izleyici', 'viewer', 'x')"
             )
         with pytest.raises(RuntimeError, match="izleyici"):
-            run_alembic(owner, "0020", "downgrade")
+            run_alembic(owner, "0022", "downgrade")
         with psycopg.connect(owner.replace("+psycopg", ""), autocommit=True) as c:
             c.execute("DELETE FROM app_user WHERE kullanici_adi = 'izleyici'")
-        run_alembic(owner, "0020", "downgrade")
+        run_alembic(owner, "0022", "downgrade")
         with psycopg.connect(owner.replace("+psycopg", ""), autocommit=True) as c:
             assert c.execute(
                 "SELECT rol FROM app_user WHERE kullanici_adi = 'sunucu'"
@@ -769,12 +769,12 @@ def test_0021_presenter_admin_olur_ve_geri_alinir(pg: PgServer) -> None:
             c.execute(f'DROP DATABASE IF EXISTS "{ad}" WITH (FORCE)')
 
 
-def test_0023_eski_analist_editi_isaretlenir_ve_po_reject(pg: PgServer) -> None:
+def test_0025_eski_analist_editi_isaretlenir_ve_po_reject(pg: PgServer) -> None:
     ad = pg.create_empty_db()
     owner = pg.url("tp_owner", ad)
     dsn = owner.replace("+psycopg", "")
     try:
-        run_alembic(owner, "0022")
+        run_alembic(owner, "0024")
         with psycopg.connect(dsn, autocommit=True) as c:
             analist, testci = (
                 c.execute(
@@ -791,7 +791,7 @@ def test_0023_eski_analist_editi_isaretlenir_ve_po_reject(pg: PgServer) -> None:
                     "%s, %s, 'h')",
                     (kullanici, karar),
                 )
-        run_alembic(owner, "0023")
+        run_alembic(owner, "0025")
         with psycopg.connect(dsn, autocommit=True) as c:
             satirlar = c.execute(
                 "SELECT u.kullanici_adi, r.karar, r.eski_onay FROM review r "
@@ -811,7 +811,7 @@ def test_0023_eski_analist_editi_isaretlenir_ve_po_reject(pg: PgServer) -> None:
             # Append-only tetikleyicisi göçten sonra yine açık.
             with pytest.raises(psycopg.errors.InsufficientPrivilege, match="append-only"):
                 c.execute("UPDATE review SET eski_onay = false")
-        run_alembic(owner, "0022", "downgrade")
+        run_alembic(owner, "0024", "downgrade")
         run_alembic(owner, "head")
     finally:
         with pg.super_conn() as c:

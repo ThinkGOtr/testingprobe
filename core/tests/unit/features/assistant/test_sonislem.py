@@ -221,11 +221,13 @@ def test_yalniz_rota_kalibina_uyan_ic_rota_baglanti_olur() -> None:
 @pytest.mark.parametrize(
     ("rol", "beklenen"),
     [
-        ("po", ["/kosular"]),  # /demo yalnız admin/engineer, /claude-code `claude_code.read`
-        ("analyst", ["/claude-code", "/kosular"]),
-        ("admin", ["/demo", "/claude-code", "/kosular"]),
-        ("tester", ["/claude-code", "/kosular"]),
-        (None, ["/demo", "/claude-code", "/kosular"]),  # rol bilinmiyor → süzgeç yok
+        # /demo yalnız admin/engineer, /claude-code `claude_code.read`; /kosular, /denetim süzülmez
+        ("po", ["/kosular", "/denetim"]),
+        ("analyst", ["/claude-code", "/kosular", "/denetim"]),
+        ("admin", ["/demo", "/claude-code", "/kosular", "/denetim"]),
+        ("tester", ["/claude-code", "/kosular", "/denetim"]),
+        ("engineer", ["/demo", "/claude-code", "/kosular", "/denetim"]),
+        (None, ["/demo", "/claude-code", "/kosular", "/denetim"]),  # rol bilinmiyor → süzgeç yok
     ],
 )
 def test_yonlendirme_rolun_acamadigi_ekrana_dusmez(rol: str | None, beklenen: list[str]) -> None:
@@ -236,6 +238,7 @@ def test_yonlendirme_rolun_acamadigi_ekrana_dusmez(rol: str | None, beklenen: li
                 {"etiket": "Demo", "rota": "/demo"},
                 {"etiket": "Claude Code", "rota": "/claude-code"},
                 {"etiket": "Koşular", "rota": "/kosular"},
+                {"etiket": "Denetim", "rota": "/denetim"},
             ]
         ),
         SonIslemBaglami(rol=rol),

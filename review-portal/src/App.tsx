@@ -20,6 +20,7 @@ import { Kod } from "./pages/Kod";
 import { KontrolKulesi } from "./pages/KontrolKulesi";
 import { KosuDetay, Kosular } from "./pages/Kosular";
 import { ScriptDetay } from "./pages/ScriptDetay";
+import { TestCaseleri } from "./pages/TestCaseleri";
 import { Yayin } from "./pages/Yayin";
 import { YolHaritasi } from "./pages/YolHaritasi";
 import { ROTA_IZINLERI } from "./lib/yetki";
@@ -102,6 +103,7 @@ export function Rotalar() {
         <Route path="gereksinimler/:id/caseler" element={<Korumali yol="/gereksinimler/:id/caseler"><CaseReview /></Korumali>} />
         {/* Yayın ekranı kendi bilgi kartıyla korunur (`publish.preview` salt okunur; yayın `case.publish`). */}
         <Route path="gereksinimler/:id/yayin" element={<Yayin />} />
+        <Route path="caseler" element={<Korumali yol="/caseler"><TestCaseleri /></Korumali>} />
         <Route path="kod" element={<Korumali yol="/kod"><Kod /></Korumali>} />
         <Route path="kod/:id" element={<Korumali yol="/kod/:id"><ScriptDetay /></Korumali>} />
         <Route path="kosular" element={<Korumali yol="/kosular"><Kosular /></Korumali>} />

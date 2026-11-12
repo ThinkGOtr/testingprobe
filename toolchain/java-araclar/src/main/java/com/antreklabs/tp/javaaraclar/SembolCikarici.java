@@ -228,9 +228,16 @@ public final class SembolCikarici {
     return new Tablo(json, metotlar, erisimciler, testTabaniVar, kimlikDosyalari);
   }
 
+  /**
+   * Doğrulama metodu: Türkçe {@code dogrula…} (uygulama ekranları) ya da TS sözleşmesiyle aynı adlı
+   * web page object'lerinde {@code expect} / {@code expect<Büyük harf|rakam|_>…} (TS kuralı
+   * {@code /^expect(?:$|[A-Z0-9_])/}; {@code expected…} gibi adlar eylemdir).
+   */
   static String tur(String metotAdi) {
-    return metotAdi.startsWith(DOGRULAMA_ONEKI) ? "expect" : "action";
+    return metotAdi.startsWith(DOGRULAMA_ONEKI) || EXPECT.matcher(metotAdi).find() ? "expect" : "action";
   }
+
+  private static final Pattern EXPECT = Pattern.compile("^expect(?:$|[A-Z0-9_])");
 
   static String parametreTuru(Parameter p) {
     return p.getType().asString() + (p.isVarArgs() ? "..." : "");

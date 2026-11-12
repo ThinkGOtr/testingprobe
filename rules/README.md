@@ -54,7 +54,7 @@ Portal asistanı (AI-ASISTAN-PLANI) modelden önce bu dosyalardaki deterministik
 | `assistant/hata-sozlugu.yaml` | Hata `kod`'u (MIMARI-SOZLESME §5) veya `detail`/görünen metin parçası → anlam, neden, çözüm, ekran |
 | `assistant/urun-terimleri.yaml` | "Ürüne özgü soru" sınıflandırması için ürün terimleri (genel QA terimleri girmez) |
 | `assistant/rotalar.json` | Portalın iç rotaları (`App.tsx` ile birebir); bağlam rotası bunlara indirgenir, cevaptaki iç rota yalnız bunlara uyarsa bağlantı olur |
-| `assistant/oneriler.yaml` | Öneri düğmesi kuralları (§17.3 26 kural + 012 son onay kuralı = 27; tek kural tek eylem), olgu sözleşmesi, bilinçli boş ekranlar |
+| `assistant/oneriler.yaml` | Öneri düğmesi kuralları (§17.3, 26 kural + 011 `script-dogrulanmamis` + 012 son onay kuralı `case-son-onay-bekliyor` = 28; tek kural tek eylem; yeni kural K10 yeniden onayı ister — 011 kuralı 2026-11-12 onaylandı), olgu sözleşmesi, bilinçli boş ekranlar |
 | `assistant/jira-taslaklari.yaml` | Önerilerin Jira kayıt/yorum taslakları (olgu yer tutuculu düz metin; URL yok) |
 
 - `dev` birleştirmesi bayrak arkasıdır (`TP_ASISTAN_MODEL_MODE=off`, `TP_ASISTAN_ONERI`); constitution
@@ -223,7 +223,7 @@ varsa çıkış 1. Bu tablo kayıtla aynı olmalıdır (`test_evaluation_status.
 | `triage` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
 | `bug-draft` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
 | `dup-rank` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
-| `assistant` (portal asistanı; `assistant` + `assistant_deep` amaçları, `assistant/*` kuralları) | v1 | **değerlendirme sonrası içerik değişti (içerik hash'i uyuşmuyor)** — 2026-11-04 canlı değerlendirmesi (Haiku 38/40, Sonnet 40/40) 012 rol göçünden önceydi (`assistant/*` rolleri `presenter` → `admin`); `make eval-live` yeniden koşulmalı |
+| `assistant` (portal asistanı; `assistant` + `assistant_deep` amaçları, `assistant/*` kuralları) | v1 | **değerlendirme sonrası içerik değişti (içerik hash'i uyuşmuyor)**: 2026-11-11'de `/caseler` ekranı eklendi; aynı gün 011 üretim dili bilgisi (dil seçici, "Doğrulanmamış" C#/Python; prompt `# Portal screens` eki, `script-dogrulanmamis` kuralı, `urun-terimleri` dil terimleri) eklendi; 012 rol göçü (`assistant/*` rolleri `presenter` → `admin`, ekran erişimi izin tablosundan; case üretimi/kararı/yayını testçide, `case-son-onay-bekliyor` → 28 kural) geldi. Son canlı değerlendirme 2026-11-04 (Haiku 38/40, Sonnet 40/40; `evaluation/results/`). `main` öncesi `make eval-live A='--bundle assistant --via-flow --update-status'` yeniden koşulmalı |
 
 2026-11-01'de `requirement-review` v3, `triage`, `bug-draft` ve `dup-rank` v2 canlı modelle
 (`make eval-live A='--bundle … --update-status'`, sert bütçe tavanı 1,50 USD, gerçek harcama

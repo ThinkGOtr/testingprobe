@@ -15,6 +15,7 @@ export const ROTA_DESENLERI: readonly string[] = [
   "/gereksinimler/:id",
   "/gereksinimler/:id/caseler",
   "/gereksinimler/:id/yayin",
+  "/caseler",
   "/kod",
   "/kod/:id",
   "/kosular",

@@ -951,11 +951,13 @@ def test_alembic_tek_bas() -> None:
 
     script = ScriptDirectory.from_config(alembic_config())
     bas = script.get_heads()
-    # 012: 0021 (roller, S1) → 0022 (case ready, S2) → 0023 (eski onay işareti, PO reddi).
-    assert bas == ["0023"], f"birden çok Alembic başı: {bas} — 0019'u yeniden ebeveynleyin (T051)"
+    # 011: 0021 (script dili) → 0022 (PR zorunlu check'ler); 012: 0023 (roller, S1) → 0024 (case
+    # ready, S2) → 0025 (eski onay işareti, PO reddi).
+    assert bas == ["0025"], f"birden çok Alembic başı: {bas} — 0019'u yeniden ebeveynleyin (T051)"
     assert script.get_revision("0019").down_revision == "0018"
     assert script.get_revision("0020").down_revision == "0019"
-    assert script.get_revision("0021").down_revision == "0020"  # 012 rol modeli v2
+    assert script.get_revision("0021").down_revision == "0020"  # 011 script dili
+    assert script.get_revision("0023").down_revision == "0022"  # 012 rol modeli v2
 
 
 # ------------------------------------------------------------------ inceleme bulguları (2026-11-10)

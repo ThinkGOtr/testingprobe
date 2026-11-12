@@ -15,6 +15,8 @@ import type {
   DenetimYaniti,
   GereksinimDetay,
   IsYaniti,
+  KodUretYaniti,
+  UretimSonucu,
   KontrolKulesi,
   Kosu,
   KosuDetay,
@@ -62,7 +64,9 @@ import {
 } from "./fixtures";
 import { mockOlayYayinla } from "./olaylar";
 import { javaDosyaYolu, javaTestKodu, uygulamayaCevir } from "./platformlar";
-import { PLATFORMLAR, platformUyarla, type Platform } from "../../lib/platform";
+import { PLATFORMLAR, PLATFORM_ETIKETI, platformUyarla, type Platform } from "../../lib/platform";
+import { DIL_ETIKETI, DILLER, dilUyarla, dogrulanmamisDilMi, gecerliCift, varsayilanDil, type Dil } from "../../lib/dil";
+import { algilananDil, csharpCiktisi, JAVA_KONTROL_ACIKLAMASI, javaAdimlari, javaWebCiktisi, javaYerelGecti, kodDilleriYaniti, pythonCiktisi } from "./diller";
 import { asistanMockSifirla, asistanRotalari } from "./asistan";
 import { KISITLI_CASE_ROLLERI, normalizeRol, rolIzinleri, type Izin } from "../../lib/yetki";
 import { oneriKuleOlcumu, oneriMockSifirla, oneriRotalari } from "./oneri";
@@ -109,7 +113,49 @@ const VERI_ANAHTARI = "tp-mock-veri-v5";
 const testModu = import.meta.env.MODE === "test";
 const GECIKME_MS = testModu ? 0 : 120;
 /** Arka plan işlerinin (ajan adımları, koşular) adım aralığı. */
-export const ayar = { isAdimiMs: testModu ? 0 : 900 };
+export const ayar = { isAdimiMs: testModu ? 0 : 900, senaryolar: new Set<string>() };
+
+/** Ekran denetimi için mock senaryoları: `sessionStorage["tp-mock-senaryo"]` (virgüllü) ya da `ayar.senaryolar`. */
+const SENARYO_ANAHTARI = "tp-mock-senaryo";
+export type MockSenaryosu =
+  /** MİM-B1: core forge'u kuramıyor/okuyamıyor; `/code/languages` algılama yapamaz (üst düzey `neden`). */
+  | "depo-okunamadi"
+  /**
+   * QA-Y4 + K-T12: uzun geçmişli depo. `GET /scripts` core gibi en yeni 200 kaydı döner ve bunlar başka
+   * story'lerin kapatılmış kayıtlarıdır (örnek veri listenin dışında kalır). Liste dışındaki eski merge
+   * edilmiş kayıtlar üretimde çakışır: TPD-13 web testi Java ile, TPD-10 web testi TypeScript ile merge edilmiş.
+   */
+  | "uzun-gecmis";
+
+export function mockSenaryosu(ad: MockSenaryosu): boolean {
+  if (ayar.senaryolar.has(ad)) return true;
+  try {
+    return (sessionStorage.getItem(SENARYO_ANAHTARI) ?? "").split(",").map((x) => x.trim()).includes(ad);
+  } catch {
+    return false;
+  }
+}
+
+/** `uzun-gecmis`: liste dışında kalan eski merge edilmiş kayıtlar (case, platform, dil). */
+const LISTE_DISI_MERGED: { case_id: string; platform: Platform; dil: Dil }[] = [
+  { case_id: "case-1-9", platform: "web", dil: "java" },
+  { case_id: "case-1-2", platform: "web", dil: "ts" },
+];
+
+/** `uzun-gecmis`: başka story'lerin en yeni 200 (kapatılmış) kaydı; örnek veriden daha yeni. */
+function uzunGecmisListesi(): ScriptDetay[] {
+  const ornek = veri.scriptler[0];
+  return Array.from({ length: 200 }, (_, i) => ({
+    ...ornek,
+    id: `scr-eski-${i + 1}`,
+    case_ids: [`case-eski-${i + 1}`],
+    requirement_key: `TPD-${100 + Math.floor(i / 4)}`,
+    baslik: `Eski story testi ${i + 1}`,
+    durum: "closed" as const,
+    pr: null,
+    olusturma: `2026-11-0${1 + (i % 9)}T10:00:00+03:00`,
+  }));
+}
 
 let veri: MockVeri = yukle();
 
@@ -137,6 +183,7 @@ export function mockSifirla(): void {
   demoKirik = false;
   mockOrtam.ortam = "dev";
   mockOrtam.demoModu = true;
+  ayar.senaryolar.clear();
   asistanMockSifirla();
   oneriMockSifirla();
   mockOturumuAyarla(null);
@@ -1133,33 +1180,120 @@ const KOD_GOLDEN: Record<string, { adimlar: () => AjanAdimi[]; kaynak: Record<st
   "case-1-4": { adimlar: minSiparisAdimlari, kaynak: MIN_SIPARIS_KAYNAK, kod: MIN_SIPARIS_TEST_KODU, defect: false },
 };
 
-function kodUret(govde: unknown): IsYaniti {
+/**
+ * core `dil_cakismasi` (K-T4): tam hat isteğinde aynı case+platformun başka dilde merge edilmiş testi
+ * varsa Türkçe neden. `uzun-gecmis` senaryosunda liste dışındaki eski kayıtlar da sayılır.
+ */
+function mockDilCakismasi(caseId: string, platform: Platform, dil: Dil): string | null {
+  if (dogrulanmamisDilMi(dil)) return null;
+  const merged = [
+    ...veri.scriptler.filter((s) => s.durum === "merged" && s.case_ids.includes(caseId) && (s.platform ?? "web") === platform).map((s) => s.dil ?? "ts"),
+    ...(mockSenaryosu("uzun-gecmis") ? LISTE_DISI_MERGED.filter((x) => x.case_id === caseId && x.platform === platform).map((x) => x.dil) : []),
+  ];
+  const onceki = merged.find((d) => d !== dil);
+  if (!onceki) return null;
+  const yer = platform === "web" ? "web testi" : `${platform} testi`;
+  // core `dil_cakismasi` iletisinin birebir kopyası (MİM-D1).
+  return `Bu case'in ${yer} ${DIL_ETIKETI[onceki]} ile merge edildi; dil değiştirmek için önce mevcut testi kaldırın: mevcut test dosyasını silen bir PR'ı merge edin, sonra yeniden üretin`;
+}
+
+/** Aynı dilde merge edilmiş (liste dışı) kayıt: core `merge_edildi` (yeniden üretilmez). */
+function mockMergeEdilmis(caseId: string, platform: Platform, dil: Dil): boolean {
+  return mockSenaryosu("uzun-gecmis") && LISTE_DISI_MERGED.some((x) => x.case_id === caseId && x.platform === platform && x.dil === dil);
+}
+
+/** core `start_generation` K-T12: çakışan case sayısı ve ileti eki (birebir core metni). */
+function cakismaSayisi(sonuclar: UretimSonucu[]): number {
+  return sonuclar.filter((x) => x.durum === "cakisma").length;
+}
+
+function cakismaEki(sonuclar: UretimSonucu[]): string {
+  const n = cakismaSayisi(sonuclar);
+  return n
+    ? ` ${n} case başka dilde merge edilmiş testi olduğu için üretilmedi (mevcut test dosyasını silen bir PR'ı merge edin, sonra yeniden üretin).`
+    : "";
+}
+
+/** core `_hedef_eki`: varsayılan hedefte (web + ts) yalnız nokta; yoksa platform ve/veya dil. */
+function hedefEki(platform: Platform, dil: Dil): string {
+  const parcalar: string[] = platform === "web" ? [] : [platform];
+  if (dil !== varsayilanDil(platform)) parcalar.push(DIL_ETIKETI[dil]);
+  let ek = parcalar.length ? ` (${parcalar.join(", ")}).` : ".";
+  if (dogrulanmamisDilMi(dil)) ek += " Doğrulanmamış dil: kod üretilir ama derlenmez/koşulmaz, PR açılmaz.";
+  return ek;
+}
+
+function kodUret(govde: unknown): KodUretYaniti {
   izinGerekli("code.generate");
-  const g = (govde ?? {}) as { case_ids?: string[]; platform?: unknown };
+  const g = (govde ?? {}) as { case_ids?: string[]; platform?: unknown; dil?: unknown };
   const ids = g.case_ids ?? [];
   if (!Array.isArray(ids) || ids.length === 0) throw new ApiError(422, "En az bir case seçilmeli.");
   // 009 §2.9: platform yoksa web; bilinmeyen değer 422 (core ile aynı).
   const platform: Platform | null = g.platform === undefined || g.platform === null ? "web" : platformUyarla(g.platform);
   if (!platform) throw new ApiError(422, `platform yalnızca ${PLATFORMLAR.join(", ")} olabilir.`);
+  // 011 §2.3: `dil` yoksa repodan algılanan (dil_kaynagi=algilandi); varsa elle seçilmiş (secildi).
+  // Geçersiz değer ya da geçersiz (platform, dil) çifti 422 (core ile aynı, Türkçe ileti).
+  const dilVar = g.dil !== undefined && g.dil !== null;
+  const dil: Dil | null = dilVar ? dilUyarla(g.dil) : algilananDil(platform);
+  if (!dil) throw new ApiError(422, `dil yalnızca ${DILLER.join(", ")} olabilir.`);
+  if (!gecerliCift(platform, dil)) throw new ApiError(422, `${PLATFORM_ETIKETI[platform]} platformunda yalnız Java üretilebilir.`);
+  const dilKaynagi = dilVar ? ("secildi" as const) : ("algilandi" as const);
+  const dogrulanmamis = dogrulanmamisDilMi(dil);
+  const javaWeb = platform === "web" && dil === "java";
   const app = platform !== "web";
   const caseler = ids.map((id) => bul(veri.caseler, id, "Case"));
   const onaysiz = caseler.filter((c) => c.durum !== "approved" && c.durum !== "published");
   if (onaysiz.length) throw new ApiError(409, "Yalnızca onaylı case'ler için kod üretilebilir.");
+  // core `start_generation` `sonuclar[]` (K-T12): case başına durum; çakışan/atlanan case'e dokunulmaz.
+  const sonuclar: UretimSonucu[] = [];
+  const baslayan: typeof caseler = [];
   for (const c of caseler) {
+    const cakisma = mockDilCakismasi(c.id, platform, dil);
+    if (cakisma) sonuclar.push({ case_id: c.id, durum: "cakisma", neden: cakisma, script_id: null });
+    else if (mockMergeEdilmis(c.id, platform, dil))
+      sonuclar.push({ case_id: c.id, durum: "merge_edildi", neden: "bu onaylı içerik için bu platformda PR zaten var", script_id: null });
+    else baslayan.push(c);
+  }
+  if (baslayan.length === 0) {
+    const hatali = sonuclar.filter((x) => x.durum === "cakisma");
+    if (hatali.length === sonuclar.length) {
+      throw new ApiError(
+        409,
+        hatali.length === 1 ? hatali[0].neden! : `Kod üretimi başlatılamadı: ${hatali.map((x) => `${x.case_id.slice(0, 8)}: ${x.neden}`).join("; ")}`,
+        { kod: "dil_cakismasi" },
+      );
+    }
+    return { job_id: null, durum: "none", mesaj: "Yeni üretim gerekmiyor (süren iş ya da açık PR var)." + cakismaEki(sonuclar), cakisma_sayisi: cakismaSayisi(sonuclar), sonuclar };
+  }
+  for (const c of baslayan) {
+    // 011 §2.2: etkin anahtar (case, platform); doğrulanmamış script başka dilde yeniden üretilince kapanır.
+    for (const eski of veri.scriptler) {
+      if (eski.durum === "unverified" && eski.case_ids.includes(c.id) && (eski.platform ?? "web") === platform) gecir("script", eski, "closed");
+    }
     const id = yeniId("scr");
     const kisa = sha256Hex(c.id).slice(0, 8);
     // Uygulama dalı web dalıyla önek çakışmaz: tp/case-<platform>-<uuid> (aynı case'in platformları ayrı PR).
     const branch = app ? `tp/case-${platform}-${kisa}` : `tp/case-${kisa}`;
     const golden = KOD_GOLDEN[c.id];
     const java = app ? javaDosyaYolu(platform, c.jira_key ?? "SERBEST", c.sira_no, kisa) : null;
+    // Web'de TypeScript dışı dilin dosya yolu/kodu ajan adımlarından (eşleme) şablonla üretilir.
+    const webDilCiktisi = (adimlar: AjanAdimi[]) => {
+      const g = { story: c.jira_key, siraNo: c.sira_no, kisa, caseId: c.id, baslik: c.icerik.title, adimlar, caseAdimlari: c.icerik.steps, testKey: c.jira_test_key };
+      return javaWeb ? javaWebCiktisi(g) : dil === "python" ? pythonCiktisi(g) : dil === "csharp" ? csharpCiktisi(g) : null;
+    };
+    const onizleme = webDilCiktisi([]);
     const s: ScriptDetay = {
       id,
       case_ids: [c.id],
       requirement_key: c.jira_key,
       baslik: c.icerik.title,
-      dosya_yolu: java ? java.yol : `demo-app/e2e/tests/${(c.jira_key ?? "ft").toLowerCase()}/c${c.sira_no}.spec.ts`,
-      branch,
+      dosya_yolu: java ? java.yol : (onizleme?.dosya_yolu ?? `demo-app/e2e/tests/${(c.jira_key ?? "ft").toLowerCase()}/c${c.sira_no}.spec.ts`),
+      // Doğrulanmamış dil forge'a commit edilmez: dal yok.
+      branch: dogrulanmamis ? "" : branch,
       platform,
+      dil,
+      dil_kaynagi: dilKaynagi,
+      dogrulanmamis: false,
       durum: "pending",
       pr: null,
       pass_at_1: null,
@@ -1182,6 +1316,7 @@ function kodUret(govde: unknown): IsYaniti {
       engel: null,
     };
     veri.scriptler.unshift(s);
+    sonuclar.push({ case_id: c.id, durum: "basladi", neden: null, script_id: id });
     if (!golden) {
       arkaPlan([
         () => {
@@ -1194,7 +1329,8 @@ function kodUret(govde: unknown): IsYaniti {
       ]);
       continue;
     }
-    const adimlar = platform === "web" ? golden.adimlar() : uygulamayaCevir(golden.adimlar(), platform);
+    // Web + Java eşlemesi Java page object adlarıyla saklanır (core `java_eslemesi`: `goto` → `goTo`).
+    const adimlar = platform !== "web" ? uygulamayaCevir(golden.adimlar(), platform) : javaWeb ? javaAdimlari(golden.adimlar()) : golden.adimlar();
     let kontrolKosusu: KosuDetay | null = null;
     arkaPlan([
       ...adimlar.map((a) => () => {
@@ -1204,25 +1340,39 @@ function kodUret(govde: unknown): IsYaniti {
         mockOlayYayinla({ type: "agent.step", id: s.id, data: { ...yeniAdim, platform } });
       }),
       () => {
+        if (dogrulanmamis) {
+          // 011 §2.7: doğrulanmamış dil — render sonrası kaynak saklanır; commit, yerel kontrol ve PR yok.
+          s.eslemeler = eslemeler(adimlar, golden.kaynak);
+          const cikti = webDilCiktisi(adimlar)!;
+          s.kod = cikti.kod;
+          s.dosya_yolu = cikti.dosya_yolu;
+          s.dogrulanmamis = true;
+          gecir("script", s, "unverified");
+          denetimEkle("code.render", s.id, `${DIL_ETIKETI[dil]} kaynağı üretildi (doğrulanmamış: derlenmedi, koşulmadı, PR yok)`, "core-worker");
+          mockOlayYayinla({ type: "script.updated", id: s.id, data: { durum: "unverified", dil } });
+          return;
+        }
         // Deterministik kontroller geçti: eşleme kaydı + şablondan kod; yerel kontrol başlar.
         gecir("script", s, "checking");
         s.eslemeler = eslemeler(adimlar, golden.kaynak);
-        s.kod = java ? javaTestKodu(platform as Exclude<Platform, "web">, java.sinif, c.icerik.title, adimlar) : golden.kod;
+        s.kod = java ? javaTestKodu(platform as Exclude<Platform, "web">, java.sinif, c.icerik.title, adimlar) : javaWeb ? webDilCiktisi(adimlar)!.kod : golden.kod;
         kontrolKosusu = kosuOlustur("local_check", "local", false, null);
         kontrolKosusu.script_id = s.id;
         kontrolKosusu.platform = platform;
         kontrolKosusu.durum = "running";
-        s.yerel_kontrol = { ...yerelGecti(kontrolKosusu.id), sonuc: null, sinif: null };
+        s.yerel_kontrol = { ...(javaWeb ? javaYerelGecti(kontrolKosusu.id)! : yerelGecti(kontrolKosusu.id)), sonuc: null, sinif: null };
         mockOlayYayinla({ type: "ci.status", id: s.id, data: { durum: "checking" } });
       },
       () => {
+        // Doğrulanmamış dilde yerel kontrol ve PR adımı yoktur (önceki adımda unverified'a geçti).
+        if (dogrulanmamis) return;
         const k = kontrolKosusu;
         if (k) kosuBitir(k, !golden.defect, `${c.jira_key ?? "FT"} C${c.sira_no} · ${c.icerik.title}`, golden.defect ? "Beklenen: \"0\" · Gerçekleşen: \"1\" (bedava adet)" : undefined);
         if (golden.defect) {
           s.pass_at_1 = false;
           s.yerel_sinif = "defect_adayi";
           s.yerel_kontrol = {
-            ...yerelGecti(k?.id ?? ""),
+            ...(javaWeb ? javaYerelGecti(k?.id ?? "")! : yerelGecti(k?.id ?? "")),
             sonuc: "failed",
             sinif: "defect_adayi",
             gecen: 0,
@@ -1238,7 +1388,7 @@ function kodUret(govde: unknown): IsYaniti {
           mockOlayYayinla({ type: "ci.status", id: s.id, data: { durum: "blocked" } });
           return;
         }
-        s.yerel_kontrol = yerelGecti(k?.id ?? "");
+        s.yerel_kontrol = javaWeb ? javaYerelGecti(k?.id ?? "") : yerelGecti(k?.id ?? "");
         s.yerel_sinif = "gecti";
         const prNo = yeniPrNo();
         gecir("script", s, "pr_open");
@@ -1248,7 +1398,7 @@ function kodUret(govde: unknown): IsYaniti {
           url: null,
           baslik: app
             ? `[${c.jira_key ?? "SERBEST"}-C${c.sira_no} · ${platform}] ${c.icerik.title} [AI-generated]`
-            : `test(${c.jira_key ?? "FT"}): ${c.icerik.title} [AI-generated]`,
+            : `test(${c.jira_key ?? "FT"}): ${c.icerik.title}${javaWeb ? " [Java]" : ""} [AI-generated]`,
           branch,
           durum: "open",
           ci: "passed",
@@ -1258,7 +1408,8 @@ function kodUret(govde: unknown): IsYaniti {
           checks: [
             app
               ? { ad: `local-ci-${platform}`, durum: "passed", zorunlu: true, url: null, aciklama: "javac ✓ · AST koruması ✓ · Appium 3/3 (cihazda)" }
-              : { ad: "local-ci", durum: "passed", zorunlu: true, url: null, aciklama: "tsc ✓ · eslint ✓ · AST koruması ✓ · Playwright 3/3" },
+              : // 011 K-T1: web + TS `local-ci`, web + Java `local-ci-web-java`; açıklama dilin adımlarıyla.
+                { ad: javaWeb ? "local-ci-web-java" : "local-ci", durum: "passed", zorunlu: true, url: null, aciklama: javaWeb ? JAVA_KONTROL_ACIKLAMASI : "tsc ✓ · eslint ✓ · AST koruması ✓ · Playwright 3/3" },
           ],
           forge: "local",
         };
@@ -1267,9 +1418,17 @@ function kodUret(govde: unknown): IsYaniti {
       },
     ]);
   }
-  denetimEkle("code.generate", ids.join(","), app ? `CasesToCode başlatıldı (${platform})` : "CasesToCode başlatıldı");
+  // Denetim yüküne dil eklenir (§2.3); varsayılan (web+ts, uygulama+java) ileti bugünküyle aynı kalır.
+  const dilEki = dilVar || javaWeb || dogrulanmamis ? ` · ${DIL_ETIKETI[dil]}${dogrulanmamis ? ", doğrulanmamış" : ""}` : "";
+  denetimEkle("code.generate", ids.join(","), app ? `CasesToCode başlatıldı (${platform}${dilEki})` : `CasesToCode başlatıldı${dilEki ? ` (${dilEki.slice(3)})` : ""}`);
   kaydet();
-  return is("started", `${caseler.length} case için kod üretimi başladı${app ? ` (${platform})` : ""}.`);
+  // Sonuçlar istek sırasıyla (core gibi).
+  sonuclar.sort((a, b) => ids.indexOf(a.case_id) - ids.indexOf(b.case_id));
+  return {
+    ...is("started", `${baslayan.length} case için kod üretimi başlatıldı${hedefEki(platform, dil)}${cakismaEki(sonuclar)}`),
+    cakisma_sayisi: cakismaSayisi(sonuclar),
+    sonuclar,
+  };
 }
 
 function ozetKosu(k: KosuDetay): Kosu {
@@ -1725,6 +1884,8 @@ function kontrolKulesi(): KontrolKulesi & AsistanliKule {
       kabul_hedefi: 0.7,
       script_ilk_review: null,
       script_hedefi: 0.6,
+      // core `script_dogrulanmamis`: son script'i doğrulanmamış (unverified) birimler; review paydasına girmez.
+      script_dogrulanmamis: new Set(veri.scriptler.filter((s) => s.durum === "unverified").map((s) => s.case_ids.join(","))).size,
       pass_at_1: scriptler.length ? scriptler.filter((s) => s.pass_at_1).length / scriptler.length : null,
       duzeltme_sonrasi: null,
       // core eşi: REPLAY'de model süresi ölçülmez (0/kayıt süresi ölçüm değil) — yalnız canlı case'lerden; hazirlik
@@ -1975,10 +2136,23 @@ const ROTALAR: Rota[] = [
   ["POST", /^\/code\/generate$/, (_m, _q, g) => kodUret(g)],
   [
     "GET",
+    /^\/code\/languages$/,
+    (_m, q) => {
+      izinGerekli("code.generate");
+      const ham = q.get("platform");
+      const p = ham === null || ham === "" ? "web" : platformUyarla(ham);
+      if (!p) throw new ApiError(422, `platform yalnızca ${PLATFORMLAR.join(", ")} olabilir.`);
+      return kodDilleriYaniti(p, { depoOkunamadi: mockSenaryosu("depo-okunamadi") });
+    },
+  ],
+  [
+    "GET",
     /^\/scripts$/,
     () => {
       izinGerekli("code.read");
-      return veri.scriptler.map((s) => {
+      // core `views.list_scripts`: en yeni 200 kayıt (sayfalama yok). `uzun-gecmis`te örnek veri sınırın dışında kalır.
+      const tum = mockSenaryosu("uzun-gecmis") ? [...uzunGecmisListesi(), ...veri.scriptler] : veri.scriptler;
+      return tum.slice(0, 200).map((s) => {
         const { kod: _k, adimlar: _a, yerel_kontrol: _y, ...ozet } = s;
         return ozet;
       });

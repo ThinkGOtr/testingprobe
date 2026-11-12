@@ -98,10 +98,10 @@ test("asistan paneli: açılır, sekmeler, dürüst rozetler, bağlam çipi rota
   // Çip kaldırılabilir; rota değişince (uygulama içi gezinme) yeniden eklenir ve güncellenir.
   await cipler.getByRole("button", { name: "Ekran bağlamını kaldır" }).click();
   await expect(cipler.getByText(/Bu ekran:/)).toHaveCount(0);
-  await page.getByRole("navigation", { name: "Ana menü" }).getByRole("link", { name: /Koşular/ }).click();
-  await expect(page).toHaveURL(/\/kosular$/);
+  await page.getByRole("navigation", { name: "Ana menü" }).getByRole("link", { name: /Bug taslakları/ }).click();
+  await expect(page).toHaveURL(/\/bug-taslaklari$/);
   await expect(panel(page)).toBeVisible();
-  await expect(cipler.getByText("Bu ekran: Koşular")).toBeVisible();
+  await expect(cipler.getByText("Bu ekran: Bug taslakları")).toBeVisible();
 
   // Esc paneli kapatır (odak panel içindeyken).
   await p.getByLabel("Sorunuz").focus();
@@ -118,7 +118,9 @@ test("asistan paneli: açılır, sekmeler, dürüst rozetler, bağlam çipi rota
 
 test('"? Bu ne?": pasif (disabled) düğme seçilir, nedeni sorulur; Esc önce kipten çıkar; "Git" iç rotaya götürür', async ({ page }) => {
   const hatalar = konsolHatalariniTopla(page);
-  await girisYap(page, "analist");
+  // Sunucu: script detayında "Merge et" pasif (yalnız mühendis) ve "Git: Kod üretimi" açabildiği ekran
+  // (Kod üretimi listesi yalnız mühendis + sunucuya açık).
+  await girisYap(page, "sunucu");
   await page.goto("/kod/scr-2");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(/7 adet kampanyalı/);
 

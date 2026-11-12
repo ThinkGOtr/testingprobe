@@ -223,6 +223,13 @@ export function KontrolKulesi() {
               pass@1 {ai.pass_at_1 === null ? "—" : yuzde(ai.pass_at_1)} · düzeltme sonrası {ai.duzeltme_sonrasi === null ? "—" : yuzde(ai.duzeltme_sonrasi)}
             </p>
           )}
+          {/* 011 MİM-Y2: doğrulanmamış (C# / Python) script'ler review başarısına girmez; ayrı sayılır. Core vermezse yok. */}
+          {typeof ai.script_dogrulanmamis === "number" && (
+            <p className="kucuk" data-testid="script-dogrulanmamis">
+              {ai.script_dogrulanmamis} doğrulanmamış script (C# / Python: derlenmedi, koşulmadı) ·{" "}
+              <span className="soluk">review başarısına ve pass@1'e girmez</span>
+            </p>
+          )}
           <div className="metrik-izgara">
             <Metrik
               etiket={<KpiBaslik ad="Case başına AI + review" k={k} anahtar="hazirlik_suresi" />}

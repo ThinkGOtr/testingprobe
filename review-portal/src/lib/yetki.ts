@@ -123,6 +123,7 @@ export const ROTA_IZINLERI: Record<string, readonly Izin[]> = {
   "/gereksinimler": ["requirement.read"],
   "/gereksinimler/:id": ["requirement.read"],
   "/gereksinimler/:id/caseler": ["case.read"],
+  "/caseler": ["case.read"],
   "/gereksinimler/:id/yayin": ["publish.preview"],
   "/kod": ["code.read"],
   "/kod/:id": ["code.read"],

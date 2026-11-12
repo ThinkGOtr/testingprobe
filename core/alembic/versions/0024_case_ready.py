@@ -7,11 +7,11 @@
 Mevcut veri değişmez: `approved` / `published` / `draft` / `rejected` case'ler olduğu gibi kalır;
 eski `approve` kayıtları (analist kararı) yayın kapısı için geçerlidir.
 
-Not (birleştirme): S1 şeridi de 0021 numarasıyla rol göçü ekliyor. Birleştirmede bu göçün
-`down_revision`'ı S1'in göçüne bağlanmalıdır (tek baş).
+Not (birleştirme): dev'deki 011 göçleri (0021 `script_dil`, 0022 `pr_zorunlu_checkler`) önce
+gelir; 012 göçleri 0023 (roller) → 0024 (bu) → 0025 olarak ardından zincirlenir (tek baş).
 
-Revision ID: 0022
-Revises: 0021
+Revision ID: 0024
+Revises: 0023
 Create Date: 2026-11-11
 """
 
@@ -19,8 +19,8 @@ from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "0022"
-down_revision: str | None = "0021"
+revision: str = "0024"
+down_revision: str | None = "0023"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

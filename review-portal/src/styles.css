@@ -2360,6 +2360,10 @@ article.bulgu:is([data-durum="decided"], [data-durum="resolved"], [data-durum="s
 .tk-fonksiyon {
   color: var(--tk-fonksiyon);
 }
+/* Java @Annotation, C# [Attribute], Python @decorator: fonksiyon tonuyla (kontrastı ölçülmüş renk). */
+.tk-ek {
+  color: var(--tk-fonksiyon);
+}
 
 /* ---------------------------------------------------------------- case */
 
@@ -3273,6 +3277,16 @@ body:has(.asistan-panel:not(.asistan-panel-modal)) .bildirimler {
 }
 .filtre-cubugu select {
   min-width: 140px;
+}
+/* Onay kutulu süzgeç (ör. "Eski sürümleri göster"): kutu ve etiketi yan yana, diğer alanlarla aynı tabanda. */
+.filtre-cubugu label.filtre-onay {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+}
+.filtre-cubugu .filtre-story {
+  max-width: 20rem;
 }
 /* Arama kutuları yer tutucuyu kesmesin. */
 #denetim-ara,
@@ -4822,4 +4836,108 @@ td > .satir-baglanti + .cip,
 .sayfa-kaynagi-xml {
   max-height: 24rem;
   overflow: auto;
+}
+
+/* ---------------------------------------------------------------- 011 üretim dili (Ş6) */
+
+/* Dil seçici platform seçicinin hemen altında, aynı segment görünümünde. Kaynak notu (repodan algılandı /
+   elle seçildi / varsayılan) grubun altında; "Algılanana dön" metin düğmesi notun yanında. */
+.dil-secici .platform-secici {
+  margin-bottom: 4px;
+}
+.dil-notu {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin: 0 0 12px;
+  color: var(--text-2);
+}
+.dil-bilgi {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: 0 0 12px;
+}
+.dil-bilgi-etiket {
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+.dil-yukleniyor {
+  margin: 0 0 12px;
+}
+/* Kullanılamayan seçenek: seçilemez ama odaklanır; neden seçeneğin içinde görünür yazılır (yalnız title değil). */
+.platform-secenek.pasif {
+  border-style: dashed;
+  background: var(--surface-3);
+  color: var(--text-2);
+  cursor: not-allowed;
+}
+.platform-secenek.pasif:hover {
+  background: var(--surface-3);
+}
+.platform-secenek-neden {
+  display: block;
+  color: var(--text);
+  font-weight: 500;
+}
+/* Doğrulanmamış script bandı: indirme + başka dilde yeniden üretim, dar ekranda alt alta. */
+.dogrulanmamis-bandi .uyari-kutusu > div {
+  flex: 1 1 100%;
+}
+.dogrulanmamis-bandi p {
+  margin: 0 0 8px;
+}
+.dogrulanmamis-eylemler {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  justify-content: flex-start;
+}
+.dil-yeniden {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.dil-yeniden select {
+  margin-left: 4px;
+  min-width: 9rem;
+}
+.dil-rozeti {
+  vertical-align: middle;
+}
+
+/* ---------------------------------------------------------------- 011 inceleme turu 1 (D4) */
+
+/* Test case'leri "Otomasyon" sütunu: case'in script'leri sıkı satırlar (her script platform + dil + durum + PR). */
+.otomasyon-liste li {
+  padding: 2px 0;
+  border-top: none;
+}
+
+/* Test case'leri satırından gelinen case kartı (`#case-<id>` çapası, programatik odak): halka görünür. */
+.case[tabindex="-1"]:focus {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Kod üretimi "Üretilen testler" dar ekranda kart: Test hücresi kartın başlığıdır (etiketsiz, tam genişlik);
+   başlık ve dosya yolu sarılır, kesilmez. Özgüllük `.tablo.tablo-yigin tbody td:not(.adim-no)` ile aynı, sonra gelir. */
+@media (max-width: 640px) {
+  .tablo.tablo-yigin tbody td.yigin-baslik {
+    padding: 4px 0 6px;
+  }
+  .tablo-yigin td.yigin-baslik::before {
+    display: none;
+  }
+  /* Hata şeridi kartın sol kenarına taşınır (hücre içi şerit kart kipinde başlık metnine biner). */
+  .kod-tablosu .tablo-yigin tbody tr:has(.cip-hata) {
+    border-left: 3px solid var(--err);
+  }
+  .kod-tablosu .tablo-yigin tbody tr:has(.cip-hata) > td:first-child {
+    box-shadow: none;
+  }
 }

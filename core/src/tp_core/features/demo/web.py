@@ -43,6 +43,8 @@ from typing import Any, Protocol
 
 import httpx
 
+from tp_core.ports import ForgePort
+
 REFRESH_ENV = "TP_DEMO_WEB_REFRESH"
 SHA_FILE_ENV = "TP_DEMO_WEB_SHA_FILE"
 REQUEST_FILE_ENV = "TP_DEMO_WEB_REQUEST_FILE"
@@ -129,19 +131,20 @@ def sha_dosyasindaki() -> str | None:
     return ilk if _sha_mi(ilk) else None
 
 
-def uygulama_eslesiyor(forge: Any, hedef_sha: str, uygulama_sha: str | None) -> tuple[bool, str]:
+def uygulama_eslesiyor(
+    forge: ForgePort, hedef_sha: str, uygulama_sha: str | None
+) -> tuple[bool, str]:
     """Çalışan uygulama `hedef_sha`'nın uygulama ağaçlarını (web, api) mı taşıyor?"""
     if not uygulama_sha:
         return False, "çalışan uygulamanın commit'i bilinmiyor"
     if uygulama_sha == hedef_sha or hedef_sha.startswith(uygulama_sha):
         return True, "aynı commit"
-    degisen = getattr(forge, "changed_paths", None)
-    if degisen is None:
-        return False, "forge ağaç karşılaştırmasını desteklemiyor"
     try:
-        yollar = degisen(uygulama_sha, hedef_sha)
+        yollar = forge.changed_paths(uygulama_sha, hedef_sha)
     except Exception as exc:  # bilinmeyen sha vb.
         return False, f"karşılaştırılamadı: {exc}"[:200]
+    if yollar is None:  # GitHub: fark listesi kesilmiş olabilir
+        return False, "karşılaştırılamadı: fark listesi eksik"
     from tp_core.integrations.forge_demo import app_path
 
     # GitHub kipinde uygulama `demo-app/` altındadır: `demo-app/web/...` uygulama yoludur.

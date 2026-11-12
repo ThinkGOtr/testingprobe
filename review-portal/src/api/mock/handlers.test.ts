@@ -525,7 +525,7 @@ describe("mock arka uç: Demo-A ölçüm, yeniden açma, token, olaylar", () => 
     const karar = await api.caseKarari("case-1-7", { ...caseH("case-1-7"), karar: "accept" });
     expect(karar.review_sure_ms).toBeGreaterThanOrEqual(10);
     // Görüntülenmeden verilen kararda süre uydurulmaz.
-    const olcumsuz = await api.caseKarari("case-1-8", { ...caseH("case-1-8"), karar: "reject", ret_nedeni: "out_of_scope" });
+    const olcumsuz = await api.caseKarari("case-1-5", { ...caseH("case-1-5"), karar: "reject", ret_nedeni: "out_of_scope" });
     expect(olcumsuz.review_sure_ms).toBeNull();
   });
 
@@ -555,8 +555,8 @@ describe("mock arka uç: Demo-A ölçüm, yeniden açma, token, olaylar", () => 
     await girisYap("analist");
     const m = await api.caseMetrikleri("req-tpd-1");
     // Ana yol (f2-kod-hatasi): C3 golden'ı story'yi esas alır, analist düzenlemeden onaylar.
-    expect(m).toMatchObject({ uretilen: 10, karar_verilen: 6, bekleyen: 4, kabul: 4, kabul_hedefi: 0.7 });
-    expect(m.kabul_orani).toBeCloseTo(4 / 10);
+    expect(m).toMatchObject({ uretilen: 10, karar_verilen: 8, bekleyen: 2, kabul: 6, kabul_hedefi: 0.7 });
+    expect(m.kabul_orani).toBeCloseTo(6 / 10);
     expect(Object.keys(m.ai_cagri_modlari).every((k) => k === "replay" || k === "replay_miss")).toBe(true);
   });
 

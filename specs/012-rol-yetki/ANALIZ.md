@@ -92,7 +92,7 @@ oturumu ve Jira PO kanalını kabul eder).
 | `case.approve` | analyst | `POST /cases/{id}/decision` karar ∈ `approve`, `send_back`; `POST /requirements/{id}/review-complete` | yalnız `ready` case; `send_back` gerekçe ister |
 | `case.publish` | tester | `POST /publish` | onaylı + hash değişmemiş (mevcut kapı) |
 | `token.issue` | tester | `POST /tokens` | yayın / IDE gönderim kanalı |
-| `code.generate` | engineer | `POST /code/generate` | onaylı case (mevcut) |
+| `code.generate` | engineer | `POST /code/generate`, `GET /code/languages` | onaylı case (mevcut). `GET /code/languages` (011 üretim dili, K-T8) her çağrıda forge'u okur; yalnız üretimi başlatan role açık, portal 403'ü "dil seçici yok" sayar |
 | `code.break_verify` | engineer | `POST /scripts/{id}/break-verify` | |
 | `code.review` | engineer | `POST /prs/{n}/review`, `POST /prs/{n}/update-branch` | |
 | `code.merge` | engineer | `POST /prs/{n}/merge` | yeşil CI + korumalı dal (mevcut merge kapısı); K3 |
@@ -109,7 +109,7 @@ oturumu ve Jira PO kanalını kabul eder).
 |---|---|---|
 | `dashboard.read` | hepsi | Kontrol Kulesi uçları, `GET /demo/status`, `GET /auth/me` |
 | `requirement.read` | admin, analyst, po, tester, engineer, developer | gereksinim listesi/detayı, bulgular, baz değer okuma |
-| `case.read` | admin, analyst, po, tester, engineer, developer* | case listesi/detayı, `GET /requirements/{id}/case-metrics`; *developer yalnız `approved`/`published` case; karar geçmişi ve chat yok |
+| `case.read` | admin, analyst, po, tester, engineer, developer* | case listesi/detayı (portal `/caseler` Test case'leri ekranı dahil, 011 dev birleştirmesi), `GET /requirements/{id}/case-metrics`; *developer yalnız `approved`/`published` case; karar geçmişi ve chat yok |
 | `code.read` | admin, analyst, tester, engineer | script listesi/detayı, ekran görüntüleri (`GET /scripts/{id}/screenshots/{n}`), onarım durumu (`GET /failures/{id}/fix`) |
 | `run.read` | hepsi | koşu listesi/detayı |
 | `run.artifacts` | admin, analyst, po, tester, engineer, developer | ham artefaktlar, `GET /artifacts/runs/{run_id}/{yol}` (auditor ve viewer hariç) |
@@ -123,6 +123,8 @@ oturumu ve Jira PO kanalını kabul eder).
 | `publish.preview` | admin, analyst, po, tester, engineer | `GET /publish/preview` (dry-run gövde; yayın `case.publish`) |
 | `claude_code.read` | admin, analyst, tester, engineer | Claude Code sayfası (portal; çekirdek ucu yok, token'lar `token.read` ile yalnız kendi) |
 | `demo.read` | admin, analyst, po, tester, engineer | Demo yol haritası sayfası (portal; çekirdek ucu yok) |
+
+Not (dev birleştirmesi, 2026-11-12): dev'deki "Kod üretimi / Koşular listeleri yalnız engineer + presenter" menü/rota kısıtı (`OTOMASYON_ROLLERI`, Hakan geri bildirimi) bu tabloya çevrildi: `/kod` → `code.read`, `/kosular` → `run.read`; ayrı rol listesi tutulmaz.
 
 Ayar izinleri: `integration.manage` / `system.settings` bu kurulumda uygulanmaz — entegrasyon ve
 sistem ayarları `.env` / sır yöneticisiyle yapılır, portalda ayar ekranı yoktur.

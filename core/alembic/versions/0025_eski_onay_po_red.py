@@ -8,8 +8,8 @@
   kapatılarak yapılır; uygulama kullanıcısı (tp_app) review'u güncelleyemez.
 - `review_karar_ck`'ye `po_reject` eklenir (T04: serbest metin gereksiniminde gerekçeli PO reddi).
 
-Revision ID: 0023
-Revises: 0022
+Revision ID: 0025
+Revises: 0024
 Create Date: 2026-11-12
 """
 
@@ -17,8 +17,8 @@ from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "0023"
-down_revision: str | None = "0022"
+revision: str = "0025"
+down_revision: str | None = "0024"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

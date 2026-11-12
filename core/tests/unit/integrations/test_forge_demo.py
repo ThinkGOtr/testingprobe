@@ -437,11 +437,6 @@ def test_break_bayat_dalda_fark_ortak_atadan(forge: LocalForge) -> None:
     assert forge.merge_base("main", BREAK_BRANCH) == forge.head_sha("demo-baseline")
 
 
-def test_verify_forge_destegi_yoksa() -> None:
-    with pytest.raises(ForgeValidationError):
-        forge_demo.verify_break_diff(object(), "a" * 40)  # type: ignore[arg-type]
-
-
 # ------------------------------------------------- web-state (forge-init.sh idempotentliği)
 
 

@@ -479,3 +479,31 @@ def test_dispatch_yaniti_belirsiz_ve_kosu_yoksa_sure_sonunda_yeniden(
     with services.override(now=lambda: datetime.now(UTC) + timedelta(seconds=400)):
         service.github_poll(engine, rid, 0)
     assert len(gh.dispatchler) == 1  # ilki hiç ulaşmadı; süre dolunca bir kez gönderildi
+
+
+def test_pr_yorumu_dil_ve_check_basligi_tasir() -> None:
+    """OPS-L3: aynı PR'daki kardeş koşuların (TS / Java / uygulama) yorumları dil ve check adı
+    başlığıyla ayrışır; satırdaki sonuç koşunun kendi job'undan okunur."""
+
+    def govde(ortam: dict[str, Any], isler: list[dict[str, Any]]) -> str:
+        run = Run(
+            ortam=ortam,
+            sonuc="passed",
+            commit=SHA,
+            tetik="pr",
+            artefaktlar={"github": {"isler": isler}},
+        )
+        return service.pr_comment_body(run)
+
+    isler = [{"ad": "test-local", "sonuc": "success"}, {"ad": "web-java", "sonuc": "failure"}]
+    ts = govde({"platform": "web", "dil": "ts"}, isler)
+    assert "**web · TypeScript (Playwright Test) · check `test-local`**" in ts
+    assert "- test-local: success" in ts
+    java = govde({"platform": "web", "dil": "java"}, isler)
+    assert "**web · Java (Playwright for Java + TestNG) · check `web-java`**" in java
+    assert "- web-java: failure" in java and "test-local" not in java
+    eski = govde({}, isler)  # dilsiz eski kayıt: web + TS
+    assert "check `test-local`" in eski
+    android = govde({"platform": "android"}, [{"ad": "mobil-android", "sonuc": "success"}])
+    assert "**android · Java (Appium + TestNG) · check `mobil-android`**" in android
+    assert "- mobil-android: success" in android

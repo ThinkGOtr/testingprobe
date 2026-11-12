@@ -102,5 +102,5 @@ prosedüreldir: `main` PR'ı plan §14'teki birleştirme kontrol listesiyle aç�
 - [ ] T132 E2E: mock duman + `canli.spec.ts` (`TP_ASISTAN_MODEL_MODE=off`); prova dürüstlük kilidi yeşil
 - [ ] T133 Gerçek Jira Cloud'da "Jira'yı aç" yeni kayıt yolu kontrolü (research R7)
 - [ ] T134 Çok rollü inceleme döngüsü; KRİTİK/ÖNEMLİ bulgu yok
-- [ ] T136 K10 yeniden onayı: kural 1, 8, 11 daraltmaları ve kural 15 (defect adayı hariç, eylem `/kod`); onayla plan K10 satırı tarihlenir (contracts/oneri-kurallari.md fark listesi)
+- [x] T136 K10 yeniden onayı (2026-11-12, ürün sahibi): kural 1, 8, 11 daraltmaları ve kural 15 (defect adayı hariç, eylem `/kod`); onayla plan K10 satırı tarihlenir (contracts/oneri-kurallari.md fark listesi)
 - [ ] T135 Tam paket yeşil → `main` → sunucu `.env`'de `TP_ASISTAN_MODEL_MODE=live`

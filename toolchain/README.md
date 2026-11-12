@@ -55,6 +55,8 @@ Alternatives not taken: installing Chromium 1247 next to 1248 (disk, two browser
 | `/opt/toolchain/ast-guard/{dist,node_modules}` | ast-guard CLI, built in the `nodebuild` stage (same pinned base) |
 | `/opt/toolchain/symbols/{dist,node_modules}` | ts-morph symbol extractor (`symbols/`, built in `nodebuild`) |
 | `/opt/toolchain/probe/locator-probe.mjs` | Locator probe (Playwright `chromium`, image browsers) |
+| `/opt/e2e-app/{pom.xml,m2}`, `/opt/e2e-java/{pom.xml,m2}` | Trusted poms (byte copies of `e2e-app-deps/`, `e2e-java-deps/`) and warmed read-only Maven repos (`TP_E2E_APP_DEPS`, `TP_E2E_JAVA_DEPS`); the target project's `pom.xml` must be byte-equal (pom lock). The `ci` stage runs an offline web + Java smoke test (`e2e-java-isinma/`) at build time; the Java layers come before the frequently changing source COPYs |
+| `/opt/toolchain/java-araclar/java-araclar.jar` | Java symbols / generated-test guard / `Kimlikler.java` patch (`java-araclar/`) |
 | `/opt/e2e/{package.json,package-lock.json,eslint.config.js,node_modules}` | demo-app e2e deps, offline, read-only. Built from `e2e-deps/`, a byte copy of `demo-app/e2e`'s manifests (`tests/test_e2e_deps.py` fails on drift: copy the files and rebuild) |
 | `/artifacts` | mount point owned by `pwuser`: an empty named volume takes this ownership on first mount |
 
@@ -104,8 +106,10 @@ written. Empty token → endpoints open and `/health` `auth: ok (uyarı: …)`; 
   - **Single writer of `TP_ARTIFACTS_PATH/checks/<full sha>.json`** (core only reads it via
     `LocalForge.checks()`): `{"schema_version":1, "sha", "guncelleme", "checks":[{"name":"local-ci",
     "status":"in_progress"|"completed","conclusion":…,"url":null}], "report":{…}, "reports":{name:…}}`.
-    Check names are **per platform** (spec 009 §2.7): web/TS `local-ci` (unchanged), Java
-    `local-ci-android|ios|windows` (`/check` with `lang:"java"` requires `platform`). A write only
+    Check names come from one source, `platform.check_adi(platform, dil)` (spec 009 §2.7, spec 011
+    review round 1 K-T1): web + TS `local-ci` (unchanged), **web + Java `local-ci-web-java`**
+    (`lang:"java"` with `platform:"web"` or no platform), app Java `local-ci-android|ios|windows`
+    (`lang:"java"` + app platform). Sibling runs on the same sha therefore never overwrite each other. A write only
     replaces its own entry; other platforms' entries are kept (`report` = last written). `in_progress`
     first, `completed` at the end, `failure` on any unexpected exception. Which checks are recorded
     (`record_check`): `null` (default) → only a **full-scope** check (no `test_files`, no `grep`) —
@@ -225,6 +229,19 @@ written. Empty token → endpoints open and `/health` `auth: ok (uyarı: …)`; 
 - Status: `failed` = some test unexpected; `error` = health check failed, timeout, no/corrupt report, report-level errors,
   no test ran, non-zero exit without failures, or break not restored; else `passed` (flaky counts as passed, see `stats.flaky`).
 
+#### Web + Java runs (spec 011 §2.6, Playwright for Java + TestNG)
+
+- `lang:"java"` with `platform:"web"` (or no platform) targets the `TP_E2E_JAVA_ROOT` tree
+  (`e2e-java`; GitHub mode `demo-app/e2e-java`), trusted pom `TP_E2E_JAVA_DEPS` (`/opt/e2e-java`).
+  `lang` is only `ts|java`; `csharp|python` never reach the toolchain (422). Steps `app → deps →
+  guard → compile → run` (same names as app Java); report carries `lang:"java"`, `platform:"web"`;
+  recorded check `local-ci-web-java`.
+- test-runner: no Appium health check (API + web origin only), `repeat_each` supported (web default
+  3), browser from the image's `/ms-playwright` (no download). Evidence
+  `target/kanit/<Class>.<method>/{ekran.png, trace.zip, sayfa.html}` (web triage method).
+- Same hardening as the app Java path below (offline pinned Maven, read-only warmed repo tail, pom
+  lock, env allow-list).
+
 #### Java / Appium runs (spec 009 §2.7, `runner/java_run.py`)
 
 - `POST /run {…, lang:"java", platform:"android"|"ios"|"windows"}` — `platform` is required with
@@ -258,7 +275,7 @@ written. Empty token → endpoints open and `/health` `auth: ok (uyarı: …)`; 
   `surefire_dir`, `kanit_dir`, `appium_url`, `compile_diagnostics` (javac errors when Maven failed
   without a report), `kirmizi_denetimi` (break runs: `{ok, kirmizi, kotu}` — the
   `araclar/KirmiziDenetimi.java` rule: every red test is an assertion, at least one red; setup,
-  locator, other errors and skipped tests are not "red"). `reports:{junit,surefire,allure,allure_html,kanit}`.
+  locator, other errors and skipped tests are not "red"). `reports:{junit,surefire,allure,allure_html,extent_html,kanit}`.
 - `failure.type` (same set as Playwright): `assertion` (`<failure type=java.lang.AssertionError>`,
   `Bekle.dogrula`; `expected`/`received`/`timeout_ms` parsed), `locator_not_found` (Timeout "öğe
   görünmedi: kimlik …" / NoSuchElement), `locator_timeout` (other TimeoutException), `test_data`
@@ -266,6 +283,13 @@ written. Empty token → endpoints open and `/health` `auth: ok (uyarı: …)`; 
   `locator_scope_test_id` come from the `kimlik '…'` text; `page_location` is the first
   `ekranlar/` stack frame; `evidence.screenshot` / `evidence.page_source` (+ `page_source_rel`) are
   `target/kanit/<Class>.<method>/{ekran.png,sayfa-kaynagi.xml}`.
+- Extent report: the e2e-app TestNG listener (`altyapi/ExtentRaporu`, dependency
+  `com.aventstack:extentreports` in the trusted pom) writes a single-file, offline Spark report
+  `target/extent-report/index.html` during the run (`reports.extent_html` = `{path, rel, exists}`;
+  the portal's "Extent raporu" link). No generation step in the runner: it only passes
+  `-Dextent.rapor.dizini=<target>/extent-report` (shared by all repeats; the listener merges earlier
+  repeats from `extent.json`) and, when `repeat_each` > 1, `-Dextent.tekrar=<i>/<n>`. A commit
+  without the listener simply has `exists:false`; the run status never depends on it.
 - Network: Appium runs on the host; test-runner reaches it **only** through `appium-gw`
   (compose profile `mobil`, see `docs/CIHAZ-ALTYAPISI.md` §5.1).
 
@@ -338,8 +362,11 @@ the formal shape of the error, the class (defect candidate / maintenance / envir
 
 ### Environment (defaults)
 
-`TP_FORGE_PATH` (/forge/demo-app.git), `TP_ARTIFACTS_PATH` (/artifacts), `TP_E2E_ROOT` (e2e),
-`TP_E2E_DEPS` (/opt/e2e), `TOOLCHAIN_HOME` (/opt/toolchain), `TEST_RUNNER_URL`, `BASE_URL`,
+`TP_FORGE_PATH` (/forge/demo-app.git), `TP_ARTIFACTS_PATH` (/artifacts), `TP_E2E_ROOT` (e2e;
+GitHub mode `demo-app/e2e`), `TP_E2E_DEPS` (/opt/e2e), `TP_E2E_APP_ROOT` (e2e-app; GitHub
+`demo-app/e2e-app`), `TP_E2E_APP_DEPS` (/opt/e2e-app), `TP_E2E_JAVA_ROOT` (e2e-java; GitHub
+`demo-app/e2e-java`), `TP_E2E_JAVA_DEPS` (/opt/e2e-java), `TP_JAVA` (java), `TP_MVN`
+(/opt/maven/bin/mvn), `TP_MVN_TIMEOUT_S` 300, `TP_JAVA_ARACLAR_JAR`, `TOOLCHAIN_HOME` (/opt/toolchain), `TEST_RUNNER_URL`, `BASE_URL`,
 `DEMO_API_URL`, `DEMOAPP_TEST_TOKEN`, `DEMO_WEB_URL` (http://demo-app-web:8080, probe target),
 `TP_PROBE_USER`/`TP_PROBE_PASSWORD` (bayi1 / Demo123!, DEMO-VERISI.md), `TP_RUN_DEALERS`.
 Timeouts (s): `TP_GIT_TIMEOUT_S` 60, `TP_TSC_TIMEOUT_S` 180, `TP_ESLINT_TIMEOUT_S` 240,

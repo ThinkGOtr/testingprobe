@@ -197,6 +197,14 @@ kayitlar:
     neden: Bağlantı eski olabilir ya da kayıt yeniden üretilmiş (yeni kimlikle) olabilir.
     cozum: Listeden kaydı yeniden açın.
     rota: null
+  - id: dil-cakismasi
+    kodlar: [dil_cakismasi]
+    metinler: []
+    baslik: Test başka dilde merge edilmiş
+    anlam: Bu case'in bu platformdaki testi başka bir dilde (ör. TypeScript) merge edilmiş; aynı case için ikinci dilde test üretilemez.
+    neden: Repoda aynı case iki ayrı dilde test olarak bulunmasın diye tam hat dilinde (TypeScript, Java) dil değiştirme engellenir. Mevcut testi kaldırmak ürün akışının parçası değildir.
+    cozum: Mevcut test dosyasını silen bir PR'ı merge edin, sonra kod üretimini seçtiğiniz dilde yeniden başlatın. C# ya da Python ile doğrulanmamış üretim bu engele takılmaz.
+    rota: /kod
   - id: cakisma
     kodlar: [cakisma]
     metinler: []

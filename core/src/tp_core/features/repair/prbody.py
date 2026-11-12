@@ -44,9 +44,16 @@ def pr_govdesi(k: Mapping[str, Any]) -> str:
     ast = k.get("ast_guard") or {}
     yk = k.get("yerel_kontrol") or {}
     platform = str(k.get("platform") or "web")
-    java = platform != "web"
+    web_java = platform == "web" and k.get("dil") == "java"
+    java = platform != "web" or web_java
+    kanit = "hata anı DOM'u" if web_java else "hata anı sayfa kaynağı"
     giris = (
-        f"Uygulama ({platform}): yalnızca `ekranlar/Kimlikler.java` içindeki ilgili sabitin "
+        "Web + Java (Playwright for Java): yalnızca `ekranlar/Kimlikler.java` içindeki ilgili "
+        "sabitin testId değeri değişir; sabit adları, niyet ve ekran nesneleri değişmez (011 "
+        "§2.8). Test dosyaları ve assertion'lara dokunulmadı (Constitution VI). Merge yalnızca "
+        "insan onayıyla yapılır."
+        if web_java
+        else f"Uygulama ({platform}): yalnızca `ekranlar/Kimlikler.java` içindeki ilgili sabitin "
         "kimlik değeri değişir; sabit adları, niyet ve ekran nesneleri değişmez (009 §2.2). "
         "Test dosyaları ve assertion'lara dokunulmadı (Constitution VI). Merge yalnızca insan "
         "onayıyla yapılır."
@@ -80,7 +87,7 @@ def pr_govdesi(k: Mapping[str, Any]) -> str:
         str(k.get("fark") or "").replace("```", "'''")[:4000].rstrip(),
         "```",
         "",
-        "### Aday (hata anı sayfa kaynağı)" if java else "### Aday (çalışan uygulamada yoklama)",
+        f"### Aday ({kanit})" if java else "### Aday (çalışan uygulamada yoklama)",
         f"- Sayfa: {_kod(probe.get('url_path'))} · kapsayıcı {_kod(k.get('scope_test_id'))}",
         f"- Eşleşme: {_kod(probe.get('matches'))} · okunan testId {_kod(probe.get('test_id'))}",
         f"- Ölçülen: {_kod(probe.get('olculen'))} · uygulama sha {_kod(probe.get('uygulama_sha'))}"
@@ -90,7 +97,7 @@ def pr_govdesi(k: Mapping[str, Any]) -> str:
         satirlar.append(f"- Uyarı: {_kod(probe.get('uyari'), 300)}")
     satirlar += [
         "",
-        "### Kanıt doğrulaması (sayfa kaynağı)" if java else "### Son yeşil doğrulaması (aria)",
+        f"### Kanıt doğrulaması ({kanit})" if java else "### Son yeşil doğrulaması (aria)",
         f"- Kaynak: {_kod(aria.get('kaynak'))}"
         + (f" · koşu {_kod(aria.get('run_id'))}" if aria.get("run_id") else "")
         + (f" · {_kod(aria.get('ref'))}" if aria.get("ref") else ""),

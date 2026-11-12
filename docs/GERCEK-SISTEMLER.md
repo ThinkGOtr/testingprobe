@@ -409,7 +409,10 @@ Hedef depo: **`ThinkGOtr/testingprobe-demo-app`** (özel). Kimlikler — anayasa
    `test-local`, `ast-guard`, `semgrep`; GitHub-hosted `ubuntu-24.04`; ürün deposundaki ci.yml'den
    golden-drift job'u çıkarılmış — golden kayıtlar ve `rules/` ürün deposunda kalır),
    `break-verify.yml`, `CODEOWNERS` (`@gokhansipahi`; `--codeowner` ile değişir), `dependabot.yml`,
-   `scripts/github-*.sh` (CI yardımcıları), `toolchain/ast-guard/`, `.playwright-version`. Tek ve
+   `scripts/github-*.sh` (CI yardımcıları), `toolchain/ast-guard/`, `.playwright-version`; web +
+   Java hattı (011) için `demo-app/e2e-java/`, `.github/workflows/web-java.yml`,
+   `toolchain/java-araclar/` (üretilen test koruması) ve `toolchain/e2e-java-deps/pom.xml` (güvenilir
+   pom; hedef pom ile bayt eşit — CI'da yoksa `run-java-checks.sh` hata verir). Tek ve
    deterministik bir ilk commit ve onun üzerinde **`demo-baseline`** etiketi oluşturulur (GitHub
    kipindeki demo sıfırlamasının hedef ağacı). `.env*` ve anahtar/token kalıpları bulunursa betik durur.
 3. Gönderin (sizin git kimlik bilgilerinizle; ör. `gh auth setup-git` — workflow dosyaları için
@@ -485,10 +488,20 @@ GITHUB_READ_TOKEN=<salt okuma>
 TP_FORGE_REMOTE_URL=https://github.com/ThinkGOtr/testingprobe-demo-app.git
 TP_FORGE_REMOTE_TOKEN=<salt okuma>
 TP_E2E_ROOT=demo-app/e2e
+TP_E2E_APP_ROOT=demo-app/e2e-app        # 009 uygulama Java hattı
+TP_E2E_JAVA_ROOT=demo-app/e2e-java      # 011 web + Java hattı (toolchain-worker + test-runner)
 TP_APP_PATHS=demo-app/web,demo-app/api
-TP_REQUIRED_CHECKS=                     # boş = test-local,ast-guard,semgrep
+TP_REQUIRED_CHECKS=                     # boş = test-local,ast-guard,semgrep (+ aşağıdakiler)
+TP_PLATFORMS=                           # ör. android,windows → mobil-android, masaustu-windows zorunlu
+TP_WEB_DILLERI=                         # ts,java → web-java zorunlu + web Java üretimi (011 K-T3)
 ```
 
+- **Web + Java (011):** `TP_WEB_DILLERI=ts,java` yazmadan önce (1) demo deposunda `web-java.yml`,
+  `toolchain/java-araclar/`, `toolchain/e2e-java-deps/` olmalı (5.1 `--push --update`), (2) ruleset'e
+  `web-java` eklenmeli (`scripts/github-ruleset.sh --checks test-local,ast-guard,semgrep,web-java
+  --apply`). `java` yazılmazsa Kod üretimi ekranında Java "kullanılamaz" görünür ve paket koşularında
+  Java kardeş koşusu açılmaz (gelmeyen check'i beklemez). Yalnız `ts|java` geçerlidir; başka değer
+  core'u GitHub kipinde başlatmaz. C#/Python doğrulanmamıştır, PR'a girmez.
 - `GH_APP_PRIVATE_KEY_PATH` yalnızca dosya core-worker konteynerinde görünürse işe yarar; compose
   böyle bir bağlama içermez, bu yüzden tek satırlık `GH_APP_PRIVATE_KEY` kullanın.
 - `TP_FORGE_REMOTE_URL` boşsa GitHub modunda "Kırarak doğrula" tamamlanamaz (merge açık kabul notu
@@ -511,7 +524,9 @@ TP_REQUIRED_CHECKS=                     # boş = test-local,ast-guard,semgrep
 | Automation Engineer · Koşular → "Gece koşusunu şimdi başlat" | `workflow_dispatch` `ci.yml` `tetik=nightly`; ayrıca zamanlanmış `0 2 * * *` (UTC) |
 
 Core koşuyu adındaki `[<kimlik>]` ile bulur, artefaktları (`test-local-results`, `sauce-results`)
-indirir; PR CI sonucu PR'a tek yorum olarak yazılır.
+indirir; PR CI sonucu PR'a tek yorum olarak yazılır. `java ∈ TP_WEB_DILLERI` iken gece/push/deploy
+paket koşuları `web-java.yml`'ı da tetikler (kardeş koşu, `web-java-results`; koşu kaydında
+`ortam.dil = java`).
 
 ### 5.7 Locator kırılması/onarımı GitHub kipinde
 

@@ -141,6 +141,7 @@
       "merged",
       "pending",
       "pr_open",
+      "unverified",
       "verifying"
     ],
     "transitions": {
@@ -169,10 +170,15 @@
         "closed",
         "merged"
       ],
+      "unverified": [
+        "closed",
+        "pending"
+      ],
       "verifying": [
         "blocked",
         "checking",
-        "failed"
+        "failed",
+        "unverified"
       ]
     }
   },

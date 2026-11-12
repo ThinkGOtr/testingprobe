@@ -65,6 +65,8 @@ def test_runs_listesi_ve_detay(
     assert k["allure_url"] == f"/api/artifacts/runs/{rid}/src/e2e/results/allure-report/index.html"
     assert k["allure_rapor"] is True
     assert k["allure_sonuclari_url"] == f"/api/artifacts/runs/{rid}/src/e2e/results/allure-results"
+    # Extent raporunu yalnızca Java (Appium + TestNG) koşusu üretir: web koşusunda bağlantı yok.
+    assert k["extent_url"] is None
     rapor = api.get(k["allure_url"].removeprefix("/api"))
     assert rapor.status_code == 200 and "sandbox" in rapor.headers["content-security-policy"]
     assert "allow-same-origin" not in rapor.headers["content-security-policy"]

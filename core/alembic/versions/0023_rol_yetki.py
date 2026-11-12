@@ -12,8 +12,8 @@
 Geri alma: `admin` → `presenter`. Yeni rollerde (`auditor`, `developer`, `viewer`) hesap varsa
 geri alma durur (bu hesaplar eski modelde karşılıksızdır; bilerek silinmeleri gerekir).
 
-Revision ID: 0021
-Revises: 0020
+Revision ID: 0023
+Revises: 0022
 Create Date: 2026-11-11
 """
 
@@ -22,8 +22,8 @@ from collections.abc import Sequence
 from alembic import op
 from sqlalchemy import text
 
-revision: str = "0021"
-down_revision: str | None = "0020"
+revision: str = "0023"
+down_revision: str | None = "0022"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -54,7 +54,7 @@ def downgrade() -> None:
     adlar = list(yeni_rollu)
     if adlar:
         raise RuntimeError(
-            "0021 geri alınamaz: eski rol modelinde karşılığı olmayan hesaplar var: "
+            "0023 geri alınamaz: eski rol modelinde karşılığı olmayan hesaplar var: "
             + ", ".join(adlar)
         )
     op.execute("ALTER TABLE ci_tetik DROP CONSTRAINT ci_tetik_tetik_ck")
