@@ -162,6 +162,11 @@ _KISA = "admin" + "123"
         (f"parola {_PAROLA}", "parola ***"),
         (f"şifre {_KISA} ile giriş", "şifre *** ile giriş"),
         (f"SIFRE {_KISA}", "SIFRE ***"),
+        # İnceleme turu 2: kısa adlar, NBSP, "olarak"
+        (f"pwd={_PAROLA}", "pwd=***"),
+        (f"pass: {_PAROLA}", "pass: ***"),
+        (f"parola\u00a0{_PAROLA}", "parola\u00a0***"),
+        (f"şifre olarak '{_PAROLA}' kullan", "şifre olarak '***' kullan"),
     ],
 )
 def test_turkce_parola_anahtari(text: str, kalan: str) -> None:
@@ -179,6 +184,14 @@ def test_turkce_parola_anahtari(text: str, kalan: str) -> None:
         "Şifre 2 haftada bir değişir",
         "parola: str",
         "şifre 12345678",  # yalnız rakam
+        "şifre: 12345678",  # yalnız rakam (bilinen sınır)
+        "şifre olarak kullanılan alan",
+        "pass: true",
+        "pass rate %95",
+        "pass_rate: abc12345x",
+        "--- PASS: TestLogin2 (0.00s)",  # Go test raporlayıcı satırı
+        "PWD=/home/runner1/work",  # kabuk ortam değişkeni
+        "compass: abc12345x",
     ],
 )
 def test_turkce_parola_yanlis_pozitif_yok(text: str) -> None:

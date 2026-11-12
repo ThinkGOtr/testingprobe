@@ -20,11 +20,12 @@ Desen dosyası bilgi paketine alınmaz (K7): asistan kendi dedektörlerinin dese
 
 from __future__ import annotations
 
+import os
 import re
+import threading
 import unicodedata
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
-from functools import lru_cache
 from pathlib import Path
 from typing import Any, Final, Literal
 
@@ -35,7 +36,8 @@ from tp_core.features.assistant.siniflandir import normalize
 SINYAL_DOSYASI: Final = "sinyaller.yaml"
 YONLER: Final = ("girdi", "cikti")
 _KAYIT_ALANLARI: Final = frozenset({"id", "yon", "regex", "istisna_regex", "ipucu", "not"})
-_UST_ALANLAR: Final = frozenset({"surum", "parcalar", "sinyaller"})
+_UST_ALANLAR: Final = frozenset({"surum", "parcalar", "cikti_olumsuz", "sinyaller"})
+_OLUMSUZ_ALANLARI: Final = frozenset({"sinyaller", "kuyruk", "ek"})
 _PARCA: Final = re.compile(r"\{\{([a-z_]+)\}\}")
 _KIMLIK: Final = re.compile(r"[a-z][a-z0-9_]*")
 _TURKCE_HARF: Final = re.compile(r"[ıİşŞğĞüÜöÖçÇâÂîÎûÛ]")
@@ -59,6 +61,33 @@ class Sinyal:
 
 
 @dataclass(frozen=True)
+class Olumsuzluk:
+    """Çıktı sinyallerinde olumsuz kip/alıntı istisnası (`sinyaller.yaml` `cikti_olumsuz`)."""
+
+    sinyaller: frozenset[str]
+    kuyruk: re.Pattern[str]
+    ek: re.Pattern[str]
+
+    def olumsuz_mu(self, katli: str, m: re.Match[str]) -> bool:
+        """Eşleşme olumsuzlanmış ya da tırnak içinde alıntılanmış mı (YAML belgesi)."""
+        cumle_sonu = _CUMLE_SONU.search(katli, m.end(), m.end() + _KUYRUK_EN_COK)
+        kuyruk = katli[m.end() : cumle_sonu.start() if cumle_sonu else m.end() + _KUYRUK_EN_COK]
+        son_sozcuk = _SON_SOZCUK.search(katli, m.start(), m.end())
+        metin = (son_sozcuk.group(0) if son_sozcuk else "") + kuyruk
+        if self.kuyruk.search(metin) or self.ek.search(metin):
+            return True
+        bas = max((katli.rfind(c, 0, m.start()) for c in ".;!?\n"), default=-1) + 1
+        return bool(_ACIK_ALINTI.search(katli[bas : m.start()]) and _KAPANAN_ALINTI.search(kuyruk))
+
+
+_CUMLE_SONU: Final = re.compile(r"[.;!?\n]")
+_KUYRUK_EN_COK: Final = 60
+_SON_SOZCUK: Final = re.compile(r"\w+\W*\Z")
+_ACIK_ALINTI: Final = re.compile(r"(?:^|(?<=[\s(:]))['\"“«][^'\"”»]*\Z")
+_KAPANAN_ALINTI: Final = re.compile(r"['\"”»]")
+
+
+@dataclass(frozen=True)
 class SinyalTanimi:
     id: str
     yon: Literal["girdi", "cikti"]
@@ -66,16 +95,23 @@ class SinyalTanimi:
     istisnalar: tuple[re.Pattern[str], ...]
     ipucu: str
     not_: str | None
+    olumsuzluk: Olumsuzluk | None = None
 
     @property
     def sinyal(self) -> Sinyal:
         return Sinyal(self.id, self.yon, self.ipucu, self.not_)
 
     def eslesir(self, katli: str) -> bool:
-        """`katli`: `katla`'dan geçmiş metin."""
-        if not katli or not any(d.search(katli) for d in self.desenler):
+        """`katli`: `katla`'dan geçmiş metin. Çıktı sinyalinde olumsuzlanmış/alıntılanmış
+        eşleşmeler sayılmaz (`Olumsuzluk`)."""
+        if not katli or not any(self._olumlu_eslesme(d, katli) for d in self.desenler):
             return False
         return not any(i.search(katli) for i in self.istisnalar)
+
+    def _olumlu_eslesme(self, desen: re.Pattern[str], katli: str) -> bool:
+        if self.olumsuzluk is None:
+            return desen.search(katli) is not None
+        return any(not self.olumsuzluk.olumsuz_mu(katli, m) for m in desen.finditer(katli))
 
 
 def katla(metin: str | None) -> str:
@@ -110,7 +146,9 @@ def _derle(desen: str, parcalar: Mapping[str, str], kimlik: str) -> re.Pattern[s
         raise SinyalHatasi(f"{kimlik}: desen derlenemedi ({exc})") from exc
 
 
-def _tanim(kayit: Any, parcalar: Mapping[str, str], sira: int) -> SinyalTanimi:
+def _tanim(
+    kayit: Any, parcalar: Mapping[str, str], sira: int, olumsuzluk: Olumsuzluk | None
+) -> SinyalTanimi:
     if not isinstance(kayit, Mapping):
         raise SinyalHatasi(f"sinyal #{sira}: kayıt bir eşleme olmalı")
     kimlik = kayit.get("id")
@@ -143,6 +181,25 @@ def _tanim(kayit: Any, parcalar: Mapping[str, str], sira: int) -> SinyalTanimi:
         ),
         ipucu=" ".join(ipucu.split()),
         not_=" ".join(not_.split()) if isinstance(not_, str) else None,
+        olumsuzluk=olumsuzluk if olumsuzluk and kimlik in olumsuzluk.sinyaller else None,
+    )
+
+
+def _olumsuzluk(veri: Any, parcalar: Mapping[str, str]) -> Olumsuzluk | None:
+    if veri is None:
+        return None
+    if (
+        not isinstance(veri, Mapping)
+        or set(veri) != _OLUMSUZ_ALANLARI
+        or not all(isinstance(veri[a], str) and veri[a] for a in ("kuyruk", "ek"))
+    ):
+        raise SinyalHatasi(
+            "'cikti_olumsuz': 'sinyaller' listesi, 'kuyruk' ve 'ek' desenleri gerekli"
+        )
+    return Olumsuzluk(
+        sinyaller=frozenset(_liste(veri["sinyaller"], "sinyaller", "cikti_olumsuz")),
+        kuyruk=_derle(veri["kuyruk"], parcalar, "cikti_olumsuz"),
+        ek=_derle(veri["ek"], parcalar, "cikti_olumsuz"),
     )
 
 
@@ -178,20 +235,56 @@ def tanimlari_ayristir(veri: Any) -> tuple[SinyalTanimi, ...]:
     kayitlar = veri.get("sinyaller")
     if not isinstance(kayitlar, list) or not kayitlar:
         raise SinyalHatasi("'sinyaller' boş olmayan bir liste olmalı")
-    tanimlar = tuple(_tanim(k, parcalar, i) for i, k in enumerate(kayitlar, 1))
+    olumsuzluk = _olumsuzluk(veri.get("cikti_olumsuz"), parcalar)
+    tanimlar = tuple(_tanim(k, parcalar, i, olumsuzluk) for i, k in enumerate(kayitlar, 1))
     kimlikler = [t.id for t in tanimlar]
     if len(set(kimlikler)) != len(kimlikler):
         raise SinyalHatasi("yinelenen sinyal kimliği")
+    cikti_kimlikleri = {t.id for t in tanimlar if t.yon == "cikti"}
+    if olumsuzluk and not olumsuzluk.sinyaller <= cikti_kimlikleri:
+        raise SinyalHatasi("cikti_olumsuz: 'sinyaller' yalnız çıktı sinyali kimlikleri içermeli")
     return tanimlar
 
 
-@lru_cache(maxsize=4)
-def _yukle(yol: str) -> tuple[SinyalTanimi, ...]:
+def _ayristir_dosya(yol: str) -> tuple[SinyalTanimi, ...]:
     try:
         veri = yaml.safe_load(Path(yol).read_text(encoding="utf-8"))
     except (OSError, yaml.YAMLError) as exc:
         raise SinyalHatasi(f"sinyaller.yaml okunamadı ({type(exc).__name__})") from exc
     return tanimlari_ayristir(veri)
+
+
+# Önbellek: yol → (dosya imzası, tanımlar ya da hata). Hata da önbelleğe alınır: bozuk dosya her
+# mesajda yeniden okunup ayrıştırılmaz; dosya değişince (mtime/boyut) yeniden denenir.
+_ONBELLEK: dict[str, tuple[tuple[int, int] | None, tuple[SinyalTanimi, ...] | SinyalHatasi]] = {}
+_ONBELLEK_KILIDI: Final = threading.Lock()
+_ONBELLEK_EN_COK: Final = 8
+
+
+def _imza(yol: str) -> tuple[int, int] | None:
+    try:
+        st = os.stat(yol)
+    except OSError:
+        return None
+    return (st.st_mtime_ns, st.st_size)
+
+
+def _yukle(yol: str) -> tuple[SinyalTanimi, ...]:
+    imza = _imza(yol)
+    with _ONBELLEK_KILIDI:
+        kayit = _ONBELLEK.get(yol)
+    if kayit is None or kayit[0] != imza:
+        try:
+            sonuc: tuple[SinyalTanimi, ...] | SinyalHatasi = _ayristir_dosya(yol)
+        except SinyalHatasi as exc:
+            sonuc = exc
+        with _ONBELLEK_KILIDI:
+            if len(_ONBELLEK) >= _ONBELLEK_EN_COK and yol not in _ONBELLEK:
+                _ONBELLEK.pop(next(iter(_ONBELLEK)))
+            _ONBELLEK[yol] = kayit = (imza, sonuc)
+    if isinstance(kayit[1], SinyalHatasi):
+        raise SinyalHatasi(*kayit[1].args)
+    return kayit[1]
 
 
 def sinyal_dosyasi(rules_dir: Path | None = None) -> Path:
@@ -201,7 +294,8 @@ def sinyal_dosyasi(rules_dir: Path | None = None) -> Path:
 
 
 def sinyaller_yukle(rules_dir: Path | None = None) -> tuple[SinyalTanimi, ...]:
-    """Önbellekli (dosya yolu başına); geçersiz dosya `SinyalHatasi` yükseltir."""
+    """Önbellekli (dosya yolu ve imzası başına; hata da önbellekte); geçersiz dosya
+    `SinyalHatasi` yükseltir."""
     return _yukle(str(sinyal_dosyasi(rules_dir)))
 
 
@@ -236,8 +330,14 @@ def _dizgeler(deger: Any) -> Iterator[str]:
 
 
 def gorunur_metinler(cevap: Mapping[str, Any]) -> list[str]:
-    """Kullanıcının gördüğü cevap metni: bloklar (kod blokları dahil) metin + maddeler, öneri
-    başlık/neden/eylem (taslak) metinleri. Her parça ayrı taranır (desen bloklar arası atlamaz)."""
+    """Çıktı SİNYALİ için taranan görünür metin: bloklar (kod blokları dahil) metin + maddeler,
+    öneri başlık/neden/eylem (taslak) metinleri. Her parça ayrı taranır (desen bloklar arası
+    atlamaz).
+
+    Notlar ve kaynaklar bilerek hariç: notlar sunucunun eklediği sabit metinlerdir (sinyal notları
+    dahil; kendi notunu yeniden işaretlemesin), kaynak alıntıları kayıtlardan birebir gelir ve
+    asistanın iddiası değildir. Sızıntı (kanarya/iz) taraması bu listeyi değil, cevabın bütün
+    dizgelerini kullanır (`guvenlik_cikti.gorunur_dizgeler`)."""
     out: list[str] = []
     for blok in cevap.get("cevap_bloklari") or []:
         if isinstance(blok, Mapping):
@@ -276,56 +376,90 @@ TEST_KARTLARI: Final = frozenset(
     }
 )
 # Görünmez karakterler (rakamların arasına konup dedektörü atlatmasın) silinir; tire benzerleri
-# (en/em dash, eksi) tireye çevrilir. Tam genişlik rakamlar NFKC ile ASCII olur.
+# (en/em dash, eksi) tireye çevrilir. Tam genişlik rakamlar NFKC ile, diğer yazı sistemlerinin
+# ondalık rakamları (Arapça-Hint ٥١٠٥…) `unicodedata.decimal` ile ASCII olur.
 _GORUNMEZ: Final = str.maketrans(
     {
-        "\u200b": None,
-        "\u200c": None,
-        "\u200d": None,
-        "\u2060": None,
-        "\ufeff": None,
-        "\u00ad": None,
-        "\u2010": "-",
-        "\u2011": "-",
-        "\u2012": "-",
-        "\u2013": "-",
-        "\u2014": "-",
-        "\u2212": "-",
+        "​": None,
+        "‌": None,
+        "‍": None,
+        "⁠": None,
+        "﻿": None,
+        "­": None,
+        "‐": "-",
+        "‑": "-",
+        "‒": "-",
+        "–": "-",
+        "—": "-",
+        "−": "-",
     }
 )
-# Rakam grupları arası ayraç: boşluk/sekme/satır sonu (en çok 3), ya da `.` `-` `_` `/` (yanında
-# boşluk olabilir).
-_AYRAC: Final = r"(?:[ \t]*[.\-_/][ \t]*|\s{1,3})"
+# Rakam grupları arası ayraç: boşluk/sekme/satır sonu (en çok 3), ya da `.` `-` `_` `/` `,` `*`
+# `|` (yanında boşluk olabilir). `,` `*` `|` kart yazımında olağan değildir (tablo satırı, sayı
+# listesi): bu ayraçlarla yazılmış kart yalnız yakınında kart kelimesi varken sayılır (`_ZAYIF`).
+_AYRAC: Final = r"(?:[ \t]*[.\-_/,*|][ \t]*|\s{1,3})"
+_ZAYIF_AYRAC: Final = re.compile(r"[,*|]")
 # Ayraçlı rakam grupları dizisi. Sol sınır yalnız rakam (ve ondalık parçası `3.5…`): harfe bitişik
 # kart (`kart5105…`) da bulunur. Kart, dizinin ardışık gruplarından oluşur ("toplam 3 5105 1051 …"
 # gibi önüne sayı gelmiş kart da bulunur; `_kart_gruplari`).
 _KART_ADAYI: Final = re.compile(rf"(?<!\d)(?<!\d[.,])[0-9]+(?:{_AYRAC}[0-9]+)*")
-_AYRAC_BOL: Final = re.compile(_AYRAC)
+_AYRAC_BOL: Final = re.compile(f"({_AYRAC})")
 # Bilinen kart ağlarının IIN önekleri (Visa, Mastercard 51–55 / 2221–2720, Amex, Diners, JCB,
 # Discover/UnionPay, Troy). Zaman damgası (`17…` ms) ve benzeri sayılar elenir.
 _KART_ONEKI: Final = re.compile(r"(?:4|5[1-5]|2[2-7]|3[47]|3[0689]|35|6|9792)")
 # Taranmayan parçalar:
 # - şemalı URL (`https://…`, tırnak/boşlukta biter: JSON alanı komşu alanı yutmaz);
-# - harf içeren yol (`/siparis/5105…/detay`, `rapor?kart=…&x=1`): bir yol parçasında harf yoksa
-#   (`5105…/12/27`, `5105/1051/…`) yol sayılmaz, rakamlar taranır. Sorgu dizesi yalnız bir yolun
-#   ardındaki `?` ile başlar (çıplak `&k=5105…` taranır).
+# - harf içeren yol (`/siparis/5105…/detay`, `rapor?no=…&x=1`): yolda iki harflik bir sözcük
+#   yoksa (`5105…/12/27`, `5105/1051/…`, `a/5105…`) yol sayılmaz, rakamlar taranır. Sorgu dizesi
+#   yalnız bir yolun ardındaki `?` ile başlar (çıplak `&k=5105…` taranır).
+# İstisna (`_ODEME_PARCASI`): sorgu anahtarı ya da yol parçası kart/ödeme adı olan URL ve yol
+# (`?kart=5105…`, `?pan=…`, `/odeme/5105…`, `/payment/…`) boşaltılmaz, taranır.
 _URL: Final = re.compile(r"\b[a-z][a-z0-9+.-]*://[^\s\"'<>`]+", re.IGNORECASE)
 _YOL: Final = re.compile(
     r"(?<![\w.~%/-])(?P<yol>[\w.~%-]*(?:/[\w.~%-]*)+|[\w.~%-]+(?=\?))(?:\?[^\s\"'<>`#]*)?"
 )
-_HARF: Final = re.compile(r"[^\W\d_]")
-# Rakam grupları kart sanılmasın: IBAN (mod-97 maskelemede; boşluk/tire ayraçlı), UUID ve uzun
-# onaltılık özetler (commit, kimlik).
-_IBAN_PARCASI: Final = re.compile(r"\bTR\d{2}(?:[ \-]?\d){22}(?!\d)", re.IGNORECASE)
+_SOZCUK: Final = re.compile(r"[^\W\d_]{2}")
+_ODEME_PARCASI: Final = re.compile(
+    r"(?:^|[/?&;#.])(?:kart\w*|card\w*|kredi\w*|pan|cc|ccnum|cvv|odeme\w*|payment\w*|pay|pos"
+    r"|checkout|tahsilat)(?=$|[/?&;#=.])"
+)
+# Rakam grupları kart sanılmasın: IBAN (mod-97 maskelemede; boşluk/tire ayraçlı, çift boşluk
+# dahil), UUID ve uzun onaltılık özetler (commit, kimlik). Onaltılık parça içinde 13+ ardışık
+# rakam varsa boşaltılmaz (`kart: ab5105105105105100cd` atlatması): harfe bitişik kalan aday
+# yalnız kart kelimesiyle sayılır (`_harfe_bitisik`); SHA gibi özetlerin yakınında kart kelimesi
+# olmaz.
+_IBAN_PARCASI: Final = re.compile(r"\bTR\d{2}(?:[ \-]{0,2}\d){22}(?!\d)", re.IGNORECASE)
 _UUID: Final = re.compile(
     r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", re.IGNORECASE
 )
 _HEX: Final = re.compile(r"(?<![0-9a-z])(?=[0-9a-f]*[a-f])[0-9a-f]{20,}(?![0-9a-z])", re.IGNORECASE)
-# Bağlam (ekran JSON'u) kipinde kart yalnız yakınında kart kelimesi varsa sayılır: ekrandaki 16
-# haneli sipariş/kayıt numaraları Luhn'u rastlantıyla (~%4, IIN süzgeciyle) tutabilir.
-_KART_KELIMESI: Final = re.compile(r"kart|card|kredi|(?<![a-z])pan(?![a-z])", re.IGNORECASE)
+_UZUN_RAKAM: Final = re.compile(r"\d{13,}")
+# Kart kelimesi (katlanmış metinde aranır): kart/kredi/pan, kart ağları, güvenlik kodu, son
+# kullanma tarihi. Soru metninde ödeme bağlamı da kart kelimesi sayılır (`_ODEME_KELIMESI`):
+# "5105 1051 0510 5100 ile ödeme denedi". Bağlam (ekran JSON'u) kipinde sayılmaz: ödeme
+# ekranındaki sipariş/işlem numaraları da kart sanılırdı.
+_KART_KELIMESI: Final = re.compile(
+    r"kart|card|kredi|(?<![a-z])(?:pan|visa|amex|troy|maestro|cvv|cvc|cv2|skt)(?![a-z])"
+    r"|master ?card|american express|son kullanma|expir"
+)
+_ODEME_KELIMESI: Final = re.compile(r"odeme|payment|tahsilat|provizyon|(?<![a-z])pos(?![a-z])")
+# Soru metninde negatif bağlam: numaranın hemen yakınında bir kimlik adı varsa (ve kart kelimesi
+# yoksa) numara kimliktir ("Sipariş numarası 4532… olan senaryo", `"amount": 4532…`). Rastgele 16
+# haneli bir kimliğin Luhn + IIN süzgecini tutma olasılığı ~%4'tür; bu kimlikler soruyu 422 ile
+# reddettirmesin (K2: kesin dedektör masum metinde ~0 yanlış pozitif).
+_KIMLIK_KELIMESI: Final = re.compile(
+    r"siparis|order|fatura|invoice|kayit|kayd|record|numara|number|barkod|barcode|timestamp"
+    r"|zaman damga|amount|tutar|referans|takip|tracking|commit|serial|ticket|kosu"
+    r"|(?<![a-z])(?:ids?|no|nr|ts|ref|sha|hash|seri|sku|build|run|msg|mesaj)(?![a-z])"
+)
 _KELIME_ONCE: Final = 60
 _KELIME_SONRA: Final = 20
+_KIMLIK_ONCE: Final = 40
+_KIMLIK_SONRA: Final = 20
+# Adayın solunda bitişik harf (en çok bir birleştirici ile: `TPD-4532…`, `ID:4532…`, `v1.2.3-…`)
+# ya da sağında harf/`@` (`4532…abc`, `<4532…@mail…>`) varsa numara bir kimliğin parçasıdır.
+_SOL_BITISIK: Final = re.compile(r"[^\W\d_][-_.:#/]?\Z")
+_SAG_BITISIK: Final = re.compile(r"[^\W\d_]|@")
 
 
 def luhn_gecerli(rakamlar: str) -> bool:
@@ -340,20 +474,43 @@ def luhn_gecerli(rakamlar: str) -> bool:
     return toplam % 10 == 0
 
 
-def _yol_sil(m: re.Match[str]) -> str:
-    return " " * len(m.group(0)) if _HARF.search(m.group("yol")) else m.group(0)
-
-
-def _bosalt(m: re.Match[str]) -> str:
+def _bosluk(m: re.Match[str]) -> str:
     return " " * len(m.group(0))
 
 
+def _odeme_parcali(metin: str) -> bool:
+    return _ODEME_PARCASI.search(katla(metin)) is not None
+
+
+def _url_sil(m: re.Match[str]) -> str:
+    return m.group(0) if _odeme_parcali(m.group(0)) else _bosluk(m)
+
+
+def _yol_sil(m: re.Match[str]) -> str:
+    if not _SOZCUK.search(m.group("yol")) or _odeme_parcali(m.group(0)):
+        return m.group(0)
+    return _bosluk(m)
+
+
+def _hex_sil(m: re.Match[str]) -> str:
+    return m.group(0) if _UZUN_RAKAM.search(m.group(0)) else _bosluk(m)
+
+
+def _ascii_rakam(c: str) -> str:
+    if c.isascii() or not c.isdecimal():
+        return c
+    return str(unicodedata.decimal(c))
+
+
 def _kart_metni(metin: str) -> str:
-    """Taranacak metin: NFKC + görünmez karakter/tire benzeri temizliği, taranmayan parçalar boşluk
-    (konumlar korunur; bağlam kipinde kelime penceresi aynı metinde aranır)."""
+    """Taranacak metin: NFKC + görünmez karakter/tire benzeri temizliği + ASCII rakam, taranmayan
+    parçalar boşluk (konumlar korunur; kelime pencereleri aynı metinde aranır)."""
     temiz = unicodedata.normalize("NFKC", metin).translate(_GORUNMEZ)
-    for desen in (_URL, _IBAN_PARCASI, _UUID, _HEX):
-        temiz = desen.sub(_bosalt, temiz)
+    temiz = "".join(_ascii_rakam(c) for c in temiz)
+    temiz = _URL.sub(_url_sil, temiz)
+    for desen in (_IBAN_PARCASI, _UUID):
+        temiz = desen.sub(_bosluk, temiz)
+    temiz = _HEX.sub(_hex_sil, temiz)
     return _YOL.sub(_yol_sil, temiz)
 
 
@@ -361,44 +518,68 @@ def kart_bul(metin: str, *, baglam: bool = False) -> bool:
     """Metinde (URL/yol/sorgu dizesi dışında) Luhn'u tutan, bilinen bir kart ağı önekiyle
     başlayan 13–19 haneli, herkese açık test kartı olmayan bir numara var mı.
 
-    `baglam=True` (ekran bağlamı JSON'u): numaranın yakınında (önce 60, sonra 20 karakter) "kart",
-    "card", "kredi" ya da "pan" kelimesi de olmalı. Soru metninde bu şart yoktur."""
+    Yakınında (önce 60, sonra 20 karakter) kart kelimesi (`_KART_KELIMESI`; soru metninde ödeme
+    kelimeleri de) olan numara her zaman karttır. Kelime yoksa:
+
+    - `baglam=True` (ekran bağlamı JSON'u): kart sayılmaz.
+    - Soru metni: yalnız 16–19 haneli, olağan ayraçlı (boşluk `.` `-` `_` `/`), harfe bitişik
+      olmayan ve yakınında (önce 40, sonra 20 karakter) kimlik adı (sipariş, order, id, no,
+      amount…) geçmeyen numara karttır. 13–15 hane kelimesiz sayılmaz (ms zaman damgası, kayıt
+      numarası)."""
     if not metin:
         return False
     temiz = _kart_metni(metin)
     for m in _KART_ADAYI.finditer(temiz):
-        if not _kart_gruplari(_AYRAC_BOL.split(m.group(0))):
+        parcalar = _AYRAC_BOL.split(m.group(0))
+        adaylar = _kart_gruplari(parcalar[0::2], parcalar[1::2])
+        if not adaylar:
             continue
-        if not baglam:
+        pencere = katla(temiz[max(0, m.start() - _KELIME_ONCE) : m.end() + _KELIME_SONRA])
+        if _KART_KELIMESI.search(pencere) or (not baglam and _ODEME_KELIMESI.search(pencere)):
             return True
-        pencere = temiz[max(0, m.start() - _KELIME_ONCE) : m.end() + _KELIME_SONRA]
-        if _KART_KELIMESI.search(pencere):
+        if baglam or _harfe_bitisik(temiz, m):
+            continue
+        yakin = katla(temiz[max(0, m.start() - _KIMLIK_ONCE) : m.end() + _KIMLIK_SONRA])
+        if _KIMLIK_KELIMESI.search(yakin):
+            continue
+        if any(len(rakamlar) >= 16 and not zayif for rakamlar, zayif in adaylar):
             return True
     return False
 
 
-def _kart_gruplari(gruplar: list[str]) -> bool:
-    """Ardışık gruplardan biri kart mı. Tek grup 13–19 hane olabilir; birden çok grup kart
-    yazımına uymalı: ilk grup 4 hane, aradakiler 4–6, sonuncu 1–7 (4-4-4-4, 4-6-5, 4-4-4-1…).
-    Böylece satır satır sayı listeleri ya da tarihler birleşip kart sanılmaz."""
+def _harfe_bitisik(temiz: str, m: re.Match[str]) -> bool:
+    return bool(
+        _SOL_BITISIK.search(temiz[max(0, m.start() - 2) : m.start()])
+        or _SAG_BITISIK.match(temiz, m.end())
+    )
+
+
+def _kart_gruplari(gruplar: list[str], ayraclar: list[str]) -> list[tuple[str, bool]]:
+    """Ardışık gruplardan kart olanlar: (rakamlar, olağan dışı ayraçlı mı). Tek grup 13–19 hane
+    olabilir; birden çok grup kart yazımına uymalı: ilk grup 4 hane, aradakiler 4–6, sonuncu 1–7
+    (4-4-4-4, 4-6-5, 4-4-4-1…). Böylece satır satır sayı listeleri ya da tarihler birleşip kart
+    sanılmaz."""
+    out: list[tuple[str, bool]] = []
     for bas in range(len(gruplar)):
         if _kart_mi(gruplar[bas]):
-            return True
+            out.append((gruplar[bas], False))
         if len(gruplar[bas]) != 4:
             continue
         rakamlar = gruplar[bas]
+        zayif = False
         for son in range(bas + 1, len(gruplar)):
             g = gruplar[son]
             if not 1 <= len(g) <= 7:
                 break
             rakamlar += g
+            zayif = zayif or _ZAYIF_AYRAC.search(ayraclar[son - 1]) is not None
             if len(rakamlar) > 19:
                 break
             if _kart_mi(rakamlar):
-                return True
+                out.append((rakamlar, zayif))
             if not 4 <= len(g) <= 6:
                 break
-    return False
+    return out
 
 
 def _kart_mi(rakamlar: str) -> bool:
