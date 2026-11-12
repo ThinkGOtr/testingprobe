@@ -22,7 +22,7 @@ from .conftest import TEST_HEADERS, giris
 # birleştirme adımında core tarafında eklenir; burada liste bilerek elle yazılıdır.
 ANALIZ_KODLARI = {
     "kampanya_bedava_yok": "kod",
-    "kampanya_esik_7": "kod",
+    "kampanya_tek_bedava": "kod",
     "kampanya_cift_indirim": "kod",
     "min_siparis_haric": "kod",
     "min_siparis_muafiyet_yok": "kod",
@@ -115,10 +115,10 @@ def test_faults_ucu_korumasi(client, monkeypatch):
 
 # ------------------------------------------------------------------ /test/break {hata}
 def test_break_hata_ac_degistir_kapat(client):
-    assert _hata(client, "bayi1", "kampanya_esik_7").json() == {
+    assert _hata(client, "bayi1", "kampanya_tek_bedava").json() == {
         "kullanici_adi": "bayi1",
         "kampanya": False,
-        "hata": "kampanya_esik_7",
+        "hata": "kampanya_tek_bedava",
     }
     # Bayi başına en çok bir etkin hata: yenisi öncekinin yerini alır.
     assert _hata(client, "bayi1", "fiyat_p004_31").json()["hata"] == "fiyat_p004_31"
@@ -168,7 +168,7 @@ def test_break_ikisi_birlikte_verilirse_hata_gecerli(client):
 
 
 def test_break_bilinmeyen_kod_422(bayi1):
-    _hata(bayi1, "bayi1", "kampanya_esik_7")
+    _hata(bayi1, "bayi1", "kampanya_tek_bedava")
     r = _hata(bayi1, "bayi1", "boyle_bir_hata_yok")
     assert r.status_code == 422
     mesaj = r.json()["detail"]
@@ -177,7 +177,7 @@ def test_break_bilinmeyen_kod_422(bayi1):
     assert _hata(bayi1, "bayi1", "x" * 41).status_code == 422  # uzunluk sınırı
     assert _hata(bayi1, "bayi1", 7).status_code == 422
     # Reddedilen istek etkin hatayı değiştirmez.
-    assert _ozet(_sepet(bayi1, ("P-001", 6))) == ("150.00", "0.00", "150.00", True)
+    assert _ozet(_sepet(bayi1, ("P-001", 12))) == ("300.00", "25.00", "275.00", True)
 
 
 def test_break_hata_korumasi(bayi1, monkeypatch):
@@ -279,25 +279,26 @@ def test_kampanya_bedava_yok(client):
     )
 
 
-def test_kampanya_esik_7(client):
-    _hata(client, "bayi1", "kampanya_esik_7")
+def test_kampanya_tek_bedava(client):
+    _hata(client, "bayi1", "kampanya_tek_bedava")
     _bayi(client, "bayi1")
-    # 6 adet: normalde 1 bedava (150,00 − 25,00 = 125,00); hatada bedava yok.
-    alti = _sepet(client, ("P-001", 6))
-    assert _ozet(alti) == ("150.00", "0.00", "150.00", True)
-    assert alti["satirlar"][0]["bedava_adet"] == 0
-    # 7 adet: iki kuralda da 1 bedava (bu adet hatayı yakalamaz).
+    # 6 ve 7 adet: iki kuralda da 1 bedava (bu adetler hatayı yakalamaz).
+    assert _ozet(_sepet(client, ("P-001", 6))) == ("150.00", "25.00", "125.00", True)
     assert _ozet(_sepet(client, ("P-001", 7))) == ("175.00", "25.00", "150.00", True)
     # 12 adet: normalde 2 bedava (300,00 − 50,00); hatada 1 bedava (300,00 − 25,00).
     on_iki = _sepet(client, ("P-001", 12))
     assert _ozet(on_iki) == ("300.00", "25.00", "275.00", True)
     assert (on_iki["satirlar"][0]["bedava_adet"], on_iki["satirlar"][0]["ucretli_adet"]) == (1, 11)
+    # 14 adet (katalogdaki ayırt edici girdi): doğru 2 bedava, hatalı 1.
+    on_dort = _sepet(client, ("P-001", 14))
+    assert on_dort["satirlar"][0]["bedava_adet"] == 1
+    assert _ozet(on_dort) == ("350.00", "25.00", "325.00", True)
     siparis = client.post("/orders").json()
-    assert (siparis["indirim"], siparis["toplam"]) == ("25.00", "275.00")
+    assert (siparis["indirim"], siparis["toplam"]) == ("25.00", "325.00")
     assert siparis["satirlar"][0]["bedava_adet"] == 1
 
     _bayi(client, "bayi2")
-    assert _ozet(_sepet(client, ("P-001", 6))) == ("150.00", "25.00", "125.00", True)
+    assert _sepet(client, ("P-001", 14))["satirlar"][0]["bedava_adet"] == 2
     assert _ozet(_sepet(client, ("P-001", 12))) == ("300.00", "50.00", "250.00", True)
 
 
@@ -477,9 +478,9 @@ def test_hatasiz_islevler_normal_kurali_verir():
     assert not faults.gecerli(None) and not faults.gecerli("") and not faults.gecerli("yok")
 
 
-def test_surec_geneli_break_campaign_esik_7_ile_de_sifir_verir(monkeypatch):
+def test_surec_geneli_break_campaign_tek_bedava_ile_de_sifir_verir(monkeypatch):
     monkeypatch.setenv("BREAK_CAMPAIGN", "1")
-    assert faults.bedava_adet(14, "kampanya_esik_7") == 0
+    assert faults.bedava_adet(14, "kampanya_tek_bedava") == 0
     assert faults.bedava_adet(14) == 0
     h = sepet_hesapla(
         [SatirGirdi("P-001", "Portakal Gazozu 1L", Decimal("25.00"), 14, True)],
@@ -544,3 +545,12 @@ def test_kolonlari_tamamla_eklenen_kolonu_bildirir(tmp_path):
             assert conn.execute(text("SELECT bayi_id, hata FROM test_kirilma")).all() == [(1, None)]
     finally:
         motor.dispose()
+
+
+def test_kampanya_tek_bedava_kurali_min_1_adet_bolu_6():
+    """K9: bedava adet `min(1, adet // 6)`; 12 adetten önce normal kuralla ayırt edilemez."""
+    for adet in range(0, 40):
+        assert faults.bedava_adet(adet, "kampanya_tek_bedava") == min(1, adet // 6)
+        assert (faults.bedava_adet(adet, "kampanya_tek_bedava") != faults.bedava_adet(adet)) == (
+            adet >= 12
+        )
