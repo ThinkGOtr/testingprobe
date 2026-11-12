@@ -84,6 +84,17 @@ def strip_meta(schema: Any) -> Any:
     return schema
 
 
+def schema_instruction(schema: dict[str, Any]) -> str:
+    """Şemanın sistem mesajındaki hâli (`params.output: prompt`): yalnız tek JSON nesnesi."""
+    return (
+        "# Output format\n"
+        "Reply with exactly one JSON object and nothing else: no prose, no Markdown code fence. "
+        "The object must validate against this JSON Schema (draft 2020-12); every property listed "
+        "in `required` is present, and no other property is added:\n"
+        + json.dumps(strip_meta(schema), ensure_ascii=False, separators=(",", ":"))
+    )
+
+
 _STOP: dict[str, StopReason] = {
     "end_turn": "end_turn",
     "tool_use": "tool_use",
@@ -219,7 +230,21 @@ class AnthropicProvider:
         effort = request.params.get("effort")
         if effort:
             output_config["effort"] = effort
-        if request.output_schema is not None:
+        if request.output_schema is not None and request.params.get("output") == "prompt":
+            # Büyük şemalar (case üretimi v3, tasarım modeli, derinleştirme) API'nin yapılandırılmış
+            # çıktı dilbilgisi sınırını aşıyor ("compiled grammar is too large"). Bu amaçlarda şema
+            # sistem mesajında verilir; çıktı geçitte tam şemayla doğrulanır ve uymazsa yeniden
+            # istenir (MAX_SCHEMA_REASKS). models.yaml: `params: { output: prompt }`.
+            # Önbellek kırılma noktası son sistem bloğundadır: şema da önbelleklenen öneke girer.
+            kwargs["system"] = [
+                {"type": "text", "text": request.system},
+                {
+                    "type": "text",
+                    "text": schema_instruction(request.output_schema),
+                    "cache_control": {"type": "ephemeral"},
+                },
+            ]
+        elif request.output_schema is not None:
             output_config["format"] = {
                 "type": "json_schema",
                 "schema": transform_schema(strip_meta(request.output_schema)),

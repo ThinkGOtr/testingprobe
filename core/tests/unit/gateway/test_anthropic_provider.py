@@ -126,6 +126,41 @@ def test_structured_output_request_shape() -> None:
     assert resp.usage.input_tokens == 10
 
 
+def test_prompt_output_mode_puts_schema_in_system_not_format() -> None:
+    """`params.output: prompt` (büyük şemalar; API dilbilgisi sınırı): format gönderilmez, şema
+    sistem mesajının son (önbelleklenen) bloğundadır; doğrulama geçitte yapılır."""
+    client = FakeClient(_message([{"type": "text", "text": '{"cases": []}'}]))
+    provider = AnthropicProvider(client=client)
+    schema = load_schema(REAL_RULES, "case_generation")
+    provider.complete(
+        ProviderRequest(
+            model="claude-sonnet-5-5",
+            system="SYS",
+            messages=[{"role": "user", "content": "x"}],
+            max_tokens=32000,
+            output_schema=schema,
+            params={"effort": "medium", "output": "prompt"},
+        )
+    )
+    kw = client.last_kwargs
+    assert "format" not in kw["output_config"]
+    assert kw["output_config"]["effort"] == "medium"
+    ilk, son = kw["system"]
+    assert ilk == {"type": "text", "text": "SYS"}
+    assert son["cache_control"] == {"type": "ephemeral"}
+    assert '"coverage_item_id"' in son["text"] and "$schema" not in son["text"]
+    assert "output" not in kw
+
+
+def test_large_purposes_use_prompt_output_mode() -> None:
+    """API dilbilgisi sınırını aşan amaçlar (2026-11-12 ölçümü) şemayı prompt'ta verir."""
+    from tp_core.gateway.config import load_model_table
+
+    tablo = load_model_table(REAL_RULES)
+    for amac in ("case_generation", "design_model", "case_deepening"):
+        assert tablo.purpose(amac).params.get("output") == "prompt", amac
+
+
 def test_agent_request_shape_and_tool_parsing() -> None:
     client = FakeClient(
         _message(

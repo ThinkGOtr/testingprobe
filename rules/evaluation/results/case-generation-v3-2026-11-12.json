@@ -1,0 +1,261 @@
+{
+  "bundle": "case-generation",
+  "version": 3,
+  "date": "2026-11-12",
+  "model": "claude-sonnet-5-5",
+  "provider": "anthropic",
+  "mode": "live",
+  "passed": 0,
+  "total": 18,
+  "runs": 3,
+  "cases": [
+    {
+      "id": "tpd-1-son-hal#k1",
+      "ok": false,
+      "failures": [
+        "ProviderPermanentError"
+      ],
+      "output": null,
+      "mode": null,
+      "error": "400: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'The compiled grammar is too large, which would cause performance issues. Simplify your tool schemas or reduce the number of strict tools.'}, 'request_id': 'req_011Cgy69YuFAVXo4vhmuAgfv'}",
+      "cost_usd": 0.0,
+      "sure_ms": 617
+    },
+    {
+      "id": "tpd-1-son-hal#k2",
+      "ok": false,
+      "failures": [
+        "ProviderPermanentError"
+      ],
+      "output": null,
+      "mode": null,
+      "error": "400: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'The compiled grammar is too large, which would cause performance issues. Simplify your tool schemas or reduce the number of strict tools.'}, 'request_id': 'req_011Cgy69aoqwxqcny3kEgNTX'}",
+      "cost_usd": 0.0,
+      "sure_ms": 288
+    },
+    {
+      "id": "tpd-1-son-hal#k3",
+      "ok": false,
+      "failures": [
+        "ProviderPermanentError"
+      ],
+      "output": null,
+      "mode": null,
+      "error": "400: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'The compiled grammar is too large, which would cause performance issues. Simplify your tool schemas or reduce the number of strict tools.'}, 'request_id': 'req_011Cgy69c8iWgPPvNwANDYPM'}",
+      "cost_usd": 0.0,
+      "sure_ms": 312
+    },
+    {
+      "id": "tpd-1-f2-kod-hatasi#k1",
+      "ok": false,
+      "failures": [
+        "ProviderPermanentError"
+      ],
+      "output": null,
+      "mode": null,
+      "error": "400: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'The compiled grammar is too large, which would cause performance issues. Simplify your tool schemas or reduce the number of strict tools.'}, 'request_id': 'req_011Cgy69dZYgkQGTiBW2XVj9'}",
+      "cost_usd": 0.0,
+      "sure_ms": 349
+    },
+    {
+      "id": "tpd-1-f2-kod-hatasi#k2",
+      "ok": false,
+      "failures": [
+        "ProviderPermanentError"
+      ],
+      "output": null,
+      "mode": null,
+      "error": "400: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'The compiled grammar is too large, which would cause performance issues. Simplify your tool schemas or reduce the number of strict tools.'}, 'request_id': 'req_011Cgy69evezHdcdaGbeDtVL'}",
+      "cost_usd": 0.0,
+      "sure_ms": 302
+    },
+    {
+      "id": "tpd-1-f2-kod-hatasi#k3",
+      "ok": false,
+      "failures": [
+        "ProviderPermanentError"
+      ],
+      "output": null,
+      "mode": null,
+      "error": "400: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'The compiled grammar is too large, which would cause performance issues. Simplify your tool schemas or reduce the number of strict tools.'}, 'request_id': 'req_011Cgy69gH1UKssxdnMB8phz'}",
+      "cost_usd": 0.0,
+      "sure_ms": 312
+    },
+    {
+      "id": "tpd-3-arama#k1",
+      "ok": false,
+      "failures": [
+        "ProviderPermanentError"
+      ],
+      "output": null,
+      "mode": null,
+      "error": "400: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'The compiled grammar is too large, which would cause performance issues. Simplify your tool schemas or reduce the number of strict tools.'}, 'request_id': 'req_011Cgy69hZQCZxuAEXZXyESE'}",
+      "cost_usd": 0.0,
+      "sure_ms": 303
+    },
+    {
+      "id": "tpd-3-arama#k2",
+      "ok": false,
+      "failures": [
+        "ProviderPermanentError"
+      ],
+      "output": null,
+      "mode": null,
+      "error": "400: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'The compiled grammar is too large, which would cause performance issues. Simplify your tool schemas or reduce the number of strict tools.'}, 'request_id': 'req_011Cgy69ivkUVaDrSEbCsU3g'}",
+      "cost_usd": 0.0,
+      "sure_ms": 314
+    },
+    {
+      "id": "tpd-3-arama#k3",
+      "ok": false,
+      "failures": [
+        "ProviderPermanentError"
+      ],
+      "output": null,
+      "mode": null,
+      "error": "400: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'The compiled grammar is too large, which would cause performance issues. Simplify your tool schemas or reduce the number of strict tools.'}, 'request_id': 'req_011Cgy69kD98SwpPppfAxsMK'}",
+      "cost_usd": 0.0,
+      "sure_ms": 346
+    },
+    {
+      "id": "tpd-4-giris#k1",
+      "ok": false,
+      "failures": [
+        "ProviderPermanentError"
+      ],
+      "output": null,
+      "mode": null,
+      "error": "400: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'The compiled grammar is too large, which would cause performance issues. Simplify your tool schemas or reduce the number of strict tools.'}, 'request_id': 'req_011Cgy69mgCxSHhsphdogEyh'}",
+      "cost_usd": 0.0,
+      "sure_ms": 295
+    },
+    {
+      "id": "tpd-4-giris#k2",
+      "ok": false,
+      "failures": [
+        "ProviderPermanentError"
+      ],
+      "output": null,
+      "mode": null,
+      "error": "400: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'The compiled grammar is too large, which would cause performance issues. Simplify your tool schemas or reduce the number of strict tools.'}, 'request_id': 'req_011Cgy69nxbPnm3G4NNwtTCP'}",
+      "cost_usd": 0.0,
+      "sure_ms": 304
+    },
+    {
+      "id": "tpd-4-giris#k3",
+      "ok": false,
+      "failures": [
+        "ProviderPermanentError"
+      ],
+      "output": null,
+      "mode": null,
+      "error": "400: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'The compiled grammar is too large, which would cause performance issues. Simplify your tool schemas or reduce the number of strict tools.'}, 'request_id': 'req_011Cgy69pGU4ZZDt9UcKMZK1'}",
+      "cost_usd": 0.0,
+      "sure_ms": 302
+    },
+    {
+      "id": "serbest-son-hal#k1",
+      "ok": false,
+      "failures": [
+        "ProviderPermanentError"
+      ],
+      "output": null,
+      "mode": null,
+      "error": "400: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'The compiled grammar is too large, which would cause performance issues. Simplify your tool schemas or reduce the number of strict tools.'}, 'request_id': 'req_011Cgy69qd64bdqoPHqmJaeV'}",
+      "cost_usd": 0.0,
+      "sure_ms": 299
+    },
+    {
+      "id": "serbest-son-hal#k2",
+      "ok": false,
+      "failures": [
+        "ProviderPermanentError"
+      ],
+      "output": null,
+      "mode": null,
+      "error": "400: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'The compiled grammar is too large, which would cause performance issues. Simplify your tool schemas or reduce the number of strict tools.'}, 'request_id': 'req_011Cgy69rtEaaYhZJ9Rpq3wo'}",
+      "cost_usd": 0.0,
+      "sure_ms": 315
+    },
+    {
+      "id": "serbest-son-hal#k3",
+      "ok": false,
+      "failures": [
+        "ProviderPermanentError"
+      ],
+      "output": null,
+      "mode": null,
+      "error": "400: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'The compiled grammar is too large, which would cause performance issues. Simplify your tool schemas or reduce the number of strict tools.'}, 'request_id': 'req_011Cgy69tHKiPt4iSMAfyZAa'}",
+      "cost_usd": 0.0,
+      "sure_ms": 317
+    },
+    {
+      "id": "hesap-kilidi-st#k1",
+      "ok": false,
+      "failures": [
+        "ProviderPermanentError"
+      ],
+      "output": null,
+      "mode": null,
+      "error": "400: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'The compiled grammar is too large, which would cause performance issues. Simplify your tool schemas or reduce the number of strict tools.'}, 'request_id': 'req_011Cgy69umNWX5VcGP1Rbcif'}",
+      "cost_usd": 0.0,
+      "sure_ms": 332
+    },
+    {
+      "id": "hesap-kilidi-st#k2",
+      "ok": false,
+      "failures": [
+        "ProviderPermanentError"
+      ],
+      "output": null,
+      "mode": null,
+      "error": "400: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'The compiled grammar is too large, which would cause performance issues. Simplify your tool schemas or reduce the number of strict tools.'}, 'request_id': 'req_011Cgy69w3kn8Aq7Rne9Pp4F'}",
+      "cost_usd": 0.0,
+      "sure_ms": 308
+    },
+    {
+      "id": "hesap-kilidi-st#k3",
+      "ok": false,
+      "failures": [
+        "ProviderPermanentError"
+      ],
+      "output": null,
+      "mode": null,
+      "error": "400: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'The compiled grammar is too large, which would cause performance issues. Simplify your tool schemas or reduce the number of strict tools.'}, 'request_id': 'req_011Cgy69xLQBFmzcSd3KKHY6'}",
+      "cost_usd": 0.0,
+      "sure_ms": 297
+    }
+  ],
+  "tamamlandi": true,
+  "set_vaka_sayisi": 6,
+  "kosu_sayisi": 18,
+  "maliyet_usd": 0.0,
+  "butce_usd": 24.0,
+  "calisma_alani_basligi": true,
+  "guardrails_version": 1,
+  "kayit_adaylari": null,
+  "cagri_kaydi": "case-generation-v3-2026-11-12.calls.jsonl",
+  "cagri_sayisi": 18,
+  "cagri_defteri": "/Users/gokhansipahi/projects/agent-probe/tp-wt-v3/exports/eval-live/ai_call.jsonl",
+  "amac": "case_generation",
+  "via_flow": false,
+  "icerik_hash": null,
+  "olcumler": null,
+  "dagilim": {
+    "toplam": {
+      "kosu": 0,
+      "readiness": {},
+      "technique": {},
+      "case": 0,
+      "coverage_items": 0,
+      "covered_items": 0,
+      "not_covered": 0,
+      "open_questions": 0,
+      "tekrar": 0,
+      "tekrar_orani": null
+    },
+    "kosular": {},
+    "uydurma": [],
+    "readiness_ihlali": []
+  }
+}

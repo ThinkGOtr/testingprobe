@@ -337,6 +337,13 @@ imzasız commit). Deploy yok.
   DÜZELTME_GEREKLİ (story temizlenmeden ona bağlı test yayınlanmasın). Agent Probe testi
   başarısız olunca bug taslağı üretilmez (kayıt ve kanıt Agent Probe'da).
 
+- **Yapılandırılmış çıktı sınırı (2026-11-12, canlı ölçüm):** case_generation v3, design_model ve
+  case_deepening şemaları API'nin derlenmiş dilbilgisi sınırını aşıyor (400 "compiled grammar is too
+  large"; `pattern`, enum ve null birleşimleri kaldırılsa da; case nesnesi ~12 alana inince geçiyor).
+  Bu üç amaçta `models.yaml` `params.output: prompt`: adaptör `output_config.format` göndermez, tam
+  şemayı sistem mesajının (önbelleklenen) son bloğuna koyar; doğrulama ve en çok 2 yeniden isteme
+  geçitte. case_review, case_audit ve assistant_guard katı yapılandırılmış çıktıda kalır.
+
 ## 6. Riskler ve açık noktalar
 
 - **Canlı eval kapısı:** `guardrails`, `consistency-check`, `verify-and-map(-app)` kayıtları bu işten

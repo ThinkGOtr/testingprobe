@@ -36,13 +36,13 @@ purposes:
     max_tokens: 32000           # v3 çıktısı (kapsam öğeleri, test verisi, gerekçeler) v2'nin ~2 katı
     timeout_s: 600              # ~10K karakter Türkçe JSON + uyarlamalı düşünme: dakikalar sürebilir
     max_timeout_retries: 0      # zaman aşımında geçit yeniden denemez; iş düzeyinde yeniden denenir
-    params: { effort: medium }
+    params: { effort: medium, output: prompt }
   design_model:               # 011 F3 iki tur — tur 1: test tasarım modeli (case yazılmaz)
     model: claude-sonnet-5-5
     max_tokens: 16000           # koşullar + öğeler + ayrıntılı modeller; case çıktısının yaklaşık yarısı
     timeout_s: 420
     max_timeout_retries: 0
-    params: { effort: medium }
+    params: { effort: medium, output: prompt }
   # 011 D şeridi: case seti review'u (P8; tavsiye) ve Agent Probe denetimi (P9; yayın kapısı, K8).
   # Uzun amaçlarda (case_generation, design_model, case_review, case_audit, case_deepening)
   # `max_timeout_retries: 0`: zaman aşımını geçit değil iş kuyruğu yeniden dener. Geçit içi ikinci
@@ -70,7 +70,7 @@ purposes:
     max_tokens: 32000           # case_generation ile aynı çıktı yapısı (en çok 10 yeni case)
     timeout_s: 600
     max_timeout_retries: 0
-    params: { effort: medium }
+    params: { effort: medium, output: prompt }
   consistency_check:          # ajan: kod (GitHub MCP, salt okuma) + veri (db_query) araçları
     model: claude-sonnet-5-5
     max_tokens: 8192
