@@ -41,13 +41,24 @@ def deepen_cases(ctx: JobContext) -> dict[str, Any]:
 
 
 def on_worker_start(conn: Connection) -> None:
-    """Worker açılışı: iş dışı çöküşle (`release_orphans`) `generating`'de kalanları `failed` yap.
+    """Worker açılışı: iş dışı çöküşle (`release_orphans`) `generating`'de kalanları `failed` yap;
+    işi ölmüş review/denetim satırlarını kapat.
 
     Asıl kurtarma `start_generation`'dadır (yeniden başlatmada); bu tarama portalda takılı
     görünmesini de önler.
     """
     with Session(bind=conn, join_transaction_mode="rollback_only") as session:
         n = sweep_stuck_generations(session)
+        k = sweep_stuck_quality(session)
         session.commit()
     if n:
         log.info("generating'de kalan %d gereksinim failed'a alındı", n)
+    if k:
+        log.info("işi yarıda kalan %d review/denetim satırı hata'ya alındı", k)
+
+
+def sweep_stuck_quality(session: Session) -> int:
+    """İşi iş dışında ölmüş (`reap_stale`/`release_orphans`/zaman aşımı) `bekliyor` review ve
+    denetim satırlarını `hata` yapar (011 D1 #1). Açılışta ve periyodik süpürmede
+    (`requirements.flow.run_po_poll`) koşar; satırlar zaten kilit sayılmaz (`bekleyen_satir`)."""
+    return review.close_stuck_reviews(session) + denetim_akisi.close_stuck_audits(session)

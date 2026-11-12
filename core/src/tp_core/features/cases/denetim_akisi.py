@@ -28,6 +28,7 @@ import os
 import re
 import uuid
 from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any
@@ -49,6 +50,13 @@ AUDIT_JOB = "cases.audit"
 KABUL, DUZELTME, ENGELLE = "KABUL", "DÜZELTME_GEREKLİ", "ENGELLE"
 SIDDET = {KABUL: 0, DUZELTME: 1, ENGELLE: 2}
 KAPI_ORTAMI = "TP_DENETIM_KAPISI"
+# Gereksinim başına 24 saatlik denetim sınırı (Opus çağrısı; maliyet, 011 D1 #8).
+DENETIM_SINIRI_ORTAMI = "TP_DENETIM_GUNLUK_SINIR"
+DENETIM_VARSAYILAN_SINIR = 10
+# `session.info` anahtarı: yayın kapısı durumu gereksinim başına bir kez hesaplanır (önizleme,
+# yayın işi; `features.publish`).
+KAPI_ONBELLEGI = "denetim_kapisi_onbellegi"
+KAYNAKLAR = frozenset({"tp-gecit", "agent-probe", "sim"})
 POLITIKA_DOSYASI = Path("agent-probe") / "politikalar.md"
 
 
@@ -289,20 +297,75 @@ def harden(model_karari: str, bulgular: Iterable[Mapping[str, Any]]) -> str:
 
 
 def _bekleyen(session: Session, requirement_id: uuid.UUID, hash_: str) -> CaseSetAudit | None:
-    return session.scalars(
-        select(CaseSetAudit)
-        .where(
-            CaseSetAudit.requirement_id == requirement_id,
-            CaseSetAudit.set_hash == hash_,
-            CaseSetAudit.durum == "bekliyor",
+    return review_mod.bekleyen_satir(session, CaseSetAudit, requirement_id, hash_)
+
+
+def _denetim_hatasi(session: Session, satir: CaseSetAudit, neden: str) -> None:
+    review_mod.mark_failed(
+        session,
+        satir,
+        neden,
+        eylem="cases.audit_failed",
+        olay="case.audit",
+        anahtar="audit_id",
+    )
+
+
+def close_stuck_audits(session: Session, requirement_id: uuid.UUID | None = None) -> int:
+    """Etkin işi olmayan `bekliyor` denetim satırlarını `hata` yapar (iş yarıda kaldı)."""
+    return review_mod.close_stuck(session, CaseSetAudit, _denetim_hatasi, requirement_id)
+
+
+def _tamamlananlar(
+    session: Session, requirement_id: uuid.UUID, hash_: str | None
+) -> list[CaseSetAudit]:
+    if hash_ is None:
+        return []
+    return list(
+        session.scalars(
+            select(CaseSetAudit)
+            .where(
+                CaseSetAudit.requirement_id == requirement_id,
+                CaseSetAudit.set_hash == hash_,
+                CaseSetAudit.durum == "tamamlandi",
+            )
+            .order_by(CaseSetAudit.olusturma.desc(), CaseSetAudit.id.desc())
         )
-        .order_by(CaseSetAudit.olusturma.desc())
-        .limit(1)
-    ).first()
+    )
 
 
-def submit_block(session: Session, req: Requirement, hash_: str | None) -> str | None:
-    """ "Denetime gönder" neden kapalı (None = gönderilebilir). Portal düğme açıklaması da budur."""
+def binding_decision(
+    session: Session, requirement_id: uuid.UUID, hash_: str | None
+) -> CaseSetAudit | None:
+    """Kapının okuduğu karar: bu set hash'inin tamamlanmış denetimlerinden EN SERTİ (eşitlikte
+    en yenisi). Aynı set yeniden denetlenip daha yumuşak karar alınsa bile önceki sert karar
+    geçerli kalır (P9 kararı set değişmeden değiştirilemez)."""
+    satirlar = _tamamlananlar(session, requirement_id, hash_)
+    if not satirlar:
+        return None
+    return max(satirlar, key=lambda a: SIDDET.get(str(a.karar), SIDDET[ENGELLE]))
+
+
+def limit_block(session: Session, requirement_id: uuid.UUID) -> str | None:
+    return review_mod.limit_reason(
+        session,
+        CaseSetAudit,
+        requirement_id,
+        DENETIM_SINIRI_ORTAMI,
+        DENETIM_VARSAYILAN_SINIR,
+        "denetim",
+    )
+
+
+def submit_block(
+    session: Session,
+    req: Requirement,
+    hash_: str | None,
+    cases: Sequence[TestCase] | None = None,
+) -> str | None:
+    """ "Denetime gönder" neden kapalı (None = gönderilebilir). Portal düğme açıklaması da budur.
+
+    `cases`: güncel set (verilmezse hesaplanır; görünüm tek kez hesaplayıp verir)."""
     from tp_core.features.cases.service import requirement_change_reason
 
     if req.durum not in review_mod.SET_KULLANILIR:
@@ -312,19 +375,22 @@ def submit_block(session: Session, req: Requirement, hash_: str | None) -> str |
         return engel
     if hash_ is None:
         return "Gereksinimin güncel v3 case'i yok; denetlenecek set boş"
+    karar = binding_decision(session, req.id, hash_)
+    if karar is not None:
+        return (
+            f"Bu set zaten denetlendi (karar: {karar.karar}); set değişmeden yeniden denetim "
+            "yapılmaz. Case'leri düzeltip yeniden gönderin"
+        )
     if review_mod._bekleyen(session, req.id, hash_) is not None:
         return "Bu set için review sürüyor; review bitince denetime gönderin"
+    sinir = limit_block(session, req.id)
+    if sinir is not None:
+        return sinir
     if review_mod.latest_completed(session, req.id, hash_) is not None:
         return None
-    onayli = session.scalar(
-        select(TestCase.id)
-        .where(
-            TestCase.id.in_([tc.id for tc in review_mod.current_cases(session, req)]),
-            TestCase.durum.in_(("approved", "published")),
-        )
-        .limit(1)
-    )
-    if onayli is None:
+    if cases is None:
+        cases = review_mod.current_cases(session, req)
+    if not any(tc.durum in ("approved", "published") for tc in cases):
         return (
             "Bu setin review'u tamamlanmadı ve onaylı case yok: review'u yeniden çalıştırın ya da "
             "en az bir case'i inceleyip onaylayın"
@@ -333,15 +399,24 @@ def submit_block(session: Session, req: Requirement, hash_: str | None) -> str |
 
 
 def request_audit(session: Session, requirement_id: uuid.UUID, user: Principal) -> dict[str, Any]:
-    """`POST /requirements/{id}/case-audit` ("Denetime gönder")."""
+    """`POST /requirements/{id}/case-audit` ("Denetime gönder").
+
+    409: set boş / gereksinim uygun değil / review sürüyor / bu set ZATEN denetlendi (aynı
+    `set_hash` için tamamlanmış karar varken yeniden denetim yok). 429: gereksinim başına
+    24 saatlik denetim sınırı (`TP_DENETIM_GUNLUK_SINIR`)."""
     from tp_core.features.cases.service import get_requirement
 
     req = get_requirement(session, requirement_id, lock=True)
-    hash_ = review_mod.set_hash(session, req)
+    close_stuck_audits(session, req.id)
+    review_mod.close_stuck_reviews(session, req.id)
+    cases = review_mod.current_cases(session, req)
+    hash_ = review_mod.hash_of([tc.icerik_hash for tc in cases])
     mevcut = _bekleyen(session, req.id, hash_) if hash_ else None
     if mevcut is None:
-        engel = submit_block(session, req, hash_)
+        engel = submit_block(session, req, hash_, cases)
         if engel is not None:
+            if engel == limit_block(session, req.id):
+                raise review_mod.KaliteSiniri(engel)
             raise AuditNotAllowed(engel)
         assert hash_ is not None
         son_review = review_mod.latest_completed(session, req.id, hash_)
@@ -403,19 +478,8 @@ def _requirement_text(req: Any) -> str:
 def _hata_yaz(audit_id: uuid.UUID, neden: str) -> None:
     with session_scope() as s:
         satir = s.get(CaseSetAudit, audit_id, with_for_update=True)
-        if satir is None or satir.durum != "bekliyor":
-            return
-        satir.durum, satir.hata = "hata", neden[:1000]
-        audit_on_commit(
-            s,
-            "system",
-            "cases.audit_failed",
-            f"requirement:{satir.requirement_id}",
-            {"audit_id": audit_id, "set_hash": satir.set_hash, "hata": neden[:300]},
-        )
-        publish_tx(
-            s.connection(), "case.audit", {"requirement_id": satir.requirement_id, "durum": "hata"}
-        )
+        if satir is not None:
+            _denetim_hatasi(s, satir, neden)
 
 
 def run_audit(ctx: JobContext, engine: Engine) -> dict[str, Any]:
@@ -425,24 +489,34 @@ def run_audit(ctx: JobContext, engine: Engine) -> dict[str, Any]:
     from tp_core.integrations.agent_probe import AgentProbeUnavailable, denetim, get_agent_probe
 
     aid = uuid.UUID(str((ctx.yuk or {})["audit_id"]))
-    with session_scope() as s:
-        satir = s.get(CaseSetAudit, aid)
-        if satir is None:
-            raise PermanentJobError("denetim kaydı yok")
-        if satir.durum != "bekliyor":
-            return {"atlandi": True, "durum": satir.durum}
-        req = s.get(Requirement, satir.requirement_id)
-        if req is None:
-            raise PermanentJobError("gereksinim silinmiş")
-        girdi = review_mod.snapshot(s, req)
-        if girdi.set_hash is None:
-            satir.durum, satir.hata = "hata", "sette v3 case kalmadı"
-            return {"atlandi": True, "neden": "boş set"}
-        satir.set_hash = girdi.set_hash
-        istek = build_request(s, req, girdi)
-        harita = girdi.harita()
-        cases = [dict(tc.icerik) for tc in girdi.cases]
-        gereksinim_metni = _requirement_text(req)
+    try:
+        with session_scope() as s:
+            satir = s.get(CaseSetAudit, aid, with_for_update=True)
+            if satir is None:
+                raise PermanentJobError("denetim kaydı yok")
+            if satir.durum != "bekliyor":
+                return {"atlandi": True, "durum": satir.durum}
+            req = s.get(Requirement, satir.requirement_id)
+            if req is None:
+                raise PermanentJobError("gereksinim silinmiş")
+            girdi = review_mod.snapshot(s, req)
+            if girdi.set_hash is None:
+                _denetim_hatasi(s, satir, "sette v3 case kalmadı")
+                return {"atlandi": True, "neden": "boş set"}
+            if girdi.set_hash != satir.set_hash:
+                # İstekten sonra set değişti: analistin göndermediği set denetlenmez (model
+                # çağrılmaz); analist güncel seti yeniden gönderir.
+                _denetim_hatasi(s, satir, review_mod.SET_DEGISTI_HATA)
+                return {"atlandi": True, "neden": "set değişti"}
+            istek = build_request(s, req, girdi)
+            harita = girdi.harita()
+            cases = [dict(tc.icerik) for tc in girdi.cases]
+            gereksinim_metni = _requirement_text(req)
+    except PermanentJobError:
+        raise
+    except Exception as exc:  # girdi kurulamadı: karar yok (fail-closed), satır kilitte kalmaz
+        _hata_yaz(aid, f"denetim girdisi kurulamadı: {type(exc).__name__}: {str(exc)[:300]}")
+        return {"hata": type(exc).__name__}
     try:
         port = get_agent_probe()
         with denetim.cagri_baglami(call_id=deterministic_call_id(ctx.job_id, "case_audit")):
@@ -460,6 +534,28 @@ def run_audit(ctx: JobContext, engine: Engine) -> dict[str, Any]:
     except Exception as exc:
         _hata_yaz(aid, f"{type(exc).__name__}: {str(exc)[:300]}")
         return {"hata": type(exc).__name__}
+    if sonuc.decision not in SIDDET or sonuc.kaynak not in KAYNAKLAR:
+        _hata_yaz(
+            aid,
+            f"Agent Probe geçersiz yanıt döndü (karar: {str(sonuc.decision)[:40]!r}, kaynak: "
+            f"{str(sonuc.kaynak)[:40]!r}); karar yazılmadı",
+        )
+        return {"hata": "gecersiz_karar"}
+    try:
+        return _denetim_yaz(aid, sonuc, istek, harita, cases, gereksinim_metni)
+    except Exception as exc:  # sonuç yazılamadı: karar yok (fail-closed)
+        _hata_yaz(aid, f"denetim sonucu yazılamadı: {type(exc).__name__}: {str(exc)[:300]}")
+        return {"hata": type(exc).__name__}
+
+
+def _denetim_yaz(
+    aid: uuid.UUID,
+    sonuc: CaseSetAuditResult,
+    istek: CaseSetAuditRequest,
+    harita: dict[str, Any],
+    cases: list[dict[str, Any]],
+    gereksinim_metni: str,
+) -> dict[str, Any]:
     bulgular = deterministic_findings(cases, gereksinim_metni)
     karar = harden(sonuc.decision, bulgular)
     with session_scope() as s:
@@ -551,20 +647,18 @@ def _kisa(metin: str | None, n: int = 240) -> str:
     return metin if len(metin) <= n else metin[: n - 1] + "…"
 
 
-def gate_reason(session: Session, req: Requirement) -> str | None:
-    """Gereksinimin güncel seti için yayın engeli (None = KABUL var ya da kapı kapalı)."""
-    if not gate_enabled():
-        return None
-    hash_ = review_mod.set_hash(session, req)
-    karar = latest_completed(session, req.id, hash_)
+def _hash_reason(session: Session, req: Requirement, hash_: str | None) -> str | None:
+    """Verilen (güncel) set hash'i için yayın engeli (kapı açıkken)."""
+    karar = binding_decision(session, req.id, hash_)
     if karar is None:
         son = latest(session, req.id)
         if son is None:
             return "Denetim kararı yok: set Agent Probe denetiminden geçmedi ('Denetime gönder')"
-        if son.set_hash == hash_ and son.durum == "bekliyor":
+        if son.set_hash == hash_ and review_mod.is_running(session, son):
             return "Denetim bekliyor: bu set için Agent Probe kararı henüz gelmedi"
-        if son.set_hash == hash_ and son.durum == "hata":
-            return f"Denetim yapılamadı: {_kisa(son.hata, 160)}; yeniden denetime gönderin"
+        if son.set_hash == hash_ and son.durum in ("hata", "bekliyor"):
+            neden = son.hata or review_mod.YARIDA_KALDI
+            return f"Denetim yapılamadı: {_kisa(neden, 160)}; yeniden denetime gönderin"
         return (
             "Denetim kararı bayat: set son denetimden sonra değişti (case eklendi, düzeltildi ya "
             "da reddedildi); yeniden denetime gönderin"
@@ -575,12 +669,52 @@ def gate_reason(session: Session, req: Requirement) -> str | None:
     return f"{karar.karar}: {gerekce}" if gerekce else str(karar.karar)
 
 
+def gate_reason(session: Session, req: Requirement, hash_: Any = ...) -> str | None:
+    """Gereksinimin güncel seti için yayın engeli (None = KABUL var ya da kapı kapalı)."""
+    if not gate_enabled():
+        return None
+    if hash_ is ...:
+        hash_ = review_mod.set_hash(session, req)
+    return _hash_reason(session, req, hash_)
+
+
+@dataclass(frozen=True)
+class KapiDurumu:
+    """Gereksinimin yayın kapısı durumu: güncel (denetlenen) setin case'leri + engel."""
+
+    set_ids: frozenset[uuid.UUID]
+    neden: str | None
+
+
+def gate_state(session: Session, req: Requirement) -> KapiDurumu:
+    cases = review_mod.current_cases(session, req)
+    hash_ = review_mod.hash_of([tc.icerik_hash for tc in cases])
+    return KapiDurumu(frozenset(tc.id for tc in cases), _hash_reason(session, req, hash_))
+
+
+SET_DISI = "Case denetlenen güncel sette değil (eski içerik ya da set dışı case); yayınlanamaz"
+
+
 def gate_check(session: Session, tc: TestCase) -> str | None:
-    """`publish.set_gate_check` kancası (yalnız v3 case için çağrılır)."""
-    req = session.get(Requirement, tc.requirement_id)
-    if req is None:
-        return "Gereksinim bulunamadı"
-    return gate_reason(session, req)
+    """`publish.set_gate_check` kancası (yalnız v3 case için çağrılır).
+
+    Kapı açıkken: case gereksinimin GÜNCEL setinde olmalı (denetlenen set) ve setin bağlayıcı
+    kararı KABUL olmalı. Durum `session.info[KAPI_ONBELLEGI]` varsa gereksinim başına bir kez
+    hesaplanır (önizleme / yayın işi)."""
+    if not gate_enabled():
+        return None
+    onbellek = session.info.get(KAPI_ONBELLEGI)
+    durum = onbellek.get(tc.requirement_id) if isinstance(onbellek, dict) else None
+    if durum is None:
+        req = session.get(Requirement, tc.requirement_id)
+        if req is None:
+            return "Gereksinim bulunamadı"
+        durum = gate_state(session, req)
+        if isinstance(onbellek, dict):
+            onbellek[tc.requirement_id] = durum
+    if tc.id not in durum.set_ids:
+        return SET_DISI
+    return durum.neden
 
 
 def bind_gate() -> None:
@@ -620,18 +754,19 @@ def view(session: Session, requirement_id: uuid.UUID) -> dict[str, Any]:
     from tp_core.features.cases.service import get_requirement
 
     req = get_requirement(session, requirement_id)
-    hash_ = review_mod.set_hash(session, req)
+    cases = review_mod.current_cases(session, req)  # set bir kez hesaplanır
+    hash_ = review_mod.hash_of([tc.icerik_hash for tc in cases])
     son = latest(session, req.id)
     bekleyen = _bekleyen(session, req.id, hash_) if hash_ else None
     return {
         "requirement_id": str(req.id),
         "set_hash": hash_,
         "denetim": serialize(session, son, hash_),
-        "guncel_karar": serialize(session, latest_completed(session, req.id, hash_), hash_),
+        "guncel_karar": serialize(session, binding_decision(session, req.id, hash_), hash_),
         "calisiyor": bekleyen is not None,
-        "gonder_engeli": None if bekleyen is not None else submit_block(session, req, hash_),
+        "gonder_engeli": None if bekleyen is not None else submit_block(session, req, hash_, cases),
         "kapi_acik": gate_enabled(),
-        "yayin_engeli": gate_reason(session, req) if hash_ else None,
+        "yayin_engeli": gate_reason(session, req, hash_) if hash_ else None,
     }
 
 

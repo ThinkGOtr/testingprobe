@@ -2391,6 +2391,7 @@ def ensure_po_poll(conn: Connection, *, gecikme_s: float = 0.0) -> uuid.UUID | N
 
 def run_po_poll(engine: Engine) -> dict[str, Any]:
     kurtarilan = sweep_stuck(engine)
+    _kalite_supur()
     with session_scope() as s:
         ids = list(
             s.scalars(
@@ -2416,6 +2417,17 @@ def run_po_poll(engine: Engine) -> dict[str, Any]:
         "silinen_eski_is": silinen,
         "yeniden_planlandi": reschedule_po_poll(engine),
     }
+
+
+def _kalite_supur() -> None:
+    """İşi ölmüş review/denetim satırları (011 D1 #1; `cases.jobs.sweep_stuck_quality`)."""
+    from tp_core.features.cases.jobs import sweep_stuck_quality
+
+    try:
+        with session_scope() as s:
+            sweep_stuck_quality(s)
+    except Exception as exc:  # süpürme sorgu zincirini koparmaz
+        log.warning("review/denetim süpürmesi başarısız: %s", exc)
 
 
 def reschedule_po_poll(engine: Engine) -> bool:
