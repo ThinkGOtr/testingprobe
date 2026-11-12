@@ -26,6 +26,11 @@ Akış (`triage.classify` işi, yalnızca core-worker; AI yalnızca kural eşle�
    `create_draft_from_failure(session, failure_id)` (insan onayı orada; yoksa sessizce
    atlanır). `test_maintenance/locator` → öneri `failure_ek.oneri`'de saklanır;
    onarımı `POST /failures/{id}/fix` (repair şeridi) başlatır.
+   `test_maintenance/beklenti` (012 §4.4, kural `karar_tablosu`: test beklentisi onaylı karar
+   tablosundan farklı, uygulama tabloya uygun) → öneri yok (`oneri_turu='none'`): bug taslağı
+   ve locator onarımı açılmaz; gerekçe "case düzeltilmeli". Karar tablosu karşılaştırmaları
+   (`Girdi.oracle`) hatanın case'inin onaylı içeriğine ait `case_oracle_kontrol` kaydından
+   koşu başına toplu okunur (`oracle_karsilastirmalari`); deterministik karar LLM'e gitmez.
 """
 
 from __future__ import annotations
@@ -36,15 +41,17 @@ import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from sqlalchemy import Engine, and_, select, text
+from sqlalchemy import Engine, and_, select, text, tuple_
 from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session
 
 from tp_core.audit import audit_on_commit
 from tp_core.events import publish_tx
+from tp_core.features.karar_tablosu.ifade import toleranslar as ifade_toleranslar
 from tp_core.features.triage import evidence as ev
 from tp_core.features.triage import java as jv
 from tp_core.features.triage import services
@@ -52,6 +59,7 @@ from tp_core.features.triage.rules import (
     Girdi,
     Karar,
     LocatorAnalizi,
+    OracleKarsilastirma,
     ag_sinyali_var,
     hata_imzasi,
     siniflandir,
@@ -60,8 +68,10 @@ from tp_core.features.triage.rules import sinyal as _sinyal
 from tp_core.models import BugDraft, Failure, Requirement, Run, Script, TestCase, TestResult
 from tp_core.models.ci_feature import TestResultEk
 from tp_core.models.codegen_feature import ScriptCodegen, ScriptKontrol
+from tp_core.models.kalite_feature import CaseOracleKontrol, KararTablosu
 from tp_core.models.triage_feature import FailureEk, TriageKosu
 from tp_core.workflow import jobs as jobq
+from tp_core.workflow.service import content_hash_of
 
 log = logging.getLogger(__name__)
 
@@ -512,6 +522,148 @@ def _story_ve_case(
     return None, None
 
 
+# ============================================================================= 012 karar tablosu
+
+ORACLE_KARAR_SONUCLARI = ("uyumlu", "uyumsuz")
+ONAYLI_CASE_DURUMLARI = ("approved", "published")
+
+
+def _bagli_case_id(session: Session, run: Run, test_case_id: uuid.UUID | None) -> uuid.UUID | None:
+    """Hatanın bağlı olduğu case (`_story_ve_case` ile aynı bağ): üretilen testin script'i →
+    `script_codegen.test_case_id`; yoksa `test_result.test_case_id`."""
+    if run.script_id is not None:
+        cg = session.get(ScriptCodegen, run.script_id)
+        if cg is not None:
+            return cg.test_case_id
+    return test_case_id
+
+
+def _uuid_or_none(x: Any) -> uuid.UUID | None:
+    try:
+        return uuid.UUID(str(x))
+    except (TypeError, ValueError):
+        return None
+
+
+def _tablo_guncel(t: KararTablosu | None, kontrol_hash: Any, req_hash: str | None) -> bool:
+    """Kontrolde kullanılan tablo hâlâ aynı mı: onaylı, içerik hash'i kontrol anındakiyle aynı
+    ve bayat değil (gereksinim onaydan sonra değişmemiş; §11.2)."""
+    return (
+        t is not None
+        and t.durum == "approved"
+        and t.icerik_hash == kontrol_hash
+        and (t.gereksinim_hash is None or t.gereksinim_hash == req_hash)
+    )
+
+
+def oracle_karsilastirmalari(
+    session: Session, case_idleri: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, list[OracleKarsilastirma]]:
+    """Case → güncel onaylı içeriğine ait karar tablosu karşılaştırmaları (012 §4.4).
+
+    Kayıt: `case_oracle_kontrol` satırı, `icerik_hash = test_case.onaylanan_hash` (case
+    `approved` ya da `published`; yayın kapısı onaylı hash'in güncel olmasını ister, hash yayında
+    korunur) ve `sonuc` `uyumlu` | `uyumsuz`. Kontrolden sonra değişen (içerik hash'i farklı,
+    onayı geri çekilmiş, bayat) tablonun grupları atılır. Sorgular koşu başına toplu yapılır.
+    """
+    idler = list(dict.fromkeys(c for c in case_idleri if c is not None))
+    if not idler:
+        return {}
+    caseler = session.execute(
+        select(TestCase.id, TestCase.onaylanan_hash).where(
+            TestCase.id.in_(idler),
+            TestCase.durum.in_(ONAYLI_CASE_DURUMLARI),
+            TestCase.onaylanan_hash.is_not(None),
+        )
+    ).all()
+    if not caseler:
+        return {}
+    kontroller = list(
+        session.scalars(
+            select(CaseOracleKontrol).where(
+                tuple_(CaseOracleKontrol.test_case_id, CaseOracleKontrol.icerik_hash).in_(
+                    [(cid, h) for cid, h in caseler]
+                ),
+                CaseOracleKontrol.sonuc.in_(ORACLE_KARAR_SONUCLARI),
+            )
+        )
+    )
+    # Kontrol anındaki tablo hash'leri: {kontrol id: {tablo uuid: icerik_hash}}.
+    kontrol_hashleri: dict[uuid.UUID, dict[uuid.UUID, Any]] = {}
+    for k in kontroller:
+        hashler: dict[uuid.UUID, Any] = {}
+        for anahtar, h in (k.tablo_hashleri or {}).items():
+            tid = _uuid_or_none(anahtar)
+            if tid is not None:
+                hashler[tid] = h
+        kontrol_hashleri[k.id] = hashler
+    tablo_idleri = {tid for h in kontrol_hashleri.values() for tid in h}
+    tablolar: dict[uuid.UUID, KararTablosu] = {}
+    if tablo_idleri:
+        tablolar = {
+            t.id: t
+            for t in session.scalars(select(KararTablosu).where(KararTablosu.id.in_(tablo_idleri)))
+        }
+    req_idleri = {t.requirement_id for t in tablolar.values()}
+    req_hashleri = (
+        {
+            r.id: content_hash_of(r)
+            for r in session.scalars(select(Requirement).where(Requirement.id.in_(req_idleri)))
+        }
+        if req_idleri
+        else {}
+    )
+    out: dict[uuid.UUID, list[OracleKarsilastirma]] = {}
+    for k in kontroller:
+        hashler = kontrol_hashleri[k.id]
+        liste: list[OracleKarsilastirma] = []
+        gruplar = (k.ayrintilar or {}).get("gruplar")
+        for grup in gruplar if isinstance(gruplar, list) else []:
+            if not isinstance(grup, Mapping):
+                continue
+            tid = _uuid_or_none(grup.get("tablo_id"))
+            t = tablolar.get(tid) if tid is not None else None
+            if t is None or tid not in hashler:
+                continue
+            if not _tablo_guncel(t, hashler[tid], req_hashleri.get(t.requirement_id)):
+                continue
+            try:
+                tol = ifade_toleranslar(t.icerik)
+            except (ArithmeticError, KeyError, TypeError, ValueError):
+                tol = {}
+            karsilastirmalar = grup.get("karsilastirmalar")
+            for c in karsilastirmalar if isinstance(karsilastirmalar, list) else []:
+                if not isinstance(c, Mapping):
+                    continue
+                kolon = c.get("column")
+                liste.append(
+                    OracleKarsilastirma(
+                        case_degeri=c.get("case_degeri"),
+                        tablo_degeri=c.get("tablo_degeri"),
+                        column=str(kolon) if kolon is not None else None,
+                        alan=ev.temiz_or_none(c.get("alan"), 200),
+                        tablo_id=str(tid),
+                        tablo_ad=ev.temiz_or_none(grup.get("tablo_ad"), 120),
+                        tolerans=tol.get(str(kolon), Decimal(0)),
+                        test_case_id=str(k.test_case_id),
+                        icerik_hash=k.icerik_hash,
+                    )
+                )
+        if liste:
+            out[k.test_case_id] = liste
+    return out
+
+
+def _oracle_ekle(
+    session: Session, kanitlar: Sequence[TestKaniti], case_idleri: Sequence[uuid.UUID | None]
+) -> None:
+    """Girdilere bağlı case'in karar tablosu karşılaştırmalarını ekler (koşu başına toplu)."""
+    harita = oracle_karsilastirmalari(session, [c for c in case_idleri if c is not None])
+    for tk, cid in zip(kanitlar, case_idleri, strict=True):
+        if cid is not None and cid in harita:
+            tk.girdi.oracle = harita[cid]
+
+
 def kosu_platformu(
     session: Session, run: Run, rapor: Mapping[str, Any] | None = None
 ) -> str | None:
@@ -554,6 +706,7 @@ def kanitlari_topla(session: Session, run: Run, u: Uygunluk) -> tuple[list[TestK
         .limit(MAX_TEST)
     ).all()
     out: list[TestKaniti] = []
+    case_idleri: list[uuid.UUID | None] = []
     for tr, ek in rows:
         g, linkler, trace_rel, durum, uyarilar, ham = _girdi_olustur(
             run=run,
@@ -583,7 +736,9 @@ def kanitlari_topla(session: Session, run: Run, u: Uygunluk) -> tuple[list[TestK
                 *_story_ve_case(session, run, tr.test_case_id, tr.dosya),
             )
         )
+        case_idleri.append(_bagli_case_id(session, run, tr.test_case_id))
     if out:
+        _oracle_ekle(session, out, case_idleri)
         return out, None
     # test_result satırı yok: JSON raporunun hata girdileri (ayrıştırma başarısız olduysa).
     gorulen: set[tuple[str, str]] = set()
@@ -620,7 +775,9 @@ def kanitlari_topla(session: Session, run: Run, u: Uygunluk) -> tuple[list[TestK
                 *_story_ve_case(session, run, None, dosya),
             )
         )
+        case_idleri.append(_bagli_case_id(session, run, None))
     if out:
+        _oracle_ekle(session, out, case_idleri)
         return out, None
     statik = _statik_kirmizi(run)
     saglik_kotu = isinstance(saglik_, Mapping) and saglik_.get("ok") is False
@@ -1507,7 +1664,7 @@ def classify_run(engine: Engine, run_id: uuid.UUID, *, son_deneme: bool = True) 
         else:
             if karar.oneri is None and (neden or ek_sinyaller):
                 # Kural 3 değerlendirildi ama öneri çıkmadı; karar sonraki kuraldan geldi.
-                karar.oneri_yok_nedeni = neden
+                karar.oneri_yok_nedeni = neden or karar.oneri_yok_nedeni
                 karar.sinyaller = [*ek_sinyaller, *karar.sinyaller]
             sonuclar.append(Sonuc(tk, karar, imza))
 

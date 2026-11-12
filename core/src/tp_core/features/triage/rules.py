@@ -13,6 +13,12 @@ Kurallar **sırayla** denenir; ilk eşleşen karar verir:
                      new_testid}`.
 4. `product_defect` — assertion farkı (beklenen ≠ gerçekleşen) ve sayfa yapısı beklendiği gibi
                      (eleman bulundu, değer okundu, sayfa snapshot'ı var; tekrarlar tutarlı).
+                     012 §4.4: hatanın case'ine ait onaylı karar tablosu kontrolü (`Girdi.oracle`)
+                     varsa karar tablosuyla inceltilir (`karar_tablosu_karari`, kural
+                     `karar_tablosu`): beklenti = tablo ≠ gerçekleşen → `product_defect`;
+                     beklenti ≠ tablo = gerçekleşen → `test_maintenance/beklenti` (case
+                     düzeltilmeli; bug taslağı ve locator onarımı yok); ikisi de ≠ tablo →
+                     `product_defect`. Tablo yok / eşleşme yok → yukarıdaki davranış aynen.
 5. `test_data`     — test verisi ön koşulu sağlanamadı (seed/reset/fixture hatası).
 
 Java / Appium testleri (009 mobil-masaüstü; `triage.java`) aynı kurallardan geçer: oturum /
@@ -32,8 +38,10 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from tp_core.features.karar_tablosu.ifade import esit_mi, sayi_ayristir
 from tp_core.features.triage.evidence import temiz
 
 LOCATOR_0_TURLERI = frozenset({"locator_not_found", "locator_timeout"})
@@ -64,6 +72,34 @@ def sinyal(kod: str, aciklama: str, kaynak: str, kanit: Any = None) -> dict[str,
         "kaynak": kaynak,
         "kanit": temiz(kanit, 500) if kanit not in (None, "") else None,
     }
+
+
+KARAR_TABLOSU_KURALI = "karar_tablosu"
+BEKLENTI_ALT_TURU = "beklenti"
+BEKLENTI_ONERISI = "Case'in beklenen değeri onaylı karar tablosuyla uyuşmuyor; case düzeltilmeli."
+BEKLENTI_ONERI_YOK = (
+    "Test beklentisi onaylı karar tablosundan farklı, uygulama tabloya uygun: bug taslağı ve "
+    "locator onarımı açılmaz. " + BEKLENTI_ONERISI
+)
+
+
+@dataclass(frozen=True)
+class OracleKarsilastirma:
+    """Case'in güncel onaylı içeriğine ait `case_oracle_kontrol` karşılaştırması (012 §4.3).
+
+    `case_degeri` / `tablo_degeri` `ayrintilar.gruplar[].karsilastirmalar[]`'dan gelir (sayı metni,
+    sayı, metin ya da mantıksal). `tolerans` tablonun o çıktı kolonundaki toleransıdır.
+    """
+
+    case_degeri: Any
+    tablo_degeri: Any
+    column: str | None = None
+    alan: str | None = None
+    tablo_id: str | None = None
+    tablo_ad: str | None = None
+    tolerans: Decimal = Decimal(0)
+    test_case_id: str | None = None  # kanıt: hangi case
+    icerik_hash: str | None = None  # kanıt: case'in kontrol edilen (onaylı) içerik hash'i
 
 
 @dataclass
@@ -98,6 +134,9 @@ class Girdi:
     platform: str | None = None
     sayfa_kaynagi: str | None = None  # hata anı sayfa kaynağı XML'i (güvenilmeyen)
     sayfa_kaynagi_rel: str | None = None
+    # 012 §4.4: hatanın bağlı olduğu case'in onaylı içeriğine ait karar tablosu karşılaştırmaları
+    # (yoksa None; service `_oracle_ekle` doldurur).
+    oracle: list[OracleKarsilastirma] | None = None
 
     @property
     def java(self) -> bool:
@@ -170,7 +209,11 @@ class Karar:
 
     @property
     def oneri_turu(self) -> str:
-        if self.oneri is not None and self.sinif == "test_maintenance":
+        if (
+            self.oneri is not None
+            and self.sinif == "test_maintenance"
+            and self.alt_tur != BEKLENTI_ALT_TURU
+        ):
             return "locator_fix"
         if self.sinif == "product_defect":
             return "bug_draft"
@@ -366,6 +409,169 @@ def urun_yapisi_beklenen(g: Girdi) -> list[dict[str, Any]]:
     return out
 
 
+# ----------------------------------------------------------------------- 012 §4.4 karar tablosu
+
+_DUZ_SAYI_RE = re.compile(r"^[+-]?\d+(?:\.\d+)?$")
+_TIRNAKLAR = ('"', "'", "`")
+_MANTIK = {"true": True, "false": False, "doğru": True, "yanlış": False}
+
+
+def _hata_degeri(metin: str | None) -> Any:
+    """Hata mesajındaki beklenen / gerçekleşen metin → karşılaştırılabilir değer (yoksa None).
+
+    Playwright `Expected: "150,00 TL"` (tırnaklı), Java `beklenen <150,00 TL>` ve TestNG
+    `expected [150.0]` biçimleri: tırnak atılır, sayı `sayi_ayristir` ile okunur (ekrandaki
+    Türkçe yazım: `"1.250"` → 1250); sayı değilse kırpılmış metin döner. Düzenli ifade
+    (`/…/`) beklentisi değer değildir (None).
+    """
+    if metin is None:
+        return None
+    m = metin.strip()
+    if len(m) >= 2 and m[0] == m[-1] and m[0] in _TIRNAKLAR:
+        m = m[1:-1].strip()
+    elif len(m) >= 2 and m.startswith("/") and m.rstrip("dgimsuvy").endswith("/"):
+        return None
+    if not m:
+        return None
+    sayi = sayi_ayristir(m)
+    return sayi if sayi is not None else m
+
+
+def _oracle_degeri(deger: Any) -> Any:
+    """Kontrol kaydındaki değer → karşılaştırılabilir değer (sayı `Decimal`; yoksa None).
+
+    Kayıt sayıları metin olarak taşır (`Degerlendirme.as_dict`: `"150.00"`, nokta ondalık);
+    düz ondalık yazım önce denenir, sonra ekran yazımı (`sayi_ayristir`)."""
+    if deger is None or isinstance(deger, bool | Decimal):
+        return deger
+    if isinstance(deger, int | float):
+        try:
+            return Decimal(repr(deger)) if isinstance(deger, float) else Decimal(deger)
+        except InvalidOperation:  # pragma: no cover - nan/inf JSON'dan gelmez
+            return None
+    if isinstance(deger, str):
+        m = deger.strip()
+        if _DUZ_SAYI_RE.match(m):
+            return Decimal(m)
+        sayi = sayi_ayristir(m)
+        return sayi if sayi is not None else m
+    return None
+
+
+def _ayni_tur(a: Any, b: Any) -> bool:
+    if isinstance(a, bool) or isinstance(b, bool):
+        return isinstance(a, bool) and isinstance(b, bool)
+    return isinstance(a, Decimal) == isinstance(b, Decimal)
+
+
+def _uyarla(deger: Any, hedef: Any) -> Any:
+    """Tablo değeri mantıksalsa hata metnindeki `true` / `false` mantıksala çevrilir."""
+    if isinstance(hedef, bool) and isinstance(deger, str):
+        return _MANTIK.get(deger.strip().casefold(), deger)
+    return deger
+
+
+def _esit(a: Any, b: Any, tolerans: Decimal) -> bool:
+    try:
+        return esit_mi(a, b, tolerans)
+    except ValueError:
+        return False
+
+
+def _goster(deger: Any) -> str:
+    if isinstance(deger, bool):
+        return "doğru" if deger else "yanlış"
+    return str(deger)
+
+
+def karar_tablosu_karari(g: Girdi, urun: list[dict[str, Any]] | None = None) -> Karar | None:
+    """Kural 4'ün karar tablosu inceltmesi (012 §4.4); uygulanamıyorsa None (bugünkü davranış).
+
+    Yalnızca kural 4 eşleştiğinde çağrılır (`urun`: kural 4'ün sinyalleri; kararın sinyal
+    listesinin başına konur, verilmezse yeniden hesaplanır). Hatanın beklenen değerine eşit
+    `case_degeri` taşıyan karşılaştırmalar alınır; tablo değerleri tek değilse (ya da eşleşme
+    yoksa) karar verilmez.
+    """
+    if not g.oracle:
+        return None
+    beklenen = _hata_degeri(g.beklenen)
+    gerceklesen = _hata_degeri(g.gerceklesen)
+    if beklenen is None or gerceklesen is None:
+        return None
+    eslesen: list[tuple[OracleKarsilastirma, Any]] = []
+    for o in g.oracle:
+        case_d, tablo_d = _oracle_degeri(o.case_degeri), _oracle_degeri(o.tablo_degeri)
+        if case_d is None or tablo_d is None:
+            continue
+        if _esit(_uyarla(beklenen, case_d), case_d, o.tolerans):
+            eslesen.append((o, tablo_d))
+    if not eslesen:
+        return None
+    o, tablo = eslesen[0]
+    if not all(_ayni_tur(t, tablo) and _esit(t, tablo, Decimal(0)) for _, t in eslesen[1:]):
+        return None  # aynı beklenen değer farklı tablo değerlerine karşılık geliyor: belirsiz
+    tolerans = max(x.tolerans for x, _ in eslesen)
+    beklenen, gerceklesen = _uyarla(beklenen, tablo), _uyarla(gerceklesen, tablo)
+    if not (_ayni_tur(beklenen, tablo) and _ayni_tur(gerceklesen, tablo)):
+        return None  # gerçekleşen değer tablo değeriyle karşılaştırılamıyor
+    beklenti_uyar = _esit(beklenen, tablo, tolerans)
+    gercek_uyar = _esit(gerceklesen, tablo, tolerans)
+    if beklenti_uyar and gercek_uyar:
+        return None  # tolerans içinde ikisi de tabloya uyuyor: tablo ayırt etmiyor
+    ad = o.tablo_ad or o.tablo_id or "karar tablosu"
+    yer = f"'{ad}'" + (f" ({o.column})" if o.column else "")
+    degerler = (
+        f"test beklentisi {_goster(beklenen)}, gerçekleşen {_goster(gerceklesen)}, "
+        f"tablo {_goster(tablo)}"
+    )
+    kanit = " · ".join(
+        p
+        for p in (
+            f"case_oracle_kontrol: test_case {o.test_case_id or '-'}",
+            f"icerik_hash {o.icerik_hash or '-'}",
+            f"tablo {o.tablo_id or '-'}",
+            f"kolon {o.column}" if o.column else "",
+            f"alan {o.alan}" if o.alan else "",
+        )
+        if p
+    )
+    kaynak = "onaylı karar tablosu (case_oracle_kontrol)"
+    if urun is None:
+        urun = urun_yapisi_beklenen(g)
+    if beklenti_uyar:
+        s = sinyal(
+            "karar_tablosu_uyumlu",
+            f"Test beklentisi onaylı karar tablosu {yer} ile aynı, uygulama tablodan farklı "
+            f"değer üretti ({degerler})",
+            kaynak,
+            kanit,
+        )
+        return Karar("product_defect", None, KARAR_TABLOSU_KURALI, [*urun, s])
+    if gercek_uyar:
+        s = sinyal(
+            "karar_tablosu_beklenti_farkli",
+            f"Test beklentisi onaylı karar tablosu {yer} ile uyuşmuyor, uygulama tabloya uygun "
+            f"({degerler})",
+            kaynak,
+            kanit,
+        )
+        return Karar(
+            "test_maintenance",
+            BEKLENTI_ALT_TURU,
+            KARAR_TABLOSU_KURALI,
+            [*urun, s],
+            gerekce=BEKLENTI_ONERISI,
+            oneri_yok_nedeni=BEKLENTI_ONERI_YOK,
+        )
+    s = sinyal(
+        "karar_tablosu_ikisi_de_farkli",
+        f"Hem test beklentisi hem uygulama onaylı karar tablosu {yer} ile uyuşmuyor ({degerler})",
+        kaynak,
+        kanit,
+    )
+    return Karar("product_defect", None, KARAR_TABLOSU_KURALI, [*urun, s])
+
+
 def veri_kurali(g: Girdi) -> list[dict[str, Any]]:
     """Kural 5: test verisi ön koşulu."""
     if g.testsiz:
@@ -427,6 +633,9 @@ def siniflandir(
             neden = "Locator analizi yapılamadı"
     urun = urun_yapisi_beklenen(g)
     if urun:
+        tablo = karar_tablosu_karari(g, urun)
+        if tablo is not None:
+            return tablo, ek, neden
         return Karar("product_defect", None, "product_defect", urun), ek, neden
     veri = veri_kurali(g)
     if veri:
