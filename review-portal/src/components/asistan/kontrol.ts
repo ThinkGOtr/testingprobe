@@ -3,6 +3,7 @@
 // modül düzeyinde tutulur, bileşenler `useSyncExternalStore` ile okur.
 import { useSyncExternalStore } from "react";
 import { oturumDegisinceTemizle } from "../../lib/oturumTemizligi";
+import { DONDURMA_ANAHTARI } from "./oturumAnahtarlari";
 
 export type AsistanSekmesi = "sohbet" | "oneriler";
 
@@ -208,6 +209,7 @@ export function asistanKontrolSifirla(): void {
   taslagiSifirla();
   try {
     sessionStorage.removeItem(OTURUM_ANAHTARI);
+    sessionStorage.removeItem(DONDURMA_ANAHTARI);
   } catch {
     /* yoksay */
   }

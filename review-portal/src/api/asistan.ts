@@ -99,7 +99,11 @@ export interface AsistanCevabi {
   derin_onerilir?: boolean;
   /** Mock arka uç cevabı: arayüz "ÖRNEK VERİ" gösterir. */
   ornek_veri?: boolean;
-  /** Sunucu niyet sinyali kimlikleri (013 §5.2); kayıt içindir, arayüzde gösterilmez. */
+  /** Cevabı üreten model kimliği (ör. `claude-haiku-5-5`); kip rozeti önce bunu kullanır (013 §7). */
+  model?: string | null;
+  /** Sızıntı yerine gelen sabit cevap (013 §6): kartta güven rozeti gösterilmez. */
+  sizinti?: boolean;
+  /** Eski sürüm alanı: core artık istemciye döndürmez; arayüz kullanmaz. */
   sinyaller?: string[];
 }
 
@@ -180,33 +184,37 @@ export interface KipRozeti {
   tur: KipRozetTuru;
   /** Görünen rozet metni: `CANLI · Haiku 5.5` / `CANLI` / `ŞABLON` / `MODEL KAPALI`. */
   metin: string;
-  /** Açıklama (title + ekran okuyucu metni). */
+  /** Kartta rozetin altında görünen açıklama (ortak metin, 013 inceleme turu 1). */
   aciklama: string;
 }
 
+/** Kip rozeti açıklamaları (backend ve portal birebir aynı metinler). */
+export const KIP_ACIKLAMALARI: Record<KipRozetTuru, string> = {
+  canli: "Bu cevabı yapay zekâ modeli üretti; hatalı olabilir.",
+  sablon: "Yapay zekâ kullanılmadı; hazır açıklama.",
+  kapali: "Model kapalı; yapay zekâ kullanılmadı, hazır açıklama.",
+};
+
 /**
- * Cevap kartının kip rozeti (013 §7, K12). `model` → `CANLI · <kısa ad>` (derin cevapta derin
- * model; status bildirmiyorsa yalnız `CANLI`); `sozluk|sablon` → `ŞABLON`; `kapali` → `MODEL KAPALI`.
+ * Cevap kartının kip rozeti (013 §7, K12). `model` → `CANLI · <kısa ad>`: model adı önce cevabın
+ * kendi `cevap.model` alanından, yoksa status'tan (derin cevapta derin model; status bildirmiyorsa
+ * yalnız `CANLI`); `sozluk|sablon` → `ŞABLON`; `kapali` → `MODEL KAPALI`.
  */
 export function kipRozeti(
-  m: Pick<AsistanMesaji, "kaynak" | "amac">,
+  m: Pick<AsistanMesaji, "kaynak" | "amac"> & { cevap?: Pick<AsistanCevabi, "model"> | null },
   durum?: Pick<AsistanDurumu, "varsayilan_model" | "derin_model"> | null,
 ): KipRozeti | null {
   switch (m.kaynak) {
     case "model": {
-      const ad = modelKisaAdi(m.amac === "assistant_deep" ? durum?.derin_model : durum?.varsayilan_model);
-      return {
-        tur: "canli",
-        metin: ad ? `CANLI · ${ad}` : "CANLI",
-        aciklama: m.amac === "assistant_deep" ? "Canlı model cevabı · ayrıntılı inceleme" : "Canlı model cevabı",
-      };
+      const ad =
+        modelKisaAdi(m.cevap?.model) ?? modelKisaAdi(m.amac === "assistant_deep" ? durum?.derin_model : durum?.varsayilan_model);
+      return { tur: "canli", metin: ad ? `CANLI · ${ad}` : "CANLI", aciklama: KIP_ACIKLAMALARI.canli };
     }
     case "sozluk":
-      return { tur: "sablon", metin: "ŞABLON", aciklama: "Hazır cevap · hata sözlüğü" };
     case "sablon":
-      return { tur: "sablon", metin: "ŞABLON", aciklama: "Hazır cevap · kayıt durumu" };
+      return { tur: "sablon", metin: "ŞABLON", aciklama: KIP_ACIKLAMALARI.sablon };
     case "kapali":
-      return { tur: "kapali", metin: "MODEL KAPALI", aciklama: "Hazır cevap · canlı model kapalı" };
+      return { tur: "kapali", metin: "MODEL KAPALI", aciklama: KIP_ACIKLAMALARI.kapali };
     default:
       return null;
   }
@@ -285,12 +293,21 @@ export type GonderimHataKodu =
 /** Core `DONDURMA_SURE_S` (013 §6.2): gövdede `kalan_s` yoksa istemci bu süreyi varsayar. */
 export const DONDURMA_SURE_S = 600;
 
-export const KISISEL_VERI_METNI = "Soru kart numarası gibi kişisel veri içeriyor; çıkarıp yeniden deneyin.";
+/** 422 `kisisel_veri` (ortak metin, backend ile birebir). */
+export const KISISEL_VERI_METNI =
+  "Soru ya da eklenen ekran bilgisi bir kart numarası içeriyor. Numarayı silin ya da maskeleyin (ör. 5105 **** **** 5100) ve yeniden gönderin.";
 
-/** 429 `donduruldu` metni: N = ⌈kalan_s / 60⌉ dk (en az 1). */
+/** Sızıntı yerine gelen cevap (ortak metin; `cevap.sizinti: true`). */
+export const SIZINTI_METNI =
+  "Bu cevap gösterilemedi. Sorunuzu ekran, kayıt ya da koşu adıyla yeniden sorabilirsiniz; neler yapabildiğimi görmek için 'Ne yapabilirsin?' yazın.";
+
+/** Dondurma bittiğinde (role="status"). */
+export const DONDURMA_BITTI_METNI = "Asistan yeniden kullanılabilir.";
+
+/** 429 `donduruldu` metni (ortak metin): N = ⌈kalan_s / 60⌉ dk (en az 1). */
 export function dondurulduMetni(kalanS: number): string {
   const dk = Math.max(1, Math.ceil((Number.isFinite(kalanS) ? kalanS : DONDURMA_SURE_S) / 60));
-  return `Asistan, art arda engellenen istekler nedeniyle ~${dk} dk kullanılamıyor.`;
+  return `Art arda engellenen istekler nedeniyle asistan geçici olarak durduruldu. Yaklaşık ${dk} dk sonra yeniden sorabilirsiniz; sorunuz kutuda duruyor.`;
 }
 
 /** 429 `donduruldu` ise kalan saniye (gövdedeki `kalan_s`, yoksa `DONDURMA_SURE_S`); değilse null. */

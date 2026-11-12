@@ -9,6 +9,7 @@ import {
   baglamiSigdir,
   BEKLEYEN_VAR_METNI,
   bekliyor,
+  DONDURMA_BITTI_METNI,
   dondurmaKalanS,
   dondurulduMetni,
   gonderimHataMetni,
@@ -32,12 +33,32 @@ import { CevapKarti } from "./CevapKarti";
 import { ekranAnahtariUret, ilkGorulmeler, istekGecerli, oneriSohbetiUnut, oneriSohbetiYaz, sohbetTaslagi, type AcmaIstegi, type SohbetTaslagi } from "./kontrol";
 import { ekOneriDurdur, ekOneriKontrol, sohbetBekleyeniYaz, useBekleyenEkOneri } from "./OneriEkOneriler";
 import { oneriAnahtari, oneriGetir, oneriSorgusu } from "./OneriVerisi";
-import { SOHBET_ANAHTARI } from "./oturumAnahtarlari";
+import { DONDURMA_ANAHTARI, SOHBET_ANAHTARI } from "./oturumAnahtarlari";
 import { soruOnerileri } from "./sorular";
 
 /** Zamanlamalar (testler kısaltabilir). `duyuruAraMs`: aynı duyuru metni yeniden yazılmadan önce
  * canlı bölgenin boş kaldığı süre. */
-export const sohbetAyar = { yoklamaMs: 3000, uzunSurerMs: 25_000, saatMs: 1000, duyuruAraMs: 100 };
+export const sohbetAyar = { yoklamaMs: 3000, uzunSurerMs: 25_000, saatMs: 1000, duyuruAraMs: 100, dondurmaSaatMs: 30_000 };
+
+/** 429 `donduruldu` bitişi (epoch ms) sessionStorage'da: sayfa yenilense de dondurma sürer. Geçmiş
+ * ya da bozuk değer null döner (sunucu da dondurmayı ayrıca uygular; istemci yalnız gösterir). */
+export function kayitliDondurma(): number | null {
+  try {
+    const d = Number(sessionStorage.getItem(DONDURMA_ANAHTARI));
+    return Number.isFinite(d) && d > Date.now() ? d : null;
+  } catch {
+    return null;
+  }
+}
+
+function dondurmaKaydet(bitis: number | null): void {
+  try {
+    if (bitis !== null) sessionStorage.setItem(DONDURMA_ANAHTARI, String(bitis));
+    else sessionStorage.removeItem(DONDURMA_ANAHTARI);
+  } catch {
+    /* depo kapalı: dondurma yalnız bu sekmenin belleğinde */
+  }
+}
 
 
 function kayitliSohbet(): string | null {
@@ -158,29 +179,44 @@ export function SohbetSekmesi({
   /** Bekleme sürerken girdiye bırakılan dış soru: girdiden gönderilince seçenekleriyle gider. */
   const [bekletilen, setBekletilen] = useTaslak("bekletilen");
   /** 429 `donduruldu`: bitişe kadar gönderim kapalı; süre dolunca (istemci saati) kendiliğinden açılır.
-   * Taslakta tutulur: sekme geçişinde / panel kapanıp açılınca sayaç sıfırlanmaz. */
-  const [dondurmaBitis, setDondurmaBitis] = useTaslak("dondurmaBitis");
+   * Taslakta (sekme geçişi / panel kapanıp açılma) ve sessionStorage'da (sayfa yenileme) tutulur. */
+  const [dondurmaBitis, dondurmaTaslakAyarla] = useTaslak("dondurmaBitis");
+  const setDondurmaBitis = useCallback(
+    (bitis: number | null) => {
+      dondurmaTaslakAyarla(bitis);
+      dondurmaKaydet(bitis);
+    },
+    [dondurmaTaslakAyarla],
+  );
+  /** Dondurma süre dolarak bitti: "Asistan yeniden kullanılabilir." (role="status"), yeni gönderime kadar. */
+  const [dondurmaBitti, setDondurmaBitti] = useState(false);
+  /** Kalan dk metni `dondurmaSaatMs`'de bir yeniden hesaplanır (yalnız yeniden çizim tetikler). */
+  const [, setDondurmaSaati] = useState(0);
+  useEffect(() => {
+    if (dondurmaBitis !== null) return;
+    const k = kayitliDondurma();
+    if (k !== null) dondurmaTaslakAyarla(k);
+    // Yalnız ilk çizimde: yenilenen sayfada kayıtlı dondurma geri yüklenir.
+  }, []);
   const donmus = dondurmaBitis !== null && Date.now() < dondurmaBitis;
   useEffect(() => {
     if (dondurmaBitis === null) return;
+    const bitir = () => {
+      setDondurmaBitis(null);
+      setDondurmaBitti(true);
+    };
     const kalan = dondurmaBitis - Date.now();
     if (kalan <= 0) {
-      setDondurmaBitis(null);
+      bitir();
       return;
     }
-    const z = setTimeout(() => setDondurmaBitis(null), kalan);
-    return () => clearTimeout(z);
+    const z = setTimeout(bitir, kalan);
+    const saat = setInterval(() => setDondurmaSaati(Date.now()), sohbetAyar.dondurmaSaatMs);
+    return () => {
+      clearTimeout(z);
+      clearInterval(saat);
+    };
   }, [dondurmaBitis, setDondurmaBitis]);
-  /** Gönderim hatası 429 `donduruldu` ise dondurmayı başlatır (metin dondurma süresinden üretilir). */
-  const dondurmaHatasi = useCallback(
-    (e: unknown): boolean => {
-      const kalanS = dondurmaKalanS(e);
-      if (kalanS === null) return false;
-      setDondurmaBitis(Date.now() + kalanS * 1000);
-      return true;
-    },
-    [setDondurmaBitis],
-  );
   /** Ekran okuyucuya yalnız sonuç duyurulur (liste kabı canlı bölge değildir). */
   const [duyuru, setDuyuru] = useState("");
   const duyuruZamanlayici = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -200,6 +236,19 @@ export function SohbetSekmesi({
       setDuyuru(metin);
     }, sohbetAyar.duyuruAraMs);
   }, []);
+  /** Gönderim hatası 429 `donduruldu` ise dondurmayı başlatır. Metin kutusu canlı bölge değildir
+   * (kalan dk her dakika değişir, her seferinde okunmasın): başlangıç bir kez duyurulur. */
+  const dondurmaHatasi = useCallback(
+    (e: unknown): boolean => {
+      const kalanS = dondurmaKalanS(e);
+      if (kalanS === null) return false;
+      setDondurmaBitti(false);
+      setDondurmaBitis(Date.now() + kalanS * 1000);
+      duyur(dondurulduMetni(kalanS));
+      return true;
+    },
+    [setDondurmaBitis, duyur],
+  );
   const girdiRef = useRef<HTMLTextAreaElement>(null);
   const sohbetRef = useRef(sohbetId);
   sohbetRef.current = sohbetId;
@@ -409,6 +458,7 @@ export function SohbetSekmesi({
         setGirdi(metin);
         return;
       }
+      setDondurmaBitti(false);
       // Yanıt bekleyen soru varken (bu sekmede) ya da önceki gönderim sürerken yeni soru
       // gönderilmez: sunucu 409 bekleyen_var döndürür. Yeni sohbete de geçilmez; soru girdide
       // kalır, cevap gelince gönderilir. Öneri kuralı / hedef sohbet de saklanır (§17.6): girdiden
@@ -647,6 +697,7 @@ export function SohbetSekmesi({
     kalanSoru: m.id === sonCevapId ? (asistan.kalan_soru ?? null) : null,
     onGit,
     modeller: asistan,
+    rol: kullanici?.rol ?? null,
   });
 
   const cevapGrubu = (m: AsistanMesaji) => {
@@ -940,9 +991,20 @@ export function SohbetSekmesi({
           </p>
         )}
         {hataMetni && (
-          <div className="uyari-kutusu uyari-hata" role="alert" id="asistan-gonderim-hatasi" data-testid="asistan-gonderim-hatasi">
+          // Dondurma metni canlı bölge değil (kalan dk güncellenir; başlangıç `duyur` ile bir kez okunur).
+          <div
+            className="uyari-kutusu uyari-hata"
+            role={donmus ? undefined : "alert"}
+            id="asistan-gonderim-hatasi"
+            data-testid="asistan-gonderim-hatasi"
+          >
             {hataMetni}
           </div>
+        )}
+        {dondurmaBitti && !donmus && (
+          <p className="soluk kucuk" role="status" data-testid="dondurma-bitti">
+            {DONDURMA_BITTI_METNI}
+          </p>
         )}
       </form>
     </div>

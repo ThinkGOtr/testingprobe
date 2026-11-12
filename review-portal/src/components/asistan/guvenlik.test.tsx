@@ -1,11 +1,14 @@
 // 013 §7 (K12) şeffaflık + yeni hata kodları: kalıcı yapay zekâ bildirimi, cevap kartı kip rozeti
-// (CANLI · model / ŞABLON / MODEL KAPALI), 422 `kisisel_veri` ve 429 `donduruldu` metinleri, dondurma
-// süresince gönderimin kapalı kalıp süre dolunca açılması (sahte saat).
+// (CANLI · model / ŞABLON / MODEL KAPALI, görünür açıklama), 422 `kisisel_veri` ve 429 `donduruldu`
+// ortak metinleri, dondurma süresince gönderimin kapalı kalıp kalan dk'nın güncellenmesi, süre
+// dolunca "Asistan yeniden kullanılabilir." ve sayfa yenilemede (sessionStorage) korunması (sahte
+// saat), sızıntı cevabında güven rozetinin gizlenmesi, rolüne kapalı rotaya "Git" çizilmemesi.
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { readFileSync } from "node:fs";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
-import { asistanApi, kipRozeti, modelKisaAdi, type AsistanMesaji } from "../../api/asistan";
+import { asistanApi, KIP_ACIKLAMALARI, kipRozeti, modelKisaAdi, SIZINTI_METNI, type AsistanMesaji } from "../../api/asistan";
 import { ApiError, mockZorunlu, yapilandir } from "../../api/http";
 import { asistanMockAyarla, asistanMockBekleyenler, asistanMockIsle } from "../../api/mock/asistan";
 import { OturumProvider } from "../../auth";
@@ -14,10 +17,16 @@ import { BildirimProvider } from "../Bildirim";
 import { AsistanPaneli, YZ_BILDIRIMI } from "./AsistanPaneli";
 import { CevapKarti } from "./CevapKarti";
 import { asistanKontrolSifirla } from "./kontrol";
-import { sohbetAyar } from "./SohbetSekmesi";
+import { DONDURMA_ANAHTARI } from "./oturumAnahtarlari";
+import { kayitliDondurma, sohbetAyar } from "./SohbetSekmesi";
 
 const KART = "5105 1051 0510 5100";
-const KISISEL = "Soru kart numarası gibi kişisel veri içeriyor; çıkarıp yeniden deneyin.";
+// Ortak metinler (backend ile birebir; 013 inceleme turu 1).
+const KISISEL =
+  "Soru ya da eklenen ekran bilgisi bir kart numarası içeriyor. Numarayı silin ya da maskeleyin (ör. 5105 **** **** 5100) ve yeniden gönderin.";
+const dondu = (n: number) =>
+  `Art arda engellenen istekler nedeniyle asistan geçici olarak durduruldu. Yaklaşık ${n} dk sonra yeniden sorabilirsiniz; sorunuz kutuda duruyor.`;
+const hataKutusu = () => within(panel()).getByTestId("asistan-gonderim-hatasi");
 
 function yalnizPanel(yol = "/kosular") {
   return render(
@@ -69,12 +78,19 @@ function mesaj(alan: Partial<AsistanMesaji>): AsistanMesaji {
   };
 }
 
-function kart(m: AsistanMesaji, modeller?: Parameters<typeof CevapKarti>[0]["modeller"]) {
+function kart(m: AsistanMesaji, modeller?: Parameters<typeof CevapKarti>[0]["modeller"], rol?: Parameters<typeof CevapKarti>[0]["rol"]) {
   return render(
     <MemoryRouter>
-      <CevapKarti mesaj={m} modeller={modeller} />
+      <CevapKarti mesaj={m} modeller={modeller} rol={rol} />
     </MemoryRouter>,
   );
+}
+
+/** Gerçek derleme davranışı: örnek veri zorunlu değil (mock derlemesinde CANLI gösterilmez). */
+function canliDerlemeGibi() {
+  const onceki = mockZorunlu();
+  yapilandir({ mockZorunlu: false });
+  onTestFinished(() => yapilandir({ mockZorunlu: onceki }));
 }
 
 beforeEach(() => {
@@ -97,8 +113,9 @@ describe("yapay zekâ bildirimi", () => {
     yalnizPanel();
     const p = await paneliAc(u);
     const not = within(p).getByRole("note");
+    // Metin sabite karşı değil, ekrandaki DOM'a karşı birebir denetlenir.
+    expect(not.textContent).toBe("Yapay zekâ asistanı; cevaplar hatalı olabilir, kararı ilgili ekranda siz verirsiniz.");
     expect(not).toHaveTextContent(YZ_BILDIRIMI);
-    expect(YZ_BILDIRIMI).toBe("Yapay zekâ asistanı; cevaplar hatalı olabilir, kararı ilgili ekranda siz verirsiniz.");
     // Başlıktan sonra, sekme listesinden önce; kapatma düğmesi yok.
     const baslik = within(p).getByRole("heading", { name: "Asistan", level: 2 });
     expect(baslik.compareDocumentPosition(not) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -141,45 +158,118 @@ describe("kip rozeti", () => {
     expect(modelKisaAdi("")).toBeNull();
   });
 
-  it("kaynak → rozet: CANLI · model, derin model, ŞABLON, MODEL KAPALI", () => {
+  it("kaynak → rozet: CANLI · model (önce cevap.model, yoksa status), ŞABLON, MODEL KAPALI; ortak açıklamalar", () => {
     const d = { varsayilan_model: "claude-haiku-5-5", derin_model: "claude-sonnet-5-5" };
     expect(kipRozeti({ kaynak: "model", amac: "assistant" }, d)?.metin).toBe("CANLI · Haiku 5.5");
     expect(kipRozeti({ kaynak: "model", amac: "assistant_deep" }, d)?.metin).toBe("CANLI · Sonnet 5.5");
+    // Cevabın kendi modeli status'tan önce gelir (yedek modele düşen cevap doğru adı taşır).
+    const cevap = { cevap_bloklari: [], kaynaklar: [], yonlendirmeler: [], eylem_reddi: false, model: "claude-opus-5-5" };
+    expect(kipRozeti({ kaynak: "model", amac: "assistant", cevap }, d)?.metin).toBe("CANLI · Opus 5.5");
+    expect(kipRozeti({ kaynak: "model", amac: "assistant", cevap: { ...cevap, model: "bilinmeyen" } }, d)?.metin).toBe("CANLI · Haiku 5.5");
     // Status derin modeli bildirmiyorsa derin cevapta varsayılan model söylenmez: yalnız CANLI.
     expect(kipRozeti({ kaynak: "model", amac: "assistant_deep" }, { varsayilan_model: "claude-haiku-5-5" })?.metin).toBe("CANLI");
     expect(kipRozeti({ kaynak: "model", amac: "assistant" }, null)?.metin).toBe("CANLI");
     expect(kipRozeti({ kaynak: "model", amac: "assistant" }, { varsayilan_model: "bilinmeyen" })?.metin).toBe("CANLI");
-    expect(kipRozeti({ kaynak: "sozluk", amac: null })).toMatchObject({ tur: "sablon", metin: "ŞABLON", aciklama: "Hazır cevap · hata sözlüğü" });
-    expect(kipRozeti({ kaynak: "sablon", amac: null })).toMatchObject({ tur: "sablon", metin: "ŞABLON", aciklama: "Hazır cevap · kayıt durumu" });
-    expect(kipRozeti({ kaynak: "kapali", amac: null })).toMatchObject({ tur: "kapali", metin: "MODEL KAPALI" });
+    expect(kipRozeti({ kaynak: "model", amac: "assistant" }, d)?.aciklama).toBe("Bu cevabı yapay zekâ modeli üretti; hatalı olabilir.");
+    expect(kipRozeti({ kaynak: "sozluk", amac: null })).toMatchObject({ tur: "sablon", metin: "ŞABLON", aciklama: "Yapay zekâ kullanılmadı; hazır açıklama." });
+    expect(kipRozeti({ kaynak: "sablon", amac: null })).toMatchObject({ tur: "sablon", metin: "ŞABLON", aciklama: "Yapay zekâ kullanılmadı; hazır açıklama." });
+    expect(kipRozeti({ kaynak: "kapali", amac: null })).toMatchObject({
+      tur: "kapali",
+      metin: "MODEL KAPALI",
+      aciklama: "Model kapalı; yapay zekâ kullanılmadı, hazır açıklama.",
+    });
     expect(kipRozeti({ kaynak: null, amac: null })).toBeNull();
   });
 
-  it("kartta tek rozet: metin + açıklama (title ve ekran okuyucu metni); ayrı 'Hazır cevap' etiketi yok", () => {
-    // Gerçek derleme davranışı: örnek veri zorunlu değil (mock derlemesinde CANLI gösterilmez).
-    const onceki = mockZorunlu();
-    yapilandir({ mockZorunlu: false });
-    onTestFinished(() => yapilandir({ mockZorunlu: onceki }));
+  it("kartta tek rozet + görünür açıklama (title değil, aria-describedby); ayrı 'Hazır cevap' etiketi yok", () => {
+    canliDerlemeGibi();
     const { unmount } = kart(mesaj({ kaynak: "model" }), { varsayilan_model: "claude-haiku-5-5" });
     const r = screen.getByTestId("kip-rozeti");
     expect(r).toHaveTextContent(/^CANLI · Haiku 5\.5$/);
     expect(r).toHaveClass("rozet", "rozet-kip", "rozet-kip-canli");
-    expect(r).toHaveAttribute("title", "Canlı model cevabı");
+    expect(r).not.toHaveAttribute("title");
+    expect(r).toHaveAccessibleDescription(KIP_ACIKLAMALARI.canli);
+    expect(screen.getByTestId("kip-aciklamasi")).toBeVisible();
+    expect(screen.getByTestId("kip-aciklamasi")).not.toHaveClass("gorunmez");
     unmount();
 
     const k2 = kart(mesaj({ kaynak: "sablon", amac: null }));
     const s = screen.getByTestId("kip-rozeti");
     expect(s).toHaveTextContent(/^ŞABLON$/);
     expect(s).toHaveClass("rozet-kip-sablon");
-    expect(s).toHaveAttribute("title", "Hazır cevap · kayıt durumu");
-    // Açıklama yalnız görünmez metin: görünür ikinci etiket yok.
-    expect(screen.getByText("Hazır cevap · kayıt durumu")).toHaveClass("gorunmez");
+    expect(s).toHaveAccessibleDescription("Yapay zekâ kullanılmadı; hazır açıklama.");
+    expect(screen.queryByText(/Hazır cevap/)).toBeNull();
     expect(screen.getAllByTestId("kip-rozeti")).toHaveLength(1);
     k2.unmount();
 
     kart(mesaj({ kaynak: "kapali", amac: null }));
     expect(screen.getByTestId("kip-rozeti")).toHaveTextContent(/^MODEL KAPALI$/);
     expect(screen.getByTestId("kip-rozeti")).toHaveClass("rozet-kip-kapali");
+    expect(screen.getByTestId("kip-aciklamasi")).toHaveTextContent("Model kapalı; yapay zekâ kullanılmadı, hazır açıklama.");
+  });
+
+  it("cevap.model rozette status'tan önce gelir", () => {
+    canliDerlemeGibi();
+    const m = mesaj({ kaynak: "model" });
+    kart({ ...m, cevap: { ...m.cevap!, model: "claude-sonnet-5-5" } }, { varsayilan_model: "claude-haiku-5-5" });
+    expect(screen.getByTestId("kip-rozeti")).toHaveTextContent(/^CANLI · Sonnet 5\.5$/);
+  });
+
+  it("kip rozeti büyük harf dönüşümü kapalı (Türkçe yerelde 'HAİKU' olmasın), imleç 'help' değil", () => {
+    // jsdom CSS dosyalarını uygulamaz: kural dosyadan denetlenir.
+    const css = readFileSync("src/components/asistan/asistan.css", "utf8");
+    expect(css).toMatch(/\.rozet\.rozet-kip\s*\{[^}]*text-transform:\s*none/);
+    expect(css).not.toMatch(/\.rozet-kip[^{]*\{[^}]*cursor:\s*help/);
+  });
+
+  it("sızıntı cevabında güven rozeti gösterilmez; metin ortak metin", () => {
+    canliDerlemeGibi();
+    const m = mesaj({
+      kaynak: "model",
+      cevap: {
+        cevap_bloklari: [{ tur: "paragraf", metin: SIZINTI_METNI }],
+        kaynaklar: [],
+        yonlendirmeler: [],
+        eylem_reddi: false,
+        guven_gosterimi: "Emin değil",
+        sizinti: true,
+      },
+    });
+    const { unmount } = kart(m, { varsayilan_model: "claude-haiku-5-5" });
+    expect(screen.getByText(SIZINTI_METNI)).toBeInTheDocument();
+    expect(screen.queryByText("Emin değil")).toBeNull();
+    unmount();
+    // Karşı örnek: sızıntı olmayan cevapta aynı güven rozeti çizilir.
+    kart({ ...m, cevap: { ...m.cevap!, sizinti: false } });
+    expect(screen.getByText("Emin değil")).toBeInTheDocument();
+  });
+
+  it("rolüne kapalı rotaya 'Git' düğmesi çizilmez; açık rotalar (Kontrol Kulesi) herkese", () => {
+    const m = mesaj({
+      kaynak: "sablon",
+      amac: null,
+      cevap: {
+        cevap_bloklari: [{ tur: "paragraf", metin: "Cevap" }],
+        kaynaklar: [],
+        yonlendirmeler: [
+          { rota: "/demo", etiket: "Demo kontrolleri" },
+          { rota: "/claude-code", etiket: "Claude Code kanalı" },
+          { rota: "/kontrol-kulesi", etiket: "Kontrol Kulesi" },
+        ],
+        eylem_reddi: false,
+      },
+    });
+    const { unmount } = kart(m, null, "tester");
+    expect(screen.getByRole("link", { name: "Git: Kontrol Kulesi" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Git: Demo kontrolleri" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Git: Claude Code kanalı" })).toBeNull();
+    unmount();
+    const k2 = kart(m, null, "presenter");
+    expect(screen.getByRole("link", { name: "Git: Demo kontrolleri" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Git: Claude Code kanalı" })).toBeNull();
+    k2.unmount();
+    kart(m, null, null);
+    expect(screen.queryByRole("link", { name: /Git: (Demo|Claude)/ })).toBeNull();
   });
 
   it("panelde (örnek veri): model cevabında CANLI yok, ÖRNEK VERİ var; şablon cevabı 'ŞABLON'", async () => {
@@ -216,67 +306,102 @@ describe("kip rozeti", () => {
 });
 
 describe("yeni hata kodları", () => {
-  it("422 kisisel_veri: metin gösterilir, taslak girdide kalır", async () => {
+  it("422 kisisel_veri: ortak metin gösterilir, taslak girdide kalır", async () => {
     await oturumAc("analist");
     const u = userEvent.setup();
     yalnizPanel();
     const p = await paneliAc(u);
     const soru = `Müşterinin kartı ${KART} neden reddedildi?`;
     await yaz(u, soru);
-    expect(await within(p).findByRole("alert")).toHaveTextContent(KISISEL);
+    expect((await within(p).findByRole("alert")).textContent).toBe(KISISEL);
     expect(within(p).getByLabelText("Sorunuz")).toHaveValue(soru);
     expect(asistanMockBekleyenler()).toHaveLength(0);
     // Gönderim açık kalır (dondurma değil).
     expect(within(p).getByRole("button", { name: "Asistana sor" })).toBeEnabled();
   });
 
-  it("429 donduruldu: ~N dk metni, gönderim kalan_s boyunca kapalı, süre dolunca açılır; taslak korunur", async () => {
+  // Sahte saat panel açılışından önce kurulur (zamanlayıcılar sahte saatte kurulsun). Gerçek geçen
+  // süre de akar (`shouldAdvanceTime`): kalan_s 120 ve 60 sn'lik sınırlardan uzak noktalar
+  // seçildiği için birkaç yüz ms'lik gerçek gecikme sonucu değiştirmez.
+  function sahteSaat() {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    const ilerlet = (ms: number) => act(async () => void (await vi.advanceTimersByTimeAsync(ms)));
+    return (ms: number) => act(async () => void (await vi.advanceTimersByTimeAsync(ms)));
+  }
+
+  it("429 donduruldu: ortak metin, gönderim kalan_s boyunca kapalı, kalan dk 30 sn'de bir güncellenir, bitince 'yeniden kullanılabilir'", async () => {
+    const ilerlet = sahteSaat();
     await oturumAc("analist");
     const u = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     const gonder = vi
       .spyOn(asistanApi, "soruGonder")
-      .mockRejectedValueOnce(new ApiError(429, "Dondu.", { kod: "donduruldu", ek: { kalan_s: 61 } }));
+      .mockRejectedValueOnce(new ApiError(429, "Dondu.", { kod: "donduruldu", ek: { kalan_s: 120 } }));
     yalnizPanel();
     const p = await paneliAc(u);
     await yaz(u, "Bu ekran ne işe yarar?");
-    const uyari = await within(p).findByRole("alert");
-    // ⌈61/60⌉ = 2
-    expect(uyari).toHaveTextContent("Asistan, art arda engellenen istekler nedeniyle ~2 dk kullanılamıyor.");
+    await waitFor(() => expect(hataKutusu()).toHaveTextContent(dondu(2)));
+    // Değişen metin canlı bölge değil (her dakika okunmasın); başlangıç bir kez duyurulur.
+    expect(hataKutusu()).not.toHaveAttribute("role");
+    await ilerlet(200);
+    expect(within(p).getByTestId("asistan-duyuru")).toHaveTextContent(dondu(2));
+    expect(Number(sessionStorage.getItem(DONDURMA_ANAHTARI))).toBeGreaterThan(Date.now());
     const alan = within(p).getByLabelText("Sorunuz");
     expect(alan).toHaveValue("Bu ekran ne işe yarar?");
     const dugme = within(p).getByRole("button", { name: "Asistana sor" });
     expect(dugme).toBeDisabled();
     expect(dugme.getAttribute("aria-describedby")).toContain("asistan-gonderim-hatasi");
-    // Enter da göndermez; hazır soru çipleri de kapalı.
+    // Enter da göndermez.
     fireEvent.keyDown(alan, { key: "Enter" });
     expect(gonder).toHaveBeenCalledTimes(1);
 
-    await ilerlet(60_000);
+    // 61 sn sonra kalan 59 sn → "1 dk" (30 sn'lik saat yeniden çizer).
+    await ilerlet(61_000);
+    expect(hataKutusu()).toHaveTextContent(dondu(1));
     expect(within(p).getByRole("button", { name: "Asistana sor" })).toBeDisabled();
-    await ilerlet(1_100);
-    await waitFor(() => expect(within(p).getByRole("button", { name: "Asistana sor" })).toBeEnabled());
-    expect(within(p).queryByText(/art arda engellenen/)).toBeNull();
+    expect(within(p).queryByTestId("dondurma-bitti")).toBeNull();
+    await ilerlet(60_000);
+    expect(within(p).getByRole("button", { name: "Asistana sor" })).toBeEnabled();
+    expect(within(p).queryByTestId("asistan-gonderim-hatasi")).toBeNull();
+    const bitti = within(p).getByTestId("dondurma-bitti");
+    expect(bitti).toHaveAttribute("role", "status");
+    expect(bitti.textContent).toBe("Asistan yeniden kullanılabilir.");
+    expect(sessionStorage.getItem(DONDURMA_ANAHTARI)).toBeNull();
     expect(within(p).getByLabelText("Sorunuz")).toHaveValue("Bu ekran ne işe yarar?");
   });
 
   it("dondurma sekme geçişinde korunur; kalan_s yoksa 10 dk varsayılır", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    const ilerlet = (ms: number) => act(async () => void (await vi.advanceTimersByTimeAsync(ms)));
+    const ilerlet = sahteSaat();
     await oturumAc("analist");
     const u = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     vi.spyOn(asistanApi, "soruGonder").mockRejectedValueOnce(new ApiError(429, "Dondu.", { kod: "donduruldu" }));
     yalnizPanel();
     const p = await paneliAc(u);
     await yaz(u, "Bu ekran ne işe yarar?");
-    expect(await within(p).findByRole("alert")).toHaveTextContent("~10 dk");
+    await waitFor(() => expect(within(p).getByTestId("asistan-gonderim-hatasi")).toHaveTextContent(dondu(10)));
     await u.click(within(p).getByRole("tab", { name: "Öneriler" }));
     await u.click(within(panel()).getByRole("tab", { name: "Sohbet" }));
-    expect(within(panel()).getByRole("alert")).toHaveTextContent("art arda engellenen");
+    expect(hataKutusu()).toHaveTextContent(dondu(10));
     expect(within(panel()).getByRole("button", { name: "Asistana sor" })).toBeDisabled();
     await ilerlet(600_000 + 100);
-    await waitFor(() => expect(within(panel()).getByRole("button", { name: "Asistana sor" })).toBeEnabled());
+    expect(within(panel()).getByRole("button", { name: "Asistana sor" })).toBeEnabled();
+    expect(within(panel()).getByTestId("dondurma-bitti")).toHaveTextContent("Asistan yeniden kullanılabilir.");
+  });
+
+  it("sayfa yenilense de dondurma sürer (sessionStorage); geçmiş ya da bozuk kayıt yok sayılır", async () => {
+    sessionStorage.setItem(DONDURMA_ANAHTARI, String(Date.now() + 180_000));
+    expect(kayitliDondurma()).not.toBeNull();
+    await oturumAc("analist");
+    const u = userEvent.setup();
+    yalnizPanel();
+    const p = await paneliAc(u);
+    await waitFor(() => expect(within(p).getByTestId("asistan-gonderim-hatasi")).toHaveTextContent(dondu(3)));
+    await u.type(within(p).getByLabelText("Sorunuz"), "Bu ekran ne?");
+    expect(within(p).getByRole("button", { name: "Asistana sor" })).toBeDisabled();
+
+    sessionStorage.setItem(DONDURMA_ANAHTARI, String(Date.now() - 1000));
+    expect(kayitliDondurma()).toBeNull();
+    sessionStorage.setItem(DONDURMA_ANAHTARI, "bozuk");
+    expect(kayitliDondurma()).toBeNull();
+    sessionStorage.removeItem(DONDURMA_ANAHTARI);
   });
 
   it("mock: art arda üç sır reddinden sonra 429 donduruldu (~10 dk)", async () => {
@@ -290,7 +415,7 @@ describe("yeni hata kodları", () => {
       expect(await within(p).findByRole("alert")).toHaveTextContent(/parola\/token/);
     }
     await yaz(u, "Bu ekran ne işe yarar?");
-    await waitFor(() => expect(within(p).getByRole("alert")).toHaveTextContent("Asistan, art arda engellenen istekler nedeniyle ~10 dk kullanılamıyor."));
+    await waitFor(() => expect(hataKutusu()).toHaveTextContent(dondu(10)));
     expect(within(p).getByRole("button", { name: "Asistana sor" })).toBeDisabled();
     expect(within(p).getByLabelText("Sorunuz")).toHaveValue("Bu ekran ne işe yarar?");
   });

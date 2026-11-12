@@ -227,9 +227,23 @@
   overflow-wrap: anywhere;
 }
 
-/* Kip rozeti (cevap kartı): CANLI · model = AI moru; ŞABLON / MODEL KAPALI = nötr. Metin anlamı taşır. */
-.rozet-kip {
-  cursor: help;
+/* Kip rozeti (cevap kartı): CANLI · model = AI moru; ŞABLON / MODEL KAPALI = nötr. Metin anlamı taşır.
+   Büyük harf dönüşümü yok: metin zaten doğru yazılır ("CANLI · Haiku 5.5"); Türkçe yerelde
+   text-transform "HAİKU" yapardı. Açıklama rozetin yanında görünür küçük metindir (title yok). */
+.rozet.rozet-kip {
+  text-transform: none;
+}
+.asistan-kip {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  min-width: 0;
+}
+.asistan-kip-aciklama {
+  font-size: 0.75rem;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
 }
 .rozet-kip-canli {
   background: var(--vurgu-bg);
