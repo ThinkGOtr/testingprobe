@@ -262,12 +262,16 @@ bundles:
       icerik_hash: sha256:77bd71cc11ec54fca189570c284779ebd4293d364cad744fb9deb445a07e92fb
   case-negative:
     version: 1
-    status: pending
-    note: '011 F4: P5 negatif kapsam genişletme (amaç case_deepening). Golden: replay/case_deepening/golden/negatif/TPD-1.json
-      (elle hazırlandı). Seti: evaluation/case-negative.json. Canlı değerlendirme yapılmadı; onaylı istisna
-      yok. 011 D2 (sürüm aynı; canlı değerlendirilmedi): blocked case tested sayılmaz (out_of_scope +
-      soru), AÇIK NOKTA yalnız varsayıma bağlı case''te, mevcut soru/varsayım aynı kimlik ve metinle tekrarlanır,
-      Risk notları / Hata geçmişi.'
+    status: evaluated
+    note: 'Canlı değerlendirme 2026-11-12, claude-sonnet-5-5 (anthropic), 2/2 vaka geçti: evaluation/results/case-negative-v1-2026-11-12.json'
+    evaluation:
+      date: '2026-11-12'
+      model: claude-sonnet-5-5
+      provider: anthropic
+      results: evaluation/results/case-negative-v1-2026-11-12.json
+      guardrails_version: 1
+      calls: evaluation/results/case-negative-v1-2026-11-12.calls.jsonl
+      icerik_hash: sha256:ffb40cd03c1ad95811dd22405da819f4ed0288f67d7fa9fe96f193ed0f7619b2
   case-technique:
     version: 1
     status: evaluated
