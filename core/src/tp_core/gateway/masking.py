@@ -271,7 +271,13 @@ _SIR_ANAHTARI = (
     r"(?:password|passwd|secret[_-]?key|secret|client[_-]?secret|token|access[_-]?token"
     r"|auth[_-]?token|refresh[_-]?token|api[_-]?key|access[_-]?key|private[_-]?key"
     # Türkçe anahtar adları (013 §9: `parola: <değer>`); değer kuralı aynı (harf + rakam).
-    rf"|{_TR_PAROLA})"
+    rf"|{_TR_PAROLA}"
+    # Kısa adlar yalnız küçük harfle (`pwd=…`, `pass: …`): büyük harfli `PWD=/home/…` (kabuk
+    # ortam değişkeni) ve test raporlayıcı satırı `--- PASS: TestLogin2` sır sayılmaz; yol
+    # değeri (`pwd: /home/user1/build`) de sayılmaz; `pass: true`, `pass rate` değer kuralına
+    # uymaz.
+    r"|(?-i:(?:pwd|pass)(?![\"']?\s*[:=]?\s*[\"']?[/~]))"
+    r")"
 )
 _SIR_KARAKTERI = r"A-Za-z0-9_\-+/=.~@#%^&!"
 # Rastgele görünümlü değer: ≥ 8 karakter, harf VE rakam (kaynak koddaki `token`, `None`, `str`
@@ -343,9 +349,12 @@ SECRET_PATTERNS: tuple[SecretPattern, ...] = (
         re.compile(
             rf"(?P<keep>(?:--{_SIR_ANAHTARI}\b(?:\s*=\s*|\s+)"
             rf"|(?<![\w-])(?:[A-Za-z0-9]+_)*{_SIR_ANAHTARI}\b[\"']?\s*[:=]\s*"
-            # Türkçe parola anahtarından sonra ayraçsız (yalnız boşluk) değer: `parola <değer>`,
-            # `şifre <değer>` ("parola alanı boş olamaz" değer kuralına uymaz: rakam yok).
-            rf"|(?<![\w-])(?:[A-Za-z0-9]+_)*{_TR_PAROLA}[ \t]+)[\"']?)"
+            # Türkçe parola anahtarından sonra ayraçsız (yatay boşluk, NBSP dahil) değer:
+            # `parola <değer>`, `şifre <değer>`, `şifre olarak '<değer>'` ("parola alanı boş
+            # olamaz" değer kuralına uymaz: rakam yok). Yalnız rakamdan oluşan değer (`şifre:
+            # 12345678`) bilerek kapsam dışı: harf + rakam kuralı sipariş/telefon/tutar gibi
+            # sayıları sır saymamak içindir; bilinen sınır (013 ANALIZ §13).
+            rf"|(?<![\w-])(?:[A-Za-z0-9]+_)*{_TR_PAROLA}[^\S\r\n]+(?:olarak[^\S\r\n]+)?)[\"']?)"
             rf"{_RASTGELE_DEGER}(?=[\s'\"`,;)}}\]]|\Z)",
             re.IGNORECASE,
         ),

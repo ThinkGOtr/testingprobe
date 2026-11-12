@@ -43,21 +43,29 @@ def _iban_genis_gecerli(deger: str) -> bool:
 
 
 def _tckn_genis_gecerli(deger: str) -> bool:
-    return tckn_valid(re.sub(r"[\s-]", "", deger))
+    return tckn_valid(re.sub(r"[\s.-]", "", deger))
 
 
 # Asistan oturumunun IBAN/TCKN tanıyıcıları geçidinkilerin (`RECOGNIZERS`) üst kümesidir: boşluk
-# ya da tire ayraçlı yazımı da alır (`TR33-0006-1005-…`, `100 000 001 46`). Global tanıyıcılar
-# değişmez (iş hattının maskeleme davranışı aynı kalır); genişletme yalnız asistan mesajında.
-# TCKN'de sol sınır ayraçlı bir sayı dizisinin ortasından başlamayı da engeller.
+# ya da tire ayraçlı yazımı da alır (`TR33-0006-1005-…`, `TR33  0006  1005…` çift boşluk,
+# `100 000 001 46`); TCKN ayrıca noktalı 3-3-3-2 gruplamayla (`100.000.001.46`). Noktalı yazım
+# yalnız bu gruplamada tanınır: ondalık/sürüm sayıları (`1.234.567,89`, `4.111.1111.1111`)
+# karışmasın; aynı gruplamadaki bir IPv4 adresi sağlamayı (~%1) tutarsa maskelenir (yalnız
+# maske, kullanıcı cevapta kendi yazdığını görür). Global tanıyıcılar değişmez (iş hattının
+# maskeleme davranışı aynı kalır); genişletme yalnız asistan mesajında. TCKN'de sol sınır ayraçlı
+# bir sayı dizisinin ortasından başlamayı da engeller.
 _IBAN_GENIS: Final = Recognizer(
     "IBAN",
-    re.compile(r"\bTR\d{2}(?:[ \-]?\d){22}(?![ \-]?\d)", re.IGNORECASE),
+    re.compile(r"\bTR\d{2}(?:[ \-]{0,2}\d){22}(?![ \-]{0,2}\d)", re.IGNORECASE),
     _iban_genis_gecerli,
 )
 _TCKN_GENIS: Final = Recognizer(
     "TCKN",
-    re.compile(r"(?<![\d.,+])(?<!\d[ \-])[1-9](?:[ \-]?\d){10}(?![ \-]?\d)(?![.,]\d)"),
+    re.compile(
+        r"(?<![\d.,+])(?<!\d[ \-])"
+        r"(?:[1-9](?:[ \-]?\d){10}|[1-9]\d{2}\.\d{3}\.\d{3}\.\d{2})"
+        r"(?![ \-]?\d)(?![.,]\d)"
+    ),
     _tckn_genis_gecerli,
 )
 _ZORUNLU_TANIYICILAR: Final[tuple[Recognizer, ...]] = (_IBAN_GENIS, _TCKN_GENIS)
