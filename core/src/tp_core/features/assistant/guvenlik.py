@@ -21,6 +21,7 @@ Desen dosyası bilgi paketine alınmaz (K7): asistan kendi dedektörlerinin dese
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from functools import lru_cache
@@ -257,6 +258,10 @@ def cikti_sinyalleri(cevap: Mapping[str, Any], *, rules_dir: Path | None = None)
 # ------------------------------------------------------------------ kart (kesin)
 
 # Herkese açık ödeme sağlayıcı test kartları (belgelerde, demo verisinde geçer): 422 almaz.
+# `5105105105105100` (Mastercard belge örneği) bilerek listede YOK: §9 kabul vakasında müşteri
+# kartı gibi verilmiş bir numaradır ("Müşterinin kartı 5105.1051.0510.5100") ve engellenmelidir;
+# kullanıcı kartı yazarken hangi numarayı seçtiğini bilemeyiz, test kartı listesi yalnız ödeme
+# sağlayıcı test ortamı belgelerindeki tipik kartlardır.
 TEST_KARTLARI: Final = frozenset(
     {
         "4111111111111111",
@@ -264,21 +269,63 @@ TEST_KARTLARI: Final = frozenset(
         "4242424242424242",
         "5528790000000008",
         "4000056655665556",
+        "4012888888881881",
+        "378282246310005",
+        "371449635398431",
+        "6011111111111117",
     }
 )
-# Ayraçlı rakam grupları dizisi: ayraç tek boşluk, tire ya da nokta. Dizinin iki yanında harf/
-# rakam/alt çizgi olmaz (hex özetler, kimlikler); ondalık/sürüm parçası da değildir. Kart, dizinin
-# ardışık gruplarından oluşur ("toplam 3 5105 1051 …" gibi önüne sayı gelmiş kart da bulunur).
-_KART_ADAYI: Final = re.compile(r"(?<![\w.,-])[0-9]+(?:[ .-][0-9]+)*(?![\w-]|[.,][0-9])")
+# Görünmez karakterler (rakamların arasına konup dedektörü atlatmasın) silinir; tire benzerleri
+# (en/em dash, eksi) tireye çevrilir. Tam genişlik rakamlar NFKC ile ASCII olur.
+_GORUNMEZ: Final = str.maketrans(
+    {
+        "\u200b": None,
+        "\u200c": None,
+        "\u200d": None,
+        "\u2060": None,
+        "\ufeff": None,
+        "\u00ad": None,
+        "\u2010": "-",
+        "\u2011": "-",
+        "\u2012": "-",
+        "\u2013": "-",
+        "\u2014": "-",
+        "\u2212": "-",
+    }
+)
+# Rakam grupları arası ayraç: boşluk/sekme/satır sonu (en çok 3), ya da `.` `-` `_` `/` (yanında
+# boşluk olabilir).
+_AYRAC: Final = r"(?:[ \t]*[.\-_/][ \t]*|\s{1,3})"
+# Ayraçlı rakam grupları dizisi. Sol sınır yalnız rakam (ve ondalık parçası `3.5…`): harfe bitişik
+# kart (`kart5105…`) da bulunur. Kart, dizinin ardışık gruplarından oluşur ("toplam 3 5105 1051 …"
+# gibi önüne sayı gelmiş kart da bulunur; `_kart_gruplari`).
+_KART_ADAYI: Final = re.compile(rf"(?<!\d)(?<!\d[.,])[0-9]+(?:{_AYRAC}[0-9]+)*")
+_AYRAC_BOL: Final = re.compile(_AYRAC)
 # Bilinen kart ağlarının IIN önekleri (Visa, Mastercard 51–55 / 2221–2720, Amex, Diners, JCB,
 # Discover/UnionPay, Troy). Zaman damgası (`17…` ms) ve benzeri sayılar elenir.
 _KART_ONEKI: Final = re.compile(r"(?:4|5[1-5]|2[2-7]|3[47]|3[0689]|35|6|9792)")
-# URL (şemalı), yol parçası (`/…/123`) ve sorgu dizesi (`?id=…&x=…`) taranmaz.
-_URL_PARCASI: Final = re.compile(
-    r"\b[a-z][a-z0-9+.-]*://\S+|\S*/\S*|[?&][^\s=&]+=[^\s&#]*", re.IGNORECASE
+# Taranmayan parçalar:
+# - şemalı URL (`https://…`, tırnak/boşlukta biter: JSON alanı komşu alanı yutmaz);
+# - harf içeren yol (`/siparis/5105…/detay`, `rapor?kart=…&x=1`): bir yol parçasında harf yoksa
+#   (`5105…/12/27`, `5105/1051/…`) yol sayılmaz, rakamlar taranır. Sorgu dizesi yalnız bir yolun
+#   ardındaki `?` ile başlar (çıplak `&k=5105…` taranır).
+_URL: Final = re.compile(r"\b[a-z][a-z0-9+.-]*://[^\s\"'<>`]+", re.IGNORECASE)
+_YOL: Final = re.compile(
+    r"(?<![\w.~%/-])(?P<yol>[\w.~%-]*(?:/[\w.~%-]*)+|[\w.~%-]+(?=\?))(?:\?[^\s\"'<>`#]*)?"
 )
-# IBAN rakam grupları kart sanılmasın (mod-97 ayrıca maskelemede).
-_IBAN_PARCASI: Final = re.compile(r"\bTR\d{2}(?:[ ]?\d){22}\b", re.IGNORECASE)
+_HARF: Final = re.compile(r"[^\W\d_]")
+# Rakam grupları kart sanılmasın: IBAN (mod-97 maskelemede; boşluk/tire ayraçlı), UUID ve uzun
+# onaltılık özetler (commit, kimlik).
+_IBAN_PARCASI: Final = re.compile(r"\bTR\d{2}(?:[ \-]?\d){22}(?!\d)", re.IGNORECASE)
+_UUID: Final = re.compile(
+    r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", re.IGNORECASE
+)
+_HEX: Final = re.compile(r"(?<![0-9a-z])(?=[0-9a-f]*[a-f])[0-9a-f]{20,}(?![0-9a-z])", re.IGNORECASE)
+# Bağlam (ekran JSON'u) kipinde kart yalnız yakınında kart kelimesi varsa sayılır: ekrandaki 16
+# haneli sipariş/kayıt numaraları Luhn'u rastlantıyla (~%4, IIN süzgeciyle) tutabilir.
+_KART_KELIMESI: Final = re.compile(r"kart|card|kredi|(?<![a-z])pan(?![a-z])", re.IGNORECASE)
+_KELIME_ONCE: Final = 60
+_KELIME_SONRA: Final = 20
 
 
 def luhn_gecerli(rakamlar: str) -> bool:
@@ -293,21 +340,64 @@ def luhn_gecerli(rakamlar: str) -> bool:
     return toplam % 10 == 0
 
 
-def kart_bul(metin: str) -> bool:
+def _yol_sil(m: re.Match[str]) -> str:
+    return " " * len(m.group(0)) if _HARF.search(m.group("yol")) else m.group(0)
+
+
+def _bosalt(m: re.Match[str]) -> str:
+    return " " * len(m.group(0))
+
+
+def _kart_metni(metin: str) -> str:
+    """Taranacak metin: NFKC + görünmez karakter/tire benzeri temizliği, taranmayan parçalar boşluk
+    (konumlar korunur; bağlam kipinde kelime penceresi aynı metinde aranır)."""
+    temiz = unicodedata.normalize("NFKC", metin).translate(_GORUNMEZ)
+    for desen in (_URL, _IBAN_PARCASI, _UUID, _HEX):
+        temiz = desen.sub(_bosalt, temiz)
+    return _YOL.sub(_yol_sil, temiz)
+
+
+def kart_bul(metin: str, *, baglam: bool = False) -> bool:
     """Metinde (URL/yol/sorgu dizesi dışında) Luhn'u tutan, bilinen bir kart ağı önekiyle
-    başlayan 13–19 haneli, herkese açık test kartı olmayan bir numara var mı."""
+    başlayan 13–19 haneli, herkese açık test kartı olmayan bir numara var mı.
+
+    `baglam=True` (ekran bağlamı JSON'u): numaranın yakınında (önce 60, sonra 20 karakter) "kart",
+    "card", "kredi" ya da "pan" kelimesi de olmalı. Soru metninde bu şart yoktur."""
     if not metin:
         return False
-    temiz = _URL_PARCASI.sub(" ", _IBAN_PARCASI.sub(" ", metin))
+    temiz = _kart_metni(metin)
     for m in _KART_ADAYI.finditer(temiz):
-        gruplar = re.split(r"[ .-]", m.group(0))
-        for bas in range(len(gruplar)):
-            for son in range(bas + 1, len(gruplar) + 1):
-                rakamlar = "".join(gruplar[bas:son])
-                if len(rakamlar) > 19:
-                    break
-                if _kart_mi(rakamlar):
-                    return True
+        if not _kart_gruplari(_AYRAC_BOL.split(m.group(0))):
+            continue
+        if not baglam:
+            return True
+        pencere = temiz[max(0, m.start() - _KELIME_ONCE) : m.end() + _KELIME_SONRA]
+        if _KART_KELIMESI.search(pencere):
+            return True
+    return False
+
+
+def _kart_gruplari(gruplar: list[str]) -> bool:
+    """Ardışık gruplardan biri kart mı. Tek grup 13–19 hane olabilir; birden çok grup kart
+    yazımına uymalı: ilk grup 4 hane, aradakiler 4–6, sonuncu 1–7 (4-4-4-4, 4-6-5, 4-4-4-1…).
+    Böylece satır satır sayı listeleri ya da tarihler birleşip kart sanılmaz."""
+    for bas in range(len(gruplar)):
+        if _kart_mi(gruplar[bas]):
+            return True
+        if len(gruplar[bas]) != 4:
+            continue
+        rakamlar = gruplar[bas]
+        for son in range(bas + 1, len(gruplar)):
+            g = gruplar[son]
+            if not 1 <= len(g) <= 7:
+                break
+            rakamlar += g
+            if len(rakamlar) > 19:
+                break
+            if _kart_mi(rakamlar):
+                return True
+            if not 4 <= len(g) <= 6:
+                break
     return False
 
 
