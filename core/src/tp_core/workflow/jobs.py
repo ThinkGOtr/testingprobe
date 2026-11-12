@@ -66,6 +66,7 @@ from sqlalchemy import Connection, Engine, text
 from tp_core.audit.canonical import normalize
 from tp_core.audit.chain import append_audit
 from tp_core.gateway.errors import BudgetExceeded
+from tp_core.gateway.is_suresi import is_suresi
 
 log = logging.getLogger("tp_core.worker")
 
@@ -711,9 +712,14 @@ def execute_with_timeout(
     kutu: list[Sonuc] = []
     baglam = contextvars.copy_context()
 
+    def sureli() -> Sonuc:
+        # Geçit yeniden istemeden önce kalan iş süresine bakar (gateway.is_suresi).
+        with is_suresi(sure):
+            return execute(job, kayit)
+
     def hedef() -> None:
         try:
-            kutu.append(baglam.run(execute, job, kayit))
+            kutu.append(baglam.run(sureli))
         except BaseException as exc:  # SystemExit vb. iş parçacığını sessizce öldürmesin
             kutu.append(Sonuc("failed", 1, _hata_metni(exc)))
 

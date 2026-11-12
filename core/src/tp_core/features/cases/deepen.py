@@ -376,13 +376,28 @@ def _reddet(rid: uuid.UUID, eylem: str, veri: Mapping[str, Any], neden: str) -> 
     raise PermanentJobError(neden)
 
 
-def _kural_denetimi() -> Any:
+def _kural_denetimi(birlesik: Mapping[str, Any] | None = None) -> Any:
     """Derinleştirme çıktısının deterministik kuralları (§4.2, ek set: AC kapsamı tek başına
     aranmaz); ihlalde geçit modelden düzeltme ister. Değerlendirme denetleyicisiyle aynı kural
-    (`eval_agents.generation_rule_problems`, çapraz testli)."""
+    (`eval_agents.generation_rule_problems`, çapraz testli).
+
+    Derinleştirme case'i mevcut setin Q/A/kapsam öğelerine atıf yapabilir (011 F4): yalnız
+    çıktıya bakan denetim bunları "tanımsız" sayıp modeli mevcut öğeyi yeniden tanımlamaya
+    iterdi. `birlesik` verilirse ihlal, mevcut birleşik özetle birlikte de sürüyorsa sayılır
+    (çıktı içi yinelenen kimlik her zaman)."""
     from tp_core.gateway.eval_agents import generation_rule_problems
 
-    return lambda o: generation_rule_problems(o, ek_set=True) if isinstance(o, dict) else []
+    def check(o: Any) -> list[str]:
+        if not isinstance(o, dict):
+            return []
+        ham = generation_rule_problems(o, ek_set=True)
+        if not birlesik or not ham:
+            return ham
+        genis = {**o, **overlay(birlesik, normalize_ozet(o))}
+        surenler = set(generation_rule_problems(genis, ek_set=True))
+        return [p for p in ham if p in surenler or p.startswith("yinelenen")]
+
+    return check
 
 
 def run_deepening(
@@ -437,7 +452,7 @@ def run_deepening(
             workflow_id=wf_id,
             call_id=deterministic_call_id(ctx.job_id, PURPOSE),
             ek={"derinlestirme": {"tur": tur, "teknik": teknik, "uretim_no": uretim_no}},
-            output_check=_kural_denetimi() if rule_reask_enabled() else None,
+            output_check=_kural_denetimi(birlesik) if rule_reask_enabled() else None,
         )
     except ReplayNotFound as exc:
         neden = (

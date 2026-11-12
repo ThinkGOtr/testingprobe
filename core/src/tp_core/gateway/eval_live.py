@@ -90,6 +90,7 @@ from tp_core.gateway.errors import GatewayConfigError, GatewayError
 from tp_core.gateway.eval_agents import EnvFactory, ToolEnv, ToolEnvUnavailable, open_env
 from tp_core.gateway.eval_set import (
     GUARDRAILS,
+    OUTPUT_CHECK_PURPOSES,
     CaseResult,
     asistan_olcumleri,
     call_bundle,
@@ -98,6 +99,7 @@ from tp_core.gateway.eval_set import (
     flow_env_name,
     guardrails_coverage,
     is_flow_set,
+    kural_yeniden_isteme_olcumleri,
     load_set,
     mark_evaluated,
     mark_guardrails_if_covered,
@@ -696,6 +698,7 @@ def run_live(
     envs: Mapping[str, EnvFactory] | None = None,
     via_flow: bool = False,
     clock: Callable[[], float] = time.monotonic,
+    output_check: bool = True,
 ) -> int:
     secrets = secret_values(settings)
     if record_dir is not None:
@@ -805,7 +808,15 @@ def run_live(
                                 case_env, case, purpose, flow_factory, case_id=cid, clock=clock
                             )
                         else:
-                            result = run_case(gw, pdata, case, schema, env=env, case_id=cid)
+                            result = run_case(
+                                gw,
+                                pdata,
+                                case,
+                                schema,
+                                env=env,
+                                case_id=cid,
+                                output_check=output_check,
+                            )
                             result.sure_ms = int((clock() - started) * 1000)
                         rows = recorder.ai_calls[before:]
                         for r in rows:
@@ -869,6 +880,7 @@ def run_live(
                     ledger,
                     secrets,
                     flow,
+                    output_check=output_check,
                 )
                 models_used.add(run.model or "")
         finally:
@@ -971,6 +983,11 @@ def _olcum_ozeti(olcum: Mapping[str, Any]) -> dict[str, Any]:
             "dogrulanmis_kaynak_orani",
             "eylem_ve_injection_orani",
             "otomatik_derin_orani",
+            "ilk_deneme_gecis_orani",
+            "kural_yeniden_isteme_orani",
+            "duzelme_orani",
+            "ek_maliyet_orani",
+            "output_check",
             "maliyet_usd",
             "sure_s",
         )
@@ -992,6 +1009,8 @@ def _finish_run(
     ledger: CallLedger,
     secrets: Sequence[str],
     flow: bool,
+    *,
+    output_check: bool = True,
 ) -> None:
     """Amaç koşusunun raporu, çağrı kaydı, ölçümleri ve geçiş kararı."""
     purpose = str(data["purpose"])
@@ -1003,6 +1022,11 @@ def _finish_run(
         from tp_core.gateway.eval_agents import guard_olcumleri
 
         run.olcum = guard_olcumleri(data, run.results)
+    elif purpose in OUTPUT_CHECK_PURPOSES and not data.get("agent"):
+        # Ham model ölçümü: ilk deneme geçişi, yeniden isteme oranı, ek maliyet/süre (tur 2, #4).
+        run.olcum = kural_yeniden_isteme_olcumleri(
+            data, run.results, run.rows, purpose, output_check=output_check
+        )
     if run.results:
         day = today or dt.date.today()
         run.report = write_report(
@@ -1028,6 +1052,7 @@ def _finish_run(
                 "cagri_defteri": str(ledger.path),
                 "amac": purpose,
                 "via_flow": flow,
+                "output_check": output_check,
                 "icerik_hash": icerik_hash(rules_dir, str(data["bundle"])),
                 "olcumler": run.olcum,
                 # Vaka başına dağılım (§13: medyan/p90 maliyet ve uçtan uca süre).
@@ -1046,6 +1071,11 @@ def _finish_run(
         calls = write_calls_file(run.report.with_suffix(".calls.jsonl"), run.rows, secrets)
         run.calls_rel = str(calls.relative_to(rules_dir))
     run.passed = set_passed(data, run.results, purpose)
+    if run.olcum and purpose in OUTPUT_CHECK_PURPOSES:
+        # Setin bağlayıcı ham geçiş alt sınırı (`ham_gecis_alt_siniri`) geçilmezse set geçmez.
+        run.passed = run.passed and all(
+            e["gecti"] for e in run.olcum.get("esikler") or [] if e.get("bagliyici")
+        )
 
 
 def _percentile(values: Sequence[int | float | None], q: float) -> float | None:
@@ -1117,6 +1147,11 @@ def main(
         help="yalnızca bu amaç(lar) (ör. assistant_deep); vars. setin tüm amaçları",
     )
     parser.add_argument(
+        "--no-output-check",
+        action="store_true",
+        help="geçidin kural yeniden istemesini kapat (ham model ölçümü; üretim davranışı değil)",
+    )
+    parser.add_argument(
         "--via-flow",
         action="store_true",
         help="asistan setini işleyici (flow.cevapla) üzerinden koştur (tohumlu yığın gerekir)",
@@ -1147,6 +1182,7 @@ def main(
             out=out,
             ledger=ledger,
             via_flow=args.via_flow,
+            output_check=not args.no_output_check,
         )
     except GatewayConfigError as exc:
         out(f"HATA: {redact(exc, secret_values(GatewaySettings()))}")
