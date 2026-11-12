@@ -252,6 +252,12 @@ describe("Ekilmiş hata koşusu kartı: sonuç tablosu, kaçan hatalar, geçmiş
     // Kapsam ve suite satırı; kural × hata dağılımı.
     expect(screen.getByTestId("hk-kapsam")).toHaveTextContent(/^Kapsam: 9\/9 katalog hatası · Web, Android$/);
     expect(screen.getByTestId("hk-suite")).toHaveTextContent("Suite: temel koşuda kırmızı test yok; bütün testler sayıldı.");
+    // R4: geçerli adım ve platform başına suite sayıları; assertion dışı düşen testler hücre notunda.
+    expect(screen.getByTestId("hk-suite-sayilari")).toHaveTextContent(
+      "17 geçerli adım (yakalandı + kaçtı) · Suite: Web 0 üretilmiş (AI) + 29 el yazısı test; Android 0 üretilmiş (AI) + 29 el yazısı test",
+    );
+    expect(within(hucre("web", "min_siparis_1000")).getByTestId("hk-not")).toHaveTextContent(/^Not: 2 test assertion dışı nedenle kırmızı \(locator \/ zaman aşımı\); yakalama sayılmadı/);
+    expect(within(hucre("web", "kampanya_bedava_yok")).queryByTestId("hk-not")).toBeNull();
     const dagilim = within(screen.getByTestId("hk-kural-dagilim"));
     expect(dagilim.getByText(/^9 ekilmiş hata üzerinde \(mutation score değildir/)).toBeInTheDocument();
     expect(dagilim.getAllByRole("rowheader").map((x) => x.textContent)).toEqual(["T1 · AC2", "T2 · AC3", "T2 · AC6", "AC1 (tablo yok)"]);
@@ -429,7 +435,7 @@ describe("Ekilmiş hata koşusu kartı: başlat → ilerleme → bitiş, 409, ip
     expect((await hataKosusuApi.liste()).map((x) => x.id)).toEqual(["hk-2", "hk-1"]);
   });
 
-  it("iptal: süren koşu 'İptal edildi' olur, ilerleme kapanır, koşmayan adımlar bekliyor kalır; form yeniden açılır", async () => {
+  it("iptal (R4): 'İptal istendi, adım bitince durur', düğme kapanır; süren adım bitince 'İptal edildi', kalan adımlar bekliyor; form yeniden açılır", async () => {
     await oturumAc("muhendis");
     kuleAyar.adimMs = 3_600_000;
     await hataKosusuApi.baslat({ platformlar: ["web"], hatalar: ["kampanya_bedava_yok", "kampanya_tek_bedava"] });
@@ -442,16 +448,23 @@ describe("Ekilmiş hata koşusu kartı: başlat → ilerleme → bitiş, 409, ip
     const ilerleme = within(await within(k).findByTestId("hk-ilerleme"));
     expect(await ilerleme.findByTestId("hk-sayac")).toHaveTextContent("adım 3 / 4");
     await u.click(ilerleme.getByRole("button", { name: "İptal et" }));
+    // Koşu hemen durmaz: süren adım bitene dek ilerleme açık, iptal düğmesi kapalı.
+    await waitFor(() => expect(within(k).getByTestId("hk-ilerleme")).toHaveTextContent("İptal istendi, adım bitince durur"));
+    expect(within(within(k).getByTestId("hk-ilerleme")).getByRole("button", { name: "İptal et" })).toBeDisabled();
+    expect((await hataKosusuApi.detay("hk-2")).durum).toBe("running");
+    // İptal isteğinden sonra odak kaybolmaz: sonuç başlığına geçer.
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Sonuç tablosu", level: 3 })).toHaveFocus());
+    // Süren adım (kampanya_tek_bedava) biter, koşu durur.
+    kuleMockIlerlet();
     await waitFor(() => expect(within(k).queryByTestId("hk-ilerleme")).toBeNull());
     expect((await hataKosusuApi.detay("hk-2")).durum).toBe("cancelled");
     expect(await within(screen.getByTestId("hk-gecmis-hk-2")).findByText("İptal edildi")).toBeInTheDocument();
     await waitFor(() => expect(within(screen.getByTestId("hk-sonuc")).getByText(/muhendis tarafından iptal edildi/)).toBeInTheDocument());
-    // İptalden sonra odak kaybolmaz: sonuç başlığına geçer.
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Sonuç tablosu", level: 3 })).toHaveFocus());
+    await waitFor(() => expect(hucre("web", "kampanya_tek_bedava")).toHaveTextContent("kaçtı"));
     expect(hucre("web", "kampanya_bedava_yok")).toHaveTextContent("✓ yakalandı");
-    expect(hucre("web", "kampanya_tek_bedava")).toHaveTextContent("bekliyor");
-    // Sayılan tek adım yakalandı: oran 1/1; kalan adım orana girmez.
-    expect(screen.getByTestId("hk-oran-web")).toHaveTextContent("%100 (1/1)");
+    expect(screen.getByTestId("hk-kapanis-web")).toHaveTextContent("bekliyor");
+    // Sayılan iki adım: biri yakalandı, biri kaçtı; koşmayan kapanış orana girmez.
+    expect(screen.getByTestId("hk-oran-web")).toHaveTextContent("%50 (1/2)");
     expect(within(k).getByRole("button", { name: "Koşuyu başlat" })).toBeEnabled();
   });
 

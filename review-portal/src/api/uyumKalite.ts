@@ -16,10 +16,13 @@ import type {
   KolonTuru,
   MetamorfikIliski,
   MetamorfikIliskiIcerik,
+  OracleDegerSayimi,
+  OracleIstisnasi,
   OracleKarsilastirma,
   OracleSonucu,
   OracleKontrolYaniti,
   TabloDegerlendirmesi,
+  TabloOrnekleri,
   TuretmeYaniti,
 } from "./types";
 import { KARAR_TABLOSU_DURUMLARI } from "./types";
@@ -76,6 +79,7 @@ export function iliskiIcerikUyarla(x: unknown): MetamorfikIliskiIcerik {
     donusum: ifadeler(h.donusum),
     iliski: ifadeler(h.iliski),
     ...(secmeli(h.aciklama) ? { aciklama: secmeli(h.aciklama) } : {}),
+    ...(Array.isArray(h.degismez) ? { degismez: metinler(h.degismez) } : {}),
   };
 }
 
@@ -108,17 +112,53 @@ function ortak(h: Ham) {
     son_karar: sonKarar(h.son_karar),
     olusturma: metinYaDaNull(h.olusturma),
     guncelleme: metinYaDaNull(h.guncelleme),
+    ...("son_duzenleyen" in h ? { son_duzenleyen: metinYaDaNull(h.son_duzenleyen) } : {}),
   };
 }
 
 export function kararTablosuUyarla(x: unknown): KararTablosu {
   const h = nesneMi(x) ? x : {};
-  return { ...ortak(h), tur: "karar_tablosu", icerik: tabloIcerikUyarla(h.icerik) };
+  return {
+    ...ortak(h),
+    tur: "karar_tablosu",
+    icerik: tabloIcerikUyarla(h.icerik),
+    ...(nesneMi(h.ai_icerik) ? { ai_icerik: tabloIcerikUyarla(h.ai_icerik) } : {}),
+  };
+}
+
+/** `GET /decision-tables/{id}/ornekler` → `{ornekler: [{girdiler, satir_id, ciktilar}], uyarilar}`. */
+export function tabloOrnekleriUyarla(x: unknown): TabloOrnekleri {
+  const h = nesneMi(x) ? x : {};
+  const kayit = (y: unknown) => (nesneMi(y) ? Object.fromEntries(Object.entries(y).map(([k, v]) => [k, deger(v)])) : {});
+  return {
+    ornekler: dizi(h.ornekler)
+      .filter(nesneMi)
+      .map((o) => ({ girdiler: kayit(o.girdiler), satir_id: metinYaDaNull(o.satir_id), ciktilar: kayit(o.ciktilar), hata: metinYaDaNull(o.hata) })),
+    // Uyarı nesnesi `{tur, mesaj, satirlar?, girdiler?}`; düz metin gelirse tür "bilgi" sayılır.
+    uyarilar: dizi(h.uyarilar).flatMap((u) => {
+      if (typeof u === "string") return u ? [{ tur: "bilgi", mesaj: u }] : [];
+      if (!nesneMi(u) || !metin(u.mesaj)) return [];
+      return [
+        {
+          tur: metin(u.tur, "bilgi"),
+          mesaj: metin(u.mesaj),
+          ...(Array.isArray(u.satirlar) ? { satirlar: metinler(u.satirlar) } : {}),
+          ...(nesneMi(u.girdiler) ? { girdiler: kayit(u.girdiler) } : {}),
+        },
+      ];
+    }),
+  };
 }
 
 export function iliskiUyarla(x: unknown): MetamorfikIliski {
   const h = nesneMi(x) ? x : {};
-  return { ...ortak(h), tur: "metamorfik_iliski", karar_tablosu_id: metinYaDaNull(h.karar_tablosu_id), icerik: iliskiIcerikUyarla(h.icerik) };
+  return {
+    ...ortak(h),
+    tur: "metamorfik_iliski",
+    karar_tablosu_id: metinYaDaNull(h.karar_tablosu_id),
+    icerik: iliskiIcerikUyarla(h.icerik),
+    ...("tablo_engeli" in h ? { tablo_engeli: metinYaDaNull(h.tablo_engeli) } : {}),
+  };
 }
 
 function taslakIsi(x: unknown): KaliteTaslakIsi | null {
@@ -137,6 +177,7 @@ function taslakIsi(x: unknown): KaliteTaslakIsi | null {
         }
       : null,
     hata: metinYaDaNull(x.hata),
+    ...("hata_kodu" in x ? { hata_kodu: metinYaDaNull(x.hata_kodu) } : {}),
     olusturma: metinYaDaNull(x.olusturma),
   };
 }
@@ -189,7 +230,26 @@ export function degerlendirmeUyarla(x: unknown): TabloDegerlendirmesi {
   };
 }
 
-const ORACLE_SONUCLARI: readonly OracleSonucu[] = ["uyumlu", "uyumsuz", "kapsam_disi", "kontrol_edilemedi"];
+const ORACLE_SONUCLARI: readonly OracleSonucu[] = ["uyumlu", "uyumsuz", "kismen", "kapsam_disi", "kontrol_edilemedi"];
+
+const sayiMi = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
+
+/** §13.2 `degerler`: nesne değilse alan eklenmez (eski çekirdek; sayı uydurulmaz). */
+function degerSayimiUyarla(x: unknown): { degerler?: OracleDegerSayimi } {
+  if (!nesneMi(x)) return {};
+  const s = (a: unknown) => (sayiMi(a) ? a : 0);
+  return { degerler: { uyumlu: s(x.uyumlu), uyumsuz: s(x.uyumsuz), karsilastirilamayan: s(x.karsilastirilamayan), atilan: s(x.atilan) } };
+}
+
+function istisnaUyarla(i: Ham): OracleIstisnasi {
+  return {
+    gerekce: metin(i.gerekce),
+    veren: metinYaDaNull(i.veren),
+    zaman: metinYaDaNull(i.zaman),
+    ...(i.tur === "uyumsuz" || i.tur === "kontrolsuz" ? { tur: i.tur } : {}),
+    ...("icerik_hash" in i ? { icerik_hash: metinYaDaNull(i.icerik_hash) } : {}),
+  };
+}
 
 function karsilastirmaUyarla(k: Ham): OracleKarsilastirma {
   return {
@@ -230,9 +290,11 @@ export function oracleUyarla(x: unknown): CaseOracle | null {
         case_degeri: deger(k.case_degeri),
         neden: metin(k.neden),
       })),
-    istisna: i ? { gerekce: metin(i.gerekce), veren: metinYaDaNull(i.veren), zaman: metinYaDaNull(i.zaman) } : null,
+    istisna: i ? istisnaUyarla(i) : null,
     icerik_hash: metinYaDaNull(x.icerik_hash),
     kontrol_suruyor: suruyor,
+    ...degerSayimiUyarla(x.degerler),
+    ...("neden" in x ? { neden: metinYaDaNull(x.neden) } : {}),
   };
 }
 
@@ -266,13 +328,18 @@ export function turetmeUyarla(x: unknown): TuretmeYaniti {
       .map((k) => ({ case_id: metin(k.case_id), kaynak_case_id: metin(k.kaynak_case_id), baslik: metin(k.baslik) })),
     atlanan: dizi(h.atlanan)
       .filter(nesneMi)
-      .map((k) => ({
-        kaynak_case_id: metin(k.kaynak_case_id),
-        // Tanınmayan kod başka bir nedene çevrilmez (ekranda yalın "Atlandı" + `neden` metni).
-        sonuc: metin(k.sonuc),
-        neden: metinYaDaNull(k.neden),
-        ...(metinYaDaNull(k.case_id) ? { case_id: metinYaDaNull(k.case_id) } : {}),
-      })),
+      .map((k) => {
+        // Tanınmayan kod başka bir nedene çevrilmez (ekranda yalın "Atlandı" + `neden` metni). Çekirdek yeni
+        // kodu sabitlenene dek `belirsiz_alinti` + `neden: "tutarsiz_kalan_deger: …"` gönderebilir: o kod okunur.
+        let sonuc = metin(k.sonuc);
+        let neden = metinYaDaNull(k.neden);
+        const on = "tutarsiz_kalan_deger:";
+        if (neden?.startsWith(on)) {
+          sonuc = "tutarsiz_kalan_deger";
+          neden = neden.slice(on.length).trim() || null;
+        }
+        return { kaynak_case_id: metin(k.kaynak_case_id), sonuc, neden, ...(metinYaDaNull(k.case_id) ? { case_id: metinYaDaNull(k.case_id) } : {}) };
+      }),
   };
 }
 
@@ -291,6 +358,12 @@ export function beklentiDogruluguUyarla(x: unknown): BeklentiDogrulugu | null | 
     kontrol_edilemedi: sayi(x.kontrol_edilemedi),
     istisna: sayi(x.istisna),
     kapsam_orani: oran(x.kapsam_orani),
+    // §13.2 ekleri: anahtar yoksa alan eklenmez (sayı uydurulmaz).
+    ...Object.fromEntries(
+      (["kismen", "kontrolsuz_onay", "n_case", "n_story", "tablolu_story", "toplam_story", "golden_kaynakli"] as const)
+        .filter((a) => sayiMi(x[a]))
+        .map((a) => [a, x[a] as number]),
+    ),
   };
 }
 

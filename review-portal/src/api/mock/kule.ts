@@ -18,7 +18,7 @@ import type {
 } from "../types";
 import { kaynakOrani, yakalamaOrani } from "../uyumKule";
 import { mockOlayYayinla } from "./olaylar";
-import { adimiSonuclandir, adimIskeleti, HATA_KATALOGU, ilkHataKosulari, KULE_KALITE_KAYNAKLARI, MOCK_BEKLENTI, PAKET_TESTLERI } from "./kuleVerisi";
+import { adimiSonuclandir, adimIskeleti, AI_TESTLERI, HATA_KATALOGU, ilkHataKosulari, KULE_KALITE_KAYNAKLARI, MOCK_BEKLENTI, PAKET_TESTLERI } from "./kuleVerisi";
 import { icerikHash, type MockVeri } from "./fixtures";
 import { kaliteVerisi } from "./kalite";
 
@@ -43,11 +43,13 @@ const katalogAdi = (kod: string | null): string | null => (kod ? (HATA_KATALOGU.
 function ayrik(adimlar: HataKosusuAdimi[]) {
   const ai = kaynakOrani(adimlar, "ai");
   const el = kaynakOrani(adimlar, "el");
+  const tum = yakalamaOrani(adimlar);
   return {
     oran: ai.oran,
     yakalanan: ai.olculdu ? ai.yakalanan : 0,
     kacan: ai.olculdu ? ai.kacan : 0,
     el_yazisi: { oran: el.oran, yakalanan: el.yakalanan, kacan: el.kacan },
+    tum_testler: { oran: tum.oran, yakalanan: tum.yakalanan, kacan: tum.kacan },
   };
 }
 
@@ -61,6 +63,8 @@ function ozetHesapla(k: HataKosusuDetay): HataKosusuOzeti {
       ...ayrik(pa),
       gecersiz,
       bekleyen,
+      uretilen_test: AI_TESTLERI.length,
+      el_test: PAKET_TESTLERI.length - AI_TESTLERI.length,
       temel: pa.find((a) => a.asama === "temel")?.sonuc ?? null,
       kapanis: pa.find((a) => a.asama === "kapanis")?.sonuc ?? null,
     };
@@ -70,7 +74,13 @@ function ozetHesapla(k: HataKosusuDetay): HataKosusuOzeti {
     ...ayrik(k.adimlar),
     gecersiz,
     bekleyen,
-    kapsam: { kosulan_hata: k.hatalar.length, katalog: HATA_KATALOGU.length, platformlar: [...k.platformlar] },
+    kapsam: {
+      kosulan_hata: k.hatalar.length,
+      katalog: HATA_KATALOGU.length,
+      platformlar: [...k.platformlar],
+      tam_katalog: HATA_KATALOGU.every((h) => k.hatalar.includes(h.kod)),
+      gecerli_adim: k.adimlar.filter((a) => a.asama === "hata" && (a.sonuc === "yakalandi" || a.sonuc === "kacti")).length,
+    },
     platformlar,
     kacanlar: k.adimlar
       .filter((a) => a.asama === "hata" && a.sonuc === "kacti" && a.hata_kodu)
@@ -134,6 +144,20 @@ function planla(): void {
 export function kuleMockIlerlet(): boolean {
   const k = suren();
   if (!k) return false;
+  // R4: iptal istendiyse süren adım biter (bu çağrı), sonra koşu `cancelled` olur; kalan adımlar koşulmaz.
+  if (k.iptal_istendi) {
+    const a = k.durum === "running" ? k.adimlar.find((x) => x.sonuc === "bekliyor") : undefined;
+    if (a) {
+      const temel = k.adimlar.find((x) => x.platform === a.platform && x.asama === "temel");
+      adimiSonuclandir(k.id, a, a.asama === "temel" || temel?.sonuc === "yesil");
+    }
+    k.durum = "cancelled";
+    k.bitis = new Date().toISOString();
+    k.ozet = ozetHesapla(k);
+    olay(k, a ?? null);
+    zamanlayiciyiTemizle();
+    return false;
+  }
   if (k.durum === "queued") {
     k.durum = "running";
     k.baslama = new Date().toISOString();
@@ -169,15 +193,15 @@ function baslat(kullanici: Kullanici, govde: unknown): Pick<HataKosusu, "id" | "
   if (suren()) throw new ApiError(409, "Süren bir ekilmiş hata koşusu var; bitmeden yenisi başlatılamaz.", { kod: "hata_kosusu_suruyor" });
   const ham = Array.isArray(g.platformlar) ? g.platformlar : [];
   const secilen = ham.map(platformUyarla);
-  if (secilen.length === 0 || secilen.some((p) => p === null)) throw new ApiError(422, "En az bir geçerli platform seçin (web, android, ios, windows).");
+  if (secilen.length === 0 || secilen.some((p) => p === null)) throw new ApiError(422, "En az bir geçerli platform seçin (web, android, ios, windows).", { kod: "gecersiz_istek" });
   // Platformlar sabit sırayla koşar (web → android → ios → windows), yinelenen değer bir kez.
   const platformlar = PLATFORMLAR.filter((p) => secilen.includes(p)) as Platform[];
   const katalog = HATA_KATALOGU.map((h) => h.kod);
   let hatalar = katalog;
   if (g.hatalar !== undefined && g.hatalar !== null) {
-    if (!Array.isArray(g.hatalar) || g.hatalar.length === 0) throw new ApiError(422, "En az bir hata seçin.");
+    if (!Array.isArray(g.hatalar) || g.hatalar.length === 0) throw new ApiError(422, "En az bir hata seçin.", { kod: "gecersiz_istek" });
     const bilinmeyen = g.hatalar.filter((h) => typeof h !== "string" || !HATA_KODU_KALIBI.test(h) || !katalog.includes(h));
-    if (bilinmeyen.length) throw new ApiError(422, `Katalogda olmayan hata kodu: ${bilinmeyen.join(", ")}`);
+    if (bilinmeyen.length) throw new ApiError(422, `Katalogda olmayan hata kodu: ${bilinmeyen.join(", ")}`, { kod: "gecersiz_istek" });
     hatalar = katalog.filter((h) => (g.hatalar as string[]).includes(h));
   }
   sayac += 1;
@@ -204,17 +228,19 @@ function baslat(kullanici: Kullanici, govde: unknown): Pick<HataKosusu, "id" | "
   return { id: k.id, durum: k.durum };
 }
 
-function iptal(id: string, kullanici: Kullanici): Pick<HataKosusu, "id" | "durum"> {
+/**
+ * core `iptal` (R4): `{id, durum, iptal_istendi}`. Koşu hemen durmaz — süren adım bitince `cancelled` olur
+ * (zamanlayıcının bir sonraki adımı). Bitmiş koşu (done | failed | cancelled) → 409 (kod `cakisma`).
+ */
+function iptal(id: string, kullanici: Kullanici): Pick<HataKosusu, "id" | "durum" | "iptal_istendi"> {
   const k = bul(id);
-  // core `iptal`: bitmiş koşu (done | failed | cancelled) → 409 (WorkflowError, kod `cakisma`).
   if (k.durum !== "queued" && k.durum !== "running") throw new ApiError(409, `Koşu iptal edilemez (durum: ${k.durum}).`, { kod: "cakisma" });
-  zamanlayiciyiTemizle();
-  k.durum = "cancelled";
-  k.bitis = new Date().toISOString();
-  k.ozet = ozetHesapla(k);
-  k.uyarilar.push(`${kullanici.kullanici_adi} tarafından iptal edildi.`);
-  olay(k, null);
-  return { id: k.id, durum: k.durum };
+  if (!k.iptal_istendi) {
+    k.iptal_istendi = true;
+    k.uyarilar.push(`${kullanici.kullanici_adi} tarafından iptal edildi.`);
+    olay(k, null);
+  }
+  return { id: k.id, durum: k.durum, iptal_istendi: true };
 }
 
 function bul(id: string): HataKosusuDetay {
@@ -326,6 +352,7 @@ export function kuleKaliteOlcumu(v: MockVeri): Required<Pick<KontrolKulesi, "bek
             platformlar: o.platformlar.map(({ platform, oran, yakalanan, kacan, gecersiz, el_yazisi }) => ({ platform, oran, yakalanan, kacan, gecersiz, el_yazisi })),
             kacanlar: o.kacanlar,
             el_yazisi: o.el_yazisi,
+            tum_testler: o.tum_testler,
             kapsam: o.kapsam,
           }
         : null,

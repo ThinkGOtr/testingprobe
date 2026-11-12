@@ -6,10 +6,10 @@
 // dene" ile case kartındaki karşılaştırma birbirini tutar.
 //
 // Tablolar ve ilişki gerçek AI taslak golden'ının (`rules/replay/decision_table_draft/golden/TPD-1.json`)
-// kolonlarını ve ifadelerini kullanır: T1 `adet`, `birim_fiyat` → `bedava_adet = adet // 7`, `indirim`;
-// T2 `kampanyali_sepet`, `sepet_tutari` → `minimum_uyarisi` (eşik 750). "AI taslağı üret" golden'ı birebir
-// döndürür. Case metinleri birim fiyatı yazmaz: 7 adette `indirim` karşılaştırılamaz (çekirdek
-// `kismi_degerlendir`), 6 adette (R2, sabit) karşılaştırılır — C3 "6 adet … bedava ürün verilmez" uyumlu.
+// kolonlarını ve ifadelerini kullanır (T1 §13.1 V9 biçiminde): T1 `adet`, `ara_toplam` → `bedava_adet =
+// adet // 7`, `indirim`, `toplam`; T2 `kampanyali_sepet`, `sepet_tutari` → `minimum_uyarisi` (eşik 750).
+// "AI taslağı üret" golden'ı birebir döndürür. Case metinleri ara toplamı yazar: 7 adette bedava adet,
+// indirim ve toplam karşılaştırılır.
 //
 // Bilinçli örnek: başlangıçtaki T2 taslağında sınır `sepet_tutari <= 750` yazılıdır (golden: `< 750`).
 // AC3 "altında uyarı" der (750 dahil geçer). Analist düzeltmeden PO onaylarsa yüksek riskli sınır case'i
@@ -18,23 +18,33 @@ import type { CiktiModu, KararTablosuIcerik, MetamorfikIliskiIcerik } from "../t
 
 export const KALITE_REQ = "req-tpd-1";
 
-/** Gerçek AI taslak golden'ı (`rules/replay/decision_table_draft/golden/TPD-1.json`) T1 — birebir. */
+/**
+ * T1 — §13.1 V9 biçimi: girdiler `adet`, `ara_toplam`; çıktılar `bedava_adet`, `indirim`, `toplam`.
+ * `birim_fiyat` girdisi kalktı (case'ler birim fiyat yazmaz, ara toplam yazar); böylece C2/C10'da indirim
+ * ve toplam da karşılaştırılır. Golden (`rules/replay/decision_table_draft/golden/TPD-1.json`) R2 şeridinde
+ * aynı biçime güncellenir; bu kopya onu izler.
+ */
 export const KAMPANYA_TABLOSU: KararTablosuIcerik = {
   ad: "Kampanya: 6 al 1 bedava (7 adette 1 bedava)",
   ac_refs: ["AC2"],
   aciklama:
-    "AC2: kampanyalı üründen her 6 adet alımda 1 adet bedava verilir (7 adette 1 bedava); bedava adet, adedin 7'ye tam bölümüdür. Bedava adet ücretlendirilmez.",
+    "AC2: kampanyalı üründen her 6 adet alımda 1 adet bedava verilir (7 adette 1 bedava); bedava adet, adedin 7'ye tam bölümüdür. Bedava adet ücretlendirilmez: indirim bedava adetlerin tutarıdır, toplam ara toplamdan indirim düşülerek bulunur.",
   girdiler: [
     { ad: "adet", tur: "sayi", birim: "adet", aciklama: "Kampanyalı üründen sepetteki adet" },
-    { ad: "birim_fiyat", tur: "sayi", birim: "TL", aciklama: "Kampanyalı ürünün birim fiyatı" },
+    { ad: "ara_toplam", tur: "sayi", birim: "TL", aciklama: "Kampanyalı ürün satırının indirimsiz tutarı (adet × birim fiyat)" },
   ],
   ciktilar: [
     { ad: "bedava_adet", tur: "sayi", birim: "adet", aciklama: "Kampanyayla bedava verilen adet" },
     { ad: "indirim", tur: "sayi", birim: "TL", tolerans: "0.01", aciklama: "Bedava adetlerin tutarı (kampanya indirimi)" },
+    { ad: "toplam", tur: "sayi", birim: "TL", tolerans: "0.01", aciklama: "İndirim düşülmüş satır tutarı" },
   ],
   satirlar: [
-    { id: "R1", kosul: "adet >= 7", cikti: { bedava_adet: "adet // 7", indirim: "(adet // 7) * birim_fiyat" } },
-    { id: "R2", kosul: "dogru", cikti: { bedava_adet: "0", indirim: "0" } },
+    {
+      id: "R1",
+      kosul: "adet >= 7",
+      cikti: { bedava_adet: "adet // 7", indirim: "yuvarla(ara_toplam / adet * (adet // 7), 2)", toplam: "ara_toplam - yuvarla(ara_toplam / adet * (adet // 7), 2)" },
+    },
+    { id: "R2", kosul: "dogru", cikti: { bedava_adet: "0", indirim: "0", toplam: "ara_toplam" } },
   ],
 };
 
@@ -71,18 +81,23 @@ export const MIN_SIPARIS_TABLOSU: KararTablosuIcerik = {
   satirlar: MIN_SIPARIS_GOLDEN.satirlar.map((s) => (s.id === "R2" ? { ...s, kosul: "sepet_tutari <= 750" } : s)),
 };
 
-/** Golden'daki tek ilişki (T1) — birebir. */
+/** Golden'daki tek ilişki (T1) — V9 biçiminde (ara toplam ve toplam da iki katına çıkar). */
 export const IKI_KAT_ILISKISI: MetamorfikIliskiIcerik = {
-  ad: "Adet iki katına çıkınca bedava adet ve indirim iki katına çıkar",
+  ad: "Adet iki katına çıkınca bedava adet ve tutarlar iki katına çıkar",
   ac_refs: ["AC2"],
   tablo_ref: "T1",
   on_kosul: "adet >= 7 ve adet % 7 == 0",
-  donusum: { adet: "adet * 2" },
-  iliski: { bedava_adet: "bedava_adet * 2", indirim: "indirim * 2" },
+  // V9: ara toplam da dönüşür; aksi hâlde türetilen case'te kaynak tutar kalırdı (tutarsiz_kalan_deger).
+  donusum: { adet: "adet * 2", ara_toplam: "ara_toplam * 2" },
+  iliski: { bedava_adet: "bedava_adet * 2", indirim: "indirim * 2", toplam: "toplam * 2" },
   aciklama: "AC2: her 7 adette 1 bedava; adet 7'nin katıyken iki katına çıkarsa bedava adet de iki katına çıkar (7 → 1, 14 → 2).",
 };
 
-/** Örnek verideki elle eklenmiş ilişki taslağı (golden'da yok; analist ekledi — `ai_generated: false`). */
+/**
+ * Elle eklenebilecek ilişki örneği (golden'da yok). Review turu 1 (analist/PO 20): başlangıç verisinden
+ * çıkarıldı — örnek veri gerçek çekirdekle aynı hikâyeyi anlatır (yalnız golden'daki I1). Testler elle
+ * ilişki akışını bu içerikle kurar.
+ */
 export const YEDI_ARTIS_ILISKISI: MetamorfikIliskiIcerik = {
   ad: "Adet 7 artınca bedava adet 1 artar",
   ac_refs: ["AC2"],
@@ -104,15 +119,20 @@ export interface IliskiTohumu {
   elle?: boolean;
 }
 
-/** Başlangıç durumu (yalnız TPD-1): T1 onaylı, T2 AI taslağı (sınırı bilinçli hatalı); I1 onaylı (golden), I2 elle eklenmiş taslak. */
+/**
+ * Başlangıç durumu (yalnız TPD-1): T1 onaylı, T2 taslağı (R2 sınırını analist `<= 750` yaptı — AI golden'ı
+ * `< 750`; ekranda satır "analist değiştirdi" diye işaretlenir); I1 onaylı (golden).
+ */
 export const ILK_TABLOLAR: TabloTohumu[] = [
   { icerik: KAMPANYA_TABLOSU, durum: "approved" },
   { icerik: MIN_SIPARIS_TABLOSU, durum: "draft" },
 ];
 export const ILK_ILISKILER: IliskiTohumu[] = [
   { icerik: IKI_KAT_ILISKISI, durum: "approved" },
-  { icerik: YEDI_ARTIS_ILISKISI, durum: "draft", elle: true },
 ];
+
+/** Tablo tohumunun AI taslağındaki özgün içeriği (ekranda "analist değiştirdi" işareti için; sıra = ILK_TABLOLAR). */
+export const ILK_TABLO_AI_ICERIKLERI: KararTablosuIcerik[] = [KAMPANYA_TABLOSU, MIN_SIPARIS_GOLDEN];
 
 /**
  * "AI taslağı üret" çıktısı (amaç `decision_table_draft`): TPD-1 için kayıtlı (REPLAY) taslak; başka
@@ -149,6 +169,9 @@ export const CIKARMA_KURALLARI: Record<string, CikarmaKurali[]> = {
   ],
   // Birim fiyat case metinlerinde yazmaz (golden case_facts da çıkarmaz).
   birim_fiyat: [],
+  // V9: ara toplam ve (T1) toplam case metninde yazılıdır ("ara toplam 175,00 TL, indirim 25,00 TL, toplam 150,00 TL").
+  ara_toplam: [{ kalip: new RegExp(`\\bara toplam ${TL}`, "g") }],
+  toplam: [{ kalip: new RegExp(`(?<!ara )\\b[Tt]oplam ${TL}`, "g") }],
   bedava_adet: [{ kalip: /\bbedava adet ([0-9]+)\b/g }, { kalip: /\b([0-9]+) adet bedava\b/g }],
   indirim: [{ kalip: new RegExp(`\\bindirim ${TL}`, "g") }],
   sepet_tutari: [{ kalip: new RegExp(`(?<!ara )\\b[Tt]oplam ${TL}`, "g") }],
@@ -162,3 +185,47 @@ export const CIKARMA_KURALLARI: Record<string, CikarmaKurali[]> = {
     { kalip: /(?:minimum sipariş )?uyarı(?:sı)? (?:gösterilmez|görünmez)/g, deger: false },
   ],
 };
+
+/**
+ * Sınır örnekleri için girdi kümeleri (R2 `ornekler` ucunun mock karşılığı). Sayı koşullarındaki sabitlerin
+ * çevresi (`adet >= 7` → 6, 7, 8; `sepet_tutari < 750` → 749,99 / 750 / 750,01) ve tam bölme bölenlerinin
+ * katları (`adet // 7` → 13, 14) denenir. Mantıksal girdi her iki değeriyle, diğer girdiler temsil değeriyle
+ * doldurulur. TPD-1 T1'de `ara_toplam` demo birim fiyatından (25,00 TL) hesaplanır; böylece indirim ve
+ * toplam okunur değer çıkar.
+ */
+export function ornekGirdileri(icerik: KararTablosuIcerik): Record<string, number | boolean>[] {
+  const sayilar = icerik.girdiler.filter((g) => g.tur === "sayi").map((g) => g.ad);
+  const mantiksal = icerik.girdiler.filter((g) => g.tur === "mantiksal").map((g) => g.ad);
+  const ifadeler = icerik.satirlar.flatMap((s) => [s.kosul, ...Object.values(s.cikti)]);
+  const sinirlar: Record<string, Set<number>> = Object.fromEntries(sayilar.map((a) => [a, new Set<number>()]));
+  for (const ad of sayilar) {
+    const ondalik = icerik.girdiler.find((g) => g.ad === ad)?.birim === "TL";
+    const adim = ondalik ? 0.01 : 1;
+    for (const m of ifadeler.join(" ").matchAll(new RegExp(`\\b${ad}\\s*(<=|>=|<|>|==|!=)\\s*([0-9]+(?:\\.[0-9]+)?)`, "g"))) {
+      const c = Number(m[2]);
+      [c - adim, c, c + adim].forEach((v) => sinirlar[ad].add(Math.round(v * 100) / 100));
+    }
+    for (const m of ifadeler.join(" ").matchAll(new RegExp(`\\b${ad}\\s*//\\s*([0-9]+)`, "g"))) {
+      const d = Number(m[1]);
+      [d - 1, d, d + 1, 2 * d - 2, 2 * d - 1, 2 * d].forEach((v) => sinirlar[ad].add(v));
+    }
+  }
+  const birimFiyat = 25;
+  const temsil = (ad: string, kume: Record<string, number | boolean>): number =>
+    ad === "ara_toplam" && typeof kume.adet === "number" ? kume.adet * birimFiyat : ([...sinirlar[ad]].sort((a, b) => a - b)[1] ?? 0);
+  const sonuc: Record<string, number | boolean>[] = [];
+  const mantiksalKume = mantiksal.length ? [false, true] : [null];
+  for (const ad of sayilar) {
+    for (const v of [...sinirlar[ad]].filter((x) => x >= 0).sort((a, b) => a - b)) {
+      for (const mv of mantiksalKume) {
+        const kume: Record<string, number | boolean> = { [ad]: v };
+        mantiksal.forEach((m) => (kume[m] = mv as boolean));
+        sayilar.filter((x) => x !== ad).forEach((x) => (kume[x] = temsil(x, kume)));
+        // Mantıksal "doğru" kolu yalnız bir kez (ilk sınır değeriyle) yeterli; ızgara kısa kalır.
+        if (mv === true && sonuc.some((o) => mantiksal.every((m) => o[m] === true))) continue;
+        sonuc.push(kume);
+      }
+    }
+  }
+  return sonuc;
+}

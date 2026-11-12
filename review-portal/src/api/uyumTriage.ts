@@ -82,9 +82,11 @@ function sinyalUyarla(x: unknown, i: number): EslesenSinyal | null {
   const kod = metin(ilk(x, "kod", "code", "id", "sinyal", "signal"), `s${i + 1}`);
   if (!aciklama && !kod) return null;
   const k = ilk(x, "kanit", "evidence", "deger", "value");
+  const baslik = metinYaDaNull(ilk(x, "baslik", "title"));
   return {
     kod,
-    aciklama: aciklama || kod,
+    ...(baslik ? { baslik } : {}),
+    aciklama: aciklama || baslik || kod,
     kaynak: metin(ilk(x, "kaynak", "source")),
     kanit: typeof k === "string" ? k || null : nesneMi(k) || Array.isArray(k) ? JSON.stringify(k) : typeof k === "number" ? String(k) : null,
   };

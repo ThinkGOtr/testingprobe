@@ -1,7 +1,7 @@
 // 012 Ş7 — "Örnekle dene": kayıtlı tablo içeriğini verilen girdilerle değerlendirir
 // (`POST /decision-tables/{id}/evaluate`; önizleme, kayıt yok). Sonuç: eşleşen satır + çıktılar,
 // "eşleşen satır yok", eksik girdiler ya da değerlendirme hatası.
-import { useId, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { api } from "../../api/client";
 import type { KararTablosu, KararTablosuIcerik, TabloDegerlendirmesi } from "../../api/types";
 import { useIslem } from "../../hooks";
@@ -17,6 +17,9 @@ export function OrnekleDene({ tablo, icerik }: { tablo: KararTablosu; icerik?: K
   const id = useId();
   const sonucRef = useRef<HTMLDivElement | null>(null);
   const girdiler = (icerik ?? tablo.icerik).girdiler.filter((g) => g.ad.trim());
+  // Tablo (kayıtlı ya da düzenleyicideki) değişince eski sonuç bayatlar: temizlenir.
+  const imza = icerik ? JSON.stringify(icerik) : tablo.icerik_hash;
+  useEffect(() => setSonuc(null), [imza]);
 
   async function dene(e: FormEvent) {
     e.preventDefault();
@@ -68,6 +71,7 @@ export function OrnekleDene({ tablo, icerik }: { tablo: KararTablosu; icerik?: K
                       className={g.tur === "sayi" ? "mono" : undefined}
                       inputMode={g.tur === "sayi" ? "decimal" : undefined}
                       autoComplete="off"
+                      placeholder={g.tur === "sayi" ? (g.birim === "TL" ? "ör. 175,00" : "ör. 7") : "ör. P-001"}
                       value={degerler[g.ad] ?? ""}
                       onChange={(e) => setDegerler({ ...degerler, [g.ad]: e.target.value })}
                     />

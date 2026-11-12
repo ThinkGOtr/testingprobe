@@ -235,4 +235,32 @@ describe("review turu 1 sözleşmesi (§13.2)", () => {
     expect(eski.hata_yakalama).not.toHaveProperty("kapsam");
     expect("onayli_uyumsuz" in eski).toBe(false);
   });
+
+  it("R4 gerçek şekiller: iptal_istendi, tum_testler, kapsam tam_katalog/gecerli_adim, platform test sayıları; yoksa alan yok", () => {
+    const k = hataKosusuUyarla({
+      id: "hk-9",
+      durum: "running",
+      iptal_istendi: true,
+      ozet: {
+        oran: null,
+        yakalanan: 0,
+        kacan: 0,
+        gecersiz: 0,
+        tum_testler: { oran: 0.5, yakalanan: 1, kacan: 1 },
+        kapsam: { kosulan_hata: 2, katalog: 9, platformlar: ["web"], tam_katalog: false, gecerli_adim: 2 },
+        platformlar: [{ platform: "web", oran: null, yakalanan: 0, kacan: 0, gecersiz: 0, tum_testler: { oran: 0.5, yakalanan: 1, kacan: 1 }, uretilen_test: 0, el_test: 29 }],
+        kacanlar: [],
+      },
+    });
+    expect(k.iptal_istendi).toBe(true);
+    expect(k.ozet?.tum_testler).toEqual({ oran: 0.5, yakalanan: 1, kacan: 1 });
+    expect(k.ozet?.kapsam).toEqual({ kosulan_hata: 2, katalog: 9, platformlar: ["web"], tam_katalog: false, gecerli_adim: 2 });
+    expect(k.ozet?.platformlar[0]).toMatchObject({ uretilen_test: 0, el_test: 29, tum_testler: { oran: 0.5, yakalanan: 1, kacan: 1 } });
+    // Eski gövde: alanlar eklenmez (değer uydurulmaz).
+    const eski = hataKosusuUyarla({ id: "hk-1", durum: "done", ozet: { oran: 1, yakalanan: 1, kacan: 0, gecersiz: 0, kapsam: { kosulan_hata: 1, katalog: 9, platformlar: ["web"] }, platformlar: [{ platform: "web", oran: 1, yakalanan: 1, kacan: 0, gecersiz: 0 }], kacanlar: [] } });
+    expect("iptal_istendi" in eski).toBe(false);
+    expect(eski.ozet && "tum_testler" in eski.ozet).toBe(false);
+    expect(eski.ozet?.kapsam).toEqual({ kosulan_hata: 1, katalog: 9, platformlar: ["web"] });
+    expect(eski.ozet && Object.keys(eski.ozet.platformlar[0])).not.toContain("uretilen_test");
+  });
 });

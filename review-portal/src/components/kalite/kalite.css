@@ -73,6 +73,17 @@
   font-size: 0.85rem;
   overflow-wrap: anywhere;
 }
+/* İfade sözdizimi birebir görünmeli: yazı tipi bitişik harfleri (>= → ≥, != → ≠) kapalı. */
+.kt-ifade,
+.kt-duzenle .mono,
+.kt-dene .mono,
+.kt-ifade-yardim code,
+.iliski .mono {
+  font-variant-ligatures: none;
+  font-feature-settings:
+    "calt" 0,
+    "liga" 0;
+}
 .tablo td.kt-ifade {
   white-space: normal;
 }
@@ -301,4 +312,54 @@
 }
 .kt-iliski-eylem {
   margin-bottom: 10px;
+}
+
+/* Review turu 1: satır anlamı, sınır örnekleri, ifade yardımı, istisna yolları */
+.kt-anlam-liste {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 10px;
+}
+.kt-ornek,
+.kt-ifade-yardim,
+.turet-gecmis {
+  margin: 8px 0;
+}
+.kt-ornek > summary,
+.kt-ifade-yardim > summary,
+.turet-gecmis > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.kt-ornek-uyari {
+  margin: 6px 0 0;
+}
+.kt-ad-cip {
+  display: inline-block;
+  margin: 2px 4px 2px 0;
+  padding: 1px 6px;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+}
+.kt-duyuru:empty {
+  display: none;
+}
+.kt-duyuru:focus {
+  outline: none;
+}
+.kt-onay-notu {
+  max-width: 520px;
+}
+.oracle-yol {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-soft);
+}
+.oracle-ozet-satir {
+  display: grid;
+  gap: 6px;
+}
+.case:focus-visible {
+  outline: 2px solid var(--focus, var(--accent));
+  outline-offset: 2px;
 }

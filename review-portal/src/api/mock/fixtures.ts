@@ -1412,6 +1412,14 @@ function hatalar(): HataAnalizi[] {
         { kod: "consistent", aciklama: "3 tekrarın 3'ünde aynı assertion farkı (flaky değil)", kaynak: "playwright-json", kanit: "repeat-each 3: failed ×3" },
         { kod: "locator_resolved", aciklama: "Locator tek eleman buldu; sayfa yapısı beklenen", kaynak: "aria-snapshot", kanit: '- row "Portakal Gazozu 1L 6 adet":\n  - status "Bedava": 1 adet' },
         { kod: "assertion_mismatch", aciklama: "cart-line-free-P-001 beklenen \"0\", gerçekleşen \"1\"", kaynak: "trace", kanit: "expect(getByTestId('cart-line-free-P-001')).toHaveText('0')" },
+        // 012 R3: karar tablosu sinyali tek satır başlıkla (core `baslik`), ayrıntı `aciklama`'da.
+        {
+          kod: "karar_tablosu_uyumlu",
+          baslik: "Uygulama onaylı kurala aykırı (T1 · R2: adet 6 → bedava_adet 0)",
+          aciklama: "Test beklentisi 0, gerçekleşen 1, onaylı karar tablosu (T1, satır R2) 0: test tabloyla aynı, uygulama farklı → ürün hatası adayı.",
+          kaynak: "karar_tablosu",
+          kanit: null,
+        },
       ],
       karar_kaynagi: "rule",
       llm_yorumu: null,

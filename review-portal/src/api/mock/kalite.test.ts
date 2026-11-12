@@ -9,7 +9,7 @@ import { caseOracleYanitiUyarla } from "../uyumKalite";
 import { bekleyenMockIs, mockIstek, mockVerisi } from "./handlers";
 import { kaliteVerisi, kismiDegerlendir, tabloDegerlendir, tabloDogrula, turetilenBaslik } from "./kalite";
 import { ayristir, hesapla, IfadeHatasi, sayiAyristir, sayiBicimle, turCikar } from "./kaliteIfade";
-import { IKI_KAT_ILISKISI, KAMPANYA_TABLOSU, MIN_SIPARIS_GOLDEN, MIN_SIPARIS_TABLOSU } from "./kaliteVerisi";
+import { IKI_KAT_ILISKISI, KAMPANYA_TABLOSU, MIN_SIPARIS_GOLDEN, MIN_SIPARIS_TABLOSU, YEDI_ARTIS_ILISKISI } from "./kaliteVerisi";
 
 const REQ = "req-tpd-1";
 const isBitsin = async () => {
@@ -78,8 +78,10 @@ describe("sınırlı ifade dili (ANALIZ §4.2)", () => {
     expect(h2.some((m) => /^satirlar\[0\]\.kosul: bilinmeyen ad 'adett'/.test(m))).toBe(true);
     expect(h2).toContain("satirlar[1].cikti.indirim: çıktı ifadesi boş");
     expect(h2.some((m) => m.startsWith("girdiler[1].ad: 'adet' adı birden çok"))).toBe(true);
-    expect(tabloDegerlendir(KAMPANYA_TABLOSU, { adet: 7, birim_fiyat: 25 })).toMatchObject({ satir_id: "R1", ciktilar: { bedava_adet: 1, indirim: 25 } });
-    expect(tabloDegerlendir(KAMPANYA_TABLOSU, { adet: 7 })).toMatchObject({ satir_id: null, eksik_girdiler: ["birim_fiyat"] });
+    // V9: indirim = yuvarla(ara_toplam / adet * (adet // 7), 2), toplam = ara_toplam - indirim.
+    expect(tabloDegerlendir(KAMPANYA_TABLOSU, { adet: 7, ara_toplam: 175 })).toMatchObject({ satir_id: "R1", ciktilar: { bedava_adet: 1, indirim: 25, toplam: 150 } });
+    expect(tabloDegerlendir(KAMPANYA_TABLOSU, { adet: 14, ara_toplam: 350 })).toMatchObject({ satir_id: "R1", ciktilar: { bedava_adet: 2, indirim: 50, toplam: 300 } });
+    expect(tabloDegerlendir(KAMPANYA_TABLOSU, { adet: 7 })).toMatchObject({ satir_id: null, eksik_girdiler: ["ara_toplam"] });
     expect(tabloDegerlendir({ ...MIN_SIPARIS_TABLOSU, satirlar: MIN_SIPARIS_TABLOSU.satirlar.slice(0, 2) }, { sepet_tutari: 1000, kampanyali_sepet: false })).toMatchObject({ satir_id: null, eksik_girdiler: [], hata: null });
   });
   it("türetilen başlık core `_baslik` gibi kısaltılır", () => {
@@ -89,10 +91,16 @@ describe("sınırlı ifade dili (ANALIZ §4.2)", () => {
     expect(uzun).toMatch(/^x{19}… \(ilişki: y+…\)$/);
   });
   it("kısmi değerlendirme (core `kismi_degerlendir`): eksik girdi yalnız onu kullanan koşulu/çıktıyı etkiler", () => {
-    // 7 adet, birim fiyat yok: R1 seçilir; bedava adet hesaplanır, indirim (birim fiyata dayanır) hesaplanamaz.
-    expect(kismiDegerlendir(KAMPANYA_TABLOSU, { adet: 7 })).toEqual({ satir_id: "R1", ciktilar: { bedava_adet: 1 }, hesaplanamayan: { indirim: ["birim_fiyat"] }, eksik_girdiler: [], hata: null });
-    // 6 adet: R2 sabit çıktılar → ikisi de hesaplanır (C3 "6 adette bedava yok" karşılaştırılabilir).
-    expect(kismiDegerlendir(KAMPANYA_TABLOSU, { adet: 6 })).toEqual({ satir_id: "R2", ciktilar: { bedava_adet: 0, indirim: 0 }, hesaplanamayan: {}, eksik_girdiler: [], hata: null });
+    // 7 adet, ara toplam yok: R1 seçilir; bedava adet hesaplanır, indirim ve toplam (ara toplama dayanır) hesaplanamaz.
+    expect(kismiDegerlendir(KAMPANYA_TABLOSU, { adet: 7 })).toEqual({
+      satir_id: "R1",
+      ciktilar: { bedava_adet: 1 },
+      hesaplanamayan: { indirim: ["ara_toplam"], toplam: ["ara_toplam"] },
+      eksik_girdiler: [],
+      hata: null,
+    });
+    // 6 adet: R2 sabit çıktılar hesaplanır; toplam ara toplama dayanır.
+    expect(kismiDegerlendir(KAMPANYA_TABLOSU, { adet: 6 })).toEqual({ satir_id: "R2", ciktilar: { bedava_adet: 0, indirim: 0 }, hesaplanamayan: { toplam: ["ara_toplam"] }, eksik_girdiler: [], hata: null });
     // Koşulu eksik girdi kullanan ilk satırda durulur.
     expect(kismiDegerlendir(MIN_SIPARIS_GOLDEN, { sepet_tutari: 750 })).toMatchObject({ satir_id: null, eksik_girdiler: ["kampanyali_sepet"] });
     expect(kismiDegerlendir(MIN_SIPARIS_GOLDEN, { kampanyali_sepet: false, sepet_tutari: 750 })).toMatchObject({ satir_id: "R3", ciktilar: { minimum_uyarisi: false } });
@@ -100,7 +108,7 @@ describe("sınırlı ifade dili (ANALIZ §4.2)", () => {
 });
 
 describe("karar tablosu uçları", () => {
-  it("liste: TPD-1'de onaylı kampanya tablosu, AI taslağı minimum sipariş, bir onaylı ve bir taslak ilişki", async () => {
+  it("liste: TPD-1'de onaylı kampanya tablosu, AI taslağı minimum sipariş (R2'yi analist değiştirdi), golden'daki tek ilişki", async () => {
     await oturumAc("testci");
     const y = await api.kararTablolari(REQ);
     expect(y.tablolar.map((t) => [t.sira_no, t.durum, t.ai_generated, t.bayat])).toEqual([
@@ -108,10 +116,11 @@ describe("karar tablosu uçları", () => {
       [2, "draft", true, false],
     ]);
     expect(y.tablolar[0]).toMatchObject({ onaylayan: "po", onaylanan_hash: y.tablolar[0].icerik_hash });
-    expect(y.iliskiler.map((r) => [r.durum, r.karar_tablosu_id])).toEqual([
-      ["approved", y.tablolar[0].id],
-      ["draft", y.tablolar[0].id],
-    ]);
+    // Analist/PO 20: golden'da olmayan elle ilişki örnek veriden çıkarıldı.
+    expect(y.iliskiler.map((r) => [r.durum, r.karar_tablosu_id, r.tablo_engeli])).toEqual([["approved", y.tablolar[0].id, null]]);
+    // Analist/PO 10: AI özgün içeriği taşınır; T2 yalnız R2'de ayrılır (`<= 750` analistin, golden `< 750`).
+    expect(y.tablolar[1].ai_icerik).toEqual(MIN_SIPARIS_GOLDEN);
+    expect(y.tablolar[1].icerik.satirlar.find((x) => x.id === "R2")!.kosul).toBe("sepet_tutari <= 750");
     expect((await api.kararTablolari("req-tpd-3")).tablolar).toEqual([]);
   });
 
@@ -154,9 +163,10 @@ describe("karar tablosu uçları", () => {
     expect(await hata(api.kararTablosuGecis(t.id, "approve", { icerik_hash: "sha256:eski" }))).toMatchObject({ status: 409, kod: "onay_hash_uyusmuyor" });
     const onayli = await api.kararTablosuGecis(t.id, "approve", g);
     expect(onayli).toMatchObject({ tur: "karar_tablosu", durum: "approved", onaylanan_hash: t.icerik_hash, onaylayan: "po", bayat: false, son_karar: { karar: "approve" } });
-    // Yanıt öğesi gerçek çekirdek şeklidir (iç alanlar sızmaz).
+    // Yanıt öğesi gerçek çekirdek şeklidir (iç alanlar sızmaz). `ai_icerik` portalın varsayımıdır (çekirdek
+    // verirse "analist değiştirdi" işareti); sözleşmede yok.
     expect(Object.keys(onayli).sort()).toEqual(
-      ["ai_generated", "bayat", "durum", "guncelleme", "icerik", "icerik_hash", "id", "olusturma", "onay_zamani", "onaylanan_hash", "onaylayan", "requirement_id", "sira_no", "son_karar", "tur", "uretim_modu"].sort(),
+      ["ai_generated", "ai_icerik", "bayat", "durum", "guncelleme", "icerik", "icerik_hash", "id", "olusturma", "onay_zamani", "onaylanan_hash", "onaylayan", "requirement_id", "sira_no", "son_karar", "tur", "uretim_modu"].sort(),
     );
     await isBitsin();
     expect((await hata(api.kararTablosuGecis(t.id, "reopen", g))).status).toBe(403);
@@ -183,15 +193,15 @@ describe("karar tablosu uçları", () => {
   it("örnekle dene: eşleşen satır, eksik girdi, eşleşen satır yok, tür hatası", async () => {
     await oturumAc("testci");
     const t = await tablo(/Kampanya/);
-    expect(await api.kararTablosuDene(t.id, { adet: 14, birim_fiyat: 25 })).toEqual({
+    expect(await api.kararTablosuDene(t.id, { adet: 14, ara_toplam: 350 })).toEqual({
       satir_id: "R1",
-      ciktilar: { bedava_adet: "2", indirim: "50" },
+      ciktilar: { bedava_adet: "2", indirim: "50", toplam: "300" },
       eksik_girdiler: [],
       hata: null,
     });
-    expect(await api.kararTablosuDene(t.id, { adet: 3 })).toMatchObject({ satir_id: null, eksik_girdiler: ["birim_fiyat"] });
-    expect((await api.kararTablosuDene(t.id, { adet: 0, birim_fiyat: 10, x: 1 } as never)).satir_id).toBe("R2");
-    expect((await api.kararTablosuDene(t.id, { adet: "yedi", birim_fiyat: 1 })).hata).toMatch(/adet/);
+    expect(await api.kararTablosuDene(t.id, { adet: 3 })).toMatchObject({ satir_id: null, eksik_girdiler: ["ara_toplam"] });
+    expect((await api.kararTablosuDene(t.id, { adet: 0, ara_toplam: 10, x: 1 } as never)).satir_id).toBe("R2");
+    expect((await api.kararTablosuDene(t.id, { adet: "yedi", ara_toplam: 1 })).hata).toMatch(/adet/);
   });
 
   it("AI taslağı: gereksinim PO onaylı değilse 409; TPD-1'de eskileri geçersiz kılar, yeni taslaklar REPLAY; kayıt yoksa tablo uydurulmaz", async () => {
@@ -220,9 +230,12 @@ describe("karar tablosu uçları", () => {
 });
 
 describe("ilişkiler ve ek case türetme (§4.5)", () => {
+  /** Elle taslak ilişki (golden'da yok): T1'e bağlı. */
+  const elleIliski = async () => api.iliskiEkle(REQ, { icerik: YEDI_ARTIS_ILISKISI, karar_tablosu_id: (await tablo(/Kampanya/)).id });
+
   it("ilişki kaydı doğrulanır; geçişler tabloyla aynı makine", async () => {
     await oturumAc("analist");
-    const r = (await api.kararTablolari(REQ)).iliskiler.find((x) => x.durum === "draft")!;
+    const r = await elleIliski();
     const e = await hata(api.iliskiKaydet(r.id, { icerik: { ...r.icerik, on_kosul: "adet +", donusum: { yok: "1" } }, icerik_hash: r.icerik_hash }));
     expect(e).toMatchObject({ status: 422, kod: "iliski_gecersiz" });
     expect(e.hatalar?.some((m) => m.startsWith("on_kosul: "))).toBe(true);
@@ -239,7 +252,7 @@ describe("ilişkiler ve ek case türetme (§4.5)", () => {
     await oturumAc("analist");
     const y = await api.kararTablolari(REQ);
     const onayli = y.iliskiler.find((r) => r.durum === "approved")!;
-    const taslak = y.iliskiler.find((r) => r.durum === "draft")!;
+    const taslak = await elleIliski();
     expect(await hata(api.ekCaseTuret(REQ, { iliski_id: taslak.id }))).toMatchObject({ status: 422, kod: "iliski_gecersiz" });
     const s = await api.ekCaseTuret(REQ, { iliski_id: onayli.id, case_ids: ["case-1-2", "case-1-3", "case-1-1"] });
     expect(s.turetilen.map((x) => x.kaynak_case_id)).toEqual(["case-1-2"]);
@@ -255,8 +268,8 @@ describe("ilişkiler ve ek case türetme (§4.5)", () => {
     // Başlık core `_baslik` gibi 120 karakterde kısaltılır.
     expect(yeni.icerik.title).toBe(turetilenBaslik("14 adet kampanyalı üründe 2 adet bedava verilir", IKI_KAT_ILISKISI.ad));
     expect(yeni.icerik.title.length).toBeLessThanOrEqual(120);
-    // Yalnız ilişkinin kolonları (adet, bedava adet, indirim) yeniden yazılır; tablo kolonu olmayan tutarlar değişmez.
-    expect(yeni.icerik.steps[3].expected).toBe("P-001 satırında adet 14, bedava adet 2; ara toplam 175,00 TL, indirim 50,00 TL, toplam 150,00 TL");
+    // V9: ilişki adet ve ara toplamı dönüştürür, bedava adet / indirim / toplamı iki katına çıkarır — 14 adette tutarlar tutarlı.
+    expect(yeni.icerik.steps[3].expected).toBe("P-001 satırında adet 14, bedava adet 2; ara toplam 350,00 TL, indirim 50,00 TL, toplam 300,00 TL");
     expect(yeni.icerik.steps[2].data).toBe("P-001 × 14");
     expect(yeni.icerik.tags).toContain("metamorfik");
     // Türetilen case normal kontrolden geçer: ilişki tabloyla çelişmiyor.
@@ -283,7 +296,14 @@ describe("ilişkiler ve ek case türetme (§4.5)", () => {
     expect(s2.turetilen).toHaveLength(1);
     const e = mockVerisi().caseler.find((x) => x.id === "case-1-6")!;
     e.durum = "approved";
-    e.icerik = { ...e.icerik, title: "x", expected_result: "y", steps: e.icerik.steps.map((x, i) => (i === 2 ? { ...x, data: "P-001 × 7", action: "a", expected: "b" } : i === 3 ? { ...x, expected: "adet 7, bedava adet 7, indirim 25,00 TL" } : x)) };
+    e.icerik = {
+      ...e.icerik,
+      title: "x",
+      expected_result: "y",
+      steps: e.icerik.steps.map((x, i) =>
+        i === 2 ? { ...x, data: "P-001 × 7", action: "a", expected: "b" } : i === 3 ? { ...x, expected: "adet 7, bedava adet 7, ara toplam 175,00 TL, indirim 25,00 TL, toplam 150,00 TL" } : x,
+      ),
+    };
     const s3 = await api.ekCaseTuret(REQ, { iliski_id: onayli.id, case_ids: ["case-1-6"] });
     expect(s3.atlanan[0]).toMatchObject({ sonuc: "belirsiz_alinti" });
   });
@@ -308,19 +328,44 @@ describe("beklenen sonuç kontrolü ve onay kapısı (§4.3)", () => {
       "case-1-10": "uyumlu",
     });
     const c2 = cs.find((c) => c.id === "case-1-2")!;
-    // 7 adet: bedava adet karşılaştırılır; indirim birim fiyata dayanır, case birim fiyat yazmaz → karşılaştırılamaz (core kismi_degerlendir).
-    expect(c2.oracle!.karsilastirmalar.map((k) => k.column)).toEqual(["bedava_adet", "bedava_adet", "bedava_adet"]);
-    expect(c2.oracle!.karsilastirmalar[1]).toMatchObject({ alan: "steps[3].expected", alinti: "1", case_degeri: "1", tablo_degeri: "1", uyumlu: true, satir_id: "R1" });
-    expect(c2.oracle!.ozet).toBe("3 beklenen değer onaylı karar tablosuyla uyumlu. 2 değer karşılaştırılamadı (case'te bulunamayan girdi: birim_fiyat).");
+    // V9: 7 adet + ara toplam 175,00 TL → bedava adet, indirim ve toplam karşılaştırılır (birim fiyat gerekmez).
+    expect([...new Set(c2.oracle!.karsilastirmalar.map((k) => k.column))].sort()).toEqual(["bedava_adet", "indirim", "toplam"]);
+    expect(c2.oracle!.karsilastirmalar.find((k) => k.column === "bedava_adet" && k.alan === "steps[3].expected")).toMatchObject({
+      alinti: "1",
+      case_degeri: "1",
+      tablo_degeri: "1",
+      uyumlu: true,
+      satir_id: "R1",
+    });
+    expect(c2.oracle!.karsilastirmalar.find((k) => k.column === "indirim" && k.alan === "steps[3].expected")).toMatchObject({ case_degeri: "25", tablo_degeri: "25", uyumlu: true });
+    expect(c2.oracle!.karsilastirilamayan).toEqual([]);
+    expect(c2.oracle!.degerler).toEqual({ uyumlu: c2.oracle!.karsilastirmalar.length, uyumsuz: 0, karsilastirilamayan: 0, atilan: 0 });
+    expect(c2.oracle!.ozet).toBe(`${c2.oracle!.karsilastirmalar.length} beklenen değer onaylı karar tablosuyla uyumlu.`);
     // Demo triage hikâyesi: C3 "6 adet … bedava ürün verilmez" `adet // 7` tablosuyla uyumlu (R2; indirim de karşılaştırılır).
     const c3 = cs.find((c) => c.id === "case-1-3")!.oracle!;
     expect(c3.karsilastirmalar.every((k) => k.uyumlu && k.satir_id === "R2")).toBe(true);
-    expect(new Set(c3.karsilastirmalar.map((k) => k.column))).toEqual(new Set(["bedava_adet", "indirim"]));
+    expect(new Set(c3.karsilastirmalar.map((k) => k.column))).toEqual(new Set(["bedava_adet", "indirim", "toplam"]));
     expect(cs.find((c) => c.id === "case-1-1")!.oracle!.ozet).toBe("Bu case'i kapsayan onaylı karar tablosu yok.");
     // Kontrol case içeriğini değiştirmez.
     expect(mockVerisi().caseler.find((c) => c.id === "case-1-2")!.icerik.expected_result).toBe(c2.icerik.expected_result);
     const m = await api.caseMetrikleri(REQ);
-    expect(m.beklenti_dogrulugu).toEqual({ oran: 1, uyumlu: 4, uyumsuz: 0, kapsam_disi: 6, kontrol_edilemedi: 0, istisna: 0, kapsam_orani: 0.4 });
+    // §13.2: kısmen, kontrolsüz onay, n ve golden kaynağı; kapsam_orani = (uyumlu + uyumsuz + kısmen) / AI case (tablolu story).
+    expect(m.beklenti_dogrulugu).toEqual({
+      oran: 1,
+      uyumlu: 4,
+      uyumsuz: 0,
+      kismen: 0,
+      kapsam_disi: 6,
+      kontrol_edilemedi: 0,
+      istisna: 0,
+      kontrolsuz_onay: 0,
+      kapsam_orani: 0.4,
+      n_case: 4,
+      n_story: 1,
+      tablolu_story: 1,
+      toplam_story: 1,
+      golden_kaynakli: 4,
+    });
     expect((await api.caseMetrikleri("req-tpd-3")).beklenti_dogrulugu).toMatchObject({ oran: null });
   });
 
@@ -355,12 +400,19 @@ describe("beklenen sonuç kontrolü ve onay kapısı (§4.3)", () => {
     expect(onayli).toMatchObject({ durum: "approved", oracle: { sonuc: "uyumsuz", istisna: { veren: "analist", gerekce: "PO ile görüşüldü: sınır dahil kabul edildi." } } });
     expect(mockVerisi().denetim.at(-1)).toMatchObject({ eylem: "oracle.exception", nesne: c.id });
     expect((await api.caseMetrikleri(REQ)).beklenti_dogrulugu?.istisna).toBe(1);
-    // Geçerli istisna kayıtlıyken yeniden açılan case gerekçe istemeden onaylanır.
+    expect(onayli.oracle?.istisna).toMatchObject({ tur: "uyumsuz" });
+    // S1 (çekirdekle aynı): aynı içerik için saklı istisna kapıyı açmaz; yeniden açılan case'te gerekçe yine istenir.
     const acik = await api.caseYenidenAc(onayli);
-    expect((await api.caseKarari(c.id, { icerik_hash: acik.icerik_hash, karar: "approve" })).durum).toBe("approved");
+    expect(await hata(api.caseKarari(c.id, { icerik_hash: acik.icerik_hash, karar: "approve" }))).toMatchObject({ status: 422, kod: "oracle_uyumsuz" });
+    // §13.2 gerekçe: ≥ 20 karakter ve ≥ 10 harf (dolgu reddedilir).
+    expect(await hata(api.caseKarari(c.id, { icerik_hash: acik.icerik_hash, karar: "approve", oracle_istisna_gerekce: "1234567890 1234567890 !!" }))).toMatchObject({ status: 422 });
+    expect((await api.caseKarari(c.id, { icerik_hash: acik.icerik_hash, karar: "approve", oracle_istisna_gerekce: "İkinci onay: PO kararı değişmedi." })).durum).toBe("approved");
+    // İstisnalar append-only; sayaç case başına.
+    expect(kaliteVerisi(mockVerisi()).istisnalar?.filter((i) => i.test_case_id === c.id)).toHaveLength(2);
+    expect((await api.caseMetrikleri(REQ)).beklenti_dogrulugu?.istisna).toBe(1);
   });
 
-  it("orta/düşük risk + uyuşmazlık: onaylanır, uyarı kaydı düşer; kontrol edilemeyen yüksek riskli case uyarıyla onaylanır (V2)", async () => {
+  it("orta/düşük risk + uyuşmazlık: onaylanır, uyarı kaydı düşer; kontrol edilemeyen yüksek riskli case gerekçe ister (K10)", async () => {
     await minSiparisOnayla();
     const c7 = mockVerisi().caseler.find((c) => c.id === "case-1-7")!;
     c7.icerik = { ...c7.icerik, risk: "medium" };
@@ -377,8 +429,11 @@ describe("beklenen sonuç kontrolü ve onay kapısı (§4.3)", () => {
     await isBitsin();
     const y = await caseBul("case-1-9");
     expect(y.oracle?.sonuc).toBe("kontrol_edilemedi");
-    expect((await api.caseKarari(y.id, { icerik_hash: y.icerik_hash, karar: "approve" })).durum).toBe("approved");
-    expect(mockVerisi().denetim.at(-1)).toMatchObject({ eylem: "oracle.warning" });
+    expect(await hata(api.caseKarari(y.id, { icerik_hash: y.icerik_hash, karar: "approve" }))).toMatchObject({ status: 422, kod: "oracle_kontrolsuz" });
+    const o = await api.caseKarari(y.id, { icerik_hash: y.icerik_hash, karar: "approve", oracle_istisna_gerekce: "Uyarının görünmediği elle doğrulandı.", oracle_istisna_turu: "kontrolsuz" });
+    expect(o).toMatchObject({ durum: "approved", oracle: { istisna: { tur: "kontrolsuz" } } });
+    expect(mockVerisi().denetim.at(-1)).toMatchObject({ eylem: "oracle.exception" });
+    expect((await api.caseMetrikleri(REQ)).beklenti_dogrulugu).toMatchObject({ kontrolsuz_onay: 1, istisna: 0 });
   });
 
   it("uyumlu, kapsam dışı ve tablosuz yüksek riskli case'ler engelsiz onaylanır; ret kapıya takılmaz", async () => {
@@ -441,7 +496,7 @@ describe("çekirdek sözleşmesiyle hizalı uçlar", () => {
     expect(
       caseOracleYanitiUyarla({ case_id: "c", icerik_hash: "h2", guncel_icerik: false, kapsayan_tablolar: [], oracle: { sonuc: null, icerik_hash: "h2", ozet: "Tablo kontrolü sürüyor.", karsilastirmalar: [], istisna: null, kontrol_suruyor: true } }),
     ).toEqual({ sonuc: null, ozet: "Tablo kontrolü sürüyor.", karsilastirmalar: [], karsilastirilamayan: [], istisna: null, icerik_hash: "h2", kontrol_suruyor: true });
-    const kk = { tablo_id: "t1", tablo_ad: "Kampanya", column: "indirim", alan: "expected_result", alinti: "25,00 TL", case_degeri: "25.00", neden: "case'te bulunamayan girdi: birim_fiyat" };
+    const kk = { tablo_id: "t1", tablo_ad: "Kampanya", column: "indirim", alan: "expected_result", alinti: "25,00 TL", case_degeri: "25.00", neden: "case'te bulunamayan girdi: ara_toplam" };
     expect(caseOracleYanitiUyarla({ case_id: "c", oracle: { sonuc: "uyumlu", ozet: "z", karsilastirmalar: [], karsilastirilamayan: [kk, "bozuk"], kontrol_suruyor: false } })?.karsilastirilamayan).toEqual([kk]);
     expect(caseOracleYanitiUyarla({ case_id: "c", oracle: { sonuc: "uyumsuz", ozet: "x", karsilastirmalar: [], istisna, kontrol_suruyor: false } })).toMatchObject({ sonuc: "uyumsuz", istisna });
     expect(caseOracleYanitiUyarla({ sonuc: "uyumlu", ozet: "y", karsilastirmalar: [] })).toMatchObject({ sonuc: "uyumlu" });
@@ -450,8 +505,8 @@ describe("çekirdek sözleşmesiyle hizalı uçlar", () => {
   it("evaluate: `icerik` verilirse kaydedilmemiş içerik değerlendirilir; geçersizse 422", async () => {
     await oturumAc("po");
     const t = await tablo(/Kampanya/);
-    const icerik = { ...t.icerik, satirlar: [{ id: "R1", kosul: "adet >= 1", cikti: { bedava_adet: "99", indirim: "0" } }] };
-    expect(await api.kararTablosuDene(t.id, { adet: "3", birim_fiyat: "25" }, icerik)).toMatchObject({ satir_id: "R1", ciktilar: { bedava_adet: "99" } });
+    const icerik = { ...t.icerik, satirlar: [{ id: "R1", kosul: "adet >= 1", cikti: { bedava_adet: "99", indirim: "0", toplam: "ara_toplam" } }] };
+    expect(await api.kararTablosuDene(t.id, { adet: "3", ara_toplam: "75" }, icerik)).toMatchObject({ satir_id: "R1", ciktilar: { bedava_adet: "99" } });
     expect(await hata(api.kararTablosuDene(t.id, { adet: "3" }, { ...icerik, satirlar: [{ id: "R1", kosul: "adet >", cikti: {} }] }))).toMatchObject({
       status: 422,
       kod: "karar_tablosu_gecersiz",
@@ -483,5 +538,66 @@ describe("çekirdek sözleşmesiyle hizalı uçlar", () => {
     expect(kayitlar[0]).toMatchObject({ iliski_id: onayli.id, olusturan_id: "analist" });
     mockVerisi().gereksinimler.find((g) => g.id === REQ)!.durum = "po_approved";
     expect(await hata(api.ekCaseTuret(REQ, { iliski_id: onayli.id }))).toMatchObject({ status: 409 });
+  });
+});
+
+describe("review turu 1: kısmen, sınır örnekleri, tutarsız türetme, ilişki tablo engeli", () => {
+  it("K11 kısmen: fark yok ama bir beklenen değer karşılaştırılamadı → `kismen`; uyarıyla onaylanır, orana girmez", async () => {
+    await oturumAc("analist");
+    const c = mockVerisi().caseler.find((x) => x.id === "case-1-10")!;
+    c.durum = "draft";
+    // Ara toplam metinden çıkınca indirim ve toplam hesaplanamaz; bedava adet karşılaştırılır.
+    c.icerik = JSON.parse(JSON.stringify(c.icerik).replaceAll(/ara toplam [0-9.,]+ TL, /g, "")) as TestCaseIcerik;
+    c.icerik_hash = (await api.caseOracleKontrol(c.id, c.icerik)).icerik_hash!;
+    await isBitsin();
+    const y = await caseBul("case-1-10");
+    expect(y.oracle).toMatchObject({ sonuc: "kismen", degerler: { uyumsuz: 0 } });
+    expect(y.oracle!.degerler!.karsilastirilamayan).toBeGreaterThan(0);
+    expect(y.oracle!.ozet).toMatch(/^Kısmen uyumlu: /);
+    expect((await api.caseKarari(y.id, { icerik_hash: y.icerik_hash, karar: "approve" })).durum).toBe("approved");
+    expect(mockVerisi().denetim.at(-1)).toMatchObject({ eylem: "oracle.warning" });
+  });
+
+  it("sınır örnekleri: adet 6/7/8/12/13/14 ve 749,99/750/750,01 tabloyla değerlendirilir", async () => {
+    await oturumAc("po");
+    const t1 = await tablo(/Kampanya/);
+    const o1 = await api.kararTablosuOrnekleri(t1.id);
+    expect(o1.ornekler.map((o) => [o.girdiler.adet, o.satir_id, o.ciktilar.bedava_adet])).toEqual([
+      [6, "R2", "0"],
+      [7, "R1", "1"],
+      [8, "R1", "1"],
+      [12, "R1", "1"],
+      [13, "R1", "1"],
+      [14, "R1", "2"],
+    ]);
+    expect(o1.uyarilar).toEqual([]);
+    const t2 = await tablo(/Minimum/);
+    const o2 = await api.kararTablosuOrnekleri(t2.id);
+    // Taslaktaki `<= 750`: tam 750,00 TL'de uyarı görünür (golden `< 750` görünmez) — PO örnekten görür.
+    expect(o2.ornekler.find((o) => o.girdiler.sepet_tutari === 750 && o.girdiler.kampanyali_sepet === false)).toMatchObject({ satir_id: "R2", ciktilar: { minimum_uyarisi: true } });
+  });
+
+  it("R2 tutarsiz_kalan_deger: ilişki ara toplamı dönüştürmezse türetilmez", async () => {
+    await oturumAc("analist");
+    const r = await api.iliskiEkle(REQ, {
+      icerik: { ...IKI_KAT_ILISKISI, ad: "Yalnız adet", donusum: { adet: "adet * 2" }, iliski: { bedava_adet: "bedava_adet * 2" } },
+      karar_tablosu_id: (await tablo(/Kampanya/)).id,
+    });
+    await api.iliskiGecis(r.id, "submit", { icerik_hash: r.icerik_hash });
+    await oturumAc("po");
+    await api.iliskiGecis(r.id, "approve", { icerik_hash: r.icerik_hash });
+    await oturumAc("analist");
+    const s = await api.ekCaseTuret(REQ, { iliski_id: r.id, case_ids: ["case-1-2"] });
+    expect(s.turetilen).toEqual([]);
+    expect(s.atlanan[0]).toMatchObject({ sonuc: "tutarsiz_kalan_deger" });
+    expect(s.atlanan[0].neden).toMatch(/ara_toplam/);
+  });
+
+  it("ilişki: bağlı tablo yoksa gönderilemez (tablo_engeli + 422 iliski_gecersiz); bulunamayan ilişki 404 iliski_bulunamadi", async () => {
+    await oturumAc("analist");
+    const r = await api.iliskiEkle(REQ, { icerik: { ...YEDI_ARTIS_ILISKISI, tablo_ref: null } });
+    expect(r.tablo_engeli).toMatch(/Bağlı karar tablosu yok/);
+    expect(await hata(api.iliskiGecis(r.id, "submit", { icerik_hash: r.icerik_hash }))).toMatchObject({ status: 422, kod: "iliski_gecersiz" });
+    expect(await hata(api.iliskiGecis("yok", "submit", {}))).toMatchObject({ status: 404, kod: "iliski_bulunamadi" });
   });
 });

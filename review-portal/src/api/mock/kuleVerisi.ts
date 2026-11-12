@@ -105,24 +105,37 @@ export const PAKET_TESTLERI = [
  */
 export const AI_TESTLERI: readonly string[] = [];
 
-export type MockAdimSonucu = { sonuc: "yakalandi"; testler: string[] } | { sonuc: "kacti" } | { sonuc: "gecersiz"; neden: string };
+/**
+ * `sayilmayan`: hatalı koşuda kırmızıya dönen ama assertion dışı nedenle (locator bulunamadı, zaman aşımı)
+ * düştüğü için yakalama sayılmayan testler (K12). Core bunları adımın `neden` notunda bildirir.
+ */
+export type MockAdimSonucu =
+  | { sonuc: "yakalandi"; testler: string[]; sayilmayan?: string[] }
+  | { sonuc: "kacti" }
+  | { sonuc: "gecersiz"; neden: string };
 
 /**
  * Web: demo uygulamada ölçülen gerçek matris (2026-11-12; `demo-app/README.md` "Ekilmiş hatalar"):
  * yakalanan 8/9, kaçan yalnız `kampanya_tek_bedava` (K9: el yazımı testler yalnız 6–7 adeti dener; hata 12
- * adet ve üstünde görünür). Kıran testlerin hepsi el yazısı suite'ten.
+ * adet ve üstünde görünür). Kıran testlerin hepsi el yazısı suite'ten; assertion kırmızısı sayıları
+ * 3, 2, 1, 1, 4, 5, 5, 7. Locator / zaman aşımıyla düşen testler sayılmaz: `min_siparis_haric` 1,
+ * `min_siparis_1000` 2, `kampanya_urunu_p002` 1.
  */
 const WEB: Record<string, MockAdimSonucu> = {
   kampanya_bedava_yok: { sonuc: "yakalandi", testler: [T_KAMPANYA, T_SIPARIS, T_PO_BEDAVA] },
   kampanya_tek_bedava: { sonuc: "kacti" },
   kampanya_cift_indirim: { sonuc: "yakalandi", testler: [T_KAMPANYA, T_SIPARIS] },
-  min_siparis_haric: { sonuc: "yakalandi", testler: [T_MIN_ULAS, T_PO_GECMIS] },
+  min_siparis_haric: { sonuc: "yakalandi", testler: [T_MIN_ULAS], sayilmayan: [T_PO_GECMIS] },
   min_siparis_muafiyet_yok: { sonuc: "yakalandi", testler: [T_MUAF] },
   min_siparis_500: { sonuc: "yakalandi", testler: [T_A11Y_SEPET, T_MIN_ALT, T_API_RED, T_PO_MIN] },
-  min_siparis_1000: { sonuc: "yakalandi", testler: [T_A11Y_SEPET, T_MIN_ALT, T_MIN_ULAS, T_API_RED, T_PO_MIN, T_PO_GECMIS, T_LOC_MENU] },
+  min_siparis_1000: { sonuc: "yakalandi", testler: [T_A11Y_SEPET, T_MIN_ALT, T_MIN_ULAS, T_API_RED, T_PO_MIN], sayilmayan: [T_PO_GECMIS, T_LOC_MENU] },
   fiyat_p004_31: { sonuc: "yakalandi", testler: [T_KATALOG, T_MIN_ULAS, T_MOBIL, T_SIPARIS, T_PO_GECMIS] },
-  kampanya_urunu_p002: { sonuc: "yakalandi", testler: [T_A11Y_SEPET, T_KATALOG, T_KAMPANYA, T_KAMPANYASIZ, T_MIN_ALT, T_MUAF, T_SIPARIS, T_PO_BEDAVA] },
+  kampanya_urunu_p002: { sonuc: "yakalandi", testler: [T_A11Y_SEPET, T_KATALOG, T_KAMPANYA, T_KAMPANYASIZ, T_MIN_ALT, T_MUAF, T_PO_BEDAVA], sayilmayan: [T_SIPARIS] },
 };
+
+/** Sayılmayan kırmızılar için adım notu (core `neden`). */
+export const sayilmayanNotu = (testler: readonly string[]) =>
+  `${testler.length} test assertion dışı nedenle kırmızı (locator / zaman aşımı); yakalama sayılmadı: ${testler.join(", ")}`;
 
 /** Platform × hata sonucu. `null`: platformun temel koşusu koşulamadı (cihaz kapalı) → tüm adımlar geçersiz. */
 export const MOCK_SONUCLAR: Record<Platform, Record<string, MockAdimSonucu> | null> = {
@@ -150,7 +163,20 @@ export function adimIskeleti(kosuId: string, platformlar: readonly Platform[], h
   const adimlar: HataKosusuAdimi[] = [];
   const ekle = (platform: Platform, asama: HataKosusuAdimi["asama"], hata_kodu: string | null) => {
     const sira = adimlar.length + 1;
-    adimlar.push({ id: `${kosuId}-a${sira}`, platform, hata_kodu, asama, run_id: null, sonuc: "bekliyor", kiran_testler: [], temelde_kirmizi: [], neden: null, sure_ms: null, sira });
+    adimlar.push({
+      id: `${kosuId}-a${sira}`,
+      platform,
+      hata_kodu,
+      hata_adi: hata_kodu ? (HATA_KATALOGU.find((h) => h.kod === hata_kodu)?.ad ?? null) : null,
+      asama,
+      run_id: null,
+      sonuc: "bekliyor",
+      kiran_testler: [],
+      temelde_kirmizi: [],
+      neden: null,
+      sure_ms: null,
+      sira,
+    });
   };
   for (const p of platformlar) {
     ekle(p, "temel", null);
@@ -194,7 +220,10 @@ export function adimiSonuclandir(kosuId: string, a: HataKosusuAdimi, temelYesil:
     return;
   }
   kosu();
-  if (s.sonuc === "yakalandi") a.kiran_testler = s.testler.map((test) => ({ test, kaynak: AI_TESTLERI.includes(test) ? "ai" : "el" }));
+  if (s.sonuc === "yakalandi") {
+    a.kiran_testler = s.testler.map((test) => ({ test, kaynak: AI_TESTLERI.includes(test) ? "ai" : "el" }));
+    if (s.sayilmayan?.length) a.neden = sayilmayanNotu(s.sayilmayan);
+  }
 }
 
 /** Örnek veride bitmiş koşu: web + android, dokuz hata (web 8/9; android 7/8 + 1 geçersiz). */

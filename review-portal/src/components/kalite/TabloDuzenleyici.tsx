@@ -93,7 +93,8 @@ export function TabloDuzenleyici({
   tablo: KararTablosu;
   /** Kaydedilmemiş içerik (ör. "Örnekle dene" onu değerlendirir). */
   degisti?: (icerik: KararTablosuIcerik) => void;
-  kriterler: { ref: string; metin: string }[];
+  /** `null`: gereksinim okunamadı (kabul kriterleri bilinmiyor; düzenleme kapalı). */
+  kriterler: { ref: string; metin: string }[] | null;
   kaydedildi: (t: KararTablosu) => void;
   vazgec: () => void;
   /** 409: liste yeniden yüklenir (güncel hash ve içerik gelir). */
@@ -266,9 +267,14 @@ export function TabloDuzenleyici({
 
       <fieldset className="kt-grup">
         <legend>Satırlar</legend>
-        <p className="soluk kucuk">
-          Koşulu ilk sağlayan satır geçerlidir. İfade dili: <span className="mono">+ - * / // % == != &lt; &lt;= &gt; &gt;= ve veya degil</span>,{" "}
-          <span className="mono">min max yuvarla taban tavan eger</span>, <span className="mono">dogru</span> / <span className="mono">yanlis</span>.
+        <p className="soluk kucuk" id={`${id}-ifade-ozet`}>
+          Koşulu ilk sağlayan satır geçerlidir. İfade dili: <span className="mono kt-ifade">+ - * / // % == != &lt; &lt;= &gt; &gt;= ve veya degil</span>,{" "}
+          <span className="mono kt-ifade">min max yuvarla taban tavan eger</span>, <span className="mono kt-ifade">dogru</span> /{" "}
+          <span className="mono kt-ifade">yanlis</span>.
+        </p>
+        <IfadeDiliYardimi id={`${id}-ifade-yardim`} girdiler={taslak.girdiler.map((g) => g.ad.trim()).filter(Boolean)} />
+        <p className="soluk kucuk" id={`${id}-satir-kimligi`}>
+          Satır kimliği (R1, R2 …) otomatik verilir, elle düzenlenmez; kimlik hatası görürseniz satırı kaldırıp yeniden ekleyin.
         </p>
         {satirlarBag.mesaj}
         {taslak.satirlar.length === 0 && <p className="soluk kucuk">Henüz satır yok.</p>}
@@ -277,7 +283,7 @@ export function TabloDuzenleyici({
           bag(`satirlar[${i}].id`);
           const idHata = hatalar?.alan[`satirlar[${i}].id`];
           return (
-            <div key={s.anahtar} className="kt-satir" role="group" aria-label={`Satır ${s.id}`} data-testid="kt-satir">
+            <div key={s.anahtar} className="kt-satir" role="group" aria-label={`Satır ${s.id}`} aria-describedby={`${id}-satir-kimligi`} data-testid="kt-satir">
               <div className="kt-satir-bas">
                 <strong className="mono kucuk">{s.id}</strong>
                 <SiraDugmeleri
@@ -301,7 +307,8 @@ export function TabloDuzenleyici({
                   maxLength={300}
                   spellCheck={false}
                   autoComplete="off"
-                  {...kosul.oz}
+                  aria-describedby={[kosul.oz["aria-describedby"], `${id}-ifade-ozet`].filter(Boolean).join(" ")}
+                  {...("aria-invalid" in kosul.oz ? { "aria-invalid": true } : {})}
                   onChange={(e) => setTaslak({ ...taslak, satirlar: taslak.satirlar.map((x, j) => (j === i ? { ...x, kosul: e.target.value } : x)) })}
                 />
                 {kosul.mesaj}
@@ -363,5 +370,47 @@ export function TabloDuzenleyici({
         </button>
       </div>
     </form>
+  );
+}
+
+/** Açılır "İfade dili" yardımı: örnekler (bu tablodan), girdi adları, sabitlerin yazımı (onyüz 4). */
+function IfadeDiliYardimi({ id, girdiler }: { id: string; girdiler: string[] }) {
+  return (
+    <details className="kt-ifade-yardim" id={id} data-testid="ifade-yardim">
+      <summary className="kucuk">İfade dili</summary>
+      <ul className="duz-liste kucuk">
+        <li>
+          Karşılaştırma: <code className="kt-ifade">adet &gt;= 7</code> (7 dahil), <code className="kt-ifade">sepet_tutari &lt; 750</code> (750 hariç).
+        </li>
+        <li>
+          Birleştirme: <code className="kt-ifade">kampanyali_sepet ve sepet_tutari &lt; 750</code>, <code className="kt-ifade">degil kampanyali_sepet</code>.
+        </li>
+        <li>
+          Tam bölme: <code className="kt-ifade">adet // 7</code> (14 // 7 = 2, 13 // 7 = 1); kalan: <code className="kt-ifade">adet % 7</code>.
+        </li>
+        <li>
+          Yuvarlama: <code className="kt-ifade">yuvarla(ara_toplam / adet, 2)</code> (2 haneye, yarım yukarı); <code className="kt-ifade">taban(x)</code> aşağı,{" "}
+          <code className="kt-ifade">tavan(x)</code> yukarı.
+        </li>
+        <li>
+          Koşullu değer: <code className="kt-ifade">eger(adet &gt;= 7, 1, 0)</code>.
+        </li>
+        <li>
+          Sabitler: ondalık ayırıcı nokta (<code className="kt-ifade">25.50</code>, virgül değil), metin çift tırnakla (<code className="kt-ifade">&quot;P-001&quot;</code>),
+          mantıksal <code className="kt-ifade">dogru</code> / <code className="kt-ifade">yanlis</code>. Son satırda <code className="kt-ifade">dogru</code> “diğer tüm
+          durumlar” demektir.
+        </li>
+      </ul>
+      {girdiler.length > 0 && (
+        <p className="kucuk">
+          Bu tablonun girdi adları:{" "}
+          {girdiler.map((g) => (
+            <code key={g} className="kt-ifade kt-ad-cip">
+              {g}
+            </code>
+          ))}
+        </p>
+      )}
+    </details>
   );
 }

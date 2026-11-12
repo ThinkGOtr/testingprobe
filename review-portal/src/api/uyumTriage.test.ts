@@ -132,6 +132,29 @@ describe("triage dönüştürücüsü (core serialize şekli)", () => {
   });
 });
 
+describe("012 R3: sinyal başlığı", () => {
+  it("`baslik` varsa alan eklenir, `aciklama` ayrıntı kalır; yoksa alan yok (eski biçim)", () => {
+    const h = hataAnaliziUyarla({
+      ...TRIAGE_LOCATOR,
+      eslesen_sinyaller: [
+        { kod: "karar_tablosu_uyumlu", baslik: "Uygulama onaylı kurala aykırı (T1 · R2: adet 6 → bedava_adet 0)", aciklama: "Test 0, gerçekleşen 1, tablo 0", kaynak: "karar_tablosu" },
+        { kod: "karar_tablosu_tablo_suphesi", baslik: "Tablo da yanlış olabilir", kaynak: "karar_tablosu" },
+        { kod: "saglik_ok", aciklama: "Sağlık kontrolü başarılı" },
+      ],
+    });
+    expect(h.eslesen_sinyaller[0]).toEqual({
+      kod: "karar_tablosu_uyumlu",
+      baslik: "Uygulama onaylı kurala aykırı (T1 · R2: adet 6 → bedava_adet 0)",
+      aciklama: "Test 0, gerçekleşen 1, tablo 0",
+      kaynak: "karar_tablosu",
+      kanit: null,
+    });
+    // Açıklamasız sinyalde başlık açıklamanın yerini tutar (boş satır uydurulmaz).
+    expect(h.eslesen_sinyaller[1]).toMatchObject({ baslik: "Tablo da yanlış olabilir", aciklama: "Tablo da yanlış olabilir" });
+    expect("baslik" in h.eslesen_sinyaller[2]).toBe(false);
+  });
+});
+
 describe("onarım dönüştürücüsü (repair views.onarim şekli)", () => {
   const ONARIM = {
     tur: "locator_fix",

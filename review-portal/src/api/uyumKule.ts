@@ -54,9 +54,23 @@ function elYazisiUyarla(x: unknown): { el_yazisi?: ElYazisiYakalama } {
   return { el_yazisi: { oran: oran(x.oran), yakalanan: sayi(x.yakalanan), kacan: sayi(x.kacan) } };
 }
 
+/** R4 `tum_testler` (AI + el yazısı); nesne değilse alan eklenmez. */
+function tumTestlerUyarla(x: unknown): { tum_testler?: ElYazisiYakalama } {
+  const e = elYazisiUyarla(x).el_yazisi;
+  return e ? { tum_testler: e } : {};
+}
+
 function kapsamUyarla(x: unknown): { kapsam?: HataKosusuKapsami } {
   if (!nesneMi(x)) return {};
-  return { kapsam: { kosulan_hata: sayi(x.kosulan_hata), katalog: sayi(x.katalog), platformlar: platformlar(x.platformlar) } };
+  return {
+    kapsam: {
+      kosulan_hata: sayi(x.kosulan_hata),
+      katalog: sayi(x.katalog),
+      platformlar: platformlar(x.platformlar),
+      ...(typeof x.tam_katalog === "boolean" ? { tam_katalog: x.tam_katalog } : {}),
+      ...(typeof x.gecerli_adim === "number" ? { gecerli_adim: sayi(x.gecerli_adim) } : {}),
+    },
+  };
 }
 
 const adimSonucu = (x: unknown): HataAdimSonucu | null => (typeof x === "string" && SONUCLAR.has(x) ? (x as HataAdimSonucu) : null);
@@ -71,6 +85,9 @@ function platformOzetiUyarla(x: Ham): HataYakalamaPlatformu | null {
     kacan: sayi(x.kacan),
     gecersiz: sayi(x.gecersiz),
     ...elYazisiUyarla(x.el_yazisi),
+    ...tumTestlerUyarla(x.tum_testler),
+    ...(typeof x.uretilen_test === "number" ? { uretilen_test: sayi(x.uretilen_test) } : {}),
+    ...(typeof x.el_test === "number" ? { el_test: sayi(x.el_test) } : {}),
     // Koşu özetinin ek alanları (core `ozet_hesapla`); Kule ölçüsü bunları vermez → alan eklenmez.
     ...("bekleyen" in x ? { bekleyen: sayi(x.bekleyen) } : {}),
     ...("temel" in x ? { temel: adimSonucu(x.temel) } : {}),
@@ -98,6 +115,7 @@ function ozetUyarla(x: unknown): HataKosusuOzeti | null {
     platformlar: dizi(x.platformlar).map(platformOzetiUyarla).filter(dolu),
     kacanlar: dizi(x.kacanlar).map(kacanUyarla).filter(dolu),
     ...elYazisiUyarla(x.el_yazisi),
+    ...tumTestlerUyarla(x.tum_testler),
     ...kapsamUyarla(x.kapsam),
   };
 }
@@ -190,6 +208,7 @@ export function hataKosusuUyarla(x: Ham): HataKosusu {
     baslama: metinYaDaNull(x.baslama),
     bitis: metinYaDaNull(x.bitis),
     olusturma: metin(ilk(x, "olusturma", "baslama")),
+    ...(typeof x.iptal_istendi === "boolean" ? { iptal_istendi: x.iptal_istendi } : {}),
   };
 }
 
@@ -249,6 +268,7 @@ function hataYakalamaUyarla(x: Ham): KuleHataYakalama | null {
     platformlar: dizi(x.platformlar).map(platformOzetiUyarla).filter(dolu),
     kacanlar: dizi(x.kacanlar).map(kacanUyarla).filter(dolu),
     ...elYazisiUyarla(x.el_yazisi),
+    ...tumTestlerUyarla(x.tum_testler),
     ...kapsamUyarla(x.kapsam),
   };
 }

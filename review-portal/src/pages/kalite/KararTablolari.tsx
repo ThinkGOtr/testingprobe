@@ -2,7 +2,7 @@
 // gereksinimin karar tabloları ve metamorfik ilişkileri, AI taslağı üretimi, elle boş tablo, düzenleme,
 // "örnekle dene", PO onay akışı ve "Ek case türet".
 import { useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
 import { api } from "../../api/client";
 import { useOlay } from "../../api/events";
 import type { KararTablolariYaniti, KararTablosu, MetamorfikIliski } from "../../api/types";
@@ -16,6 +16,7 @@ import { useGeciktirilmis, useIslem, useVeri } from "../../hooks";
 /** AI taslağı yalnız PO onaylı (ya da sonrasındaki) gereksinimden üretilir (ANALIZ §4.1). */
 const TASLAK_DURUMLARI = new Set(["po_approved", "generating", "cases_ready", "done"]);
 export const TASLAK_NEDENI = "Karar tablosu için gereksinim PO onaylı olmalı.";
+export const GEREKSINIM_OKUNAMADI = "Gereksinim okunamadı; durum ve kabul kriterleri bilinmeden tablo düzenlenemez.";
 /** Taslak işi bu süre içinde sonuç olayı vermezse bekleme göstergesi uyarıya döner. */
 export const TASLAK_BEKLEME_MS = 60000;
 const TASLAK_SUREN = new Set(["started", "running", "queued"]);
@@ -61,6 +62,17 @@ export function KararTablolari() {
 
   const g = gereksinim.veri;
   const y = veri.veri;
+  // `#tablo-<id>` / `#ek-case-turet` (Kule, case review bağlantıları): liste yüklenince hedefe kaydır.
+  const { hash } = useLocation();
+  const kaydirilan = useRef<string | null>(null);
+  useEffect(() => {
+    if (!hash || !y || kaydirilan.current === hash) return;
+    const el = document.getElementById(decodeURIComponent(hash.slice(1)));
+    if (!el) return;
+    kaydirilan.current = hash;
+    el.scrollIntoView?.({ block: "start" });
+    if (el.tabIndex >= 0 || el.hasAttribute("tabindex")) el.focus();
+  }, [hash, y]);
   const sonTaslak = y?.son_taslak ?? null;
   const taslakSuruyor = sonTaslak ? TASLAK_SUREN.has(sonTaslak.durum) : false;
   // Sayfa açıldığında süren iş varsa (başka sekmeden başlatılmış) gösterge açılır; liste işin bittiğini söylerse kapanır.
@@ -68,12 +80,13 @@ export function KararTablolari() {
     if (taslakSuruyor) setUretiliyor((u) => (u === "yok" ? "suruyor" : u));
     else if (sonTaslak) setUretiliyor("yok");
   }, [taslakSuruyor, sonTaslak]);
-  const kriterler = g?.kabul_kriterleri ?? [];
+  const kriterler = g ? g.kabul_kriterleri : null;
   const etkinTablolar = y?.tablolar.filter((t) => t.durum !== "superseded") ?? [];
   const eskiTablolar = y?.tablolar.filter((t) => t.durum === "superseded") ?? [];
   const etkinIliskiler = y?.iliskiler.filter((r) => r.durum !== "superseded") ?? [];
   const eskiIliskiler = y?.iliskiler.filter((r) => r.durum === "superseded") ?? [];
-  const taslakNedeni = g && !TASLAK_DURUMLARI.has(g.durum) ? TASLAK_NEDENI : undefined;
+  // Gereksinim okunamadıysa analist eylemleri açılmaz (durum ve kabul kriterleri bilinmiyor).
+  const taslakNedeni = gereksinim.hata && !g ? GEREKSINIM_OKUNAMADI : g && !TASLAK_DURUMLARI.has(g.durum) ? TASLAK_NEDENI : !g ? "Gereksinim yükleniyor." : undefined;
 
   const listeGuncelle = (f: (y: KararTablolariYaniti) => KararTablolariYaniti) => {
     if (veri.veri) veri.setVeri(f(veri.veri));
@@ -107,6 +120,7 @@ export function KararTablolari() {
         Boş tablo ekle
       </IslemDugmesi>
       <IslemDugmesi
+        id="kt-ai-taslak"
         roller={["analyst"]}
         calisiyor={uretIslem.calisiyor || uretiliyor === "suruyor"}
         disabled={!!taslakNedeni}
@@ -142,10 +156,22 @@ export function KararTablolari() {
             <IslemDugmesi roller={["analyst"]} kucuk calisiyor={uretIslem.calisiyor} onClick={() => void taslakUret()}>
               Evet, yeni taslak üret
             </IslemDugmesi>
-            <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={() => setOnay(false)}>
+            <button
+              type="button"
+              className="dugme dugme-hayalet dugme-kucuk"
+              onClick={() => {
+                setOnay(false);
+                requestAnimationFrame(() => document.getElementById("kt-ai-taslak")?.focus());
+              }}
+            >
               Vazgeç
             </button>
           </div>
+        </div>
+      )}
+      {gereksinim.hata && !g && (
+        <div data-testid="gereksinim-hata">
+          <HataKutusu hata={`Gereksinim okunamadı: ${gereksinim.hata}`} yenile={() => void gereksinim.yenile()} kaynak={gereksinim.hataNesnesi} />
         </div>
       )}
       {uretIslem.hata && <HataKutusu hata={uretIslem.hata} kaynak={uretIslem.hataNesnesi} />}
@@ -168,7 +194,13 @@ export function KararTablolari() {
         {uretiliyor === "yok" && sonTaslak?.hata && (
           <Uyari ton="hata" baslik="Son AI taslağı üretilemedi">
             {sonTaslak.hata}
+            {sonTaslak.hata_kodu && <span className="mono soluk kucuk"> · {sonTaslak.hata_kodu}</span>}
           </Uyari>
+        )}
+        {uretiliyor === "yok" && !!sonTaslak?.sonuc && Array.isArray(sonTaslak.sonuc.korunan) && sonTaslak.sonuc.korunan.length > 0 && (
+          <p className="soluk kucuk" data-testid="taslak-korunan">
+            Son AI taslağı {sonTaslak.sonuc.korunan.length} mevcut kaydı korudu (onaylı ya da elle eklenmiş kayıtların yerini almadı).
+          </p>
         )}
         {uretiliyor === "yok" && !!sonTaslak?.sonuc?.atilan.length && (
           <div data-testid="taslak-atilan">

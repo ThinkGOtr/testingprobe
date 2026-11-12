@@ -76,10 +76,14 @@ describe("katalog ve örnek koşu", () => {
     // (web 8/9, yalnız kampanya_tek_bedava kaçar; android 7/8 + 1 geçersiz).
     expect(k.ozet).toMatchObject({ oran: null, yakalanan: 0, kacan: 0, gecersiz: 1, bekleyen: 0 });
     expect(k.ozet?.el_yazisi).toEqual({ oran: 15 / 17, yakalanan: 15, kacan: 2 });
-    expect(k.ozet?.kapsam).toEqual({ kosulan_hata: 9, katalog: 9, platformlar: ["web", "android"] });
+    // R4: tam_katalog + geçerli adım sayısı (web 9 + android 8).
+    expect(k.ozet?.kapsam).toEqual({ kosulan_hata: 9, katalog: 9, platformlar: ["web", "android"], tam_katalog: true, gecerli_adim: 17 });
+    expect(k.ozet?.tum_testler).toEqual({ oran: 15 / 17, yakalanan: 15, kacan: 2 });
+    // R4: platform başına suite sayıları (üretilmiş test yok; 29 el yazısı) ve tüm testler.
+    const ortak = { oran: null, yakalanan: 0, kacan: 0, bekleyen: 0, temel: "yesil", kapanis: "yesil", uretilen_test: 0, el_test: 29 };
     expect(k.ozet?.platformlar).toEqual([
-      { platform: "web", oran: null, yakalanan: 0, kacan: 0, gecersiz: 0, el_yazisi: { oran: 8 / 9, yakalanan: 8, kacan: 1 }, bekleyen: 0, temel: "yesil", kapanis: "yesil" },
-      { platform: "android", oran: null, yakalanan: 0, kacan: 0, gecersiz: 1, el_yazisi: { oran: 7 / 8, yakalanan: 7, kacan: 1 }, bekleyen: 0, temel: "yesil", kapanis: "yesil" },
+      { platform: "web", ...ortak, gecersiz: 0, el_yazisi: { oran: 8 / 9, yakalanan: 8, kacan: 1 }, tum_testler: { oran: 8 / 9, yakalanan: 8, kacan: 1 } },
+      { platform: "android", ...ortak, gecersiz: 1, el_yazisi: { oran: 7 / 8, yakalanan: 7, kacan: 1 }, tum_testler: { oran: 7 / 8, yakalanan: 7, kacan: 1 } },
     ]);
     expect(k.ozet?.kacanlar).toEqual([
       { hata_kodu: "kampanya_tek_bedava", ad: "Kampanyada en çok 1 bedava", platform: "web" },
@@ -105,19 +109,24 @@ describe("katalog ve örnek koşu", () => {
     expect(d.adimlar.every((a) => a.kiran_testler.every((t) => t.kaynak === "el"))).toBe(true);
     // Temel koşuda kırmızı test yok (alan var, boş).
     expect(d.adimlar.every((a) => Array.isArray(a.temelde_kirmizi) && a.temelde_kirmizi.length === 0)).toBe(true);
-    // README "Ekilmiş hatalar" matrisindeki kırmızı test sayıları.
+    // Ölçülen gerçek matris (R4): assertion kırmızısı sayıları 3, 2, 1, 1, 4, 5, 5, 7; locator / zaman aşımıyla
+    // düşenler sayılmaz ve adım notunda yazılır (haric 1, 1000 2, p002 1).
     const sayilar = Object.fromEntries(d.adimlar.filter((a) => a.platform === "web" && a.asama === "hata").map((a) => [a.hata_kodu, a.kiran_testler.length]));
     expect(sayilar).toEqual({
       kampanya_bedava_yok: 3,
       kampanya_tek_bedava: 0,
       kampanya_cift_indirim: 2,
-      min_siparis_haric: 2,
+      min_siparis_haric: 1,
       min_siparis_muafiyet_yok: 1,
       min_siparis_500: 4,
-      min_siparis_1000: 7,
+      min_siparis_1000: 5,
       fiyat_p004_31: 5,
-      kampanya_urunu_p002: 8,
+      kampanya_urunu_p002: 7,
     });
+    const notlar = Object.fromEntries(
+      d.adimlar.filter((a) => a.platform === "web" && a.asama === "hata" && a.neden).map((a) => [a.hata_kodu, Number(/^(\d+) test/.exec(a.neden ?? "")?.[1])]),
+    );
+    expect(notlar).toEqual({ min_siparis_haric: 1, min_siparis_1000: 2, kampanya_urunu_p002: 1 });
     // core `_adim_sozluk`: adımda katalog adı.
     expect(d.adimlar.find((a) => a.hata_kodu === "fiyat_p004_31")?.hata_adi).toBe("P-004 fiyatı 31");
     expect(d.adimlar[0].hata_adi).toBeNull();
@@ -306,15 +315,18 @@ describe("başlatma, ilerleme, iptal", () => {
       yakalanan: 0,
       kacan: 0,
       el_yazisi: { oran: null, yakalanan: 0, kacan: 0 },
+      tum_testler: { oran: null, yakalanan: 0, kacan: 0 },
       gecersiz: 1,
       bekleyen: 0,
+      uretilen_test: 0,
+      el_test: 29,
       temel: "gecersiz",
       kapanis: "gecersiz",
     });
     expect(d.uyarilar.join(" ")).toMatch(/temel koşu yeşil değil/);
   });
 
-  it("iptal: koşu cancelled olur, kalan adımlar bekliyor kalır, zamanlayıcı temizlenir; biten koşu iptal edilemez (409)", async () => {
+  it("iptal (R4): iptal_istendi, süren adım bitince cancelled; kalan adımlar bekliyor, zamanlayıcı temizlenir; biten koşu iptal edilemez (409)", async () => {
     vi.useFakeTimers();
     await oturumAc("muhendis");
     kuleAyar.adimMs = 1000;
@@ -322,12 +334,18 @@ describe("başlatma, ilerleme, iptal", () => {
     await vi.advanceTimersByTimeAsync(3000); // running + temel + ilk hata
     expect(kuleMockZamanlayiciVar()).toBe(true);
     await hataKosusuApi.iptal("hk-2");
+    // Koşu hemen durmaz: durum running, iptal_istendi; süren adım bitince durur.
+    const ara = await hataKosusuApi.detay("hk-2");
+    expect(ara).toMatchObject({ durum: "running", iptal_istendi: true });
+    // İkinci iptal isteği aynı yanıtı verir (yeni uyarı eklenmez).
+    await hataKosusuApi.iptal("hk-2");
+    await vi.advanceTimersByTimeAsync(60_000);
     expect(kuleMockZamanlayiciVar()).toBe(false);
     expect(vi.getTimerCount()).toBe(0);
-    await vi.advanceTimersByTimeAsync(60_000);
     const d = await hataKosusuApi.detay("hk-2");
     expect(d.durum).toBe("cancelled");
-    expect(d.adimlar.filter((a) => a.sonuc !== "bekliyor")).toHaveLength(2);
+    expect(d.adimlar.filter((a) => a.sonuc !== "bekliyor")).toHaveLength(3);
+    expect(d.uyarilar.filter((u) => u.includes("iptal"))).toHaveLength(1);
     // İptal edilen koşu Kule ölçüsüne girmez (son bitmiş koşu hâlâ hk-1).
     expect((await api.kontrolKulesi()).hata_yakalama?.son_kosu.id).toBe("hk-1");
     // core: bitmiş koşu → 409 `cakisma`, "Koşu iptal edilemez (durum: …)".
@@ -337,11 +355,16 @@ describe("başlatma, ilerleme, iptal", () => {
     expect((await hataBekle(hataKosusuApi.iptal("yok"))).status).toBe(404);
   });
 
-  it("core gövdeleri: POST /fault-runs ve /cancel yalnız `{id, durum}` döner", async () => {
+  it("core gövdeleri: POST /fault-runs `{id, durum}`, /cancel `{id, durum, iptal_istendi}`; geçersiz gövde 422 gecersiz_istek", async () => {
     await oturumAc("muhendis");
     kuleAyar.adimMs = 3_600_000;
     expect(await mockIstek("POST", "/fault-runs", new URLSearchParams(), { platformlar: ["web"] })).toEqual({ id: "hk-2", durum: "queued" });
-    expect(await mockIstek("POST", "/fault-runs/hk-2/cancel", new URLSearchParams(), undefined)).toEqual({ id: "hk-2", durum: "cancelled" });
+    expect(await mockIstek("POST", "/fault-runs/hk-2/cancel", new URLSearchParams(), undefined)).toEqual({ id: "hk-2", durum: "queued", iptal_istendi: true });
+    // Sırada bekleyen koşu da bir sonraki adımda durur.
+    kuleMockIlerlet();
+    expect((await hataKosusuApi.detay("hk-2")).durum).toBe("cancelled");
+    expect(await hataBekle(hataKosusuApi.baslat({ platformlar: [] }))).toMatchObject({ status: 422, kod: "gecersiz_istek" });
+    expect(await hataBekle(hataKosusuApi.baslat({ platformlar: ["web"], hatalar: ["yok_boyle"] }))).toMatchObject({ status: 422, kod: "gecersiz_istek" });
   });
 
   it("mockSifirla süren koşunun zamanlayıcısını temizler (testler arasında sızmaz)", async () => {

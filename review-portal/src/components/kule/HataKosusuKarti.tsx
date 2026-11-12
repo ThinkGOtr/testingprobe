@@ -8,7 +8,7 @@ import { Link } from "react-router-dom";
 import { api, HATA_KOSUSU_SURUYOR, hataKosusuApi } from "../../api/client";
 import { useOlay } from "../../api/events";
 import { ApiError, hataMesaji } from "../../api/http";
-import type { HataKatalogOgesi, HataKosusu, HataKosusuAdimi, HataKosusuDetay, HataTuru, KiranTest, Rol } from "../../api/types";
+import type { HataKatalogOgesi, HataKosusu, HataKosusuAdimi, HataKosusuDetay, HataKosusuKapsami, HataTuru, KiranTest, Rol } from "../../api/types";
 import { hataKosusuSuruyorMu, kaynakBilgisiVar, kaynakOrani, yakalamaOrani } from "../../api/uyumKule";
 import { useOturum } from "../../auth";
 import { useGeciktirilmis, useVeri } from "../../hooks";
@@ -429,7 +429,8 @@ function Ilerlemesi({
   const basladi = kosu.baslama ? new Date(kosu.baslama).getTime() : NaN;
   const gecenMs = Number.isFinite(basladi) ? Math.max(0, simdi - basladi) : null;
   const kalanMs = kosu.durum === "running" ? kalanTahmini(adimlar, gecenMs) : null;
-  const durumAdi = kosu.durum === "queued" ? "Koşu sırada" : "Koşu sürüyor";
+  const iptalIstendi = kosu.iptal_istendi === true;
+  const durumAdi = iptalIstendi ? "İptal istendi, adım bitince durur" : kosu.durum === "queued" ? "Koşu sırada" : "Koşu sürüyor";
   const adimMetni = simdiki ? `${PLATFORM_ETIKETI[simdiki.platform]} · ${adimAdi(simdiki, katalog)}` : null;
   const sayacMetni = adimlar.length > 0 ? `adım ${Math.min(biten + 1, adimlar.length)} / ${adimlar.length}` : null;
   return (
@@ -450,7 +451,15 @@ function Ilerlemesi({
           )}
         </div>
         <div className="satir-ogeler">
-          <IslemDugmesi roller={HATA_KOSUSU_ROLLERI} tur="ikincil" kucuk calisiyor={calisiyor} onClick={iptal}>
+          <IslemDugmesi
+            roller={HATA_KOSUSU_ROLLERI}
+            tur="ikincil"
+            kucuk
+            calisiyor={calisiyor}
+            disabled={iptalIstendi}
+            title={iptalIstendi ? "İptal istendi; süren adım bitince koşu durur." : undefined}
+            onClick={iptal}
+          >
             İptal et
           </IslemDugmesi>
         </div>
@@ -502,6 +511,12 @@ function Hucre({ a, ad, platform }: { a: HataKosusuAdimi | undefined; ad: string
       </div>
       {/* Neden yalnız ipucunda değil, görünür metin (dokunmatik ve klavye kullanıcıları için). */}
       {a.neden && (a.sonuc === "gecersiz" || a.sonuc === "kirmizi") && <div className="hk-neden kucuk">Neden: {a.neden}</div>}
+      {/* R4: yakalanan adımda core'un notu (ör. assertion dışı nedenle düşen, sayılmayan testler). */}
+      {a.neden && a.sonuc === "yakalandi" && (
+        <div className="hk-neden kucuk" data-testid="hk-not">
+          Not: {a.neden}
+        </div>
+      )}
       {a.sonuc === "yakalandi" &&
         (a.kiran_testler.length > 0 ? (
           <details className="hk-testler">
@@ -669,7 +684,11 @@ function Sonuc({
   const elGenel = kaynakIcin(kosu.adimlar, "el");
 
   // Kapsam satırı: çekirdeğin `kapsam`'ı; yoksa koşunun hata listesi ve okunabildiyse katalog boyu.
-  const kapsam = kosu.ozet?.kapsam ?? { kosulan_hata: kosu.hatalar.length, katalog: katalog.size, platformlar: kosu.platformlar };
+  const kapsam: HataKosusuKapsami = kosu.ozet?.kapsam ?? { kosulan_hata: kosu.hatalar.length, katalog: katalog.size, platformlar: kosu.platformlar };
+  // R4: platform başına suite'teki üretilmiş / el yazısı test sayıları (core verirse).
+  const testSayilari = (kosu.ozet?.platformlar ?? [])
+    .filter((p) => p.uretilen_test !== undefined || p.el_test !== undefined)
+    .map((p) => `${PLATFORM_ETIKETI[p.platform]} ${p.uretilen_test ?? "?"} üretilmiş (AI) + ${p.el_test ?? "?"} el yazısı test`);
   // K12: temelde kırmızı olduğu için sayılmayan testler (platform başına). Alan hiç yoksa satır çizilmez.
   const temeldeBilgi = kosu.adimlar.some((a) => a.temelde_kirmizi !== undefined);
   const temeldeKirmizi = kosu.platformlar
@@ -708,8 +727,16 @@ function Sonuc({
       <p className="kucuk hk-kapsam" data-testid="hk-kapsam">
         Kapsam: {kapsam.katalog > 0 ? `${kapsam.kosulan_hata}/${kapsam.katalog} katalog hatası` : `${kapsam.kosulan_hata} hata`} ·{" "}
         {kapsam.platformlar.map((p) => PLATFORM_ETIKETI[p]).join(", ")}
-        {kapsam.katalog > 0 && kapsam.kosulan_hata < kapsam.katalog && " · kısmi seçim: Kontrol Kulesi oranına girmez"}
+        {(kapsam.tam_katalog === false || (kapsam.tam_katalog === undefined && kapsam.katalog > 0 && kapsam.kosulan_hata < kapsam.katalog)) &&
+          " · kısmi seçim: Kontrol Kulesi oranına girmez"}
       </p>
+      {(kapsam.gecerli_adim !== undefined || testSayilari.length > 0) && (
+        <p className="kucuk hk-kapsam" data-testid="hk-suite-sayilari">
+          {[kapsam.gecerli_adim !== undefined ? `${kapsam.gecerli_adim} geçerli adım (yakalandı + kaçtı)` : "", testSayilari.length ? `Suite: ${testSayilari.join("; ")}` : ""]
+            .filter(Boolean)
+            .join(" · ")}
+        </p>
+      )}
       {kosu.uyarilar.length > 0 && (
         <Uyari ton="uyari">
           <ul className="duz-liste kucuk">
@@ -793,7 +820,10 @@ function Sonuc({
             <tr>
               <th scope="row">{ayrik ? "Tüm testler" : "Yakalama oranı"}</th>
               {kosu.platformlar.map((p) => {
-                const o = yakalamaOrani(pAdim(p));
+                const hesap = yakalamaOrani(pAdim(p));
+                // R4: core'un `tum_testler`'ı varsa o (aynı formül; adımlar okunamadıysa da doğru), yoksa adımlardan.
+                const t = kosu.ozet?.platformlar.find((x) => x.platform === p)?.tum_testler;
+                const o = t && !suruyor ? { ...hesap, ...t } : hesap;
                 const m = oranMetni(o);
                 return (
                   <td key={p} data-testid={`hk-oran-${p}`}>

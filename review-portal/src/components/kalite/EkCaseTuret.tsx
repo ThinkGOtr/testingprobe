@@ -1,8 +1,9 @@
 // 012 Ş7 — "Ek case türet" (ANALIZ §4.5): onaylı ilişki + isteğe bağlı kaynak case'ler →
 // `POST /requirements/{id}/metamorphic-cases` → türetilen (bağlantılı) ve atlanan (nedenli) liste.
-import { useId, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { api } from "../../api/client";
-import type { MetamorfikIliski, TestCase, TuretmeAtlamaSonucu, TuretmeYaniti } from "../../api/types";
+import type { MetamorfikIliski, MetamorfikTuretme, TestCase, TuretmeAtlamaSonucu, TuretmeYaniti } from "../../api/types";
+import { tarih } from "../../lib/format";
 import { useIslem } from "../../hooks";
 import { TURETME_ATLAMA } from "../../lib/etiketler";
 import { AlanHatasi, Cip, IslemDugmesi } from "../ui";
@@ -45,7 +46,7 @@ export function EkCaseTuret({
   }
 
   return (
-    <section className="turet" aria-labelledby={`${id}-baslik`} data-testid="ek-case-turet">
+    <section className="turet" id="ek-case-turet" tabIndex={-1} aria-labelledby={`${id}-baslik`} data-testid="ek-case-turet">
       <h3 id={`${id}-baslik`}>Ek case türet</h3>
       <p className="soluk kucuk">
         Onaylı ilişki, kaynak case'in doğrulanmış değerlerinden yeni girdi ve beklenen değer hesaplar. Türetilen case taslak olarak yazılır; insan onayından ve
@@ -103,7 +104,9 @@ export function EkCaseTuret({
               {sonuc.turetilen.map((t) => (
                 <li key={t.case_id}>
                   <Cip ton="bilgi">Taslak</Cip>
-                  <CaseBaglantisi requirementId={requirementId}>{t.baslik || t.case_id}</CaseBaglantisi>
+                  <CaseBaglantisi requirementId={requirementId} caseId={t.case_id}>
+                    {t.baslik || t.case_id}
+                  </CaseBaglantisi>
                   <span className="soluk kucuk">kaynak: {baslik(t.kaynak_case_id)}</span>
                 </li>
               ))}
@@ -119,13 +122,65 @@ export function EkCaseTuret({
                   <Cip ton={a.sonuc === "zaten_turetildi" ? "notr" : "uyari"}>Atlandı: {TURETME_ATLAMA[a.sonuc as TuretmeAtlamaSonucu] ?? a.sonuc}</Cip>
                   <span>{baslik(a.kaynak_case_id)}</span>
                   {a.neden && <span className="soluk kucuk">— {a.neden}</span>}
-                  {a.case_id && <CaseBaglantisi requirementId={requirementId}>Türetilen case'i aç</CaseBaglantisi>}
+                  {a.case_id && (
+                    <CaseBaglantisi requirementId={requirementId} caseId={a.case_id}>
+                      Türetilen case'i aç
+                    </CaseBaglantisi>
+                  )}
                 </li>
               ))}
             </ul>
           )}
         </div>
       )}
+      <TuretmeGecmisi requirementId={requirementId} baslik={baslik} yenileme={sonuc} />
     </section>
+  );
+}
+
+/** "Türetme geçmişi": açılınca yüklenir (`GET /requirements/{id}/metamorphic-derivations`). */
+function TuretmeGecmisi({ requirementId, baslik, yenileme }: { requirementId: string; baslik: (cid: string) => string; yenileme: unknown }) {
+  const [acik, setAcik] = useState(false);
+  const [liste, setListe] = useState<MetamorfikTuretme[] | null>(null);
+  const [hata, setHata] = useState<string | null>(null);
+  useEffect(() => {
+    if (!acik) return;
+    let iptal = false;
+    setHata(null);
+    api.metamorfikTuretmeler(requirementId).then(
+      (l) => !iptal && setListe(l),
+      (e: unknown) => !iptal && setHata(e instanceof Error ? e.message : "Türetme geçmişi yüklenemedi."),
+    );
+    return () => {
+      iptal = true;
+    };
+  }, [acik, requirementId, yenileme]);
+  return (
+    <details className="turet-gecmis" data-testid="turetme-gecmisi" onToggle={(e) => setAcik((e.currentTarget as HTMLDetailsElement).open)}>
+      <summary className="kucuk">Türetme geçmişi</summary>
+      {hata ? (
+        <AlanHatasi>{hata}</AlanHatasi>
+      ) : !liste ? (
+        acik && <p className="soluk kucuk">Yükleniyor…</p>
+      ) : liste.length === 0 ? (
+        <p className="soluk kucuk">Bu gereksinimde henüz türetme yapılmadı.</p>
+      ) : (
+        <ul className="duz-liste turet-sonuc">
+          {liste.map((t) => (
+            <li key={t.id}>
+              {t.sonuc === "turetildi" ? <Cip ton="bilgi">Türetildi</Cip> : <Cip ton="uyari">Atlandı: {TURETME_ATLAMA[t.sonuc as TuretmeAtlamaSonucu] ?? t.sonuc}</Cip>}
+              <span>{baslik(t.kaynak_case_id)}</span>
+              {t.turetilen_case_id && (
+                <CaseBaglantisi requirementId={requirementId} caseId={t.turetilen_case_id}>
+                  Türetilen case
+                </CaseBaglantisi>
+              )}
+              {t.neden && <span className="soluk kucuk">— {t.neden}</span>}
+              {t.olusturma && <span className="soluk kucuk">{tarih(t.olusturma)}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </details>
   );
 }
