@@ -1,5 +1,6 @@
 // Case kalite (011 P8 review, P9 Agent Probe denetimi) ve yayın engeli metinlerinin saf kuralları:
 // ham istisna sınıfı ayıklama, "Yayınlanamaz: " öneki (K22) ve karar sonrası yönlendirme.
+import { ortamAdiniAyikla } from "../api/http";
 import type { CaseDenetimKaydi } from "../api/types";
 
 /** Core yayın engeli öneki (K22). Core metinleri bu önekle gönderir; portal ikinci kez eklemez. */
@@ -8,7 +9,8 @@ const YAYINLANAMAZ_RE = /^\s*Yayınlanamaz\s*:\s*/i;
 
 /** Engel metnini "Yayınlanamaz: …" biçimine getirir (önek zaten varsa dokunmaz). */
 export function yayinlanamaz(metin: string): string {
-  const t = metin.trim();
+  // D1 `blocked_gate` metinleri ("Denetim kapısı bağlı değil…") ayar adı taşıyabilir: gösterilmez.
+  const t = ortamAdiniAyikla(metin.trim(), "Denetim kapısı yayına izin vermiyor; yöneticinize başvurun.");
   return YAYINLANAMAZ_RE.test(t) ? t : `${YAYINLANAMAZ}${t}`;
 }
 

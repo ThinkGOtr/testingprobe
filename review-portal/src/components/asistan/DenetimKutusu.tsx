@@ -7,11 +7,22 @@ import type { CevapDenetimi, DenetimOzeti } from "../../api/asistan";
 import { DENETIM_KAYNAGI, kategoriEtiketi } from "../../lib/ajanProbe";
 import { Cip } from "../ui";
 
-/** Backend'in uyarı notu öneki (core assistant/denetim.py NOT_ONEKI). */
-export const DENETIM_NOT_ONEKI = "Denetim uyarısı";
+/** Backend'in uyarı notu öneki (core assistant/denetim.py NOT_ONEKI; D4: "İçerik kontrolü uyarısı"). */
+export const DENETIM_NOT_ONEKI = "İçerik kontrolü uyarısı";
+/** Önceki core sürümünün öneki (geriye uyum). */
+const ESKI_NOT_ONEKI = "Denetim uyarısı";
+const NOT_ONEKI_RE = new RegExp(`^(?:${DENETIM_NOT_ONEKI}|${ESKI_NOT_ONEKI}):?\\s*`);
 
 export function denetimNotuMu(n: string): boolean {
-  return n.startsWith(DENETIM_NOT_ONEKI);
+  return n.startsWith(DENETIM_NOT_ONEKI) || n.startsWith(ESKI_NOT_ONEKI);
+}
+
+/** Engel / çalışmıyor kutusunun başlığı: backend `baslik`, yoksa yönüne göre varsayılan (D4 metinleri). */
+export function denetimBasligi(d: CevapDenetimi): string | null {
+  if (d.baslik?.trim()) return d.baslik.trim();
+  if (d.karar === "calismiyor") return "Şu an yanıt veremiyorum";
+  if (d.karar === "engelle") return d.engellenen === "cevap" ? "Bu cevabı gösteremiyorum" : "Bu soruyu yanıtlayamıyorum";
+  return null;
 }
 
 /** Gösterilecek kategoriler: "temiz" yalnız başınaysa anlamlıdır. */
@@ -82,13 +93,23 @@ function Kategoriler({ etiketler }: { etiketler: string[] }) {
  * `notlar`: backend'in "Denetim uyarısı" notları. Verilirse uyarı kutusunun gövdesi bunlardır (CevapKarti
  * aynı notu ayrıca yazmaz); verilmezse kategori etiketleri gösterilir.
  */
-export function DenetimKutusu({ denetim, notlar = [] }: { denetim: CevapDenetimi | null | undefined; notlar?: string[] }) {
+export function DenetimKutusu({
+  denetim,
+  notlar = [],
+  bloklardaAciklama = false,
+}: {
+  denetim: CevapDenetimi | null | undefined;
+  notlar?: string[];
+  /** Cevap blokları açıklamayı zaten taşıyor (D4 engel/çalışmıyor cevabı). */
+  bloklardaAciklama?: boolean;
+}) {
   if (!denetim) return null;
   if (denetim.karar === "calismiyor") {
     return (
       <div className="uyari-kutusu uyari-hata asistan-denetim" role="alert" data-testid="denetim-kutusu">
-        <strong>İçerik kontrolü çalışmıyor</strong>
-        <div>İçerik kontrolü şu an erişilemiyor; güvenlik gereği cevap verilmedi. Biraz sonra yeniden deneyin.</div>
+        <strong>{denetimBasligi(denetim)}</strong>
+        {/* D4: açıklama cevap bloğundaysa (paragraf) kutu tekrar yazmaz; yalnız blok yoksa varsayılan metin. */}
+        {!denetim.aciklama && !bloklardaAciklama && <div>İçerik kontrolü şu an erişilemiyor; güvenlik gereği cevap verilmedi. Biraz sonra yeniden deneyin.</div>}
       </div>
     );
   }
@@ -97,15 +118,15 @@ export function DenetimKutusu({ denetim, notlar = [] }: { denetim: CevapDenetimi
     // Açıklama cevap bloğunda (backend); kutu yalnız başlık, kategori ve ayrıntı taşır.
     return (
       <div className="uyari-kutusu uyari-uyari asistan-denetim" role="note" data-testid="denetim-kutusu">
-        <strong>Bu soruyu yanıtlayamıyorum</strong>
-        <Kategoriler etiketler={anlamliKategoriler(o).map(kategoriEtiketi)} />
+        <strong>{denetimBasligi(denetim)}</strong>
+        <Kategoriler etiketler={denetim.kategori_etiketi ? [denetim.kategori_etiketi] : anlamliKategoriler(o).map(kategoriEtiketi)} />
         <Ayrinti denetim={denetim} />
       </div>
     );
   }
   if (denetim.karar === "uyar") {
     const kat = [...new Set([...anlamliKategoriler(denetim.soru), ...anlamliKategoriler(denetim.cevap)])].map(kategoriEtiketi);
-    const govde = notlar.map((n) => n.replace(new RegExp(`^${DENETIM_NOT_ONEKI}:?\\s*`), "")).filter(Boolean);
+    const govde = notlar.map((n) => n.replace(NOT_ONEKI_RE, "")).filter(Boolean);
     return (
       <div className="uyari-kutusu uyari-uyari asistan-denetim" role="note" data-testid="denetim-kutusu">
         <strong>İçerik kontrolü uyarısı</strong>

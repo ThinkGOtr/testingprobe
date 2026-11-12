@@ -488,10 +488,20 @@ function cevapUret(m: MockMesaj): { cevap: AsistanCevabi; kaynak: AsistanMesaji[
       kaynak: "denetim",
       amac: null,
       cevap: bos({
+        // D4 biçimi: başlık + paragraf blokları; `denetim` gösterim alanlarını taşır.
         cevap_bloklari: [
-          { tur: "paragraf", metin: `${ORNEK} Bu soru içerik kontrolünden geçmedi (Talimat manipülasyonu) ve asistana iletilmedi. Sorunuzu iş akışıyla ilgili olarak yeniden yazabilirsiniz.` },
+          { tur: "baslik", metin: "Bu soruyu yanıtlayamıyorum" },
+          {
+            tur: "paragraf",
+            metin: `${ORNEK} Soru içerik kurallarına takıldı (Talimat manipülasyonu). İş akışıyla ilgili olarak yeniden sorabilirsiniz. Yanlış olduğunu düşünüyorsanız 👎 ile bildirin.`,
+          },
         ],
         denetim: {
+          etiket: "İçerik kontrolü",
+          baslik: "Bu soruyu yanıtlayamıyorum",
+          aciklama: "Soru içerik kurallarına takıldı (Talimat manipülasyonu). İş akışıyla ilgili olarak yeniden sorabilirsiniz. Yanlış olduğunu düşünüyorsanız 👎 ile bildirin.",
+          kategori_etiketi: "Talimat manipülasyonu",
+          kesildi: false,
           karar: "engelle",
           engellenen: "soru",
           soru: { puan: 8, karar: "engelle", kategoriler: ["prompt_injection"], gerekce: "Sistem talimatlarını açıklatma girişimi.", kaynak: "sim" },
@@ -508,7 +518,7 @@ function cevapUret(m: MockMesaj): { cevap: AsistanCevabi; kaynak: AsistanMesaji[
         cevap_bloklari: [{ tur: "paragraf", metin: `${ORNEK} Rakip ürünler hakkında doğrulanmamış karşılaştırma yapmıyorum; kendi ürünümüzün test durumunu anlatabilirim.` }],
         guven: "orta",
         guven_gosterimi: "Genel bilgi",
-        notlar: ["Denetim uyarısı: soru rakip firmaya ilişkin (Rekabete aykırı); cevabı dikkatle değerlendirin."],
+        notlar: ["İçerik kontrolü uyarısı: soru rakip firmaya ilişkin (Rekabete aykırı); cevabı dikkatle değerlendirin."],
         denetim: {
           karar: "uyar",
           engellenen: null,

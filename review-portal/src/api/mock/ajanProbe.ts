@@ -128,6 +128,9 @@ function gorunum(requirementId: string, yenile: boolean): AjanTestiGorunumu {
     engel,
     talep: son ? talepCiktisi(son) : null,
     gecmis: kendi.slice(0, -1).reverse().map(talepCiktisi),
+    // D4: talep sürerken analist refresh ile işletir; sonucu simülatör tamamlar.
+    yenilenebilir: !!aktif,
+    sim_tamamlar: true,
   };
 }
 
@@ -141,7 +144,10 @@ function bagliGereksinimler(kod: string, bul?: GereksinimBulucu): NonNullable<Aj
     });
 }
 
-type GereksinimBulucu = (id: string) => { jira_key: string | null; baslik: string } | undefined;
+type GereksinimBulucu = (id: string) => { jira_key: string | null; baslik: string; durum?: string } | undefined;
+
+/** D4: bu durumlarda ürün bağlanamaz/kaldırılamaz (core 409 `ajan_urunu_baglanamaz`). */
+const BAGLAMA_KAPALI: ReadonlySet<string> = new Set(["generating", "cases_ready", "modeling", "model_ready", "done"]);
 
 export function ajanProbeRotalari(
   rolGerekli: (...roller: Rol[]) => Kullanici,
@@ -185,6 +191,10 @@ export function ajanProbeRotalari(
         const k = rolGerekli("analyst");
         const id = decodeURIComponent(m[1]);
         const kod = (govde as { urun_kodu?: string | null } | null)?.urun_kodu ?? null;
+        const durum = gereksinimBul?.(id)?.durum;
+        if (durum && BAGLAMA_KAPALI.has(durum)) {
+          throw new ApiError(409, "Case akışı başlamış ya da tamamlanmış gereksinimde ajan ürünü bağlantısı değiştirilemez.", { kod: "ajan_urunu_baglanamaz" });
+        }
         const son = talepler.filter((t) => t.requirement_id === id).pop();
         if (son && (son.durum === "queued" || son.durum === "running")) {
           throw new ApiError(409, "Süren bir ajan testi varken ürün bağlantısı değiştirilemez.", { kod: "ajan_urunu_baglanamaz" });

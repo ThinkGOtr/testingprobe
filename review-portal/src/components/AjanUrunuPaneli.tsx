@@ -9,6 +9,7 @@ import type { AjanTestiGorunumu, AjanTestiTalebi } from "../api/types";
 import { useVeri, type VeriDurumu } from "../hooks";
 import { AJAN_TESTI_BITMEDI, AJAN_TESTI_DURUMU, SIMULASYON_ACIKLAMASI } from "../lib/ajanProbe";
 import { tarih } from "../lib/format";
+import { useOturum } from "../auth";
 import { useBildirim } from "./Bildirim";
 import { Cip, DisBaglanti, HataKutusu, IslemDugmesi, Kart, Uyari } from "./ui";
 
@@ -29,14 +30,18 @@ export function useAjanTesti(id: string): VeriDurumu<AjanTestiGorunumu | null> {
       }),
     [id],
   );
-  const aktif = !!v.veri?.talep && AJAN_TESTI_BITMEDI.has(v.veri.talep.durum);
+  const { kullanici } = useOturum();
+  const analist = kullanici?.rol === "analyst";
+  // D4: GET yalnız okur; `yenilenebilir` true iken analist refresh POST'u ile sonucu işletir.
+  // Alan yoksa (eski core) talep bitmeyene kadar yoklanır. Analist olmayan rol yalnız GET ile okur.
+  const veri = v.veri;
+  const aktif = !!veri && (typeof veri.yenilenebilir === "boolean" ? veri.yenilenebilir : !!veri.talep && AJAN_TESTI_BITMEDI.has(veri.talep.durum));
   const { setVeri } = v;
   useEffect(() => {
     if (!aktif) return;
     let iptal = false;
     const t = window.setTimeout(() => {
-      api
-        .ajanTestiYenile(id)
+      (analist ? api.ajanTestiYenile(id) : api.ajanTesti(id))
         .then((g) => {
           if (!iptal) setVeri(g);
         })
@@ -46,7 +51,7 @@ export function useAjanTesti(id: string): VeriDurumu<AjanTestiGorunumu | null> {
       iptal = true;
       window.clearTimeout(t);
     };
-  }, [aktif, id, setVeri, v.veri]);
+  }, [aktif, analist, id, setVeri, v.veri]);
   return v;
 }
 
@@ -77,10 +82,16 @@ function TalepSonucu({ t }: { t: AjanTestiTalebi }) {
           Toplam {t.sonuc.toplam} senaryo · geçen {t.sonuc.gecen ?? 0} · kalan {t.sonuc.kalan ?? 0}
         </p>
       )}
-      {t.surec_notu && (
-        <Uyari ton={t.surec === "tamamlandi" ? "basari" : t.surec === "bulgu" ? "uyari" : t.surec ? "hata" : "bilgi"} baslik="Testing Probe süreci">
-          {t.surec_notu}
+      {t.surec === "simule" ? (
+        <Uyari ton="bilgi" baslik="Simülasyon sonucu — gereksinim tamamlanmadı">
+          {t.surec_notu ?? "Sonuç simülatörden geldi; gerçek Agent Probe koşusu olmadığı için gereksinim tamamlandı olarak işaretlenmez."}
         </Uyari>
+      ) : (
+        t.surec_notu && (
+          <Uyari ton={t.surec === "tamamlandi" ? "basari" : t.surec === "bulgu" ? "uyari" : t.surec ? "hata" : "bilgi"} baslik="Testing Probe süreci">
+            {t.surec_notu}
+          </Uyari>
+        )
       )}
       {t.durum === "failed" && kalanlar.length > 0 && (
         <div data-testid="ajan-bulgular">

@@ -12,7 +12,7 @@ import { uygulamaRotasiMi } from "../../lib/rotalar";
 import { Ikon } from "../Ikon";
 import { Cip, DisBaglanti } from "../ui";
 import { AiOneriKarti } from "./OneriKarti";
-import { DenetimKutusu, DenetimRozeti, denetimNotuMu } from "./DenetimKutusu";
+import { DenetimKutusu, DenetimRozeti, denetimBasligi, denetimNotuMu } from "./DenetimKutusu";
 
 // Renk disiplini (TASARIM-YENILEME-PLANI §3.2, §4.6): kırmızı yalnız hata/engel, indigo yalnız etkileşim/süren.
 // "Emin değil" bir hata değil, dikkat çağrısıdır (doğrulayın) → amber; "Genel bilgi" kategoriktir → nötr.
@@ -271,8 +271,13 @@ export function CevapKarti({ mesaj, baslik, derinIncelenebilir: derinIstegi, der
         )}
       </div>
       {/* Uyarı kutusu backend'in "Denetim uyarısı" notunu gövde olarak gösterir; not aşağıda tekrar yazılmaz (UX-9). */}
-      <DenetimKutusu denetim={c.denetim} notlar={c.denetim?.karar === "uyar" ? (c.notlar ?? []).filter(denetimNotuMu) : []} />
-      <Bloklar bloklar={c.cevap_bloklari ?? []} />
+      <DenetimKutusu
+        denetim={c.denetim}
+        notlar={c.denetim?.karar === "uyar" ? (c.notlar ?? []).filter(denetimNotuMu) : []}
+        bloklardaAciklama={(c.cevap_bloklari ?? []).some((b) => b.tur === "paragraf")}
+      />
+      {/* D4: engel/çalışmıyor cevabının başlık bloğu kutunun başlığıyla aynıysa iki kez yazılmaz. */}
+      <Bloklar bloklar={(c.cevap_bloklari ?? []).filter((b) => !(c.denetim && b.tur === "baslik" && b.metin === denetimBasligi(c.denetim)))} />
       {c.eylem_reddi && <p className="asistan-not">Asistan işlem yapmaz; bu işlemi ilgili ekranda siz yaparsınız.</p>}
       {(c.notlar ?? [])
         .filter((n) => !(c.denetim?.karar === "uyar" && denetimNotuMu(n)))

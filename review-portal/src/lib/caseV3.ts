@@ -159,19 +159,33 @@ export interface HazirlikYonlendirmesi {
  * tutarlılık engeli varsa onun metni. Onaylanabilir case'te ya da taslak olmayan case'te null.
  */
 export function hazirlikYonlendirmesi(
-  tc: Pick<TestCase, "durum" | "readiness" | "icerik" | "onay_engeli" | "acik_sorular" | "legacy">,
+  tc: Pick<TestCase, "durum" | "readiness" | "icerik" | "onay_engeli" | "acik_sorular" | "legacy" | "po_sorulari">,
 ): HazirlikYonlendirmesi | null {
   if (tc.durum !== "draft") return null;
   const eski = caseEski(tc);
   const sorular = eski ? [] : (tc.icerik.open_question_refs ?? []);
   const varsayimlar = eski ? [] : (tc.icerik.assumption_refs ?? []);
   if (sorular.length) {
-    const sahipler = [...new Set((tc.acik_sorular ?? []).filter((q) => sorular.includes(q.id)).map((q) => q.owner))];
-    const bekleyen = sahipler.length === 0 || (sahipler.length === 1 && sahipler[0] === "PO") ? "PO'nun yanıtını bekliyor" : `yanıt bekliyor (sahibi: ${sahipler.map((x) => SORU_SAHIBI[x] ?? x).join(", ")})`;
     const ek = varsayimlar.length
       ? ` Case ayrıca ${varsayimlar.join(", ")} ${varsayimlar.length > 1 ? "varsayımlarına" : "varsayımına"} bağlı; yanıtla birlikte ${varsayimlar.length > 1 ? "onları" : "onu"} da doğrulayıp 'Düzelt' ile hazır yapın.`
       : "";
-    return { tur: "soru", metin: `${sorular.join(", ")} ${bekleyen}. Yanıt gelince beklenen sonucu 'Düzelt' ile yazın.${ek}`, dogrulanacak: [] };
+    // D6 (K16): soru PO'ya gönderildi mi / yanıtlandı mı — `po_sorulari` varsa metin duruma göre.
+    const po = tc.po_sorulari;
+    if (po && sorular.some((q) => po[q])) {
+      const grup = (d: string) => sorular.filter((q) => (po[q]?.po_durumu ?? "gonderilmedi") === d);
+      const parcalar: string[] = [];
+      const yanitli = grup("yanitlandi");
+      const gonderildi = grup("gonderildi");
+      const gonderilmedi = grup("gonderilmedi");
+      const etiket = (q: string) => (po[q]?.po_etiketi ? `${q} (${po[q]!.po_etiketi})` : q);
+      if (yanitli.length) parcalar.push(`${yanitli.map(etiket).join(", ")} PO tarafından yanıtlandı; beklenen sonucu 'Düzelt' ile bu yanıta göre yazın ya da case'i yeniden üretin.`);
+      if (gonderildi.length) parcalar.push(`${gonderildi.map(etiket).join(", ")} PO'ya gönderildi, yanıt bekleniyor; yanıt gelince 'Düzelt' ile beklenen sonucu yazın.`);
+      if (gonderilmedi.length) parcalar.push(`${gonderilmedi.join(", ")} PO'nun yanıtını bekliyor ve henüz gönderilmedi; 'Açık soruları PO'ya gönder' ile gönderin, yanıt gelince 'Düzelt' ile beklenen sonucu yazın.`);
+      return { tur: "soru", metin: parcalar.join(" ") + ek, dogrulanacak: [] };
+    }
+    const sahipler = [...new Set((tc.acik_sorular ?? []).filter((q) => sorular.includes(q.id)).map((q) => q.owner))];
+    const bekleyen = sahipler.length === 0 || (sahipler.length === 1 && sahipler[0] === "PO") ? "PO'nun yanıtını bekliyor" : `yanıt bekliyor (sahibi: ${sahipler.map((x) => SORU_SAHIBI[x] ?? x).join(", ")})`;
+    return { tur: "soru", metin: `${sorular.join(", ")} ${bekleyen}. Henüz gönderilmediyse 'Açık soruları PO'ya gönder' ile gönderin; yanıt gelince 'Düzelt' ile beklenen sonucu yazın.${ek}`, dogrulanacak: [] };
   }
   if (varsayimlar.length) {
     const cok = varsayimlar.length > 1;

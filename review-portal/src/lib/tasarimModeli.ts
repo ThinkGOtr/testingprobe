@@ -126,18 +126,19 @@ export interface Tur2Bilgisi {
 export function tur2Uyarla(ham: unknown): Tur2Bilgisi | null {
   if (!ham || typeof ham !== "object") return null;
   const h = ham as Record<string, unknown>;
-  const t = h.tur2;
-  if (t && typeof t === "object" && !Array.isArray(t)) {
-    const n = t as Record<string, unknown>;
-    return {
-      basladi: n.basladi === true,
-      job_id: typeof n.job_id === "string" ? n.job_id : null,
-      uretim_no: typeof n.uretim_no === "number" ? n.uretim_no : null,
-      mesaj: typeof n.mesaj === "string" ? n.mesaj : null,
-    };
-  }
-  if (typeof h.tur2_basladi === "boolean") return { basladi: h.tur2_basladi, job_id: null, uretim_no: null, mesaj: null };
-  return null;
+  const t = h.tur2 && typeof h.tur2 === "object" && !Array.isArray(h.tur2) ? (h.tur2 as Record<string, unknown>) : null;
+  const engel = typeof h.tur2_engeli === "string" && h.tur2_engeli.trim() ? h.tur2_engeli : null;
+  // D1 kesin sözleşme: `tur2_baslatildi: bool`, `tur2: {job_id, workflow_id, uretim_no, kip, asama} | null`,
+  // `tur2_engeli: str | null`. Önceki taslak biçimler (`tur2.basladi`, `tur2_basladi`) de okunur.
+  const bayrak =
+    typeof h.tur2_baslatildi === "boolean" ? h.tur2_baslatildi : typeof h.tur2_basladi === "boolean" ? h.tur2_basladi : t && typeof t.basladi === "boolean" ? t.basladi : null;
+  if (bayrak === null && !t && engel === null) return null;
+  return {
+    basladi: bayrak ?? !!t,
+    job_id: t && typeof t.job_id === "string" ? t.job_id : null,
+    uretim_no: t && typeof t.uretim_no === "number" ? t.uretim_no : null,
+    mesaj: engel ?? (t && typeof t.mesaj === "string" ? t.mesaj : null),
+  };
 }
 
 /** Onaydan sonra tur 2 başladıysa gösterilen bildirim. */

@@ -507,6 +507,9 @@ export function caseUyarla(c: Ham): TestCase {
     ...(Array.isArray(c.varsayimlar) ? { varsayimlar: nesneler(c.varsayimlar, varsayimUyarla) } : {}),
     ...(c.onay_engeli !== undefined ? { onay_engeli: metinYaDaNull(c.onay_engeli) } : {}),
     ...(typeof c.uretim_no === "number" ? { uretim_no: c.uretim_no } : {}),
+    // D6: alanlar yoksa (D6 öncesi core) gösterim eski metinle kalır.
+    ...(nesneMi(c.po_sorulari) ? { po_sorulari: c.po_sorulari as NonNullable<TestCase["po_sorulari"]> } : {}),
+    ...(nesneMi(c.po_yanit_onerisi) ? { po_yanit_onerisi: c.po_yanit_onerisi as NonNullable<TestCase["po_yanit_onerisi"]> } : {}),
   };
 }
 

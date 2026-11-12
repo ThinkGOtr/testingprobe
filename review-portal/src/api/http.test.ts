@@ -342,3 +342,14 @@ describe("ApiError ek alanları", () => {
     expect((await detayOku(yanit(400, { detail: "x" }))).kod).toBeUndefined();
   });
 });
+
+describe("D5: kullanıcı metninde ortam değişkeni adı yok", () => {
+  it("TP_ ile başlayan ayar adı geçen cümle atılır; 429 hız sınırı okunur kalır", async () => {
+    const { hataMesaji, ortamAdiniAyikla } = await import("./http");
+    expect(ortamAdiniAyikla("Kapı kapalı. TP_DENETIM_KAPISI=off ile kapatıldı.")).toBe("Kapı kapalı.");
+    expect(ortamAdiniAyikla("Normal metin.")).toBe("Normal metin.");
+    const e = new ApiError(429, "Bu gereksinim için son 24 saatte en çok 5 denetim yapılabilir. Sınır TP_DENETIM_GUNLUK ile ayarlanır.", { kod: "hiz_siniri" });
+    expect(hataMesaji(e)).toBe("Bu gereksinim için son 24 saatte en çok 5 denetim yapılabilir.");
+    expect(hataMesaji(new ApiError(429, "TP_X=3", { kod: "hiz_siniri" }))).toMatch(/çok fazla istek/);
+  });
+});

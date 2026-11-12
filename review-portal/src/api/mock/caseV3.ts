@@ -210,7 +210,7 @@ export const V3_ICERIKLER: TestCaseIcerik[] = [
 export function caseV3Alanlari(
   c: TestCase,
   uretimler: CaseUretimOzeti[] | undefined,
-): Pick<TestCase, "readiness" | "legacy" | "acik_sorular" | "varsayimlar" | "uyarilar" | "onay_engeli"> {
+): Pick<TestCase, "readiness" | "legacy" | "acik_sorular" | "varsayimlar" | "uyarilar" | "onay_engeli" | "po_sorulari"> {
   const legacy = eskiIcerik(c.icerik);
   if (legacy) return { readiness: "ready", legacy: true, acik_sorular: [], varsayimlar: [], onay_engeli: null, ...(c.uyarilar ? { uyarilar: c.uyarilar } : {}) };
   const ozet = birlesikOzet(uretimler);
@@ -230,6 +230,12 @@ export function caseV3Alanlari(
     acik_sorular: (c.icerik.open_question_refs ?? []).flatMap((r) => sorular.get(r) ?? []),
     varsayimlar: (c.icerik.assumption_refs ?? []).flatMap((r) => varsayimlar.get(r) ?? []),
     uyarilar: [...new Set([...(c.uyarilar ?? []), ...sorunlar])],
+    // D6 biçimi: atıf yapılan sorular örnekte henüz PO'ya gönderilmemiştir (mevcut kayıt korunur).
+    po_sorulari:
+      c.po_sorulari ??
+      Object.fromEntries(
+        (c.icerik.open_question_refs ?? []).map((r, i) => [r, { tur: "soru" as const, po_etiketi: `CQ${i + 1}`, po_durumu: "gonderilmedi" as const, po_yaniti: null }]),
+      ),
   };
 }
 

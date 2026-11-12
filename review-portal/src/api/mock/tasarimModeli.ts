@@ -7,7 +7,8 @@
 // gelir; o yoksa aynı story'nin case_generation golden'ının üst listelerinden türetilir
 // (coverage_items / open_questions / assumptions birebir aynı kalır: tur-2 eşitlik kuralı).
 import { ApiError } from "../http";
-import type { CaseUretimOzeti, GereksinimDetay, IsYaniti, Kullanici, RetNedeni, Rol } from "../types";
+import type { CaseUretimOzeti, GereksinimDetay, IsYaniti, Kullanici, Rol } from "../types";
+import type { ModelRetNedeni } from "../tasarimModeliTipleri";
 import {
   modelTamamla,
   type DesignModel,
@@ -42,10 +43,9 @@ export interface ModelBaglami {
 
 /** D1 onay yanıtının tur 2 bilgisi (approve/edit sonrası; ret ve eski core'da alan yok). */
 export interface Tur2Yaniti {
-  basladi: boolean;
-  job_id?: string;
-  uretim_no?: number;
-  mesaj?: string;
+  tur2_baslatildi: boolean;
+  tur2: { job_id: string | null; workflow_id: string | null; uretim_no: number | null; kip: "iki_tur"; asama: "case" } | null;
+  tur2_engeli: string | null;
 }
 
 export const MODEL_ISI = "model.generate";
@@ -232,9 +232,10 @@ function yanit(v: MockVeri, g: GereksinimDetay): TasarimModeliYaniti {
   };
 }
 
-const RET_NEDENLERI: RetNedeni[] = ["hallucinated_step", "missing_ac", "wrong_test_data", "out_of_scope", "duplicate", "wrong_element"];
+// D1: model ret nedenleri modele özgüdür (case nedenleri 422).
+const RET_NEDENLERI: ModelRetNedeni[] = ["wrong_technique", "missing_condition", "wrong_coverage_item", "wrong_boundary", "invented_rule", "missing_ac", "out_of_scope"];
 
-function karar(ctx: ModelBaglami, modelId: string, govde: unknown): TasarimModeliKaydi & { tur2?: Tur2Yaniti | null } {
+function karar(ctx: ModelBaglami, modelId: string, govde: unknown): TasarimModeliKaydi & Partial<Tur2Yaniti> {
   const k = ctx.rolGerekli("analyst");
   const v = ctx.veri();
   let m: TasarimModeliKaydi | undefined;
@@ -280,14 +281,19 @@ function karar(ctx: ModelBaglami, modelId: string, govde: unknown): TasarimModel
   if (m.durum !== "approved" || !ctx.turIkiBaslat) return m;
   // D1/K20: onay tur 2'yi otomatik başlatır (gereksinim generating → cases_ready). Başlatılamazsa
   // onay geçerli kalır; yanıt nedeni taşır ve tur 2 elle başlatılır.
+  // Yanıt D1 sözleşmesiyle: `tur2_baslatildi`, `tur2` (iş bilgisi) ya da null, `tur2_engeli`.
   let tur2: Tur2Yaniti;
   try {
     const y = ctx.turIkiBaslat(g);
-    tur2 = { basladi: true, ...(y.job_id ? { job_id: y.job_id } : {}), ...(typeof y.uretim_no === "number" ? { uretim_no: y.uretim_no } : {}), mesaj: y.mesaj };
+    tur2 = {
+      tur2_baslatildi: true,
+      tur2: { job_id: y.job_id ?? null, workflow_id: null, uretim_no: typeof y.uretim_no === "number" ? y.uretim_no : null, kip: "iki_tur", asama: "case" },
+      tur2_engeli: null,
+    };
   } catch (e) {
-    tur2 = { basladi: false, mesaj: e instanceof Error ? e.message : String(e) };
+    tur2 = { tur2_baslatildi: false, tur2: null, tur2_engeli: e instanceof Error ? e.message : String(e) };
   }
-  return { ...m, tur2 };
+  return { ...m, ...tur2 };
 }
 
 export function tasarimModeliRotalari(ctx: ModelBaglami): Rota[] {

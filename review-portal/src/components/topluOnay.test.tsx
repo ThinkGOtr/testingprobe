@@ -66,13 +66,13 @@ describe("Neden onaylanamıyor kutusu (UX-2)", () => {
     const soru = await v3Case("case-v3-3");
     expect(hazirlikYonlendirmesi(soru)).toEqual({
       tur: "soru",
-      metin: "Q1 PO'nun yanıtını bekliyor. Yanıt gelince beklenen sonucu 'Düzelt' ile yazın.",
+      metin: "Q1 PO'nun yanıtını bekliyor ve henüz gönderilmedi; 'Açık soruları PO'ya gönder' ile gönderin, yanıt gelince 'Düzelt' ile beklenen sonucu yazın.",
       dogrulanacak: [],
     });
     const ikisi = { ...soru, icerik: { ...soru.icerik, assumption_refs: ["A1"] } };
     const y = hazirlikYonlendirmesi(ikisi)!;
     expect(y.dogrulanacak).toEqual([]);
-    expect(y.metin.startsWith("Q1 PO'nun yanıtını bekliyor.")).toBe(true);
+    expect(y.metin.startsWith("Q1 PO'nun yanıtını bekliyor")).toBe(true);
     expect(y.metin).toContain("A1 varsayımına bağlı");
     const tutarsiz = { ...(await v3Case("case-v3-1")), onay_engeli: "Tutarlılık ihlali olan case onaylanamaz" };
     expect(hazirlikYonlendirmesi(tutarsiz)!.metin).toBe("Tutarlılık ihlali olan case onaylanamaz. 'Düzelt' ile giderin ya da reddedin.");
@@ -94,7 +94,7 @@ describe("Neden onaylanamıyor kutusu (UX-2)", () => {
 
     sar(<CaseKarti tc={await v3Case("case-v3-3")} guncellendi={() => {}} poyaGonder={<button type="button">PO'ya gönder</button>} />);
     const soru = within(screen.getByTestId("hazirlik-yonlendirme"));
-    expect(soru.getByTestId("hazirlik-yonlendirme-metin")).toHaveTextContent("Q1 PO'nun yanıtını bekliyor. Yanıt gelince beklenen sonucu 'Düzelt' ile yazın.");
+    expect(soru.getByTestId("hazirlik-yonlendirme-metin")).toHaveTextContent("Q1 PO'nun yanıtını bekliyor ve henüz gönderilmedi; 'Açık soruları PO'ya gönder' ile gönderin, yanıt gelince 'Düzelt' ile beklenen sonucu yazın.");
     expect(soru.queryByRole("button", { name: /Varsayım/ })).not.toBeInTheDocument();
     expect(soru.getByRole("button", { name: "PO'ya gönder" })).toBeInTheDocument();
   });
@@ -359,5 +359,21 @@ describe("örnek veri K6 tutarlılığı (UX-10)", () => {
   it("onaylı ya da yayınlanmış her case hazırdır", () => {
     const tutarsiz = mockVerisi().caseler.filter((c) => (c.durum === "approved" || c.durum === "published") && caseHazirlik(c) !== "ready");
     expect(tutarsiz.map((c) => c.id)).toEqual([]);
+  });
+});
+
+describe("D6: soru bekleyen case'te metin PO durumuna göre (K16)", () => {
+  it("gönderilmedi / gönderildi / yanıtlandı ve D6 alanı yokken eski metin", async () => {
+    await oturumAc("analist");
+    const soru = await v3Case("case-v3-3");
+    const po = (d: "gonderilmedi" | "gonderildi" | "yanitlandi") => ({
+      ...soru,
+      po_sorulari: { Q1: { tur: "soru" as const, po_etiketi: "CQ1", po_durumu: d, po_yaniti: d === "yanitlandi" ? { metin: "Evet", yazar: "PO", zaman: null } : null } },
+    });
+    expect(hazirlikYonlendirmesi(po("gonderilmedi"))!.metin).toContain("'Açık soruları PO'ya gönder' ile gönderin");
+    expect(hazirlikYonlendirmesi(po("gonderildi"))!.metin).toBe("Q1 (CQ1) PO'ya gönderildi, yanıt bekleniyor; yanıt gelince 'Düzelt' ile beklenen sonucu yazın.");
+    expect(hazirlikYonlendirmesi(po("yanitlandi"))!.metin).toMatch(/^Q1 \(CQ1\) PO tarafından yanıtlandı; beklenen sonucu 'Düzelt' ile/);
+    const { po_sorulari: _p, ...eski } = soru;
+    expect(hazirlikYonlendirmesi(eski)!.metin).toBe("Q1 PO'nun yanıtını bekliyor. Henüz gönderilmediyse 'Açık soruları PO'ya gönder' ile gönderin; yanıt gelince 'Düzelt' ile beklenen sonucu yazın.");
   });
 });

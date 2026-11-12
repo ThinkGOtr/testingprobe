@@ -5,10 +5,11 @@
 // `POST /requirements/{id}/generate-cases {kip:"iki_tur"}` ("Case'leri üret").
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
-import type { GereksinimDetay, RetNedeni } from "../api/types";
+import type { GereksinimDetay } from "../api/types";
+import type { ModelRetNedeni } from "../api/tasarimModeliTipleri";
 import type { DesignModel, TasarimModeliKaydi } from "../api/tasarimModeliTipleri";
 import { useIslem, useVeri } from "../hooks";
-import { RET_NEDENI } from "../lib/etiketler";
+import { MODEL_RET_NEDENI, RET_NEDENI } from "../lib/etiketler";
 import { tarih } from "../lib/format";
 import { MODEL_DURUMU, tur2Bildirimi, YER_TUTUCU_NEDENI, yerTutucuModelMi, type Tur2Bilgisi } from "../lib/tasarimModeli";
 import { useBildirim } from "./Bildirim";
@@ -36,7 +37,7 @@ export function TasarimModeliPaneli({
   const islem = useIslem();
   const bildir = useBildirim();
   const [kip, setKip] = useState<"goster" | "duzelt" | "reddet">("goster");
-  const [retNedeni, setRetNedeni] = useState<RetNedeni>("missing_ac");
+  const [retNedeni, setRetNedeni] = useState<ModelRetNedeni>("missing_ac");
   const [gerekce, setGerekce] = useState("");
   const [yenidenOnay, setYenidenOnay] = useState(false);
   // Son onay yanıtının tur 2 bilgisi (D1); null: alan yok (eski core) ya da henüz onay verilmedi.
@@ -77,7 +78,7 @@ export function TasarimModeliPaneli({
     }
   }
 
-  const karar = (k: "approve" | "edit" | "reject", ek: { icerik?: DesignModel; ret_nedeni?: RetNedeni; gerekce?: string } = {}) =>
+  const karar = (k: "approve" | "edit" | "reject", ek: { icerik?: DesignModel; ret_nedeni?: ModelRetNedeni; gerekce?: string } = {}) =>
     m &&
     eylem(
       () => api.tasarimModeliKarari(m.id, { karar: k, icerik_hash: m.icerik_hash, ...ek }),
@@ -191,10 +192,10 @@ export function TasarimModeliPaneli({
               >
                 <label>
                   Ret nedeni{" "}
-                  <select value={retNedeni} onChange={(e) => setRetNedeni(e.target.value as RetNedeni)}>
-                    {(Object.keys(RET_NEDENI) as RetNedeni[]).map((r) => (
+                  <select value={retNedeni} onChange={(e) => setRetNedeni(e.target.value as ModelRetNedeni)}>
+                    {(Object.keys(MODEL_RET_NEDENI) as ModelRetNedeni[]).map((r) => (
                       <option key={r} value={r}>
-                        {RET_NEDENI[r]}
+                        {MODEL_RET_NEDENI[r]}
                       </option>
                     ))}
                   </select>
@@ -218,7 +219,7 @@ export function TasarimModeliPaneli({
                   <span key={i}>
                     {i > 0 && " · "}
                     {k.karar === "approve" ? "Onay" : k.karar === "edit" ? "Düzeltilerek onay" : "Ret"} — {k.kullanici ?? "—"} ({tarih(k.zaman)})
-                    {k.ret_nedeni && `: ${RET_NEDENI[k.ret_nedeni] ?? k.ret_nedeni}`}
+                    {k.ret_nedeni && `: ${(MODEL_RET_NEDENI as Record<string, string>)[k.ret_nedeni] ?? (RET_NEDENI as Record<string, string>)[k.ret_nedeni] ?? k.ret_nedeni}`}
                     {k.gerekce && ` — ${k.gerekce}`}
                   </span>
                 ))}

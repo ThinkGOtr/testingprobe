@@ -14,6 +14,7 @@ import type {
   SoruTuru,
   Tetik,
 } from "../api/types";
+import type { ModelRetNedeni } from "../api/tasarimModeliTipleri";
 
 export type Ton = "notr" | "bilgi" | "basari" | "uyari" | "hata" | "vurgu";
 
@@ -186,6 +187,17 @@ export const RET_NEDENI: Record<RetNedeni, string> = {
   out_of_scope: "Kapsam dışı",
   duplicate: "Tekrar",
   wrong_element: "Yanlış eleman/aksiyon",
+};
+
+/** D1: tasarım modeli ret nedenleri (modele özgü). */
+export const MODEL_RET_NEDENI: Record<ModelRetNedeni, string> = {
+  wrong_technique: "Yanlış teknik",
+  missing_condition: "Eksik koşul",
+  wrong_coverage_item: "Yanlış kapsam öğesi",
+  wrong_boundary: "Yanlış sınır değer",
+  invented_rule: "Uydurulmuş kural",
+  missing_ac: "Eksik kabul kriteri",
+  out_of_scope: "Kapsam dışı",
 };
 
 /** core `script` makinesinin her durumu (eksik anahtar derleme hatasıdır). */

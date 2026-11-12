@@ -43,3 +43,12 @@ describe("denetimYonlendirmesi", () => {
     expect(denetimYonlendirmesi(null)).toBeNull();
   });
 });
+
+describe("D1 blocked_gate metinleri", () => {
+  it("yeni kapı metinleri önekle ve ayar adı olmadan gösterilir", async () => {
+    const { yayinlanamaz } = await import("./kalite");
+    expect(yayinlanamaz("Denetim kapısı bağlı değil. TP_DENETIM_KAPISI=on iken kapı zorunludur.")).toBe("Yayınlanamaz: Denetim kapısı bağlı değil.");
+    expect(yayinlanamaz("Case denetlenen güncel sette değil; 'Agent Probe'a gönder' ile yeniden gönderin")).toMatch(/^Yayınlanamaz: Case denetlenen/);
+    expect(yayinlanamaz("Yayınlanamaz: Denetim yapılamadı: iş yarıda kaldı (zaman aşımı)")).toBe("Yayınlanamaz: Denetim yapılamadı: iş yarıda kaldı (zaman aşımı)");
+  });
+});

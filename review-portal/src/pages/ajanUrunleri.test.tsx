@@ -189,7 +189,7 @@ describe("ajan testi yenileme: POST refresh, yoksa eski GET (D4)", () => {
 
   it.each([404, 405])("refresh %i dönerse eski GET ile devam eder", async (kod) => {
     yapilandir({ mockZorunlu: false, mockOtomatik: false, yetenekKesfi: false });
-    const f = vi.fn().mockImplementation((url: string, init: RequestInit) =>
+    const f = vi.fn().mockImplementation((_url: string, init: RequestInit) =>
       Promise.resolve(init.method === "POST" ? yanit(kod, { detail: kod === 405 ? "Method Not Allowed" : "Not Found" }) : yanit(200, GORUNUM)),
     );
     vi.stubGlobal("fetch", f);

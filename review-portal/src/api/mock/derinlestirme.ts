@@ -61,9 +61,10 @@ export function uretimSecenekleriYaniti(v: MockVeri, id: string): UretimSecenekl
   const kayitli = v.uretimSecenekleri?.[id];
   const kip = v.uretimKipleri?.[id];
   return {
-    // D1: kayıtlı kip tercihi (core `kayitli.kip`); uyarlayıcı `kip` alanına çevirir.
-    ...(kip ? ({ kayitli: { kip } } as object) : {}),
-    secenekler: kayitli ? JSON.parse(JSON.stringify(kayitli)) : null,
+    // D1: kayıtlı kip tercihi core'da `secenekler.kip`; seçenek kaydı yoksa yalnız kip taşıyan
+    // `kayitli` (eski taslak biçim) — uyarlayıcı ikisini de `kip` alanına çevirir.
+    ...(kip && !kayitli ? ({ kayitli: { kip } } as object) : {}),
+    secenekler: kayitli ? { ...JSON.parse(JSON.stringify(kayitli)), ...(kip ? { kip } : {}) } : null,
     varsayilan: varsayilanSecenekler(),
     platformlar: [...URETIM_PLATFORMLARI],
     test_seviyeleri: [...URETIM_TEST_SEVIYELERI],

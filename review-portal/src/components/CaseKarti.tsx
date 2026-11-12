@@ -825,6 +825,8 @@ function CaseDuzenleyici({
             ))}
           </select>
         </div>
+{/* K18: v3 case'te risk alanı yok (risk değerlendirmesi öncelik gerekçesinde); yalnız eski case düzeltilir. */}
+        {!v3 && (
         <div className="alan">
           <label htmlFor={`${id}-risk`}>Risk</label>
           <select
@@ -839,6 +841,7 @@ function CaseDuzenleyici({
             ))}
           </select>
         </div>
+        )}
         <div className="alan">
           <label htmlFor={`${id}-ac`}>Kabul kriteri atıfları</label>
           <input

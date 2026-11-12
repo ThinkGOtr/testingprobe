@@ -471,6 +471,18 @@ export interface TestCase {
   onay_engeli?: string | null;
   /** Case'i üreten üretimin numarası (`case_uretim.uretim_no`). */
   uretim_no?: number;
+  /** D6 (K16): atıf yapılan soru/varsayımların PO'ya gönderim durumu (kaynak kimliği → durum). */
+  po_sorulari?: Record<string, CasePoSorusu>;
+  /** D6: yanıtlanan soruya bağlı case için öneri (düzelt / yeniden üret). */
+  po_yanit_onerisi?: { eylem: string; etiketler: string[]; mesaj: string } | null;
+}
+
+/** D6: case'in atıf yaptığı açık soru/varsayımın PO tarafı (Jira yorumu etiketi CQn / CAn). */
+export interface CasePoSorusu {
+  tur: "soru" | "varsayim";
+  po_etiketi: string | null;
+  po_durumu: "gonderilmedi" | "gonderildi" | "yanitlandi";
+  po_yaniti: { metin: string; yazar: string | null; zaman: string | null } | null;
 }
 
 export interface CaseAlanFarki {
@@ -1764,7 +1776,8 @@ export interface AjanTestiTalebi {
   guncelleme: string;
   islenme: string | null;
   /** Testing Probe'un sonuca göre sürdürdüğü süreç. */
-  surec: "tamamlandi" | "bulgu" | "onay_gecersiz" | "hata" | null;
+  /** D4: "simule" = simüle sonuç; gereksinimi done yapmaz. */
+  surec: "tamamlandi" | "bulgu" | "onay_gecersiz" | "hata" | "simule" | null;
   surec_notu: string | null;
 }
 
@@ -1779,6 +1792,10 @@ export interface AjanTestiGorunumu {
   engel: string | null;
   talep: AjanTestiTalebi | null;
   gecmis: AjanTestiTalebi[];
+  /** D4: true iken analist oturumu `POST …/agent-test/refresh` ile sonucu işletir (yoksa eski kural: talep bitmemişse). */
+  yenilenebilir?: boolean;
+  /** D4: simülatör sonucu tamamlar (gerçek Agent Probe değil). */
+  sim_tamamlar?: boolean;
 }
 
 /* ---- K21: Kontrol Kulesi "Case kalitesi" (GET /control-tower/case-quality[?requirement_id=]) ---- */
