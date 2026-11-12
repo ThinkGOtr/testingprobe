@@ -68,7 +68,7 @@ from tp_core.features.triage.rules import sinyal as _sinyal
 from tp_core.models import BugDraft, Failure, Requirement, Run, Script, TestCase, TestResult
 from tp_core.models.ci_feature import TestResultEk
 from tp_core.models.codegen_feature import ScriptCodegen, ScriptKontrol
-from tp_core.models.kalite_feature import CaseOracleKontrol, KararTablosu
+from tp_core.models.kalite_feature import CaseOracleKontrol, KararTablosu, OracleIstisna
 from tp_core.models.triage_feature import FailureEk, TriageKosu
 from tp_core.workflow import jobs as jobq
 
@@ -575,24 +575,40 @@ def kayit_tablosu_gecerli(
     )
 
 
-def _istisnali_kayitlar(
-    session: Session, ciftler: Sequence[tuple[uuid.UUID, str]]
-) -> set[tuple[uuid.UUID, str]]:
-    """`oracle_istisna` (review K11/V10; append-only, R1 şeridi) satırı olan (case, hash) çiftleri.
+ISTISNA_TURU = "uyumsuz"
 
-    Tablo henüz yoksa (birleştirmeden önce) boş küme: istisna yalnız `case_oracle_kontrol
-    .istisna_gerekce`'den okunur."""
-    if not ciftler:
+
+def _tablo_kumesi(hashler: Any) -> dict[str, Any]:
+    return {str(k): v for k, v in hashler.items()} if isinstance(hashler, Mapping) else {}
+
+
+def _istisnali_kontroller(
+    session: Session, kontroller: Sequence[CaseOracleKontrol]
+) -> set[uuid.UUID]:
+    """Gerekçeli `uyumsuz` istisnasıyla örtülen kontrol kayıtları (t2 N9; §13.2).
+
+    Bir kayıt ancak `oracle_istisna`'da aynı case + içerik hash'i için **`tur='uyumsuz'`** ve
+    kaydın güncel tablo kümesiyle (`tablo_hashleri` birebir aynı) verilmiş bir istisna varsa
+    inceltmeden çıkar: `kontrolsuz` istisnası ya da tablo değiştikten sonra kalmış eski istisna
+    tabloyu doğruluk kaynağı olmaktan çıkarmaz (oracle'ın `gecerli_istisna` tanımı). Tek sorgu."""
+    if not kontroller:
         return set()
-    var = session.execute(text("SELECT to_regclass('oracle_istisna') IS NOT NULL")).scalar()
-    if not var:
-        return set()
-    rows = session.execute(
-        text("SELECT test_case_id, icerik_hash FROM oracle_istisna WHERE test_case_id = ANY(:ids)"),
-        {"ids": list({c for c, _ in ciftler})},
+    satirlar = session.execute(
+        select(
+            OracleIstisna.test_case_id, OracleIstisna.icerik_hash, OracleIstisna.tablo_hashleri
+        ).where(
+            OracleIstisna.test_case_id.in_({k.test_case_id for k in kontroller}),
+            OracleIstisna.tur == ISTISNA_TURU,
+        )
     ).all()
-    istenen = set(ciftler)
-    return {(c, h) for c, h in rows if (c, h) in istenen}
+    kumeler: dict[tuple[uuid.UUID, str], list[dict[str, Any]]] = {}
+    for c, h, th in satirlar:
+        kumeler.setdefault((c, h), []).append(_tablo_kumesi(th))
+    return {
+        k.id
+        for k in kontroller
+        if _tablo_kumesi(k.tablo_hashleri) in kumeler.get((k.test_case_id, k.icerik_hash), [])
+    }
 
 
 @dataclass
@@ -628,9 +644,10 @@ def oracle_baglamlari(
     `kapsam_disi` — karar vermez, okunmaz). Kontrolden sonra değişen (içerik hash'i farklı, onayı
     geri çekilmiş, bayat) tablonun grupları atılır (`kayit_tablosu_gecerli`).
 
-    **İstisna (review K2):** case'in o içeriği tabloya rağmen gerekçeli istisnayla onaylandıysa
-    (`case_oracle_kontrol.istisna_gerekce` ya da `oracle_istisna` satırı) tablo bu case için
-    doğruluk kaynağı değildir: kayıt okunmaz, triage bugünkü davranışa döner.
+    **İstisna (review K2, t2 N9):** case'in o içeriği tabloya rağmen gerekçeli `uyumsuz`
+    istisnasıyla, kaydın güncel tablo kümesi üzerinde onaylandıysa (`oracle_istisna`) tablo bu
+    case için doğruluk kaynağı değildir: kayıt okunmaz, triage bugünkü davranışa döner.
+    `case_oracle_kontrol.istisna_*` kolonları (geriye uyum) okunmaz.
 
     Sorgular koşu başına toplu yapılır (test sayısından bağımsız).
     """
@@ -661,13 +678,8 @@ def oracle_baglamlari(
             )
         )
     )
-    istisnali = _istisnali_kayitlar(session, [(k.test_case_id, k.icerik_hash) for k in kontroller])
-    kontroller = [
-        k
-        for k in kontroller
-        if not (k.istisna_gerekce or "").strip()
-        and (k.test_case_id, k.icerik_hash) not in istisnali
-    ]
+    istisnali = _istisnali_kontroller(session, kontroller)
+    kontroller = [k for k in kontroller if k.id not in istisnali]
     # Kontrol anındaki tablo hash'leri: {kontrol id: {tablo uuid: icerik_hash}}.
     kontrol_hashleri: dict[uuid.UUID, dict[uuid.UUID, Any]] = {}
     for k in kontroller:

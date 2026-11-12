@@ -134,8 +134,12 @@ def test_hata_yakalama_son_tam_katalog_kosusundan(engine: Engine) -> None:
     assert hy["kapsam"]["tam_katalog"] is True and hy["kapsam"]["katalog"] == n
     assert hy["kapsam"]["kosulan_hata"] == n and hy["kapsam"]["gecerli_adim"] == gecerli
     assert hy["platformlar"][0]["platform"] == "web"
-    assert kodlar[1] in [x["hata_kodu"] for x in hy["kacanlar"]]  # AI testleri kaçırdı
-    assert kodlar[0] not in [x["hata_kodu"] for x in hy["kacanlar"]]
+    # `kacanlar`: hiçbir testin yakalamadığı (kacti) hatalar; `ai_kacanlar`: AI testlerinin
+    # kaçırdığı (el yazısı yakalamış olabilir) hatalar.
+    kacan_kodlar = [x["hata_kodu"] for x in hy["kacanlar"]]
+    ai_kacan_kodlar = [x["hata_kodu"] for x in hy["ai_kacanlar"]]
+    assert kacan_kodlar == kodlar[3:]
+    assert ai_kacan_kodlar == [kodlar[1], *kodlar[3:]]
     assert "yakalanan 1" in k["kaynaklar"]["hata_yakalama"]
 
 

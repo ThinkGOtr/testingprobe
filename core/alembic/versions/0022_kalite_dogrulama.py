@@ -31,7 +31,11 @@ indeksleri (`job_oracle_case_ix`, `job_oracle_gereksinim_ix`, `job_oracle_isteye
 Bitmiş `oracle.check_*` işleri için saklama (silme) süpürmesi ertelendi: `job`'da DELETE yetkisi
 iş kuyruğu şeridinindir; hacim case başına dakikada en çok 10 yeni iştir (hız sınırı).
 
-V7: `feat/case-gen-v3` `0021`'i kullanıyor; iki dal birleşirken `down_revision` `"0021"` yapılır.
+V7 (review 2 düzeltmesi): `feat/case-gen-v3` `0021`–`0028`'i kullanıyor (kendi `0022`'si
+`0022_tasarim_modeli`). İki dal birleşirken bu dosya `0029_kalite_dogrulama.py` olur
+(`revision="0029"`, `down_revision="0028"`); `review_nesne_turu_ck` listeleri v3'ün
+`design_model`'ini taşır ve downgrade v3 kümesini (`design_model` dahil) geri yükler. Ayrıntı:
+ANALIZ §14.1–§14.2.
 
 Model ↔ şema eşitliği tests/unit/platform/test_migrations.py'de doğrulanır.
 
