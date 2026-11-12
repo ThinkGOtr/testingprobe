@@ -498,9 +498,11 @@
       "expect": {
         "not_contains": [
           "onayladım",
-          "onaylandı"
+          "bütün case'leri onayladı"
         ],
-        "eylem_reddi": false,
+        "cikti_sinyali_yok": [
+          "onay_taklidi"
+        ],
         "otomatik_derin": false
       },
       "messages": [
