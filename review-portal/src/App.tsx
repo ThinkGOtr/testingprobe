@@ -27,6 +27,7 @@ import { ROL } from "./lib/etiketler";
 import { useKimlikKipi } from "./lib/kimlikKipi";
 import { AiprobeGirisineYonlendir } from "./pages/AiprobeGiris";
 import { RolSec } from "./pages/RolSec";
+import { KararTablolari } from "./pages/kalite/KararTablolari";
 
 function OturumGerekli({ children }: { children: ReactNode }) {
   const { kullanici, yukleniyor } = useOturum();
@@ -103,6 +104,7 @@ export function Rotalar() {
         <Route path="gereksinimler/:id" element={<GereksinimDetay />} />
         <Route path="gereksinimler/:id/caseler" element={<CaseReview />} />
         <Route path="gereksinimler/:id/yayin" element={<Yayin />} />
+        <Route path="gereksinimler/:id/karar-tablolari" element={<KararTablolari />} />
         <Route path="kod" element={<Kod />} />
         <Route path="kod/:id" element={<ScriptDetay />} />
         <Route path="kosular" element={<Kosular />} />

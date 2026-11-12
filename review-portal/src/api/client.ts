@@ -49,6 +49,37 @@ import type {
   YayinOnizleme,
   YayinSonucu,
 } from "./types";
+// 012 Ş7 (test kalite doğrulama): tipler ve uyarlayıcılar.
+import type {
+  CaseOracle,
+  IliskiGuncelleme,
+  IliskiOlusturma,
+  KaliteTaslakYaniti,
+  KararTablosuIcerik,
+  MetamorfikTuretme,
+  KaliteGecisGirdisi,
+  KaliteGecisi,
+  KararTablolariYaniti,
+  KararTablosu,
+  KararTablosuGuncelleme,
+  MetamorfikIliski,
+  OracleKontrolYaniti,
+  TabloDegerlendirmesi,
+  TestCaseIcerik,
+  TuretmeGirdisi,
+  TuretmeYaniti,
+} from "./types";
+import {
+  degerlendirmeUyarla,
+  iliskiUyarla,
+  kaliteTaslakUyarla,
+  kararTablolariUyarla,
+  kararTablosuUyarla,
+  oracleKontrolUyarla,
+  oracleUyarla,
+  turetmelerUyarla,
+  turetmeUyarla,
+} from "./uyumKalite";
 
 const yol = (s: string) => encodeURIComponent(s);
 /** Gereksinim detayı + Faz 5 baz değeri (alan yoksa eklenmez: "çekirdek sunmuyor"). */
@@ -262,7 +293,50 @@ export const api = {
   demoSifirla: () => istek<IsYaniti>("POST", "/demo/reset"),
   /** Forge main / çalışan demo uygulaması eşleşmesi (salt okuma). */
   demoDurumu: async (): Promise<DemoDurumu> => demoDurumuUyarla(await istek<unknown>("GET", "/demo/status")),
+
+  // ---- 012 Ş7: karar tabloları, ilişkiler, beklenen sonuç kontrolü (specs/012 ANALIZ §6)
+  /** Tablolar + ilişkiler + son taslak işi. `tumu`: yerini yenisi alanlar da gelir. */
+  kararTablolari: async (requirementId: string, tumu = false): Promise<KararTablolariYaniti> =>
+    kararTablolariUyarla(await istek<unknown>("GET", `/requirements/${yol(requirementId)}/decision-tables`, { sorgu: { tumu: tumu ? "true" : "false" }, kaynak: KALITE_KAYNAGI })),
+  /** AI taslağı işi (analyst; 202). Bir taslak işi sürerken aynı iş döner. */
+  kararTablosuTaslagiUret: async (requirementId: string): Promise<KaliteTaslakYaniti> =>
+    kaliteTaslakUyarla(await istek<unknown>("POST", `/requirements/${yol(requirementId)}/decision-tables/draft`, { kaynak: KALITE_KAYNAGI })),
+  /** Elle tablo (analyst; 201). İçerik verilmezse boş varsayılan. */
+  kararTablosuEkle: async (requirementId: string, icerik?: KararTablosuIcerik): Promise<KararTablosu> =>
+    kararTablosuUyarla(await istek<unknown>("POST", `/requirements/${yol(requirementId)}/decision-tables`, { govde: icerik ? { icerik } : {}, kaynak: KALITE_KAYNAGI })),
+  /** İçerik güncelle (yalnız `draft`); 409 `onay_hash_uyusmuyor` / `cakisma`, 422 `karar_tablosu_gecersiz` (`ApiError.hatalar`). */
+  kararTablosuKaydet: async (id: string, g: KararTablosuGuncelleme): Promise<KararTablosu> =>
+    kararTablosuUyarla(await istek<unknown>("PUT", `/decision-tables/${yol(id)}`, { govde: g, kaynak: KALITE_KAYNAGI })),
+  /** submit `{icerik_hash?}` · withdraw / reopen gövdesiz (analyst) · approve `{icerik_hash, gerekce?}` · request-changes `{icerik_hash, gerekce}` (po). */
+  kararTablosuGecis: async (id: string, gecis: KaliteGecisi, g: KaliteGecisGirdisi = {}): Promise<KararTablosu> =>
+    kararTablosuUyarla(await istek<unknown>("POST", `/decision-tables/${yol(id)}/${gecis}`, { ...gecisGovdesi(gecis, g), kaynak: KALITE_KAYNAGI })),
+  /** "Örnekle dene" (herkes; kayıt yok). `icerik` verilirse kaydedilmemiş içerik değerlendirilir. */
+  kararTablosuDene: async (id: string, girdiler: Record<string, string | number | boolean>, icerik?: KararTablosuIcerik): Promise<TabloDegerlendirmesi> =>
+    degerlendirmeUyarla(await istek<unknown>("POST", `/decision-tables/${yol(id)}/evaluate`, { govde: { girdiler, ...(icerik ? { icerik } : {}) }, kaynak: KALITE_KAYNAGI })),
+  /** Elle ilişki (analyst; 201). */
+  iliskiEkle: async (requirementId: string, g: IliskiOlusturma): Promise<MetamorfikIliski> =>
+    iliskiUyarla(await istek<unknown>("POST", `/requirements/${yol(requirementId)}/relations`, { govde: g, kaynak: KALITE_KAYNAGI })),
+  iliskiKaydet: async (id: string, g: IliskiGuncelleme): Promise<MetamorfikIliski> =>
+    iliskiUyarla(await istek<unknown>("PUT", `/relations/${yol(id)}`, { govde: g, kaynak: KALITE_KAYNAGI })),
+  iliskiGecis: async (id: string, gecis: KaliteGecisi, g: KaliteGecisGirdisi = {}): Promise<MetamorfikIliski> =>
+    iliskiUyarla(await istek<unknown>("POST", `/relations/${yol(id)}/${gecis}`, { ...gecisGovdesi(gecis, g), kaynak: KALITE_KAYNAGI })),
+  /** Gereksinimin ilişki türetme kayıtları (başarılı ve atlanan). */
+  metamorfikTuretmeler: async (requirementId: string): Promise<MetamorfikTuretme[]> =>
+    turetmelerUyarla(await istek<unknown>("GET", `/requirements/${yol(requirementId)}/metamorphic-derivations`, { kaynak: KALITE_KAYNAGI })),
+  /** Onaylı ilişkiden deterministik ek case (analyst): türetilen / atlanan liste. */
+  ekCaseTuret: async (requirementId: string, g: TuretmeGirdisi): Promise<TuretmeYaniti> =>
+    turetmeUyarla(await istek<unknown>("POST", `/requirements/${yol(requirementId)}/metamorphic-cases`, { govde: g, kaynak: KALITE_KAYNAGI })),
+  /** Kontrol sonucu: güncel içerik ya da (`icerikHash` verilirse) önerilen içerik; kayıt yoksa null. */
+  caseOracle: async (id: string, icerikHash?: string): Promise<CaseOracle | null> =>
+    oracleUyarla(await istek<unknown>("GET", `/cases/${yol(id)}/oracle`, { sorgu: { icerik_hash: icerikHash }, kaynak: CASE_KAYNAGI })),
+  /** Önerilen (düzeltme formundaki) içerik için kontrol ister (analyst; 202). Sonuç `oracle.checked` ile gelir. */
+  caseOracleKontrol: async (id: string, icerik?: TestCaseIcerik): Promise<OracleKontrolYaniti> =>
+    oracleKontrolUyarla(await istek<unknown>("POST", `/cases/${yol(id)}/oracle-check`, { govde: icerik ? { icerik } : {}, kaynak: CASE_KAYNAGI })),
 };
+/** withdraw / reopen gövdesizdir; diğer geçişler görülen hash'i (ve gerekçeyi) taşır. */
+const gecisGovdesi = (gecis: KaliteGecisi, g: KaliteGecisGirdisi) => (gecis === "withdraw" || gecis === "reopen" ? {} : { govde: g });
+/** Karar tablosu / ilişki işlemleri tablo listesine bağlıdır (liste çekirdekten geliyorsa işlem örnek veriye düşmez). */
+const KALITE_KAYNAGI = ["GET", "/requirements/1/decision-tables"] as const;
 
 export type Api = typeof api;
 

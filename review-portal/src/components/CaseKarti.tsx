@@ -8,6 +8,7 @@ import { CASE_DURUMU, CASE_TURU, RET_NEDENI, RISK } from "../lib/etiketler";
 import { sure, tarih } from "../lib/format";
 import { FarkGorunumu } from "./FarkGorunumu";
 import { AlanHatasi, Cip, IslemDugmesi, ReplayRozeti } from "./ui";
+import { DuzeltmeOnKontrolPaneli, OracleAyrinti, OracleCipi, OracleKapisi, oracleHatasindaYenile, TuretmeCipi, useDuzeltmeOnKontrolu, useOracleKapisi } from "./kalite/oracle";
 
 type Mod = "goster" | "duzenle" | "reddet";
 
@@ -85,7 +86,8 @@ export function CaseKarti({
   const bag = { icerik_hash: tc.icerik_hash };
 
   async function karar(fn: () => Promise<TestCase>) {
-    const yeni = await islem.calistir(fn, {
+    // 012: sunucu kapı hatası (422 oracle_uyumsuz) verirse liste yenilenir; 409 aşağıdaki çakışma yoluna girer.
+    const yeni = await islem.calistir(oracleHatasindaYenile(fn, yenile), {
       cakismada: () => {
         setMod("goster");
         yenile?.();
@@ -96,6 +98,20 @@ export function CaseKarti({
       guncellendi(yeni);
     }
   }
+
+  // 012 (ANALIZ §4.3): beklenen sonuç kontrolü kapısı ve düzeltme ön kontrolü.
+  const kapi = useOracleKapisi(tc);
+  const onKontrol = useDuzeltmeOnKontrolu(tc, (icerik, beklenenAnlamDegisti, istisnaGerekce) =>
+    karar(() =>
+      api.caseKarari(tc.id, {
+        ...bag,
+        karar: "edit",
+        icerik,
+        ...(beklenenAnlamDegisti !== undefined ? { beklenen_anlam_degisti: beklenenAnlamDegisti } : {}),
+        ...(istisnaGerekce ? { oracle_istisna_gerekce: istisnaGerekce } : {}),
+      }),
+    ),
+  );
 
   return (
     <article ref={kartRef} className={`case case-${tc.durum}`} aria-labelledby={`${id}-baslik`}>
@@ -112,28 +128,27 @@ export function CaseKarti({
           ))}
           {tc.kanal === "ide" && <Cip ton="notr" title="Claude Code (MCP submit_draft_cases) kanalından geldi">Claude Code</Cip>}
           <ReplayRozeti mode={tc.mode} />
+          <OracleCipi tc={tc} />
+          <TuretmeCipi tc={tc} />
         </div>
         {tc.jira_test_key && <span className="mono">{tc.jira_test_key}</span>}
       </header>
 
       {mod === "duzenle" ? (
-        <CaseDuzenleyici
-          ilk={tc.icerik}
-          calisiyor={islem.calisiyor}
-          hata={islem.hata}
-          hataKaynagi={islem.hataNesnesi}
-          vazgec={() => setMod("goster")}
-          kaydet={(icerik, beklenenAnlamDegisti) =>
-            karar(() =>
-              api.caseKarari(tc.id, {
-                ...bag,
-                karar: "edit",
-                icerik,
-                ...(beklenenAnlamDegisti !== undefined ? { beklenen_anlam_degisti: beklenenAnlamDegisti } : {}),
-              }),
-            )
-          }
-        />
+        <>
+          <CaseDuzenleyici
+            ilk={tc.icerik}
+            calisiyor={islem.calisiyor || onKontrol.bekliyor}
+            hata={islem.hata}
+            hataKaynagi={islem.hataNesnesi}
+            vazgec={() => {
+              onKontrol.sifirla();
+              setMod("goster");
+            }}
+            kaydet={onKontrol.gonder}
+          />
+          <DuzeltmeOnKontrolPaneli kontrol={onKontrol} calisiyor={islem.calisiyor} />
+        </>
       ) : (
         <>
           <h3 id={`${id}-baslik`} className="case-ad">
@@ -174,6 +189,7 @@ export function CaseKarti({
           <p>
             <strong>Beklenen sonuç:</strong> {tc.icerik.expected_result}
           </p>
+          <OracleAyrinti tc={tc} />
         </>
       )}
 
@@ -204,8 +220,8 @@ export function CaseKarti({
             <IslemDugmesi
               roller={["analyst"]}
               kucuk
-              disabled={!verilebilir("approve")}
-              title={gecisYokNedeni("approve")}
+              disabled={!verilebilir("approve") || !!kapi.engel}
+              title={gecisYokNedeni("approve") ?? kapi.engel ?? undefined}
               calisiyor={islem.calisiyor}
               onClick={() => karar(() => api.caseKarari(tc.id, { ...bag, karar: "approve" }))}
             >
@@ -234,6 +250,13 @@ export function CaseKarti({
           </div>
         )}
       </footer>
+      {mod === "goster" && !kilitli && !kararVerildi && (
+        <OracleKapisi
+          kapi={kapi}
+          calisiyor={islem.calisiyor}
+          onayla={(gerekce) => karar(() => api.caseKarari(tc.id, { ...bag, karar: "approve", oracle_istisna_gerekce: gerekce }))}
+        />
+      )}
       {mod === "goster" && kararVerildi && (
         <div className="satir-ogeler">
           <p className="soluk kucuk" data-testid="case-karar-kilit">

@@ -2,7 +2,7 @@ import { Fragment, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import type { KosuDetay, PwAdimi, TestDenemesi, TestSonucu } from "../api/types";
 import { Baglanti, BosDurum, Cip, DisBaglanti, Kart } from "../components/ui";
-import { HATA_SINIFI, KOSU_DURUMU } from "../lib/etiketler";
+import { altTurEtiketi, HATA_SINIFI, KOSU_DURUMU } from "../lib/etiketler";
 import { sure } from "../lib/format";
 
 /**
@@ -260,7 +260,7 @@ function SinifCipi({ s }: { s: TestSonucu }) {
   return (
     <Cip ton={x.ton}>
       {x.etiket}
-      {s.triage_alt_tur ? ` · ${s.triage_alt_tur}` : ""}
+      {s.triage_alt_tur ? ` · ${altTurEtiketi(s.triage_alt_tur)}` : ""}
     </Cip>
   );
 }

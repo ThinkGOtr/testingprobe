@@ -68,6 +68,7 @@ import { asistanMockSifirla, asistanRotalari } from "./asistan";
 import { oneriKuleOlcumu, oneriMockSifirla, oneriRotalari } from "./oneri";
 import { kuleKaliteOlcumu, kuleMockSifirla, kuleRotalari } from "./kule";
 import { KULE_KALITE_KAYNAKLARI } from "./kuleVerisi";
+import { kaliteRotalari } from "./kalite";
 import type { AsistanliKule } from "../../components/asistan/OnerilerOlcumKarti";
 import { kirmaTaslagiMi } from "../../lib/yolHaritasi";
 import { BAZ_NOT_EN_AZ, BAZ_NOT_EN_COK, BAZ_UST_SINIR_S, kazancOzeti } from "../uyumFaz5";
@@ -1721,6 +1722,9 @@ const ROTALAR: Rota[] = [
   ...oneriRotalari(girisGerekli, () => veri),
   // 012/Ş8 ekilmiş hata koşusu (ANALIZ §4.6): api/mock/kule.ts.
   ...kuleRotalari(girisGerekli, rolGerekli),
+  // 012 Ş7 (karar tabloları, ilişkiler, oracle): api/mock/kalite.ts. Aşağıdaki `GET /cases`,
+  // `POST /cases/:id/decision` ve `GET …/case-metrics` uçlarını sarar (ilk eşleşen rota geçerlidir).
+  ...kaliteRotalari({ veri: () => veri, girisGerekli, rolGerekli, kaydet, arkaPlan, denetimEkle, yeniId, caseKarari, caseMetrikleri }),
   ["POST", /^\/auth\/login$/, (_m, _q, g) => login(g)],
   ["POST", /^\/auth\/logout$/, () => logout()],
   ["GET", /^\/auth\/me$/, () => girisGerekli()],

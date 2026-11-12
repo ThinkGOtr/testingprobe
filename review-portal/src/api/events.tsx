@@ -72,6 +72,9 @@ export const BILINEN_OLAYLAR = [
   "assistant.answered",
   // 012/Ş8 ekilmiş hata koşusu (ANALIZ §4.6): veri `{id, durum, platform, hata_kodu, asama, sonuc}`.
   "hata_kosusu.ilerleme",
+  // 012 Ş7 (test kalite doğrulama, ANALIZ §6): beklenen sonuç kontrolü bitti
+  // `{case_id, requirement_id, icerik_hash, sonuc}`; case ekranı yenilenir.
+  "oracle.checked",
 ] as const;
 
 /** Ayrıntılı olayın ek konuları (sayfalar konuya abone olur, olay adına değil). */
@@ -89,6 +92,8 @@ const EK_KONULAR: Record<string, string[]> = {
   "agent.step": ["script.updated"],
   "failure.classified": ["failure.updated"],
   "bug.published": ["bug.updated"],
+  // 012 Ş7: kontrol sonucu case kartındaki çipi değiştirir.
+  "oracle.checked": ["case.updated"],
 };
 
 /** Ailenin her olayı aynı konuya gider (repair.* → failure.updated, bug.* → bug.updated, demo.* → demo.updated). */
@@ -116,6 +121,8 @@ export const CORE_OLAYLARI = [
   "metamorfik_iliski.state",
   "workflow_instance.state",
   "review.recorded",
+  // 012 Ş7: içerik düzenleme / AI taslağı `{id, tur, requirement_id, durum, eylem}` (Karar tabloları sayfası yenilenir).
+  "karar_tablosu.updated",
 ] as const;
 
 /** core varlık türü → sayfaların abone olduğu portal konusu. */

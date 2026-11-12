@@ -26,6 +26,7 @@ import type {
 import { dizgeler, ilk, jiraKayitAdresi, kimlik, metin, metinYaDaNull, modUyarla, nesneMi, sayiYaDaNull, type Ham } from "./uyum";
 import { adresUyarla, prUyarla } from "./uyumDemoB";
 import { platformUyarla } from "../lib/platform";
+import { triageCaseBagi } from "./uyumKalite";
 
 const nesne = (x: unknown): Ham => (nesneMi(x) ? x : {});
 const dizi = (x: unknown): unknown[] => (Array.isArray(x) ? x : []);
@@ -360,6 +361,8 @@ export function hataAnaliziUyarla(h: Ham): HataAnalizi {
     zaman: metin(ilk(h, "zaman", "olusturma", "created_at")),
     script_id: metinYaDaNull(kimlik(h.script_id)),
     platform: platformUyarla(h.platform) ?? platformUyarla(nesne(ilk(h, "oneri", "onarim")).platform),
+    // 012 Ş7: case bağı (alt tür `beklenti` için "Case düzeltilmeli").
+    ...triageCaseBagi(h),
   };
 }
 

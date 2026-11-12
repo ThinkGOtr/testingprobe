@@ -7,6 +7,7 @@ import { bazKaynagiUyarla, manuelBazUyarla } from "../api/uyumFaz5";
 import { useKisiAdi, useOturum } from "../auth";
 import { BAZ_KAYNAGI } from "../components/BazDegerKarti";
 import { CaseKarti } from "../components/CaseKarti";
+import { BeklentiDogruluguMetrigi, KaliteSaglayici, kararTablolariYolu } from "../components/kalite/oracle";
 import { BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, Metrik, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { HedefOlcer } from "../components/Grafikler";
 import { useGeciktirilmis, useVeri } from "../hooks";
@@ -185,15 +186,20 @@ export function CaseReview() {
         baslik="Case review"
         aciklama={g ? `${g.jira_key ? `${g.jira_key} · ` : ""}${g.baslik}` : undefined}
         eylemler={
-          yayinYetkili ? (
-            <Link className="dugme dugme-birincil" to={`/gereksinimler/${encodeURIComponent(id)}/yayin`}>
-              Yayın önizleme
+          <>
+            <Link className="dugme dugme-ikincil" to={kararTablolariYolu(id)}>
+              Karar tabloları
             </Link>
-          ) : (
-            <IslemDugmesi tur="ikincil" disabled title={YAYIN_ROLU_GEREKLI}>
-              Yayın önizleme
-            </IslemDugmesi>
-          )
+            {yayinYetkili ? (
+              <Link className="dugme dugme-birincil" to={`/gereksinimler/${encodeURIComponent(id)}/yayin`}>
+                Yayın önizleme
+              </Link>
+            ) : (
+              <IslemDugmesi tur="ikincil" disabled title={YAYIN_ROLU_GEREKLI}>
+                Yayın önizleme
+              </IslemDugmesi>
+            )}
+          </>
         }
       />
 
@@ -204,6 +210,7 @@ export function CaseReview() {
           <Metrik etiket="Düzeltilerek onaylı" deger={ozet.duzeltilmis} />
           <Metrik etiket="Reddedilen" deger={ozet.ret} />
           <Metrik etiket="Karar bekleyen" deger={ozet.bekleyen} />
+          <BeklentiDogruluguMetrigi m={metrik.veri} />
         </div>
         {/* İkinci şerit: süre ve maliyet (kararlar şeridiyle eşit sütun ritmi; 11 öğe tek şeritte 7+4 sarıyordu). */}
         <div className="metrik-izgara">
@@ -321,16 +328,18 @@ export function CaseReview() {
           </BosDurum>
         </Kart>
       ) : (
-        <div className="case-liste">
-          {gorunen.map((c) => (
-            <CaseKarti
-              key={c.id}
-              tc={c}
-              guncellendi={(t) => caseler.setVeri(liste.map((x) => (x.id === t.id ? t : x)))}
-              yenile={() => void caseler.yenile(true)}
-            />
-          ))}
-        </div>
+        <KaliteSaglayici requirementId={id}>
+          <div className="case-liste">
+            {gorunen.map((c) => (
+              <CaseKarti
+                key={c.id}
+                tc={c}
+                guncellendi={(t) => caseler.setVeri(liste.map((x) => (x.id === t.id ? t : x)))}
+                yenile={() => void caseler.yenile(true)}
+              />
+            ))}
+          </div>
+        </KaliteSaglayici>
       )}
     </>
   );

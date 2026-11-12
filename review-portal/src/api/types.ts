@@ -1491,3 +1491,278 @@ export interface Kosu {
   /** Bağlı ekilmiş hata koşusu (core `run.ortam.hata_kosusu_id`). */
   hata_kosusu_id?: string | null;
 }
+
+
+// ---------------------------------------------------------------- 012 Ş7: test kalite doğrulama
+// Karar tablosu, beklenen sonuç kontrolü (oracle) ve ilişki tabanlı ek case (specs/012 ANALIZ §4, §6).
+// Var olan arayüzlere eklenen alanlar bildirim birleştirmesiyle (aynı adlı `interface`) bu blokta durur.
+
+/** Karar tablosu ve metamorfik ilişki durumları (ANALIZ §4.1; core `karar_tablosu` makinesi). */
+export const KARAR_TABLOSU_DURUMLARI = ["draft", "pending_po", "approved", "superseded"] as const;
+export type KararTablosuDurumu = (typeof KARAR_TABLOSU_DURUMLARI)[number];
+
+export type KolonTuru = "sayi" | "metin" | "mantiksal";
+
+export interface KararTablosuGirdisi {
+  ad: string;
+  tur: KolonTuru;
+  birim?: string;
+  aciklama?: string;
+}
+
+export interface KararTablosuCiktisi {
+  ad: string;
+  tur: KolonTuru;
+  birim?: string;
+  /** Sayısal karşılaştırma toleransı (metin olarak ondalık; verilmezse 0). */
+  tolerans?: string;
+  aciklama?: string;
+}
+
+export interface KararTablosuSatiri {
+  id: string;
+  /** Sınırlı ifade dili (§4.2); ilk koşulu sağlayan satır geçerlidir. */
+  kosul: string;
+  /** Çıktı adı → ifade. */
+  cikti: Record<string, string>;
+}
+
+/** `karar_tablosu.icerik` (şema `rules/schemas/karar_tablosu.schema.json`). */
+export interface KararTablosuIcerik {
+  ad: string;
+  ac_refs: string[];
+  aciklama?: string;
+  girdiler: KararTablosuGirdisi[];
+  ciktilar: KararTablosuCiktisi[];
+  satirlar: KararTablosuSatiri[];
+}
+
+/** PO'nun son kararı (`approve` | `request_changes`); "Değişiklik iste" gerekçesi buradan gösterilir. */
+export interface KaliteSonKarar {
+  karar: string;
+  gerekce: string | null;
+  kullanici: string | null;
+  zaman: string | null;
+}
+
+interface KaliteKaydi {
+  id: string;
+  /** `karar_tablosu` | `metamorfik_iliski`. */
+  tur: "karar_tablosu" | "metamorfik_iliski";
+  requirement_id: string;
+  sira_no: number;
+  icerik_hash: string;
+  onaylanan_hash: string | null;
+  durum: KararTablosuDurumu;
+  /** Gereksinim onaydan sonra değişti (hesaplanan özellik); bayat kayıt kontrolde kullanılmaz. */
+  bayat: boolean;
+  ai_generated: boolean;
+  uretim_modu: CiktiModu | null;
+  /** Yalnız `approved` iken dolu. */
+  onaylayan: string | null;
+  onay_zamani: string | null;
+  son_karar: KaliteSonKarar | null;
+  olusturma: string | null;
+  guncelleme: string | null;
+}
+
+export interface KararTablosu extends KaliteKaydi {
+  icerik: KararTablosuIcerik;
+}
+
+/** `metamorfik_iliski.icerik` (§4.5). */
+export interface MetamorfikIliskiIcerik {
+  ad: string;
+  ac_refs: string[];
+  /** Bağlı tablonun atfı ("T<sira_no>"); tablosuz ilişkide null. */
+  tablo_ref?: string | null;
+  on_kosul: string;
+  /** Girdi adı → yeni girdinin ifadesi (kaynak case değerlerinden). */
+  donusum: Record<string, string>;
+  /** Çıktı adı → yeni beklenen değerin ifadesi (kaynak case değerlerinden). */
+  iliski: Record<string, string>;
+  aciklama?: string;
+}
+
+export interface MetamorfikIliski extends KaliteKaydi {
+  karar_tablosu_id: string | null;
+  icerik: MetamorfikIliskiIcerik;
+}
+
+/** Son AI taslak işi (`son_taslak`); `sonuc.atilan`: şemaya/doğrulamaya uymadığı için yazılmayan öğeler. */
+export interface KaliteTaslakIsi {
+  job_id: string | null;
+  workflow_id: string | null;
+  durum: string;
+  sonuc: { atilan: { tur: string; ref: string | null; ad: string | null; hatalar: string[] }[]; [k: string]: unknown } | null;
+  hata: string | null;
+  olusturma: string | null;
+}
+
+/** `GET /requirements/{id}/decision-tables?tumu=` (tumu=true yerini yenisi alanları da içerir). */
+export interface KararTablolariYaniti {
+  tablolar: KararTablosu[];
+  iliskiler: MetamorfikIliski[];
+  son_taslak: KaliteTaslakIsi | null;
+}
+
+/** Tablo/ilişki içerik güncellemesi: ekranda görülen hash ile iyimser eşzamanlılık (409). */
+export interface KararTablosuGuncelleme {
+  icerik: KararTablosuIcerik;
+  icerik_hash: string;
+}
+export interface IliskiGuncelleme {
+  icerik: MetamorfikIliskiIcerik;
+  icerik_hash: string;
+  /** Yoksa bağ korunur; `null` bağı kaldırır. */
+  karar_tablosu_id?: string | null;
+}
+
+/** `POST /requirements/{id}/relations`. */
+export interface IliskiOlusturma {
+  icerik: MetamorfikIliskiIcerik;
+  karar_tablosu_id?: string | null;
+}
+
+/** Durum geçişi gövdesi: görülen hash (submit isteğe bağlı, approve / request-changes zorunlu); "Değişiklik iste"de gerekçe. withdraw / reopen gövdesizdir. */
+export interface KaliteGecisGirdisi {
+  icerik_hash?: string;
+  gerekce?: string;
+}
+
+/** `POST /requirements/{id}/decision-tables/draft` (202). Bir taslak işi sürerken aynı iş döner. */
+export interface KaliteTaslakYaniti {
+  job_id: string | null;
+  workflow_id: string | null;
+  durum: string;
+  mesaj?: string;
+  uretim_no: number | null;
+}
+
+/** `GET /requirements/{id}/metamorphic-derivations`. */
+export interface MetamorfikTuretme {
+  id: string;
+  iliski_id: string;
+  kaynak_case_id: string;
+  turetilen_case_id: string | null;
+  sonuc: string;
+  neden: string | null;
+  olusturan_id: string | null;
+  olusturma: string | null;
+}
+
+export type KaliteGecisi = "submit" | "withdraw" | "reopen" | "approve" | "request-changes";
+
+/** `POST /decision-tables/{id}/evaluate` yanıtı (core `Degerlendirme`; önizleme, kayıt yok). */
+export interface TabloDegerlendirmesi {
+  satir_id: string | null;
+  /** Sayılar core'da Decimal'dir: metin ("25.00") ya da sayı gelebilir. */
+  ciktilar: Record<string, string | number | boolean | null>;
+  eksik_girdiler: string[];
+  hata: string | null;
+}
+
+export type OracleSonucu = "uyumlu" | "uyumsuz" | "kapsam_disi" | "kontrol_edilemedi";
+
+/** Bir beklenen olgunun tabloyla karşılaştırması (§4.3 `ayrintilar.gruplar[].karsilastirmalar[]`). */
+export interface OracleKarsilastirma {
+  column: string;
+  /** Case içindeki yol (`steps[3].expected`, `expected_result` …). */
+  alan: string;
+  alinti: string;
+  case_degeri: string | number | boolean | null;
+  tablo_degeri: string | number | boolean | null;
+  uyumlu: boolean;
+  tablo_id?: string | null;
+  tablo_ad?: string | null;
+  satir_id?: string | null;
+}
+
+export interface OracleIstisnasi {
+  gerekce: string;
+  veren: string | null;
+  zaman: string | null;
+}
+
+/** `GET /cases` ve `GET /cases/{id}` yanıtındaki `oracle` ve `GET /cases/{id}/oracle`. */
+export interface CaseOracle {
+  /** `null` yalnız `kontrol_suruyor` iken (bu içerik için henüz sonuç yok). */
+  sonuc: OracleSonucu | null;
+  ozet: string;
+  karsilastirmalar: OracleKarsilastirma[];
+  istisna: OracleIstisnasi | null;
+  /** Kontrolün yapıldığı case içeriğinin hash'i (güncel ya da önerilen içerik). */
+  icerik_hash: string | null;
+  /** Bu içerik için kontrol işi kuyrukta / çalışıyor (yüksek riskte onay 409 `oracle_bekleniyor`). */
+  kontrol_suruyor: boolean;
+}
+
+/** `POST /cases/{id}/oracle-check` (202): `{job_id, icerik_hash}`; sonuç `oracle.checked` ile gelir. */
+export interface OracleKontrolYaniti {
+  job_id: string | null;
+  icerik_hash: string | null;
+}
+
+/** Atlanan kaynak case'in nedeni (§4.5; `zaten_turetildi`: aynı kaynak + ilişki çifti daha önce türetildi). */
+export type TuretmeAtlamaSonucu = "iliski_gecersiz" | "belirsiz_alinti" | "olgu_yok" | "zaten_turetildi";
+
+export interface TuretilenCase {
+  case_id: string;
+  kaynak_case_id: string;
+  baslik: string;
+}
+
+export interface AtlananKaynak {
+  kaynak_case_id: string;
+  /** Bilinen kodlar `TuretmeAtlamaSonucu`; tanınmayan kod olduğu gibi kalır. */
+  sonuc: TuretmeAtlamaSonucu | (string & {});
+  neden: string | null;
+  /** `zaten_turetildi`: önceki türetmenin case'i (bağlantı için; çekirdek vermeyebilir). */
+  case_id?: string | null;
+}
+
+/** `POST /requirements/{id}/metamorphic-cases`. */
+export interface TuretmeYaniti {
+  turetilen: TuretilenCase[];
+  atlanan: AtlananKaynak[];
+}
+
+export interface TuretmeGirdisi {
+  iliski_id: string;
+  case_ids?: string[];
+}
+
+/** §4.7 beklenti doğruluğu (gereksinim kapsamında `case-metrics`, genelde `control-tower`). */
+export interface BeklentiDogrulugu {
+  /** uyumlu / (uyumlu + uyumsuz); payda 0 ise null ("ölçülmedi"). */
+  oran: number | null;
+  uyumlu: number;
+  uyumsuz: number;
+  kapsam_disi: number;
+  kontrol_edilemedi: number;
+  istisna: number;
+  kapsam_orani: number | null;
+}
+
+export interface TestCase {
+  /**
+   * Güncel içeriğin beklenen sonuç kontrolü. `null`: kontrol kaydı yok; alan hiç yoksa çekirdek
+   * bu özelliği sunmuyor (çip çizilmez).
+   */
+  oracle?: CaseOracle | null;
+}
+
+export interface CaseMetrikleri {
+  beklenti_dogrulugu?: BeklentiDogrulugu | null;
+}
+
+export interface CaseKararGirdisi {
+  /** Yüksek riskli uyuşmazlıkta gerekçeli istisna (en az 20 karakter; denetim kaydına düşer). */
+  oracle_istisna_gerekce?: string;
+}
+
+/** 012 Ş7: triage kaydının bağlı olduğu case (alt tür `beklenti` → "Case düzeltilmeli" bağlantısı). */
+export interface HataAnalizi {
+  case_id?: string | null;
+  requirement_id?: string | null;
+}

@@ -72,6 +72,8 @@ const ROTALAR: { yol: string; ad: string; baslik: RegExp }[] = [
   { yol: "/bug-taslaklari/bug-3", ad: "43-bug-f2-tutarlilik", baslik: /TPD-1 AC2/ },
   { yol: "/kosular/run-109", ad: "44-kosu-ortam-hatasi", baslik: /run-109/ },
   { yol: "/yol-haritasi", ad: "52-yol-haritasi", baslik: /^Demo yol haritası$/ },
+  // 012 Ş7: karar tabloları ve ilişkiler.
+  { yol: "/gereksinimler/req-tpd-1/karar-tablolari", ad: "70-karar-tablolari", baslik: /^Karar tabloları$/ },
 ];
 
 test("giriş ekranı", async ({ page }) => {
@@ -646,6 +648,17 @@ const AXE_SAYFALARI: { yol: string; ad: string; hazir: (p: Page) => Promise<void
   { yol: "/denetim", ad: "16-denetim", hazir: (p) => expect(p.getByText("Zincir doğrulandı").first()).toBeVisible() },
   { yol: "/claude-code", ad: "17-claude-code", hazir: (p) => expect(p.getByText("Token oluştur").first()).toBeVisible() },
   { yol: "/yol-haritasi", ad: "52-yol-haritasi", hazir: (p) => expect(p.getByText("Test bakımı yolu").first()).toBeVisible() },
+  // 012 Ş7: "Örnekle dene" açık (form alanları da denetlensin).
+  {
+    yol: "/gereksinimler/req-tpd-1/karar-tablolari",
+    ad: "70-karar-tablolari",
+    hazir: async (p) => {
+      const t1 = p.getByRole("region", { name: /T1 · Kampanya/ });
+      await expect(t1).toBeVisible();
+      await t1.getByText("Örnekle dene").click();
+      await expect(t1.getByRole("button", { name: "Dene" })).toBeVisible();
+    },
+  },
 ];
 
 /**
@@ -673,6 +686,8 @@ const F0_INCOMPLETE: Record<string, [number, number, number, number, number]> = 
   "/kosular/run-108": [1, 1, 1, 1, 1],
   "/bug-taslaklari": [0, 0, 0, 0, 0],
   "/demo": [0, 0, 0, 0, 0],
+  // 012 Ş7 (yeni sayfa; ilk ölçüm 2026-11-11).
+  "/gereksinimler/req-tpd-1/karar-tablolari": [0, 0, 0, 0, 0],
 };
 
 function f0Taban(yol: string, tema: TemaTuru["tema"], genislik: number): number {
@@ -1116,4 +1131,63 @@ test("Faz 5: analist TPD-1'e ölçülmüş baz değer girer → Kontrol Kulesi k
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await page.screenshot({ path: `${EKRAN_DIZINI}/56-mobil-yol-haritasi.png`, fullPage: true });
   expect(hatalar).toEqual([]);
+});
+
+test("012 karar tablosu: analist taslağı düzenler → PO'ya gönderir → PO onaylar → yüksek riskli uyuşmazlık engellenir → istisnayla onay", async ({ page }) => {
+  const hatalar = konsolHatalariniTopla(page);
+  await girisYap(page, "analist");
+  await page.goto("/gereksinimler/req-tpd-1/karar-tablolari");
+  let t2 = page.getByRole("region", { name: /T2 · Minimum sipariş/ });
+  await expect(t2.getByText("AI taslağı")).toBeVisible();
+  await t2.getByRole("button", { name: "Düzenle" }).click();
+  const ad = t2.getByLabel("Tablo adı");
+  await expect(ad).toBeFocused();
+  await ad.fill("Minimum sipariş tutarı (AC3)");
+  await t2.getByRole("button", { name: "Kaydet" }).click();
+  await expect(t2.getByTestId("kt-duzenleyici")).toHaveCount(0);
+  t2 = page.getByRole("region", { name: /T2 · Minimum sipariş tutarı \(AC3\)/ });
+  await t2.getByRole("button", { name: "PO onayına gönder" }).click();
+  await expect(t2.getByText("PO onayı bekliyor")).toBeVisible();
+  await page.screenshot({ path: `${EKRAN_DIZINI}/71-karar-tablosu-po-bekliyor.png`, fullPage: true });
+  await page.getByRole("button", { name: "Çıkış" }).click();
+  await expect(page.getByRole("heading", { name: "Oturum aç" })).toBeVisible();
+
+  await girisYap(page, "po");
+  await page.goto("/gereksinimler/req-tpd-1/karar-tablolari");
+  await t2.getByRole("button", { name: "PO olarak onayla" }).click();
+  await expect(t2.getByText("Onaylı", { exact: true })).toBeVisible();
+  await expect(t2.getByTestId("kt-onay")).toContainText("PO onayı:");
+  await page.getByRole("button", { name: "Çıkış" }).click();
+  await expect(page.getByRole("heading", { name: "Oturum aç" })).toBeVisible();
+
+  await girisYap(page, "analist");
+  await page.goto("/gereksinimler/req-tpd-1/caseler");
+  const c6 = page.getByRole("article", { name: /minimum tutara eşit toplamda/ });
+  await expect(c6.getByText("Tabloyla uyuşmuyor ✗")).toBeVisible();
+  await expect(c6.getByRole("button", { name: "Onayla", exact: true })).toBeDisabled();
+  await expect(c6.locator(".dugme-neden").filter({ hasText: "gerekçeli istisna olmadan onaylanamaz" })).toBeVisible();
+  await page.screenshot({ path: `${EKRAN_DIZINI}/72-case-tablo-uyusmazligi.png`, fullPage: true });
+  await c6.getByRole("button", { name: "İstisnayla onayla" }).click();
+  const gerekce = c6.getByLabel("İstisna gerekçesi");
+  await expect(gerekce).toBeFocused();
+  await gerekce.fill("PO ile görüşüldü: 750,00 TL sınırı dahil kabul edildi.");
+  await c6.getByTestId("istisna-formu").getByRole("button", { name: "İstisnayla onayla" }).click();
+  await expect(c6.getByTestId("oracle-istisna")).toContainText("PO ile görüşüldü");
+  await expect(c6.getByTestId("case-karar-kilit")).toBeVisible();
+  expect(hatalar).toEqual([]);
+});
+
+test("012 mobil (390 px) karar tabloları: sayfa ve düzenleyici yatay taşmaz", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await girisYap(page, "analist");
+  await page.goto("/gereksinimler/req-tpd-1/karar-tablolari");
+  const t2 = page.getByRole("region", { name: /T2 · Minimum sipariş/ });
+  await expect(t2).toBeVisible();
+  await fontlariBekle(page);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await t2.getByRole("button", { name: "Düzenle" }).click();
+  await t2.getByText("Örnekle dene").click();
+  await expect(t2.getByTestId("kt-duzenleyici")).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await page.screenshot({ path: `${EKRAN_DIZINI}/73-mobil-karar-tablosu-duzenleyici.png`, fullPage: true });
 });

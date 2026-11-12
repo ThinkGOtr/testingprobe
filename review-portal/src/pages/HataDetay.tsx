@@ -6,7 +6,7 @@ import type { BugTaslagi, HataAnalizi, LocatorOnarimi, LocatorProbeSonucu, Sagli
 import { useBildirim } from "../components/Bildirim";
 import { Baglanti, BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
-import { HATA_SINIFI, type Ton } from "../lib/etiketler";
+import { altTurEtiketi, HATA_SINIFI, TRIAGE_ALT_TUR, type Ton } from "../lib/etiketler";
 import { tarih } from "../lib/format";
 import { kisaKosuAdi } from "./Kosular";
 import { PlatformRozeti } from "../components/Platform";
@@ -680,7 +680,7 @@ export function HataDetay() {
         <Kart baslik="Sınıf">
           <p className="satir-ogeler" data-testid="triage-sinif">
             <Cip ton={s.ton}>{s.etiket}</Cip>
-            {h.alt_tur && <span className="mono">{h.alt_tur}</span>}
+            {h.alt_tur && (TRIAGE_ALT_TUR[h.alt_tur] ? <span data-testid="triage-alt-tur">{altTurEtiketi(h.alt_tur)}</span> : <span className="mono">{h.alt_tur}</span>)}
             <Cip ton={h.karar_kaynagi === "rule" ? "notr" : "vurgu"}>{kararKaynagiMetni(h)}</Cip>
             <ReplayRozeti mode={h.mode} degerlendirme={h.degerlendirme} />
             <PlatformRozeti platform={h.platform} />
@@ -754,7 +754,20 @@ export function HataDetay() {
               <MukerrerSatiri id={h.oneri.bug_draft_id} />
             </Kart>
           )}
-          {!h.oneri && h.oneri_yok_nedeni && (
+          {/* 012 Ş3: test beklentisi onaylı karar tablosuyla uyuşmuyor → bug/onarım değil, case düzeltilir. */}
+          {!ortam && h.alt_tur === "beklenti" && (
+            <div data-testid="case-duzeltilmeli">
+              <Uyari ton="uyari" baslik="Case düzeltilmeli">
+                Case'in beklenen değeri onaylı karar tablosuyla uyuşmuyor; uygulama tabloya uygun. Bug taslağı ve locator onarımı açılmaz.{" "}
+                {h.requirement_id ? (
+                  <Link to={`/gereksinimler/${encodeURIComponent(h.requirement_id)}/caseler`}>Case'i aç{h.case_id ? ` (${h.case_id})` : ""}</Link>
+                ) : h.script_id ? (
+                  <Link to={`/kod/${encodeURIComponent(h.script_id)}`}>Script ve bağlı case'i aç</Link>
+                ) : null}
+              </Uyari>
+            </div>
+          )}
+          {!h.oneri && h.oneri_yok_nedeni && h.alt_tur !== "beklenti" && (
             <Uyari ton="uyari" baslik="Öneri üretilmedi">
               {h.oneri_yok_nedeni}
             </Uyari>

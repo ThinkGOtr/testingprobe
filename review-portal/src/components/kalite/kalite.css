@@ -1,0 +1,292 @@
+/* 012 Ş7 — karar tabloları, ilişkiler ve case review beklenen sonuç kontrolü (specs/012 ANALIZ §7).
+   Yalnız styles.css token'ları; bileşen kurallarında sabit renk ve [data-theme] seçicisi yok.
+   Mor (--vurgu) yalnız AI taslağı; yeşil (--ok) yalnız PO onayı (insan kapısı). */
+
+/* ---- case review */
+.oracle-ayrinti {
+  margin: 8px 0;
+}
+.oracle-ayrinti > summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.oracle-ayrinti > .tablo-sarici,
+.on-kontrol > .tablo-sarici {
+  margin: 8px 0;
+}
+.oracle-ozet {
+  margin: 8px 0;
+}
+/* Farklı satır: sol şerit + "Farklı ✗" metni (renk tek başına anlam taşımaz). */
+.oracle-farkli > td:first-child {
+  box-shadow: inset 3px 0 0 var(--err);
+}
+.oracle-kapi {
+  margin-top: 10px;
+}
+.oracle-kapi > .satir-ogeler[hidden] {
+  display: none;
+}
+.istisna-formu textarea,
+.kt-alan-genis textarea {
+  width: 100%;
+}
+.on-kontrol {
+  margin-top: 10px;
+}
+
+/* ---- karar tabloları sayfası */
+.kt-kart.kt-ai:not(.kapi-gecti):not(.kapi-bekliyor) {
+  border-left: 3px solid var(--vurgu);
+}
+.kt-ust {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.kt-bolum {
+  margin: 14px 0 6px;
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+.kt-kart .tablo-sarici,
+.iliski .tablo-sarici {
+  margin-bottom: 10px;
+}
+.kt-ifade {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+.tablo td.kt-ifade {
+  white-space: normal;
+}
+.kt-eylemler {
+  border-top: 1px solid var(--border-soft);
+  padding-top: 12px;
+  margin-top: 12px;
+}
+.kt-onay {
+  margin: 0 0 10px;
+}
+
+/* Düzenleyici: her kolon/satır bir ızgara satırı; dar ekranda alanlar alt alta. */
+.kt-duzenle {
+  border-top: 1px dashed var(--border);
+  padding-top: 12px;
+  margin-top: 12px;
+}
+.kt-duzenle-ust {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0 12px;
+}
+.kt-satir {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 6px 8px;
+  align-items: start;
+  padding: 10px;
+  margin-bottom: 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.kt-satir > .alan {
+  margin-bottom: 0;
+}
+.kt-satir input,
+.kt-satir select,
+.kt-satir textarea,
+.kt-duzenle-ust input {
+  width: 100%;
+  min-width: 0;
+}
+.kt-satir-bas {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+}
+.kt-satir-kosul {
+  grid-column: 1 / -1;
+}
+.kt-satir [aria-invalid="true"] {
+  border-color: var(--err);
+}
+
+/* Örnekle dene */
+.kt-dene {
+  margin-top: 10px;
+}
+.kt-dene > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.kt-dene-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0 12px;
+  margin-top: 10px;
+}
+.kt-dene-form input,
+.kt-dene-form select {
+  width: 100%;
+}
+.kt-dene-sonuc {
+  margin-top: 10px;
+}
+
+/* İlişkiler */
+.iliski {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  background: var(--surface);
+}
+.iliski.iliski-ai {
+  border-left-color: var(--vurgu);
+}
+.iliski.iliski-bekliyor {
+  border-left-color: var(--warn);
+}
+.iliski.iliski-onayli {
+  border-left-color: var(--ok);
+}
+.iliski h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 8px 0;
+}
+.iliski-tanim {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 0 0 8px;
+}
+.iliski-tanim dt {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.iliski-tanim dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.turet {
+  border-top: 1px solid var(--border-soft);
+  padding-top: 14px;
+  margin-top: 14px;
+}
+.turet h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.turet select {
+  max-width: 100%;
+}
+.turet-kaynaklar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.turet-kaynaklar label {
+  font-weight: 400;
+}
+.turet-sonuc > li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+}
+.kt-eskiler > summary {
+  cursor: pointer;
+  color: var(--text-2);
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+@media (max-width: 640px) {
+  .iliski-tanim {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .iliski-tanim dd {
+    margin-bottom: 6px;
+  }
+}
+
+/* ---- sayfa düzeni */
+.kt-giris {
+  margin: 0 0 16px;
+  max-width: 70ch;
+}
+.kt-bolum-kap {
+  margin-bottom: 20px;
+}
+.kt-bolum-baslik {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 0 0 12px;
+}
+.kt-durum:focus {
+  outline: none;
+}
+.kt-durum:empty {
+  display: none;
+}
+.kt-onay-kutu {
+  margin-bottom: 16px;
+}
+.kt-onay-kutu > .eylemler {
+  margin-top: 8px;
+}
+
+/* ---- düzenleyici parçaları */
+.kt-grup {
+  border-top: 1px solid var(--border-soft);
+  padding-top: 10px;
+  margin-top: 10px;
+}
+.kt-ac-liste {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+.kt-ac-secenek {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 400;
+}
+.kt-sira {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.kt-satir .alan-hata,
+.kt-duzenle .alan-hata {
+  overflow-wrap: anywhere;
+}
+.turet-sonuc-kutu {
+  margin-top: 12px;
+}
+.turet-sonuc-kutu:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.kt-dene-sonuc:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.kt-iliski-eylem {
+  margin-bottom: 10px;
+}

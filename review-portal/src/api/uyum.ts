@@ -34,6 +34,7 @@ import type {
   YayinSonucu,
   ZincirDogrulama,
 } from "./types";
+import { caseOracleAlani } from "./uyumKalite";
 
 /** core-api GET /audit gövdesi (tp_core.api.routers.audit.AuditOut). */
 interface CoreDenetimOlayi {
@@ -432,6 +433,8 @@ export function caseUyarla(c: Ham): TestCase {
     ...(Array.isArray(c.fark) ? { fark: c.fark.filter(nesneMi).map(farkUyarla) } : {}),
     ...(c.duzeltme_nedeni !== undefined ? { duzeltme_nedeni: metinYaDaNull(c.duzeltme_nedeni) } : {}),
     ...(c.onceki_icerik === true ? { onceki_icerik: true } : {}),
+    // 012 Ş7: beklenen sonuç kontrolü (alan yoksa eklenmez: çekirdek sunmuyor).
+    ...caseOracleAlani(c),
   };
 }
 
