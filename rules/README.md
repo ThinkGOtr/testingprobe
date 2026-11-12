@@ -226,7 +226,7 @@ varsa çıkış 1. Bu tablo kayıtla aynı olmalıdır (`test_evaluation_status.
 | `bug-draft` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
 | `dup-rank` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
 | `assistant` (portal asistanı; `assistant` + `assistant_deep` amaçları, `assistant/*` kuralları) | v1 | **canlı değerlendirildi** (2026-11-04; Haiku 38/40, Sonnet 40/40; `evaluation/results/`) |
-| `decision-table-draft` (+ `decision_table_draft` golden'ı; 012 karar tablosu) | v1 | **canlı değerlendirme bekliyor** |
+| `decision-table-draft` (+ `decision_table_draft` golden'ı; 012 karar tablosu) | v2 | **canlı değerlendirme bekliyor** |
 | `case-facts` (+ `case_facts` golden'ları; 012 karar tablosu kontrolü) | v1 | **canlı değerlendirme bekliyor** |
 
 2026-11-01'de `requirement-review` v3, `triage`, `bug-draft` ve `dup-rank` v2 canlı modelle

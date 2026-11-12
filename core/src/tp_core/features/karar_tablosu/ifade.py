@@ -61,6 +61,8 @@ AZAMI_HANE: Final = 12  # yuvarla(x, hane)
 HASSASIYET: Final = 60  # anlamlı basamak
 AZAMI_BUYUKLUK: Final = 30  # |x| < 10^30
 AZAMI_HATA: Final = 20  # dogrula'nın döndürdüğü en çok hata metni
+# Yuvarlaması belirtilmemiş sayı çıktısında izin verilen en büyük tolerans (kuruş).
+TOLERANS_AZAMI: Final = Decimal("0.01")
 
 SAYI: Final = "sayi"
 METIN: Final = "metin"
@@ -961,6 +963,67 @@ def _ifade_denetle(
         hatalar.append(f"{etiket}: sonuç {_TUR_ADI[beklenen]} olmalı ({_TUR_ADI[tur]} bulundu)")
 
 
+def _yuvarla_hanesi(metin: Any) -> int | None:
+    """İfade en dışta `yuvarla(x, <sabit hane>)` ise hane; değilse None."""
+    try:
+        d = ayristir(metin)
+    except (IfadeHatasi, TypeError):
+        return None
+    if d.cins == "islev" and d.deger == "yuvarla" and d.alt[1].cins == "sayi":
+        hane = d.alt[1].deger
+        if hane == hane.to_integral_value() and 0 <= hane <= AZAMI_HANE:
+            return int(hane)
+    return None
+
+
+def _sabit_mi(metin: Any) -> bool:
+    try:
+        d = ayristir(metin)
+    except (IfadeHatasi, TypeError):
+        return False
+    while d.cins == "tekli" and d.deger in ("-", "+"):
+        d = d.alt[0]
+    return d.cins == "sayi"
+
+
+def cikti_hassasiyeti(kolon: Mapping[str, Any], satirlar: Sequence[Mapping[str, Any]]) -> Decimal:
+    """Sayı çıktısının hassasiyeti (izin verilen en büyük tolerans).
+
+    Sabit olmayan her satır ifadesi en dışta `yuvarla(x, h)` ise `10^-h` (birden çok hane varsa
+    en incesi); değilse `TOLERANS_AZAMI` (0.01: kuruş). Tolerans bu değeri aşamaz: "1" toleranslı
+    bir `bedava_adet` 6 ile 7 adet arasındaki farkı (tam da yakalanması gereken hatayı) gizlerdi.
+    """
+    ad = kolon.get("ad")
+    haneler: list[int] = []
+    for satir in satirlar:
+        metin = (satir.get("cikti") or {}).get(ad)
+        if metin is None or _sabit_mi(metin):
+            continue
+        hane = _yuvarla_hanesi(metin)
+        if hane is None:
+            return TOLERANS_AZAMI
+        haneler.append(hane)
+    if not haneler:
+        return TOLERANS_AZAMI
+    return Decimal(1).scaleb(-max(haneler))
+
+
+def _tolerans_hatasi(kolon: Mapping[str, Any], satirlar: Sequence[Mapping[str, Any]]) -> str | None:
+    try:
+        tol = Decimal(str(kolon["tolerans"]))
+    except (InvalidOperation, ValueError):
+        return "sayı olmalı"
+    if not tol.is_finite() or tol < 0:
+        return "negatif olmayan bir sayı olmalı"
+    azami = cikti_hassasiyeti(kolon, satirlar)
+    if tol > azami:
+        return (
+            f"{tol} çıktının hassasiyetinden ({azami}) büyük olamaz; tolerans yalnız yuvarlama "
+            "farkını örter (yuvarla(x, h) ile hassasiyet 10^-h olur)"
+        )
+    return None
+
+
 def _tablo_hatalari(icerik: Mapping[str, Any]) -> list[str]:
     """Şemayı geçmiş içeriğin anlam denetimi (adlar, satırlar, ifadeler)."""
     hatalar: list[str] = []
@@ -976,6 +1039,11 @@ def _tablo_hatalari(icerik: Mapping[str, Any]) -> list[str]:
             gorulen.add(ad)
             if "tolerans" in kolon and kolon["tur"] != SAYI:
                 hatalar.append(f"{bolum}[{i}].tolerans: yalnız sayı türündeki çıktıda verilir")
+    for i, kolon in enumerate(ciktilar):
+        if kolon["tur"] == SAYI and "tolerans" in kolon:
+            hata = _tolerans_hatasi(kolon, icerik["satirlar"])
+            if hata:
+                hatalar.append(f"ciktilar[{i}].tolerans: {hata}")
     girdi_turleri = _kolon_turleri(girdiler)
     cikti_turleri = _kolon_turleri(ciktilar)
     satir_idleri: set[str] = set()
@@ -1161,6 +1229,271 @@ def toleranslar(icerik: Mapping[str, Any]) -> dict[str, Decimal]:
     return {k["ad"]: Decimal(k.get("tolerans", "0")) for k in icerik.get("ciktilar", [])}
 
 
+# ---------------------------------------------------------------------- sınır analizi
+
+AZAMI_ORNEK: Final = 200
+_PARA_BIRIMLERI: Final = frozenset({"tl", "₺", "try", "usd", "eur", "$", "€", "kurus", "kuruş"})
+_TEMSILI_SAYI: Final = Decimal(100)
+_BASKA_METIN: Final = "baska"
+
+
+def _sabit_sayi(d: Dugum) -> Decimal | None:
+    """Sabit sayı düğümü (`7`, `-5`, `750.00`) → değer; değilse None."""
+    isaret = 1
+    while d.cins == "tekli" and d.deger in ("-", "+"):
+        if d.deger == "-":
+            isaret = -isaret
+        d = d.alt[0]
+    if d.cins == "sayi":
+        return d.deger if isaret == 1 else -d.deger
+    return None
+
+
+def _dugumler(d: Dugum) -> Iterator[Dugum]:
+    yield d
+    for alt in d.alt:
+        yield from _dugumler(alt)
+
+
+def _ondalik(deger: Decimal) -> int:
+    us = deger.as_tuple().exponent
+    return -us if isinstance(us, int) and us < 0 else 0
+
+
+def _sinir_adaylari(icerik: Mapping[str, Any]) -> dict[str, list[Any]]:
+    """Girdi adı → sınır değerleri (koşullardaki sabitlerin bir adım altı / kendisi / üstü,
+    `ad // k` ve `ad % k`'da k ve 2k çevresi; mantıksal: doğru/yanlış; metin: karşılaştırılan
+    sabitler + başka bir değer)."""
+    turler = _kolon_turleri(icerik["girdiler"])
+    birimler = {k["ad"]: str(k.get("birim") or "").strip().lower() for k in icerik["girdiler"]}
+    sabitler: dict[str, list[Decimal]] = {ad: [] for ad in turler}
+    bolenler: dict[str, list[Decimal]] = {ad: [] for ad in turler}
+    metinler: dict[str, list[str]] = {ad: [] for ad in turler}
+    ifadeler = [m for s in icerik["satirlar"] for m in (s["kosul"], *s["cikti"].values())]
+    for metin in ifadeler:
+        try:
+            kok = ayristir(metin)
+        except IfadeHatasi:
+            continue
+        for d in _dugumler(kok):
+            if d.cins != "ikili" or len(d.alt) != 2:
+                continue
+            sol, sag = d.alt
+            for ad_d, sabit_d in ((sol, sag), (sag, sol)):
+                if ad_d.cins != "ad" or ad_d.deger not in turler:
+                    continue
+                ad = ad_d.deger
+                if d.deger in _KARSILASTIRMA:
+                    if sabit_d.cins == "metin":
+                        metinler[ad].append(sabit_d.deger)
+                    elif (c := _sabit_sayi(sabit_d)) is not None:
+                        sabitler[ad].append(c)
+                elif d.deger in ("//", "%") and ad_d is sol:
+                    c = _sabit_sayi(sabit_d)
+                    if c is not None and c > 0:
+                        bolenler[ad].append(c)
+    out: dict[str, list[Any]] = {}
+    for ad, tur in turler.items():
+        if tur == MANTIKSAL:
+            out[ad] = [True, False]
+            continue
+        if tur == METIN:
+            gorulen = list(dict.fromkeys(metinler[ad]))
+            if gorulen:
+                baska = _BASKA_METIN
+                while baska in gorulen:
+                    baska += "_"
+                gorulen.append(baska)
+            out[ad] = gorulen or ["ornek"]
+            continue
+        hepsi = sabitler[ad] + bolenler[ad]
+        hane = max((_ondalik(c) for c in hepsi), default=0)
+        if birimler[ad] in _PARA_BIRIMLERI:
+            hane = max(hane, 2)
+        adim = Decimal(1).scaleb(-hane)
+        degerler: set[Decimal] = set()
+        for c in sabitler[ad]:
+            degerler.update((c - adim, c, c + adim))
+        for k in bolenler[ad]:
+            for kat in (k, 2 * k):
+                degerler.update((kat - adim, kat, kat + adim))
+        negatif_olabilir = any(c < 0 for c in hepsi)
+        sonuc = sorted({d.quantize(adim) for d in degerler if negatif_olabilir or d >= 0})
+        out[ad] = sonuc or [_TEMSILI_SAYI.quantize(adim)]
+    return out
+
+
+def _izgara(adaylar: Mapping[str, Sequence[Any]]) -> tuple[list[dict[str, Any]], bool]:
+    """Tam kartezyen çarpım `AZAMI_ORNEK`'i aşmıyorsa o; aşıyorsa her girdiyi tek tek değiştiren
+    (diğerleri orta değerde) örnekler. İkinci değer: ızgara sınırlandı mı."""
+    adlar = list(adaylar)
+    toplam = 1
+    for ad in adlar:
+        toplam *= max(1, len(adaylar[ad]))
+    if toplam <= AZAMI_ORNEK:
+        ornekler: list[dict[str, Any]] = [{}]
+        for ad in adlar:
+            ornekler = [{**o, ad: d} for o in ornekler for d in adaylar[ad]]
+        return ornekler, False
+    taban = {ad: adaylar[ad][len(adaylar[ad]) // 2] for ad in adlar}
+    out = [dict(taban)]
+    for ad in adlar:
+        for d in adaylar[ad]:
+            if d != taban[ad]:
+                out.append({**taban, ad: d})
+    return out[:AZAMI_ORNEK], True
+
+
+def _goster_deger(deger: Any) -> Any:
+    return str(deger) if isinstance(deger, Decimal) else deger
+
+
+def _ornek_metni(girdiler: Mapping[str, Any]) -> str:
+    return ", ".join(f"{a}={_goster_deger(d)}" for a, d in girdiler.items())
+
+
+def sinir_ornekleri(icerik: dict[str, Any], rules_dir: Path | None = None) -> dict[str, Any]:
+    """Tablonun sınır örnekleri ve satır uyarıları (PO'ya göndermeden önce kalite görünümü).
+
+    Girdi değerleri koşullardaki sabitlerden kendiliğinden üretilir (`adet >= 7` → 6, 7, 8;
+    `sepet_tutari < 750` ve birim TL → 749.99, 750.00, 750.01; `adet // 7` → 6, 7, 8, 13, 14,
+    15) ve her örnek `degerlendir` ile değerlendirilir. Dönüş:
+    `{ornekler: [{girdiler, satir_id, ciktilar, hata}], uyarilar: [{tur, mesaj, satirlar?,
+    girdiler?}]}`. Uyarı türleri:
+
+    - `ortusme`: iki (genel olmayan) satırın koşulu aynı örnekte sağlanıyor ve çıktıları farklı;
+      ilk satır geçerli olur — bilinçli değilse sınır yorumu PO'ya sorulmalı.
+    - `hic_eslesmez`: satırın koşulu hiçbir örnekte sağlanmıyor.
+    - `golgede`: satırın koşulu sağlanıyor ama her seferinde önceki bir satır seçiliyor.
+    - `satir_yok`: hiçbir satırın eşleşmediği örnekler (sonuç "satır yok" olur).
+    - `hata`: değerlendirme hatası (sıfıra bölme …).
+    - `ornek_sinirli`: girdi çok olduğundan örnekler tek tek değiştirilerek üretildi.
+    - `gecersiz`: tablo geçersiz ya da eksik; örnek üretilmedi.
+
+    Izgara sezgiseldir (yalnız sabitle karşılaştırmaları görür); boş uyarı listesi tablonun
+    doğru olduğunu kanıtlamaz.
+    """
+    hatalar = gonderim_hatalari(icerik, rules_dir)
+    if hatalar:
+        return {
+            "ornekler": [],
+            "uyarilar": [
+                {
+                    "tur": "gecersiz",
+                    "mesaj": "Tablo geçersiz ya da eksik: " + "; ".join(hatalar[:3]),
+                }
+            ],
+        }
+    satirlar = icerik["satirlar"]
+    turler = _kolon_turleri(icerik["girdiler"])
+    izgara, sinirli = _izgara(_sinir_adaylari(icerik))
+    ornekler: list[dict[str, Any]] = []
+    uyarilar: list[dict[str, Any]] = []
+    saglanan: dict[str, int] = {s["id"]: 0 for s in satirlar}
+    secilen: dict[str, int] = {s["id"]: 0 for s in satirlar}
+    ortusme: dict[tuple[str, str], dict[str, Any]] = {}
+    satir_yok: list[dict[str, Any]] = []
+    hatali: list[tuple[dict[str, Any], str]] = []
+    ctx = _baglam()
+    for girdiler in izgara:
+        sonuc = degerlendir(icerik, girdiler, rules_dir)
+        gosterilen = {a: _goster_deger(d) for a, d in girdiler.items()}
+        ornekler.append({"girdiler": gosterilen, **sonuc.as_dict()})
+        ornekler[-1].pop("eksik_girdiler", None)
+        if sonuc.hata:
+            hatali.append((gosterilen, sonuc.hata))
+            continue
+        if sonuc.satir_id is None:
+            satir_yok.append(gosterilen)
+        else:
+            secilen[sonuc.satir_id] += 1
+        ortam = {a: girdi_donustur(d, turler[a]) for a, d in girdiler.items()}
+        dogru_satirlar: list[tuple[str, dict[str, Any] | None]] = []
+        for satir in satirlar:
+            try:
+                if _hesapla(ayristir(satir["kosul"]), ortam, ctx) is not True:
+                    continue
+            except IfadeHatasi:
+                continue
+            saglanan[satir["id"]] += 1
+            if satir["kosul"].strip() == "dogru":
+                continue
+            try:
+                cikti = {a: _hesapla(ayristir(m), ortam, ctx) for a, m in satir["cikti"].items()}
+            except IfadeHatasi:
+                cikti = None
+            dogru_satirlar.append((satir["id"], cikti))
+        for i, (a, ca) in enumerate(dogru_satirlar):
+            for b, cb in dogru_satirlar[i + 1 :]:
+                if ca is not None and ca == cb:
+                    continue
+                ortusme.setdefault((a, b), gosterilen)
+    for (a, b), girdiler in ortusme.items():
+        uyarilar.append(
+            {
+                "tur": "ortusme",
+                "satirlar": [a, b],
+                "girdiler": girdiler,
+                "mesaj": (
+                    f"{a} ve {b} koşulları aynı girdide birlikte sağlanıyor "
+                    f"({_ornek_metni(girdiler)}); ilk satır {a} geçerli olur, {b} satırının "
+                    "çıktıları farklı. Bilinçli değilse sınır yorumunu PO'ya sorun."
+                ),
+            }
+        )
+    for satir in satirlar:
+        sid = satir["id"]
+        if saglanan[sid] == 0:
+            uyarilar.append(
+                {
+                    "tur": "hic_eslesmez",
+                    "satirlar": [sid],
+                    "mesaj": (
+                        f"{sid} koşulu hiçbir sınır örneğinde sağlanmıyor; satır hiç "
+                        "seçilmeyebilir."
+                    ),
+                }
+            )
+        elif secilen[sid] == 0:
+            uyarilar.append(
+                {
+                    "tur": "golgede",
+                    "satirlar": [sid],
+                    "mesaj": (
+                        f"{sid} koşulu sağlanan her örnekte önceki bir satır seçiliyor; {sid} hiç "
+                        "uygulanmıyor."
+                    ),
+                }
+            )
+    if satir_yok:
+        uyarilar.append(
+            {
+                "tur": "satir_yok",
+                "girdiler": satir_yok[0],
+                "mesaj": (
+                    f"{len(satir_yok)} örnekte hiçbir satır eşleşmiyor (ör. "
+                    f"{_ornek_metni(satir_yok[0])}); kapsanmayan durum PO'ya sorulmalı ya da genel "
+                    "bir satır (kosul: dogru) eklenmeli."
+                ),
+            }
+        )
+    for girdiler, hata in hatali[:5]:
+        uyarilar.append(
+            {"tur": "hata", "girdiler": girdiler, "mesaj": f"{_ornek_metni(girdiler)}: {hata}"}
+        )
+    if sinirli:
+        uyarilar.append(
+            {
+                "tur": "ornek_sinirli",
+                "mesaj": (
+                    f"Girdi çok olduğundan örnekler her girdi tek tek değiştirilerek üretildi "
+                    f"(en çok {AZAMI_ORNEK})."
+                ),
+            }
+        )
+    return {"ornekler": ornekler, "uyarilar": uyarilar}
+
+
 # ---------------------------------------------------------------------- metamorfik ilişki
 
 
@@ -1268,13 +1601,16 @@ __all__ = [
     "AZAMI_DERINLIK",
     "AZAMI_GIRDI",
     "AZAMI_IFADE_UZUNLUGU",
+    "AZAMI_ORNEK",
     "AZAMI_SATIR",
+    "TOLERANS_AZAMI",
     "Degerlendirme",
     "Dugum",
     "IfadeHatasi",
     "IliskiSonucu",
     "adlar",
     "ayristir",
+    "cikti_hassasiyeti",
     "degerlendir",
     "dogrula",
     "esit_mi",
@@ -1287,5 +1623,6 @@ __all__ = [
     "sayi_ayristir",
     "sayi_bicimle",
     "sema",
+    "sinir_ornekleri",
     "toleranslar",
 ]

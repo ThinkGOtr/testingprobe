@@ -13,16 +13,20 @@ durum, mesaj, uretim_no}` |
 | POST | `/decision-tables/{id}/approve` | po | `{icerik_hash, gerekce?}` → öğe |
 | POST | `/decision-tables/{id}/request-changes` | po | `{icerik_hash, gerekce}` → öğe |
 | POST | `/decision-tables/{id}/evaluate` | herkes | `{girdiler, icerik?}` → `{satir_id,
-ciktilar, eksik_girdiler, hata}` |
+ciktilar, eksik_girdiler, hata}`; `girdiler` en çok 24 ad, ad ≤ 40, metin değer ≤ 300 karakter |
+| GET  | `/decision-tables/{id}/ornekler` | herkes | → `{ornekler: [{girdiler, satir_id, ciktilar,
+hata}], uyarilar: [{tur, mesaj, satirlar?, girdiler?}]}` (`ifade.sinir_ornekleri`) |
 | POST | `/requirements/{id}/relations` | analyst | `{icerik, karar_tablosu_id?}` → 201 öğe |
 | PUT  | `/relations/{id}` | analyst | `{icerik, icerik_hash, karar_tablosu_id?}` → öğe |
 | POST | `/relations/{id}/submit` · `/withdraw` · `/reopen` | analyst | tablo uçlarıyla aynı |
 | POST | `/relations/{id}/approve` · `/request-changes` | po | tablo uçlarıyla aynı |
 
 Öğe: `{id, tur, requirement_id, sira_no, durum, icerik, icerik_hash, onaylanan_hash,
-ai_generated, uretim_modu, bayat, olusturma, guncelleme, onaylayan, onay_zamani, son_karar}`;
-ilişkide ek olarak `karar_tablosu_id`. `son_karar` = `{karar, gerekce, kullanici, zaman} | null`
-(PO'nun son kararı; "değişiklik iste" gerekçesi buradadır).
+ai_generated, uretim_modu, bayat, olusturma, guncelleme, onaylayan, onay_zamani, son_karar,
+son_duzenleyen}`; ilişkide ek olarak `karar_tablosu_id` ve `tablo_engeli` (onaylı ilişkinin bağlı
+tablosu onaylandığı sürümde değilse nedeni; o zaman `bayat: true`). `son_taslak.hata` ham iş hatası
+değil, sınıflandırılmış metindir (`hata_kodu` ile). `son_karar` = `{karar, gerekce, kullanici,
+zaman} | null` (PO'nun son kararı; "değişiklik iste" gerekçesi buradadır).
 
 Hatalar `{detail, kod}`; içerik doğrulaması 422 `karar_tablosu_gecersiz` / `iliski_gecersiz` ve
 ek olarak `hatalar: [metin]`. Görülen hash eskiyse 409 `onay_hash_uyusmuyor`; içerik taslakta
@@ -37,7 +41,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from tp_core.auth.deps import CurrentUser, DbSession, require_role
 from tp_core.features.karar_tablosu import service
@@ -78,10 +82,27 @@ class PoKarari(BaseModel):
     gerekce: str | None = Field(default=None, max_length=2000)
 
 
+GIRDI_AZAMI = 24  # tablo en çok 12 girdi alır; fazlası yok sayılır ama gövde sınırlıdır
+GIRDI_ADI_AZAMI = 40
+GIRDI_DEGERI_AZAMI = 300
+
+GirdiDegeri = str | int | float | bool | None
+
+
 class Degerlendir(BaseModel):
-    girdiler: dict[str, Any] = Field(default_factory=dict)
+    girdiler: dict[str, GirdiDegeri] = Field(default_factory=dict, max_length=GIRDI_AZAMI)
     # Düzenleyicideki kaydedilmemiş içerik ("örnekle dene"); verilmezse kayıtlı içerik.
     icerik: dict[str, Any] | None = None
+
+    @field_validator("girdiler")
+    @classmethod
+    def _girdi_sinirlari(cls, girdiler: dict[str, GirdiDegeri]) -> dict[str, GirdiDegeri]:
+        for ad, deger in girdiler.items():
+            if len(ad) > GIRDI_ADI_AZAMI:
+                raise ValueError(f"girdi adı en çok {GIRDI_ADI_AZAMI} karakter olabilir")
+            if isinstance(deger, str) and len(deger) > GIRDI_DEGERI_AZAMI:
+                raise ValueError(f"'{ad}' değeri en çok {GIRDI_DEGERI_AZAMI} karakter olabilir")
+        return girdiler
 
 
 class IliskiOlustur(BaseModel):
@@ -171,6 +192,12 @@ def evaluate_table(
     tablo_id: uuid.UUID, body: Degerlendir, session: DbSession, _u: CurrentUser
 ) -> dict[str, Any]:
     return service.tablo_degerlendir(session, tablo_id, body.girdiler, body.icerik)
+
+
+@router.get("/decision-tables/{tablo_id}/ornekler")
+def table_examples(tablo_id: uuid.UUID, session: DbSession, _u: CurrentUser) -> dict[str, Any]:
+    """Sınır örnekleri ve satır uyarıları (çakışan, hiç eşleşmeyen, gölgede kalan satırlar)."""
+    return service.tablo_ornekleri(session, tablo_id)
 
 
 # ---------------------------------------------------------------------- metamorfik ilişki
