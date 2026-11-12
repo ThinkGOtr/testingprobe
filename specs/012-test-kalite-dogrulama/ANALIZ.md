@@ -580,7 +580,7 @@ Dalga 2 (çekirdek birleştirme, 2026-11-12) sonunda uygulamanın §4–§6'dan 
 | Tablo araması | iki şeritte ayrı | Tek kaynak `karar_tablosu.service.gecerli_tablolar`; `oracle/tablolar.py` yeniden dışa aktarır. AC atfı boşluksuz büyük harfle karşılaştırılır (`"ac 2"` = `"AC2"`) |
 | Tablo olayı | `karar_tablosu.state` | Durum geçişleri `karar_tablosu.state` / `metamorfik_iliski.state` (iş akışı); içerik ve AI taslağı `karar_tablosu.updated` (`eylem`: `created`, `updated`, `ai_draft`) |
 | Oracle işleri | `oracle.check` | `oracle.check_requirement {requirement_id, neden}` (gereksinimin `draft`/`approved` case'leri; düzeltilmiş case'in AI içeriği de) → `oracle.check_case {case_id, icerik_hash, icerik?}`. Tablo onayı, yeniden açma ve onaylı tablonun geçersiz kılınması (Ş1), case üretimi sonu (yalnız geçerli tablo varsa) ve metamorfik türetme (Ş6) `check_requirement` açar |
-| Ş1 iş anahtarı | — | `oracle.check_requirement:<req>:<tablo>:<neden>:<uuid>` — olay başına tekil. Birleştirmede düzeltildi: önceki `…:<onaylanan_hash \| acik>` ikinci yeniden açmayı ve aynı içeriğin yeniden onayını yutuyordu; kayıtlar eski tablo kümesinde kalıp kapı 409'da takılıyordu |
+| Ş1 iş anahtarı | — | **§13.2 ile değişti** (gereksinim başına tek bekleyen iş). Eskiden `oracle.check_requirement:<req>:<tablo>:<neden>:<uuid>` — olay başına tekil. Birleştirmede düzeltildi: önceki `…:<onaylanan_hash \| acik>` ikinci yeniden açmayı ve aynı içeriğin yeniden onayını yutuyordu; kayıtlar eski tablo kümesinde kalıp kapı 409'da takılıyordu |
 | Kısmi değerlendirme | eksik girdi → grup `cikarilamadi` | `dogrulama.kismi_degerlendir`: eksik girdi yalnız onu kullanan koşul ve çıktıyı etkiler. Satırlar sırayla denenir; koşulu eksik girdiye dayanan ilk satırda durulur (seçilen satır tam değerlendirmeyle aynıdır). Seçilen satırın eksik girdiye dayanan çıktıları karşılaştırılmaz; o çıktıların doğrulanmış olguları gruptaki `karsilastirilamayan: [{column, value, field, quote, neden}]` listesine yazılır, sonuca girmez. `ifade.degerlendir` sözleşmesi değişmedi |
 | `ayrintilar.gruplar[]` | `{tablo_id, tablo_ad, satir_id, girdiler, karsilastirmalar, durum, neden}` | + `karsilastirilamayan` (yukarıda). Alan yolları 0 tabanlıdır (`steps[3].expected`); `case_degeri`/`tablo_degeri` sayıda düz ondalık metin (`"25.00"`), mantıksalda JSON bool, metinde str |
 | Portal `oracle` nesnesi | `{sonuc, ozet, karsilastirmalar, istisna}` | + `icerik_hash`, `kontrol_suruyor` (kayıt yokken `sonuc: null`), `karsilastirilamayan: [{tablo_id, tablo_ad, column, alan, alinti, case_degeri, neden}]`; `ozet` karşılaştırılamayanları söyler. `GET /cases/{id}/oracle?icerik_hash=` ayrıca `guncel_icerik`, `kapsayan_tablolar` döner |
@@ -670,22 +670,137 @@ sabitler; §4–§6 ile çelişirse bu bölüm geçerlidir.
 
 ### 13.2 Sözleşme değişiklikleri
 
-- `ORACLE_SONUC` += `kismen`. `0022` migrasyonu yerinde güncellenir (dal dev'e girmedi; izole yığın
-  yeniden kurulur). Yeni tablo `oracle_istisna(id, test_case_id, icerik_hash, tur: uyumsuz|kontrolsuz,
-  gerekce, veren_id, zaman)`, yalnız INSERT/SELECT.
-- `case_oracle_kontrol` satırı istisna kolonlarını korur (geriye uyum) ama sayımlar `oracle_istisna`'dan
-  yapılır.
-- `oracle` nesnesi: `sonuc ∈ {uyumlu, uyumsuz, kismen, kontrol_edilemedi, kapsam_disi} | null`,
-  `degerler: {uyumlu, uyumsuz, karsilastirilamayan, atilan}` (değer düzeyinde sayım), `istisna`
-  (son kayıt, `tur` ile), `neden` (`cagri_hatasi` vb.).
-- Karar gövdesi: `oracle_istisna_gerekce` (her iki tür için) + `oracle_istisna_turu?`
-  (`uyumsuz|kontrolsuz`; verilmezse sonuca göre çıkarılır). Gerekçe: ≥ 20 karakter ve ≥ 10 harf.
-- `beklenti_dogrulugu`: `{oran, uyumlu, uyumsuz, kismen, kontrol_edilemedi, kapsam_disi, istisna,
-  kontrolsuz_onay, n_case, n_story, tablolu_story, toplam_story, kapsam_orani, golden_kaynakli}`;
-  `kapsam_orani = (uyumlu+uyumsuz+kismen) / AI case toplamı (tablolu story'lerde)`;
-  `golden_kaynakli` = REPLAY ile üretilmiş kayıt sayısı (portal "REPLAY / elle golden" etiketi).
-  Kule ayrıca `onayli_uyumsuz: [{case_id, requirement_id, baslik}]` verir.
-- Hata koşusu adımı: `kiran_testler: [{test, kaynak: "ai"|"el"}]`, `temelde_kirmizi: [test]`;
-  özet ve `hata_yakalama`: `oran` (AI), `el_yazisi: {oran, yakalanan, kacan}`, `kapsam:
-  {kosulan_hata, katalog, platformlar}`; tam katalog ve ≥ 1 geçerli adım olmayan koşu Kule
-  ölçüsüne girmez.
+Uygulandığı hâliyle (düzeltme şeritleri R1–R4 birleştirildikten sonra, kod okunarak yazıldı;
+§12.1 ile çelişirse bu bölüm geçerlidir).
+
+**Veri.** `ORACLE_SONUC` += `kismen`; `TURETME_SONUC` += `tutarsiz_kalan_deger`. `0022` migrasyonu
+yerinde güncellendi (dal dev'e girmedi; izole yığın yeniden kurulur). Yeni tablo `oracle_istisna(id,
+test_case_id, icerik_hash, tur: uyumsuz|kontrolsuz, gerekce, veren_id (boş olabilir), zaman,
+tablo_hashleri)`, yalnız INSERT/SELECT. `case_oracle_kontrol` istisna kolonlarını geriye uyum için
+yazar; sayımlar ve "istisna verilmiş" görünümü `oracle_istisna`'dandır.
+
+**Oracle nesnesi** (`GET /cases/{id}/oracle` içinde `oracle`, case listesinde case başına;
+`service.oracle_gorunumu`). Kapsayan tablo da geçerli kayıt da yoksa `null`.
+
+```
+{ sonuc: uyumlu|uyumsuz|kismen|kontrol_edilemedi|kapsam_disi|null,   // null: kontrol sürüyor
+  icerik_hash, ozet, kontrol_suruyor: bool,
+  karsilastirmalar: [{tablo_id, tablo_ad, satir_id, column, alan, alinti, case_degeri,
+                      tablo_degeri, uyumlu}],
+  karsilastirilamayan: [{tablo_id, tablo_ad, column, alan, alinti, case_degeri, neden}],
+      // eksik girdi yüzünden hesaplanamayan değerler + tamlık denetiminde hiçbir olguya ya da
+      // `ignored`'a bağlanmayan sayılar (tablo_id/column/case_degeri null)
+  degerler: {uyumlu, uyumsuz, karsilastirilamayan, atilan},   // değer düzeyinde sayım
+  istisna: {tur, gerekce, veren, zaman, gecerli} | null,      // son kayıt; gecerli = aynı
+      // tablo kümesiyle verilmiş (kapı yeniden gerekçe istemez)
+  neden: cagri_hatasi|replay_miss|null }
+```
+
+`GET /cases/{id}/oracle?icerik_hash=` sarmalayıcısı: `{case_id, icerik_hash, guncel_icerik,
+kapsayan_tablolar: [{id, ref, ad, icerik_hash}], oracle}`. `POST /cases/{id}/oracle-check
+{icerik?}` → 202 `{job_id, icerik_hash}`; iş `(case, hash, tablo kümesi, kayıt sürümü)`
+anahtarlıdır, case başına dakikada 10 yeni iş.
+
+**Model çıktısı** (`case_facts` şema v2): `{groups: [{table_ref, inputs[], expected[]}], ignored:
+[{field, quote, reason}]}` — `ignored` zorunludur. Beklenen alanlardaki (`steps[i].expected`,
+`expected_result`, `verification_point`) her sayı bir olgunun ya da `ignored` kaydının alıntısı
+içinde olmalı; değilse kayıt `kismen` olur (fark varsa `uyumsuz`).
+
+**Karar gövdesi** (`POST /cases/{id}/decision`, `approve` | `edit`): `oracle_istisna_gerekce?`
+(≤ 2000; iki tür için de) + `oracle_istisna_turu?: uyumsuz|kontrolsuz` (verilmezse sonuçtan
+çıkarılır; sonuca uymazsa 422 `gecersiz_karar`). Gerekçe boşluk atılınca ≥ 20 karakter ve ≥ 10
+harf (değilse 422 `gecersiz_karar`).
+
+**Kapı** (`oracle/kapi.py`). "Zorunlu" = yüksek risk (saklı, AI özgün ya da gönderilen içerikten
+biri; `risk == "high"` ya da v3 `priority == "P1"`) ya da düşürme (V11; `oracle.dusurme` denetimi,
+engellenen deneme de `engellendi: true` ile yazılır).
+
+| Durum | Zorunlu | Diğer |
+|---|---|---|
+| kapsayan tablo yok · `uyumlu` · `kapsam_disi` | onay | onay |
+| `kismen` | onay + uyarı | onay + uyarı |
+| `uyumsuz`, gerekçe / geçerli istisna yok | 422 `oracle_uyumsuz` | onay + uyarı |
+| `kontrol_edilemedi`, gerekçe / geçerli istisna yok | 422 `oracle_kontrolsuz` | onay + uyarı |
+| gerekçe verildi ya da aynı tür + tablo kümesiyle önceki istisna | onay (`oracle_istisna`, `oracle.exception`) | onay + uyarı |
+| kayıt yok, kapsayan tablo var | 409 `oracle_bekleniyor` (kontrol ayrı işlemde kuyruğa) | onay |
+| `oracle-check` dakikalık sınır aşıldı | 429 `oracle_kontrol_siniri` | aynı |
+
+Uyarılar karar kaydına (`review.duzeltme_olculeri.oracle_uyarilari`) ve `oracle.warning`
+denetimine yazılır.
+
+**Kontrol işleri.** `oracle.check_requirement {requirement_id, neden, nedenler?}` gereksinim başına
+tek bekleyen işe birleşir (`oracle.service.gereksinim_kontrolu_kuyruga_al`; bekleyen iş varsa
+`nedenler`'e eklenir, yoksa `TP_ORACLE_BIRLESTIRME_S` (2 sn) sonra koşacak yeni iş). Tablo onayı /
+yeniden açma / onaylı tablonun geçersiz kılınması (`karar_tablosu.service.oracle_kontrolu_iste`),
+case üretimi ve metamorfik türetme bu işlevi çağırır; §12.1'deki olay başına tekil anahtar kalktı.
+`decide` (edit / reopen) aynı işlemde `oracle.check_case` açar. Onaylı case sonradan `uyumsuz`
+çıkarsa (geçerli istisnasız) `oracle.onayli_uyumsuz` olayı + denetimi.
+
+**`beklenti_dogrulugu`** (`oracle/metrik.py`): `{oran, uyumlu, uyumsuz, kismen, kontrol_edilemedi,
+kapsam_disi, istisna, kontrolsuz_onay, n_case, n_story, tablolu_story, toplam_story, kapsam_orani,
+golden_kaynakli, tekrar, kaynak}`. `oran = uyumlu / (uyumlu + uyumsuz)` (payda 0 → `null`);
+`kapsam_orani = (uyumlu + uyumsuz + kismen) / tablolu story'lerdeki AI case toplamı`; `tekrar` =
+aynı gereksinimde aynı satırı aynı değerlerle denetleyen, tek sayılan case'ler (paydadan da düşülür);
+`istisna` / `kontrolsuz_onay` = `oracle_istisna`'dan case ve tür başına bir. Kule değeri `kaynak`
+taşımaz (metin `kaynaklar`'dadır); Kule ayrıca `onayli_uyumsuz: [{case_id, requirement_id,
+baslik}]` verir (onaylı/yayınlı, güncel içeriğin geçerli kaydı `uyumsuz`, aynı tablo kümesiyle
+`uyumsuz` istisnası yok).
+
+**Hata koşusu** (`/fault-runs`). Koşu: `{id, durum, iptal_istendi, platformlar, hatalar, commit,
+baslatan_id, baslatan, ozet | null, uyarilar, baslama, bitis, olusturma}`; iptal yanıtı `{id, durum,
+iptal_istendi}` (koşan adım varken koşu `running` kalır). Adım: `{id, platform, hata_kodu,
+hata_adi, asama: temel|hata|kapanis, run_id, sonuc, kiran_testler: [{test, kaynak: ai|el}],
+temelde_kirmizi: [test], neden, sure_ms, sira}`. Özet:
+
+```
+{ oran, yakalanan, kacan, gecersiz, bekleyen,          // oran = AI (üretilen testler)
+  el_yazisi: {oran, yakalanan, kacan}, tum_testler: {oran, yakalanan, kacan},
+  kapsam: {kosulan_hata, katalog, platformlar, tam_katalog, gecerli_adim},
+  platformlar: [{platform, oran, yakalanan, kacan, gecersiz, bekleyen, el_yazisi, tum_testler,
+                 uretilen_test, el_test, temel, kapanis}],
+  kacanlar: [{hata_kodu, ad, platform}] }
+```
+
+Kule `hata_yakalama`: son `done` koşu ki `kapsam.tam_katalog` ve `gecerli_adim ≥ 1`; şekil
+`{son_kosu: {id, bitis, durum}, oran, yakalanan, kacan, gecersiz, el_yazisi, tum_testler, kapsam,
+platformlar: [{platform, oran, yakalanan, kacan, gecersiz, el_yazisi}], kacanlar}`. Katalog
+(`GET /fault-runs/catalog`): `{kod, ad, tur, aciklama, yakalayan_kural, ac_refs, tablo,
+ayirt_edici: {girdi, dogru, hatali}}`; `kampanya_esik_7` yerine `kampanya_tek_bedava` (K9).
+Hatalar: 409 `hata_kosusu_suruyor`, 422 `gecersiz_istek`.
+
+**Karar tablosu ve ilişki.** `GET /decision-tables/{id}/ornekler` → `{ornekler: [{girdiler,
+satir_id, ciktilar, hata}], uyarilar: [{tur: ortusme|hic_eslesmez|golgede|satir_yok|hata|
+ornek_sinirli|gecersiz, mesaj, satirlar?, girdiler?}]}`. İlişki öğesi `karar_tablosu_id` ve
+`tablo_engeli` taşır (onaylı ilişkinin bağlı tablosu onaylandığı sürümde değilse nedeni; o zaman
+`bayat: true`; sürüm onay review'unun `sonra.bagli_tablo`'sundadır). İlişki içeriğinde isteğe bağlı
+`degismez: [metin]` (≤ 20, ≤ 80 karakter): türetmede değişmeyen parçalar. TPD-1 T1 V9'dur
+(`adet`, `ara_toplam` → `bedava_adet`, `indirim`, `toplam`; ilişki `ara_toplam`'ı da ikiye katlar).
+
+**Metamorfik türetme.** Sonuç += `tutarsiz_kalan_deger`: kaynak grupta `degismez` parçasıyla
+örtülmeyen karşılaştırılamayan değer varsa ya da yeniden yazılan alanda olgusuz/örtülmeyen sayı
+kalırsa türetme yapılmaz. Yalnız sonucu `uyumlu` grup türetir. Olmayan ilişki 404
+`iliski_bulunamadi`.
+
+**Triage.** Sinyal `{kod, aciklama, kaynak, kanit, baslik?}`; karar tablosu sinyalleri tek satırlık
+`baslik` taşır. `test_maintenance/beklenti` kararına ek sinyal `karar_tablosu_tablo_suphesi`
+("Tablo da yanlış olabilir"). İnceltme yalnız başarısız adıma ait karşılaştırmada; kayıtlı istisna
+inceltmeyi kapatır.
+
+### 13.3 Açık konular
+
+- **Golden'ların canlı kaydı (ürün sahibi):** `case_facts` ve `decision_table_draft` golden'ları elle
+  hazırlandı; `TP_MODEL_MODE=record` ile canlı kayıt ve `evaluations.yaml` `pending` →
+  değerlendirme kararı.
+- **Asistan paketi değerlendirmesi (ürün sahibi):** `assistant` paketi `icerik_degisti`
+  (§11.6); `test_readme_status_table_matches_manifest` ve `test_degerlendirme_durumu_durust_etiket`
+  bu yüzden kırmızı.
+- **`beklenti` için elle bug taslağı yolu yok:** `test_maintenance/beklenti` kararında bug taslağı
+  açılmaz; tablo yanlışsa (`karar_tablosu_tablo_suphesi`) kullanıcının ürün hatası taslağını elle
+  açacağı bir yol bulunmuyor.
+- **`HataKosusuSuruyor` yeri:** hata koşusu hatası `karar_tablosu/hatalar.py`'de duruyor (Ş0
+  ortak hata modülü); `hata_kosusu` özelliğine taşınması düşünülmeli.
+- **İsteğe bağlı kolonlar (R2/R4 önerisi):** `karar_tablosu`/`metamorfik_iliski`'de
+  `son_duzenleyen_id`, `insan_duzenledi`, `metamorfik_iliski.tablo_onaylanan_hash` (bugün denetim
+  kayıtları ve onay review'undan okunuyor); `hata_kosusu`'nda iptal işareti ve temel envanter için
+  kolon (bugün `ozet._ic` JSON'ında). Migrasyon `feat/case-gen-v3` birleşmesiyle birlikte
+  değerlendirilir.
