@@ -158,7 +158,7 @@ export const MOCK_SONUCLAR: Record<Platform, Record<string, MockAdimSonucu> | nu
     ...WEB,
     min_siparis_1000: {
       sonuc: "gecersiz",
-      neden: "Cihaz/Appium erişilemiyor (http://127.0.0.1:4723): oturum komutu zaman aşımına uğradı (UiAutomator2 yanıt vermedi).",
+      neden: "Cihaz/Appium erişilemiyor: oturum komutu zaman aşımına uğradı.",
     },
   },
   // Örnek veride iOS simülatörü kapalıdır (kabul senaryosu 13: adımlar geçersiz, oran etkilenmez).

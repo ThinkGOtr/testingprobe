@@ -21,7 +21,7 @@ import { BildirimProvider } from "../Bildirim";
 import { CaseKarti } from "../CaseKarti";
 import { HataKosusuKarti, turetmeOnerisi } from "../kule/HataKosusuKarti";
 import { HataYakalamaKarosu, OnayliUyumsuzKarti } from "../kule/KaliteKpilari";
-import { damgaAlani, karsilastirilamamaNedeni, KarsilastirmaTablosu } from "./oracle";
+import { damgaAlani, karsilastirilamamaNedeni, KarsilastirmaTablosu, ozetMetni } from "./oracle";
 import { OrnekIzgarasi } from "./OrnekIzgarasi";
 import { caseOracleYanitiUyarla } from "../../api/uyumKalite";
 import { icerikFarklari } from "./ortak";
@@ -58,6 +58,13 @@ describe("u2 N8, N18 + koordinatör 1: iş dili ve alıntı", () => {
     );
     // Açıklamasız uzun ifade: formül okunur (anlam uydurulmaz).
     expect(ciktiyiOku({ ad: "x" }, "yuvarla(a / b, 2)")).toBe("x = yuvarla(a ÷ b, 2)");
+  });
+
+  it("özet cümlesinde bitişik tırnak çifti teke iner", () => {
+    expect(ozetMetni('2 beklenen değer tabloyla uyuşmuyor; ör. minimum_uyarisi: case “"Minimum sipariş tutarı 750,00 TL" uyarısı görünür”, tablo yanlış.')).toBe(
+      '2 beklenen değer tabloyla uyuşmuyor; ör. minimum_uyarisi: case "Minimum sipariş tutarı 750,00 TL" uyarısı görünür, tablo yanlış.',
+    );
+    expect(ozetMetni("ör. indirim: case “25,00 TL”, tablo 0.")).toBe("ör. indirim: case “25,00 TL”, tablo 0.");
   });
 
   it("alıntı zaten tırnakla başlıyorsa yeniden sarılmaz (““…” olmaz); karşılaştırmada mantıksal değer iş dilinde, satır T2 · R3", () => {

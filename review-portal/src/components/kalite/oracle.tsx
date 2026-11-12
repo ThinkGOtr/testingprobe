@@ -272,6 +272,15 @@ function useToleranslar(): Record<string, string> {
   );
 }
 
+/**
+ * Çekirdek özeti alıntıyı “…” ile sarar; alıntı zaten tırnakla başlıyor/bitiyorsa çift tırnak (““…”) olur.
+ * Ekranda bitişik tırnak çifti teke indirilir (koordinatör ekran turu 1).
+ */
+export function ozetMetni(ozet: string): string {
+  // Tırnakla başlayan alıntının dış “…” sarmalı kaldırılır (içerik aynen kalır).
+  return ozet.replace(/“(["'][^”]*)”/g, "$1");
+}
+
 /** Karşılaştırma hücresi: mantıksal çıktı iş dilinde (u2 N18), diğerleri `degerMetni`. */
 export function karsilastirmaDegeri(column: string, d: string | number | boolean | null | undefined): string {
   return mantiksalMi(d) ? mantiksalOku(column, d) : degerMetni(d);
@@ -461,7 +470,7 @@ export function OracleAyrinti({ tc }: { tc: TestCase }) {
         Tablo karşılaştırması{satirlar.length > 0 && ` (${satirlar.length} değer, ${satirlar.filter((k) => !k.uyumlu).length} farklı`}
         {satirlar.length > 0 && (disarida.length > 0 ? `, ${disarida.length} karşılaştırılamadı)` : ")")}
       </summary>
-      {o?.ozet && <p className="kucuk">{o.ozet}</p>}
+      {o?.ozet && <p className="kucuk">{ozetMetni(o.ozet)}</p>}
       {d && (
         <p className="kucuk soluk" data-testid="oracle-degerler">
           Değer düzeyinde: {d.uyumlu} uyumlu · {d.uyumsuz} farklı · {d.karsilastirilamayan} karşılaştırılamadı{d.atilan > 0 ? ` · ${d.atilan} doğrulanamadığı için atıldı` : ""}

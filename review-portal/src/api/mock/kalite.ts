@@ -492,18 +492,19 @@ function tekDeger(olgular: Olgu[], kolon: string): IfadeDegeri | null | undefine
 }
 
 /**
- * core `yeniden_yazim._baslik`: başlık + ` (ilişki: <ad>)`; 120 karakteri aşarsa önce başlık (en az 20
- * karakter kalır), sonra ilişki adı `…` ile kısaltılır.
+ * Türetilen case başlığı: başlık + ` (ilişki: <ad>)`, en çok 120 karakter. u2 N11 (tur 2): önce ilişki adı `…` ile
+ * kısaltılır (case başlığı korunur: "14 adet kampanyalı üründe 2 adet bedava verilir" kesilmez); ilişki adına en az
+ * 8 karakter kalmıyorsa başlık da kısaltılır. Çekirdek `yeniden_yazim._baslik` aynı kurala çekilmeli (rapor).
  */
 export function turetilenBaslik(baslik: string, ad: string): string {
   const AZAMI = 120;
-  let ek = ` (ilişki: ${ad})`;
-  if (baslik.length + ek.length <= AZAMI) return baslik + ek;
-  const pay = Math.max(20, AZAMI - ek.length);
-  if (baslik.length > pay) baslik = `${baslik.slice(0, pay - 1).trimEnd()}…`;
-  const kalan = AZAMI - baslik.length;
-  if (ek.length > kalan) ek = `${ek.slice(0, kalan - 2)}…)`;
-  return baslik + ek;
+  const ek = (x: string) => ` (ilişki: ${x})`;
+  if (baslik.length + ek(ad).length <= AZAMI) return baslik + ek(ad);
+  const EN_AZ_AD = 8;
+  const adPayi = AZAMI - baslik.length - ek("").length;
+  if (adPayi >= EN_AZ_AD) return baslik + ek(`${ad.slice(0, adPayi - 1).trimEnd()}…`);
+  const kisaBaslik = `${baslik.slice(0, AZAMI - ek("").length - EN_AZ_AD - 1).trimEnd()}…`;
+  return kisaBaslik + ek(`${ad.slice(0, AZAMI - kisaBaslik.length - ek("").length - 1).trimEnd()}…`);
 }
 
 /** İfadede geçen adlar (`ifade.adlar` karşılığı). */

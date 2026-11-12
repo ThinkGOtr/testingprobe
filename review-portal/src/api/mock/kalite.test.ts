@@ -84,11 +84,14 @@ describe("sınırlı ifade dili (ANALIZ §4.2)", () => {
     expect(tabloDegerlendir(KAMPANYA_TABLOSU, { adet: 7 })).toMatchObject({ satir_id: null, eksik_girdiler: ["ara_toplam"] });
     expect(tabloDegerlendir({ ...MIN_SIPARIS_TABLOSU, satirlar: MIN_SIPARIS_TABLOSU.satirlar.slice(0, 2) }, { sepet_tutari: 1000, kampanyali_sepet: false })).toMatchObject({ satir_id: null, eksik_girdiler: [], hata: null });
   });
-  it("türetilen başlık core `_baslik` gibi kısaltılır", () => {
+  it("u2 N11: türetilen başlıkta önce ilişki adı kısaltılır, case başlığı korunur (≤ 120)", () => {
     expect(turetilenBaslik("Kısa", "İlişki")).toBe("Kısa (ilişki: İlişki)");
-    const uzun = turetilenBaslik("x".repeat(100), "y".repeat(100));
-    expect(uzun.length).toBe(120);
-    expect(uzun).toMatch(/^x{19}… \(ilişki: y+…\)$/);
+    const c2 = turetilenBaslik("14 adet kampanyalı üründe 2 adet bedava verilir", "Adet iki katına çıkınca bedava adet ve tutarlar iki katına çıkar");
+    expect(c2.length).toBeLessThanOrEqual(120);
+    expect(c2).toMatch(/^14 adet kampanyalı üründe 2 adet bedava verilir \(ilişki: Adet iki katına.*…\)$/);
+    const uzun = turetilenBaslik("x".repeat(115), "y".repeat(100));
+    expect(uzun.length).toBeLessThanOrEqual(120);
+    expect(uzun).toMatch(/^x+… \(ilişki: y+…\)$/);
   });
   it("kısmi değerlendirme (core `kismi_degerlendir`): eksik girdi yalnız onu kullanan koşulu/çıktıyı etkiler", () => {
     // 7 adet, ara toplam yok: R1 seçilir; bedava adet hesaplanır, indirim ve toplam (ara toplama dayanır) hesaplanamaz.
