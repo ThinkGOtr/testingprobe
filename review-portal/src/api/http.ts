@@ -28,6 +28,8 @@ export interface ApiHataEki {
   yol?: string;
   /** Başka bir hatadan dönüştürülen hata, son hata kaydının kimliğini taşır. */
   kayitId?: string;
+  /** Hata yanıtının ayrıştırılmış JSON gövdesi (ör. 409'da atıf yapan case listesi). */
+  govde?: unknown;
 }
 
 let kayitSayaci = 0;
@@ -45,6 +47,8 @@ export class ApiError extends Error {
   yol?: string;
   /** Son hata deposundaki kaydın kimliği ("Asistana sor" bu kaydın bağlamıyla açar). */
   readonly kayitId: string;
+  /** Hata yanıtının JSON gövdesi (varsa). */
+  readonly govde?: unknown;
 
   constructor(status: number, detail: string, ek: ApiHataEki = {}) {
     super(detail);
@@ -55,6 +59,7 @@ export class ApiError extends Error {
     this.method = ek.method;
     this.yol = ek.yol;
     this.kayitId = ek.kayitId ?? yeniKayitId();
+    this.govde = ek.govde;
   }
 }
 
@@ -220,7 +225,7 @@ function sorguMetni(sorgu?: Sorgu): URLSearchParams {
   return p;
 }
 
-export async function detayOku(res: Response): Promise<{ detail: string | null; json: boolean; kod?: string }> {
+export async function detayOku(res: Response): Promise<{ detail: string | null; json: boolean; kod?: string; govde?: unknown }> {
   const metin = await res.text().catch(() => "");
   if (!metin) return { detail: null, json: false };
   try {
@@ -230,7 +235,16 @@ export async function detayOku(res: Response): Promise<{ detail: string | null; 
       const kod = typeof hamKod === "string" && hamKod ? hamKod : undefined;
       if ("detail" in govde) {
         const d = (govde as { detail: unknown }).detail;
-        if (typeof d === "string") return { detail: d, json: true, kod };
+        // Gövde yalnız detay/kod dışında alan taşıyorsa eklenir (ör. 409 + atıf yapan case listesi).
+        const ekAlan = Object.keys(govde).some((k) => k !== "detail" && k !== "kod");
+        if (typeof d === "string") return { detail: d, json: true, kod, ...(ekAlan ? { govde } : {}) };
+        // Yapılı detay (`HTTPException(detail={...})`): içindeki Türkçe mesaj ve kod alınır, gövde korunur.
+        if (d && typeof d === "object" && !Array.isArray(d)) {
+          const o = d as Record<string, unknown>;
+          const m = [o.detail, o.mesaj, o.message].find((x): x is string => typeof x === "string" && x !== "");
+          const ic = typeof o.kod === "string" && o.kod ? o.kod : kod;
+          return { detail: m ?? null, json: true, kod: ic, govde };
+        }
         // FastAPI doğrulama hataları: [{loc, msg, type}]
         if (Array.isArray(d)) {
           const mesajlar = d
@@ -239,7 +253,7 @@ export async function detayOku(res: Response): Promise<{ detail: string | null; 
           return { detail: mesajlar.join("; ") || "Geçersiz istek", json: true, kod };
         }
       }
-      return { detail: null, json: true, kod };
+      return { detail: null, json: true, kod, govde };
     }
     return { detail: null, json: true };
   } catch {
@@ -367,7 +381,7 @@ async function istekGonder<T>(
     }
   }
 
-  const { detail, json, kod } = await detayOku(res);
+  const { detail, json, kod, govde } = await detayOku(res);
   if (res.status === 404 && ayarlar.mockOtomatik && (detail === "Not Found" || !json)) {
     // Kaynağı çekirdekten gelen bir işlem örnek veriye düşmez (bkz. IstekSecenegi.kaynak).
     if (secenek.kaynak && !mockUclar.has(ucuNormallestir(...secenek.kaynak))) throw new ApiError(501, UC_YOK);
@@ -376,7 +390,7 @@ async function istekGonder<T>(
   // Canlı derlemede genel 404 (FastAPI'de rota yok) "bu fazda yok" demektir; ham "Not Found" gösterilmez.
   if (res.status === 404 && !ayarlar.mockOtomatik && (detail === "Not Found" || !json)) throw new ApiError(501, BU_FAZDA_YOK);
   if (res.status === 401 && !path.startsWith("/auth/")) yetkisizDinleyici?.();
-  throw new ApiError(res.status, detail ?? VARSAYILAN_HATA[res.status] ?? `Beklenmeyen hata (HTTP ${res.status}).`, { kod });
+  throw new ApiError(res.status, detail ?? VARSAYILAN_HATA[res.status] ?? `Beklenmeyen hata (HTTP ${res.status}).`, { kod, govde });
 }
 
 /** Karar uçlarında 409'un kullanıcıya gösterilen hâli (içerik görüntülendikten sonra değişti). */

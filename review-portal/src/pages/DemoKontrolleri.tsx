@@ -1,7 +1,7 @@
 // Sunucu (presenter) için demo kontrolleri: locator kırılması (TEKNIK-TASARIM §2 ikinci kırılma
 // senaryosu, `make break` eşi) ve demo sıfırlama. Her ikisi de onay ister; ilerleme core olaylarından
 // (`demo.progress`) ve koşu listesinden izlenir — olay gelmese de koşu ve triage görünür.
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
@@ -776,6 +776,97 @@ function SifirlamaKarti() {
   );
 }
 
+/**
+ * 013 §3.4 demo kontrolü: jira-sim'de bir story'yi Jira tetiğinin izlediği duruma ("QA To Do") taşır.
+ * Yalnız demo/sim modunda; gerçek Jira'da core 409 döner (metni gösterilir). Story listesi gereksinimlerden.
+ */
+export function JiraDurumKarti() {
+  const id = useId();
+  const bildir = useBildirim();
+  const [storyler, setStoryler] = useState<string[] | null>(null);
+  const [anahtar, setAnahtar] = useState("");
+  const [hedef, setHedef] = useState("QA To Do");
+  const [calisiyor, setCalisiyor] = useState(false);
+  const [hata, setHata] = useState<string | null>(null);
+  const [sonuc, setSonuc] = useState<string | null>(null);
+  useEffect(() => {
+    let iptal = false;
+    void api
+      .gereksinimler()
+      .then((l) => {
+        if (iptal) return;
+        const anahtarlar = [...new Set(l.map((g) => g.jira_key).filter((k): k is string => !!k))].sort((a, b) => a.localeCompare(b, "tr", { numeric: true }));
+        setStoryler(anahtarlar);
+        setAnahtar((x) => x || anahtarlar[0] || "");
+      })
+      .catch(() => !iptal && setStoryler([]));
+    // Tetiğin izlediği durum adı ayarlanabilir (varsayılan "QA To Do"): ayar okunabilirse o kullanılır.
+    void api
+      .otomasyonAyarlari()
+      .then((a) => !iptal && setHedef(a.jira_tetik.durum))
+      .catch(() => undefined);
+    return () => {
+      iptal = true;
+    };
+  }, []);
+
+  async function tasi() {
+    const k = anahtar.trim().toUpperCase();
+    if (!k) return setHata("Bir story anahtarı girin (ör. TPD-2).");
+    setCalisiyor(true);
+    setHata(null);
+    setSonuc(null);
+    try {
+      const y = await api.demoJiraDurumu(k, hedef);
+      const mesaj =
+        (y && typeof y.mesaj === "string" && y.mesaj) ||
+        (y?.degisti === false ? `${k} zaten "${hedef}" durumunda; değişiklik yapılmadı.` : `${k} jira-sim'de "${hedef}" durumuna taşındı.`);
+      setSonuc(mesaj);
+      bildir(mesaj);
+    } catch (e) {
+      setHata(hataMesaji(e));
+    } finally {
+      setCalisiyor(false);
+    }
+  }
+
+  return (
+    <Kart baslik="Jira durum tetiği (jira-sim)">
+      <p className="soluk kucuk">
+        jira-sim'de story durumunu değiştirir; Jira tetiği bir sonraki turda (bkz. <Link to="/otomasyon">Otomasyon</Link>) story'yi çekip ön
+        incelemeye alır. PO onayı yine gerekir. Gerçek Jira'da çalışmaz.
+      </p>
+      <div className="satir-ogeler">
+        <label htmlFor={`${id}-story`}>Story</label>
+        {storyler && storyler.length > 0 ? (
+          <select id={`${id}-story`} value={anahtar} onChange={(e) => setAnahtar(e.target.value)}>
+            {storyler.map((k) => (
+              <option key={k} value={k}>
+                {k}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <input id={`${id}-story`} className="mono" value={anahtar} placeholder="TPD-2" size={10} onChange={(e) => setAnahtar(e.target.value)} />
+        )}
+        <IslemDugmesi roller={["presenter"]} calisiyor={calisiyor} disabled={!anahtar.trim()} onClick={() => void tasi()}>
+          {hedef === "QA To Do" ? "Story'yi QA To Do'ya taşı" : `Story'yi "${hedef}" durumuna taşı`}
+        </IslemDugmesi>
+      </div>
+      {sonuc && (
+        <p className="kucuk" role="status">
+          {sonuc}
+        </p>
+      )}
+      {hata && (
+        <Uyari ton="hata" baslik="Taşınamadı">
+          {hata}
+        </Uyari>
+      )}
+    </Kart>
+  );
+}
+
 /** `/demo/status` (salt okuma): sayfa açılışında ve her demo olayında yenilenir. */
 function useDemoDurumu(): DemoDurumu | null {
   const [d, setD] = useState<DemoDurumu | null>(null);
@@ -867,6 +958,7 @@ export function DemoKontrolleri() {
         <LocatorKirmaKarti durum={durum} />
         <SifirlamaKarti />
       </div>
+      <JiraDurumKarti />
       <DurumKarti d={durum} />
     </>
   );

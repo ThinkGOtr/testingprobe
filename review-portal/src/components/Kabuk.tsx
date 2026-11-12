@@ -37,6 +37,9 @@ const NAV: { grup: string; ogeler: NavOgesi[] }[] = [
       { yol: "/kod", ad: "Kod üretimi", ikon: "kod", odak: ["engineer"], uc: ["GET", "/scripts"] },
       { yol: "/kosular", ad: "Koşular", ikon: "kosu", odak: ["presenter", "engineer"], uc: ["GET", "/runs"] },
       { yol: "/bug-taslaklari", ad: "Bug taslakları", ikon: "bug", odak: ["tester"], uc: ["GET", "/bug-drafts"] },
+      // 013: herkes görür; Analist ve Mühendis düzenler (K11, Y3).
+      { yol: "/test-verisi", ad: "Test verisi", ikon: "veri", odak: ["analyst", "engineer"], uc: ["GET", "/test-data"] },
+      { yol: "/otomasyon", ad: "Otomasyon", ikon: "otomasyon", odak: ["analyst", "engineer"], uc: ["GET", "/automation-settings"] },
     ],
   },
   {

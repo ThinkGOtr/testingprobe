@@ -10,6 +10,28 @@ import { YEREL_SINIF } from "../lib/kapi";
 import { tarih } from "../lib/format";
 import { PlatformRozeti, PlatformSecici } from "../components/Platform";
 import { PLATFORM_ETIKETI, type Platform } from "../lib/platform";
+import type { Script } from "../api/types";
+
+export const OTOMATIK_TETIK_ACIKLAMA = "Bu test, case onaylanınca otomatik kod üretimiyle başlatıldı (Otomasyon ayarı).";
+export const VERI_DEGISTI_METNI = "Test verisi değişti; yeniden üretin";
+
+/** 013 §3.5: otomatik tetik rozeti ve "test verisi değişti" işareti (core göndermediyse hiçbiri). */
+export function OtomasyonIsaretleri({ s }: { s: Pick<Script, "tetik" | "veri_degisti"> }) {
+  return (
+    <>
+      {s.tetik === "otomatik" && (
+        <Cip ton="bilgi" title={OTOMATIK_TETIK_ACIKLAMA}>
+          Onayla otomatik
+        </Cip>
+      )}
+      {s.veri_degisti && (
+        <Cip ton="uyari" title="Üretimde kullanılan test verisi sürümü artık güncel değil.">
+          {VERI_DEGISTI_METNI}
+        </Cip>
+      )}
+    </>
+  );
+}
 
 export function Kod() {
   const scriptler = useVeri(() => api.scriptler(), []);
@@ -183,6 +205,7 @@ export function Kod() {
                             </Cip>
                           )}
                           <ReplayRozeti mode={s.mode} />
+                          <OtomasyonIsaretleri s={s} />
                         </span>
                       </td>
                       <td>{s.pr ? <span className="mono">#{s.pr.number} · {s.pr.durum === "merged" ? "birleşti" : s.pr.durum === "open" ? "açık" : "kapalı"}</span> : "—"}</td>
@@ -202,7 +225,8 @@ export function Kod() {
                       <td className="tek-satir">{tarih(s.olusturma)}</td>
                       <td>
                         {/* Defect adayının testi doğru (uygulama farklı davranıyor): yeniden üretim önerilmez, karar triage'da. */}
-                        {(s.durum === "blocked" || s.durum === "failed") &&
+                        {/* 013: test verisi değişen script de yeniden üretilebilir (core veri_izi kuralı). */}
+                        {(s.durum === "blocked" || s.durum === "failed" || (s.veri_degisti && s.durum !== "closed")) &&
                           s.case_ids.length > 0 &&
                           s.platform !== null &&
                           !(s.yerel_sinif === "defect_adayi" || s.engel?.tur === "defect_candidate") && (

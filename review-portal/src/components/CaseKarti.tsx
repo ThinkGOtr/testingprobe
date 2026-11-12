@@ -2,8 +2,11 @@ import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, ty
 import { api } from "../api/client";
 import { caseKarariVerilebilir, GECIS_YOK, gecisVar, type CaseKarari } from "../api/sozlesme/durumMakinesi";
 import { useKisiAdi, useOturum } from "../auth";
-import type { RetNedeni, TestCase, TestCaseIcerik } from "../api/types";
-import { useIslem } from "../hooks";
+import type { OtomatikKodSonucu, RetNedeni, TestCase, TestCaseIcerik, TestVerisi } from "../api/types";
+import { atifMetni } from "../api/uyumOtomasyon";
+import { useIslem, useVeri } from "../hooks";
+import { useBildirim } from "./Bildirim";
+import { AtifliMetin, GIZLI_DEGER } from "./VeriAtfi";
 import { CASE_DURUMU, CASE_TURU, RET_NEDENI, RISK } from "../lib/etiketler";
 import { sure, tarih } from "../lib/format";
 import { FarkGorunumu } from "./FarkGorunumu";
@@ -26,14 +29,20 @@ export function goruntulenenleriSifirla(): void {
  * bildirilir; review süresi (`review_sure_ms`) sunucuda bu andan karara kadar ölçülür. Hata
  * sessizce yutulur: ölçüm kararın önüne geçmez (uç yoksa süre ölçülmez, karar yine verilir).
  */
-function useGoruntulemeBildir(tc: TestCase, etkin: boolean) {
+function useGoruntulemeBildir(tc: TestCase, etkin: boolean, goruntulendi?: (id: string) => void) {
   const ref = useRef<HTMLElement | null>(null);
+  const geriCagri = useRef(goruntulendi);
+  geriCagri.current = goruntulendi;
   useEffect(() => {
     if (!etkin || tc.goruntulenme || goruntulenenler.has(tc.id)) return;
     const bildir = () => {
       if (goruntulenenler.has(tc.id)) return;
       goruntulenenler.add(tc.id);
-      api.caseGoruntulendi(tc.id).catch(() => undefined);
+      // 013: başarılı görüntüleme kaydı toplu onayın "görüldü" şartını bu oturumda da karşılar.
+      api
+        .caseGoruntulendi(tc.id)
+        .then(() => geriCagri.current?.(tc.id))
+        .catch(() => undefined);
     };
     const el = ref.current;
     if (!el || typeof IntersectionObserver === "undefined") {
@@ -54,23 +63,53 @@ function useGoruntulemeBildir(tc: TestCase, etkin: boolean) {
   }, [tc.id, tc.goruntulenme, etkin]);
   return ref;
 }
+/** Onay sonrası otomatik kod üretimi sonucunun kısa Türkçe metni (013 §3.2). */
+export function otomatikKodMetni(o: OtomatikKodSonucu): string {
+  switch (o.durum) {
+    case "kuyrukta":
+      return "Otomatik kod üretimi kuyruğa alındı.";
+    case "kapali":
+      return "Otomatik kod üretimi kapalı (Otomasyon ayarı); kodu Kod üretimi ekranından başlatın.";
+    case "atlandi":
+      return `Otomatik kod üretimi atlandı${o.neden ? `: ${o.neden}` : " (süren ya da açık bir üretim var)"}.`;
+    case "reddedildi":
+      return `Otomatik kod üretimi başlatılamadı${o.neden ? `: ${o.neden}` : ""}.`;
+    case "hata":
+      return `Otomatik kod üretimi hata verdi${o.neden ? `: ${o.neden}` : "; onay geçerli, kodu Kod üretimi ekranından elle başlatın"}.`;
+  }
+}
+
+/** Toplu onay seçimi (Case review): onay kutusu yalnız karar bekleyen satırlarda. */
+export interface CaseSecimi {
+  secili: boolean;
+  degistir: (secili: boolean) => void;
+  /** Seçilemezse nedeni (ör. henüz görüntülenmedi, onaya engel var). */
+  engel?: string | null;
+}
+
 export function CaseKarti({
   tc,
   guncellendi,
   yenile,
+  secim,
+  goruntulendi,
 }: {
   tc: TestCase;
   guncellendi: (t: TestCase) => void;
   /** 409 (içerik siz görüntüledikten sonra değişti): case listesini yeniden yükler. */
   yenile?: () => void;
+  secim?: CaseSecimi;
+  /** Görüntüleme sunucuya kaydedildi (toplu onayda "görüldü" sayılır). */
+  goruntulendi?: (id: string) => void;
 }) {
   const [mod, setMod] = useState<Mod>("goster");
   const islem = useIslem();
   const id = useId();
   const { kullanici } = useOturum();
   const kisiAdi = useKisiAdi();
+  const bildir = useBildirim();
   // Yalnızca karar verecek rol (analist) ve karar bekleyen case için görüntüleme ölçülür.
-  const kartRef = useGoruntulemeBildir(tc, kullanici?.rol === "analyst" && tc.durum === "draft");
+  const kartRef = useGoruntulemeBildir(tc, kullanici?.rol === "analyst" && tc.durum === "draft", goruntulendi);
   // core test_case: approved | rejected → draft (yeniden aç). Yayınlanmış case son durumdur.
   const yenidenAcilabilir = gecisVar("test_case", tc.durum, "draft");
   const d = CASE_DURUMU[tc.durum];
@@ -94,6 +133,7 @@ export function CaseKarti({
     if (yeni) {
       setMod("goster");
       guncellendi(yeni);
+      if (yeni.otomatik_kod) bildir(otomatikKodMetni(yeni.otomatik_kod), yeni.otomatik_kod.durum === "reddedildi" || yeni.otomatik_kod.durum === "hata" ? "hata" : "bilgi");
     }
   }
 
@@ -101,6 +141,23 @@ export function CaseKarti({
     <article ref={kartRef} className={`case case-${tc.durum}`} aria-labelledby={`${id}-baslik`}>
       <header className="case-baslik">
         <div className="satir-ogeler">
+          {secim && tc.durum === "draft" && (
+            <label className="case-sec" title={secim.engel ?? undefined}>
+              <input
+                type="checkbox"
+                checked={secim.secili}
+                disabled={!!secim.engel}
+                aria-describedby={secim.engel ? `${id}-sec-neden` : undefined}
+                onChange={(e) => secim.degistir(e.target.checked)}
+              />
+              <span className="gorunmez">{`#${tc.sira_no} toplu onay için seç: ${tc.icerik.title}`}</span>
+            </label>
+          )}
+          {secim && tc.durum === "draft" && secim.engel && (
+            <span id={`${id}-sec-neden`} className="gorunmez">
+              {secim.engel}
+            </span>
+          )}
           <span className="mono soluk">#{tc.sira_no}</span>
           <Cip ton={d.ton}>{d.etiket}</Cip>
           <Cip ton="notr">{CASE_TURU[tc.icerik.type] ?? tc.icerik.type}</Cip>
@@ -141,7 +198,13 @@ export function CaseKarti({
           </h3>
           {tc.icerik.preconditions.length > 0 && (
             <p className="kucuk">
-              <strong>Ön koşul:</strong> {tc.icerik.preconditions.join(" · ")}
+              <strong>Ön koşul:</strong>{" "}
+              {tc.icerik.preconditions.map((p, i) => (
+                <span key={i}>
+                  {i > 0 && " · "}
+                  <AtifliMetin metin={p} veri={tc.veri} />
+                </span>
+              ))}
             </p>
           )}
           <div className="tablo-sarici" tabIndex={0} role="region" aria-label={`Adımlar: ${tc.icerik.title}`}>
@@ -161,18 +224,22 @@ export function CaseKarti({
                     <td className="mono adim-no" data-etiket="#">
                       {s.id}
                     </td>
-                    <td data-etiket="Adım">{s.action}</td>
-                    <td className={`mono${s.data ? "" : " bos-hucre"}`} data-etiket="Veri">
-                      {s.data ?? "—"}
+                    <td data-etiket="Adım">
+                      <AtifliMetin metin={s.action} veri={tc.veri} />
                     </td>
-                    <td data-etiket="Beklenen">{s.expected}</td>
+                    <td className={`mono${s.data ? "" : " bos-hucre"}`} data-etiket="Veri">
+                      {s.data ? <AtifliMetin metin={s.data} veri={tc.veri} /> : "—"}
+                    </td>
+                    <td data-etiket="Beklenen">
+                      <AtifliMetin metin={s.expected} veri={tc.veri} />
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
           <p>
-            <strong>Beklenen sonuç:</strong> {tc.icerik.expected_result}
+            <strong>Beklenen sonuç:</strong> <AtifliMetin metin={tc.icerik.expected_result} veri={tc.veri} />
           </p>
         </>
       )}
@@ -394,6 +461,51 @@ function CaseDuzenleyici({
   const [onKosulMetni, setOnKosulMetni] = useState(() => listeMetni(ilk.preconditions));
   const [acMetni, setAcMetni] = useState(() => ilk.acceptance_criteria_refs.join(", "));
 
+  // 013 §3.5 "Test verisi ekle": atıf, en son odaklanılan atıf alanında imlecin olduğu yere eklenir.
+  const imlec = useRef<{ alan: string; bas: number; son: number } | null>(null);
+  const [sonAlan, setSonAlan] = useState<string | null>(null);
+  const [eklendi, setEklendi] = useState("");
+  const alanEtiketi = (alan: string) =>
+    alan === "onkosul" ? "Ön koşullar" : alan === "beklenen" ? "Beklenen sonuç" : `S${Number(alan.slice(1)) + 1} ${{ a: "eylem", d: "veri", e: "beklenen" }[alan[0] as "a" | "d" | "e"]}`;
+  const alanDegeri = (alan: string): string => {
+    if (alan === "onkosul") return onKosulMetni;
+    if (alan === "beklenen") return icerik.expected_result;
+    const s = icerik.steps[Number(alan.slice(1))];
+    if (!s) return "";
+    return alan[0] === "a" ? s.action : alan[0] === "d" ? (s.data ?? "") : s.expected;
+  };
+  const alanYaz = (alan: string, deger: string) => {
+    if (alan === "onkosul") setOnKosulMetni(deger);
+    else if (alan === "beklenen") setIcerik((c) => ({ ...c, expected_result: deger }));
+    else adimGuncelle(Number(alan.slice(1)), alan[0] === "a" ? "action" : alan[0] === "d" ? "data" : "expected", deger);
+  };
+  /** Atıf alanlarının odak/imleç izleyicisi (başlık ve AC alanı atıf almaz: core yalnız içerik alanlarını eşler). */
+  const izle = (alan: string) => ({
+    onFocus: () => setSonAlan(alan),
+    onBlur: (e: { currentTarget: HTMLTextAreaElement }) => {
+      imlec.current = { alan, bas: e.currentTarget.selectionStart ?? 0, son: e.currentTarget.selectionEnd ?? 0 };
+    },
+  });
+  function atifEkle(anahtar: string) {
+    const alan = sonAlan;
+    if (!alan) return;
+    const deger = alanDegeri(alan);
+    const h = imlec.current && imlec.current.alan === alan ? imlec.current : { alan, bas: deger.length, son: deger.length };
+    const bas = Math.min(h.bas, deger.length);
+    const son = Math.min(Math.max(h.son, bas), deger.length);
+    const atif = atifMetni(anahtar);
+    alanYaz(alan, deger.slice(0, bas) + atif + deger.slice(son));
+    const konum = bas + atif.length;
+    imlec.current = { alan, bas: konum, son: konum };
+    setEklendi(`${atif} → ${alanEtiketi(alan)}`);
+    // Odak alana döner, imleç atfın sonuna (klavye kullanıcısı yazmaya devam eder).
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`${id}-${alan}`) as HTMLTextAreaElement | null;
+      el?.focus();
+      el?.setSelectionRange(konum, konum);
+    });
+  }
+
   const adimGuncelle = (i: number, alan: "action" | "data" | "expected", deger: string) =>
     setIcerik((c) => ({
       ...c,
@@ -478,7 +590,7 @@ function CaseDuzenleyici({
       </div>
       <div className="alan">
         <label htmlFor={`${id}-onkosul`}>Ön koşullar (her satır bir ön koşul)</label>
-        <OtoMetin id={`${id}-onkosul`} value={onKosulMetni} onChange={(e) => setOnKosulMetni(e.target.value)} />
+        <OtoMetin id={`${id}-onkosul`} value={onKosulMetni} onChange={(e) => setOnKosulMetni(e.target.value)} {...izle("onkosul")} />
       </div>
       <fieldset className="alan">
         <legend>Adımlar</legend>
@@ -486,15 +598,28 @@ function CaseDuzenleyici({
           <div key={i} className="adim-duzenle">
             <span className="mono">S{i + 1}</span>
             <label className="gorunmez" htmlFor={`${id}-a${i}`}>{`S${i + 1} eylem`}</label>
-            <OtoMetin id={`${id}-a${i}`} placeholder="Eylem" value={s.action} onChange={(e) => adimGuncelle(i, "action", e.target.value)} />
+            <OtoMetin
+              id={`${id}-a${i}`}
+              placeholder="Eylem"
+              value={s.action}
+              onChange={(e) => adimGuncelle(i, "action", e.target.value)}
+              {...izle(`a${i}`)}
+            />
             <label className="gorunmez" htmlFor={`${id}-d${i}`}>{`S${i + 1} veri`}</label>
-            <OtoMetin id={`${id}-d${i}`} placeholder="Veri" value={s.data ?? ""} onChange={(e) => adimGuncelle(i, "data", e.target.value)} />
+            <OtoMetin
+              id={`${id}-d${i}`}
+              placeholder="Veri"
+              value={s.data ?? ""}
+              onChange={(e) => adimGuncelle(i, "data", e.target.value)}
+              {...izle(`d${i}`)}
+            />
             <label className="gorunmez" htmlFor={`${id}-e${i}`}>{`S${i + 1} beklenen`}</label>
             <OtoMetin
               id={`${id}-e${i}`}
               placeholder="Beklenen"
               value={s.expected}
               onChange={(e) => adimGuncelle(i, "expected", e.target.value)}
+              {...izle(`e${i}`)}
             />
             <button
               type="button"
@@ -516,8 +641,14 @@ function CaseDuzenleyici({
       </fieldset>
       <div className="alan">
         <label htmlFor={`${id}-beklenen`}>Beklenen sonuç</label>
-        <OtoMetin id={`${id}-beklenen`} value={icerik.expected_result} onChange={(e) => setIcerik({ ...icerik, expected_result: e.target.value })} />
+        <OtoMetin
+          id={`${id}-beklenen`}
+          value={icerik.expected_result}
+          onChange={(e) => setIcerik({ ...icerik, expected_result: e.target.value })}
+          {...izle("beklenen")}
+        />
       </div>
+      <VeriSecici alan={sonAlan ? alanEtiketi(sonAlan) : null} ekle={atifEkle} eklendi={eklendi} />
       {beklenenDegisti && (
         <fieldset className="alan" data-testid="beklenen-anlam">
           <legend>
@@ -576,4 +707,62 @@ function OtoMetin(props: TextareaHTMLAttributes<HTMLTextAreaElement> & { value: 
     if (el.scrollHeight > 0) el.style.height = `${el.scrollHeight + 2}px`;
   }, [props.value]);
   return <textarea ref={ref} rows={1} className="oto-metin" {...props} />;
+}
+
+/**
+ * "Test verisi ekle" (013 §3.5): katalogdan anahtar seçip son odaklanılan atıf alanına `{veri:anahtar}`
+ * ekler. Gizli kaydın değeri listede de gösterilmez. Katalog okunamazsa seçici yerine not çıkar.
+ */
+function VeriSecici({ alan, ekle, eklendi }: { alan: string | null; ekle: (anahtar: string) => void; eklendi: string }) {
+  const katalog = useVeri(() => api.testVerileri(), []);
+  const [anahtar, setAnahtar] = useState("");
+  const id = useId();
+  const gruplar = new Map<string, TestVerisi[]>();
+  for (const k of katalog.veri ?? []) {
+    const g = k.grup ?? "diğer";
+    gruplar.set(g, [...(gruplar.get(g) ?? []), k]);
+  }
+  const neden = !alan ? "Önce atfın ekleneceği ön koşul, adım ya da beklenen sonuç alanına tıklayın." : !anahtar ? "Bir test verisi seçin." : undefined;
+  return (
+    <div className="veri-secici" role="group" aria-labelledby={`${id}-baslik`}>
+      <span id={`${id}-baslik`} className="veri-secici-baslik">
+        Test verisi ekle
+      </span>
+      {katalog.yukleniyor && !katalog.veri ? (
+        <span className="soluk kucuk">Katalog yükleniyor…</span>
+      ) : katalog.hata && !katalog.veri ? (
+        <span className="soluk kucuk">Test verisi kataloğu okunamadı: {katalog.hata}</span>
+      ) : (katalog.veri ?? []).length === 0 ? (
+        <span className="soluk kucuk">Katalogda kayıt yok (Test verisi ekranından eklenir).</span>
+      ) : (
+        <div className="satir-ogeler">
+          <label className="gorunmez" htmlFor={`${id}-anahtar`}>
+            Eklenecek test verisi
+          </label>
+          <select id={`${id}-anahtar`} value={anahtar} onChange={(e) => setAnahtar(e.target.value)} aria-describedby={`${id}-ipucu`}>
+            <option value="">Test verisi seçin…</option>
+            {[...gruplar.entries()].map(([g, kayitlar]) => (
+              <optgroup key={g} label={g}>
+                {kayitlar.map((k) => (
+                  <option key={k.id} value={k.anahtar}>
+                    {`${k.anahtar} — ${k.gizli ? GIZLI_DEGER : (k.deger ?? "")}`}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+          <IslemDugmesi roller={["analyst"]} kucuk tur="ikincil" disabled={!!neden} title={neden} onClick={() => ekle(anahtar)}>
+            {alan ? `İmlece ekle (${alan})` : "İmlece ekle"}
+          </IslemDugmesi>
+        </div>
+      )}
+      <span id={`${id}-ipucu`} className="soluk kucuk">
+        Atıf <span className="mono">{"{veri:anahtar}"}</span> biçiminde eklenir; değer kod üretiminde katalogdan okunur, Jira'ya
+        gizli olmayan değerler yazılır.
+      </span>
+      <span className="gorunmez" role="status" aria-live="polite">
+        {eklendi && `Eklendi: ${eklendi}`}
+      </span>
+    </div>
+  );
 }

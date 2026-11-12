@@ -14,6 +14,14 @@ import { bugIcerikCoreBicimi, bugTaslagiUyarla, hataAnaliziUyarla } from "./uyum
 import { nesneMi } from "./uyum";
 import { kontrolKulesiUyarla, kosuDetayUyarla, kosuUyarla, scriptDetayUyarla, scriptUyarla } from "./uyumDemoB";
 import { bazYanitiUyarla, demoDurumuUyarla, gereksinimBazi } from "./uyumFaz5";
+import {
+  jiraTetikDurumuUyarla,
+  otomasyonAyarlariUyarla,
+  surumlerUyarla,
+  testVerileriUyarla,
+  testVerisiUyarla,
+  topluKararUyarla,
+} from "./uyumOtomasyon";
 import type {
   BazDegerGirdisi,
   Bulgu,
@@ -48,6 +56,14 @@ import type {
   TokenKapsami,
   YayinOnizleme,
   YayinSonucu,
+  JiraTetikDurumu,
+  OtomasyonAyarAnahtari,
+  OtomasyonAyarlari,
+  TestVerisi,
+  TestVerisiGirdisi,
+  TestVerisiGuncelleme,
+  TestVerisiSurumu,
+  TopluKararYaniti,
 } from "./types";
 
 const yol = (s: string) => encodeURIComponent(s);
@@ -66,6 +82,8 @@ const CASE_KAYNAGI = ["GET", "/cases"] as const;
 const SCRIPT_KAYNAGI = ["GET", "/scripts"] as const;
 /** Onarım işlemi triage sonucuna bağlıdır ("1": herhangi bir kimlik; yol kalıbı ve mock anahtarı ":id" ile eşleşir). */
 const HATA_KAYNAGI = ["GET", "/failures/1"] as const;
+/** Test verisi işlemleri katalog listesine bağlıdır. */
+const TESTVERI_KAYNAGI = ["GET", "/test-data"] as const;
 /** Bug kararı taslak listesine bağlıdır. */
 const BUG_KAYNAGI = ["GET", "/bug-drafts"] as const;
 
@@ -131,6 +149,17 @@ export const api = {
           kaynak: CASE_KAYNAGI,
         }),
       ),
+    ),
+  /**
+   * 013 §3.2 toplu onay (analyst): her öğe ekranda görülen kendi hash'iyle onaylanır; sunucu görülmeyeni
+   * atlar. 1..200 öğe (çağıran böler).
+   */
+  topluOnay: async (ogeler: Pick<TestCase, "id" | "icerik_hash">[]): Promise<TopluKararYaniti> =>
+    topluKararUyarla(
+      await istek<unknown>("POST", "/cases/bulk-decision", {
+        govde: { karar: "approve", ogeler: ogeler.map((c) => ({ case_id: c.id, icerik_hash: c.icerik_hash })) },
+        kaynak: CASE_KAYNAGI,
+      }),
     ),
   /** Analist case'i ilk kez gördü: review süresi (`review_sure_ms`) sunucuda bu andan ölçülür. */
   caseGoruntulendi: (id: string) => istek<unknown>("POST", `/cases/${yol(id)}/viewed`, { kaynak: CASE_KAYNAGI }),
@@ -257,7 +286,34 @@ export const api = {
   tokenlar: () => istek<McpTokenKaydi[]>("GET", "/tokens"),
   tokenIptal: (id: string) => istek<void>("DELETE", `/tokens/${yol(id)}`, { kaynak: ["GET", "/tokens"] }),
 
+  // Test verisi kataloğu (013 §3.3)
+  testVerileri: async (): Promise<TestVerisi[]> => testVerileriUyarla(await istek<unknown>("GET", "/test-data")),
+  testVerisiEkle: async (g: TestVerisiGirdisi): Promise<TestVerisi> =>
+    testVerisiUyarla(nesne(await istek<unknown>("POST", "/test-data", { govde: g, kaynak: TESTVERI_KAYNAGI }))),
+  testVerisiGuncelle: async (id: string, g: TestVerisiGuncelleme): Promise<TestVerisi> =>
+    testVerisiUyarla(nesne(await istek<unknown>("PUT", `/test-data/${yol(id)}`, { govde: g, kaynak: TESTVERI_KAYNAGI }))),
+  /** 409: sürüm uyuşmazlığı ya da atıf yapan etkin case var (`ApiError.govde` listeyi taşır). */
+  testVerisiSil: (id: string, beklenen_surum: number) =>
+    istek<unknown>("DELETE", `/test-data/${yol(id)}`, { sorgu: { beklenen_surum }, kaynak: TESTVERI_KAYNAGI }),
+  testVerisiGecmisi: async (id: string): Promise<TestVerisiSurumu[]> =>
+    surumlerUyarla(await istek<unknown>("GET", `/test-data/${yol(id)}/history`, { kaynak: TESTVERI_KAYNAGI })),
+
+  // Otomasyon ayarları ve Jira tetiği (013 §3.1, §3.4)
+  otomasyonAyarlari: async (): Promise<OtomasyonAyarlari> => otomasyonAyarlariUyarla(await istek<unknown>("GET", "/automation-settings")),
+  /** Kısmi nesne; yanıt güncel tüm ayarlardır. */
+  otomasyonAyariKaydet: async <K extends OtomasyonAyarAnahtari>(
+    anahtar: K,
+    deger: Partial<Omit<OtomasyonAyarlari[K], "guncelleyen" | "guncelleme">>,
+  ): Promise<OtomasyonAyarlari> =>
+    otomasyonAyarlariUyarla(
+      await istek<unknown>("PUT", `/automation-settings/${yol(anahtar)}`, { govde: deger, kaynak: ["GET", "/automation-settings"] }),
+    ),
+  jiraTetikDurumu: async (): Promise<JiraTetikDurumu> => jiraTetikDurumuUyarla(await istek<unknown>("GET", "/automation/jira-trigger")),
+
   // Sunum
+  /** jira-sim'de story durumunu değiştirir (yalnız demo/sim; gerçek Jira'da 409). */
+  demoJiraDurumu: (jira_key: string, durum: string) =>
+    istek<{ mesaj?: string; jira_key?: string; durum?: string; degisti?: boolean } | undefined>("POST", "/demo/jira-status", { govde: { jira_key, durum } }),
   demoKir: () => istek<IsYaniti>("POST", "/demo/break-locator"),
   demoSifirla: () => istek<IsYaniti>("POST", "/demo/reset"),
   /** Forge main / çalışan demo uygulaması eşleşmesi (salt okuma). */

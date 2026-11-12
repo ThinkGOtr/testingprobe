@@ -65,6 +65,7 @@ import { mockOlayYayinla } from "./olaylar";
 import { javaDosyaYolu, javaTestKodu, uygulamayaCevir } from "./platformlar";
 import { PLATFORMLAR, platformUyarla, type Platform } from "../../lib/platform";
 import { asistanMockSifirla, asistanRotalari } from "./asistan";
+import { bilinmeyenAtiflar, caseVerisi, otomasyonMockSifirla, otomasyonRotalari, otomatikKodAcik } from "./otomasyon";
 import { oneriKuleOlcumu, oneriMockSifirla, oneriRotalari } from "./oneri";
 import type { AsistanliKule } from "../../components/asistan/OnerilerOlcumKarti";
 import { kirmaTaslagiMi } from "../../lib/yolHaritasi";
@@ -126,6 +127,7 @@ export function mockSifirla(): void {
   demoKirik = false;
   asistanMockSifirla();
   oneriMockSifirla();
+  otomasyonMockSifirla();
   mockOturumuAyarla(null);
   try {
     sessionStorage.removeItem(VERI_ANAHTARI);
@@ -745,6 +747,9 @@ function caseKarari(id: string, govde: unknown): TestCase {
   } else if (g.karar === "edit") {
     if (!g.icerik) throw new ApiError(422, "Düzeltme için içerik zorunludur.");
     if (!g.icerik.title.trim() || g.icerik.steps.length === 0) throw new ApiError(422, "Başlık ve en az bir adım zorunlu.");
+    // 013 §3.3: düzeltmede katalogda olmayan atıf reddedilir.
+    const bilinmeyen = bilinmeyenAtiflar(g.icerik);
+    if (bilinmeyen.length) throw new ApiError(422, `Katalogda olmayan test verisi anahtarı: ${bilinmeyen.join(", ")}`);
     const once = kanonikJson(c.icerik);
     // core metrics.edit_metrics: insan beyanı varsa o; yoksa beklenen sonuç metni karşılaştırılır.
     const beklenenDegisti =
@@ -1703,6 +1708,58 @@ function tokenIptal(id: string): void {
   kaydet();
 }
 
+// ------------------------------------------------------------------ 013 toplu onay ve otomatik kod
+
+/** Case yanıtı + 013 alanları (`goruldu`: örnek veride görüntüleme kişiye bağlı değil; `veri`). */
+function caseGorunumu(c: TestCase): TestCase {
+  return { ...c, goruldu: !!c.goruntulenme, veri: caseVerisi(c.icerik) };
+}
+
+/**
+ * core `otokod.kuyruga_al` taklidi: ayar kapalıysa `kapali`; açıksa kuyruğa alındı sayılır. Örnek veri
+ * script üretmez (kod üretimi ekranında elle başlatılır); yanıt yalnız durumu gösterir.
+ */
+function otomatikKod(c: TestCase): NonNullable<TestCase["otomatik_kod"]> {
+  if (!otomatikKodAcik()) return { durum: "kapali", neden: null, script_id: null };
+  const acik = veri.scriptler.find((s) => s.case_ids.includes(c.id) && s.durum !== "closed");
+  if (acik) return { durum: "atlandi", neden: "Bu case için süren ya da açık bir üretim var.", script_id: acik.id };
+  return { durum: "kuyrukta", neden: null, script_id: null };
+}
+
+function tekliKarar(id: string, govde: unknown): TestCase {
+  const c = caseKarari(id, govde);
+  const karar = (govde as { karar?: unknown } | null)?.karar;
+  return { ...caseGorunumu(c), ...(karar === "approve" || karar === "edit" ? { otomatik_kod: otomatikKod(c) } : {}) };
+}
+
+/** core `POST /cases/bulk-decision` (013 §3.2): her öğe kendi hash'iyle; görülmeyen atlanır; biri diğerini bozmaz. */
+function topluKarar(govde: unknown) {
+  rolGerekli("analyst");
+  const g = (govde ?? {}) as { karar?: unknown; ogeler?: unknown };
+  if (g.karar !== "approve") throw new ApiError(422, "Toplu karar yalnız approve olabilir.");
+  if (!Array.isArray(g.ogeler) || g.ogeler.length < 1 || g.ogeler.length > 200) throw new ApiError(422, "1 ile 200 arasında öğe gönderin.");
+  const gorulen = new Set<string>();
+  const sonuclar = (g.ogeler as { case_id?: unknown; icerik_hash?: unknown }[]).map((o) => {
+    const case_id = String(o.case_id ?? "");
+    if (gorulen.has(case_id)) return { case_id, durum: "atlandi", neden: "Case istekte birden çok kez var", otomatik_kod: null };
+    gorulen.add(case_id);
+    const c = veri.caseler.find((x) => x.id === case_id);
+    if (!c) return { case_id, durum: "hata", neden: `Case bulunamadı: ${case_id}`, otomatik_kod: null };
+    if (c.durum === "draft" && !c.goruntulenme) return { case_id, durum: "atlandi", neden: "Bu case'i açıp görmediniz", otomatik_kod: null };
+    try {
+      const y = caseKarari(case_id, { karar: "approve", icerik_hash: o.icerik_hash });
+      return { case_id, durum: "onaylandi", neden: null, otomatik_kod: otomatikKod(y) };
+    } catch (e) {
+      const neden = e instanceof ApiError ? e.detail : "Beklenmeyen hata";
+      return { case_id, durum: e instanceof ApiError && e.status === 409 ? "atlandi" : "hata", neden, otomatik_kod: null };
+    }
+  });
+  const say = (d: string) => sonuclar.filter((s) => s.durum === d).length;
+  denetimEkle("cases.bulk_decision", "toplu", `istenen ${sonuclar.length}, onaylandı ${say("onaylandi")}, atlandı ${say("atlandi")}`);
+  kaydet();
+  return { sonuclar, ozet: { onaylandi: say("onaylandi"), atlandi: say("atlandi"), hata: say("hata") } };
+}
+
 // ------------------------------------------------------------------ yönlendirme
 
 type Rota = [string, RegExp, (m: RegExpMatchArray, q: URLSearchParams, govde: unknown) => unknown];
@@ -1712,6 +1769,12 @@ const ROTALAR: Rota[] = [
   ...asistanRotalari(girisGerekli),
   // Öneri düğmesi (§17, uç 10–11): api/mock/oneri.ts.
   ...oneriRotalari(girisGerekli, () => veri),
+  // 013 sprint otomasyonu: test verisi, otomasyon ayarları, Jira tetiği (api/mock/otomasyon.ts).
+  ...otomasyonRotalari(girisGerekli, rolGerekli, () => veri.caseler, (eylem, nesne, ozet) => {
+    denetimEkle(eylem, nesne, ozet);
+    kaydet();
+  }),
+  ["POST", /^\/cases\/bulk-decision$/, (_m, _q, g) => topluKarar(g)],
   ["POST", /^\/auth\/login$/, (_m, _q, g) => login(g)],
   ["POST", /^\/auth\/logout$/, () => logout()],
   ["GET", /^\/auth\/me$/, () => girisGerekli()],
@@ -1776,10 +1839,13 @@ const ROTALAR: Rota[] = [
     (_m, q) => {
       girisGerekli();
       const rid = q.get("requirement_id");
-      return veri.caseler.filter((c) => !rid || c.requirement_id === rid).sort((a, b) => a.sira_no - b.sira_no);
+      return veri.caseler
+        .filter((c) => !rid || c.requirement_id === rid)
+        .sort((a, b) => a.sira_no - b.sira_no)
+        .map(caseGorunumu);
     },
   ],
-  ["POST", /^\/cases\/([^/]+)\/decision$/, (m, _q, g) => caseKarari(decodeURIComponent(m[1]), g)],
+  ["POST", /^\/cases\/([^/]+)\/decision$/, (m, _q, g) => tekliKarar(decodeURIComponent(m[1]), g)],
   ["POST", /^\/cases\/([^/]+)\/viewed$/, (m) => caseGoruntulendi(decodeURIComponent(m[1]))],
   ["GET", /^\/requirements\/([^/]+)\/case-metrics$/, (m) => caseMetrikleri(decodeURIComponent(m[1]))],
   ["GET", /^\/publish\/preview$/, (_m, q) => yayinOnizleme(q)],
