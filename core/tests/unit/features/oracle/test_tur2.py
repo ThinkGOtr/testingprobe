@@ -130,11 +130,11 @@ def test_g2_y1_ignored_dolu_ise_en_iyi_kismen_ve_cikti_birimi_reddedilir() -> No
     gerekçesiyle reddedilir (sayısı kapsanmamış kalır); kabul edilen `ignored` kaydı da kontrolü en
     iyi `kismen` yapar."""
     case = basit_case(toplam="30,00")
-    case["steps"][1]["expected"] = "Toplam 30,00 TL; kargo 45,00 TL; sayaç 3"
+    case["steps"][1]["expected"] = "Toplam 30,00 TL; kargo 45,00 TL; sayaç 5"
     olgu = _basit_olgular(case, toplam_alanlari=("steps[1].expected", "expected_result"))
     olgu["ignored"] = [
         {"field": "steps[1].expected", "quote": "kargo 45,00 TL", "reason": "kargo"},
-        {"field": "steps[1].expected", "quote": "sayaç 3", "reason": "sayaç"},
+        {"field": "steps[1].expected", "quote": "sayaç 5", "reason": "sayaç"},
     ]
     sonuc, ayr = d.degerlendir(case, [BASIT_T], olgu)
     assert sonuc == d.KISMEN
@@ -145,7 +145,7 @@ def test_g2_y1_ignored_dolu_ise_en_iyi_kismen_ve_cikti_birimi_reddedilir() -> No
             "neden": "çıktı kolonunun birimini taşıyor (TL)",
         }
     ]
-    assert [y["alinti"] for y in ayr["yok_sayilan"]] == ["sayaç 3"]
+    assert [y["alinti"] for y in ayr["yok_sayilan"]] == ["sayaç 5"]
     assert ayr["kismen_nedeni"] == ["kapsanmayan_sayi", "yok_sayilan"]
     # Çıktı kolonunun adı da reddedilir.
     olgu["ignored"] = [{"field": "steps[1].expected", "quote": "toplam 30", "reason": "x"}]
@@ -171,6 +171,28 @@ def test_girdi_alanindaki_ignored_kismen_yapmaz() -> None:
     assert sonuc == d.UYUMLU and ayr["kismen_nedeni"] == [] and len(ayr["yok_sayilan"]) == 1
     # Aynı kayıt beklenen alanda olsaydı kısmen olurdu.
     assert d.kismen_nedenleri({"yok_sayilan": [{"alan": "expected_result"}]}) == ["yok_sayilan"]
+
+
+@pytest.mark.parametrize(("sayac", "sonuc"), [("3", d.UYUMLU), ("4", d.KISMEN)])
+def test_beklenen_alanda_girdiyi_yineleyen_ignored_kismen_yapmaz(sayac: str, sonuc: str) -> None:
+    """Ürün sahibi kararı: beklenen alandaki `ignored` sayısı doğrulanmış bir girdi değerine eşitse
+    (adet 3 iken "Sepet sayacı 3") yalnız girdiyi yineler: kısmen yapmaz, `yankilanan_girdi`'ye
+    yazılır. Eşit değilse (`Sepet sayacı 4`) `yok_sayilan` nedeniyle kısmen."""
+    case = basit_case(toplam="30,00")
+    case["steps"][0]["expected"] = f"Sepet sayacı {sayac} olur"
+    olgu = _basit_olgular(case, toplam_alanlari=("steps[1].expected", "expected_result"))
+    olgu["ignored"] = [
+        {"field": "steps[0].expected", "quote": f"Sepet sayacı {sayac}", "reason": "sayaç"}
+    ]
+    s, ayr = d.degerlendir(case, [BASIT_T], olgu)
+    assert s == sonuc
+    if sonuc == d.UYUMLU:
+        assert ayr["yankilanan_girdi"] == [
+            {"alan": "steps[0].expected", "alinti": "Sepet sayacı 3", "degerler": ["3"]}
+        ]
+        assert ayr["kismen_nedeni"] == []
+    else:
+        assert ayr["yankilanan_girdi"] == [] and ayr["kismen_nedeni"] == ["yok_sayilan"]
 
 
 def test_g2_y14_baslik_ve_veri_alanlari_cikarilan_girdiyle_celismez() -> None:

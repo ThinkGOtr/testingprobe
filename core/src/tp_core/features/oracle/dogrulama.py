@@ -726,12 +726,15 @@ def degerlendir(
     §13.2 + review 2).
     """
     if not tablolar:
-        return KAPSAM_DISI, _ayrintilar([], 0, [], [], [], [])
+        ayr = _ayrintilar([], 0, [], [], [], [])
+        ayr["yankilanan_girdi"] = []
+        return KAPSAM_DISI, ayr
     cikti = cikti if isinstance(cikti, Mapping) else {}
     atilan = 0
     gruplar: list[dict[str, Any]] = []
     alintilar: list[tuple[str, str]] = []
     degerler: list[Any] = []
+    girdi_degerleri: list[Any] = []
     gorulen: set[str] = set()
     for grup in cikti.get("groups") or []:
         if not isinstance(grup, Mapping):
@@ -749,6 +752,7 @@ def degerlendir(
         atilan += len(ham_girdi) - len(girdiler) + len(ham_beklenen) - len(beklenen)
         alintilar += [(o["field"], o["quote"]) for o in girdiler + beklenen]
         degerler += [o["value"] for o in girdiler + beklenen]
+        girdi_degerleri += [o["value"] for o in girdiler]
         g = _grup_degerlendir(tablo, girdiler, beklenen)
         # Değerlendirilemeyen grubun doğrulanmış beklenen olguları da karşılaştırılmadı.
         g["_karsilastirilmayan"] = (
@@ -768,6 +772,8 @@ def degerlendir(
     kapsanmayan = kapsanmayan_sayilar(icerik, alintilar, degerler)
     eksik_tablolar = [t.ref for t in tablolar if t.id not in gorulen]
     ayr = _ayrintilar(gruplar, atilan, kapsanmayan, yok_sayilan, reddedilen, eksik_tablolar)
+    ayr["yankilanan_girdi"] = yankilanan_girdiler(yok_sayilan, girdi_degerleri)
+    ayr["kismen_nedeni"] = kismen_nedenleri(ayr)
     return _genel_sonuc(gruplar, ayr), ayr
 
 
@@ -866,6 +872,33 @@ def _grup_degerlendir(
     return kayit
 
 
+def yankilanan_girdiler(
+    yok_sayilan: Sequence[Mapping[str, Any]], girdi_degerleri: Sequence[Any]
+) -> list[dict[str, Any]]:
+    """Beklenen alandaki kabul edilmiş `ignored` kayıtlarından yalnız doğrulanmış bir GİRDİ
+    olgusunun değerini yineleyenler (ör. adet 7 iken "Sepet sayacı 7"): kontrolü kısmen yapmaz,
+    denetlenebilsin diye `ayrintilar.yankilanan_girdi`'ye yazılır (review 2, ürün sahibi kararı).
+    Alıntıdaki her rakamla yazılmış sayı bir girdi değerine eşit olmalı; yazıyla sayı içeren
+    alıntı yankı sayılmaz. Girdi değerleri kaydın tüm gruplarındandır (`ignored` grupsuzdur)."""
+    bilinen = set()
+    for d in girdi_degerleri:
+        try:
+            bilinen.add(ifade.girdi_donustur(d, ifade.SAYI))
+        except (ifade.IfadeHatasi, TypeError, ValueError):
+            continue
+    out = []
+    for y in yok_sayilan:
+        if not _BEKLENEN_ALAN.match(str(y.get("alan") or "")):
+            continue
+        q = temizle(str(y.get("alinti") or ""))
+        sayilar = [ifade.sayi_ayristir(q[a:b]) for a, b in sayi_gecisleri(q)]
+        if sayilar and not yaziyla_sayilar(q) and all(x in bilinen for x in sayilar):
+            out.append(
+                {"alan": y["alan"], "alinti": y["alinti"], "degerler": [goster(x) for x in sayilar]}
+            )
+    return out
+
+
 def kismen_nedenleri(ayr: Mapping[str, Any] | None) -> list[str]:
     """Kontrolün eksik kalma nedenleri (review 2 g2 Y4), `KISMEN_NEDENLERI` sırasıyla:
 
@@ -875,7 +908,8 @@ def kismen_nedenleri(ayr: Mapping[str, Any] | None) -> list[str]:
       girdi, eşleşen satırı olmayan ya da hatalı grup (modelin çıktısı kullanılamadı).
     - `kapsanmayan_sayi`: tamlık denetiminde kapsanmayan sayı (`kapsanmayan_sayilar`).
     - `yok_sayilan`: modelin "hiçbir kolona ait değil" dediği (kabul edilmiş) `ignored` kaydı,
-      yalnız beklenen alandaysa (`steps[i].expected`, `expected_result`, `verification_point`).
+      yalnız beklenen alandaysa (`steps[i].expected`, `expected_result`, `verification_point`)
+      ve doğrulanmış bir girdi değerini yinelemiyorsa (`yankilanan_girdi`).
 
     Eski kayıtlarda da (`kismen_nedeni` alanı yokken) ayrıntılardan hesaplanır."""
     ayr = ayr or {}
@@ -892,7 +926,12 @@ def kismen_nedenleri(ayr: Mapping[str, Any] | None) -> list[str]:
         nedenler.add(KN_KAPSANMAYAN_SAYI)
     # Yalnız beklenen alandaki `ignored` kontrolü eksik bırakır; girdi/başlık alanındaki yok sayılan
     # sayı zaten çelişki denetiminden geçer (review 2 koordinatör düzeltmesi).
-    if any(_BEKLENEN_ALAN.match(str(y.get("alan") or "")) for y in ayr.get("yok_sayilan") or []):
+    yanki = {(y.get("alan"), y.get("alinti")) for y in ayr.get("yankilanan_girdi") or []}
+    if any(
+        _BEKLENEN_ALAN.match(str(y.get("alan") or ""))
+        and (y.get("alan"), y.get("alinti")) not in yanki
+        for y in ayr.get("yok_sayilan") or []
+    ):
         nedenler.add(KN_YOK_SAYILAN)
     return [n for n in KISMEN_NEDENLERI if n in nedenler]
 

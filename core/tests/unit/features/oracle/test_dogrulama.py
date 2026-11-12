@@ -305,6 +305,7 @@ AYRINTI_ALANLARI = {
     "reddedilen_yok_sayilan",
     "degerlendirilmeyen_tablolar",
     "kismen_nedeni",
+    "yankilanan_girdi",
 }
 
 
@@ -637,8 +638,9 @@ def test_tamlik_ignored_kapsar_ama_listelenir() -> None:
         {"field": "steps[2].expected", "quote": "Sepet sayacı", "reason": "sayı yok"},
     ]
     sonuc, ayr = d.degerlendir(case, TABLOLAR[:1], olgu)
-    # Kabul edilmiş `ignored` kontrolü en iyi `kismen` yapar (review 2 g2 Y1).
-    assert sonuc == d.KISMEN and ayr["kismen_nedeni"] == ["yok_sayilan"]
+    # Sayaç girdi değerini (adet 7) yineler: kısmen yapmaz, `yankilanan_girdi`'de görünür.
+    assert sonuc == d.UYUMLU and ayr["kismen_nedeni"] == []
+    assert [y["alinti"] for y in ayr["yankilanan_girdi"]] == ["Sepet sayacı 7"]
     assert ayr["kapsanmayan_sayilar"] == []
     assert ayr["yok_sayilan"] == [
         {"alan": "steps[2].expected", "alinti": "Sepet sayacı 7", "neden": "sayaç"}
