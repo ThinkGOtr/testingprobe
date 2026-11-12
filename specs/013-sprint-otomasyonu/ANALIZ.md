@@ -319,3 +319,12 @@ Netleştirmeler:
 - `veri_izi` ve tüm API'lerdeki değer özeti **tuzlu** (sunucu sırrıyla HMAC); gizli değerin düz sha256'sı hiçbir yerde dönmez.
 - K10 case yarısı: onay anında case'in veri izi review kaydına yazılır; `serialize_cases` → `veri_onaydan_sonra_degisen: [anahtar]`; kart uyarısı.
 - K17: IDE/MCP kanalı her zaman katalog bloğunu kullanır (bu kanalda REPLAY yok).
+
+## 11. Review turu 3 (2026-11-12) — kararlar
+
+| # | Konu | Karar |
+|---|---|---|
+| K22 | Maske ve düzeltme | Gizli değer API'de `•••` değil geri dönüşebilir **atıf** (`{veri:<anahtar>}`) olarak döner; **başlık dahil** tüm case alanlarında gizli değer atfa çevrilir (eski case'ler okunurken de). Düzeltme gövdesinde `•••` gelirse açık Türkçe hatayla reddedilir; analistin düz yazdığı gizli değer atfa çevrilir. Case dışı metinlerde (bug, PR, log, denetim) maske `•••` kalır |
+| K23 | K20 kapsamı | Seed/reset otomatik kodu **yalnız Jira sim'i ya da REPLAY kipindeyken** kapatır; gerçek Jira'lı kurulumda ürün varsayılanı (açık) kalır. REPLAY kipinde Otomasyon sayfası uyarır: "Demo kayıtları bu ayara göre değil; açarsanız kod üretimi kayıt bulamaz". Demo'daki tekli onay "kapalı" notu sade tek satır |
+
+Tur 3'te ana oturum düzeltti: onay veri izi review'a `(tuzlu, eski)` çifti yerine yalnız tuzlu özet yazılır (E2×E3 çakışması).

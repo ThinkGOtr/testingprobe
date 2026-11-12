@@ -1163,7 +1163,14 @@ def decide(
     if karar in ("approve", "edit"):
         # K10 case yarısı: onaylanan içeriğin atıfladığı test verisinin değer özetleri.
         onaylanan = icerik if karar == "edit" and icerik is not None else tc.icerik
-        olculer["veri_izi"] = testveri.guncel_ozetler(session, atif.case_atiflari(onaylanan))
+        # Yalnız tuzlu özet (guncel_ozetler iç karşılaştırma için (tuzlu, eski) çifti verir).
+        olculer["veri_izi"] = {
+            a: tuzlu
+            for a, (tuzlu, _eski) in testveri.guncel_ozetler(
+                session, atif.case_atiflari(onaylanan)
+            ).items()
+            if tuzlu is not None
+        }
     olculer["review_sure_ms"] = _review_sure_ms(session, tc, user)
     olculer["ilk_karar"] = latest_review(session, "test_case", tc.id) is None
     if toplu:
