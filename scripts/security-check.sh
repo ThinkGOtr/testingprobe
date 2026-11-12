@@ -197,7 +197,9 @@ check_audit_role() {
 #     dosyalar (`git ls-files -co --exclude-standard`). .env, exports/, node_modules gibi
 #     .gitignore'daki dosyalar bilinçli olarak taranmaz: zaten depoya giremezler ve .env
 #     her zaman gerçek sır içerir. Dosyalar host'ta geçici kopya oluşturmadan tar akışıyla
-#     konteynere aktarılır (Colima'da paylaşılmayan dizin sorunu da olmaz).
+#     konteynere aktarılır (Colima'da paylaşılmayan dizin sorunu da olmaz). Tarama kopyanın kökünden
+#     (`cd /tmp/scan && gitleaks dir .`) yapılır: .gitleaksignore okunur ve parmak izleri göreli yollu
+#     olur (`dosya:kural:satır`; git geçmişi parmak izlerinde commit öneki vardır).
 check_secrets() {
   local ok=1 out
   if ! out="$(docker run --rm -v "$TP_REPO_ROOT:/repo:ro" \
@@ -211,7 +213,7 @@ check_secrets() {
         | while IFS= read -r -d '' f; do [ -f "$f" ] && printf '%s\0' "$f"; done \
         | tar -cf - --null -T - \
         | docker run --rm -i --entrypoint sh "$GITLEAKS_IMAGE" -c \
-            'mkdir -p /tmp/scan && tar -xf - -C /tmp/scan && gitleaks dir /tmp/scan --no-banner --redact --no-color --verbose --exit-code 1' 2>&1)"; then
+            'mkdir -p /tmp/scan && tar -xf - -C /tmp/scan && cd /tmp/scan && gitleaks dir . --no-banner --redact --no-color --verbose --exit-code 1' 2>&1)"; then
     ok=0; info "çalışma ağacı:"; printf '%s\n' "$out" | tail -n 30 | while IFS= read -r l; do info "  $l"; done
   else
     info "çalışma ağacı (izlenen + izlenmeyen, .gitignore hariç): sızıntı yok"

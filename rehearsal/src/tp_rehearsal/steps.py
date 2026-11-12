@@ -40,6 +40,10 @@ CI_BUTCESI_S = 120.0  # §13: CI 2 dakikayı aşarsa yedek yol
 ONAY_NOTU = (
     "Zayıf test bilinçli kabul (prova): kampanya dışı davranış, BREAK_CAMPAIGN ile kırılmaz."
 )
+# 011 K15: iki tur (tasarım modeli → analist onayı → case), otomatik review (P8), denetim (P9).
+MODEL_OGE_SAYISI = 18  # rules/replay/design_model/golden/f2-kod-hatasi/TPD-1.json coverage_items
+REVIEW_SKORU = 10  # rules/replay/case_review/golden/f2-kod-hatasi/TPD-1.json score
+DENETIM_KARARI = "KABUL"  # rules/replay/case_audit/golden/f2-kod-hatasi/TPD-1.json decision
 SURUYOR = {"pending", "queued", "generating", "verifying", "mapping", "checking", "running"}
 KOSU_SURUYOR = {"queued", "running"}
 
@@ -139,8 +143,18 @@ def mod_kontrol(b: Baglam, ad: str, mod: Any) -> None:
 
 TEMEL_BEKLEME_S = 420.0  # demo-reset: demo-app-web derlemesi + baseline push CI
 CI_TETIKLERI = {"pr", "push", "nightly", "deploy", "manual"}
-DENETIM_SONRASI = {"doc_final", "pending_po", "po_approved", "generating", "cases_ready", "done"}
-PO_SONRASI = {"po_approved", "generating", "cases_ready", "done"}
+# review-portal/src/lib/yolHaritasi.ts aynası (iki tur: modeling, model_ready)
+DENETIM_SONRASI = {
+    "doc_final",
+    "pending_po",
+    "po_approved",
+    "modeling",
+    "model_ready",
+    "generating",
+    "cases_ready",
+    "done",
+}
+PO_SONRASI = {"po_approved", "modeling", "model_ready", "generating", "cases_ready", "done"}
 AKIS_ADIM_SAYISI = 14
 
 
@@ -513,10 +527,118 @@ def po_teyidi(b: Baglam) -> None:
     b.kontrol("onay içerik hash'ine bağlı", bool(req["po"].get("onaylanan_hash")))
 
 
-def case_uret(b: Baglam) -> None:
+def tasarim_modeli(b: Baglam) -> dict[str, Any]:
+    return b.api.get("analist", f"/requirements/{b.veri['req_id']}/design-model")
+
+
+def model_uret(b: Baglam) -> None:
+    """İki tur, tur 1 (011 F3): tasarım modeli üretimi → `model_ready`, model taslak."""
     req_id = b.veri["req_id"]
     if b.prova:
-        b.api.post("analist", f"/requirements/{req_id}/generate-cases", beklenen=(202,))
+        y = b.api.post(
+            "analist", f"/requirements/{req_id}/generate-cases", {"kip": "iki_tur"}, beklenen=(202,)
+        )
+        b.kontrol(
+            "iki tur başladı: aşama model",
+            y.get("kip") == "iki_tur" and y.get("asama") == "model",
+            f"kip={y.get('kip')!r} asama={y.get('asama')!r}",
+        )
+        req = gereksinim_bekle(
+            b,
+            "tasarım modeli üretildi (model_ready)",
+            lambda r: r.get("durum") in ("model_ready", "failed"),
+            60,
+        )
+        b.kontrol("durum model_ready", req["durum"] == "model_ready", req["durum"])
+    g = tasarim_modeli(b)
+    m = g.get("model") or {}
+    dogrula(m, "tasarım modeli yok")
+    b.veri["model"] = m
+    ozet = m.get("ozet") or {}
+    b.kanit["model"] = {
+        "surum": m.get("surum"),
+        "durum": m.get("durum"),
+        "uretim_modu": m.get("uretim_modu"),
+        "ozet": ozet,
+        "sorunlar": m.get("sorunlar"),
+    }
+    if b.prova:
+        b.kontrol(
+            "model taslak (analist onayı bekliyor)", m.get("durum") == "draft", m.get("durum")
+        )
+        b.kontrol(
+            "onaysız modelle case üretilemez",
+            g.get("case_uretimi_hazir") is False,
+            str(g.get("engel")),
+        )
+    mod_kontrol(b, "tasarım modeli", m.get("uretim_modu"))
+    b.kontrol(
+        "model kontrolleri temiz (sorun yok)", m.get("sorunlar") == [], str(m.get("sorunlar"))
+    )
+    b.kontrol(
+        f"model {MODEL_OGE_SAYISI} kapsam öğesi (golden f2-kod-hatasi/TPD-1)",
+        ozet.get("oge") == MODEL_OGE_SAYISI,
+        str(ozet.get("oge")),
+    )
+
+
+def model_onayi(b: Baglam) -> None:
+    """İnsan kapısı: analist ekranda gördüğü modelin hash'iyle onaylar; tur 2 açılır."""
+    m = b.veri.get("model") or (tasarim_modeli(b).get("model") or {})
+    if b.prova:
+        y = b.api.post(
+            "analist",
+            f"/design-models/{m['id']}/decision",
+            {"karar": "approve", "icerik_hash": m["icerik_hash"]},
+            beklenen=(200,),
+        )
+        b.kontrol("model onaylandı", y.get("durum") == "approved", str(y.get("durum")))
+        g = tasarim_modeli(b)
+        b.kontrol(
+            "tur 2 hazır (case_uretimi_hazir)",
+            g.get("case_uretimi_hazir") is True,
+            str(g.get("engel")),
+        )
+    m = tasarim_modeli(b).get("model") or {}
+    kararlar = m.get("kararlar") or []
+    b.kanit["model_onayi"] = {
+        "durum": m.get("durum"),
+        "onaylanan_hash_eslesiyor": m.get("onaylanan_hash") == m.get("icerik_hash"),
+        "kararlar": [(k.get("karar"), k.get("kullanici")) for k in kararlar],
+    }
+    b.kontrol("model durumu approved", m.get("durum") == "approved", str(m.get("durum")))
+    b.kontrol(
+        "onay görülen içeriğin hash'ine bağlı",
+        bool(m.get("onaylanan_hash")) and m.get("onaylanan_hash") == m.get("icerik_hash"),
+    )
+    b.kontrol(
+        "onay analist oturumuyla (model onaylayamaz)",
+        any(k.get("karar") == "approve" and k.get("kullanici") == "analist" for k in kararlar),
+        str(b.kanit["model_onayi"]["kararlar"]),
+    )
+
+
+def _uretim_olayi(b: Baglam) -> dict[str, Any] | None:
+    """Gereksinimin son `cases.generated` denetim kaydının özeti."""
+    olaylar = (
+        b.api.get("sunucu", f"/audit?limit=100&nesne=requirement:{b.veri['req_id']}").get("events")
+        or []
+    )
+    return next((o.get("ozet") or {} for o in olaylar if o.get("eylem") == "cases.generated"), None)
+
+
+def case_uret(b: Baglam) -> None:
+    """İki tur, tur 2: yalnız onaylı modelden case üretimi (10 case)."""
+    req_id = b.veri["req_id"]
+    if b.prova:
+        y = b.api.post(
+            "analist", f"/requirements/{req_id}/generate-cases", {"kip": "iki_tur"}, beklenen=(202,)
+        )
+        b.kontrol(
+            "tur 2 başladı: aşama case",
+            y.get("kip") == "iki_tur" and y.get("asama") == "case",
+            f"kip={y.get('kip')!r} asama={y.get('asama')!r}",
+        )
         gereksinim_bekle(
             b,
             f"{CASE_SAYISI} case üretildi",
@@ -531,6 +653,113 @@ def case_uret(b: Baglam) -> None:
     )
     for n, c in cs.items():
         mod_kontrol(b, f"C{n}", c.get("mode"))
+    olay = _uretim_olayi(b) or {}
+    b.kanit["uretim_olayi"] = {k: olay.get(k) for k in ("kip", "tur2_farklari", "mode", "case")}
+    b.kontrol(
+        "cases.generated kaydı: kip iki_tur", olay.get("kip") == "iki_tur", str(olay.get("kip"))
+    )
+    b.kontrol(
+        "tur 2 onaylı modelden sapmadı (tur2_farklari boş)",
+        olay.get("tur2_farklari") == [],
+        str(olay.get("tur2_farklari")),
+    )
+
+
+def case_review(b: Baglam) -> None:
+    """Otomatik review (P8, K4): üretimden sonra kendiliğinden koşar; tavsiye niteliğinde."""
+    req_id = b.veri["req_id"]
+
+    def oku():
+        v = b.api.get("analist", f"/requirements/{req_id}/case-review")
+        r = v.get("review") or {}
+        return v if r.get("durum") in ("tamamlandi", "hata") and not v.get("calisiyor") else None
+
+    v = b.bekle("otomatik review tamamlandı", oku, 60)
+    r = v.get("review") or {}
+    ic = r.get("icerik") or {}
+    b.kanit["review"] = {
+        "durum": r.get("durum"),
+        "skor": r.get("skor"),
+        "mode": r.get("mode"),
+        "eksik_case": len(ic.get("missing_cases") or []),
+        "birlestir_sil": len(ic.get("remove_or_merge") or []),
+        "bayat": v.get("bayat"),
+    }
+    b.kontrol(
+        "review tamamlandı", r.get("durum") == "tamamlandi", f"{r.get('durum')} {r.get('hata')}"
+    )
+    b.kontrol(
+        "review isteyen sistem (otomatik)",
+        r.get("isteyen") in (None, "system"),
+        str(r.get("isteyen")),
+    )
+    mod_kontrol(b, "case review", r.get("mode"))
+    b.kontrol(
+        f"review skoru {REVIEW_SKORU} (golden f2-kod-hatasi/TPD-1)",
+        r.get("skor") == REVIEW_SKORU,
+        str(r.get("skor")),
+    )
+    if b.prova:
+        b.kontrol("review güncel sete ait", v.get("bayat") is False, str(v.get("bayat")))
+
+
+def case_denetim(b: Baglam) -> None:
+    """Denetim (P9, Agent Probe portu): QA kararlarından sonra set denetime gider; yayın için
+    setin güncel hâline ait KABUL gerekir (K3, TP_DENETIM_KAPISI=on)."""
+    req_id = b.veri["req_id"]
+    yol = f"/requirements/{req_id}/case-audit"
+    if b.prova:
+        once = b.api.get("analist", yol)
+        b.kontrol("denetim kapısı açık (TP_DENETIM_KAPISI=on)", once.get("kapi_acik") is True)
+        b.kontrol(
+            "denetimsiz set yayına çıkamaz",
+            bool(once.get("yayin_engeli")),
+            str(once.get("yayin_engeli")),
+        )
+        on = b.api.get("analist", f"/publish/preview?requirement_id={req_id}")
+        islemler = {k["islem"] for k in on["kalemler"]}
+        b.kontrol(
+            "yayın önizlemesi denetim öncesi kapalı (blocked_gate)",
+            islemler == {"blocked_gate"},
+            str(islemler),
+        )
+        b.kontrol(
+            "denetime gönderilebilir",
+            once.get("gonder_engeli") is None,
+            str(once.get("gonder_engeli")),
+        )
+        b.api.post("analist", yol, beklenen=(202,))
+
+    def oku():
+        v = b.api.get("analist", yol)
+        d = v.get("denetim") or {}
+        return v if not v.get("calisiyor") and d.get("durum") in ("tamamlandi", "hata") else None
+
+    v = b.bekle("denetim kararı geldi", oku, 60)
+    d = v.get("guncel_karar") or v.get("denetim") or {}
+    ic = d.get("icerik") or {}
+    b.kanit["denetim"] = {
+        "karar": d.get("karar"),
+        "model_karari": d.get("model_karari"),
+        "kaynak": d.get("kaynak"),
+        "talep_no": d.get("talep_no"),
+        "mode": ic.get("mode"),
+        "guncel": d.get("guncel"),
+        "yayin_engeli": v.get("yayin_engeli"),
+    }
+    b.kontrol(
+        f"denetim kararı {DENETIM_KARARI} (golden f2-kod-hatasi/TPD-1)",
+        (v.get("guncel_karar") or {}).get("karar") == DENETIM_KARARI,
+        f"{d.get('karar')} {d.get('hata') or ''}",
+    )
+    b.kontrol(
+        "kod sertleştirmedi (deterministik bulgu yok)",
+        not ic.get("sertlestirildi"),
+        str(ic.get("deterministik_bulgular")),
+    )
+    mod_kontrol(b, "denetim", ic.get("mode"))
+    b.kontrol("karar güncel sete ait", d.get("guncel") is True, str(d.get("guncel")))
+    b.kontrol("yayın engeli yok", v.get("yayin_engeli") is None, str(v.get("yayin_engeli")))
 
 
 def qa_kararlari(b: Baglam) -> None:
@@ -1588,6 +1817,29 @@ def son_denetim(b: Baglam) -> None:
         yabanci = [k for k in kipler if k["mod"] not in izinli and k["mod"] != "replay_miss"]
         b.kontrol("sahte 'live' yok (tüm çağrılar dürüst etiketli)", not yabanci, str(yabanci))
         b.kontrol("model çağrısı kaydı var", sum(k["sayi"] for k in kipler) > 0, str(kipler))
+    v3_amaclari = ("design_model", "case_generation", "case_review", "case_audit")
+    v3 = b.yigin.ai_call_kokenleri(b.veri["baslangic_iso"], v3_amaclari)
+    b.kanit["v3_cagrilari"] = v3
+    if v3 is not None and b.veri.get("model_modu") == "replay":
+        amaclar = {c["amac"] for c in v3}
+        b.kontrol(
+            "iki tur + review + denetim çağrıları yapıldı",
+            set(v3_amaclari) <= amaclar,
+            f"eksik: {sorted(set(v3_amaclari) - amaclar)}",
+        )
+        sapma = [
+            c
+            for c in v3
+            if c["mod"] != "replay"
+            or c["koken"] != "golden_matched"
+            or not c["kaynak"].endswith(f"f2-kod-hatasi/{STORY}.json")
+        ]
+        b.kontrol(
+            f"v3 çağrıları REPLAY, golden_matched (f2-kod-hatasi/{STORY})",
+            not sapma,
+            str(sapma),
+            kritik=b.prova,
+        )
     a = b.api.get("sunucu", "/audit?verify=true&limit=1")
     v = a.get("verify") or {}
     b.kanit["denetim_zinciri"] = {
@@ -1656,9 +1908,45 @@ def adimlar(kirma_yayinla: bool = False) -> list[Adim]:
             ai_adimi=True,
         ),
         Adim("A5", "PO teyidi (jira-sim, tp-po-approved)", "po", "3", 60, po_teyidi),
-        Adim("A6", "Case üretimi (10 case)", "analist", "4", 60, case_uret, ai_adimi=True),
-        Adim("A7", "QA kararları (10 onay)", "analist", "4", 60, qa_kararlari),
-        Adim("A8", "Yayın: önizleme → Jira Test issue'ları", "analist", "4", 60, yayin),
+        Adim(
+            "A6",
+            "Tasarım modeli (iki tur, tur 1: 18 kapsam öğesi)",
+            "analist",
+            "4",
+            60,
+            model_uret,
+            ai_adimi=True,
+        ),
+        Adim("A7", "Model onayı (analist, hash'e bağlı)", "analist", "4", 30, model_onayi),
+        Adim(
+            "A8",
+            "Case üretimi (tur 2, onaylı modelden 10 case)",
+            "analist",
+            "4",
+            60,
+            case_uret,
+            ai_adimi=True,
+        ),
+        Adim(
+            "A9",
+            "Otomatik review (P8): tamamlandı, skor 10",
+            "analist",
+            "4",
+            60,
+            case_review,
+            ai_adimi=True,
+        ),
+        Adim("A10", "QA kararları (10 onay)", "analist", "4", 60, qa_kararlari),
+        Adim(
+            "A11",
+            "Denetime gönder (P9, Agent Probe) → KABUL, yayın kapısı açık",
+            "analist",
+            "4",
+            60,
+            case_denetim,
+            ai_adimi=True,
+        ),
+        Adim("A12", "Yayın: önizleme → Jira Test issue'ları", "analist", "4", 60, yayin),
         Adim(
             "B1",
             "Kod üretimi C1/C2/C3/C5 (Playwright MCP ajanı + şablon)",

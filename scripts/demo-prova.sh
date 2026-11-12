@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# demo-prova — tam demo provası: sıfırla → 14 adım + locator kırma/onarım, N kez; özet.
+# demo-prova — tam demo provası: sıfırla → 14 adım (adım 4: iki tur tasarım modeli + analist onayı →
+# case → otomatik review → QA → denetim KABUL → yayın; 011 K15) + locator kırma/onarım, N kez; özet.
 #
 #   scripts/demo-prova.sh                 # 1 koşu: make reset + make demo-reset → API provası
 #   scripts/demo-prova.sh --runs 3        # TEKNIK-TASARIM §13: 3 ardışık sorunsuz prova
@@ -64,7 +65,7 @@ while [ $# -gt 0 ]; do
     --temizle)
       TEMIZLE=1
       if [ $# -ge 2 ] && [ -n "$2" ] && [ "${2#-}" = "$2" ]; then SAKLA="$2"; shift; fi ;;
-    -h|--help) sed -n '2,36p' "$SELF" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,37p' "$SELF" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) err "bilinmeyen argüman: $1 (yardım: --help)"; exit 2 ;;
   esac
   shift
@@ -166,8 +167,10 @@ mod_dogrula() {
     exit 2
   fi
   GOZLENEN_MOD="$m"
+  GOZLENEN_KAPI="$(docker compose exec -T core-worker printenv TP_DENETIM_KAPISI 2>/dev/null | tr -d '[:space:]' || true)"
 }
 GOZLENEN_MOD=""
+GOZLENEN_KAPI=""
 
 strict_ac() {
   if [ "$(worker_strict)" != 1 ]; then
@@ -177,6 +180,13 @@ strict_ac() {
   fi
   [ "$(worker_strict)" = 1 ] || die "core-worker TP_REPLAY_STRICT=1 değil"
 }
+
+# Arayüz provası bu yığının portalına ve jira-sim'ine gider (.env portları; yalıtılmış ikinci yığında
+# varsayılan 8080/8090 BAŞKA yığını hedeflerdi). Kabukta verilmişse o kullanılır.
+PORTAL_PORT="${TP_PORTAL_PORT:-$(env_get TP_PORTAL_PORT)}"
+JIRA_PORT="${JIRA_SIM_PORT:-$(env_get JIRA_SIM_PORT)}"
+export PORTAL_URL="${PORTAL_URL:-http://127.0.0.1:${PORTAL_PORT:-8080}}"
+export JIRA_SIM_URL="${JIRA_SIM_URL:-http://127.0.0.1:${JIRA_PORT:-8090}}"
 
 ZAMAN="$(date +%Y%m%d-%H%M%S)"
 OZET="$RAPOR_KOK/prova-ozeti-$ZAMAN.md"
@@ -263,6 +273,7 @@ done
   else
     echo "- Model kipi (core-worker'dan okundu): ${GOZLENEN_MOD:-okunamadı} — REPLAY doğrulanmadı."
   fi
+  echo "- Case akışı (011 K15): iki tur (tasarım modeli → analist onayı → case) → otomatik review (P8) → QA → denetim (P9, KABUL) → yayın; yayın kapısı TP_DENETIM_KAPISI=${GOZLENEN_KAPI:-okunamadı}."
   echo "- Gerçek CI değil, yerel CI (LocalForge + test-runner)."
   echo
   echo "| Koşu | Kip | Sonuç | Süre (sıfırlama dahil) | Rapor |"

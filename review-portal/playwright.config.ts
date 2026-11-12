@@ -9,6 +9,8 @@ import { defineConfig, devices } from "@playwright/test";
 const CANLI = process.env.PORTAL_LIVE === "1";
 const PORT = Number(process.env.PORTAL_E2E_PORT ?? 4173);
 const BASE_URL = CANLI ? (process.env.PORTAL_URL ?? "http://127.0.0.1:8080") : `http://127.0.0.1:${PORT}`;
+// İsteğe bağlı tarayıcı ikilisi (ör. Chrome for Testing): PW_EXECUTABLE_PATH=/…/Google Chrome for Testing
+const IKILI = process.env.PW_EXECUTABLE_PATH;
 
 export default defineConfig({
   testDir: "./e2e",
@@ -26,7 +28,16 @@ export default defineConfig({
     locale: "tr-TR",
     timezoneId: "Europe/Istanbul",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } } }],
+  projects: [
+    {
+      name: "chromium",
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1440, height: 900 },
+        ...(IKILI ? { launchOptions: { executablePath: IKILI } } : {}),
+      },
+    },
+  ],
   ...(CANLI
     ? {}
     : {

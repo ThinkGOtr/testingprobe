@@ -74,7 +74,7 @@ demo-check: ## Demo-B ön kontrolü: REPLAY golden'larında defect adayı anı h
 	@docker compose exec -T core-worker python -m tp_core.gateway.demo_check --story $(or $(STORY),TPD-1)
 	@docker compose exec -T core-worker python -m tp_core.gateway.replay_check --runs $(or $(RUNS),5)
 
-demo-prova: ## Tam demo provası: make reset → 14 adım + locator kırma/onarım, strict REPLAY (RUNS=n, varsayılan 1; §13 için RUNS=3; UI=1: arayüzden; UITUR=1: salt okuma arayüz turu + video; KIRMA=1: kırma taslağını yayınla; SAKLA=n: son n rapor)
+demo-prova: ## Tam demo provası: make reset → 14 adım (iki tur + review + denetim KABUL) + locator kırma/onarım, strict REPLAY (RUNS=n, varsayılan 1; §13 için RUNS=3; UI=1: arayüzden; UITUR=1: salt okuma arayüz turu + video; KIRMA=1: kırma taslağını yayınla; SAKLA=n: son n rapor)
 	@scripts/demo-prova.sh --runs $(or $(RUNS),1) $(if $(UI),--ui,) $(if $(UITUR),--ui-tur,) $(if $(KIRMA),--kirma-yayinla,) $(if $(SAKLA),--sakla $(SAKLA),)
 
 prova-temizle: ## Eski prova raporlarını temizle (N=10: son N koşu klasörü kalır)

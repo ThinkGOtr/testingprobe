@@ -1575,9 +1575,14 @@ td .cip:has(+ .cip) {
 }
 .alan-satir {
   flex-direction: row;
+  flex-wrap: wrap; /* dar ekranda (320 px) düğme alt satıra iner, sayfa yatay kaymaz */
   align-items: center;
   gap: 8px;
   margin: 0;
+}
+.alan-satir select {
+  min-width: 0;
+  max-width: 100%;
 }
 .alan-satir label {
   white-space: nowrap;
@@ -2512,6 +2517,14 @@ article.bulgu:is([data-durum="decided"], [data-durum="resolved"], [data-durum="s
   list-style: none;
   margin: 0;
   padding: 0;
+}
+/* WCAG 2.2 hedef boyutu (2.5.8): kapsam tablosundaki "C2" gibi kısa case bağlantıları ≥ 24 px. */
+.kapsam-cipler a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  min-height: 24px;
 }
 .kapsam-ayrinti {
   border-top: 1px solid var(--border-soft);
