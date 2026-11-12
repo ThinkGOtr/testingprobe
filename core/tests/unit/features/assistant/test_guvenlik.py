@@ -723,7 +723,8 @@ def test_kartli_soru_ve_baglam_422_kisisel_veri(
     r = sor(client, s, soru="Müşterinin kartı 5105.1051.0510.5100, ödeme neden düştü?")
     assert r.status_code == 422 and r.json()["kod"] == "kisisel_veri"
     assert "kart numarası" in r.json()["detail"]
-    assert "5105" not in r.text
+    # Ortak 422 metni maskeli örnek ("5105 **** **** 5100") içerir; tam numara yanıtta yok.
+    assert "5105105105105100" not in re.sub(r"\D", "", r.text)
     r = sor(client, s, soru="bu ne?", baglam={"secili_eleman": {"ad": "kart 5105105105105100"}})
     assert r.status_code == 422 and r.json()["kod"] == "kisisel_veri"
     assert _api.tek(engine, "SELECT count(*) FROM asistan_mesaj") == 0

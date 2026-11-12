@@ -28,7 +28,6 @@ dahil edilir.
 
 from __future__ import annotations
 
-import inspect
 import json
 import logging
 import uuid
@@ -400,13 +399,10 @@ def _dondurma_kontrol(session: Session, user: Principal) -> None:
 
 def _kart_bul(metin: str, *, baglam: bool) -> bool:
     """`guvenlik.kart_bul`; ekran bağlamı (JSON) `baglam=True` ile taranır (çevrede kart kelimesi
-    şartı). Geçiş uyarlaması: `baglam` parametresi olmayan eski imzada bağlam soru kuralıyla
-    taranır (spec 013 F1 birleşince bu dal ölü kalır ve kaldırılabilir)."""
+    şartı, spec 013 §5.1)."""
     from tp_core.features.assistant.guvenlik import kart_bul
 
-    if baglam and "baglam" in inspect.signature(kart_bul).parameters:
-        return bool(kart_bul(metin, baglam=True))
-    return bool(kart_bul(metin))
+    return bool(kart_bul(metin, baglam=baglam))
 
 
 def _kisisel_veri_kontrol(session: Session, user: Principal, soru: str, baglam_json: str) -> None:

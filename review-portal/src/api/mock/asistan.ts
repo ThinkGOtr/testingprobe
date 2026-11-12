@@ -168,7 +168,9 @@ const KART_AYRACI = /[\s._/\u2010-\u2015\u2212-]+/;
 const SEMALI_URL = /\b[a-z][a-z0-9+.-]*:\/\/\S+/gi;
 const IBAN = /\bTR\d{2}(?:[ -]?\d){22}\b/gi;
 const KART_KELIMESI = /(?<![a-zçğıöşü])(?:kart|card|pan|kredi)/i;
-const BAGLAM_PENCERESI = 40;
+// Çekirdekle aynı (guvenlik.kart_bul baglam=True): kart kelimesi önce 60, sonra 20 karakter içinde.
+const BAGLAM_ONCE = 60;
+const BAGLAM_SONRA = 20;
 
 function luhn(hane: string): boolean {
   let top = 0;
@@ -208,7 +210,7 @@ export function mockKartVar(metin: string, { baglam = false }: { baglam?: boolea
     if (!bulundu) continue;
     if (!baglam) return true;
     const i = m.index ?? 0;
-    const cevre = temiz.slice(Math.max(0, i - BAGLAM_PENCERESI), i + m[0].length + BAGLAM_PENCERESI);
+    const cevre = temiz.slice(Math.max(0, i - BAGLAM_ONCE), i + m[0].length + BAGLAM_SONRA);
     if (KART_KELIMESI.test(cevre)) return true;
   }
   return false;
