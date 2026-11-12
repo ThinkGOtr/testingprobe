@@ -74,6 +74,16 @@ export function caseKalitesiUyarla(ham: unknown): CaseKalitesi {
       etkilenen_case: sayi(tekrar.etkilenen_case),
       oran: sayiYaDaNull(tekrar.oran),
     },
+    ...(h.yetim_soru && typeof h.yetim_soru === "object"
+      ? {
+          yetim_soru: {
+            toplam: sayi(nesne(h.yetim_soru).toplam),
+            yetim: sayi(nesne(h.yetim_soru).yetim),
+            yetim_gereksinim: sayi(nesne(h.yetim_soru).yetim_gereksinim),
+            oran: sayiYaDaNull(nesne(h.yetim_soru).oran),
+          },
+        }
+      : {}),
     readiness: {
       ready: sayi(readiness.ready),
       assumption_dependent: sayi(readiness.assumption_dependent),

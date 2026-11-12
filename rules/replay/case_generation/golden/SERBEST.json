@@ -90,11 +90,13 @@
     "not_covered": [
       {
         "item": "EP-V2",
-        "reason": "Ayrı case yazılmadı: AC3 için yazılan kampanyalı sepet case'inde kampanyalı satır sepette kalıyor ve toplam (125,00 TL) indirimi içeriyor, ancak indirim tutarı ayrıca doğrulanmıyor."
+        "reason": "Ayrı case yazılmadı: AC3 için yazılan kampanyalı sepet case'inde kampanyalı satır sepette kalıyor ve toplam (125,00 TL) indirimi içeriyor, ancak indirim tutarı ayrıca doğrulanmıyor.",
+        "question_ref": null
       },
       {
         "item": "DT-R4",
-        "reason": "Sonucu DT-R3 ile aynı (kampanyalı sepette minimum şartı aranmaz); kampanyalı sepet kuralı DT-R3 case'iyle sınanıyor, ayrı case yazılmadı."
+        "reason": "Sonucu DT-R3 ile aynı (kampanyalı sepette minimum şartı aranmaz); kampanyalı sepet kuralı DT-R3 case'iyle sınanıyor, ayrı case yazılmadı.",
+        "question_ref": null
       }
     ],
     "observations": [],

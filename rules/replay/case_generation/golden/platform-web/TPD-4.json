@@ -90,27 +90,33 @@
     "not_covered": [
       {
         "item": "Web:Tarayıcı davranışı",
-        "reason": "Story'de form ortasında yenileme, geri/ileri ya da çift gönderim için tanımlı davranış yok; beklenen sonuç uydurulmadı."
+        "reason": "Story'de form ortasında yenileme, geri/ileri ya da çift gönderim için tanımlı davranış yok; beklenen sonuç uydurulmadı.",
+        "question_ref": null
       },
       {
         "item": "Web:Oturum ve durum",
-        "reason": "Story'de oturum süresi, çıkış ve \"beni hatırla\" yok."
+        "reason": "Story'de oturum süresi, çıkış ve \"beni hatırla\" yok.",
+        "question_ref": null
       },
       {
         "item": "Web:URL ve yetki",
-        "reason": "Story yalnız giriş formunu tanımlar; korunan sayfaya doğrudan erişim davranışı kaynakta yok."
+        "reason": "Story yalnız giriş formunu tanımlar; korunan sayfaya doğrudan erişim davranışı kaynakta yok.",
+        "question_ref": null
       },
       {
         "item": "Web:Responsive",
-        "reason": "Kırılım noktaları verilmedi (Q2); çözünürlükler config_matrix'te."
+        "reason": "Kırılım noktaları verilmedi (Q2); çözünürlükler config_matrix'te.",
+        "question_ref": "Q2"
       },
       {
         "item": "Web:Ağ",
-        "reason": "500/503/zaman aşımında arayüz davranışı kaynakta yok."
+        "reason": "500/503/zaman aşımında arayüz davranışı kaynakta yok.",
+        "question_ref": null
       },
       {
         "item": "Web:Yerelleştirme",
-        "reason": "Story'de dil değişimi ya da biçimlendirilen tarih/tutar yok."
+        "reason": "Story'de dil değişimi ya da biçimlendirilen tarih/tutar yok.",
+        "question_ref": null
       }
     ],
     "observations": [

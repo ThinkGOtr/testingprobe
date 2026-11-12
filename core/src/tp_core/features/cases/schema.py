@@ -148,8 +148,23 @@ def validate_case(icerik: Any, rules_dir: Path | None = None, *, legacy: bool = 
     return _sema_hatalari(case_schema(rules_dir), icerik)
 
 
+def _not_covered_varsayilani(ozet: Any) -> Any:
+    """`not_covered[].question_ref` (011 tur 2) eski istemcilerde yoktur: verilmeyen alan `null`
+    sayılır (IDE taslağı geriye uyumlu kalır; şemada alan zorunlu ve null olabilir)."""
+    if not isinstance(ozet, Mapping) or not isinstance(ozet.get("not_covered"), list):
+        return ozet
+    return {
+        **ozet,
+        "not_covered": [
+            {**x, "question_ref": None} if isinstance(x, Mapping) and "question_ref" not in x else x
+            for x in ozet["not_covered"]
+        ],
+    }
+
+
 def validate_summary(ozet: Any, rules_dir: Path | None = None) -> list[str]:
     """Üretim özetinin (üst düzey listeler) şema hataları + yinelenen kimlikler."""
+    ozet = _not_covered_varsayilani(ozet)
     hatalar = _sema_hatalari(summary_schema(rules_dir), ozet)
     if hatalar or not isinstance(ozet, Mapping):
         return hatalar
@@ -378,8 +393,44 @@ def consistency_problems(case: Mapping[str, Any], ozet: Mapping[str, Any] | None
     return sorunlar
 
 
-# Platform eki kategorisi (`Web:Responsive`): not_covered'da kapsam öğesi gibi geçerlidir.
-PLATFORM_KATEGORISI = re.compile(r"(Web|Mobil|Desktop|API|Data):[^\n]{1,32}|N(10|[1-9])")
+# Platform eki kategorisi (`Web:Responsive`): not_covered'da kapsam öğesi gibi geçerlidir. Tek
+# kaynak burasıdır (değerlendirme aynası `kural_aynasi` buradan alır).
+PLATFORM_KATEGORISI = re.compile(r"(Web|Mobil|Desktop|API|Data):[^\n]{1,32}")
+# Negatif kategori kodu (`case-negative.md` N1–N10): yalnız derinleştirmenin (`case_deepening`)
+# not_covered kaydında geçerlidir ("bu kategori bu story için anlamsız"); case_generation'da
+# kapsam öğesi değildir. Birleşik (üretim + derinleştirme) özette geçerlidir.
+NEGATIF_KATEGORISI = re.compile(r"N(10|[1-9])")
+SORU_KIMLIGI = re.compile(r"Q[0-9]+")
+
+
+def soru_aniliyor(metin: Any, kimlik: str) -> bool:
+    """Serbest metinde (gerekçe, öğe tanımı) açık soru kimliği tek başına geçiyor mu? `CQ1`,
+    `Q10` içindeki `Q1` sayılmaz."""
+    return re.search(rf"(?<![A-Za-z0-9]){re.escape(kimlik)}(?![0-9])", str(metin or "")) is not None
+
+
+def orphan_questions(
+    cases: Sequence[Mapping[str, Any]], ozet: Mapping[str, Any] | None
+) -> list[str]:
+    """Hiçbir yerde anılmayan (yetim) açık sorular (011 K16; tur 2 inceleme #1). Bir soru şu
+    yerlerden en az birinde anılmalıdır: bir case'in `open_question_refs`'i, `not_covered`
+    kaydının `question_ref`'i, bir `negative_coverage` kararının gerekçesi (ör. `out_of_scope`:
+    "PO'ya soruldu (Q1)") ya da bir kapsam öğesinin tanımı ("sonuç kaynakta tanımsız, Q1").
+    Yetim soru PO yanıtından sonra hiçbir case'e ya da karara dönmez; döngü kopar."""
+    oz = ozet or {}
+    sorular = [str(q.get("id")) for q in oz.get("open_questions") or [] if isinstance(q, Mapping)]
+    anilan = {str(r) for c in cases for r in (c.get("open_question_refs") or [])}
+    anilan |= {
+        str(x.get("question_ref"))
+        for x in oz.get("not_covered") or []
+        if isinstance(x, Mapping) and x.get("question_ref")
+    }
+    metinler = [
+        k.get("rationale") for k in oz.get("negative_coverage") or [] if isinstance(k, Mapping)
+    ] + [o.get("definition") for o in oz.get("coverage_items") or [] if isinstance(o, Mapping)]
+    return [
+        q for q in sorular if q not in anilan and not any(soru_aniliyor(m, q) for m in metinler)
+    ]
 
 
 def set_problems(
@@ -388,6 +439,7 @@ def set_problems(
     kabul_kriterleri: Sequence[Any],
     *,
     korunan: Sequence[Mapping[str, Any]] = (),
+    negatif_kodlari: bool = False,
 ) -> list[str]:
     """Set düzeyi tutarsızlıklar (§4.2): negatif kapsam kararları ve kapsanmayanların gerekçesi.
 
@@ -401,8 +453,13 @@ def set_problems(
     - hiçbir case'in kapsamadığı öğe `not_covered`'da ya da `out_of_scope` kararında, kapsanmayan
       kabul kriteri `not_covered`'da gerekçelidir.
 
+    - her açık soru en az bir yerde anılır (`orphan_questions`); `not_covered.question_ref`
+      tanımlı bir açık sorudur.
+
     `korunan`: üretimde korunan (önceki üretimlerin onaylı/yayınlı ya da IDE) case'leri; yalnız
     kabul kriteri kapsamına sayılır (kapsam öğesi kimlikleri kendi üretimlerine aittir).
+    `negatif_kodlari`: `not_covered.item` negatif kategori kodu (`N8`) olabilir mi — yalnız
+    derinleştirme çıktısı ve onu içeren birleşik özet için True.
     """
     oz = ozet or {}
     ogeler = [x for x in oz.get("coverage_items") or [] if isinstance(x, Mapping)]
@@ -422,18 +479,33 @@ def set_problems(
     for kimlik in sorted(set(karar_sayisi) - tanimli):
         sorunlar.append(f"negative_coverage: tanımlı olmayan kapsam öğesi: {kimlik}")
     # not_covered.item: tanımlı kapsam öğesi, kabul kriteri (ACn) ya da platform kategorisi
-    # (`Web:Responsive`); soru/varsayım kimliği değildir (soru open_questions'ta durur).
+    # (`Web:Responsive`; derinleştirmede negatif kategori kodu `N8`); soru/varsayım kimliği
+    # değildir. Kaydı soru yüzünden kapsanmayan öğe soruyu `question_ref` ile anar.
+    soru_kimlikleri = _kimlikler(oz, "open_questions")
     for x in oz.get("not_covered") or []:
-        item = str(x.get("item")) if isinstance(x, Mapping) else ""
+        if not isinstance(x, Mapping):
+            continue
+        item = str(x.get("item") or "")
         if (
             item
             and item not in tanimli
             and not re.fullmatch(r"AC[0-9]+", _ac_ya_da_oge(item))
             and not PLATFORM_KATEGORISI.fullmatch(item)
+            and not (negatif_kodlari and NEGATIF_KATEGORISI.fullmatch(item))
         ):
+            ipucu = (
+                "soru kimliği item'a yazılmaz: item ilgili ACn ya da kapsam öğesidir, soru "
+                "question_ref'e yazılır; kaydı silmeyin"
+                if SORU_KIMLIGI.fullmatch(item)
+                else "kapsam öğesini ya da ACn'yi yazın"
+            )
             sorunlar.append(
-                f"not_covered: '{item}' bir kapsam öğesi ya da kabul kriteri değil (soru/varsayım "
-                "kimliği yazılmaz; kapsam öğesini ya da ACn'yi yazın)"
+                f"not_covered: '{_kisa(item)}' bir kapsam öğesi ya da kabul kriteri değil ({ipucu})"
+            )
+        ref = x.get("question_ref")
+        if ref and str(ref) not in soru_kimlikleri:
+            sorunlar.append(
+                f"not_covered: question_ref '{_kisa(ref)}' open_questions'ta tanımlı değil"
             )
     for o in ogeler:
         kimlik = str(o.get("id"))
@@ -472,7 +544,19 @@ def set_problems(
     for ref in uncovered_acs([*cases, *korunan], kabul_kriterleri):
         if ref not in gerekceli:
             sorunlar.append(f"{ref}: hiçbir case kapsamıyor; not_covered'da gerekçesi yok")
+    for q in orphan_questions(cases, oz):
+        sorunlar.append(
+            f"{q}: açık soru hiçbir yerde anılmıyor (yetim); soruyu silmeyin, bağlayın: ona bağlı "
+            "case'in open_question_refs'i, out_of_scope kararının gerekçesi ya da not_covered "
+            f"kaydı (item: ilgili ACn ya da kapsam öğesi, question_ref: {q})"
+        )
     return sorunlar
+
+
+def _kisa(deger: Any, n: int = 40) -> str:
+    """İhlal mesajına kopyalanan model değeri kısa tutulur (yeniden istemeye geri yansır)."""
+    metin = " ".join(str(deger or "").split())
+    return metin if len(metin) <= n else metin[: n - 1] + "…"
 
 
 def readiness_warnings(
@@ -527,11 +611,12 @@ def coverage_matrix(
     """
     hazir = {i for i, c in enumerate(cases, start=1) if readiness_of(c) == READY}
     oz = ozet or {}
-    neden = {
-        _ac_ya_da_oge(x.get("item")): str(x.get("reason") or "")
-        for x in oz.get("not_covered") or []
-        if isinstance(x, Mapping)
-    }
+    neden: dict[str, str] = {}
+    for x in oz.get("not_covered") or []:
+        if isinstance(x, Mapping):
+            # Aynı öğe için birden çok kayıt (ör. iki açık soru) gerekçeleri birleştirir.
+            anahtar, metin = _ac_ya_da_oge(x.get("item")), str(x.get("reason") or "")
+            neden[anahtar] = "; ".join(m for m in (neden.get(anahtar), metin) if m)
     kararlar = {
         str(k.get("item")): k for k in oz.get("negative_coverage") or [] if isinstance(k, Mapping)
     }
@@ -659,5 +744,6 @@ def generation_output_problems(
         if bilinmeyen:
             out.append(f"C{n}: acceptance_criteria_refs: source has no {', '.join(bilinmeyen)}")
     # Korunan (önceki üretimlerden onaylı/yayınlı) case'lerin kapsadığı AC eksik sayılmaz.
+    # Negatif kategori kodu (N1–N10) yalnız derinleştirmede geçerlidir (`negatif_kodlari`).
     out += set_problems(cases, ozet, kabul_kriterleri, korunan=korunan)
     return out

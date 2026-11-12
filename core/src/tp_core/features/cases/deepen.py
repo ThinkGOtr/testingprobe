@@ -378,9 +378,10 @@ def _reddet(rid: uuid.UUID, eylem: str, veri: Mapping[str, Any], neden: str) -> 
 
 def _kural_denetimi() -> Any:
     """Derinleştirme çıktısının deterministik kuralları (§4.2, ek set: AC kapsamı tek başına
-    aranmaz); ihlalde geçit modelden düzeltme ister. Değerlendirme denetleyicisiyle aynı kural
-    (`eval_agents.generation_rule_problems`, çapraz testli)."""
-    from tp_core.gateway.eval_agents import generation_rule_problems
+    aranmaz; negatif kategori kodu `N8` geçerli); ihlalde geçit modelden düzeltme ister.
+    Değerlendirme denetleyicisiyle aynı kural (`kural_aynasi.generation_rule_problems`, çapraz
+    testli); üretim kodu değerlendirme modülünü (`gateway.eval_agents`) içe aktarmaz."""
+    from tp_core.features.cases.kural_aynasi import generation_rule_problems
 
     return lambda o: generation_rule_problems(o, ek_set=True) if isinstance(o, dict) else []
 
@@ -538,7 +539,10 @@ def run_deepening(
         # Set düzeyi kurallar birleşik set üzerinde (mevcut + yeni): derinleştirme yalnız ek
         # öğeler taşır, AC kapsamını tek başına sağlamaz.
         uyarilar += set_problems(
-            [*(tc.icerik for tc in guncel), *cases], denetim_ozeti, req.kabul_kriterleri
+            [*(tc.icerik for tc in guncel), *cases],
+            denetim_ozeti,
+            req.kabul_kriterleri,
+            negatif_kodlari=True,
         )
         # P8 review her üretimden (derinleştirme dahil) sonra otomatik planlanır (011 K4).
         from tp_core.features.cases import review

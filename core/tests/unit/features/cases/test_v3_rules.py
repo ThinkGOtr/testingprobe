@@ -35,7 +35,11 @@ def _ozet(**over):
             {"id": "BV-1", "ac_ref": "AC2", "definition": "Boş parola", "valid": False},
         ],
         negative_coverage=[
-            {"item": "EP-I1", "decision": "tested", "rationale": "AC2 doğrudan ister"},
+            {
+                "item": "EP-I1",
+                "decision": "tested",
+                "rationale": "AC2 doğrudan ister; kilit süresi Q1 yanıtlanınca eklenir",
+            },
             {"item": "BV-1", "decision": "out_of_scope", "rationale": "Form boş parolayı engeller"},
         ],
     )
@@ -302,7 +306,7 @@ def test_kapsam_matrisi_ve_oranlar() -> None:
         "karar": "tested",
         "covered_by": [2],
         "covered_by_ready": [2],
-        "gerekce": "AC2 doğrudan ister",
+        "gerekce": "AC2 doğrudan ister; kilit süresi Q1 yanıtlanınca eklenir",
     }
     assert satir["BV-1"]["covered_by"] == [] and satir["BV-1"]["gerekce"] == "Sığmadı"
     assert satir["BV-1"]["karar"] == "out_of_scope"
@@ -476,3 +480,16 @@ def test_korunan_onayli_caseler_ac_kapsamina_sayilir() -> None:
     assert any(p.startswith("AC2:") for p in set_problems(yeni, oz, ACS))
     korunan = [_negatif()]
     assert not any(p.startswith("AC2:") for p in set_problems(yeni, oz, ACS, korunan=korunan))
+
+
+def test_ozet_birlesiminde_ayni_ogenin_soru_kayitlari_ayri_kalir() -> None:
+    """Aynı AC iki açık soru yüzünden kapsanmamışsa iki `not_covered` kaydı birleşimde ezilmez."""
+    from tp_core.features.cases import ozet as ozet_modulu
+
+    kayitlar = [
+        {"item": "AC1", "reason": "a", "question_ref": "Q1"},
+        {"item": "AC1", "reason": "b", "question_ref": "Q2"},
+        {"item": "AC2", "reason": "c", "question_ref": None},
+    ]
+    birlesik = ozet_modulu.merge([{"not_covered": kayitlar}])
+    assert birlesik["not_covered"] == kayitlar

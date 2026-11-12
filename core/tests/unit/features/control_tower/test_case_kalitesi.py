@@ -246,6 +246,7 @@ def test_bos_db_sifir_ve_null(engine: Engine) -> None:
     assert (ic["n"], ic["gec"], ic["uyar"], ic["engelle"]) == (0, 0, 0, 0)
     assert ic["engel_orani"] is None and ic["uyari_orani"] is None
     assert k["surumler"] == [] and k["hedefler"] == []
+    assert k["yetim_soru"] == {"toplam": 0, "yetim": 0, "yetim_gereksinim": 0, "oran": None}
     assert set(k["kaynaklar"]) >= {"kapsam", "review", "denetim", "tekrar", "surumler"}
     assert any("hedef" in u for u in k["uyarilar"])
 
@@ -393,3 +394,45 @@ def test_api_ucu(api: TestClient, make_user, engine: Engine, kurulum: dict[str, 
 
 def test_api_girissiz_401(api: TestClient) -> None:
     assert api.get("/control-tower/case-quality").status_code == 401
+
+
+def test_yetim_soru_ve_api_onbellegi(
+    api: TestClient, make_user, engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """011 K16 (tur 2 #1): hiçbir yerde anılmayan açık soru `yetim_soru`'da sayılır. API sonucu
+    kısa süre önbellektedir; kalite tablolarında değişiklik olunca yeniden hesaplanır (#6)."""
+    c1 = case_icerik("A", "AC1")
+    c2 = case_icerik("B", "AC1", readiness="blocked", open_question_refs=["Q1"])
+    sorular = [
+        {"id": "Q1", "question": "Kilit süresi?", "owner": "PO"},
+        {"id": "Q2", "question": "Sıralama?", "owner": "PO"},
+    ]
+    with Session(engine) as s, s.begin(), allow_state_write():
+        rid = _req(s, "TPD-9", ["AC1: Geçerli girişte katalog açılır."])
+        s.add(
+            CaseUretim(
+                requirement_id=rid, uretim_no=1, ozet=ozet_icerik([c1, c2], open_questions=sorular)
+            )
+        )
+        _cases(s, rid, [(c1, "draft"), (c2, "draft")])
+    k = _hesap(engine)
+    assert k["yetim_soru"] == {"toplam": 2, "yetim": 1, "yetim_gereksinim": 1, "oran": 0.5}
+    assert any("yetim" in u for u in k["uyarilar"]) and "yetim_soru" in k["kaynaklar"]
+
+    ck.onbellegi_temizle()
+    sayac = {"n": 0}
+    asil = ck.case_kalitesi
+
+    def say(*a: Any, **kw: Any) -> dict[str, Any]:
+        sayac["n"] += 1
+        return asil(*a, **kw)
+
+    monkeypatch.setattr(ck, "case_kalitesi", say)
+    login(api, make_user("analyst"))
+    ilk = api.get("/control-tower/case-quality").json()
+    assert api.get("/control-tower/case-quality").json() == ilk and sayac["n"] == 1
+    with Session(engine) as s, s.begin(), allow_state_write():
+        _cases(s, rid, [(case_icerik("C", "AC1"), "draft")], uretim_no=2)
+    api.get("/control-tower/case-quality")
+    assert sayac["n"] == 2
+    ck.onbellegi_temizle()

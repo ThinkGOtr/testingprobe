@@ -15,7 +15,8 @@ override the source rules (no invented rule, message, code, threshold or timing)
   enjeksiyonu (WSTG-INPV-05)`); the case lists `CL` in `technique` and the item in `covers`
   (together with the EP/BVA/… items whose input it uses). For a category you skip, add one
   `not_covered` entry (`item`: `<Web|Mobil|Desktop|API|Data>:<category>`, at most 40 characters,
-  for example `Web:Responsive`, `Mobil:Kesintiler`) with the reason ("story has no …"). Do not
+  for example `Web:Responsive`, `Mobil:Kesintiler`) with the reason ("story has no …") and
+  `question_ref` (the open question when the category waits for an answer, otherwise `null`). Do not
   write one case per category to fill the list. The limits stay: at most 15 cases per story and
   8 steps per case.
 - **Category tags.** An accessibility case gets the tag `a11y`; a security case (authentication,

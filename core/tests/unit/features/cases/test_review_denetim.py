@@ -377,6 +377,29 @@ def test_izinsiz_ortam_engelle_ve_semasiz_host() -> None:
         "evil.com",
         "x.example.com",
     }
+    # Tur 2 güvenlik #15: şemasız IP (yol/port ile), yolsuz üç etiketli ad, ws/ftp şemaları,
+    # URL kullanıcı bilgisi; tutar, sürüm, e-posta ve ters alan adı (bundle kimliği) sayılmaz.
+    for metin, host in (
+        ("10.0.0.5/admin aç", "10.0.0.5"),
+        ("10.0.0.5:8080 çağır", "10.0.0.5"),
+        ("prod.firma.com adresine git", "prod.firma.com"),
+        ("wss://canli.firma.com/ws bağlan", "canli.firma.com"),
+        ("ftp://dosya.firma.com al", "dosya.firma.com"),
+        ("https://localhost@evil.com/x aç", "evil.com"),
+    ):
+        assert denetim_akisi.hosts_in(metin) == {host}, metin
+        adim = [{"id": "S1", "action": metin, "data": None, "expected": "x"}]
+        assert _bulgular([_case(steps=adim)]) == {"izinsiz_ortam": "ENGELLE"}, metin
+    for metin in (
+        "Tutar 1.250.000,00 TL",
+        "1.250.000.000/ay kota",
+        "Sürüm 10.0.0.5 yüklü",
+        "com.cci.bayi uygulamasını aç",
+        "bayi1@mail.sim.local yaz",
+        "api.demo.local açılır",
+    ):
+        adim = [{"id": "S1", "action": metin, "data": None, "expected": "x"}]
+        assert _bulgular([_case(steps=adim)]) == {}, metin
 
 
 @pytest.mark.parametrize(

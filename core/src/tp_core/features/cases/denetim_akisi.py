@@ -152,7 +152,10 @@ DENETCIYE_TALIMAT = re.compile(
 )
 # Tırnak içi kısa metin (UI etiketi: 'Onayla', "Kabul et"); talimat aranmadan önce çıkarılır.
 _TIRNAKLI = re.compile(r"[\"'‘’“”«»][^\"'‘’“”«»\n]{1,40}[\"'‘’“”«»]")
-URL_DESENI = re.compile(r"https?://([^/\s:\"'<>)]+)", re.IGNORECASE)
+# Şemalı hedef: http(s), ws(s), ftp(s), sftp; kullanıcı bilgisi (`user:parola@`) atlanır.
+URL_DESENI = re.compile(
+    r"\b(?:https?|wss?|ftps?|sftp)://(?:[^/\s@\"'<>)]*@)?([^/\s:\"'<>)@]+)", re.IGNORECASE
+)
 # Şemasız ana makine (`evil.com/api`, `www.ornek.com`): en az iki etiket, harfli üst alan adı,
 # ardından yol ya da `www.` öneki. E-posta alan adı (`@` sonrası) ve URL içindeki ad sayılmaz.
 SEMASIZ_HOST = re.compile(
@@ -160,6 +163,23 @@ SEMASIZ_HOST = re.compile(
     r"|(?<![@\w./:-])(www\.(?:[a-z0-9-]+\.)+[a-z]{2,})\b",
     re.IGNORECASE,
 )
+# Yolsuz ve `www`'siz ana makine (`prod.firma.com`, tur 2 güvenlik #15): en az üç etiket ve
+# yaygın üst alan adı. Ters alan adı biçimi (`com.firma.app`, paket/bundle kimliği) sayılmaz.
+SEMASIZ_ALT_ALAN = re.compile(
+    r"(?<![@\w./:-])(?!(?:com|net|org|io|tr|de|uk|co|gov|edu)\.)"
+    r"((?:[a-z0-9-]+\.){2,}(?:com|net|org|io|dev|cloud|internal|corp|lan|local|gov|edu|tr))"
+    r"(?![\w.-]*\w)",
+    re.IGNORECASE,
+)
+# Şemasız IP (`10.0.0.5/admin`, `10.0.0.5:8080`): ardından yol ya da port gelmeli (tutar ya da
+# sürüm numarası yanlış pozitif vermesin); oktetler `hosts_in`'de doğrulanır.
+SEMASIZ_IP = re.compile(r"(?<![\w.@/:-])(\d{1,3}(?:\.\d{1,3}){3})(?=:\d+|/)")
+
+
+def _ip_gecerli(ip: str) -> bool:
+    oktetler = ip.split(".")
+    return all(o == "0" or (not o.startswith("0") and int(o) <= 255) for o in oktetler)
+
 
 # Gizlilik (KVKK): geçerli sağlama toplamlı kimlik/ödeme numaraları ve genel e-posta sağlayıcısı.
 KART_DESENI = re.compile(r"(?<![\d.,])\d(?:[ -]?\d){12,18}(?![\d]|[.,]\d)")
@@ -215,10 +235,14 @@ def instruction_to_auditor(metin: str) -> bool:
 
 
 def hosts_in(metin: str) -> set[str]:
-    """Metindeki hedef ana makineler: şemalı URL'ler ve şemasız `ad.uzanti/yol` biçimleri."""
+    """Metindeki hedef ana makineler: şemalı URL'ler (http, ws, ftp…), şemasız `ad.uzanti/yol`,
+    `www.` önekli ad, en az üç etiketli yolsuz ad (`prod.firma.com`) ve yol/port ile yazılmış
+    IP adresi (`10.0.0.5/admin`)."""
     out = {h for h in URL_DESENI.findall(metin)}
     for a, b in SEMASIZ_HOST.findall(metin):
         out.add(a or b)
+    out.update(SEMASIZ_ALT_ALAN.findall(metin))
+    out.update(ip for ip in SEMASIZ_IP.findall(metin) if _ip_gecerli(ip))
     return {h.lower().rstrip(".") for h in out if h}
 
 

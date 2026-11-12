@@ -2,7 +2,8 @@
 
 Golden'lar bu yardımcıyla denetlenir; aynı kurallar üretimde `tp_core.features.cases.schema`
 (`consistency_problems`, `set_problems`) ve canlı değerlendirmede
-`tp_core.gateway.eval_agents.generation_rule_problems` olarak ayrıca yazılıdır. Üçü ayrı
+`tp_core.features.cases.kural_aynasi.generation_rule_problems` (`eval_agents` aracılığıyla)
+olarak ayrıca yazılıdır. Üçü ayrı
 uygulamadır: `test_goldens.py` golden'ları ve bozulmuş golden'ları üçüne birden sorar; biri
 kuralı farklı okursa orada görünür.
 
@@ -192,6 +193,30 @@ def set_problems(
     for ac in acs:
         if ac not in used and ac not in reasoned:
             problems.append(f"set: {ac} kapsanmıyor, gerekçesi yok")
+    problems += question_problems(cases, summary)
+    return problems
+
+
+def question_problems(cases: Sequence[Mapping[str, Any]], summary: Mapping[str, Any]) -> list[str]:
+    """Açık soru bağı (011 K16): `not_covered.question_ref` tanımlı bir soru; her soru en az bir
+    yerde anılır — case atfı, `not_covered.question_ref`, negatif kapsam kararının gerekçesi ya
+    da kapsam öğesinin tanımı (yetim soru yok)."""
+    problems: list[str] = []
+    questions = [str(q["id"]) for q in summary.get("open_questions") or []]
+    refs = {
+        str(n["question_ref"])
+        for n in summary.get("not_covered") or []
+        if n.get("question_ref") is not None
+    }
+    for ref in sorted(refs - set(questions)):
+        problems.append(f"set: not_covered.question_ref tanımsız soru {ref}")
+    refs |= {str(r) for case in cases for r in case.get("open_question_refs") or []}
+    texts = [str(d.get("rationale") or "") for d in summary.get("negative_coverage") or []]
+    texts += [str(i.get("definition") or "") for i in summary.get("coverage_items") or []]
+    for q in questions:
+        mentioned = any(re.search(rf"(?<![A-Za-z0-9]){q}(?![0-9])", t) for t in texts)
+        if q not in refs and not mentioned:
+            problems.append(f"set: {q} yetim açık soru")
     return problems
 
 
