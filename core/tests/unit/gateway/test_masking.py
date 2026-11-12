@@ -1,6 +1,12 @@
 import pytest
 
-from tp_core.gateway.masking import PiiMasker, iban_valid, tckn_valid
+from tp_core.gateway.masking import (
+    PiiMasker,
+    find_secret_patterns,
+    iban_valid,
+    scrub_secret_patterns,
+    tckn_valid,
+)
 
 
 def make_iban(bban: str) -> str:
@@ -136,3 +142,44 @@ def test_diff_has_no_raw_values() -> None:
     assert diff["counts"] == {"TCKN": 1, "EMAIL": 2}
     assert "x@ornek.com" not in str(diff)
     assert VALID_TCKN not in str(diff)
+
+
+# Türkçe parola anahtarı (spec 013): iyelik ekli ve ayraçsız (yalnız boşluk) biçimler. Değer kuralı
+# İngilizce anahtarlarla aynı: ≥ 8 karakter, harf VE rakam. Değerler çalışma anında birleştirilir.
+_PAROLA = "Gizli" + "123" + "Abc"
+_KISA = "admin" + "123"
+
+
+@pytest.mark.parametrize(
+    ("text", "kalan"),
+    [
+        (f"parola: {_PAROLA}", "parola: ***"),
+        (f"şifrem: {_PAROLA}", "şifrem: ***"),
+        (f"şifresi={_PAROLA}", "şifresi=***"),
+        (f"parolası: {_PAROLA}", "parolası: ***"),
+        (f"kullanici_sifresi: {_PAROLA}", "kullanici_sifresi: ***"),
+        (f"ŞİFRENİZ: {_PAROLA}", "ŞİFRENİZ: ***"),
+        (f"parola {_PAROLA}", "parola ***"),
+        (f"şifre {_KISA} ile giriş", "şifre *** ile giriş"),
+        (f"SIFRE {_KISA}", "SIFRE ***"),
+    ],
+)
+def test_turkce_parola_anahtari(text: str, kalan: str) -> None:
+    assert find_secret_patterns(text)
+    assert scrub_secret_patterns(text) == kalan
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "parola alanı boş olamaz",
+        "şifre sıfırlama ekranı",
+        "şifremi unuttum bağlantısı",
+        "şifreleme SHA256withRSA ile yapılır",  # anahtar değil: ek listesi sayılı
+        "Şifre 2 haftada bir değişir",
+        "parola: str",
+        "şifre 12345678",  # yalnız rakam
+    ],
+)
+def test_turkce_parola_yanlis_pozitif_yok(text: str) -> None:
+    assert find_secret_patterns(text) == []

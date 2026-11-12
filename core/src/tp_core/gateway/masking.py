@@ -262,12 +262,16 @@ def _onekli(onek: str, govde: str, en_az: int) -> str:
     return rf"{onek}(?:{govde}{{{en_az},}}|{govde}+\Z)"
 
 
+# Türkçe parola anahtarı, iyelik ekleriyle: parola, şifre(m/n/si/miz/niz/yi), parolası,
+# kullanici_sifresi. Ekler sayılıdır (`\w*` değil): "şifreleme SHA256…" gibi kelimeler anahtar
+# sayılmaz.
+_TR_PAROLA = r"(?:parola|s[iı]fre|şifre)(?:s[iı](?:n[iı])?|m(?:[iı]z)?|n(?:[iı]z)?|y[iı])?"
 # `generic_assignment` anahtar adları (büyük/küçük harf duyarsız) ve değer karakterleri.
 _SIR_ANAHTARI = (
     r"(?:password|passwd|secret[_-]?key|secret|client[_-]?secret|token|access[_-]?token"
     r"|auth[_-]?token|refresh[_-]?token|api[_-]?key|access[_-]?key|private[_-]?key"
     # Türkçe anahtar adları (013 §9: "parola: Gizli123Abc"); değer kuralı aynı (harf + rakam).
-    r"|parola|sifre|şifre)"
+    rf"|{_TR_PAROLA})"
 )
 _SIR_KARAKTERI = r"A-Za-z0-9_\-+/=.~@#%^&!"
 # Rastgele görünümlü değer: ≥ 8 karakter, harf VE rakam (kaynak koddaki `token`, `None`, `str`
@@ -338,7 +342,10 @@ SECRET_PATTERNS: tuple[SecretPattern, ...] = (
         "generic_assignment",
         re.compile(
             rf"(?P<keep>(?:--{_SIR_ANAHTARI}\b(?:\s*=\s*|\s+)"
-            rf"|(?<![\w-])(?:[A-Za-z0-9]+_)*{_SIR_ANAHTARI}\b[\"']?\s*[:=]\s*)[\"']?)"
+            rf"|(?<![\w-])(?:[A-Za-z0-9]+_)*{_SIR_ANAHTARI}\b[\"']?\s*[:=]\s*"
+            # Türkçe parola anahtarından sonra ayraçsız (yalnız boşluk) değer: `parola
+            # Gizli123Abc`, `şifre admin123` ("parola alanı boş olamaz" değer kuralına uymaz).
+            rf"|(?<![\w-])(?:[A-Za-z0-9]+_)*{_TR_PAROLA}[ \t]+)[\"']?)"
             rf"{_RASTGELE_DEGER}(?=[\s'\"`,;)}}\]]|\Z)",
             re.IGNORECASE,
         ),

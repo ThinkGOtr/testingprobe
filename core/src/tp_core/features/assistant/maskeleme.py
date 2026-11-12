@@ -30,19 +30,48 @@ from tp_core.gateway.masking import (
     MaskingSession,
     PiiMasker,
     Recognizer,
+    iban_valid,
+    tckn_valid,
 )
 
 # Bayrak kapalıyken de maskelenen türler (tanıyıcı sırası `RECOGNIZERS`'daki gibi: önce IBAN).
 ZORUNLU_TURLER: Final = frozenset({"IBAN", "TCKN"})
-_ZORUNLU_TANIYICILAR: Final[tuple[Recognizer, ...]] = tuple(
-    r for r in RECOGNIZERS if r.kind in ZORUNLU_TURLER
+
+
+def _iban_genis_gecerli(deger: str) -> bool:
+    return iban_valid(re.sub(r"[\s-]", "", deger))
+
+
+def _tckn_genis_gecerli(deger: str) -> bool:
+    return tckn_valid(re.sub(r"[\s-]", "", deger))
+
+
+# Asistan oturumunun IBAN/TCKN tanıyıcıları geçidinkilerin (`RECOGNIZERS`) üst kümesidir: boşluk
+# ya da tire ayraçlı yazımı da alır (`TR33-0006-1005-…`, `100 000 001 46`). Global tanıyıcılar
+# değişmez (iş hattının maskeleme davranışı aynı kalır); genişletme yalnız asistan mesajında.
+# TCKN'de sol sınır ayraçlı bir sayı dizisinin ortasından başlamayı da engeller.
+_IBAN_GENIS: Final = Recognizer(
+    "IBAN",
+    re.compile(r"\bTR\d{2}(?:[ \-]?\d){22}(?![ \-]?\d)", re.IGNORECASE),
+    _iban_genis_gecerli,
+)
+_TCKN_GENIS: Final = Recognizer(
+    "TCKN",
+    re.compile(r"(?<![\d.,+])(?<!\d[ \-])[1-9](?:[ \-]?\d){10}(?![ \-]?\d)(?![.,]\d)"),
+    _tckn_genis_gecerli,
+)
+_ZORUNLU_TANIYICILAR: Final[tuple[Recognizer, ...]] = (_IBAN_GENIS, _TCKN_GENIS)
+# Bayrak açıkken: genişletilmiş IBAN/TCKN + geçidin geri kalan tanıyıcıları (telefon, e-posta).
+_TUM_TANIYICILAR: Final[tuple[Recognizer, ...]] = _ZORUNLU_TANIYICILAR + tuple(
+    r for r in RECOGNIZERS if r.kind not in ZORUNLU_TURLER
 )
 
 
 @dataclass
 class AsistanMaskeOturumu(MaskingSession):
-    """Asistan mesaj oturumu: bayrak açıkken `MaskingSession`'ın aynısı; kapalıyken yalnız TCKN
-    (sağlama) ve IBAN (mod-97) maskelenir.
+    """Asistan mesaj oturumu: bayrak açıkken `MaskingSession`'ın tüm türleri; kapalıyken yalnız
+    TCKN (sağlama) ve IBAN (mod-97) maskelenir. Her iki durumda IBAN/TCKN boşluk/tire ayraçlı
+    yazımda da tanınır (`_IBAN_GENIS`, `_TCKN_GENIS`).
 
     Seçimin gerekçesi (bayrak kapalı kurulum):
 
@@ -63,13 +92,11 @@ class AsistanMaskeOturumu(MaskingSession):
     """
 
     def mask_text(self, text: str) -> tuple[str, list[dict[str, str]]]:
-        if self.enabled:
-            return super().mask_text(text)
         if not text:
             return text, []
         found: list[dict[str, str]] = []
         text = PLACEHOLDER_RE.sub(lambda m: m.group(0).replace("<<", "< <", 1), text)
-        for rec in _ZORUNLU_TANIYICILAR:
+        for rec in _TUM_TANIYICILAR if self.enabled else _ZORUNLU_TANIYICILAR:
 
             def repl(m: re.Match[str], rec: Recognizer = rec) -> str:
                 value = m.group(0)
