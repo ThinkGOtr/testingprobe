@@ -551,10 +551,11 @@ def test_report_carries_readiness_and_technique_distribution(tmp_path: Path) -> 
 
 def test_source_grounding_of_quotes_and_amounts() -> None:
     """#4: hazır case'in beklenen sonucundaki tırnak içi metin kaynakta birebir geçer; TL tutarı
-    kaynakta geçer ya da bir kaynak tutarının katıdır (adet × birim fiyat)."""
+    kaynakta geçer ya da birim fiyatların birleşimidir (adet × birim fiyat; birim fiyat yalnız
+    ürün satırından — sepetli case yolu `test_eval_denetleyici_gucu.py`'de)."""
     from tp_core.gateway.eval_agents import source_problems
 
-    kaynak = 'AC2: "Kullanıcı adı veya parola hatalı" mesajı. P-001 birim fiyat 25,00 TL.'
+    kaynak = 'AC2: "Kullanıcı adı veya parola hatalı" mesajı.\n- P-001 · "Gazoz" · 25,00 TL'
     temiz = [
         ("C1", '"Kullanıcı adı veya parola hatalı" mesajı gösterilir'),
         ("C2", "ara toplam 175,00 TL (7 × 25,00 TL)"),
