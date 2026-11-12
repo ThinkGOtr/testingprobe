@@ -17,13 +17,14 @@ kuyruğa alır; iş (`toplu_uret`, işleyici `codegen/jobs.py`) `MAX_CASE`'lik p
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import uuid
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from tp_core.audit.session import _ANAHTAR as _DENETIM_ANAHTARI
@@ -83,6 +84,16 @@ def _sonuc(durum: str, neden: str | None = None, script_id: str | None = None) -
     return {"durum": durum, "neden": neden, "script_id": script_id}
 
 
+# Denetime (`GET /audit`, tüm roller) giden sabit metin: istisna metni SQL parametrelerini (case
+# içeriği, çözülmüş test verisi) taşıyabilir; ayrıntı yalnız log'da (§9, güvenlik #4).
+DENETIM_HATA_METNI = "Otomatik kod üretimi başlatılamadı; ayrıntı sunucu günlüğünde"
+
+
+def _hata_ozeti(exc: BaseException, **ek: Any) -> dict[str, Any]:
+    """`codegen.otomatik_hata` denetim özeti: istisna sınıfı + sabit Türkçe metin."""
+    return {**ek, "hata": type(exc).__name__, "mesaj": DENETIM_HATA_METNI}
+
+
 def kuyruga_al(session: Session, tc: TestCase, onaylayan: Principal) -> dict[str, Any]:
     """Onaylanan case için web kod üretimini kuyruğa alır.
 
@@ -113,9 +124,8 @@ def kuyruga_al(session: Session, tc: TestCase, onaylayan: Principal) -> dict[str
             OTOMASYON_AKTORU.kullanici_adi,
             "codegen.otomatik_hata",
             f"test_case:{tc.id}",
-            {"tetikleyen": onaylayan.kullanici_adi, "hata": type(exc).__name__,
-             "mesaj": str(exc)[:500]},
-        )  # fmt: skip
+            _hata_ozeti(exc, tetikleyen=onaylayan.kullanici_adi),
+        )
         return _sonuc("hata", HATA_NEDENI)
     return _ogeden((cevap.get("sonuclar") or [{}])[0], cevap.get("mesaj"))
 
@@ -142,12 +152,18 @@ PARCA_HATA_NEDENI = (
 
 def _onceden_atlananlar(session: Session, ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, str]:
     """Kuyruğa almadan önce bilinen atlamalar (K16; `start_generation` ile aynı kural): web
-    platformunda üretimi süren (`AKTIF`) ya da açık PR'lı (`pr_open`) script'i olan case."""
-    from tp_core.features.codegen.service import AKTIF, OTOMATIK_PR_ACIK
+    platformunda üretimi gerçekten süren (`AKTIF` ve işi bitmemiş) ya da açık PR'lı
+    (`pr_open`) script'i olan case.
+
+    Takılı script (`AKTIF` ama işi bitmiş: iş dışı çöküş) atlanmaz: işte `start_generation`
+    `recover_stuck` ile kurtarıp yeniden üretir. Takılılık kuralı `recover_stuck`'ınkiyle aynı
+    yardımcıdan (`_job_bitti`) gelir; burada durum yazılmaz (onay isteği salt okur).
+    """
+    from tp_core.features.codegen.service import AKTIF, OTOMATIK_PR_ACIK, _job_bitti
 
     out: dict[uuid.UUID, str] = {}
-    for cid, durum in session.execute(
-        select(ScriptCodegen.test_case_id, Script.durum)
+    for cid, durum, job_id in session.execute(
+        select(ScriptCodegen.test_case_id, Script.durum, ScriptCodegen.job_id)
         .join(Script, Script.id == ScriptCodegen.script_id)
         .where(
             ScriptCodegen.test_case_id.in_(ids),
@@ -156,7 +172,8 @@ def _onceden_atlananlar(session: Session, ids: Sequence[uuid.UUID]) -> dict[uuid
         )
     ).all():
         if durum in AKTIF:
-            out[cid] = SURUYOR_NEDENI
+            if _job_bitti(session, job_id) is None:
+                out[cid] = SURUYOR_NEDENI
         else:
             out.setdefault(cid, OTOMATIK_PR_ACIK)
     return out
@@ -211,61 +228,145 @@ def toplu_kuyruga_al(
     }
 
 
-def _parca_uret(parca: list[uuid.UUID], tetikleyen: str | None) -> list[dict[str, Any]]:
+class GeciciHata(Exception):
+    """Parça geçici bir hatayla (DB bağlantısı, forge erişimi) başlatılamadı: iş yeniden denenir.
+
+    Mesaj yalnız istisna sınıfını taşır (`job.son_hata`'ya SQL parametreleri yazılmasın)."""
+
+
+def gecici_hata_mi(exc: BaseException) -> bool:
+    """Yeniden denemeye değer hata: DB bağlantı/işletim hatası ya da forge erişimi (doğrulama,
+    bulunamadı ve koruma hataları kalıcıdır)."""
+    from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
+    from sqlalchemy.exc import TimeoutError as HavuzZamanAsimi
+
+    from tp_core.integrations.forge import (
+        ForgeError,
+        ForgeNotFoundError,
+        ForgeProtectionError,
+        ForgeValidationError,
+    )
+
+    if isinstance(exc, OperationalError | InterfaceError | HavuzZamanAsimi):
+        return True
+    if isinstance(exc, DBAPIError) and exc.connection_invalidated:
+        return True
+    if isinstance(exc, ForgeError):
+        return not isinstance(exc, ForgeValidationError | ForgeNotFoundError | ForgeProtectionError)
+    return isinstance(exc, ConnectionError | TimeoutError)
+
+
+_ILERLEME = "ara"  # job.sonuc'ta iş sürerken tamamlanan parçalar (yeniden denemede korunur)
+
+
+def _ilerleme_yaz(
+    s: Session, job_id: uuid.UUID | None, sonraki: int, sonuclar: list[dict[str, Any]]
+) -> None:
+    """Tamamlanan parçaları işin satırına yazar (parçanın kendi işleminde: atomik)."""
+    if job_id is None:
+        return
+    s.execute(
+        text("UPDATE job SET sonuc = CAST(:s AS jsonb) WHERE id = :id AND durum = 'running'"),
+        {
+            "id": job_id,
+            "s": json.dumps({_ILERLEME: {"sonraki": sonraki, "sonuclar": sonuclar}}),
+        },
+    )
+
+
+def _ilerleme_oku(job_id: uuid.UUID | None) -> tuple[int, list[dict[str, Any]]]:
+    if job_id is None:
+        return 0, []
+    with session_scope() as s:
+        sonuc = s.scalar(select(Job.sonuc).where(Job.id == job_id))
+    ara = sonuc.get(_ILERLEME) if isinstance(sonuc, dict) else None
+    if not isinstance(ara, dict) or not isinstance(ara.get("sonraki"), int):
+        return 0, []
+    return ara["sonraki"], [o for o in ara.get("sonuclar") or [] if isinstance(o, dict)]
+
+
+def _parca_uret(
+    parca: list[uuid.UUID],
+    tetikleyen: str | None,
+    *,
+    job_id: uuid.UUID | None = None,
+    sonraki: int = 0,
+    onceki: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     """Bir parça kendi işleminde. Kesin ret (`CodegenRejected`) parça sonucudur; diğer hatalar
-    çağırana yükselir (işlem geri alınır)."""
+    çağırana yükselir (işlem geri alınır). İlerleme (`onceki` + bu parça) aynı işlemde yazılır."""
     with session_scope() as s:
         if not ayarlar.otomatik_kod(s).acik:
-            return [
+            out = [
                 {"case_id": str(c), **_sonuc("kapali", "Otomatik kod üretimi ayarı kapalı")}
                 for c in parca
             ]
-        try:
-            with savepoint(s):
-                cevap = start_generation(
-                    s,
-                    parca,
-                    OTOMASYON_AKTORU,
-                    platform=platformlar.WEB,
-                    tetik="otomatik",
-                    tetikleyen=tetikleyen,
-                )
-        except CodegenRejected as exc:
-            return [{"case_id": str(c), **_sonuc("reddedildi", str(exc))} for c in parca]
-        return [
-            {"case_id": o.get("case_id"), **_ogeden(o, cevap.get("mesaj"))}
-            for o in cevap.get("sonuclar") or []
-        ]
+        else:
+            try:
+                with savepoint(s):
+                    cevap = start_generation(
+                        s,
+                        parca,
+                        OTOMASYON_AKTORU,
+                        platform=platformlar.WEB,
+                        tetik="otomatik",
+                        tetikleyen=tetikleyen,
+                    )
+            except CodegenRejected as exc:
+                out = [{"case_id": str(c), **_sonuc("reddedildi", str(exc))} for c in parca]
+            else:
+                out = [
+                    {"case_id": o.get("case_id"), **_ogeden(o, cevap.get("mesaj"))}
+                    for o in cevap.get("sonuclar") or []
+                ]
+        _ilerleme_yaz(s, job_id, sonraki, [*(onceki or []), *out])
+        return out
 
 
-def toplu_uret(yuk: dict[str, Any]) -> dict[str, Any]:
+def toplu_uret(
+    yuk: dict[str, Any], *, job_id: uuid.UUID | None = None, son_deneme: bool = True
+) -> dict[str, Any]:
     """`codegen.otomatik` işinin gövdesi: `MAX_CASE`'lik parçalarla `start_generation`.
 
     Her parça kendi işleminde (önceki parçaların üretimi kalıcı). Ayar iş sırasında kapanırsa
-    kalan case'ler `kapali`. Parça başına hata izolasyonu: bir parçadaki beklenmeyen hata
-    (forge/DB…) yalnız o parçanın case'lerini `hata` yapar, denetime `codegen.otomatik_hata`
-    yazılır ve sonraki parçaya geçilir (iş yeniden denenmez; kalan parçalar düşmez).
+    kalan case'ler `kapali`. Hata izolasyonu (backend #8):
+
+    - **Geçici hata** (`gecici_hata_mi`: DB bağlantısı, forge erişimi) ve son deneme değil:
+      iş `GeciciHata` ile yeniden denenir. Tamamlanan parçaların sonucu `job.sonuc["ara"]`'da
+      (parçanın kendi işleminde yazılır) korunur; yeniden deneme kaldığı parçadan sürer.
+      Parça idempotenttir: işlem geri alındığı için yarım üretim kalmaz.
+    - **Kalıcı hata** (ya da son denemedeki geçici hata): yalnız o parçanın case'leri `hata`,
+      denetime `codegen.otomatik_hata` (istisna sınıfı + sabit metin) yazılır, sonraki parçaya
+      geçilir.
 
     Dönen (`job.sonuc`): `{tetikleyen, case_sayisi, ozet: {durum: n}, sonuclar: [{case_id,
     durum: kuyrukta|atlandi|reddedildi|kapali|hata, neden, script_id}]}`.
     """
     ids = [uuid.UUID(str(c)) for c in yuk.get("case_ids") or []]
     tetikleyen = yuk.get("tetikleyen")
-    sonuclar: list[dict[str, Any]] = []
-    for i in range(0, len(ids), MAX_CASE):
+    baslangic, sonuclar = _ilerleme_oku(job_id)
+    for i in range(baslangic, len(ids), MAX_CASE):
         parca = ids[i : i + MAX_CASE]
+        sonraki = i + len(parca)
         try:
-            sonuclar += _parca_uret(parca, tetikleyen)
+            sonuclar += _parca_uret(
+                parca, tetikleyen, job_id=job_id, sonraki=sonraki, onceki=sonuclar
+            )
         except Exception as exc:
             log.exception("otomatik kod: parça %d başlatılamadı", i // MAX_CASE + 1)
+            if gecici_hata_mi(exc) and not son_deneme:
+                raise GeciciHata(type(exc).__name__) from exc
             sonuclar += [{"case_id": str(c), **_sonuc("hata", PARCA_HATA_NEDENI)} for c in parca]
             try:
                 with session_scope() as s:
                     audit_on_commit(
-                        s, OTOMASYON_AKTORU.kullanici_adi, "codegen.otomatik_hata", None,
-                        {"tetikleyen": tetikleyen, "case_ids": [str(c) for c in parca],
-                         "hata": type(exc).__name__, "mesaj": str(exc)[:500]},
-                    )  # fmt: skip
+                        s,
+                        OTOMASYON_AKTORU.kullanici_adi,
+                        "codegen.otomatik_hata",
+                        None,
+                        _hata_ozeti(exc, tetikleyen=tetikleyen, case_ids=[str(c) for c in parca]),
+                    )
+                    _ilerleme_yaz(s, job_id, sonraki, sonuclar)
             except Exception:
                 log.exception("otomatik kod: hata denetimi yazılamadı")
     ozet: dict[str, int] = {}

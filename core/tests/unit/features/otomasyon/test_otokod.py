@@ -162,6 +162,9 @@ def test_beklenmeyen_hata_onayi_geri_almaz_ve_denetlenir(
     assert _denetim("codegen.requested") == []
     [d] = _denetim("codegen.otomatik_hata")
     assert d.aktor == "otomasyon" and d.nesne == f"test_case:{c['id']}"
+    # Güvenlik #4: istisna metni denetime girmez (sınıf + sabit metin).
+    assert d.ozet["hata"] == "RuntimeError" and d.ozet["mesaj"] == otokod.DENETIM_HATA_METNI
+    assert "beklenmedik" not in str(d.ozet)
 
 
 def _pr_ac(script_id: str) -> None:
@@ -358,12 +361,105 @@ def test_toplu_uret_parca_hatasi_sonraki_parcalari_dusurmez(
     assert out["ozet"] == {"hata": 1, "kuyrukta": 1}
     [d] = _denetim("codegen.otomatik_hata")
     assert d.ozet["case_ids"] == [cs[0]["id"]] and d.ozet["hata"] == "RuntimeError"
+    assert d.ozet["mesaj"] == otokod.DENETIM_HATA_METNI and "forge" not in str(d.ozet)
+
+
+def _calisan_is(engine: Engine, case_ids: list[str]) -> uuid.UUID:
+    """Test kurulumu: worker'ın sahiplendiği (`running`) `codegen.otomatik` işi."""
+    from sqlalchemy import text
+
+    from tp_core.workflow.jobs import enqueue
+
+    with engine.begin() as c:
+        jid = enqueue(c, otokod.JOB_OTOMATIK_KOD, {"case_ids": case_ids, "tetikleyen": "analist"})
+        c.execute(text("UPDATE job SET durum = 'running' WHERE id = :i"), {"i": jid})
+    return jid
+
+
+def test_toplu_uret_gecici_hata_isi_yeniden_dener_onceki_parcalar_korunur(
+    api: TestClient, hazir, engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Backend #8: geçici hata (DB bağlantısı) parçayı `hata` yapmaz; iş yeniden denenir,
+    tamamlanan parçanın sonucu korunur ve kaldığı parçadan sürer. Son denemede kalıcı."""
+    from sqlalchemy.exc import OperationalError
+
+    rid, _ = hazir
+    otomatik_kod_ayari(False)
+    cs = latest_cases(api, rid)
+    for c in cs:
+        assert _onayla(api, c).status_code == 200
+    otomatik_kod_ayari(True)
+    monkeypatch.setattr(otokod, "MAX_CASE", 1)
+    asil = otokod.start_generation
+    cagri: list[str] = []
+    patlasin = [True]
+
+    def ikincisi_kopar(session, case_ids, user, **kw):
+        cagri.append(str(case_ids[0]))
+        if str(case_ids[0]) == cs[1]["id"] and patlasin[0]:
+            raise OperationalError("SELECT gizli", {"p": "Demo123!"}, Exception("kopma"))
+        return asil(session, case_ids, user, **kw)
+
+    monkeypatch.setattr(otokod, "start_generation", ikincisi_kopar)
+    ids = [c["id"] for c in cs]
+    jid = _calisan_is(engine, ids)
+    with pytest.raises(otokod.GeciciHata) as hata:
+        otokod.toplu_uret({"case_ids": ids, "tetikleyen": "analist"}, job_id=jid, son_deneme=False)
+    assert "Demo123!" not in str(hata.value) and str(hata.value) == "OperationalError"
+    assert _denetim("codegen.otomatik_hata") == []
+    with session_scope() as s:
+        ara = s.get(Job, jid).sonuc["ara"]
+    assert ara["sonraki"] == 1 and [o["durum"] for o in ara["sonuclar"]] == ["kuyrukta"]
+
+    patlasin[0] = False
+    out = otokod.toplu_uret({"case_ids": ids, "tetikleyen": "analist"}, job_id=jid)
+    assert cagri == [cs[0]["id"], cs[1]["id"], cs[1]["id"]]  # ilk parça yeniden koşmadı
+    assert [o["durum"] for o in out["sonuclar"]] == ["kuyrukta", "kuyrukta"]
+    assert out["ozet"] == {"kuyrukta": 2} and len(_scriptler(cs[0]["id"])) == 1
+
+    # Son denemede geçici hata da parça başına kalıcı `hata`.
+    patlasin[0] = True
+    jid2 = _calisan_is(engine, [cs[1]["id"]])
+    out = otokod.toplu_uret(
+        {"case_ids": [cs[1]["id"]], "tetikleyen": "analist"}, job_id=jid2, son_deneme=True
+    )
+    assert [o["durum"] for o in out["sonuclar"]] == ["hata"]
+    [d] = _denetim("codegen.otomatik_hata")
+    assert d.ozet["hata"] == "OperationalError" and "Demo123!" not in str(d.ozet)
+
+
+def test_toplu_on_suzme_takili_scripti_atlamaz(
+    api: TestClient, hazir, engine: Engine, make_user
+) -> None:
+    """Backend #4: işi bitmiş ama `pending`'de takılı script'i olan case toplu yolda "sürüyor"
+    diye atlanmaz (tekli yoldaki `recover_stuck` kuralı); gerçekten süren atlanır."""
+    from sqlalchemy import text
+
+    rid, analist = hazir
+    c1, _c2 = latest_cases(api, rid)
+    assert _onayla(api, c1).json()["otomatik_kod"]["durum"] == "kuyrukta"
+    [cg] = _scriptler(c1["id"])
+    with session_scope() as s:
+        ok = otokod.toplu_kuyruga_al(s, [uuid.UUID(c1["id"])], analist)
+    assert ok["durum"] == "yok" and ok["atlanan"][0]["neden"] == otokod.SURUYOR_NEDENI
+    with engine.begin() as c:  # iş dışı çöküş: iş bitti, script pending'de kaldı
+        c.execute(text("UPDATE job SET durum = 'failed' WHERE id = :j"), {"j": cg.job_id})
+    with session_scope() as s:
+        ok = otokod.toplu_kuyruga_al(s, [uuid.UUID(c1["id"])], analist)
+        assert s.get(Script, cg.script_id).durum == "pending"  # ön süzme durum yazmaz
+    assert ok["durum"] == "kuyrukta" and ok["atlanan"] == [] and ok["case_sayisi"] == 1
 
 
 # --------------------------------------------------------------------- ayar API'si
 
 
-def test_ayar_api_rol_kapisi_ve_dogrulama(api: TestClient, make_user) -> None:
+def test_ayar_api_rol_kapisi_ve_dogrulama(
+    api: TestClient, make_user, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tp_core.features.otomasyon import ayarlar
+
+    # K14 varsayılanı (sim'de açık) süreç önbelleğine bağlı kalmasın.
+    monkeypatch.setattr(ayarlar, "jira_sim_mi", lambda: True)
     login(api, make_user("po"))
     r = api.get("/automation-settings")
     assert r.status_code == 200, r.text
@@ -396,12 +492,16 @@ def test_ayar_api_rol_kapisi_ve_dogrulama(api: TestClient, make_user) -> None:
     assert len(_denetim("otomasyon.ayar")) == 2
 
 
-def test_demo_ayarlari_otomatik_kodu_kapatir_k20(engine: Engine) -> None:
-    """K20: seed (yalnız satır yoksa) ve demo sıfırlaması (zorla) otomatik kodu denetimli kapatır;
-    ürün varsayılanı açık kalır."""
+def test_demo_ayarlari_otomatik_kodu_kapatir_k20(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """K20: demo ortamında (K23: doğrulanmış Jira sim'i) seed (yalnız satır yoksa) ve demo
+    sıfırlaması (zorla) otomatik kodu denetimli kapatır; ürün varsayılanı açık kalır."""
     from tp_core.features.demo import service as demo_service
     from tp_core.features.otomasyon import ayarlar
     from tp_core.seed import seed_otomasyon_demo
+
+    monkeypatch.setattr(ayarlar, "jira_sim_mi", lambda: True)
 
     with session_scope() as s:
         assert ayarlar.otomatik_kod(s).acik is True  # ürün varsayılanı

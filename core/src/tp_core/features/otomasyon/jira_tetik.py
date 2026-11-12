@@ -110,6 +110,19 @@ AKISA_ALINDI_ELLE_NEDENI = (
 )
 YENIDEN_INCELEME_NEDENI = "İçerik değişti; sonraki turda yeniden ön incelemeye girer"
 ELLE_BASLAT_NEDENI = "İçerik değişti; story tetik durumunda değil, ön incelemeyi elle başlatın"
+# Tetik sonuçlarının nedeni (frontend #3: `son_tetiklenenler[].neden` her sonuçta dolu).
+TETIKLENDI_NEDENI = "Story duruma girdi; ön inceleme başlatıldı"
+YENIDEN_TETIKLENDI_NEDENI = "İçerik değişti; ön inceleme yeniden başlatıldı"
+CASE_URETIMI_NEDENI = "PO onaylı story duruma girdi; otomatik case üretimi kuyruğa alındı"
+SONUC_NEDENI = {
+    "tetiklendi": TETIKLENDI_NEDENI,
+    "yeniden_tetiklendi": YENIDEN_TETIKLENDI_NEDENI,
+    "case_uretimi": CASE_URETIMI_NEDENI,
+    "isaretlendi": ISARET_NEDENI,
+    "durumda": DURUMDA_NEDENI,
+    "ertelendi": ERTELEME_NEDENI,
+    "hata": STORY_HATASI,
+}
 _CEKIM_NEDENI = {
     "yeniden_kontrol": "Jira'da içerik değişti; tutarlılık denetimi yeniden koşuyor",
     "mesgul": "Jira'da içerik değişti; süren iş bitince yeniden değerlendirilecek",
@@ -252,8 +265,11 @@ def _incelemeye_al(
 ) -> tuple[str, str | None]:
     req.qa_tetik_zamani = _islem_zamani(s)
     basladi = flow.start_review(s, req, JIRA_TETIK_AKTORU)
-    _denetle(s, req, sonuc, cekim=cekim, workflow_id=basladi.workflow_id, job_id=basladi.job_id)
-    return sonuc, None
+    neden = SONUC_NEDENI[sonuc]
+    _denetle(
+        s, req, sonuc, neden, cekim=cekim, workflow_id=basladi.workflow_id, job_id=basladi.job_id
+    )
+    return sonuc, neden
 
 
 def isaretle(s: Session, issue: Any, durum: str, kayit: _Kayit | None) -> tuple[str, str | None]:
@@ -291,8 +307,8 @@ def giris_isle(
             {"requirement_id": str(req.id), "tetik_zamani": zaman},
             idempotency_key=f"{JOB_OTOMATIK_CASE}:{req.id}:giris:{zaman}",
         )
-        _denetle(s, req, "case_uretimi", cekim=cekim, job_id=job_id)
-        return "case_uretimi", None
+        _denetle(s, req, "case_uretimi", CASE_URETIMI_NEDENI, cekim=cekim, job_id=job_id)
+        return "case_uretimi", CASE_URETIMI_NEDENI
     if req.durum in AKIS_SURUYOR:
         req.qa_tetik_zamani = _islem_zamani(s)
         neden = AKISA_ALINDI_NEDENI if ayar.otomatik_case else AKISA_ALINDI_ELLE_NEDENI
@@ -731,8 +747,10 @@ def _sonuc_satiri(r: Any) -> dict[str, Any] | None:
 
 
 def durum_ozeti(s: Session) -> dict[str, Any]:
-    """`GET /automation/jira-trigger` gövdesi."""
+    """`GET /automation/jira-trigger` gövdesi. `taban_kurulu`: geçerli durum için başlangıç
+    işareti var mı (yoksa sonraki tur taban turudur: durumda olanlar yalnız işaretlenir)."""
     ayar = ayarlar.jira_tetik(s)
+    taban = ayarlar.tetik_tabani(s)
     son = s.execute(
         text(
             "SELECT sonuc FROM job WHERE tur = :t AND durum = 'done' AND sonuc ? 'bulunan' "
@@ -774,13 +792,15 @@ def durum_ozeti(s: Session) -> dict[str, Any]:
         "acik": ayar.acik,
         "durum": ayar.durum,
         "aralik_s": ayar.aralik_s,
+        "taban_kurulu": taban is not None and _ayni_durum(taban.get("durum"), ayar.durum),
         "son_tur": son_tur,
         "son_tetiklenenler": [
             {
                 "jira_key": r.jira_key,
                 "zaman": r.zaman,
                 "sonuc": r.sonuc or "tetiklendi",
-                "neden": r.neden,
+                # Eski kayıtlarda (neden yazılmadan) sonuçtan türetilir; hep dolu metin.
+                "neden": r.neden or SONUC_NEDENI.get(r.sonuc or "tetiklendi") or "",
             }
             for r in satirlar
         ],

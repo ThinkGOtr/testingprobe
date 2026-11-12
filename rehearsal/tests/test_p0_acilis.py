@@ -64,6 +64,7 @@ def _api(hazir: bool = True, kosular=None, kule=None) -> SahteApi:
             "/runs?limit=200": kosular,
             "/control-tower": kule if kule is not None else {"son_kosular": []},
             "/bug-drafts": [],
+            "/automation-settings": {"otomatik_kod_uretimi": {"acik": False}},
         }
     )
 
@@ -184,3 +185,16 @@ def test_cli_canli_izinli_bayragi():
     a = cli._arguman().parse_args(["--canli-izinli"])
     assert a.canli_izinli is True
     assert cli._arguman().parse_args([]).canli_izinli is False
+
+
+def test_p0_otomatik_kod_acikken_ilk_kontrolde_durur(baglam):
+    """QA #6 (K20): otomatik kod kontrolü provanın ilk kontrolü; açıkken başka adım koşmaz."""
+    api = _api()
+    api.yanitlar["/automation-settings"] = {"otomatik_kod_uretimi": {"acik": True}}
+    b = baglam(kip="prova", api=api)
+    b.yigin = SahteYigin("replay")
+    b.ortam = SahteOrtam()
+    with pytest.raises(Basarisiz):
+        on_kontrol(b)
+    assert _kontrol(b, "otomatik kod kapalı").sonuc == FAIL
+    assert not any(y == "/demo/status" for _r, _m, y in api.cagrilar)

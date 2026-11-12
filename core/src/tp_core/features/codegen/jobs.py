@@ -59,7 +59,7 @@ def pr_close(ctx: JobContext) -> dict[str, Any]:
 
 @job_handler(otokod.JOB_OTOMATIK_KOD, max_deneme=3, backoff_s=10.0, zaman_asimi_s=600)
 def otomatik(ctx: JobContext) -> dict[str, Any]:
-    return otokod.toplu_uret(dict(ctx.yuk or {}))
+    return otokod.toplu_uret(dict(ctx.yuk or {}), job_id=ctx.job_id, son_deneme=ctx.son_deneme)
 
 
 @job_handler(service.PR_SYNC_JOB, max_deneme=1, zaman_asimi_s=300)
