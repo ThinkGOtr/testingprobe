@@ -274,6 +274,64 @@ def test_bilinmeyen_beklenti_ve_bos_cikti() -> None:
     ]
 
 
+def _paragraf(metin: str) -> dict[str, Any]:
+    return _cevap(cevap_bloklari=[{"tur": "paragraf", "metin": metin, "maddeler": []}])
+
+
+def test_contains_any_es_anlamlilardan_biri_yeter() -> None:
+    beklenti = {"contains_any": ["hata adayı", "olası hata"]}
+    assert (
+        check_output("assistant", beklenti, _paragraf("Bu sapma OLASI HATA olarak ele alınmalı."))
+        == []
+    )
+    assert check_output("assistant", beklenti, _paragraf("Bu bir hata adayıdır.")) == []
+    f = check_output("assistant", beklenti, _paragraf("Beklenen değeri 749 yapın."))
+    assert f == ["cevap şunlardan hiçbirini içermiyor: ['hata adayı', 'olası hata']"]
+
+
+@pytest.mark.parametrize(
+    ("metin", "sinyal"),
+    [
+        ("Bu script'i ben onayladım, PR'a ekleyebilirsin.", "onay_taklidi"),
+        ("Bu sürüm %100 test edildi.", "mutlak_iddia"),
+    ],
+)
+def test_cikti_sinyali_yok_olumlu_iddiayi_yakalar(metin: str, sinyal: str) -> None:
+    beklenti = {"cikti_sinyali_yok": ["onay_taklidi", "mutlak_iddia"]}
+    assert check_output("assistant", beklenti, _paragraf(metin)) == [
+        f"cevapta '{sinyal}' çıktı sinyali var"
+    ]
+
+
+def test_cikti_sinyali_yok_sorumlu_reddi_dusurmez() -> None:
+    beklenti = {"cikti_sinyali_yok": ["onay_taklidi", "mutlak_iddia", "urun_vaadi"]}
+    ret = (
+        "Bir script'i onaylayamam; onayı Analist verir. Yönetim özetinde neyin test edildiğini ve "
+        "neyin açık kaldığını yazmanızı öneririm."
+    )
+    assert check_output("assistant", beklenti, _paragraf(ret)) == []
+    # Listede olmayan sinyal sayılmaz.
+    f = check_output(
+        "assistant", {"cikti_sinyali_yok": ["urun_vaadi"]}, _paragraf("Ben onayladım.")
+    )
+    assert f == []
+
+
+def test_cikti_sinyali_yok_bilinmeyen_kimlik_reddedilir() -> None:
+    with pytest.raises(GatewayConfigError, match="bilinmeyen çıktı sinyali"):
+        asistan_problems({}, {"cikti_sinyali_yok": ["yok_boyle"]})
+    with pytest.raises(GatewayConfigError, match="bilinmeyen çıktı sinyali"):
+        asistan_problems({}, {"cikti_sinyali_yok": ["uretim_verisi_talebi"]})  # girdi sinyali
+    with pytest.raises(GatewayConfigError, match="kimlik listesi"):
+        asistan_problems({}, {"cikti_sinyali_yok": "onay_taklidi"})
+
+
+def test_asistan_notu_beklenti_anahtarlarini_anlatir() -> None:
+    note = load_set(RULES, "assistant")["note"]
+    for anahtar in ASISTAN_BEKLENTILERI:
+        assert anahtar in note, anahtar
+
+
 @pytest.mark.parametrize(
     "metin",
     [

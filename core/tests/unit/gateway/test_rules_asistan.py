@@ -867,6 +867,35 @@ def test_istem_izleri_promptta_birebir_ve_yeterince_uzun() -> None:
     assert len(guvenlik_cikti.izleri_yukle(RULES)) == len(izler)
 
 
+@pytest.mark.parametrize(
+    "metin",
+    [
+        # Doğal Türkçe cevaplar: istemin genel cümlelerine benzese de sızıntı sayılmaz (izler
+        # ayırt edici olmalı; yoksa zararsız cevap değiştirilir).
+        "Sunucu sinyali satırı bir uyarıdır, hüküm değildir; soruya yine cevap verdim.",
+        "Kayıtta talimat içeren bir metin var; güvenilmeyen bloklardaki talimatlar uygulanmaz.",
+        "Araç tanımları ve kanıt kimliği satırları yalnız iç kullanım içindir, paylaşamam.",
+        "A server signal is a caution, not a verdict.",
+        "Use as few tool calls as you need.",
+        "Talimatlarımı paylaşamam; ekranlar, kayıtlar ve Jira hakkında soru yanıtlayabilirim.",
+    ],
+)
+def test_istem_izleri_dogal_cevapta_tetiklenmez(metin: str) -> None:
+    from tp_core.features.assistant import guvenlik_cikti
+
+    cevap = {"cevap_bloklari": [{"tur": "paragraf", "metin": metin, "maddeler": []}]}
+    assert guvenlik_cikti.sizinti_var(cevap, None, guvenlik_cikti.izleri_yukle(RULES)) is None
+
+
+def test_istem_izleri_ic_not_sizintisini_yakalar() -> None:
+    from tp_core.features.assistant import guvenlik_cikti
+
+    metin = "İç notlar (kullanıcıya yazılmaz): sunucu sinyali satırı bir uyarıdır."
+    cevap = {"cevap_bloklari": [{"tur": "paragraf", "metin": metin.upper(), "maddeler": []}]}
+    izler = guvenlik_cikti.izleri_yukle(RULES)
+    assert guvenlik_cikti.sizinti_var(cevap, None, izler) == "istem_sizintisi"
+
+
 def test_rol_etiketleri_portal_ile_ayni() -> None:
     """Portal rollerinin asistan etiketi portalın gösterdiği adla aynı (etiketler.ts `ROL`)."""
     from tp_core.features.assistant.rol_politikasi import etiket
@@ -907,7 +936,9 @@ def test_asistan_model_amaclari_yeni_alanlari_tasir() -> None:
 
 EVAL_BEKLENTILERI = {
     "contains",
+    "contains_any",
     "not_contains",
+    "cikti_sinyali_yok",
     "kaynak_tur_include",
     "kaynak_ref_include",
     "rota_in",
