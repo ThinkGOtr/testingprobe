@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select, text, update
+from sqlalchemy import Engine, select, update
 from sqlalchemy.orm import Session
 
 from tp_core.features.triage import classify_run, get_failure
@@ -21,7 +21,7 @@ from tp_core.features.triage.rules import BEKLENTI_ONERISI
 from tp_core.models import Failure, Requirement, Script, TestCase, TestResult
 from tp_core.models.codegen_feature import ScriptCodegen
 from tp_core.models.guard import allow_state_write
-from tp_core.models.kalite_feature import CaseOracleKontrol, KararTablosu
+from tp_core.models.kalite_feature import CaseOracleKontrol, KararTablosu, OracleIstisna
 from tp_core.models.triage_feature import FailureEk
 from tp_core.workflow.service import content_hash, content_hash_of
 
@@ -499,27 +499,48 @@ def test_oracle_sorgulari_kosu_basina_toplu(
         finally:
             event.remove(engine, "before_cursor_execute", say)
     assert set(harita) == {k.case, k2.case}
-    # case + kontrol + `oracle_istisna` varlığı (+ tablo varsa satırları) + tablo + gereksinim.
+    # case + kontrol + `oracle_istisna` (uyumsuz) + tablo + gereksinim.
     assert bir == iki <= 6
 
 
 # ----------------------------------------------------------------------------- istisna (K2)
 
 
+def _istisna(
+    engine: Engine,
+    k: Kurulum,
+    *,
+    tur: str = "uyumsuz",
+    icerik_hash: str | None = None,
+    tablo_hashleri: dict[str, str] | None = None,
+) -> None:
+    """`oracle_istisna` satırı (varsayılan: kaydın güncel tablo kümesiyle `uyumsuz`)."""
+    with Session(engine) as s, s.begin():
+        s.add(
+            OracleIstisna(
+                test_case_id=k.case,
+                icerik_hash=icerik_hash or k.case_hash,
+                tur=tur,
+                gerekce="PO ile görüşüldü: case doğru, tablo güncellenecek.",
+                tablo_hashleri=(
+                    tablo_hashleri
+                    if tablo_hashleri is not None
+                    else {str(k.tablo): content_hash(TABLO_ICERIK)}
+                ),
+            )
+        )
+
+
 def test_senaryo10_istisna_ile_onaylanmissa_bugunku_davranis(
     engine: Engine, artefakt_kok: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Review K2: case 125 bekler, tablo 150, uygulama 150 — ama case içeriği tabloya rağmen
-    gerekçeli istisnayla onaylanmış ("case doğru, tablo güncellenecek"). Tablo bu case için
-    doğruluk kaynağı değildir: `test_maintenance/beklenti` DEĞİL, bugünkü `product_defect` + bug
-    taslağı (gerçek hata gizlenmez)."""
+    gerekçeli `uyumsuz` istisnasıyla (aynı tablo kümesi) onaylanmış ("case doğru, tablo
+    güncellenecek"). Tablo bu case için doğruluk kaynağı değildir: `test_maintenance/beklenti`
+    DEĞİL, bugünkü `product_defect` + bug taslağı (gerçek hata gizlenmez)."""
     cagrilar = _bugs_modulu(monkeypatch)
     k = _kur(engine, case_degeri="125.00", sonuc="uyumsuz")
-    with Session(engine) as s, s.begin():
-        kayit = s.scalars(
-            select(CaseOracleKontrol).where(CaseOracleKontrol.test_case_id == k.case)
-        ).one()
-        kayit.istisna_gerekce = "PO ile görüşüldü: case doğru, tablo güncellenecek."
+    _istisna(engine, k)
     rid = _kosu(engine, artefakt_kok, k, "125,00 TL", "150,00 TL")
     sonuc = classify_run(engine, rid)
     _bugunku(engine, rid)
@@ -528,51 +549,61 @@ def test_senaryo10_istisna_ile_onaylanmissa_bugunku_davranis(
     assert sonuc["bug_taslagi_istenen"] == 1
 
 
-def test_oracle_istisna_tablosundaki_kayit_da_inceltmeyi_kapatir(
-    engine: Engine, db: Any, artefakt_kok: Path, monkeypatch: pytest.MonkeyPatch
+def _inceltildi(engine: Engine, rid: uuid.UUID) -> None:
+    f, _ = _tek(engine, rid)
+    assert (f.sinif, f.alt_tur) == ("test_maintenance", "beklenti")
+
+
+@pytest.mark.parametrize(
+    "durum",
+    ["kontrolsuz_turu", "baska_tablo_kumesi", "baska_hash", "yalniz_eski_kolon"],
+)
+def test_inceltmeyi_yalniz_guncel_tablo_kumesindeki_uyumsuz_istisnasi_kapatir_n9(
+    engine: Engine, artefakt_kok: Path, monkeypatch: pytest.MonkeyPatch, durum: str
 ) -> None:
-    """R1'in append-only `oracle_istisna` tablosu (§13.2) varsa (case, hash) satırı da istisnadır.
-    Tablo bu dalda henüz yoksa test onu sözleşmedeki kolonlarla kurar."""
+    """t2 N9: bastırma yalnız `tur='uyumsuz'` + kaydın güncel `tablo_hashleri`'yle verilmiş
+    istisnadadır. `kontrolsuz` istisnası, başka tablo kümesinde (tablo değişmeden önce) verilmiş
+    istisna, başka içerik hash'inin istisnası ve yalnız geriye uyum kolonu
+    (`case_oracle_kontrol.istisna_gerekce`) inceltmeyi kapatmaz."""
     _bugs_modulu(monkeypatch)
     k = _kur(engine, case_degeri="125.00", sonuc="uyumsuz")
-    sahip = db.engine("tp_owner")
-    try:
-        with sahip.begin() as c:
-            c.execute(
-                text(
-                    "CREATE TABLE IF NOT EXISTS oracle_istisna ("
-                    "id uuid PRIMARY KEY DEFAULT gen_random_uuid(), "
-                    "test_case_id uuid NOT NULL, icerik_hash text NOT NULL, tur text NOT NULL, "
-                    "gerekce text NOT NULL, veren_id uuid, zaman timestamptz DEFAULT now())"
-                )
-            )
-            c.execute(text("GRANT SELECT ON oracle_istisna TO tp_app"))
-            c.execute(
-                text(
-                    "INSERT INTO oracle_istisna (test_case_id, icerik_hash, tur, gerekce) "
-                    "VALUES (:c, :h, 'uyumsuz', 'PO ile görüşüldü: case doğru, tablo yanlış.')"
-                ),
-                {"c": k.case, "h": k.case_hash},
-            )
-        # Başka hash'in istisnası bu içeriği etkilemez.
-        k2 = _kur(engine, case_degeri="125.00", sonuc="uyumsuz")
-        with sahip.begin() as c:
-            c.execute(
-                text(
-                    "INSERT INTO oracle_istisna (test_case_id, icerik_hash, tur, gerekce) "
-                    "VALUES (:c, :h, 'uyumsuz', 'Eski içerik için verilmiş istisna gerekçesi.')"
-                ),
-                {"c": k2.case, "h": "0" * 64},
-            )
-        rid = _kosu(engine, artefakt_kok, k, "125,00 TL", "150,00 TL")
-        classify_run(engine, rid)
-        _bugunku(engine, rid)
-        rid2 = _kosu(engine, artefakt_kok, k2, "125,00 TL", "150,00 TL")
-        classify_run(engine, rid2)
-        f2, _ = _tek(engine, rid2)
-        assert (f2.sinif, f2.alt_tur) == ("test_maintenance", "beklenti")
-    finally:
-        sahip.dispose()
+    if durum == "kontrolsuz_turu":
+        _istisna(engine, k, tur="kontrolsuz")
+    elif durum == "baska_tablo_kumesi":
+        _istisna(engine, k, tablo_hashleri={str(k.tablo): "eski-tablo-hash"})
+    elif durum == "baska_hash":
+        _istisna(engine, k, icerik_hash="0" * 64)
+    else:
+        with Session(engine) as s, s.begin():
+            kayit = s.scalars(
+                select(CaseOracleKontrol).where(CaseOracleKontrol.test_case_id == k.case)
+            ).one()
+            kayit.istisna_gerekce = "PO ile görüşüldü: case doğru, tablo güncellenecek."
+    rid = _kosu(engine, artefakt_kok, k, "125,00 TL", "150,00 TL")
+    classify_run(engine, rid)
+    _inceltildi(engine, rid)
+
+
+def test_istisna_sorgusunda_to_regclass_yok(engine: Engine) -> None:
+    """t2 N9: tablo birleştirmeden sonra vardır; çağrı başına varlık yoklaması yapılmaz."""
+    from sqlalchemy import event
+
+    from tp_core.features.triage import service
+
+    k = _kur(engine, case_degeri="125.00")
+    sorgular: list[str] = []
+
+    def say(_c: Any, _cur: Any, stmt: str, *_a: Any) -> None:
+        sorgular.append(stmt)
+
+    with Session(engine) as s:
+        event.listen(engine, "before_cursor_execute", say)
+        try:
+            service.oracle_karsilastirmalari(s, [k.case])
+        finally:
+            event.remove(engine, "before_cursor_execute", say)
+    assert sorgular and not any("to_regclass" in q for q in sorgular)
+    assert any("oracle_istisna" in q and "tur" in q for q in sorgular)
 
 
 # ----------------------------------------------------------------------------- adım eşlemesi (O6)

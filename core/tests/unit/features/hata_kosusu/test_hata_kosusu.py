@@ -26,7 +26,7 @@ from tp_core.features.control_tower import service as kule
 from tp_core.features.hata_kosusu import jobs as hk_jobs
 from tp_core.features.hata_kosusu import katalog as kat
 from tp_core.features.hata_kosusu import service
-from tp_core.features.karar_tablosu.hatalar import HataKosusuSuruyor
+from tp_core.features.hata_kosusu.hatalar import HataKosusuSuruyor
 from tp_core.features.triage import jobs as _triage_jobs  # noqa: F401  (iş kaydı)
 from tp_core.models import BugDraft, Failure, HataKosusu, HataKosusuAdim, Run, TestResult
 from tp_core.models.triage_feature import TriageKosu
@@ -52,6 +52,56 @@ ASSERTION_HATASI = (
 FIX = Path(__file__).parent / "fixtures"
 TOOLCHAIN = Path(__file__).resolve().parents[5] / "toolchain"
 AI_TEST = "tests/generated/tpd-1-c11-1a2b3c4d.spec.ts"
+JAVA_AI_TEST = "src/test/java/com/antreklabs/bayi/uretilen/TPD1AndroidC11_1a2b3c4dTest.java"
+
+
+def uretilen_kaydet(
+    engine: Engine,
+    dosya: str = AI_TEST,
+    platform: str = "web",
+    *,
+    case_durum: str = "approved",
+    hash_eslesir: bool = True,
+) -> None:
+    """`dosya`'yı (e2e / e2e-app köküne göre) onaylı bir case'in onaylı içeriğinden üretilmiş test
+    olarak kaydeder (gereksinim + case + script + script_codegen; Y7)."""
+    from tp_core.features.codegen.service import e2e_app_root, e2e_root
+    from tp_core.models import Requirement, Script, TestCase
+    from tp_core.models.codegen_feature import ScriptCodegen
+    from tp_core.models.guard import allow_state_write
+
+    kok = e2e_root() if platform == "web" else e2e_app_root()
+    with allow_state_write(), Session(engine) as s, s.begin():
+        req = Requirement(
+            kaynak="jira",
+            jira_key=f"TPD-{uuid.uuid4().hex[:6]}",
+            baslik="b",
+            kaynak_hash="h",
+            durum="cases_ready",
+        )
+        s.add(req)
+        s.flush()
+        h = uuid.uuid4().hex
+        tc = TestCase(
+            id=uuid.uuid4(),
+            requirement_id=req.id,
+            sira_no=1,
+            icerik={"title": "t"},
+            icerik_hash=h,
+            onaylanan_hash=h if case_durum in ("approved", "published") else None,
+            durum=case_durum,
+        )
+        sc = Script(id=uuid.uuid4(), dosya_yolu=f"{kok}/{dosya}", platform=platform)
+        s.add_all([tc, sc])
+        s.flush()
+        s.add(
+            ScriptCodegen(
+                script_id=sc.id,
+                test_case_id=tc.id,
+                case_hash=h if hash_eslesir else "eski" + h,
+                sira_no=1,
+            )
+        )
 
 
 # ------------------------------------------------------------------ sahte toolchain raporu
@@ -197,6 +247,16 @@ def isler(engine: Engine, kid: uuid.UUID) -> list[Any]:
         )
 
 
+def _denetim_detayi(engine: Engine, kid: uuid.UUID, eylem: str) -> str:
+    """Koşunun `eylem` denetim kayıtlarındaki `detay` metinleri (birleşik)."""
+    with engine.connect() as c:
+        ozetler = c.execute(
+            text("SELECT ozet FROM audit_event WHERE eylem = :e AND nesne = :n ORDER BY id"),
+            {"e": eylem, "n": f"hata_kosusu:{kid}"},
+        ).scalars()
+        return " | ".join(str((o or {}).get("detay") or "") for o in ozetler)
+
+
 def kosu_durumu(engine: Engine, kid: uuid.UUID) -> str:
     with engine.connect() as c:
         return c.execute(
@@ -305,6 +365,7 @@ def test_gercek_playwright_raporu_k12_sayimi(
         "min_siparis_500": pw_raporu(tc_runner, "hata-yalniz-locator"),
     }
     kur(toolchain, lambda p, f: planlar[f])
+    uretilen_kaydet(engine)
     kid = baslat(engine, muhendis, ["web"], ["kampanya_tek_bedava", "min_siparis_500"])
     adim_isleri(engine)
     d = detay(engine, kid)
@@ -339,7 +400,8 @@ def test_gercek_playwright_raporu_k12_sayimi(
     # El yazısı suite bu hatayı assertion ile yakalamadı (kırmızıları locator/zaman aşımı).
     assert oz["el_yazisi"] == {"oran": 0.0, "yakalanan": 0, "kacan": 1}
     web = oz["platformlar"][0]
-    assert (web["uretilen_test"], web["el_test"]) == (1, 4)
+    # Envanter yalnız temelde yeşil testlerden (N3): 4 el yazısı testin biri temelde kırmızı.
+    assert (web["uretilen_test"], web["el_test"]) == (1, 3)
     assert oz["kapsam"]["kosulan_hata"] == 2 and oz["kapsam"]["tam_katalog"] is False
     with Session(engine) as s:
         run = s.get(Run, uuid.UUID(yak["run_id"]))
@@ -365,6 +427,7 @@ def test_gercek_surefire_raporu_android(
         "kampanya_tek_bedava": surefire_raporu(tc_runner, "hata"),
     }
     kur(toolchain, lambda p, f: planlar[f])
+    uretilen_kaydet(engine, JAVA_AI_TEST, "android")
     kid = baslat(engine, muhendis, ["android"], ["kampanya_tek_bedava"])
     adim_isleri(engine)
     d = detay(engine, kid)
@@ -418,6 +481,10 @@ def test_katalog_dokuz_kod_ve_k9_alanlari() -> None:
     tek = k["kampanya_tek_bedava"]
     assert (tek["ac_refs"], tek["tablo"]) == (["AC2"], "T1")
     assert tek["ayirt_edici"]["girdi"]["adet"] == 14
+    # u2 N6: 12 adette story (T1, adet // 7) de 1 der; ayrılan adet 14'tür ve açıklamada öndedir.
+    assert tek["aciklama"].startswith("Ayırt edici girdi 14 adet: doğru 2 bedava, hatalı 1.")
+    assert "14 adette (7'nin 2 katı) ayrılır" in tek["aciklama"]
+    assert all("12 adet" not in h["aciklama"] for h in hatalar)
     assert tek["ayirt_edici"]["dogru"]["bedava_adet"] == 2
     assert tek["ayirt_edici"]["hatali"]["bedava_adet"] == 1
     assert k["min_siparis_haric"]["tablo"] == "T2" and k["fiyat_p004_31"]["tablo"] is None
@@ -681,6 +748,7 @@ def test_ai_el_ayrimi(engine: Engine, muhendis: Principal, toolchain: FakeToolch
         "min_siparis_1000": [_assertion("üretilen", **ai), _assertion("el")],
     }
     kur(toolchain, lambda p, f: planlar[f])
+    uretilen_kaydet(engine)
     kid = baslat(
         engine, muhendis, ["web"], ["kampanya_tek_bedava", "min_siparis_500", "min_siparis_1000"]
     )
@@ -694,7 +762,9 @@ def test_ai_el_ayrimi(engine: Engine, muhendis: Principal, toolchain: FakeToolch
     assert (oz["oran"], oz["yakalanan"], oz["kacan"]) == (round(2 / 3, 4), 2, 1)
     assert oz["el_yazisi"] == {"oran": round(2 / 3, 4), "yakalanan": 2, "kacan": 1}
     assert oz["tum_testler"] == {"oran": 1.0, "yakalanan": 3, "kacan": 0}
-    assert oz["kacanlar"] == [
+    # Her hata en az bir testle yakalandı: `kacanlar` boş; AI testleri birini kaçırdı.
+    assert oz["kacanlar"] == []
+    assert oz["ai_kacanlar"] == [
         {"hata_kodu": "kampanya_tek_bedava", "ad": "Kampanyada en çok 1 bedava", "platform": "web"}
     ]
     web = oz["platformlar"][0]
@@ -973,7 +1043,10 @@ def test_deneme_hakki_biten_kosu_tarama_ile_kapanir_get_salt_okunur(
     assert sonuc is not None
     d = detay(engine, kid)
     assert d["durum"] == "failed" and d["bitis"]
-    assert "yarıda kaldı" in d["uyarilar"][-1] and "worker yeniden başladı" in d["uyarilar"][-1]
+    assert d["uyarilar"][-1] == f"{service.YARIM_KALDI}."
+    # Ham iş hatası görünmez; yalnız denetimde (güvenlik-12).
+    assert "worker yeniden başladı" not in " ".join(d["uyarilar"])
+    assert "worker yeniden başladı" in _denetim_detayi(engine, kid, "hata_kosusu.finished")
     assert d["ozet"]["kapsam"]["kosulan_hata"] == 0
     # Süren koşu kalmadı: tarama kendini yeniden planlamaz.
     with engine.connect() as c:
@@ -1000,7 +1073,8 @@ def test_cokus_sonrasi_worker_acilisi_kurtarir(engine: Engine, muhendis: Princip
     with Session(engine) as s:
         kosu = s.get(HataKosusu, kid)
         assert kosu.durum == "failed" and kosu.bitis is not None
-        assert "yarıda kaldı" in kosu.uyarilar[-1] and "zaman aşımı" in kosu.uyarilar[-1]
+        assert kosu.uyarilar[-1] == f"{service.YARIM_KALDI}."
+    assert "zaman aşımı (900 sn)" in _denetim_detayi(engine, kid, "hata_kosusu.finished")
 
 
 def test_iptal_istenip_kesilen_kosu_acilista_cancelled(engine: Engine, muhendis: Principal) -> None:
@@ -1166,6 +1240,10 @@ def test_ozet_hesabi() -> None:
         "platformlar": ["web", "ios"],
         "tam_katalog": False,
         "gecerli_adim": 3,
+        "esik": 0.5,
+        "yeterli": False,
+        "not": "Geçerli hata adımı kataloğun %50'inin altında (web 3/9; ios 0/9); oran ölçü "
+        "sayılmaz.",
     }
     web, ios = oz["platformlar"]
     assert web["oran"] == round(1 / 3, 4) and web["gecersiz"] == 1
@@ -1176,7 +1254,8 @@ def test_ozet_hesabi() -> None:
         10,
     )
     assert ios["oran"] is None and ios["el_yazisi"]["oran"] is None and ios["gecersiz"] == 1
-    assert [k["hata_kodu"] for k in oz["kacanlar"]] == ["min_siparis_500", "fiyat_p004_31"]
+    assert [k["hata_kodu"] for k in oz["kacanlar"]] == ["fiyat_p004_31"]
+    assert [k["hata_kodu"] for k in oz["ai_kacanlar"]] == ["min_siparis_500", "fiyat_p004_31"]
     assert service.ozet_hesapla([], ["web"])["oran"] is None
 
 
@@ -1193,6 +1272,7 @@ def test_hata_yakalama_ozeti_kule_sekli_ve_kapsam(
         return [_assertion("üretilen", **ai), _test("el")]
 
     kur(toolchain, plan)
+    uretilen_kaydet(engine)
     tam = baslat(engine, muhendis, ["web"])  # tüm katalog
     adim_isleri(engine)
     with Session(engine) as s:
@@ -1221,6 +1301,7 @@ def test_hata_yakalama_ozeti_kule_sekli_ve_kapsam(
         "kapsam",
         "platformlar",
         "kacanlar",
+        "ai_kacanlar",
         "kaynak",
     }
     assert hy["son_kosu"]["id"] == str(tam) and hy["son_kosu"]["durum"] == "done"
@@ -1237,9 +1318,11 @@ def test_hata_yakalama_ozeti_kule_sekli_ve_kapsam(
             "el_yazisi": {"oran": 0.0, "yakalanan": 0, "kacan": 9},
         }
     ]
-    assert hy["kacanlar"] == [
-        {"hata_kodu": "min_siparis_500", "ad": "Minimum sipariş tutarı 500", "platform": "web"}
-    ]
+    assert (
+        hy["kacanlar"]
+        == hy["ai_kacanlar"]
+        == [{"hata_kodu": "min_siparis_500", "ad": "Minimum sipariş tutarı 500", "platform": "web"}]
+    )
     assert "yakalanan 8, kaçan 1" in hy["kaynak"] and "9/9 hata" in hy["kaynak"]
 
 
@@ -1344,32 +1427,328 @@ def test_codegen_toolchain_istemcisi_fault_alani() -> None:
     assert govdeler[1]["fault"] == "kampanya_tek_bedava" and govdeler[1]["lang"] == "java"
 
 
-def test_ortam_nedeni_appium_adresi_yoksa_parantez_yazmaz() -> None:
-    """Windows VM yapılandırılmamışken neden metni "(?)" taşımaz (izole yığında görüldü)."""
+def test_ortam_nedeni_appium_adresi_ve_ham_metin_nedende_yok() -> None:
+    """Güvenlik-12: `neden` kategorize Türkçe metindir; Appium adresi ve ham hata yalnız
+    ayrıntıdadır (denetime gider)."""
     sinif = type("S", (), {"sinif": "ortam", "hata": "x", "aciklama": "x"})()
 
     def rapor(appium: dict[str, Any]) -> dict[str, Any]:
         return {"run": {"saglik": {"ok": False, "appium": appium}}}
 
-    assert service.ortam_nedeni(
+    neden, detay = service.ortam_nedeni(
         rapor({"url": None, "hata": "APPIUM_URL_WINDOWS yapılandırılmamış"}), sinif
-    ) == ("Cihaz/Appium erişilemiyor: APPIUM_URL_WINDOWS yapılandırılmamış")
-    assert service.ortam_nedeni(
+    )
+    assert neden == "Cihaz/Appium erişilemiyor: adres yapılandırılmamış."
+    assert detay is not None and "APPIUM_URL_WINDOWS" in detay
+    neden, detay = service.ortam_nedeni(
         rapor({"url": "http://appium-gw:4723/status", "hata": "ConnectError"}), sinif
-    ) == ("Cihaz/Appium erişilemiyor (http://appium-gw:4723/status): ConnectError")
+    )
+    assert neden == "Cihaz/Appium erişilemiyor."
+    assert detay == "http://appium-gw:4723/status: ConnectError"
+    neden, detay = service.ortam_nedeni(
+        {"run": {"status": "error", "error": "Traceback … /opt/runner/x.py"}}, sinif
+    )
+    assert neden == "Test koşucusu hata verdi." and "Traceback" in (detay or "")
+    yok = service.siniflandir("hata", None, "ConnectError: http://toolchain:9000/check")
+    assert yok.neden == "Toolchain'e ulaşılamadı ya da istek reddedildi."
+    assert "toolchain:9000" in (yok.detay or "")
 
 
-def test_test_kaynagi_ai_el() -> None:
-    assert service.test_kaynagi({"file": "generated/tpd-1-c3-1a2b3c4d.spec.ts"}) == "ai"
-    assert service.test_kaynagi({"file": "tests/generated/x.spec.ts"}) == "ai"
-    assert (
-        service.test_kaynagi(
-            {"file": "src/test/java/com/antreklabs/bayi/uretilen/TPD1C3_0a1b2c3dTest.java"}
-        )
-        == "ai"
-    )
-    assert service.test_kaynagi({"file": "cart.spec.ts"}) == "el"
-    assert (
-        service.test_kaynagi({"file": "src/test/java/com/antreklabs/bayi/testler/X.java"}) == "el"
-    )
+def test_appium_adresi_adim_nedeninde_degil_denetimde(
+    engine: Engine, muhendis: Principal, toolchain: FakeToolchain
+) -> None:
+    kur(toolchain, lambda p, f: "appium_yok")
+    kid = baslat(engine, muhendis, ["android"], ["kampanya_tek_bedava"])
+    adim_isleri(engine)
+    d = detay(engine, kid)
+    metin = " ".join(str(a["neden"] or "") for a in d["adimlar"]) + " ".join(d["uyarilar"])
+    assert "appium:4723" not in metin and "bağlantı reddedildi" not in metin
+    assert "Cihaz/Appium erişilemiyor" in adim(d, "android", "temel")["neden"]
+    ayrinti = _denetim_detayi(engine, kid, "hata_kosusu.adim_detayi")
+    assert "http://appium:4723: bağlantı reddedildi" in ayrinti
+
+
+def test_test_kaynagi_codegen_kaydiyla(engine: Engine) -> None:
+    """Y7: `ai` yalnız onaylı case'in onaylı hash'inden üretilmiş testin dosyası; yol adı taklit
+    edilemez, failure konumu bakılmaz; codegen kaydı yoksa her test `el`."""
+    with Session(engine) as s:
+        assert service.uretilen_dosyalar(s, "web") == frozenset()
+    # Kayıt yokken `tests/generated/` altındaki dosya da `el`.
+    assert service.test_kaynagi({"file": "generated/tpd-1-c3-1a2b3c4d.spec.ts"}) == "el"
+    uretilen_kaydet(engine)
+    uretilen_kaydet(engine, JAVA_AI_TEST, "android")
+    uretilen_kaydet(engine, "tests/generated/onaysiz.spec.ts", case_durum="draft")
+    uretilen_kaydet(engine, "tests/generated/eski-hash.spec.ts", hash_eslesir=False)
+    with Session(engine) as s:
+        web = service.uretilen_dosyalar(s, "web")
+        android = service.uretilen_dosyalar(s, "android")
+        assert service.uretilen_dosyalar(s, "ios") == frozenset()
+    # Playwright `testDir`'e göre yol ve toolchain `test_files` yolu.
+    assert service.test_kaynagi({"file": "generated/tpd-1-c11-1a2b3c4d.spec.ts"}, web) == "ai"
+    assert service.test_kaynagi({"file": AI_TEST}, web) == "ai"
+    assert service.test_kaynagi({"file": JAVA_AI_TEST}, android) == "ai"
+    # Platform ayrı: web kaydı android'de ai değil.
+    assert service.test_kaynagi({"file": JAVA_AI_TEST}, web) == "el"
+    # Taklit: `generated/` altındaki kayıtsız, onaysız ya da eski hash'li dosya `el`.
+    for sahte in (
+        "generated/sahte.spec.ts",
+        "tests/generated/onaysiz.spec.ts",
+        "tests/generated/eski-hash.spec.ts",
+        "x/tests/generated/tpd-1-c11-1a2b3c4d.spec.ts",
+    ):
+        assert service.test_kaynagi({"file": sahte}, web) == "el", sahte
+    # Yalnız testin kendi dosyası: failure konumu üretilen dosyayı gösterse de `el`.
+    konumlu = {
+        "file": "cart.spec.ts",
+        "failure": {"location": {"file": AI_TEST}, "test_location": {"file": AI_TEST}},
+    }
+    assert service.test_kaynagi(konumlu, web) == "el"
     assert service.kiran_listesi(["eski"]) == [{"test": "eski", "kaynak": "el"}]
+
+
+def test_temelde_yesil_uyelik_sarti_y8(
+    engine: Engine, muhendis: Principal, toolchain: FakeToolchain
+) -> None:
+    """Y8: temelde atlanan ya da başlığı değişen test hatalı koşuda assertion ile kırmızı olsa da
+    yakalama kanıtı değildir (`kacti` + not); temelde yeşil test kanıttır."""
+    temel = [_test("a"), _test("atlanan", "skipped")]
+    planlar: dict[str | None, Any] = {
+        None: temel,
+        "kampanya_tek_bedava": [_test("a"), _assertion("atlanan")],
+        "min_siparis_500": [_test("a"), _assertion("yeni başlık")],
+        "min_siparis_1000": [_assertion("a"), _assertion("atlanan")],
+    }
+    kur(toolchain, lambda p, f: planlar[f])
+    kid = baslat(
+        engine, muhendis, ["web"], ["kampanya_tek_bedava", "min_siparis_500", "min_siparis_1000"]
+    )
+    adim_isleri(engine)
+    d = detay(engine, kid)
+    atlanan = adim(d, "web", "hata", "kampanya_tek_bedava")
+    assert atlanan["sonuc"] == "kacti" and atlanan["kiran_testler"] == []
+    assert "yeşil görülmeyen 1 kırmızı test kanıt sayılmadı: atlanan" in atlanan["neden"]
+    yeni = adim(d, "web", "hata", "min_siparis_500")
+    assert yeni["sonuc"] == "kacti" and "yeni başlık" in yeni["neden"]
+    yak = adim(d, "web", "hata", "min_siparis_1000")
+    assert yak["sonuc"] == "yakalandi" and yak["kiran_testler"] == [{"test": "a", "kaynak": "el"}]
+    with Session(engine) as s:
+        ic = service._ic(s.get(HataKosusu, kid))
+    assert ic["temel"]["web"]["yesil"] == ["cart.spec.ts::a"]
+    assert (ic["temel"]["web"]["ai"], ic["temel"]["web"]["el"]) == (0, 1)
+
+
+def test_temel_kirmizi_siniri_asilirsa_platform_gecersiz(
+    engine: Engine, muhendis: Principal, toolchain: FakeToolchain, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(service, "MAX_TEMEL_KIRMIZI", 2)
+    temel = [_test("a"), _assertion("k1"), _assertion("k2"), _assertion("k3")]
+    kur(toolchain, lambda p, f: temel)
+    kid = baslat(engine, muhendis, ["web"], ["kampanya_tek_bedava"])
+    adim_isleri(engine)
+    d = detay(engine, kid)
+    t = adim(d, "web", "temel")
+    assert t["sonuc"] == "gecersiz" and "Temelde 3 test kırmızı (sınır 2)" in t["neden"]
+    assert adim(d, "web", "hata", "kampanya_tek_bedava")["sonuc"] == "gecersiz"
+    assert len(toolchain.istekler) == 1
+
+
+def test_uretilenlerin_hepsi_temelde_kirmiziysa_ai_olculmedi_n3(
+    engine: Engine, muhendis: Principal, toolchain: FakeToolchain
+) -> None:
+    """t2 N3: üretilen testlerin hepsi temelde kırmızı → AI oranı %0 değil `null` (ölçülmedi)."""
+    uretilen_kaydet(engine)
+    ai = {"file": AI_TEST}
+    temel = [_assertion("üretilen", **ai), _test("el")]
+    kur(
+        toolchain,
+        lambda p, f: temel if f is None else [_assertion("üretilen", **ai), _assertion("el")],
+    )
+    kid = baslat(engine, muhendis, ["web"], ["kampanya_tek_bedava"])
+    adim_isleri(engine)
+    oz = detay(engine, kid)["ozet"]
+    web = oz["platformlar"][0]
+    assert (web["uretilen_test"], web["el_test"]) == (0, 1)
+    assert oz["oran"] is None and web["oran"] is None
+    # AI ölçülmeyen platformda `ai_kacanlar`'a yazılmaz; el yazısı yakaladı: `kacanlar` boş.
+    assert oz["kacanlar"] == [] and oz["ai_kacanlar"] == []
+    assert oz["el_yazisi"] == {"oran": 1.0, "yakalanan": 1, "kacan": 0}
+
+
+def test_kule_gecerli_adim_esigi_y10(
+    engine: Engine, muhendis: Principal, toolchain: FakeToolchain, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Y10: tam katalog koşusunda geçerli hata adımı kataloğun %50'sinin altındaysa Kule oranları
+    null ve `kapsam.not` nedeni söyler; eşik ayarlanabilir."""
+    uretilen_kaydet(engine)
+    ai = {"file": AI_TEST}
+    gecerli = {"kampanya_tek_bedava", "min_siparis_500", "min_siparis_1000", "fiyat_p004_31"}
+
+    def plan(p: str, f: str | None) -> Any:
+        if f is None:
+            return [_test("üretilen", **ai), _test("el")]
+        if f in gecerli:
+            return [_assertion("üretilen", **ai), _test("el")]
+        return "saglik"
+
+    kur(toolchain, plan)
+    baslat(engine, muhendis, ["web"])
+    adim_isleri(engine)
+    with Session(engine) as s:
+        hy = service.hata_yakalama_ozeti(s)
+    assert hy is not None
+    assert (hy["oran"], hy["yakalanan"], hy["kacan"], hy["gecersiz"]) == (None, 4, 0, 5)
+    assert hy["el_yazisi"]["oran"] is None and hy["tum_testler"]["oran"] is None
+    assert hy["platformlar"][0]["oran"] is None
+    k = hy["kapsam"]
+    assert (k["yeterli"], k["esik"], k["gecerli_adim"]) == (False, 0.5, 4)
+    assert k["not"] and "web 4/9" in k["not"] and k["not"] in hy["kaynak"]
+    monkeypatch.setenv(service.GECERLI_ESIK_ENV, "0.4")
+    with Session(engine) as s:
+        hy = service.hata_yakalama_ozeti(s)
+    assert hy is not None and hy["oran"] == 1.0 and hy["kapsam"]["yeterli"] is True
+    assert hy["kapsam"]["not"] is None
+
+
+class _Ctx:
+    def __init__(self, kid: uuid.UUID, deneme: int, max_deneme: int = 2) -> None:
+        self.yuk = {"kosu_id": str(kid)}
+        self.deneme = deneme
+        self.max_deneme = max_deneme
+
+    @property
+    def son_deneme(self) -> bool:
+        return self.deneme >= self.max_deneme
+
+
+def _db_hatasi() -> Exception:
+    from sqlalchemy.exc import OperationalError
+
+    return OperationalError("SELECT 1", {}, Exception("server closed the connection"))
+
+
+def test_gecici_db_hatasi_yeniden_denenir_son_denemede_failed_n4(
+    engine: Engine, muhendis: Principal, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """t2 N4: DB/taşıma hatası yeniden fırlatılır (iş yeniden denenir, adım `bekliyor`); koşu
+    yalnız son denemede `failed` kapanır, ham metin denetimde."""
+    from tp_core.workflow.jobs import PermanentJobError
+
+    kid = baslat(engine, muhendis, ["web"], ["kampanya_tek_bedava"])
+
+    def patlat(_kid: uuid.UUID, **_k: Any) -> dict[str, Any]:
+        raise _db_hatasi()
+
+    monkeypatch.setattr(service, "_adim_isle", patlat)
+    with pytest.raises(Exception) as ilk:
+        service.calistir(_Ctx(kid, 1))  # type: ignore[arg-type]
+    assert not isinstance(ilk.value, PermanentJobError)
+    assert kosu_durumu(engine, kid) == "queued"
+    assert {a["sonuc"] for a in detay(engine, kid)["adimlar"]} == {"bekliyor"}
+    with pytest.raises(PermanentJobError):
+        service.calistir(_Ctx(kid, 2))  # type: ignore[arg-type]
+    d = detay(engine, kid)
+    assert d["durum"] == "failed"
+    assert "veritabanı/ağ hatası" in d["uyarilar"][-1]
+    assert "server closed" not in " ".join(d["uyarilar"])
+    assert "server closed the connection" in _denetim_detayi(engine, kid, "hata_kosusu.finished")
+
+
+def test_gecici_db_hatasi_is_kuyrugunda_retry(
+    engine: Engine, muhendis: Principal, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Gerçek kuyruk yolu: ilk denemedeki DB hatası işi `retry` yapar, koşu süren kalır."""
+    kid = baslat(engine, muhendis, ["web"], ["kampanya_tek_bedava"])
+
+    def patlat(_kid: uuid.UUID, **_k: Any) -> dict[str, Any]:
+        raise _db_hatasi()
+
+    monkeypatch.setattr(service, "_adim_isle", patlat)
+    jobq.process_one(engine, "w", turler=[service.JOB])
+    assert isler(engine, kid)[0].durum == "retry"
+    assert kosu_durumu(engine, kid) == "queued"
+
+
+def test_iptal_istenmisken_beklenmeyen_hata_cancelled_y15(
+    engine: Engine, muhendis: Principal, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tp_core.workflow.jobs import PermanentJobError
+
+    kid = baslat(engine, muhendis, ["web"], ["kampanya_tek_bedava"])
+    with Session(engine) as s, s.begin():
+        kosu = service._kilitle(s, kid)
+        assert kosu is not None
+        ic = service._ic(kosu)
+        ic["iptal_istendi"] = True
+        service._ic_yaz(kosu, ic)
+
+    def patlat(_kid: uuid.UUID, **_k: Any) -> dict[str, Any]:
+        raise RuntimeError("beklenmeyen")
+
+    monkeypatch.setattr(service, "_adim_isle", patlat)
+    with pytest.raises(PermanentJobError):
+        service.calistir(_Ctx(kid, 1))  # type: ignore[arg-type]
+    assert kosu_durumu(engine, kid) == "cancelled"
+
+
+def test_commit_kilit_disinda_cozulur_n12(
+    engine: Engine, muhendis: Principal, toolchain: FakeToolchain, fake_forge: Any
+) -> None:
+    """t2 N12: `head_sha` (ağ çağrısı) koşu satırı kilitliyken çağrılmaz: o sırada başka bir
+    bağlantı satırı NOWAIT ile kilitleyebilir (iptal beklemez)."""
+    kur(toolchain, lambda p, f: "yesil")
+    kid = baslat(engine, muhendis, ["web"], ["kampanya_tek_bedava"])
+    gorulen: list[bool] = []
+    asil = type(fake_forge).head_sha
+
+    def head_sha(self: Any, ref: str = "main") -> str:
+        with engine.begin() as c:
+            c.execute(
+                text("SELECT id FROM hata_kosusu WHERE id = :i FOR UPDATE NOWAIT"), {"i": kid}
+            )
+            gorulen.append(True)
+        return asil(self, ref)
+
+    type(fake_forge).head_sha = head_sha  # type: ignore[method-assign]
+    try:
+        jobq.process_one(engine, "w", turler=[service.JOB])
+    finally:
+        type(fake_forge).head_sha = asil  # type: ignore[method-assign]
+    assert gorulen == [True]
+    assert kosu_durumu(engine, kid) == "running"
+
+
+def test_commit_cozulemezse_failed_ham_metin_denetimde(
+    engine: Engine, muhendis: Principal, fake_forge: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def bozuk(ref: str = "main") -> str:
+        raise ValueError("token=gizli forge yanıtı")
+
+    monkeypatch.setattr(fake_forge, "head_sha", bozuk)
+    kid = baslat(engine, muhendis, ["web"], ["kampanya_tek_bedava"])
+    jobq.process_one(engine, "w", turler=[service.JOB])
+    d = detay(engine, kid)
+    assert d["durum"] == "failed"
+    assert d["uyarilar"][-1] == "Koşulacak commit çözülemedi (main)."
+    assert "gizli" in _denetim_detayi(engine, kid, "hata_kosusu.finished")
+
+
+def test_is_anahtarlari_tum_adimlari_kapsar(engine: Engine, muhendis: Principal) -> None:
+    """t2 N10: adım işleri `LIKE` yerine tam anahtar listesiyle (tekil indeks) okunur."""
+    from sqlalchemy import event
+
+    kid = baslat(engine, muhendis, ["web", "android"], ["kampanya_tek_bedava"])
+    sorgular: list[str] = []
+
+    def say(_c: Any, _cur: Any, stmt: str, *_a: Any) -> None:
+        sorgular.append(stmt)
+
+    with Session(engine) as s:
+        assert service.is_anahtarlari(s, kid) == [service.is_anahtari(kid, i) for i in range(6)]
+        event.listen(engine, "before_cursor_execute", say)
+        try:
+            assert [r.durum for r in service._isler(s, kid)] == ["queued"]
+        finally:
+            event.remove(engine, "before_cursor_execute", say)
+    job_sorgulari = [q for q in sorgular if "FROM job" in q]
+    assert job_sorgulari and not any("LIKE" in q.upper() for q in job_sorgulari)
+    assert all("idempotency_key = ANY" in q for q in job_sorgulari)
