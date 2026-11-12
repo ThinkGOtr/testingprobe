@@ -809,8 +809,7 @@ export function BeklentiDogruluguMetrigi({ m }: { m: CaseMetrikleri | null | und
         <>
           {b ? parcalar.join(" · ") : CEKIRDEK_BILDIRMIYOR}
           {nMetni && (
-            <span className="kule-n" data-testid="beklenti-n">
-              {" "}
+            <span className="kule-n oracle-n" data-testid="beklenti-n">
               {nMetni}
               {n !== undefined && n < GOSTERGE_ESIGI && (
                 <>

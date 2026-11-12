@@ -363,3 +363,7 @@
   outline: 2px solid var(--focus, var(--accent));
   outline-offset: 2px;
 }
+.oracle-n {
+  display: block;
+  margin-top: 4px;
+}

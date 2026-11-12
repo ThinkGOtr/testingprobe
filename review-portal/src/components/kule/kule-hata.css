@@ -307,8 +307,12 @@
   max-width: 96ch;
 }
 .hk-kural-dagilim tbody th {
+  font-size: 0.85rem;
   font-weight: 600;
+  letter-spacing: 0;
   color: var(--text);
+  /* Satır başlığı gövde zemininde (sütun başlığı zemini satırı ikiye bölüyordu). */
+  background: var(--surface);
 }
 /* Kaçan hata: kural, ayırt edici girdi, case isteği */
 .hk-kacan-liste > li + li {

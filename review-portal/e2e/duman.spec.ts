@@ -304,11 +304,12 @@ test("sunucu: Kontrol Kulesi'nde ekilmiş hata koşusu başlatır (web); ilerlem
   await page.goto("/kontrol-kulesi");
   // KPI şeridi: iki kalite karosu ve kaynak ipuçları.
   await expect(page.getByTestId("beklenti-dogrulugu")).toHaveText("%83");
-  await expect(page.getByTestId("hata-yakalama")).toHaveText("%88");
-  await expect(page.getByRole("img", { name: /^Kaynak: Son tamamlanan ekilmiş hata koşusu/ })).toBeVisible();
+  // K12: ana oran yalnız üretilmiş (AI) testlerle; demo reposunda üretilmiş test yok → ölçülmedi.
+  await expect(page.getByTestId("hata-yakalama")).toHaveText("ölçülmedi");
+  await expect(page.getByRole("img", { name: /^Kaynak: Son tamamlanan tam katalog ekilmiş hata koşusu/ })).toBeVisible();
   const kart = page.getByRole("region", { name: "Ekilmiş hata koşusu" });
-  // Örnek verideki bitmiş koşu (web + android): web demo uygulamada ölçülen gerçek matris (8/9, yalnız
-  // kampanya_esik_7 kaçar); geçersiz adım orana girmez; kaçan hatalar ayrı listede.
+  // Örnek verideki bitmiş koşu (web + android): web demo uygulamada ölçülen gerçek matris (el yazısı suite
+  // 8/9, yalnız kampanya_tek_bedava kaçar — K9); geçersiz adım orana girmez; kaçan hatalar ayrı listede.
   await expect(kart.getByTestId("hk-oran-web")).toHaveText("%89 (8/9)");
   await expect(kart.getByTestId("hk-oran-android")).toContainText("%88 (7/8)");
   await expect(kart.getByTestId("hk-oran-android")).toContainText("1 geçersiz (orana girmez)");
@@ -330,7 +331,7 @@ test("sunucu: Kontrol Kulesi'nde ekilmiş hata koşusu başlatır (web); ilerlem
   ]) {
     await kart.getByRole("checkbox", { name: ad }).uncheck();
   }
-  await expect(kart.getByTestId("hk-tahmin")).toContainText("2 hata × 1 platform = 4 koşu");
+  await expect(kart.getByTestId("hk-tahmin")).toContainText("2 hata + 2 çerçeve koşusu (temel, kapanış) = 4 koşu / platform");
   await kart.getByRole("button", { name: "Koşuyu başlat" }).click();
   await expect(kart.getByTestId("hk-ilerleme")).toBeVisible();
   await expect(kart.getByTestId("hk-sayac")).toContainText("/ 4");
@@ -342,12 +343,12 @@ test("sunucu: Kontrol Kulesi'nde ekilmiş hata koşusu başlatır (web); ilerlem
   await expect(kart.getByRole("region", { name: "Ekilmiş hata sonuç tablosu" }).getByRole("columnheader")).toHaveText(["Hata", "Web"]);
   await expect(kart.getByTestId("hk-temel-web")).toContainText("✓ yeşil");
   await expect(kart.getByTestId("hk-hucre-web-kampanya_bedava_yok")).toContainText("✓ yakalandı");
-  await expect(kart.getByTestId("hk-hucre-web-kampanya_esik_7")).toContainText("✗ kaçtı");
+  await expect(kart.getByTestId("hk-hucre-web-kampanya_tek_bedava")).toContainText("✗ kaçtı");
   await expect(kart.getByTestId("hk-kapanis-web")).toContainText("✓ yeşil");
   await expect(kart.getByTestId("hk-oran-web")).toHaveText("%50 (1/2)");
-  await expect(kart.getByTestId("hk-kacan-kampanya_esik_7")).toContainText("Kampanya eşiği 6 yerine 7 · Web");
-  // Kule ölçüsü son bitmiş koşudan; geçmişte iki koşu.
-  await expect(page.getByTestId("hata-yakalama")).toHaveText("%50");
+  await expect(kart.getByTestId("hk-kacan-kampanya_tek_bedava")).toContainText("Kampanyada en çok 1 bedava · Web");
+  // Kule ölçüsüne yalnız tam katalog koşusu girer (kısmi seçim girmez); geçmişte iki koşu.
+  await expect(page.getByTestId("hata-yakalama")).toHaveText("ölçülmedi");
   await expect(kart.getByTestId("hk-gecmis").getByRole("row")).toHaveCount(3);
   await tamSayfaUstten(page, `${EKRAN_DIZINI}/62-kule-ekilmis-hata-sonuc.png`);
   // Hücre kendi koşusuna bağlanır.
@@ -667,6 +668,9 @@ const AXE_SAYFALARI: { yol: string; ad: string; hazir: (p: Page) => Promise<void
       await expect(t1).toBeVisible();
       await t1.getByText("Örnekle dene").click();
       await expect(t1.getByRole("button", { name: "Dene" })).toBeVisible();
+      // Satır anlamı ve sınır örnekleriyle kart uzadı: tıklama sayfayı kaydırır; yapışkan üst çubuk içeriğin
+      // üstünde kalınca axe çubuktaki metnin zeminini çözemez ("incomplete"). Ölçüm F0'daki gibi sayfa tepesinden.
+      await p.evaluate(() => window.scrollTo(0, 0));
     },
   },
 ];
@@ -1177,11 +1181,13 @@ test("012 karar tablosu: analist taslağı düzenler → PO'ya gönderir → PO 
   await expect(c6.getByRole("button", { name: "Onayla", exact: true })).toBeDisabled();
   await expect(c6.locator(".dugme-neden").filter({ hasText: "gerekçeli istisna olmadan onaylanamaz" })).toBeVisible();
   await page.screenshot({ path: `${EKRAN_DIZINI}/72-case-tablo-uyusmazligi.png`, fullPage: true });
-  await c6.getByRole("button", { name: "İstisnayla onayla" }).click();
+  // V10: iki yol; "Case doğru, istisnayla onayla" gerekçe ister (≥ 20 karakter, ≥ 10 harf).
+  await expect(c6.getByTestId("oracle-tablo-yanlis")).toBeVisible();
+  await c6.getByRole("button", { name: "Case doğru, istisnayla onayla" }).click();
   const gerekce = c6.getByLabel("İstisna gerekçesi");
   await expect(gerekce).toBeFocused();
   await gerekce.fill("PO ile görüşüldü: 750,00 TL sınırı dahil kabul edildi.");
-  await c6.getByTestId("istisna-formu").getByRole("button", { name: "İstisnayla onayla" }).click();
+  await c6.getByTestId("istisna-formu").getByRole("button", { name: "Case doğru, istisnayla onayla" }).click();
   await expect(c6.getByTestId("oracle-istisna")).toContainText("PO ile görüşüldü");
   await expect(c6.getByTestId("case-karar-kilit")).toBeVisible();
   expect(hatalar).toEqual([]);

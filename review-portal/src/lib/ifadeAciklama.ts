@@ -38,7 +38,7 @@ function karsilastirmaOku(sol: string, op: string, sag: string): string {
 /** Aritmetik ifade: `adet // 7` → "adet ÷ 7 (tam kısım)"; `x * y` → "x × y". */
 export function ifadeyiOku(ifade: string): string {
   return ifade
-    .replace(/\s*\/\/\s*(\S+)/g, (_m, b: string) => ` ÷ ${sayi(b)} (tam kısım)`)
+    .replace(/\s*\/\/\s*([A-Za-z0-9_.]+)/g, (_m, b: string) => ` ÷ ${sayi(b)} (tam kısım)`)
     .replace(/\s*\*\s*/g, " × ")
     .replace(/(?<![<>=!])\s*\/\s*/g, " ÷ ")
     .replace(/\byuvarla\(/g, "yuvarla(")

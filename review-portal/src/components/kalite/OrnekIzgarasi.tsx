@@ -18,6 +18,9 @@ const UYARI_TURU: Record<string, string> = {
   gecersiz: "Tablo geçersiz",
 };
 
+/** Mobil yığın etiketinde uzun kolon adı alt çizgiden sarabilsin (sözcük ortasından bölünmesin). */
+const kirilabilir = (ad: string) => ad.replace(/_/g, "_\u200b");
+
 export function OrnekIzgarasi({ tablo }: { tablo: KararTablosu }) {
   const [acik, setAcik] = useState(tablo.durum === "pending_po");
   const [veri, setVeri] = useState<TabloOrnekleri | null>(null);
@@ -79,7 +82,7 @@ export function OrnekIzgarasi({ tablo }: { tablo: KararTablosu }) {
                   {veri.ornekler.map((o, i) => (
                     <tr key={i} className={o.hata || !o.satir_id ? "oracle-farkli" : undefined}>
                       {t.girdiler.map((g) => (
-                        <td key={g.ad} className="mono" data-etiket={g.ad}>
+                        <td key={g.ad} className="mono" data-etiket={kirilabilir(g.ad)}>
                           {degerMetni(o.girdiler[g.ad])}
                         </td>
                       ))}
@@ -87,7 +90,7 @@ export function OrnekIzgarasi({ tablo }: { tablo: KararTablosu }) {
                         {o.hata ? "hata" : (o.satir_id ?? "yok")}
                       </td>
                       {t.ciktilar.map((c) => (
-                        <td key={c.ad} className="mono" data-etiket={c.ad}>
+                        <td key={c.ad} className="mono" data-etiket={kirilabilir(c.ad)}>
                           {degerMetni(o.ciktilar[c.ad])}
                         </td>
                       ))}
