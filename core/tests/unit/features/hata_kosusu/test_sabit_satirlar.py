@@ -8,6 +8,7 @@ Ekilmiş hata işi demo uygulamaya dokunduğu için satırın hem numarası hem 
 from __future__ import annotations
 
 import hashlib
+import os
 from pathlib import Path
 
 import pytest
@@ -49,13 +50,42 @@ SABIT = [
 ]
 
 
-@pytest.mark.skipif(not KAYNAK.exists(), reason="demo-app kaynağı yok")
+def zorunlu_mu() -> bool:
+    """CI'da ya da `TP_TEST_REQUIRE_DB` verilmişse kaynak yokluğu atlama değil hatadır (t2 N13)."""
+    return any((os.environ.get(ad) or "").strip() for ad in ("TP_TEST_REQUIRE_DB", "CI"))
+
+
+def kaynak_gerekli(kaynak: Path = KAYNAK) -> None:
+    if kaynak.exists():
+        return
+    mesaj = f"demo-app kaynağı yok: {kaynak}"
+    if zorunlu_mu():
+        pytest.fail(f"{mesaj} (CI / TP_TEST_REQUIRE_DB: sessiz atlanmaz)")
+    pytest.skip(mesaj)
+
+
 @pytest.mark.parametrize(("dosya", "satir", "metin", "ozet"), SABIT)
 def test_sabit_satir_numarasi_ve_icerigi_degismez(
     dosya: str, satir: int, metin: str, ozet: str
 ) -> None:
+    kaynak_gerekli()
     satirlar = (KAYNAK / dosya).read_text(encoding="utf-8").splitlines()
     assert len(satirlar) >= satir, f"{dosya} {satir} satırdan kısa"
     gercek = satirlar[satir - 1]
     assert gercek == metin, f"{dosya}:{satir} değişti: {gercek!r}"
     assert hashlib.sha256(gercek.encode("utf-8")).hexdigest() == ozet
+
+
+def test_kaynak_yoksa_zorunlu_ortamda_basarisiz(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    yok = tmp_path / "yok"
+    for ad in ("TP_TEST_REQUIRE_DB", "CI"):
+        monkeypatch.delenv(ad, raising=False)
+    with pytest.raises(pytest.skip.Exception):
+        kaynak_gerekli(yok)
+    for ad in ("TP_TEST_REQUIRE_DB", "CI"):
+        monkeypatch.setenv(ad, "1")
+        with pytest.raises(pytest.fail.Exception):
+            kaynak_gerekli(yok)
+        monkeypatch.delenv(ad)
