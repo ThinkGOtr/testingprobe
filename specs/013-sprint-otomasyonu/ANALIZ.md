@@ -301,3 +301,16 @@ Düzeltme sözleşmeleri (şeritler bunlara uyar):
 - **Jira tetiği tabanı (D1):** işaret yoksa tur "taban turu"dur; durumdaki story'lere yalnız `jira_durumu` yazılır (TP'de olmayanlar `new` gereksinim olarak eklenir), tetiklenmez. İşaret iç satır `otomasyon_ayari["jira_tetik.taban"]` (API'de görünmez); `acik`/`durum` değişince silinir. Duruma giren story: `new` → tetiklendi; `po_approved` + etkin case yok → case_uretimi; inceleme/PO aşamasında → akisa_alindi (`qa_tetik_zamani` yazılır, PO onayında case otomatik). Arama sayfalı, en çok 1000 story. `son_tur.sonuc` sözlüğü: tetiklendi, yeniden_tetiklendi, case_uretimi, akisa_alindi, isaretlendi, ertelendi, dokunulmadi, durumda, guncellendi, hata. Demo ucu sim'i `is_simulator` + `/health` `service == "jira-sim"` ile doğrular.
 - **Gizli veri (D3):** ortam okuması şablonda değil `args`/`jargs` süzgeçlerinde (`OrtamDegeri`); guard'lar (eslint `generatedTestSyntax`, java-araclar `UretilenTestKoruyucu`) yalnız doğrudan argüman `process.env.TP_TESTVERI_*` / `System.getenv("TP_TESTVERI_*")` kabul eder. Yeni gizli ad için `demo-app/e2e/tests/testveri-env.d.ts`'e satır gerekir. Runner test sürecine yalnız `TP_TESTVERI_*` geçirir. GitHub CI'da `TP_TESTVERI_DEMO_PAROLA` secret'ı gerekir (kullanıcı ekler).
 - **Toplu kod (D2):** `codegen.otomatik` işi, idempotent anahtar sıralı case_id + son review sırası; 20'lik parçalar ayrı işlemde.
+
+## 10. Review turu 2 (2026-11-12) — kararlar ve netleştirmeler
+
+| # | Konu | Karar |
+|---|---|---|
+| K20 | Demo provası | `make reset` / seed / demo-reset demo ortamına `otomatik_kod_uretimi.acik=false` yazar; Demo-B bugünkü gibi "Kod üret" düğmesiyle yürür, kayıtlı yanıtlar bozulmaz. Ürün varsayılanı (açık) değişmez. Birleştirmeden önce `make demo-prova` koşulur |
+| K21 | K15 genişlemesi | Kalır: QA To Do'ya giren story aşaması ne olursa olsun (elle çekilmiş dahil) akışa alınır; PO onayından sonra case'ler otomatik üretilir (ayar açıksa). **Y2 bununla değişti**; metinler: "Story bu duruma girerse elle çekilmiş gereksinim de akışa alınır; PO onayından sonra case'ler otomatik üretilir" |
+| K13' | 3 sn netleştirme | Portal `POST /cases/{id}/viewed`'i görünürlüğün **başında** gönderir (review süresi ölçümü doğru kalır); case'i yerelde ancak **3 sn kesintisiz görünür** (sekme görünür) kalınca "görüldü" sayar. Sunucu görüntüleme ile karar arasında ≥ 3 sn arar; bu pencere içindeki atlama nedeni ayrı: "Görüntüleme yeni kaydedildi; birkaç saniye sonra yeniden deneyin". Böylece çift bekleme yok |
+
+Netleştirmeler:
+- `veri_izi` ve tüm API'lerdeki değer özeti **tuzlu** (sunucu sırrıyla HMAC); gizli değerin düz sha256'sı hiçbir yerde dönmez.
+- K10 case yarısı: onay anında case'in veri izi review kaydına yazılır; `serialize_cases` → `veri_onaydan_sonra_degisen: [anahtar]`; kart uyarısı.
+- K17: IDE/MCP kanalı her zaman katalog bloğunu kullanır (bu kanalda REPLAY yok).
