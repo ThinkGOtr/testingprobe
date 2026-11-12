@@ -58,8 +58,8 @@ parcalar:
 #   ("'hiç hata yok' demek yanıltıcı olur"); kodda sabittir.
 cikti_olumsuz:
   sinyaller: [mutlak_iddia, urun_vaadi, onay_taklidi]
-  kuyruk: '\b(?:degil\w*|diye|gibi|soyleyemeyiz|soylenemez|soyleyemem|diyemeyiz|diyemem|denemez|hedef\w*|yaniltici|iddia (?:edemeyiz|edilemez|etmiyoruz|etmiyorum)|anlamina gelmez|kullanmam|yazamam|yazmam|davranamam)\b'
-  ek: '^\w*(?:\W+\w+)?(?:m[ae]z|m[ae]m|m[ae]y[iu]z|m[iu]yor)\b'
+  kuyruk: '\b(?:degil\w*(?!\s+m[iu]\w*\b)|soyleyemeyiz|soylenemez|soyleyemem|diyemeyiz|diyemem|denemez|\w+m[ae]y[iu]n(?:iz)?|yaniltici|iddia (?:edemeyiz|edilemez|etmiyoruz|etmiyorum)|anlamina gelmez|kullanmam|yazamam|yazmam|davranamam)\b'
+  ek: '^\w*(?:\W+\w+)?(?:m[ae]z|m[ae]m|m[ae]y[iu]z|m[iu]yor)\b|^\w*\W+(?:gibi|hedef(?:i|iyle|le|ine|imiz|imizdir)?)\b'
 
 sinyaller:
   # ------------------------------------------------------------------ girdi
@@ -192,13 +192,13 @@ sinyaller:
   - id: prompt_saldirisi
     yon: girdi
     regex:
-      - '\b(?:talimat|yonerge|kural|komut|instruction)\w*\s+(?:unut|yok say|gormezden gel|iptal et|devre disi birak|es gec|hice say)'
+      - '\b(?:talimat|yonerge|kural|instruction)\w*\s+(?:unut|yok say|gormezden gel|hice say)'
       - '\b(?:ignore|disregard|forget|override)\s+(?:all\s+|any\s+)?(?:the\s+|your\s+)?(?:previous|prior|above|earlier|system|your)?\s*(?:instructions|rules|prompt|directions|guidelines)'
-      - '\b(?:sistem|system)\s*(?:istem|prompt|mesaj|talimat)\w*.{0,40}?\b(?:yaz|goster|paylas|ver|dok|tekrarla|soyle|cevir|ozetle|print|show|reveal|repeat)\w*'
+      - '\b(?:sistem|system)\s*(?:istem|prompt|talimat)\w*.{0,40}?\b(?:yaz|goster|paylas|ver|dok|tekrarla|soyle|cevir|ozetle|print|show|reveal|repeat)\w*'
       - '\b(?:reveal|print|show|repeat|output|leak)\s+(?:me\s+)?(?:your|the)\s+(?:system\s+|hidden\s+|initial\s+)?(?:prompt|instructions)'
       - '\b(?:ic|gizli) (?:talimat|kural|yonerge|istem|prompt)\w*.{0,30}?\b(?:yaz|goster|paylas|ver|soyle|listele|dok|say)\w*'
-      - '\b(?:talimat|yonerge|kural|istem|prompt|instruction)\w*.{0,30}?\b(?:kelimesi kelimesine|harfi harfine|aynen|birebir|verbatim|word for word)\b.{0,20}?\b(?:yaz|goster|paylas|ver|tekrarla|dok|listele|aktar)\w*'
-      - '\brol(?:une)? (?:yap|gir)(?!ma\b)\w*(?! degil\b)|\bgibi davran(?:\b|in|sana|ir m[iu]s[iu]n)|\bbundan sonra sen\b|\bsen artik\b(?:(?!\?).){0,40}?\b\w+(?<!yor)s[iu]n\b|\bpretend (?:to be|you are)\b|\byou are now\b|\bact as (?:if\b|an? (?:unrestricted|unfiltered|uncensored|jailbroken|evil)\b|dan\b|(?:the )?system\b)|\b(?:developer|gelistirici|dan) mod(?!e?''?d[ae](?:ki|n)?\b)\w*|\bdevmode\b|\bdev mode (?:asistan|bot|ai|model)\w*|\bjailbreak\w*'
+      - '\b(?:talimatlar?(?:in|ini|inizi)|kurallar?(?:in|ini)|yonergeler?(?:in|ini)|istemin(?:i|izi)?|promptun(?:u|uzu)?|(?:your|the system) (?:prompt|instructions))\b.{0,30}?\b(?:kelimesi kelimesine|harfi harfine|aynen|birebir|verbatim|word for word)\b.{0,20}?\b(?:yaz|goster|paylas|ver|tekrarla|dok|listele|aktar)\w*'
+      - '\brol yap(?!ma\b)\w*(?! degil\b)|\brolune gir(?:\b|in\b|sene\b)|\bgibi davran(?:\b|in|sana|ir m[iu]s[iu]n)|\bbundan sonra sen\b|\bsen artik\b(?:(?!\?).){0,40}?\b\w+(?<!yor)s[iu]n\b|\bpretend (?:to be|you are)\b|\byou are now\b|\bact as (?:if\b|an? (?:unrestricted|unfiltered|uncensored|jailbroken|evil)\b|dan\b|(?:the )?system\b)|\b(?:developer|gelistirici|dan) ?mod(?:e|u)?''?(?:a|una)? (?:gec|gir|ol|aktif)\w*|\b(?:developer|gelistirici|dan) ?mod\w*s[iu]n\b|\bdevmode\b|\bdev mode (?:asistan|bot|ai|model)\w*|\bjailbreak\w*'
       - '\b(?:kisitsiz|kisit\w* olmayan|sinirsiz|filtresiz|sansursuz|kuralsiz)\b.{0,30}?\b(?:asistan|bot|model|mod|yapay zeka|ai)\w*|\bartik\b.{0,40}?\b(?:asistan|bot|model)\w*s[iu]n\b'
       - '\bbase ?64\w*.{0,40}?\b(?:coz(?!ul)|decode(?! (?:edil|olan))|uygula|calistir|cevir|takip et|execute|follow)\w*|\b(?:coz(?!ul)|decode(?! (?:edil|olan)))\w*.{0,20}?\bbase ?64|\brot ?13\b'
       - '<\s*/?\s*(?:system|untrusted|instructions?|talimat)\b|\[\s*/?\s*(?:system|inst)\s*\]|#{2,}\s*(?:system|instruction)'

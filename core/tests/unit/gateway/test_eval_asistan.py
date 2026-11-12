@@ -700,3 +700,14 @@ def test_rol_ortami_yoksa_vaka_cagrilmaz(mini: Path) -> None:
 def test_eval_dosyalarinda_gercek_bicimli_sir_yok() -> None:
     metin = (RULES / "evaluation" / "assistant.json").read_text(encoding="utf-8")
     assert not re.search(r"gh[pousr]_[A-Za-z0-9]{20,}|sk-ant-[A-Za-z0-9-]{10,}", metin)
+
+
+def test_rapor_yollari_repo_koke_goreli(tmp_path: Path) -> None:
+    """013 tur 3: rapordaki yollar mutlak değil (public repoda kullanıcı adı sızmasın)."""
+    from tp_core.gateway.eval_live import repo_goreli
+
+    rules = tmp_path / "rules"
+    rules.mkdir()
+    defter = tmp_path / "exports" / "eval-live" / "ai_call.jsonl"
+    assert repo_goreli(defter, rules) == "exports/eval-live/ai_call.jsonl"
+    assert repo_goreli(Path("/baska/yer/ai_call.jsonl"), rules) == "ai_call.jsonl"

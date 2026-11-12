@@ -1122,14 +1122,23 @@ def cevapla(
             # Kanarya / istem sızıntısı (specs/013 §6.3): cevabın bütün dizgeleri taranır; cevap
             # değişir, ciddi olay kök soruya yazılır (sızan cevabın kimliği ayrıntıda). Girdide
             # ya da araç sonucunda zaten geçen yabancı kanarya/iz alıntıdır, sızıntı değildir.
+            # İki ayrı karar (013 tur 3): (a) cevapta kanarya ya da iz cümlesi varsa cevap HER
+            # durumda değişir — saldırgan bütün iz cümlelerini girdiye koyup istemin tamamını
+            # tekrarlatsa da istem gösterilmez; (b) ciddi olay (dondurma sayacı) yalnız kanıtta
+            # geçmeyen sızıntıda yazılır — kayda yerleştirilmiş metni alıntılayan kullanıcı
+            # cezalandırılmaz (SEC2-Y1). Bu sürecin kanaryası her iki kararda da sızıntıdır.
+            izler = guvenlik_cikti.izleri_yukle(rules_dir)
+            kanarya_degeri = guvenlik_cikti.kanarya()
             sizinti = guvenlik_cikti.sizinti_var(
                 cevap,
-                guvenlik_cikti.kanarya(),
-                guvenlik_cikti.izleri_yukle(rules_dir),
+                kanarya_degeri,
+                izler,
                 sizinti_kaniti(m, ekran, kural_onerileri, gecmis, araclar.havuz),
             )
-            if sizinti is not None:
+            ham_sizinti = sizinti or guvenlik_cikti.sizinti_var(cevap, kanarya_degeri, izler)
+            if ham_sizinti is not None:
                 cevap = guvenlik_cikti.istem_sizintisi_cevabi()
+            if sizinti is not None:
                 _olay_yaz(session_factory, m, sizinti, ayrinti={"cevap": str(m.id)})
         finally:
             araclar.havuz.temizle()
@@ -1141,7 +1150,7 @@ def cevapla(
             sinyaller=sinyaller,
             # Sızıntı yerine gelen cevap modelin cevabı değildir: `model` yazılmaz (BE2-3).
             model=None
-            if sizinti is not None
+            if ham_sizinti is not None
             else yanitlayan_model(engine, sonuc, gw, m.hedef_amac, rules_dir),
         )
     except Exception as exc:

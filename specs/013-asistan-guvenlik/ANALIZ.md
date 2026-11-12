@@ -421,9 +421,15 @@ ve bu belge. Bu belgedeki §4–§9 düzeltilmiş hâli anlatır.
 - Kart negatif bağlamı (§5.1 tur 2) bilinçli bir ödünleşimdir: kart kelimesi ya da ödeme bağlamı
   olmadan "sipariş numarası" kılığında verilmiş gerçek bir kart numarası 422 almaz; modele giden
   metinde ve sohbette durur.
-- Yerleştirilmiş alıntı istisnası (§6.3 tur 2): girdide ya da araç sonucunda birebir geçen iz
-  cümlesini model tekrarlarsa sızıntı sayılmaz; saldırgan istem cümlesini önce bir kayda yazıp
-  sonra alıntılatırsa yalnız o cümle görünür (istemin geri kalanı yine izlerle korunur).
+- Yerleştirilmiş alıntı istisnası (§6.3 tur 2, tur 3'te daraltıldı): cevapta kanarya ya da iz
+  cümlesi görülürse cevap **her durumda** sızıntı cevabıyla değiştirilir; istisna yalnız ciddi
+  olayı (dondurma sayacını) etkiler — iz cümlesi girdide ya da araç sonucunda da geçiyorsa olay
+  yazılmaz. Böylece saldırgan bütün izleri girdiye koyup istemi tekrarlatsa da istem gösterilmez;
+  kayda yerleştirilmiş metni soran kullanıcı da dondurulmaz. Yan etkisi: iz cümlesi geçen bir
+  kaydı alıntılayan meşru cevap da gösterilmez (izler normal metinde kurulmayacak biçimde seçilir).
+- `prompt_saldirisi` sinyali otomatik yükseltmeyi engeller (tur 3); bu yüzden deseni yalnız açık
+  geçersiz kılma / iç talimatı isteme / rol yapma kalıplarını kapsar. "Sistem mesajı", "rolüne
+  giriş", "developer modunda", "komutu iptal et" gibi ürün soruları sinyal almaz (regresyon testi).
 - TCKN sağlama algoritması rastgele 11 haneli bir kimliğin yaklaşık %1'inde tutar; noktalı biçim
   (`100.000.001.46`) da asistan oturumunda maskelendiği için 3-3-3-2 gruplu bir değer nadiren
   TCKN sanılıp maskelenir. Etkisi yalnız maskedir (engel yok, kullanıcı kendi değerini görür).
