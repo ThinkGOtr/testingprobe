@@ -7,7 +7,8 @@
 // gelir; o yoksa aynı story'nin case_generation golden'ının üst listelerinden türetilir
 // (coverage_items / open_questions / assumptions birebir aynı kalır: tur-2 eşitlik kuralı).
 import { ApiError } from "../http";
-import type { CaseUretimOzeti, GereksinimDetay, IsYaniti, Kullanici, Rol } from "../types";
+import type { CaseUretimOzeti, GereksinimDetay, IsYaniti, Kullanici } from "../types";
+import type { Izin } from "../../lib/yetki";
 import type { ModelRetNedeni } from "../tasarimModeliTipleri";
 import {
   modelTamamla,
@@ -28,8 +29,8 @@ type Rota = [string, RegExp, (m: RegExpMatchArray, q: URLSearchParams, govde: un
 /** handlers.ts'in iç yardımcıları (durum makinesi, roller, arka plan işi) — tek kaynaktan. */
 export interface ModelBaglami {
   veri: () => MockVeri;
-  girisGerekli: () => Kullanici;
-  rolGerekli: (...roller: Rol[]) => Kullanici;
+  /** core `izin(...)` (012): izinlerden hiçbiri yoksa 403. */
+  izinGerekli: (...izinler: [Izin, ...Izin[]]) => Kullanici;
   gecir: (g: GereksinimDetay, ...yol: GereksinimDetay["durum"][]) => void;
   arkaPlan: (adimlar: (() => void)[]) => void;
   yeniId: (onek: string) => string;
@@ -223,7 +224,7 @@ function yanit(v: MockVeri, g: GereksinimDetay): TasarimModeliYaniti {
         : !son
           ? "Henüz tasarım modeli yok."
           : son.durum === "draft"
-            ? "Model analist onayı bekliyor."
+            ? "Model testçi onayı bekliyor."
             : son.durum === "rejected"
               ? "Model reddedildi; yeniden üretin."
               : g.durum !== "model_ready"
@@ -236,7 +237,7 @@ function yanit(v: MockVeri, g: GereksinimDetay): TasarimModeliYaniti {
 const RET_NEDENLERI: ModelRetNedeni[] = ["wrong_technique", "missing_condition", "wrong_coverage_item", "wrong_boundary", "invented_rule", "missing_ac", "out_of_scope"];
 
 function karar(ctx: ModelBaglami, modelId: string, govde: unknown): TasarimModeliKaydi & Partial<Tur2Yaniti> {
-  const k = ctx.rolGerekli("analyst");
+  const k = ctx.izinGerekli("design_model.decide");
   const v = ctx.veri();
   let m: TasarimModeliKaydi | undefined;
   let g: GereksinimDetay | undefined;
@@ -307,7 +308,7 @@ export function tasarimModeliRotalari(ctx: ModelBaglami): Rota[] {
       "GET",
       /^\/requirements\/([^/]+)\/design-model$/,
       (m) => {
-        ctx.girisGerekli();
+        ctx.izinGerekli("case.analysis_read");
         return yanit(ctx.veri(), gereksinim(decodeURIComponent(m[1])));
       },
     ],
@@ -315,7 +316,7 @@ export function tasarimModeliRotalari(ctx: ModelBaglami): Rota[] {
       "POST",
       /^\/requirements\/([^/]+)\/design-model$/,
       (m) => {
-        ctx.rolGerekli("analyst");
+        ctx.izinGerekli("case.generate");
         return modelUretimiBaslat(ctx, gereksinim(decodeURIComponent(m[1])));
       },
     ],

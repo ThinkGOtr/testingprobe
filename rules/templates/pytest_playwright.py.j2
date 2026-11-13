@@ -1,0 +1,78 @@
+{#-
+  CasesToCode Python şablonu (011 plan §2.7, K3; Constitution IV) — pytest-playwright (eşzamanlı
+  API). DOĞRULANMAMIŞ dil: çıktı derlenmez, koşulmaz, forge'a yazılmaz, PR'a giremez.
+
+  Model Python yazmaz: bu dosya yalnızca tarayıcıda doğrulanmış ve deterministik kontrollerden
+  geçmiş adım → page object eşlemesinden render edilir (tp_core.features.codegen.render.render_dil).
+  - Her değer `py` süzgecinden geçer: düz "…" dize (önek yok: f-string / bytes / raw / üç tırnak
+    YOK), int / float, True / False, None.
+  - Sınıf, değişken, modül ve metot adları `ident` süzgecinden geçer; metot, değişken ve modül adı
+    referans sembol tablosundaki adın snake_case biçimidir (`addToCart` → `add_to_cart`,
+    `LoginPage` → `pages.login_page`).
+  - Yorumlar `comment` süzgecinden geçer (tek satır #; docstring yok). İlk iki satır sabit metindir
+    (Python kodlama bildirimi yalnız o satırlarda anlam taşır).
+  - Varsayımlar (hedef projede page object kütüphanesi yoktur): sınıflar `<Sınıf>(page)`
+    kurucusuyla `pages/<sınıf>.py` modüllerindedir. Başlık bu imzaları ve `--strict-markers` için
+    işaret kaydını (`conftest.py` parçası, `PY_ISARETLER`) listeler (uyarlama için; K-T9).
+  - Çıktı deterministiktir (golden testi: core/tests/unit/features/codegen/golden/).
+-#}
+# AI-generated — AI Testing Probe (CasesToCode). Hedef projeye uyarlanmak üzere verilir:
+# page object adlarını ve imzalarını projenize göre düzenleyebilirsiniz.
+# {{ unverified_note | comment }}
+# Case: {{ case_ref | comment }} ({{ case_id | comment }}) · Story: {{ story_key | comment }} · Jira Test: {{ test_key | comment }}
+# Başlık: {{ description | comment }}
+# Onaylı case hash: {{ case_hash | comment }}
+# Eşleme: verify_and_map · platform: web · dil: python (pytest-playwright) · mod: {{ mode | comment }} · bundle: {{ bundle_hash | comment }}
+# Eşleme hash: {{ mapping_hash | comment }} · şablon: {{ template_hash | comment }}
+#
+# Varsayılan page object imzaları (kurucu: <Sınıf>(page: Page); metotlar None döner):
+{% for s in imzalar %}
+#   {{ po_package | comment }}.{{ s.modul | comment }}.{{ s.sinif | comment }}
+{% for m in s.metotlar %}
+#     def {{ m.imza | comment }} -> None
+{% endfor %}
+{% endfor %}
+#
+# --strict-markers kullanıyorsanız işaretleri conftest.py'de kaydedin:
+#   def pytest_configure(config):
+{% for mk in markers %}
+#       config.addinivalue_line("markers", "{{ mk.ad | comment }}: {{ mk.aciklama | comment }}")
+{% endfor %}
+#
+# Taban adres ve içe aktarma yolu: göreli page.goto() çağrıları için pytest-playwright'ı
+# --base-url ile koşun (ör. pytest --base-url "$BASE_URL"; ya da pytest.ini'de base_url = ...);
+# "{{ po_package | comment }}" paketinin bulunması için pytest.ini'de proje kökünü ekleyin:
+#   [pytest]
+#   pythonpath = .
+import pytest
+from playwright.sync_api import Page
+
+{% for o in objects %}
+from {{ po_package }}.{{ o.modul | ident }} import {{ o.sinif | ident }}
+{% endfor %}
+
+
+@pytest.mark.uretilen
+@pytest.mark.web
+@pytest.mark.tp_case({{ case_id | py }})
+{% if story %}
+@pytest.mark.story({{ story | py }})
+{% endif %}
+{% if dealer %}
+@pytest.mark.dealer({{ dealer | py }})
+{% endif %}
+def {{ test_name | ident }}(page: Page) -> None:
+{% for o in objects %}
+    {{ o.degisken | ident }} = {{ o.sinif | ident }}(page)
+{% endfor %}
+
+{% for step in steps %}
+    # {{ step.label | comment }}
+{% for call in step.calls %}
+    {{ call.fixture | ident }}.{{ call.method | ident }}({{ call.args | pyargs }})
+{% endfor %}
+{% endfor %}
+    # Beklenen sonuç (değerler onaylı case metninden)
+{% for call in expects %}
+    {{ call.fixture | ident }}.{{ call.method | ident }}({{ call.args | pyargs }})
+{% endfor %}

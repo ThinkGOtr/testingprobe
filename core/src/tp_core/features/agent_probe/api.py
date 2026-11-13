@@ -21,13 +21,18 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
-from tp_core.auth.deps import CurrentUser, DbSession, require_role
+from tp_core.auth.deps import DbSession
+from tp_core.auth.yetki import izin
 from tp_core.features.agent_probe import service
 from tp_core.workflow.service import Principal
 
 router = APIRouter(tags=["agent-probe"])
 
-Analyst = Annotated[Principal, Depends(require_role("analyst"))]
+# 012 rol modeli (dev birleştirmesi): ürün bağlama gereksinim kapsamı kararıdır (Analist,
+# `requirement.review`); ajan testini başlatma/sorgulama Testçinin (`agent_test.run`).
+Baglayici = Annotated[Principal, Depends(izin("requirement.review"))]
+Testci = Annotated[Principal, Depends(izin("agent_test.run"))]
+Okur = Annotated[Principal, Depends(izin("requirement.read"))]
 
 
 class UrunBaglamaGirdisi(BaseModel):
@@ -35,31 +40,31 @@ class UrunBaglamaGirdisi(BaseModel):
 
 
 @router.get("/agent-probe/products")
-def urunler(user: CurrentUser) -> dict[str, Any]:
+def urunler(user: Okur) -> dict[str, Any]:
     kip, liste = service.urunler()
     return {"kip": kip, "simulasyon": True, "urunler": [u.model_dump() for u in liste]}
 
 
 @router.put("/requirements/{requirement_id}/agent-product")
 def urun_bagla(
-    requirement_id: uuid.UUID, girdi: UrunBaglamaGirdisi, session: DbSession, user: Analyst
+    requirement_id: uuid.UUID, girdi: UrunBaglamaGirdisi, session: DbSession, user: Baglayici
 ) -> dict[str, Any]:
     service.urun_bagla(session, requirement_id, girdi.urun_kodu, user)
     return service.gorunum(session, requirement_id)
 
 
 @router.post("/requirements/{requirement_id}/agent-test", status_code=202)
-def test_baslat(requirement_id: uuid.UUID, session: DbSession, user: Analyst) -> dict[str, Any]:
+def test_baslat(requirement_id: uuid.UUID, session: DbSession, user: Testci) -> dict[str, Any]:
     service.test_baslat(session, requirement_id, user)
     return service.gorunum(session, requirement_id)
 
 
 @router.post("/requirements/{requirement_id}/agent-test/refresh")
-def test_yenile(requirement_id: uuid.UUID, session: DbSession, user: Analyst) -> dict[str, Any]:
+def test_yenile(requirement_id: uuid.UUID, session: DbSession, user: Testci) -> dict[str, Any]:
     service.yenile(session, requirement_id)
     return service.gorunum(session, requirement_id)
 
 
 @router.get("/requirements/{requirement_id}/agent-test")
-def ajan_testi(requirement_id: uuid.UUID, session: DbSession, user: CurrentUser) -> dict[str, Any]:
+def ajan_testi(requirement_id: uuid.UUID, session: DbSession, user: Okur) -> dict[str, Any]:
     return service.gorunum(session, requirement_id)

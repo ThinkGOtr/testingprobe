@@ -48,10 +48,13 @@ ENGEL_TURU = frozenset(
         "check_unknown",  # sınıflandırılamayan kırmızı
         "flaky",  # tekrarların bir kısmı geçti, bir kısmı kırmızı (defect adayı değil)
         "human_rejected",  # mühendis PR'ı reddetti / değişiklik istedi (POST /prs/{n}/review)
+        "test_verisi",  # 013 K19: test verisi atfı çözülemedi (sır tanımsız / katalogda yok)
         "case_changed",  # case onaydan sonra değişti
     }
 )
 BREAK_DURUM = frozenset({"not_started", "running", "passed", "weak", "failed"})
+# 013: üretimi başlatan (portal/MCP düğmesi = elle, case onayı = otomatik)
+TETIK = frozenset({"elle", "otomatik"})
 KONTROL_TUR = frozenset(
     {"local_check", "remap_check", "break_baseline", "break_red", "break_green"}
 )
@@ -79,6 +82,7 @@ class ScriptCodegen(Base):
     __table_args__ = (
         in_check("engel_turu", ENGEL_TURU, "script_codegen_engel_ck", True),
         in_check("break_durum", BREAK_DURUM, "script_codegen_break_ck"),
+        in_check("tetik", TETIK, "script_codegen_tetik_ck"),
         Index("script_codegen_case_ix", "test_case_id"),
     )
 
@@ -102,6 +106,9 @@ class ScriptCodegen(Base):
     ai_call_ids: Mapped[list[Any]] = mapped_column(JSONB, server_default=EMPTY_LIST, default=list)
     bundle_hash: Mapped[str | None]
     sablon_hash: Mapped[str | None]
+    # 011 §2.2: yalnız doğrulanmamış dillerde (csharp | python) render edilen kaynak. Forge'a
+    # commit edilmez; portal buradan gösterir/indirir.
+    kaynak_kod: Mapped[str | None]
     ilk_eslesme: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     eslesme: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     dogrulama: Mapped[list[Any]] = mapped_column(JSONB, server_default=EMPTY_LIST, default=list)
@@ -117,6 +124,11 @@ class ScriptCodegen(Base):
     # `codegen.update_branch` işi dalı günceller (yeni head → PR CI, yeni onay, yeni kırma kanıtı).
     dal: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     break_durum: Mapped[str] = mapped_column(server_default="not_started", default="not_started")
+    # 013 §9/§10: üretimde çözülen test verisi anahtarlarının tuzlu değer özetleri
+    # ({anahtar: "h1:<HMAC-SHA256[:16]>"}; sürüm DEĞİL). Yalnız DEĞER değişince (açıklama/grup/
+    # sürüm değil) portal "veri değişti" uyarısı gösterir (testveri.service.degisen_anahtarlar).
+    veri_izi: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    tetik: Mapped[str] = mapped_column(server_default="elle", default="elle")
     olusturma: Mapped[datetime] = olusturma_col()
     guncelleme: Mapped[datetime] = guncelleme_col()
 

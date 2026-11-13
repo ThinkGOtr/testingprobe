@@ -11,9 +11,11 @@ Kaynak, portalın GET uçlarının servis/serileştirme fonksiyonlarıdır (ayn�
   çağrıları (`ai_call`) özeti.
 - `probe_my_queue {}`: çağıranın rolüne düşen bekleyen işler (`APPROVER_ROLES` + durum makineleri).
 
-- **Rol** yalnızca `AracBaglami.rol`'den (oturum); argümanda rol yoktur. Uç-düzeyi rol kısıtları
-  `UC_ROLLERI`'nde aynen tutulur (ör. `GET /publish/preview` yalnız analist): kısıtlı uca dayanan
-  bölüm başka role **hiç** dönmez (alan adı dahil).
+- **Rol** yalnızca `AracBaglami.rol`'den (oturum); argümanda rol yoktur. Uç-düzeyi kısıtlar
+  izin kataloğundan türetilir (`UC_IZINLERI` → `yetki.roller_icin`; specs/012-rol-yetki §4.3):
+  kısıtlı uca dayanan bölüm başka role **hiç** dönmez (alan adı dahil). Developer yalnız
+  `approved`/`published` case'leri ve yayınlanmış bug'ları görür; `read_own` denetim izni olan
+  roller `probe_audit`'te yalnız kendi olaylarını görür.
 - **Alan izin listesi:** serileştiricinin çıktısından yalnız `*_ALANLARI` kümelerindeki alanlar
   alınır. Token/parola/oturum alanları, `*_url` bağlantıları (modele URL gitmez; §7.3), içerik
   hash'leri ve kişi adları (karar veren, onaylayan, isteyen) listeye girmez.
@@ -35,6 +37,7 @@ from typing import Any
 from sqlalchemy import Text, cast, func, or_, select
 from sqlalchemy.orm import Session
 
+from tp_core.auth import yetki
 from tp_core.features.assistant.tools.base import (
     AracBaglami,
     AracHatasi,
@@ -43,6 +46,7 @@ from tp_core.features.assistant.tools.base import (
 )
 from tp_core.models import (
     AiCall,
+    AppUser,
     AuditEvent,
     BugDraft,
     ExternalRef,
@@ -58,6 +62,7 @@ from tp_core.models import (
 from tp_core.models.codegen_feature import ScriptCodegen
 from tp_core.models.enums import FAILURE_SINIF, RUN_SONUC
 from tp_core.ports import ToolSpec
+from tp_core.workflow.service import Principal
 from tp_core.workflow.states import MACHINES
 
 TURLER: tuple[str, ...] = ("requirement", "case", "script", "run", "failure", "bug_draft")
@@ -80,31 +85,45 @@ MODELLER: dict[str, Any] = {
 }
 
 ROL_ETIKETI: dict[str, str] = {
-    "analyst": "Analist",
-    "engineer": "Mühendis",
-    "presenter": "Sunucu",
-    "po": "Ürün sahibi (PO)",
-    "tester": "Testçi",
+    **{eski: yetki.ROL_ETIKETLERI[yeni] for eski, yeni in yetki.ESKI_ROLLER.items()},
+    **yetki.ROL_ETIKETLERI,
 }
 SISTEM = "sistem"
 
-# Uç → izinli roller (None = oturum açmış her rol). Kaynak: ilgili router'daki `require_role`;
+# Uç → izin (specs/012-rol-yetki §4.2). Router'daki `izin(...)` bağımlılığıyla aynı anahtar;
 # hizalama testi FastAPI rotalarından okur (test_probe_tools::test_uc_rolleri_routerla_ayni).
+# Birden çok izin: herhangi biri yeter (`GET /audit`: tümü ya da yalnız kendi olayları).
+UC_IZINLERI: dict[str, tuple[str, ...]] = {
+    "GET /requirements": ("requirement.read",),
+    "GET /requirements/{req_id}": ("requirement.read",),
+    "GET /cases": ("case.read",),
+    "GET /cases/{case_id}": ("case.read",),
+    "GET /scripts": ("code.read",),
+    "GET /scripts/{script_id}": ("code.read",),
+    "GET /runs": ("run.read",),
+    "GET /runs/{run_id}": ("run.read",),
+    "GET /failures": ("failure.read",),
+    "GET /failures/{failure_id}": ("failure.read",),
+    "GET /bug-drafts": ("bug.read",),
+    "GET /bug-drafts/{draft_id}": ("bug.read",),
+    "GET /publish/preview": ("publish.preview",),
+    "GET /audit": ("audit.read_all", "audit.read_own"),
+}
+
+
+def _uc_rolleri(izinler: tuple[str, ...]) -> frozenset[str] | None:
+    roller = frozenset().union(*(yetki.roller_icin(i) for i in izinler))
+    return None if roller == yetki.ROLLER else roller
+
+
+# Uç → izinli roller (None = oturum açmış her rol); katalogdan türetilir.
 UC_ROLLERI: dict[str, frozenset[str] | None] = {
-    "GET /requirements": None,
-    "GET /requirements/{req_id}": None,
-    "GET /cases": None,
-    "GET /cases/{case_id}": None,
-    "GET /scripts": None,
-    "GET /scripts/{script_id}": None,
-    "GET /runs": None,
-    "GET /runs/{run_id}": None,
-    "GET /failures": None,
-    "GET /failures/{failure_id}": None,
-    "GET /bug-drafts": None,
-    "GET /bug-drafts/{draft_id}": None,
-    "GET /publish/preview": frozenset({"analyst"}),
-    "GET /audit": None,
+    uc: _uc_rolleri(izinler) for uc, izinler in UC_IZINLERI.items()
+}
+# Developer'ın görebildiği durumlar (specs/012-rol-yetki §4.2 `case.read`, `bug.read`).
+DEVELOPER_DURUMLARI: dict[str, frozenset[str]] = {
+    "case": frozenset({"approved", "published"}),
+    "bug_draft": frozenset({"published"}),
 }
 DETAY_UCU: dict[str, str] = {
     "requirement": "GET /requirements/{req_id}",
@@ -304,16 +323,17 @@ REQUIREMENT_KAPILARI: dict[str, Kapi] = {
     "findings_open": Kapi("Tutarlılık bulguları analist kararı bekliyor", "analyst"),
     "doc_final": Kapi("Doküman son hal; PO onayına gönderilmeli", "analyst"),
     "pending_po": Kapi("PO onayı bekleniyor", "po"),
-    "po_approved": Kapi("PO onayladı; case üretimi başlatılmalı", "analyst"),
+    "po_approved": Kapi("PO onayladı; case üretimi başlatılmalı", "tester"),
     "modeling": Kapi("Test tasarım modeli üretiliyor (iki tur)", SISTEM),
-    "model_ready": Kapi("Tasarım modeli kararı ve onaylı modelden case üretimi", "analyst"),
+    "model_ready": Kapi("Tasarım modeli kararı ve onaylı modelden case üretimi", "tester"),
     "generating": Kapi("Case üretimi sürüyor", SISTEM),
-    "cases_ready": Kapi("Case incelemesi ve yayın", "analyst"),
+    "cases_ready": Kapi("Case kararı, son onay ve yayın", "tester"),
     "failed": Kapi("Son işlem başarısız; neden incelenip yeniden denenmeli", "analyst"),
 }
 CASE_KAPILARI: dict[str, Kapi] = {
-    "draft": Kapi("Case kararı bekleniyor (onay / düzelt / ret)", "analyst"),
-    "approved": Kapi("Onaylı; Jira'ya yayın bekleniyor", "analyst"),
+    "draft": Kapi("Testçi kararı bekleniyor (kabul / düzelterek kabul / ret)", "tester"),
+    "ready": Kapi("Analist son onayı bekleniyor (onay / geri gönder)", "analyst"),
+    "approved": Kapi("Onaylı; Jira'ya yayın bekleniyor", "tester"),
 }
 SCRIPT_KAPILARI: dict[str, Kapi] = {
     "pending": Kapi("Kod üretimi kuyrukta", SISTEM),
@@ -367,10 +387,17 @@ class VarlikBulunamadi(AracHatasi):
 
 
 def uc_izinli(rol: str, uc: str) -> bool:
-    if uc not in UC_ROLLERI:
+    if uc not in UC_IZINLERI:
         return False
-    izinli = UC_ROLLERI[uc]
-    return izinli is None or rol in izinli
+    return any(yetki.izinli(rol, i) for i in UC_IZINLERI[uc])
+
+
+def gorunur_mu(rol: str, tur: str, nesne: Any) -> bool:
+    """Rolün okuma süzgeci (developer: onaylı case, yayınlanmış bug)."""
+    kisit = DEVELOPER_DURUMLARI.get(tur)
+    if kisit is None or yetki.normalize_rol(rol) != yetki.DEVELOPER:
+        return True
+    return getattr(nesne, "durum", None) in kisit
 
 
 def _uc_kontrol(rol: str, uc: str) -> None:
@@ -409,7 +436,7 @@ def varlik_bul(session: Session, rol: str, tur: str, id_or_key: Any) -> Any:
     kimlik = _uuid(id_or_key)
     if kimlik is not None:
         nesne = session.get(model, kimlik)
-        if nesne is None:
+        if nesne is None or not gorunur_mu(rol, tur, nesne):
             raise VarlikBulunamadi(f"{tur} bulunamadı: {kimlik}")
         return nesne
     anahtar = id_or_key.strip() if isinstance(id_or_key, str) else ""
@@ -436,7 +463,7 @@ def varlik_bul(session: Session, rol: str, tur: str, id_or_key: Any) -> Any:
             .order_by(ScriptCodegen.script_id)
         ).first()
         nesne = session.get(Script, sid) if sid is not None else None
-    if nesne is None:
+    if nesne is None or not gorunur_mu(rol, tur, nesne):
         raise VarlikBulunamadi(f"{tur} bulunamadı: {anahtar}")
     return nesne
 
@@ -528,7 +555,7 @@ def _po_cevaplari_ozeti(req: Requirement) -> list[str]:
 
 
 def _yayin_onizleme_ozeti(s: Session, req: Requirement) -> list[str]:
-    """`GET /publish/preview` özeti (yalnız analist; çağıran `_uc_kontrol` ile denetler)."""
+    """`GET /publish/preview` özeti (`publish.preview`; çağıran `uc_izinli` ile denetler)."""
     from tp_core.features.publish import service as publish_service
 
     try:
@@ -565,8 +592,9 @@ def _ekran_rotasi(tur: str, nesne: Any) -> str:
 
 def _cases_ready_kapisi(s: Session, req: Requirement) -> Kapi | None:
     """`cases_ready` gereksinimin gerçek bekleyen kapısı (UX4 Bulgu 6): durum kodu tek başına
-    yetmez. Taslak case varsa case incelemesi; yoksa onaylı case'in yayın engeli (ör. P9 denetimi)
-    ya da yayın; her case yayınlandıysa (ya da reddedildiyse) bekleyen kapı yok."""
+    yetmez. Taslak case varsa Testçi kararı, `ready` case varsa Analist son onayı; yoksa onaylı
+    case'in yayın engeli (ör. P9 denetimi) ya da yayın; her case yayınlandıysa (ya da
+    reddedildiyse) bekleyen kapı yok."""
     from tp_core.features.publish.service import _engel
 
     caseler = s.scalars(
@@ -575,17 +603,21 @@ def _cases_ready_kapisi(s: Session, req: Requirement) -> Kapi | None:
             TestCase.durum.notin_(("superseded", "rejected")),
         )
     ).all()
+    # 012 iki adım: taslak → Testçi kararı, `ready` → Analist son onayı; yayın Testçinin.
     taslak = sum(1 for c in caseler if c.durum == "draft")
     if taslak:
-        return Kapi(f"Case incelemesi ({taslak} case karar bekliyor)", "analyst")
+        return Kapi(f"Case incelemesi ({taslak} case Testçi kararı bekliyor)", "tester")
+    hazir = sum(1 for c in caseler if c.durum == "ready")
+    if hazir:
+        return Kapi(f"Analist son onayı ({hazir} case bekliyor)", "analyst")
     onayli = [c for c in caseler if c.durum == "approved"]
     if not onayli:
         return None
     for c in onayli:
         engel = _engel(s, c)
         if engel:
-            return Kapi(f"Yayın engeli: {_kirp(engel, 200)}", "analyst")
-    return Kapi(f"Onaylı {len(onayli)} case'in Jira'ya yayını", "analyst")
+            return Kapi(f"Yayın engeli: {_kirp(engel, 200)}", "tester")
+    return Kapi(f"Onaylı {len(onayli)} case'in Jira'ya yayını", "tester")
 
 
 def _kapi(tur: str, nesne: Any, s: Session | None = None) -> Kapi | None:
@@ -604,13 +636,17 @@ def _kapi(tur: str, nesne: Any, s: Session | None = None) -> Kapi | None:
     return BUG_DRAFT_KAPILARI.get(nesne.durum)
 
 
-def _detay_ham(s: Session, tur: str, nesne: Any) -> dict[str, Any]:
+def _detay_ham(s: Session, rol: str, tur: str, nesne: Any) -> dict[str, Any]:
+    """Uçla aynı rol görünümü: developer kısıtlı case/bug görünümü, maskeli koşu (izin yoksa)."""
+    gelistirici = yetki.normalize_rol(rol) == yetki.DEVELOPER
     if tur == "requirement":
         return _requirement_ham(s, nesne)
     if tur == "case":
         from tp_core.features.cases import service as cases_service
 
-        return cases_service.serialize_cases(s, [nesne])[0]
+        kim = Principal(id=None, kullanici_adi="asistan", rol=rol, kanal="assistant")
+        rows = cases_service.serialize_cases(s, [nesne], kim)
+        return rows[0] if rows else {}
     if tur == "script":
         from tp_core.features.codegen import views
 
@@ -621,11 +657,11 @@ def _detay_ham(s: Session, tur: str, nesne: Any) -> dict[str, Any]:
     if tur == "run":
         from tp_core.features.ci import service as ci_service
 
-        return ci_service.serialize_runs(s, [nesne])[0]
+        return ci_service.serialize_runs(s, [nesne], artefakt=yetki.izinli(rol, "run.artifacts"))[0]
     if tur == "failure":
         from tp_core.features.triage import service as triage_service
 
-        return triage_service.get_failure(s, nesne.id) or {}
+        return triage_service.get_failure(s, nesne.id, yalniz_yayinlanmis_bug=gelistirici) or {}
     from tp_core.features.bugs import serialize as bugs_serialize
 
     return bugs_serialize.bug_draft_view(s, nesne)
@@ -652,7 +688,7 @@ def _son_hata(s: Session, tur: str, nesne: Any, ham: Mapping[str, Any]) -> str |
 def probe_detay(s: Session, rol: str, tur: str, nesne: Any) -> list[str]:
     """`probe_get` gövdesi (satırlar). Öneri motoru aynı veriyi buradan okuyabilir."""
     _uc_kontrol(rol, DETAY_UCU[tur])
-    ham = _detay_ham(s, tur, nesne)
+    ham = _detay_ham(s, rol, tur, nesne)
     alanlar = alanlari_sec(ham, DETAY_ALANLARI[tur])
     satirlar = _satirlar(f"{tur} {nesne.id}", alanlar)
     kapi = _kapi(tur, nesne, s)
@@ -719,9 +755,12 @@ def _liste_satiri(s: Session, tur: str, n: Any) -> str:
     return f"- {n.id} | {durum} | {etiket} | {_ekran_rotasi(tur, n)}"
 
 
-def _liste_sorgusu(tur: str, durum: str | None) -> Any:
+def _liste_sorgusu(tur: str, durum: str | None, rol: str | None = None) -> Any:
     model = MODELLER[tur]
     q = select(model)
+    kisit = DEVELOPER_DURUMLARI.get(tur)
+    if kisit is not None and rol is not None and yetki.normalize_rol(rol) == yetki.DEVELOPER:
+        q = q.where(model.durum.in_(sorted(kisit)))
     if durum is not None:
         if tur == "run":
             q = q.where(Run.sonuc == durum)
@@ -745,18 +784,15 @@ class BekleyenIs:
 
 
 def _kuyruk_kaynaklari(rol: str) -> list[tuple[str, Any, Callable[[Any], str]]]:
-    """(tür, sorgu, neden) — rolün kapısındaki varlıklar (APPROVER_ROLES + durum makineleri)."""
+    """(tür, sorgu, neden) — rolün kapısındaki varlıklar (izin kataloğu + durum makineleri).
+
+    Görev dağılımı specs/012-rol-yetki §3 ve §5'tedir: Testçi case kararı/yayını ve bug kararı,
+    Analist gereksinim incelemesi ve case son onayı, PO yalnız Jira'dan teyit.
+    """
+    rol = yetki.normalize_rol(rol)
     out: list[tuple[str, Any, Callable[[Any], str]]] = []
-    if rol == "analyst":
-        for durum in (
-            "findings_open",
-            "doc_final",
-            "po_approved",
-            "model_ready",
-            "cases_ready",
-            "failed",
-            "new",
-        ):
+    if rol == yetki.ANALYST:
+        for durum in ("findings_open", "doc_final", "failed", "new"):
             out.append(
                 (
                     "requirement",
@@ -767,22 +803,23 @@ def _kuyruk_kaynaklari(rol: str) -> list[tuple[str, Any, Callable[[Any], str]]]:
         out.append(
             (
                 "case",
-                select(TestCase).where(TestCase.durum == "draft"),
-                lambda _n: CASE_KAPILARI["draft"].ad,
+                select(TestCase).where(TestCase.durum == "ready"),
+                lambda _n: CASE_KAPILARI["ready"].ad,
             )
         )
-    elif rol == "po":
+    elif rol == yetki.PO:
         out.append(
             (
                 "requirement",
                 select(Requirement).where(Requirement.durum == "pending_po"),
                 lambda n: (
-                    "PO onayı bekleniyor"
-                    + (" (Jira'da etiketle)" if n.kaynak == "jira" else " (portalda)")
+                    "PO onayı bekleniyor (Jira'da etiketle)"
+                    if n.kaynak == "jira"
+                    else "PO onayı bekleniyor (serbest metin; portalda)"
                 ),
             )
         )
-    elif rol == "engineer":
+    elif rol == yetki.ENGINEER:
         for durum in ("pr_open", "blocked", "failed"):
             out.append(
                 (
@@ -804,7 +841,23 @@ def _kuyruk_kaynaklari(rol: str) -> list[tuple[str, Any, Callable[[Any], str]]]:
         out.append(
             ("run", select(Run).where(Run.sonuc == "error"), lambda _n: RUN_KAPILARI["error"].ad)
         )
-    elif rol == "tester":
+    elif rol == yetki.TESTER:
+        for durum in ("po_approved", "model_ready", "cases_ready"):
+            out.append(
+                (
+                    "requirement",
+                    select(Requirement).where(Requirement.durum == durum),
+                    lambda _n, d=durum: REQUIREMENT_KAPILARI[d].ad,
+                )
+            )
+        for durum in ("draft", "approved"):
+            out.append(
+                (
+                    "case",
+                    select(TestCase).where(TestCase.durum == durum),
+                    lambda _n, d=durum: CASE_KAPILARI[d].ad,
+                )
+            )
         out.append(
             (
                 "bug_draft",
@@ -821,12 +874,12 @@ def _kuyruk_kaynaklari(rol: str) -> list[tuple[str, Any, Callable[[Any], str]]]:
                 lambda n: (_failure_kapisi(n) or Kapi("-", "tester")).ad,
             )
         )
-    elif rol == "presenter":
+    elif rol == yetki.ADMIN:
         out.append(
             (
                 "run",
                 select(Run).where(Run.sonuc == "error"),
-                lambda _n: "Koşu ortam hatasıyla bitti; mühendis inceliyor",
+                lambda _n: "Koşu ortam hatasıyla bitti; Automation Engineer inceliyor",
             )
         )
     return out
@@ -915,7 +968,7 @@ def probe_list(baglam: AracBaglami, **arg: Any) -> AracSonucu:
         raise AracHatasi(f"'durum' {tur} için şunlardan biri olmalı: {gecerli}")
     limit = _limit(arg.get("limit"), LISTE_UST, 10)
     with _db(baglam) as s:
-        sorgu = _liste_sorgusu(tur, durum)
+        sorgu = _liste_sorgusu(tur, durum, baglam.rol)
         toplam = int(s.scalar(select(func.count()).select_from(sorgu.subquery())) or 0)
         satirlar = [_liste_satiri(s, tur, n) for n in s.scalars(sorgu.limit(limit))]
     ust = f"{tur} listesi" + (f" (durum={durum})" if durum else "") + f": {toplam} kayıt"
@@ -934,7 +987,11 @@ def _varlik_id_arg(arg: Mapping[str, Any]) -> uuid.UUID:
 
 def _erisilebilir_varlik(s: Session, rol: str, vid: uuid.UUID) -> str:
     tur = _varlik_turu(s, vid)
-    if tur is None or not uc_izinli(rol, DETAY_UCU[tur]):
+    if (
+        tur is None
+        or not uc_izinli(rol, DETAY_UCU[tur])
+        or not gorunur_mu(rol, tur, s.get(MODELLER[tur], vid))
+    ):
         raise VarlikBulunamadi(f"varlık bulunamadı: {vid}")
     return tur
 
@@ -991,23 +1048,28 @@ def probe_audit(baglam: AracBaglami, **arg: Any) -> AracSonucu:
     with _db(baglam) as s:
         tur = _erisilebilir_varlik(s, baglam.rol, vid)
         nesne = s.get(MODELLER[tur], vid)
-        olaylar = s.scalars(
-            select(AuditEvent)
-            .where(AuditEvent.nesne == f"{TABLO[tur]}:{vid}")
-            .order_by(AuditEvent.id.desc())
-            .limit(limit)
-        ).all()
+        olay_sorgusu = select(AuditEvent).where(AuditEvent.nesne == f"{TABLO[tur]}:{vid}")
+        if not yetki.izinli(baglam.rol, "audit.read_all"):
+            # `audit.read_own`: yalnız çağıranın kendi olayları (GET /audit ile aynı kapsam).
+            kendi = s.scalar(select(AppUser.kullanici_adi).where(AppUser.id == baglam.kullanici_id))
+            olay_sorgusu = olay_sorgusu.where(AuditEvent.aktor == (kendi or ""))
+        olaylar = s.scalars(olay_sorgusu.order_by(AuditEvent.id.desc()).limit(limit)).all()
         satirlar = [f"{tur} {vid} denetim izi (yeniden eskiye, en çok {limit}):"]
         for o in olaylar:
             satirlar.append(f"- {o.zaman.isoformat()} | {o.eylem} | {_ozet_metni(o.ozet)}")
         if not olaylar:
             satirlar.append("- kayıt yok")
-        kararlar = s.scalars(
-            select(Review)
-            .where(Review.nesne_turu == TABLO[tur], Review.nesne_id == vid)
-            .order_by(Review.sira.desc())
-            .limit(limit)
-        ).all()
+        # Developer karar geçmişini görmez (specs/012-rol-yetki §4.2 `case.read`).
+        kararlar = (
+            []
+            if yetki.normalize_rol(baglam.rol) == yetki.DEVELOPER
+            else s.scalars(
+                select(Review)
+                .where(Review.nesne_turu == TABLO[tur], Review.nesne_id == vid)
+                .order_by(Review.sira.desc())
+                .limit(limit)
+            ).all()
+        )
         if kararlar:
             satirlar.append("kararlar (onay/ret):")
             for r in kararlar:

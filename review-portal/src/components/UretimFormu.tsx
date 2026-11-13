@@ -272,7 +272,7 @@ export function UretimFormu({
         {islem.hata && <HataKutusu hata={islem.hata} kaynak={islem.hataNesnesi} />}
 
         <div className="satir-ogeler">
-          <IslemDugmesi roller={["analyst"]} type="submit" calisiyor={islem.calisiyor}>
+          <IslemDugmesi izin="case.generate" type="submit" calisiyor={islem.calisiyor}>
             Üretimi başlat
           </IslemDugmesi>
           <button type="button" className="dugme dugme-ikincil" onClick={kapat}>

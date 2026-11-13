@@ -118,7 +118,9 @@ def test_normalize_buyuk_kucuk_ve_bosluk_duzeltme_sayilmaz() -> None:
 
 
 def test_ilk_karar_kabul_mu() -> None:
-    assert metrics.first_decision_accepted("approve", None)
+    assert metrics.first_decision_accepted("accept", None)
+    assert metrics.first_decision_accepted("approve", None)  # 012 öncesi kayıtlar
+    assert not metrics.first_decision_accepted("send_back", None)
     assert metrics.first_decision_accepted("edit", {"kucuk_duzeltme": True})
     assert not metrics.first_decision_accepted("edit", {"kucuk_duzeltme": False})
     assert not metrics.first_decision_accepted("reject", None)

@@ -36,7 +36,8 @@ from sqlalchemy import Engine, exists, func, select
 from sqlalchemy.orm import Session
 
 from tp_core.audit import audit_on_commit
-from tp_core.auth.deps import CurrentUser, DbSession, require_role
+from tp_core.auth.deps import DbSession
+from tp_core.auth.yetki import izin
 from tp_core.events.bus import publish_tx
 from tp_core.features.cases.schema import (
     acceptance_criteria,
@@ -745,18 +746,19 @@ def rerun(session: Session, requirement_id: uuid.UUID, user: Principal) -> dict[
 # --------------------------------------------------------------------------- API
 
 router = APIRouter(tags=["cases"])
-Analyst = Annotated[Principal, Depends(require_role("analyst"))]
+# 012 (dev birleştirmesi): P8 yeniden çalıştırma `case.generate` (Testçi); okuma
+# `case.analysis_read`.
+Uretici = Annotated[Principal, Depends(izin("case.generate"))]
+Analiz = Annotated[Principal, Depends(izin("case.analysis_read"))]
 
 
 @router.get("/requirements/{requirement_id}/case-review")
-def get_case_review(
-    requirement_id: uuid.UUID, session: DbSession, _user: CurrentUser
-) -> dict[str, Any]:
+def get_case_review(requirement_id: uuid.UUID, session: DbSession, _user: Analiz) -> dict[str, Any]:
     return view(session, requirement_id)
 
 
 @router.post("/requirements/{requirement_id}/case-review", status_code=202)
 def post_case_review(
-    requirement_id: uuid.UUID, session: DbSession, user: Analyst
+    requirement_id: uuid.UUID, session: DbSession, user: Uretici
 ) -> dict[str, Any]:
     return rerun(session, requirement_id, user)

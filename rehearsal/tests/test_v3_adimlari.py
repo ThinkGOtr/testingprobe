@@ -1,4 +1,4 @@
-"""011 K15: iki tur (tasarım modeli → analist onayı → case), otomatik review, denetim kapısı."""
+"""011 K15: iki tur (tasarım modeli → Testçi onayı → case), otomatik review, denetim kapısı."""
 
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ def _model(durum: str = "draft", **ek: Any) -> dict[str, Any]:
         "uretim_modu": "replay",
         "sorunlar": [],
         "ozet": {"oge": steps.MODEL_OGE_SAYISI},
-        "kararlar": [{"karar": "approve", "kullanici": "analist"}] if durum == "approved" else [],
+        "kararlar": [{"karar": "approve", "kullanici": "testci"}] if durum == "approved" else [],
         **ek,
     }
 
@@ -65,7 +65,7 @@ def test_model_uret_iki_tur_govdesi_ve_kontroller(baglam):
     )
     b = _hazir(baglam(), api)
     steps.model_uret(b)
-    assert api.postlar == [("analist", f"/requirements/{RID}/generate-cases", {"kip": "iki_tur"})]
+    assert api.postlar == [("testci", f"/requirements/{RID}/generate-cases", {"kip": "iki_tur"})]
     assert {k.sonuc for k in b.kontroller} == {PASS}
     assert b.veri["model"]["id"] == "m1"
 
@@ -111,7 +111,7 @@ def test_model_onayi_hash_ile_onaylar(baglam):
     b.veri["model"] = _model()
     steps.model_onayi(b)
     assert api.postlar == [
-        ("analist", "/design-models/m1/decision", {"karar": "approve", "icerik_hash": "h1"})
+        ("testci", "/design-models/m1/decision", {"karar": "approve", "icerik_hash": "h1"})
     ]
     assert {k.sonuc for k in b.kontroller} == {PASS}
 

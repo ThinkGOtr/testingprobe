@@ -2,12 +2,16 @@ import { useMemo, useState } from "react";
 import { api } from "../api/client";
 import { ortamAdlariniGizle } from "../api/http";
 import { BosDurum, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
-import { useKisiAdi } from "../auth";
+import { useIzin, useKisiAdi } from "../auth";
 import { useVeri } from "../hooks";
 import { kisaHash, tarih } from "../lib/format";
 
 export function Denetim() {
-  const v = useVeri(() => api.denetim(true), []);
+  // Tüm kayıt + zincir doğrulaması: Sistem Yöneticisi ve Denetçi (`audit.read_all`, `audit.verify`).
+  // Diğer roller yalnız kendi olaylarını görür (`audit.read_own`; core süzer).
+  const tumu = useIzin("audit.read_all");
+  const dogrulayabilir = useIzin("audit.verify");
+  const v = useVeri(() => api.denetim(dogrulayabilir), [dogrulayabilir]);
   const [ara, setAra] = useState("");
   const kisiAdi = useKisiAdi();
   const olaylar = useMemo(() => {
@@ -23,11 +27,17 @@ export function Denetim() {
     <>
       <SayfaBasligi
         baslik="Denetim kaydı"
-        aciklama="Her AI çağrısı, araç çağrısı, onay ve ret append-only kayıttadır; her olay bir öncekinin hash'ine zincirlenir."
+        aciklama={
+          tumu
+            ? "Her AI çağrısı, araç çağrısı, onay ve ret append-only kayıttadır; her olay bir öncekinin hash'ine zincirlenir."
+            : "Yalnız sizin olaylarınız gösterilir. Tüm kayıt ve zincir doğrulaması Sistem Yöneticisi ve Denetçi rolündedir."
+        }
         eylemler={
-          <IslemDugmesi tur="ikincil" calisiyor={v.yukleniyor} onClick={() => void v.yenile()}>
-            Zinciri yeniden doğrula
-          </IslemDugmesi>
+          dogrulayabilir && (
+            <IslemDugmesi izin="audit.verify" tur="ikincil" calisiyor={v.yukleniyor} onClick={() => void v.yenile()}>
+              Zinciri yeniden doğrula
+            </IslemDugmesi>
+          )
         }
       />
       {v.yukleniyor && !v.veri ? (
@@ -46,11 +56,11 @@ export function Denetim() {
                 {dg.kontrol_edilen} olay kontrol edildi · ilk kırık kayıt <span className="mono">{dg.ilk_kirik_id}</span>. Denetim kaydı değiştirilmiş olabilir.
               </Uyari>
             )
-          ) : (
+          ) : dogrulayabilir ? (
             <Uyari ton="bilgi">Zincir doğrulaması yapılmadı.</Uyari>
-          )}
+          ) : null}
           <Kart
-            baslik={`Olaylar (${olaylar.length})`}
+            baslik={tumu ? `Olaylar (${olaylar.length})` : `Olaylarınız (${olaylar.length})`}
             eylemler={
               <div className="alan alan-satir">
                 <label htmlFor="denetim-ara" className="gorunmez">

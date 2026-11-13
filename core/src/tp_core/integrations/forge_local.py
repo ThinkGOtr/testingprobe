@@ -11,7 +11,10 @@
   `MergeResult`'a yazılır. Bot (`tp-bot`) merge edemez. Uygulama (Java + Appium) kontrolleri
   platform başınadır (`local-ci-android|ios|windows`, 009 §2.7): head için kaydedilmiş her biri
   de zorunludur; yalnızca `e2e-app/` değiştiren PR web `local-ci` yerine en az bir platform
-  kontrolü ister (`forge.local_required_checks`). Liste `TP_REQUIRED_CHECKS` ile değişir.
+  kontrolü ister (`forge.local_required_checks`). Web'de check adı dile göredir (011 K-T1):
+  `e2e/` (TS) değiştiren PR `local-ci`, `e2e-java/` (Playwright for Java) değiştiren PR
+  `local-ci-web-java` ister (yalnız `e2e-java/` değiştiren PR web `local-ci`'ı istemez). Liste
+  `TP_REQUIRED_CHECKS` ile değişir.
 - Güncel dal kuralı (GitHub "require branches to be up to date" / strict status checks): PR dalı
   `main`'in güncel head'ini içermiyorsa merge reddedilir — aksi halde hiçbir kontrolün koşmadığı
   bir birleşim ağacı `main`'e girerdi. Dal `update_branch` ile güncellenir (yeni head → PR CI'ı
@@ -66,6 +69,7 @@ from tp_core.integrations.forge import (
     validate_query,
     validate_ref,
     validate_required_checks,
+    yerel_repodaki_web_dilleri,
 )
 from tp_core.ports import CheckRun, PullRequest
 
@@ -179,8 +183,10 @@ class LocalForge:
             env.get("TP_FORGE_PATH") or DEFAULT_FORGE_PATH,
             env.get("TP_ARTIFACTS_PATH") or DEFAULT_ARTIFACTS_PATH,
             env.get("TP_FORGE_PRS_PATH") or None,
-            # MIMARI-SOZLESME: `TP_REQUIRED_CHECKS` boş = `local-ci` (ör. platform kontrolünü her
-            # PR'da zorunlu kılmak için `local-ci,local-ci-android`).
+            # MIMARI-SOZLESME: `TP_REQUIRED_CHECKS` boş = `local-ci`; yalnız HER PR'da zorunlu
+            # kontroller içindir (ör. `local-ci,local-ci-android`). PR'a göre gereken kontroller
+            # (`local-ci-web-java`, `local-ci-<platform>`, K-T11 dilleri) kapıda otomatik eklenir
+            # (`forge.local_required_checks`); listeye yazılmaz.
             required_checks=parse_required_checks(
                 env.get(REQUIRED_CHECKS_ENV), LOCAL_REQUIRED_CHECKS
             ),
@@ -554,11 +560,18 @@ class LocalForge:
                 raise ForgeNotFoundError(f"temel dal bulunamadı: {rec['base']}")
 
             checks = self.checks(head)
-            # Platform başına kapı (009 §2.7): kayıtlı uygulama kontrolleri de zorunlu; yalnızca
-            # e2e-app/ değiştiren PR web local-ci yerine platform kontrolü ister.
+            # Platform/dil başına kapı (009 §2.7, 011 K-T1): kayıtlı uygulama / web + Java
+            # kontrolleri de zorunlu; e2e-java/ değiştiren PR local-ci-web-java ister.
             fark_tabani = self._merge_base(base_head, head)
-            degisen = self.changed_paths(fark_tabani, head) if is_sha(fark_tabani) else []
-            zorunlu, platform_eksik = local_required_checks(self.required_checks, checks, degisen)
+            # Ortak ata yoksa fark bilinmiyor (None): kapı KAPALI tarafa düşer (tüm tam hat
+            # dillerinin check'i zorunlu; `local_required_checks`).
+            degisen = self.changed_paths(fark_tabani, head) if is_sha(fark_tabani) else None
+            # K-T11: test kökleri dışı değişiklik CI'ın koşacağı dillerin check'ini ister
+            # (`platform.degisen_web_dilleri`; repo okunamazsa kapalı taraf).
+            repodaki = yerel_repodaki_web_dilleri(self.list_files, head)
+            zorunlu, platform_eksik = local_required_checks(
+                self.required_checks, checks, degisen, repodaki
+            )
             verdict = evaluate_required_checks(checks, zorunlu)
             ihlaller: list[str] = []
             nedenler = [r for r in (verdict.reason() if not verdict.passed else "",

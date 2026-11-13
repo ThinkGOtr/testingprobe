@@ -1,20 +1,20 @@
-# gitleaks yapılandırması: varsayılan kurallar aynen geçerli (useDefault); yalnız aşağıdaki dar
-# istisna eklenir. Gerçek sır için istisna eklenmez. Tekil yanlış alarmlar .gitleaksignore'da.
+# gitleaks yapılandırması: varsayılan kurallar aynen, yalnız belgelenmiş yanlış alarm izinli.
+# `.gitleaksignore` commit önekli parmak izleri tutar ve `gitleaks dir` (security-check 4b, commit
+# edilmemiş içerik) taramasında eşleşmez; aynı yanlış alarm burada kural düzeyinde tanımlanır.
+# Not: genel `[[allowlists]]` içindeki `paths` dosyayı bütünüyle atlar; bu yüzden yol koşulu yok,
+# izin yalnız `generic-api-key` bulgusunun eşleşmesine uygulanır (aynı satırdaki gerçek sır yakalanır).
 [extend]
 useDefault = true
 
-# Eval çağrı defterleri (rules/evaluation/results/*.calls.jsonl): asistan araç argümanındaki
-# "id_or_key": "<UUID>" kayıt kimliğidir, sır değildir. Varsayılan generic-api-key kuralına
-# eklenen istisna (kuralın deseni değişmez) iki koşulun ikisini de ister (AND):
-#   - dosya yalnız bu dizindeki bir .calls.jsonl olmalı,
-#   - eşleşmenin tamamı id_or_key + kanonik küçük harf UUID olmalı.
-# Aynı dosyada, hatta aynı satırda başka bir anahtar/değer (ör. "api_key": "...", ya da
-# id_or_key içinde UUID olmayan bir değer) yine yakalanır.
 [[rules]]
 id = "generic-api-key"
-[[rules.allowlists]]
-description = "eval çağrı defterlerinde id_or_key kayıt UUID'si"
-condition = "AND"
-paths = ['''(^|/)rules/evaluation/results/[^/]+\.calls\.jsonl$''']
-regexTarget = "match"
-regexes = ['''^id_or_key"\s*:\s*"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"$''']
+
+  [[rules.allowlists]]
+  description = "eval çağrı defteri: id_or_key alanı kayıt UUID'si / Jira anahtarıdır, sır değil"
+  regexTarget = "match"
+  regexes = ['''^id_or_key"\s*:\s*"(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[A-Z][A-Z0-9]+-[0-9]+)"$''']
+
+  [[rules.allowlists]]
+  description = "sayaç alanı (ör. 'bekleyen_kapi yok, bulgu_acik=0' — 'kapi' içindeki 'api' anahtar sözcük sanılır): değer 'ad=küçük sayı', sır olamaz"
+  regexTarget = "secret"
+  regexes = ['''^[a-z_]{3,30}=[0-9]{1,6}\.?$''']

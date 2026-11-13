@@ -116,8 +116,9 @@ async function sonCevap(p: Locator): Promise<Locator> {
 }
 
 /** Hazır (modelsiz) cevap kartının ortak beklentileri: ücret yok, derin inceleme yok, sahte canlı yok. */
-async function hazirCevap(kart: Locator, not: string) {
-  await expect(kart.getByText(not, { exact: true })).toBeVisible();
+async function hazirCevap(kart: Locator, rozet: "ŞABLON" | "MODEL KAPALI") {
+  // 013 §7: hazır cevap tek kip rozetiyle işaretlenir (açıklaması görünür küçük metin).
+  await expect(kart.getByTestId("kip-rozeti")).toHaveText(rozet);
   await expect(kart.getByText(/Maliyet: ölçülmedi/)).toBeVisible();
   await expect(kart.getByRole("button", { name: /Daha ayrıntılı incele/ })).toHaveCount(0);
   await expect(kart.getByText("Bilgi amaçlıdır; kararı ilgili ekranda verin.")).toBeVisible();
@@ -177,14 +178,14 @@ test("analist (model kapalı): S2 sözlük, S3 şablon, kapalı kip mesajı, S12
   await expect(p.getByLabel("Soruya eklenecek bağlam").getByText(/^Son hata:/)).toBeVisible();
   await p.getByRole("list", { name: "Soru önerileri" }).getByRole("button", { name: "Az önceki hata ne demek?" }).click();
   let kart = await sonCevap(p);
-  await hazirCevap(kart, "Hazır cevap · hata sözlüğü");
+  await hazirCevap(kart, "ŞABLON");
   await expect(kart.getByText("Kayıt bulunamadı", { exact: true })).toBeVisible();
   await expect(kart.getByText(/^Ne yapmalı: /)).toBeVisible();
   await page.screenshot({ path: `${EKRAN_DIZINI}/01-s2-sozluk.png` });
 
   // --- S3: kayıt durumu şablonu (modelsiz): bekleyen kapı + sorumlu + ekran bağlantısı.
   kart = await sor(await sohbetAc(page), "TPD-3 neden case üretimine geçmiyor?");
-  await hazirCevap(kart, "Hazır cevap · kayıt durumu");
+  await hazirCevap(kart, "ŞABLON");
   await expect(kart.getByText(/^TPD-3 · Gereksinim/)).toBeVisible();
   await expect(kart.getByRole("link", { name: /^Git: Gereksinim ekranı$/ })).toBeVisible();
   await expect(kart.getByText("Kaynakla doğrulandı").first()).toBeVisible();
@@ -196,7 +197,7 @@ test("analist (model kapalı): S2 sözlük, S3 şablon, kapalı kip mesajı, S12
 
   // --- Kapalı kip: şablon/sözlük dışı soru modele gitmez, sabit mesaj döner.
   kart = await sor(await sohbetAc(page), "Flaky test nasıl ayıklanır?");
-  await hazirCevap(kart, "Hazır cevap");
+  await hazirCevap(kart, "MODEL KAPALI");
   await expect(kart.getByText(KAPALI_METNI)).toBeVisible();
   await durustluk(page);
   await page.screenshot({ path: `${EKRAN_DIZINI}/03-kapali-kip.png` });
@@ -246,7 +247,7 @@ test("testçi (model kapalı): S6 bugün ne yapmalıyım, S3 şablon, kapalı ki
   await expect(p.getByText("HAZIR CEVAPLAR", { exact: true })).toBeVisible();
   await p.getByRole("list", { name: "Soru önerileri" }).getByRole("button", { name: "Bugün ne yapmalıyım?" }).click();
   let kart = await sonCevap(p);
-  await hazirCevap(kart, "Hazır cevap · kayıt durumu");
+  await hazirCevap(kart, "ŞABLON");
   await expect(kart.getByText("Kaynakla doğrulandı").first()).toBeVisible();
   await durustluk(page);
   await page.screenshot({ path: `${EKRAN_DIZINI}/05-s6-testci.png` });
@@ -256,13 +257,13 @@ test("testçi (model kapalı): S6 bugün ne yapmalıyım, S3 şablon, kapalı ki
 
   // --- S3 testçi gözüyle: aynı şablon (rol bağımsız kayıt durumu).
   kart = await sor(await sohbetAc(page), "TPD-3 neden bekliyor?");
-  await hazirCevap(kart, "Hazır cevap · kayıt durumu");
+  await hazirCevap(kart, "ŞABLON");
   await expect(kart.getByText(/^TPD-3 · Gereksinim/)).toBeVisible();
 
   // --- Kapalı kip mesajı.
   p = await sohbetAc(page);
   kart = await sor(p, "Demo uygulamasında kampanya indirimi nasıl hesaplanıyor?");
-  await hazirCevap(kart, "Hazır cevap");
+  await hazirCevap(kart, "MODEL KAPALI");
   await expect(kart.getByText(KAPALI_METNI)).toBeVisible();
 
   // --- Öneri paneli: testçinin kuralı olan bir ekranda (bug taslağı kararı) düğme ve kart.

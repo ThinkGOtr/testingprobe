@@ -67,7 +67,11 @@ CurrentUser = Annotated[Principal, Depends(current_user)]
 
 
 def require_role(*roller: str) -> Callable[[Principal], Principal]:
-    """Yalnızca verilen rollerden birine izin veren bağımlılık (MIMARI-SOZLESME §5 rol sütunu)."""
+    """KULLANIMDAN KALKTI: yerine `tp_core.auth.yetki.izin("<izin>")` (specs/012-rol-yetki §4.3).
+
+    Yalnızca verilen rollerden birine izin verir; reddi denetime yazmaz. Case/yayın/token uçları
+    S2 şeridi birleşene kadar kullanır; yeni uçta kullanılmaz (katalog testi izin ister).
+    """
     if not roller:
         raise ValueError("en az bir rol verilmeli")
     izinli = frozenset(roller)

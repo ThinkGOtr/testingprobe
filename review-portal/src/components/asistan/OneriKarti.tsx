@@ -11,7 +11,9 @@ import { goreliZaman, guvenliDisAdres } from "../../lib/format";
 import { uygulamaRotasiMi } from "../../lib/rotalar";
 import { useBildirim } from "../Bildirim";
 import { Ikon } from "../Ikon";
+import type { Rol } from "../../api/types";
 import { acSekme, oneriSohbeti, paneliKapat } from "./kontrol";
+import { rolRotasiAcik } from "./rolRotalari";
 
 export const NEDEN_SORUSU = "Bu öneriyi neden yapmalıyım, yapmazsam ne olur?";
 
@@ -381,8 +383,10 @@ export function aiOneriSorusu(baslik: string, neden: string): string {
  * "Neden? Sor" yerine "Bunu sor": başlık ve gerekçe, öneriyi üreten sohbette (verildiyse) soru
  * olarak sorulur; hazır soru çipleri aynı sohbete gider.
  */
-export function AiOneriKarti({ oneri, onGit, sohbetId }: { oneri: AsistanOnerisi; onGit?: () => void; sohbetId?: string }) {
-  const k = aiOnerisiKarta(oneri);
+export function AiOneriKarti({ oneri, onGit, sohbetId, rol }: { oneri: AsistanOnerisi; onGit?: () => void; sohbetId?: string; rol?: Rol | null }) {
+  const ham = aiOnerisiKarta(oneri);
+  // Rol süzgeci yalnız rol biliniyorsa (`rol` verilmeyen çağıranlar eski davranışı korur).
+  const k = rol !== undefined && ham.eylem.tur === "rota" && !rolRotasiAcik(ham.eylem.rota ?? "", rol) ? { ...ham, eylem: { tur: "bilgi" as const } } : ham;
   const baslikId = useId();
   const jiraEylemi = JIRA_EYLEMLERI.has(k.eylem.tur);
   const sor = (soru: string) => acSekme("sohbet", { soru, ...(sohbetId ? { sohbetId } : {}) });

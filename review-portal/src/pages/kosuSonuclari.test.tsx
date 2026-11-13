@@ -1,6 +1,6 @@
 // Koşu detayı: test sonucu süzgeci (saf fonksiyonlar), satır ayrıntısı (adımlar, stack, ekler),
 // CI adımları özeti ve GitHub koşusunda yerel rapor kopyası / GitHub yedeği (canlı core şekli).
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -17,12 +17,12 @@ const OPENAPI = {
   paths: Object.fromEntries(["/auth/me", "/auth/login", "/runs", "/runs/{run_id}", "/events"].map((p) => [p, { get: {}, post: {} }])),
 };
 
-function sahteCore(ek: Record<string, unknown>) {
+function sahteCore(ek: Record<string, unknown>, me: Record<string, unknown> = { id: "u1", kullanici_adi: "analyst", rol: "analyst" }) {
   return vi.fn().mockImplementation((url: string) => {
     const j = (status: number, govde: unknown) =>
       Promise.resolve(new Response(JSON.stringify(govde), { status, headers: { "Content-Type": "application/json" } }));
     if (url === "/api/openapi.json") return j(200, OPENAPI);
-    if (url === "/api/auth/me") return j(200, { id: "u1", kullanici_adi: "analyst", rol: "analyst" });
+    if (url === "/api/auth/me") return j(200, me);
     const yol = url.replace(/^\/api/, "").split("?")[0];
     if (yol in ek) return j(200, ek[yol]);
     return j(404, { detail: "Not Found" });
@@ -286,14 +286,26 @@ describe("koşu detayı (canlı core şekli)", () => {
     expect(metin({ ...temel, kaynak: "local", durum: "running", sauce_durum: null })).toBe("");
   });
 
-  it("Koşular: iki tetik düğmesinin açıklaması görünür ve düğmeye aria-describedby ile bağlı", async () => {
+  it("Koşular: tetik düğmelerinin açıklaması görünür ve düğmeye aria-describedby ile bağlı (core izinleri)", async () => {
     yapilandir({ mockZorunlu: false, mockOtomatik: false, yetenekKesfi: true });
-    vi.stubGlobal("fetch", sahteCore({ "/runs": [] }));
+    // core `/auth/me` → `izinler`: portal düğmeleri rolden değil bu listeden çizer.
+    const me = { id: "u2", kullanici_adi: "muhendis", rol: "engineer", izinler: ["run.read", "run.trigger_manual", "run.trigger_scheduled"] };
+    vi.stubGlobal("fetch", sahteCore({ "/runs": [] }, me));
     uygulama("/kosular");
     const gece = await screen.findByRole("button", { name: "Gece koşusunu şimdi başlat" });
     expect(gece).toHaveAccessibleDescription(/zamanlanmış koşuyu şimdi başlatır: aynı onaylı test paketi/);
     expect(screen.getByRole("button", { name: "Deploy sonrası testleri koş" })).toHaveAccessibleDescription(/uygulamayı hiçbir yere yüklemez/);
     expect(screen.queryByText(/tam regresyon/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Manuel koşu başlat" })).toHaveAccessibleDescription(/Developer rolü yalnız prod dışı/);
+  });
+
+  it("core izinleri katalogdan önce gelir: izinlerde tetik yoksa (rol engineer olsa da) düğme çizilmez", async () => {
+    yapilandir({ mockZorunlu: false, mockOtomatik: false, yetenekKesfi: true });
+    vi.stubGlobal("fetch", sahteCore({ "/runs": [] }, { id: "u2", kullanici_adi: "muhendis", rol: "engineer", izinler: ["run.read"] }));
+    uygulama("/kosular");
+    await screen.findByRole("heading", { name: "Koşular" });
+    await waitFor(() => expect(screen.queryByRole("list", { name: "Tetik düğmeleri" })).toBeNull());
+    expect(screen.queryByRole("button", { name: "Gece koşusunu şimdi başlat" })).toBeNull();
   });
 
   it("GitHub yedeğinde Allure GitHub artefaktı diye etiketlenir; eksik dosyalar CI koşusuna bağlanır", async () => {
@@ -312,6 +324,34 @@ describe("koşu detayı (canlı core şekli)", () => {
     expect(within(kart).getByRole("link", { name: /Allure raporu \(GitHub artefaktı\)/ })).toHaveAttribute("href", kosu.allure_url);
     expect(within(kart).getByRole("link", { name: /JUnit XML \(GitHub artefaktında\)/ })).toHaveAttribute("href", KOSU.ci_url);
     expect(within(kart).getByRole("link", { name: /Koşu günlüğü \(GitHub artefaktında\)/ })).toHaveAttribute("href", KOSU.ci_url);
+  });
+
+  it("Extent raporu: Java koşusunda Allure'un yanında bağlantı; rapor yoksa (web, eski koşu) satır yok", async () => {
+    yapilandir({ mockZorunlu: false, mockOtomatik: false, yetenekKesfi: true });
+    const extent = `/api/artifacts/runs/${RID}/src/e2e-app/target/extent-report/index.html`;
+    const allure = `/api/artifacts/runs/${RID}/src/e2e-app/target/allure-report/index.html`;
+    const java = { ...KOSU, kaynak: "local", ci_url: null, platform: "android", allure_url: allure, allure_rapor: true, extent_url: extent };
+    vi.stubGlobal("fetch", sahteCore({ [`/runs/${RID}`]: java }));
+    const { unmount } = uygulama(`/kosular/${RID}`);
+    let kart = await screen.findByRole("region", { name: "Raporlar ve bağlantılar" });
+    expect(within(kart).getByRole("link", { name: /Extent raporu/ })).toHaveAttribute("href", extent);
+    expect(within(kart).getByRole("link", { name: /Allure raporu/ })).toHaveAttribute("href", allure);
+    unmount();
+
+    // Web koşusu / eski core yanıtı: alan null ya da hiç yok → ne bağlantı ne "yok" metni.
+    for (const kosu of [{ ...KOSU, extent_url: null }, KOSU]) {
+      vi.stubGlobal("fetch", sahteCore({ [`/runs/${RID}`]: kosu }));
+      const r = uygulama(`/kosular/${RID}`);
+      kart = await screen.findByRole("region", { name: "Raporlar ve bağlantılar" });
+      expect(within(kart).getByRole("link", { name: /Allure ham sonuçları/ })).toBeInTheDocument();
+      expect(within(kart).queryByText(/Extent/)).not.toBeInTheDocument();
+      r.unmount();
+    }
+    expect(kosuDetayUyarla({ ...KOSU, extent_url: "/artifacts/runs/x/src/e2e-app/target/extent-report/index.html" }).extent_url).toBe(
+      "/api/artifacts/runs/x/src/e2e-app/target/extent-report/index.html",
+    );
+    expect(kosuDetayUyarla({ ...KOSU, extent_url: "javascript:alert(1)" }).extent_url).toBeNull();
+    expect(kosuDetayUyarla(KOSU).extent_url).toBeNull();
   });
 
   it("CI adımları: atlanan adımın gerekçesi soluk, kalan adımın hatası kırmızı", () => {

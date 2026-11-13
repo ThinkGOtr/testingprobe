@@ -21,7 +21,7 @@ export const derinlestirmeAyari = { aralikMs: 2000 };
 
 /**
  * Derinleştirme paneli (011 §4.8; P5 negatif genişletme, P6 teknikle derinleştirme; K7): mevcut
- * sete ek taslaklar üretir, mevcut taslak ve onaylar korunur. Yalnız analist ve gereksinim
+ * sete ek taslaklar üretir, mevcut taslak ve onaylar korunur. Yalnız Testçi (`case.generate`) ve gereksinim
  * `cases_ready` ("Case review aşamasında") iken etkin (core aksi hâlde 409). Core tek iş tutar: biri
  * sürerken diğer düğme "Diğer derinleştirme sürüyor" nedeniyle pasiftir. Başlatınca `GET deepen`
  * aralıkla yoklanır; ardışık 3 okuma hatasında yoklama durur ve "Tekrar dene" sunulur. Bitince
@@ -163,7 +163,7 @@ export function DerinlestirmePaneli({
       </p>
       <div className="eylemler derinlestirme-dugmeleri" data-testid="derinlestirme-dugmeleri">
         <IslemDugmesi
-          roller={["analyst"]}
+          izin="case.generate"
           tur="ikincil"
           disabled={negatifDugme.disabled}
           title={negatifDugme.title}
@@ -190,7 +190,7 @@ export function DerinlestirmePaneli({
             ))}
           </select>
           <IslemDugmesi
-            roller={["analyst"]}
+            izin="case.generate"
             tur="ikincil"
             disabled={teknikDugme.disabled}
             title={teknikDugme.title}

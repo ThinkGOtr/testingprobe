@@ -131,6 +131,7 @@ test("Demo-A: ön inceleme → 4 doğrulanmış bulgu → düzeltme → Jira PO 
     await expect(kart.getByText(/Karar:/)).toBeVisible({ timeout: 15_000 });
   }
   await ekran("02-kararlar");
+  const gereksinimYolu = new URL(page.url()).pathname;
   await page.getByRole("button", { name: /Düzeltmeleri Jira'ya yaz/ }).click();
   // 2. tur (TPD-1-r2) temiz → son hal → PO soru yorumu + tp-po-pending.
   await expect(page.getByText("PO teyidi bekliyor").first()).toBeVisible({ timeout: 120_000 });
@@ -146,6 +147,10 @@ test("Demo-A: ön inceleme → 4 doğrulanmış bulgu → düzeltme → Jira PO 
   await jira.getByTestId("po-onayla").click();
   await jira.screenshot({ path: `${EKRAN_DIZINI}/demoa-04-jira-po-onayi.png`, fullPage: true });
 
+  // Case üretimi, kararı ve yayını Testçide; son onay Analistte (ANALIZ 012 §5).
+  await page.getByRole("button", { name: "Çıkış" }).click();
+  await girisCanli(page, "testci");
+  await page.goto(gereksinimYolu);
   // Demo-A doğrudan case üretir: tek tur seçilir, üst düğme kipi söyler ("Case üret (tek tur)").
   await expect(async () => {
     await page.reload();
@@ -155,15 +160,27 @@ test("Demo-A: ön inceleme → 4 doğrulanmış bulgu → düzeltme → Jira PO 
   await page.getByRole("button", { name: "Case üret (tek tur)" }).click();
   await expect(page.getByRole("link", { name: "Case review" })).toBeVisible({ timeout: 120_000 });
   await page.getByRole("link", { name: "Case review" }).click();
-  const onayla = page.getByRole("button", { name: "Onayla", exact: true });
-  await expect(onayla.first()).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText(/^REPLAY$/).first()).toBeVisible();
+  const tikla = async (ad: string) => {
+    const d = page.getByRole("button", { name: ad, exact: true });
+    await expect(d.first()).toBeVisible({ timeout: 30_000 });
+    for (let i = 0; i < 20 && (await d.count()) > 0; i++) {
+      const n = await d.count();
+      await d.first().click();
+      await expect(d).toHaveCount(n - 1, { timeout: 15_000 });
+    }
+  };
+  await expect(page.getByText(/^REPLAY$/).first()).toBeVisible({ timeout: 30_000 });
   await ekran("05-case-review");
-  for (let i = 0; i < 20 && (await onayla.count()) > 0; i++) {
-    const n = await onayla.count();
-    await onayla.first().click();
-    await expect(onayla).toHaveCount(n - 1, { timeout: 15_000 });
-  }
+  await tikla("Kabul et");
+  const caseYolu = new URL(page.url()).pathname;
+  await page.getByRole("button", { name: "Çıkış" }).click();
+  await girisCanli(page, "analist");
+  await page.goto(caseYolu);
+  await tikla("Onayla");
+  await ekran("05b-analist-onayi");
+  await page.getByRole("button", { name: "Çıkış" }).click();
+  await girisCanli(page, "testci");
+  await page.goto(caseYolu);
   await page.getByRole("link", { name: "Yayın önizleme" }).first().click();
   await page.getByRole("button", { name: /Seçilenleri yayınla/ }).click();
   await expect(page.getByTestId("yayin-ozeti")).toContainText(/[1-9]\d* oluşturuldu/, { timeout: 90_000 });
@@ -265,13 +282,16 @@ test("Demo-B: kod üretimi → yerel kontrol → PR → kırarak doğrula → me
   await page.screenshot({ path: `${EKRAN_DIZINI}/demob-05-defect-adayi.png`, fullPage: true });
   await page.getByRole("button", { name: "Çıkış" }).click();
 
-  // Sunucu: açılış Demo yol haritası (Faz 5); Kontrol Kulesi KPI kaynakları; uydurma yok; deploy tetiği.
+  // Sistem Yöneticisi (sunucu): açılış Demo yol haritası (Faz 5); Kontrol Kulesi KPI kaynakları; uydurma yok.
   await girisCanli(page, "sunucu");
   await expect(page).toHaveURL(/\/yol-haritasi$/);
   await page.goto("/kontrol-kulesi");
   await expect(page.getByRole("img", { name: /^Kaynak: run\.sonuc/ })).toBeVisible();
   await expect(page.getByText("ÖRNEK VERİ")).toHaveCount(0);
   await page.screenshot({ path: `${EKRAN_DIZINI}/demob-06-kontrol-kulesi.png`, fullPage: true });
+  // Deploy tetiği Automation Engineer'da (run.trigger_scheduled; ANALIZ 012 §6).
+  await page.getByRole("button", { name: "Çıkış" }).click();
+  await girisCanli(page, "muhendis");
   await page.goto("/kosular");
   // Satır sayısı tablo yüklendikten sonra okunur (sayaç "N/M koşu" görünür); yeniden yüklemede de.
   const sayac = page.getByRole("status").filter({ hasText: /\d+\/\d+ koşu/ });

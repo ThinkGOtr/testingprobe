@@ -27,7 +27,7 @@ from tests.unit.features.codegen.conftest import (
 )
 from tp_core.audit import content_hash
 from tp_core.events.bus import parse_payload
-from tp_core.features.codegen import service
+from tp_core.features.codegen import service, views
 from tp_core.features.codegen.render import parse_dealers
 from tp_core.models import (
     AiCall,
@@ -186,8 +186,15 @@ def test_demo_b_case_den_pr_a(
     assert codegen.ci == [{"sha": sc.head_sha, "trigger": "pr", "pr_number": sc.pr_no}]
 
     # API: liste, detay, ekran görüntüsü.
-    liste = api.get("/scripts").json()
+    yanit = api.get("/scripts")
+    liste = yanit.json()
     assert liste[0]["id"] == sid and liste[0]["durum"] == "pr_open"
+    # MİM-D5: düz dizi korunur; sınır bilgisi `X-Daha-Fazla` başlığında (limit+1 okunur).
+    assert isinstance(liste, list) and yanit.headers["X-Daha-Fazla"] == "0"
+    with session_scope() as s:
+        assert views.list_scripts_sinirli(s, limit=len(liste))[1] is False
+        kesik, daha_fazla = views.list_scripts_sinirli(s, limit=len(liste) - 1)
+        assert daha_fazla is True and len(kesik) == len(liste) - 1
     assert liste[0]["pr"]["ci"] == "passed" and liste[0]["yerel_sinif"] == "gecti"
     d = api.get(f"/scripts/{sid}").json()
     assert d["kod"] == kod and len(d["adimlar"]) == ADIM_C2 and len(d["eslemeler"]) == 9
@@ -406,17 +413,21 @@ def test_degistirilmis_case_replay_miss_insana(
 ) -> None:
     cid = hazir["cases"][2]
     analist = hazir["analist"]
+    testci = make_user("tester")
     with session_scope() as s:
         tc = s.get(TestCase, cid)
-        transition(s, tc, "draft", analist, "approved")
+        transition(s, tc, "draft", testci, "approved")
     with session_scope() as s:
         tc = s.get(TestCase, cid)
         yeni = dict(tc.icerik, title="8 adet kampanyalı üründe 1 adet bedava verilir")
+        # 012: Testçi düzeltir (draft → ready), Analist son onayı verir (ready → approved).
         record_approval(
-            s, tc, analist, "edit", beklenen_hash=content_hash_of(tc), degisiklik={"icerik": yeni}
+            s, tc, testci, "edit", beklenen_hash=content_hash_of(tc), degisiklik={"icerik": yeni}
         )
         tc.icerik_hash = content_hash(yeni)
-        transition(s, tc, "approved", analist, "draft")
+        transition(s, tc, "ready", testci, "draft")
+        record_approval(s, tc, analist, "approve", beklenen_hash=content_hash_of(tc))
+        transition(s, tc, "approved", analist, "ready")
     sid = uret(api, [cid])["script_ids"][0]
     run_jobs(engine)
     sc, cg = script_of(sid)

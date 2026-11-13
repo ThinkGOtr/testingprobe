@@ -135,7 +135,7 @@ export function ReviewPaneli({
   const harita = ic.case_haritasi;
   const dugme = (
     <IslemDugmesi
-      roller={["analyst"]}
+      izin="case.generate"
       tur="ikincil"
       kucuk
       calisiyor={calisiyor || gorunum.calisiyor}
@@ -320,7 +320,7 @@ export function DenetimPaneli({
   const dugme = (
     <IslemDugmesi
       id={dugmeId}
-      roller={["analyst"]}
+      izin="case.approve"
       tur={birincil ? "birincil" : "ikincil"}
       kucuk
       calisiyor={gonderiliyor || gorunum.calisiyor}

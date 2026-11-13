@@ -1,4 +1,4 @@
-"""Sunucu (presenter) demo kontrolleri: locator kırılması ve demo sıfırlaması.
+"""Demo kontrolleri (admin, engineer; `TP_DEMO_MODE=1`): locator kırılması ve demo sıfırlaması.
 
 - `POST /demo/break-locator` → iş `demo.break_locator`: `demo/break-locator` dalı `demo-admin`
   kural bypass'ıyla merge edilir (`integrations.forge_demo.break_locator`; denetim "demo
@@ -55,6 +55,7 @@ from sqlalchemy import Engine, select, text
 from sqlalchemy.orm import Session
 
 from tp_core.audit import PgAuditLog, append_audit, audit_on_commit
+from tp_core.config import get_settings
 from tp_core.events.bus import publish_tx
 from tp_core.features.demo import web
 from tp_core.integrations import forge_demo
@@ -468,8 +469,20 @@ def _web_ve_ci(engine: Engine, forge: Any, sha: str, eylem: str, isteyen: str) -
 # ------------------------------------------------------------------------ kırılma
 
 
+DEMO_KAPALI = "Demo kipi kapalı (TP_DEMO_MODE=0)"
+
+
+def demo_kipi_gerekli() -> None:
+    """Demo kontrolleri (kırma/sıfırlama) yalnız `TP_DEMO_MODE=1` iken (specs/012-rol-yetki §6).
+
+    API kapısını atlayan yollar (kuyrukta kalmış iş, host CLI) için ikinci denetim."""
+    if not get_settings().demo_mode:
+        raise PermanentJobError(DEMO_KAPALI)
+
+
 def run_break(ctx: JobContext, engine: Engine) -> dict[str, Any]:
-    isteyen = str((ctx.yuk or {}).get("isteyen") or "presenter")
+    demo_kipi_gerekli()
+    isteyen = str((ctx.yuk or {}).get("isteyen") or "system")
     forge = _forge()
     if not callable(getattr(forge, "merge_pr_detailed", None)):
         raise PermanentJobError("forge demo kırılmasını desteklemiyor (merge_pr_detailed yok)")
@@ -637,8 +650,24 @@ def _prlari_kapat(engine: Engine, forge: Any, isteyen: str) -> list[dict[str, An
     return kapanan
 
 
+def _otomasyon_demo_ayarlari() -> dict[str, Any]:
+    """013 K20/K23: demo sıfırlaması onay sonrası otomatik kodu kapatır (Demo-B "Kod üret"
+    düğmesiyle yürür) — yalnız demo ortamında (Jira sim'i ya da REPLAY; gerçek kurulumda
+    `gercek_ortam`, dokunulmaz). Denetimli (`otomasyon.ayar`, aktör `demo`; isteyen
+    `demo.reset` kaydında); hata sıfırlamayı durdurmaz, özete yazılır."""
+    from tp_core.features.otomasyon import ayarlar
+
+    try:
+        with session_scope() as s:
+            return ayarlar.demo_ayarlarini_yaz(s, "demo")
+    except Exception:
+        log.exception("demo sıfırlaması: otomasyon ayarları yazılamadı")
+        return {"hata": "otomasyon ayarları yazılamadı; Otomasyon sayfasından kapatın"}
+
+
 def run_reset(ctx: JobContext, engine: Engine) -> dict[str, Any]:
-    isteyen = str((ctx.yuk or {}).get("isteyen") or "presenter")
+    demo_kipi_gerekli()
+    isteyen = str((ctx.yuk or {}).get("isteyen") or "system")
     forge = _forge()
     yerel = _yerel_forge_mu(forge)
     try:
@@ -657,6 +686,7 @@ def run_reset(ctx: JobContext, engine: Engine) -> dict[str, Any]:
     ek = _web_ve_ci(engine, forge, sonuc.main_after, "baseline", isteyen)
     jira = _jira_temizle()
     isaretlenen = _silinen_buglari_isaretle(jira.get("silinen") or [], isteyen)
+    otomasyon = _otomasyon_demo_ayarlari()
     ozet = {
         "isteyen": isteyen,
         "bypass_aktoru": BYPASS_ACTOR,
@@ -671,6 +701,7 @@ def run_reset(ctx: JobContext, engine: Engine) -> dict[str, Any]:
         },
         "kapanan_prlar": kapanan,
         "jira": jira,
+        "otomasyon": otomasyon,
         "veritabani": {
             "durum": "dokunulmadi",
             "neden": "denetim ve geçmiş append-only; tam sıfırlama için `make reset` (denetim "
@@ -802,3 +833,79 @@ def durum(forge: Any | None = None, session: Session | None = None) -> dict[str,
             out["uygulama"]["yonerge"] = web.YONERGE
     out["web_yenileme_istegi"] = web.bekleyen_istek()
     return out
+
+
+# ------------------------------------------------------------- Jira durum (yalnız jira-sim)
+
+_JIRA_KEY = re.compile(r"^[A-Z][A-Z0-9_]{0,19}-[1-9][0-9]{0,8}$")
+
+
+class DemoJiraYok(WorkflowError):
+    """Demo Jira kontrolü yalnız jira-sim'e karşı çalışır (gerçek Jira'ya demo yazımı yok)."""
+
+    status_code = 409
+
+
+class DemoJiraGecisYok(WorkflowError):
+    status_code = 409
+
+
+class DemoJiraIssueYok(WorkflowError):
+    status_code = 404
+
+
+def _jira_sim_mi() -> bool:
+    """Demo Jira kontrolü yalnız jira-sim'e: yapılandırma simülatörü göstermeli VE uç kendini
+    jira-sim olarak tanıtmalı (`RestJira.simulator_mu`, sim'e özgü `/health`). Host adına tek
+    başına güvenilmez (localhost tüneli/proxy gerçek Jira'ya çıkabilir)."""
+    f = _factories.get("jira_sim_mi")
+    if f is not None:
+        return bool(f())
+    from tp_core.features.requirements import services as req_services
+    from tp_core.integrations.jira import get_jira_settings
+
+    if not get_jira_settings().is_simulator:
+        return False
+    dogrula = getattr(req_services.jira(), "simulator_mu", None)
+    return bool(dogrula()) if callable(dogrula) else False
+
+
+def jira_durum_tasi(user: Principal, jira_key: str, durum: str) -> dict[str, Any]:
+    """`POST /demo/jira-status`: jira-sim'deki story'yi verilen duruma taşır (gerçek Jira
+    biçimindeki geçiş uçlarıyla). Sprint otomasyonu provası: story "QA To Do"ya gelince Jira
+    durum tetiği onu çeker (specs/013 §3.4). Gerçek Jira'da 409; hiçbir istek gönderilmez.
+    """
+    from tp_core.features.requirements import services as req_services
+    from tp_core.integrations.jira import JiraNotFound
+
+    if not _jira_sim_mi():
+        raise DemoJiraYok("Demo Jira kontrolü yalnız jira-sim ile çalışır (gerçek Jira bağlı)")
+    key = jira_key.strip().upper()
+    if not _JIRA_KEY.fullmatch(key):
+        raise DemoJiraIssueYok(f"Geçersiz Jira anahtarı: {jira_key!r}")
+    hedef = " ".join(durum.split())
+    jira = req_services.jira()
+    try:
+        onceki = jira.get_issue(key).status
+        if " ".join(onceki.split()).casefold() == hedef.casefold():
+            return {"jira_key": key, "onceki": onceki, "durum": onceki, "degisti": False}
+        gecis = next(
+            (
+                t for t in jira.transitions(key)
+                if " ".join(str((t.get("to") or {}).get("name") or "").split()).casefold()
+                == hedef.casefold()
+            ),
+            None,
+        )  # fmt: skip
+        if gecis is None:
+            raise DemoJiraGecisYok(f"{key} için '{hedef}' durumuna geçiş yok")
+        jira.transition(key, str(gecis["id"]))
+    except JiraNotFound as exc:
+        raise DemoJiraIssueYok(f"Jira kaydı bulunamadı: {key}") from exc
+    yeni = str((gecis.get("to") or {}).get("name") or hedef)
+    with session_scope() as s:
+        audit_on_commit(
+            s, user.kullanici_adi, "demo.jira_status", f"jira:{key}",
+            {"onceki": onceki, "durum": yeni},
+        )  # fmt: skip
+    return {"jira_key": key, "onceki": onceki, "durum": yeni, "degisti": True}

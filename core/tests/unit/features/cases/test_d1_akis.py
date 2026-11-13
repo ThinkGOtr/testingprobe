@@ -32,7 +32,15 @@ from tp_core.models import (
 from tp_core.workflow import states
 from tp_core.workflow.service import Principal
 
-from .helpers import case_icerik, latest_cases, login, ozet_icerik, run_jobs, uretim_cikti
+from .helpers import (
+    case_icerik,
+    latest_cases,
+    login,
+    onayla,
+    ozet_icerik,
+    run_jobs,
+    uretim_cikti,
+)
 
 RULES = Path(__file__).resolve().parents[5] / "rules"
 SRC = Path(__file__).resolve().parents[4] / "src" / "tp_core"
@@ -161,7 +169,7 @@ def test_tur2_hatasi_onayli_modeli_korur_ve_kip_saklanir(
         ]
     )
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     r = api.post(f"/requirements/{rid}/generate-cases", json={"kip": "iki_tur"})
     assert r.status_code == 202 and r.json()["asama"] == "model"
     run_jobs(engine)
@@ -196,7 +204,7 @@ def test_govdesiz_cagri_kayit_yoksa_tek_tur_kip_verilirse_saklanir(
     api: TestClient, engine: Engine, make_user, make_requirement, replay_gateway
 ) -> None:
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     r = api.post(f"/requirements/{rid}/generate-cases")
     assert r.json()["kip"] == "tek_tur"
     run_jobs(engine)
@@ -212,7 +220,7 @@ def test_model_onayi_tur2_baslatamazsa_karar_kaydedilir(
     api: TestClient, engine: Engine, make_user, make_requirement, replay_gateway, monkeypatch
 ) -> None:
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     api.post(f"/requirements/{rid}/design-model")
     run_jobs(engine)
     m = _model(api, rid)
@@ -239,7 +247,7 @@ def test_tasarim_modeli_uretim_seceneklerini_gorur(
 ) -> None:
     provider = fake_gateway([text_response(_golden("TPD-4", "design_model")["output"])])
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     r = api.post(
         f"/requirements/{rid}/generate-cases",
         json={"kip": "iki_tur", "platformlar": ["Web"], "test_seviyesi": "E2E"},
@@ -263,8 +271,8 @@ def test_model_karari_once_gereksinimi_sonra_modeli_kilitler(
     api: TestClient, engine: Engine, make_user, make_requirement, replay_gateway
 ) -> None:
     rid = make_requirement()
-    analist = make_user("analyst")
-    login(api, analist)
+    testci = make_user("tester")  # 012: model kararı Testçinin (design_model.decide)
+    login(api, testci)
     api.post(f"/requirements/{rid}/design-model")
     run_jobs(engine)
     m = _model(api, rid)
@@ -283,7 +291,7 @@ def test_model_karari_once_gereksinimi_sonra_modeli_kilitler(
             model_service.decide_model(
                 s,
                 uuid.UUID(m["id"]),
-                Principal(analist.id, analist.kullanici_adi, "analyst"),
+                Principal(testci.id, testci.kullanici_adi, "tester"),
                 karar="approve",
                 icerik_hash=m["icerik_hash"],
             )
@@ -309,14 +317,12 @@ def test_tam_yeniden_uretim_korunan_kimlikleri_bilir(
         [text_response(uretim_cikti(ilk)), text_response(uretim_cikti(ikinci, **farkli))]
     )
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     api.post(f"/requirements/{rid}/generate-cases")
     run_jobs(engine)
     assert "Korunan case'lerin kimlikleri" not in provider.requests[0].messages[0]["content"]
     c1 = latest_cases(api, rid)[0]
-    api.post(
-        f"/cases/{c1['id']}/decision", json={"karar": "approve", "icerik_hash": c1["icerik_hash"]}
-    )
+    onayla(api, c1, make_user("tester"), make_user("analyst"))  # 012; Testçi oturumu kalır
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     (is_,) = run_jobs(engine)
     girdi = provider.requests[1].messages[0]["content"]
@@ -337,7 +343,7 @@ def _ilk_uretim(api: TestClient, engine: Engine, make_user, make_requirement, pr
     }
     provider = provider_kur([text_response(uretim_cikti(ilk, **ozet)), *ek])
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     api.post(f"/requirements/{rid}/generate-cases")
     run_jobs(engine)
     return rid, provider
@@ -366,10 +372,7 @@ def test_derinlestirme_casei_mevcut_ogelere_atif_yapabilir(
     d = cases["Ana akış — oturum süresi"]
     assert d["uretim_no"] == 2 and d["uyarilar"] == [] and d["onay_engeli"] is None
     assert cases["Kilit sonrası giriş"]["varsayimlar"][0]["id"] == "A1"
-    r = api.post(
-        f"/cases/{d['id']}/decision", json={"karar": "approve", "icerik_hash": d["icerik_hash"]}
-    )
-    assert r.status_code == 200, r.text
+    assert onayla(api, d, make_user("tester"), make_user("analyst"))["durum"] == "approved"
     ozet = api.get(f"/requirements/{rid}/case-summary").json()
     assert not any("tutarsız" in u for u in ozet["uyarilar"])
 
@@ -435,7 +438,7 @@ def test_model_ret_nedeni_kaydedilir_case_nedeni_reddedilir(
     api: TestClient, engine: Engine, make_user, make_requirement, replay_gateway
 ) -> None:
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     api.post(f"/requirements/{rid}/design-model")
     run_jobs(engine)
     m = _model(api, rid)
@@ -451,8 +454,8 @@ def test_model_ret_nedeni_kaydedilir_case_nedeni_reddedilir(
 
 def test_ide_taslagi_review_planlar(make_user, make_requirement) -> None:
     rid = make_requirement()
-    u = make_user("analyst")
-    ide = Principal(u.id, u.kullanici_adi, "analyst", kanal="ide", kapsam="submit")
+    u = make_user("tester")  # 012: IDE taslağını Testçi gönderir
+    ide = Principal(u.id, u.kullanici_adi, "tester", kanal="ide", kapsam="submit")
     with session_scope() as s:
         service.submit_drafts(s, "TPD-4", [case_icerik()], ide, ozet=ozet_icerik([case_icerik()]))
     with session_scope() as s:

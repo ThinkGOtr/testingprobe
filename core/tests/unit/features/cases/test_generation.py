@@ -12,7 +12,17 @@ from tp_core.audit import content_hash, verify_chain
 from tp_core.gateway.testing import text_response
 from tp_core.models import AiCall, Requirement, Review, TestCase, case_id, session_scope
 
-from .helpers import TPD3_INJECTION, TPD4, case_icerik, latest_cases, login, run_jobs, uretim_cikti
+from .helpers import (
+    TPD3_INJECTION,
+    TPD4,
+    case_icerik,
+    latest_cases,
+    login,
+    onayla,
+    rol_ol,
+    run_jobs,
+    uretim_cikti,
+)
 
 
 def _durum(rid: uuid.UUID) -> str:
@@ -22,22 +32,23 @@ def _durum(rid: uuid.UUID) -> str:
 
 def test_po_onayi_olmadan_uretim_409(api: TestClient, make_user, make_requirement) -> None:
     rid = make_requirement(po_onayli=False)
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     r = api.post(f"/requirements/{rid}/generate-cases")
     assert r.status_code == 409
     assert "PO onaylı" in r.json()["detail"]
     assert _durum(rid) == "pending_po"
 
 
-def test_yalnizca_analist_uretim_baslatir(api: TestClient, make_user, make_requirement) -> None:
+def test_yalnizca_testci_uretim_baslatir(api: TestClient, make_user, make_requirement) -> None:
     rid = make_requirement()
-    login(api, make_user("engineer"))
-    assert api.post(f"/requirements/{rid}/generate-cases").status_code == 403
+    for rol in ("engineer", "analyst", "po"):
+        rol_ol(api, make_user(rol))
+        assert api.post(f"/requirements/{rid}/generate-cases").status_code == 403, rol
 
 
 def test_ac_missing_uretime_gitmez(api: TestClient, make_user, make_requirement) -> None:
     rid = make_requirement(acs=[], ac_missing=True)
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     r = api.post(f"/requirements/{rid}/generate-cases")
     assert r.status_code == 422
     assert "ac_missing" in r.json()["detail"]
@@ -50,7 +61,7 @@ def test_po_onayindan_sonra_degisen_icerik_kapida_reddedilir(
     rid = make_requirement()
     with session_scope() as s:
         s.get(Requirement, rid).aciklama = "PO'nun görmediği yeni metin"
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     r = api.post(f"/requirements/{rid}/generate-cases")
     assert r.status_code == 409
     assert _durum(rid) == "po_approved"
@@ -60,7 +71,7 @@ def test_replay_ile_uctan_uca_uretim(
     api: TestClient, engine: Engine, make_user, make_requirement, replay_gateway
 ) -> None:
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     r = api.post(f"/requirements/{rid}/generate-cases")
     assert r.status_code == 202, r.text
     govde = r.json()
@@ -103,7 +114,7 @@ def test_replay_miss_duzgun_etiketlenir(
     olmaz; iskalama ai_call'a `replay_miss` olarak yazılır, iş yeniden denenmeden biter ve
     gereksinim Türkçe nedenle `failed` olur (canlı gibi gösterilmez)."""
     rid = make_requirement(acs=[*TPD4["acs"], "AC3: Yeni madde"])
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     (is_,) = run_jobs(engine)
     assert is_.durum == "failed" and "REPLAY-MISS" in (is_.hata or "")
@@ -128,7 +139,7 @@ def test_tpd3_enjeksiyonu_hicbir_durumu_degistirmez(
             'AC2: Eşleşen ürün yoksa "Ürün bulunamadı" mesajı gösterilir.',
         ],
     )
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     run_jobs(engine)
     cases = latest_cases(api, rid)
@@ -147,7 +158,7 @@ def test_fake_provider_po_cevaplari_ayri_blok_ve_tekrar_eleme(
     a, b = case_icerik(), case_icerik(title="Hatalı parola mesajı", ref="AC2")
     provider = fake_gateway([text_response(uretim_cikti([a, b, dict(a)]))])
     rid = make_requirement(po_cevaplari=[{"soru": "Kilit var mı?", "cevap": "Hayır"}])
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     sonuc = run_jobs(engine)
     assert sonuc[0].deger["tekrar"] == [3]
@@ -167,15 +178,12 @@ def test_yeniden_uretim_taslaklari_superseded_onaylilari_korur(
     c = case_icerik(title="Boş parola", ref="AC2", type="negative")
     fake_gateway([text_response(uretim_cikti([a, b])), text_response(uretim_cikti([a, c]))])
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    testci = make_user("tester")
+    login(api, testci)
     api.post(f"/requirements/{rid}/generate-cases")
     run_jobs(engine)
     ilk = latest_cases(api, rid)
-    r = api.post(
-        f"/cases/{ilk[0]['id']}/decision",
-        json={"karar": "approve", "icerik_hash": ilk[0]["icerik_hash"]},
-    )
-    assert r.status_code == 200, r.text
+    onayla(api, ilk[0], testci, make_user("analyst"))
 
     r = api.post(f"/requirements/{rid}/generate-cases")
     assert r.status_code == 202 and r.json()["uretim_no"] == 2
@@ -194,7 +202,7 @@ def test_basarisiz_uretim_gereksinimi_failed_yapar(
 ) -> None:
     fake_gateway([text_response("bozuk")] * 6)
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     api.post(f"/requirements/{rid}/generate-cases")
     sonuc = run_jobs(engine)
     assert sonuc[-1].durum == "retry"
@@ -212,7 +220,7 @@ def test_is_kuyruktayken_icerik_degisirse_uretim_failed(
 ) -> None:
     provider = fake_gateway([text_response(uretim_cikti([case_icerik()]))])
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     with session_scope() as s:
         s.get(Requirement, rid).aciklama = "Kuyruktayken değişen metin"
@@ -231,7 +239,7 @@ def test_ayni_ciktiyla_yeniden_uretim_taslaklari_silmez(
     a, b = case_icerik(), case_icerik(title="Hatalı parola mesajı", ref="AC2")
     fake_gateway([text_response(uretim_cikti([a, b])), text_response(uretim_cikti([a, b]))])
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     api.post(f"/requirements/{rid}/generate-cases")
     run_jobs(engine)
     assert [c["durum"] for c in latest_cases(api, rid)] == ["draft", "draft"]
@@ -259,7 +267,7 @@ def test_bilinmeyen_ac_ve_kapsam_deterministik_denetlenir(
         [text_response(uretim_cikti([case_icerik(), case_icerik(title="Uydurma", ref="AC9")]))]
     )
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     api.post(f"/requirements/{rid}/generate-cases")
     (sonuc,) = run_jobs(engine)
     assert sonuc.deger["bilinmeyen_ac"] == {"2": ["AC9"]}
@@ -271,7 +279,7 @@ def test_bilinmeyen_ac_ve_kapsam_deterministik_denetlenir(
 
     r = api.post(
         f"/cases/{uydurma['id']}/decision",
-        json={"karar": "approve", "icerik_hash": uydurma["icerik_hash"]},
+        json={"karar": "accept", "icerik_hash": uydurma["icerik_hash"]},
     )
     assert r.status_code == 422 and "AC9" in r.json()["detail"]
     # Düzeltilince (gerçek AC) onaylanabilir; kapsam da tamamlanır.
@@ -294,7 +302,7 @@ def test_son_denemede_is_disi_cokme_gereksinimi_generatingde_birakmaz(
 
     fake_gateway([text_response(uretim_cikti([case_icerik()]))])
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     with engine.begin() as c:
         c.execute(
@@ -323,7 +331,7 @@ def test_takili_generating_yeniden_baslatmada_kurtarilir(
 ) -> None:
     fake_gateway([text_response(uretim_cikti([case_icerik()]))])
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     # İş kuyruktayken yeniden başlatma reddedilir (iş sürüyor).
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 409
@@ -343,20 +351,14 @@ def test_duzeltilip_onaylanan_ai_case_yeniden_uretimde_tekrar_sayilir(
     a, b = case_icerik(), case_icerik(title="Hatalı parola mesajı", ref="AC2")
     fake_gateway([text_response(uretim_cikti([a, b])), text_response(uretim_cikti([a, b]))])
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    testci, analist = make_user("tester"), make_user("analyst")
+    login(api, testci)
     api.post(f"/requirements/{rid}/generate-cases")
     run_jobs(engine)
     c1, c2 = latest_cases(api, rid)
     duzeltilmis = {**c1["icerik"], "expected_result": "Ürün kataloğu ve bayi adı görünür"}
-    r = api.post(
-        f"/cases/{c1['id']}/decision",
-        json={"karar": "edit", "icerik_hash": c1["icerik_hash"], "icerik": duzeltilmis},
-    )
-    assert r.status_code == 200, r.text
-    r = api.post(
-        f"/cases/{c2['id']}/decision", json={"karar": "approve", "icerik_hash": c2["icerik_hash"]}
-    )
-    assert r.status_code == 200, r.text
+    onayla(api, c1, testci, analist, icerik=duzeltilmis)
+    onayla(api, c2, testci, analist)
 
     r = api.post(f"/requirements/{rid}/generate-cases")
     assert r.status_code == 202 and r.json()["uretim_no"] == 2
@@ -373,7 +375,7 @@ def test_case_metrics_baz_deger_ve_replay_suresi_uyarisi(
     from tp_core.features.cases.service import AI_SURE_REPLAY_UYARISI, MANUEL_BAZ_YOK_UYARISI
 
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     api.post(f"/requirements/{rid}/generate-cases")
     run_jobs(engine)
 

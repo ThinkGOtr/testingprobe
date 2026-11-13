@@ -19,14 +19,19 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from tp_core.auth.deps import CurrentUser, DbSession, require_role
+from tp_core.auth.deps import DbSession
+from tp_core.auth.yetki import izin
 from tp_core.features.cases import model_service
 from tp_core.features.cases.api import IsYaniti
 from tp_core.workflow.service import Principal
 
 router = APIRouter(tags=["design-model"])
 
-Analyst = Annotated[Principal, Depends(require_role("analyst"))]
+# 012 rol modeli (dev birleştirmesi): model üretimi `case.generate`, model kararı
+# `design_model.decide` (Testçi), okuma `case.analysis_read` (developer hariç).
+Uretici = Annotated[Principal, Depends(izin("case.generate"))]
+Karar = Annotated[Principal, Depends(izin("design_model.decide"))]
+Analiz = Annotated[Principal, Depends(izin("case.analysis_read"))]
 
 
 # Düzenlenen modelin JSON boyutu üst sınırı (karakter). Golden modeller ~20K; büyük gövde
@@ -68,7 +73,7 @@ class ModelKararGirdisi(BaseModel):
 
 @router.get("/requirements/{requirement_id}/design-model")
 def get_design_model(
-    requirement_id: uuid.UUID, session: DbSession, _user: CurrentUser
+    requirement_id: uuid.UUID, session: DbSession, _user: Analiz
 ) -> dict[str, Any]:
     return model_service.design_model_view(session, requirement_id)
 
@@ -77,7 +82,7 @@ def get_design_model(
     "/requirements/{requirement_id}/design-model", response_model=IsYaniti, status_code=202
 )
 def regenerate_design_model(
-    requirement_id: uuid.UUID, session: DbSession, user: Analyst
+    requirement_id: uuid.UUID, session: DbSession, user: Uretici
 ) -> IsYaniti:
     sonuc = model_service.start_model_generation(session, requirement_id, user)
     return IsYaniti(
@@ -92,7 +97,7 @@ def regenerate_design_model(
 
 @router.post("/design-models/{model_id}/decision")
 def decide_design_model(
-    model_id: uuid.UUID, body: ModelKararGirdisi, session: DbSession, user: Analyst
+    model_id: uuid.UUID, body: ModelKararGirdisi, session: DbSession, user: Karar
 ) -> dict[str, Any]:
     """Karar; onayda (approve | edit) tur 2 aynı işlemde başlar (011 K20): yanıt model
     görünümüne ek `tur2_baslatildi`, `tur2` (iş bilgisi) ve `tur2_engeli` taşır."""

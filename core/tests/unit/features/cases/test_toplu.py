@@ -1,4 +1,4 @@
-"""Toplu onay ve "Varsayım doğrulandı" (specs/011 K20; `features/cases/toplu.py`)."""
+"""Toplu kabul (v3 kapısı) ve "Varsayım doğrulandı" (specs/011 K20; `features/cases/toplu.py`)."""
 
 from __future__ import annotations
 
@@ -13,7 +13,15 @@ from tp_core.features.cases import service
 from tp_core.gateway.testing import text_response
 from tp_core.models import AuditEvent, Requirement, Review, session_scope
 
-from .helpers import case_icerik, eski_case_icerik, latest_cases, login, run_jobs, uretim_cikti
+from .helpers import (
+    case_icerik,
+    eski_case_icerik,
+    goruntule,
+    latest_cases,
+    login,
+    run_jobs,
+    uretim_cikti,
+)
 
 OZET = {
     "open_questions": [{"id": "Q1", "question": "Kaç hatalı denemede kilitlenir?", "owner": "PO"}],
@@ -56,10 +64,11 @@ def _cases() -> list[dict[str, Any]]:
 
 @pytest.fixture
 def cs(api: TestClient, engine: Engine, make_user, make_requirement, fake_gateway):
-    """v3 üretimi tamamlanmış gereksinim + oturum açmış analist; güncel case'ler."""
+    """v3 üretimi tamamlanmış gereksinim + oturum açmış Testçi (012: üretim, kabul, "Varsayım
+    doğrulandı"); güncel case'ler."""
     fake_gateway([text_response(uretim_cikti(_cases(), **OZET))])
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     (is_,) = run_jobs(engine)
     assert is_.durum == "done", is_
@@ -94,124 +103,29 @@ def _denetim(cid: str, eylem: str) -> int:
         )
 
 
-# --------------------------------------------------------------------------- toplu onay
+# --------------------------------------------------------------------------- toplu karar
+# 011 K20 "Seçilenleri onayla" dev birleştirmesinde 013/012'nin `POST /cases/bulk-decision`
+# ucuna katıldı (Testçi toplu kabul / Analist toplu son onay; sözleşme testleri
+# `test_toplu_karar*.py`). Burada v3'e özgü kapı: hazır olmayan case toplu kabulde öğe hatasıdır.
 
 
-def test_toplu_onay_kalem_bazli_karisik_sonuc(api: TestClient, cs) -> None:
-    rid, (a, b, varsayim, *_) = cs
-    yok = str(uuid.uuid4())
+def test_toplu_kabul_hazir_olmayan_v3_case_oge_hatasi(api: TestClient, cs, db, make_user) -> None:
+    rid, (hazir, hazir2, tek, *_rest) = cs
+    goruntule(api, db, hazir["id"], hazir2["id"], tek["id"])
     r = api.post(
         "/cases/bulk-decision",
-        json={
-            "karar": "approve",
-            "kalemler": [
-                _kalem(a),
-                _kalem(varsayim),
-                _kalem(b, icerik_hash="bayat"),
-                {"case_id": yok, "icerik_hash": "x"},
-            ],
-        },
+        json={"karar": "accept", "ogeler": [_kalem(hazir), _kalem(tek), _kalem(hazir2)]},
     )
     assert r.status_code == 200, r.text
-    g = r.json()
-    assert (g["karar"], g["onaylanan"], g["basarisiz"]) == ("approve", 1, 3)
-    s0, s1, s2, s3 = g["sonuclar"]
-    assert [s["case_id"] for s in g["sonuclar"]] == [a["id"], varsayim["id"], b["id"], yok]
-    assert s0["basarili"] is True and s0["hata"] is None and s0["kod"] is None
-    assert s0["case"]["durum"] == "approved" and s0["case"]["id"] == a["id"]
-    assert (s1["basarili"], s1["kod"], s1["case"]) == (False, 422, None)
-    assert "varsayıma bağlı" in s1["hata"]
-    assert (s2["basarili"], s2["kod"]) == (False, 409) and "görüntüledikten sonra" in s2["hata"]
-    assert (s3["basarili"], s3["kod"]) == (False, 404)
-    assert [c["durum"] for c in latest_cases(api, rid)][:3] == ["approved", "draft", "draft"]
-    # Başarılıya bir review (görülen hash ile), başarısızlara hiç.
-    (rev,) = _reviews(a["id"])
-    assert rev.karar == "approve" and rev.onaylanan_hash == a["icerik_hash"]
-    assert _reviews(varsayim["id"]) == [] and _reviews(b["id"]) == []
-
-
-def test_toplu_onay_her_casee_ayri_review(api: TestClient, cs) -> None:
-    _, (a, b, *_) = cs
-    r = api.post(
-        "/cases/bulk-decision", json={"karar": "approve", "kalemler": [_kalem(b), _kalem(a)]}
-    )
-    assert r.status_code == 200, r.text
-    g = r.json()
-    assert (g["onaylanan"], g["basarisiz"]) == (2, 0)
-    assert [s["case"]["id"] for s in g["sonuclar"]] == [b["id"], a["id"]]
-    for c in (a, b):
-        (rev,) = _reviews(c["id"])
-        assert rev.karar == "approve" and rev.onaylanan_hash == c["icerik_hash"]
-        assert rev.duzeltme_olculeri["mesafe"] == 0.0
-        assert _denetim(c["id"], "review.approve") == 1
-        # Review süresi ölçüsünde toplu onay ayrı kategori (betik/API onayı sanılmaz).
-        assert rev.duzeltme_olculeri["toplu_onay"] is True
-    rid = a["requirement_id"]
-    assert api.get(f"/requirements/{rid}/case-metrics").json()["toplu_onay_sayisi"] == 2
-    # Hepsi başarısız olsa bile 200 + sonuçlar (onaylı case yeniden onaylanamaz: 409).
-    r = api.post("/cases/bulk-decision", json={"karar": "approve", "kalemler": [_kalem(a)]})
-    assert r.status_code == 200
-    assert (r.json()["onaylanan"], r.json()["sonuclar"][0]["kod"]) == (0, 409)
-
-
-def test_toplu_onay_savepoint_kalemi_geri_alir(
-    api: TestClient, cs, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Karar yazıldıktan sonra kalem hata verirse review, durum ve bekleyen denetim geri alınır."""
-    _, (a, b, *_) = cs
-    gercek = service.decide
-
-    def bozuk(session, cid, user, **kw):
-        tc = gercek(session, cid, user, **kw)
-        if str(cid) == b["id"]:
-            raise service.RequirementChanged("yapay hata")
-        return tc
-
-    monkeypatch.setattr(service, "decide", bozuk)
-    r = api.post(
-        "/cases/bulk-decision", json={"karar": "approve", "kalemler": [_kalem(b), _kalem(a)]}
-    )
-    g = r.json()
-    assert [(s["basarili"], s["kod"]) for s in g["sonuclar"]] == [(False, 409), (True, None)]
-    assert g["sonuclar"][0]["hata"] == "yapay hata"
-    assert _reviews(b["id"]) == [] and _denetim(b["id"], "review.approve") == 0
-    assert len(_reviews(a["id"])) == 1 and _denetim(a["id"], "review.approve") == 1
-    assert api.get(f"/cases/{b['id']}").json()["durum"] == "draft"
-
-
-@pytest.mark.parametrize(
-    "govde",
-    [
-        {"karar": "reject", "kalemler": [{"case_id": str(uuid.uuid4()), "icerik_hash": "h"}]},
-        {"karar": "approve", "kalemler": []},
-        {"karar": "approve", "kalemler": [{"case_id": "x", "icerik_hash": "h"}]},
-        {
-            "karar": "approve",
-            "kalemler": [{"case_id": str(uuid.uuid4()), "icerik_hash": "h"}],
-            "x": 1,
-        },
-        {
-            "karar": "approve",
-            "kalemler": [{"case_id": str(uuid.uuid4()), "icerik_hash": "h"} for _ in range(51)],
-        },
-    ],
-)
-def test_toplu_onay_gecersiz_govde_422(api: TestClient, cs, govde: dict[str, Any]) -> None:
-    assert api.post("/cases/bulk-decision", json=govde).status_code == 422
-
-
-def test_toplu_onay_tekrar_eden_case_422(api: TestClient, cs) -> None:
-    _, (a, *_) = cs
-    r = api.post(
-        "/cases/bulk-decision", json={"karar": "approve", "kalemler": [_kalem(a), _kalem(a)]}
-    )
-    assert r.status_code == 422 and "tekrarlanıyor" in r.json()["detail"]
-
-
-def test_toplu_onay_analist_rolu_ister(api: TestClient, cs, make_user) -> None:
-    _, (a, *_) = cs
-    login(api, make_user("po"))
-    r = api.post("/cases/bulk-decision", json={"karar": "approve", "kalemler": [_kalem(a)]})
+    sonuc = {o["case_id"]: o for o in r.json()["sonuclar"]}
+    assert sonuc[hazir["id"]]["durum"] == sonuc[hazir2["id"]]["durum"] == "onaylandi"
+    assert sonuc[tek["id"]]["durum"] == "hata"
+    assert "hazır değil" in sonuc[tek["id"]]["neden"]
+    durum = {c["id"]: c["durum"] for c in latest_cases(api, rid)}
+    assert (durum[hazir["id"]], durum[tek["id"]]) == ("ready", "draft")
+    # Analist (son onay) Testçinin toplu kabulünü veremez: 403.
+    login(api, make_user("analyst"))
+    r = api.post("/cases/bulk-decision", json={"karar": "accept", "ogeler": [_kalem(tek)]})
     assert r.status_code == 403
 
 
@@ -225,13 +139,14 @@ def _dogrula(api: TestClient, c: dict[str, Any], **govde: Any):
     )
 
 
-def test_varsayim_dogrulandi_case_i_onaylar(api: TestClient, cs) -> None:
+def test_varsayim_dogrulandi_case_i_kabul_eder(api: TestClient, cs) -> None:
+    """012: doğrulama Testçinin `edit`'idir; case `ready` olur, son onay Analistindir."""
     _, cases = cs
     c = cases[2]
     r = _dogrula(api, c, varsayim_id="A1")
     assert r.status_code == 200, r.text
     g = r.json()
-    assert (g["durum"], g["readiness"], g["varsayimlar"]) == ("approved", "ready", [])
+    assert (g["durum"], g["readiness"], g["varsayimlar"]) == ("ready", "ready", [])
     assert g["icerik"]["assumption_refs"] == []
     assert g["icerik"]["expected_result"] == c["icerik"]["expected_result"]
     (rev,) = _reviews(c["id"])
@@ -279,7 +194,7 @@ def test_varsayim_dogrulandi_hatalari(api: TestClient, cs) -> None:
     assert _dogrula(api, tek, varsayim_id="A1", gerekce="x" * 2001).status_code == 422
     for c in (tek, iki, soru, bos):
         assert _reviews(c["id"]) == []
-    # Onaylanmış case artık taslak değil: 409.
+    # Kabul edilmiş (ready) case artık taslak değil: 409.
     assert _dogrula(api, tek, varsayim_id="A1").status_code == 200
     taze = api.get(f"/cases/{tek['id']}").json()
     r = _dogrula(api, taze, varsayim_id="A1")
@@ -411,15 +326,3 @@ def test_po_dogru_yaniti() -> None:
         "...",
     ):
         assert not po_dogru_dedi(hayir), hayir
-
-
-def test_toplu_onay_ters_sirada_kilitler_ve_govde_sirasini_korur(api: TestClient, cs) -> None:
-    """Tur 2 güvenlik #7: satırlar id sırasıyla kilitlenir; yanıt gövde sırasındadır."""
-    _, cases = cs
-    secilen = sorted(cases[:2], key=lambda c: c["id"], reverse=True)
-    r = api.post(
-        "/cases/bulk-decision", json={"karar": "approve", "kalemler": [_kalem(c) for c in secilen]}
-    )
-    assert r.status_code == 200, r.text
-    assert [s["case_id"] for s in r.json()["sonuclar"]] == [c["id"] for c in secilen]
-    assert r.json()["onaylanan"] == 2

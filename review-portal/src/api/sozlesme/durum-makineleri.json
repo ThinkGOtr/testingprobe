@@ -179,6 +179,7 @@
       "merged",
       "pending",
       "pr_open",
+      "unverified",
       "verifying"
     ],
     "transitions": {
@@ -207,10 +208,15 @@
         "closed",
         "merged"
       ],
+      "unverified": [
+        "closed",
+        "pending"
+      ],
       "verifying": [
         "blocked",
         "checking",
-        "failed"
+        "failed",
+        "unverified"
       ]
     }
   },
@@ -220,6 +226,7 @@
       "approved",
       "draft",
       "published",
+      "ready",
       "rejected",
       "superseded"
     ],
@@ -230,11 +237,16 @@
         "superseded"
       ],
       "draft": [
-        "approved",
+        "ready",
         "rejected",
         "superseded"
       ],
       "published": [],
+      "ready": [
+        "approved",
+        "draft",
+        "superseded"
+      ],
       "rejected": [
         "draft",
         "superseded"

@@ -53,6 +53,19 @@ const good = {
     "});",
     "",
   ].join("\n"),
+  // K19: gizli test verisi ortamdan — fikstür çağrısının doğrudan argümanı olarak tam `process.env.TP_TESTVERI_<AD>`.
+  "gizli-test-verisi": [
+    'import { test } from "../fixtures";',
+    "",
+    'test.use({ dealerUsername: "bayi1" });',
+    "",
+    'test("örnek", async ({ loginPage }) => {',
+    "  await loginPage.goto();",
+    '  await loginPage.login("bayi1", process.env.TP_TESTVERI_DEMO_PAROLA);',
+    '  await loginPage.expectLoggedIn("Merkez Bayi");',
+    "});",
+    "",
+  ].join("\n"),
 };
 
 const bad = {
@@ -76,6 +89,29 @@ const bad = {
   "degisken": body('    const n = 7;\n    await catalogPage.addToCart("P-001", n);'),
   "await-yok": body("    void cartPage.expectEmpty();"),
   "bilinmeyen-metot": body('    await cartPage.evaluate("1");'),
+  // K19 istisnasının dışı: yalnızca fikstür çağrısının doğrudan argümanı olarak tam `process.env.TP_TESTVERI_<AD>`.
+  "testveri-olmayan-env": body('    await catalogPage.addToCart(process.env.PATH, 1);'),
+  "testveri-kucuk-harf": body('    await catalogPage.addToCart(process.env.TP_TESTVERI_x, 1);'),
+  "testveri-onek-yok": body('    await catalogPage.addToCart(process.env.TP_TESTVERI_, 1);'),
+  "testveri-hesaplanmis": body('    await catalogPage.addToCart(process.env["TP_TESTVERI_X"], 1);'),
+  "testveri-hesaplanmis-env": body('    await catalogPage.addToCart(process["env"].TP_TESTVERI_X, 1);'),
+  "testveri-varsayilan": body('    await catalogPage.addToCart(process.env.TP_TESTVERI_X ?? "P-001", 1);'),
+  "testveri-non-null": body("    await catalogPage.addToCart(process.env.TP_TESTVERI_X!, 1);"),
+  "testveri-as": body("    await catalogPage.addToCart(process.env.TP_TESTVERI_X as string, 1);"),
+  "testveri-opsiyonel": body("    await catalogPage.addToCart(process.env?.TP_TESTVERI_X, 1);"),
+  "testveri-metot": body("    await catalogPage.addToCart(process.env.TP_TESTVERI_X.trim(), 1);"),
+  "testveri-uye": body("    await catalogPage.addToCart(process.env.TP_TESTVERI_X.length, 1);"),
+  "testveri-globalthis": body("    await catalogPage.addToCart(globalThis.process.env.TP_TESTVERI_X, 1);"),
+  "testveri-sablon-dizesi": body("    await catalogPage.addToCart(`${process.env.TP_TESTVERI_X}`, 1);"),
+  "testveri-dizi": body("    await catalogPage.addToCart([process.env.TP_TESTVERI_X], 1);"),
+  "testveri-degisken": body("    const p = process.env.TP_TESTVERI_X;\n    await catalogPage.addToCart(p, 1);"),
+  "testveri-deyim": body("    process.env.TP_TESTVERI_X;\n    await cartPage.expectEmpty();"),
+  "testveri-atama": body('    process.env.TP_TESTVERI_X = "x";\n    await cartPage.expectEmpty();'),
+  "testveri-test-use": `${header}test.use({ dealerUsername: process.env.TP_TESTVERI_X });\ntest("x", async ({ cartPage }) => { await cartPage.expectEmpty(); });\n`,
+  "testveri-test-adi": `${header}test(process.env.TP_TESTVERI_X, async ({ cartPage }) => { await cartPage.expectEmpty(); });\n`,
+  "process-argv": body("    await catalogPage.addToCart(process.argv, 1);"),
+  "process-yalin": body("    await catalogPage.addToCart(process, 1);"),
+  "process-env-yalin": body("    await catalogPage.addToCart(process.env, 1);"),
   "ic-ice-islev": body("    await cartPage.expectEmpty();\n    await catalogPage.goto();\n  });\n  test(\"y\", async ({ cartPage }) => {\n    await (async () => { await cartPage.expectEmpty(); })();"),
 };
 

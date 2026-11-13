@@ -40,19 +40,34 @@ describe("oturum ve yönlendirme", () => {
     expect(screen.getByText("ÖRNEK VERİ")).toBeInTheDocument();
   });
 
-  it("menü role duyarlı: Claude Code kanalı yalnızca analiste görünür", async () => {
+  it("menü role duyarlı: Claude Code kanalı claude_code.read rollerine görünür (Developer görmez)", async () => {
+    await oturumAc("gelistirici");
+    const ilk = uygulama("/");
+    expect(await screen.findByRole("heading", { name: "Koşular", level: 1 })).toBeInTheDocument();
+    let menu = screen.getByRole("navigation", { name: "Ana menü" });
+    expect(within(menu).queryByText("Claude Code kanalı")).toBeNull();
+    expect(within(menu).getByText("Kontrol Kulesi")).toBeInTheDocument();
+    ilk.unmount();
     await oturumAc("muhendis");
     uygulama("/");
     expect(await screen.findByRole("heading", { name: "Kod üretimi", level: 1 })).toBeInTheDocument();
-    const menu = screen.getByRole("navigation", { name: "Ana menü" });
-    expect(within(menu).queryByText("Claude Code kanalı")).toBeNull();
-    expect(within(menu).getByText("Kontrol Kulesi")).toBeInTheDocument();
+    menu = screen.getByRole("navigation", { name: "Ana menü" });
+    expect(within(menu).getByText("Claude Code kanalı")).toBeInTheDocument();
   });
 
   it("yetkisiz rolde Claude Code ekranı erişim mesajı verir", async () => {
-    await oturumAc("testci");
+    await oturumAc("gelistirici");
     uygulama("/claude-code");
     expect(await screen.findByText("Bu ekran için yetkiniz yok.")).toBeInTheDocument();
+    expect(screen.getByText("Gereken rol: Sistem Yöneticisi / Analist / Testçi / Automation Engineer")).toBeInTheDocument();
+  });
+
+  it("Analist Claude Code ekranını görür; token oluşturma Testçiye ait (token.issue)", async () => {
+    await oturumAc("analist");
+    uygulama("/claude-code");
+    const d = await screen.findByRole("button", { name: "8 saatlik token oluştur" });
+    expect(d).toBeDisabled();
+    expect(d).toHaveAccessibleDescription("Bu işlem için gereken rol: Testçi");
   });
 
   it("çıkış oturumu kapatır", async () => {
@@ -74,7 +89,7 @@ describe("oturum ve yönlendirme", () => {
     await u.click(dugme);
     expect(dugme).toHaveAttribute("aria-expanded", "true");
     expect(menu).toHaveClass("acik");
-    within(menu).getByRole("link", { name: "Koşular" }).focus();
+    within(menu).getByRole("link", { name: "Bug taslakları" }).focus();
     await u.keyboard("{Escape}");
     expect(dugme).toHaveAttribute("aria-expanded", "false");
     expect(menu).not.toHaveClass("acik");
@@ -115,8 +130,8 @@ describe("oturum ve yönlendirme", () => {
     const dugme = screen.getByRole("button", { name: "Menü" });
     const menu = screen.getByRole("navigation", { name: "Ana menü" });
     await u.click(dugme);
-    await u.click(within(menu).getByRole("link", { name: "Koşular" }));
-    await screen.findByRole("heading", { name: "Koşular", level: 1 });
+    await u.click(within(menu).getByRole("link", { name: "Bug taslakları" }));
+    await screen.findByRole("heading", { name: "Bug taslakları", level: 1 });
     expect(dugme).toHaveAttribute("aria-expanded", "false");
     expect(menu).not.toHaveClass("acik");
     expect(screen.getByRole("main")).toHaveFocus();
@@ -137,8 +152,8 @@ describe("ekranlar", () => {
     // TPD-1: core durumu `done`, akış ipucu 6 (Review + kırma)
     expect(screen.getByText("Case'ler yayınlandı")).toBeInTheDocument();
     expect(screen.getByText("Review + kırma")).toBeInTheDocument();
-    // TPD-1 case sayacı: 9 üretildi, 1 reddedildi → süitte 8; 4'ü onaylı/yayında
-    expect(screen.getByText("4/8")).toBeInTheDocument();
+    // TPD-1 case sayacı: 10 üretildi, 2 reddedildi → süitte 8; 6'sı onaylı/yayında
+    expect(screen.getByText("6/8")).toBeInTheDocument();
     // İki serbest metin gereksinimi: req-ft-1 ve şema v3 örneği (req-ft-2).
     expect(screen.getAllByText("Serbest metin")).toHaveLength(2);
   });
@@ -185,7 +200,7 @@ describe("ekranlar", () => {
     const hash = (id: string) => bulgular.find((b) => b.id === id)!.icerik_hash;
     await api.bulguKarari("fnd-5", { icerik_hash: hash("fnd-5"), karar: "fix_doc" });
     await api.bulguKarari("fnd-6", { icerik_hash: hash("fnd-6"), karar: "accept_difference", gerekce: "ok" });
-    await api.duzeltmeleriUygula("req-ft-1");
+    await api.duzeltmeleriUygula("req-ft-1"); // Analist (requirement.review)
     await new Promise((r) => setTimeout(r, 20));
     await api.logout();
     await oturumAc("po");
@@ -214,6 +229,30 @@ describe("ekranlar", () => {
     await u.click(screen.getByRole("button", { name: "PO olarak onayla" }));
     expect(await screen.findByText("Onaylı")).toBeInTheDocument();
     expect(g.durum).toBe("po_approved");
+  });
+
+  it("Jira story'sinde PO onay düğmesi yok, Jira etiketi ipucu var (ANALIZ 012 K6)", async () => {
+    const { mockVerisi } = await import("../api/mock/handlers");
+    const g = mockVerisi().gereksinimler.find((x) => x.id === "req-tpd-1")!;
+    g.durum = "pending_po";
+    g.po = { durum: "pending", onaylayan: null, zaman: null, kanal: "jira" };
+    await oturumAc("po");
+    uygulama("/gereksinimler/req-tpd-1");
+    expect(await screen.findByTestId("po-onay-ipucu")).toHaveTextContent("tp-po-approved");
+    expect(screen.queryByRole("button", { name: "PO olarak onayla" })).toBeNull();
+  });
+
+  it("serbest metinde PO onay düğmesi PO olmayan rolde pasif ve gereken rolü söyler", async () => {
+    const { mockVerisi } = await import("../api/mock/handlers");
+    const g = mockVerisi().gereksinimler.find((x) => x.id === "req-ft-1")!;
+    g.durum = "pending_po";
+    g.po = { durum: "pending", onaylayan: null, zaman: null, kanal: "portal" };
+    await oturumAc("analist");
+    uygulama("/gereksinimler/req-ft-1");
+    const d = await screen.findByRole("button", { name: "PO olarak onayla" });
+    await waitFor(() => expect(d).toBeDisabled());
+    expect(d).toHaveAttribute("title", "Bu işlem için gereken rol: PO");
+    expect(screen.queryByTestId("po-onay-ipucu")).toBeNull();
   });
 
   it("script listesi: core durumu + türetilmiş işaret (merge'e hazır / zayıf test)", async () => {
@@ -321,14 +360,20 @@ describe("ekranlar", () => {
     expect(screen.queryByRole("button", { name: "Buton kimliğini değiştir" })).toBeNull();
   });
 
-  it("denetim: zincir doğrulama sonucu", async () => {
+  it("denetim: zincir doğrulama sonucu (Denetçi); diğer roller yalnız kendi olaylarını, doğrulamasız görür", async () => {
+    await oturumAc("denetci");
+    const { unmount } = uygulama("/denetim");
+    expect(await screen.findByText("✓ Zincir doğrulandı")).toBeInTheDocument();
+    unmount();
     await oturumAc("analist");
     uygulama("/denetim");
-    expect(await screen.findByText("✓ Zincir doğrulandı")).toBeInTheDocument();
+    expect(await screen.findByText(/Yalnız sizin olaylarınız gösterilir/)).toBeInTheDocument();
+    expect(screen.queryByText("✓ Zincir doğrulandı")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Zinciri yeniden doğrula" })).toBeNull();
   });
 
   it("Claude Code kanalı: token ve .mcp.json", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const u = userEvent.setup();
     uygulama("/claude-code");
     await u.click(await screen.findByRole("button", { name: "8 saatlik token oluştur" }));

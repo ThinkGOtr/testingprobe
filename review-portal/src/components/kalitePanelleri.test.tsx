@@ -26,9 +26,18 @@ async function uret() {
   const g = mockVerisi().gereksinimler.find((x) => x.id === RID)!;
   g.durum = "po_approved";
   g.po = { durum: "approved", onaylayan: "po@sim.local", zaman: "2026-11-11T10:00:00Z", kanal: "jira", onaylanan_hash: g.icerik_hash };
-  await oturumAc("analist");
+  await oturumAc("testci");
   await api.caseUret(RID);
   await bekleIsler();
+}
+
+/** 012 iki adım: Testçi kabul eder, Analist son onayı verir; oturum Analistte kalır (denetime gönderen). */
+async function ikiAdimOnay(ids: string[]) {
+  const hash = (id: string) => mockVerisi().caseler.find((x) => x.id === id)!.icerik_hash;
+  await oturumAc("testci");
+  for (const id of ids) await api.caseKarari(id, { icerik_hash: hash(id), karar: "accept" });
+  await oturumAc("analist");
+  for (const id of ids) await api.caseKarari(id, { icerik_hash: hash(id), karar: "approve" });
 }
 
 function uygulama(yol: string) {
@@ -57,7 +66,7 @@ describe("mock: review (P8) ve denetim (P9) akışı", () => {
     expect(r.review?.icerik.items?.[8].finding).toBe("UYGUN — platform eki yok");
 
     const caseler = mockVerisi().caseler.filter((c) => c.requirement_id === RID);
-    for (const c of caseler) await api.caseKarari(c.id, { icerik_hash: c.icerik_hash, karar: "approve" });
+    await ikiAdimOnay(caseler.map((c) => c.id));
     let p = await api.yayinOnizleme(RID);
     expect(p.kalemler.map((k) => k.islem)).toEqual(["blocked_gate", "blocked_gate"]);
     expect(p.kalemler[0].neden).toMatch(/^Yayınlanamaz: Agent Probe denetimi kararı yok/);
@@ -74,8 +83,10 @@ describe("mock: review (P8) ve denetim (P9) akışı", () => {
 
     // Bir case reddedildi: set değişti → karar bayat, review bayat, kapı kapanır.
     const c = mockVerisi().caseler.find((x) => x.requirement_id === RID)!;
+    await oturumAc("testci");
     await api.caseYenidenAc(c);
     await api.caseKarari(c.id, { icerik_hash: mockVerisi().caseler.find((x) => x.id === c.id)!.icerik_hash, karar: "reject", ret_nedeni: "duplicate" });
+    await oturumAc("analist");
     const bayat = await api.caseDenetim(RID);
     expect(bayat.guncel_karar).toBeNull();
     expect(bayat.denetim?.guncel).toBe(false);
@@ -97,9 +108,10 @@ describe("mock: review (P8) ve denetim (P9) akışı", () => {
     k.review = { ...k.review!, durum: "hata", hata: "test" };
     const d = await api.caseDenetim(RID);
     expect(d.gonder_engeli).toMatch(/review'u tamamlanmadı ve onaylı case yok/);
+    await oturumAc("analist");
     await expect(api.caseDenetimGonder(RID)).rejects.toMatchObject({ status: 409 });
     const c = mockVerisi().caseler.find((x) => x.requirement_id === RID)!;
-    await api.caseKarari(c.id, { icerik_hash: c.icerik_hash, karar: "approve" });
+    await ikiAdimOnay([c.id]);
     expect((await api.caseDenetim(RID)).gonder_engeli).toBeNull();
   });
 
@@ -122,7 +134,7 @@ describe("mock: review (P8) ve denetim (P9) akışı", () => {
   it("case review sayfası: daralmış paneller, karar bekleyen varken ikincil + onay ile Agent Probe'a gönder, KABUL yönlendirmesi", async () => {
     await uret();
     const c = mockVerisi().caseler.find((x) => x.requirement_id === RID)!;
-    await api.caseKarari(c.id, { icerik_hash: c.icerik_hash, karar: "approve" });
+    await ikiAdimOnay([c.id]);
     const u = userEvent.setup();
     uygulama(`/gereksinimler/${RID}/caseler`);
     expect(await screen.findByTestId("review-skor")).toHaveTextContent("11/12");
@@ -174,7 +186,7 @@ describe("mock: review (P8) ve denetim (P9) akışı", () => {
     expect(screen.getByRole("link", { name: "Yayın önizleme" })).toHaveClass("dugme-ikincil");
 
     // Hepsi onaylandı: gönder birincil olur, yayın önizleme ikincil kalır (sayfada tek birincil).
-    for (const c of mockVerisi().caseler.filter((x) => x.requirement_id === RID)) await api.caseKarari(c.id, { icerik_hash: c.icerik_hash, karar: "approve" });
+    await ikiAdimOnay(mockVerisi().caseler.filter((x) => x.requirement_id === RID).map((c) => c.id));
     await u.click(within(serit).getByTestId("serit-bekleyen"));
     await waitFor(() => expect(screen.getByTestId("serit-bekleyen")).toHaveTextContent("Karar bekleyen yok"), { timeout: 3000 });
     await waitFor(() => expect(screen.getByRole("button", { name: "Agent Probe'a gönder" })).toHaveClass("dugme-birincil"));
@@ -254,7 +266,7 @@ describe("paneller", () => {
   });
 
   it("review hatası: 'review çalışmadı, yeniden dene'; ham sınıf adı ayıklanır, hata tonunda", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     sar(
       <ReviewPaneli
         gorunum={{ ...REVIEW, bayat: false, review: { ...REVIEW.review!, durum: "hata", hata: "REPLAY-MISS: bu set için kayıtlı review çıktısı yok (ReplayNoOutput)" } }}

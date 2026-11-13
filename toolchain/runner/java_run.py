@@ -1,4 +1,13 @@
-"""Java (Appium + TestNG) koşusu — `demo-app/e2e-app`, platform android | ios | windows (009 §2.7).
+"""Java (TestNG) koşusu (009 §2.7, 011 §2.6) — iki hedef proje, tek hat:
+
+- uygulama: `demo-app/e2e-app` (Appium), platform android | ios | windows;
+- web: `demo-app/e2e-java` (Playwright for Java), platform web — Appium YOK. Sağlık kontrolü
+  TS koşusuyla aynıdır (web origin + demo API); ortam `BASE_URL`, `API_URL` (+ `DEMO_API_URL`),
+  `DEMOAPP_TEST_TOKEN`; tarayıcı imajdaki `/ms-playwright` (`PLAYWRIGHT_BROWSERS_PATH`), indirme
+  kapalı (`PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`: Playwright Java sürücüsü `driver` +
+  `driver-bundle` jar'larından geçici dizine açılır, ağa çıkmaz). Kanıt
+  `target/kanit/<Sınıf>.<metot>/{ekran.png, trace.zip, sayfa.html}`. Aşağıdaki akış, sertleştirme
+  ve tekrar düzeni iki projede aynıdır (kök/güvenilir pom/depo: `worker.java.java_kok`).
 
 `ci/run-app-checks.sh`'in test-runner karşılığıdır; ama betik ve commit'teki `mvnw` ÇALIŞTIRILMAZ.
 toolchain-worker'ın Java derleme yolundaki sertleştirme aynen uygulanır (worker/java.py):
@@ -14,7 +23,7 @@ toolchain-worker'ın Java derleme yolundaki sertleştirme aynen uygulanır (work
 Akış (run.py ile aynı kilit ve koşu dizini sözleşmesi):
   1. Sağlık: `DEMO_API_URL/health` + Appium `APPIUM_URL_<PLATFORM>/status`. Başarısızsa koşu
      yapılmaz, `error` (triage kuralı 1: `environment`).
-  2. Commit'in e2e-app ağacı `runs/<id>/src/<e2e_app_root>`'a çıkarılır (koşan kodun kopyası).
+  2. Commit'in proje ağacı `runs/<id>/src/<kök>`'e çıkarılır (koşan kodun kopyası).
   3. Tekrar başına (`repeat_each`) `mvn … [test-compile] surefire:test -Dplatform=<p>`; kapsam
      `test_files` → `-Dtest=<yol>` (testng.xml devre dışı), yoksa `testng.xml` (testler + uretilen).
      Birim testleri (cihazsız) burada koşmaz: GitHub iş akışı `run-app-checks.sh` ile koşar.
@@ -24,6 +33,11 @@ Akış (run.py ile aynı kilit ve koşu dizini sözleşmesi):
      `failure.type` ile yapılır (runner/surefire.py aynı sınıflandırmayı üretir).
   5. Sonuç: Surefire `TEST-*.xml` → `results.summarize` biçiminde özet + tek `junit.xml`
      (`runs/<id>/results/junit.xml`), Allure raporu, kanıt `target/kanit/`.
+  6. Extent raporu: e2e-app'in TestNG dinleyicisi (`altyapi/ExtentRaporu`) koşu sırasında tek
+     dosyalık, dış kaynak yüklemeyen `target/extent-report/index.html` yazar
+     (`reports.extent_html`). Ayrı üretim adımı yoktur; tekrarlar (`repeat_each`) aynı dizine
+     yazar ve dinleyici önceki tekrarları rapora geri yükler (`-Dextent.tekrar=<i>/<n>` test
+     adına eklenir).
 
 Uygulama seçimi Appium hostundaki kurulu uygulamadır (`TP_APP_ID_<P>`; isteğe bağlı
 `TP_APP_PATH_<P>` Appium hostundaki dosya yolu). Retries (`--retries`) Java'da yoktur (TestNG
@@ -43,6 +57,7 @@ import httpx
 
 from runner import surefire
 from runner.results import decide_status, failure_groups, failures_of
+from runner.run import testveri_env
 from toolchain_common import gitforge, proc, repos
 from toolchain_common.artifacts import KEEP_MARKER, atomic_write_json, run_dir
 from toolchain_common.settings import Settings
@@ -51,7 +66,12 @@ from worker import java as javayol
 if TYPE_CHECKING:
     from runner.run import RunRequest
 
-PLATFORMS = ("android", "ios", "windows")
+PLATFORMS = javayol.APP_PLATFORMS
+WEB = javayol.WEB
+# Web + Java raporlarındaki `project`: TS koşusundaki Playwright projesiyle aynı ad.
+WEB_PROJECT = "chromium"
+# İmajdaki tarayıcı dizini (mcr.microsoft.com/playwright; Dockerfile `PLAYWRIGHT_BROWSERS_PATH`).
+BROWSERS_PATH = "/ms-playwright"
 # Uygulama kimliği varsayılanları (demo-app/mobile/app.json; Windows'ta zorunlu yapılandırma).
 DEFAULT_APP_ID = {"android": "com.antreklabs.bayisiparis", "ios": "com.antreklabs.bayisiparis"}
 DEFAULT_APP_ACTIVITY = {"android": ".MainActivity"}
@@ -68,6 +88,15 @@ APP_ENV = {
 }
 PASS_ENV = ("PATH", "HOME", "LANG", "LC_ALL", "TZ", "TMPDIR", "JAVA_HOME")
 SUREFIRE_DIR = "surefire-reports"
+# OPS-O6: test-runner kapsayıcısı 3 GB sınırlıdır (Maven JVM + Surefire çatalı + Node sürücüsü +
+# Chromium). Maven JVM'inin yığını sabittir (ortamdaki MAVEN_OPTS geçmez; bu değer verilir);
+# Surefire çatalının sınırı pom'un `argLine`'ıdır.
+MAVEN_OPTS = "-Xmx384m"
+# Koşunun geçici dosyaları (JVM, Playwright sürücüsü) koşu dizini altında: `<run>/tmp`. JVM Linux'ta
+# TMPDIR okumaz (OPS-O2): Maven JVM'ine `MAVEN_OPTS` ile, Surefire çatalına pom `argLine`'ındaki
+# `${tp.java.tmpdir}` ile `-Djava.io.tmpdir` verilir.
+RUN_TMP_DIR = "tmp"
+EXTENT_REPORT_DIR = "extent-report"
 
 
 def appium_url(platform: str) -> str:
@@ -90,8 +119,14 @@ def app_settings(platform: str) -> dict[str, str]:
 
 
 def health_check(cfg: Settings, platform: str, client: httpx.Client | None = None) -> dict:
-    """Koşu öncesi: demo API + Appium. `ok` yalnızca ikisi de 2xx dönerse doğrudur."""
+    """Koşu öncesi: demo API + Appium (uygulama) ya da web origin + demo API (web; Appium yok).
+    `ok` yalnızca ikisi de 2xx dönerse doğrudur."""
     from runner.run import _probe, now_iso
+    from runner.run import health_check as web_health_check
+
+    if platform == WEB:
+        # TS koşusuyla aynı kontrol ve aynı biçim; `appium` alanı (Java raporu) boş kalır.
+        return {**web_health_check(cfg, client), "appium": None}
 
     own = client is None
     http = client or httpx.Client()
@@ -146,7 +181,11 @@ def maven_argv(
     test_files: list[str],
     *,
     compile_first: bool,
+    repeat_count: int = 1,
+    kok: javayol.JavaKok | None = None,
+    tmp_dir: Path | None = None,
 ) -> list[str]:
+    kok = kok or javayol.java_kok(cfg, platform)
     argv = [
         cfg.mvn,
         "-B",
@@ -155,22 +194,61 @@ def maven_argv(
         "-f",
         str(root / "pom.xml"),
         f"-Dmaven.repo.local={head_repo}",
-        f"-Dmaven.repo.local.tail={cfg.e2e_app_m2}",
+        f"-Dmaven.repo.local.tail={kok.m2}",
         "-Dmaven.compiler.proc=none",
         f"-Dplatform={platform}",
         f"-Draporlar.dizini={rep.reports_dir}",
         f"-Dallure.results.directory={allure_dir}",
         f"-Dkanit.dizini={rep.kanit_dir}",
+        # Extent raporu tekrarlar arasında ortak dizine yazılır (dinleyici birleştirir).
+        f"-Dextent.rapor.dizini={allure_dir.parent / EXTENT_REPORT_DIR}",
     ]
+    if tmp_dir is not None:
+        # Surefire çatalının java.io.tmpdir'i (pom argLine: -Djava.io.tmpdir=${tp.java.tmpdir}).
+        argv.append(f"-Dtp.java.tmpdir={tmp_dir}")
+    if repeat_count > 1:
+        argv.append(f"-Dextent.tekrar={rep.index + 1}/{repeat_count}")
     if test_files:
         argv += [f"-Dtest={test_selector(test_files)}", "-Dsurefire.failIfNoSpecifiedTests=true"]
     argv += ["test-compile", "surefire:test"] if compile_first else ["surefire:test"]
     return argv
 
 
-def maven_env(cfg: Settings, req: RunRequest, platform: str) -> dict[str, str]:
-    """İzin listesi: sistem + e2e-app ayarları (MAVEN_*/JVM seçenekleri geçmez)."""
+def maven_env(
+    cfg: Settings, req: RunRequest, platform: str, tmp_dir: Path | None = None
+) -> dict[str, str]:
+    """İzin listesi: sistem + proje ayarları + gizli test verisi `TP_TESTVERI_*` (K19; ortamdaki
+    MAVEN_*/JVM seçenekleri geçmez).
+    `MAVEN_OPTS` sabittir (bellek sınırı, OPS-O6); `tmp_dir` verilirse `TMPDIR` odur (koşu
+    dizini altı; ortamdaki TMPDIR'in yerine geçer) ve Maven JVM'inin `java.io.tmpdir`'i de odur
+    (JVM Linux'ta TMPDIR okumaz, OPS-O2)."""
     env = {k: os.environ[k] for k in PASS_ENV if k in os.environ}
+    env.update(testveri_env())
+    env["MAVEN_OPTS"] = MAVEN_OPTS
+    if tmp_dir is not None:
+        env["TMPDIR"] = str(tmp_dir)
+        env["MAVEN_OPTS"] = f"{MAVEN_OPTS} -Djava.io.tmpdir={tmp_dir}"
+    if platform == WEB:
+        env.update(
+            {
+                "MAVEN_SKIP_RC": "1",
+                "CI": "1",
+                # TS e2e ile aynı hedef (compose'daki demo uygulaması). API kökü iki adla da
+                # verilir: 011 §2.5 `API_URL`, TS e2e ve e2e-app `DEMO_API_URL`.
+                "BASE_URL": cfg.base_url,
+                "API_URL": cfg.demo_api_url,
+                "DEMO_API_URL": cfg.demo_api_url,
+                "DEMOAPP_TEST_TOKEN": cfg.demoapp_test_token,
+                "BREAK_CAMPAIGN": "1" if req.break_campaign else "",
+                "TP_RUN_ID": req.run_id,
+                # Tarayıcı imajdan; sürücü (driver-bundle) açılırken `playwright install`
+                # çalıştırmaz: koşu sırasında indirme yok (çevrimdışı).
+                "PLAYWRIGHT_BROWSERS_PATH": os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+                or BROWSERS_PATH,
+                "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD": "1",
+            }
+        )
+        return env
     env.update(app_settings(platform))
     env.update(
         {
@@ -203,9 +281,11 @@ def execute_locked(
 ) -> dict[str, Any]:
     from runner import run as runmod
 
-    platform = req.platform or ""
-    if platform not in PLATFORMS:
-        raise runmod.RunRejected(f"Java koşusu platform ister: {PLATFORMS}")
+    platform = req.platform or WEB
+    if platform != WEB and platform not in PLATFORMS:
+        raise runmod.RunRejected(f"Java koşusu platformu: {(WEB, *PLATFORMS)}")
+    web = platform == WEB
+    kok = javayol.java_kok(cfg, platform)
     dest = run_dir(cfg.artifacts_path, req.run_id)
     try:
         dest.mkdir(parents=True, exist_ok=False)
@@ -224,8 +304,8 @@ def execute_locked(
         "break_campaign": req.break_campaign,
         "workers": None,
         "keep": req.keep,
-        "base_url": None,
-        "appium_url": appium_url(platform) or None,
+        "base_url": cfg.base_url if web else None,
+        "appium_url": None if web else (appium_url(platform) or None),
         "artifacts_dir": str(dest),
         "baslangic": started,
     }
@@ -234,7 +314,7 @@ def execute_locked(
     atomic_write_json(dest / "run.json", {**base, "status": "running"})
     saglik = health_check(cfg, platform, http)
 
-    root = dest / "src" / cfg.e2e_app_root
+    root = dest / "src" / kok.root
     target = root / "target"
     repeats = _repeats(target, req.repeat_each)
     allure_dir = target / "allure-results"
@@ -252,11 +332,11 @@ def execute_locked(
             error = saglik["hata"]
         else:
             try:
-                _export(cfg, loc, dest / "src")
+                _export(cfg, loc, dest / "src", kok)
             except gitforge.ForgeError as exc:
                 error = str(exc)
             else:
-                deps = javayol.check_deps(cfg, root)
+                deps = javayol.check_deps(cfg, root, kok)
                 if not deps["ok"]:
                     error = deps["error"]
                 else:
@@ -266,7 +346,7 @@ def execute_locked(
                         target.unlink()
                     ran = True
                     exit_code, timed_out, duration_ms = _run_maven(
-                        cfg, req, platform, root, repeats, allure_dir, log_parts
+                        cfg, req, platform, root, repeats, allure_dir, log_parts, kok, dest
                     )
     finally:
         if req.break_campaign and saglik["ok"]:
@@ -277,9 +357,11 @@ def execute_locked(
     if ran:
         (dest / "runner.log").write_text("\n".join(log_parts), encoding="utf-8")
         allure_report = runmod.generate_allure(cfg, target)
-        summary = surefire.summarize(repeats, project=platform, rel_root=cfg.artifacts_path)
+        summary = surefire.summarize(
+            repeats, project=WEB_PROJECT if web else platform, rel_root=cfg.artifacts_path
+        )
         try:
-            surefire.write_junit(repeats, junit_out)
+            surefire.write_junit(repeats, junit_out, name=kok.ad)
         except OSError as exc:
             summary["errors"].append(f"junit.xml yazılamadı: {type(exc).__name__}")
         if timed_out:
@@ -325,7 +407,8 @@ def execute_locked(
         "kanit_dir": str(target / "kanit"),
         "allure_dir": str(allure_dir),
         "html_dir": None,
-        "traces_dir": None,
+        # Web + Java: Playwright izleri kanıt dizinindedir (`<Sınıf>.<metot>/trace.zip`).
+        "traces_dir": str(target / "kanit") if web else None,
         "log": str(dest / "runner.log"),
         "artifacts_rel": runmod._rel(cfg, dest),
         "break_restore": restore,
@@ -376,12 +459,40 @@ def _run_maven(
     repeats: list[surefire.Repeat],
     allure_dir: Path,
     log_parts: list[str],
+    kok: javayol.JavaKok | None = None,
+    run_tmp: Path | None = None,
 ) -> tuple[int | None, bool, int]:
-    """Tekrarları sırayla koşar; (son sıfırdan farklı çıkış kodu, süre aşımı, toplam süre)."""
+    """Tekrarları sırayla koşar; (son sıfırdan farklı çıkış kodu, süre aşımı, toplam süre).
+    `run_tmp` koşu dizinidir: geçici dosyalar `<run>/tmp`'ye (TMPDIR) yazılır, sonda silinir."""
+    tmp_dir = run_tmp / RUN_TMP_DIR if run_tmp is not None else None
+    if tmp_dir is not None:
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+    env = maven_env(cfg, req, platform, tmp_dir)
+    try:
+        return _run_repeats(
+            cfg, req, platform, root, repeats, allure_dir, log_parts, kok, env, tmp_dir
+        )
+    finally:
+        if tmp_dir is not None:
+            # Geçici dosyalar kanıt değildir: koşu dizininde (artefakt) kalmaz.
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def _run_repeats(
+    cfg: Settings,
+    req: RunRequest,
+    platform: str,
+    root: Path,
+    repeats: list[surefire.Repeat],
+    allure_dir: Path,
+    log_parts: list[str],
+    kok: javayol.JavaKok | None,
+    env: dict[str, str],
+    tmp_dir: Path | None = None,
+) -> tuple[int | None, bool, int]:
     deadline = time.monotonic() + cfg.run_timeout_s
     exit_code: int | None = 0
     total_ms = 0
-    env = maven_env(cfg, req, platform)
     with tempfile.TemporaryDirectory(prefix="tp-m2-run-") as head_repo:
         for i, rep in enumerate(repeats):
             left = deadline - time.monotonic()
@@ -389,7 +500,7 @@ def _run_maven(
                 return None, True, total_ms
             argv = maven_argv(
                 cfg, root, Path(head_repo), platform, rep, allure_dir, req.test_files,
-                compile_first=i == 0,
+                compile_first=i == 0, repeat_count=len(repeats), kok=kok, tmp_dir=tmp_dir,
             )  # fmt: skip
             res = proc.run(argv, cwd=root, env=env, timeout_s=left)
             total_ms += res.duration_ms
@@ -416,6 +527,7 @@ def _reports(cfg: Settings, target: Path, junit: Path) -> dict[str, dict[str, An
         ("surefire", target / SUREFIRE_DIR, None),
         ("allure", target / "allure-results", None),
         ("allure_html", target / "allure-report", "index.html"),
+        ("extent_html", target / EXTENT_REPORT_DIR, "index.html"),
         ("kanit", target / "kanit", None),
     ):
         probe = path / marker if marker else path
@@ -423,9 +535,12 @@ def _reports(cfg: Settings, target: Path, junit: Path) -> dict[str, dict[str, An
     return out
 
 
-def _export(cfg: Settings, loc: repos.Located, into: Path) -> None:
-    """Commit'in e2e-app ağacını `into/<e2e_app_root>`'a çıkarır (kalıcı; koşu kanıtı)."""
-    with gitforge.checkout(loc.repo, loc.sha, cfg.e2e_app_root, cfg.git_timeout_s) as tree:
-        dst = into / cfg.e2e_app_root
+def _export(
+    cfg: Settings, loc: repos.Located, into: Path, kok: javayol.JavaKok | None = None
+) -> None:
+    """Commit'in Java proje ağacını `into/<kök>`'e çıkarır (kalıcı; koşu kanıtı)."""
+    kok = kok or javayol.java_kok(cfg, "android")
+    with gitforge.checkout(loc.repo, loc.sha, kok.root, cfg.git_timeout_s) as tree:
+        dst = into / kok.root
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copytree(tree, dst, symlinks=True)

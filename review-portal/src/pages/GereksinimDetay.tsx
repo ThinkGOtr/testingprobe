@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { OtomatikAkisRozeti } from "../components/OtomatikAkisRozeti";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { ApiError } from "../api/http";
 import { useOlay } from "../api/events";
 import type { Bulgu, GereksinimDetay as Detay } from "../api/types";
+import { useIzin } from "../auth";
 import { AjanUrunuPaneli, useAjanTesti } from "../components/AjanUrunuPaneli";
 import { AkisAdimlari } from "../components/AkisAdimlari";
 import { BazDegerKarti } from "../components/BazDegerKarti";
@@ -68,7 +70,9 @@ export function GereksinimDetay() {
     kipSecildi.current = true;
     setKipHam(k);
   }, []);
-  const secenekYaniti = useVeri(() => api.uretimSecenekleri(id).catch(() => null), [id]);
+  // generation-options `case.analysis_read` ister (developer hariç); izinsiz rolde istek atılmaz.
+  const analiz = useIzin("case.analysis_read");
+  const secenekYaniti = useVeri(() => (analiz ? api.uretimSecenekleri(id).catch(() => null) : Promise.resolve(null)), [id, analiz]);
   useEffect(() => {
     if (!kipSecildi.current && secenekYaniti.veri !== undefined) setKipHam(baslangicKipi(secenekYaniti.veri));
   }, [secenekYaniti.veri]);
@@ -181,6 +185,7 @@ export function GereksinimDetay() {
         aciklama={
           <span className="satir-ogeler">
             <Cip ton={d.ton}>{d.etiket}</Cip>
+            <OtomatikAkisRozeti akis={g.otomatik_akis} />
             <span>{g.kaynak === "jira" ? "Jira story'si" : "Serbest metin gereksinim"}</span>
             {g.jira_url && <DisBaglanti href={g.jira_url}>Jira'da aç</DisBaglanti>}
             <span className="soluk">Çekim: {tarih(g.cekim_zamani)}</span>
@@ -189,7 +194,7 @@ export function GereksinimDetay() {
         eylemler={
           <>
             <IslemDugmesi
-              roller={["analyst"]}
+              izin="requirement.review"
               tur={incelemeBaslatilabilir && !(uretimHatasi && caseUretilebilir) ? "birincil" : "ikincil"}
               disabled={!incelemeBaslatilabilir}
               calisiyor={inceleme.calisiyor || g.durum === "in_review"}
@@ -215,7 +220,7 @@ export function GereksinimDetay() {
             {reviewAsamasi ? (
               <IslemDugmesi
                 id="case-uret"
-                roller={["analyst"]}
+                izin="case.generate"
                 tur="ikincil"
                 disabled={!caseUretilebilir || yenidenOnay}
                 calisiyor={uretim.calisiyor}
@@ -229,7 +234,7 @@ export function GereksinimDetay() {
             ) : (
               <IslemDugmesi
                 id="case-uret"
-                roller={["analyst"]}
+                izin="case.generate"
                 tur={uretimHatasi && caseUretilebilir ? "birincil" : undefined}
                 disabled={!caseUretilebilir}
                 calisiyor={uretim.calisiyor}
@@ -241,7 +246,7 @@ export function GereksinimDetay() {
             )}
             <IslemDugmesi
               id="uretim-formu-ac"
-              roller={["analyst"]}
+              izin="case.generate"
               tur="ikincil"
               disabled={!caseUretilebilir}
               title={caseUretilebilir ? "Kip, platform, test seviyesi, standartlar ve kapsam dışı seçerek üretimi başlatır" : caseUretNedeni}
@@ -453,7 +458,7 @@ export function GereksinimDetay() {
                   </span>
                 ) : (
                   <IslemDugmesi
-                    roller={["analyst"]}
+                    izin="requirement.review"
                     disabled={sonHalAcik ? false : yazilacak === 0 || turSiniri}
                     calisiyor={inceleme.calisiyor && g.durum === "in_review"}
                     // Tur sınırı nedeni aşağıdaki uyarı kutusunda (yalnız yazılacak düzeltme varken) görünür
@@ -692,10 +697,65 @@ export function caseUretHatasi(e: unknown): never {
   throw e;
 }
 
+/** Jira kaynaklı story'de PO onayı yalnız Jira'dan verilir (ANALIZ 012 K6); portalda düğme yoktur. */
+export const PO_ONAYI_JIRADA = "PO onayı Jira'da: story'ye tp-po-approved etiketi konur. Portalda PO onay düğmesi yoktur.";
+
+/** PO "Geri çevir" (serbest metin, T04): gerekçe zorunlu, en çok 2000 karakter. */
+function PoRetFormu({ gonder, vazgec, calisiyor }: { gonder: (gerekce: string) => void; vazgec: () => void; calisiyor: boolean }) {
+  const [gerekce, setGerekce] = useState("");
+  const [uyari, setUyari] = useState<string | null>(null);
+  const id = useId();
+  return (
+    <form
+      className="ret-formu"
+      data-testid="po-ret-formu"
+      noValidate
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!gerekce.trim()) return setUyari("Geri çevirme gerekçesi zorunludur.");
+        setUyari(null);
+        gonder(gerekce.trim());
+      }}
+    >
+      <div className="alan">
+        <label htmlFor={`${id}-gerekce`}>Geri çevirme gerekçesi</label>
+        <textarea
+          id={`${id}-gerekce`}
+          value={gerekce}
+          maxLength={2000}
+          rows={3}
+          required
+          aria-required="true"
+          aria-invalid={uyari ? true : undefined}
+          aria-describedby={uyari ? `${id}-uyari` : undefined}
+          placeholder="Analistin neyi değiştirmesi gerekiyor?"
+          onChange={(e) => setGerekce(e.target.value)}
+        />
+      </div>
+      {uyari && (
+        <p id={`${id}-uyari`} className="hata-metin kucuk" role="alert">
+          {uyari}
+        </p>
+      )}
+      <div className="eylemler">
+        <IslemDugmesi izin="requirement.po_reject_free_text" type="submit" tur="tehlike" calisiyor={calisiyor}>
+          Geri çevir
+        </IslemDugmesi>
+        <button type="button" className="dugme dugme-hayalet" onClick={vazgec}>
+          Vazgeç
+        </button>
+      </div>
+    </form>
+  );
+}
+
 function PoKarti({ g, yenile }: { g: Detay; yenile: () => void }) {
   const islem = useIslem();
+  const [retAcik, setRetAcik] = useState(false);
   const bildir = useBildirim();
   const po = g.po;
+  // Serbest metin gereksinimin Jira story'si yok: PO teyidi portalda (`requirement.po_approve_free_text`).
+  const serbest = g.kaynak === "free_text";
   // Onay var ve içerik onaydan sonra değişmediyse kapı geçilmiştir; sabit kural metni "henüz
   // geçilmedi" gibi okunmasın.
   const kapiGecildi =
@@ -724,18 +784,24 @@ function PoKarti({ g, yenile }: { g: Detay; yenile: () => void }) {
         <>
           <p>
             <Cip ton="uyari">Bekliyor</Cip>{" "}
-            {po.kanal === "jira"
-              ? "PO soruları Jira'da cevaplayıp tp-po-approved etiketini koyduğunda akış devam eder (15 sn'de bir kontrol edilir)."
-              : "Serbest metin gereksinim: PO teyidi portalda verilir."}
+            {serbest
+              ? "Serbest metin gereksinim: PO teyidi portalda verilir."
+              : "PO soruları Jira'da cevaplayıp tp-po-approved etiketini koyduğunda akış devam eder (15 sn'de bir kontrol edilir)."}
           </p>
-          {po.kanal === "portal" && g.icerik_hash && (
+          {!serbest && (
+            <p className="soluk kucuk" data-testid="po-onay-ipucu">
+              {PO_ONAYI_JIRADA}
+            </p>
+          )}
+          {serbest && g.icerik_hash && (
             <p className="soluk kucuk">
               Onay, ekranda gördüğünüz içeriğe bağlanır (<span className="mono">{kisaHash(g.icerik_hash)}</span>); arada değişirse reddedilir.
             </p>
           )}
-          {po.kanal === "portal" && (
+          {serbest && (
+            <div className="eylemler">
             <IslemDugmesi
-              roller={["po"]}
+              izin="requirement.po_approve_free_text"
               calisiyor={islem.calisiyor}
               onClick={async () => {
                 // Gösterilen içeriğin hash'i gönderilir; arada değiştiyse 409 → ekran yenilenir.
@@ -748,6 +814,26 @@ function PoKarti({ g, yenile }: { g: Detay; yenile: () => void }) {
             >
               PO olarak onayla
             </IslemDugmesi>
+            {!retAcik && (
+              <IslemDugmesi izin="requirement.po_reject_free_text" tur="ikincil" onClick={() => setRetAcik(true)}>
+                Geri çevir
+              </IslemDugmesi>
+            )}
+            </div>
+          )}
+          {serbest && retAcik && (
+            <PoRetFormu
+              calisiyor={islem.calisiyor}
+              vazgec={() => setRetAcik(false)}
+              gonder={async (gerekce) => {
+                const s = await islem.calistir(() => api.poReddet(g, gerekce), { cakismada: yenile });
+                if (s) {
+                  setRetAcik(false);
+                  bildir("Gereksinim PO tarafından geri çevrildi.");
+                  yenile();
+                }
+              }}
+            />
           )}
           {islem.hata && <HataKutusu hata={islem.hata} kaynak={islem.hataNesnesi} />}
         </>

@@ -144,7 +144,7 @@ def test_iki_tur_replay_uctan_uca(
     api: TestClient, engine: Engine, make_user, make_requirement, replay_gateway
 ) -> None:
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     r = api.post(f"/requirements/{rid}/generate-cases", json={"kip": "iki_tur"})
     assert r.status_code == 202, r.text
     assert r.json()["kip"] == "iki_tur" and r.json()["asama"] == "model"
@@ -202,7 +202,7 @@ def test_govdesiz_cagri_tek_tur(
     api: TestClient, engine: Engine, make_user, make_requirement, replay_gateway
 ) -> None:
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     r = api.post(f"/requirements/{rid}/generate-cases")
     assert r.status_code == 202 and r.json()["kip"] == "tek_tur" and r.json()["asama"] == "case"
     assert _durum(rid) == "generating"
@@ -214,7 +214,7 @@ def test_replay_miss_model_failed(
     api: TestClient, engine: Engine, make_user, make_requirement, replay_gateway
 ) -> None:
     rid = make_requirement(acs=[*TPD4["acs"], "AC3: Yeni madde"])
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     assert api.post(f"/requirements/{rid}/design-model").status_code == 202
     (is_,) = run_jobs(engine)
     assert is_.durum == "failed" and "REPLAY-MISS" in (is_.hata or "")
@@ -235,7 +235,7 @@ def test_tutarsiz_model_onaylanamaz_duzelt_ve_ret(
 ) -> None:
     fake_gateway([text_response(_bozuk_model()), text_response(_golden("TPD-4")["output"])])
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     assert api.post(f"/requirements/{rid}/design-model").status_code == 202
     run_jobs(engine)
     m = _model(api, rid)["model"]
@@ -286,7 +286,7 @@ def test_tur2_sapmasi_uyari_ve_denetim(
     sapan = uretim_cikti([case_icerik()])  # coverage_items yalnız UC-MF
     fake_gateway([text_response(model), text_response(sapan)])
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     api.post(f"/requirements/{rid}/generate-cases", json={"kip": "iki_tur"})
     run_jobs(engine)
     r = _karar(api, _model(api, rid)["model"], "approve")
@@ -327,7 +327,7 @@ def test_story_degisince_model_superseded(
     api: TestClient, engine: Engine, make_user, make_requirement, replay_gateway
 ) -> None:
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     api.post(f"/requirements/{rid}/generate-cases", json={"kip": "iki_tur"})
     run_jobs(engine)
     m = _model(api, rid)["model"]
@@ -349,24 +349,26 @@ def test_modeling_sirasinda_story_degisikligi_mesgul(
     api: TestClient, engine: Engine, make_user, make_requirement, replay_gateway
 ) -> None:
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     api.post(f"/requirements/{rid}/design-model")
     with session_scope() as s:
         req = s.get(Requirement, rid, with_for_update=True)
         assert apply_content_change(s, req, "x", "", ["AC1: y"], SYSTEM, sebep="t") == "mesgul"
 
 
-def test_yalnizca_analist_karar_verir(
+def test_yalnizca_testci_karar_verir(
     api: TestClient, engine: Engine, make_user, make_requirement, replay_gateway
 ) -> None:
+    """012: tasarım modeli üretimi ve kararı Testçinin (`case.generate`, `design_model.decide`)."""
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     api.post(f"/requirements/{rid}/design-model")
     run_jobs(engine)
     m = _model(api, rid)["model"]
-    login(api, make_user("po"))
-    assert _karar(api, m, "approve").status_code == 403
-    assert api.post(f"/requirements/{rid}/design-model").status_code == 403
+    for rol in ("po", "analyst"):
+        login(api, make_user(rol))
+        assert _karar(api, m, "approve").status_code == 403
+        assert api.post(f"/requirements/{rid}/design-model").status_code == 403
 
 
 # --------------------------------------------------------------- değerlendirme seti

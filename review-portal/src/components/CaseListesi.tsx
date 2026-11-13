@@ -1,19 +1,20 @@
 // Case review sayfasının case listesi bölgesi (A2): filtre sekmeleri (URL `?filtre=`), ek süzgeçler
-// (`?uretim=<no>`, `?hazirlik=<durum>`, `?teknik=<kısaltma>`), K20 toplu onay ve case kartları.
-// Durum şeridi (A1) ve derinleştirme "göster" bağlantısı bu parametrelerle buraya gelir.
-import { useMemo } from "react";
+// (`?uretim=<no>`, `?hazirlik=<durum>`, `?teknik=<kısaltma>`), toplu karar alanı (013/012: Case review
+// `TopluOnayCubugu`; çağıran verir) ve case kartları. Durum şeridi (A1) ve derinleştirme "göster"
+// bağlantısı bu parametrelerle buraya gelir.
+import { useMemo, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { CaseUretimOzeti, TestCase } from "../api/types";
-import { useOturum } from "../auth";
+import { useIzin } from "../auth";
 import { caseHazirlik, onayaHazirDegil, sayiEki } from "../lib/caseV3";
 import { CASE_HAZIRLIK, CASE_TEKNIGI } from "../lib/etiketler";
 import { PoyaGonderEylemi } from "./AcikSorular";
-import { CaseKarti } from "./CaseKarti";
-import { SecimKutusu, TopluOnayCubugu, useTopluSecim } from "./TopluOnayCubugu";
+import { CaseKarti, type CaseSecimi } from "./CaseKarti";
 import { BosDurum, HataKutusu, Kart, Yukleniyor } from "./ui";
 
-export type CaseFiltresi = "hepsi" | "bekleyen" | "onayli" | "reddedilen" | "hazir-degil";
-const FILTRELER: CaseFiltresi[] = ["hepsi", "bekleyen", "onayli", "reddedilen", "hazir-degil"];
+/** 012: `bekleyen` Testçi kararı bekleyen taslak, `hazir` Analist son onayı bekleyen (onaya hazır). */
+export type CaseFiltresi = "hepsi" | "bekleyen" | "hazir" | "onayli" | "reddedilen" | "hazir-degil";
+const FILTRELER: CaseFiltresi[] = ["hepsi", "bekleyen", "hazir", "onayli", "reddedilen", "hazir-degil"];
 /** Ek süzgeç parametreleri ("Tümünü göster" bunları temizler). */
 export const EK_SUZGECLER = ["uretim", "hazirlik", "teknik"] as const;
 
@@ -21,6 +22,7 @@ const onayli = (c: TestCase) => c.durum === "approved" || c.durum === "published
 
 export function filtreUygula(c: TestCase, f: CaseFiltresi): boolean {
   if (f === "bekleyen") return c.durum === "draft";
+  if (f === "hazir") return c.durum === "ready";
   if (f === "onayli") return onayli(c);
   if (f === "reddedilen") return c.durum === "rejected";
   if (f === "hazir-degil") return onayaHazirDegil(c);
@@ -70,14 +72,22 @@ export function CaseListesi({
   yeniden,
   yenile,
   guncellendi,
-  topluSonrasi,
   uretimler,
   varsayimDogrulandi,
-  gonderilmemisSoru = 0,
+  topluAlani,
+  secim,
+  goruntulendi,
+  kisitli = false,
 }: {
   liste: TestCase[];
-  /** PO'ya gönderilmemiş açık soru sayısı (core listesi): toplu onay onayında uyarı (engel değil). */
-  gonderilmemisSoru?: number;
+  /** Toplu karar çubuğu ve sonucu (Case review, 013/012); filtre sekmelerinin altına yerleşir. */
+  topluAlani?: ReactNode;
+  /** Kartın toplu karar seçimi (yalnız kararı bekleyen evredeki case'te). */
+  secim?: (c: TestCase) => CaseSecimi | undefined;
+  /** Kart 3 sn kesintisiz görüldü (toplu karar uygunluğu yeniden hesaplanır). */
+  goruntulendi?: (anahtar: string) => void;
+  /** Developer kısıtlı görünümü: yalnız onaylı/yayınlanmış case, boş durum ipucu yok. */
+  kisitli?: boolean;
   /** İlk yükleme sürüyor (henüz veri yok). */
   yukleniyor: boolean;
   /** Liste hiç yüklenemedi. */
@@ -88,16 +98,14 @@ export function CaseListesi({
   /** Sessiz yenileme (409 sonrası). */
   yenile: () => void;
   guncellendi: (t: TestCase) => void;
-  /** Toplu onaydan sonra liste ve paneller yenilenir. */
-  topluSonrasi: () => void;
   /** case-summary üretimleri: derinleştirme rozeti için üretim türü (yoksa rozet yok). */
   uretimler?: CaseUretimOzeti[] | null;
   /** B2: "Varsayım doğrulandı" sonrası aynı varsayıma dayanan case'ler iyimser güncellenir. */
   varsayimDogrulandi?: (onceki: TestCase, yeni: TestCase, varsayimlar: string[]) => void;
 }) {
   const s = useCaseSuzgeci();
-  const { kullanici } = useOturum();
-  const analist = kullanici?.rol === "analyst";
+  // D6 "Açık soruları PO'ya gönder" kart yuvası yalnız `case.ask_po` (Analist) için çizilir.
+  const poyaSorabilir = useIzin("case.ask_po");
   const turler = useMemo(() => new Map((uretimler ?? []).map((u) => [u.uretim_no, u.tur])), [uretimler]);
   // Ek süzgeçler sayaçlara da uygulanır: sekme sayıları görünen kümeyi anlatır.
   const taban = useMemo(
@@ -111,12 +119,12 @@ export function CaseListesi({
     [liste, s.uretim, s.hazirlik, s.teknik],
   );
   const gorunen = useMemo(() => taban.filter((c) => filtreUygula(c, s.filtre)), [taban, s.filtre]);
-  const secim = useTopluSecim(analist ? gorunen : []);
   const suzgec = suzgecMetni(s);
   const say = (f: CaseFiltresi) => taban.filter((c) => filtreUygula(c, f)).length;
   const sekmeler: [CaseFiltresi, string][] = [
     ["hepsi", `Hepsi (${taban.length})`],
     ["bekleyen", `Karar bekleyen (${say("bekleyen")})`],
+    ["hazir", `Onaya hazır (${say("hazir")})`],
     ["hazir-degil", `Hazır değil (${say("hazir-degil")})`],
     ["onayli", `Onaylı (${say("onayli")})`],
     ["reddedilen", `Reddedilen (${say("reddedilen")})`],
@@ -124,13 +132,16 @@ export function CaseListesi({
 
   return (
     <div className="case-liste-alani">
-      <div className="sekmeler sekmeler-yapiskan" role="group" aria-label="Case filtresi">
-        {sekmeler.map(([k, etiket]) => (
-          <button key={k} type="button" className={`sekme${s.filtre === k ? " aktif" : ""}`} aria-pressed={s.filtre === k} onClick={() => s.filtreSec(k)}>
-            {etiket}
-          </button>
-        ))}
-      </div>
+      {/* Developer kısıtlı görünümü (012): yalnız onaylı/yayınlanmış case gelir; durum filtresi anlamsız. */}
+      {!kisitli && (
+        <div className="sekmeler sekmeler-yapiskan" role="group" aria-label="Case filtresi">
+          {sekmeler.map(([k, etiket]) => (
+            <button key={k} type="button" className={`sekme${s.filtre === k ? " aktif" : ""}`} aria-pressed={s.filtre === k} onClick={() => s.filtreSec(k)}>
+              {etiket}
+            </button>
+          ))}
+        </div>
+      )}
       <div role="status" aria-live="polite" className="case-suzgec-kap">
         {suzgec && (
           <p className="case-suzgec" data-testid="case-suzgec">
@@ -142,7 +153,7 @@ export function CaseListesi({
         )}
       </div>
 
-      {analist && liste.length > 0 && <TopluOnayCubugu gorunen={gorunen} secim={secim} tamamlandi={topluSonrasi} gonderilmemisSoru={gonderilmemisSoru} />}
+      {liste.length > 0 && topluAlani}
 
       {yukleniyor ? (
         <Yukleniyor />
@@ -151,7 +162,7 @@ export function CaseListesi({
       ) : gorunen.length === 0 ? (
         <Kart>
           <BosDurum baslik={liste.length ? "Bu filtrede case yok." : "Henüz case üretilmedi."}>
-            {!liste.length && "PO teyidinden sonra gereksinim ekranından 'Tasarım modelini üret (iki tur)' ile başlatın."}
+            {!liste.length && !kisitli && "PO teyidinden sonra gereksinim ekranından 'Tasarım modelini üret (iki tur)' ile başlatın (Testçi)."}
           </BosDurum>
         </Kart>
       ) : (
@@ -163,8 +174,9 @@ export function CaseListesi({
               guncellendi={guncellendi}
               yenile={yenile}
               uretimTuru={c.uretim_no !== undefined ? turler.get(c.uretim_no) : undefined}
-              secim={analist ? <SecimKutusu tc={c} secili={secim.secili.has(c.id)} degistir={secim.degistir} /> : undefined}
-              poyaGonder={<PoyaGonderEylemi tc={c} tamamlandi={yenile} />}
+              secim={secim?.(c)}
+              goruntulendi={goruntulendi}
+              poyaGonder={poyaSorabilir ? <PoyaGonderEylemi tc={c} tamamlandi={yenile} /> : undefined}
               varsayimDogrulandi={varsayimDogrulandi}
             />
           ))}

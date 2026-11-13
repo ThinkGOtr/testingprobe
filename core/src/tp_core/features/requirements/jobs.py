@@ -14,6 +14,14 @@
                                    in_review/generating → failed) ve eski sorgu satırlarının
                                    temizliği; izlenecek gereksinim varsa kendini `TP_PO_POLL_S`
                                    (15 sn) sonrasına yeniden planlar.
+- `requirements.jira_tetik`       Jira durum tetiği (specs/013 §3.4, K14/K15; `jira_tetik`):
+                                   ayarlı duruma GİREN story'yi akışa alır (ilk tur yalnız
+                                   işaretler); her zaman `aralik_s` sonrasına yeniden planlanır
+                                   (ayar kapalıyken Jira'ya gidilmez). PO sorgusu ve worker
+                                   açılışı zinciri yeniden kurar (`ensure`).
+- `requirements.otomatik_case`    tetikle akışa alınmış gereksinim PO onaylıyken case üretimini
+                                   otomasyon aktörüyle başlatır (kapı kesin reddederse denetim;
+                                   Jira'ya geçici erişilemezse yeniden denenir).
 
 Kalıcı hata (son deneme, şema/replay hatası, akış kuralı) gereksinimi `in_review → failed`
 yapar; bütçe aşımı iş akışını duraklatır (çekirdek kuralı) ve gereksinim de `failed` olur.
@@ -28,6 +36,7 @@ from typing import Any
 from sqlalchemy.engine import Connection
 
 from tp_core.db import get_engine
+from tp_core.features.otomasyon import jira_tetik
 from tp_core.features.requirements import flow
 from tp_core.gateway import GatewayError, ReplayMiss, ReplayNoOutput, ReplayNotFound
 from tp_core.gateway.errors import BudgetExceeded
@@ -110,12 +119,46 @@ def po_poll(_ctx: JobContext) -> dict[str, Any]:
         # Sorgu zinciri kopmasın: hata olsa da bir sonraki tur planlanır (bekleyen varsa).
         flow.reschedule_po_poll(engine)
         raise
+    finally:
+        _tetik_zincirini_koru(engine)
+
+
+def _tetik_zincirini_koru(engine: Any) -> None:
+    """Tetik turu zaman aşımıyla dışarıdan `failed` olursa (işleyicinin `except`'i çalışmaz)
+    zincir kopar; PO sorgusu her turda bekleyen tetik işi yoksa ekler (worker açılışını
+    beklemeden)."""
+    try:
+        jira_tetik.yeniden_planla(engine)
+    except Exception:  # sorgu sonucunu etkilemez
+        flow.log.warning("Jira tetiği zinciri denetlenemedi", exc_info=True)
+
+
+@job_handler(jira_tetik.JOB_JIRA_TETIK, max_deneme=1, zaman_asimi_s=120)
+def jira_tetik_turu(_ctx: JobContext) -> dict[str, Any]:
+    engine = get_engine()
+    try:
+        sonuc = jira_tetik.tur(engine)
+    except Exception:
+        # Zincir kopmasın: hata olsa da sonraki tur planlanır.
+        jira_tetik.yeniden_planla(engine)
+        raise
+    sonuc["silinen_eski_is"] = jira_tetik.eski_turlari_sil(engine)
+    sonuc["sonraki_tur"] = jira_tetik.yeniden_planla(engine)
+    return sonuc
+
+
+@job_handler(jira_tetik.JOB_OTOMATIK_CASE, max_deneme=3, backoff_s=10.0, zaman_asimi_s=120)
+def otomatik_case(ctx: JobContext) -> dict[str, Any]:
+    # Jira'ya geçici erişilemezse son deneme dışında hata fırlar ve iş yeniden denenir.
+    return jira_tetik.otomatik_case_baslat(dict(ctx.yuk or {}), son_deneme=ctx.son_deneme)
 
 
 def on_worker_start(conn: Connection) -> None:
-    """Worker açılışı: PO etiket sorgusu kuyrukta yoksa ekle (iş tablosu silinmiş olabilir).
+    """Worker açılışı: PO etiket sorgusu ve Jira durum tetiği kuyrukta yoksa ekle (iş tablosu
+    silinmiş olabilir).
 
     Sorgu hemen koşar ve önce takılı iş süpürmesini yapar: önceki worker sürecinden kalan
     (`release_orphans` ile `failed` olan) işin gereksinimi `in_review`/`generating`'de kalmaz.
     """
     flow.ensure_po_poll(conn)
+    jira_tetik.ensure(conn)

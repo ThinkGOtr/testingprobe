@@ -63,7 +63,7 @@ describe("B1: story'si olmayan gereksinimde kartın 'PO'ya gönder'i", () => {
     sar(<CaseKarti tc={tc} guncellendi={() => {}} poyaGonder={<PoyaGonderEylemi tc={tc} />} />);
     const kutu = within(screen.getByTestId("hazirlik-yonlendirme"));
     expect(kutu.getByTestId("hazirlik-yonlendirme-metin")).toHaveTextContent(
-      "Q1 PO yanıtı gerektiriyor. Bu gereksinimin Jira story'si olmadığı için soru portaldan gönderilemez; yanıtı PO'dan alıp 'Düzelt' ile beklenen sonucu yazın.",
+      "Q1 PO yanıtı gerektiriyor. Bu gereksinimin Jira story'si olmadığı için soru portaldan gönderilemez; yanıtı PO'dan alıp 'Düzelterek kabul' ile beklenen sonucu yazın.",
     );
     expect(kutu.queryByRole("button", { name: "Açık soruları PO'ya gönder" })).not.toBeInTheDocument();
   });
@@ -91,14 +91,16 @@ describe("B2: doğrulanan varsayım diğer case'lere ve panele yansır", () => {
   });
 
   it("örnek veri: #2'de doğrulanan A1, #6'nın A1 kaydında; kutu metni 'doğrulanmadı' demez", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const iki = await v3Case("case-v3-2");
     await api.varsayimDogrulandi(iki.id, { icerik_hash: iki.icerik_hash, varsayim_id: "A1" });
     const alti = await v3Case("case-v3-6");
     expect(alti.durum).toBe("draft");
-    expect(alti.varsayimlar?.[0].dogrulama).toMatchObject({ case_id: "case-v3-2", sira_no: 2, kimlik: "A1", kim: "analist" });
-    const y = hazirlikYonlendirmesi(alti, (ad) => (ad === "analist" ? "Cengizhan G." : ad ?? ""))!;
-    expect(y.metin).toMatch(/^A1, #2 numaralı case'te doğrulandı \(Cengizhan G\., .+\)\. Bu case için de onaylamak üzere 'Varsayım doğrulandı' düğmesini kullanın/);
+    // 012: doğrulanan case onaya hazırdır (ready); doğrulama Testçinin kararı olarak yansır.
+    expect((await v3Case("case-v3-2")).durum).toBe("ready");
+    expect(alti.varsayimlar?.[0].dogrulama).toMatchObject({ case_id: "case-v3-2", sira_no: 2, kimlik: "A1", kim: "testci" });
+    const y = hazirlikYonlendirmesi(alti, (ad) => (ad === "testci" ? "Selin T." : ad ?? ""))!;
+    expect(y.metin).toMatch(/^A1, #2 numaralı case'te doğrulandı \(Selin T\., .+\)\. Bu case için de kabul etmek üzere 'Varsayım doğrulandı' düğmesini kullanın/);
     expect(y.metin).not.toContain("doğrulanmadı.");
     expect(y.dogrulanacak).toEqual(["A1"]);
     // Taslağa alınan case'in doğrulaması sayılmaz.
@@ -125,7 +127,7 @@ describe("B2: doğrulanan varsayım diğer case'lere ve panele yansır", () => {
   });
 
   it("sayfada: #2'de 'Varsayım doğrulandı' → #6'nın kutusu ve rozeti, paneldeki A1 satırı güncellenir", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const u = userEvent.setup();
     uygulama(SAYFA);
     // case-v3-2 ve case-v3-6 aynı A1'e dayanır; #2 = case-v3-2.
@@ -133,7 +135,7 @@ describe("B2: doğrulanan varsayım diğer case'lere ve panele yansır", () => {
     await waitFor(() => expect(document.getElementById("case-case-v3-6")).not.toBeNull());
     expect(kart("case-v3-6").getByTestId("hazirlik-yonlendirme-metin")).toHaveTextContent(/^A1 varsayımı doğrulanmadı\./);
     await u.click(kart("case-v3-2").getByRole("button", { name: "Varsayım doğrulandı" }));
-    await u.click(within(screen.getByTestId("varsayim-dogrulama-onayi")).getByRole("button", { name: "Evet, doğrulandı — onayla" }));
+    await u.click(within(screen.getByTestId("varsayim-dogrulama-onayi")).getByRole("button", { name: "Evet, doğrulandı — kabul et" }));
     await waitFor(() => expect(kart("case-v3-6").getByTestId("hazirlik-yonlendirme-metin")).toHaveTextContent(/^A1, #2 numaralı case'te doğrulandı/));
     expect(within(kart("case-v3-6").getByTestId("case-varsayimlar")).getByTestId("varsayim-dogrulandi")).toHaveTextContent("✓ Doğrulandı (#2)");
     const panel = within(screen.getByRole("region", { name: "Açık sorular ve PO yanıtları" }));
@@ -144,25 +146,27 @@ describe("B2: doğrulanan varsayım diğer case'lere ve panele yansır", () => {
 });
 
 describe("B3: PO yanıtı sonrası kart tek mesaj verir", () => {
-  it("öneri kutusu yok, birincil 'Düzelt' kutuda, açık sorular bilgi tonunda, beklenen sonuç satırı ve Onayla ipucu", async () => {
+  it("öneri kutusu yok, birincil 'Düzelterek kabul' kutuda, açık sorular bilgi tonunda, beklenen sonuç satırı ve Kabul et ipucu", async () => {
+    // Analist PO'ya gönderir (`case.ask_po`); yanıtı Testçi de okuyabilir; kartta karar Testçinin.
     await oturumAc("analist");
     jiraStorysiVer();
     await api.acikSorulariGonder(V3_GEREKSINIM_ID);
+    await oturumAc("testci");
     await api.acikSoruYanitlariniOku(V3_GEREKSINIM_ID);
     const tc = await v3Case("case-v3-3");
     expect(tc.po_yanit_onerisi).toBeTruthy();
     const u = userEvent.setup();
     sar(<CaseKarti tc={tc} guncellendi={() => {}} poyaGonder={<PoyaGonderEylemi tc={tc} />} />);
     const kutu = within(screen.getByTestId("hazirlik-yonlendirme"));
-    expect(kutu.getByTestId("hazirlik-yonlendirme-metin")).toHaveTextContent("CQ1: PO yanıtladı. 'Düzelt' ile beklenen sonucu yanıta göre yazın");
+    expect(kutu.getByTestId("hazirlik-yonlendirme-metin")).toHaveTextContent("CQ1: PO yanıtladı. 'Düzelterek kabul' ile beklenen sonucu yanıta göre yazın");
     expect(screen.queryByTestId("po-yanit-onerisi")).not.toBeInTheDocument();
     const sorular = screen.getByTestId("case-acik-sorular");
     expect(within(sorular).getByText("Açık sorular ve PO yanıtı")).toBeInTheDocument();
     expect(sorular.querySelector(".uyari-bilgi")).not.toBeNull();
     expect(screen.queryByText(/yanıtlanmadan bu case hazır olamaz/)).not.toBeInTheDocument();
     expect(screen.getByText("— (PO yanıtına göre yazılacak)")).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Onayla" })).not.toHaveAttribute("data-yetkisiz"));
-    expect(screen.getByRole("button", { name: "Onayla" })).toHaveAttribute("title", "PO yanıtladı: önce 'Düzelt' ile beklenen sonucu yanıta göre yazın.");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Kabul et" })).not.toHaveAttribute("data-yetkisiz"));
+    expect(screen.getByRole("button", { name: "Kabul et" })).toHaveAttribute("title", "PO yanıtladı: önce 'Düzelterek kabul' ile beklenen sonucu yanıta göre yazın.");
     const duzelt = kutu.getByTestId("yonlendirme-duzelt");
     expect(duzelt).toHaveClass("dugme-birincil");
     await u.click(duzelt);
@@ -186,10 +190,10 @@ describe("B5: CL (kontrol listesi) tekniği", () => {
   });
 
   it("düzeltme formunda onay kutusu 'CL (kontrol listesi)'", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const u = userEvent.setup();
     sar(<CaseKarti tc={await v3Case("case-v3-1")} guncellendi={() => {}} />);
-    await u.click(screen.getByRole("button", { name: "Düzelt" }));
+    await u.click(await screen.findByRole("button", { name: "Düzelterek kabul" }));
     const grup = screen.getByRole("group", { name: "Test tasarım teknikleri" });
     expect(within(grup).getByText("(kontrol listesi)")).toBeInTheDocument();
     expect(grup).not.toHaveTextContent("CL ()");

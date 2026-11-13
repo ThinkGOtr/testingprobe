@@ -3,6 +3,7 @@
 // modül düzeyinde tutulur, bileşenler `useSyncExternalStore` ile okur.
 import { useSyncExternalStore } from "react";
 import { oturumDegisinceTemizle } from "../../lib/oturumTemizligi";
+import { DONDURMA_ANAHTARI } from "./oturumAnahtarlari";
 
 export type AsistanSekmesi = "sohbet" | "oneriler";
 
@@ -165,10 +166,12 @@ export interface SohbetTaslagi {
   notlar: Record<string, string>;
   /** Mesaj kimliği → son adım kodu (SSE `assistant.step`). */
   adimlar: Record<string, string>;
+  /** 429 `donduruldu` (013 §6.2): gönderimin yeniden açılacağı an (istemci saati, ms); yoksa null. */
+  dondurmaBitis: number | null;
 }
 
 function bosTaslak(): SohbetTaslagi {
-  return { girdi: "", ekranKaldirilan: null, hataKaldirilan: null, secilenHataId: null, hataNotu: null, bekletilen: null, notlar: {}, adimlar: {} };
+  return { girdi: "", ekranKaldirilan: null, hataKaldirilan: null, secilenHataId: null, hataNotu: null, bekletilen: null, notlar: {}, adimlar: {}, dondurmaBitis: null };
 }
 
 /**
@@ -206,6 +209,7 @@ export function asistanKontrolSifirla(): void {
   taslagiSifirla();
   try {
     sessionStorage.removeItem(OTURUM_ANAHTARI);
+    sessionStorage.removeItem(DONDURMA_ANAHTARI);
   } catch {
     /* yoksay */
   }

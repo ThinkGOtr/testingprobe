@@ -34,6 +34,8 @@ public class TestTabaniBirimTesti {
     try {
       TestNG testng = new TestNG(false);
       testng.setUseDefaultListeners(false);
+      // İç koşunun sahte testi birim Allure sonuçlarına sızmasın (service loader ile yüklenen dinleyici).
+      testng.setListenersToSkipFromBeingWiredInViaServiceLoaders("io.qameta.allure.testng.AllureTestNg");
       testng.setVerbose(0);
       testng.setTestClasses(new Class<?>[] {AjanBayisineSabit.class});
       TestListenerAdapter dinleyici = new TestListenerAdapter();

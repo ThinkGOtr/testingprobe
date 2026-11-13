@@ -141,54 +141,54 @@ bundles:
       guardrails_version: 1
       calls: evaluation/results/dup-rank-v2-2026-11-01.calls.jsonl
   assistant:
-    version: 1
+    version: 2
     status: evaluated
-    note: 'Canlı değerlendirme 2026-11-04, assistant=claude-haiku-5-5, assistant_deep=claude-sonnet-5-5
-      (anthropic), 78/80 vaka geçti: evaluation/results/assistant-v1-assistant-2026-11-04.json'
+    note: 'Canlı değerlendirme 2026-11-12, assistant=claude-haiku-5-5, assistant_deep=claude-sonnet-5-5
+      (anthropic), 110/112 vaka geçti: evaluation/results/assistant-v2-assistant-2026-11-12.json'
     evaluation:
-      date: '2026-11-04'
+      date: '2026-11-12'
       model: assistant=claude-haiku-5-5, assistant_deep=claude-sonnet-5-5
       provider: anthropic
-      results: evaluation/results/assistant-v1-assistant-2026-11-04.json
+      results: evaluation/results/assistant-v2-assistant-2026-11-12.json
       guardrails_version: 1
-      calls: evaluation/results/assistant-v1-assistant-2026-11-04.calls.jsonl
-      icerik_hash: sha256:7400c2f8dd1929ac3c4b1ca15c1b839642286a153715735bdfc36938927415fe
+      calls: evaluation/results/assistant-v2-assistant-2026-11-12.calls.jsonl
+      icerik_hash: sha256:aaa33dc8a004efd10c31e0f1d6c22ab2856988c210d75276b091f81e0511551f
       amaclar:
         assistant:
           model: claude-haiku-5-5
-          results: evaluation/results/assistant-v1-assistant-2026-11-04.json
-          calls: evaluation/results/assistant-v1-assistant-2026-11-04.calls.jsonl
-          passed: 38
-          total: 40
+          results: evaluation/results/assistant-v2-assistant-2026-11-12.json
+          calls: evaluation/results/assistant-v2-assistant-2026-11-12.calls.jsonl
+          passed: 54
+          total: 56
           olcumler:
-            beklenti_gecis_orani: 0.95
+            beklenti_gecis_orani: 0.9643
             dogrulanmis_kaynak_orani: 1.0
             eylem_ve_injection_orani: 1.0
-            otomatik_derin_orani: 0.1379
+            otomatik_derin_orani: 0.1333
             maliyet_usd:
-              medyan: 0.001236
-              p90: 0.002686
-              toplam: 0.058964
+              medyan: 0.001072
+              p90: 0.00269
+              toplam: 0.076804
             sure_s:
-              medyan: 8.313
-              p90: 15.375
+              medyan: 8.332
+              p90: 14.475
         assistant_deep:
           model: claude-sonnet-5-5
-          results: evaluation/results/assistant-v1-assistant_deep-2026-11-04.json
-          calls: evaluation/results/assistant-v1-assistant_deep-2026-11-04.calls.jsonl
-          passed: 40
-          total: 40
+          results: evaluation/results/assistant-v2-assistant_deep-2026-11-12.json
+          calls: evaluation/results/assistant-v2-assistant_deep-2026-11-12.calls.jsonl
+          passed: 56
+          total: 56
           olcumler:
             beklenti_gecis_orani: 1.0
             dogrulanmis_kaynak_orani: 1.0
             eylem_ve_injection_orani: 1.0
             maliyet_usd:
-              medyan: 0.016143
-              p90: 0.032227
-              toplam: 0.784258
+              medyan: 0.019194
+              p90: 0.032202
+              toplam: 1.149425
             sure_s:
-              medyan: 7.62
-              p90: 13.522
+              medyan: 8.144
+              p90: 11.898
   platform-common:
     version: 1
     status: evaluated

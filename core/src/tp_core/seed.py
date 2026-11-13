@@ -1,4 +1,8 @@
-"""Deterministik başlangıç verisi: 5 demo kullanıcısı + zincirli `seed.applied` denetim kaydı."""
+"""Deterministik başlangıç verisi: rol başına bir demo kullanıcısı + `seed.applied` denetim kaydı.
+
+Roller specs/012-rol-yetki §3'tedir. Sistem Yöneticisi hesabı `sunucu`dur: mevcut kurulumlarda
+`presenter` rolüyle vardır ve 0031 göçüyle `admin` olur; yeni kurulumlarda doğrudan `admin` açılır.
+"""
 
 import uuid
 from typing import Final
@@ -15,19 +19,26 @@ NAMESPACE_TP: Final = uuid.UUID("6f1d2c3a-8b4e-5f60-9a7b-1c2d3e4f5a6b")
 KULLANICILAR: Final[tuple[tuple[str, str], ...]] = (
     ("analist", "analyst"),
     ("muhendis", "engineer"),
-    ("sunucu", "presenter"),
+    ("sunucu", "admin"),
     ("po", "po"),
     ("testci", "tester"),
+    ("denetci", "auditor"),
+    ("gelistirici", "developer"),
+    ("izleyici", "viewer"),
 )
 
 # Portalda gösterilen kişi adları (demo varsayılanı; `TP_GORUNEN_ADLAR` ile değiştirilir). Ad
-# yalnızca gösterim içindir: yetki her zaman roldedir. Boş ad = yalnızca rol etiketi ("Sunucu").
+# yalnızca gösterim içindir: yetki her zaman roldedir. Boş ad = yalnızca rol etiketi
+# ("Sistem Yöneticisi").
 GORUNEN_ADLAR: Final[dict[str, str]] = {
     "analist": "Cengizhan Gunaydin",
     "po": "Cengizhan Gunaydin",
     "muhendis": "Gokhan Sipahi",
     "testci": "Fatih Arslan",
     "sunucu": "",
+    "denetci": "",
+    "gelistirici": "",
+    "izleyici": "",
 }
 
 
@@ -63,9 +74,33 @@ def seed() -> int:
     return yeni
 
 
+def seed_test_verisi() -> int:
+    """Test verisi kataloğu tohumu (013 §3.3; idempotent). core-api demo DB'ye bağlanmaz: burada
+    yalnız sabitler eklenir, demo DB kayıtlarını worker açılışı ekler."""
+    from tp_core.features.testveri.service import tohumla
+    from tp_core.models import session_scope
+
+    with session_scope() as s:
+        return tohumla(s)
+
+
+def seed_otomasyon_demo() -> dict[str, str]:
+    """Demo ortamı otomasyon ayarları (013 K20, K23): onay sonrası otomatik kod KAPALI; Demo-B
+    kodu "Kod üret" düğmesiyle yürütür. Yalnız satır yoksa ve yalnız demo ortamında (doğrulanmış
+    Jira sim'i ya da model kipi REPLAY) yazılır (denetimli, aktör `seed`); gerçek Jira'lı
+    kurulumda ürün varsayılanı (açık) korunur (`gercek_ortam`)."""
+    from tp_core.features.otomasyon import ayarlar
+    from tp_core.models import session_scope
+
+    with session_scope() as s:
+        return ayarlar.demo_ayarlarini_yaz(s, "seed", yalniz_yoksa=True)
+
+
 def main() -> None:
     yeni = seed()
     print(f"seed: {len(KULLANICILAR)} kullanıcı (yeni: {yeni})")
+    print(f"seed: test verisi kataloğu (yeni: {seed_test_verisi()})")
+    print(f"seed: demo otomasyon ayarları {seed_otomasyon_demo()}")
 
 
 if __name__ == "__main__":

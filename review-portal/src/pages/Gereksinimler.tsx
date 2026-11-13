@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import { useOlay } from "../api/events";
 import type { Gereksinim } from "../api/types";
 import { useBildirim } from "../components/Bildirim";
+import { OtomatikAkisRozeti } from "../components/OtomatikAkisRozeti";
 import { AlanHatasi, BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { adimAdi, akisAdimi } from "../lib/akis";
@@ -40,7 +41,7 @@ export function Gereksinimler() {
         eylemler={
           <>
             <IslemDugmesi
-              roller={["analyst"]}
+              izin="requirement.import"
               tur="ikincil"
               calisiyor={cek.calisiyor}
               onClick={async () => {
@@ -53,7 +54,7 @@ export function Gereksinimler() {
             >
               Jira'dan çek
             </IslemDugmesi>
-            <IslemDugmesi roller={["analyst"]} onClick={() => setFormAcik((a) => !a)} aria-expanded={formAcik} aria-controls="serbest-metin">
+            <IslemDugmesi izin="requirement.import" onClick={() => setFormAcik((a) => !a)} aria-expanded={formAcik} aria-controls="serbest-metin">
               {formAcik ? "Formu kapat" : "Serbest metin gereksinim"}
             </IslemDugmesi>
           </>
@@ -137,6 +138,11 @@ function GereksinimSatiri({ g, kanit }: { g: Gereksinim; kanit: Omit<SonrakiGird
       </td>
       <td data-etiket="Durum">
         <Cip ton={d.ton}>{d.etiket}</Cip>
+        {g.otomatik_akis && (
+          <div>
+            <OtomatikAkisRozeti akis={g.otomatik_akis} />
+          </div>
+        )}
       </td>
       <td data-etiket="Adım">
         <span className="mono">
@@ -195,7 +201,7 @@ function SerbestMetinFormu({ kapat }: { kapat: () => void }) {
       </p>
       <div className="satir-ogeler">
         <IslemDugmesi
-          roller={["analyst", "presenter"]}
+          izin="requirement.import"
           tur="ikincil"
           kucuk
           onClick={() => {
@@ -252,7 +258,7 @@ function SerbestMetinFormu({ kapat }: { kapat: () => void }) {
           <AlanHatasi asistan={dogrulama ? null : { hata: islem.hata, kaynak: islem.hataNesnesi }}>{dogrulama ?? islem.hata}</AlanHatasi>
         )}
         <div className="eylemler">
-          <IslemDugmesi roller={["analyst"]} type="submit" calisiyor={islem.calisiyor}>
+          <IslemDugmesi izin="requirement.import" type="submit" calisiyor={islem.calisiyor}>
             Gereksinimi oluştur
           </IslemDugmesi>
           <button type="button" className="dugme dugme-hayalet" onClick={kapat}>

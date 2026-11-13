@@ -6,7 +6,9 @@ Artefaktlar test kodunun çıktısıdır (güvenilmeyen). Kurallar:
   kopyası `TP_GITHUB_ARTIFACTS_PATH/gh/<id>-<deneme>`, bkz. `github_artifacts`) altındaki izinli
   alt ağaçlar:
   `src/**/results/**` (JUnit, JSON, HTML raporu, allure-results, trace/ekran görüntüsü),
-  `run.json`, `runner.log`. Kaynak kod ve diğer dosyalar sunulmaz.
+  Java (Appium + TestNG) koşusunun rapor dizinleri `src/**/target/{allure-report,allure-results,
+  extent-report}/**`, `run.json`, `runner.log`. Kaynak kod, derleme çıktısı (`target/classes` …)
+  ve diğer dosyalar sunulmaz.
 - Yol öğeleri: boş, `.`/`..`, NUL, ters bölü, gizli dosya (`.` ile başlayan) reddedilir; gerçek yol
   (symlink çözülerek) koşu dizininin içinde kalmalıdır.
 - HTML/SVG/XML: `Content-Security-Policy: sandbox allow-scripts allow-popups` — rapor sayfası
@@ -32,6 +34,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import itertools
 import mimetypes
 import os
 import re
@@ -123,7 +126,7 @@ def link_token(run_id: uuid.UUID, simdi: float) -> str | None:
 
 
 def token_gecerli_mi(run_id: uuid.UUID, token: str, simdi: float) -> bool:
-    m = _TOKEN_RE.match(token or "")
+    m = _TOKEN_RE.fullmatch(token or "")
     anahtar = _imza_anahtari()
     if m is None or anahtar is None:
         return False
@@ -150,10 +153,31 @@ class YolHatasi(ValueError):
     pass
 
 
+# Java koşusunda raporlar Maven `target/` altındadır (`results/` yok). `target/`'ın tamamı değil,
+# yalnızca rapor dizinleri sunulur (derlenmiş sınıflar, Surefire dökümleri vb. dışarıda kalır).
+_TARGET_RAPOR_DIZINLERI = frozenset({"allure-report", "allure-results", "extent-report"})
+# Extent raporu 50. başarısız testten sonra kanıtı göreli `../kanit/tekrar-N/<Sınıf>.<metot>/`
+# bağlantısıyla gösterir (O-1). `target/kanit/` altında YALNIZ görüntüler sunulur: aynı dizindeki
+# `trace.zip` / `sayfa.html` hassas veri (oturum, form içeriği) taşıyabilir.
+_TARGET_KANIT_DIZINI = "kanit"
+_KANIT_GORUNTU_EKLERI = frozenset({".png", ".jpg", ".jpeg"})
+
+
 def izinli_mi(parcalar: tuple[str, ...]) -> bool:
     if parcalar in (("run.json",), ("runner.log",)):
         return True
-    return len(parcalar) >= 3 and parcalar[0] == "src" and "results" in parcalar[1:]
+    if len(parcalar) < 3 or parcalar[0] != "src":
+        return False
+    if "results" in parcalar[1:]:
+        return True
+    if any(
+        a == "target" and b in _TARGET_RAPOR_DIZINLERI for a, b in itertools.pairwise(parcalar[1:])
+    ):
+        return True
+    # Kanıt: dosya `target/kanit/` altında (dizinin kendisi değil) ve görüntü.
+    return PurePosixPath(parcalar[-1]).suffix.lower() in _KANIT_GORUNTU_EKLERI and any(
+        a == "target" and b == _TARGET_KANIT_DIZINI for a, b in itertools.pairwise(parcalar[1:-1])
+    )
 
 
 def coz(kok: Path, istek: str) -> Path:
@@ -167,7 +191,7 @@ def coz(kok: Path, istek: str) -> Path:
     if not parcalar:
         raise YolHatasi("geçersiz yol")
     for oge in parcalar:
-        if oge in (".", "..") or oge.startswith(".") or not _OGE_RE.match(oge):
+        if oge in (".", "..") or oge.startswith(".") or not _OGE_RE.fullmatch(oge):
             raise YolHatasi("geçersiz yol")
     if not izinli_mi(parcalar):
         raise YolHatasi("bu yol sunulmaz")

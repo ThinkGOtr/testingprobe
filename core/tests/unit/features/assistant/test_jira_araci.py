@@ -134,10 +134,10 @@ def bilinen(engine: Engine) -> list[str]:
     return ["TPD-3", "TPD-9", "TPD-21"]
 
 
-def _baglam(engine: Engine, *, bitis: float | None = None) -> AracBaglami:
+def _baglam(engine: Engine, *, bitis: float | None = None, rol: str = "tester") -> AracBaglami:
     return AracBaglami(
         kullanici_id=uuid.uuid4(),
-        rol="tester",
+        rol=rol,
         oturum=PiiMasker(enabled=True).new_session(),
         db=lambda: Session(engine),
         bitis=bitis,
@@ -190,6 +190,27 @@ def test_bilinmeyen_ya_da_atlatma_anahtarinda_istek_yok(
     with pytest.raises(AracHatasi):
         araci.jira_issue(_baglam(engine), anahtar=anahtar)
     assert sahte.istekler == []
+
+
+@pytest.mark.parametrize("rol", ["auditor", "viewer"])
+def test_okuma_izni_olmayan_rol_jira_okuyamaz(
+    engine: Engine, sahte: SahteJira, bilinen, rol: str
+) -> None:
+    # Gereksinim → requirement.read, bug → bug.read, case → case.read (yetki kataloğu).
+    for anahtar in bilinen:
+        with pytest.raises(AracHatasi, match="rolünüze açık değil"):
+            araci.jira_issue(_baglam(engine, rol=rol), anahtar=anahtar)
+    assert sahte.istekler == []
+
+
+def test_tur_izni_katalogdan(engine: Engine, bilinen) -> None:
+    b = _baglam(engine)
+    assert araci.anahtar_turleri(b, "TPD-3") == {"requirement"}
+    assert araci.anahtar_turleri(b, "TPD-9") == {"bug"}
+    assert araci.anahtar_turleri(b, "TPD-21") == {"case"}
+    assert araci.anahtar_turleri(b, "TPD-22") == frozenset()
+    assert araci.rol_okuyabilir_mi("developer", frozenset({"bug"}))
+    assert not araci.rol_okuyabilir_mi("viewer", frozenset({"requirement", "bug", "case"}))
 
 
 def test_mesaj_basina_dorduncu_anahtar_reddedilir(

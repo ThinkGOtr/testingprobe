@@ -71,7 +71,7 @@ Portal asistanı (AI-ASISTAN-PLANI) modelden önce bu dosyalardaki deterministik
 | `assistant/hata-sozlugu.yaml` | Hata `kod`'u (MIMARI-SOZLESME §5) veya `detail`/görünen metin parçası → anlam, neden, çözüm, ekran |
 | `assistant/urun-terimleri.yaml` | "Ürüne özgü soru" sınıflandırması için ürün terimleri (genel QA terimleri girmez) |
 | `assistant/rotalar.json` | Portalın iç rotaları (`App.tsx` ile birebir); bağlam rotası bunlara indirgenir, cevaptaki iç rota yalnız bunlara uyarsa bağlantı olur |
-| `assistant/oneriler.yaml` | Öneri düğmesi kuralları (§17.3, 26 kural; tek kural tek eylem), olgu sözleşmesi, bilinçli boş ekranlar |
+| `assistant/oneriler.yaml` | Öneri düğmesi kuralları (§17.3, 26 kural + 011 `script-dogrulanmamis` + 012 son onay kuralı `case-son-onay-bekliyor` = 28; tek kural tek eylem; yeni kural K10 yeniden onayı ister — 011 kuralı 2026-11-12 onaylandı), olgu sözleşmesi, bilinçli boş ekranlar |
 | `assistant/jira-taslaklari.yaml` | Önerilerin Jira kayıt/yorum taslakları (olgu yer tutuculu düz metin; URL yok) |
 
 - `dev` birleştirmesi bayrak arkasıdır (`TP_ASISTAN_MODEL_MODE=off`, `TP_ASISTAN_ONERI`); constitution
@@ -292,7 +292,7 @@ varsa çıkış 1. Bu tablo kayıtla aynı olmalıdır (`test_evaluation_status.
 | `triage` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
 | `bug-draft` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
 | `dup-rank` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
-| `assistant` (portal asistanı; `assistant` + `assistant_deep` amaçları, `assistant/*` kuralları) | v1 | **değerlendirme sonrası içerik değişti (içerik hash'i uyuşmuyor)** — 2026-11-04 canlı değerlendirildi (Haiku 38/40, Sonnet 40/40); 011 ile `/ajan-urunleri` rotası ve asistan denetimi (`assistant-guard`) eklendi, denetim açık `--via-flow` 2026-11-12 koşusu Haiku 38/40, Sonnet 38/40 (eylem/injection eşiği Haiku'da 0,95); ardından belirsizlik → `guven=dusuk`, çağrılan fonksiyon tanımını açma, bilgi sorusunda `eylem_reddi` yok, kaynaksız rol/AC iddiası yok yönergeleri eklendi, yeniden koşu gerekir |
+| `assistant` (portal asistanı; `assistant` + `assistant_deep` amaçları, `assistant/*` kuralları) | v2 | **değerlendirme sonrası içerik değişti (içerik hash'i uyuşmuyor)**: son canlı değerlendirme 2026-11-12, 012 rol göçü sonrası (Haiku 54/56, Sonnet 56/56; `evaluation/results/assistant-v2-*-2026-11-12.json`); ardından 011 test üretimi v3 dev'e birleşti: `/ajan-urunleri` rotası, asistan içerik kontrolü (`assistant-guard`) entegrasyonu, belirsizlik ifadesinde otomatik ayrıntılı inceleme, `cases_ready`/`model_ready` kapı metinleri (012 rollerine göre), bilgi sorusunda `eylem_reddi` yok, kaynaksız rol/AC iddiası yok, belirsizlikte `guven=dusuk` ve çağrılan fonksiyon tanımını açma yönergeleri. `main` öncesi `make eval-live A='--bundle assistant --via-flow --update-status'` yeniden koşulmalı |
 | `assistant-guard` (011 F7 asistan denetimi; Agent Probe portu) | v1 | **canlı değerlendirildi** — 2026-11-12 (`evaluation/results/assistant-guard-v1-2026-11-12.json`, 18/18; cevaptaki injection reddi/bildirimi `prompt_injection` sayılmaz netleştirmesi ve `injection-reddi-cevap` vakası dahil) |
 
 2026-11-01'de `requirement-review` v3, `triage`, `bug-draft` ve `dup-rank` v2 canlı modelle

@@ -366,13 +366,14 @@ def test_ai_call_yazilamazsa_denetim_satiri_da_yazilmaz(engine: Engine) -> None:
 
 
 def test_seed_idempotent_ve_zincirli(engine: Engine) -> None:
-    assert seed.seed() == 5
+    # Rol başına bir demo hesabı (specs/012-rol-yetki §3: 8 rol).
+    assert seed.seed() == 8
     assert seed.seed() == 0
     with engine.connect() as c:
-        assert c.execute(text("SELECT count(*) FROM app_user")).scalar_one() == 5
+        assert c.execute(text("SELECT count(*) FROM app_user")).scalar_one() == 8
         ozetler = c.execute(
             text("SELECT ozet FROM audit_event WHERE eylem = 'seed.applied' ORDER BY id")
         ).scalars()
-        assert list(ozetler) == [{"yeni": 5}, {"yeni": 0}]
+        assert list(ozetler) == [{"yeni": 8}, {"yeni": 0}]
         sonuc = verify_chain(c)
     assert sonuc.ok and sonuc.count == 2

@@ -1,0 +1,68 @@
+# AI-generated — AI Testing Probe (CasesToCode). Hedef projeye uyarlanmak üzere verilir:
+# page object adlarını ve imzalarını projenize göre düzenleyebilirsiniz.
+# Doğrulanmamış çıktı: adımlar tarayıcıda doğrulandı; bu kod derlenmedi ve koşulmadı; page object kütüphanesi TypeScript tablosundan türetilen adları varsayar.
+# Case: TPD-1 C2 (3f9b1c2e-0000-5000-8000-0000000000c2) · Story: TPD-1 · Jira Test: TPD-12
+# Başlık: 7 adet kampanyalı üründe 1 adet bedava verilir
+# Onaylı case hash: f7a67a7af02b8a418cef1ecd99f091def093ea2e4dc866d50dec36cf3c004573
+# Eşleme: verify_and_map · platform: web · dil: python (pytest-playwright) · mod: replay · bundle: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+# Eşleme hash: cf31f88a3e9573641b0cbbbbbedc4af4af58f8eee0c9432845c6a88b9611c17f · şablon: aee2ee8473ce9733084d3fab58dddc277e8f76916965fa76d8ab8479fc2d71d6
+#
+# Varsayılan page object imzaları (kurucu: <Sınıf>(page: Page); metotlar None döner):
+#   pages.cart_page.CartPage
+#     def expect_line_quantity(self, product_code: str, quantity: float) -> None
+#     def expect_free_quantity(self, product_code: str, quantity: float) -> None
+#     def expect_subtotal(self, amount: str) -> None
+#     def expect_discount(self, amount: str) -> None
+#     def expect_total(self, amount: str) -> None
+#   pages.catalog_page.CatalogPage
+#     def add_to_cart(self, product_code: str, quantity: float) -> None
+#     def open_cart(self) -> None
+#   pages.login_page.LoginPage
+#     def goto(self) -> None
+#     def login(self, username: str, password: str) -> None
+#
+# --strict-markers kullanıyorsanız işaretleri conftest.py'de kaydedin:
+#   def pytest_configure(config):
+#       config.addinivalue_line("markers", "uretilen: AI Testing Probe tarafından üretilen test")
+#       config.addinivalue_line("markers", "web: web platformu testi")
+#       config.addinivalue_line("markers", "tp_case(case_id): AI Testing Probe test case kimliği")
+#       config.addinivalue_line("markers", "story(anahtar): Jira story anahtarı")
+#       config.addinivalue_line("markers", "dealer(kullanici): testin sabitlendiği e2e bayisi")
+#
+# Taban adres ve içe aktarma yolu: göreli page.goto() çağrıları için pytest-playwright'ı
+# --base-url ile koşun (ör. pytest --base-url "$BASE_URL"; ya da pytest.ini'de base_url = ...);
+# "pages" paketinin bulunması için pytest.ini'de proje kökünü ekleyin:
+#   [pytest]
+#   pythonpath = .
+import pytest
+from playwright.sync_api import Page
+
+from pages.cart_page import CartPage
+from pages.catalog_page import CatalogPage
+from pages.login_page import LoginPage
+
+
+@pytest.mark.uretilen
+@pytest.mark.web
+@pytest.mark.tp_case("3f9b1c2e-0000-5000-8000-0000000000c2")
+@pytest.mark.story("TPD-1")
+@pytest.mark.dealer("bayi1")
+def test_tpd_1_c2_3f9b1c2e(page: Page) -> None:
+    cart_page = CartPage(page)
+    catalog_page = CatalogPage(page)
+    login_page = LoginPage(page)
+
+    # S1 — Giriş sayfasını aç
+    login_page.goto()
+    # S2 — Bayi kullanıcısıyla giriş yap
+    login_page.login("bayi1", "Demo123!")
+    # S3 — "Portakal Gazozu 1L" (P-001) kartında adedi 7 yapıp "Sepete ekle" butonuna bas
+    catalog_page.add_to_cart("P-001", 7)
+    # S4 — Üst menüden sepete git
+    catalog_page.open_cart()
+    # Beklenen sonuç (değerler onaylı case metninden)
+    cart_page.expect_line_quantity("P-001", 7)
+    cart_page.expect_free_quantity("P-001", 1)
+    cart_page.expect_subtotal("175,00 TL")
+    cart_page.expect_discount("25,00 TL")
+    cart_page.expect_total("150,00 TL")

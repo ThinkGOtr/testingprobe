@@ -91,7 +91,7 @@ export function ClaudeCode() {
             </label>
           ))}
         </fieldset>
-        <IslemDugmesi roller={["analyst"]} calisiyor={islem.calisiyor} onClick={olustur}>
+        <IslemDugmesi izin="token.issue" calisiyor={islem.calisiyor} onClick={olustur}>
           8 saatlik token oluştur
         </IslemDugmesi>
         {kanalKapali && (
@@ -197,7 +197,7 @@ export function ClaudeCode() {
                       <td>
                         {!t.iptal && !suresiDoldu && (
                           <IslemDugmesi
-                            roller={["analyst"]}
+                            izin="token.read"
                             kucuk
                             tur="tehlike"
                             calisiyor={iptal.calisiyor}

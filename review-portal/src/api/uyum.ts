@@ -2,6 +2,7 @@
 // core-api'nin gerçek şekli (platform şeridi) ile portalın beklediği şekil farklı olduğunda burada
 // eşlenir; mock arka uç zaten portal şeklini döndürdüğü için iki şekil de kabul edilir.
 
+import { caseOtomasyonAlanlari, otomatikAkisUyarla } from "./uyumOtomasyon";
 import type {
   Bulgu,
   DenetimOlayi,
@@ -23,7 +24,7 @@ import type {
   KapsamSatiri,
   KapsayanCase,
   NegatifKapsamKarari,
-  TestVerisi,
+  CaseTestVerisi,
   Varsayim,
   CiktiModu,
   Gereksinim,
@@ -40,6 +41,7 @@ import type {
   SonHata,
   SonKontrol,
   TestAdimi,
+  SonOnay,
   TestCase,
   TestCaseIcerik,
   YayinOnizleme,
@@ -245,6 +247,8 @@ export function gereksinimUyarla(g: Ham): Gereksinim {
       case_toplam: sayi(s.case_toplam),
       case_onayli: sayi(s.case_onayli),
     },
+    ...(g.otomatik_akis !== undefined ? { otomatik_akis: otomatikAkisUyarla(g.otomatik_akis) } : {}),
+    ...(typeof g.jira_durumu === "string" && g.jira_durumu ? { jira_durumu: g.jira_durumu } : {}),
   };
 }
 
@@ -402,7 +406,7 @@ export const dizgeler = (x: unknown): string[] => (Array.isArray(x) ? x.filter((
 const HAZIRLIKLAR = new Set(["ready", "assumption_dependent", "blocked"]);
 const hazirlikUyarla = (x: unknown): CaseHazirlik | undefined => (typeof x === "string" && HAZIRLIKLAR.has(x) ? (x as CaseHazirlik) : undefined);
 
-function testVerisiUyarla(x: unknown): TestVerisi | null {
+function caseTestVerisiUyarla(x: unknown): CaseTestVerisi | null {
   if (!nesneMi(x)) return null;
   return {
     name: metin(x.name),
@@ -451,7 +455,7 @@ export function caseIcerikUyarla(x: unknown): TestCaseIcerik {
     assumption_refs: dizgeler(i.assumption_refs),
     open_question_refs: dizgeler(i.open_question_refs),
     preconditions: v2.preconditions,
-    test_data: Array.isArray(i.test_data) ? i.test_data.map(testVerisiUyarla).filter((v): v is TestVerisi => v !== null) : [],
+    test_data: Array.isArray(i.test_data) ? i.test_data.map(caseTestVerisiUyarla).filter((v): v is CaseTestVerisi => v !== null) : [],
     steps: v2.steps,
     expected_result: v2.expected_result,
     teardown: dizgeler(i.teardown),
@@ -513,9 +517,37 @@ function poYanitOnerisiUyarla(x: unknown): TestCase["po_yanit_onerisi"] {
 
 const nesneler = <T>(x: unknown, donustur: (h: Ham) => T): T[] => (Array.isArray(x) ? x.filter(nesneMi).map(donustur) : []);
 
+const CASE_KARARLARI = new Set(["accept", "edit", "reject", "reopen", "approve", "send_back"]);
+// `approve`: 012 öncesi kayıtta Testçi kabulü olmadan verilen onay (core testci_kararlari, eski).
+const TESTCI_KARARLARI = new Set(["accept", "edit", "reject", "approve"]);
+
+/** core `son_onay` → `{karar, veren, zaman, gerekce}`; geçersizse null. */
+export function sonOnayUyarla(x: unknown): SonOnay | null {
+  if (!nesneMi(x)) return null;
+  const karar = metin(x.karar);
+  if (karar !== "approve" && karar !== "send_back") return null;
+  return { karar, veren: metinYaDaNull(x.veren), zaman: metinYaDaNull(x.zaman), gerekce: metinYaDaNull(x.gerekce) };
+}
+
 export function caseUyarla(c: Ham): TestCase {
   const karar = metin(ilk(c, "karar", "son_karar"));
   const icerik = caseIcerikUyarla(c.icerik);
+  const testciKarari = metin(ilk(c, "testci_karari", "tester_karar"));
+  const sonOnay = c.son_onay !== undefined ? sonOnayUyarla(c.son_onay) : undefined;
+  // Son onay alanları core `son_onay`'dan; eski/örnek yanıtın düz alanları yalnız `son_onay` yoksa.
+  const onay =
+    sonOnay !== undefined
+      ? {
+          son_onay: sonOnay,
+          gerekce: sonOnay?.karar === "send_back" ? sonOnay.gerekce : null,
+          onaylayan: sonOnay?.karar === "approve" ? sonOnay.veren : null,
+          onay_zamani: sonOnay?.karar === "approve" ? sonOnay.zaman : null,
+        }
+      : {
+          ...(c.gerekce !== undefined ? { gerekce: metinYaDaNull(c.gerekce) } : {}),
+          ...(c.onaylayan !== undefined ? { onaylayan: metinYaDaNull(c.onaylayan) } : {}),
+          ...(c.onay_zamani !== undefined ? { onay_zamani: metinYaDaNull(c.onay_zamani) } : {}),
+        };
   return {
     id: kimlik(c.id),
     requirement_id: kimlik(c.requirement_id),
@@ -525,7 +557,11 @@ export function caseUyarla(c: Ham): TestCase {
     surum: sayi(c.surum, 1),
     icerik,
     durum: metin(c.durum, "draft") as CaseDurumu,
-    karar: karar === "approve" || karar === "edit" || karar === "reject" ? karar : null,
+    karar: CASE_KARARLARI.has(karar) ? (karar as TestCase["karar"]) : null,
+    ...onay,
+    ...(TESTCI_KARARLARI.has(testciKarari) ? { testci_karari: testciKarari as NonNullable<TestCase["testci_karari"]> } : {}),
+    ...(c.testci !== undefined ? { testci: metinYaDaNull(c.testci) } : {}),
+    ...(c.kisitli === true ? { kisitli: true } : {}),
     ret_nedeni: (metinYaDaNull(c.ret_nedeni) as RetNedeni | null),
     karar_veren: metinYaDaNull(c.karar_veren),
     karar_zamani: metinYaDaNull(c.karar_zamani),
@@ -551,11 +587,11 @@ export function caseUyarla(c: Ham): TestCase {
     legacy: typeof c.legacy === "boolean" ? c.legacy : icerik.readiness === undefined,
     ...(Array.isArray(c.acik_sorular) ? { acik_sorular: nesneler(c.acik_sorular, (x) => acikSoruUyarla(x, c.po_sorulari)) } : {}),
     ...(Array.isArray(c.varsayimlar) ? { varsayimlar: nesneler(c.varsayimlar, (x) => varsayimUyarla(x, c.po_sorulari)) } : {}),
-    ...(c.onay_engeli !== undefined ? { onay_engeli: metinYaDaNull(c.onay_engeli) } : {}),
     ...(typeof c.uretim_no === "number" ? { uretim_no: c.uretim_no } : {}),
     ...(c.po_yanit_onerisi !== undefined ? { po_yanit_onerisi: poYanitOnerisiUyarla(c.po_yanit_onerisi) } : {}),
     // D6: atıf kimliği → PO durumu (hazır olmayan case yönlendirmesi metni buna göre değişir).
     ...(nesneMi(c.po_sorulari) ? { po_sorulari: c.po_sorulari as NonNullable<TestCase["po_sorulari"]> } : {}),
+    ...caseOtomasyonAlanlari(c),
   };
 }
 

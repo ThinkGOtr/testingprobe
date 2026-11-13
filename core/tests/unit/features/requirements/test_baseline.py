@@ -139,8 +139,8 @@ def test_varsayilan_etiketlenir(
     assert b["giren"] is None and "TP_MANUAL_BASELINE_S" in b["not"]
 
 
-@pytest.mark.parametrize("rol", ["engineer", "tester", "presenter"])
-def test_yalnizca_analist_ve_po_girer(api: TestClient, make_user, rol: str) -> None:
+@pytest.mark.parametrize("rol", ["analyst", "engineer", "tester", "admin"])
+def test_yalnizca_po_girer(api: TestClient, make_user, rol: str) -> None:
     rid = _req()
     assert _put(api, rid, {"deger_s": 3600, "not": "F0 ölçümü"}).status_code == 401
     assert api.delete(f"/requirements/{rid}/baseline").status_code == 401
@@ -150,11 +150,11 @@ def test_yalnizca_analist_ve_po_girer(api: TestClient, make_user, rol: str) -> N
     assert api.get(f"/requirements/{rid}/baseline").status_code == 200
 
 
-def test_analist_girer_po_gunceller_gecmis_ve_denetim(
+def test_po_girer_baska_po_gunceller_gecmis_ve_denetim(
     api: TestClient, engine: Engine, make_user
 ) -> None:
     rid = _req()
-    analist = make_user("analyst", ad="ismail")
+    analist = make_user("po", ad="ismail")
     login(api, analist)
     r = _put(api, rid, {"deger_s": 5400, "not": "  F0 ölçümü –   İsmail "})
     assert r.status_code == 200, r.text
@@ -168,7 +168,7 @@ def test_analist_girer_po_gunceller_gecmis_ve_denetim(
     )
     assert (b["giren"], b["giren_rol"], b["not"], b["sira"]) == (
         "ismail",
-        "analyst",
+        "po",
         "F0 ölçümü – İsmail",
         1,
     )
@@ -211,7 +211,7 @@ def test_silme_gecmisi_korur_ve_varsayilana_duser(
     api: TestClient, engine: Engine, make_user, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     rid = _req()
-    login(api, make_user("analyst"))
+    login(api, make_user("po"))
     _put(api, rid, {"deger_s": 3600, "not": "F0 ölçümü – İsmail"})
     r = api.delete(f"/requirements/{rid}/baseline", params={"not": "yanlış story'ye girildi"})
     assert r.status_code == 200
@@ -262,7 +262,7 @@ def test_gecersiz_deger_reddedilir(
     api: TestClient, engine: Engine, make_user, body: dict[str, Any]
 ) -> None:
     rid = _req()
-    login(api, make_user("analyst"))
+    login(api, make_user("po"))
     r = _put(api, rid, body)
     assert r.status_code == 422, r.text
     with Session(engine) as s:
@@ -292,7 +292,7 @@ def test_case_metrics_story_degerini_kullanir(
     )
 
     rid = _req()
-    login(api, make_user("analyst"))
+    login(api, make_user("po"))
     m = api.get(f"/requirements/{rid}/case-metrics").json()
     assert m["manuel_baz_ms"] is None and m["manuel_baz_kaynagi"] is None
     assert MANUEL_BAZ_YOK_UYARISI in m["uyarilar"]
@@ -345,7 +345,7 @@ def test_kapsam_metni_turkce_ekler() -> None:
 def test_kaynak_notu_en_az_uc_karakter(api: TestClient, make_user) -> None:
     """Portal (BAZ_NOT_EN_AZ=3) ile aynı kural: boşluk dışında en az 3 karakter, Türkçe 422."""
     rid = _req()
-    login(api, make_user("analyst"))
+    login(api, make_user("po"))
     r = _put(api, rid, {"deger_s": 3600, "not": "a"})
     assert r.status_code == 422 and "en az 3 karakter" in r.json()["detail"]
     assert _put(api, rid, {"deger_s": 3600, "not": "a  b"}).status_code == 422

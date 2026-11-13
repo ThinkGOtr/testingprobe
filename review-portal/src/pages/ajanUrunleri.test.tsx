@@ -88,9 +88,12 @@ describe("Ajan ürünleri sayfası", { timeout: 60000 }, () => {
 
 describe("mock Agent Probe: talep ilerlemesi ve case üretimi engeli", { timeout: 60000 }, () => {
   it("bağlı gereksinimde generate-cases 409 ajan_urunu; talep refresh ile queued → running → failed (kredi ajanı)", async () => {
+    // 012: bağlama Analistin (`requirement.review`); case üretimi ve ajan testi Testçinin.
     await oturumAc("analist");
     poOnayli();
     await api.ajanUrunuBagla(RID, "kredi-danismani");
+    await expect(api.ajanTestiBaslat(RID)).rejects.toMatchObject({ status: 403 });
+    await oturumAc("testci");
     const hata = await api.caseUret(RID).catch((e: unknown) => e);
     expect(hata).toBeInstanceOf(ApiError);
     expect((hata as ApiError).status).toBe(409);
@@ -112,9 +115,11 @@ describe("mock Agent Probe: talep ilerlemesi ve case üretimi engeli", { timeout
     await oturumAc("analist");
     const e = await api.ajanUrunuBagla(RID, "kampanya-onerici").catch((x: unknown) => x);
     expect((e as ApiError).kod).toBe("ajan_urunu_baglanamaz");
-    await oturumAc("po");
-    const y = await api.ajanUrunuBagla(RID, "destek-asistani").catch((x: unknown) => x);
-    expect((y as ApiError).status).toBe(403);
+    for (const rol of ["po", "testci"]) {
+      await oturumAc(rol);
+      const y = await api.ajanUrunuBagla(RID, "destek-asistani").catch((x: unknown) => x);
+      expect((y as ApiError).status).toBe(403);
+    }
   });
 });
 
@@ -137,15 +142,22 @@ describe("gereksinim detayı: Ürün AI ajanı", { timeout: 90000 }, () => {
     await u.selectOptions(secim, "destek-asistani");
     await u.click(within(kart as HTMLElement).getByRole("button", { name: "Ürün AI ajanı olarak bağla" }));
     await within(kart as HTMLElement).findByText("Müşteri destek asistanı", undefined, T);
+    // Analist ajan testini başlatamaz (`agent_test.run` Testçinin): düğme yetkisiz.
+    expect(within(kart as HTMLElement).getByRole("button", { name: "Agent Probe'da test başlat" })).toBeDisabled();
+    unmount();
 
+    await oturumAc("testci");
+    const ikinci = uygulama(`/gereksinimler/${RID}`);
+    const kart2 = (await screen.findByRole("heading", { name: "Ürün AI ajanı" }, T)).closest("section")! as HTMLElement;
     await waitFor(() => expect(screen.getByRole("button", { name: "Tasarım modelini üret (iki tur)" })).toBeDisabled(), T);
     expect(screen.getByRole("button", { name: "Tasarım modelini üret (iki tur)" })).toHaveAttribute("title", AJAN_URUNU_NEDENI);
 
-    await u.click(within(kart as HTMLElement).getByRole("button", { name: "Agent Probe'da test başlat" }));
-    const talep = await within(kart as HTMLElement).findByTestId("ajan-talep", undefined, T);
+    await waitFor(() => expect(within(kart2).getByRole("button", { name: "Agent Probe'da test başlat" })).toBeEnabled(), T);
+    await u.click(within(kart2).getByRole("button", { name: "Agent Probe'da test başlat" }));
+    const talep = await within(kart2).findByTestId("ajan-talep", undefined, T);
     expect(talep).toHaveTextContent("Kuyrukta");
     expect(within(talep).getByText("Simülasyon")).toBeInTheDocument();
-    unmount();
+    ikinci.unmount();
 
     // Agent Probe tarafı ilerler (iki refresh) → sayfa yeniden açılınca sonuç ve süreç notu.
     await api.ajanTestiYenile(RID);
@@ -162,6 +174,7 @@ describe("gereksinim detayı: Ürün AI ajanı", { timeout: 90000 }, () => {
     await oturumAc("analist");
     poOnayli();
     await api.ajanUrunuBagla(RID, "kredi-danismani");
+    await oturumAc("testci");
     await api.ajanTestiBaslat(RID);
     await api.ajanTestiYenile(RID);
     await api.ajanTestiYenile(RID);

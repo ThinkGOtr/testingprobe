@@ -73,7 +73,7 @@ describe("409 'durum: X' eşlemesi", () => {
   });
 
   it("ekranda: arka planda üretim başladıysa düğme ham kodu değil etiketi gösterir", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const g = poOnayli();
     const u = userEvent.setup();
     uygulama("/gereksinimler/req-tpd-4");
@@ -87,7 +87,7 @@ describe("409 'durum: X' eşlemesi", () => {
 
 describe("UX-1: çift tıklama tek istek", () => {
   it("aynı olay döngüsündeki iki tıklama generate-cases'i bir kez çağırır; düğme beklerken meşgul", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     poOnayli();
     let bitir: (y: IsYaniti) => void = () => undefined;
     const spy = vi.spyOn(api, "caseUret").mockImplementation(() => new Promise<IsYaniti>((r) => (bitir = r)));
@@ -106,7 +106,7 @@ describe("UX-1: çift tıklama tek istek", () => {
 
 describe("UX-4: kip seçimi ve düğme metni", () => {
   it("düğme metni seçili kipi söyler; tek tur seçilince 'Case üret (tek tur)'", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     poOnayli();
     const u = userEvent.setup();
     uygulama("/gereksinimler/req-tpd-4");
@@ -123,7 +123,7 @@ describe("UX-4: kip seçimi ve düğme metni", () => {
   }, AGIR);
 
   it("kayıtlı kip tercihi (D1) varsayılan gelir; gönderilen kip saklanır", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     poOnayli();
     (mockVerisi().uretimKipleri ??= {})["req-tpd-4"] = "tek_tur";
     uygulama("/gereksinimler/req-tpd-4");
@@ -139,7 +139,7 @@ describe("UX-4: kip seçimi ve düğme metni", () => {
     expect(kipDugmeMetni("iki_tur")).toBe("Tasarım modelini üret (iki tur)");
     expect(kipDugmeMetni("tek_tur")).toBe("Case üret (tek tur)");
     // Mock: açıkça gönderilen kip generation-options'ta döner.
-    await oturumAc("analist");
+    await oturumAc("testci");
     poOnayli();
     await api.caseUret("req-tpd-4", "tek_tur");
     expect((await api.uretimSecenekleri("req-tpd-4")).kip).toBe("tek_tur");
@@ -155,7 +155,7 @@ describe("cases_ready: 'Case review' birincil, yeniden üretim ikincil ve onayl�
   }
 
   it("birincil bağlantı case review'a gider; durum etiketi 'Case review aşamasında'; Gherkin indir yanında", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     reviewAsamasinda();
     uygulama("/gereksinimler/req-tpd-1");
     const review = await screen.findByRole("link", { name: "Case review" }, T);
@@ -172,7 +172,7 @@ describe("cases_ready: 'Case review' birincil, yeniden üretim ikincil ve onayl�
   }, AGIR);
 
   it("'Yeniden üret…' sayfa içi onay ister (mevcut sayılar); Vazgeç istek göndermez, onay üretimi başlatır", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     reviewAsamasinda();
     const confirm = vi.spyOn(window, "confirm");
     const spy = vi.spyOn(api, "caseUret");

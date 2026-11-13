@@ -106,6 +106,13 @@ IZINLI_IFADELER = frozenset(
         "doğrulamadım",
         "bulamadım",
         "submit_result",
+        # 013 asistan güvenlik sözleşmesi (dev birleştirmesi): prompt bu sözcükleri zorunlu kural
+        # sözcüğü ("sentetik", "hata adayı") ya da yasak iddia ("%100 test edildi", "hiç hata
+        # yok") olarak tanımlar; eval aynı sözleşmeyi ölçer. Vaka cevabı öğreten örnek değildir.
+        "sentetik",
+        "hata adayı",
+        "%100 test edildi",
+        "hiç hata yok",
     )
 )
 IZINLI_SOZCUKLER = frozenset(

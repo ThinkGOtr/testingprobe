@@ -3,12 +3,15 @@
 Örnek::
 
     from fastapi import APIRouter, Depends
-    from tp_core.api.deps import CurrentUser, DbSession, require_role
+    from tp_core.api.deps import DbSession
+    from tp_core.auth.yetki import izin
 
     router = APIRouter(tags=["requirements"])
 
     @router.post("/requirements/sync")
-    def sync(session: DbSession, user=Depends(require_role("analyst"))): ...
+    def sync(session: DbSession, user=Depends(izin("requirement.import"))): ...
+
+`require_role` kullanımdan kalktı (specs/012-rol-yetki §4.3); geçiş süresince dışa aktarılır.
 """
 
 from tp_core.auth.deps import (

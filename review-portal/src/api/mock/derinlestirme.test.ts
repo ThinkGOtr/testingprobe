@@ -39,7 +39,7 @@ afterEach(() => {
 
 describe("GET generation-options", () => {
   it("kayıt yokken secenekler null, varsayılan ve katalog döner", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const y = await api.uretimSecenekleri("req-tpd-4");
     expect(y.secenekler).toBeNull();
     expect(y.varsayilan).toMatchObject({ platformlar: [], test_seviyesi: "SYSTEM" });
@@ -50,7 +50,7 @@ describe("GET generation-options", () => {
   });
 
   it("gönderilen seçenekler gereksinimde saklanır ve sonraki okumada `secenekler` olur", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     tpd4Hazir();
     const govde = { platformlar: ["API"], test_seviyesi: "INTEGRATION", benimsenen_standartlar: ["OWASP API Top 10"], kapsam_disi: "Ödeme", roller: "bayi", ek_bilgi: { auth_tipi: "OAuth2" } };
     await api.caseUret("req-tpd-4", "tek_tur", govde);
@@ -61,7 +61,7 @@ describe("GET generation-options", () => {
 
 describe("POST generate-cases (seçenekli)", () => {
   it("gövdesiz çağrı eski davranış: golden TPD-4, hiçbir seçenek saklanmaz", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     tpd4Hazir();
     await api.caseUret("req-tpd-4");
     await bekleIsler();
@@ -70,7 +70,7 @@ describe("POST generate-cases (seçenekli)", () => {
   });
 
   it("sınır aşımı 422; durum değişmez", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     tpd4Hazir();
     await expect(api.caseUret("req-tpd-4", "tek_tur", { benimsenen_standartlar: Array.from({ length: 11 }, (_, i) => `S${i}`) })).rejects.toMatchObject({ status: 422 });
     await expect(api.caseUret("req-tpd-4", "tek_tur", { platformlar: ["Tablet"] })).rejects.toMatchObject({ status: 422 });
@@ -79,7 +79,7 @@ describe("POST generate-cases (seçenekli)", () => {
   });
 
   it("platform seçili ama golden yok: REPLAY-MISS, gereksinim failed (yeniden denenebilir), case eklenmez", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     tpd4Hazir();
     const once = mockVerisi().caseler.length;
     await api.caseUret("req-tpd-4", "tek_tur", { platformlar: ["Desktop-Win", "Mobil-iOS"] });
@@ -93,7 +93,7 @@ describe("POST generate-cases (seçenekli)", () => {
   });
 
   it("platform golden'ı varsa (`platform-<ek>/<kök>`) onun case'leri REPLAY taslak olur", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const g = tpd4Hazir();
     // Golden henüz depoda yoksa testte örnek kayıt eklenir (golden gelince `platform-web/TPD-4` aynı yoldan seçilir).
     const ad = "platform-web/TPD-4";
@@ -117,7 +117,7 @@ describe("derinleştirme", () => {
     await oturumAc("muhendis");
     await expect(api.derinlestir(V3_GEREKSINIM_ID, { tur: "negatif" })).rejects.toMatchObject({ status: 403 });
     await api.logout();
-    await oturumAc("analist");
+    await oturumAc("testci");
     await expect(api.derinlestir("req-tpd-4", { tur: "negatif" })).rejects.toMatchObject({ status: 409 });
     await expect(api.derinlestir(V3_GEREKSINIM_ID, { tur: "teknik" })).rejects.toMatchObject({ status: 422 });
     await expect(api.derinlestir(V3_GEREKSINIM_ID, { tur: "teknik", teknik: "XX" as never })).rejects.toMatchObject({ status: 422 });
@@ -126,7 +126,7 @@ describe("derinleştirme", () => {
   });
 
   it("durum 'yok' → başlat (202) → çalışırken ikinci istek 409 → golden yoksa REPLAY-MISS hata, gereksinim cases_ready'de kalır", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     KAYNAK.case_deepening = {};
     expect(await api.derinlestirmeDurumu(V3_GEREKSINIM_ID)).toMatchObject({ durum: "yok", tur: null });
     ayar.isAdimiMs = 50;
@@ -146,7 +146,7 @@ describe("derinleştirme", () => {
   });
 
   it("golden varsa (`negatif/<kök>`) case'ler yeni üretim numarasıyla taslak eklenir; mevcutlar korunur; özet tur=negatif", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     // TPD-1'i case'leri hazır duruma getir (golden kökü Jira anahtarı).
     const g = gereksinim("req-tpd-1");
     g.durum = "cases_ready";
@@ -176,7 +176,7 @@ describe("derinleştirme", () => {
   });
 
   it("teknik anahtarı küçük harf: `teknik-bva/<kök>`; kaynaklar.json'da case_deepening anahtarı hiç yoksa da çalışır", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const g = gereksinim("req-tpd-1");
     g.durum = "cases_ready";
     KAYNAK.case_deepening = undefined;

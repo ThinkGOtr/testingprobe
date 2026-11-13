@@ -5,10 +5,12 @@
 // "Platform, radyo grubu" der. Seçili parça dolu `--accent-solid` + beyaz metin ve ✓ işaretiyle
 // ayrılır (renk tek gösterge değil).
 import { useId } from "react";
+import type { ReactNode } from "react";
 import {
   PLATFORMLAR,
   PLATFORM_ACIKLAMASI,
   PLATFORM_ETIKETI,
+  PLATFORM_ORTAMI,
   type Platform,
   type PlatformSecimi,
 } from "../lib/platform";
@@ -32,11 +34,25 @@ type SeciciOzellikleri<T extends string> = {
   aciklamali?: boolean;
   disabled?: boolean;
   /** Grubun altında açıklama metni (aria-describedby). */
-  ipucu?: string;
+  ipucu?: ReactNode;
   className?: string;
 };
 
-function SegmentGrubu<T extends string>({
+export type SegmentSecenegi<T extends string> = {
+  deger: T;
+  ad: string;
+  aciklama?: string;
+  /**
+   * Seçilemez seçenek. Radyo `disabled` yapılmaz (odaklanamaz, ekran okuyucu nedeni duymaz):
+   * `aria-disabled` ile odakta kalır, seçim değişmez; `neden` seçeneğin içinde görünür yazılır ve
+   * tanım (aria-describedby) olarak okunur.
+   */
+  pasif?: boolean;
+  neden?: string | null;
+};
+
+/** Segment görünümünde yerel radyo grubu (fieldset + legend). Platform ve dil seçicilerinin ortak gövdesi. */
+export function SegmentGrubu<T extends string>({
   etiket,
   deger,
   degistir,
@@ -45,7 +61,7 @@ function SegmentGrubu<T extends string>({
   disabled,
   ipucu,
   className,
-}: SeciciOzellikleri<T> & { secenekler: { deger: T; ad: string; aciklama?: string }[] }) {
+}: SeciciOzellikleri<T> & { secenekler: SegmentSecenegi<T>[] }) {
   const ad = useId();
   const ipucuId = `${ad}-ipucu`;
   return (
@@ -56,15 +72,23 @@ function SegmentGrubu<T extends string>({
           // Ad yalnız platform adı; kısa açıklama ayrı tanım (aria-describedby) olarak okunur.
           const adId = `${ad}-${s.deger}-ad`;
           const altId = `${ad}-${s.deger}-alt`;
-          const alt = aciklamali && s.aciklama;
+          const aciklama = aciklamali ? s.aciklama : undefined;
+          // Pasif seçeneğin nedeni "Kullanılamıyor: …" diye; açık seçeneğin nedeni (ör. depo okunamadığı için
+          // kullanılabilirlik bilinmiyor) de görünür ve aynı tanımla okunur (MİM-B1).
+          const neden = s.pasif ? s.neden?.trim() || "Bu seçenek kullanılamıyor." : s.neden?.trim() || undefined;
+          const alt = !!aciklama || !!neden;
           return (
-            <label key={s.deger} className="platform-secenek">
+            <label key={s.deger} className={`platform-secenek${s.pasif ? " pasif" : ""}`}>
               <input
                 type="radio"
                 name={ad}
                 value={s.deger}
                 checked={s.deger === deger}
-                onChange={() => degistir(s.deger)}
+                // Pasif seçenek seçilemez: denetimli radyo eski değerinde kalır (odak seçenekte, neden okunur).
+                onChange={() => {
+                  if (!s.pasif) degistir(s.deger);
+                }}
+                aria-disabled={s.pasif || undefined}
                 aria-labelledby={adId}
                 aria-describedby={alt ? altId : undefined}
               />
@@ -73,7 +97,13 @@ function SegmentGrubu<T extends string>({
               </span>
               {alt && (
                 <span className="platform-secenek-alt" id={altId}>
-                  {s.aciklama}
+                  {aciklama}
+                  {neden && (
+                    <span className="platform-secenek-neden" data-testid="secenek-neden" data-pasif={s.pasif ? "evet" : "hayir"}>
+                      {aciklama && <span className="gorunmez">. </span>}
+                      {s.pasif ? `Kullanılamıyor: ${neden}` : neden}
+                    </span>
+                  )}
                 </span>
               )}
             </label>
@@ -81,22 +111,21 @@ function SegmentGrubu<T extends string>({
         })}
       </div>
       {ipucu && (
-        <p className="kucuk soluk platform-secici-ipucu" id={ipucuId}>
+        <div className="kucuk soluk platform-secici-ipucu" id={ipucuId}>
           {ipucu}
-        </p>
+        </div>
       )}
     </fieldset>
   );
 }
 
-/** Kod üretiminin hedef platformu (varsayılan Web). */
-export function PlatformSecici(p: SeciciOzellikleri<Platform>) {
-  return (
-    <SegmentGrubu
-      {...p}
-      secenekler={PLATFORMLAR.map((x) => ({ deger: x, ad: PLATFORM_ETIKETI[x], aciklama: PLATFORM_ACIKLAMASI[x] }))}
-    />
-  );
+/**
+ * Kod üretiminin hedef platformu (varsayılan Web). `dilAyri`: dil ayrı seçiliyor (011) — seçenek
+ * açıklaması yalnız ortam/araçtır ("Tarayıcı · Playwright"), dil adı taşımaz.
+ */
+export function PlatformSecici({ dilAyri, ...p }: SeciciOzellikleri<Platform> & { dilAyri?: boolean }) {
+  const aciklama = dilAyri ? PLATFORM_ORTAMI : PLATFORM_ACIKLAMASI;
+  return <SegmentGrubu {...p} secenekler={PLATFORMLAR.map((x) => ({ deger: x, ad: PLATFORM_ETIKETI[x], aciklama: aciklama[x] }))} />;
 }
 
 /** Liste/ölçü süzgeci: "Tümü" + dört platform. */

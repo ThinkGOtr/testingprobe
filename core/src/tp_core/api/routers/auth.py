@@ -20,7 +20,13 @@ from sqlalchemy.orm import Session
 from tp_core.audit import audit_on_commit
 from tp_core.auth.client_ip import client_address
 from tp_core.auth.deps import Codec, CurrentUser, DbSession, session_codec
-from tp_core.auth.display import configured_names, display_name, kaynakli_ad, person_name
+from tp_core.auth.display import (
+    ROL_ETIKETI,
+    configured_names,
+    display_name,
+    kaynakli_ad,
+    person_name,
+)
 from tp_core.auth.login import THROTTLE, OrtakKimlikGerekli, authenticate
 from tp_core.auth.sessions import (
     DEVICE_COOKIE_NAME,
@@ -32,6 +38,7 @@ from tp_core.auth.sessions import (
     open_session,
     revoke_session,
 )
+from tp_core.auth.yetki import rol_izinleri
 from tp_core.config import get_settings
 from tp_core.models import AppUser, Oturum
 
@@ -47,6 +54,11 @@ class Me(BaseModel):
     id: uuid.UUID
     kullanici_adi: str
     rol: str
+    # Rolün görünen adı (specs/012-rol-yetki §3, `yetki.ROL_ETIKETLERI`).
+    rol_etiketi: str = ""
+    # Rolün izin anahtarları (sıralı; `yetki.rol_izinleri`). Portal menü/sayfa/düğmeleri bununla
+    # gösterir; kontrol yine çekirdektedir.
+    izinler: list[str] = Field(default_factory=list)
     # Yalnızca gösterim (yetki rolle): "Cengizhan Gunaydin · Analist"; ad tanımsızsa rol etiketi.
     gorunen_ad: str
     ad_soyad: str | None = None
@@ -79,6 +91,8 @@ def me_of(session: Session, user_id: uuid.UUID, kullanici_adi: str, rol: str) ->
         id=user_id,
         kullanici_adi=kullanici_adi,
         rol=rol,
+        rol_etiketi=ROL_ETIKETI.get(rol, rol),
+        izinler=rol_izinleri(rol),
         gorunen_ad=display_name(kullanici_adi, rol, names),
         ad_soyad=kisi_adi.get(anahtar) or person_name(kullanici_adi, names),
         ad_kaynak=kaynak,

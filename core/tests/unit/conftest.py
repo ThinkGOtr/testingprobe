@@ -264,3 +264,21 @@ def _kural_yeniden_isteme_kapali(monkeypatch: pytest.MonkeyPatch) -> None:
     kural ihlalinde yeniden isteme (011) senaryoyu tüketmesin. Mekanizmanın kendisi
     `test_kural_yeniden_isteme.py`'de açıkça açılarak sınanır."""
     monkeypatch.setenv("TP_KURAL_YENIDEN_ISTEME", "off")
+
+
+@pytest.fixture(autouse=True)
+def _red_tekrar_suzgeci_temiz() -> None:
+    """`authz.denied` tekrar süzgeci süreç içidir: her test temiz başlar (aynı kullanıcı/yol)."""
+    from tp_core.auth.yetki import red_onbellegini_temizle
+
+    red_onbellegini_temizle()
+
+
+@pytest.fixture(autouse=True)
+def _jira_sim_onbellegi_temiz() -> None:
+    """`ayarlar.jira_sim_mi` sonucu süreç içinde önbelleklenir (olumsuz sonuç `SIM_NEGATIF_S`):
+    önceki bir testin Jira'sız ortamı sonraki testin tetik varsayılanını (`acik`) etkilemesin
+    (dev birleştirmesinde test sırası değişince görüldü)."""
+    from tp_core.features.otomasyon.ayarlar import sim_onbellegini_temizle
+
+    sim_onbellegini_temizle()

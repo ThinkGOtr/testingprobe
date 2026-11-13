@@ -15,7 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, select, text
 
-from tests.unit.features.cases.helpers import latest_cases, login, run_jobs
+from tests.unit.features.cases.helpers import latest_cases, login, onayla, rol_ol, run_jobs
 from tp_core.features.cases import denetim_akisi, review
 from tp_core.features.cases.jobs import on_worker_start
 from tp_core.features.publish import service as publish
@@ -41,26 +41,36 @@ def gecit(replay_gateway: Any) -> Iterator[Any]:
     denetim_akisi.bind_gate()
 
 
+# 012 rol hesapları (gereksinim başına): üretim/review/karar Testçi, son onay/denetim Analist.
+_ROLLER: dict[uuid.UUID, dict[str, Any]] = {}
+
+
+def _rol(api: TestClient, rid: uuid.UUID, rol: str) -> None:
+    rol_ol(api, _ROLLER[rid][rol])
+
+
 def _uret(api: TestClient, engine: Engine, make_user, make_requirement) -> uuid.UUID:
+    """Testçi üretir; Testçi oturumu açık kalır."""
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    _ROLLER[rid] = {"tester": make_user("tester"), "analyst": make_user("analyst")}
+    login(api, _ROLLER[rid]["tester"])
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     run_jobs(engine)
     return rid
 
 
 def _onayla(api: TestClient, rid: uuid.UUID) -> list[dict[str, Any]]:
+    """Testçi kabulü + Analist son onayı; Analist oturumu açık kalır (P9'a gönderim Analistin)."""
     cases = latest_cases(api, rid)
+    testci, analist = _ROLLER[rid]["tester"], _ROLLER[rid]["analyst"]
     for c in cases:
-        r = api.post(
-            f"/cases/{c['id']}/decision", json={"karar": "approve", "icerik_hash": c["icerik_hash"]}
-        )
-        assert r.status_code == 200, r.text
-    return cases
+        onayla(api, c, testci, analist, sonra=analist)
+    return latest_cases(api, rid)
 
 
 def _set_degistir(api: TestClient, rid: uuid.UUID) -> None:
-    """İkinci case'i taslağa alıp reddeder (set hash'i değişir)."""
+    """İkinci case'i taslağa alıp reddeder (set hash'i değişir; Testçi kararı)."""
+    _rol(api, rid, "tester")
     c = latest_cases(api, rid)[1]
     api.post(
         f"/cases/{c['id']}/decision", json={"karar": "reopen", "icerik_hash": c["icerik_hash"]}
@@ -191,6 +201,7 @@ def test_review_set_degisince_yeni_sete_planlanir(
 ) -> None:
     rid = _uret(api, engine, make_user, make_requirement)
     _onayla(api, rid)
+    _rol(api, rid, "tester")  # P8 review Testçinin (case.generate)
     api.post(f"/requirements/{rid}/case-review")
     _set_degistir(api, rid)
     run_jobs(engine)

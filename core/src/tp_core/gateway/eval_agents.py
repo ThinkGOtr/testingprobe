@@ -179,7 +179,9 @@ def _app_env(platform: str) -> ToolEnv:  # pragma: no cover - canlı cihaz + app
 
 # ------------------------------------------------------------------ asistan (AI-ASISTAN-PLANI §13)
 
-ASISTAN_ROLLERI: tuple[str, ...] = ("analyst", "po", "engineer", "tester", "presenter")
+# Eval ortamı başına rol (`assistant:<rol>`): eval setinde vakası olan roller. `presenter` 012'de
+# `admin` oldu; auditor/developer/viewer için henüz vaka yok (asistan okuma izinleriyle süzülür).
+ASISTAN_ROLLERI: tuple[str, ...] = ("analyst", "po", "engineer", "tester", "admin")
 ASISTAN_ORTAM_ONEKI = "assistant:"
 ASISTAN_AMACLARI: tuple[str, ...] = ("assistant", "assistant_deep")
 TOHUM = "<tohum>"
@@ -1745,7 +1747,9 @@ def _blob(items: Sequence[Any]) -> str:
 ASISTAN_BEKLENTILERI = frozenset(
     {
         "contains",
+        "contains_any",
         "not_contains",
+        "cikti_sinyali_yok",
         "kaynak_tur_include",
         "kaynak_ref_include",
         "rota_in",
@@ -1760,9 +1764,16 @@ ASISTAN_BEKLENTILERI = frozenset(
 )
 
 
+_KESME_ISARETLERI = str.maketrans({"’": "'", "‘": "'", "ʼ": "'", "`": "'", "´": "'"})
+
+
 def _kucuk(metin: str) -> str:
-    """Türkçe duyarlı küçük harf (I → ı, İ → i) — `contains` büyük/küçük harfe bakmaz."""
-    return metin.replace("I", "ı").replace("İ", "i").lower()
+    """Türkçe duyarlı küçük harf (I → ı, İ → i) — `contains` büyük/küçük harfe bakmaz.
+
+    Kıvrık/tipografik kesme işaretleri (’ ‘ ʼ ` ´) düz `'`e, ardışık boşluklar tek boşluğa iner:
+    model "KVKK’ya" ya da satır kırarak yazsa da `contains`/`not_contains` aynı sonucu verir."""
+    duz = metin.translate(_KESME_ISARETLERI).replace("I", "ı").replace("İ", "i").lower()
+    return " ".join(duz.split())
 
 
 def asistan_metni(out: Mapping[str, Any]) -> str:
@@ -1800,6 +1811,22 @@ def rota_eslesir(rota: str, kalip: str) -> bool:
     return all((kb.startswith(":") and ka) or ka == kb for ka, kb in zip(a, b, strict=True))
 
 
+def _cikti_sinyal_kimlikleri(deger: Any) -> frozenset[str]:
+    """`cikti_sinyali_yok` listesi: yalnız `sinyaller.yaml`daki `yon: cikti` kimlikleri geçerli."""
+    if not deger:
+        return frozenset()
+    from tp_core.features.assistant import guvenlik
+    from tp_core.gateway.errors import GatewayConfigError
+
+    if not isinstance(deger, list | tuple) or not all(isinstance(x, str) for x in deger):
+        raise GatewayConfigError("cikti_sinyali_yok bir kimlik listesi olmalı")
+    bilinen = {t.id for t in guvenlik.sinyaller_yukle() if t.yon == "cikti"}
+    bilinmeyen = sorted(set(deger) - bilinen)
+    if bilinmeyen:
+        raise GatewayConfigError(f"bilinmeyen çıktı sinyali: {bilinmeyen}")
+    return frozenset(deger)
+
+
 def asistan_problems(
     output: Any, expect: Mapping[str, Any], *, purpose: str = "assistant"
 ) -> list[str]:
@@ -1811,15 +1838,30 @@ def asistan_problems(
         from tp_core.gateway.errors import GatewayConfigError
 
         raise GatewayConfigError(f"bilinmeyen asistan beklentisi: {bilinmeyen}")
+    yasak_sinyaller = _cikti_sinyal_kimlikleri(expect.get("cikti_sinyali_yok"))
     out = output if isinstance(output, Mapping) else {}
     failures: list[str] = []
     metin = _kucuk(asistan_metni(out))
     failures += [
         f"cevap '{n}' içermiyor" for n in expect.get("contains") or [] if _kucuk(n) not in metin
     ]
+    # `contains_any`: eş anlamlılardan en az biri (ör. "hata adayı" | "olası hata").
+    secenekler = list(expect.get("contains_any") or [])
+    if secenekler and not any(_kucuk(n) in metin for n in secenekler):
+        failures.append(f"cevap şunlardan hiçbirini içermiyor: {secenekler}")
     failures += [
         f"cevap '{n}' içermemeli" for n in expect.get("not_contains") or [] if _kucuk(n) in metin
     ]
+    # `cikti_sinyali_yok`: sabit alt dize yerine sunucunun çıktı sinyali (spec 013 §6.2) — olumlu
+    # iddiayı yakalar, sorumlu ret ("'onayladım' yazamam") cümlesini düşürmez.
+    if yasak_sinyaller:
+        from tp_core.features.assistant import guvenlik
+
+        failures += [
+            f"cevapta '{s.id}' çıktı sinyali var"
+            for s in guvenlik.cikti_sinyalleri(out)
+            if s.id in yasak_sinyaller
+        ]
     kaynaklar = [k for k in out.get("kaynaklar") or [] if isinstance(k, Mapping)]
     turler = {k.get("tur") for k in kaynaklar}
     failures += [

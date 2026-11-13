@@ -31,7 +31,15 @@ from tp_core.gateway.testing import text_response
 from tp_core.models import Requirement, TestCase, session_scope
 from tp_core.workflow.service import SYSTEM, transition
 
-from .helpers import case_icerik, eski_case_icerik, latest_cases, login, run_jobs, uretim_cikti
+from .helpers import (
+    case_icerik,
+    eski_case_icerik,
+    latest_cases,
+    login,
+    onayla,
+    run_jobs,
+    uretim_cikti,
+)
 
 REPO = Path(__file__).resolve().parents[5]
 GOLDEN_GIRDI = REPO / "rules" / "replay" / "case_generation" / "golden"
@@ -352,8 +360,14 @@ def test_dosya_adi() -> None:
 
 
 @pytest.fixture
-def uretilmis(api: TestClient, engine: Engine, make_user, make_requirement, fake_gateway):
-    """TPD-4 için 3 v3 case (hazır, hazır, varsayıma bağlı) + 1 eski case; analist oturumu."""
+def roller(make_user) -> tuple[Any, Any]:
+    """012: (Testçi, Analist) — case kabulü ve son onayı farklı hesaplardır."""
+    return make_user("tester"), make_user("analyst")
+
+
+@pytest.fixture
+def uretilmis(api: TestClient, engine: Engine, roller, make_requirement, fake_gateway):
+    """TPD-4 için 3 v3 case (hazır, hazır, varsayıma bağlı) + 1 eski case; Testçi oturumu."""
     neg = {"type": "negative", "technique": ["EP"], "ref": "AC2"}
     cases = [
         case_icerik(),
@@ -369,7 +383,7 @@ def uretilmis(api: TestClient, engine: Engine, make_user, make_requirement, fake
     ozet = {"assumptions": [{"id": "A1", "statement": "Kilit 3 denemede", "owner": ""}]}
     fake_gateway([text_response(uretim_cikti(cases, **ozet))])
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    login(api, roller[0])
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     (is_,) = run_jobs(engine)
     assert is_.durum == "done", is_
@@ -386,11 +400,9 @@ def uretilmis(api: TestClient, engine: Engine, make_user, make_requirement, fake
     return rid
 
 
-def _onayla(api: TestClient, c: dict[str, Any]) -> None:
-    r = api.post(
-        f"/cases/{c['id']}/decision", json={"karar": "approve", "icerik_hash": c["icerik_hash"]}
-    )
-    assert r.status_code == 200, r.text
+def _onayla(api: TestClient, c: dict[str, Any], roller: tuple[Any, Any]) -> None:
+    """012: Testçi kabulü + Analist son onayı."""
+    onayla(api, c, *roller)
 
 
 def test_uc_uygun_case_yoksa_404(api: TestClient, uretilmis) -> None:
@@ -399,11 +411,11 @@ def test_uc_uygun_case_yoksa_404(api: TestClient, uretilmis) -> None:
     assert "onaylı" in r.json()["detail"]
 
 
-def test_uc_yalniz_onayli_ve_hazir_case(api: TestClient, uretilmis, make_user) -> None:
+def test_uc_yalniz_onayli_ve_hazir_case(api: TestClient, uretilmis, make_user, roller) -> None:
     rid = uretilmis
     hazir, hatali, varsayim, eski = latest_cases(api, rid)
     for c in (hazir, eski):
-        _onayla(api, c)
+        _onayla(api, c, roller)
     r = api.get(f"/requirements/{rid}/cases.feature")
     assert r.status_code == 200, r.text
     assert r.headers["content-type"] == "text/plain; charset=utf-8"
@@ -420,10 +432,10 @@ def test_uc_yalniz_onayli_ve_hazir_case(api: TestClient, uretilmis, make_user) -
     assert r.text == api.get(f"/requirements/{rid}/cases.feature").text
 
 
-def test_uc_yalniz_yayinlanan(api: TestClient, uretilmis) -> None:
+def test_uc_yalniz_yayinlanan(api: TestClient, uretilmis, roller) -> None:
     rid = uretilmis
     hazir, *_ = latest_cases(api, rid)
-    _onayla(api, hazir)
+    _onayla(api, hazir, roller)
     r = api.get(f"/requirements/{rid}/cases.feature", params={"yalniz_yayinlanan": 1})
     assert r.status_code == 404 and "Yayınlanmış case yok" in r.json()["detail"]
     with session_scope() as s:
@@ -432,10 +444,10 @@ def test_uc_yalniz_yayinlanan(api: TestClient, uretilmis) -> None:
     assert r.status_code == 200 and f"@tp-{hazir['id']}" in r.text
 
 
-def test_uc_onaydan_sonra_degisen_icerik_dahil_degil(api: TestClient, uretilmis) -> None:
+def test_uc_onaydan_sonra_degisen_icerik_dahil_degil(api: TestClient, uretilmis, roller) -> None:
     rid = uretilmis
     hazir, *_ = latest_cases(api, rid)
-    _onayla(api, hazir)
+    _onayla(api, hazir, roller)
     with session_scope() as s:
         tc = s.get(TestCase, uuid.UUID(hazir["id"]))
         icerik = copy.deepcopy(tc.icerik)
@@ -445,10 +457,10 @@ def test_uc_onaydan_sonra_degisen_icerik_dahil_degil(api: TestClient, uretilmis)
     assert api.get(f"/requirements/{rid}/cases.feature").status_code == 404
 
 
-def test_uc_gereksinim_degistiyse_409(api: TestClient, uretilmis) -> None:
+def test_uc_gereksinim_degistiyse_409(api: TestClient, uretilmis, roller) -> None:
     rid = uretilmis
     hazir, *_ = latest_cases(api, rid)
-    _onayla(api, hazir)
+    _onayla(api, hazir, roller)
     with session_scope() as s:
         s.get(Requirement, rid).baslik = "Story değişti"
     r = api.get(f"/requirements/{rid}/cases.feature")

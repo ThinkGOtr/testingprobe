@@ -48,6 +48,7 @@ import type {
 import { kanonikJson, sha256Hex } from "../../lib/sha256";
 import { ekranGoruntusu } from "./ekran";
 import { uygulamaHatalari, uygulamaKosulari, uygulamaScriptleri } from "./platformlar";
+import { dilScriptleri } from "./diller";
 import kaynaklar from "./golden/kaynaklar.json";
 import type { TasarimModeliKaydi } from "../tasarimModeliTipleri";
 import type { KaliteKaydi } from "./kalite";
@@ -672,8 +673,10 @@ function caseler(): TestCase[] {
     karar("case-1-7", 6, G[5], { durum: "draft" }),
     // Kredi limiti case'i bilinen kod hatasını hedefler (golden etiketi expected-code-defect).
     karar("case-1-5", 7, G[6], { durum: "draft", kanal: "ide", mode: "replay" }),
-    karar("case-1-8", 8, G[7], { durum: "draft" }),
-    karar("case-1-9", 9, G[8], { durum: "draft" }),
+    // 011: C8 (sipariş geçmişi) ve C9 (kampanyalı sepette minimum tutar yok) yayınlandı; kodları üretim dili
+    // örnekleridir (C9 web + Java PR'ı, C8 doğrulanmamış Python kaynağı).
+    karar("case-1-8", 8, G[7], { ...analist, durum: "published", karar: "approve", karar_zamani: t(30, "10:42"), duzeltme_olcusu: 0, review_sure_ms: 47000, jira_test_key: "TPD-12" }),
+    karar("case-1-9", 9, G[8], { ...analist, durum: "published", karar: "approve", karar_zamani: t(30, "10:43"), duzeltme_olcusu: 0, review_sure_ms: 39000, jira_test_key: "TPD-13" }),
     // Golden C10 bilinçli olarak C2'nin tekrarı: analist "duplicate" gerekçesiyle reddeder.
     karar("case-1-10", 10, G[9], { ...analist, durum: "rejected", karar: "reject", ret_nedeni: "duplicate", karar_zamani: t(30, "10:44"), review_sure_ms: 21000 }),
     ...v3Caseler(karar),
@@ -1116,6 +1119,8 @@ function scriptler(): ScriptDetay[] {
     },
     // 009: aynı onaylı case (C2) Android, iOS ve Windows'ta: platform başına ayrı script ve PR.
     ...uygulamaScriptleri(),
+    // 011: üretim dili örnekleri — C9 web + Java (PR açık), C8 doğrulanmamış Python (PR yok).
+    ...dilScriptleri(),
   ];
 }
 

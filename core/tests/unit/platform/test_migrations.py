@@ -301,18 +301,18 @@ def test_0008_downgrade_reopen_kararini_silmez(pg: PgServer) -> None:
             c.execute(f'DROP DATABASE IF EXISTS "{ad}" WITH (FORCE)')
 
 
-# 0026 (specs/011 D1 #19): kalite tabloları en az yetkiyle; tamamlanan denetimin kararı vardır.
+# 0039 (eski 0026; specs/011 D1 #19): kalite tabloları en az yetkiyle; tamamlanan denetim kararlı.
 KALITE_TABLOLARI = ("case_uretim", "tasarim_modeli", "case_set_review", "case_set_audit")
 
 
 @pytest.mark.parametrize("tablo", KALITE_TABLOLARI)
 @pytest.mark.parametrize("islem", ["DELETE FROM {t}", "TRUNCATE {t}"])
-def test_0026_tp_app_kalite_kayitlarini_silemez(db: Db, tablo: str, islem: str) -> None:
+def test_0039_tp_app_kalite_kayitlarini_silemez(db: Db, tablo: str, islem: str) -> None:
     with _app(db) as c, pytest.raises(psycopg.errors.InsufficientPrivilege):
         c.execute(islem.format(t=tablo))
 
 
-def test_0026_tamamlanan_denetim_kararsiz_yazilamaz(db: Db) -> None:
+def test_0039_tamamlanan_denetim_kararsiz_yazilamaz(db: Db) -> None:
     rid = uuid.uuid4()
     with _app(db) as c:
         c.execute(
@@ -333,3 +333,30 @@ def test_0026_tamamlanan_denetim_kararsiz_yazilamaz(db: Db) -> None:
         # Gereksinim silinince kalite kayıtları (CASCADE) tablo sahibi yetkisiyle silinir.
         c.execute("DELETE FROM requirement WHERE id = %s", (rid,))
         assert c.execute("SELECT count(*) FROM case_set_audit").fetchone() == (0,)
+
+
+def test_0030_test_verisi_gecmisi_silinemez_ve_engel_turu(db: Db) -> None:
+    """013 §9: tp_app test_verisi'ni silemez; sürüm FK RESTRICT; `test_verisi` engel türü."""
+    kid = uuid.uuid4()
+    with _app(db) as c:
+        c.execute(
+            "INSERT INTO test_verisi (id, anahtar, deger, guncelleyen) "
+            "VALUES (%s, 'a.b', 'x', 't')",
+            (kid,),
+        )
+        c.execute(
+            "INSERT INTO test_verisi_surum (test_verisi_id, surum, islem, deger, gizli, "
+            "degistiren) VALUES (%s, 1, 'olustur', 'x', false, 't')",
+            (kid,),
+        )
+        c.execute("UPDATE test_verisi SET silindi = true WHERE id = %s", (kid,))
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            c.execute("DELETE FROM test_verisi WHERE id = %s", (kid,))
+    with psycopg.connect(db.owner_url.replace("+psycopg", ""), autocommit=True) as c:
+        with pytest.raises(psycopg.errors.ForeignKeyViolation):
+            c.execute("DELETE FROM test_verisi WHERE id = %s", (kid,))
+        tanim = c.execute(
+            "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+            "WHERE conname = 'script_codegen_engel_ck'"
+        ).fetchone()[0]
+    assert "'test_verisi'" in tanim and "'unsourced_value'" in tanim

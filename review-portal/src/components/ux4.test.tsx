@@ -13,14 +13,14 @@ import type { AcikSoruKaydi, AcikSorularYaniti } from "../api/acikSoruTipleri";
 import { api } from "../api/client";
 import { ortamAdlariniGizle } from "../api/http";
 import { V3_GEREKSINIM_ID } from "../api/mock/caseV3";
-import { mockVerisi } from "../api/mock/handlers";
+import { mockGoruntulemeEkle, mockVerisi } from "../api/mock/handlers";
 import type { CaseKalitesi, GereksinimDetay, TestCase } from "../api/types";
 import { OturumProvider } from "../auth";
 import { acikSoruSayimi, gonderilmemisSoruSayisi } from "../lib/caseV3";
 import { kipDugmeMetni } from "../lib/uretimSecenekleri";
 import { demoAdimlari, type YolGirdisi } from "../lib/yolHaritasi";
 import { reviewSuresiAlti } from "../pages/CaseReview";
-import { oturumAc, sar } from "../test/yardimci";
+import { oturumAc, sar, yereldeGorulmus } from "../test/yardimci";
 import { AcikSorularPaneli, panelSayimi, poYazarAdi } from "./AcikSorular";
 import { BildirimProvider } from "./Bildirim";
 import { acikSoruSeritDurumu } from "./CaseDurumSeridi";
@@ -106,20 +106,23 @@ describe("Bulgu 2: case'e bağlı olmayan açık soru", () => {
     expect(gonderilmemisSoruSayisi([soru(), soru({ tur: "varsayim", kaynak_id: "A1" }), soru({ durum: "gonderildi" })])).toBe(1);
   });
 
-  it("sayfada şerit ve toplu onay diyaloğu gönderilmemiş soruyu söyler; onay engellenmez", async () => {
-    await oturumAc("analist");
+  it("sayfada şerit ve toplu kabul teyidi gönderilmemiş soruyu söyler; kabul engellenmez", async () => {
+    // 012/013: toplu karar Testçide (`accept`); yalnız görülen ve engeli olmayan taslak girer.
+    mockGoruntulemeEkle("case-v3-1", "testci");
+    await oturumAc("testci");
+    await yereldeGorulmus(["case-v3-1"]);
     const spy = vi.spyOn(api, "acikSorular").mockResolvedValue(yanit([soru({ kaynak_id: "Q9", metin: "Hiçbir case'e bağlı olmayan soru" })]));
     const u = userEvent.setup();
     uygulama(SAYFA);
     expect(await screen.findByTestId("serit-acik-sorular", undefined, { timeout: 5000 })).toHaveTextContent("1 soru PO'ya gönderilmedi");
-    await u.click(await screen.findByRole("checkbox", { name: /^Case 1'i seç/ }));
-    await u.click(screen.getByRole("button", { name: "Seçilenleri onayla" }));
-    const onay = within(screen.getByTestId("toplu-onay-onayi"));
-    expect(onay.getByTestId("toplu-onay-soru-uyarisi")).toHaveTextContent("PO'ya gönderilmemiş 1 açık soru var. Onay engellenmez");
-    await u.click(onay.getByRole("button", { name: "Evet, 1 case'i onayla" }));
-    // Toplu onay sonucu sayfada kalıcı satır olarak kalır (bildirim kaybolsa da).
-    expect(await screen.findByTestId("toplu-onay-sonuc")).toHaveTextContent("Toplu onay: 1 case onaylandı.");
-    expect(mockVerisi().caseler.find((c) => c.id === "case-v3-1")!.durum).toBe("approved");
+    await u.click(await screen.findByRole("button", { name: "Toplu kabul (1)" }));
+    const teyit = screen.getByRole("group", { name: "Toplu kabul teyidi" });
+    expect(within(teyit).getByTestId("toplu-onay-soru-uyarisi")).toHaveTextContent("PO'ya gönderilmemiş 1 açık soru var. Kabul engellenmez");
+    await u.click(within(teyit).getByRole("checkbox"));
+    await u.click(within(teyit).getByRole("button", { name: "Kabul et (1)" }));
+    // Toplu karar sonucu sayfada kalıcı satır olarak kalır (bildirim kaybolsa da).
+    expect(await screen.findByTestId("toplu-onay-sonucu")).toHaveTextContent("Toplu kabul: 1 kabul edildi");
+    expect(mockVerisi().caseler.find((c) => c.id === "case-v3-1")!.durum).toBe("ready");
     spy.mockRestore();
   });
 });
@@ -180,7 +183,7 @@ describe("Bulgu 7: asistan başlatıcısı içeriği örtmez", () => {
 
 describe("Bulgu 8: varsayım doğrulama onayında varsayım metni", () => {
   it("onay kutusu doğrulanacak varsayımın metnini gösterir", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const u = userEvent.setup();
     const tc = (await api.caseler(V3_GEREKSINIM_ID)).find((c) => c.id === "case-v3-2")!;
     const metin = tc.varsayimlar?.find((a) => a.id === "A1")?.statement;
@@ -247,7 +250,8 @@ describe("Bulgu 9 ve B16/B17 küçükleri", () => {
 describe("denetim kaydı özeti ortam adı göstermez (B16)", () => {
   it("Denetim sayfası özet sütununu ayıklar", async () => {
     await oturumAc("analist");
-    const olaylar = await api.denetim();
+    // 012: zincir doğrulaması (`verify`) yalnız admin/denetçi; analist kendi kayıtlarını okur.
+    const olaylar = await api.denetim(false);
     const ilk = olaylar.olaylar[0];
     const spy = vi.spyOn(api, "denetim").mockResolvedValue({
       ...olaylar,

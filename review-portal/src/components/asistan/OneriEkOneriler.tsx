@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import { asistanApi, baglamiSigdir, bekliyor, gonderimHataMetni, mesajHataMetni, type AsistanMesaji } from "../../api/asistan";
 import { useBaglantiDurumu, useOlay } from "../../api/events";
 import { ApiError } from "../../api/http";
+import type { Rol } from "../../api/types";
 import type { EkranBaglami } from "../../lib/ekranBaglami";
 import { oturumDegisinceTemizle } from "../../lib/oturumTemizligi";
 import { Ikon } from "../Ikon";
@@ -236,7 +237,8 @@ export function ekOneriSohbetleriniSifirla(): void {
 
 oturumDegisinceTemizle(ekOneriSohbetleriniSifirla);
 
-export function OneriEkOneriler({ ekran, onGit }: { ekran: EkranBaglami; onGit?: () => void }) {
+// `rol`: oturumdaki rol; rolüne kapalı ekrana "Git" düğmesi çizilmez (013 inceleme turu 1, UX15).
+export function OneriEkOneriler({ ekran, onGit, rol }: { ekran: EkranBaglami; onGit?: () => void; rol?: Rol | null }) {
   const anahtar = `${ekran.rota_kalibi}|${ekran.varlik?.id ?? ""}`;
   const [durum, setDurum] = useState<Durum>(() => ekDurumlar.get(anahtar) ?? { tur: "bos" });
   const baglanti = useBaglantiDurumu();
@@ -429,7 +431,7 @@ export function OneriEkOneriler({ ekran, onGit }: { ekran: EkranBaglami; onGit?:
         <ul className="oneri-liste">
           {oneriler.map((o, i) => (
             <li key={i}>
-              <AiOneriKarti oneri={o} onGit={onGit} sohbetId={durum.mesaj.sohbet_id} />
+              <AiOneriKarti oneri={o} onGit={onGit} sohbetId={durum.mesaj.sohbet_id} rol={rol} />
             </li>
           ))}
         </ul>

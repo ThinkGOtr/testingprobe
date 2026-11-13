@@ -38,6 +38,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import set_committed_value
 
 from tp_core.audit import audit_on_commit
+from tp_core.auth import yetki
 from tp_core.config import get_settings
 from tp_core.models import ApiToken, AppUser, KimlikBagi, Oturum, enums, session_scope
 
@@ -70,7 +71,8 @@ GECICI_4XX = frozenset({408, 429})
 # Oturum / token başına kesintisiz degraded üst sınırı (platform `DEGRADED_MAX_SECONDS`).
 DEGRADED_MAX_S = 600
 # TP'nin AI Probe `admin_roles`'u (`products/testing-probe.yaml`); yalnız `acr="2"` (MFA) ile.
-ADMIN_ROLLERI = frozenset({"po"})
+# specs/012-rol-yetki §7: Sistem Yöneticisi ve PO.
+ADMIN_ROLLERI = frozenset({yetki.ADMIN, yetki.PO})
 
 
 class GecersizKod(Exception):
@@ -107,8 +109,8 @@ class KontrolSonucu:
 @dataclass(frozen=True)
 class OturumKimligi:
     """`/v1/session/check`'e giden oturum alanları (CONTRACT v1.2): devirdeki `auth_time` (MFA
-    tazeliği), `acr` ("2" = MFA; "1"de home ürünün `admin_roles`'unu — TP'de `po` — çıkarır) ve
-    `session_epoch_ms` (iptal kuralı; yoksa eski `V > auth_time` kuralı)."""
+    tazeliği), `acr` ("2" = MFA; "1"de home ürünün `admin_roles`'unu — TP'de `admin`, `po` —
+    çıkarır) ve `session_epoch_ms` (iptal kuralı; yoksa eski `V > auth_time` kuralı)."""
 
     auth_time: int
     acr: str = "1"
@@ -770,11 +772,16 @@ def izinli_org(org: str | None) -> bool:
 def tp_rolleri(roller: Iterable[str], acr: str | None = None) -> tuple[str, ...]:
     """Devirdeki rollerden TP'nin tanıdıkları (sıra korunur, tekrarsız).
 
-    Derinlemesine savunma: `acr` "2" (MFA) değilse yönetici rolleri (`ADMIN_ROLLERI`, TP'de
-    `po`) home göndermiş olsa bile düşülür (home `acr="1"`de zaten çıkarır; CONTRACT v1.2).
+    Kaldırılan roller yerine geçen role çevrilir (`presenter` → `admin`, `yetki.ESKI_ROLLER`):
+    AI Probe'daki canlı rol kayıtları güncellenene kadar hesap erişimini kaybetmez.
+
+    Derinlemesine savunma: `acr` "2" (MFA) değilse yönetici rolleri (`ADMIN_ROLLERI`: `admin`,
+    `po`) home göndermiş olsa bile düşülür (home `acr="1"`de zaten çıkarır; CONTRACT v1.2). Kontrol
+    çevrilmiş role uygulanır: eski `presenter` da `admin` olarak MFA ister.
     """
     gorulen: list[str] = []
-    for r in roller:
+    for ham in roller:
+        r = yetki.normalize_rol(ham)
         if r in ADMIN_ROLLERI and acr != "2":
             continue
         if r in enums.ROLLER and r not in gorulen:

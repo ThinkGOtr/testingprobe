@@ -39,7 +39,8 @@ from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
 from tp_core.audit import audit_on_commit
-from tp_core.auth.deps import CurrentUser, DbSession, require_role
+from tp_core.auth.deps import DbSession
+from tp_core.auth.yetki import izin
 from tp_core.events.bus import publish_tx
 from tp_core.features.cases import review as review_mod
 from tp_core.models import CaseSetAudit, Requirement, TestCase, session_scope
@@ -994,16 +995,17 @@ def view(session: Session, requirement_id: uuid.UUID) -> dict[str, Any]:
 
 
 router = APIRouter(tags=["cases"])
-Analyst = Annotated[Principal, Depends(require_role("analyst"))]
+# 012 (dev birleştirmesi): P9'a gönderme Analist son onayının devamıdır (`case.approve`);
+# okuma `case.analysis_read`.
+SonOnay = Annotated[Principal, Depends(izin("case.approve"))]
+Analiz = Annotated[Principal, Depends(izin("case.analysis_read"))]
 
 
 @router.get("/requirements/{requirement_id}/case-audit")
-def get_case_audit(
-    requirement_id: uuid.UUID, session: DbSession, _user: CurrentUser
-) -> dict[str, Any]:
+def get_case_audit(requirement_id: uuid.UUID, session: DbSession, _user: Analiz) -> dict[str, Any]:
     return view(session, requirement_id)
 
 
 @router.post("/requirements/{requirement_id}/case-audit", status_code=202)
-def post_case_audit(requirement_id: uuid.UUID, session: DbSession, user: Analyst) -> dict[str, Any]:
+def post_case_audit(requirement_id: uuid.UUID, session: DbSession, user: SonOnay) -> dict[str, Any]:
     return request_audit(session, requirement_id, user)

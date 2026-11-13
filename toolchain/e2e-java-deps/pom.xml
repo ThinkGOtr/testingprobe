@@ -1,0 +1,238 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Bayi Sipariş Portalı — web uçtan uca testleri (Java hattı).
+  Java 17 + Playwright for Java + TestNG. TypeScript karşılığı: ../e2e (Playwright Test);
+  uygulama (Appium) karşılığı: ../e2e-app.
+
+  Koşum:
+    ./mvnw -q test-compile                     derleme (tarayıcı gerekmez)
+    ./mvnw -q test -Dgroups=birim              birim testleri (tarayıcı gerekmez)
+    ./mvnw test                                tarayıcı koşusu (testng.xml: testler + uretilen)
+    ./mvnw test -Dgroups=kampanya              yalnız bir grup (testng.xml devre dışı kalır)
+
+  Ortam (TS e2e ile aynı hedef):
+    BASE_URL              web origin (ör. http://localhost:8080)
+    API_URL               /test/* uçları için API kökü
+    DEMOAPP_TEST_TOKEN    /test/* paylaşılan sırrı — ORTAMDAN verin, depoya yazmayın
+    PLAYWRIGHT_BROWSERS_PATH, PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+                          tarayıcı önceden kurulu dizinden; test sırasında indirme yok
+
+  Playwright sürümü: Playwright for Java <playwright.version>, depo kökündeki .playwright-version
+  ile AYNI tarayıcı derlemelerini kullanır (Java 1.64.0 sürücüsü = playwright-core 1.64.1).
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.antreklabs</groupId>
+  <artifactId>bayi-e2e-java</artifactId>
+  <version>0.1.0</version>
+  <packaging>jar</packaging>
+  <name>Bayi Sipariş Portalı — web e2e (Playwright for Java + TestNG)</name>
+
+  <properties>
+    <maven.compiler.release>17</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+    <!-- Sürümler sabittir (aralık yok): çevrimdışı ve tekrarlanabilir derleme. -->
+    <playwright.version>1.64.0</playwright.version>
+    <testng.version>7.12.0</testng.version>
+    <allure.version>2.35.5</allure.version>
+    <extent.version>5.1.2</extent.version>
+    <slf4j.version>2.0.20</slf4j.version>
+    <surefire.version>3.5.6</surefire.version>
+
+    <!-- Varsayılan süit; -Dgroups verilirse "gruplu" profili bunu devre dışı bırakır. -->
+    <testng.suite>testng.xml</testng.suite>
+    <allure.results.directory>${project.build.directory}/allure-results</allure.results.directory>
+    <!-- Extent (Spark) HTML raporu: <dizin>/index.html. -->
+    <extent.rapor.dizini>${project.build.directory}/extent-report</extent.rapor.dizini>
+    <!-- JUnit XML dizini (Surefire TEST-*.xml). -->
+    <raporlar.dizini>${project.build.directory}/surefire-reports</raporlar.dizini>
+    <!--
+      Surefire test JVM'i: yığın sınırı (test-runner 3 GB kapsayıcı sınırı: Maven JVM + test JVM +
+      Playwright sürücüsü + tarayıcılar) ve kodlama. file.encoding JVM başlarken verilmelidir;
+      sistem özelliği olarak verilirse JDK uyarır ve yok sayar. -DargLine=… ile değiştirilebilir.
+      java.io.tmpdir: JVM Linux'ta TMPDIR'i okumaz; geçici dosyalar (Playwright sürücüsü dahil)
+      tp.java.tmpdir altına açılır. Varsayılan Maven JVM'inin java.io.tmpdir'i; toolchain koşusu
+      -Dtp.java.tmpdir=<koşu>/tmp verir.
+    -->
+    <tp.java.tmpdir>${java.io.tmpdir}</tp.java.tmpdir>
+    <argLine>-Xmx512m -Dfile.encoding=UTF-8 -Djava.io.tmpdir=${tp.java.tmpdir}</argLine>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.microsoft.playwright</groupId>
+      <artifactId>playwright</artifactId>
+      <version>${playwright.version}</version>
+      <scope>test</scope>
+      <exclusions>
+        <!--
+          Playwright'in JUnit 5 bütünleşmesi (com.microsoft.playwright.junit) kullanılmaz. JUnit
+          Platform sınıf yolunda kalırsa Surefire sağlayıcıyı ondan seçer ve TestNG testleri HİÇ
+          koşmaz ("0 test, yeşil"). opentest4j kalır: assertThat(...) AssertionFailedError atar.
+        -->
+        <exclusion>
+          <groupId>org.junit.jupiter</groupId>
+          <artifactId>*</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.junit.platform</groupId>
+          <artifactId>*</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.testng</groupId>
+      <artifactId>testng</artifactId>
+      <version>${testng.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.qameta.allure</groupId>
+      <artifactId>allure-testng</artifactId>
+      <version>${allure.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <!-- Extent Reports 5 (Spark HTML); dinleyici: altyapi/ExtentRaporu (META-INF/services ile yüklenir). -->
+      <groupId>com.aventstack</groupId>
+      <artifactId>extentreports</artifactId>
+      <version>${extent.version}</version>
+      <scope>test</scope>
+      <exclusions>
+        <!-- Yalnızca Extent'in kendi derlemesinde gerekir; sınıf yolunda açıklama işlemcisi olmasın. -->
+        <exclusion>
+          <groupId>org.projectlombok</groupId>
+          <artifactId>lombok</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-simple</artifactId>
+      <version>${slf4j.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-clean-plugin</artifactId>
+          <version>3.5.0</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-resources-plugin</artifactId>
+          <version>3.3.1</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <version>3.14.1</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-surefire-plugin</artifactId>
+          <version>${surefire.version}</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-jar-plugin</artifactId>
+          <version>3.4.2</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-install-plugin</artifactId>
+          <version>3.1.4</version>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <release>17</release>
+          <compilerArgs>
+            <!-- classfile: Playwright'in (dışlanan) JUnit bütünleşmesine başvuran sınıf dosyaları. -->
+            <arg>-Xlint:all,-processing,-classfile</arg>
+          </compilerArgs>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <dependencies>
+          <!-- Sağlayıcı açıkça TestNG'dir (otomatik seçim sınıf yoluna göre değişmesin). -->
+          <dependency>
+            <groupId>org.apache.maven.surefire</groupId>
+            <artifactId>surefire-testng</artifactId>
+            <version>${surefire.version}</version>
+          </dependency>
+        </dependencies>
+        <configuration>
+          <suiteXmlFiles>
+            <suiteXmlFile>${testng.suite}</suiteXmlFile>
+          </suiteXmlFiles>
+          <!-- -Dgroups ile (testng.xml'siz) taranan sınıflar: adlar *Testi / *Test, iç sınıf yok. -->
+          <includes>
+            <include>**/testler/**/*.java</include>
+            <include>**/uretilen/**/*.java</include>
+            <include>**/birim/**/*.java</include>
+          </includes>
+          <!-- JUnit XML: target/surefire-reports/TEST-*.xml. -->
+          <reportsDirectory>${raporlar.dizini}</reportsDirectory>
+          <trimStackTrace>false</trimStackTrace>
+          <redirectTestOutputToFile>true</redirectTestOutputToFile>
+          <systemPropertyVariables>
+            <allure.results.directory>${allure.results.directory}</allure.results.directory>
+            <extent.rapor.dizini>${extent.rapor.dizini}</extent.rapor.dizini>
+            <kanit.dizini>${project.build.directory}/kanit</kanit.dizini>
+          </systemPropertyVariables>
+          <properties>
+            <property>
+              <!-- TestNG'nin kendi raporlayıcıları kapalı; JUnit XML'i Surefire yazar. -->
+              <name>usedefaultlisteners</name>
+              <value>false</value>
+            </property>
+          </properties>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+
+  <profiles>
+    <!--
+      -Dgroups=<grup>[,<grup>] verilince testng.xml yerine Surefire'ın grup süzgeci kullanılır
+      (Surefire, suiteXmlFiles varken groups'u yok sayar). Örn. birim testleri:
+        ./mvnw -q test -Dgroups=birim
+    -->
+    <profile>
+      <id>gruplu</id>
+      <activation>
+        <property>
+          <name>groups</name>
+        </property>
+      </activation>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <configuration>
+              <suiteXmlFiles combine.self="override"/>
+              <groups>${groups}</groups>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+</project>

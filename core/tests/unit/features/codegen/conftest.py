@@ -32,11 +32,13 @@ from tests.unit.features.cases.helpers import (  # noqa: E402, F401  (pytest fik
     api,
     login,
     make_requirement,
+    onayla_db,
     run_jobs,
 )
 from tests.unit.features.codegen.test_browser import FakeSession  # noqa: E402
 from tp_core.audit import PgCallRecorder, content_hash  # noqa: E402
 from tp_core.config import get_settings  # noqa: E402
+from tp_core.features.codegen import platform as platformlar  # noqa: E402
 from tp_core.features.codegen import service  # noqa: E402
 from tp_core.features.codegen.toolchain import ToolchainClient, clear_symbol_cache  # noqa: E402
 from tp_core.gateway import build_gateway  # noqa: E402
@@ -46,8 +48,6 @@ from tp_core.models import Requirement, TestCase, case_id, session_scope  # noqa
 from tp_core.workflow.jobs import process_one  # noqa: E402
 from tp_core.workflow.service import (  # noqa: E402
     SYSTEM,
-    content_hash_of,
-    record_approval,
     transition,
 )
 
@@ -171,7 +171,11 @@ class FakeToolchain:
                         {
                             "checks": [
                                 {
-                                    "name": "local-ci",
+                                    # toolchain `check_name(lang, platform)` ile aynı mantık
+                                    # (sözleşme: toolchain/tests/data/core_sozlesme.json).
+                                    "name": platformlar.check_adi(
+                                        body.get("platform"), body.get("lang") or "ts"
+                                    ),
                                     "status": "completed",
                                     "conclusion": rapor["conclusion"],
                                     "url": None,
@@ -280,6 +284,7 @@ def hazir(engine: Engine, make_requirement: Any, make_user: Any) -> dict[str, An
         tpd1_acs(),
     )
     analist = make_user("analyst")
+    testci = make_user("tester")
     with session_scope() as s:
         req = s.get(Requirement, rid)
         transition(s, req, "generating", SYSTEM, "po_approved")
@@ -299,8 +304,8 @@ def hazir(engine: Engine, make_requirement: Any, make_user: Any) -> dict[str, An
             )
             s.add(tc)
             s.flush()
-            record_approval(s, tc, analist, "approve", beklenen_hash=content_hash_of(tc))
-            transition(s, tc, "approved", analist, "draft")
+            # 012: Testçi kabulü (draft → ready) + Analist son onayı (ready → approved).
+            onayla_db(s, tc, testci, analist)
             ids[n] = tc.id
     return {"requirement_id": rid, "cases": ids, "analist": analist}
 

@@ -32,6 +32,7 @@ export const EKRAN_ADLARI: Record<string, string> = {
   "/gereksinimler/:id": "Gereksinim detayı",
   "/gereksinimler/:id/caseler": "Case inceleme",
   "/gereksinimler/:id/yayin": "Yayın",
+  "/caseler": "Test case'leri",
   "/kod": "Kod üretimi",
   "/kod/:id": "Script detayı",
   "/kosular": "Koşular",
@@ -45,6 +46,8 @@ export const EKRAN_ADLARI: Record<string, string> = {
   "/ajan-urunleri": "Ajan ürünleri",
   "/claude-code": "Claude Code kanalı",
   "/demo": "Demo kontrolleri",
+  "/test-verisi": "Test verisi",
+  "/otomasyon": "Otomasyon",
 };
 
 /** `:id` taşıyan desenin varlık türü. */

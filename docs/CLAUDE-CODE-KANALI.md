@@ -10,7 +10,7 @@ Claude Code ──get_requirement─────▶ core-api /mcp ──▶ PO o
             (onaylanan_hash)                            (güvenilmeyen veri blokları; salt okuma)
 Claude Code ──submit_draft_cases──▶ core-api /mcp ──▶ test_case (draft, kanal=ide)
                                                           │
-                                   portal: analist onay / düzelt / reddet (review + hash)
+                                   portal: Testçi kabul / düzelt / reddet → Analist son onay (review + hash)
                                                           │
 Claude Code ──publish_test_cases──▶ core-api /mcp ──▶ worker: publish.cases ──▶ Jira Test / Xray
             (ya da portal "Yayınla")      (aynı sunucu yolu, aynı kontroller)
@@ -53,7 +53,8 @@ Claude Code ──publish_test_cases──▶ core-api /mcp ──▶ worker: pu
 
 ## 1. Portalda token oluşturma
 
-1. Portala **analist** rolüyle girin (`http://127.0.0.1:8080`, kullanıcı `analist`).
+1. Portala **Testçi** rolüyle girin (`http://127.0.0.1:8080`, kullanıcı `testci`). Token'ı yalnız
+   Testçi oluşturur (izin `token.issue`, 012); diğer roller kendi token'larını yalnız listeler ve iptal eder.
 2. Sol menüden **Claude Code kanalı** (`/claude-code`) sayfasını açın.
 3. Kapsamı seçin: taslak göndermek için **submit**, onaylıları yayınlamak için **publish**.
    Token tek kapsamlıdır; iki aracı da kullanacaksanız iki token oluşturun.
@@ -134,7 +135,8 @@ Sahnede kullanılacak istem (kelimesi kelimesine):
 > `get_requirement`'ın döndürdüğü `onaylanan_hash` ile gönder. Yayınlama yapma.
 
 Sonra portalda **Case review** ekranında taslaklar `IDE` kanal etiketiyle görünür (REPLAY/canlı
-rozeti yoktur: bu çıktı ürünün model geçidinden geçmedi). Analist onaylar/düzeltir/reddeder.
+rozeti yoktur: bu çıktı ürünün model geçidinden geçmedi). Testçi kabul eder/düzeltir/reddeder,
+Analist son onayı verir (ya da gerekçeyle geri gönderir).
 Onaylı case kimlikleriyle:
 
 > Şu onaylı case'leri yayınla: `publish_test_cases(["<case-id>", ...])`
@@ -162,7 +164,7 @@ sonra Claude Code ile ek taslaklar (IDE katkısı ayrı satırlar olarak düşer
 Story içeriği değişip PO yeniden onayladığında eski metne ait taslak/onaylı case'ler `superseded`
 olur; **yayınlanmış** eski case'ler Jira'da kalır, `onceki_icerik: true` ve "önceki içerik için
 üretildi" uyarısıyla görünür. Yeni metin için üretilen/gönderilen case'ler bunlarla tekrar
-denetimine girmez (aynı içerik yeniden taslak olarak düşer, analist yeni metne göre gözden geçirir)
+denetimine girmez (aynı içerik yeniden taslak olarak düşer, Testçi yeni metne göre gözden geçirir)
 ve AC kapsamı (`kapsanmayan_ac`) bunlardan hesaplanmaz.
 
 ## Güvenlik sınırları

@@ -1,6 +1,6 @@
 // Örnek veri: üretim seçenekleri (011 K5) ve derinleştirme (P5/P6, K7) uçları.
 //   GET  /requirements/{id}/generation-options  → kayıtlı son seçenekler + varsayılan + katalog
-//   POST /requirements/{id}/deepen              → {tur, teknik?}; yalnız analist, yalnız cases_ready
+//   POST /requirements/{id}/deepen              → {tur, teknik?}; `case.generate` (Testçi), yalnız cases_ready
 //   GET  /requirements/{id}/deepen              → son derinleştirmenin durumu
 // generate-cases gövdesinin doğrulaması/saklanması ve platform golden seçimi de buradadır
 // (handlers.ts `caseUret` çağırır). Model çağrısı yoktur: çıktılar golden kopyasından
@@ -14,13 +14,13 @@ import type {
   DerinlestirmeYaniti,
   GereksinimDetay,
   Kullanici,
-  Rol,
   TestCase,
   TestCaseIcerik,
   UretimSecenekleri,
   UretimSecenekleriYaniti,
 } from "../types";
 import { uretimOzetiUyarla } from "../uyum";
+import type { Izin } from "../../lib/yetki";
 import {
   derinlestirmeReplayAdi,
   EK_BILGI_ALANLARI,
@@ -44,8 +44,8 @@ const TEKNIKLER: DerinlestirmeTeknigi[] = ["EP", "BVA", "DT", "ST", "PW", "UC", 
 /** handlers.ts iç yardımcıları (mock durumu tek yerde kalır). */
 export interface MockBaglami {
   veri: () => MockVeri;
-  girisGerekli: () => Kullanici;
-  rolGerekli: (...roller: Rol[]) => Kullanici;
+  /** core `izin(...)` (012): izinlerden hiçbiri yoksa 403. */
+  izinGerekli: (...izinler: [Izin, ...Izin[]]) => Kullanici;
   gereksinim: (id: string) => GereksinimDetay;
   arkaPlan: (adimlar: (() => void)[]) => void;
   yeniId: (onek: string) => string;
@@ -144,7 +144,7 @@ function govdeDogrula(govde: unknown): { tur: "negatif" | "teknik"; teknik: Deri
 }
 
 function derinlestir(b: MockBaglami, id: string, govde: unknown): DerinlestirmeYaniti {
-  b.rolGerekli("analyst");
+  b.izinGerekli("case.generate");
   const g = b.gereksinim(id);
   const { tur, teknik } = govdeDogrula(govde);
   const v = b.veri();
@@ -211,7 +211,7 @@ function derinlestir(b: MockBaglami, id: string, govde: unknown): DerinlestirmeY
 }
 
 function derinlestirmeDurumu(b: MockBaglami, id: string): DerinlestirmeDurumu {
-  b.girisGerekli();
+  b.izinGerekli("case.analysis_read");
   b.gereksinim(id);
   const d = b.veri().derinlestirmeler?.[id];
   return d
@@ -225,7 +225,7 @@ export function derinlestirmeRotalari(b: MockBaglami): Rota[] {
       "GET",
       /^\/requirements\/([^/]+)\/generation-options$/,
       (m) => {
-        b.girisGerekli();
+        b.izinGerekli("case.analysis_read");
         const id = decodeURIComponent(m[1]);
         b.gereksinim(id);
         return uretimSecenekleriYaniti(b.veri(), id);

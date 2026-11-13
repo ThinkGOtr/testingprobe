@@ -20,7 +20,9 @@ from .helpers import (
     eski_case_icerik,
     latest_cases,
     login,
+    onayla,
     ozet_icerik,
+    rol_ol,
     run_jobs,
     uretim_cikti,
 )
@@ -72,10 +74,10 @@ def _cases() -> list[dict[str, Any]]:
 
 @pytest.fixture
 def v3(api: TestClient, engine: Engine, make_user, make_requirement, fake_gateway):
-    """v3 üretimi tamamlanmış gereksinim + oturum açmış analist; (rid, iş sonucu)."""
+    """v3 üretimi tamamlanmış gereksinim + oturum açmış Testçi (012); (rid, iş sonucu)."""
     fake_gateway([text_response(uretim_cikti(_cases(), **OZET))])
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     (is_,) = run_jobs(engine)
     assert is_.durum == "done", is_
@@ -87,8 +89,8 @@ def _karar(api: TestClient, c: dict[str, Any], **govde: Any):
 
 
 def _ide(make_user) -> Principal:
-    u = make_user("analyst")
-    return Principal(u.id, u.kullanici_adi, "analyst", kanal="ide", kapsam="submit")
+    u = make_user("tester")  # 012: IDE taslağını Testçi gönderir (case.generate)
+    return Principal(u.id, u.kullanici_adi, "tester", kanal="ide", kapsam="submit")
 
 
 # ------------------------------------------------------------------ üretim ve özet
@@ -117,7 +119,7 @@ def test_set_sorunlari_uretim_sonucuna_girer(
     ozet = {**OZET, "negative_coverage": OZET["negative_coverage"][:2]}  # BV-1 kararsız
     fake_gateway([text_response(uretim_cikti(_cases()[:3], **ozet))])
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     (is_,) = run_jobs(engine)
     assert len(is_.deger["set_sorunlari"]) == 2
@@ -145,26 +147,30 @@ def test_serialize_v3_alanlari(api: TestClient, v3) -> None:
 # ------------------------------------------------------------------------ K6: onay
 
 
-def test_hazir_olmayan_ve_tutarsiz_case_onaylanamaz(api: TestClient, v3) -> None:
+def test_hazir_olmayan_ve_tutarsiz_case_onaylanamaz(api: TestClient, v3, make_user) -> None:
     rid, _ = v3
     hazir, varsayim, engelli, tutarsiz = latest_cases(api, rid)
-    assert _karar(api, hazir, karar="approve").status_code == 200
-    r = _karar(api, varsayim, karar="approve")
+    assert _karar(api, hazir, karar="accept").status_code == 200
+    r = _karar(api, varsayim, karar="accept")
     assert r.status_code == 422
     assert "hazır değil (varsayıma bağlı)" in r.json()["detail"] and "Düzelt" in r.json()["detail"]
-    r = _karar(api, engelli, karar="approve")
+    r = _karar(api, engelli, karar="accept")
     assert r.status_code == 422 and "soru bekliyor" in r.json()["detail"]
-    r = _karar(api, tutarsiz, karar="approve")
+    r = _karar(api, tutarsiz, karar="accept")
     assert r.status_code == 422 and "EP-I9" in r.json()["detail"]
-    assert [c["durum"] for c in latest_cases(api, rid)] == ["approved", "draft", "draft", "draft"]
+    assert [c["durum"] for c in latest_cases(api, rid)] == ["ready", "draft", "draft", "draft"]
     # Ret her durumda verilebilir.
     assert _karar(api, engelli, karar="reject", ret_nedeni="out_of_scope").status_code == 200
+    # Kabul edilen hazır case'e Analist son onayı verir (012).
+    rol_ol(api, make_user("analyst"))
+    assert _karar(api, latest_cases(api, rid)[0], karar="approve").status_code == 200
+    assert latest_cases(api, rid)[0]["durum"] == "approved"
 
 
 def test_duzeltme_hazir_yapar_ya_da_reddedilir(api: TestClient, v3) -> None:
     rid, _ = v3
     _, varsayim, engelli, tutarsiz = latest_cases(api, rid)
-    # Hazır olmayan içerikle düzeltme: düzeltme onay sayıldığı için 422.
+    # Hazır olmayan içerikle düzeltme: düzeltme kabul sayıldığı için 422.
     r = _karar(api, engelli, karar="edit", icerik={**engelli["icerik"], "title": "Yeni başlık"})
     assert r.status_code == 422 and "hazır değil" in r.json()["detail"]
     # Yarım düzeltme (ready ama açık soru atıfı duruyor) tutarsızdır.
@@ -176,7 +182,7 @@ def test_duzeltme_hazir_yapar_ya_da_reddedilir(api: TestClient, v3) -> None:
     r = _karar(api, engelli, karar="edit", icerik=tam)
     assert r.status_code == 200, r.text
     govde = r.json()
-    assert (govde["durum"], govde["readiness"], govde["acik_sorular"]) == ("approved", "ready", [])
+    assert (govde["durum"], govde["readiness"], govde["acik_sorular"]) == ("ready", "ready", [])
     assert {"readiness", "open_question_refs", "expected_result"} <= {
         f["alan"] for f in govde["fark"]
     }
@@ -224,7 +230,7 @@ def test_eski_case_hazir_sayilir_ve_onaylanir(api: TestClient, eski) -> None:
     _, c = eski
     assert (c["legacy"], c["readiness"], c["onay_engeli"]) == (True, "ready", None)
     assert c["acik_sorular"] == [] and c["varsayimlar"] == [] and c["uyarilar"] == []
-    assert _karar(api, c, karar="approve").status_code == 200
+    assert _karar(api, c, karar="accept").status_code == 200
 
 
 def test_eski_case_eski_alan_kumesiyle_duzeltilir(api: TestClient, eski) -> None:
@@ -232,7 +238,7 @@ def test_eski_case_eski_alan_kumesiyle_duzeltilir(api: TestClient, eski) -> None
     r = _karar(api, c, karar="edit", icerik={**c["icerik"], "title": "Eski case, yeni başlık"})
     assert r.status_code == 200, r.text
     govde = r.json()
-    assert govde["legacy"] is True and govde["durum"] == "approved"
+    assert govde["legacy"] is True and govde["durum"] == "ready"
     assert [f["alan"] for f in govde["fark"]] == ["title"]
 
 
@@ -355,11 +361,11 @@ def test_ide_taslagi_ozetle_yazilir(api: TestClient, make_user, make_requirement
         (u,) = s.scalars(select(CaseUretim)).all()
         assert (u.requirement_id, u.uretim_no, u.kanal, u.ai_call_id) == (rid, 1, "ide", None)
         assert u.ozet == ozet_icerik(**OZET)
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     _, varsayim, engelli = latest_cases(api, rid)
     assert varsayim["varsayimlar"] == OZET["assumptions"]
     assert engelli["acik_sorular"] == OZET["open_questions"]
-    assert _karar(api, engelli, karar="approve").status_code == 422
+    assert _karar(api, engelli, karar="accept").status_code == 422
     assert api.get(f"/requirements/{rid}/case-summary").json()["uretimler"][0]["kanal"] == "ide"
 
 
@@ -401,7 +407,7 @@ def test_ide_taslagi_ozetsiz(api: TestClient, make_user, make_requirement) -> No
     with session_scope() as s:
         (u,) = s.scalars(select(CaseUretim)).all()
         assert u.kanal == "ide" and u.ozet == {}
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     (c,) = latest_cases(api, rid)
     assert c["uyarilar"] == [] and c["onay_engeli"] is None
     govde = api.get(f"/requirements/{rid}/case-summary").json()
@@ -430,11 +436,12 @@ def test_tamami_tekrar_olan_uretim_numarasini_tutar(
     cikti = uretim_cikti([case_icerik()])
     fake_gateway([text_response(cikti), text_response(cikti), text_response(cikti)])
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    testci = make_user("tester")
+    login(api, testci)
     assert api.post(f"/requirements/{rid}/generate-cases").json()["uretim_no"] == 1
     run_jobs(engine)
     (c,) = latest_cases(api, rid)
-    assert _karar(api, c, karar="approve").status_code == 200
+    onayla(api, c, testci, make_user("analyst"))
     # 2. üretim: tek case onaylı case'in tekrarı → case yazılmaz ama özet satırı yazılır.
     assert api.post(f"/requirements/{rid}/generate-cases").json()["uretim_no"] == 2
     (is_,) = run_jobs(engine)
@@ -481,11 +488,12 @@ def test_korunan_onayli_case_ac_kapsamina_sayilir(
     ikinci = uretim_cikti([case_icerik()])
     fake_gateway([text_response(ilk), text_response(ikinci)])
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    testci = make_user("tester")
+    login(api, testci)
     api.post(f"/requirements/{rid}/generate-cases")
     run_jobs(engine)
     (c,) = latest_cases(api, rid)
-    assert _karar(api, c, karar="approve").status_code == 200
+    onayla(api, c, testci, make_user("analyst"))
     api.post(f"/requirements/{rid}/generate-cases")
     (is_,) = run_jobs(engine)
     assert is_.durum == "done"

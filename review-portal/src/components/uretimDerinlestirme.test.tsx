@@ -52,7 +52,7 @@ const platformKutusu = (ad: string) => screen.getByRole("checkbox", { name: ad }
 
 describe("UretimFormu", () => {
   beforeEach(async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
   });
 
   it("kayıtlı seçenek yoksa varsayılanla açılır; platform seçilmeden ek bilgi alanı yok", async () => {
@@ -168,7 +168,7 @@ describe("Gereksinim detayı: 'Seçeneklerle üret…'", () => {
 
   it("PO onaylı gereksinimde formu açar; gönderim generate-cases'i seçili kip ve seçeneklerle çağırır", async () => {
     const u = userEvent.setup();
-    await oturumAc("analist");
+    await oturumAc("testci");
     const g = mockVerisi().gereksinimler.find((x) => x.id === "req-tpd-4")!;
     g.durum = "po_approved";
     g.po = { durum: "approved", onaylayan: "po", zaman: "2026-11-01T10:00:00Z", kanal: "jira" };
@@ -197,7 +197,7 @@ describe("Gereksinim detayı: 'Seçeneklerle üret…'", () => {
   });
 
   it("PO onayı yoksa düğme pasif", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     uygulama("/gereksinimler/req-tpd-4");
     expect(await screen.findByRole("button", { name: "Seçeneklerle üret…" })).toBeDisabled();
   });
@@ -218,7 +218,7 @@ describe("DerinlestirmePaneli", () => {
   });
 
   it("cases_ready değilse düğmeler pasif ve nedeni yazılı", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     sar(<DerinlestirmePaneli gereksinim={{ id: "req-tpd-4", durum: "new" }} tazele={vi.fn()} />);
     const negatif = await screen.findByRole("button", { name: "Negatif kapsamı genişlet" });
     expect(negatif).toBeDisabled();
@@ -226,17 +226,17 @@ describe("DerinlestirmePaneli", () => {
     expect(negatif).toHaveAccessibleDescription(/yalnız "Case review aşamasında" olan gereksinimde/);
   });
 
-  it("analist olmayan rolde pasif ve gereken rol yazılı", async () => {
-    await oturumAc("muhendis");
+  it("Testçi olmayan rolde (012: Analist de) pasif ve gereken rol yazılı", async () => {
+    await oturumAc("analist");
     sar(<DerinlestirmePaneli gereksinim={{ id: V3_GEREKSINIM_ID, durum: "cases_ready" }} tazele={vi.fn()} />);
     const negatif = await screen.findByRole("button", { name: "Negatif kapsamı genişlet" });
     expect(negatif).toBeDisabled();
-    expect(negatif).toHaveAccessibleDescription(/gereken rol: Analist/);
+    expect(negatif).toHaveAccessibleDescription(/gereken rol: Testçi/);
   });
 
   it("başlat → çalışıyor → 'N yeni taslak eklendi'; bitince tazele bir kez", async () => {
     const u = userEvent.setup();
-    await oturumAc("analist");
+    await oturumAc("testci");
     const g = mockVerisi().gereksinimler.find((x) => x.id === "req-tpd-1")!;
     g.durum = "cases_ready";
     KAYNAK.case_deepening = { "teknik-bva/TPD-1": { girdi_ac: [], cases: [V3_ICERIKLER[0], V3_ICERIKLER[1]] } };
@@ -261,7 +261,7 @@ describe("DerinlestirmePaneli", () => {
 
   it("golden yoksa hata metni (REPLAY-MISS) ve tazele", async () => {
     const u = userEvent.setup();
-    await oturumAc("analist");
+    await oturumAc("testci");
     KAYNAK.case_deepening = {};
     const tazele = vi.fn();
     sar(<DerinlestirmePaneli gereksinim={{ id: V3_GEREKSINIM_ID, durum: "cases_ready" }} tazele={tazele} />);
@@ -275,7 +275,7 @@ describe("DerinlestirmePaneli", () => {
   });
 
   it("tamam ama sıfır case: 'Yeni taslak eklenmedi' + uyarılar", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     vi.spyOn(api, "derinlestirmeDurumu").mockResolvedValue({
       durum: "tamam",
       tur: "negatif",
@@ -292,7 +292,7 @@ describe("DerinlestirmePaneli", () => {
 
   it("yoklama ardışık 3 hatada durur, 'Durum alınamadı — Tekrar dene'; sürdürünce biter, 'göster' üretime süzer", async () => {
     const u = userEvent.setup();
-    await oturumAc("analist");
+    await oturumAc("testci");
     const calisiyor = { durum: "calisiyor" as const, tur: "negatif" as const, teknik: null, uretim_no: 4, yeni_case_sayisi: null, uyarilar: [], hata: null };
     const oku = vi
       .spyOn(api, "derinlestirmeDurumu")
@@ -322,7 +322,7 @@ describe("DerinlestirmePaneli", () => {
 
   it("Case review sayfasında 'göster' URL'ye ?uretim= yazar ve case kararlarına gider", async () => {
     const u = userEvent.setup();
-    await oturumAc("analist");
+    await oturumAc("testci");
     vi.spyOn(api, "derinlestirmeDurumu").mockResolvedValue({ durum: "tamam", tur: "negatif", teknik: null, uretim_no: 2, yeni_case_sayisi: 1, uyarilar: [], hata: null });
     uygulama(`/gereksinimler/${V3_GEREKSINIM_ID}/caseler`);
     const dugme = await screen.findByRole("button", { name: "Üretim 2 ile eklenen 1 taslağı listede göster" }, { timeout: 3000 });
@@ -333,7 +333,7 @@ describe("DerinlestirmePaneli", () => {
   });
 
   it("uç yoksa (eski core) panel görünmez", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const { ApiError } = await import("../api/http");
     vi.spyOn(api, "derinlestirmeDurumu").mockRejectedValue(new ApiError(404, "Not Found"));
     const { container } = sar(<DerinlestirmePaneli gereksinim={{ id: V3_GEREKSINIM_ID, durum: "cases_ready" }} tazele={vi.fn()} />);
@@ -341,7 +341,7 @@ describe("DerinlestirmePaneli", () => {
   });
 
   it("Case review sayfasında görünür (case'i olan gereksinim)", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     uygulama(`/gereksinimler/${V3_GEREKSINIM_ID}/caseler`);
     expect(await screen.findByRole("button", { name: "Negatif kapsamı genişlet" })).toBeInTheDocument();
   });
@@ -407,7 +407,7 @@ describe("KapsamPaneli: dalga 2 bölümleri", () => {
 
 describe("CaseKarti: platform ve gerçek cihaz", () => {
   it("platform, 'Gerçek cihaz gerekir' ve standart atıfları görünür", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const tc = (await api.caseler(V3_GEREKSINIM_ID))[0];
     const c: TestCase = { ...tc, icerik: { ...tc.icerik, platform: "Mobil-iOS", requires_real_device: true, standard_refs: ["OWASP MASVS L1"] } };
     sar(<CaseKarti tc={c} guncellendi={vi.fn()} yenile={vi.fn()} />);

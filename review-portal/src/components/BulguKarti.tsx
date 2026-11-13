@@ -174,7 +174,7 @@ export function BulguKarti({
             </p>
           )}
           {kararVerilebilir && (
-            <IslemDugmesi roller={["analyst"]} tur="ikincil" kucuk onClick={() => setDuzenle(true)}>
+            <IslemDugmesi izin="requirement.review" tur="ikincil" kucuk onClick={() => setDuzenle(true)}>
               Kararı değiştir
             </IslemDugmesi>
           )}
@@ -252,7 +252,7 @@ export function BulguKarti({
             <AlanHatasi asistan={dogrulama ? null : { hata: islem.hata, kaynak: islem.hataNesnesi }}>{dogrulama ?? islem.hata}</AlanHatasi>
           )}
           <div className="eylemler">
-            <IslemDugmesi roller={["analyst"]} type="submit" calisiyor={islem.calisiyor}>
+            <IslemDugmesi izin="requirement.review" type="submit" calisiyor={islem.calisiyor}>
               Kararı kaydet
             </IslemDugmesi>
             {bulgu.karar && (

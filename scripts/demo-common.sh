@@ -6,7 +6,7 @@
 #
 # API çağrıları portal üzerinden yapılır (core-api host'a port açmaz):
 #   TP_API_URL          varsayılan http://127.0.0.1:${TP_PORTAL_PORT:-8080}/api
-#   TP_DEMO_USER        sunucu (presenter) kullanıcısı, varsayılan "sunucu" (seed)
+#   TP_DEMO_USER        Sistem Yöneticisi (admin) kullanıcısı, varsayılan "sunucu" (seed)
 #   TP_DEMO_PASSWORD    yoksa .env SEED_USER_PASSWORD
 # İstemci tarayıcı değildir (Origin / Sec-Fetch-Site göndermez): OriginGuard geçirir.
 

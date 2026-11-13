@@ -4,7 +4,7 @@ Gerçek Postgres + gerçek API; Agent Probe süreç içi simülatör (`PgDeposu`
 satırı), denetlenebilir saat. Durum geçişleri: queued → running → passed (gereksinim `done` yalnız
 `TP_AGENT_PROBE_SIM_TAMAMLAR=on` iken; varsayılan `simule`) | failed (bulgu, gereksinim
 `po_approved` kalır); case üretimi ve tasarım modeli bağlı gereksinimde 409. Durum yalnız
-`POST …/agent-test/refresh` (analist) ile ilerler; GET yan etkisizdir."""
+`POST …/agent-test/refresh` (Testçi) ile ilerler; GET yan etkisizdir."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from tests.unit.features.cases.helpers import login
+from tests.unit.features.cases.helpers import login, rol_ol
 from tp_core.audit import verify_chain
 from tp_core.integrations.agent_probe import set_agent_probe_factory
 from tp_core.integrations.agent_probe.sim import PgDeposu, SimAgentProbe, SimAjanTestleri
@@ -40,9 +40,24 @@ def saat(db) -> Iterator[Saat]:
 
 
 @pytest.fixture
-def analist(api: TestClient, make_user) -> TestClient:
-    login(api, make_user("analyst"))
+def roller(make_user) -> dict:
+    """012: ürünü Analist bağlar (`requirement.review`), ajan testini Testçi yürütür
+    (`agent_test.run`)."""
+    return {"analyst": make_user("analyst"), "tester": make_user("tester")}
+
+
+@pytest.fixture
+def analist(api: TestClient, roller: dict) -> TestClient:
+    login(api, roller["analyst"])
     return api
+
+
+def _bagla(api: TestClient, roller: dict, rid: uuid.UUID, urun_kodu: str | None):
+    """Analist ajan ürününü bağlar; ardından Testçi oturumu açık kalır."""
+    rol_ol(api, roller["analyst"])
+    r = api.put(f"/requirements/{rid}/agent-product", json={"urun_kodu": urun_kodu})
+    rol_ol(api, roller["tester"])
+    return r
 
 
 def _ilerlet(saat: Saat, s: float) -> None:
@@ -69,10 +84,10 @@ def test_urun_listesi_yalniz_hazir(analist: TestClient, saat: Saat) -> None:
 
 
 def test_gecen_ajan_testi_gereksinimi_tamamlar(
-    analist: TestClient, saat: Saat, make_requirement, engine, sim_tamamlar
+    analist: TestClient, roller: dict, saat: Saat, make_requirement, engine, sim_tamamlar
 ) -> None:
     rid = make_requirement()
-    r = analist.put(f"/requirements/{rid}/agent-product", json={"urun_kodu": "destek-asistani"})
+    r = _bagla(analist, roller, rid, "destek-asistani")
     assert r.status_code == 200, r.text
     assert r.json()["urun_kodu"] == "destek-asistani" and r.json()["baslatilabilir"]
 
@@ -87,7 +102,7 @@ def test_gecen_ajan_testi_gereksinimi_tamamlar(
     assert talep["simulasyon"] is True and not r.json()["baslatilabilir"]
     # Süren talep varken ikinci talep ve bağlantı değişikliği reddedilir.
     assert analist.post(f"/requirements/{rid}/agent-test").status_code == 409
-    r = analist.put(f"/requirements/{rid}/agent-product", json={"urun_kodu": None})
+    r = _bagla(analist, roller, rid, None)
     assert r.status_code == 409
 
     _ilerlet(saat, 10)
@@ -126,10 +141,10 @@ def test_gecen_ajan_testi_gereksinimi_tamamlar(
 
 
 def test_kalan_ajan_testi_bulgu_ve_yeniden_test(
-    analist: TestClient, saat: Saat, make_requirement
+    analist: TestClient, roller: dict, saat: Saat, make_requirement
 ) -> None:
     rid = make_requirement()
-    analist.put(f"/requirements/{rid}/agent-product", json={"urun_kodu": "kredi-danismani"})
+    _bagla(analist, roller, rid, "kredi-danismani")
     analist.post(f"/requirements/{rid}/agent-test")
     _ilerlet(saat, 200)
     v = _yenile(analist, rid)
@@ -157,21 +172,24 @@ def test_yetki_ve_engeller(api: TestClient, saat: Saat, make_requirement, make_u
     assert r.status_code == 200
     v = api.get(f"/requirements/{rid}/agent-test").json()
     assert not v["baslatilabilir"] and "PO onaylı" in v["engel"]
+    # Ajan testini başlatma / yenileme Testçinin (012 `agent_test.run`).
+    assert api.post(f"/requirements/{rid}/agent-test").status_code == 403
+    login(api, make_user("tester"))
     r = api.post(f"/requirements/{rid}/agent-test")
     assert r.status_code == 409 and r.json()["kod"] == "ajan_testi_baslatilamaz"
     assert api.get(f"/requirements/{uuid.uuid4()}/agent-test").status_code == 404
     assert api.post(f"/requirements/{uuid.uuid4()}/agent-test/refresh").status_code == 404
-    # Yenileme (yan etkili) yalnız analist; GET herkese açık ve yan etkisiz.
-    login(api, make_user("tester"))
+    # Yenileme (yan etkili) yalnız Testçi; GET herkese açık ve yan etkisiz.
+    login(api, make_user("analyst"))
     assert api.post(f"/requirements/{rid}/agent-test/refresh").status_code == 403
     assert api.get(f"/requirements/{rid}/agent-test").status_code == 200
 
 
 def test_icerik_degisirse_gecen_test_gereksinimi_ilerletmez(
-    analist: TestClient, saat: Saat, make_requirement, sim_tamamlar
+    analist: TestClient, roller: dict, saat: Saat, make_requirement, sim_tamamlar
 ) -> None:
     rid = make_requirement()
-    analist.put(f"/requirements/{rid}/agent-product", json={"urun_kodu": "destek-asistani"})
+    _bagla(analist, roller, rid, "destek-asistani")
     analist.post(f"/requirements/{rid}/agent-test")
     with session_scope() as s:
         s.get(Requirement, rid).aciklama = "Değişti"
@@ -182,7 +200,9 @@ def test_icerik_degisirse_gecen_test_gereksinimi_ilerletmez(
         assert s.get(Requirement, rid).durum == "po_approved"
 
 
-def test_case_varken_baglanamaz(analist: TestClient, saat: Saat, make_requirement, engine) -> None:
+def test_case_varken_baglanamaz(
+    analist: TestClient, roller: dict, saat: Saat, make_requirement, engine
+) -> None:
     rid = make_requirement()
     with session_scope() as s:
         s.execute(
@@ -192,16 +212,16 @@ def test_case_varken_baglanamaz(analist: TestClient, saat: Saat, make_requiremen
             ),
             {"r": rid},
         )
-    r = analist.put(f"/requirements/{rid}/agent-product", json={"urun_kodu": "destek-asistani"})
+    r = _bagla(analist, roller, rid, "destek-asistani")
     assert r.status_code == 409, r.text
 
 
 def test_simulasyon_sonucu_gereksinimi_tamamlamaz(
-    analist: TestClient, saat: Saat, make_requirement, engine
+    analist: TestClient, roller: dict, saat: Saat, make_requirement, engine
 ) -> None:
     """Güvenlik #5: simüle edilmiş `passed` gerçek `done` geçişi yapmaz (varsayılan)."""
     rid = make_requirement()
-    analist.put(f"/requirements/{rid}/agent-product", json={"urun_kodu": "destek-asistani"})
+    _bagla(analist, roller, rid, "destek-asistani")
     analist.post(f"/requirements/{rid}/agent-test")
     _ilerlet(saat, 100)
     v = _yenile(analist, rid)
@@ -247,11 +267,11 @@ def test_model_ve_uretim_durumlarinda_baglanti_degismez(
 
 
 def test_bagli_gereksinimde_tasarim_modeli_baslatilmaz(
-    analist: TestClient, saat: Saat, make_requirement
+    analist: TestClient, roller: dict, saat: Saat, make_requirement
 ) -> None:
     """İki tur yolu (POST design-model ve generate-cases kip=iki_tur) da 409 `ajan_urunu`."""
     rid = make_requirement()
-    analist.put(f"/requirements/{rid}/agent-product", json={"urun_kodu": "destek-asistani"})
+    _bagla(analist, roller, rid, "destek-asistani")
     r = analist.post(f"/requirements/{rid}/design-model")
     assert r.status_code == 409 and r.json()["kod"] == "ajan_urunu", r.text
     r = analist.post(f"/requirements/{rid}/generate-cases", json={"kip": "iki_tur"})
@@ -285,12 +305,12 @@ class _KilitDenetleyenPort(SimAgentProbe):
 
 
 def test_port_cagrisi_satir_kilidi_altinda_yapilmaz(
-    analist: TestClient, saat: Saat, make_requirement, db
+    analist: TestClient, roller: dict, saat: Saat, make_requirement, db
 ) -> None:
     port = _KilitDenetleyenPort(SimAjanTestleri(PgDeposu(), saat=saat), db.owner_url)
     set_agent_probe_factory(lambda: port)
     rid = make_requirement()
-    analist.put(f"/requirements/{rid}/agent-product", json={"urun_kodu": "destek-asistani"})
+    _bagla(analist, roller, rid, "destek-asistani")
     r = analist.post(f"/requirements/{rid}/agent-test")
     assert r.status_code == 202, r.text
     assert port.kilitliydi is False

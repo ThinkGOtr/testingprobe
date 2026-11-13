@@ -3,14 +3,15 @@
 // ilgili ekrana bağlanır; model kipi (REPLAY/strict) ve prompt değerlendirme durumu üstte yazılır.
 // Okunamayan kaynak "tamam" sayılmaz: adım "bekliyor" kalır ve okunamayan uç açıkça listelenir.
 import { useCallback, useEffect } from "react";
-import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
 import { buFazdaYok, hataMesaji, ortamAdlariniGizle } from "../api/http";
 import type { BugTaslagi, DemoDurumu, GereksinimDetay, HataAnalizi, KontrolKulesi, Kosu, Script, TestCase } from "../api/types";
-import { Cip, HataKutusu, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
+import { Cip, HataKutusu, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor, IzinliLink } from "../components/ui";
+import { useIzinler } from "../auth";
 import { useGeciktirilmis, useVeri } from "../hooks";
 import type { Ton } from "../lib/etiketler";
+import type { Izin } from "../lib/yetki";
 import { saat } from "../lib/format";
 import {
   DEMO_STORY,
@@ -38,12 +39,33 @@ const TUR: Record<YolAdimi["tur"], string> = { sistem: "Sistem", ai: "AI", insan
 
 interface Yuklenen extends YolGirdisi {
   okunamayan: string[];
+  /** Rolün okuma izni olmadığı için hiç istenmeyen kaynaklar (hata değil). */
+  kapali: string[];
   zaman: string;
 }
 
-async function yukle(): Promise<Yuklenen> {
+/** Kaynak → okuma izni (012). İzni olmayan kaynak istenmez; 403 uyarısı üretmez. */
+const KAYNAK_IZNI: Record<string, Izin> = {
+  Gereksinimler: "requirement.read",
+  [DEMO_STORY]: "requirement.read",
+  "Case'ler": "case.read",
+  "Kod üretimi": "code.read",
+  Koşular: "run.read",
+  Triage: "failure.read",
+  "Bug taslakları": "bug.read",
+  "Kontrol Kulesi": "dashboard.read",
+  "Demo durumu": "dashboard.read",
+};
+
+export async function yukle(izinler: ReadonlySet<string>): Promise<Yuklenen> {
   const okunamayan: string[] = [];
+  const kapali: string[] = [];
   async function oku<T>(ad: string, fn: () => Promise<T>, bos: T): Promise<T> {
+    const gerekli = KAYNAK_IZNI[ad];
+    if (gerekli && !izinler.has(gerekli)) {
+      kapali.push(ad);
+      return bos;
+    }
     try {
       return await fn();
     } catch (e) {
@@ -63,7 +85,7 @@ async function yukle(): Promise<Yuklenen> {
     oku<KontrolKulesi | null>("Kontrol Kulesi", () => api.kontrolKulesi(), null),
     oku<DemoDurumu | null>("Demo durumu", () => api.demoDurumu(), null),
   ]);
-  return { gereksinim, caseler, scriptler, kosular, hatalar, bugTaslaklari, kule, demo, okunamayan, zaman: new Date().toISOString() };
+  return { gereksinim, caseler, scriptler, kosular, hatalar, bugTaslaklari, kule, demo, okunamayan, kapali, zaman: new Date().toISOString() };
 }
 
 function AdimSatiri({ a }: { a: YolAdimi }) {
@@ -92,9 +114,9 @@ function AdimSatiri({ a }: { a: YolAdimi }) {
         {a.ipucu && <p className="yh-ipucu">↳ {ortamAdlariniGizle(a.ipucu)}</p>}
       </div>
       {a.baglanti ? (
-        <Link className="yh-baglanti" to={a.baglanti.yol}>
+        <IzinliLink className="yh-baglanti" to={a.baglanti.yol}>
           {a.baglanti.etiket} →
-        </Link>
+        </IzinliLink>
       ) : (
         <span />
       )}
@@ -164,7 +186,8 @@ function DurumSeridi({ v }: { v: Yuklenen }) {
 }
 
 export function YolHaritasi() {
-  const v = useVeri(yukle, []);
+  const izinler = useIzinler();
+  const v = useVeri(() => yukle(izinler), [izinler]);
   const sessiz = useGeciktirilmis(() => void v.yenile(true), 600);
   useOlay(sessiz, [
     "requirement.updated",
@@ -210,6 +233,11 @@ export function YolHaritasi() {
           </button>
         }
       />
+      {y.kapali.length > 0 && (
+        <p className="kucuk soluk" data-testid="yh-rol-kapali">
+          Rolünüz şu kaynakları görmüyor; ilgili adımlar “bekliyor” gösterilir: {y.kapali.join(", ")}.
+        </p>
+      )}
       {y.okunamayan.length > 0 && (
         <Uyari ton="uyari" baslik="Bazı kaynaklar okunamadı (ilgili adımlar 'bekliyor' gösterilir)">
           <ul className="duz-liste kucuk">

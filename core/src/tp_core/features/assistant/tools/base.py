@@ -214,8 +214,10 @@ class AracSarmalayici:
     """Geçide verilen `ToolExecutor` (`execute(name, args) -> str`).
 
     - Yeni araçlar: sonuç → sır temizleme → `oturum.mask_text` → kanıt havuzu → `<untrusted>`.
-    - Mevcut araçlar (`mevcut`): yalnız sır temizleme + kanıt havuzu; zaten sarılı (ve `DataTools`
-      maskeli) sonuca ikinci maske/sarma uygulanmaz.
+    - Mevcut araçlar (`mevcut`): sır temizleme → oturum maskesi (`_mevcut_maske`) → kanıt havuzu;
+      zaten sarılı sonuca ikinci sarma uygulanmaz. Oturum maskesi asistanda TCKN/IBAN'ı her zaman
+      yer tutucuya çevirir (specs/013 §5.1); `DataTools` oturumla zaten maskelemişse (bayrak açık)
+      ikinci maske uygulanmaz.
     - Modele giden her başarılı sonuç `[kanit:kN]` ile başlar.
     - Hata: `AracHatasi` (mesajı temizlenip maskelenmiş) yükseltilir; geçit bunu araç hatası olarak
       modele iletir. Beklenmeyen istisnanın `str(exc)`'i hiçbir yere yazılmaz.
@@ -292,6 +294,7 @@ class AracSarmalayici:
         tur = self.mevcut_turleri.get(name, "uygulama_kodu")
         if tur == "uygulama_kodu":
             temiz = _yer_tutucu_notr(temiz)
+        temiz = self._mevcut_maske(temiz, tur, sql is not None)
         return self.havuz.ekle(
             name,
             tur,
@@ -299,3 +302,24 @@ class AracSarmalayici:
             sql=sql,
             result_digest=digest,
         ).metin
+
+    def _mevcut_maske(self, metin: str, tur: KanitTuru, sorgu_basligi: bool) -> str:
+        """Mevcut araç sonucuna mesaj oturumunun maskesi (asistan oturumu: TCKN/IBAN her zaman).
+
+        - Veri araçları (`DataTools`) bayrak açıkken sonucu aynı oturumla zaten maskeler: ikinci
+          `mask_text` hazır yer tutucuları (`<<PII_…>>`) etkisizleştirip maskeyi açılamaz kılardı;
+          bu durumda dokunulmaz (çift maske yok).
+        - `db_query` başlığı (`query:` / `result_digest:`) maskelenmez: SQL ve özet kanıt
+          doğrulamasında birebir kullanılır; yalnız veri bloğu maskelenir.
+        - Kod araçlarının hazır yer tutucuları `_yer_tutucu_notr` ile zaten etkisizdir."""
+        oturum = self.baglam.oturum
+        if tur == "uygulama_verisi" and oturum.enabled:
+            return metin
+        if sorgu_basligi:
+            ayrac = metin.find("\nresult_digest: ")
+            son = metin.find("\n", ayrac + 1) if ayrac >= 0 else -1
+            if son >= 0:
+                govde, _ = oturum.mask_text(metin[son + 1 :])
+                return metin[: son + 1] + govde
+        maskeli, _ = oturum.mask_text(metin)
+        return maskeli

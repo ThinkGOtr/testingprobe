@@ -1,4 +1,5 @@
-// D5 / A2: "Neden onaylanamıyor" kutusu (UX-2), K20 "Varsayım doğrulandı" ve toplu onay, "Hazır değil"
+// D5 / A2: "Neden kabul edilemiyor" kutusu (UX-2), K20 "Varsayım doğrulandı" (012: Testçi kabulü) ve
+// toplu karar (013/012 `bulk-decision`) × v3 hazır olma, "Hazır değil"
 // süzgeci ve URL parametreleri (UX-6), derinleştirme rozeti (UX-5), kart başlığı sadeliği (UX-12),
 // kapsam matrisi etiketleri ve hazır kapsam (UX-13 / D3), örnek verinin K6 tutarlılığı (UX-10).
 import { render, screen, waitFor, within } from "@testing-library/react";
@@ -9,14 +10,15 @@ import { Rotalar } from "../App";
 import { api } from "../api/client";
 import { ApiError } from "../api/http";
 import { V3_GEREKSINIM_ID } from "../api/mock/caseV3";
-import { ICERIK_DEGISMIS, mockVerisi } from "../api/mock/handlers";
+import { mockGoruntulemeEkle, mockVerisi } from "../api/mock/handlers";
 import type { CaseKapsamOzeti, TestCase } from "../api/types";
 import { OturumProvider } from "../auth";
-import { caseHazirlik, hazirlikYonlendirmesi, sayiEki, topluOnayEngeli } from "../lib/caseV3";
+import { caseHazirlik, hazirlikYonlendirmesi, sayiEki } from "../lib/caseV3";
+import { topluOnayAdaylari } from "../pages/CaseReview";
 import { oturumAc, sar } from "../test/yardimci";
 import { BildirimProvider } from "./Bildirim";
 import { PoyaGonderEylemi } from "./AcikSorular";
-import { CaseKarti } from "./CaseKarti";
+import { CaseKarti, goruntulemeAnahtari } from "./CaseKarti";
 import { KapsamPaneli } from "./KapsamPaneli";
 
 function uygulama(yol: string) {
@@ -58,22 +60,22 @@ describe("sayıya Türkçe ek", () => {
   });
 });
 
-describe("Neden onaylanamıyor kutusu (UX-2)", () => {
+describe("Neden kabul edilemiyor kutusu (UX-2)", () => {
   it("metinler: tek varsayım, çok varsayım, soru (+varsayım), tutarlılık; onaylı ve hazır case'te kutu yok", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     jiraStorysiVer();
     const varsayim = await v3Case("case-v3-2");
     expect(hazirlikYonlendirmesi(varsayim)).toEqual({
       tur: "varsayim",
-      metin: "A1 varsayımı doğrulanmadı. Doğruladıysanız 'Varsayım doğrulandı' ile onaylayın; değilse 'Düzelt' ile beklenen sonucu güncelleyin ya da reddedin.",
+      metin: "A1 varsayımı doğrulanmadı. Doğruladıysanız 'Varsayım doğrulandı' ile kabul edin; değilse 'Düzelterek kabul' ile beklenen sonucu güncelleyin ya da reddedin.",
       dogrulanacak: ["A1"],
     });
     const cok = { ...varsayim, icerik: { ...varsayim.icerik, assumption_refs: ["A1", "A2"] } };
-    expect(hazirlikYonlendirmesi(cok)!.metin).toMatch(/^A1, A2 varsayımları doğrulanmadı\. Doğruladıysanız 'Varsayımlar doğrulandı' ile onaylayın/);
+    expect(hazirlikYonlendirmesi(cok)!.metin).toMatch(/^A1, A2 varsayımları doğrulanmadı\. Doğruladıysanız 'Varsayımlar doğrulandı' ile kabul edin/);
     const soru = await v3Case("case-v3-3");
     expect(hazirlikYonlendirmesi(soru)).toEqual({
       tur: "soru",
-      metin: "Q1 PO'nun yanıtını bekliyor ve henüz gönderilmedi; 'Açık soruları PO'ya gönder' ile gönderin, yanıt gelince 'Düzelt' ile beklenen sonucu yazın.",
+      metin: "Q1 PO'nun yanıtını bekliyor ve henüz gönderilmedi; 'Açık soruları PO'ya gönder' ile gönderin, yanıt gelince 'Düzelterek kabul' ile beklenen sonucu yazın.",
       dogrulanacak: [],
       duzeltBirincil: false,
     });
@@ -83,17 +85,17 @@ describe("Neden onaylanamıyor kutusu (UX-2)", () => {
     expect(y.metin.startsWith("Q1 PO'nun yanıtını bekliyor")).toBe(true);
     expect(y.metin).toContain("A1 varsayımına bağlı");
     const tutarsiz = { ...(await v3Case("case-v3-1")), onay_engeli: "Tutarlılık ihlali olan case onaylanamaz" };
-    expect(hazirlikYonlendirmesi(tutarsiz)!.metin).toBe("Tutarlılık ihlali olan case onaylanamaz. 'Düzelt' ile giderin ya da reddedin.");
+    expect(hazirlikYonlendirmesi(tutarsiz)!.metin).toBe("Tutarlılık ihlali olan case onaylanamaz. 'Düzelterek kabul' ile giderin ya da reddedin.");
     expect(hazirlikYonlendirmesi(await v3Case("case-v3-1"))).toBeNull();
     expect(hazirlikYonlendirmesi(await v3Case("case-v3-5"))).toBeNull();
   });
 
-  it("kartta: varsayımda 'Varsayım doğrulandı' düğmesi; soruda düğme yok ve D6 yuvası çizilir", async () => {
-    await oturumAc("analist");
+  it("kartta (Testçi): varsayımda 'Varsayım doğrulandı' düğmesi; soruda düğme yok ve D6 yuvası çizilir", async () => {
+    await oturumAc("testci");
     jiraStorysiVer();
     const { unmount } = sar(<CaseKarti tc={await v3Case("case-v3-2")} guncellendi={() => {}} />);
     const kutu = within(screen.getByTestId("hazirlik-yonlendirme"));
-    expect(kutu.getByText("Neden onaylanamıyor, ne yapmalı?")).toBeInTheDocument();
+    expect(kutu.getByText("Neden kabul edilemiyor, ne yapmalı?")).toBeInTheDocument();
     expect(kutu.getByTestId("hazirlik-yonlendirme-metin")).toHaveTextContent(/^A1 varsayımı doğrulanmadı\./);
     await waitFor(() => expect(kutu.getByRole("button", { name: "Varsayım doğrulandı" })).toBeEnabled());
     // Kutu kartın üstünde: başlık satırından hemen sonra, case başlığından önce.
@@ -103,13 +105,13 @@ describe("Neden onaylanamıyor kutusu (UX-2)", () => {
 
     sar(<CaseKarti tc={await v3Case("case-v3-3")} guncellendi={() => {}} poyaGonder={<button type="button">PO'ya gönder</button>} />);
     const soru = within(screen.getByTestId("hazirlik-yonlendirme"));
-    expect(soru.getByTestId("hazirlik-yonlendirme-metin")).toHaveTextContent("Q1 PO'nun yanıtını bekliyor ve henüz gönderilmedi; 'Açık soruları PO'ya gönder' ile gönderin, yanıt gelince 'Düzelt' ile beklenen sonucu yazın.");
+    expect(soru.getByTestId("hazirlik-yonlendirme-metin")).toHaveTextContent("Q1 PO'nun yanıtını bekliyor ve henüz gönderilmedi; 'Açık soruları PO'ya gönder' ile gönderin, yanıt gelince 'Düzelterek kabul' ile beklenen sonucu yazın.");
     expect(soru.queryByRole("button", { name: /Varsayım/ })).not.toBeInTheDocument();
     expect(soru.getByRole("button", { name: "PO'ya gönder" })).toBeInTheDocument();
   });
 
   it("çok varsayımda düğme adı kimlikleri taşır", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const tc = await v3Case("case-v3-2");
     sar(<CaseKarti tc={{ ...tc, icerik: { ...tc.icerik, assumption_refs: ["A1", "A2"] } }} guncellendi={() => {}} />);
     expect(screen.getByRole("button", { name: "Varsayımlar doğrulandı (A1, A2)" })).toBeInTheDocument();
@@ -117,8 +119,8 @@ describe("Neden onaylanamıyor kutusu (UX-2)", () => {
 });
 
 describe("Varsayım doğrulandı (K20)", () => {
-  it("görülen hash ile gönderilir; case onaylı + hazır döner; bildirim gösterilir", async () => {
-    await oturumAc("analist");
+  it("görülen hash ile gönderilir; case kabul edilir (onaya hazır + hazır, karar edit); bildirim gösterilir", async () => {
+    await oturumAc("testci");
     const spy = vi.spyOn(api, "varsayimDogrulandi");
     const guncellendi = vi.fn();
     const u = userEvent.setup();
@@ -127,19 +129,24 @@ describe("Varsayım doğrulandı (K20)", () => {
     await u.click(screen.getByRole("button", { name: "Varsayım doğrulandı" }));
     const onay = within(screen.getByTestId("varsayim-dogrulama-onayi"));
     await u.type(onay.getByLabelText("Doğrulama notu (isteğe bağlı)"), "PO ile teyit edildi");
-    await u.click(onay.getByRole("button", { name: "Evet, doğrulandı — onayla" }));
+    await u.click(onay.getByRole("button", { name: "Evet, doğrulandı — kabul et" }));
     await waitFor(() => expect(guncellendi).toHaveBeenCalled());
     expect(spy).toHaveBeenCalledWith("case-v3-2", { icerik_hash: tc.icerik_hash, varsayim_id: "A1", gerekce: "PO ile teyit edildi" });
     const yeni = guncellendi.mock.calls[0][0] as TestCase;
-    expect([yeni.durum, yeni.readiness, yeni.karar]).toEqual(["approved", "ready", "edit"]);
+    // 012: doğrudan onaylı DEĞİL; Analist son onayı ayrıca gerekir.
+    expect([yeni.durum, yeni.readiness, yeni.karar]).toEqual(["ready", "ready", "edit"]);
+    expect(yeni.onaylanan_hash).toBeNull();
     expect(yeni.icerik.assumption_refs).toEqual([]);
     expect(yeni.icerik.expected_result).toBe(tc.icerik.expected_result);
-    expect(await screen.findByText("Case #2 onaylandı: A1 varsayımı doğrulandı.")).toBeInTheDocument();
+    expect(await screen.findByText("Case #2 kabul edildi (Analist son onayına gitti): A1 varsayımı doğrulandı.")).toBeInTheDocument();
     spy.mockRestore();
   });
 
-  it("mock: başka atıf kalırsa 422 (Türkçe), bayat hash 409, atıf yapılmayan varsayım 422", async () => {
+  it("mock: başka atıf kalırsa 422 (Türkçe), bayat hash 409, atıf yapılmayan varsayım 422; Analist 403", async () => {
     await oturumAc("analist");
+    const once = await v3Case("case-v3-2");
+    await expect(api.varsayimDogrulandi(once.id, { icerik_hash: once.icerik_hash, varsayim_id: "A1" })).rejects.toSatisfy((e: unknown) => e instanceof ApiError && e.status === 403);
+    await oturumAc("testci");
     const c = ham("case-v3-6");
     c.icerik = { ...c.icerik, open_question_refs: ["Q1"] };
     const tc = await v3Case("case-v3-6");
@@ -153,91 +160,57 @@ describe("Varsayım doğrulandı (K20)", () => {
   });
 
   it("409'da liste yeniden yüklenir (cakismada)", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const yenile = vi.fn();
     const u = userEvent.setup();
     const tc = await v3Case("case-v3-2");
     ham("case-v3-2").icerik_hash = "baskasi-degistirdi";
     sar(<CaseKarti tc={tc} guncellendi={() => {}} yenile={yenile} />);
     await u.click(screen.getByRole("button", { name: "Varsayım doğrulandı" }));
-    await u.click(screen.getByRole("button", { name: "Evet, doğrulandı — onayla" }));
+    await u.click(screen.getByRole("button", { name: "Evet, doğrulandı — kabul et" }));
     await waitFor(() => expect(yenile).toHaveBeenCalled());
   });
 });
 
-describe("toplu onay (K20)", () => {
-  it("seçim kuralları: yalnız hazır, tutarlı taslak; karar verilmişte kutu yok; seçilemeyende neden görünür", async () => {
-    await oturumAc("analist");
+describe("toplu karar × v3 hazır olma (K20 → 013/012 `bulk-decision`)", () => {
+  it("adaylar: onay engeli dolu (hazır değil / tutarsız) v3 taslak toplu kabule girmez", async () => {
+    await oturumAc("testci");
     const tumu = await api.caseler(V3_GEREKSINIM_ID);
-    expect(tumu.filter((c) => topluOnayEngeli(c) === null).map((c) => c.sira_no)).toEqual([1, 4]);
-    expect(topluOnayEngeli({ ...tumu[0], onay_engeli: "Tutarlılık ihlali olan case onaylanamaz" })).toBe("Tutarlılık ihlali var");
-
-    uygulama(SAYFA);
-    const tumuSec = await screen.findByRole("checkbox", { name: "Tümünü seç (seçilebilir 2)" });
-    expect(tumuSec).not.toBeChecked();
-    expect(screen.getByRole("checkbox", { name: "Case 1'i seç: 250 karakterlik not siparişle birlikte kaydedilir" })).toBeEnabled();
-    const ikinci = screen.getByRole("checkbox", { name: "Case 2'yi seç: 251 karakterlik not kaydedilmez" });
-    expect(ikinci).toBeDisabled();
-    expect(ikinci).toHaveAccessibleDescription("Toplu onaya seçilemez: Hazır değil (Varsayıma bağlı)");
-    // Onaylı case 5: kutu yok.
-    const besinci = await kart("Başka bayinin sipariş notu görüntülenemez");
-    expect(besinci.queryByRole("checkbox")).not.toBeInTheDocument();
+    const gorulenler = new Set(tumu.map((c) => goruntulemeAnahtari(c)));
+    const { uygun, engelli } = topluOnayAdaylari(tumu, gorulenler, "accept");
+    expect(uygun.map((c) => c.sira_no)).toEqual([1, 4]);
+    expect(engelli).toBeGreaterThan(0);
+    expect(topluOnayAdaylari([{ ...tumu[0], onay_engeli: "Tutarlılık ihlali olan case onaylanamaz" }], gorulenler, "accept").uygun).toEqual([]);
   });
 
-  it("tümünü seç → onay kutusu → hepsi onaylanır; bildirim ve liste yenilenir", async () => {
-    await oturumAc("analist");
-    const spy = vi.spyOn(api, "topluOnay");
-    const u = userEvent.setup();
-    uygulama(SAYFA);
-    await u.click(await screen.findByRole("checkbox", { name: "Tümünü seç (seçilebilir 2)" }));
-    expect(screen.getByText("2 case seçildi")).toBeInTheDocument();
-    await u.click(screen.getByRole("button", { name: "Seçilenleri onayla" }));
-    const onay = within(screen.getByTestId("toplu-onay-onayi"));
-    expect(onay.getByText(/2 case kendi görülen içerikleriyle ayrı ayrı onaylanacak/)).toBeInTheDocument();
-    await u.click(onay.getByRole("button", { name: "Evet, 2 case'i onayla" }));
-    expect(await screen.findByText("2 case onaylandı")).toBeInTheDocument();
-    expect(spy.mock.calls[0][0]).toEqual([
-      { case_id: "case-v3-1", icerik_hash: ham("case-v3-1").onaylanan_hash },
-      { case_id: "case-v3-4", icerik_hash: ham("case-v3-4").onaylanan_hash },
-    ]);
-    expect([ham("case-v3-1").durum, ham("case-v3-4").durum]).toEqual(["approved", "approved"]);
-    // Liste yenilendi: onaylanan case'lerin kutusu kalktı.
-    await waitFor(() => expect(screen.queryByRole("checkbox", { name: /^Case 1'i seç/ })).not.toBeInTheDocument());
-    spy.mockRestore();
-  });
-
-  it("karışık sonuç: '1 onaylandı, 1 onaylanamadı' ve kalem hatası case başlığıyla listelenir", async () => {
-    await oturumAc("analist");
-    const u = userEvent.setup();
-    uygulama(SAYFA);
-    await u.click(await screen.findByRole("checkbox", { name: /^Case 1'i seç/ }));
-    await u.click(screen.getByRole("checkbox", { name: /^Case 4'ü seç/ }));
-    await u.click(screen.getByRole("button", { name: "Seçilenleri onayla" }));
-    // Görüntülendikten sonra case 4 başkası tarafından değişti: kalem 409.
-    ham("case-v3-4").icerik_hash = "baskasi-degistirdi";
-    await u.click(screen.getByRole("button", { name: "Evet, 2 case'i onayla" }));
-    const sonuc = within(await screen.findByTestId("toplu-onay-sonuc"));
-    expect(sonuc.getByText("1 onaylandı, 1 onaylanamadı")).toBeInTheDocument();
-    expect(sonuc.getByRole("listitem")).toHaveTextContent(`#4 Nottaki betik sipariş detayında çalıştırılmaz: ${ICERIK_DEGISMIS}`);
-    expect([ham("case-v3-1").durum, ham("case-v3-4").durum]).toEqual(["approved", "draft"]);
-  });
-
-  it("mock: kalem bazlı sonuç (hazır değil 422, bayat hash 409); her kalem ayrı karar", async () => {
-    await oturumAc("analist");
+  it("mock: Testçi toplu kabulü öğe bazlı (hazır değil → hata, bayat hash → atlandı); kabul edilen onaya hazır", async () => {
+    await oturumAc("testci");
     const [c1, c2, , c4] = await api.caseler(V3_GEREKSINIM_ID);
-    const s = await api.topluOnay([
-      { case_id: c1.id, icerik_hash: c1.icerik_hash },
-      { case_id: c2.id, icerik_hash: c2.icerik_hash },
-      { case_id: c4.id, icerik_hash: "bayat" },
+    for (const c of [c1, c2, c4]) mockGoruntulemeEkle(c.id, "testci");
+    const y = await api.topluKarar("accept", [c1, c2, { id: c4.id, icerik_hash: "bayat" }]);
+    expect(y.sonuclar.map((s) => [s.case_id, s.durum])).toEqual([
+      ["case-v3-1", "onaylandi"],
+      ["case-v3-2", "hata"],
+      ["case-v3-4", "atlandi"],
     ]);
-    expect([s.onaylanan, s.basarisiz]).toEqual([1, 2]);
-    expect(s.sonuclar.map((k) => [k.case_id, k.basarili, k.kod])).toEqual([
-      ["case-v3-1", true, null],
-      ["case-v3-2", false, 422],
-      ["case-v3-4", false, 409],
-    ]);
-    expect(s.sonuclar[0].case?.durum).toBe("approved");
-    expect(s.sonuclar[1].hata).toMatch(/Hazır olmayan case onaylanamaz/);
+    expect(y.sonuclar[1].neden).toMatch(/Hazır olmayan case onaylanamaz|readiness/);
+    expect(y.ozet).toEqual({ onaylandi: 1, atlandi: 1, hata: 1 });
+    expect([ham("case-v3-1").durum, ham("case-v3-2").durum, ham("case-v3-4").durum]).toEqual(["ready", "draft", "draft"]);
+  });
+
+  it("mock: Analist toplu son onayı kabul edilmiş v3 case'i onaylar; Testçi toplu son onay veremez (403)", async () => {
+    await oturumAc("testci");
+    const c1 = await v3Case("case-v3-1");
+    mockGoruntulemeEkle(c1.id, "testci");
+    await api.topluKarar("accept", [c1]);
+    await expect(api.topluKarar("approve", [await v3Case("case-v3-1")])).rejects.toMatchObject({ status: 403 });
+    await oturumAc("analist");
+    const hazir = await v3Case("case-v3-1");
+    expect(hazir.durum).toBe("ready");
+    mockGoruntulemeEkle(hazir.id, "analist");
+    const y = await api.topluKarar("approve", [hazir]);
+    expect(y.ozet.onaylandi).toBe(1);
+    expect(ham("case-v3-1").durum).toBe("approved");
   });
 });
 
@@ -382,14 +355,14 @@ describe("D6: soru bekleyen case'te metin PO durumuna göre (K16)", () => {
     });
     expect(hazirlikYonlendirmesi(po("gonderilmedi"))!.metin).toContain("'Açık soruları PO'ya gönder' ile gönderin");
     // B7: gönderilen soru PO'nun gördüğü kimlikle (CQ1) anılır; "Q1 (CQ1)" karışıklığı yok.
-    expect(hazirlikYonlendirmesi(po("gonderildi"))!.metin).toBe("CQ1 PO'ya gönderildi, yanıt bekleniyor; yanıt gelince 'Düzelt' ile beklenen sonucu yazın.");
+    expect(hazirlikYonlendirmesi(po("gonderildi"))!.metin).toBe("CQ1 PO'ya gönderildi, yanıt bekleniyor; yanıt gelince 'Düzelterek kabul' ile beklenen sonucu yazın.");
     // B3: yanıt gelince tek mesaj ve sıradaki eylem "Düzelt" (birincil).
     const yanit = hazirlikYonlendirmesi(po("yanitlandi"))!;
-    expect(yanit.metin).toBe("CQ1: PO yanıtladı. 'Düzelt' ile beklenen sonucu yanıta göre yazın (ya da case'i yeniden üretin).");
+    expect(yanit.metin).toBe("CQ1: PO yanıtladı. 'Düzelterek kabul' ile beklenen sonucu yanıta göre yazın (ya da case'i yeniden üretin).");
     expect(yanit.duzeltBirincil).toBe(true);
     expect(hazirlikYonlendirmesi(po("gonderildi"))!.duzeltBirincil).toBe(false);
     const { po_sorulari: _p, ...eski } = soru;
-    expect(hazirlikYonlendirmesi(eski)!.metin).toBe("Q1 PO'nun yanıtını bekliyor. Henüz gönderilmediyse 'Açık soruları PO'ya gönder' ile gönderin; yanıt gelince 'Düzelt' ile beklenen sonucu yazın.");
+    expect(hazirlikYonlendirmesi(eski)!.metin).toBe("Q1 PO'nun yanıtını bekliyor. Henüz gönderilmediyse 'Açık soruları PO'ya gönder' ile gönderin; yanıt gelince 'Düzelterek kabul' ile beklenen sonucu yazın.");
   });
 });
 

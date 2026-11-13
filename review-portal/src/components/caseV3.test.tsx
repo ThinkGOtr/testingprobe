@@ -57,7 +57,7 @@ async function eskiCase(): Promise<TestCase> {
 
 describe("CaseKarti v3: rozetler ve bloklar", () => {
   it("hazır case: hazır olma, öncelik ve teknik rozetleri (tam adla), kapsam, doğrulama noktası, test verisi, temizlik", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     sar(<CaseKarti tc={await v3Case("case-v3-1")} guncellendi={() => {}} />);
     const hazir = screen.getByTestId("case-hazirlik");
     expect(hazir).toHaveTextContent("Hazır olma durumu: ✓ Hazır");
@@ -83,27 +83,27 @@ describe("CaseKarti v3: rozetler ve bloklar", () => {
     expect(veri.getByRole("cell", { name: "not_250" })).toBeInTheDocument();
     expect(within(screen.getByTestId("case-temizlik")).getByText("Oluşturulan siparişi iptal et")).toBeInTheDocument();
     expect(screen.queryByTestId("case-eski-sema")).not.toBeInTheDocument();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Onayla" })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Kabul et" })).toBeEnabled());
   });
 
-  it("varsayıma bağlı case: rozet, varsayım metni ve sahibi; Onayla pasif ve nedeni yazılı", async () => {
-    await oturumAc("analist");
+  it("varsayıma bağlı case: rozet, varsayım metni ve sahibi; Kabul et pasif ve nedeni yazılı", async () => {
+    await oturumAc("testci");
     sar(<CaseKarti tc={await v3Case("case-v3-2")} guncellendi={() => {}} />);
     expect(screen.getByTestId("case-hazirlik")).toHaveTextContent("⚠ Varsayıma bağlı");
     const blok = within(screen.getByTestId("case-varsayimlar"));
     expect(blok.getByText("A1")).toBeInTheDocument();
     expect(blok.getByText(/250 karakter sınırı bayt değil/)).toBeInTheDocument();
     expect(blok.getByText(/Sahibi: Analist/)).toBeInTheDocument();
-    const onayla = screen.getByRole("button", { name: "Onayla" });
+    const onayla = screen.getByRole("button", { name: "Kabul et" });
     await waitFor(() => expect(onayla).toHaveAccessibleDescription(/Hazır olmayan case onaylanamaz \(varsayıma bağlı\)/));
     expect(onayla).toBeDisabled();
-    // Düzelt ve Reddet açık kalır (K6: analist hazır yapar ya da reddeder).
-    expect(screen.getByRole("button", { name: "Düzelt" })).toBeEnabled();
+    // Düzelterek kabul ve Reddet açık kalır (K6: Testçi hazır yapar ya da reddeder).
+    expect(screen.getByRole("button", { name: "Düzelterek kabul" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Reddet" })).toBeEnabled();
   });
 
-  it("soru bekleyen case: açık soru metni ve sahibi görünür; Onayla pasif; sunucu onayı 422 ile reddeder", async () => {
-    await oturumAc("analist");
+  it("soru bekleyen case: açık soru metni ve sahibi görünür; Kabul et pasif; sunucu kabulü 422 ile reddeder", async () => {
+    await oturumAc("testci");
     const tc = await v3Case("case-v3-3");
     sar(<CaseKarti tc={tc} guncellendi={() => {}} />);
     expect(screen.getByTestId("case-hazirlik")).toHaveTextContent("? Soru bekliyor");
@@ -111,17 +111,17 @@ describe("CaseKarti v3: rozetler ve bloklar", () => {
     expect(blok.getByText("Q1")).toBeInTheDocument();
     expect(blok.getByText(/Yalnızca boşluk karakterlerinden oluşan not kaydedilir mi/)).toBeInTheDocument();
     expect(blok.getByText(/Sahibi: PO/)).toBeInTheDocument();
-    const onayla = screen.getByRole("button", { name: "Onayla" });
+    const onayla = screen.getByRole("button", { name: "Kabul et" });
     await waitFor(() => expect(onayla).toHaveAccessibleDescription(/Hazır olmayan case onaylanamaz \(açık soru bekliyor\)/));
     expect(onayla).toBeDisabled();
     // Beklenen sonuç boş: uydurulmaz, açıkça yazılır.
     expect(screen.getByText(/henüz yazılamıyor/)).toBeInTheDocument();
-    await expect(api.caseKarari(tc.id, { icerik_hash: tc.icerik_hash, karar: "approve" })).rejects.toMatchObject({ status: 422 });
+    await expect(api.caseKarari(tc.id, { icerik_hash: tc.icerik_hash, karar: "accept" })).rejects.toMatchObject({ status: 422 });
     expect(mockVerisi().caseler.find((c) => c.id === tc.id)!.durum).toBe("draft");
   });
 
   it("çözülmüş metni gelmeyen atıf yalnız kimliğiyle gösterilir (çökmez)", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const tc = { ...(await v3Case("case-v3-3")), acik_sorular: undefined };
     sar(<CaseKarti tc={tc} guncellendi={() => {}} />);
     const blok = within(screen.getByTestId("case-acik-sorular"));
@@ -130,7 +130,7 @@ describe("CaseKarti v3: rozetler ve bloklar", () => {
   });
 
   it("saldırı verisi HTML olarak işlenmez: düz metin/kod olarak ve 'güvenlik testi girdisi' işaretiyle gösterilir", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const { container } = sar(<CaseKarti tc={await v3Case("case-v3-4")} guncellendi={() => {}} />);
     const veri = screen.getByTestId("case-test-verisi");
     const kod = veri.querySelector("code.veri-deger")!;
@@ -144,7 +144,7 @@ describe("CaseKarti v3: rozetler ve bloklar", () => {
   });
 
   it("betik içeren değerler de (başlık, veri) metin olarak kalır", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const tc = await v3Case("case-v3-4");
     tc.icerik.test_data = [{ name: "betik", value: "<script>window.__tp_xss = 1</script>", class: null, synthetic: true, is_attack_payload: true }];
     const { container } = sar(<CaseKarti tc={tc} guncellendi={() => {}} />);
@@ -153,8 +153,8 @@ describe("CaseKarti v3: rozetler ve bloklar", () => {
     expect(screen.getByText("<script>window.__tp_xss = 1</script>")).toBeInTheDocument();
   });
 
-  it("eski (v2) case: 'eski şema' notu; v3 blokları hiç çizilmez; onay açık", async () => {
-    await oturumAc("analist");
+  it("eski (v2) case: 'eski şema' notu; v3 blokları hiç çizilmez; kabul açık", async () => {
+    await oturumAc("testci");
     const tc = await eskiCase();
     expect(tc.legacy).toBe(true);
     expect(tc.readiness).toBe("ready");
@@ -164,27 +164,52 @@ describe("CaseKarti v3: rozetler ve bloklar", () => {
       expect(screen.queryByTestId(kimlik)).not.toBeInTheDocument();
     }
     expect(screen.queryByRole("group", { name: "Test tasarım teknikleri" })).not.toBeInTheDocument();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Onayla" })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Kabul et" })).toBeEnabled());
   });
 
-  it("core onay engeli (onay_engeli) varsa Onayla pasif ve engel metni yazılı", async () => {
-    await oturumAc("analist");
+  it("core onay engeli (onay_engeli) varsa Kabul et pasif ve engel metni yazılı", async () => {
+    await oturumAc("testci");
     const tc = { ...(await v3Case("case-v3-1")), onay_engeli: "Tutarlılık ihlali olan case onaylanamaz", uyarilar: ["Kapsam öğesi tanımlı değil: EP-V9"] };
     sar(<CaseKarti tc={tc} guncellendi={() => {}} />);
-    const onayla = screen.getByRole("button", { name: "Onayla" });
+    const onayla = screen.getByRole("button", { name: "Kabul et" });
     await waitFor(() => expect(onayla).toHaveAccessibleDescription(/Tutarlılık ihlali olan case onaylanamaz/));
     expect(onayla).toBeDisabled();
     expect(screen.getByText("Kapsam öğesi tanımlı değil: EP-V9")).toBeInTheDocument();
   });
 });
 
+describe("CaseKarti v3 × 012 iki adım", () => {
+  it("onaya hazır v3 case'te onay engeli doluysa Analist son onayı pasif ve nedeni yazılı; Testçi düğmeleri yok", async () => {
+    await oturumAc("analist");
+    const tc: TestCase = { ...(await v3Case("case-v3-1")), durum: "ready", onay_engeli: "Tutarlılık ihlali olan case onaylanamaz" };
+    sar(<CaseKarti tc={tc} guncellendi={() => {}} />);
+    const onayla = screen.getByRole("button", { name: "Onayla" });
+    await waitFor(() => expect(onayla).toHaveAccessibleDescription(/Tutarlılık ihlali olan case onaylanamaz\. "Geri gönder" ile Testçiye döndürün/));
+    expect(onayla).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Geri gönder" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Kabul et" })).not.toBeInTheDocument();
+    // "Neden kabul edilemiyor" kutusu ve "Varsayım doğrulandı" yalnız taslakta (Testçi).
+    expect(screen.queryByTestId("hazirlik-yonlendirme")).not.toBeInTheDocument();
+  });
+
+  it("Analist taslak v3 case'te kabul/düzelterek kabul/varsayım doğrulandı düğmelerini çalıştıramaz", async () => {
+    await oturumAc("analist");
+    sar(<CaseKarti tc={await v3Case("case-v3-2")} guncellendi={() => {}} />);
+    for (const ad of ["Kabul et", "Düzelterek kabul", "Varsayım doğrulandı"]) {
+      const d = screen.queryAllByRole("button", { name: ad });
+      for (const x of d) expect(x).toBeDisabled();
+    }
+    await expect(api.caseKarari("case-v3-1", { icerik_hash: (await v3Case("case-v3-1")).icerik_hash, karar: "accept" })).rejects.toMatchObject({ status: 403 });
+  });
+});
+
 describe("CaseKarti v3: düzeltme formu", () => {
   it("tür seçiminde yetki ve entegrasyon var; eski case'te yalnız eski türler ve v3 alanı yok", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const u = userEvent.setup();
     const { unmount } = sar(<CaseKarti tc={await v3Case("case-v3-1")} guncellendi={() => {}} />);
-    await waitFor(() => expect(screen.getByRole("button", { name: "Düzelt" })).toBeEnabled());
-    await u.click(screen.getByRole("button", { name: "Düzelt" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Düzelterek kabul" })).toBeEnabled());
+    await u.click(screen.getByRole("button", { name: "Düzelterek kabul" }));
     expect(within(screen.getByLabelText("Tür")).getAllByRole("option").map((o) => o.textContent)).toEqual(["Pozitif", "Negatif", "Sınır", "Yetki", "Entegrasyon"]);
     for (const etiket of ["Öncelik", "Öncelik gerekçesi", "Doğrulama noktası", "Kapsadığı öğeler", "Varsayım atıfları", "Açık soru atıfları", "Temizlik adımları (her satır bir adım)"]) {
       expect(screen.getByLabelText(etiket)).toBeInTheDocument();
@@ -195,43 +220,43 @@ describe("CaseKarti v3: düzeltme formu", () => {
     unmount();
 
     sar(<CaseKarti tc={await eskiCase()} guncellendi={() => {}} />);
-    await waitFor(() => expect(screen.getByRole("button", { name: "Düzelt" })).toBeEnabled());
-    await u.click(screen.getByRole("button", { name: "Düzelt" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Düzelterek kabul" })).toBeEnabled());
+    await u.click(screen.getByRole("button", { name: "Düzelterek kabul" }));
     expect(within(screen.getByLabelText("Tür")).getAllByRole("option").map((o) => o.textContent)).toEqual(["Pozitif", "Negatif", "Sınır"]);
     expect(screen.queryByLabelText("Öncelik")).not.toBeInTheDocument();
     expect(screen.queryByTestId("hazirlik-alani")).not.toBeInTheDocument();
   });
 
   it("eski case düzeltmesi v3 anahtarı eklemeden gönderilir (K9)", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const spy = vi.spyOn(api, "caseKarari");
     const guncellendi = vi.fn();
     const u = userEvent.setup();
     sar(<CaseKarti tc={await eskiCase()} guncellendi={guncellendi} />);
-    await waitFor(() => expect(screen.getByRole("button", { name: "Düzelt" })).toBeEnabled());
-    await u.click(screen.getByRole("button", { name: "Düzelt" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Düzelterek kabul" })).toBeEnabled());
+    await u.click(screen.getByRole("button", { name: "Düzelterek kabul" }));
     await u.type(screen.getByLabelText("S1 veri"), "P-001");
-    await u.click(screen.getByRole("button", { name: "Düzeltip onayla" }));
+    await u.click(screen.getByRole("button", { name: "Düzelterek kabul et" }));
     await waitFor(() => expect(guncellendi).toHaveBeenCalled());
     const icerik = spy.mock.calls[0][1].icerik!;
     expect(Object.keys(icerik).sort()).toEqual(Object.keys(ESKI_ICERIK).sort());
     spy.mockRestore();
   });
 
-  it("soru bekleyen case'i hazır yapma akışı: form eksikleri söyler, hazır olmadan kaydetmez; hazır yapılınca onaylanır", async () => {
-    await oturumAc("analist");
+  it("soru bekleyen case'i hazır yapma akışı: form eksikleri söyler, hazır olmadan kaydetmez; hazır yapılınca kabul edilir", async () => {
+    await oturumAc("testci");
     const spy = vi.spyOn(api, "caseKarari");
     const guncellendi = vi.fn();
     const u = userEvent.setup();
     sar(<CaseKarti tc={await v3Case("case-v3-3")} guncellendi={guncellendi} />);
-    await waitFor(() => expect(screen.getByRole("button", { name: "Düzelt" })).toBeEnabled());
-    await u.click(screen.getByRole("button", { name: "Düzelt" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Düzelterek kabul" })).toBeEnabled());
+    await u.click(screen.getByRole("button", { name: "Düzelterek kabul" }));
 
     // "Soru bekliyor" hâliyle kaydedilemez: form nedenini söyler, istek gitmez.
     expect(screen.getByLabelText("Durum")).toHaveValue("blocked");
     expect(screen.getByTestId("hazirlik-eksikleri")).toHaveTextContent('Durum "Soru bekliyor": bu hâliyle kaydedilemez');
-    await u.click(screen.getByRole("button", { name: "Düzeltip onayla" }));
-    expect(screen.getByRole("alert")).toHaveTextContent(/Düzeltme case'i onaylar; durum "Soru bekliyor" iken kaydedilemez/);
+    await u.click(screen.getByRole("button", { name: "Düzelterek kabul et" }));
+    expect(screen.getByRole("alert")).toHaveTextContent(/Düzeltme case'i kabul eder; durum "Soru bekliyor" iken kaydedilemez/);
     expect(spy).not.toHaveBeenCalled();
 
     // "Hazır" seçilince atıfların boşaltılması ve beklenenlerin doldurulması gerektiği listelenir.
@@ -240,7 +265,7 @@ describe("CaseKarti v3: düzeltme formu", () => {
     expect(eksikler).toHaveTextContent("açık soru atıflarını boşaltın (Q1)");
     expect(eksikler).toHaveTextContent("beklenen sonucu dolu olmalı");
     expect(eksikler).toHaveTextContent("boş: S2, S3");
-    await u.click(screen.getByRole("button", { name: "Düzeltip onayla" }));
+    await u.click(screen.getByRole("button", { name: "Düzelterek kabul et" }));
     expect(screen.getByTestId("case-hata-listesi")).toHaveTextContent("açık soru atıflarını boşaltın");
     expect(spy).not.toHaveBeenCalled();
 
@@ -251,27 +276,28 @@ describe("CaseKarti v3: düzeltme formu", () => {
     await u.type(screen.getByLabelText("Beklenen sonuç"), "Sipariş detayında not görünmez");
     expect(screen.getByTestId("hazirlik-eksikleri")).toBeEmptyDOMElement();
     await u.click(screen.getByRole("radio", { name: /Evet, anlam değişti/ }));
-    await u.click(screen.getByRole("button", { name: "Düzeltip onayla" }));
+    await u.click(screen.getByRole("button", { name: "Düzelterek kabul et" }));
     await waitFor(() => expect(guncellendi).toHaveBeenCalled());
 
     const girdi = spy.mock.calls[0][1];
     expect(girdi.karar).toBe("edit");
     expect(girdi.icerik).toMatchObject({ readiness: "ready", open_question_refs: [], assumption_refs: [], expected_result: "Sipariş detayında not görünmez" });
     const sonuc = guncellendi.mock.calls[0][0] as TestCase;
-    expect(sonuc.durum).toBe("approved");
+    // 012: düzeltme case'i onaylamaz, kabul eder (onaya hazır; Analist son onayı ayrıca gerekir).
+    expect(sonuc.durum).toBe("ready");
     expect(sonuc.readiness).toBe("ready");
     expect(sonuc.acik_sorular).toEqual([]);
     spy.mockRestore();
   });
 
   it("v3 alanları düzenlenir: teknik, kapsam, öncelik, doğrulama noktası, test verisi, temizlik", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const spy = vi.spyOn(api, "caseKarari");
     const guncellendi = vi.fn();
     const u = userEvent.setup();
     sar(<CaseKarti tc={await v3Case("case-v3-4")} guncellendi={guncellendi} />);
-    await waitFor(() => expect(screen.getByRole("button", { name: "Düzelt" })).toBeEnabled());
-    await u.click(screen.getByRole("button", { name: "Düzelt" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Düzelterek kabul" })).toBeEnabled());
+    await u.click(screen.getByRole("button", { name: "Düzelterek kabul" }));
     await u.selectOptions(screen.getByLabelText("Öncelik"), "P2");
     await u.selectOptions(screen.getByLabelText("Doğrulama noktası"), "API");
     await u.clear(screen.getByLabelText("Öncelik gerekçesi"));
@@ -281,7 +307,7 @@ describe("CaseKarti v3: düzeltme formu", () => {
     // Saldırı verisi düzenleme alanında da düz metindir (textarea değeri).
     expect(screen.getByLabelText("Veri 1 değeri")).toHaveValue(V3_SALDIRI_VERISI);
     expect(screen.getByRole("checkbox", { name: /Güvenlik\s+testi girdisi/ })).toBeChecked();
-    await u.click(screen.getByRole("button", { name: "Düzeltip onayla" }));
+    await u.click(screen.getByRole("button", { name: "Düzelterek kabul et" }));
     await waitFor(() => expect(guncellendi).toHaveBeenCalled());
     expect(spy.mock.calls[0][1].icerik).toMatchObject({
       priority: "P2",
@@ -296,34 +322,34 @@ describe("CaseKarti v3: düzeltme formu", () => {
   });
 
   it("teknik ↔ kapsam uyumsuzluğunu sunucu 422 ile reddeder; hata listesi madde madde gösterilir", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const guncellendi = vi.fn();
     const u = userEvent.setup();
     sar(<CaseKarti tc={await v3Case("case-v3-1")} guncellendi={guncellendi} />);
-    await waitFor(() => expect(screen.getByRole("button", { name: "Düzelt" })).toBeEnabled());
-    await u.click(screen.getByRole("button", { name: "Düzelt" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Düzelterek kabul" })).toBeEnabled());
+    await u.click(screen.getByRole("button", { name: "Düzelterek kabul" }));
     await u.clear(screen.getByLabelText("Kapsadığı öğeler"));
     await u.type(screen.getByLabelText("Kapsadığı öğeler"), "EP-V9");
-    await u.click(screen.getByRole("button", { name: "Düzeltip onayla" }));
+    await u.click(screen.getByRole("button", { name: "Düzelterek kabul et" }));
     const liste = await screen.findByTestId("case-hata-listesi");
     expect(screen.getByRole("alert")).toHaveTextContent("Düzenlenen case şemaya uymuyor ya da üretim özetiyle tutarsız");
     const maddeler = within(liste).getAllByRole("listitem").map((li) => li.textContent);
     expect(maddeler).toContain("Kapsam öğesi tanımlı değil: EP-V9");
     expect(maddeler).toContain("Teknik BVA için kapsam öğesi yok (BV-… bekleniyor).");
     expect(guncellendi).not.toHaveBeenCalled();
-    // Form açık kalır: analist düzeltip yeniden gönderebilir.
+    // Form açık kalır: Testçi düzeltip yeniden gönderebilir.
     expect(screen.getByLabelText("Kapsadığı öğeler")).toHaveValue("EP-V9");
   });
 
-  it("onay 422 dönerse (ör. core engeli sonradan oluştu) kartta hata listesi gösterilir", async () => {
-    await oturumAc("analist");
+  it("kabul 422 dönerse (ör. core engeli sonradan oluştu) kartta hata listesi gösterilir", async () => {
+    await oturumAc("testci");
     const spy = vi
       .spyOn(api, "caseKarari")
       .mockRejectedValueOnce(new ApiError(422, 'Tutarlılık ihlali olan case onaylanamaz — ["Kapsam öğesi tanımlı değil: EP-V9", "Açık soru tanımlı değil: Q7"]'));
     const u = userEvent.setup();
     sar(<CaseKarti tc={await v3Case("case-v3-1")} guncellendi={() => {}} />);
-    await waitFor(() => expect(screen.getByRole("button", { name: "Onayla" })).toBeEnabled());
-    await u.click(screen.getByRole("button", { name: "Onayla" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Kabul et" })).toBeEnabled());
+    await u.click(screen.getByRole("button", { name: "Kabul et" }));
     const liste = await screen.findByTestId("case-hata-listesi");
     expect(within(liste).getAllByRole("listitem")).toHaveLength(2);
     expect(screen.getByRole("alert")).toHaveTextContent("Tutarlılık ihlali olan case onaylanamaz");
@@ -379,7 +405,7 @@ describe("Kapsam ve açık noktalar paneli", () => {
   });
 
   it("karar kapsamı değiştirir: case reddedilince panel yenilenir", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const u = userEvent.setup();
     uygulama(`/gereksinimler/${V3_GEREKSINIM_ID}/caseler`);
     const panel = within((await screen.findByRole("heading", { name: "Kapsam ve açık noktalar" })).closest("section")!);

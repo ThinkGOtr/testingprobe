@@ -1,5 +1,5 @@
-// UX-2 (D5): hazır olmayan taslak case'te kartın üstünde "Neden onaylanamıyor / ne yapmalı" kutusu ve
-// K20 "Varsayım doğrulandı" eylemi. Açık soru varsa önce o söylenir ve doğrulama düğmesi sunulmaz;
+// UX-2 (D5): hazır olmayan taslak case'te kartın üstünde "Neden kabul edilemiyor / ne yapmalı" kutusu ve
+// K20 "Varsayım doğrulandı" eylemi (Testçi, `case.decide`; 012: case kabul edilir, Analist son onayı ayrıca gerekir). Açık soru varsa önce o söylenir ve doğrulama düğmesi sunulmaz;
 // D6'nın "PO'ya gönder" eylemi `poyaGonder` yuvasına bağlanır.
 import { useId, useState, type ReactNode } from "react";
 import { api } from "../api/client";
@@ -19,7 +19,7 @@ export function HazirlikYonlendirme({
   varsayimDogrulandi,
 }: {
   tc: TestCase;
-  /** Başarılı doğrulamadan dönen (onaylı) case. */
+  /** Başarılı doğrulamadan dönen (kabul edilmiş, onaya hazır) case. */
   guncellendi: (t: TestCase) => void;
   /** 409 (içerik siz görüntüledikten sonra değişti): case listesini yeniden yükler. */
   yenile?: () => void;
@@ -63,7 +63,7 @@ export function HazirlikYonlendirme({
     );
     if (yeni) {
       setOnayAcik(false);
-      bildir(`Case #${tc.sira_no} onaylandı: ${varsayimlar.join(", ")} ${cok ? "varsayımları" : "varsayımı"} doğrulandı.`);
+      bildir(`Case #${tc.sira_no} kabul edildi (Analist son onayına gitti): ${varsayimlar.join(", ")} ${cok ? "varsayımları" : "varsayımı"} doğrulandı.`);
       if (varsayimDogrulandi) varsayimDogrulandi(tc, yeni, varsayimlar);
       else guncellendi(yeni);
       // Aynı varsayıma dayanan diğer case'ler ve açık sorular paneli sunucudaki doğrulama bilgisini alır.
@@ -73,7 +73,7 @@ export function HazirlikYonlendirme({
 
   return (
     <div className="uyari-kutusu uyari-uyari hazirlik-yonlendirme" role="note" aria-labelledby={`${id}-baslik`} data-testid="hazirlik-yonlendirme" data-tur={y.tur}>
-      <strong id={`${id}-baslik`}>Neden onaylanamıyor, ne yapmalı?</strong>
+      <strong id={`${id}-baslik`}>Neden kabul edilemiyor, ne yapmalı?</strong>
       <div>
         <p className="hazirlik-yonlendirme-metin" data-testid="hazirlik-yonlendirme-metin">
           {y.metin}
@@ -81,15 +81,15 @@ export function HazirlikYonlendirme({
         {y.tur === "soru" && poyaGonder}
         {y.duzeltBirincil && duzelt && (
           <div className="eylemler">
-            <IslemDugmesi roller={["analyst"]} kucuk onClick={duzelt} data-testid="yonlendirme-duzelt">
-              Düzelt
+            <IslemDugmesi izin="case.decide" kucuk onClick={duzelt} data-testid="yonlendirme-duzelt">
+              Düzelterek kabul
             </IslemDugmesi>
           </div>
         )}
         {/* D6: "Açık soruları PO'ya gönder" (PoyaGonderEylemi, CaseListesi bağlar). */}
         {y.dogrulanacak.length > 0 && !onayAcik && (
           <div className="eylemler">
-            <IslemDugmesi roller={["analyst"]} kucuk tur="ikincil" calisiyor={islem.calisiyor} onClick={() => setOnayAcik(true)}>
+            <IslemDugmesi izin="case.decide" kucuk tur="ikincil" calisiyor={islem.calisiyor} onClick={() => setOnayAcik(true)}>
               {dugmeMetni}
             </IslemDugmesi>
           </div>
@@ -97,7 +97,7 @@ export function HazirlikYonlendirme({
         {onayAcik && (
           <SayfaIciOnay
             baslik={`${y.dogrulanacak.join(", ")} doğrulandı mı?`}
-            onayMetni="Evet, doğrulandı — onayla"
+            onayMetni="Evet, doğrulandı — kabul et"
             calisiyor={islem.calisiyor}
             onayla={() => void dogrula()}
             vazgec={() => setOnayAcik(false)}
@@ -115,8 +115,8 @@ export function HazirlikYonlendirme({
               })}
             </ul>
             <p className="kucuk">
-              Case ekranda gördüğünüz içerikle "Hazır" yapılıp onaylanır; beklenen sonuç değişmez. Varsayım yanlışsa vazgeçip "Düzelt" ile
-              beklenen sonucu güncelleyin.
+              Case ekranda gördüğünüz içerikle "Hazır" yapılıp kabul edilir ve Analist son onayına gider; beklenen sonuç değişmez. Varsayım
+              yanlışsa vazgeçip "Düzelterek kabul" ile beklenen sonucu güncelleyin.
             </p>
             <div className="alan">
               <label htmlFor={`${id}-gerekce`}>Doğrulama notu (isteğe bağlı)</label>

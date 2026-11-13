@@ -101,12 +101,35 @@ def _fold(s: str) -> str:
     return unicodedata.normalize("NFC", s).casefold().replace("i̇", "i")
 
 
-def key_terms(metinler: Iterable[str | None], limit: int = MAX_TERIM) -> list[str]:
+# Sırrın bir sözcüğünün bu uzunluktaki (ve üstü) parçası olan terim sırrı taşır sayılır.
+MIN_SIR_PARCASI = 6
+
+
+def _sirri_tasir(terim: str, sir_sozcukleri: Sequence[str]) -> bool:
+    return any(s in terim or (len(terim) >= MIN_SIR_PARCASI and terim in s) for s in sir_sozcukleri)
+
+
+def key_terms(
+    metinler: Iterable[str | None], limit: int = MAX_TERIM, gizliler: Iterable[str] = ()
+) -> list[str]:
     """Metinlerden mükerrer araması terimleri: sıra korunur, tekrarsız, güvenli.
 
     Yalnızca harf/rakam dizileri; sayılar, ayrılmış sözcükler, yaygın sözcükler ve çok kısa/uzun
-    terimler atılır.
+    terimler atılır. 013 K19 (güvenlik #1): sırrı taşıyan terim de atılır; parola Jira aramasına,
+    `ek.jql`'e ve denetime girmez (`_sirri_tasir`).
+
+    Mimar tur 3 #7 (replay değişmezi): yalnız sırrın bir sözcüğünü (≥ `MIN_TERIM_UZUNLUGU`)
+    içeren ya da sırrın en az `MIN_SIR_PARCASI` karakterlik parçası olan terim atılır. Sırrın
+    kısa parçası olan yaygın sözcükler ("dem", "demo") atılmaz: metinde sır geçmiyorsa terimler,
+    JQL ve sıralama modelinin girdisi gizli değer listesinden bağımsızdır.
     """
+    sir_sozcukleri = [
+        k
+        for g in gizliler
+        if isinstance(g, str) and g
+        for k in _KELIME.findall(_fold(g))
+        if len(k) >= MIN_TERIM_UZUNLUGU
+    ]
     out: list[str] = []
     gorulen: set[str] = set()
     for metin in metinler:
@@ -123,6 +146,7 @@ def key_terms(metinler: Iterable[str | None], limit: int = MAX_TERIM) -> list[st
                 or k.startswith(DURAK_ONEK)
                 or _AC_NO.fullmatch(k)
                 or k in gorulen
+                or _sirri_tasir(k, sir_sozcukleri)
             ):
                 continue
             gorulen.add(k)

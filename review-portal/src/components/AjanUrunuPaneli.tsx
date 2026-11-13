@@ -9,7 +9,7 @@ import type { AjanTestiGorunumu, AjanTestiTalebi } from "../api/types";
 import { useVeri, type VeriDurumu } from "../hooks";
 import { AJAN_TESTI_BITMEDI, AJAN_TESTI_DURUMU, SIMULASYON_ACIKLAMASI } from "../lib/ajanProbe";
 import { tarih } from "../lib/format";
-import { useOturum } from "../auth";
+import { useIzin } from "../auth";
 import { useBildirim } from "./Bildirim";
 import { Cip, DisBaglanti, HataKutusu, IslemDugmesi, Kart, Uyari } from "./ui";
 
@@ -30,10 +30,10 @@ export function useAjanTesti(id: string): VeriDurumu<AjanTestiGorunumu | null> {
       }),
     [id],
   );
-  const { kullanici } = useOturum();
-  const analist = kullanici?.rol === "analyst";
-  // D4: GET yalnız okur; `yenilenebilir` true iken analist refresh POST'u ile sonucu işletir.
-  // Alan yoksa (eski core) talep bitmeyene kadar yoklanır. Analist olmayan rol yalnız GET ile okur.
+  // 012: ajan testini başlatan/işleten Testçi (`agent_test.run`).
+  const isletir = useIzin("agent_test.run");
+  // D4: GET yalnız okur; `yenilenebilir` true iken `agent_test.run` sahibi refresh POST'u ile sonucu
+  // işletir. Alan yoksa (eski core) talep bitmeyene kadar yoklanır. Diğer roller yalnız GET ile okur.
   const veri = v.veri;
   const aktif = !!veri && (typeof veri.yenilenebilir === "boolean" ? veri.yenilenebilir : !!veri.talep && AJAN_TESTI_BITMEDI.has(veri.talep.durum));
   const { setVeri } = v;
@@ -41,7 +41,7 @@ export function useAjanTesti(id: string): VeriDurumu<AjanTestiGorunumu | null> {
     if (!aktif) return;
     let iptal = false;
     const t = window.setTimeout(() => {
-      (analist ? api.ajanTestiYenile(id) : api.ajanTesti(id))
+      (isletir ? api.ajanTestiYenile(id) : api.ajanTesti(id))
         .then((g) => {
           if (!iptal) setVeri(g);
         })
@@ -51,7 +51,7 @@ export function useAjanTesti(id: string): VeriDurumu<AjanTestiGorunumu | null> {
       iptal = true;
       window.clearTimeout(t);
     };
-  }, [aktif, analist, id, setVeri, v.veri]);
+  }, [aktif, isletir, id, setVeri, v.veri]);
   return v;
 }
 
@@ -208,7 +208,7 @@ export function AjanUrunuPaneli({
                 ))}
               </select>
               <IslemDugmesi
-                roller={["analyst"]}
+                izin="requirement.review"
                 tur="ikincil"
                 disabled={!secim || caseVar}
                 title={caseVar ? "Bu gereksinim için case'ler üretilmiş; ajan ürününe bağlanamaz." : !secim ? "Önce bir ürün seçin" : undefined}
@@ -232,7 +232,7 @@ export function AjanUrunuPaneli({
           {g.simulasyon && <SimulasyonRozeti />}
           {bagli && (
             <IslemDugmesi
-              roller={["analyst"]}
+              izin="agent_test.run"
               disabled={!g.baslatilabilir}
               title={g.baslatilabilir ? "Test Agent Probe'da koşar; sonuç geldiğinde Testing Probe süreci sürdürür." : g.engel ?? undefined}
               calisiyor={calisiyor}
@@ -257,7 +257,7 @@ export function AjanUrunuPaneli({
               </span>
             )}
             <IslemDugmesi
-              roller={["analyst"]}
+              izin="requirement.review"
               tur="ikincil"
               kucuk
               disabled={aktif || calisiyor}

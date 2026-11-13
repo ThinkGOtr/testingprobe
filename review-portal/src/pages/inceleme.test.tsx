@@ -3,7 +3,7 @@
 // rolü, örnek gereksinim ve dar ekran tabloları.
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -330,7 +330,8 @@ describe("case ölçümleri", () => {
     );
     uygulama("/gereksinimler/req-tpd-1/caseler");
     const ozet = await screen.findByRole("region", { name: "Özet" });
-    expect(await within(ozet).findByTestId("case-baz")).toHaveTextContent("45 dk 00 sn");
+    // Ölçüm verisi özet kartından sonra gelebilir (yük altında): metin gelene dek beklenir.
+    await waitFor(() => expect(within(ozet).getByTestId("case-baz")).toHaveTextContent("45 dk 00 sn"));
     expect(within(ozet).getByTestId("case-baz")).toHaveTextContent("Varsayılan");
     expect(within(ozet).getByTestId("case-baz-aciklama")).toHaveTextContent("varsayılan değer (yönetici ayarı)");
     expect(within(ozet).getByTestId("case-baz-aciklama")).toHaveTextContent("kazanca girmez");
@@ -393,27 +394,33 @@ describe("case ölçümleri", () => {
 });
 
 describe("yayın rolü", () => {
-  it("PO case review'da 'Yayın önizleme'yi pasif görür (gerekçesiyle)", async () => {
-    await oturumAc("po");
+  it("Analist case review'dan yayın önizlemesine gider (publish.preview, salt okunur)", async () => {
+    await oturumAc("analist");
     uygulama("/gereksinimler/req-tpd-1/caseler");
-    const d = await screen.findByRole("button", { name: "Yayın önizleme" });
-    expect(d).toBeDisabled();
-    expect(d).toHaveAttribute("title", "Yayın analist rolü gerektirir");
-    expect(screen.queryByRole("link", { name: "Yayın önizleme" })).toBeNull();
+    expect(await screen.findByRole("link", { name: "Yayın önizleme" })).toBeInTheDocument();
   });
 
-  it("PO yayın ekranına gelirse önizleme istenmez; bilgi notu, 'Tekrar dene' yok", async () => {
+  it("PO yayın önizlemesini salt okunur görür: yayınla düğmesi pasif ve nedeni Testçi", async () => {
     await oturumAc("po");
+    uygulama("/gereksinimler/req-tpd-1/yayin");
+    expect(await screen.findByText("Salt okunur önizleme")).toBeInTheDocument();
+    const d = await screen.findByRole("button", { name: /Seçilenleri yayınla/ });
+    expect(d).toBeDisabled();
+    expect(d).toHaveAccessibleDescription("Bu işlem için gereken rol: Testçi");
+  });
+
+  it("Developer yayın ekranına gelirse önizleme istenmez; bilgi notu, 'Tekrar dene' yok", async () => {
+    await oturumAc("gelistirici");
     const casus = vi.spyOn(api, "yayinOnizleme");
     uygulama("/gereksinimler/req-tpd-1/yayin");
-    expect(await screen.findByText("Yayın analist rolü gerektirir")).toBeInTheDocument();
+    expect(await screen.findByText("Yayın önizleme bu rolde görünmez")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Tekrar dene" })).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
     expect(casus).not.toHaveBeenCalled();
   });
 
   it("sunucu 403 dönerse bilgi notu gösterilir, yeniden deneme önerilmez", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     vi.spyOn(api, "yayinOnizleme").mockRejectedValue(new ApiError(403, "Bu işlem için yetkiniz yok."));
     uygulama("/gereksinimler/req-tpd-1/yayin");
     expect(await screen.findByText("Bu işlem için yetkiniz yok.")).toBeInTheDocument();

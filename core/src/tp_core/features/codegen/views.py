@@ -13,7 +13,7 @@ import json
 import os
 import re
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -21,7 +21,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, object_session
 
 from tp_core.config import get_settings
+from tp_core.features.codegen import platform as platformlar
 from tp_core.features.codegen.browser import AgentConfig, sayfa_adresi
+from tp_core.features.codegen.classify import GORUNEN_ADIMLAR
 from tp_core.features.codegen.ozet import ham_cikti, insan_ozeti
 from tp_core.features.codegen.service import (
     AJAN_BAYILERI,
@@ -30,24 +32,26 @@ from tp_core.features.codegen.service import (
     merge_kabul_gerekceleri,
     screenshot_url,
 )
+from tp_core.features.testveri import service as testveri
 from tp_core.integrations.forge import (
-    APP_PLATFORMS,
     GITHUB_REQUIRED_CHECKS,
     LOCAL_REQUIRED_CHECKS,
     REQUIRED_CHECKS_ENV,
     ForgeValidationError,
     etkin_platformlar,
+    etkin_web_dilleri,
     github_required_checks,
     local_required_checks,
     parse_required_checks,
+    validate_required_checks,
 )
 from tp_core.models import PullRequest, Script, ScriptTestCase, StepMapping
 from tp_core.models.codegen_feature import ScriptAdim, ScriptCodegen, ScriptKontrol
 from tp_core.ports import CheckRun
 from tp_core.workflow.service import content_hash_of
 
-_SHA_RE = re.compile(r"^[0-9a-f]{40}([0-9a-f]{24})?$")
-_EKRAN_RE = re.compile(r"^codegen/[0-9a-f-]{36}/step-\d{1,4}\.png$")
+_SHA_RE = re.compile(r"[0-9a-f]{40}([0-9a-f]{24})?")
+_EKRAN_RE = re.compile(r"codegen/[0-9a-f-]{36}/step-\d{1,4}\.png")
 
 
 def required_checks() -> tuple[str, ...]:
@@ -61,15 +65,18 @@ def required_checks() -> tuple[str, ...]:
         # LocalForge: platform kontrolleri PR'a göre eklenir (`yerel_zorunlu_checkler`).
         return liste
     try:
-        # GitHub: etkin platformların iş akışı check'leri (`TP_PLATFORMS`; GitHubForge ile aynı).
-        return github_required_checks(liste, etkin_platformlar(os.environ))
+        # GitHub: etkin platformların ve web dillerinin iş akışı check'leri (`TP_PLATFORMS`,
+        # `TP_WEB_DILLERI`; GitHubForge ile aynı). Geçersiz değer `pr_checks`'te engel olur.
+        return github_required_checks(
+            liste, etkin_platformlar(os.environ), etkin_web_dilleri(os.environ)
+        )
     except ForgeValidationError:
         return liste
 
 
 def read_checks(sha: str | None) -> list[dict[str, Any]]:
     """`checks/<sha>.json` (LocalForge biçimi); yoksa/okunamazsa []."""
-    if not sha or not _SHA_RE.match(sha):
+    if not sha or not _SHA_RE.fullmatch(sha):
         return []
     yol = Path(get_settings().checks_dir) / f"{sha}.json"
     try:
@@ -91,6 +98,24 @@ def github_checks(sha: str | None, kayit: PullRequest | None) -> list[dict[str, 
     if not sha or kayit is None or kayit.checks is None or kayit.checks_sha != sha:
         return None
     return _gecerli_checkler(kayit.checks)
+
+
+def github_kapi_zorunlu(
+    yapilandirilmis: Sequence[str], kayit: PullRequest | None
+) -> tuple[str, ...]:
+    """GitHub merge kapısının zorunlu listesi (MİM-D3: kapıyla AYNI sonuç). core-worker PR
+    senkronu `GitHubForge.zorunlu_checkler(head, base)` sonucunu (K-T13: hedef dal ∪ head
+    `web-java.yml`, okunamazsa kapalı taraf) `pull_request.zorunlu_checkler`'e yazar; liste
+    `checks_sha` head'ine aittir (`github_checks` ile birlikte okunur). Yapılandırmayla birleşir
+    (`github_required_checks`, MİM-D4). Kayıt yoksa (eski kopya) kapalı taraf: `web-java`
+    zorunlu."""
+    sakli = kayit.zorunlu_checkler if kayit is not None else None
+    if isinstance(sakli, list) and all(isinstance(a, str) for a in sakli):
+        try:
+            return validate_required_checks([*yapilandirilmis, *sakli])
+        except ForgeValidationError:
+            pass  # bozuk kopya → kapalı taraf
+    return github_required_checks(yapilandirilmis, (), web_java_is_akisi=True)
 
 
 def script_pr_kaydi(sc: Script) -> PullRequest | None:
@@ -128,18 +153,27 @@ def _check_run(c: dict[str, Any]) -> CheckRun | None:
 
 
 def yerel_zorunlu_checkler(
-    ham: Sequence[dict[str, Any]], degisen: Sequence[str], platform: str | None = None
+    ham: Sequence[dict[str, Any]],
+    degisen: Sequence[str],
+    platform: str | None = None,
+    dil: str | None = None,
+    repodaki_web_dilleri: Sequence[str] = (platformlar.TS,),
 ) -> tuple[tuple[str, ...], str | None]:
     """LocalForge merge kapısıyla AYNI kural (`forge.local_required_checks`): portal ve
-    `merge_pr` aynı zorunlu listeyi görür. Uygulama script'inin kendi platform kontrolü
-    (`local-ci-<platform>`) henüz kaydedilmemişse de zorunlu listeye girer ("yok"): yalnız
-    e2e-app/ değiştiren PR'da web `local-ci` yerine onu bekleriz (kapı da aynısını ister)."""
+    `merge_pr` aynı zorunlu listeyi görür. Script'in kendi check'i (`platform.check_adi`:
+    uygulama `local-ci-<platform>`, web + Java `local-ci-web-java`; K-T1) henüz kaydedilmemişse
+    de zorunlu listeye girer ("yok"): kapı da aynısını bekler. Test kökleri dışında değişiklik
+    varsa `repodaki_web_dilleri`'nin her birinin check'i zorunludur (K-T11; script PR'ı yalnız
+    üretilen test dosyasını değiştirdiğinden portalda bu dal pratikte tetiklenmez)."""
     kosular = [k for k in (_check_run(c) for c in ham) if k is not None]
-    beklenen = f"{LOCAL_REQUIRED_CHECKS[0]}-{platform}" if platform in APP_PLATFORMS else None
+    kendi = platformlar.check_adi(platform, platformlar.dil(platform, dil))
+    beklenen = kendi if kendi != LOCAL_REQUIRED_CHECKS[0] else None
     if beklenen and beklenen not in {k.name for k in kosular}:
         kosular.append(CheckRun(name=beklenen, status="queued"))
     try:
-        return local_required_checks(required_checks(), kosular, list(degisen))
+        return local_required_checks(
+            required_checks(), kosular, list(degisen), repodaki_web_dilleri
+        )
     except ForgeValidationError:
         return required_checks(), None
 
@@ -150,6 +184,7 @@ def pr_checks(
     *,
     degisen: Sequence[str] = (),
     platform: str | None = None,
+    dil: str | None = None,
 ) -> tuple[list[dict[str, Any]], str | None, list[str]]:
     """(portal check listesi, ci özeti, zorunlu check engelleri).
 
@@ -162,11 +197,14 @@ def pr_checks(
     if get_settings().forge == "github":
         try:
             etkin_platformlar(os.environ)
+            etkin_web_dilleri(os.environ)
         except ForgeValidationError as exc:
             # GitHubForge.from_env aynı hatayla kurulamaz (merge kapalı): portal "merge
             # edilebilir" göstermesin.
             ek_engel = f"Yapılandırma hatası: {exc}"
         ham = github_checks(sha, kayit)
+        if ham is not None:
+            zorunlu = github_kapi_zorunlu(zorunlu, kayit)
         if ham is None:
             if not sha:
                 return (
@@ -197,7 +235,7 @@ def pr_checks(
             )
     else:
         ham = read_checks(sha)
-        zorunlu, ek_engel = yerel_zorunlu_checkler(ham, degisen, platform)
+        zorunlu, ek_engel = yerel_zorunlu_checkler(ham, degisen, platform, dil)
     son: dict[str, dict[str, Any]] = {}
     for c in ham:
         son[c["name"]] = c
@@ -237,7 +275,7 @@ def _pr(session: Session, sc: Script, cg: ScriptCodegen) -> dict[str, Any] | Non
         return None
     kayit = session.get(PullRequest, sc.pr_no)
     checks, ci, _ = pr_checks(
-        sc.head_sha, kayit, degisen=pr_degisen_yollari(sc), platform=sc.platform
+        sc.head_sha, kayit, degisen=pr_degisen_yollari(sc), platform=sc.platform, dil=sc.dil
     )
     return {
         "number": sc.pr_no,
@@ -283,7 +321,14 @@ def _break_verify(sc: Script, cg: ScriptCodegen) -> dict[str, Any]:
     return {"durum": cg.break_durum, "asamalar": asamalar, "neden": kd.get("neden")}
 
 
-def serialize(session: Session, sc: Script, cg: ScriptCodegen) -> dict[str, Any]:
+def serialize(
+    session: Session,
+    sc: Script,
+    cg: ScriptCodegen,
+    guncel_ozetler: Mapping[str, tuple[str | None, str]] | None = None,
+) -> dict[str, Any]:
+    """`guncel_ozetler`: liste için tüm script'lerin test verisi özetleri tek sorguda (N+1 yok)."""
+    veri_degisen = testveri.degisen_anahtarlar(session, cg.veri_izi, guncel_ozetler)
     case_ids = [
         str(r)
         for r in session.scalars(
@@ -302,6 +347,10 @@ def serialize(session: Session, sc: Script, cg: ScriptCodegen) -> dict[str, Any]
         "dosya_yolu": sc.dosya_yolu,
         # 009 §2.1: web | android | ios | windows (portal rozeti / Kontrol Kulesi süzgeci).
         "platform": sc.platform,
+        # 011 §2.3: üretim dili, nereden geldiği ve doğrulanmamış (csharp | python) bayrağı.
+        "dil": sc.dil,
+        "dil_kaynagi": sc.dil_kaynagi,
+        "dogrulanmamis": dogrulanmamis(sc),
         "branch": sc.branch or "",
         "durum": sc.durum,
         # Faz 4: defect adayı script'in triage sonucu (portal "Triage sonucuna git").
@@ -312,29 +361,70 @@ def serialize(session: Session, sc: Script, cg: ScriptCodegen) -> dict[str, Any]
         "break_verify": _break_verify(sc, cg),
         "yerel_sinif": None if yk.get("atlandi") else yk.get("sinif"),
         "mode": cg.uretim_modu,
+        # 013 §3.2: elle (kod üretimi ekranı) | otomatik (case onayı sonrası).
+        "tetik": cg.tetik,
         "engel": ({"tur": cg.engel_turu, "neden": cg.engel_nedeni} if cg.engel_turu else None),
         "olusturma": sc.olusturma.isoformat(),
         "hata": cg.engel_nedeni,
+        # 013 §3.3 (K10) / §10: üretimde kullanılan test verisi değer özetleri (tuzlu HMAC,
+        # {anahtar: "h1:…"}; eski düz özetler null); değişen / silinen anahtarlar `veri_degisen`.
+        "veri_izi": testveri.api_veri_izi(cg.veri_izi),
+        "veri_degisen": veri_degisen,
+        "veri_degisti": bool(veri_degisen),
     }
 
 
-def list_scripts(session: Session) -> list[dict[str, Any]]:
+def dogrulanmamis(sc: Script) -> bool:
+    """Script doğrulanmamış çıktı mı? Tek tanım (MİM-L3; 011 §2.3): `durum == "unverified"`."""
+    return sc.durum == "unverified"
+
+
+SCRIPT_LISTE_SINIRI = 200
+# `GET /scripts` yanıt başlığı (MİM-D5): liste sınırı aştıysa "1", aşmadıysa "0". Yanıt gövdesi
+# düz dizi kalır (geriye uyumlu); başlık yoksa (eski core) portal ≥ sınır kuralına düşer.
+DAHA_FAZLA_BASLIGI = "X-Daha-Fazla"
+
+
+def list_scripts_sinirli(
+    session: Session, limit: int = SCRIPT_LISTE_SINIRI
+) -> tuple[list[dict[str, Any]], bool]:
+    """En yeni `limit` script + sınırın ötesinde kayıt var mı (`limit+1` okunur)."""
     rows = session.execute(
         select(Script, ScriptCodegen)
         .join(ScriptCodegen, ScriptCodegen.script_id == Script.id)
         .order_by(Script.olusturma.desc())
-        .limit(200)
+        .limit(limit + 1)
     ).all()
-    return [serialize(session, sc, cg) for sc, cg in rows]
+    sayfa = rows[:limit]
+    ozetler = testveri.guncel_ozetler(session, (a for _, cg in sayfa for a in (cg.veri_izi or {})))
+    gizli = testveri.gizli_degerler(session)
+    return [
+        testveri.maskele(session, serialize(session, sc, cg, ozetler), gizli) for sc, cg in sayfa
+    ], len(rows) > limit
 
 
-def _yerel_kontrol(cg: ScriptCodegen) -> dict[str, Any] | None:
+def list_scripts(session: Session) -> list[dict[str, Any]]:
+    return list_scripts_sinirli(session)[0]
+
+
+# 011 §2.3: yerel kontrolün dile göre statik adımları (tek kaynak `classify.GORUNEN_ADIMLAR`).
+KONTROL_ADIMLARI = GORUNEN_ADIMLAR
+
+
+def _adim_durumu(v: Any) -> str:
+    return "passed" if v is True else ("failed" if v is False else "skipped")
+
+
+def _yerel_kontrol(cg: ScriptCodegen, dil: str | None = None) -> dict[str, Any] | None:
     yk = cg.yerel_kontrol
     if not yk:
         return None
     adim = yk.get("adimlar") or {}
     run_status = yk.get("run_status")
+    adlar = KONTROL_ADIMLARI.get(dil or "ts", KONTROL_ADIMLARI["ts"])
     return {
+        # Dile göre adım listesi (Java web'de deps/guard/compile görünür); eski alanlar korunur.
+        "adimlar": [{"ad": ad, "durum": _adim_durumu(adim.get(ad))} for ad in adlar],
         "tsc": adim.get("tsc"),
         "eslint": adim.get("eslint"),
         "ast_guard": adim.get("ast_guard"),
@@ -377,7 +467,11 @@ def merge_engelleri(sc: Script, cg: ScriptCodegen) -> list[str]:
     if dal:
         engeller.append(dal)
     _, _, check_engelleri = pr_checks(
-        sc.head_sha, script_pr_kaydi(sc), degisen=pr_degisen_yollari(sc), platform=sc.platform
+        sc.head_sha,
+        script_pr_kaydi(sc),
+        degisen=pr_degisen_yollari(sc),
+        platform=sc.platform,
+        dil=sc.dil,
     )
     engeller += check_engelleri
     return engeller
@@ -473,7 +567,11 @@ def detail(session: Session, sc: Script, cg: ScriptCodegen) -> dict[str, Any]:
         select(ScriptKontrol).where(ScriptKontrol.script_id == sc.id).order_by(ScriptKontrol.zaman)
     ).all()
     out.update(
-        kod=sc.icerik,
+        # Doğrulanmamış dilde kod forge'a gitmez: gösterilen kaynak `script_codegen.kaynak_kod`
+        # (üretim sürerken / engellendiğinde henüz yok; o zaman `icerik` de boştur).
+        kod=sc.icerik
+        if platformlar.tam_hat_mi(platformlar.dil(sc.platform, sc.dil))
+        else cg.kaynak_kod,
         adimlar=[_adim(sc.id, a, gizli) for a in adimlar],
         eslemeler=[
             {
@@ -490,7 +588,7 @@ def detail(session: Session, sc: Script, cg: ScriptCodegen) -> dict[str, Any]:
             }
             for m in eslemeler
         ],
-        yerel_kontrol=_yerel_kontrol(cg),
+        yerel_kontrol=_yerel_kontrol(cg, platformlar.dil(sc.platform, sc.dil)),
         merge_engelleri=merge_engelleri(sc, cg),
         # Kapı değil: merge isteğinde `onay_notu` (açık insan kabulü) zorunlu kılan uyarılar.
         merge_kabul_gerekli=merge_kabul_gerekceleri(sc, cg),
@@ -520,7 +618,9 @@ def detail(session: Session, sc: Script, cg: ScriptCodegen) -> dict[str, Any]:
         denetim_hash=cg.denetim_hash,
         bundle_hash=cg.bundle_hash,
     )
-    return out
+    # 013 K19: adım argümanları / ham çıktı, eşleme argümanları, engel/kontrol metinleri
+    # kullanıcıya bilinen gizli test verisi değerini düz göstermez (eski kayıtlar dahil).
+    return testveri.maskele(session, out)
 
 
 def get_pair(session: Session, sid: uuid.UUID) -> tuple[Script, ScriptCodegen] | None:
@@ -539,7 +639,7 @@ def screenshot_path(session: Session, sid: uuid.UUID, sira: int) -> Path | None:
     if adim is None or not adim.ekran_goruntusu:
         return None
     rel = adim.ekran_goruntusu
-    if not _EKRAN_RE.match(rel) or rel.split("/")[1] != str(sid):
+    if not _EKRAN_RE.fullmatch(rel) or rel.split("/")[1] != str(sid):
         return None
     kok = Path(get_settings().screenshot_root).resolve()
     try:

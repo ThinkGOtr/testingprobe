@@ -232,7 +232,7 @@ export function TasarimModeliPaneli({
           {m && taslak && kip === "goster" && (
             <>
               <IslemDugmesi
-                roller={["analyst"]}
+                izin="design_model.decide"
                 disabled={!!onayEngeli || !m.guncel}
                 title={onayEngeli ?? (!m.guncel ? "Model eski içeriğe ait" : "Model onaylanır; ardından case'ler yalnız bu modelden otomatik üretilir")}
                 calisiyor={islem.calisiyor}
@@ -241,7 +241,7 @@ export function TasarimModeliPaneli({
                 Modeli onayla
               </IslemDugmesi>
               <IslemDugmesi
-                roller={["analyst"]}
+                izin="design_model.decide"
                 tur="ikincil"
                 disabled={!m.guncel || yerTutucu}
                 title={yerTutucu ? YER_TUTUCU_NEDENI : !m.guncel ? "Model eski içeriğe ait" : "Alanları düzeltip kaydettiğinizde model onaylanır"}
@@ -249,7 +249,7 @@ export function TasarimModeliPaneli({
               >
                 Düzelt
               </IslemDugmesi>
-              <IslemDugmesi roller={["analyst"]} tur="ikincil" disabled={!m.guncel} onClick={() => setKip("reddet")}>
+              <IslemDugmesi izin="design_model.decide" tur="ikincil" disabled={!m.guncel} onClick={() => setKip("reddet")}>
                 Reddet
               </IslemDugmesi>
             </>
@@ -257,7 +257,7 @@ export function TasarimModeliPaneli({
           {caseUretilebilir && (
             <IslemDugmesi
               id="model-case-uret"
-              roller={["analyst"]}
+              izin="case.generate"
               calisiyor={islem.calisiyor}
               title="Onaylı tasarım modelinden case üretilir (tur 2)"
               onClick={() => void eylem(() => api.caseUret(g.id, "iki_tur"), "Onaylı modelden case üretimi başlatıldı.")}
@@ -268,7 +268,7 @@ export function TasarimModeliPaneli({
           {yenidenUretilebilir && !(m && taslak && kip !== "goster") && (
             <IslemDugmesi
               id="model-yeniden-uret"
-              roller={["analyst"]}
+              izin="case.generate"
               tur={m?.durum === "rejected" || yerTutucu ? "birincil" : "ikincil"}
               disabled={yenidenOnay}
               nedenGizli
@@ -320,7 +320,7 @@ export function TasarimModeliPaneli({
   );
 }
 
-/** Paneldeki "Sıradaki adım" satırı (UX-8): analistin şimdi ne yapacağı; adım yoksa null. */
+/** Paneldeki "Sıradaki adım" satırı (UX-8): Testçinin şimdi ne yapacağı; adım yoksa null. */
 export function siradakiAdim(
   durum: string,
   m: Pick<TasarimModeliKaydi, "durum" | "guncel" | "sorunlar"> | null,

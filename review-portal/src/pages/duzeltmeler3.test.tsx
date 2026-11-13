@@ -58,7 +58,7 @@ function uretimiDusur(po: "approved" | "not_requested") {
 
 describe("case üretimi hata ile bitti: yeniden denenir, denetim yeniden başlatılmaz", () => {
   it("'Case üretimini yeniden dene' etkin; tıklanınca generate-cases çağrılır ve gereksinim generating olur", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const g = uretimiDusur("approved");
     const spy = vi.spyOn(api, "caseUret");
     const u = userEvent.setup();
@@ -66,8 +66,8 @@ describe("case üretimi hata ile bitti: yeniden denenir, denetim yeniden başlat
     const dugme = await screen.findByRole("button", { name: "Case üretimini yeniden dene" });
     expect(dugme).toBeEnabled();
     expect(dugme).toHaveAttribute("title", expect.stringMatching(/sunucuda yeniden doğrulanır/));
-    // "Yeniden kontrol et" ikincil ve yeni PO teyidi gerektirdiğini söyler.
-    expect(screen.getByRole("button", { name: "Yeniden kontrol et" })).toHaveAttribute("title", expect.stringMatching(/yeni PO teyidi/));
+    // "Yeniden kontrol et" Analist işidir: Testçide pasif ve gereken rolü söyler.
+    expect(screen.getByRole("button", { name: "Yeniden kontrol et" })).toHaveAttribute("title", "Bu işlem için gereken rol: Analist");
     await u.click(dugme);
     // Üretim formunun kipi açıkça gönderilir (011 K1; varsayılan iki tur → önce tasarım modeli).
     await waitFor(() => expect(spy).toHaveBeenCalledWith("req-tpd-1", "iki_tur"));
@@ -76,7 +76,7 @@ describe("case üretimi hata ile bitti: yeniden denenir, denetim yeniden başlat
   });
 
   it("core failed'da PO onayını göstermese de (not_requested) yeniden deneme açık; PO kartı 'henüz istenmedi' demez", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     uretimiDusur("not_requested");
     uygulama("/gereksinimler/req-tpd-1");
     expect(await screen.findByRole("button", { name: "Case üretimini yeniden dene" })).toBeEnabled();
@@ -88,6 +88,8 @@ describe("case üretimi hata ile bitti: yeniden denenir, denetim yeniden başlat
     await oturumAc("analist");
     uretimiDusur("approved");
     uygulama("/gereksinimler/req-tpd-1");
+    // "Yeniden kontrol et" (Analist) ikincil ve yeni PO teyidi gerektirdiğini söyler.
+    expect(await screen.findByRole("button", { name: "Yeniden kontrol et" })).toHaveAttribute("title", expect.stringMatching(/yeni PO teyidi/));
     const kart = await screen.findByRole("region", { name: /Tutarlılık bulguları/ });
     expect(kart).not.toHaveTextContent(DENETIM_HATALI);
     const simdi = document.querySelector('[aria-current="step"]');
@@ -216,25 +218,25 @@ describe("case düzeltmesi: 'beklenen sonuç anlamca değişti mi?' insan karar�
   const taslak = () => mockVerisi().caseler.find((c) => c.id === "case-1-5")!;
 
   async function duzeltmeyiAc(u: ReturnType<typeof userEvent.setup>) {
-    await waitFor(() => expect(screen.getByRole("button", { name: "Düzelt" })).toBeEnabled());
-    await u.click(screen.getByRole("button", { name: "Düzelt" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Düzelterek kabul" })).toBeEnabled());
+    await u.click(screen.getByRole("button", { name: "Düzelterek kabul" }));
   }
 
   it("beklenen sonuç değişmediyse soru çıkmaz; false gönderilir", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const spy = vi.spyOn(api, "caseKarari");
     const u = userEvent.setup();
     sar(<CaseKarti tc={taslak()} guncellendi={() => {}} />);
     await duzeltmeyiAc(u);
     expect(screen.queryByTestId("beklenen-anlam")).not.toBeInTheDocument();
     await u.type(screen.getByLabelText("Başlık"), " (düzeltildi)");
-    await u.click(screen.getByRole("button", { name: "Düzeltip onayla" }));
+    await u.click(screen.getByRole("button", { name: "Düzelterek kabul et" }));
     await waitFor(() => expect(spy).toHaveBeenCalled());
     expect(spy.mock.calls[0][1]).toMatchObject({ karar: "edit", beklenen_anlam_degisti: false });
   });
 
   it("beklenen sonuç değiştiyse seçim zorunlu; 'Hayır' → false gönderilir ve kart küçük düzeltme ✓ gösterir", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const spy = vi.spyOn(api, "caseKarari");
     let son: TestCase | null = null;
     const u = userEvent.setup();
@@ -243,11 +245,11 @@ describe("case düzeltmesi: 'beklenen sonuç anlamca değişti mi?' insan karar�
     await u.type(screen.getByLabelText("Beklenen sonuç"), ".");
     const soru = screen.getByTestId("beklenen-anlam");
     expect(soru).toHaveTextContent("Beklenen sonuç anlamca değişti mi?");
-    await u.click(screen.getByRole("button", { name: "Düzeltip onayla" }));
+    await u.click(screen.getByRole("button", { name: "Düzelterek kabul et" }));
     expect(screen.getByRole("alert")).toHaveTextContent("Evet ya da Hayır seçin");
     expect(spy).not.toHaveBeenCalled();
     await u.click(within(soru).getByLabelText(/Hayır/));
-    await u.click(screen.getByRole("button", { name: "Düzeltip onayla" }));
+    await u.click(screen.getByRole("button", { name: "Düzelterek kabul et" }));
     await waitFor(() => expect(spy).toHaveBeenCalled());
     expect(spy.mock.calls[0][1]).toMatchObject({ karar: "edit", beklenen_anlam_degisti: false });
     await waitFor(() => expect(son).not.toBeNull());
@@ -264,7 +266,7 @@ describe("case düzeltmesi: 'beklenen sonuç anlamca değişti mi?' insan karar�
   });
 
   it("'Evet' → true gönderilir; kart küçük düzeltme ✗ ve nedenini gösterir", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const spy = vi.spyOn(api, "caseKarari");
     let son: TestCase | null = null;
     const u = userEvent.setup();
@@ -272,7 +274,7 @@ describe("case düzeltmesi: 'beklenen sonuç anlamca değişti mi?' insan karar�
     await duzeltmeyiAc(u);
     await u.type(screen.getByLabelText("Beklenen sonuç"), ".");
     await u.click(within(screen.getByTestId("beklenen-anlam")).getByLabelText(/Evet/));
-    await u.click(screen.getByRole("button", { name: "Düzeltip onayla" }));
+    await u.click(screen.getByRole("button", { name: "Düzelterek kabul et" }));
     await waitFor(() => expect(son).not.toBeNull());
     expect(spy.mock.calls[0][1]).toMatchObject({ beklenen_anlam_degisti: true });
     expect(son!.kucuk_duzeltme).toBe(false);

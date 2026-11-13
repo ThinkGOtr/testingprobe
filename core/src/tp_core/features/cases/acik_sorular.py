@@ -46,7 +46,8 @@ from sqlalchemy import Engine, select, text
 from sqlalchemy.orm import Session
 
 from tp_core.audit import audit_on_commit
-from tp_core.auth.deps import CurrentUser, DbSession, require_role
+from tp_core.auth.deps import DbSession
+from tp_core.auth.yetki import izin, izinlerden_biri
 from tp_core.features.cases.schema import READY, is_legacy, normalize_ozet, readiness_of
 from tp_core.models import Requirement, TestCase
 from tp_core.models.acik_soru import AcikSoru
@@ -839,7 +840,12 @@ def generation_parts(text: str, kaynak: str, kind: str) -> list[str]:
 # --------------------------------------------------------------------------- API
 
 router = APIRouter(tags=["cases"])
-Analyst = Annotated[Principal, Depends(require_role("analyst"))]
+# 012 (dev birleştirmesi): PO'ya Jira yorumu gönderme Analistin (`case.ask_po`; gereksinimle
+# ilgili Jira yazımı Analistte, K7); yanıtları şimdi okuma Analist ya da Testçi; okuma
+# `case.analysis_read`.
+Gonderen = Annotated[Principal, Depends(izin("case.ask_po"))]
+Yenileyen = Annotated[Principal, Depends(izinlerden_biri("case.ask_po", "case.decide"))]
+Analiz = Annotated[Principal, Depends(izin("case.analysis_read"))]
 
 
 class GonderGirdisi(BaseModel):
@@ -851,7 +857,7 @@ class GonderGirdisi(BaseModel):
 
 @router.get("/requirements/{requirement_id}/open-questions")
 def get_open_questions(
-    requirement_id: uuid.UUID, session: DbSession, _user: CurrentUser
+    requirement_id: uuid.UUID, session: DbSession, _user: Analiz
 ) -> dict[str, Any]:
     return view(session, requirement_id)
 
@@ -860,14 +866,14 @@ def get_open_questions(
 def post_send(
     requirement_id: uuid.UUID,
     session: DbSession,
-    user: Analyst,
+    user: Gonderen,
     body: GonderGirdisi | None = None,
 ) -> dict[str, Any]:
     return send(session, requirement_id, user, varsayimlar=bool(body and body.varsayimlar))
 
 
 @router.post("/requirements/{requirement_id}/open-questions/refresh")
-def post_refresh(requirement_id: uuid.UUID, session: DbSession, _user: Analyst) -> dict[str, Any]:
+def post_refresh(requirement_id: uuid.UUID, session: DbSession, _user: Yenileyen) -> dict[str, Any]:
     """PO yanıtlarını şimdi oku (periyodik PO sorgusunu beklemeden)."""
     from tp_core.features.cases.service import get_requirement
     from tp_core.features.requirements import services

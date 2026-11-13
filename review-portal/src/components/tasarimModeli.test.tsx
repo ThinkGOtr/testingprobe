@@ -132,7 +132,7 @@ describe("model içi tutarlılık (önizleme)", () => {
 
 describe("tasarım modeli tabloları", () => {
   it("koşullar, teknikler, bölümler, sınırlar, karar tablosu, model sorunları ve açık sorular tablo olarak; boş bölüm yok", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     sar(<TasarimModeliTablolari m={ORNEK} />);
     expect(within(screen.getByTestId("model-kosullar")).getByText("Kampanyasız minimum tutar 750,00 TL")).toBeInTheDocument();
     expect(within(screen.getByTestId("model-teknikler")).getByText("Sıralı tutar, eşik var")).toBeInTheDocument();
@@ -153,7 +153,7 @@ describe("tasarım modeli tabloları", () => {
 
 describe("alan bazlı düzeltme", () => {
   it("tanım düzeltilir, öğe silinir, soru eklenir; kaydet düzenlenmiş modeli verir", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const kaydet = vi.fn();
     const u = userEvent.setup();
     sar(<TasarimModeliDuzenleyici ilk={ORNEK} kaydet={kaydet} vazgec={() => undefined} />);
@@ -178,7 +178,7 @@ describe("alan bazlı düzeltme", () => {
   });
 
   it("geçersiz yeni öğe kimliği reddedilir; model kontrolü ihlali kaydı engeller", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const u = userEvent.setup();
     sar(<TasarimModeliDuzenleyici ilk={ORNEK} kaydet={() => undefined} vazgec={() => undefined} />);
     await u.type(screen.getByLabelText("Yeni öğe kimliği"), "XX-1");
@@ -196,7 +196,7 @@ describe("alan bazlı düzeltme", () => {
 
 describe("iki tur akışı (gereksinim detayı + mock)", () => {
   it("üretim formunda varsayılan iki tur; üst düğme kipi söyler ve kipi açıkça gönderir, model üretilir", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const g = poOnayli();
     const spy = vi.spyOn(api, "caseUret");
     const u = userEvent.setup();
@@ -220,7 +220,7 @@ describe("iki tur akışı (gereksinim detayı + mock)", () => {
   }, AGIR);
 
   it("tek tur seçilirse gövde tek_tur ve doğrudan case üretimi", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const g = poOnayli();
     const spy = vi.spyOn(api, "caseUret");
     const u = userEvent.setup();
@@ -234,7 +234,7 @@ describe("iki tur akışı (gereksinim detayı + mock)", () => {
   }, AGIR);
 
   it("K20: onay tur 2'yi otomatik başlatır — bildirim ve panel durumu; 'Case'leri üret' görünmez", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const g = poOnayli();
     await api.caseUret("req-tpd-1", "iki_tur");
     await bekleIsler();
@@ -256,7 +256,7 @@ describe("iki tur akışı (gereksinim detayı + mock)", () => {
   }, AGIR);
 
   it("onay yanıtında tur 2 alanı yoksa (eski core) 'Case'leri üret' görünür; tıklanınca onaylı modelden case üretilir", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const g = poOnayli();
     await api.caseUret("req-tpd-1", "iki_tur");
     await bekleIsler();
@@ -284,7 +284,7 @@ describe("iki tur akışı (gereksinim detayı + mock)", () => {
   }, AGIR);
 
   it("REPLAY-MISS yer tutucu model onaylanamaz: Onayla ve Düzelt pasif, neden görünür; sıradaki adım yeniden üretim", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     poOnayli();
     await api.caseUret("req-tpd-1", "iki_tur");
     await bekleIsler();
@@ -304,7 +304,7 @@ describe("iki tur akışı (gereksinim detayı + mock)", () => {
   }, AGIR);
 
   it("'Modeli yeniden üret…' sayfa içi onay ister; Vazgeç istek göndermez, onay modeli yeniden üretir", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const g = poOnayli();
     await api.caseUret("req-tpd-1", "iki_tur");
     await bekleIsler();
@@ -330,7 +330,7 @@ describe("iki tur akışı (gereksinim detayı + mock)", () => {
   }, AGIR);
 
   it("model kontrolü ihlali varsa 'Modeli onayla' pasif ve nedeni yazılı; Düzelt açılır", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     poOnayli();
     await api.caseUret("req-tpd-1", "iki_tur");
     await bekleIsler();
@@ -347,7 +347,7 @@ describe("iki tur akışı (gereksinim detayı + mock)", () => {
   }, AGIR);
 
   it("Reddet: ret nedeniyle kaydedilir; ardından 'Modeli yeniden üret…'", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     poOnayli();
     await api.caseUret("req-tpd-1", "iki_tur");
     await bekleIsler();
@@ -371,7 +371,7 @@ describe("iki tur akışı (gereksinim detayı + mock)", () => {
 
 describe("mock uç sözleşmesi", () => {
   it("edit kararı görülen hash ve düzenlenmiş içerikle; eski hash 409, aynı içerik 422", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const g = poOnayli();
     const y = await api.caseUret("req-tpd-1", "iki_tur");
     expect(y).toMatchObject({ kip: "iki_tur", asama: "model" });
@@ -397,7 +397,7 @@ describe("mock uç sözleşmesi", () => {
   });
 
   it("ret tur 2 başlatmaz (yanıtta tur2 yok)", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const g = poOnayli();
     await api.caseUret("req-tpd-1", "iki_tur");
     await bekleIsler();

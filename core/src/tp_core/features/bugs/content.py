@@ -127,8 +127,20 @@ def _environment(ctx: BugContext) -> str:
     return " · ".join(parcalar)
 
 
+def maskele(obj: Any, ctx: BugContext) -> Any:
+    """013 K19: taslak içeriğinde (kullanıcıya görünen, Jira'ya giden) bilinen gizli test verisi
+    değerleri `•••`. Model girdisi (`ctx.sources()`) çözülmüş kalır."""
+    from tp_core.features.testveri.atif import maskele_obje
+
+    return maskele_obje(obj, ctx.gizli_degerler) if ctx.gizli_degerler else obj
+
+
 def template_draft(ctx: BugContext) -> dict[str, Any]:
     """Deterministik taslak (model yokken / REPLAY-MISS'te / şemaya uymayan çıktıda)."""
+    return maskele(_template_draft(ctx), ctx)
+
+
+def _template_draft(ctx: BugContext) -> dict[str, Any]:
     if ctx.kaynak == "finding" and ctx.mevcut_icerik:
         return normalize_legacy(ctx.mevcut_icerik, ctx)
     if ctx.kaynak == "finding":
@@ -268,8 +280,10 @@ def apply_guards(
     else:
         out["summary"] = out["summary"][:120]
     if validation_errors(out):
-        return dict(sablon), [{"alan": "*", "neden": "model taslağı şemaya uymadı; şablon"}]
-    return out, duzeltmeler
+        return maskele(dict(sablon), ctx), [
+            {"alan": "*", "neden": "model taslağı şemaya uymadı; şablon"}
+        ]
+    return maskele(out, ctx), maskele(duzeltmeler, ctx)
 
 
 # ------------------------------------------------------------ insan düzenlemesi

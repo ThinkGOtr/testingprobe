@@ -26,6 +26,7 @@ from starlette.types import Receive, Scope, Send
 from tp_core import __version__
 from tp_core.audit import record_tool_call
 from tp_core.auth.tokens import verify_bearer
+from tp_core.auth.yetki import izinli
 from tp_core.db import get_engine
 from tp_core.features.cases.schema import case_schema, summary_schema
 from tp_core.features.cases.service import requirement_for_ide, submit_drafts
@@ -41,6 +42,8 @@ PUBLISH = "publish_test_cases"
 READ = "get_requirement"
 TOOL_NAMES = (READ, SUBMIT, PUBLISH)
 KAPSAM = {READ: "submit", SUBMIT: "submit", PUBLISH: "publish"}
+# Token kapsamının gerektirdiği izin (auth/yetki.py; ANALIZ §4.1, K7: yayın token'ı Testçinin).
+KAPSAM_IZNI = {"submit": "case.generate", "publish": "case.publish"}
 OZET_SINIRI = 4000
 
 INSTRUCTIONS = (
@@ -51,9 +54,9 @@ INSTRUCTIONS = (
     "TPD-1) için §7 şemasında (v3: teknik, kapsam öğeleri, öncelik, hazır olma durumu) test case "
     "taslaklarını ve üretim özetini (ozet: açık sorular, varsayımlar, kapsam öğeleri, negatif "
     "kapsam kararları) onaylanan_hash ile portala gönderir; kaynakta yanıtı olmayan beklenen "
-    "sonucu uydurmayın: açık soru yazıp case'i 'blocked' bırakın. Taslaklar portalda analist "
-    "tarafından onaylanmadan hiçbir yere yazılmaz; hazır olmayan case onaylanamaz. "
-    "publish_test_cases: portalda onaylanmış case "
+    "sonucu uydurmayın: açık soru yazıp case'i 'blocked' bırakın. Taslaklar portalda Testçi "
+    "kararı ve Analist son onayı olmadan hiçbir yere yazılmaz; hazır olmayan case kabul "
+    "edilemez. publish_test_cases: portalda onaylanmış case "
     "kimliklerini Jira'ya yayınlar; onaysız veya onaydan sonra değişmiş case yayınlanmaz. Bu "
     "araçlar için otomatik onay kullanmayın."
 )
@@ -171,7 +174,22 @@ def _tool_list() -> list[types.Tool]:
 
 
 class ToolRefused(Exception):
-    """Kimlik/kapsam nedeniyle araç çalıştırılmadı (`tool_call.izin_verildi = false`)."""
+    """Kimlik/kapsam nedeniyle araç çalıştırılmadı (`tool_call.izin_verildi = false`).
+
+    `izin_adi` verilmişse (rol/kapsam reddi) `authz.denied` denetim kaydı da yazılır."""
+
+    def __init__(self, mesaj: str, *, izin_adi: str | None = None, neden: str = "rol") -> None:
+        super().__init__(mesaj)
+        self.izin_adi = izin_adi
+        self.neden = neden
+
+
+def _red_denetimi(caller: Principal, name: str, exc: ToolRefused) -> None:
+    if exc.izin_adi is None:
+        return
+    from tp_core.auth.yetki import denetle_red
+
+    denetle_red(get_engine(), caller, exc.izin_adi, exc.neden, f"mcp:{name}")
 
 
 def _kisalt(deger: Any) -> str:
@@ -229,10 +247,17 @@ def _check_scope(caller: Principal, name: str) -> None:
     gerekli = KAPSAM[name]
     if caller.kapsam != gerekli:
         raise ToolRefused(
-            f"Bu token'ın kapsamı '{caller.kapsam}'; {name} için '{gerekli}' kapsamlı token gerekir"
+            f"Bu token'ın kapsamı '{caller.kapsam}'; {name} için '{gerekli}' kapsamlı token "
+            "gerekir",
+            izin_adi=KAPSAM_IZNI[gerekli],
+            neden="kapsam",
         )
-    if caller.rol != "analyst":
-        raise ToolRefused(f"{caller.rol} rolü {name} aracını kullanamaz")
+    # 012: IDE kanalı Testçinindir (taslak gönderimi `case.generate`, yayın `case.publish`).
+    if not izinli(caller.rol, KAPSAM_IZNI[gerekli]):
+        from tp_core.auth.yetki import ROL_ETIKETLERI, normalize_rol
+
+        etiket = ROL_ETIKETLERI.get(normalize_rol(caller.rol), caller.rol)
+        raise ToolRefused(f"{etiket} rolü {name} aracını kullanamaz", izin_adi=KAPSAM_IZNI[gerekli])
 
 
 def _read(args: Mapping[str, Any]) -> dict[str, Any]:
@@ -334,6 +359,7 @@ async def _run_tool(caller: Principal, name: str, args: Mapping[str, Any]) -> ty
                 }
     except ToolRefused as exc:
         izin, hata, sonuc = False, True, {"hata": str(exc)}
+        await anyio.to_thread.run_sync(_red_denetimi, caller, name, exc)
     except WorkflowError as exc:
         hata, sonuc = True, {"hata": str(exc), "kod": exc.status_code}
     except Exception as exc:

@@ -119,7 +119,7 @@ def test_probe_get_anahtarla_kapi_sorumlu_rota_ve_po_cevabi(veri: dict[str, Any]
     cikti = _sar(baglam)("probe_get", {"tur": "requirement", "id_or_key": "TPD-3"})
     assert cikti.startswith("[kanit:k1]\n<untrusted")
     assert "bekleyen_kapi: PO onayı bekleniyor" in cikti
-    assert "sorumlu_rol: po (Ürün sahibi (PO))" in cikti
+    assert "sorumlu_rol: po (PO)" in cikti
     assert f"ekran_rotasi: /gereksinimler/{veri['req']}" in cikti
     assert "jira_key: TPD-3" in cikti
     # PII'li PO cevabı maskeli gider; alıntı aynı oturumla açılınca doğrulanır.
@@ -131,13 +131,35 @@ def test_probe_get_anahtarla_kapi_sorumlu_rota_ve_po_cevabi(veri: dict[str, Any]
         assert yasak not in cikti
 
 
-def test_sablon_rol_kisiti_testci_analiste_ozel_alani_goremez(veri: dict[str, Any]) -> None:
-    analist = _sar(_baglam("analyst"))("probe_get", {"tur": "requirement", "id_or_key": "TPD-3"})
-    testci = _sar(_baglam("tester"))("probe_get", {"tur": "requirement", "id_or_key": "TPD-3"})
-    assert "yayin_onizleme" in analist
-    assert "yayin_onizleme" not in testci
+def test_sablon_rol_kisiti_developer_onizlemeyi_goremez(veri: dict[str, Any]) -> None:
+    """Yayın önizlemesi `publish.preview` (specs/012-rol-yetki §4.1) izni ister: developer yok."""
+    gelistirici = _sar(_baglam("developer"))(
+        "probe_get", {"tur": "requirement", "id_or_key": "TPD-3"}
+    )
+    for rol in ("tester", "analyst", "po"):
+        cikti = _sar(_baglam(rol))("probe_get", {"tur": "requirement", "id_or_key": "TPD-3"})
+        assert "yayin_onizleme" in cikti, rol
+    assert "yayin_onizleme" not in gelistirici
     # Ortak kısım aynı.
-    assert "bekleyen_kapi: PO onayı bekleniyor" in testci
+    assert "bekleyen_kapi: PO onayı bekleniyor" in gelistirici
+
+
+def test_developer_case_detayi_kisitli(veri: dict[str, Any], session: Session) -> None:
+    """Developer: taslak case bulunamaz; onaylı case karar/ret nedeni olmadan döner."""
+    sar = _sar(_baglam("developer", maske=False))
+    with pytest.raises(AracHatasi, match="bulunamadı"):
+        sar("probe_get", {"tur": "case", "id_or_key": str(veri["case"])})
+    with allow_state_write():
+        tc = session.get(TestCase, veri["case"])
+        tc.durum = "approved"
+        session.commit()
+    cikti = sar("probe_get", {"tur": "case", "id_or_key": str(veri["case"])})
+    assert "icerik.title: Sepete ekleme" in cikti
+    assert "karar:" not in cikti and "ret_nedeni" not in cikti and "duplicate" not in cikti
+    testci = _sar(_baglam("tester", maske=False))(
+        "probe_get", {"tur": "case", "id_or_key": str(veri["case"])}
+    )
+    assert "ret_nedeni: duplicate" in testci
 
 
 def test_probe_get_case_script_run_bug(veri: dict[str, Any]) -> None:
@@ -145,7 +167,7 @@ def test_probe_get_case_script_run_bug(veri: dict[str, Any]) -> None:
     case = sar("probe_get", {"tur": "case", "id_or_key": str(veri["case"])})
     assert "icerik.title: Sepete ekleme" in case
     assert f"ekran_rotasi: /gereksinimler/{veri['req']}/caseler" in case
-    assert "sorumlu_rol: analyst (Analist)" in case
+    assert "sorumlu_rol: tester (Testçi)" in case  # taslak case: Testçi kararı
     kosu = sar("probe_get", {"tur": "run", "id_or_key": str(veri["run"])})
     assert "bekleyen_kapi: Testler koşmadı: CI ortam hatası incelenmeli" in kosu
     assert "son_hata: runner çöktü" in kosu
@@ -191,7 +213,10 @@ def test_probe_jobs_akis_ve_yuk_ile_bulunur_hata_kisadir(veri: dict[str, Any]) -
 
 
 def test_probe_audit_gecis_karar_ozet(veri: dict[str, Any]) -> None:
-    sar = _sar(_baglam("tester"))
+    # `audit.read_own` (Testçi): yalnız kendi olayları — bu kullanıcının olayı yok.
+    kendi = _sar(_baglam("tester"))("probe_audit", {"varlik_id": str(veri["req"])})
+    assert "kayıt yok" in kendi and "requirement.transition" not in kendi
+    sar = _sar(_baglam("admin"))  # `audit.read_all`
     izi = sar("probe_audit", {"varlik_id": str(veri["req"])})
     assert "requirement.transition" in izi and "to=pending_po" in izi
     assert SAHTE_TOKEN not in izi and "token=" not in izi
@@ -213,7 +238,7 @@ def test_probe_audit_gecis_karar_ozet(veri: dict[str, Any]) -> None:
         ("analyst", "Tutarlılık bulguları analist kararı bekliyor", "PO onayı bekleniyor"),
         ("tester", "Bug taslağı kararı bekleniyor", "PO onayı"),
         ("engineer", "CI ortam hatası", "Bug taslağı"),
-        ("presenter", "mühendis inceliyor", "Case kararı"),
+        ("admin", "Automation Engineer inceliyor", "Case kararı"),
     ],
 )
 def test_probe_my_queue_rolden(veri: dict[str, Any], rol: str, beklenen: str, olmayan: str) -> None:
@@ -223,8 +248,11 @@ def test_probe_my_queue_rolden(veri: dict[str, Any], rol: str, beklenen: str, ol
 
 def test_bekleyen_isler_sayimi(veri: dict[str, Any], session: Session) -> None:
     toplam, isler = probe.bekleyen_isler(session, "analyst")
-    assert toplam == len(isler) == 2  # serbest gereksinim (bulgular) + taslak case
-    assert {i.tur for i in isler} == {"requirement", "case"}
+    assert toplam == len(isler) == 1  # serbest gereksinim (bulgular)
+    assert {i.tur for i in isler} == {"requirement"}
+    # Taslak case Testçi kararını bekler (specs/012-rol-yetki §5).
+    _, testci = probe.bekleyen_isler(session, "tester")
+    assert "case" in {i.tur for i in testci}
 
 
 # ------------------------------------------------------------------ uç-düzeyi rol hizası
@@ -242,6 +270,7 @@ def _api_rotalari(rotalar: Any) -> Iterator[Any]:
 
 def _route_rolleri() -> dict[str, frozenset[str] | None]:
     from tp_core.api.main import create_app
+    from tp_core.auth import yetki
 
     out: dict[str, frozenset[str] | None] = {}
     for r in _api_rotalari(create_app().routes):
@@ -249,10 +278,15 @@ def _route_rolleri() -> dict[str, frozenset[str] | None]:
             continue
         roller: frozenset[str] | None = None
         for dep in r.dependant.dependencies:
-            if getattr(dep.call, "__name__", "").startswith("require_role_"):
-                for hucre in dep.call.__closure__ or ():
-                    if isinstance(hucre.cell_contents, frozenset):
-                        roller = hucre.cell_contents
+            cagri = dep.call
+            izinler = (
+                (cagri.izin_adi,)
+                if hasattr(cagri, "izin_adi")
+                else tuple(getattr(cagri, "izin_adlari", ()))
+            )
+            if izinler:
+                kume = frozenset().union(*(yetki.roller_icin(i) for i in izinler))
+                roller = None if kume == yetki.ROLLER else kume
         out[f"GET {r.path}"] = roller
     return out
 
@@ -292,7 +326,15 @@ def test_cases_ready_bekleyen_kapi_case_durumundan(engine: Engine) -> None:
         rid, cid = req.id, tc.id
     with Session(engine) as s:
         kapi = probe._cases_ready_kapisi(s, s.get(Requirement, rid))
-    assert kapi is not None and kapi.ad == "Case incelemesi (1 case karar bekliyor)"
+    assert kapi is not None and kapi.ad == "Case incelemesi (1 case Testçi kararı bekliyor)"
+    assert kapi.rol == "tester"
+    # 012: Testçi kabulünden sonra (`ready`) kapı Analist son onayıdır.
+    with allow_state_write(), session_scope() as s:
+        s.get(TestCase, cid).durum = "ready"
+    with Session(engine) as s:
+        kapi = probe._cases_ready_kapisi(s, s.get(Requirement, rid))
+    assert kapi is not None and kapi.ad == "Analist son onayı (1 case bekliyor)"
+    assert kapi.rol == "analyst"
     with allow_state_write(), session_scope() as s:
         s.get(TestCase, cid).durum = "approved"
     with Session(engine) as s:

@@ -8,18 +8,21 @@
     {"kalip": "/gereksinimler/:id", "ekran": "Gereksinim detay", "varlik": "requirement", "roller": null},
     {"kalip": "/gereksinimler/:id/caseler", "ekran": "Case inceleme", "varlik": "requirement", "roller": null},
     {"kalip": "/gereksinimler/:id/yayin", "ekran": "Yayın", "varlik": "requirement", "roller": null},
-    {"kalip": "/kod", "ekran": "Kod (scriptler)", "varlik": null, "roller": null},
-    {"kalip": "/kod/:id", "ekran": "Script detay", "varlik": "script", "roller": null},
+    {"kalip": "/caseler", "ekran": "Test case'leri", "varlik": null, "roller": null},
+    {"kalip": "/kod", "ekran": "Kod (scriptler)", "varlik": null, "roller": ["admin", "analyst", "tester", "engineer"]},
+    {"kalip": "/kod/:id", "ekran": "Script detay", "varlik": "script", "roller": ["admin", "analyst", "tester", "engineer"]},
     {"kalip": "/kosular", "ekran": "Koşular", "varlik": null, "roller": null},
     {"kalip": "/kosular/:id", "ekran": "Koşu detay", "varlik": "run", "roller": null},
     {"kalip": "/hatalar/:id", "ekran": "Hata detay", "varlik": "failure", "roller": null},
     {"kalip": "/bug-taslaklari", "ekran": "Bug taslakları", "varlik": null, "roller": null},
     {"kalip": "/bug-taslaklari/:id", "ekran": "Bug taslağı", "varlik": "bug_draft", "roller": null},
     {"kalip": "/kontrol-kulesi", "ekran": "Kontrol Kulesi", "varlik": null, "roller": null},
-    {"kalip": "/yol-haritasi", "ekran": "Yol haritası", "varlik": null, "roller": null},
+    {"kalip": "/yol-haritasi", "ekran": "Yol haritası", "varlik": null, "roller": ["admin", "analyst", "engineer", "po", "tester"]},
     {"kalip": "/denetim", "ekran": "Denetim", "varlik": null, "roller": null},
-    {"kalip": "/ajan-urunleri", "ekran": "Ajan ürünleri", "varlik": null, "roller": null},
-    {"kalip": "/claude-code", "ekran": "Claude Code kanalı", "varlik": null, "roller": ["analyst"]},
-    {"kalip": "/demo", "ekran": "Demo kontrolleri", "varlik": null, "roller": ["presenter"]}
+    {"kalip": "/ajan-urunleri", "ekran": "Ajan ürünleri", "varlik": null, "roller": ["admin", "analyst", "developer", "engineer", "po", "tester"]},
+    {"kalip": "/claude-code", "ekran": "Claude Code kanalı", "varlik": null, "roller": ["admin", "analyst", "engineer", "tester"]},
+    {"kalip": "/demo", "ekran": "Demo kontrolleri", "varlik": null, "roller": ["admin", "engineer"]},
+    {"kalip": "/test-verisi", "ekran": "Test verisi", "varlik": null, "roller": ["admin", "analyst", "developer", "engineer", "po", "tester"]},
+    {"kalip": "/otomasyon", "ekran": "Otomasyon", "varlik": null, "roller": ["admin", "analyst", "developer", "engineer", "po", "tester"]}
   ]
 }

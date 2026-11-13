@@ -4,7 +4,7 @@
 import type { AcikSoru, CaseHazirlik, CaseUretimOzeti, TestCase, TestCaseIcerik, Varsayim } from "../api/types";
 import type { AcikSoruKaydi } from "../api/acikSoruTipleri";
 import { tarih } from "./format";
-import { CASE_DURUMU, CASE_HAZIRLIK, SORU_SAHIBI } from "./etiketler";
+import { CASE_HAZIRLIK, SORU_SAHIBI } from "./etiketler";
 import { TEKNIK_ONEKI } from "./tasarimModeli";
 
 /** Eski (v2) içerik: `readiness` anahtarı yok (K9). */
@@ -157,7 +157,7 @@ export interface HazirlikYonlendirmesi {
   metin: string;
   /** "Varsayım doğrulandı" ile doğrulanabilecek varsayımlar (yalnız `tur === "varsayim"`). */
   dogrulanacak: string[];
-  /** B3: atıf yapılan soruların hepsi PO tarafından yanıtlandı; sıradaki eylem "Düzelt" (birincil). */
+  /** B3: atıf yapılan soruların hepsi PO tarafından yanıtlandı; sıradaki eylem "Düzelterek kabul" (birincil). */
   duzeltBirincil?: boolean;
 }
 
@@ -173,7 +173,7 @@ export function soruKimligi(tc: Pick<TestCase, "po_sorulari">, q: string): strin
 export const storySiYok = (tc: Pick<TestCase, "jira_key">): boolean => tc.jira_key === null;
 
 const STORY_YOK_METNI = (q: string) =>
-  `${q} PO yanıtı gerektiriyor. Bu gereksinimin Jira story'si olmadığı için soru portaldan gönderilemez; yanıtı PO'dan alıp 'Düzelt' ile beklenen sonucu yazın.`;
+  `${q} PO yanıtı gerektiriyor. Bu gereksinimin Jira story'si olmadığı için soru portaldan gönderilemez; yanıtı PO'dan alıp 'Düzelterek kabul' ile beklenen sonucu yazın.`;
 
 /** B2: başka case'te doğrulanan varsayımın notu: "A1, #2 numaralı case'te doğrulandı (Ad, 12 Kas 10:00)." */
 export function dogrulamaNotu(a: Pick<Varsayim, "id" | "dogrulama">, kisiAdi?: AdCevir): string | null {
@@ -186,7 +186,7 @@ export function dogrulamaNotu(a: Pick<Varsayim, "id" | "dogrulama">, kisiAdi?: A
 }
 
 /**
- * UX-2: taslaktaki case neden onaylanamıyor ve ne yapmalı. Açık soru varsa önce o söylenir (varsayım
+ * UX-2: taslaktaki case neden kabul edilemiyor ve ne yapmalı. Açık soru varsa önce o söylenir (varsayım
  * doğrulaması bu durumda sunulmaz); yalnız varsayım varsa "Varsayım doğrulandı" önerilir; core
  * tutarlılık engeli varsa onun metni. Onaylanabilir case'te ya da taslak olmayan case'te null.
  */
@@ -202,7 +202,7 @@ export function hazirlikYonlendirmesi(
   const storyYok = tc.jira_key === null;
   if (sorular.length) {
     const ek = varsayimlar.length
-      ? ` Case ayrıca ${varsayimlar.join(", ")} ${varsayimlar.length > 1 ? "varsayımlarına" : "varsayımına"} bağlı; yanıtla birlikte ${varsayimlar.length > 1 ? "onları" : "onu"} da doğrulayıp 'Düzelt' ile hazır yapın.`
+      ? ` Case ayrıca ${varsayimlar.join(", ")} ${varsayimlar.length > 1 ? "varsayımlarına" : "varsayımına"} bağlı; yanıtla birlikte ${varsayimlar.length > 1 ? "onları" : "onu"} da doğrulayıp 'Düzelterek kabul' ile hazır yapın.`
       : "";
     // D6 (K16): soru PO'ya gönderildi mi / yanıtlandı mı — `po_sorulari` varsa metin duruma göre.
     const po = tc.po_sorulari;
@@ -214,13 +214,13 @@ export function hazirlikYonlendirmesi(
       const gonderilmedi = grup("gonderilmedi");
       // B7: gönderilen soru her yerde PO'nun gördüğü kimlikle (CQ1) anılır.
       const etiket = (q: string) => soruKimligi(tc, q);
-      if (yanitli.length) parcalar.push(`${yanitli.map(etiket).join(", ")}: PO yanıtladı. 'Düzelt' ile beklenen sonucu yanıta göre yazın (ya da case'i yeniden üretin).`);
-      if (gonderildi.length) parcalar.push(`${gonderildi.map(etiket).join(", ")} PO'ya gönderildi, yanıt bekleniyor; yanıt gelince 'Düzelt' ile beklenen sonucu yazın.`);
+      if (yanitli.length) parcalar.push(`${yanitli.map(etiket).join(", ")}: PO yanıtladı. 'Düzelterek kabul' ile beklenen sonucu yanıta göre yazın (ya da case'i yeniden üretin).`);
+      if (gonderildi.length) parcalar.push(`${gonderildi.map(etiket).join(", ")} PO'ya gönderildi, yanıt bekleniyor; yanıt gelince 'Düzelterek kabul' ile beklenen sonucu yazın.`);
       if (gonderilmedi.length) {
         parcalar.push(
           storyYok
             ? STORY_YOK_METNI(gonderilmedi.join(", "))
-            : `${gonderilmedi.join(", ")} PO'nun yanıtını bekliyor ve henüz gönderilmedi; 'Açık soruları PO'ya gönder' ile gönderin, yanıt gelince 'Düzelt' ile beklenen sonucu yazın.`,
+            : `${gonderilmedi.join(", ")} PO'nun yanıtını bekliyor ve henüz gönderilmedi; 'Açık soruları PO'ya gönder' ile gönderin, yanıt gelince 'Düzelterek kabul' ile beklenen sonucu yazın.`,
         );
       }
       return {
@@ -233,7 +233,7 @@ export function hazirlikYonlendirmesi(
     if (storyYok) return { tur: "soru", metin: STORY_YOK_METNI(sorular.join(", ")) + ek, dogrulanacak: [] };
     const sahipler = [...new Set((tc.acik_sorular ?? []).filter((q) => sorular.includes(q.id)).map((q) => q.owner))];
     const bekleyen = sahipler.length === 0 || (sahipler.length === 1 && sahipler[0] === "PO") ? "PO'nun yanıtını bekliyor" : `yanıt bekliyor (sahibi: ${sahipler.map((x) => SORU_SAHIBI[x] ?? x).join(", ")})`;
-    return { tur: "soru", metin: `${sorular.join(", ")} ${bekleyen}. Henüz gönderilmediyse 'Açık soruları PO'ya gönder' ile gönderin; yanıt gelince 'Düzelt' ile beklenen sonucu yazın.${ek}`, dogrulanacak: [] };
+    return { tur: "soru", metin: `${sorular.join(", ")} ${bekleyen}. Henüz gönderilmediyse 'Açık soruları PO'ya gönder' ile gönderin; yanıt gelince 'Düzelterek kabul' ile beklenen sonucu yazın.${ek}`, dogrulanacak: [] };
   }
   if (varsayimlar.length) {
     const cok = varsayimlar.length > 1;
@@ -252,20 +252,20 @@ export function hazirlikYonlendirmesi(
         : "";
       return {
         tur: "varsayim",
-        metin: `${notlar.join(" ")}${kalan} Bu case için de onaylamak üzere '${dugme}' düğmesini kullanın; varsayım bu case'e uymuyorsa 'Düzelt' ile beklenen sonucu güncelleyin.`,
+        metin: `${notlar.join(" ")}${kalan} Bu case için de kabul etmek üzere '${dugme}' düğmesini kullanın; varsayım bu case'e uymuyorsa 'Düzelterek kabul' ile beklenen sonucu güncelleyin.`,
         dogrulanacak: varsayimlar,
       };
     }
     return {
       tur: "varsayim",
-      metin: `${varsayimlar.join(", ")} ${cok ? "varsayımları" : "varsayımı"} doğrulanmadı. Doğruladıysanız '${dugme}' ile onaylayın; değilse 'Düzelt' ile beklenen sonucu güncelleyin ya da reddedin.`,
+      metin: `${varsayimlar.join(", ")} ${cok ? "varsayımları" : "varsayımı"} doğrulanmadı. Doğruladıysanız '${dugme}' ile kabul edin; değilse 'Düzelterek kabul' ile beklenen sonucu güncelleyin ya da reddedin.`,
       dogrulanacak: varsayimlar,
     };
   }
-  if (tc.onay_engeli) return { tur: "tutarlilik", metin: `${tc.onay_engeli}. 'Düzelt' ile giderin ya da reddedin.`, dogrulanacak: [] };
+  if (tc.onay_engeli) return { tur: "tutarlilik", metin: `${tc.onay_engeli}. 'Düzelterek kabul' ile giderin ya da reddedin.`, dogrulanacak: [] };
   const hazirlik = caseHazirlik(tc);
   if (hazirlik !== "ready") {
-    return { tur: "genel", metin: `Hazır değil (${CASE_HAZIRLIK[hazirlik]?.etiket ?? hazirlik}): 'Düzelt' ile hazır yapın ya da reddedin.`, dogrulanacak: [] };
+    return { tur: "genel", metin: `Hazır değil (${CASE_HAZIRLIK[hazirlik]?.etiket ?? hazirlik}): 'Düzelterek kabul' ile hazır yapın ya da reddedin.`, dogrulanacak: [] };
   }
   return null;
 }
@@ -343,19 +343,6 @@ export function bagsizSorular(sorular?: readonly AcikSoruKaydi[] | null): AcikSo
 /** PO'ya henüz gönderilmemiş açık soru sayısı (core listesinden; varsayımlar hariç). */
 export function gonderilmemisSoruSayisi(sorular?: readonly AcikSoruKaydi[] | null): number {
   return (sorular ?? []).filter((k) => k.tur === "soru" && k.durum === "gonderilmedi").length;
-}
-
-/**
- * K20 toplu onay: case seçilebilir mi. Yalnız taslak, hazır ve tutarlı (core `onay_engeli` null)
- * case seçilir; değilse görünür neden döner. Core alanı yoksa (eski core) içerikten türetilir.
- */
-export function topluOnayEngeli(tc: Pick<TestCase, "durum" | "readiness" | "icerik" | "onay_engeli" | "uyarilar" | "legacy">): string | null {
-  if (tc.durum !== "draft") return `Taslak değil (${CASE_DURUMU[tc.durum]?.etiket ?? tc.durum})`;
-  const hazirlik = caseHazirlik(tc);
-  if (hazirlik !== "ready") return `Hazır değil (${CASE_HAZIRLIK[hazirlik]?.etiket ?? hazirlik})`;
-  if (tc.onay_engeli) return "Tutarlılık ihlali var";
-  if (tc.onay_engeli === undefined && !caseEski(tc) && (tc.uyarilar?.length ?? 0) > 0) return "İçerik uyarısı var";
-  return null;
 }
 
 /**

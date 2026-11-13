@@ -9,7 +9,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, SecretStr, ValidationError, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
@@ -40,6 +40,14 @@ class Settings(BaseSettings):
     seed_user_password: SecretStr | None = Field(
         default=None, validation_alias="SEED_USER_PASSWORD"
     )
+
+    # --- Ortam ve demo (specs/012-rol-yetki §2). `ortam=prod` iken developer koşu başlatamaz;
+    # demo kontrolleri (locator kırma, demo sıfırlama) yalnız `demo_mode` açıkken çalışır.
+    # `prod` + demo kipi birlikte verilirse çekirdek başlamaz (`baslangic_denetimi`).
+    ortam: Literal["dev", "test", "staging", "prod"] = Field(
+        default="dev", validation_alias="TP_ORTAM"
+    )
+    demo_mode: bool = Field(default=False, validation_alias="TP_DEMO_MODE")
 
     # --- Oturum ve kimlik
     session_secret: SecretStr | None = Field(default=None, validation_alias="TP_SESSION_SECRET")
@@ -165,6 +173,35 @@ class Settings(BaseSettings):
     def _db_auth(self) -> "Settings":
         self.database_url = libpq_auth_zorla(self.database_url, self.db_require_auth)
         return self
+
+
+class _OrtamAyari(BaseSettings):
+    """Yalnız ortam/demo bayrakları (TP_DATABASE_URL tanımsızken de okunabilsin)."""
+
+    model_config = SettingsConfigDict(extra="ignore", populate_by_name=True)
+
+    ortam: Literal["dev", "test", "staging", "prod"] = Field(
+        default="dev", validation_alias="TP_ORTAM"
+    )
+    demo_mode: bool = Field(default=False, validation_alias="TP_DEMO_MODE")
+
+
+def baslangic_denetimi(ayar: Settings | None = None) -> None:
+    """core-api ve core-worker açılışında koşar: üretimde demo kipi açık olamaz."""
+    bayrak: Settings | _OrtamAyari
+    if ayar is not None:
+        bayrak = ayar
+    else:
+        try:
+            bayrak = get_settings()
+        except ValidationError:
+            bayrak = _OrtamAyari()
+    if bayrak.ortam == "prod" and bayrak.demo_mode:
+        raise RuntimeError(
+            "TP_ORTAM=prod iken TP_DEMO_MODE açık olamaz: demo kontrolleri (locator kırma, demo "
+            "sıfırlama) üretim ortamında çalıştırılmaz. TP_DEMO_MODE=0 yapın ya da TP_ORTAM'ı "
+            "düzeltin."
+        )
 
 
 @lru_cache

@@ -2,7 +2,11 @@
 
 from tp_core.workflow.states import KARARLAR, MACHINES, TUM_RET_NEDENLERI
 
-ROLLER = frozenset({"analyst", "engineer", "presenter", "po", "tester"})
+# TP rolleri (specs/012-rol-yetki §3). Tek kaynak `tp_core.auth.yetki.ROLLER`'dır; burada içe
+# aktarma döngüsü olmasın diye aynen tekrarlanır (eşitliği test_yetki doğrular). 0021.
+ROLLER = frozenset(
+    {"admin", "auditor", "analyst", "po", "tester", "engineer", "developer", "viewer"}
+)
 REQUIREMENT_KAYNAK = frozenset({"jira", "free_text"})
 URETIM_MODU = frozenset({"live", "replay", "replay_miss"})
 CASE_KANAL = frozenset({"portal", "ide"})
@@ -31,6 +35,9 @@ FINDING_KARAR = KARARLAR["consistency_finding"]
 SCRIPT_TUR = frozenset({"test", "locator_fix"})
 # 009 §2.1: üretilen testin hedef platformu (web = Playwright/TS; diğerleri Appium/Java). 0018.
 PLATFORM = frozenset({"web", "android", "ios", "windows"})
+# 011 §2.1–2.2: üretim dili (platformdan bağımsız boyut) ve dilin nereden geldiği. 0021.
+DIL = frozenset({"ts", "java", "csharp", "python"})
+DIL_KAYNAGI = frozenset({"algilandi", "secildi", "varsayilan"})
 RUN_KAYNAK = frozenset({"local", "github", "sauce"})
 # CI ile ortak liste: .github/workflows/ci.yml `trigger` girdisi (workflow_dispatch → manual).
 RUN_TETIK = frozenset({"pr", "push", "nightly", "deploy", "break_verify", "local_check", "manual"})
@@ -64,6 +71,11 @@ ASISTAN_MOD = frozenset({"live", "off"})
 ASISTAN_GERI_BILDIRIM = frozenset({-1, 1})
 # Öneri geri bildirimi: -1 gizle, 1 faydalı, 2 yaptım (§17).
 ASISTAN_ONERI_DEGER = frozenset({-1, 1, 2})
+# Asistan güvenlik olayı (0021, specs/013 §6.1). Dondurma sayacı yalnız ciddi türleri sayar (K11).
+ASISTAN_OLAY_TUR = frozenset(
+    {"sir_icerik", "kisisel_veri", "kanarya", "istem_sizintisi", "sinyal", "donduruldu"}
+)
+ASISTAN_CIDDI_OLAY = frozenset({"sir_icerik", "kanarya", "istem_sizintisi"})
 
 
 def durumlar(entity: str) -> frozenset[str]:

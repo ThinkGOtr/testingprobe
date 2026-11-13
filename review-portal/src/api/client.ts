@@ -14,11 +14,20 @@ import {
 } from "./uyum";
 import { bugIcerikCoreBicimi, bugTaslagiUyarla, hataAnaliziUyarla } from "./uyumTriage";
 import { nesneMi } from "./uyum";
-import { kontrolKulesiUyarla, kosuDetayUyarla, kosuUyarla, scriptDetayUyarla, scriptUyarla } from "./uyumDemoB";
+import { dahaFazlaBasligiOku, kodDilleriUyarla, kodUretYanitiUyarla, kontrolKulesiUyarla, kosuDetayUyarla, kosuUyarla, scriptDetayUyarla, scriptListesiUyarla, scriptUyarla } from "./uyumDemoB";
 import { bazYanitiUyarla, demoDurumuUyarla, gereksinimBazi } from "./uyumFaz5";
 import { caseKalitesiUyarla } from "./uyumCaseKalitesi";
 import type { CaseKalitesi } from "./types";
-import type { TopluOnayKalemi, TopluOnaySonucu, VarsayimDogrulamaGirdisi } from "./types";
+import {
+  jiraTetikDurumuUyarla,
+  kodUretimIsiUyarla,
+  otomasyonAyarlariUyarla,
+  surumlerUyarla,
+  testVerileriUyarla,
+  testVerisiUyarla,
+  topluKararUyarla,
+} from "./uyumOtomasyon";
+import type { VarsayimDogrulamaGirdisi } from "./types";
 import type {
   AjanTestiGorunumu,
   AjanUrunleriYaniti,
@@ -34,6 +43,7 @@ import type {
   CaseReviewGorunumu,
   DemoDurumu,
   DenetimYaniti,
+  Dil,
   Gereksinim,
   GereksinimDetay,
   ManuelBaz,
@@ -41,6 +51,9 @@ import type {
   RetNedeni,
   HataAnalizi,
   IsYaniti,
+  KodDilleri,
+  KodUretYaniti,
+  ScriptListesi,
   KontrolKulesi,
   Kosu,
   KosuDetay,
@@ -63,6 +76,15 @@ import type {
   DerinlestirmeYaniti,
   UretimGovdesi,
   UretimSecenekleriYaniti,
+  JiraTetikDurumu,
+  KodUretimIsi,
+  OtomasyonAyarAnahtari,
+  OtomasyonAyarlari,
+  TestVerisi,
+  TestVerisiGirdisi,
+  TestVerisiGuncelleme,
+  TestVerisiSurumu,
+  TopluKararYaniti,
 } from "./types";
 import { uretimSecenekleriYanitiUyarla } from "../lib/uretimSecenekleri";
 import { tur2Uyarla, type Tur2Bilgisi } from "../lib/tasarimModeli";
@@ -93,6 +115,8 @@ const CASE_KAYNAGI = ["GET", "/cases"] as const;
 const SCRIPT_KAYNAGI = ["GET", "/scripts"] as const;
 /** Onarım işlemi triage sonucuna bağlıdır ("1": herhangi bir kimlik; yol kalıbı ve mock anahtarı ":id" ile eşleşir). */
 const HATA_KAYNAGI = ["GET", "/failures/1"] as const;
+/** Test verisi işlemleri katalog listesine bağlıdır. */
+const TESTVERI_KAYNAGI = ["GET", "/test-data"] as const;
 /** Bug kararı taslak listesine bağlıdır. */
 const BUG_KAYNAGI = ["GET", "/bug-drafts"] as const;
 
@@ -124,10 +148,23 @@ export const api = {
   /** `cakismayiOnayla`: düzeltme bir 'bilinçli fark' kararıyla çelişiyorsa (409) yine de uygula (denetlenir). */
   duzeltmeleriUygula: (id: string, cakismayiOnayla = false) =>
     istek<IsYaniti>("POST", `/requirements/${yol(id)}/apply-doc-fixes`, cakismayiOnayla ? { govde: { cakismayi_onayla: true } } : {}),
-  /** `g`: ekranda görülen gereksinim; `icerik_hash` aynen gönderilir (TOCTOU bağı). */
+  /**
+   * Serbest metin gereksinimde PO teyidi (`requirement.po_approve_free_text`). Jira kaynaklı story'de
+   * core 410 (`po_onayi_jira`) döner: onay Jira etiketiyle. `icerik_hash` aynen gönderilir (TOCTOU bağı).
+   */
   poOnayla: async (g: Pick<GereksinimDetay, "id" | "icerik_hash">): Promise<GereksinimDetay> =>
     detayUyarla(
       nesne(await istek<unknown>("POST", `/requirements/${yol(g.id)}/po-approve`, { govde: { icerik_hash: g.icerik_hash } })),
+    ),
+  /**
+   * Serbest metin gereksinimde PO reddi (`requirement.po_reject_free_text`; pending_po → new).
+   * Gerekçe zorunlu; Jira kaynaklı story'de core 410 (`po_onayi_jira`).
+   */
+  poReddet: async (g: Pick<GereksinimDetay, "id" | "icerik_hash">, gerekce: string): Promise<GereksinimDetay> =>
+    detayUyarla(
+      nesne(
+        await istek<unknown>("POST", `/requirements/${yol(g.id)}/po-reject`, { govde: { gerekce, icerik_hash: g.icerik_hash } }),
+      ),
     ),
   /**
    * Üretimi başlatır. `kip` (011 K1) ve `secenekler` (011 K5) gövdede gider (`UretimBaslatGirdisi`);
@@ -187,35 +224,27 @@ export const api = {
         }),
       ),
     ),
-  /** Analist case'i ilk kez gördü: review süresi (`review_sure_ms`) sunucuda bu andan ölçülür. */
+  /**
+   * 013 §3.2 toplu karar (012 iki adım): Testçi `accept` (taslak → ready, "Toplu kabul"), Analist
+   * `approve` (ready → approved, "Toplu onayla"). Her öğe ekranda görülen kendi hash'iyle; sunucu
+   * görülmeyeni atlar. 1..200 öğe (çağıran böler).
+   */
+  topluKarar: async (karar: "accept" | "approve", ogeler: Pick<TestCase, "id" | "icerik_hash">[]): Promise<TopluKararYaniti> =>
+    topluKararUyarla(
+      await istek<unknown>("POST", "/cases/bulk-decision", {
+        govde: { karar, ogeler: ogeler.map((c) => ({ case_id: c.id, icerik_hash: c.icerik_hash })) },
+        kaynak: CASE_KAYNAGI,
+      }),
+    ),
+  /** Testçi (taslak) ya da Analist (onaya hazır) case'i ilk kez gördü: review süresi (`review_sure_ms`) sunucuda bu andan ölçülür. */
   caseGoruntulendi: (id: string) => istek<unknown>("POST", `/cases/${yol(id)}/viewed`, { kaynak: CASE_KAYNAGI }),
   /**
-   * K20 "Varsayım doğrulandı": analist varsayımı doğruladı; case görülen içeriğiyle (hash) hazır
-   * yapılıp onaylanır (review kaydı düzeltme). Başka atıf kalırsa 422, içerik değiştiyse 409.
+   * K20 "Varsayım doğrulandı" (`case.decide`, Testçi): varsayım doğrulandı; case görülen içeriğiyle
+   * (hash) hazır yapılıp `edit` kararıyla kabul edilir (taslak → onaya hazır; Analist son onayı
+   * gerekir). Başka atıf kalırsa 422, içerik değiştiyse 409.
    */
   varsayimDogrulandi: async (caseId: string, g: VarsayimDogrulamaGirdisi): Promise<TestCase> =>
     caseUyarla(nesne(await istek<unknown>("POST", `/cases/${yol(caseId)}/assumption-verified`, { govde: g, kaynak: CASE_KAYNAGI }))),
-  /** K20 toplu onay: kalem bazlı (her case ayrı review kaydı ve kendi hash'i); kalem hataları sonuçta döner. */
-  topluOnay: async (kalemler: TopluOnayKalemi[]): Promise<TopluOnaySonucu> => {
-    const ham = nesne(await istek<unknown>("POST", "/cases/bulk-decision", { govde: { karar: "approve", kalemler }, kaynak: CASE_KAYNAGI }));
-    const sonuclar = (Array.isArray(ham.sonuclar) ? ham.sonuclar : []).map((x) => {
-      const k = nesne(x);
-      return {
-        case_id: String(k.case_id ?? ""),
-        basarili: k.basarili === true,
-        hata: typeof k.hata === "string" ? k.hata : null,
-        kod: typeof k.kod === "number" ? k.kod : null,
-        case: k.case && typeof k.case === "object" ? caseUyarla(nesne(k.case)) : null,
-      };
-    });
-    const onaylanan = sonuclar.filter((k) => k.basarili).length;
-    return {
-      karar: "approve",
-      onaylanan: typeof ham.onaylanan === "number" ? ham.onaylanan : onaylanan,
-      basarisiz: typeof ham.basarisiz === "number" ? ham.basarisiz : sonuclar.length - onaylanan,
-      sonuclar,
-    };
-  },
   /** §12 ölçümleri (kabul oranı ilk karara göre, AI + review süresi, maliyet). */
   caseMetrikleri: (requirementId: string) =>
     istek<CaseMetrikleri>("GET", `/requirements/${yol(requirementId)}/case-metrics`, { kaynak: CASE_KAYNAGI }),
@@ -239,25 +268,25 @@ export const api = {
   /** P8 review (011 F2): son review + güncel set hash'i + bayat mı. */
   caseReview: (requirementId: string) =>
     istek<CaseReviewGorunumu>("GET", `/requirements/${yol(requirementId)}/case-review`, { kaynak: CASE_KAYNAGI }),
-  /** Review'u yeniden çalıştır (analist; tavsiye niteliğinde). */
+  /** Review'u yeniden çalıştır (`case.generate`, Testçi; tavsiye niteliğinde). */
   caseReviewCalistir: (requirementId: string) =>
     istek<CaseReviewGorunumu>("POST", `/requirements/${yol(requirementId)}/case-review`, { kaynak: CASE_KAYNAGI }),
   /** Açık sorular (011 K16): güncel setin soruları/varsayımları, PO'ya gönderim durumu ve yanıtı. */
   acikSorular: (requirementId: string) =>
     istek<AcikSorularYaniti>("GET", `/requirements/${yol(requirementId)}/open-questions`, { kaynak: CASE_KAYNAGI }),
-  /** "Açık soruları PO'ya gönder" (analist): gönderilmemiş sorular story'ye tek Jira yorumu olarak gider. */
+  /** "Açık soruları PO'ya gönder" (`case.ask_po`, Analist): gönderilmemiş sorular story'ye tek Jira yorumu olarak gider. */
   acikSorulariGonder: (requirementId: string, varsayimlar = false) =>
     istek<AcikSorularYaniti>("POST", `/requirements/${yol(requirementId)}/open-questions/send`, {
       govde: { varsayimlar },
       kaynak: CASE_KAYNAGI,
     }),
-  /** PO yanıtlarını şimdi oku (analist; periyodik sorguyu beklemeden). */
+  /** PO yanıtlarını şimdi oku (`case.ask_po` ya da `case.decide`; periyodik sorguyu beklemeden). */
   acikSoruYanitlariniOku: (requirementId: string) =>
     istek<AcikSorularYaniti>("POST", `/requirements/${yol(requirementId)}/open-questions/refresh`, { kaynak: CASE_KAYNAGI }),
   /** P9 denetim (011 F5): son karar, güncel set, yayın kapısı durumu. */
   caseDenetim: (requirementId: string) =>
     istek<CaseDenetimGorunumu>("GET", `/requirements/${yol(requirementId)}/case-audit`, { kaynak: CASE_KAYNAGI }),
-  /** "Agent Probe'a gönder" (analist). */
+  /** "Agent Probe'a gönder" (`case.approve`, Analist). */
   caseDenetimGonder: (requirementId: string) =>
     istek<CaseDenetimGorunumu>("POST", `/requirements/${yol(requirementId)}/case-audit`, { kaynak: CASE_KAYNAGI }),
 
@@ -268,10 +297,34 @@ export const api = {
     yayinSonucuUyarla(await istek<unknown>("POST", "/publish", { govde: { case_ids: caseIds }, kaynak: CASE_KAYNAGI })),
 
   // Kod üretimi
-  /** 009 §2.9: `platform` (web | android | ios | windows; varsayılan web). Aynı case için platform başına ayrı script/PR. */
-  kodUret: (caseIds: string[], platform: Platform = "web") =>
-    istek<IsYaniti>("POST", "/code/generate", { govde: { case_ids: caseIds, platform } }),
+  /**
+   * 009 §2.9: `platform` (web | android | ios | windows; varsayılan web). Aynı case için platform başına ayrı script/PR.
+   * 011 §2.3: `dil` yalnız kullanıcı elle seçtiyse gönderilir (core `dil_kaynagi="secildi"` yazar);
+   * gönderilmezse core repodan algılanan dili kullanır. Alan yokken gövde 011 öncesiyle aynıdır.
+   */
+  kodUret: async (caseIds: string[], platform: Platform = "web", dil?: Dil | null): Promise<KodUretYaniti> =>
+    kodUretYanitiUyarla(await istek<unknown>("POST", "/code/generate", { govde: { case_ids: caseIds, platform, ...(dil ? { dil } : {}) } })),
+  /**
+   * 011 §2.3: platformun dil seçenekleri ve repodan algılanan dil. Uç yoksa (011 öncesi core) `null`:
+   * dil seçici çizilmez, üretim bugünkü gibi sürer. Script'ler çekirdekten geliyorsa örnek veriye düşülmez.
+   */
+  kodDilleri: async (platform: Platform): Promise<KodDilleri | null> => {
+    try {
+      return kodDilleriUyarla(await istek<unknown>("GET", "/code/languages", { sorgu: { platform }, kaynak: SCRIPT_KAYNAGI }), platform);
+    } catch (e) {
+      // 501: uç yok (011 öncesi core). 403: uç yalnız `code.generate` iznine açık (011 K-T8, 012); üretim
+      // yetkisi olmayan rol seçiciyi zaten kullanamaz — seçici sessizce gizlenir.
+      if (e instanceof ApiError && (e.status === 501 || e.status === 403)) return null;
+      throw e;
+    }
+  },
   scriptler: async (): Promise<Script[]> => listeUyarla(await istek<unknown>("GET", "/scripts"), scriptUyarla),
+  /** `GET /scripts` + liste sınırına ulaşıldı mı (core en yeni 200 kayıt; QA-Y4). */
+  scriptListesi: async (): Promise<ScriptListesi> => {
+    let dahaFazla: boolean | null = null;
+    const govde = await istek<unknown>("GET", "/scripts", { basliklar: (h) => (dahaFazla = dahaFazlaBasligiOku(h)) });
+    return scriptListesiUyarla(govde, dahaFazla);
+  },
   script: async (id: string): Promise<ScriptDetay> => scriptDetayUyarla(nesne(await istek<unknown>("GET", `/scripts/${yol(id)}`))),
   kirarakDogrula: (id: string) => istek<IsYaniti>("POST", `/scripts/${yol(id)}/break-verify`, { kaynak: SCRIPT_KAYNAGI }),
   /** `pr`: incelenen PR; içerik hash'i ve head sha'sı merge'e bağlanır. */
@@ -305,7 +358,8 @@ export const api = {
   },
 
   // CI ve koşular
-  ciTetikle: (tetik: "deploy" | "nightly") => istek<IsYaniti>("POST", "/ci/trigger", { govde: { tetik } }),
+  /** deploy | nightly: Automation Engineer; manual: Automation Engineer + Developer (prod'da developer 403). */
+  ciTetikle: (tetik: "deploy" | "nightly" | "manual") => istek<IsYaniti>("POST", "/ci/trigger", { govde: { tetik } }),
   kosular: async (): Promise<Kosu[]> => listeUyarla(await istek<unknown>("GET", "/runs"), kosuUyarla),
   kosu: async (id: string): Promise<KosuDetay> => kosuDetayUyarla(nesne(await istek<unknown>("GET", `/runs/${yol(id)}`))),
 
@@ -406,7 +460,37 @@ export const api = {
   tokenlar: () => istek<McpTokenKaydi[]>("GET", "/tokens"),
   tokenIptal: (id: string) => istek<void>("DELETE", `/tokens/${yol(id)}`, { kaynak: ["GET", "/tokens"] }),
 
+  // Test verisi kataloğu (013 §3.3)
+  testVerileri: async (): Promise<TestVerisi[]> => testVerileriUyarla(await istek<unknown>("GET", "/test-data")),
+  testVerisiEkle: async (g: TestVerisiGirdisi): Promise<TestVerisi> =>
+    testVerisiUyarla(nesne(await istek<unknown>("POST", "/test-data", { govde: g, kaynak: TESTVERI_KAYNAGI }))),
+  testVerisiGuncelle: async (id: string, g: TestVerisiGuncelleme): Promise<TestVerisi> =>
+    testVerisiUyarla(nesne(await istek<unknown>("PUT", `/test-data/${yol(id)}`, { govde: g, kaynak: TESTVERI_KAYNAGI }))),
+  /** 409: sürüm uyuşmazlığı ya da atıf yapan etkin case var (`ApiError.govde` listeyi taşır). */
+  testVerisiSil: (id: string, beklenen_surum: number) =>
+    istek<unknown>("DELETE", `/test-data/${yol(id)}`, { sorgu: { beklenen_surum }, kaynak: TESTVERI_KAYNAGI }),
+  testVerisiGecmisi: async (id: string): Promise<TestVerisiSurumu[]> =>
+    surumlerUyarla(await istek<unknown>("GET", `/test-data/${yol(id)}/history`, { kaynak: TESTVERI_KAYNAGI })),
+
+  // Otomasyon ayarları ve Jira tetiği (013 §3.1, §3.4)
+  otomasyonAyarlari: async (): Promise<OtomasyonAyarlari> => otomasyonAyarlariUyarla(await istek<unknown>("GET", "/automation-settings")),
+  /** Kısmi nesne; yanıt güncel tüm ayarlardır. */
+  otomasyonAyariKaydet: async <K extends OtomasyonAyarAnahtari>(
+    anahtar: K,
+    deger: Partial<Omit<OtomasyonAyarlari[K], "guncelleyen" | "guncelleme">>,
+  ): Promise<OtomasyonAyarlari> =>
+    otomasyonAyarlariUyarla(
+      await istek<unknown>("PUT", `/automation-settings/${yol(anahtar)}`, { govde: deger, kaynak: ["GET", "/automation-settings"] }),
+    ),
+  /** Toplu onayın kod üretimi işi (`otomatik_kod.job_id`); case başına sonuç. */
+  kodUretimIsi: async (jobId: string): Promise<KodUretimIsi> =>
+    kodUretimIsiUyarla(await istek<unknown>("GET", `/automation/codegen-jobs/${yol(jobId)}`), jobId),
+  jiraTetikDurumu: async (): Promise<JiraTetikDurumu> => jiraTetikDurumuUyarla(await istek<unknown>("GET", "/automation/jira-trigger")),
+
   // Sunum
+  /** jira-sim'de story durumunu değiştirir (yalnız demo/sim; gerçek Jira'da 409). */
+  demoJiraDurumu: (jira_key: string, durum: string) =>
+    istek<{ mesaj?: string; jira_key?: string; durum?: string; degisti?: boolean } | undefined>("POST", "/demo/jira-status", { govde: { jira_key, durum } }),
   demoKir: () => istek<IsYaniti>("POST", "/demo/break-locator"),
   demoSifirla: () => istek<IsYaniti>("POST", "/demo/reset"),
   /** Forge main / çalışan demo uygulaması eşleşmesi (salt okuma). */

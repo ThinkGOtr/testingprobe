@@ -8,6 +8,7 @@ import threading
 import time
 import uuid
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -221,10 +222,13 @@ def test_yalniz_rota_kalibina_uyan_ic_rota_baglanti_olur() -> None:
 @pytest.mark.parametrize(
     ("rol", "beklenen"),
     [
-        ("tester", ["/kosular"]),  # /demo yalnız presenter, /claude-code yalnız analyst
-        ("presenter", ["/demo", "/kosular"]),
-        ("analyst", ["/claude-code", "/kosular"]),
-        (None, ["/demo", "/claude-code", "/kosular"]),  # rol bilinmiyor → süzgeç yok
+        # /demo yalnız admin/engineer, /claude-code `claude_code.read`; /kosular, /denetim süzülmez
+        ("po", ["/kosular", "/denetim"]),
+        ("analyst", ["/claude-code", "/kosular", "/denetim"]),
+        ("admin", ["/demo", "/claude-code", "/kosular", "/denetim"]),
+        ("tester", ["/claude-code", "/kosular", "/denetim"]),
+        ("engineer", ["/demo", "/claude-code", "/kosular", "/denetim"]),
+        (None, ["/demo", "/claude-code", "/kosular", "/denetim"]),  # rol bilinmiyor → süzgeç yok
     ],
 )
 def test_yonlendirme_rolun_acamadigi_ekrana_dusmez(rol: str | None, beklenen: list[str]) -> None:
@@ -235,6 +239,7 @@ def test_yonlendirme_rolun_acamadigi_ekrana_dusmez(rol: str | None, beklenen: li
                 {"etiket": "Demo", "rota": "/demo"},
                 {"etiket": "Claude Code", "rota": "/claude-code"},
                 {"etiket": "Koşular", "rota": "/kosular"},
+                {"etiket": "Denetim", "rota": "/denetim"},
             ]
         ),
         SonIslemBaglami(rol=rol),
@@ -363,6 +368,80 @@ def test_kisa_alinti_yalniz_tam_satirsa_gecer() -> None:
         SonIslemBaglami(dogrulayici=d),
     )
     assert [k["dogrulandi"] for k in cevap["kaynaklar"]] == [True, False, True, False]
+
+
+def test_rolde_kod_veri_araci_yoksa_kaynak_dogrulanmaz() -> None:
+    """SEC10: rolün okuyamadığı uygulama kodu/verisi için doğrulama evet/hayır kâhini olmasın;
+    `get_file_contents` / `db_query` rolde yoksa dış okuma hiç yapılmaz, "doğrulanmadı" döner."""
+    oturum = _oturum(maske=True)
+    satirlar = [("ABC", 10)]
+    db_cikti = (
+        f"query: SELECT kod FROM kampanya\nresult_digest: {masked_digest(satirlar)}\n<untrusted>…"
+    )
+    havuz = KanitHavuzu()
+    AracSarmalayici(
+        _baglam(oturum),
+        mevcut={"db_query": lambda _a: db_cikti},
+        mevcut_turleri={"db_query": "uygulama_verisi"},
+        havuz=havuz,
+    )("db_query", {})
+
+    class Sayan(SahteDogrulayici):
+        def __init__(self, **kw: Any) -> None:
+            super().__init__(**kw)
+            self.okunan: list[str] = []
+
+        def uygulama_satirlari(self, yol: str) -> list[str] | None:
+            self.okunan.append(yol)
+            return super().uygulama_satirlari(yol)
+
+    kaynaklar = [
+        _kaynak("uygulama_kodu", "src/k.py:1", "x = 1"),
+        _kaynak("uygulama_verisi", "k1", ""),
+    ]
+    d = Sayan(uygulama={"src/k.py": ["x = 1"]}, satirlar=satirlar)
+    kapali = isle(
+        _cikti(kaynaklar=kaynaklar),
+        SonIslemBaglami(
+            havuz=havuz,
+            oturum=oturum,
+            dogrulayici=d,
+            izinli_araclar=frozenset({"product_search", "product_read", "probe_get"}),
+        ),
+    )
+    assert [(k["dogrulandi"], k["neden"]) for k in kapali["kaynaklar"]] == [
+        (False, "doğrulanmadı"),
+        (False, "doğrulanmadı"),
+    ]
+    assert d.okunan == [] and d.sorgular == []
+    acik = isle(
+        _cikti(kaynaklar=kaynaklar),
+        SonIslemBaglami(
+            havuz=havuz,
+            oturum=oturum,
+            dogrulayici=d,
+            izinli_araclar=frozenset({"get_file_contents", "db_query"}),
+        ),
+    )
+    assert [k["dogrulandi"] for k in acik["kaynaklar"]] == [True, True]
+    assert d.okunan == ["src/k.py"] and d.sorgular == ["SELECT kod FROM kampanya"]
+
+
+def test_cikti_sinyalleri_kural_dizininden_ve_bozuk_dosya_kayda_sinif_adi(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    (tmp_path / "assistant").mkdir()
+    (tmp_path / "assistant" / "sinyaller.yaml").write_text(
+        "surum: 1\nsinyaller:\n  - {id: a, yon: cikti, regex: gizli-desen-xyz, ipucu: y}\n",
+        encoding="utf-8",
+    )
+    cikti = _cikti(
+        cevap_bloklari=[{"tur": "paragraf", "metin": "Yapay zeka onayladı.", "maddeler": []}]
+    )
+    with caplog.at_level("WARNING"):
+        cevap = isle(cikti, SonIslemBaglami(rules_dir=tmp_path))
+    assert cevap["notlar"] == []  # varsayılan kurallar değil, verilen (bozuk) dizin kullanıldı
+    assert "SinyalHatasi" in caplog.text and "gizli-desen-xyz" not in caplog.text
 
 
 def test_havuz_kaynagi_turu_uyusmali_ve_500_karakter_sonrasi_alinti_dogrulanir() -> None:
@@ -721,10 +800,11 @@ def test_modelin_bug_taslagi_her_ekranda_bilgiye_duser(
 @pytest.mark.parametrize(
     ("rol", "rota", "beklenen"),
     [
-        ("tester", "/demo", "bilgi"),  # yalnız presenter
-        ("presenter", "/demo", "rota"),
-        ("tester", "/claude-code", "bilgi"),  # yalnız analyst
-        ("analyst", "/claude-code", "rota"),
+        ("tester", "/demo", "bilgi"),  # yalnız admin/engineer
+        ("admin", "/demo", "rota"),
+        ("po", "/claude-code", "bilgi"),  # `claude_code.read`: admin, analyst, tester, engineer
+        ("viewer", "/yol-haritasi", "bilgi"),  # `demo.read`
+        ("tester", "/claude-code", "rota"),
         ("tester", "/kod/0f3c-1", "rota"),  # roller null → herkes
         (None, "/demo", "rota"),  # rol bilinmiyor → süzgeç yok
     ],
@@ -955,9 +1035,9 @@ def _probe_havuzu(arac: str, metin: str) -> KanitHavuzu:
     ("soru", "baglam", "rol", "beklenen"),
     [
         # Bağlamsız eylem: kural dosyasındaki ifade → ekran (eval eylem-kosu-tetikle).
-        ("Yeni bir gece koşusu başlat.", None, "presenter", ["/kosular"]),
+        ("Yeni bir gece koşusu başlat.", None, "admin", ["/kosular"]),
         # Bulunulan ekran ve ifade aynı (eval eylem-demo-sifirla).
-        ("Demo verisini sıfırla.", {"rota_kalibi": "/demo"}, "presenter", ["/demo"]),
+        ("Demo verisini sıfırla.", {"rota_kalibi": "/demo"}, "admin", ["/demo"]),
         # Rolün açamadığı ekran bağlantı olmaz (`/demo` yalnız Sunucu).
         ("Demo verisini sıfırla.", {"rota_kalibi": "/demo"}, "tester", []),
         # `:id` bağlamdaki varlıktan; ifade eşleşmezse bulunulan ekran.
@@ -1028,17 +1108,17 @@ def test_eylem_reddinde_id_arac_sonucundaki_kayittan_anahtarla_secilir() -> None
 def test_modelin_gecerli_yonlendirmesi_varsa_eylem_kurali_eklenmez() -> None:
     cevap = isle(
         _cikti(eylem_reddi=True, yonlendirmeler=[{"etiket": "Koşu", "rota": f"/kosular/{REQ}"}]),
-        SonIslemBaglami(soru="Yeni bir gece koşusu başlat.", rol="presenter"),
+        SonIslemBaglami(soru="Yeni bir gece koşusu başlat.", rol="admin"),
     )
     assert [y["rota"] for y in cevap["yonlendirmeler"]] == [f"/kosular/{REQ}"]
     # Rota dışı model rotası düşer, kural bağlantısı gelir (eval s8 `/kuyruk` deseni).
     cevap = isle(
         _cikti(eylem_reddi=True, yonlendirmeler=[{"etiket": "Kuyruk", "rota": "/kuyruk"}]),
-        SonIslemBaglami(soru="Yeni bir gece koşusu başlat.", rol="presenter"),
+        SonIslemBaglami(soru="Yeni bir gece koşusu başlat.", rol="admin"),
     )
     assert [y["rota"] for y in cevap["yonlendirmeler"]] == ["/kosular"]
     # Eylem reddi olmayan cevaba bağlantı eklenmez.
-    cevap = isle(_cikti(), SonIslemBaglami(soru="Yeni bir gece koşusu başlat.", rol="presenter"))
+    cevap = isle(_cikti(), SonIslemBaglami(soru="Yeni bir gece koşusu başlat.", rol="admin"))
     assert cevap["yonlendirmeler"] == []
 
 
@@ -1119,3 +1199,32 @@ def test_cevap_metninde_mention_yankisi_anmaz_kod_blogu_korunur() -> None:
     assert bloklar[0]["metin"] == "ali eklenmez; reader@sim.local kalır."
     assert bloklar[1]["maddeler"] == ["ayse.k yorum yazdı"]
     assert bloklar[2]["metin"] == "@job_handler('x')"
+
+
+def test_rota_rolleri_baglamin_kural_dizininden_okunur(tmp_path: Path) -> None:
+    """BE2-5: rol süzgeci (`schemas.rota_rolleri`) `SonIslemBaglami.rules_dir`'in `rotalar.json`'unu
+    kullanır (varsayılan dizinde `/kosular` herkese açık; bu dizinde yalnız PO)."""
+    import json
+    import shutil
+
+    from tp_core.features.assistant.schemas import rota_rolleri
+    from tp_core.gateway.config import find_rules_dir
+
+    kok = tmp_path / "kurallar"
+    shutil.copytree(find_rules_dir() / "assistant", kok / "assistant")
+    dosya = kok / "assistant" / "rotalar.json"
+    veri = json.loads(dosya.read_text(encoding="utf-8"))
+    for r in veri["rotalar"]:
+        if r.get("kalip") == "/bug-taslaklari":
+            r["roller"] = ["po"]
+    dosya.write_text(json.dumps(veri, ensure_ascii=False), encoding="utf-8")
+
+    assert rota_rolleri("/bug-taslaklari") is None
+    assert rota_rolleri("/bug-taslaklari", rules_dir=kok) == frozenset({"po"})
+    cikti = _cikti(yonlendirmeler=[{"etiket": "Bug taslakları", "rota": "/bug-taslaklari"}])
+    assert isle(cikti, SonIslemBaglami(rol="tester"))["yonlendirmeler"]
+    assert isle(cikti, SonIslemBaglami(rol="tester", rules_dir=kok))["yonlendirmeler"] == []
+    assert isle(cikti, SonIslemBaglami(rol="po", rules_dir=kok))["yonlendirmeler"]
+    # Dışarıdan verilen süzgeç önceliklidir (testler/çağıranlar için).
+    yok = SonIslemBaglami(rol="po", rules_dir=kok, rota_rolleri=lambda _r: frozenset({"admin"}))
+    assert isle(cikti, yok)["yonlendirmeler"] == []

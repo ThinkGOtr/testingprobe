@@ -50,13 +50,18 @@ def project() -> str:
 
 
 def testdata() -> str | None:
-    """Case üretimindeki test verisi bloğu (bayi/ürün/limit; taslak adımlarının kaynağı)."""
+    """Case üretimindeki test verisi bloğu (bayi/ürün/limit; taslak adımlarının kaynağı).
+
+    K17 (mimar tur 2 #8): case üretimiyle aynı kural — live/record'da katalogdan, replay'de demo
+    DB bloğu (REPLAY girdisi değişmez)."""
     f = _overrides.get("testdata")
     if f is not None:
         return f()
     from tp_core.features.cases import testdata as td
+    from tp_core.models import session_scope
 
-    return td.block()
+    with session_scope() as s:
+        return td.block(s)
 
 
 def public_base_url() -> str:

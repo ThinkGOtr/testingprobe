@@ -3,7 +3,7 @@
 - **Girdi:** yalnızca case kimlikleri; içerik kabul edilmez (portal `POST /publish` ve IDE
   `publish_test_cases` aynı yolu kullanır).
 - **Kontrol (worker, her case için, yazmadan hemen önce ve sonra):** durum `approved` ve
-  `approved_hash_matches` (son insan kararı onaylayan bir karar, `review.onaylanan_hash ==
+  `approved_hash_matches` (son insan kararı Analistin son onayı `approve`, `review.onaylanan_hash ==
   test_case.icerik_hash == test_case.onaylanan_hash`) **ve** gereksinim `cases_ready|done` ve PO
   onayı güncel içerikte (`onaylanan_hash == content_hash_of(req)`; story değişip PO onayı
   sıfırlandıysa eski metnin case'i yayınlanmaz) **ve** case hazır (`readiness == ready`; eski
@@ -21,8 +21,9 @@
   `tp-<uuid>` etiketiyle arar (`find_existing`); yeniden denemede ikinci issue açılmaz. Aynı hash
   `created` ise çağrı yapılmaz.
 - **Kısmi başarı:** her case ayrı sonuçlanır (`created` | `exists` | `failed` + hata).
-- **Gereksinim:** tüm onaylı case'ler yayınlanmış ve karar bekleyen case kalmamışsa `cases_ready →
-  done`. Story'ye yayın özeti ve denetim zincirinin son hash'i Jira yorumu olarak yazılır (§3/8).
+- **Gereksinim:** tüm onaylı case'ler yayınlanmış ve karar/son onay bekleyen (`draft`/`ready`)
+  case kalmamışsa `cases_ready → done`. Story'ye yayın özeti ve denetim zincirinin son hash'i
+  Jira yorumu olarak yazılır (§3/8).
 
 Jira/Xray yazma kimlikleri yalnızca core-worker'dadır (MIMARI-SOZLESME §6): core-api işi kuyruğa
 koyar (`request_publish`) ve sonucunu bekler (`await_job`).
@@ -42,6 +43,7 @@ from sqlalchemy import Engine, func, select, text
 from sqlalchemy.orm import Session
 
 from tp_core.audit import audit_on_commit, chain_tip
+from tp_core.auth.yetki import izinli
 from tp_core.events.bus import publish_tx
 from tp_core.features.cases.schema import is_legacy, readiness_of
 from tp_core.features.cases.service import get_requirement, requirement_change_reason
@@ -67,9 +69,12 @@ from tp_core.ports import JiraPort, TestManagementPort
 from tp_core.workflow.jobs import JobContext, PermanentJobError, enqueue
 from tp_core.workflow.service import (
     APPROVING,
+    ApprovalNotAllowed,
     InvalidDecision,
     Principal,
     approved_hash_matches,
+    eski_analist_onayi,
+    latest_review,
     transition,
 )
 
@@ -122,16 +127,23 @@ def set_targets_factory(factory: Callable[[], Targets] | None) -> None:
 
 
 def approver_of(session: Session, tc: TestCase) -> str | None:
-    son = session.scalars(
-        select(Review)
-        .where(
-            Review.nesne_turu == "test_case",
-            Review.nesne_id == tc.id,
-            Review.karar.in_(APPROVING["test_case"]),
-        )
-        .order_by(Review.sira.desc())
-        .limit(1)
-    ).first()
+    """Son onaylayan: Analistin `approve`'u ya da 012 öncesi analist `edit`'i."""
+    son = next(
+        (
+            r
+            for r in session.scalars(
+                select(Review)
+                .where(
+                    Review.nesne_turu == "test_case",
+                    Review.nesne_id == tc.id,
+                    Review.karar.in_((*APPROVING["test_case"], "edit")),
+                )
+                .order_by(Review.sira.desc())
+            )
+            if r.karar in APPROVING["test_case"] or eski_analist_onayi(session, r)
+        ),
+        None,
+    )
     if son is None or son.user_id is None:
         return None
     return session.scalar(select(AppUser.kullanici_adi).where(AppUser.id == son.user_id))
@@ -140,8 +152,11 @@ def approver_of(session: Session, tc: TestCase) -> str | None:
 def case_mapping(session: Session, tc: TestCase) -> dict[str, Any]:
     """Adaptöre giden case (şema + kimlik + onaylayan + onaylanan hash + üretim modu)."""
     mod = mode_of(tc)
+    # 013 Y4: gizli olmayan test verisi atıfları değere çözülür; gizliler atıf kalır.
+    from tp_core.features.testveri.service import yayin_icin_coz
+
     return {
-        **tc.icerik,
+        **yayin_icin_coz(session, tc.icerik),
         "id": str(tc.id),
         "onaylayan": approver_of(session, tc),
         "onaylanan_hash": tc.onaylanan_hash,
@@ -251,8 +266,22 @@ def _yayin_engeli_ham(
     session: Session, tc: TestCase, gereksinim_engeli: str | None
 ) -> tuple[str, str] | None:
     if tc.durum != "approved":
+        if tc.durum == "ready":
+            return "blocked_not_approved", "Analist son onayı bekleniyor (durum: ready)"
         return "blocked_not_approved", f"Onaylı değil (durum: {tc.durum})"
     if not approved_hash_matches(session, tc):
+        son = latest_review(session, "test_case", tc.id)
+        if (
+            son is not None
+            and son.karar not in APPROVING["test_case"]
+            and not eski_analist_onayi(session, son)
+        ):
+            # Son karar onaylayan değil (ör. Testçi `edit`'i): yayın Analist son onayıyla açılır.
+            return (
+                "blocked_hash_mismatch",
+                f"Analist son onayı yok (son karar: {son.karar}); Taslağa alıp yeniden kabul "
+                "ve son onay gerekir",
+            )
         return (
             "blocked_hash_mismatch",
             "İçerik onaydan sonra değişmiş (onaylanan hash ≠ güncel hash)",
@@ -439,6 +468,10 @@ def request_publish(
         raise InvalidDecision("yayın oturumlu kullanıcıyla istenir")
     if user.kanal == "ide" and user.kapsam != "publish":
         raise InvalidDecision("yayın için 'publish' kapsamlı token gerekir")
+    # Derinlemesine savunma: portal ucu `case.publish` ister; IDE token'ı da yayın yetkili rolün
+    # (Testçi) olmalıdır (token rolü üretim anındaki hesabın rolüdür).
+    if not izinli(user.rol, "case.publish"):
+        raise ApprovalNotAllowed(f"{user.rol} rolü case yayınlayamaz")
     ids = _parse_ids(case_ids)
     isteyen = {**user.as_dict(), "kanal": user.kanal}
     job_id = enqueue(
@@ -640,7 +673,8 @@ def _publish_one(
         mapping = case_mapping(s, tc)
         story_key = req.jira_key
         icerik_hash = tc.icerik_hash
-        baslik = str(tc.icerik.get("title") or "")
+        # Jira'ya giden başlık maskelidir (K19); mevcut issue karşılaştırması da o başlıkla.
+        baslik = str(mapping.get("title") or "")
         mod = mode_of(tc)
         # intent commit edilir: dış çağrıdan sonra çöksek de kayıt (ve tp-<uuid> araması) kalır.
     try:
@@ -727,7 +761,12 @@ def _complete_requirements(req_ids: set[uuid.UUID], aktor: str) -> list[str]:
                     .group_by(TestCase.durum)
                 ).all()
             )
-            if sayim.get("published", 0) and not sayim.get("approved") and not sayim.get("draft"):
+            if (
+                sayim.get("published", 0)
+                and not sayim.get("approved")
+                and not sayim.get("draft")
+                and not sayim.get("ready")
+            ):
                 transition(
                     s, req, "done", aktor, "cases_ready", sebep="onaylı case'lerin tümü yayınlandı"
                 )

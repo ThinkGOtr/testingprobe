@@ -297,12 +297,33 @@ describe("Koşular", () => {
     expect(kirmasiz.length).toBeLessThan(hepsi.length);
   });
 
-  it("sunucu 'Deploy sonrası testleri koş' ile koşu kuyruğa alınır; mühendis tetikleyemez", async () => {
-    await oturumAc("sunucu");
+  it("Automation Engineer 'Deploy sonrası testleri koş' ile koşu kuyruğa alır; Sistem Yöneticisi tetik görmez", async () => {
+    await oturumAc("muhendis");
     const u = userEvent.setup();
-    uygulama("/kosular");
+    const { unmount } = uygulama("/kosular");
     await u.click(await screen.findByRole("button", { name: "Deploy sonrası testleri koş" }));
     expect(await screen.findAllByText(/Deploy koşusu sıraya alındı/)).not.toHaveLength(0);
+    unmount();
+    await oturumAc("sunucu");
+    uygulama("/kosular");
+    await screen.findByRole("heading", { name: "Koşular" });
+    expect(screen.queryByRole("button", { name: "Deploy sonrası testleri koş" })).toBeNull();
+  });
+
+  it("Developer manuel koşu başlatır; prod'da core 403 mesajı gösterilir", async () => {
+    const { mockOrtam } = await import("../api/mock/handlers");
+    await oturumAc("gelistirici");
+    const u = userEvent.setup();
+    uygulama("/kosular");
+    await u.click(await screen.findByRole("button", { name: "Manuel koşu başlat" }));
+    expect(await screen.findAllByText(/Manuel koşusu sıraya alındı/)).not.toHaveLength(0);
+    mockOrtam.ortam = "prod";
+    try {
+      await u.click(screen.getByRole("button", { name: "Manuel koşu başlat" }));
+      expect(await screen.findByText(/prod ortamında koşu başlatamaz/)).toBeInTheDocument();
+    } finally {
+      mockOrtam.ortam = "dev";
+    }
   });
 
   it("koşu detayı: raporlar kartı, adres yoksa nedeniyle düz metin; üretilen teste bağlantı", async () => {
@@ -409,13 +430,19 @@ describe("Kontrol Kulesi: KPI şeridi (F4)", () => {
 });
 
 describe("rol bazlı açılış", () => {
-  it("varsayilanSayfa: sunucu → Demo yol haritası, mühendis → Kod üretimi; uç yoksa sıradaki ekran", () => {
-    expect(varsayilanSayfa("presenter")).toBe("/yol-haritasi");
+  it("varsayilanSayfa: sistem yöneticisi → Demo yol haritası, Automation Engineer → Kod üretimi; uç yoksa sıradaki ekran", () => {
+    expect(varsayilanSayfa("admin")).toBe("/yol-haritasi");
     expect(varsayilanSayfa("engineer")).toBe("/kod");
+    expect(varsayilanSayfa("tester")).toBe("/gereksinimler");
+    expect(varsayilanSayfa("auditor")).toBe("/denetim");
+    expect(varsayilanSayfa("viewer")).toBe("/kontrol-kulesi");
+    expect(varsayilanSayfa("developer")).toBe("/kosular");
+    // Kaldırılan `presenter` geçiş süresince Sistem Yöneticisi sayılır.
+    expect(varsayilanSayfa("presenter" as never)).toBe("/yol-haritasi");
     const yalnizGereksinim = (_m: string, y: string) => y === "/requirements";
     expect(varsayilanSayfa("engineer", yalnizGereksinim)).toBe("/gereksinimler");
-    expect(varsayilanSayfa("presenter", (_m, y) => y === "/runs" || y === "/requirements")).toBe("/yol-haritasi");
-    expect(varsayilanSayfa("presenter", (_m, y) => y === "/runs")).toBe("/kosular");
+    expect(varsayilanSayfa("admin", (_m, y) => y === "/runs" || y === "/requirements")).toBe("/yol-haritasi");
+    expect(varsayilanSayfa("admin", (_m, y) => y === "/runs")).toBe("/kosular");
   });
 
   it("örnek veri: sunucu girişte Demo yol haritasına, mühendis Kod üretimine düşer", async () => {

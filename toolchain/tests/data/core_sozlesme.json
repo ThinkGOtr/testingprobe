@@ -1,0 +1,24 @@
+{
+  "aciklama": "Core (codegen/platform.py) ile toolchain worker arasindaki sozlesme. Iki tarafin testleri bu dosyayi okur: core tests/unit/test_cross_lane_contracts.py, toolchain tests/test_core_sozlesme.py. Bir taraf degisirse dosya ve diger taraf birlikte guncellenir.",
+  "check_adlari": [
+    {"lang": "ts", "platform": "web", "check": "local-ci"},
+    {"lang": "ts", "platform": null, "check": "local-ci"},
+    {"lang": "java", "platform": "web", "check": "local-ci-web-java"},
+    {"lang": "java", "platform": null, "check": "local-ci-web-java"},
+    {"lang": "java", "platform": "android", "check": "local-ci-android"},
+    {"lang": "java", "platform": "ios", "check": "local-ci-ios"},
+    {"lang": "java", "platform": "windows", "check": "local-ci-windows"}
+  ],
+  "java_kapsam_sonekleri": ["Test.java", "Testi.java"],
+  "java_kapsam_ornekleri": {
+    "kabul": [
+      "src/test/java/com/antreklabs/bayi/uretilen/TPD1WebC2_3f9b1c2eTest.java",
+      "src/test/java/com/antreklabs/bayi/testler/SepetTesti.java"
+    ],
+    "red": [
+      "src/test/java/com/antreklabs/bayi/testler/SepetTests.java",
+      "src/test/java/com/antreklabs/bayi/testler/SepetIT.java",
+      "src/test/java/com/antreklabs/bayi/ekranlar/LoginPage.java"
+    ]
+  }
+}

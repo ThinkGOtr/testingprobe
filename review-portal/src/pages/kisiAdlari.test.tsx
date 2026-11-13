@@ -30,17 +30,17 @@ describe("portal kişi adları (yalnızca gösterim)", () => {
     expect(within(kutu).getByText("Analist")).toBeInTheDocument();
   });
 
-  it("adı olmayan sunucu kullanıcı adıyla ve Sunucu rolüyle görünür", async () => {
+  it("adı olmayan sunucu kullanıcı adıyla ve Sistem Yöneticisi rolüyle görünür", async () => {
     await oturumAc("sunucu");
     const { container } = uygulama("/denetim");
     await screen.findByRole("heading", { name: "Denetim kaydı", level: 1 });
     const kutu = container.querySelector(".kullanici") as HTMLElement;
     expect(kutu).toHaveTextContent("sunucu");
-    expect(kutu).toHaveTextContent("Sunucu");
+    expect(kutu).toHaveTextContent("Sistem Yöneticisi");
   });
 
   it("denetim tablosunda aktör görünen adla gösterilir; sistem aktörü aynen kalır", async () => {
-    await oturumAc("testci");
+    await oturumAc("denetci");
     mockVerisi().denetim.push(
       { aktor: "po", eylem: "requirement.po_approved", nesne: "requirement:x", ozet: "-", zaman: new Date().toISOString() },
       { aktor: "system", eylem: "seed.applied", nesne: "-", ozet: "-", zaman: new Date().toISOString() },

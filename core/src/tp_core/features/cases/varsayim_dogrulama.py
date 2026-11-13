@@ -22,7 +22,9 @@ from sqlalchemy.orm import Session
 
 from tp_core.models import AppUser, Requirement, Review
 
-ONAYLI = frozenset({"approved", "published"})
+# 012 (dev birleştirmesi): "Varsayım doğrulandı" Testçinin `edit`'idir ve case'i `ready` yapar;
+# doğrulama Analist son onayını beklemeden diğer case'lere yansır.
+ONAYLI = frozenset({"ready", "approved", "published"})
 
 
 def verified_assumptions(session: Session, req: Requirement) -> dict[str, dict[str, Any]]:

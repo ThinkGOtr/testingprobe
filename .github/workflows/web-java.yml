@@ -1,0 +1,292 @@
+# Web e2e CI — Java hattı (Playwright for Java + TestNG), AI'sız (Constitution II, specs/011-uretim-dili §2.5, §2.8).
+#
+# Bu workflow'da model anahtarı, MCP sunucusu (playwright-mcp dahil) veya ajan bağımlılığı YOKTUR;
+# yalnızca onaylanmış, deterministik Java test kodu (demo-app/e2e-java) koşar. ci.yml `test-local`
+# job'unun Java karşılığıdır (Yol B: runner üzerinde aynı sürümler):
+#   demo uygulaması (scripts/github-demo-serve.sh: API + vite preview /api vekili, 127.0.0.1:8081)
+#   → Chromium (.playwright-version ile aynı Playwright sürümünün tarayıcı derlemesi; önbellekli)
+#   → demo-app/ci/run-java-checks.sh: pom kilidi → java-araclar guard → test-compile → birim → tarayıcı
+#
+# Check adı `web-java` (job adı). GitHub kipinde web + java üretimi için zorunlu check (011 §2.8);
+# zorunlu yapılınca ruleset + TP_REQUIRED_CHECKS'e eklenir (.github/CI.md "Web Java iş akışı"). Bu
+# yüzden workflow düzeyinde `paths` filtresi YOKTUR: değişiklik `changes` job'unda tespit edilir,
+# ilgisiz PR'da job "no-op, başarılı" çıkar.
+name: web-java
+run-name: >-
+  ${{ github.event_name == 'workflow_dispatch'
+      && format('web-java {0} [{1}]', inputs.tetik, inputs.istek_id || 'elle')
+    || github.event.pull_request.title || github.event.head_commit.message || 'web-java' }}
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  push:
+    branches: [main]
+  schedule:
+    # Gece koşusu: 02:15 UTC = 05:15 TR (ci.yml'den çeyrek saat sonra; her koşu kendi runner'ında
+    # kendi SQLite veritabanıyla çalışır).
+    - cron: "15 2 * * *"
+  workflow_dispatch:
+    inputs:
+      tetik:
+        description: "Tetik türü (sonuç kaydında görünür)"
+        type: choice
+        options: [manual, nightly, deploy]
+        default: manual
+      istek_id:
+        description: "Çekirdeğin istek kimliği (koşu adında görünür; [A-Za-z0-9._-], ≤64)"
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-java-${{ github.event_name }}-${{ github.event.pull_request.number || inputs.istek_id || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  APP_ROOT: demo-app
+  JAVA_ROOT: demo-app/e2e-java
+  NODE_VERSION: "22"
+  JAVA_VERSION: "17"
+  UV_VERSION: "0.8.24"
+  TP_ISTEK_ID: ${{ inputs.istek_id || '' }}
+
+jobs:
+  changes:
+    name: changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      run_tests: ${{ steps.decide.outputs.run_tests }}
+      trigger: ${{ steps.decide.outputs.trigger }}
+    steps:
+      - name: Değişiklikleri tespit et (yalnızca PR)
+        id: filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: |
+            java:
+              - 'demo-app/e2e-java/**'
+              - 'demo-app/api/**'
+              - 'demo-app/web/**'
+              - 'demo-app/kimlikler.json'
+              - 'demo-app/ci/run-java-checks.sh'
+              - 'demo-app/ci/break-verify-java.sh'
+              - 'toolchain/java-araclar/**'
+              - 'toolchain/e2e-java-deps/**'
+              - '.playwright-version'
+              # Sürüm tutarlılığı adımı @playwright/test sürümünü buradan okur.
+              - 'demo-app/e2e/package.json'
+              - 'scripts/github-demo-serve.sh'
+              - '.github/workflows/web-java.yml'
+
+      - name: Karar
+        id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          JAVA_DEGISTI: ${{ steps.filter.outputs.java }}
+          DISPATCH_TETIK: ${{ inputs.tetik }}
+        run: |
+          set -euo pipefail
+          if [ -n "$TP_ISTEK_ID" ] && ! [[ "$TP_ISTEK_ID" =~ ^[A-Za-z0-9._-]{1,64}$ ]]; then
+            echo "::error::istek_id biçimi geçersiz ([A-Za-z0-9._-], en çok 64 karakter)"
+            exit 1
+          fi
+          case "$EVENT" in
+            pull_request)      trigger="pr" ;;
+            push)              trigger="push" ;;
+            schedule)          trigger="nightly" ;;
+            workflow_dispatch) trigger="${DISPATCH_TETIK:-manual}" ;;
+            *)                 trigger="$EVENT" ;;
+          esac
+          if [ "$EVENT" = "pull_request" ]; then run_tests="${JAVA_DEGISTI:-false}"; else run_tests=true; fi
+          echo "run_tests=$run_tests" >> "$GITHUB_OUTPUT"
+          echo "trigger=$trigger" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Değişiklik tespiti (web-java)"
+            echo "| tetik | istek | testler |"
+            echo "|---|---|---|"
+            echo "| \`$trigger\` | \`${TP_ISTEK_ID:--}\` | $run_tests |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  web-java:
+    # Zorunlu check adayı (GitHub kipinde web + java). e2e-java / uygulama değişmediyse no-op başarılı.
+    name: web-java
+    needs: changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      RUN_TESTS: ${{ needs.changes.outputs.run_tests }}
+      TP_TRIGGER: ${{ needs.changes.outputs.trigger }}
+      CI: "true"
+    steps:
+      - name: No-op (Java web testleri / uygulama değişmedi)
+        if: env.RUN_TESTS != 'true'
+        run: echo "demo-app/e2e-java ve uygulama değişmedi; web-java no-op (başarılı)." | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Checkout
+        if: env.RUN_TESTS == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Playwright for Java sürücüsünün paketlediği çekirdek = .playwright-version (birim testi
+      # SurumBirimTesti de denetler); tarayıcı derlemeleri böylece TS hattıyla aynıdır.
+      - name: Sürüm tutarlılığı (.playwright-version ↔ e2e/package.json)
+        if: env.RUN_TESTS == 'true'
+        run: |
+          set -euo pipefail
+          want="$(tr -d '[:space:]' < .playwright-version)"
+          have="$(jq -r '.devDependencies["@playwright/test"] // empty' "$APP_ROOT/e2e/package.json")"
+          echo "PLAYWRIGHT_VERSION=$want" >> "$GITHUB_ENV"
+          if [ "$want" != "$have" ]; then
+            echo "::error file=$APP_ROOT/e2e/package.json::@playwright/test ($have) != .playwright-version ($want)"
+            exit 1
+          fi
+          n="$(find "$JAVA_ROOT/src/test/java/com/antreklabs/bayi/uretilen" -name '*Test.java' | wc -l | tr -d ' ')"
+          echo "Üretilen Java web testi: $n"
+
+      - name: Java kurulumu
+        if: env.RUN_TESTS == 'true'
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+          cache-dependency-path: |
+            demo-app/e2e-java/pom.xml
+            toolchain/java-araclar/pom.xml
+
+      - name: Node kurulumu
+        if: env.RUN_TESTS == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: demo-app/web/package-lock.json
+
+      - name: uv kurulumu
+        if: env.RUN_TESTS == 'true'
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: demo-app/api/uv.lock
+
+      - name: Playwright tarayıcı önbelleği
+        if: env.RUN_TESTS == 'true'
+        id: pw-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: ms-playwright-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.playwright-version') }}-chromium
+
+      # Testler tarayıcıyı indirmez (PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD); kurulum burada, ci.yml ile
+      # aynı komutla ve aynı sürümle yapılır.
+      - name: Chromium kurulumu (Playwright ${{ env.PLAYWRIGHT_VERSION }})
+        if: env.RUN_TESTS == 'true'
+        env:
+          CACHE_HIT: ${{ steps.pw-cache.outputs.cache-hit }}
+        run: |
+          set -euo pipefail
+          if [ "$CACHE_HIT" = "true" ]; then
+            npx --yes "playwright@${PLAYWRIGHT_VERSION}" install-deps chromium
+          else
+            npx --yes "playwright@${PLAYWRIGHT_VERSION}" install --with-deps chromium
+          fi
+          echo "PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/ms-playwright" >> "$GITHUB_ENV"
+
+      - name: java-araclar (üretilen test koruması)
+        if: env.RUN_TESTS == 'true'
+        run: (cd toolchain/java-araclar && ./mvnw -B -ntp -q package -DskipTests)
+
+      # Test uçlarının (/test/*) sırrı koşu başına üretilir; API (github-demo-serve.sh ortamından) ve
+      # Java testleri (DEMOAPP_TEST_TOKEN ortamı) aynı değeri alır. /test/* doğrudan API'ye gider.
+      - name: Demo uygulamasını başlat
+        if: env.RUN_TESTS == 'true'
+        run: |
+          set -euo pipefail
+          token="$(openssl rand -hex 24)"
+          echo "::add-mask::$token"
+          {
+            echo "DEMOAPP_TEST_TOKEN=$token"
+            echo "BASE_URL=http://127.0.0.1:8081"
+            echo "DEMO_API_URL=http://127.0.0.1:18000"
+          } >> "$GITHUB_ENV"
+          mkdir -p tp-logs
+          PORT=8081 DEMO_API_PORT=18000 DEMOAPP_TEST_TOKEN="$token" \
+            nohup bash scripts/github-demo-serve.sh > tp-logs/serve.log 2>&1 &
+          for _ in $(seq 1 90); do
+            if curl -fsS "http://127.0.0.1:8081/api/health" >/dev/null 2>&1; then
+              echo "Uygulama hazır: http://127.0.0.1:8081"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::Demo uygulaması 180 sn içinde hazır olmadı"
+          tail -n 100 tp-logs/serve.log
+          exit 1
+
+      - name: Testler
+        if: env.RUN_TESTS == 'true'
+        id: tests
+        run: |
+          set -euo pipefail
+          bash demo-app/ci/run-java-checks.sh 2>&1 | tee tp-logs/run-java-checks.log
+
+      # --- Sonuçlar -----------------------------------------------------------------------------
+      # Düz artefakt kökü: ci-meta.json, surefire-reports/ (tarayıcı koşusu JUnit XML), birim-raporlari/,
+      # allure-results/, extent-report/index.html (Extent raporu; tek dosya), kanit/<Sınıf>.<metot>/
+      # (ekran.png + trace.zip + sayfa.html; triage), guard.json, logs/.
+      - name: Sonuçları topla
+        if: always() && env.RUN_TESTS == 'true'
+        env:
+          OUTCOME: ${{ steps.tests.outcome }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          out=tp-results
+          mkdir -p "$out"
+          target="$JAVA_ROOT/target"
+          for d in surefire-reports birim-raporlari allure-results extent-report kanit; do
+            if [ -d "$target/$d" ]; then cp -R "$target/$d" "$out/$d"; fi
+          done
+          if [ -f "$target/guard.json" ]; then cp "$target/guard.json" "$out/guard.json"; fi
+          if [ -d tp-logs ]; then cp -R tp-logs "$out/logs"; fi
+          # Sır günlüklere/trace'e yazılmaz (TestVerisi HttpClient ile çağırır); yine de koşu belirteci
+          # geçen dosyalarda maskelenir (GitHub maskesi yalnız iş günlüğüne uygulanır). Bağlar silinir.
+          find "$out" -type l -delete
+          if [ -n "${DEMOAPP_TEST_TOKEN:-}" ]; then
+            { grep -rl -- "$DEMOAPP_TEST_TOKEN" "$out" || true; } | while read -r f; do
+              sed -i "s/$DEMOAPP_TEST_TOKEN/***/g" "$f"
+            done
+          fi
+          case "$OUTCOME" in success) durum=passed ;; failure) durum=failed ;; *) durum=error ;; esac
+          jq -n --arg platform web --arg dil java --arg sha "$SHA" --arg tetik "$TP_TRIGGER" \
+            --arg istek "$TP_ISTEK_ID" --arg durum "$durum" --arg sonuc "$OUTCOME" \
+            --arg job web-java \
+            '{schema_version: 1, job: $job, platform: $platform, dil: $dil, sha: $sha, tetik: $tetik,
+              istek_id: (if $istek == "" then null else $istek end), durum: $durum,
+              adim_sonucu: $sonuc}' > "$out/ci-meta.json"
+          n="$(find "$out/surefire-reports" -name 'TEST-*.xml' 2>/dev/null | wc -l | tr -d ' ')"
+          {
+            echo "### web-java (tetik: \`$TP_TRIGGER\`)"
+            echo "Durum: **$durum** · JUnit XML: $n dosya · commit \`${SHA:0:12}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Artefaktlar
+        if: always() && env.RUN_TESTS == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: web-java-results
+          retention-days: 14
+          if-no-files-found: warn
+          include-hidden-files: false
+          path: tp-results/

@@ -299,15 +299,18 @@ def test_evaluated_asistan_kaydi_hashsiz_ya_da_bayat_hashle_kapiyi_kapatir(
     capsys.readouterr()
     assert main(["--rules-dir", str(rules_dir), "--check"]) == 1
     out = capsys.readouterr()
-    assert "assistant@v1\ticerik_degisti" in out.out and "içerik hash'i: kayıtlı sha256:" in out.out
-    assert "assistant@v1 (değerlendirme sonrası içerik değişti" in out.err
+    v = prompt_versions(rules_dir)["assistant"]
+    assert (
+        f"assistant@v{v}\ticerik_degisti" in out.out and "içerik hash'i: kayıtlı sha256:" in out.out
+    )
+    assert f"assistant@v{v} (değerlendirme sonrası içerik değişti" in out.err
 
 
 def test_waived_asistan_kaydinda_hash_denetlenmez(rules_dir: Path) -> None:
     _set(
         rules_dir,
         "assistant",
-        version=1,
+        version=prompt_versions(rules_dir)["assistant"],
         status="waived",
         waiver={
             "approved_by": "Sahip",

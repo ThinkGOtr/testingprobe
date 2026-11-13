@@ -363,6 +363,9 @@ def test_tam_akis_tpd1(
         "requirement.po_withdrawn",
     ):
         assert e in eylemler, e
+    # Zincir doğrulaması `audit.verify` (admin/auditor) ister; analist 403 alır.
+    assert api.get("/audit", params={"verify": True}).status_code == 403
+    login(api, make_user("auditor"))
     assert api.get("/audit", params={"verify": True}).json()["verify"]["ok"] is True
 
 
@@ -542,7 +545,8 @@ def test_jira_yolunda_portal_po_onayi_yok(api: TestClient, make_user, engine: En
     h = api.get(f"/requirements/{rid}").json()["icerik_hash"]
     login(api, make_user("po"))
     r = api.post(f"/requirements/{rid}/po-approve", json={"icerik_hash": h})
-    assert r.status_code == 409 and "tp-po-approved" in r.json()["detail"]
+    assert r.status_code == 410 and r.json()["kod"] == "po_onayi_jira"
+    assert "tp-po-approved" in r.json()["detail"]
 
 
 def test_sse_olaylari_yayilir(

@@ -3,7 +3,8 @@
 // listelenir; talep ilerlemesi `POST …/agent-test/refresh` sayısına bağlıdır (queued → running →
 // passed|failed; D4). `GET …/agent-test` yalnız okur.
 import { ApiError } from "../http";
-import type { AjanTestiGorunumu, AjanTestiTalebi, AjanUrunu, Kullanici, Rol } from "../types";
+import type { AjanTestiGorunumu, AjanTestiTalebi, AjanUrunu, Kullanici } from "../types";
+import type { Izin } from "../../lib/yetki";
 
 type Rota = [string, RegExp, (m: RegExpMatchArray, q: URLSearchParams, govde: unknown) => unknown];
 
@@ -150,8 +151,8 @@ type GereksinimBulucu = (id: string) => { jira_key: string | null; baslik: strin
 const BAGLAMA_KAPALI: ReadonlySet<string> = new Set(["generating", "cases_ready", "modeling", "model_ready", "done"]);
 
 export function ajanProbeRotalari(
-  rolGerekli: (...roller: Rol[]) => Kullanici,
-  girisGerekli: () => Kullanici,
+  /** core `izin(...)` (012): izinlerden hiçbiri yoksa 403. */
+  izinGerekli: (...izinler: [Izin, ...Izin[]]) => Kullanici,
   gereksinimBul?: GereksinimBulucu,
 ): Rota[] {
   return [
@@ -159,7 +160,7 @@ export function ajanProbeRotalari(
       "GET",
       /^\/agent-probe\/products$/,
       () => {
-        girisGerekli();
+        izinGerekli("requirement.read");
         return {
           kip: "sim",
           simulasyon: true,
@@ -171,7 +172,7 @@ export function ajanProbeRotalari(
       "GET",
       /^\/requirements\/([^/]+)\/agent-test$/,
       (m) => {
-        girisGerekli();
+        izinGerekli("requirement.read");
         // D4: GET yalnız okur; sonuç işleme `POST …/agent-test/refresh` ile.
         return gorunum(decodeURIComponent(m[1]), false);
       },
@@ -180,7 +181,7 @@ export function ajanProbeRotalari(
       "POST",
       /^\/requirements\/([^/]+)\/agent-test\/refresh$/,
       (m) => {
-        girisGerekli();
+        izinGerekli("agent_test.run");
         return gorunum(decodeURIComponent(m[1]), true);
       },
     ],
@@ -188,7 +189,7 @@ export function ajanProbeRotalari(
       "PUT",
       /^\/requirements\/([^/]+)\/agent-product$/,
       (m, _q, govde) => {
-        const k = rolGerekli("analyst");
+        const k = izinGerekli("requirement.review");
         const id = decodeURIComponent(m[1]);
         const kod = (govde as { urun_kodu?: string | null } | null)?.urun_kodu ?? null;
         const durum = gereksinimBul?.(id)?.durum;
@@ -212,7 +213,7 @@ export function ajanProbeRotalari(
       "POST",
       /^\/requirements\/([^/]+)\/agent-test$/,
       (m) => {
-        const k = rolGerekli("analyst");
+        const k = izinGerekli("agent_test.run");
         const id = decodeURIComponent(m[1]);
         const g = gorunum(id, false);
         if (!g.baslatilabilir || !g.urun_kodu) throw new ApiError(409, g.engel ?? "Ajan testi başlatılamaz.", { kod: "ajan_testi_baslatilamaz" });

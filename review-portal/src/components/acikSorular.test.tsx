@@ -1,4 +1,4 @@
-// Açık soru döngüsü (specs/011 K16; D6): "Açık soruları PO'ya gönder" (analist, Jira story'si
+// Açık soru döngüsü (specs/011 K16; D6): "Açık soruları PO'ya gönder" (`case.ask_po`, Analist; Jira story'si
 // gerekir, aynı soru iki kez gitmez), PO yanıtının soruya bağlanması, case kartında durum/yanıt,
 // düzelt önerisi ve düzeltme formunda yanıt metni; core yanıt biçiminin uyarlanması.
 import { screen, waitFor, within } from "@testing-library/react";
@@ -117,7 +117,7 @@ describe("CaseKarti: PO yanıtı", () => {
     jiraStorysiVer();
     await api.acikSorulariGonder(V3_GEREKSINIM_ID);
     let c = await engelliCase();
-    sar(<CaseKarti tc={c} guncellendi={() => undefined} />);
+    const ilk = sar(<CaseKarti tc={c} guncellendi={() => undefined} />);
     // B7: atıf satırında PO'nun gördüğü kimlik (CQ1), rozet yalnız durumu söyler.
     const blok = within(screen.getByTestId("case-acik-sorular"));
     expect(blok.getByTestId("atif-kimlik")).toHaveTextContent(/^CQ1/);
@@ -125,19 +125,22 @@ describe("CaseKarti: PO yanıtı", () => {
     expect(blok.getByText("PO yanıtı bekleniyor")).toBeInTheDocument();
     expect(screen.queryByTestId("po-yanit-onerisi")).not.toBeInTheDocument();
 
+    // Yanıtı Testçi de okuyabilir (`case.ask_po` | `case.decide`); düzeltme kararı Testçinin.
+    ilk.unmount();
+    await oturumAc("testci");
     await api.acikSoruYanitlariniOku(V3_GEREKSINIM_ID);
     c = await engelliCase();
     sar(<CaseKarti tc={c} guncellendi={() => undefined} />);
-    const bloklar = screen.getAllByTestId("case-acik-sorular");
-    const son = bloklar[bloklar.length - 1];
+    const son = screen.getByTestId("case-acik-sorular");
     expect(within(son).getByText("Yanıtlandı")).toBeInTheDocument();
     expect(within(son).getByTestId("po-yaniti")).toHaveTextContent(ORNEK_PO_YANITI);
     // B3: yanıt sonrası tek mesaj — öneri kutusu ayrıca çizilmez (yönlendirme kutusu söyler).
     expect(screen.queryAllByTestId("po-yanit-onerisi")).toHaveLength(0);
 
     const user = userEvent.setup();
-    const dugmeler = screen.getAllByRole("button", { name: "Düzelt" });
-    await user.click(dugmeler[dugmeler.length - 1]);
+    const duzelt = screen.getByTestId("yonlendirme-duzelt");
+    await waitFor(() => expect(duzelt).toBeEnabled());
+    await user.click(duzelt);
     await waitFor(() => expect(screen.getByTestId("duzeltme-kaynaklari")).toHaveTextContent(ORNEK_PO_YANITI));
   });
 });

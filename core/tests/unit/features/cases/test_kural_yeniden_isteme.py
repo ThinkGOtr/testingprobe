@@ -30,7 +30,7 @@ def test_kural_ihlali_duzeltme_istenir_ve_duzeltilmis_cikti_yazilir(
     duzgun = uretim_cikti([case_icerik()])
     provider = fake_gateway([text_response(_tutarsiz()), text_response(duzgun)])
     rid = make_requirement(acs=["AC1: Bayi giriş yapar."])
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     (is_,) = run_jobs(engine)
     assert is_.durum == "done", is_
@@ -47,7 +47,7 @@ def test_duzelmezse_cikti_yine_doner_ve_uyari_kalir(
     monkeypatch.setenv("TP_KURAL_YENIDEN_ISTEME", "on")
     fake_gateway([text_response(_tutarsiz())] * 3)
     rid = make_requirement(acs=["AC1: Bayi giriş yapar."])
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     api.post(f"/requirements/{rid}/generate-cases")
     (is_,) = run_jobs(engine)
     assert is_.durum == "done", is_
@@ -63,7 +63,7 @@ def test_anahtar_kapali_iken_tek_cagri(
     monkeypatch.setenv("TP_KURAL_YENIDEN_ISTEME", anahtar)
     provider = fake_gateway([text_response(_tutarsiz())])
     rid = make_requirement(acs=["AC1: Bayi giriş yapar."])
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     api.post(f"/requirements/{rid}/generate-cases")
     run_jobs(engine)
     assert len(provider.requests) == 1
@@ -96,7 +96,7 @@ def test_is_suresi_yetmezse_yeniden_istemez_cikti_uyariyla_doner(
     monkeypatch.setattr(gecit, "kalan_sure", lambda: 1.0)  # iş süresinin sonuna gelinmiş
     provider = fake_gateway([text_response(_tutarsiz())])
     rid = make_requirement(acs=["AC1: Bayi giriş yapar."])
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     api.post(f"/requirements/{rid}/generate-cases")
     (is_,) = run_jobs(engine)
     assert is_.durum == "done", is_
@@ -118,7 +118,7 @@ def test_is_yeniden_denemesi_kural_ihlalli_ara_ciktiyi_kullanmaz(
         [text_response(_tutarsiz()), ProviderRefusal("ret"), text_response(duzgun)]
     )
     rid = make_requirement(acs=["AC1: Bayi giriş yapar."])
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     api.post(f"/requirements/{rid}/generate-cases")
     (ilk,) = run_jobs(engine)
     assert ilk.durum == "retry", ilk
@@ -145,7 +145,7 @@ def test_hazir_casein_dusen_soru_atfi_uyariya_yazilir(
     )
     fake_gateway([text_response(sorulu), text_response(duzgun)])
     rid = make_requirement(acs=["AC1: Bayi giriş yapar."])
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     api.post(f"/requirements/{rid}/generate-cases")
     (is_,) = run_jobs(engine)
     assert is_.durum == "done", is_
@@ -184,7 +184,7 @@ def test_tur2_onayli_modelden_sapma_yeniden_istenir(
     sapan["coverage_items"] = sapan["coverage_items"][:-1]  # onaylı modelden bir öğe eksik
     provider = fake_gateway([text_response(model), text_response(sapan), text_response(cases)])
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     assert (
         api.post(f"/requirements/{rid}/generate-cases", json={"kip": "iki_tur"}).status_code == 202
     )
@@ -219,7 +219,7 @@ def test_derinlestirme_kural_ihlalinde_yeniden_ister(
         ]
     )
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     api.post(f"/requirements/{rid}/generate-cases")
     run_jobs(engine)
     monkeypatch.setenv("TP_KURAL_YENIDEN_ISTEME", "on")

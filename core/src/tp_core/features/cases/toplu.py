@@ -4,44 +4,31 @@
 her case'e ayrı `review` kaydı (görülen içerik hash'iyle), durum geçişi ve denetim zinciri kaydı
 düşer; onay kuralları (hazır olma, tutarlılık, PO onayının güncelliği) tek yerde kalır.
 
-1. `bulk_approve` (`POST /cases/bulk-decision`, "Seçilenleri onayla"): önce seçilen case
-   satırları `case_id` sırasıyla kilitlenir (kesişen iki toplu istek ters sırayla gelse de
-   deadlock olmaz; tekil karar da önce case'i kilitler), sonra kalemler gövde sırasıyla,
-   her biri kendi SAVEPOINT'inde (`session.begin_nested()`) onaylanır. Bir kalem hata verirse
-   yalnız o kalem geri alınır, diğerleri sürer; yanıt kalem kalem sonuç taşır (hepsi başarısız
-   olsa bile 200). Gerekçe: her onay bağımsız bir insan kararıdır ve kendi görülen hash'ine
-   bağlıdır; bir case'in bayat hash'i ya da hazır olmaması diğer case'lerdeki geçerli kararı
-   geçersiz kılmaz; portal sonucu kalem kalem gösterir. Kalem hatasının `kod`'u tekil uçtaki
-   HTTP karşılığıdır (`WorkflowError.status_code`: 409 bayat hash / taslak değil / story değişti,
-   422 hazır değil / tutarsız, 404 case yok); `hata` aynı Türkçe mesajdır.
+1. Toplu karar ("Seçilenleri onayla"): dev birleştirmesinde 013/012'nin `POST /cases/bulk-decision`
+   ucuna (`service.bulk_decide`: Testçi toplu kabul / Analist toplu son onay; öğe başına
+   SAVEPOINT, görülme şartı, denetim kaydı) katıldı; 011'in ayrı `bulk_approve`'u kaldırıldı.
 2. `assumption_verified` (`POST /cases/{id}/assumption-verified`, "Varsayım doğrulandı"):
-   varsayıma bağlı taslak case'te analist varsayımı doğruladığını tek eylemle bildirir. Yeni
-   içerik = mevcut içerik − doğrulanan `assumption_refs`; başka varsayım/soru kalmadıysa
-   `readiness=ready`. Karar `edit` olarak verilir (denetim zincirine düzeltme olarak; K20),
+   varsayıma bağlı taslak case'te Testçi (012: `case.decide`) varsayımı doğruladığını tek
+   eylemle bildirir. Yeni içerik = mevcut içerik − doğrulanan `assumption_refs`; başka
+   varsayım/soru kalmadıysa `readiness=ready`. Karar `edit` olarak verilir (denetim zincirine
+   düzeltme olarak; K20; 012'de case draft → ready olur, son onay Analistindir),
    `beklenen_anlam_degisti=False` ve `duzeltme_olculeri.varsayim_dogrulandi=[kimlikler]` ile.
    Başka atıf kalıyorsa ya da beklenen sonuç boşsa 422: o durumda analist 'Düzelt' kullanır.
    Varsayım PO'ya doğrulatılmak üzere gönderildiyse (K16, `acik_soru`) PO kaydı esastır: yanıt
    bekleniyorsa ya da PO "doğru" dışında bir yanıt verdiyse 409 (analist PO yanıtına göre
    'Düzelt' kullanır); PO "doğru" dediyse kayıt kaynağı olarak `CAn` yazılır.
 
-Denetim kaydı notu: `audit_on_commit` kayıtları oturumda bekler ve SAVEPOINT geri alımı onları
-silmez (`audit/session.py`). Başarısız kalemin bekleyen kayıtları burada elle atılır; aksi halde
-geri alınan karar zincire "verilmiş" gibi yazılırdı.
 """
 
 from __future__ import annotations
 
 import copy
 import re
-import uuid
-from collections.abc import Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from collections.abc import Mapping, Sequence
 from typing import Any
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from tp_core.audit.session import _ANAHTAR as _BEKLEYEN_DENETIM
 from tp_core.features.cases import service
 from tp_core.features.cases.schema import READY, is_legacy
 from tp_core.models import TestCase
@@ -54,95 +41,6 @@ from tp_core.workflow.service import (
 
 AZAMI_KALEM = 50
 GEREKCE_AZAMI = 2000
-
-
-# ------------------------------------------------------------------------- toplu onay
-
-
-@contextmanager
-def _kalem_savepoint(session: Session) -> Iterator[None]:
-    """Kalemi SAVEPOINT'te çalıştırır; hata olursa kalemin bekleyen denetim kayıtlarını da atar."""
-    bekleyen = session.info.get(_BEKLEYEN_DENETIM)
-    onceki = len(bekleyen) if bekleyen is not None else 0
-    try:
-        with session.begin_nested():
-            yield
-    except BaseException:
-        kalan = session.info.get(_BEKLEYEN_DENETIM)
-        if kalan is not None:
-            del kalan[onceki:]
-        raise
-
-
-def _kilitle(session: Session, kimlikler: Sequence[Any]) -> None:
-    """Seçilen case satırlarını tek sorguda `id` sırasıyla kilitler (tutarlı kilit sırası)."""
-    gecerli: set[uuid.UUID] = set()
-    for k in kimlikler:
-        try:
-            gecerli.add(k if isinstance(k, uuid.UUID) else uuid.UUID(str(k)))
-        except ValueError:
-            continue
-    if gecerli:
-        session.scalars(
-            select(TestCase.id)
-            .where(TestCase.id.in_(sorted(gecerli)))
-            .order_by(TestCase.id)
-            .with_for_update()
-        ).all()
-
-
-def bulk_approve(
-    session: Session, user: Principal, kalemler: Sequence[tuple[Any, str]]
-) -> dict[str, Any]:
-    """`kalemler`: `(case_id, icerik_hash)` (gövde sırası). Kalem bazlı sonuç döner."""
-    if not kalemler:
-        raise InvalidDecision("En az bir case seçilmeli")
-    if len(kalemler) > AZAMI_KALEM:
-        raise InvalidDecision(f"Tek seferde en fazla {AZAMI_KALEM} case onaylanır")
-    _kilitle(session, [cid for cid, _ in kalemler])
-    sonuclar: list[dict[str, Any]] = []
-    onaylanan: dict[int, TestCase] = {}
-    for sira, (cid, icerik_hash) in enumerate(kalemler):
-        try:
-            with _kalem_savepoint(session):
-                # `toplu_onay`: review süresi ölçüsünde toplu onay ayrı kategoridir (kart başına
-                # insan review süresi değil; betik/API onayı da değil).
-                tc = service.decide(
-                    session,
-                    cid,
-                    user,
-                    karar="approve",
-                    icerik_hash=icerik_hash,
-                    ek_olculer={"toplu_onay": True},
-                )
-                session.flush()
-        except WorkflowError as exc:
-            sonuclar.append(
-                {
-                    "case_id": str(cid),
-                    "basarili": False,
-                    "hata": str(exc),
-                    "kod": exc.status_code,
-                    "case": None,
-                }
-            )
-            continue
-        onaylanan[sira] = tc
-        sonuclar.append(
-            {"case_id": str(cid), "basarili": True, "hata": None, "kod": None, "case": None}
-        )
-    if onaylanan:
-        sirali = sorted(onaylanan)
-        for sira, govde in zip(
-            sirali, service.serialize_cases(session, [onaylanan[i] for i in sirali]), strict=True
-        ):
-            sonuclar[sira]["case"] = govde
-    return {
-        "karar": "approve",
-        "onaylanan": len(onaylanan),
-        "basarisiz": len(sonuclar) - len(onaylanan),
-        "sonuclar": sonuclar,
-    }
 
 
 # ----------------------------------------------------------------- varsayım doğrulandı

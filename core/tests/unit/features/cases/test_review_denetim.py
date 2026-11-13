@@ -13,7 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, select
 
-from tests.unit.features.cases.helpers import latest_cases, login, run_jobs
+from tests.unit.features.cases.helpers import latest_cases, login, onayla, rol_ol, run_jobs
 from tp_core.features.cases import denetim_akisi, review
 from tp_core.features.publish import service as publish
 from tp_core.integrations.agent_probe import denetim
@@ -31,22 +31,32 @@ def gecit(replay_gateway: Any) -> Iterator[Any]:
     review.set_gateway_factory(None)
 
 
+# 012 rol hesapları (gereksinim başına): üretim/review/karar Testçi, son onay/denetim Analist.
+_ROLLER: dict[uuid.UUID, dict[str, Any]] = {}
+
+
+def _rol(api: TestClient, rid: uuid.UUID, rol: str) -> None:
+    rol_ol(api, _ROLLER[rid][rol])
+
+
 def _uret(api: TestClient, engine: Engine, make_user, make_requirement) -> uuid.UUID:
+    """Testçi üretir; Testçi oturumu açık kalır."""
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    _ROLLER[rid] = {"tester": make_user("tester"), "analyst": make_user("analyst")}
+    login(api, _ROLLER[rid]["tester"])
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     run_jobs(engine)
     return rid
 
 
-def _onayla(api: TestClient, rid: uuid.UUID) -> list[dict[str, Any]]:
-    cases = latest_cases(api, rid)
-    for c in cases:
-        r = api.post(
-            f"/cases/{c['id']}/decision", json={"karar": "approve", "icerik_hash": c["icerik_hash"]}
-        )
-        assert r.status_code == 200, r.text
-    return cases
+def _onayla(
+    api: TestClient, rid: uuid.UUID, cases: list[dict[str, Any]] | None = None
+) -> list[dict[str, Any]]:
+    """Testçi kabulü + Analist son onayı; Analist oturumu açık kalır (P9'a gönderim Analistin)."""
+    testci, analist = _ROLLER[rid]["tester"], _ROLLER[rid]["analyst"]
+    for c in latest_cases(api, rid) if cases is None else cases:
+        onayla(api, c, testci, analist, sonra=analist)
+    return latest_cases(api, rid)
 
 
 def _kalemler(api: TestClient, rid: uuid.UUID) -> list[dict[str, Any]]:
@@ -115,7 +125,8 @@ def test_denetim_kabul_yayin_kapisini_acar_set_degisince_bayat(
     assert v["yayin_engeli"] is None
     assert {x["islem"] for x in _kalemler(api, rid)} == {"create"}
 
-    # Set değişti (bir case taslağa alınıp reddedildi): karar bayat, kapı kapanır.
+    # Set değişti (bir case taslağa alınıp reddedildi; Testçi kararı): karar bayat, kapı kapanır.
+    _rol(api, rid, "tester")
     c = latest_cases(api, rid)[1]
     api.post(
         f"/cases/{c['id']}/decision", json={"karar": "reopen", "icerik_hash": c["icerik_hash"]}
@@ -147,14 +158,12 @@ def test_denetime_gonder_kosulu(
 ) -> None:
     review.set_gateway_factory(lambda _e: (_ for _ in ()).throw(RuntimeError("yok")))
     rid = _uret(api, engine, make_user, make_requirement)
+    _rol(api, rid, "analyst")
     v = api.get(f"/requirements/{rid}/case-audit").json()
     assert "review'u tamamlanmadı ve onaylı case yok" in v["gonder_engeli"]
     r = api.post(f"/requirements/{rid}/case-audit")
     assert r.status_code == 409
-    c = latest_cases(api, rid)[0]
-    api.post(
-        f"/cases/{c['id']}/decision", json={"karar": "approve", "icerik_hash": c["icerik_hash"]}
-    )
+    _onayla(api, rid, latest_cases(api, rid)[:1])
     assert api.get(f"/requirements/{rid}/case-audit").json()["gonder_engeli"] is None
     assert api.post(f"/requirements/{rid}/case-audit").status_code == 202
     # Aynı set için ikinci istek yeni iş açmaz.

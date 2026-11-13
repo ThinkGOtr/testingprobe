@@ -132,16 +132,21 @@ def approved_cases(story: str) -> list[tuple[int, dict[str, Any]]]:
     """Story'nin kod üretimine girecek case'leri (sıra başına en son üretim)."""
     from sqlalchemy import select
 
+    from tp_core.features.testveri.service import case_coz_gevsek
     from tp_core.models import session_scope
     from tp_core.models.requirements import Requirement, TestCase
 
     latest: dict[int, tuple[int, dict[str, Any]]] = {}
     with session_scope() as s:
-        rows = s.execute(
-            select(TestCase.sira_no, TestCase.uretim_no, TestCase.icerik)
-            .join(Requirement, Requirement.id == TestCase.requirement_id)
-            .where(Requirement.jira_key == story, TestCase.durum.in_(USABLE_CASE_STATES))
-        ).all()
+        rows = [
+            # 013 §3.3: kod üretimi çözülmüş metni görür; hazırlık denetimi de aynısını.
+            (sira_no, uretim_no, case_coz_gevsek(s, icerik or {}))
+            for sira_no, uretim_no, icerik in s.execute(
+                select(TestCase.sira_no, TestCase.uretim_no, TestCase.icerik)
+                .join(Requirement, Requirement.id == TestCase.requirement_id)
+                .where(Requirement.jira_key == story, TestCase.durum.in_(USABLE_CASE_STATES))
+            ).all()
+        ]
     for sira_no, uretim_no, icerik in rows:
         if sira_no not in latest or uretim_no > latest[sira_no][0]:
             latest[sira_no] = (uretim_no, dict(icerik))

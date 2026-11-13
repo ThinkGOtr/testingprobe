@@ -327,3 +327,26 @@ def test_sablon_beklenen_degeri_urun_kodunda_saklanmaz() -> None:
     ctx = _ctx(case_beklenen="P-001 için kampanya uygulanır")
     sablon = content.template_draft(ctx)
     assert "(beklenen değer: 0)" in sablon["expected"]
+
+
+def test_gizli_test_verisi_taslakta_maskelenir_model_girdisinde_kalir() -> None:
+    """013 K19: bug taslağı (Jira'ya giden) bilinen gizli değeri `•••` gösterir; model girdisi
+    (`ctx.sources()`) çözülmüş kalır (REPLAY)."""
+    ctx = _ctx(
+        gizli_degerler=["Demo123!"],
+        case_icerik={
+            "title": "Giriş",
+            "steps": [{"action": "Giriş yap", "data": "bayi1 / Demo123!"}],
+        },
+        case_ref="TPD-1-C2",
+        case_adimlar=[{"action": "Giriş yap", "data": "bayi1 / Demo123!"}],
+    )
+    sablon = content.template_draft(ctx)
+    assert "Demo123!" not in str(sablon) and "bayi1 / •••" in str(sablon["steps"])
+    ai = {**ICERIK, "summary": "Demo123! ile giriş başarısız", "actual": "bedava adet 1"}
+    out, duz = content.apply_guards(ai, ctx, sablon)
+    assert "Demo123!" not in str(out) and "Demo123!" not in str(duz)
+    assert out["summary"] == "••• ile giriş başarısız"
+    assert any("Demo123!" in str(k) for k in ctx.sources())
+    # Gizli değer bilinmiyorsa içerik değişmez.
+    assert content.template_draft(_ctx()) == content.template_draft(_ctx(gizli_degerler=[]))

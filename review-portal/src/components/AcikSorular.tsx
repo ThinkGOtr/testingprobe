@@ -103,7 +103,7 @@ export function VarsayimRozeti({
   if (!durum) return null;
   if (durum === "gonderilmedi" && sahip !== "PO") {
     return (
-      <Cip ton="notr" title="Varsayım henüz doğrulanmadı. Doğrulamayı analist yapar; isterseniz PO'ya da gönderebilirsiniz.">
+      <Cip ton="notr" title="Varsayım henüz doğrulanmadı. Doğrulamayı Testçi yapar (Varsayım doğrulandı düğmesi); Analist isterse PO'ya da gönderebilir.">
         Doğrulanmadı
       </Cip>
     );
@@ -380,7 +380,7 @@ export function AcikSorularPaneli({
         v && v.sorular.length > 0 ? (
           <>
             <IslemDugmesi
-              roller={["analyst"]}
+              izin="case.ask_po"
               calisiyor={islem === "gonder"}
               disabled={!!gonderNedeni || islem !== null}
               title={gonderNedeni ?? GONDER_ACIKLAMASI}
@@ -389,7 +389,7 @@ export function AcikSorularPaneli({
               Açık soruları PO'ya gönder
             </IslemDugmesi>
             <IslemDugmesi
-              roller={["analyst"]}
+              izin={["case.ask_po", "case.decide"]}
               tur="ikincil"
               calisiyor={islem === "oku"}
               disabled={!bekleyenVar || islem !== null}
@@ -483,7 +483,7 @@ export function PoyaGonderEylemi({ tc, tamamlandi }: { tc: TestCase; tamamlandi?
   };
   return (
     <div className="eylemler">
-      <IslemDugmesi roller={["analyst"]} kucuk tur="ikincil" calisiyor={islem.calisiyor} title={GONDER_ACIKLAMASI} nedenGizli onClick={() => void gonder()}>
+      <IslemDugmesi izin="case.ask_po" kucuk tur="ikincil" calisiyor={islem.calisiyor} title={GONDER_ACIKLAMASI} nedenGizli onClick={() => void gonder()}>
         Açık soruları PO'ya gönder
       </IslemDugmesi>
       {islem.hata && <AlanHatasi asistan={{ hata: islem.hata, kaynak: islem.hataNesnesi }}>{islem.hata}</AlanHatasi>}

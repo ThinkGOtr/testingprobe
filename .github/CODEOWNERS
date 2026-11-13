@@ -20,11 +20,22 @@
 /demo-app/e2e/package-lock.json      @gokhansipahi
 /demo-app/ci/                        @gokhansipahi
 
+# Java karşılıkları (009 uygulama hattı e2e-app, 011 web hattı e2e-java): TÜM dizin (GÜV-Y2 tur 2).
+# Page object'ler ve Kimlikler (onarım PR'ları), üretilen testler (bot PR'ı), kalite kapısı
+# yapılandırması (pom kilidi: toolchain/e2e-java-deps/pom.xml ve toolchain/e2e-app-deps/pom.xml ile
+# bayt eşit; TestNG takımı) ve test tabanı/yardımcılar — alt yol listesi yeni dosyaları açıkta
+# bırakıyordu (ör. src/test/resources, ortak taban sınıfları).
+/demo-app/e2e-java/                  @gokhansipahi
+/demo-app/e2e-app/                   @gokhansipahi
+
 # CI, workflow'lar ve bu dosya.
 /.github/                   @gokhansipahi
 
 # CI'da zorunlu check olan AST koruması ve Sauce yapılandırması.
 /toolchain/ast-guard/       @gokhansipahi
+/toolchain/java-araclar/     @gokhansipahi
+/toolchain/e2e-java-deps/    @gokhansipahi
+/toolchain/e2e-app-deps/     @gokhansipahi
 /demo-app/.sauce/           @gokhansipahi
 
 # Ruleset betiği.

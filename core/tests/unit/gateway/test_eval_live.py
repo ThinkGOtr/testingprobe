@@ -26,6 +26,7 @@ from tp_core.gateway.eval_live import (
     main,
     plan_bundles,
     redact,
+    repo_goreli,
     run_live,
 )
 from tp_core.gateway.eval_set import load_set
@@ -361,7 +362,9 @@ def test_record_writes_candidates_outside_committed_goldens(
             encoding="utf-8"
         )
     )
-    assert report["mode"] == "record" and report["kayit_adaylari"] == str(record_dir)
+    assert report["mode"] == "record" and report["kayit_adaylari"] == repo_goreli(
+        record_dir, rules_dir
+    )
 
 
 def test_record_dir_inside_committed_goldens_is_refused(rules_dir: Path) -> None:

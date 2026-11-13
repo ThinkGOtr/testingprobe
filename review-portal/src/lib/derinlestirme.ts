@@ -40,7 +40,7 @@ export const DIGER_DERINLESTIRME_SURUYOR = "Diğer derinleştirme sürüyor";
 export const YOKLAMA_HATA_SINIRI = 3;
 
 /**
- * Düğmeler neden pasif (null: etkin). Rol kontrolü düğmenin kendisinde (yalnız analist); burada
+ * Düğmeler neden pasif (null: etkin). Rol kontrolü düğmenin kendisinde (`case.generate`, Testçi); burada
  * gereksinim durumu (core: yalnız `cases_ready`, aksi 409) ve süren derinleştirme (409).
  */
 export function derinlestirmeEngeli(gereksinimDurumuKodu: string | undefined, d: Pick<DerinlestirmeDurumu, "durum"> | null | undefined): string | null {

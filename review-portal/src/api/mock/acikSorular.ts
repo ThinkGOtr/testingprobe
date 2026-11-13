@@ -1,8 +1,8 @@
 // Örnek veri: açık soru döngüsü (specs/011 K16; D6) — core `features/cases/acik_sorular.py` ile
 // aynı biçim.
 //   GET  /requirements/{id}/open-questions          → güncel setin soruları + PO durumu/yanıtı
-//   POST /requirements/{id}/open-questions/send     → {varsayimlar?}; analist; Jira story'si gerekir
-//   POST /requirements/{id}/open-questions/refresh  → analist; PO yanıtlarını okur
+//   POST /requirements/{id}/open-questions/send     → {varsayimlar?}; `case.ask_po` (Analist); Jira story'si gerekir
+//   POST /requirements/{id}/open-questions/refresh  → `case.ask_po` | `case.decide`; PO yanıtlarını okur
 // Örnek veride Jira yoktur: gönderim yalnız kayda geçer; "yanıtları oku" gönderilmiş sorulara
 // "(örnek veri)" işaretli sabit bir PO yanıtı yazar.
 import { ApiError } from "../http";
@@ -11,7 +11,8 @@ import type {
   AcikSoruKaydi,
   AcikSorularYaniti,
 } from "../acikSoruTipleri";
-import type { GereksinimDetay, Kullanici, Rol, TestCase } from "../types";
+import type { GereksinimDetay, Kullanici, TestCase } from "../types";
+import type { Izin } from "../../lib/yetki";
 import { birlesikOzet } from "./caseV3";
 import type { MockVeri } from "./fixtures";
 
@@ -38,8 +39,8 @@ export interface MockAcikSoru {
 
 export interface AcikSoruBaglami {
   veri: () => MockVeri;
-  girisGerekli: () => Kullanici;
-  rolGerekli: (...roller: Rol[]) => Kullanici;
+  /** core `izin(...)` (012): izinlerden hiçbiri yoksa 403. */
+  izinGerekli: (...izinler: [Izin, ...Izin[]]) => Kullanici;
   gereksinim: (id: string) => GereksinimDetay;
   kaydet: () => void;
   denetimEkle: (
@@ -210,7 +211,7 @@ function gonder(
   rid: string,
   govde: unknown,
 ): AcikSorularYaniti {
-  const k = b.rolGerekli("analyst");
+  const k = b.izinGerekli("case.ask_po");
   const g = b.gereksinim(rid);
   if (!g.jira_key) throw new ApiError(409, STORY_YOK_ENGELI);
   const varsayimlar =
@@ -257,7 +258,7 @@ function gonder(
 }
 
 function yanitlariOku(b: AcikSoruBaglami, rid: string): AcikSorularYaniti {
-  b.rolGerekli("analyst");
+  b.izinGerekli("case.ask_po", "case.decide");
   const g = b.gereksinim(rid);
   const v = b.veri();
   for (const k of kayitlar(v, rid)) {
@@ -285,7 +286,7 @@ export function acikSoruRotalari(b: AcikSoruBaglami): Rota[] {
       "GET",
       /^\/requirements\/([^/]+)\/open-questions$/,
       (m) => {
-        b.girisGerekli();
+        b.izinGerekli("case.analysis_read");
         return acikSorularYaniti(
           b.veri(),
           b.gereksinim(decodeURIComponent(m[1])),

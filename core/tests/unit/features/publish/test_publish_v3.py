@@ -10,7 +10,13 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Engine, text
 
 from tests.unit.features.cases.helpers import READ
-from tests.unit.features.publish.test_publish import _ctx, _label_count, hazir  # noqa: F401
+from tests.unit.features.publish.test_publish import (  # noqa: F401
+    _ctx,
+    _label_count,
+    hazir,
+    yayin_analist,
+    yayin_testci,
+)
 from tp_core.audit.canonical import content_hash
 from tp_core.features.publish import service as publish
 from tp_core.integrations.jira import RestJira

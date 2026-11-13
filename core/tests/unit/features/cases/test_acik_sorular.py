@@ -23,7 +23,7 @@ from tp_core.integrations.jira_adf import text_to_adf
 from tp_core.models import AuditEvent, ExternalRef, Requirement, new_session, session_scope
 from tp_core.models.acik_soru import AcikSoru
 
-from .helpers import case_icerik, latest_cases, login, run_jobs, uretim_cikti
+from .helpers import case_icerik, latest_cases, login, rol_ol, run_jobs, uretim_cikti
 
 PO_AUTH = ("po@sim.local", "po-test-parola")
 WRITER = ("writer@sim.local", "x")
@@ -75,10 +75,11 @@ def ortam(
 ) -> Iterator[uuid.UUID]:
     fake_gateway([text_response(uretim_cikti(_cases(), **OZET))])
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))  # 012: üretim Testçinin
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     (is_,) = run_jobs(engine)
     assert is_.durum == "done", is_
+    rol_ol(api, make_user("analyst"))  # PO'ya gönderim Analistin (case.ask_po)
     with services.override(jira=lambda: jira, po_accounts=lambda: {"po@sim.local"}):
         yield rid
 
@@ -154,15 +155,19 @@ def test_gonderim_tek_yorum_idempotent_ve_yetki(
         ).all()
         assert len(eylemler) == 2
 
-    # Yalnız analist gönderir; diğer roller listeyi okuyabilir.
-    login(api, make_user("tester"))
+    # Yalnız analist gönderir; Testçi yanıtları yenileyebilir, diğer roller listeyi okuyabilir.
+    rol_ol(api, make_user("tester"))
+    assert api.post(f"/requirements/{ortam}/open-questions/send").status_code == 403
+    assert api.post(f"/requirements/{ortam}/open-questions/refresh").status_code == 200
+    assert api.get(f"/requirements/{ortam}/open-questions").status_code == 200
+    rol_ol(api, make_user("engineer"))
     assert api.post(f"/requirements/{ortam}/open-questions/send").status_code == 403
     assert api.post(f"/requirements/{ortam}/open-questions/refresh").status_code == 403
     assert api.get(f"/requirements/{ortam}/open-questions").status_code == 200
 
 
 def test_po_yaniti_soruya_baglanir_ve_case_duzeltilir(
-    api: TestClient, ortam: uuid.UUID, sim: TestClient
+    api: TestClient, ortam: uuid.UUID, sim: TestClient, make_user
 ) -> None:
     assert api.post(f"/requirements/{ortam}/open-questions/send").status_code == 200
     # PO dışı hesabın "yanıtı" sayılmaz; PO yanıtı kimlikle bağlanır.
@@ -195,6 +200,7 @@ def test_po_yaniti_soruya_baglanir_ve_case_duzeltilir(
         "open_question_refs": [],
         "expected_result": "5. hatalı denemede hesap 15 dakika kilitlenir",
     }
+    rol_ol(api, make_user("tester"))  # düzeltme (edit) Testçinin
     r = api.post(
         f"/cases/{engelli['id']}/decision",
         json={"icerik_hash": engelli["icerik_hash"], "karar": "edit", "icerik": tam},
@@ -215,7 +221,7 @@ def test_po_yaniti_soruya_baglanir_ve_case_duzeltilir(
 
 
 def test_duzeltmeyle_kapanan_soru_yetim_sayilmaz(
-    api: TestClient, ortam: uuid.UUID, sim: TestClient
+    api: TestClient, ortam: uuid.UUID, sim: TestClient, make_user
 ) -> None:
     """Tur 3 inceleme #1: PO yanıtı + atfı kaldıran düzeltme doğru kapanıştır. Soru birleşik
     özette kalır ama artık hiçbir yerde anılmaz; liste "yeniden üret" önermez, kapsam özeti ve
@@ -244,6 +250,7 @@ def test_duzeltmeyle_kapanan_soru_yetim_sayilmaz(
         "open_question_refs": [],
         "expected_result": "5. hatalı denemede hesap 15 dakika kilitlenir",
     }
+    rol_ol(api, make_user("tester"))  # düzeltme (edit) Testçinin
     r = api.post(
         f"/cases/{engelli['id']}/decision",
         json={"icerik_hash": engelli["icerik_hash"], "karar": "edit", "icerik": tam},
@@ -301,9 +308,10 @@ def test_jira_story_si_yoksa_gonderilemez(
 ) -> None:
     fake_gateway([text_response(uretim_cikti(_cases(), **OZET))])
     rid = make_requirement(jira_key=None)
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     run_jobs(engine)
+    rol_ol(api, make_user("analyst"))
     g = api.get(f"/requirements/{rid}/open-questions").json()
     assert g["gonderilebilir"] is False and "Jira story" in g["gonderim_engeli"]
     r = api.post(f"/requirements/{rid}/open-questions/send")
@@ -331,10 +339,11 @@ def yetimli(
     sorular = [*OZET["open_questions"], {"id": "Q2", "question": YETIM, "owner": "PO"}]
     fake_gateway([text_response(uretim_cikti(_cases(), **{**OZET, "open_questions": sorular}))])
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))  # 012: üretim Testçinin
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     (is_,) = run_jobs(engine)
     assert is_.durum == "done", is_
+    rol_ol(api, make_user("analyst"))  # PO'ya gönderim Analistin (case.ask_po)
     with services.override(jira=lambda: jira, po_accounts=lambda: {"po@sim.local"}):
         yield rid
 

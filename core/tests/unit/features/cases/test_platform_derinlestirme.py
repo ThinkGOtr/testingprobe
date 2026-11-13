@@ -22,7 +22,7 @@ from tp_core.models import (
     session_scope,
 )
 
-from .helpers import case_icerik, latest_cases, login, run_jobs, uretim_cikti
+from .helpers import case_icerik, latest_cases, login, onayla, run_jobs, uretim_cikti
 
 WEB = {
     "platformlar": ["Web"],
@@ -125,7 +125,7 @@ def test_secenekler_saklanir_ise_konur_ve_ai_call_ekine_yazilir(
         ]
     )
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     r = api.get(f"/requirements/{rid}/generation-options")
     assert r.status_code == 200 and r.json()["secenekler"] is None
     assert r.json()["varsayilan"]["test_seviyesi"] == "SYSTEM"
@@ -153,7 +153,7 @@ def test_gecersiz_secenek_422_ve_durum_degismez(
     api: TestClient, make_user, make_requirement
 ) -> None:
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     r = api.post(f"/requirements/{rid}/generate-cases", json={"platformlar": ["Tablet"]})
     assert r.status_code == 422, r.text
     r = api.post(f"/requirements/{rid}/generate-cases", json={"bilinmeyen": 1})
@@ -168,7 +168,7 @@ def test_govdesiz_cagri_bugunku_davranis(
 ) -> None:
     provider = fake_gateway([text_response(uretim_cikti([case_icerik()]))])
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     is_ = _uret(api, rid, engine)
     assert is_.durum == "done" and "secenekler" not in _son_yuk(rid)
     c = provider.requests[0].messages[0]["content"]
@@ -179,7 +179,7 @@ def test_platform_golden_replay(
     api: TestClient, engine: Engine, make_user, make_requirement, replay_gateway
 ) -> None:
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     govde = {
         "platformlar": ["Web"],
         "benimsenen_standartlar": ["WCAG 2.2 AA"],
@@ -201,7 +201,7 @@ def test_platform_golden_yoksa_replay_miss(
     api: TestClient, engine: Engine, make_user, make_requirement, replay_gateway
 ) -> None:
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     assert (
         api.post(
             f"/requirements/{rid}/generate-cases", json={"kip": "tek_tur", "platformlar": ["Data"]}
@@ -268,14 +268,11 @@ def hazir(api: TestClient, engine: Engine, make_user, make_requirement, fake_gat
             [text_response(uretim_cikti(ilk, **ozet)), *(text_response(d) for d in derin)]
         )
         rid = make_requirement()
-        login(api, make_user("analyst"))
+        testci = make_user("tester")
+        login(api, testci)
         _uret(api, rid, engine)
         c1 = latest_cases(api, rid)[0]
-        r = api.post(
-            f"/cases/{c1['id']}/decision",
-            json={"karar": "approve", "icerik_hash": c1["icerik_hash"]},
-        )
-        assert r.status_code == 200, r.text
+        onayla(api, c1, testci, make_user("analyst"))  # 012; Testçi oturumu açık kalır
         return rid, provider
 
     return _kur
@@ -374,7 +371,7 @@ def test_derinlestirme_kapilari(
     api: TestClient, engine: Engine, make_user, make_requirement, fake_gateway
 ) -> None:
     rid = make_requirement()
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     # cases_ready değil → 409
     assert api.post(f"/requirements/{rid}/deepen", json={"tur": "negatif"}).status_code == 409
     # teknik eksik / negatifte teknik / bilinmeyen tür → 422
@@ -406,7 +403,7 @@ def test_derinlestirme_golden_replay(
     api: TestClient, engine: Engine, make_user, make_requirement, replay_gateway
 ) -> None:
     rid = make_requirement()  # TPD-4 (ana golden)
-    login(api, make_user("analyst"))
+    login(api, make_user("tester"))
     _uret(api, rid, engine)
     assert (
         api.post(f"/requirements/{rid}/deepen", json={"tur": "teknik", "teknik": "EP"}).status_code

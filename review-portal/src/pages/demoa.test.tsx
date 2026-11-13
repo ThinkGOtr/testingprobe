@@ -12,6 +12,7 @@ import { mockOlayYayinla } from "../api/mock/olaylar";
 import { OturumProvider } from "../auth";
 import { BildirimProvider } from "../components/Bildirim";
 import { goruntulenenleriSifirla } from "../components/CaseKarti";
+import { gozlemciKur } from "../test/gorunurluk";
 import { oturumAc } from "../test/yardimci";
 
 function uygulama(yol: string) {
@@ -27,6 +28,15 @@ function uygulama(yol: string) {
 }
 
 beforeEach(() => goruntulenenleriSifirla());
+
+/** Testçi kabul eder, Analist son onayı verir (ANALIZ 012 §5). */
+async function kabulVeOnay(id: string) {
+  const hash = () => mockVerisi().caseler.find((c) => c.id === id)!.icerik_hash;
+  await oturumAc("testci");
+  await api.caseKarari(id, { icerik_hash: hash(), karar: "accept" });
+  await oturumAc("analist");
+  await api.caseKarari(id, { icerik_hash: hash(), karar: "approve" });
+}
 
 describe("gereksinim detayı", () => {
   it("kanıtı doğrulanmamış ve elenen bulgular gösterilmez, yalnızca sayılır; tur sayacı düğmede", async () => {
@@ -102,53 +112,61 @@ describe("PO teyidi insan kapısı şeridi", () => {
 });
 
 describe("case review", () => {
-  it("karar bekleyen case'ler görüntülendi olarak bir kez bildirilir; review süresi bundan ölçülür", async () => {
-    await oturumAc("analist");
+  it("karar bekleyen case'ler 3 sn görünür kalınca görüntülendi olarak bir kez bildirilir; review süresi bundan ölçülür", async () => {
+    const g = gozlemciKur();
+    await oturumAc("testci");
     const casus = vi.spyOn(api, "caseGoruntulendi");
-    const u = userEvent.setup();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const u = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     uygulama("/gereksinimler/req-tpd-1/caseler");
     await screen.findByText("Case review");
-    await waitFor(() => expect(casus).toHaveBeenCalled());
+    // K13: gözlenen (karar bekleyen) kartlar görünür olur, 3 sn dolar.
+    await waitFor(() => expect(g.gozlenenler().length).toBe(2));
+    for (const el of g.gozlenenler()) g.goster(el);
+    await act(async () => void (await vi.advanceTimersByTimeAsync(3000)));
+    await waitFor(() => expect(casus).toHaveBeenCalledTimes(2));
     const bildirilen = casus.mock.calls.map((c) => c[0]).sort();
-    // Yalnızca taslak (karar bekleyen) case'ler: case-1-5, 1-7, 1-8, 1-9
-    expect(bildirilen).toEqual(["case-1-5", "case-1-7", "case-1-8", "case-1-9"]);
+    // Yalnızca taslak (karar bekleyen) case'ler: case-1-5, 1-7 (C8 ve C9 yayınlandı: 011 dil örnekleri)
+    expect(bildirilen).toEqual(["case-1-5", "case-1-7"]);
     await waitFor(() => expect(mockVerisi().caseler.find((c) => c.id === "case-1-7")!.goruntulenme).toBeTruthy());
     const kart = screen.getAllByRole("article").find((a) => within(a).queryByText(/^#6$/))!;
-    await u.click(within(kart).getByRole("button", { name: "Onayla" }));
+    await u.click(within(kart).getByRole("button", { name: "Kabul et" }));
     await waitFor(() => expect(mockVerisi().caseler.find((c) => c.id === "case-1-7")!.review_sure_ms).not.toBeNull());
-    expect(casus).toHaveBeenCalledTimes(4);
+    expect(casus).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
-  it("analist olmayan rol görüntüleme bildirmez (ölçüm yalnızca karar verenin süresi)", async () => {
-    await oturumAc("muhendis");
+  it("Testçi olmayan rol görüntüleme bildirmez (ölçüm yalnızca karar verenin süresi)", async () => {
+    await oturumAc("analist");
     const casus = vi.spyOn(api, "caseGoruntulendi");
     uygulama("/gereksinimler/req-tpd-1/caseler");
     await screen.findAllByRole("article");
     expect(casus).not.toHaveBeenCalled();
   });
 
-  it("reddedilen case yeniden açılır: taslağa döner ve kararlar yeniden açılır; sayaçlar güncellenir", async () => {
-    await oturumAc("analist");
+  it("reddedilen case taslağa alınır: taslağa döner ve kararlar yeniden açılır; sayaçlar güncellenir", async () => {
+    await oturumAc("testci");
     const u = userEvent.setup();
     uygulama("/gereksinimler/req-tpd-1/caseler");
     await screen.findByText("Reddedilen (2)");
     const red = screen.getAllByRole("article").find((a) => within(a).queryByText("Reddedildi"))!;
-    expect(within(red).queryByRole("button", { name: "Onayla" })).toBeNull();
-    await u.click(within(red).getByRole("button", { name: "Yeniden aç" }));
-    await waitFor(() => expect(within(red).getByRole("button", { name: "Onayla" })).toBeEnabled());
+    expect(within(red).queryByRole("button", { name: "Kabul et" })).toBeNull();
+    await u.click(within(red).getByRole("button", { name: "Taslağa al" }));
+    await waitFor(() => expect(within(red).getByRole("button", { name: "Kabul et" })).toBeEnabled());
     expect(mockVerisi().caseler.find((c) => c.id === "case-1-6")).toMatchObject({ durum: "draft" });
     expect(within(red).getByText(/taslağa alındı \(önceki karar: ret\)/)).toBeInTheDocument();
     expect(screen.getByText("Reddedilen (1)")).toBeInTheDocument();
     // Yayınlanmış case için yeniden açma yok (son durum).
     const yayinda = screen.getAllByRole("article").find((a) => within(a).queryByText("TPD-9"))!;
-    expect(within(yayinda).queryByRole("button", { name: "Yeniden aç" })).toBeNull();
+    expect(within(yayinda).queryByRole("button", { name: "Taslağa al" })).toBeNull();
   });
 
   it("özet: AI + review süresi ve ölçülen case sayısı", async () => {
     await oturumAc("analist");
     uygulama("/gereksinimler/req-tpd-1/caseler");
     expect(await screen.findByText("AI + review")).toBeInTheDocument();
-    expect(screen.getByText(/6 case · ort\./)).toBeInTheDocument();
+    expect(await screen.findByText(/8 case · ort\./)).toBeInTheDocument();
     // Çekirdek ölçümü geldiğinde kabul oranı ilk karara göre etiketlenir.
     expect(await screen.findByText("Kabul oranı (ilk karar: onay + küçük düzeltme / üretilen)")).toBeInTheDocument();
   });
@@ -156,9 +174,8 @@ describe("case review", () => {
 
 describe("yayın", () => {
   it("hedef, kısmi başarı ve jira-sim bağlantılı dış anahtarlar", async () => {
-    await oturumAc("analist");
-    const hash = (id: string) => mockVerisi().caseler.find((c) => c.id === id)!.icerik_hash;
-    await api.caseKarari("case-1-7", { icerik_hash: hash("case-1-7"), karar: "approve" });
+    await kabulVeOnay("case-1-7");
+    await oturumAc("testci");
     const gercek = api.yayinla;
     // Kısmi sonuç: biri oluşturuldu, biri başarısız (ör. Jira 5xx sonrası).
     vi.spyOn(api, "yayinla").mockImplementation(async (ids) => {
@@ -186,9 +203,8 @@ describe("yayın", () => {
   });
 
   it("yayın arka plan işi döndürürse olaylarla tamamlanır", async () => {
-    await oturumAc("analist");
-    const hash = (id: string) => mockVerisi().caseler.find((c) => c.id === id)!.icerik_hash;
-    await api.caseKarari("case-1-7", { icerik_hash: hash("case-1-7"), karar: "approve" });
+    await kabulVeOnay("case-1-7");
+    await oturumAc("testci");
     vi.spyOn(api, "yayinla").mockResolvedValue({ hedef: "jira", sonuclar: [], job_id: "job-9" });
     const u = userEvent.setup();
     uygulama("/gereksinimler/req-tpd-1/yayin");
@@ -203,7 +219,7 @@ describe("yayın", () => {
 
 describe("Claude Code kanalı", () => {
   it(".mcp.json token'ı ortam değişkeninden okur; token listesi ve iptal", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const u = userEvent.setup();
     uygulama("/claude-code");
     expect(await screen.findByText("Henüz token yok.")).toBeInTheDocument();
@@ -226,7 +242,7 @@ describe("Claude Code kanalı", () => {
   });
 
   it("core 501 (MCP ucu bağlı değil): token ve .mcp.json gösterilmez, nedeni yazılır", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     vi.spyOn(api, "tokenOlustur").mockRejectedValue(new ApiError(501, "IDE (MCP) kanalı henüz etkin değil; token üretilemez"));
     const u = userEvent.setup();
     uygulama("/claude-code");

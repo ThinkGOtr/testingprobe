@@ -18,11 +18,18 @@ def test_seed_kullanicilari() -> None:
     assert dict(KULLANICILAR) == {
         "analist": "analyst",
         "muhendis": "engineer",
-        "sunucu": "presenter",
+        "sunucu": "admin",
         "po": "po",
         "testci": "tester",
+        "denetci": "auditor",
+        "gelistirici": "developer",
+        "izleyici": "viewer",
     }
-    assert len({tp_uuid("user", ad) for ad, _ in KULLANICILAR}) == 5
+    # Rol başına bir hesap (specs/012-rol-yetki §3).
+    from tp_core.auth.yetki import ROLLER
+
+    assert {rol for _, rol in KULLANICILAR} == ROLLER
+    assert len({tp_uuid("user", ad) for ad, _ in KULLANICILAR}) == 8
 
 
 def test_seed_gorunen_adlari() -> None:
@@ -33,9 +40,12 @@ def test_seed_gorunen_adlari() -> None:
     beklenen = {
         "analist": "Cengizhan Gunaydin · Analist",
         "po": "Cengizhan Gunaydin · PO",
-        "muhendis": "Gokhan Sipahi · Mühendis",
+        "muhendis": "Gokhan Sipahi · Automation Engineer",
         "testci": "Fatih Arslan · Testçi",
-        "sunucu": "Sunucu",
+        "sunucu": "Sistem Yöneticisi",
+        "denetci": "Denetçi",
+        "gelistirici": "Developer",
+        "izleyici": "Görüntüleyici",
     }
     assert {ad: display_name(ad, rol, adlar) for ad, rol in KULLANICILAR} == beklenen
     # Geçersiz kılma: boş ad → yalnızca rol; bozuk parça atlanır; büyük/küçük harf duyarsız.
@@ -44,4 +54,6 @@ def test_seed_gorunen_adlari() -> None:
         "sunucu": "Gokhan Sipahi",
     }
     assert configured_names("muhendis=")["muhendis"] == ""
-    assert display_name("muhendis", "engineer", configured_names("muhendis=")) == "Mühendis"
+    assert (
+        display_name("muhendis", "engineer", configured_names("muhendis=")) == "Automation Engineer"
+    )

@@ -184,6 +184,15 @@ def test_saklama_suresi_ve_kapsam(engine: Engine, make_user) -> None:
                 ),
                 {"y": f'{{"kullanici_id": "{u.id}", "tetik": "kullanici"}}', "d": durum, "g": gun},
             ).scalar_one()
+        # Güvenlik olayları: süreden eski satır gider, yenisi kalır.
+        for gun in (120, 10):
+            c.execute(
+                text(
+                    "INSERT INTO asistan_guvenlik_olay (kullanici_id, tur, ciddi, zaman) "
+                    "VALUES (:k, 'sir_icerik', true, now() - make_interval(days => :g))"
+                ),
+                {"k": u.id, "g": gun},
+            )
         # Denetim kayıtları: 200 gün önceki ai_call ve tool_call kalır.
         cid = uuid.uuid4()
         c.execute(
@@ -206,6 +215,7 @@ def test_saklama_suresi_ve_kapsam(engine: Engine, make_user) -> None:
         "mesaj": 3,  # etkin_cok_eski, cift_ust, cift_cocuk
         "cevap_isi": 2,
         "oneri_geri_bildirim": 1,
+        "guvenlik_olay": 1,
         "hiz": 1,
     }
     assert not _var(engine, "asistan_sohbet", eski) and not _var(engine, "asistan_mesaj", eski_m)
@@ -227,6 +237,7 @@ def test_saklama_suresi_ve_kapsam(engine: Engine, make_user) -> None:
     assert _var(engine, "asistan_sohbet", mesaji_yeni)
     assert _say(engine, "SELECT count(*) FROM asistan_oneri_geri_bildirim") == 1
     assert _say(engine, "SELECT count(*) FROM asistan_hiz") == 1
+    assert _say(engine, "SELECT count(*) FROM asistan_guvenlik_olay") == 1
     assert _say(engine, "SELECT count(*) FROM ai_call") == ai_once
     assert _var(engine, "ai_call", cid)
     assert _say(engine, "SELECT count(*) FROM tool_call") == tool_once

@@ -33,7 +33,7 @@ from collections.abc import Callable
 from typing import Any, Final
 
 import httpx
-from sqlalchemy import exists, or_, select
+from sqlalchemy import exists, select
 
 from tp_core.features.assistant.hiz import KOVA_JIRA_GLOBAL, VARSAYILAN_SINIRLAR, hiz_kontrol
 from tp_core.features.assistant.tools.base import (
@@ -67,6 +67,7 @@ MESAJ_BILINMEYEN: Final = (
     "Bilinmeyen anahtar: Testing Probe'da bu Jira anahtarıyla kayıt yok; yalnız kayıtlı "
     "gereksinim, bug ve yayınlanmış case/test anahtarları okunabilir."
 )
+MESAJ_ROL: Final = "jira_issue: bu kaydın türü rolünüze açık değil."
 MESAJ_GECERSIZ: Final = "Geçersiz Jira anahtarı (ör. TPD-3)."
 MESAJ_FAZLA: Final = f"Bir mesajda en çok {MESAJ_BASI_ANAHTAR} farklı Jira anahtarı okunabilir."
 MESAJ_MESGUL: Final = "Jira meşgul: asistanın Jira okuma sınırı doldu, biraz sonra yeniden deneyin."
@@ -132,22 +133,43 @@ def _yorum_limiti(deger: Any) -> int:
     return min(max(sayi, 1), YORUM_LIMIT_EN_COK)
 
 
-def bilinen_anahtar_mi(baglam: AracBaglami, anahtar: str) -> bool:
-    """Anahtar Testing Probe'da kayıtlı mı (gereksinim, bug, yayınlanmış case/test)?"""
+# Anahtar türü → okumak için gereken izin (yetki kataloğu).
+TUR_IZNI: Final[dict[str, str]] = {
+    "requirement": "requirement.read",
+    "bug": "bug.read",
+    "case": "case.read",
+}
+
+
+def anahtar_turleri(baglam: AracBaglami, anahtar: str) -> frozenset[str]:
+    """Anahtarın Testing Probe'daki kayıt türleri (`requirement`, `bug`, `case`); yoksa boş."""
     sorgu = select(
-        or_(
-            exists().where(Requirement.jira_key == anahtar),
-            exists().where(BugDraft.jira_key == anahtar),
-            exists().where(
-                ExternalRef.sistem.in_(("jira", "xray")),
-                ExternalRef.durum == "created",
-                ExternalRef.external_key.isnot(None),
-                ExternalRef.external_key == anahtar,
-            ),
-        )
+        exists().where(Requirement.jira_key == anahtar),
+        exists().where(BugDraft.jira_key == anahtar),
+        exists().where(
+            ExternalRef.sistem.in_(("jira", "xray")),
+            ExternalRef.durum == "created",
+            ExternalRef.external_key.isnot(None),
+            ExternalRef.external_key == anahtar,
+        ),
     )
     with baglam.db() as s:
-        return bool(s.execute(sorgu).scalar())
+        gereksinim, bug, case = s.execute(sorgu).one()
+    return frozenset(
+        tur for tur, var in (("requirement", gereksinim), ("bug", bug), ("case", case)) if var
+    )
+
+
+def bilinen_anahtar_mi(baglam: AracBaglami, anahtar: str) -> bool:
+    """Anahtar Testing Probe'da kayıtlı mı (gereksinim, bug, yayınlanmış case/test)?"""
+    return bool(anahtar_turleri(baglam, anahtar))
+
+
+def rol_okuyabilir_mi(rol: str, turler: frozenset[str]) -> bool:
+    """Rol, anahtarın türlerinden en az birini okuma iznine sahip mi?"""
+    from tp_core.auth.yetki import izinli
+
+    return any(izinli(rol, TUR_IZNI[t]) for t in turler)
 
 
 def gereksinim_kimligi(baglam: AracBaglami, anahtar: str) -> str | None:
@@ -230,8 +252,11 @@ def jira_issue(baglam: AracBaglami, **arg: Any) -> AracSonucu:
             if len(anahtarlar) >= MESAJ_BASI_ANAHTAR:
                 raise AracHatasi(MESAJ_FAZLA)
             anahtarlar.append(anahtar)
-        if not bilinen_anahtar_mi(baglam, anahtar):
+        turler = anahtar_turleri(baglam, anahtar)
+        if not turler:
             raise AracHatasi(MESAJ_BILINMEYEN)
+        if not rol_okuyabilir_mi(baglam.rol, turler):
+            raise AracHatasi(MESAJ_ROL)
         kalan = baglam.kalan_s()
         if kalan < EN_AZ_KALAN_S:
             raise AracHatasi(MESAJ_YANIT_YOK)

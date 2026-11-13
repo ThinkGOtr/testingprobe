@@ -15,7 +15,7 @@ import { ApiError, hataMesaji } from "../api/http";
 import type { AiprobeHesaplari, AiprobeHesabi } from "../api/types";
 import { useOturum } from "../auth";
 import { useBildirim } from "../components/Bildirim";
-import { ROL } from "../lib/etiketler";
+import { rolEtiketi } from "../lib/yetki";
 import { aiprobeGirisAdresi, guvenliDevam, useKimlikKipi } from "../lib/kimlikKipi";
 import { MarkaBasligi } from "./AiprobeGiris";
 
@@ -65,7 +65,7 @@ export function RolSec() {
       if (degistir) {
         const k = await api.aiprobeRolDegistir(h.id);
         oturumKur(k);
-        bildir(`Rol değiştirildi: ${ROL[k.rol] ?? k.rol}.`);
+        bildir(`Rol değiştirildi: ${rolEtiketi(k.rol)}.`);
         // Yeni rolün açılış ekranı (önceki ekran bu rolde olmayabilir).
         git("/", { replace: true });
       } else {
@@ -132,7 +132,7 @@ export function RolSec() {
                         aria-current={aktif ? "true" : undefined}
                         onClick={() => void sec(h)}
                       >
-                        <span className="rol-secenek-rol">{ROL[h.rol] ?? h.rol}</span>
+                        <span className="rol-secenek-rol">{rolEtiketi(h.rol)}</span>
                         <span className="rol-secenek-ad">{h.gorunen_ad}</span>
                         <span className="rol-secenek-not">{aktif ? "Şu anki rolünüz" : h.kullanici_adi}</span>
                       </button>

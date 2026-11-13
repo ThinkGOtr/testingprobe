@@ -742,3 +742,32 @@ def test_basarisiz_app_launch_kilidi_acmaz() -> None:
         ajan("app_launch", {"platform": "android"})
     with pytest.raises(BrowserError, match="app_launch"):
         ajan("app_snapshot", {})
+
+
+GIZLI_ORTAM = {"Demo123!": "TP_TESTVERI_DEMO_PAROLA"}
+
+
+def test_java_gizli_test_verisi_ortamdan_okunur() -> None:
+    """013 K19: bilinen gizli değer argümanı `System.getenv("<SIR>")`; metinde düz değer yok."""
+    case = json.loads(json.dumps(golden_cases()[1]))
+    case["title"] = f"{case.get('title')} (Demo123!)"
+    r = render.render_java_test(_girdi(case=case, gizli_ortam=GIZLI_ORTAM), "android", RULES)
+    assert '    girisEkrani().girisYap("bayi1", System.getenv("TP_TESTVERI_DEMO_PAROLA"));' in (
+        r.content
+    )
+    assert "Demo123!" not in r.content and "•••" in r.content
+    # Gizli değer yoksa çıktı golden'la aynı kalır (şablon değişmedi).
+    assert (
+        render.render_java_test(_girdi(), "android", RULES).content
+        == render.render_java_test(_girdi(gizli_ortam={}), "android", RULES).content
+    )
+
+
+@pytest.mark.skipif(
+    not JAR.is_file() or shutil.which("java") is None, reason="java-araclar.jar yok"
+)
+def test_java_gizli_test_verisi_gercek_guard_dan_gecer(tmp_path: Path) -> None:
+    r = render.render_java_test(_girdi(gizli_ortam=GIZLI_ORTAM), "android", RULES)
+    assert "System.getenv(" in r.content
+    rapor = _java_guard(Path(r.test_file).name, r.content, tmp_path)
+    assert rapor["ok"], rapor["violations"]

@@ -4,15 +4,16 @@
 // soldurulmaz); bağlantılar yalnız iç rota (Git) ve sunucunun kurduğu Jira adresidir.
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { kaynakDogrulandi, type AsistanMesaji, type CevapBlogu, type CevapKaynagiOgesi, type GuvenGosterimi } from "../../api/asistan";
+import { kaynakDogrulandi, kipRozeti, type AsistanCevabi, type AsistanDurumu, type AsistanMesaji, type CevapBlogu, type CevapKaynagiOgesi, type GuvenGosterimi } from "../../api/asistan";
 import { mockZorunlu } from "../../api/http";
 import { dolar, goreliZaman, guvenliDisAdres } from "../../lib/format";
 import type { Ton } from "../../lib/etiketler";
-import { uygulamaRotasiMi } from "../../lib/rotalar";
+import type { Rol } from "../../api/types";
 import { Ikon } from "../Ikon";
 import { Cip, DisBaglanti } from "../ui";
 import { AiOneriKarti } from "./OneriKarti";
 import { DenetimKutusu, DenetimRozeti, denetimBasligi, denetimNotuMu } from "./DenetimKutusu";
+import { rolRotasiAcik } from "./rolRotalari";
 
 // Renk disiplini (TASARIM-YENILEME-PLANI §3.2, §4.6): kırmızı yalnız hata/engel, indigo yalnız etkileşim/süren.
 // "Emin değil" bir hata değil, dikkat çağrısıdır (doğrulayın) → amber; "Genel bilgi" kategoriktir → nötr.
@@ -30,12 +31,33 @@ const GUVEN_ACIKLAMASI: Record<GuvenGosterimi, string> = {
   "Genel bilgi": "Ürüne özgü olmayan genel QA bilgisi.",
 };
 
-const KAYNAK_NOTU: Record<string, string> = {
-  sozluk: "Hazır cevap · hata sözlüğü",
-  sablon: "Hazır cevap · kayıt durumu",
-  kapali: "Hazır cevap",
-  denetim: "İçerik kontrolü",
-};
+/**
+ * Kip rozeti (013 §7, K12): `CANLI · Haiku 5.5` / `ŞABLON` / `MODEL KAPALI`. Eski "Hazır cevap · …"
+ * etiketi rozetin açıklamasıdır: kartta iki ayrı etiket olmaz. Açıklama yalnız title'da değil,
+ * rozetin yanında küçük görünür metindir (dokunmatik ve klavye kullanıcısı da okur; rozet
+ * etkileşimli değildir). Anlam metinde; renk ek ipucudur (canlı = AI moru, şablon/kapalı = nötr).
+ */
+export function KipRozeti({
+  mesaj,
+  modeller,
+}: {
+  mesaj: Pick<AsistanMesaji, "kaynak" | "amac"> & { cevap?: Pick<AsistanCevabi, "model" | "sizinti"> | null };
+  modeller?: Pick<AsistanDurumu, "varsayilan_model" | "derin_model"> | null;
+}) {
+  const aciklamaId = useId();
+  const r = kipRozeti(mesaj, modeller);
+  if (!r) return null;
+  return (
+    <span className="asistan-kip">
+      <span className={`rozet rozet-kip rozet-kip-${r.tur}`} aria-describedby={aciklamaId} data-testid="kip-rozeti">
+        {r.metin}
+      </span>
+      <span id={aciklamaId} className="asistan-kip-aciklama soluk kucuk" data-testid="kip-aciklamasi">
+        {r.aciklama}
+      </span>
+    </span>
+  );
+}
 
 /** Göreli zaman tek yerde (lib/format); eski içe aktarımlar için yeniden dışa aktarılır. */
 export { goreliZaman };
@@ -230,17 +252,23 @@ export interface CevapKartiOzellikleri {
   kalanSoru?: number | null;
   /** Git bağlantısına basılınca (mobilde panel kapanır). */
   onGit?: () => void;
+  /** `/assistant/status` model kimlikleri: cevap `model` taşımıyorsa kip rozetindeki kısa model adı. */
+  modeller?: Pick<AsistanDurumu, "varsayilan_model" | "derin_model"> | null;
+  /** Oturumdaki rol: rolüne kapalı ekrana "Git" düğmesi çizilmez. */
+  rol?: Rol | null;
 }
 
-export function CevapKarti({ mesaj, baslik, derinIncelenebilir: derinIstegi, derinIncele, derinCalisiyor, geriBildir, kalanSoru, onGit }: CevapKartiOzellikleri) {
+
+export function CevapKarti({ mesaj, baslik, derinIncelenebilir: derinIstegi, derinIncele, derinCalisiyor, geriBildir, kalanSoru, onGit, modeller, rol }: CevapKartiOzellikleri) {
   const derinNotId = useId();
   const c = mesaj.cevap;
   if (!c) return null;
   // Denetimin engellediği/denetimsiz kalan cevap ayrıntılı incelenemez (core 422; 011 F7).
   const derinIncelenebilir = derinIstegi && mesaj.kaynak !== "denetim";
-  const guven = c.guven_gosterimi ?? null;
+  // Sızıntı yerine gelen sabit cevapta güven rozeti gösterilmez (ortak metin kuralı).
+  const guven = c.sizinti ? null : (c.guven_gosterimi ?? null);
   const ornek = c.ornek_veri === true || mockZorunlu();
-  const yonlendirmeler = (c.yonlendirmeler ?? []).filter((y) => uygulamaRotasiMi(y.rota));
+  const yonlendirmeler = (c.yonlendirmeler ?? []).filter((y) => rolRotasiAcik(y.rota, rol));
   // Jira adresleri yalnız http(s) ise bağlantı olur (javascript:/data: vb. düşer; OneriKarti ile aynı süzgeç).
   const kaynakJiraAnahtarlari = new Set(
     (c.kaynaklar ?? []).filter((k) => k.tur === "jira" && guvenliDisAdres(k.jira?.url)).map((k) => k.jira!.anahtar),
@@ -262,7 +290,10 @@ export function CevapKarti({ mesaj, baslik, derinIncelenebilir: derinIstegi, der
             {guven}
           </Cip>
         )}
-        {mesaj.kaynak && KAYNAK_NOTU[mesaj.kaynak] && <span className="soluk kucuk">{KAYNAK_NOTU[mesaj.kaynak]}</span>}
+        {/* Örnek veri derlemesinde hazırlanmış "model" cevabı canlı gösterilmez (sahte CANLI yok):
+            o kartta yalnız ÖRNEK VERİ rozeti; şablon/kapalı rozetleri doğru olduğu için kalır. */}
+        {!(ornek && mesaj.kaynak === "model") && <KipRozeti mesaj={mesaj} modeller={modeller} />}
+        {mesaj.kaynak === "denetim" && <span className="soluk kucuk">İçerik kontrolü</span>}
         {c.denetim && <DenetimRozeti denetim={c.denetim} />}
         {ornek && (
           <span className="rozet rozet-mock" title="Örnek veri: hazırlanmış cevap, gerçek asistan cevabı değil.">
@@ -293,7 +324,7 @@ export function CevapKarti({ mesaj, baslik, derinIncelenebilir: derinIstegi, der
           <ul className="oneri-liste">
             {c.oneriler!.map((o, i) => (
               <li key={i}>
-                <AiOneriKarti oneri={o} onGit={onGit} sohbetId={mesaj.sohbet_id} />
+                <AiOneriKarti oneri={o} onGit={onGit} sohbetId={mesaj.sohbet_id} rol={rol} />
               </li>
             ))}
           </ul>
