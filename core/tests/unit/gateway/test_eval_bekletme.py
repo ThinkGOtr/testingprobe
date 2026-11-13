@@ -64,11 +64,20 @@ GENEL_BEKLENTILER = {
 }
 
 
+# P1 oranı ölçülmeyen bekletme story'leri (her AC tahsil edilen tutarı tanımlar; yönergeye göre
+# her sınır case'i para kuralıdır). Yalnız gerekçeli `max_p1_orani: None` ile.
+P1_ORANI_OLCULMEZ = {"holdout-otopark-ucret"}
+
+
 def test_bekletme_beklentileri_genel_kural_denetimleri() -> None:
     for case in _ham_set()["holdout_cases"]:
         exp = case["expect"]
-        assert set(exp) == GENEL_BEKLENTILER, case["id"]
-        assert exp["source_grounded"] is True and exp["max_p1_orani"] == 0.6
+        if case["id"] in P1_ORANI_OLCULMEZ:
+            assert set(exp) == GENEL_BEKLENTILER - {"max_p1_orani"}, case["id"]
+        else:
+            assert set(exp) == GENEL_BEKLENTILER, case["id"]
+            assert exp["max_p1_orani"] == 0.6
+        assert exp["source_grounded"] is True
         assert exp["not_contains_any"] == bes.FABRICATION_COMMON
         assert exp["ac_coverage"] == exp["ready_ac_coverage"]
         assert exp["min_cases"] == len(exp["ac_coverage"]) and exp["max_cases"] == 15

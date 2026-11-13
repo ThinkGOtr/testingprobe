@@ -68,7 +68,8 @@
               "5 adet",
               "adedi 5",
               "5 adette",
-              "adet 5"
+              "adet 5",
+              "P-001 × 5"
             ]
           },
           {
@@ -77,7 +78,8 @@
               "6 adet",
               "adedi 6",
               "6 adette",
-              "adet 6"
+              "adet 6",
+              "P-001 × 6"
             ]
           },
           {
@@ -152,7 +154,8 @@
               "6 adet",
               "adedi 6",
               "6 adette",
-              "adet 6"
+              "adet 6",
+              "P-001 × 6"
             ]
           },
           {
@@ -161,7 +164,8 @@
               "7 adet",
               "adedi 7",
               "7 adette",
-              "adet 7"
+              "adet 7",
+              "P-001 × 7"
             ]
           },
           {
@@ -416,7 +420,9 @@
               "2. hatalı",
               "ikinci hatalı",
               "2 art arda",
-              "2 ardışık"
+              "2 ardışık",
+              "2. art arda",
+              "2. ardışık"
             ]
           },
           {
@@ -427,7 +433,9 @@
               "3. hatalı",
               "üçüncü hatalı",
               "3 art arda",
-              "3 ardışık"
+              "3 ardışık",
+              "3. art arda",
+              "3. ardışık"
             ]
           },
           {

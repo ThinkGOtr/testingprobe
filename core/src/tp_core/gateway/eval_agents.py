@@ -670,6 +670,7 @@ def duplicate_cases(cases: Sequence[Mapping[str, Any]]) -> list[list[int]]:
 # (test verisindeki `P-xxx × n`) birim fiyatlarla yeniden hesaplanmış bir alt toplamıdır.
 TUTAR = re.compile(r"(?<![\d.,])(\d{1,3}(?:\.\d{3})*,\d{2})\s?TL\b")
 _CIPLAK_TUTAR = re.compile(r"(?<![\d.,])(\d{1,3}(?:\.\d{3})*,\d{2})(?![\d])")
+_SALT_TUTAR = re.compile(r"\d{1,3}(?:\.\d{3})*,\d{2}\s?TL")
 TIRNAK_ICI = re.compile(
     r'"([^"\n]{2,160})"|“([^”\n]{2,160})”|«([^»\n]{2,160})»|(?<!\w)\'([^\'\n]{2,80})\'(?!\w)'
 )
@@ -717,10 +718,12 @@ _ESIK_BAGLAMI = re.compile(
 # yalnız eşiği niteleyen bir sözcük girebilir (kredi, sipariş, bayi…); eşik adı yalın ya da
 # iyelik halinde olmalı ve ardından etken karşılaştırma gelmemeli: "toplam 525,00 TL olan
 # sipariş limiti aşar" / "150,00 TL olan sepet minimum sipariş tutarının altında" sepet
-# tutarıdır, eşik değil; edilgen "300,00 TL olan kredi limiti aşılmaz" eşiktir.
+# tutarıdır, eşik değil; edilgen "300,00 TL olan kredi limiti aşılmaz" eşiktir. Niteleyici
+# "sipariş" eşik adı "minimum"dan önce gelemez (e10): "125,00 TL'lik sipariş minimum tutar şartı
+# aranmadan" siparişin tutarıdır; eşiğin adı "minimum sipariş tutarı"dır.
 _ESIK_BAGLAMI_TERS = re.compile(
     _TUTAR_TL + r"(?:['’](?:lik|lık|luk|lük)\s+|\s+(?:olan|olarak\s+(?:belirlenen|tanımlı)|"
-    r"değerinde(?:ki)?)\s+)(?:(?:kredi|sipariş|bayi|harcama|ödeme)\s+)?"
+    r"değerinde(?:ki)?)\s+)(?:(?:kredi|sipariş|bayi|harcama|ödeme)\s+(?!minimum))?"
     r"(?:limit(?:i|li)?|minimum(?:\s+sipariş)?(?:\s+tutar[ıi]?)?|eşi(?:k|ği)|tavan[ıi]?|"
     r"(?:alt|üst)\s+sınır[ıi]?)"
     r"(?!\w|\s+(?:tutar|sipariş)|"
@@ -748,6 +751,19 @@ _HAZIRLIK_FIYATI = re.compile(
 _HAZIRLIK_URUNU = re.compile(
     r"\b(" + _KOD + r")\b\s*(?:[·:,\-–(]\s*(?:[\"“][^\"”\n]{1,80}[\"”]\s*[·:,\-–]\s*)?|"
     r"[^;\n×*]{0,30}?fiyat\w*\s*(?::|=|olarak|olan)?\s*)" + _TUTAR_TL,
+    re.IGNORECASE,
+)
+# Ters sıra (e10): fiyat önce, kod sonra — "fiyatı 749,99 TL olan sentetik ürün SENT-749",
+# "749,99 TL fiyatlı ürün SENT-749". Kod "ürün" sözcüğünün hemen ardından gelmelidir.
+_HAZIRLIK_URUNU_TERS = re.compile(
+    r"fiyat\w*\s*(?::|=|olarak|olan)?\s*" + _TUTAR_TL + r"(?:['’](?:lik|lık))?\s+"
+    r"(?:olan\s+|fiyatlı\s+)?(?:[\w-]+\s+){0,2}?ürün\w*\s+("
+    + _KOD
+    + r")\b|"
+    + _TUTAR_TL
+    + r"\s+fiyatlı\s+(?:[\w-]+\s+){0,2}?ürün\w*\s+("
+    + _KOD
+    + r")\b",
     re.IGNORECASE,
 )
 # Sepetin alt toplamı (gerçek toplam ya da satır tutarı değilse) yalnız sepet/toplam bağlamında
@@ -969,6 +985,8 @@ def case_sepeti_ayrintili(
     fiyat = dict(fiyatlar)
     for kod, tutar in _HAZIRLIK_URUNU.findall(hazirlik):
         fiyat.setdefault(kod, _kurus(tutar))
+    for t1, k1, t2, k2 in _HAZIRLIK_URUNU_TERS.findall(hazirlik):
+        fiyat.setdefault(k1 or k2, _kurus(t1 or t2))
     ad = adlar or {}
 
     def grup(parcalar: Sequence[str]) -> tuple[dict[str, int], set[str]]:
@@ -1001,12 +1019,48 @@ def case_sepeti(case: Mapping[str, Any], fiyatlar: Mapping[str, int]) -> list[tu
     return list(case_sepeti_ayrintili(case, fiyatlar).satirlar)
 
 
-def _baglam(metin: str, bas: int, son: int, onceki: int) -> str:
-    """Tutarın bağlamı: önceki tutardan (en çok 50 karakter) bu tutara kadar olan metin + ardından
-    gelen, aynı yan cümlede ve sonraki sayıdan önce kalan en çok 25 karakter ("25,00 TL
-    indirim"; "; kredi limiti …" ya da "sipariş 500,00 TL limiti" sonraki ifadedir)."""
+# İşlem zinciri (e10): "5 × 25,00 TL = 125,00 TL", "150,00 TL + 660,00 TL = 810,00 TL" — iki
+# tutar arasında yalnız işlem işareti / çarpan varsa sonuç tutarı ifadenin bağlamını taşır.
+_ISLEM_ARASI = re.compile(r"^[\s=+\-−–×x*/·\d]*[=+\-−–×x*/][\s=+\-−–×x*/·\d]*$")
+
+
+def _baglam_parcalari(metin: str, bas: int, son: int, onceki: int) -> tuple[str, str]:
+    """Tutarın bağlamı `(önce, sonra)`: önceki tutardan (en çok 50 karakter) bu tutara kadar olan
+    metin; ardından gelen, aynı yan cümlede ve sonraki sayıdan önce kalan en çok 25 karakter
+    ("25,00 TL indirim"; "; kredi limiti …" ya da "sipariş 500,00 TL limiti" sonraki ifadedir).
+    Önceki tutarla arasında yalnız işlem işareti varsa ("… = 125,00 TL") önceki tutar sınır
+    değildir: bağlam ifadenin başına (en çok 50 karakter) uzanır."""
     sonra = re.split(r"[;\n(\d]|,\s|\.\s", metin[son : son + 25])[0]
-    return metin[max(onceki, bas - 50) : bas] + " " + sonra
+    sinir = onceki
+    if onceki and _ISLEM_ARASI.match(metin[onceki:bas]):
+        sinir = 0
+    return metin[max(sinir, bas - 50) : bas], sonra
+
+
+def _sepet_baglaminda(once: str, sonra: str) -> bool:
+    """Alt toplam bu bağlamda sepet/toplam tutarı mı. Önceki metin sepet sözcüğü taşıyor ve
+    yabancı kavram içermiyorsa ("toplam (525,00 TL) kredi limitini aşar") karar odur; sonraki
+    metindeki karşılaştırma nesnesi ("kredi limitini") tutarın kendisini nitelemez (e10).
+    Aksi halde birleşik bağlam: sepet sözcüğü var ve yabancı kavram yok."""
+    if _SEPET_BAGLAMI.search(once) and not _YABANCI_BAGLAM.search(once):
+        return True
+    birlesik = once + " " + sonra
+    return bool(_SEPET_BAGLAMI.search(birlesik)) and not _YABANCI_BAGLAM.search(birlesik)
+
+
+# Fark tutarı (e10): eşik adıyla karşılaştırma fiili arasındaki tutar ("limiti 0,01 TL aşan",
+# "eşiğin 1,00 TL altında") ya da açıkça "fark" denen tutar ("fark: 25,00 TL"). Kaynağa dayanan
+# iki tutarın (kaynak, hazırlık fiyatı, case sepetinin toplamı) farkıysa uydurma değildir. Eşik
+# adı olmadan "sepet 725,00 TL altında" fark değildir (karşılaştırılan tutardır).
+_FARK_ESIK_ONCESI = re.compile(r"(?:limit|eşi[kğ]|minimum|tavan|sınır)\w*\s*$", re.IGNORECASE)
+_FARK_SONRASI = re.compile(
+    r"^(?:['’]\w*)?\s*(?:aş|geç|fazla|eksik|üst|üzer|alt|yukarı|aşağı)", re.IGNORECASE
+)
+_FARK_ONCESI = re.compile(r"\bfark\w*\s*(?:\(|:|=|olarak|olan)?\s*$", re.IGNORECASE)
+
+
+def _farklar(tutarlar: set[int]) -> set[int]:
+    return {a - b for a in tutarlar for b in tutarlar if a > b}
 
 
 def source_problems(
@@ -1052,6 +1106,8 @@ def source_problems(
         ek_fiyat = _hazirlik_fiyatlari((ek_kaynaklar or {}).get(etiket, ""))
         for m in TIRNAK_ICI.finditer(metin):
             alinti = _bosluk(next(g for g in m.groups() if g))
+            if _SALT_TUTAR.fullmatch(alinti):
+                continue  # tırnaklı tutar ("'1.350,00 TL' biçiminde"): tutar kuralıyla denetlenir
             if alinti not in kaynak_sade:
                 out.append(f"{etiket}: kaynakta olmayan alıntı {alinti!r}")
         esikler = {_kurus(t) for t in _ESIK_BAGLAMI.findall(metin)}
@@ -1068,27 +1124,43 @@ def source_problems(
             )
         )
         alt_toplamlar = sepet_alt_toplamlari(sepet.satirlar) if sepet.satirlar else None
+        dayanakli = kaynak_tutar | ek_fiyat | set(sepet.toplamlar)
         onceki = 0
         goruldu: set[int] = set()
         for m in TUTAR.finditer(metin):
             tutar = m.group(1)
             k = _kurus(tutar)
-            baglam = _baglam(metin, m.start(), m.end(), onceki)
+            once, sonra = _baglam_parcalari(metin, m.start(), m.end(), onceki)
             onceki = m.end()
             if k == 0 or k in kaynak_tutar or k in ek_fiyat or k in goruldu:
                 continue
             goruldu.add(k)
+            if (
+                k not in esikler
+                and (
+                    (_FARK_ESIK_ONCESI.search(once) and _FARK_SONRASI.match(metin[m.end() :]))
+                    or _FARK_ONCESI.search(once)
+                )
+                and k in _farklar(dayanakli)
+            ):
+                continue  # kaynağa dayanan iki tutarın farkı ("limiti 0,01 TL aşan")
             okunamadi = f"{etiket}: {SEPET_OKUNAMADI}: tutar '{tutar} TL' doğrulanamadı"
             if k in esikler:
                 out.append(f"{etiket}: kaynakta olmayan eşik/limit tutarı '{tutar} TL'")
             elif alt_toplamlar is not None:
                 if k in sepet.toplamlar:
                     continue
+                if k in alt_toplamlar and _sepet_baglaminda(once, sonra):
+                    continue
                 if (
-                    k in alt_toplamlar
-                    and _SEPET_BAGLAMI.search(baglam)
-                    and not _YABANCI_BAGLAM.search(baglam)
+                    ek_fiyat
+                    and _sepet_baglaminda(once, sonra)
+                    and CaseSepeti(
+                        satirlar=sepet.satirlar, eksik_fiyatlar=tuple(sorted(ek_fiyat))
+                    ).eksikle_kurulabilir(k)
                 ):
+                    # Okunan sepet + hazırlıkta tanımlanan sentetik ürün(ler) (kodsuz ya da
+                    # kod biçimi dışı adla anılsa da; e10): "749,99 TL'lik ürün + P-003".
                     continue
                 if sepet.eksikle_kurulabilir(k):
                     out.append(okunamadi)

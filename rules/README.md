@@ -370,7 +370,9 @@ scripts/eval-live.sh --record                        # kayıt adayları exports/
   ayarında hiç kullanılmamış, eval setlerindeki story'lerle örtüşmeyen alanlardan (kütüphane
   ödünç, otopark ücreti, poliçe yenileme, kırtasiye teslimatı) 4 story ve kendi test verisi
   bloğudur; beklentiler yalnız genel kurallardır (`ac_coverage`, `ready_ac_coverage`,
-  `source_grounded`, uydurma belirteçleri, `techniques_include` BVA, `max_p1_orani`). Ayrı paket
+  `source_grounded`, uydurma belirteçleri, `techniques_include` BVA, `max_p1_orani`; her AC'si
+  tahsil edilen tutarı tanımlayan otopark story'sinde P1 oranı ölçülmez — yönergeye göre her sınır
+  case'i para kuralıdır). Ayrı paket
   değildir (prompt dosyası olmayan kayıt `evaluations.yaml` kapısında reddedilir): `load_set`
   vakaları `alt_kume: holdout` ile aynı koşuya katar. **Bağlayıcıdır:** set geçişi her vakayı
   ister, holdout geçmeden `case-generation` `evaluated` olmaz. Rapor alt kümeleri ayrı taşır

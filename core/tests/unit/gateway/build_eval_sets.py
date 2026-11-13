@@ -486,8 +486,10 @@ _ESIK_750 = {"topic": "minimum sipariş tutarı sınırı 750,00 TL", "keywords"
 
 
 def _esik(n: str) -> list[str]:
-    """Adet eşiğinin modelin kullandığı yazımları (canlı eval 2026-11-12: "adet 6" de çıktı)."""
-    return [f"{n} adet", f"adedi {n}", f"{n} adette", f"adet {n}"]
+    """Adet eşiğinin modelin kullandığı yazımları (canlı eval 2026-11-12: "adet 6" de çıktı;
+    2026-11-13: prompt'un sepet biçimi "<ürün kodu> × <adet>" ile "P-001 × 6"). Kampanya
+    yalnız P-001'dedir; başka ürünün "× n" yazımı eşiği anmaz."""
+    return [f"{n} adet", f"adedi {n}", f"{n} adette", f"adet {n}", f"P-001 × {n}"]
 
 
 ITEMS_LIKE: dict[str, list[dict[str, Any]]] = {
@@ -561,6 +563,9 @@ ST_EXPECT: dict[str, Any] = {
                 "ikinci hatalı",
                 "2 art arda",
                 "2 ardışık",
+                # Sıra sayısı yazımı (canlı eval 2026-11-13: "2. art arda hatalı deneme").
+                "2. art arda",
+                "2. ardışık",
             ],
         },
         {
@@ -572,6 +577,8 @@ ST_EXPECT: dict[str, Any] = {
                 "üçüncü hatalı",
                 "3 art arda",
                 "3 ardışık",
+                "3. art arda",
+                "3. ardışık",
             ],
         },
         {"topic": "kilitli durumda giriş denemesi", "keywords": ["kilitli"]},
@@ -741,7 +748,9 @@ def case_generation_cases() -> list[dict[str, Any]]:
 # kapsamı ve her AC için hazır case, case sayısı sınırları, kaynağa dayalı alıntı ve tutarlar
 # (`source_grounded`), genel uydurma belirteçleri (kaynaklarda yanıt kodu / zaman aşımı / yeniden
 # deneme yok), sayısal sınırı olan story'de BVA ve P1 seçiciliği (`max_p1_orani` 0,6: ayar
-# setindeki en yüksek para hikâyesi çıtası; vaka başına ayarlanmadı). 011 §4.2 deterministik
+# setindeki en yüksek para hikâyesi çıtası; vaka başına ayarlanmadı). İstisna: her AC'si tahsil
+# edilen tutarı tanımlayan story'de (otopark) çıta yönergeyle çelişir; TPD-4 gibi ölçülmez
+# (story'nin `max_p1_orani: None`, gerekçesiyle). 011 §4.2 deterministik
 # kuralları her çıktıya zaten uygulanır.
 #
 # KURAL: bekletme vakasının canlı sonucuna bakarak prompt değiştirilirse o vaka artık bekletme
@@ -800,6 +809,10 @@ HOLDOUT_STORIES: list[dict[str, Any]] = [
         'Arayüz etiketleri: "Bileti okut", "Abone kartını okut", "Öde", "Çıkış"\n'
         "Tutar biçimi: 1.250,00 TL (tr-TR, iki ondalık).",
         "techniques": ["BVA"],
+        # P1 oranı ölçülmez (eval seti düzeltmesi, 2026-11-13): her AC tahsil edilen tutarı
+        # tanımlar; her sınırın iki yanı da yanlış tutar tahsil eder (yönergeye göre para kaybı,
+        # P1). TPD-4 gibi eşik konmaz; 0,6 çıtası yönergeyle çelişiyordu.
+        "max_p1_orani": None,
     },
     {
         "id": "holdout-police-yenileme",
@@ -891,7 +904,11 @@ def holdout_cases() -> list[dict[str, Any]]:
                     "not_contains_any": FABRICATION_COMMON,
                     "techniques_include": st["techniques"],
                     "source_grounded": True,
-                    "max_p1_orani": HOLDOUT_MAX_P1_ORANI,
+                    **(
+                        {"max_p1_orani": st.get("max_p1_orani", HOLDOUT_MAX_P1_ORANI)}
+                        if st.get("max_p1_orani", HOLDOUT_MAX_P1_ORANI) is not None
+                        else {}
+                    ),
                 },
             }
         )
@@ -1157,7 +1174,17 @@ def _review_vaka(
         "description": aciklama,
         "replay_key": _key(name.split("/")[-1]),
         "messages": _msgs(
-            review.review_messages(req, cases, ozet, matris["satirlar"], matris["oranlar"], h)
+            review.review_messages(
+                req,
+                cases,
+                ozet,
+                matris["satirlar"],
+                matris["oranlar"],
+                h,
+                # Üretimdeki gibi test verisi bloğu (canlı eval 2026-11-13: bloksuz girdide
+                # golden'ın bayi adı "uydurma" sayıldı).
+                test_data_block=_test_data_block(),
+            )
         ),
         "expect": expect,
     }

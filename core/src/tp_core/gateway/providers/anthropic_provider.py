@@ -57,6 +57,23 @@ from tp_core.gateway.providers.base import (
 )
 
 _META_KEYS = {"$schema", "$id"}
+
+
+def _transport_errors() -> tuple[type[BaseException], ...]:
+    """SDK'nın akış sırasında sarmalamadan geçirdiği httpx aktarım hataları (SDK `httpx2`
+    kullanır; eski kurulumlar için `httpx` de eklenir)."""
+    found: list[type[BaseException]] = []
+    for name in ("httpx2", "httpx"):
+        try:
+            module = __import__(name)
+        except ImportError:
+            continue
+        err = getattr(module, "TransportError", None)
+        if isinstance(err, type) and issubclass(err, BaseException):
+            found.append(err)
+    return tuple(found)
+
+
 # Bu eşik ve üstünde akışlı istek (HTTP zaman aşımı tüm yanıt yerine parçalar arası beklemeye
 # uygulanır). models.yaml: case_generation 16000, consistency_check / verify_and_map 8192.
 STREAM_MIN_MAX_TOKENS = 8192
@@ -314,6 +331,11 @@ class AnthropicProvider:
             ) from exc
         except anthropic.APIConnectionError as exc:
             raise ProviderTransientError(f"bağlantı: {exc}") from exc
+        except _transport_errors() as exc:
+            # Akış gövdesi okunurken bağlantı koparsa (ör. "peer closed connection without
+            # sending complete message body") SDK hatayı sarmalamaz; ham httpx aktarım hatası
+            # gelir. Bağlantı hatasıyla aynı sınıf: yeniden denenebilir.
+            raise ProviderTransientError(f"aktarım: {exc}") from exc
         except anthropic.APIError as exc:  # akış ortasında gelen hata olayı
             if _stream_error_type(exc) in _TRANSIENT_STREAM_ERRORS:
                 raise ProviderTransientError(f"akış: {exc}") from exc
