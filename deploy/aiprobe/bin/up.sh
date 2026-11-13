@@ -3,6 +3,8 @@
 # Sırlar /run/tp/tp.env (tmpfs) -> paket kökünde .env (yalnız root okur), sonra `make up`.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# startup-script ortamında HOME tanımsız; git config --global için gerekli.
+export HOME="${HOME:-/root}"
 command -v git >/dev/null 2>&1 || { apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git; }
 # Paket başka bir uid ile arşivlenmiş olabilir; root git "dubious ownership" demesin.
 chown -R root:root .

@@ -2,5 +2,7 @@
 # tp-vm deploy paketi kapanışı (aiprobe-platform vm-product: /opt/tp/current/bin/down.sh).
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# startup-script ortamında HOME tanımsız; git config --global için gerekli.
+export HOME="${HOME:-/root}"
 [ -f .env ] || install -m 600 /run/tp/tp.env .env
 docker compose down
