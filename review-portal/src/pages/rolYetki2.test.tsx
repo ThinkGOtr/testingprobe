@@ -294,12 +294,12 @@ describe("yeni okuma izinleri ve demo kipi", () => {
     expect([...IZINLER["requirement.po_reject_free_text"]]).toEqual(["po"]);
   });
 
-  it("Analist Demo yol haritasını ve Demo kontrollerini görür (demo.read); Developer görmez", async () => {
+  it("Analist Demo yol haritasını görür (demo.read); Demo kontrolleri menüde yok", async () => {
     await oturumAc("analist");
     uygulama("/yol-haritasi");
     const menu = await screen.findByRole("navigation", { name: "Ana menü" });
     await waitFor(() => expect(within(menu).getByText("Demo yol haritası")).toBeInTheDocument());
-    expect(within(menu).getByText("Demo kontrolleri")).toBeInTheDocument();
+    expect(within(menu).queryByText("Demo kontrolleri")).toBeNull();
     expect(screen.queryByText("Bu ekran için yetkiniz yok.")).toBeNull();
   });
 
