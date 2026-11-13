@@ -65,9 +65,9 @@ export function degerlendirmeNotuMetni(d: Degerlendirme | null | undefined): { m
   };
 }
 
-export function Cip({ ton = "notr", children, title }: { ton?: Ton; children: ReactNode; title?: string }) {
+export function Cip({ ton = "notr", children, title, className }: { ton?: Ton; children: ReactNode; title?: string; className?: string }) {
   return (
-    <span className={`cip cip-${ton}`} title={title}>
+    <span className={`cip cip-${ton}${className ? ` ${className}` : ""}`} title={title}>
       {children}
     </span>
   );

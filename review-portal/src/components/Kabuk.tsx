@@ -229,7 +229,7 @@ function KabukIcerik() {
     const dongu = (e: KeyboardEvent) => {
       if (e.key !== "Tab" || e.altKey || e.ctrlKey || e.metaKey) return;
       const dugme = menuDugmesi.current;
-      const baglantilar = [...(menuRef.current?.querySelectorAll<HTMLElement>("a[href]") ?? [])];
+      const baglantilar = [...(menuRef.current?.querySelectorAll<HTMLElement>("a[href], button:not(:disabled)") ?? [])];
       if (!dugme || baglantilar.length === 0) return;
       const sira = [dugme, ...baglantilar];
       const i = sira.indexOf(document.activeElement as HTMLElement);
@@ -308,7 +308,7 @@ function KabukIcerik() {
           )}
           {/* Canlı olaylar rolün izniyle (events.read); Denetçi ve Görüntüleyici'de akış yok, gösterge de yok. */}
           {olaylarAcik && (
-            <span className={`baglanti baglanti-${b.sinif}`} role="status">
+            <span className={`baglanti baglanti-${b.sinif}`} role="status" title={b.etiket}>
               <span className="nokta" aria-hidden="true" />
               <span className="baglanti-metin">{b.etiket}</span>
             </span>
@@ -345,6 +345,16 @@ function KabukIcerik() {
       </header>
       <div className="govde">
         <nav ref={menuRef} id="yan-menu" className={`yan-menu${menuAcik ? " acik" : ""}`} aria-label="Ana menü">
+          {/* Dar ekranda (≤860 px) üst çubuktaki ad + rol seçici gizlidir: aynı seçici açık çekmecenin başında
+              (çekmece yalnız dar ekranda açılır; geniş ekranda DOM'da ikinci bir seçici olmaz). */}
+          {menuAcik && kullanici && (
+            <div className="menu-kullanici" data-testid="menu-kullanici">
+              <span className="menu-kullanici-ad">{kullanici.ad_soyad || kullanici.kullanici_adi}</span>
+              <span className="menu-kullanici-rol">
+                Rol: <RolSecici />
+              </span>
+            </div>
+          )}
           {NAV.map((g) => {
             const ogeler = g.ogeler.filter(
               (o) => izinVar(izinler, ...(ROTA_IZINLERI[o.yol] ?? [])) && !(demoModu === false && DEMO_ROTALARI.includes(o.yol)),

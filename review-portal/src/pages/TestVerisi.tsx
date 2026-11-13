@@ -548,7 +548,7 @@ export function TestVerisiSayfasi() {
                 {grup} <span className="soluk kucuk">({l.length})</span>
               </h2>
               <div className="tablo-sarici" tabIndex={0} role="region" aria-label={`${grup} grubu test verileri`}>
-                <table className="tablo tablo-sik">
+                <table className="tablo tablo-sik tablo-yigin">
                   <thead>
                     <tr>
                       <th scope="col">Anahtar</th>
@@ -565,8 +565,8 @@ export function TestVerisiSayfasi() {
                   <tbody>
                     {l.map((k) => (
                       <tr key={k.id} data-anahtar={k.anahtar}>
-                        <td className="mono">{k.anahtar}</td>
-                        <td>
+                        <td className="mono" data-etiket="Anahtar">{k.anahtar}</td>
+                        <td data-etiket="Değer">
                           {k.gizli ? (
                             <span className="satir-ogeler">
                               <span>{GIZLI_DEGER}</span>
@@ -579,16 +579,16 @@ export function TestVerisiSayfasi() {
                             <span className="mono">{k.deger ?? "—"}</span>
                           )}
                         </td>
-                        <td>{k.aciklama ?? <span className="soluk">—</span>}</td>
-                        <td className="mono">s{k.surum}</td>
-                        <td>
+                        <td data-etiket="Açıklama">{k.aciklama ?? <span className="soluk">—</span>}</td>
+                        <td className="mono" data-etiket="Sürüm">s{k.surum}</td>
+                        <td data-etiket="Kullanım">
                           <span aria-label={`${k.kullanim} case atıf yapıyor`}>{k.kullanim}</span>
                         </td>
-                        <td className="kucuk">
+                        <td className="kucuk" data-etiket="Güncelleme">
                           {k.guncelleyen ? kisiAdi(k.guncelleyen) : "—"}
                           <div className="soluk">{tarih(k.guncelleme)}</div>
                         </td>
-                        <td>
+                        <td data-etiket="Eylemler">
                           <div className="satir-ogeler testveri-eylemler">
                             <button
                               type="button"

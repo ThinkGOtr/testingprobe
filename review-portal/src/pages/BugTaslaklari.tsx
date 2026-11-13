@@ -112,7 +112,7 @@ export function BugTaslaklari() {
           <BosDurum baslik="Bug taslağı yok." />
         ) : (
           <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Bug taslakları tablosu">
-            <table className="tablo">
+            <table className="tablo tablo-yigin">
               <thead>
                 <tr>
                   <th scope="col">Özet</th>
@@ -130,7 +130,7 @@ export function BugTaslaklari() {
                   const yapilmadi = mukerrerAramaDurumu(b) !== "yapildi";
                   return (
                     <tr key={b.id}>
-                      <td>
+                      <td data-etiket="Özet">
                         <Link to={`/bug-taslaklari/${encodeURIComponent(b.id)}`} className="satir-baglanti">
                           {b.icerik.summary}
                         </Link>{" "}
@@ -148,14 +148,14 @@ export function BugTaslaklari() {
                           </span>
                         )}
                       </td>
-                      <td>{KAYNAK[b.kaynak]}</td>
-                      <td className="mono">{b.icerik.story_key ?? "—"}</td>
-                      <td>{SEVERITY[b.icerik.severity_suggestion]}</td>
-                      <td className={yapilmadi ? "soluk" : "mono"}>{aramaOzeti(b)}</td>
-                      <td>
+                      <td data-etiket="Kaynak">{KAYNAK[b.kaynak]}</td>
+                      <td className="mono" data-etiket="Story">{b.icerik.story_key ?? "—"}</td>
+                      <td data-etiket="Önem">{SEVERITY[b.icerik.severity_suggestion]}</td>
+                      <td className={yapilmadi ? "soluk" : "mono"} data-etiket="Mükerrer adayı">{aramaOzeti(b)}</td>
+                      <td data-etiket="Durum">
                         <Cip ton={d.ton}>{d.etiket}</Cip>
                       </td>
-                      <td className="tek-satir">{tarih(b.olusturma)}</td>
+                      <td className="tek-satir" data-etiket="Oluşturma">{tarih(b.olusturma)}</td>
                     </tr>
                   );
                 })}

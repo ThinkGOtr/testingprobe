@@ -36,7 +36,7 @@ function DurumCipi({ d }: { d: string }) {
 export function KosuTablosu({ kosular, kompakt }: { kosular: Kosu[]; kompakt?: boolean }) {
   return (
     <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Koşular tablosu">
-      <table className="tablo">
+      <table className="tablo tablo-yigin">
         <thead>
           <tr>
             <th scope="col">Koşu</th>
@@ -54,7 +54,7 @@ export function KosuTablosu({ kosular, kompakt }: { kosular: Kosu[]; kompakt?: b
         <tbody>
           {kosular.map((k) => (
             <tr key={k.id}>
-              <td>
+              <td data-etiket="Koşu">
                 <Link to={`/kosular/${encodeURIComponent(k.id)}`} className="satir-baglanti mono" title={`Koşu kimliği: ${k.id}`}>
                   {kisaKosuAdi(k.id)}
                 </Link>
@@ -66,7 +66,7 @@ export function KosuTablosu({ kosular, kompakt }: { kosular: Kosu[]; kompakt?: b
                 {/* 012/Ş8: ekilmiş hata koşusunun adımı ("Ekilmiş hata: <ad>"); diğer koşularda çizilmez. */}
                 <EkilmisHataCipi kosu={k} />
               </td>
-              <td>
+              <td data-etiket="Tetik">
                 <Cip ton={TETIK_TONU[k.tetik] ?? "notr"}>{TETIK[k.tetik] ?? k.tetik}</Cip>
                 {k.pr_no !== null && <span className="mono"> #{k.pr_no}</span>}
                 {k.platform && (
@@ -79,11 +79,11 @@ export function KosuTablosu({ kosular, kompakt }: { kosular: Kosu[]; kompakt?: b
                 )}
               </td>
               {!kompakt && (
-                <td>
+                <td data-etiket="Kaynak">
                   <Cip ton="notr">{KAYNAK[k.kaynak] ?? k.kaynak}</Cip>
                 </td>
               )}
-              <td>
+              <td data-etiket="Durum">
                 <DurumCipi d={k.durum} />
                 {k.flaky > 0 && (
                   <Cip ton="uyari" title="Yeniden denemeyle geçen test">
@@ -91,12 +91,12 @@ export function KosuTablosu({ kosular, kompakt }: { kosular: Kosu[]; kompakt?: b
                   </Cip>
                 )}
               </td>
-              <td className="sayi mono">
+              <td className="sayi mono" data-etiket="Geçen / toplam">
                 {k.gecen}/{k.toplam}
               </td>
-              {!kompakt && <td className="mono">{k.commit}</td>}
-              <td className="tek-satir">{tarih(k.baslangic)}</td>
-              {!kompakt && <td className="tek-satir">{sure(k.sure_ms)}</td>}
+              {!kompakt && <td className="mono" data-etiket="Commit">{k.commit}</td>}
+              <td className="tek-satir" data-etiket="Başlangıç">{tarih(k.baslangic)}</td>
+              {!kompakt && <td className="tek-satir" data-etiket="Süre">{sure(k.sure_ms)}</td>}
             </tr>
           ))}
         </tbody>
@@ -127,9 +127,9 @@ export function SauceCipi({ k }: { k: Pick<Kosu, "kaynak" | "durum" | "sauce_dur
     case "failed":
       return <Cip ton="hata">Sauce: kırmızı</Cip>;
     case "error":
-      return <Cip ton="uyari">Sauce koşmadı: {k.sauce_neden ?? "altyapı hatası"}</Cip>;
+      return <Cip ton="uyari" className="cip-uzun">Sauce koşmadı: {k.sauce_neden ?? "altyapı hatası"}</Cip>;
     case "atlandi":
-      return <Cip ton="notr">Sauce atlandı: {k.sauce_neden ?? "neden bildirilmedi"}</Cip>;
+      return <Cip ton="notr" className="cip-uzun">Sauce atlandı: {k.sauce_neden ?? "neden bildirilmedi"}</Cip>;
   }
   if (k.kaynak === "github" && (k.durum === "queued" || k.durum === "running")) return <Cip ton="bilgi">Sauce: sırada/sürüyor</Cip>;
   return null;

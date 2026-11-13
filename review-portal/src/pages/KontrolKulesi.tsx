@@ -40,7 +40,7 @@ function PlatformDagilimiKarti({ scriptler, secim }: { scriptler: Script[] | nul
   return (
     <Kart baslik="Üretilen testler (platform bazında)">
       <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Platform dağılımı tablosu">
-        <table className="tablo tablo-sik">
+        <table className="tablo tablo-sik tablo-yigin">
           <thead>
             <tr>
               <th scope="col">Platform</th>
@@ -61,11 +61,11 @@ function PlatformDagilimiKarti({ scriptler, secim }: { scriptler: Script[] | nul
           <tbody>
             {satirlar.map((r) => (
               <tr key={r.platform} data-testid={`platform-dagilimi-${r.platform}`}>
-                <td>{PLATFORM_ETIKETI[r.platform]}</td>
-                <td className="sayi">{r.toplam}</td>
-                <td className="sayi">{r.pr_acik}</td>
-                <td className="sayi">{r.birlesti}</td>
-                <td className="sayi">{r.defect}</td>
+                <td data-etiket="Platform">{PLATFORM_ETIKETI[r.platform]}</td>
+                <td className="sayi" data-etiket="Üretilen test">{r.toplam}</td>
+                <td className="sayi" data-etiket="PR açık">{r.pr_acik}</td>
+                <td className="sayi" data-etiket="Birleşti">{r.birlesti}</td>
+                <td className="sayi" data-etiket="Defect adayı">{r.defect}</td>
               </tr>
             ))}
           </tbody>
@@ -282,7 +282,7 @@ export function KontrolKulesi() {
                 <Metrik etiket="Kritik" deger={k.a11y.kritik > 0 ? <span className="hata-metin">{k.a11y.kritik}</span> : 0} />
               </div>
               {k.a11y.sayfalar.length > 0 && (
-                <table className="tablo tablo-sik">
+                <table className="tablo tablo-sik tablo-yigin">
                   <caption className="gorunmez">Sayfa bazında erişilebilirlik ihlalleri</caption>
                   <thead>
                     <tr>
@@ -298,9 +298,9 @@ export function KontrolKulesi() {
                   <tbody>
                     {k.a11y.sayfalar.map((s) => (
                       <tr key={s.yol}>
-                        <td className="mono">{s.yol}</td>
-                        <td className="sayi">{s.ihlal}</td>
-                        <td className="sayi">{s.kritik}</td>
+                        <td className="mono" data-etiket="Sayfa">{s.yol}</td>
+                        <td className="sayi" data-etiket="İhlal">{s.ihlal}</td>
+                        <td className="sayi" data-etiket="Kritik">{s.kritik}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -346,7 +346,7 @@ export function KontrolKulesi() {
           <BosDurum baslik="Karne için story yok." />
         ) : (
           <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Karne tablosu">
-            <table className="tablo">
+            <table className="tablo tablo-yigin">
               <thead>
                 <tr>
                   <th scope="col">Story</th>
@@ -364,12 +364,12 @@ export function KontrolKulesi() {
               <tbody>
                 {k.karne.map((s) => (
                   <tr key={s.story_key}>
-                    <td>
+                    <td data-etiket="Story">
                       <span className="mono">{s.story_key}</span> {s.baslik}
                     </td>
-                    <td>{s.alan ?? "—"}</td>
-                    <td className="sayi">{s.case_sayisi}</td>
-                    <td>
+                    <td data-etiket="Alan">{s.alan ?? "—"}</td>
+                    <td className="sayi" data-etiket="Case">{s.case_sayisi}</td>
+                    <td data-etiket="Otomasyon kapsamı">
                       {s.otomasyon_kapsami === null ? (
                         <Olculmedi metin="case yok" />
                       ) : (
@@ -379,7 +379,7 @@ export function KontrolKulesi() {
                         </div>
                       )}
                     </td>
-                    <td>
+                    <td data-etiket="Son sonuç (main)">
                       {s.son_sonuc === "none" ? (
                         "—"
                       ) : (
@@ -394,7 +394,7 @@ export function KontrolKulesi() {
                         </>
                       )}
                     </td>
-                    <td className="sayi" data-testid={`karne-bug-${s.story_key}`}>
+                    <td className="sayi" data-etiket="Açık bug" data-testid={`karne-bug-${s.story_key}`}>
                       {s.acik_bug || "—"}
                       {s.bug_taslagi > 0 && (
                         <>
@@ -444,7 +444,7 @@ function HazirlikKarti({ k, kazanc }: { k: Kule; kazanc: KazancOzeti }) {
         Manuel baz değer) girilir; varsayılan ya da ölçülmemiş baz değerle kazanç hesaplanmaz.
       </p>
       <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Story bazında hazırlık tablosu">
-        <table className="tablo hazirlik-tablo">
+        <table className="tablo hazirlik-tablo tablo-yigin">
           <thead>
             <tr>
               <th scope="col">Story</th>
@@ -462,7 +462,7 @@ function HazirlikKarti({ k, kazanc }: { k: Kule; kazanc: KazancOzeti }) {
               const bk = BAZ_KAYNAGI[h.baz_kaynagi];
               return (
                 <tr key={h.requirement_id || h.story_key || ""} data-testid={`hazirlik-${h.story_key ?? h.requirement_id}`}>
-                  <td>
+                  <td data-etiket="Story">
                     {h.requirement_id ? (
                       <IzinliLink to={`/gereksinimler/${encodeURIComponent(h.requirement_id)}`} className="mono">
                         {h.story_key ?? "serbest metin"}
@@ -471,7 +471,7 @@ function HazirlikKarti({ k, kazanc }: { k: Kule; kazanc: KazancOzeti }) {
                       <span className="mono">{h.story_key ?? "—"}</span>
                     )}
                   </td>
-                  <td>
+                  <td data-etiket="AI + review">
                     {sure_ms === null ? <Olculmedi /> : sure(sure_ms)}
                     {yalniz_review && sure_ms !== null && (
                       <span className="kucuk soluk" title="REPLAY: AI süresi ölçülmez; süre yalnız insan review süresidir.">
@@ -480,14 +480,14 @@ function HazirlikKarti({ k, kazanc }: { k: Kule; kazanc: KazancOzeti }) {
                       </span>
                     )}
                   </td>
-                  <td>
+                  <td data-etiket="Manuel baz">
                     {/* Ölçülmemiş baz yalnız "Ölçülmedi" çipiyle (aynı hücrede iki kez "ölçülmedi" yazılmaz). */}
                     {h.manuel_baz_ms !== null ? sure(h.manuel_baz_ms) : h.baz_kaynagi === "olculmedi" ? null : <Olculmedi />}
                     <Cip ton={bk.ton} title={bk.aciklama}>
                       {bk.etiket}
                     </Cip>
                   </td>
-                  <td className="sayi">{oran === null ? "—" : yuzde(oran)}</td>
+                  <td className="sayi" data-etiket="Kazanç">{oran === null ? "—" : yuzde(oran)}</td>
                 </tr>
               );
             })}

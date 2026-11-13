@@ -74,7 +74,7 @@ export function Denetim() {
               <BosDurum baslik="Olay yok." />
             ) : (
               <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Denetim olayları tablosu">
-                <table className="tablo tablo-sik">
+                <table className="tablo tablo-sik tablo-yigin">
                   <thead>
                     <tr>
                       <th scope="col" className="sayi">
@@ -91,13 +91,13 @@ export function Denetim() {
                   <tbody>
                     {olaylar.map((o) => (
                       <tr key={o.id} className={dg && !dg.gecerli && dg.ilk_kirik_id === o.id ? "satir-hata" : undefined}>
-                        <td className="sayi mono">{o.sira}</td>
-                        <td className="tek-satir">{tarih(o.zaman)}</td>
-                        <td className="tek-satir" title={kisiAdi(o.aktor) !== o.aktor ? o.aktor : undefined}>{kisiAdi(o.aktor)}</td>
-                        <td className="mono">{o.eylem}</td>
-                        <td className="mono">{o.nesne}</td>
-                        <td>{ortamAdlariniGizle(o.ozet)}</td>
-                        <td className="mono kucuk" title={`prev ${o.prev_hash}\nhash ${o.hash}`}>
+                        <td className="sayi mono" data-etiket="#">{o.sira}</td>
+                        <td className="tek-satir" data-etiket="Zaman">{tarih(o.zaman)}</td>
+                        <td className="tek-satir" data-etiket="Aktör" title={kisiAdi(o.aktor) !== o.aktor ? o.aktor : undefined}>{kisiAdi(o.aktor)}</td>
+                        <td className="mono" data-etiket="Eylem">{o.eylem}</td>
+                        <td className="mono" data-etiket="Nesne">{o.nesne}</td>
+                        <td data-etiket="Özet">{ortamAdlariniGizle(o.ozet)}</td>
+                        <td className="mono kucuk" data-etiket="Hash" title={`prev ${o.prev_hash}\nhash ${o.hash}`}>
                           {kisaHash(o.hash)}
                         </td>
                       </tr>
