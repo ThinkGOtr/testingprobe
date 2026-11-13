@@ -30,6 +30,10 @@ export interface ApiHataEki {
   kayitId?: string;
   /** Doğrulama hatası listesi (`{"detail", "kod", "hatalar": [...]}`; ör. `karar_tablosu_gecersiz`). */
   hatalar?: string[];
+  /** Hata yanıtının ayrıştırılmış JSON gövdesi (ör. 409'da atıf yapan case listesi). */
+  govde?: unknown;
+  /** Hata gövdesinin ek sayısal alanları (ör. 429 `donduruldu` → `kalan_s`); metin alanı taşınmaz. */
+  ek?: Record<string, number>;
 }
 
 let kayitSayaci = 0;
@@ -49,6 +53,10 @@ export class ApiError extends Error {
   readonly kayitId: string;
   /** Sunucunun alan bazlı doğrulama mesajları (varsa). */
   hatalar?: string[];
+  /** Hata yanıtının JSON gövdesi (varsa). */
+  readonly govde?: unknown;
+  /** Gövdenin ek sayısal alanları (`ApiHataEki.ek`). */
+  readonly ek: Readonly<Record<string, number>>;
 
   constructor(status: number, detail: string, ek: ApiHataEki = {}) {
     super(detail);
@@ -60,6 +68,8 @@ export class ApiError extends Error {
     this.yol = ek.yol;
     this.kayitId = ek.kayitId ?? yeniKayitId();
     this.hatalar = ek.hatalar;
+    this.govde = ek.govde;
+    this.ek = ek.ek ?? {};
   }
 }
 
@@ -225,7 +235,13 @@ function sorguMetni(sorgu?: Sorgu): URLSearchParams {
   return p;
 }
 
-export async function detayOku(res: Response): Promise<{ detail: string | null; json: boolean; kod?: string; hatalar?: string[] }> {
+/** Gövdenin üst düzey sonlu sayı alanları (`kalan_s` …); metin ve iç içe alanlar alınmaz. */
+function sayisalEk(govde: object): Record<string, number> | undefined {
+  const ek = Object.fromEntries(Object.entries(govde).filter(([, v]) => typeof v === "number" && Number.isFinite(v))) as Record<string, number>;
+  return Object.keys(ek).length ? ek : undefined;
+}
+
+export async function detayOku(res: Response): Promise<{ detail: string | null; json: boolean; kod?: string; ek?: Record<string, number>; govde?: unknown; hatalar?: string[] }> {
   const metin = await res.text().catch(() => "");
   if (!metin) return { detail: null, json: false };
   try {
@@ -233,24 +249,34 @@ export async function detayOku(res: Response): Promise<{ detail: string | null; 
     if (govde && typeof govde === "object") {
       const hamKod = (govde as { kod?: unknown }).kod;
       const kod = typeof hamKod === "string" && hamKod ? hamKod : undefined;
+      const ek = Array.isArray(govde) ? undefined : sayisalEk(govde);
       // Doğrulama listesi: `hatalar: [metin]` ya da `detail: [metin]` (ör. 422 `karar_tablosu_gecersiz`).
       const metinListesi = (x: unknown) => (Array.isArray(x) && x.length > 0 && x.every((m) => typeof m === "string") ? (x as string[]) : undefined);
       const hatalar = metinListesi((govde as { hatalar?: unknown }).hatalar) ?? metinListesi((govde as { detail?: unknown }).detail);
       if (hatalar && !("detail" in govde && typeof (govde as { detail: unknown }).detail === "string")) {
-        return { detail: hatalar.join("; "), json: true, kod, hatalar };
+        return { detail: hatalar.join("; "), json: true, kod, hatalar, ek };
       }
       if ("detail" in govde) {
         const d = (govde as { detail: unknown }).detail;
-        if (typeof d === "string") return { detail: d, json: true, kod, hatalar };
+        // Gövde yalnız detay/kod dışında alan taşıyorsa eklenir (ör. 409 + atıf yapan case listesi).
+        const ekAlan = Object.keys(govde).some((k) => k !== "detail" && k !== "kod" && k !== "hatalar");
+        if (typeof d === "string") return { detail: d, json: true, kod, ek, hatalar, ...(ekAlan ? { govde } : {}) };
+        // Yapılı detay (`HTTPException(detail={...})`): içindeki Türkçe mesaj ve kod alınır, gövde korunur.
+        if (d && typeof d === "object" && !Array.isArray(d)) {
+          const o = d as Record<string, unknown>;
+          const m = [o.detail, o.mesaj, o.message].find((x): x is string => typeof x === "string" && x !== "");
+          const ic = typeof o.kod === "string" && o.kod ? o.kod : kod;
+          return { detail: m ?? null, json: true, kod: ic, ek, govde };
+        }
         // FastAPI doğrulama hataları: [{loc, msg, type}]
         if (Array.isArray(d)) {
           const mesajlar = d
             .map((x) => (x && typeof x === "object" && "msg" in x ? String((x as { msg: unknown }).msg) : ""))
             .filter(Boolean);
-          return { detail: mesajlar.join("; ") || "Geçersiz istek", json: true, kod };
+          return { detail: mesajlar.join("; ") || "Geçersiz istek", json: true, kod, ek };
         }
       }
-      return { detail: null, json: true, kod };
+      return { detail: null, json: true, kod, ek, govde };
     }
     return { detail: null, json: true };
   } catch {
@@ -299,6 +325,8 @@ export interface IstekSecenegi {
    * yoktur; sahte başarı gösterilmez), 501 `UC_YOK` döner. Kaynak da örnek veriyse işlem de oraya gider.
    */
   kaynak?: readonly [string, string];
+  /** Başarılı core yanıtının başlıkları (ör. `GET /scripts` liste sınırı); örnek veride çağrılmaz. */
+  basliklar?: (h: Headers) => void;
 }
 
 /**
@@ -368,6 +396,7 @@ async function istekGonder<T>(
   yanitBasliklariniOku(res, path);
 
   if (res.ok) {
+    secenek.basliklar?.(res.headers);
     if (res.status === 204) return undefined as T;
     const metin = await res.text();
     if (!metin) return undefined as T;
@@ -378,7 +407,7 @@ async function istekGonder<T>(
     }
   }
 
-  const { detail, json, kod, hatalar } = await detayOku(res);
+  const { detail, json, kod, ek, govde, hatalar } = await detayOku(res);
   if (res.status === 404 && ayarlar.mockOtomatik && (detail === "Not Found" || !json)) {
     // Kaynağı çekirdekten gelen bir işlem örnek veriye düşmez (bkz. IstekSecenegi.kaynak).
     if (secenek.kaynak && !mockUclar.has(ucuNormallestir(...secenek.kaynak))) throw new ApiError(501, UC_YOK);
@@ -387,8 +416,13 @@ async function istekGonder<T>(
   // Canlı derlemede genel 404 (FastAPI'de rota yok) "bu fazda yok" demektir; ham "Not Found" gösterilmez.
   if (res.status === 404 && !ayarlar.mockOtomatik && (detail === "Not Found" || !json)) throw new ApiError(501, BU_FAZDA_YOK);
   if (res.status === 401 && !path.startsWith("/auth/")) yetkisizDinleyici?.();
-  throw new ApiError(res.status, detail ?? VARSAYILAN_HATA[res.status] ?? `Beklenmeyen hata (HTTP ${res.status}).`, { kod, hatalar });
+  // Demo kipi kapalı (core 403 `demo_kapali`): genel "yetkiniz yok" yerine nedeni söylenir.
+  if (kod === "demo_kapali") throw new ApiError(res.status, detail && detail !== VARSAYILAN_HATA[403] ? detail : DEMO_KAPALI, { kod, ek, govde, hatalar });
+  throw new ApiError(res.status, detail ?? VARSAYILAN_HATA[res.status] ?? `Beklenmeyen hata (HTTP ${res.status}).`, { kod, ek, govde, hatalar });
 }
+
+/** core 403 `demo_kapali` iletisi (TP_DEMO_MODE=0). */
+export const DEMO_KAPALI = "Demo kipi kapalı (TP_DEMO_MODE=0)";
 
 /** Karar uçlarında 409'un kullanıcıya gösterilen hâli (içerik görüntülendikten sonra değişti). */
 export const ICERIK_DEGISTI = "İçerik değişti, yeniden inceleyin.";

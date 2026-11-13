@@ -76,6 +76,16 @@ taşıyabilir.
 (+ `--kimlikler`: `forbidden_statement`, `non_literal_value`, `invalid_testid`, `duplicate_key`,
 `locator_file_missing`).
 
+Ekran çağrısı argümanları literal olmalıdır; tek istisna gizli test verisidir (specs/013 K19):
+doğrudan argüman olarak `System.getenv("TP_TESTVERI_…")` (niteliksiz `System`, tek string literal, ad
+`^TP_TESTVERI_[A-Z0-9_]{1,64}$`) kabul edilir ve `String` sayılır. Başka ad/kapsam/biçim, zincir ya da
+bağımsız deyim olarak kullanımı `non_literal_argument` / `static_call` / `field_access` ile reddedilir.
+
+`raw_driver` hem Appium/Selenium sürücüsünü (`driver`, `driver()`, …) hem Playwright for Java
+tutamaçlarını (web projesi `e2e-java`, 011 §2.6: `page`, `page()`, `browser()`, `context()`,
+`playwright` ve Türkçe karşılıkları `sayfa`, `tarayici`, `baglam`) kapsar: üretilen test yalnızca ekran
+erişimcilerini çağırır.
+
 Unicode kaçışları (`\uXXXX`) her yerde yasaktır: javac onları yorum ve literal içinde bile ayrıştırmadan
 önce işler (`// … \u000a kod`). Görünmez/yön denetimi karakterleri de reddedilir.
 

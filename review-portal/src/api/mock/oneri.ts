@@ -3,6 +3,7 @@
 // verisinin olgularıyla değerlendirilir. "Yaptım" (2) o kuralı o varlık aynı durumdayken tüm rollerde,
 // "Gizle" (-1) yalnız o kullanıcı için bastırır. `baglanti`'yı yalnız bu "sunucu" kurar (§17.4):
 // jira-sim gezinme adresi bilinen anahtar için; kayıt oluşturma sayfası simülatörde yok.
+import { IZINLER } from "../../lib/yetki";
 import type { AsistanKuleOlcumu, MaliyetGrubu } from "../../components/asistan/OnerilerOlcumKarti";
 import { ApiError, BU_FAZDA_YOK } from "../http";
 import { JIRA_ANAHTARI, type BastirilanOneri, type KuralOnerisi, type OneriEylemi, type OneriListesi } from "../asistan";
@@ -155,7 +156,7 @@ export const MOCK_KURALLAR: MockKural[] = [
     neden: "Case üretimi PO onayı olmadan başlamaz. Bekleme demo takvimini kaydırır; PO'ya Jira'da hatırlatın.",
     eylem: { tur: "jira_yorum", sablon: "po-hatirlatma" },
     aciklama:
-      "Gereksinim PO onayında ve PO onayı Jira kanalından bekleniyor. Onay gelmeden case üretimi başlatılamaz (insan onay kapısı). Jira kaydına kısa bir hatırlatma yorumu yazın; PO onayı verince durum kendiliğinden güncellenir.",
+      "Gereksinim PO onayında ve PO onayı Jira kanalından bekleniyor (tp-po-approved etiketi). Onay gelmeden case üretimi başlatılamaz (insan onay kapısı). Jira kaydına kısa bir hatırlatma yorumu yazın; PO etiketi koyunca durum kendiliğinden güncellenir.",
     tekrar_saat: 24,
   },
   {
@@ -164,11 +165,11 @@ export const MOCK_KURALLAR: MockKural[] = [
     roller: ["analyst"],
     kosul: (o) => o.durum === "pending_po" && Number(o.po_bekleme_saat) >= 24 && o.po_kanal === "portal",
     oncelik: 80,
-    baslik: "PO onayı {po_bekleme_gun} gündür bekliyor; onay portalda",
-    neden: "Case üretimi PO onayı olmadan başlamaz. Onay portalda verilir; PO'ya ekrana bakmasını hatırlatın.",
+    baslik: "PO onayı {po_bekleme_gun} gündür bekliyor; onay portalda (serbest metin)",
+    neden: "Case üretimi PO onayı olmadan başlamaz. Serbest metin gereksinimde onay portalda verilir; PO'ya ekrana bakmasını hatırlatın.",
     eylem: { tur: "bilgi" },
     aciklama:
-      "Gereksinim PO onayında ve onay portaldan bekleniyor. Onay gelmeden case üretimi başlatılamaz. PO bu gereksinimin detay ekranında onay bölümünü görür; kendisine ekranın yolunu iletin.",
+      "Serbest metin gereksinim PO onayında; Jira kaydı olmadığı için onay portaldan bekleniyor. Onay gelmeden case üretimi başlatılamaz. PO bu gereksinimin detay ekranında onay bölümünü görür; kendisine ekranın yolunu iletin.",
     tekrar_saat: 24,
   },
   {
@@ -178,10 +179,10 @@ export const MOCK_KURALLAR: MockKural[] = [
     kosul: (o) => o.durum === "pending_po" && o.po_kanal === "portal",
     oncelik: 95,
     baslik: "Onayınız bekleniyor; case üretimi buna bağlı",
-    neden: "Analist case üretimini ancak sizin onayınızdan sonra başlatabilir; onay içeriğin bu hâline bağlanır.",
+    neden: "Testçi case üretimini ancak sizin onayınızdan sonra başlatabilir; onay içeriğin bu hâline bağlanır.",
     eylem: { tur: "rota", rota: "/gereksinimler/:id", capa: "po-onay" },
     aciklama:
-      "Gereksinim dokümanı son hâline geldi ve onayınızı bekliyor. Onay, gördüğünüz içeriğe bağlanır; içerik sonradan değişirse onay yenilenmelidir. Onayınızdan sonra analist case üretimini başlatır.",
+      "Serbest metin gereksinimin dokümanı son hâline geldi ve onayınızı bekliyor; Jira kaydı olmadığı için onay portalda verilir. Onay, gördüğünüz içeriğe bağlanır; içerik sonradan değişirse onay yenilenmelidir. Onayınızdan sonra Testçi case üretimini başlatır.",
   },
   {
     id: "gereksinim-po-onayi-jira",
@@ -190,22 +191,22 @@ export const MOCK_KURALLAR: MockKural[] = [
     kosul: (o) => o.durum === "pending_po" && o.po_kanal === "jira" && var_(o.jira_key),
     oncelik: 95,
     baslik: "Onayınız bekleniyor; case üretimi buna bağlı",
-    neden: "Analist case üretimini ancak sizin onayınızdan sonra başlatabilir; bu gereksinimde onay Jira'dan verilir.",
+    neden: "Testçi case üretimini ancak sizin onayınızdan sonra başlatabilir; bu gereksinimde onay Jira'dan verilir.",
     eylem: { tur: "jira_kaydi" },
     aciklama:
-      "Bu gereksinimde PO onayı Jira kanalından alınır. Jira kaydını açıp onayınızı orada verin; Testing Probe onayı kendi hesabınızdan gelen teyitle tanır ve durumu günceller.",
+      "Bu gereksinimde PO onayı Jira kanalından alınır: Jira kaydına tp-po-approved etiketini koyun. Testing Probe etiketi kendi hesabınızdan gelen teyitle tanır ve durumu günceller; portalda onay düğmesi yoktur.",
   },
   {
     id: "gereksinim-case-uret",
     ekran: "/gereksinimler/:id",
-    roller: ["analyst"],
+    roller: ["tester"],
     kosul: (o) => o.durum === "po_approved" && o.ac_eksik === false,
     oncelik: 90,
     baslik: "PO onayladı; case üretimini başlatın",
     neden: "Onaylı içerikten case üretilmeden inceleme, yayın ve otomasyon adımları başlayamaz.",
     eylem: { tur: "rota", rota: "/gereksinimler/:id", capa: "case-uret" },
     aciklama:
-      "PO gereksinimin bu hâlini onayladı. Case üretimi yalnızca onaylı içerikten yapılır; üretim bitince case'ler inceleme ekranına düşer ve kararınızı bekler.",
+      "PO gereksinimin bu hâlini onayladı. Case üretimi yalnızca onaylı içerikten yapılır; üretim bitince case'ler inceleme ekranına düşer ve kararınızı bekler; Analist son onayı verir.",
   },
   {
     id: "gereksinim-basarisiz",
@@ -222,20 +223,33 @@ export const MOCK_KURALLAR: MockKural[] = [
   {
     id: "case-inceleme-bekliyor",
     ekran: "/gereksinimler/:id/caseler",
-    roller: ["analyst"],
+    roller: ["tester"],
     kosul: (o) => Number(o.inceleme_bekleyen_case) >= 1,
     oncelik: 90,
     baslik: "{inceleme_bekleyen_case} case kararınızı bekliyor",
-    neden: "Onaylanmayan case yayımlanamaz ve otomasyona geçemez.",
+    neden: "Kararınız verilmeyen case Analist'in son onayına gidemez; yayın ve otomasyon bekler.",
     eylem: { tur: "rota", rota: "/gereksinimler/:id/caseler" },
     aciklama:
-      "Üretilen case'ler taslak durumunda. Her case'i onaylayın, düzenleyerek onaylayın ya da gerekçesiyle reddedin. Yayın ve otomasyon yalnızca onaylı case'lerle yapılır.",
+      "Üretilen case'ler taslak durumunda. Her case'i kabul edin, düzelterek kabul edin ya da gerekçesiyle reddedin. Kabul edilen case'ler Analist'in son onayına gider; yayın ve otomasyon yalnızca son onaylı case'lerle yapılır.",
+  },
+  {
+    id: "case-son-onay-bekliyor",
+    ekran: "/gereksinimler/:id/caseler",
+    roller: ["analyst"],
+    kosul: (o) => Number(o.son_onay_bekleyen_case) >= 1,
+    oncelik: 90,
+    baslik: "{son_onay_bekleyen_case} case son onayınızı bekliyor",
+    neden: "Son onay verilmeyen case yayımlanamaz ve otomasyona geçemez.",
+    eylem: { tur: "rota", rota: "/gereksinimler/:id/caseler" },
+    aciklama:
+      "Testçi bu case'leri kabul etti; onaya hazır durumdalar. Her case'i onaylayın ya da gerekçesiyle Testçi'ye geri gönderin. Yalnızca onayladığınız case'ler yayımlanabilir.",
   },
   {
     id: "case-yayina-hazir",
     ekran: "/gereksinimler/:id/caseler",
-    roller: ["analyst"],
-    kosul: (o) => o.durum === "cases_ready" && Number(o.inceleme_bekleyen_case) === 0 && Number(o.onayli_case) >= 1,
+    roller: ["tester"],
+    kosul: (o) =>
+      o.durum === "cases_ready" && Number(o.inceleme_bekleyen_case) === 0 && Number(o.son_onay_bekleyen_case ?? 0) === 0 && Number(o.onayli_case) >= 1,
     oncelik: 85,
     baslik: "İnceleme tamam; yayına hazır",
     neden: "Onaylı case'ler yayımlanınca test yönetimine geçer ve otomasyon üretimi başlayabilir.",
@@ -247,13 +261,13 @@ export const MOCK_KURALLAR: MockKural[] = [
     id: "case-inceleme-analistte",
     ekran: "/gereksinimler/:id/caseler",
     roller: ["tester"],
-    kosul: (o) => Number(o.inceleme_bekleyen_case) >= 1,
+    kosul: (o) => Number(o.son_onay_bekleyen_case) >= 1,
     oncelik: 40,
-    baslik: "Case'ler analist incelemesinde",
-    neden: "Case kararını Analist verir; onaylanan case'ler yayımlanınca test planına girer.",
+    baslik: "{son_onay_bekleyen_case} case Analist'in son onayında",
+    neden: "Son onayı Analist verir; onaylanan case'leri yayımlayabilirsiniz.",
     eylem: { tur: "bilgi" },
     aciklama:
-      "Bu gereksinimin case'leri henüz analist incelemesinde. Case kararı Analist rolündedir; onaylanıp yayımlanınca test çalışmasına alınabilir.",
+      "Kabul ettiğiniz case'ler Analist'in son onayını bekliyor. Analist onaylarsa yayın ekranından yayımlayabilirsiniz; geri gönderirse case gerekçesiyle taslağa döner.",
   },
   {
     id: "script-kirarak-dogrula",
@@ -276,7 +290,7 @@ export const MOCK_KURALLAR: MockKural[] = [
     baslik: "PR merge kararınızı bekliyor",
     neden: "Doğrulanmış test merge edilmeden gece koşularına ve regresyon setine girmez.",
     eylem: { tur: "rota", rota: "/kod/:id", capa: "pr" },
-    aciklama: "Script'in PR'ı açık ve kırarak doğrulama geçti. Değişikliği inceleyip merge kararını verin; merge yalnızca Mühendis onayıyla yapılır.",
+    aciklama: "Script'in PR'ı açık ve kırarak doğrulama geçti. Değişikliği inceleyip merge kararını verin; merge yalnızca Automation Engineer onayıyla yapılır.",
   },
   {
     id: "script-insana-dustu",
@@ -305,13 +319,13 @@ export const MOCK_KURALLAR: MockKural[] = [
   {
     id: "kosu-ortam-hatasi-bilgi",
     ekran: "/kosular/:id",
-    roller: ["presenter"],
+    roller: ["admin"],
     kosul: (o) => o.ci_sonuc === "error",
     oncelik: 60,
     baslik: "Koşu ortam hatasıyla bitti; mühendis inceliyor",
     neden: "Bu koşunun test sonucu yok; demo öncesi güncel ve başarılı bir koşu gerekir.",
     eylem: { tur: "bilgi" },
-    aciklama: "Koşu testler çalışmadan bitti. İnceleme Mühendis rolündedir; düzeltildikten sonra yeni bir koşu tetiklenebilir.",
+    aciklama: "Koşu testler çalışmadan bitti. İnceleme Automation Engineer rolündedir; düzeltildikten sonra yeni bir koşu tetiklenebilir.",
   },
   {
     id: "hata-bakim-onarim",
@@ -424,7 +438,7 @@ export const MOCK_KURALLAR: MockKural[] = [
   {
     id: "butce-uyarisi",
     ekran: "/kontrol-kulesi",
-    roller: ["presenter"],
+    roller: ["admin"],
     kosul: (o) => Number(o.butce_orani) >= 0.8,
     oncelik: 70,
     baslik: "Model bütçesinin %{butce_yuzde} kadarı kullanıldı",
@@ -436,7 +450,7 @@ export const MOCK_KURALLAR: MockKural[] = [
   {
     id: "guncel-kosu-yok",
     ekran: "/kosular",
-    roller: ["presenter"],
+    roller: ["admin"],
     kosul: (o) => Number(o.son_kosu_saat) >= 24,
     oncelik: 60,
     baslik: "Güncel koşu yok; demo öncesi koşu tetikleyin",
@@ -447,8 +461,8 @@ export const MOCK_KURALLAR: MockKural[] = [
   },
 ];
 
-/** `rotalar.json`'da rolü kısıtlı ekranlar (diğerleri herkese açık). */
-const EKRAN_ROLLERI: Record<string, Rol[]> = { "/claude-code": ["analyst"], "/demo": ["presenter"] };
+/** `rotalar.json`'da rolü kısıtlı ekranlar (diğerleri herkese açık); izinler `lib/yetki.ts` ile aynı. */
+const EKRAN_ROLLERI: Record<string, readonly Rol[]> = { "/claude-code": IZINLER["token.issue"], "/demo": IZINLER["demo.manage"] };
 
 /** Ekranın varlık türü (rotalar.json `varlik`). */
 const EKRAN_VARLIGI: Record<string, string> = {
@@ -542,6 +556,7 @@ function olgular(veri: MockVeri, tur: string | null, id: string | null, simdi: n
       po_bekleme_saat: g.durum === "pending_po" ? saatFarki(g.cekim_zamani, simdi) : null,
       acik_bulgu_sayisi: veri.bulgular.filter((b) => b.requirement_id === id && b.durum === "open").length,
       inceleme_bekleyen_case: caseler.filter((c) => c.durum === "draft").length,
+      son_onay_bekleyen_case: caseler.filter((c) => c.durum === "ready").length,
       onayli_case: caseler.filter((c) => c.durum === "approved").length,
     };
   }

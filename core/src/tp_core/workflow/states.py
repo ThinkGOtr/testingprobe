@@ -41,12 +41,17 @@ consistency_finding (başlangıç ``unverified``)::
     decided    -> resolved, open, stale
     resolved, stale, discarded: son durum
 
-test_case (başlangıç ``draft``)::
+test_case (başlangıç ``draft``; specs/012-rol-yetki/ANALIZ.md §5)::
 
-    draft      -> approved [KAPI: approve | edit], rejected [KAPI: reject], superseded
-    approved   -> published [KAPI: onaylı hash hâlâ güncel], draft, superseded
-    rejected   -> draft, superseded
+    draft      -> ready [KAPI: accept | edit], rejected [KAPI: reject], superseded   (Testçi)
+    ready      -> approved [KAPI: approve] (Analist son onayı), draft (send_back | reopen),
+                  superseded
+    approved   -> published [KAPI: approve; onaylı hash hâlâ güncel], draft (reopen), superseded
+    rejected   -> draft (reopen), superseded
     published, superseded: son durum
+
+    Eski kayıtlar: 012 öncesinde `draft → approved` doğrudan (analist `approve`/`edit`) idi;
+    `approved` case'ler olduğu gibi kalır, eski `approve` kaydı yayın kapısını açmaya devam eder.
 
 script (üretilen test veya locator onarımı; başlangıç ``pending``)::
 
@@ -143,10 +148,24 @@ def _t(**kw: tuple[str, ...]) -> dict[str, frozenset[str]]:
 
 # --------------------------------------------------------------------- karar kümeleri
 
-# `reopen` ("Taslağa al"): onaylı/reddedilmiş case'i taslağa döndüren kayıtlı karar. Onaylayan
-# değildir; son karar olduğu için eski bir `approve` kapıyı yeniden açamaz (Constitution I).
-TEST_CASE_KARARLARI = frozenset({"approve", "edit", "reject", "reopen"})
-REQUIREMENT_KARARLARI = frozenset({"po_approve"})
+# Case kararları (ANALIZ §5). Testçi: `accept` (olduğu gibi kabul) ve `edit` (düzelterek kabul)
+# case'i `ready` yapar, `reject` reddeder, `reopen` ("Taslağa al") hazır/onaylı/reddedilmiş case'i
+# taslağa döndürür. Analist (son onay): `approve` ready → approved, `send_back` ready → draft
+# (gerekçe zorunlu). `reopen`/`send_back` onaylayan değildir; son karar oldukları için eski bir
+# `approve` kapıyı yeniden açamaz (Constitution I).
+TEST_CASE_TESTCI_KARARLARI = frozenset({"accept", "edit", "reject", "reopen"})
+TEST_CASE_SON_ONAY_KARARLARI = frozenset({"approve", "send_back"})
+TEST_CASE_KARARLARI = TEST_CASE_TESTCI_KARARLARI | TEST_CASE_SON_ONAY_KARARLARI
+# Case'i `ready` yapan (Testçi kabulü) kararlar.
+TEST_CASE_KABUL = frozenset({"accept", "edit"})
+# Kararın gerektirdiği izin (auth/yetki.py kataloğu; rol kümesi oradan türetilir).
+TEST_CASE_KARAR_IZNI: dict[str, str] = {
+    **dict.fromkeys(TEST_CASE_TESTCI_KARARLARI, "case.decide"),
+    **dict.fromkeys(TEST_CASE_SON_ONAY_KARARLARI, "case.approve"),
+}
+REQUIREMENT_KARARLARI = frozenset({"po_approve"})  # onaylayan (kapılar)
+# T04: serbest metin gereksiniminde PO reddi (gerekçeli; pending_po → new). Onaylayan değildir.
+REQUIREMENT_RED_KARARLARI = frozenset({"po_reject"})
 BUG_DRAFT_KARARLARI = frozenset({"new", "link", "dismiss"})
 SCRIPT_KARARLARI = frozenset({"merge", "request_changes"})
 FINDING_KARARLARI = frozenset({"fix_doc", "code_defect", "accept_difference"})
@@ -157,7 +176,8 @@ METAMORFIK_ILISKI_KARARLARI = KARAR_TABLOSU_KARARLARI
 
 # Onaylayan (kapıyı açan) kararlar; yayın/PR/bug kapıları bunlardan birini ister.
 APPROVING: dict[str, frozenset[str]] = {
-    "test_case": frozenset({"approve", "edit"}),
+    # Yalnız Analist'in son onayı yayını açar (012; önceden `edit` de sayılıyordu).
+    "test_case": frozenset({"approve"}),
     "requirement": REQUIREMENT_KARARLARI,
     "bug_draft": frozenset({"new", "link"}),
     "script": frozenset({"merge"}),
@@ -168,7 +188,7 @@ APPROVING: dict[str, frozenset[str]] = {
 
 KARARLAR: dict[str, frozenset[str]] = {
     "test_case": TEST_CASE_KARARLARI,
-    "requirement": REQUIREMENT_KARARLARI,
+    "requirement": REQUIREMENT_KARARLARI | REQUIREMENT_RED_KARARLARI,
     "bug_draft": BUG_DRAFT_KARARLARI,
     "script": SCRIPT_KARARLARI,
     "consistency_finding": FINDING_KARARLARI,
@@ -176,9 +196,13 @@ KARARLAR: dict[str, frozenset[str]] = {
     "metamorfik_iliski": METAMORFIK_ILISKI_KARARLARI,
 }
 
-# Karar verebilecek roller (API rol kontrolüne ek, derinlemesine savunma).
+# Karar verebilecek roller (API izin kontrolüne ek, derinlemesine savunma). Bu modül saf veri
+# olduğu için kümeler burada yazılıdır; auth/yetki.py kataloğuyla eşitliği test edilir
+# (test_canonical_and_states). test_case'te karar başına izin `TEST_CASE_KARAR_IZNI`'dedir:
+# `record_approval` kararın kendi iznini ister (Testçi `approve` veremez, Analist `accept`
+# veremez); buradaki küme o iki iznin birleşimidir (kuyruk/asistan gibi tür düzeyi okuyucular).
 APPROVER_ROLES: dict[str, frozenset[str]] = {
-    "test_case": frozenset({"analyst"}),
+    "test_case": frozenset({"tester", "analyst"}),
     "requirement": frozenset({"po"}),
     "bug_draft": frozenset({"tester"}),
     "script": frozenset({"engineer"}),
@@ -273,15 +297,17 @@ TEST_CASE = Machine(
     entity="test_case",
     initial="draft",
     transitions=_t(
-        draft=("approved", "rejected", "superseded"),
+        draft=("ready", "rejected", "superseded"),
+        ready=("approved", "draft", "superseded"),
         approved=("published", "draft", "superseded"),
         rejected=("draft", "superseded"),
         published=(),
         superseded=(),
     ),
     gates={
-        ("draft", "approved"): Gate(APPROVING["test_case"]),
+        ("draft", "ready"): Gate(TEST_CASE_KABUL),
         ("draft", "rejected"): Gate(frozenset({"reject"})),
+        ("ready", "approved"): Gate(APPROVING["test_case"]),
         ("approved", "published"): Gate(APPROVING["test_case"]),
     },
     approval_targets=frozenset({"approved"}),
@@ -293,11 +319,15 @@ SCRIPT = Machine(
     initial="pending",
     transitions=_t(
         pending=("verifying", "failed"),
-        verifying=("checking", "blocked", "failed"),
+        # `unverified` (011 §2.2): doğrulanmamış dilde (csharp | python) üretim bitti; kod
+        # derlenmedi ve koşulmadı. Onay kapısı ve `merged`'e geçiş yoktur;
+        # yeniden üretim `pending`'e döner.
+        verifying=("checking", "blocked", "failed", "unverified"),
         checking=("verifying", "pr_open", "blocked", "failed"),
         pr_open=("merged", "checking", "closed"),
         blocked=("verifying", "closed"),
         failed=("pending", "closed"),
+        unverified=("pending", "closed"),
         merged=(),
         closed=(),
     ),
@@ -381,6 +411,12 @@ DECISION_EDITS: dict[str, dict[str, frozenset[str]]] = {
 }
 # Bu kararlarda değişiklik zorunludur (ör. 'edit' içeriği değiştirmeden verilemez).
 DECISION_EDIT_REQUIRED: dict[str, frozenset[str]] = {"test_case": frozenset({"edit"})}
+# Bu kararlar boş olmayan gerekçe ister.
+DECISION_GEREKCE_REQUIRED: dict[str, frozenset[str]] = {
+    "test_case": frozenset({"send_back"}),
+    "consistency_finding": frozenset({"accept_difference"}),
+    "requirement": REQUIREMENT_RED_KARARLARI,
+}
 
 # İçerik hash'ine giren alanlar (kanonik JSON). Onay ve yayın kapıları bunu karşılaştırır.
 CONTENT_FIELDS: dict[str, tuple[str, ...]] = {

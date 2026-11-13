@@ -12,16 +12,22 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field, StrictInt
 
-from tp_core.api.deps import DbSession, Principal, current_user, require_role
+from tp_core.api.deps import DbSession, Principal
+from tp_core.api.errors import KodluHata
+from tp_core.auth.yetki import izin
 from tp_core.features.requirements import baseline, flow, serialize, services
 from tp_core.models import BugDraft, ConsistencyFinding, Requirement
 
 router = APIRouter(tags=["requirements"])
 
-Analyst = Annotated[Principal, Depends(require_role("analyst"))]
-Po = Annotated[Principal, Depends(require_role("po"))]
-Herkes = Annotated[Principal, Depends(current_user)]
-AnalystVeyaPo = Annotated[Principal, Depends(require_role("analyst", "po"))]
+# İzinler: specs/012-rol-yetki §4 (tek kaynak `tp_core.auth.yetki`).
+Okur = Annotated[Principal, Depends(izin("requirement.read"))]
+IceAktarir = Annotated[Principal, Depends(izin("requirement.import"))]
+Inceler = Annotated[Principal, Depends(izin("requirement.review"))]
+PoSerbestMetin = Annotated[Principal, Depends(izin("requirement.po_approve_free_text"))]
+PoSerbestMetinRed = Annotated[Principal, Depends(izin("requirement.po_reject_free_text"))]
+BazYonetir = Annotated[Principal, Depends(izin("baseline.manage"))]
+BugOkur = Annotated[Principal, Depends(izin("bug.read"))]
 
 ELENEN_BASLIGI = "X-Elenen-Bulgu-Sayisi"
 
@@ -45,6 +51,11 @@ class DuzeltmeUygulama(BaseModel):
 
 
 class PoOnayi(BaseModel):
+    icerik_hash: str | None = Field(default=None, max_length=128)
+
+
+class PoReddi(BaseModel):
+    gerekce: str = Field(min_length=1, max_length=2000)
     icerik_hash: str | None = Field(default=None, max_length=128)
 
 
@@ -85,12 +96,12 @@ def _is(started: flow.Started | flow.Finalized | None, mesaj: str | None = None)
 
 
 @router.get("/requirements")
-def list_requirements(session: DbSession, _u: Herkes) -> list[dict[str, Any]]:
+def list_requirements(session: DbSession, _u: Okur) -> list[dict[str, Any]]:
     return serialize.list_requirements(session)
 
 
 @router.post("/requirements/sync")
-def sync(session: DbSession, user: Analyst) -> dict[str, Any]:
+def sync(session: DbSession, user: IceAktarir) -> dict[str, Any]:
     from tp_core.integrations.jira import JiraError
 
     try:
@@ -109,18 +120,18 @@ def sync(session: DbSession, user: Analyst) -> dict[str, Any]:
 
 
 @router.post("/requirements/free-text", status_code=201)
-def free_text(body: SerbestMetin, session: DbSession, user: Analyst) -> dict[str, Any]:
+def free_text(body: SerbestMetin, session: DbSession, user: IceAktarir) -> dict[str, Any]:
     req = flow.create_free_text(session, user, body.baslik, body.aciklama, body.ac)
     return serialize.requirement_detail(session, req)
 
 
 @router.get("/requirements/{req_id}")
-def detail(req_id: uuid.UUID, session: DbSession, _u: Herkes) -> dict[str, Any]:
+def detail(req_id: uuid.UUID, session: DbSession, _u: Okur) -> dict[str, Any]:
     return serialize.requirement_detail(session, _req(session, req_id))
 
 
 @router.post("/requirements/{req_id}/review", status_code=202)
-def review(req_id: uuid.UUID, session: DbSession, user: Analyst) -> dict[str, Any]:
+def review(req_id: uuid.UUID, session: DbSession, user: Inceler) -> dict[str, Any]:
     return _is(flow.start_review(session, _req(session, req_id, kilit=True), user))
 
 
@@ -129,7 +140,7 @@ def findings(
     req_id: uuid.UUID,
     session: DbSession,
     response: Response,
-    _u: Herkes,
+    _u: Okur,
     tumu: Annotated[bool, Query(description="Bayatlamış (stale) bulguları da getir")] = False,
 ) -> list[dict[str, Any]]:
     _req(session, req_id)
@@ -140,7 +151,7 @@ def findings(
 
 @router.post("/findings/{finding_id}/decision")
 def decision(
-    finding_id: uuid.UUID, body: BulguKarari, session: DbSession, user: Analyst
+    finding_id: uuid.UUID, body: BulguKarari, session: DbSession, user: Inceler
 ) -> dict[str, Any]:
     f = session.get(ConsistencyFinding, finding_id)
     if f is None or not f.kanit_dogrulandi:
@@ -156,7 +167,7 @@ def decision(
 def apply_doc_fixes(
     req_id: uuid.UUID,
     session: DbSession,
-    user: Analyst,
+    user: Inceler,
     body: DuzeltmeUygulama | None = None,
 ) -> dict[str, Any]:
     started = flow.start_apply(
@@ -169,16 +180,54 @@ def apply_doc_fixes(
 
 
 @router.post("/requirements/{req_id}/po-approve")
-def po_approve(req_id: uuid.UUID, body: PoOnayi, session: DbSession, user: Po) -> dict[str, Any]:
+def po_approve(
+    req_id: uuid.UUID, body: PoOnayi, session: DbSession, user: PoSerbestMetin
+) -> dict[str, Any]:
+    """PO teyidi portaldan yalnız serbest metin gereksiniminde verilir (Jira kaydı yoktur).
+
+    Jira kaynaklı gereksinimde 410 `po_onayi_jira` (K6): teyit, PO listesindeki aktörün Jira'da
+    koyduğu `tp-po-approved` etiketi ve içerik hash'i eşleşmesiyle verilir. Simülatör kipinde
+    etiket simüle Jira'ya konur; PO etiket sorgusu (`requirement.po_poll`) onayı işler.
+    """
     req = _req(session, req_id, kilit=True)
+    if req.kaynak == "jira":
+        raise KodluHata(
+            410,
+            "po_onayi_jira",
+            "Jira gereksiniminde PO onayı portaldan verilmez; Jira'da tp-po-approved etiketi "
+            "konmalıdır",
+        )
     flow.po_approve_portal(session, req, user, body.icerik_hash)
     session.flush()
     return serialize.requirement_detail(session, req)
 
 
+PO_ONAYI_JIRA = (
+    "Jira gereksiniminde PO kararı portaldan verilmez; Jira'da tp-po-approved etiketi konmalıdır"
+)
+
+
+@router.post("/requirements/{req_id}/po-reject")
+def po_reject(
+    req_id: uuid.UUID, body: PoReddi, session: DbSession, user: PoSerbestMetinRed
+) -> dict[str, Any]:
+    """T04: serbest metin gereksiniminde gerekçeli PO reddi (`pending_po` → `new`, Analist'e).
+
+    Jira kaynaklı gereksinimde 410 `po_onayi_jira` (K6). Gerekçe boşsa 422; hash eskiyse 409.
+    """
+    if not body.gerekce.strip():
+        raise HTTPException(422, "PO reddi gerekçe ister")
+    req = _req(session, req_id, kilit=True)
+    if req.kaynak == "jira":
+        raise KodluHata(410, "po_onayi_jira", PO_ONAYI_JIRA)
+    flow.po_reject_portal(session, req, user, body.icerik_hash, body.gerekce.strip())
+    session.flush()
+    return serialize.requirement_detail(session, req)
+
+
 # ------------------------------------------------------------- manuel baz değer (Faz 5)
-# Story başına manuel test tasarımı süresi. Analist ya da PO girer; her giriş geçmişte kalır ve
-# hash zincirli denetim olayı yazar. Ölçüm yoksa TP_MANUAL_BASELINE_S "varsayılan" olarak
+# Story başına manuel test tasarımı süresi. PO girer (K7, `baseline.manage`); her giriş geçmişte
+# kalır ve hash zincirli denetim olayı yazar. Ölçüm yoksa TP_MANUAL_BASELINE_S "varsayılan" olarak
 # kullanılır; ikisi de yoksa "ölçülmedi" (değer uydurulmaz).
 
 
@@ -195,14 +244,14 @@ def _baz_yanit(
 
 
 @router.get("/requirements/{req_id}/baseline")
-def get_baseline(req_id: uuid.UUID, session: DbSession, _u: Herkes) -> dict[str, Any]:
+def get_baseline(req_id: uuid.UUID, session: DbSession, _u: Okur) -> dict[str, Any]:
     req = _req(session, req_id)
     return _baz_yanit(session, req, baseline.baseline_for(session, req.id), False)
 
 
 @router.put("/requirements/{req_id}/baseline")
 def put_baseline(
-    req_id: uuid.UUID, body: BazDeger, session: DbSession, user: AnalystVeyaPo
+    req_id: uuid.UUID, body: BazDeger, session: DbSession, user: BazYonetir
 ) -> dict[str, Any]:
     req = _req(session, req_id, kilit=True)
     try:
@@ -216,7 +265,7 @@ def put_baseline(
 def delete_baseline(
     req_id: uuid.UUID,
     session: DbSession,
-    user: AnalystVeyaPo,
+    user: BazYonetir,
     not_metni: Annotated[str | None, Query(alias="not", max_length=baseline.NOT_UST_SINIR)] = None,
 ) -> dict[str, Any]:
     req = _req(session, req_id, kilit=True)
@@ -233,14 +282,14 @@ def delete_baseline(
 
 
 @router.get("/baseline-file")
-def baseline_file_status(session: DbSession, _u: Herkes) -> dict[str, Any]:
+def baseline_file_status(session: DbSession, _u: Okur) -> dict[str, Any]:
     from tp_core.features.requirements import baseline_dosya
 
     return baseline_dosya.durum(session)
 
 
 @router.post("/baseline-file/apply")
-def baseline_file_apply(session: DbSession, user: AnalystVeyaPo) -> dict[str, Any]:
+def baseline_file_apply(session: DbSession, user: BazYonetir) -> dict[str, Any]:
     from tp_core.features.requirements import baseline_dosya
 
     sonuc = baseline_dosya.uygula_hepsi(session, user.kullanici_adi)
@@ -257,21 +306,22 @@ def baseline_file_apply(session: DbSession, user: AnalystVeyaPo) -> dict[str, An
 @router.get("/bug-drafts")
 def bug_drafts(
     session: DbSession,
-    _u: Herkes,
+    user: BugOkur,
     requirement_id: Annotated[uuid.UUID | None, Query()] = None,
 ) -> list[dict[str, Any]]:
     from tp_core.features.bugs import serialize as bugs_serialize
 
     # Faz 4: `bug_draft_view` Faz 2 `bug_draft_out`'un üst kümesidir; triage kaynaklı
     # taslaklar da gereksinim süzgecine girer.
-    return bugs_serialize.bug_draft_list(session, requirement_id)
+    return bugs_serialize.bug_draft_list(session, requirement_id, rol=user.rol)
 
 
 @router.get("/bug-drafts/{draft_id}")
-def bug_draft(draft_id: uuid.UUID, session: DbSession, _u: Herkes) -> dict[str, Any]:
-    b = session.get(BugDraft, draft_id)
-    if b is None:
-        raise HTTPException(404, "Bug taslağı bulunamadı")
+def bug_draft(draft_id: uuid.UUID, session: DbSession, user: BugOkur) -> dict[str, Any]:
     from tp_core.features.bugs import serialize as bugs_serialize
+
+    b = session.get(BugDraft, draft_id)
+    if b is None or not bugs_serialize.gorunur_mu(user.rol, b.durum):
+        raise HTTPException(404, "Bug taslağı bulunamadı")
 
     return bugs_serialize.bug_draft_view(session, b)

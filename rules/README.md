@@ -56,7 +56,7 @@ Portal asistanı (AI-ASISTAN-PLANI) modelden önce bu dosyalardaki deterministik
 | `assistant/hata-sozlugu.yaml` | Hata `kod`'u (MIMARI-SOZLESME §5) veya `detail`/görünen metin parçası → anlam, neden, çözüm, ekran |
 | `assistant/urun-terimleri.yaml` | "Ürüne özgü soru" sınıflandırması için ürün terimleri (genel QA terimleri girmez) |
 | `assistant/rotalar.json` | Portalın iç rotaları (`App.tsx` ile birebir); bağlam rotası bunlara indirgenir, cevaptaki iç rota yalnız bunlara uyarsa bağlantı olur |
-| `assistant/oneriler.yaml` | Öneri düğmesi kuralları (§17.3, 26 kural; tek kural tek eylem), olgu sözleşmesi, bilinçli boş ekranlar |
+| `assistant/oneriler.yaml` | Öneri düğmesi kuralları (§17.3, 26 kural + 011 `script-dogrulanmamis` + 012 son onay kuralı `case-son-onay-bekliyor` = 28; tek kural tek eylem; yeni kural K10 yeniden onayı ister — 011 kuralı 2026-11-12 onaylandı), olgu sözleşmesi, bilinçli boş ekranlar |
 | `assistant/jira-taslaklari.yaml` | Önerilerin Jira kayıt/yorum taslakları (olgu yer tutuculu düz metin; URL yok) |
 
 - `dev` birleştirmesi bayrak arkasıdır (`TP_ASISTAN_MODEL_MODE=off`, `TP_ASISTAN_ONERI`); constitution
@@ -225,7 +225,7 @@ varsa çıkış 1. Bu tablo kayıtla aynı olmalıdır (`test_evaluation_status.
 | `triage` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
 | `bug-draft` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
 | `dup-rank` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
-| `assistant` (portal asistanı; `assistant` + `assistant_deep` amaçları, `assistant/*` kuralları) | v1 | **canlı değerlendirildi** (2026-11-04; Haiku 38/40, Sonnet 40/40; `evaluation/results/`) |
+| `assistant` (portal asistanı; `assistant` + `assistant_deep` amaçları, `assistant/*` kuralları) | v2 | **değerlendirme sonrası içerik değişti (içerik hash'i uyuşmuyor)**: son canlı değerlendirme 2026-11-12 (spec 013 güvenlik katmanı; Haiku 54/56, Sonnet 55/56; `evaluation/results/`); ardından 012 rol göçü geldi (`assistant/*` ve `rol-politikasi.yaml` rolleri 8 portal rolüne, `presenter` → `admin`, ekran erişimi izin tablosundan; case üretimi/kararı/yayını testçide, `case-son-onay-bekliyor` → 28 kural; araçlar yetki kataloğunun okuma izinlerine bağlı); 013 sprint otomasyonu ekran listesine `/test-verisi` ve `/otomasyon` ekledi. 2026-11-13: 012 rol sonrası canlı değerlendirme geçti (Haiku 54/56, Sonnet 56/56; `evaluated`, c45103b); ardından 012 kalite doğrulama birleşmesi asistan paketini yeniden değiştirdi (`hata-sozlugu.yaml` +8 kod, `oneriler.yaml` `beklenti_farki` olgusu ve iki kural → 30 kural, `rotalar.json` `/gereksinimler/:id/karar-tablolari`, istem ekran listesi). `main` öncesi `make eval-live A='--bundle assistant --via-flow --update-status'` yeniden koşulmalı |
 | `decision-table-draft` (+ `decision_table_draft` golden'ı; 012 karar tablosu) | v2 | **canlı değerlendirme bekliyor** |
 | `case-facts` (+ `case_facts` golden'ları; 012 karar tablosu kontrolü) | v1 | **canlı değerlendirme bekliyor** |
 

@@ -110,19 +110,28 @@ export function Giris() {
           <summary>Demo kullanıcıları</summary>
           <ul>
             <li>
-              <code>analist</code> — gereksinim, bulgu ve case kararları
+              <code>sunucu</code> — Sistem Yöneticisi: demo kontrolleri ve sistem işletimi
             </li>
             <li>
-              <code>po</code> — serbest metin gereksinimlerde PO teyidi
+              <code>analist</code> — Analist: gereksinim içe aktarma, ön inceleme ve doküman düzeltmesi, case son onayı
             </li>
             <li>
-              <code>muhendis</code> — kod üretimi, kırarak doğrulama, merge
+              <code>po</code> — PO: baz değer; serbest metinde PO teyidi (Jira story'sinde onay Jira etiketiyle)
             </li>
             <li>
-              <code>testci</code> — bug taslağı onayı
+              <code>testci</code> — Testçi: case üretimi, kararı ve yayını; bug kararı
             </li>
             <li>
-              <code>sunucu</code> — deploy/gece tetikleri ve demo kontrolleri
+              <code>muhendis</code> — Automation Engineer: kod üretimi, kırarak doğrulama, merge, koşu tetikleri
+            </li>
+            <li>
+              <code>gelistirici</code> — Developer: onaylı case'ler ve koşular; manuel koşu
+            </li>
+            <li>
+              <code>denetci</code> — Denetçi: denetim kaydı (salt okunur)
+            </li>
+            <li>
+              <code>izleyici</code> — Görüntüleyici: Kontrol Kulesi ve koşu özetleri
             </li>
           </ul>
           <p className="soluk">

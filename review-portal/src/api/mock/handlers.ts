@@ -1,7 +1,7 @@
 // Mock arka uç: §5 uçlarının süreç içi uygulaması. Durum makinesi kuralları ve rol kontrolleri
 // gerçek API'yi taklit eder (insan kapıları atlanamaz), böylece ekranlar arka uç olmadan
 // demo edilebilir ve ekran testine girebilir. Tüm üretilen çıktılar mode alanıyla işaretlidir.
-import { ApiError, mockOturumu, mockOturumuAyarla } from "../http";
+import { ApiError, DEMO_KAPALI, mockOturumu, mockOturumuAyarla } from "../http";
 import type {
   AjanAdimi,
   Bulgu,
@@ -15,6 +15,8 @@ import type {
   DenetimYaniti,
   GereksinimDetay,
   IsYaniti,
+  KodUretYaniti,
+  UretimSonucu,
   KontrolKulesi,
   Kosu,
   KosuDetay,
@@ -23,7 +25,6 @@ import type {
   PullRequest,
   McpToken,
   McpTokenKaydi,
-  Rol,
   ScriptDetay,
   SerbestMetinGirdisi,
   TestCase,
@@ -31,7 +32,7 @@ import type {
   YayinOnizleme,
   YayinSonucu,
 } from "../types";
-import { CASE_KARAR_HEDEFI, GECIS_YOK, type MakineAdi, yolGecerli } from "../sozlesme/durumMakinesi";
+import { CASE_KARAR_HEDEFI, caseKarariVerilebilir, GECIS_YOK, type MakineAdi, yolGecerli } from "../sozlesme/durumMakinesi";
 import { duzeltmeOlcusu } from "../../lib/diff";
 import { kanonikJson, sha256Hex } from "../../lib/sha256";
 import {
@@ -63,8 +64,12 @@ import {
 } from "./fixtures";
 import { mockOlayYayinla } from "./olaylar";
 import { javaDosyaYolu, javaTestKodu, uygulamayaCevir } from "./platformlar";
-import { PLATFORMLAR, platformUyarla, type Platform } from "../../lib/platform";
+import { PLATFORMLAR, PLATFORM_ETIKETI, platformUyarla, type Platform } from "../../lib/platform";
+import { DIL_ETIKETI, DILLER, dilUyarla, dogrulanmamisDilMi, gecerliCift, varsayilanDil, type Dil } from "../../lib/dil";
+import { algilananDil, csharpCiktisi, JAVA_KONTROL_ACIKLAMASI, javaAdimlari, javaWebCiktisi, javaYerelGecti, kodDilleriYaniti, pythonCiktisi } from "./diller";
 import { asistanMockSifirla, asistanRotalari } from "./asistan";
+import { KISITLI_CASE_ROLLERI, normalizeRol, rolIzinleri, type Izin } from "../../lib/yetki";
+import { bilinmeyenAtiflar, caseVerisi, otomasyonMockSifirla, otomasyonRotalari, otomatikKodAcik } from "./otomasyon";
 import { oneriKuleOlcumu, oneriMockSifirla, oneriRotalari } from "./oneri";
 import { kuleKaliteKaynaklariMock, kuleKaliteOlcumu, kuleMockSifirla, kuleRotalari } from "./kule";
 import { KULE_KALITE_KAYNAKLARI } from "./kuleVerisi";
@@ -76,22 +81,33 @@ import { BAZ_NOT_EN_AZ, BAZ_NOT_EN_COK, BAZ_UST_SINIR_S, kazancOzeti } from "../
 // core `auth/display.py` + `seed.GORUNEN_ADLAR` demo varsayılanlarıyla aynı (yalnızca gösterim).
 const KISILER: Record<string, string> = {
   analist: "Cengizhan Gunaydin · Analist",
-  muhendis: "Gokhan Sipahi · Mühendis",
-  sunucu: "Sunucu",
+  muhendis: "Gokhan Sipahi · Automation Engineer",
+  sunucu: "Sistem Yöneticisi",
   po: "Cengizhan Gunaydin · PO",
   testci: "Fatih Arslan · Testçi",
+  denetci: "Denetçi",
+  gelistirici: "Developer",
+  izleyici: "Görüntüleyici",
 };
 
 function mockKullanici(kullanici_adi: string, rol: Kullanici["rol"], ad_soyad: string | null): Kullanici {
-  return { id: `u-${kullanici_adi}`, kullanici_adi, rol, gorunen_ad: KISILER[kullanici_adi], ad_soyad, kisiler: KISILER };
+  // core `GET /auth/me` → `izinler` (rol_izinleri): portal menü/düğmeleri bununla çizer.
+  return { id: `u-${kullanici_adi}`, kullanici_adi, rol, izinler: rolIzinleri(rol), gorunen_ad: KISILER[kullanici_adi], ad_soyad, kisiler: KISILER };
 }
 
+/**
+ * Örnek veri hesapları: her rol için bir hesap (ANALIZ 012 §3). `sunucu` hesabı göçle `admin`
+ * (Sistem Yöneticisi) oldu; kullanıcı adı korunur.
+ */
 const KULLANICILAR: Record<string, Kullanici> = {
+  sunucu: mockKullanici("sunucu", "admin", null),
+  denetci: mockKullanici("denetci", "auditor", null),
   analist: mockKullanici("analist", "analyst", "Cengizhan Gunaydin"),
-  muhendis: mockKullanici("muhendis", "engineer", "Gokhan Sipahi"),
-  sunucu: mockKullanici("sunucu", "presenter", null),
   po: mockKullanici("po", "po", "Cengizhan Gunaydin"),
   testci: mockKullanici("testci", "tester", "Fatih Arslan"),
+  muhendis: mockKullanici("muhendis", "engineer", "Gokhan Sipahi"),
+  gelistirici: mockKullanici("gelistirici", "developer", null),
+  izleyici: mockKullanici("izleyici", "viewer", null),
 };
 
 const OTURUM_ANAHTARI = "tp-mock-oturum";
@@ -101,7 +117,49 @@ const VERI_ANAHTARI = "tp-mock-veri-v5";
 const testModu = import.meta.env.MODE === "test";
 const GECIKME_MS = testModu ? 0 : 120;
 /** Arka plan işlerinin (ajan adımları, koşular) adım aralığı. */
-export const ayar = { isAdimiMs: testModu ? 0 : 900 };
+export const ayar = { isAdimiMs: testModu ? 0 : 900, senaryolar: new Set<string>() };
+
+/** Ekran denetimi için mock senaryoları: `sessionStorage["tp-mock-senaryo"]` (virgüllü) ya da `ayar.senaryolar`. */
+const SENARYO_ANAHTARI = "tp-mock-senaryo";
+export type MockSenaryosu =
+  /** MİM-B1: core forge'u kuramıyor/okuyamıyor; `/code/languages` algılama yapamaz (üst düzey `neden`). */
+  | "depo-okunamadi"
+  /**
+   * QA-Y4 + K-T12: uzun geçmişli depo. `GET /scripts` core gibi en yeni 200 kaydı döner ve bunlar başka
+   * story'lerin kapatılmış kayıtlarıdır (örnek veri listenin dışında kalır). Liste dışındaki eski merge
+   * edilmiş kayıtlar üretimde çakışır: TPD-13 web testi Java ile, TPD-10 web testi TypeScript ile merge edilmiş.
+   */
+  | "uzun-gecmis";
+
+export function mockSenaryosu(ad: MockSenaryosu): boolean {
+  if (ayar.senaryolar.has(ad)) return true;
+  try {
+    return (sessionStorage.getItem(SENARYO_ANAHTARI) ?? "").split(",").map((x) => x.trim()).includes(ad);
+  } catch {
+    return false;
+  }
+}
+
+/** `uzun-gecmis`: liste dışında kalan eski merge edilmiş kayıtlar (case, platform, dil). */
+const LISTE_DISI_MERGED: { case_id: string; platform: Platform; dil: Dil }[] = [
+  { case_id: "case-1-9", platform: "web", dil: "java" },
+  { case_id: "case-1-2", platform: "web", dil: "ts" },
+];
+
+/** `uzun-gecmis`: başka story'lerin en yeni 200 (kapatılmış) kaydı; örnek veriden daha yeni. */
+function uzunGecmisListesi(): ScriptDetay[] {
+  const ornek = veri.scriptler[0];
+  return Array.from({ length: 200 }, (_, i) => ({
+    ...ornek,
+    id: `scr-eski-${i + 1}`,
+    case_ids: [`case-eski-${i + 1}`],
+    requirement_key: `TPD-${100 + Math.floor(i / 4)}`,
+    baslik: `Eski story testi ${i + 1}`,
+    durum: "closed" as const,
+    pr: null,
+    olusturma: `2026-11-0${1 + (i % 9)}T10:00:00+03:00`,
+  }));
+}
 
 let veri: MockVeri = yukle();
 
@@ -127,9 +185,16 @@ function kaydet(): void {
 export function mockSifirla(): void {
   veri = ilkVeri();
   demoKirik = false;
+  mockOrtam.ortam = "dev";
+  mockOrtam.demoModu = true;
+  ayar.senaryolar.clear();
   asistanMockSifirla();
   oneriMockSifirla();
   kuleMockSifirla();
+  otomasyonMockSifirla();
+  goruntulemeKayitlari.clear();
+  onayVeriIzleri.clear();
+  kodIsleri.clear();
   mockOturumuAyarla(null);
   try {
     sessionStorage.removeItem(VERI_ANAHTARI);
@@ -166,11 +231,27 @@ function girisGerekli(): Kullanici {
   return k;
 }
 
-function rolGerekli(...roller: Rol[]): Kullanici {
+/**
+ * core `izin(...)` bağımlılığı: rol izinlerden hiçbirine sahip değilse 403 `yetki_yok`
+ * (+ `authz.denied` denetimi). Birden çok izin "herhangi biri" demektir.
+ */
+function izinGerekli(...izinler: [Izin, ...Izin[]]): Kullanici {
   const k = girisGerekli();
-  if (!roller.includes(k.rol)) {
-    throw new ApiError(403, `Bu işlem için ${roller.join(" / ")} rolü gerekir.`);
+  const roller = rolIzinleri(k.rol);
+  if (!izinler.some((i) => roller.includes(i))) {
+    denetimEkle("authz.denied", izinler.join("|"), `Yetkisiz istek (${k.rol})`, k.kullanici_adi);
+    kaydet();
+    throw new ApiError(403, "Bu işlem için yetkiniz yok", { kod: "yetki_yok" });
   }
+  return k;
+}
+
+/** Örnek veride kurulum ayarları (core `TP_ORTAM`, `TP_DEMO_MODE`); testler değiştirebilir. */
+export const mockOrtam = { ortam: "dev", demoModu: true };
+
+function demoGerekli(): Kullanici {
+  const k = izinGerekli("demo.manage");
+  if (!mockOrtam.demoModu) throw new ApiError(403, DEMO_KAPALI, { kod: "demo_kapali" });
   return k;
 }
 
@@ -329,7 +410,7 @@ function logout(): void {
 }
 
 function serbestMetin(govde: unknown): GereksinimDetay {
-  rolGerekli("analyst");
+  izinGerekli("requirement.import");
   const g = (govde ?? {}) as Partial<SerbestMetinGirdisi>;
   const baslik = (g.baslik ?? "").trim();
   const aciklama = (g.aciklama ?? "").trim();
@@ -450,7 +531,7 @@ function incelemeBulgulari(g: GereksinimDetay): Bulgu[] {
 }
 
 function incelemeBaslat(id: string): IsYaniti {
-  rolGerekli("analyst");
+  izinGerekli("requirement.review");
   const g = bul(veri.gereksinimler, id, "Gereksinim");
   // core flow.start_review kabul kriteri eksik story'yi de kabul eder: ön inceleme eksik AC'leri
   // PO'ya sorar (TPD-2 golden'ı). Yalnızca case üretimi kapalıdır (generate-cases 422).
@@ -520,7 +601,7 @@ function poBekle(g: GereksinimDetay): void {
 }
 
 function bulguKarari(id: string, govde: unknown): Bulgu {
-  const k = rolGerekli("analyst");
+  const k = izinGerekli("requirement.review");
   const b = bul(veri.bulgular, id, "Bulgu");
   const g = (govde ?? {}) as Partial<BulguKararGirdisi>;
   if (!g.karar || !["fix_doc", "code_defect", "accept_difference"].includes(g.karar)) {
@@ -591,7 +672,7 @@ function bulguKarari(id: string, govde: unknown): Bulgu {
 }
 
 function duzeltmeleriUygula(id: string): IsYaniti {
-  rolGerekli("analyst");
+  izinGerekli("requirement.review");
   const g = bul(veri.gereksinimler, id, "Gereksinim");
   const uygulanacak = veri.bulgular.filter((b) => b.requirement_id === id && b.karar === "fix_doc" && b.durum === "decided");
   if (uygulanacak.length === 0) throw new ApiError(409, "Uygulanacak onaylı doküman düzeltmesi yok.");
@@ -637,25 +718,70 @@ function duzeltmeleriUygula(id: string): IsYaniti {
   return is("started", `${uygulanacak.length} düzeltme yazılıyor.`);
 }
 
+/**
+ * core `POST /requirements/{id}/po-approve` (ANALIZ 012 K6): yalnız serbest metin gereksinimde ve
+ * `requirement.po_approve_free_text` (PO) izniyle; Jira kaynaklı story'de 410 `po_onayi_jira`
+ * (onay Jira etiketiyle). İçerik hash'i ekranda görülene bağlıdır.
+ */
 function poOnayla(id: string, govde: unknown): GereksinimDetay {
-  const k = rolGerekli("po");
+  const k = izinGerekli("requirement.po_approve_free_text");
   const g = bul(veri.gereksinimler, id, "Gereksinim");
-  if (g.kaynak === "jira") {
-    throw new ApiError(409, "Jira yolunda PO teyidi Jira'daki tp-po-approved etiketiyle verilir.");
+  if (g.kaynak !== "free_text") {
+    throw new ApiError(410, "Jira kaynaklı story'de PO onayı Jira'dan verilir: tp-po-approved etiketi.", { kod: "po_onayi_jira" });
   }
   hashGerekli(govde, g.icerik_hash);
   if (g.durum !== "pending_po") throw new ApiError(409, "Gereksinim PO teyidi beklemiyor.");
   gecir("requirement", g, "po_approved");
   g.po = { durum: "approved", onaylayan: k.kullanici_adi, zaman: simdi(), kanal: "portal" };
   g.po.onaylanan_hash = g.icerik_hash;
-  denetimEkle("po.approve", g.id, `PO teyidi (portal) · ${g.icerik_hash}`);
+  denetimEkle("po.approve", g.id, `PO teyidi (portal, serbest metin) · ${g.icerik_hash}`);
   gereksinimOlayi(g);
   mockOlayYayinla({ type: "po.approved", id: g.id, data: { onaylayan: k.kullanici_adi, kanal: "portal" } });
   return cikti(g);
 }
 
+/**
+ * core `POST /requirements/{id}/po-reject` (T04): yalnız serbest metin gereksinimde, `pending_po`
+ * iken ve `requirement.po_reject_free_text` (PO) izniyle; gerekçe zorunlu (≤2000). Gereksinim
+ * `new`'e döner. Jira kaynaklı story'de 410 `po_onayi_jira`.
+ */
+function poReddet(id: string, govde: unknown): GereksinimDetay {
+  izinGerekli("requirement.po_reject_free_text");
+  const g = bul(veri.gereksinimler, id, "Gereksinim");
+  if (g.kaynak !== "free_text") {
+    throw new ApiError(410, "Jira kaynaklı story'de PO kararı Jira'dan verilir: tp-po-approved etiketi.", { kod: "po_onayi_jira" });
+  }
+  const gerekce = String((govde as { gerekce?: unknown } | null)?.gerekce ?? "").trim();
+  if (!gerekce) throw new ApiError(422, "PO reddi için gerekçe zorunludur.");
+  if (gerekce.length > 2000) throw new ApiError(422, "Gerekçe en fazla 2000 karakter olabilir.");
+  hashGerekli(govde, g.icerik_hash);
+  if (g.durum !== "pending_po") throw new ApiError(409, "Gereksinim PO teyidi beklemiyor.");
+  gecir("requirement", g, "new");
+  g.po = { durum: "not_requested", onaylayan: null, zaman: null, kanal: "portal" };
+  denetimEkle("po.reject", g.id, `PO reddi (portal, serbest metin): ${gerekce}`);
+  gereksinimOlayi(g);
+  return cikti(g);
+}
+
+/**
+ * Simülatör: PO'nun Jira'da `tp-po-approved` etiketini koyması (ANALIZ 012 K6; portalda PO onay ucu
+ * yok → 410). Testler ve örnek veri akışı PO teyidini bununla verir; insan rolü kontrolü Jira'dadır.
+ */
+export function mockPoEtiketi(id: string, aktor = "po@sim.local"): GereksinimDetay {
+  hashleriTazele(veri);
+  const g = bul(veri.gereksinimler, id, "Gereksinim");
+  if (g.durum !== "pending_po") throw new ApiError(409, "Gereksinim PO teyidi beklemiyor.");
+  gecir("requirement", g, "po_approved");
+  g.po = { durum: "approved", onaylayan: aktor, zaman: simdi(), kanal: "jira" };
+  g.po.onaylanan_hash = g.icerik_hash;
+  denetimEkle("po.approve", g.jira_key ?? g.id, `tp-po-approved etiketi okundu · ${g.icerik_hash}`, aktor);
+  gereksinimOlayi(g);
+  mockOlayYayinla({ type: "po.approved", id: g.id, data: { onaylayan: aktor, kanal: "jira" } });
+  return cikti(g);
+}
+
 function caseUret(id: string): IsYaniti {
-  rolGerekli("analyst");
+  izinGerekli("case.generate");
   const g = bul(veri.gereksinimler, id, "Gereksinim");
   if (g.po.durum !== "approved") throw new ApiError(409, "PO teyidi olmadan case üretilemez.");
   if (g.ac_missing) throw new ApiError(409, "Kabul kriteri olmayan story case üretimine gönderilmez.");
@@ -726,82 +852,180 @@ function caseUret(id: string): IsYaniti {
   return is("started", "Case üretimi başlatıldı.");
 }
 
-function caseKarari(id: string, govde: unknown): TestCase {
-  const k = rolGerekli("analyst");
-  const c = bul(veri.caseler, id, "Case");
-  // core: "Taslağa al" aynı karar ucunda `karar: "reopen"` ile verilir.
-  if ((govde as { karar?: unknown } | null)?.karar === "reopen") return caseYenidenAc(id, govde);
-  const g = (govde ?? {}) as Partial<CaseKararGirdisi>;
-  if (!g.karar || !["approve", "edit", "reject"].includes(g.karar)) {
-    throw new ApiError(422, "Karar approve, edit, reject veya reopen olmalı.");
+/** core `KISITLI_GIZLI_ALANLAR`: developer görünümünde yanıttan çıkarılan alanlar. */
+const KISITLI_GIZLI_ALANLAR = [
+  "karar",
+  "ret_nedeni",
+  "karar_veren",
+  "karar_zamani",
+  "duzeltme_olcusu",
+  "kucuk_duzeltme",
+  "review_sure_ms",
+  "ai_icerik",
+  "fark",
+  "duzeltme_nedeni",
+  "testci_karari",
+  "testci",
+  "son_onay",
+] as const;
+
+/**
+ * core `serialize_cases` biçimi: Testçi kararı (`testci_karari`, `testci`) ve Analist son onayı
+ * (`son_onay`) ayrı; `karar`/`karar_veren`/`karar_zamani` son karardır (Analist olabilir). Düz
+ * `gerekce`/`onaylayan`/`onay_zamani` core'da yoktur. Developer (kısıtlı görünüm): geçmiş alanları
+ * çıkarılır, `kisitli: true`.
+ */
+function caseYaniti(c: TestCase, kullanici?: Kullanici | null): Record<string, unknown> {
+  const { gerekce: _g, onaylayan: _o, onay_zamani: _z, ...ham } = c;
+  void _g;
+  void _o;
+  void _z;
+  // 012 öncesi kayıt (örnek veri): Testçi kararı alanı yoksa son karar Testçi kararı sayılır (core testci_kararlari).
+  const eski = c.testci_karari === undefined && c.karar !== null && c.karar !== "send_back" && c.karar !== "reopen";
+  const out: Record<string, unknown> = {
+    ...ham,
+    testci_karari: c.testci_karari ?? (eski ? c.karar : null),
+    testci: c.testci ?? (eski ? c.karar_veren : null),
+    son_onay: c.son_onay ?? null,
+  };
+  const r = normalizeRol(kullanici?.rol);
+  if (r && KISITLI_CASE_ROLLERI.includes(r)) {
+    for (const a of KISITLI_GIZLI_ALANLAR) delete out[a];
+    delete out.goruntulenme;
+    out.kisitli = true;
   }
+  return out;
+}
+
+/** Karar uçlarının yanıtı: güncel hash'li kopya, core biçiminde. */
+function caseCikti(c: TestCase, kullanici: Kullanici): Record<string, unknown> {
+  return caseGorunumu(cikti(c), kullanici);
+}
+
+const TESTCI_KARARLARI = ["accept", "edit", "reject"] as const;
+const ANALIST_KARARLARI = ["approve", "send_back"] as const;
+
+/**
+ * core `POST /cases/{id}/decision` (ANALIZ 012 §5): Testçi `accept` | `edit` (draft → ready),
+ * `reject` (draft → rejected), `reopen` ("Taslağa al"); Analist `approve` (ready → approved) ve
+ * `send_back` (ready → draft, gerekçe zorunlu).
+ */
+function caseKarari(id: string, govde: unknown): Record<string, unknown> {
+  const g = (govde ?? {}) as Partial<CaseKararGirdisi>;
+  // core: "Taslağa al" aynı karar ucunda `karar: "reopen"` ile verilir.
+  if (g.karar === "reopen") return caseYenidenAc(id, govde);
+  const testci = (TESTCI_KARARLARI as readonly string[]).includes(g.karar ?? "");
+  const analist = (ANALIST_KARARLARI as readonly string[]).includes(g.karar ?? "");
+  if (!g.karar || (!testci && !analist)) {
+    throw new ApiError(422, "Karar accept, edit, reject, reopen, approve veya send_back olmalı.");
+  }
+  const k = izinGerekli(testci ? "case.decide" : "case.approve");
+  const c = bul(veri.caseler, id, "Case");
   hashGerekli(govde, c.icerik_hash);
   if (c.durum === "published") throw new ApiError(409, "Yayınlanmış case değiştirilemez.");
   if (c.durum === "superseded") throw new ApiError(409, "Bu case'in yerini yenisi aldı; karar verilemez.");
-  // core test_case makinesi: kararlar yalnızca draft'tan (draft → approved | rejected).
   const hedef = CASE_KARAR_HEDEFI[g.karar];
-  if (!yolGecerli("test_case", c.durum, [hedef])) throw new ApiError(409, GECIS_YOK);
-  if (g.karar === "reject") {
-    if (!g.ret_nedeni) throw new ApiError(422, "Ret için neden seçilmelidir.");
-    gecir("test_case", c, "rejected");
-    c.ret_nedeni = g.ret_nedeni;
-    c.onaylanan_hash = null;
-  } else if (g.karar === "edit") {
-    if (!g.icerik) throw new ApiError(422, "Düzeltme için içerik zorunludur.");
-    if (!g.icerik.title.trim() || g.icerik.steps.length === 0) throw new ApiError(422, "Başlık ve en az bir adım zorunlu.");
-    const once = kanonikJson(c.icerik);
-    // core metrics.edit_metrics: insan beyanı varsa o; yoksa beklenen sonuç metni karşılaştırılır.
-    const beklenenDegisti =
-      typeof g.beklenen_anlam_degisti === "boolean" ? g.beklenen_anlam_degisti : c.icerik.expected_result !== g.icerik.expected_result;
-    const kaynakInsan = typeof g.beklenen_anlam_degisti === "boolean";
-    // core: AI özgün içeriği ilk düzeltmede saklanır (beklenti doğruluğu AI'ın yazdığını ölçer, insanın düzelttiğini değil).
-    if (c.ai_generated && !c.ai_icerik && c.karar !== "edit") c.ai_icerik = c.icerik;
-    c.icerik = g.icerik;
-    c.surum += 1;
-    c.icerik_hash = icerikHash(g.icerik);
-    c.onaylanan_hash = c.icerik_hash;
-    c.duzeltme_olcusu = Math.round(duzeltmeOlcusu(once, kanonikJson(g.icerik)) * 100) / 100;
-    c.kucuk_duzeltme = c.duzeltme_olcusu <= 0.15 && !beklenenDegisti;
-    const olcuMetni = (x: number) => x.toFixed(3).replace(".", ",");
-    c.duzeltme_nedeni = c.kucuk_duzeltme
-      ? `Küçük düzeltme sayıldı: düzeltme ölçüsü ${olcuMetni(c.duzeltme_olcusu)} ≤ 0,150 ve beklenen sonuç değişmedi (ilk karar kabul sayılır).`
-      : `Küçük düzeltme sayılmadı: ${[
-          beklenenDegisti ? `beklenen sonuç anlamca değişti (${kaynakInsan ? "analistin beyanı" : "beklenen sonuç metni değişti"})` : null,
-          c.duzeltme_olcusu > 0.15 ? `düzeltme ölçüsü ${olcuMetni(c.duzeltme_olcusu)} > eşik 0,150` : null,
-        ]
-          .filter(Boolean)
-          .join(" ve ")} (ilk karar kabul oranına girmez).`;
-    gecir("test_case", c, "approved");
-    c.ret_nedeni = null;
+  if (!caseKarariVerilebilir(c.durum, g.karar)) throw new ApiError(409, GECIS_YOK);
+  if (g.karar === "approve" || g.karar === "send_back") {
+    if (g.karar === "send_back" && !g.gerekce?.trim()) throw new ApiError(422, "Geri gönderme için gerekçe zorunludur.");
+    // core ApprovalNotAllowed (görevler ayrılığı, K2): kabul eden/düzenleyen hesap son onayı veremez.
+    if (g.karar === "approve" && (c.testci ?? c.karar_veren) === k.kullanici_adi) {
+      throw new ApiError(403, "Case'i kabul eden/düzenleyen hesap son onayı veremez (görevler ayrılığı)", { kod: "onay_yetkisi_yok" });
+    }
+    gecir("test_case", c, hedef);
+    const zaman = simdi();
+    const gerekce = g.karar === "send_back" ? g.gerekce!.trim() : null;
+    c.onaylanan_hash = g.karar === "approve" ? c.icerik_hash : null;
+    if (g.karar === "send_back") c.goruntulenme = null;
+    // core: karar/karar_veren/karar_zamani son karardır (Analist dahil); son onay ayrı alanda.
+    c.karar = g.karar;
+    c.karar_veren = k.kullanici_adi;
+    c.karar_zamani = zaman;
+    c.son_onay = { karar: g.karar, veren: k.kullanici_adi, zaman, gerekce };
+    denetimEkle("case.decision", c.id, g.karar === "send_back" ? `send_back: ${gerekce}` : "approve");
   } else {
-    gecir("test_case", c, "approved");
-    c.onaylanan_hash = c.icerik_hash;
-    c.duzeltme_olcusu = 0;
-    c.ret_nedeni = null;
+    if (g.karar === "reject") {
+      if (!g.ret_nedeni) throw new ApiError(422, "Ret için neden seçilmelidir.");
+      gecir("test_case", c, "rejected");
+      c.ret_nedeni = g.ret_nedeni;
+    } else if (g.karar === "edit") {
+      if (!g.icerik) throw new ApiError(422, "Düzeltme için içerik zorunludur.");
+      if (!g.icerik.title.trim() || g.icerik.steps.length === 0) throw new ApiError(422, "Başlık ve en az bir adım zorunlu.");
+      // 013 §3.3: düzeltmede katalogda olmayan atıf reddedilir.
+      const bilinmeyen = bilinmeyenAtiflar(g.icerik);
+      if (bilinmeyen.length) throw new ApiError(422, `Katalogda olmayan test verisi anahtarı: ${bilinmeyen.join(", ")}`);
+      // K22: maskeli gizli değer (•••) düzeltmede kaydedilmez (core ile aynı metin).
+      if (JSON.stringify(g.icerik).includes("•••")) throw new ApiError(422, "Gizli değer maskeli görünüyor; {veri:…} atfını kullanın");
+      const once = kanonikJson(c.icerik);
+      // core metrics.edit_metrics: insan beyanı varsa o; yoksa beklenen sonuç metni karşılaştırılır.
+      const beklenenDegisti =
+        typeof g.beklenen_anlam_degisti === "boolean" ? g.beklenen_anlam_degisti : c.icerik.expected_result !== g.icerik.expected_result;
+      const kaynakInsan = typeof g.beklenen_anlam_degisti === "boolean";
+      // core: AI özgün içeriği ilk düzeltmede saklanır (beklenti doğruluğu AI'ın yazdığını ölçer, insanın düzelttiğini değil).
+      if (c.ai_generated && !c.ai_icerik) c.ai_icerik = c.icerik;
+      c.icerik = g.icerik;
+      c.surum += 1;
+      c.icerik_hash = icerikHash(g.icerik);
+      c.duzeltme_olcusu = Math.round(duzeltmeOlcusu(once, kanonikJson(g.icerik)) * 100) / 100;
+      c.kucuk_duzeltme = c.duzeltme_olcusu <= 0.15 && !beklenenDegisti;
+      const olcuMetni = (x: number) => x.toFixed(3).replace(".", ",");
+      c.duzeltme_nedeni = c.kucuk_duzeltme
+        ? `Küçük düzeltme sayıldı: düzeltme ölçüsü ${olcuMetni(c.duzeltme_olcusu)} ≤ 0,150 ve beklenen sonuç değişmedi (ilk karar kabul sayılır).`
+        : `Küçük düzeltme sayılmadı: ${[
+            beklenenDegisti ? `beklenen sonuç anlamca değişti (${kaynakInsan ? "testçinin beyanı" : "beklenen sonuç metni değişti"})` : null,
+            c.duzeltme_olcusu > 0.15 ? `düzeltme ölçüsü ${olcuMetni(c.duzeltme_olcusu)} > eşik 0,150` : null,
+          ]
+            .filter(Boolean)
+            .join(" ve ")} (ilk karar kabul oranına girmez).`;
+      gecir("test_case", c, "ready");
+      c.ret_nedeni = null;
+    } else {
+      gecir("test_case", c, "ready");
+      c.duzeltme_olcusu = 0;
+      c.ret_nedeni = null;
+    }
+    if (g.karar !== "edit") {
+      c.kucuk_duzeltme = null;
+      c.duzeltme_nedeni = null;
+    }
+    // Son onay (Analist) bu içerik hash'ine bağlanır; Testçi kararı onayı düşürür.
+    c.onaylanan_hash = null;
+    c.son_onay = null;
+    c.karar = g.karar;
+    c.testci_karari = g.karar;
+    c.testci = k.kullanici_adi;
+    c.karar_veren = k.kullanici_adi;
+    c.karar_zamani = simdi();
+    // core gibi: review süresi ilk görüntülemeden (POST /cases/{id}/view) karara kadar ölçülür.
+    c.review_sure_ms = c.goruntulenme ? Math.max(0, Date.parse(c.karar_zamani) - Date.parse(c.goruntulenme)) : null;
+    denetimEkle("case.decision", c.id, g.karar === "reject" ? `reject: ${g.ret_nedeni}` : g.karar);
   }
-  if (g.karar !== "edit") {
-    c.kucuk_duzeltme = null;
-    c.duzeltme_nedeni = null;
-  }
-  c.karar = g.karar;
-  c.karar_veren = k.kullanici_adi;
-  c.karar_zamani = simdi();
-  // core gibi: review süresi ilk görüntülemeden (POST /cases/{id}/view) karara kadar ölçülür.
-  c.review_sure_ms = c.goruntulenme ? Math.max(0, Date.parse(c.karar_zamani) - Date.parse(c.goruntulenme)) : null;
-  denetimEkle("case.decision", c.id, g.karar === "reject" ? `reject: ${g.ret_nedeni}` : g.karar);
+  goruntulemeleriUnut(c.id);
+  // §10 (K10): kabul/son onay anındaki veri izi (mock: anahtar → değer); ret ve geri gönderme düşürür.
+  if (g.karar === "approve" || g.karar === "accept" || g.karar === "edit") onayVeriIzleri.set(c.id, veriIzi(c));
+  else onayVeriIzleri.delete(c.id);
   const req = veri.gereksinimler.find((r) => r.id === c.requirement_id);
   if (req) gereksinimOlayi(req);
   else kaydet();
-  return cikti(c);
+  return caseCikti(c, k);
 }
 
 /**
  * core `POST /cases/{id}/viewed`: kullanıcının son karardan sonraki ilk görüntülemesi (idempotent).
  * Review süresi bu andan karara kadar ölçülür.
  */
-function caseGoruntulendi(id: string): { case_id: string; ilk_goruntuleme: string; yeni: boolean } {
-  girisGerekli();
+function caseGoruntulendi(id: string): { case_id: string; ilk_goruntuleme: string | null; yeni: boolean } {
+  // core: görüntüleme kaydı karar verecek rollere (case.decide | case.approve).
+  const k = izinGerekli("case.decide", "case.approve");
   const c = bul(veri.caseler, id, "Case");
+  // core (§10; 012): kayıt yalnız kullanıcının bu durumda vereceği karar için açılır (taslak → Testçi,
+  // ready → Analist); diğer case'lerde açılmaz.
+  const izin = rolIzinleri(k.rol);
+  const bekliyor = (c.durum === "draft" && izin.includes("case.decide")) || (c.durum === "ready" && izin.includes("case.approve"));
+  if (!bekliyor) return { case_id: c.id, ilk_goruntuleme: null, yeni: false };
+  // 013 K13': kişiye bağlı görüntüleme kaydı (son karardan sonraki ilk görüntüleme; görünürlüğün başında gelir).
+  const anahtar = goruntulemeAnahtari(c.id, k.kullanici_adi);
+  if (!goruntulemeKayitlari.has(anahtar)) goruntulemeKayitlari.set(anahtar, Date.now());
   const yeni = !c.goruntulenme;
   if (yeni) {
     c.goruntulenme = simdi();
@@ -815,22 +1039,26 @@ function caseGoruntulendi(id: string): { case_id: string; ilk_goruntuleme: strin
  * gerekir. core karar kaydı yazmaz: son karar (`karar`) önceki karar olarak kalır; ekran durumdan
  * (`draft`) karar beklediğini anlar.
  */
-function caseYenidenAc(id: string, govde: unknown): TestCase {
-  rolGerekli("analyst");
+function caseYenidenAc(id: string, govde: unknown): Record<string, unknown> {
+  const k = izinGerekli("case.decide");
   const c = bul(veri.caseler, id, "Case");
-  if (c.durum !== "approved" && c.durum !== "rejected") {
-    throw new ApiError(409, `Yalnızca onaylı veya reddedilmiş case taslağa alınabilir (durum: ${c.durum})`);
+  if (c.durum !== "ready" && c.durum !== "approved" && c.durum !== "rejected") {
+    throw new ApiError(409, `Yalnızca onaya hazır, onaylı veya reddedilmiş case taslağa alınabilir (durum: ${c.durum})`);
   }
   hashGerekli(govde, c.icerik_hash);
   gecir("test_case", c, "draft");
   const onceki = c.karar;
   c.onaylanan_hash = null;
+  // Taslağa alınan case'in son onayı düşer (yeniden Testçi kararı + Analist onayı gerekir).
+  c.son_onay = null;
   c.goruntulenme = null;
+  goruntulemeleriUnut(c.id);
+  onayVeriIzleri.delete(c.id);
   denetimEkle("case.reopen", c.id, `Taslağa alındı (önceki karar: ${onceki ?? "—"})`);
   const req = veri.gereksinimler.find((r) => r.id === c.requirement_id);
   if (req) gereksinimOlayi(req);
   else kaydet();
-  return cikti(c);
+  return caseCikti(c, k);
 }
 
 const acAnahtari = (r: string) => r.replace(/\s/g, "").toUpperCase();
@@ -847,8 +1075,13 @@ function caseMetrikleri(rid: string): CaseMetrikleri {
   );
   const kapsanmayan = g.kabul_kriterleri.map((a) => a.ref).filter((r) => !atiflar.has(acAnahtari(r)));
   const cs = veri.caseler.filter((c) => c.requirement_id === rid && c.ai_generated && c.durum !== "superseded");
-  const kararli = cs.filter((c) => c.karar !== null);
-  const kabul = kararli.filter((c) => c.karar === "approve" || (c.karar === "edit" && (c.kucuk_duzeltme ?? (c.duzeltme_olcusu ?? 1) <= 0.15))).length;
+  // Ölçümler Testçi kararını sayar (ANALIZ 012 §5); eski kayıtlarda Analist `approve` kabul sayılır.
+  const ilkKarar = (c: TestCase) => c.testci_karari ?? (c.karar === "send_back" ? null : c.karar);
+  const kararli = cs.filter((c) => ilkKarar(c) !== null);
+  const kabul = kararli.filter((c) => {
+    const kr = ilkKarar(c);
+    return kr === "accept" || kr === "approve" || (kr === "edit" && (c.kucuk_duzeltme ?? (c.duzeltme_olcusu ?? 1) <= 0.15));
+  }).length;
   const sureler = cs.map((c) => c.review_sure_ms).filter((x): x is number => x !== null);
   const say = (anahtar: (c: TestCase) => string | null) =>
     kararli.reduce<Record<string, number>>((a, c) => {
@@ -864,7 +1097,7 @@ function caseMetrikleri(rid: string): CaseMetrikleri {
     kabul,
     kabul_orani: cs.length ? kabul / cs.length : null,
     kabul_hedefi: 0.7,
-    ilk_kararlar: say((c) => c.karar),
+    ilk_kararlar: say(ilkKarar),
     ret_nedenleri: say((c) => c.ret_nedeni),
     ai_sure_ms: cs.reduce((a, c) => a + c.ai_sure_ms, 0),
     review_sure_ms: sureler.reduce((a, x) => a + x, 0),
@@ -889,7 +1122,8 @@ function caseMetrikleri(rid: string): CaseMetrikleri {
 }
 
 function yayinOnizleme(q: URLSearchParams): YayinOnizleme {
-  rolGerekli("analyst");
+  // core: önizleme `publish.preview` (salt okunur); yayın `case.publish`.
+  izinGerekli("publish.preview");
   const rid = q.get("requirement_id");
   if (!rid) throw new ApiError(422, "requirement_id zorunlu.");
   const g = bul(veri.gereksinimler, rid, "Gereksinim");
@@ -925,7 +1159,7 @@ function yayinOnizleme(q: URLSearchParams): YayinOnizleme {
 }
 
 function yayinla(govde: unknown): YayinSonucu {
-  rolGerekli("analyst");
+  izinGerekli("case.publish");
   const ids = ((govde ?? {}) as { case_ids?: string[] }).case_ids ?? [];
   if (!Array.isArray(ids) || ids.length === 0) throw new ApiError(422, "En az bir case seçilmeli.");
   const sonuclar = ids.map((id) => {
@@ -976,33 +1210,120 @@ const KOD_GOLDEN: Record<string, { adimlar: () => AjanAdimi[]; kaynak: Record<st
   "case-1-4": { adimlar: minSiparisAdimlari, kaynak: MIN_SIPARIS_KAYNAK, kod: MIN_SIPARIS_TEST_KODU, defect: false },
 };
 
-function kodUret(govde: unknown): IsYaniti {
-  rolGerekli("engineer");
-  const g = (govde ?? {}) as { case_ids?: string[]; platform?: unknown };
+/**
+ * core `dil_cakismasi` (K-T4): tam hat isteğinde aynı case+platformun başka dilde merge edilmiş testi
+ * varsa Türkçe neden. `uzun-gecmis` senaryosunda liste dışındaki eski kayıtlar da sayılır.
+ */
+function mockDilCakismasi(caseId: string, platform: Platform, dil: Dil): string | null {
+  if (dogrulanmamisDilMi(dil)) return null;
+  const merged = [
+    ...veri.scriptler.filter((s) => s.durum === "merged" && s.case_ids.includes(caseId) && (s.platform ?? "web") === platform).map((s) => s.dil ?? "ts"),
+    ...(mockSenaryosu("uzun-gecmis") ? LISTE_DISI_MERGED.filter((x) => x.case_id === caseId && x.platform === platform).map((x) => x.dil) : []),
+  ];
+  const onceki = merged.find((d) => d !== dil);
+  if (!onceki) return null;
+  const yer = platform === "web" ? "web testi" : `${platform} testi`;
+  // core `dil_cakismasi` iletisinin birebir kopyası (MİM-D1).
+  return `Bu case'in ${yer} ${DIL_ETIKETI[onceki]} ile merge edildi; dil değiştirmek için önce mevcut testi kaldırın: mevcut test dosyasını silen bir PR'ı merge edin, sonra yeniden üretin`;
+}
+
+/** Aynı dilde merge edilmiş (liste dışı) kayıt: core `merge_edildi` (yeniden üretilmez). */
+function mockMergeEdilmis(caseId: string, platform: Platform, dil: Dil): boolean {
+  return mockSenaryosu("uzun-gecmis") && LISTE_DISI_MERGED.some((x) => x.case_id === caseId && x.platform === platform && x.dil === dil);
+}
+
+/** core `start_generation` K-T12: çakışan case sayısı ve ileti eki (birebir core metni). */
+function cakismaSayisi(sonuclar: UretimSonucu[]): number {
+  return sonuclar.filter((x) => x.durum === "cakisma").length;
+}
+
+function cakismaEki(sonuclar: UretimSonucu[]): string {
+  const n = cakismaSayisi(sonuclar);
+  return n
+    ? ` ${n} case başka dilde merge edilmiş testi olduğu için üretilmedi (mevcut test dosyasını silen bir PR'ı merge edin, sonra yeniden üretin).`
+    : "";
+}
+
+/** core `_hedef_eki`: varsayılan hedefte (web + ts) yalnız nokta; yoksa platform ve/veya dil. */
+function hedefEki(platform: Platform, dil: Dil): string {
+  const parcalar: string[] = platform === "web" ? [] : [platform];
+  if (dil !== varsayilanDil(platform)) parcalar.push(DIL_ETIKETI[dil]);
+  let ek = parcalar.length ? ` (${parcalar.join(", ")}).` : ".";
+  if (dogrulanmamisDilMi(dil)) ek += " Doğrulanmamış dil: kod üretilir ama derlenmez/koşulmaz, PR açılmaz.";
+  return ek;
+}
+
+function kodUret(govde: unknown): KodUretYaniti {
+  izinGerekli("code.generate");
+  const g = (govde ?? {}) as { case_ids?: string[]; platform?: unknown; dil?: unknown };
   const ids = g.case_ids ?? [];
   if (!Array.isArray(ids) || ids.length === 0) throw new ApiError(422, "En az bir case seçilmeli.");
   // 009 §2.9: platform yoksa web; bilinmeyen değer 422 (core ile aynı).
   const platform: Platform | null = g.platform === undefined || g.platform === null ? "web" : platformUyarla(g.platform);
   if (!platform) throw new ApiError(422, `platform yalnızca ${PLATFORMLAR.join(", ")} olabilir.`);
+  // 011 §2.3: `dil` yoksa repodan algılanan (dil_kaynagi=algilandi); varsa elle seçilmiş (secildi).
+  // Geçersiz değer ya da geçersiz (platform, dil) çifti 422 (core ile aynı, Türkçe ileti).
+  const dilVar = g.dil !== undefined && g.dil !== null;
+  const dil: Dil | null = dilVar ? dilUyarla(g.dil) : algilananDil(platform);
+  if (!dil) throw new ApiError(422, `dil yalnızca ${DILLER.join(", ")} olabilir.`);
+  if (!gecerliCift(platform, dil)) throw new ApiError(422, `${PLATFORM_ETIKETI[platform]} platformunda yalnız Java üretilebilir.`);
+  const dilKaynagi = dilVar ? ("secildi" as const) : ("algilandi" as const);
+  const dogrulanmamis = dogrulanmamisDilMi(dil);
+  const javaWeb = platform === "web" && dil === "java";
   const app = platform !== "web";
   const caseler = ids.map((id) => bul(veri.caseler, id, "Case"));
   const onaysiz = caseler.filter((c) => c.durum !== "approved" && c.durum !== "published");
   if (onaysiz.length) throw new ApiError(409, "Yalnızca onaylı case'ler için kod üretilebilir.");
+  // core `start_generation` `sonuclar[]` (K-T12): case başına durum; çakışan/atlanan case'e dokunulmaz.
+  const sonuclar: UretimSonucu[] = [];
+  const baslayan: typeof caseler = [];
   for (const c of caseler) {
+    const cakisma = mockDilCakismasi(c.id, platform, dil);
+    if (cakisma) sonuclar.push({ case_id: c.id, durum: "cakisma", neden: cakisma, script_id: null });
+    else if (mockMergeEdilmis(c.id, platform, dil))
+      sonuclar.push({ case_id: c.id, durum: "merge_edildi", neden: "bu onaylı içerik için bu platformda PR zaten var", script_id: null });
+    else baslayan.push(c);
+  }
+  if (baslayan.length === 0) {
+    const hatali = sonuclar.filter((x) => x.durum === "cakisma");
+    if (hatali.length === sonuclar.length) {
+      throw new ApiError(
+        409,
+        hatali.length === 1 ? hatali[0].neden! : `Kod üretimi başlatılamadı: ${hatali.map((x) => `${x.case_id.slice(0, 8)}: ${x.neden}`).join("; ")}`,
+        { kod: "dil_cakismasi" },
+      );
+    }
+    return { job_id: null, durum: "none", mesaj: "Yeni üretim gerekmiyor (süren iş ya da açık PR var)." + cakismaEki(sonuclar), cakisma_sayisi: cakismaSayisi(sonuclar), sonuclar };
+  }
+  for (const c of baslayan) {
+    // 011 §2.2: etkin anahtar (case, platform); doğrulanmamış script başka dilde yeniden üretilince kapanır.
+    for (const eski of veri.scriptler) {
+      if (eski.durum === "unverified" && eski.case_ids.includes(c.id) && (eski.platform ?? "web") === platform) gecir("script", eski, "closed");
+    }
     const id = yeniId("scr");
     const kisa = sha256Hex(c.id).slice(0, 8);
     // Uygulama dalı web dalıyla önek çakışmaz: tp/case-<platform>-<uuid> (aynı case'in platformları ayrı PR).
     const branch = app ? `tp/case-${platform}-${kisa}` : `tp/case-${kisa}`;
     const golden = KOD_GOLDEN[c.id];
     const java = app ? javaDosyaYolu(platform, c.jira_key ?? "SERBEST", c.sira_no, kisa) : null;
+    // Web'de TypeScript dışı dilin dosya yolu/kodu ajan adımlarından (eşleme) şablonla üretilir.
+    const webDilCiktisi = (adimlar: AjanAdimi[]) => {
+      const g = { story: c.jira_key, siraNo: c.sira_no, kisa, caseId: c.id, baslik: c.icerik.title, adimlar, caseAdimlari: c.icerik.steps, testKey: c.jira_test_key };
+      return javaWeb ? javaWebCiktisi(g) : dil === "python" ? pythonCiktisi(g) : dil === "csharp" ? csharpCiktisi(g) : null;
+    };
+    const onizleme = webDilCiktisi([]);
     const s: ScriptDetay = {
       id,
       case_ids: [c.id],
       requirement_key: c.jira_key,
       baslik: c.icerik.title,
-      dosya_yolu: java ? java.yol : `demo-app/e2e/tests/${(c.jira_key ?? "ft").toLowerCase()}/c${c.sira_no}.spec.ts`,
-      branch,
+      dosya_yolu: java ? java.yol : (onizleme?.dosya_yolu ?? `demo-app/e2e/tests/${(c.jira_key ?? "ft").toLowerCase()}/c${c.sira_no}.spec.ts`),
+      // Doğrulanmamış dil forge'a commit edilmez: dal yok.
+      branch: dogrulanmamis ? "" : branch,
       platform,
+      dil,
+      dil_kaynagi: dilKaynagi,
+      dogrulanmamis: false,
       durum: "pending",
       pr: null,
       pass_at_1: null,
@@ -1025,6 +1346,7 @@ function kodUret(govde: unknown): IsYaniti {
       engel: null,
     };
     veri.scriptler.unshift(s);
+    sonuclar.push({ case_id: c.id, durum: "basladi", neden: null, script_id: id });
     if (!golden) {
       arkaPlan([
         () => {
@@ -1037,7 +1359,8 @@ function kodUret(govde: unknown): IsYaniti {
       ]);
       continue;
     }
-    const adimlar = platform === "web" ? golden.adimlar() : uygulamayaCevir(golden.adimlar(), platform);
+    // Web + Java eşlemesi Java page object adlarıyla saklanır (core `java_eslemesi`: `goto` → `goTo`).
+    const adimlar = platform !== "web" ? uygulamayaCevir(golden.adimlar(), platform) : javaWeb ? javaAdimlari(golden.adimlar()) : golden.adimlar();
     let kontrolKosusu: KosuDetay | null = null;
     arkaPlan([
       ...adimlar.map((a) => () => {
@@ -1047,25 +1370,39 @@ function kodUret(govde: unknown): IsYaniti {
         mockOlayYayinla({ type: "agent.step", id: s.id, data: { ...yeniAdim, platform } });
       }),
       () => {
+        if (dogrulanmamis) {
+          // 011 §2.7: doğrulanmamış dil — render sonrası kaynak saklanır; commit, yerel kontrol ve PR yok.
+          s.eslemeler = eslemeler(adimlar, golden.kaynak);
+          const cikti = webDilCiktisi(adimlar)!;
+          s.kod = cikti.kod;
+          s.dosya_yolu = cikti.dosya_yolu;
+          s.dogrulanmamis = true;
+          gecir("script", s, "unverified");
+          denetimEkle("code.render", s.id, `${DIL_ETIKETI[dil]} kaynağı üretildi (doğrulanmamış: derlenmedi, koşulmadı, PR yok)`, "core-worker");
+          mockOlayYayinla({ type: "script.updated", id: s.id, data: { durum: "unverified", dil } });
+          return;
+        }
         // Deterministik kontroller geçti: eşleme kaydı + şablondan kod; yerel kontrol başlar.
         gecir("script", s, "checking");
         s.eslemeler = eslemeler(adimlar, golden.kaynak);
-        s.kod = java ? javaTestKodu(platform as Exclude<Platform, "web">, java.sinif, c.icerik.title, adimlar) : golden.kod;
+        s.kod = java ? javaTestKodu(platform as Exclude<Platform, "web">, java.sinif, c.icerik.title, adimlar) : javaWeb ? webDilCiktisi(adimlar)!.kod : golden.kod;
         kontrolKosusu = kosuOlustur("local_check", "local", false, null);
         kontrolKosusu.script_id = s.id;
         kontrolKosusu.platform = platform;
         kontrolKosusu.durum = "running";
-        s.yerel_kontrol = { ...yerelGecti(kontrolKosusu.id), sonuc: null, sinif: null };
+        s.yerel_kontrol = { ...(javaWeb ? javaYerelGecti(kontrolKosusu.id)! : yerelGecti(kontrolKosusu.id)), sonuc: null, sinif: null };
         mockOlayYayinla({ type: "ci.status", id: s.id, data: { durum: "checking" } });
       },
       () => {
+        // Doğrulanmamış dilde yerel kontrol ve PR adımı yoktur (önceki adımda unverified'a geçti).
+        if (dogrulanmamis) return;
         const k = kontrolKosusu;
         if (k) kosuBitir(k, !golden.defect, `${c.jira_key ?? "FT"} C${c.sira_no} · ${c.icerik.title}`, golden.defect ? "Beklenen: \"0\" · Gerçekleşen: \"1\" (bedava adet)" : undefined);
         if (golden.defect) {
           s.pass_at_1 = false;
           s.yerel_sinif = "defect_adayi";
           s.yerel_kontrol = {
-            ...yerelGecti(k?.id ?? ""),
+            ...(javaWeb ? javaYerelGecti(k?.id ?? "")! : yerelGecti(k?.id ?? "")),
             sonuc: "failed",
             sinif: "defect_adayi",
             gecen: 0,
@@ -1081,7 +1418,7 @@ function kodUret(govde: unknown): IsYaniti {
           mockOlayYayinla({ type: "ci.status", id: s.id, data: { durum: "blocked" } });
           return;
         }
-        s.yerel_kontrol = yerelGecti(k?.id ?? "");
+        s.yerel_kontrol = javaWeb ? javaYerelGecti(k?.id ?? "") : yerelGecti(k?.id ?? "");
         s.yerel_sinif = "gecti";
         const prNo = yeniPrNo();
         gecir("script", s, "pr_open");
@@ -1091,7 +1428,7 @@ function kodUret(govde: unknown): IsYaniti {
           url: null,
           baslik: app
             ? `[${c.jira_key ?? "SERBEST"}-C${c.sira_no} · ${platform}] ${c.icerik.title} [AI-generated]`
-            : `test(${c.jira_key ?? "FT"}): ${c.icerik.title} [AI-generated]`,
+            : `test(${c.jira_key ?? "FT"}): ${c.icerik.title}${javaWeb ? " [Java]" : ""} [AI-generated]`,
           branch,
           durum: "open",
           ci: "passed",
@@ -1101,7 +1438,8 @@ function kodUret(govde: unknown): IsYaniti {
           checks: [
             app
               ? { ad: `local-ci-${platform}`, durum: "passed", zorunlu: true, url: null, aciklama: "javac ✓ · AST koruması ✓ · Appium 3/3 (cihazda)" }
-              : { ad: "local-ci", durum: "passed", zorunlu: true, url: null, aciklama: "tsc ✓ · eslint ✓ · AST koruması ✓ · Playwright 3/3" },
+              : // 011 K-T1: web + TS `local-ci`, web + Java `local-ci-web-java`; açıklama dilin adımlarıyla.
+                { ad: javaWeb ? "local-ci-web-java" : "local-ci", durum: "passed", zorunlu: true, url: null, aciklama: javaWeb ? JAVA_KONTROL_ACIKLAMASI : "tsc ✓ · eslint ✓ · AST koruması ✓ · Playwright 3/3" },
           ],
           forge: "local",
         };
@@ -1110,15 +1448,34 @@ function kodUret(govde: unknown): IsYaniti {
       },
     ]);
   }
-  denetimEkle("code.generate", ids.join(","), app ? `CasesToCode başlatıldı (${platform})` : "CasesToCode başlatıldı");
+  // Denetim yüküne dil eklenir (§2.3); varsayılan (web+ts, uygulama+java) ileti bugünküyle aynı kalır.
+  const dilEki = dilVar || javaWeb || dogrulanmamis ? ` · ${DIL_ETIKETI[dil]}${dogrulanmamis ? ", doğrulanmamış" : ""}` : "";
+  denetimEkle("code.generate", ids.join(","), app ? `CasesToCode başlatıldı (${platform}${dilEki})` : `CasesToCode başlatıldı${dilEki ? ` (${dilEki.slice(3)})` : ""}`);
   kaydet();
-  return is("started", `${caseler.length} case için kod üretimi başladı${app ? ` (${platform})` : ""}.`);
+  // Sonuçlar istek sırasıyla (core gibi).
+  sonuclar.sort((a, b) => ids.indexOf(a.case_id) - ids.indexOf(b.case_id));
+  return {
+    ...is("started", `${baslayan.length} case için kod üretimi başlatıldı${hedefEki(platform, dil)}${cakismaEki(sonuclar)}`),
+    cakisma_sayisi: cakismaSayisi(sonuclar),
+    sonuclar,
+  };
 }
 
 function ozetKosu(k: KosuDetay): Kosu {
   const { sonuclar: _s, ...ozet } = k;
   void _s;
   return ozet;
+}
+
+/** core `ci/api.ARTEFAKT_ALANLARI`: `run.artifacts` olmayan rolde null'lanan ham artefakt alanları. */
+const ARTEFAKT_ALANLARI = ["allure_url", "allure_sonuclari_url", "rapor_url", "junit_url", "log_url", "sauce_url", "artefakt_kok"] as const;
+
+/** core `ci/api.maskele`: rol `run.artifacts` taşımıyorsa artefakt bağlantıları null, ekler boş, `maskeli: true`. */
+function kosuMaskele<T extends Kosu>(k: T, kullanici: Kullanici): T {
+  if (rolIzinleri(kullanici.rol).includes("run.artifacts")) return k;
+  const out: Record<string, unknown> = { ...(k as unknown as Record<string, unknown>), ...Object.fromEntries(ARTEFAKT_ALANLARI.map((a) => [a, null])), maskeli: true };
+  if (Array.isArray(out.sonuclar)) out.sonuclar = (out.sonuclar as Record<string, unknown>[]).map((r) => ({ ...r, ekler: [] }));
+  return out as unknown as T;
 }
 
 function kosuOlustur(tetik: Kosu["tetik"], kaynak: Kosu["kaynak"], break_campaign: boolean, pr_no: number | null): KosuDetay {
@@ -1176,7 +1533,7 @@ function kosuBitir(k: KosuDetay, gecti: boolean, testAdi: string, hata?: string)
 }
 
 function kirarakDogrula(id: string): IsYaniti {
-  rolGerekli("engineer");
+  izinGerekli("code.break_verify");
   const s = bul(veri.scriptler, id, "Script");
   if (!s.pr || s.pr.durum !== "open") throw new ApiError(409, "Kırarak doğrulama için açık PR gerekir.");
   if (s.break_verify.durum === "running") throw new ApiError(409, "Kırarak doğrulama zaten sürüyor.");
@@ -1225,7 +1582,7 @@ function mergeBagi(govde: unknown, pr: PullRequest): void {
 }
 
 function prBirlestir(no: number, govde: unknown) {
-  rolGerekli("engineer");
+  izinGerekli("code.merge");
   const s = veri.scriptler.find((x) => x.pr?.number === no);
   const h = veri.hatalar.find((x) => x.oneri?.tur === "locator_fix" && x.oneri.pr?.number === no);
   if (s?.pr) {
@@ -1266,7 +1623,7 @@ const RET_NEDENLERI = new Set(["hallucinated_step", "missing_ac", "wrong_test_da
 
 /** core POST /prs/{n}/review: değişiklik iste / reddet → script kapanır, PR kapatılır. */
 function prReview(no: number, govde: unknown) {
-  rolGerekli("engineer");
+  izinGerekli("code.review");
   const s = veri.scriptler.find((x) => x.pr?.number === no);
   if (!s?.pr) throw new ApiError(404, `PR bulunamadı: #${no}`);
   const g = (govde ?? {}) as { karar?: unknown; ret_nedeni?: unknown; not?: unknown };
@@ -1285,7 +1642,7 @@ function prReview(no: number, govde: unknown) {
 
 /** core POST /prs/{n}/update-branch: geride kalan bot dalını main'e taşır (202). */
 function prDaliGuncelle(no: number): IsYaniti {
-  rolGerekli("engineer");
+  izinGerekli("code.review");
   const s = veri.scriptler.find((x) => x.pr?.number === no);
   if (!s?.pr) throw new ApiError(404, `PR bulunamadı: #${no}`);
   if (s.pr.durum !== "open") throw new ApiError(409, `PR #${no} açık değil.`);
@@ -1295,11 +1652,15 @@ function prDaliGuncelle(no: number): IsYaniti {
 }
 
 function ciTetikle(govde: unknown): IsYaniti {
-  rolGerekli("presenter");
   const tetik = ((govde ?? {}) as { tetik?: string }).tetik;
-  if (tetik !== "deploy" && tetik !== "nightly") throw new ApiError(422, "tetik deploy veya nightly olmalı.");
+  if (tetik !== "deploy" && tetik !== "nightly" && tetik !== "manual") throw new ApiError(422, "tetik deploy, nightly veya manual olmalı.");
+  // core: deploy/nightly `run.trigger_scheduled` (engineer); manual `run.trigger_manual` (engineer, developer).
+  const kullanici = izinGerekli(tetik === "manual" ? "run.trigger_manual" : "run.trigger_scheduled");
+  if (tetik === "manual" && kullanici.rol === "developer" && mockOrtam.ortam === "prod") {
+    throw new ApiError(403, "Developer prod ortamında koşu başlatamaz (TP_ORTAM=prod).", { kod: "yetki_yok" });
+  }
   const k = kosuOlustur(tetik, "local", false, null);
-  denetimEkle("ci.trigger", k.id, tetik === "deploy" ? "Deploy tetiklendi (repository_dispatch)" : "Gece koşusu tetiklendi");
+  denetimEkle("ci.trigger", k.id, tetik === "deploy" ? "Deploy tetiklendi (repository_dispatch)" : tetik === "manual" ? "Manuel koşu başlatıldı" : "Gece koşusu tetiklendi");
   kaydet();
   arkaPlan([
     () => {
@@ -1308,7 +1669,7 @@ function ciTetikle(govde: unknown): IsYaniti {
     },
     () => kosuBitir(k, true, TEST_C1),
   ]);
-  return is("queued", `${tetik === "deploy" ? "Deploy" : "Gece"} koşusu sıraya alındı (${k.id}).`);
+  return is("queued", `${tetik === "deploy" ? "Deploy" : tetik === "manual" ? "Manuel" : "Gece"} koşusu sıraya alındı (${k.id}).`);
 }
 
 /**
@@ -1319,7 +1680,7 @@ function ciTetikle(govde: unknown): IsYaniti {
 let demoKirik = false;
 
 function demoKir(): IsYaniti {
-  rolGerekli("presenter");
+  demoGerekli();
   if (demoKirik) throw new ApiError(409, "Buton kimliği zaten değişti (main'de cart-add); önce demoyu sıfırlayın.");
   demoKirik = true;
   denetimEkle("demo.break_locator", "demo-app-web", "demo kırılması: demo/break-locator merge (demo-admin bypass) · add-to-cart → cart-add");
@@ -1350,7 +1711,7 @@ function demoKir(): IsYaniti {
 }
 
 function onarimPr(id: string): IsYaniti {
-  rolGerekli("engineer");
+  izinGerekli("code.repair");
   const h = bul(veri.hatalar, id, "Hata analizi");
   if (h.sinif === "environment") throw new ApiError(409, "Ortam hatası için onarım yapılmaz.");
   if (h.oneri?.tur !== "locator_fix") throw new ApiError(409, "Bu hata için locator onarım önerisi yok.");
@@ -1400,7 +1761,7 @@ function onarimPr(id: string): IsYaniti {
 }
 
 function bugKarari(id: string, govde: unknown): BugTaslagi {
-  const k = rolGerekli("tester");
+  const k = izinGerekli("bug.decide");
   const b = bul(veri.bugTaslaklari, id, "Bug taslağı");
   const g = (govde ?? {}) as Partial<BugKararGirdisi>;
   if (!["new", "link", "dismiss", "edit", "reopen"].includes(g.karar ?? "")) {
@@ -1481,7 +1842,7 @@ const KULE_KAYNAKLARI: KontrolKulesi["kaynaklar"] = {
 };
 
 function kontrolKulesi(): KontrolKulesi & AsistanliKule {
-  girisGerekli();
+  const kullanici = izinGerekli("dashboard.read");
   // core gibi: Kontrol Kulesi yalnızca CI koşularını sayar (yerel kontrol ve kırarak doğrula hariç).
   const ciKosulari = veri.kosular.filter((k) => ["pr", "push", "nightly", "deploy", "manual"].includes(k.tetik));
   const sonuclar = ciKosulari.flatMap((k) => k.sonuclar.map((s) => ({ ...s, kosu: k })));
@@ -1509,7 +1870,7 @@ function kontrolKulesi(): KontrolKulesi & AsistanliKule {
     flaky.set(s.test_adi, e);
   }
   return {
-    son_kosular: ciKosulari.slice(0, 6).map(ozetKosu),
+    son_kosular: ciKosulari.slice(0, 6).map((k) => kosuMaskele(ozetKosu(k), kullanici)),
     gecme_orani: { oran: sayilan.length ? gecen / sayilan.length : null, toplam: sayilan.length, gecen, donem_gun: 7, son_n: null, birim: "test", test: null },
     // Hedef çizgisi yalnızca core bir hedef bildirirse çizilir (tasarımda geçme oranı hedefi yok).
     gecme_hedefi: null,
@@ -1555,6 +1916,8 @@ function kontrolKulesi(): KontrolKulesi & AsistanliKule {
       kabul_hedefi: 0.7,
       script_ilk_review: null,
       script_hedefi: 0.6,
+      // core `script_dogrulanmamis`: son script'i doğrulanmamış (unverified) birimler; review paydasına girmez.
+      script_dogrulanmamis: new Set(veri.scriptler.filter((s) => s.durum === "unverified").map((s) => s.case_ids.join(","))).size,
       pass_at_1: scriptler.length ? scriptler.filter((s) => s.pass_at_1).length / scriptler.length : null,
       duzeltme_sonrasi: null,
       // core eşi: REPLAY'de model süresi ölçülmez (0/kayıt süresi ölçüm değil) — yalnız canlı case'lerden; hazirlik
@@ -1605,7 +1968,7 @@ function manuelBaz(id: string): ManuelBaz {
 }
 
 function bazDegerKaydet(id: string, govde: unknown): ManuelBaz {
-  const k = rolGerekli("analyst", "po");
+  const k = izinGerekli("baseline.manage");
   const g = bul(veri.gereksinimler, id, "Gereksinim");
   const b = (govde && typeof govde === "object" ? govde : {}) as Record<string, unknown>;
   const deger = b.deger_s;
@@ -1625,7 +1988,7 @@ function bazDegerKaydet(id: string, govde: unknown): ManuelBaz {
 }
 
 function bazDegerSil(id: string): ManuelBaz {
-  rolGerekli("analyst", "po");
+  izinGerekli("baseline.manage");
   const g = bul(veri.gereksinimler, id, "Gereksinim");
   if (!veri.manuelBazlar?.[g.id]) throw new ApiError(404, "Bu story için girilmiş baz değer yok.");
   const { [g.id]: _silinen, ...kalan } = veri.manuelBazlar;
@@ -1666,7 +2029,11 @@ function hazirlikSatirlari(): KontrolKulesi["hazirlik"] {
 }
 
 function denetim(q: URLSearchParams): DenetimYaniti {
-  girisGerekli();
+  const k = girisGerekli();
+  const izinler = rolIzinleri(k.rol);
+  const tumu = izinler.includes("audit.read_all");
+  if (!tumu && !izinler.includes("audit.read_own")) izinGerekli("audit.read_all");
+  if (q.get("verify") === "true") izinGerekli("audit.verify");
   let onceki = "0".repeat(64);
   const olaylar: DenetimOlayi[] = veri.denetim.map((o, i) => {
     const hash = sha256Hex(onceki + kanonikJson(o));
@@ -1676,7 +2043,8 @@ function denetim(q: URLSearchParams): DenetimYaniti {
   });
   const dogrula = q.get("verify") === "true";
   return {
-    olaylar: olaylar.slice().reverse(),
+    // core: audit.read_own → yalnız kendi olayları (`aktor` = kullanıcı adı).
+    olaylar: olaylar.filter((o) => tumu || o.aktor === k.kullanici_adi).reverse(),
     dogrulama: dogrula
       ? { gecerli: true, kontrol_edilen: olaylar.length, ilk_kirik_id: null, son_hash: onceki, zaman: simdi() }
       : null,
@@ -1684,7 +2052,7 @@ function denetim(q: URLSearchParams): DenetimYaniti {
 }
 
 function tokenOlustur(govde: unknown): McpToken {
-  rolGerekli("analyst");
+  izinGerekli("token.issue");
   const kapsam = ((govde ?? {}) as { kapsam?: string }).kapsam;
   if (kapsam !== "submit" && kapsam !== "publish") throw new ApiError(422, "Kapsam submit veya publish olmalı.");
   const rastgele = new Uint8Array(24);
@@ -1713,6 +2081,155 @@ function tokenIptal(id: string): void {
   kaydet();
 }
 
+// ------------------------------------------------------------------ 013 toplu onay ve otomatik kod
+
+/** K13: görüntüleme ile toplu karar arasında en az bu kadar süre (core ile aynı). */
+export const GORULDU_ESIK_MS = 3000;
+export const GORULMEDI_NEDENI = "Case en az 3 saniye ekranda kalmadı";
+/** K13' (§10): görüntüleme kaydı var ama karar 3 sn penceresinin içinde geldi. */
+export const YENI_GORUNTULEME_NEDENI = "Görüntüleme yeni kaydedildi; birkaç saniye sonra yeniden deneyin";
+
+// §10 (K10): onay anındaki case veri izi (anahtar → değer; core'da tuzlu özet). Açıklama/grup değişimi sayılmaz.
+const onayVeriIzleri = new Map<string, Record<string, string | null>>();
+function veriIzi(c: TestCase): Record<string, string | null> {
+  return Object.fromEntries(Object.entries(caseVerisi(c.icerik)).map(([k, v]) => [k, v.deger]));
+}
+/** core `veri_onaydan_sonra_degisen`: her zaman dizi; yalnız approved/published'ta dolar. */
+function onaydanSonraDegisen(c: TestCase): string[] {
+  if (c.durum !== "approved" && c.durum !== "published") return [];
+  const iz = onayVeriIzleri.get(c.id);
+  if (!iz) return [];
+  const simdiki = caseVerisi(c.icerik);
+  return Object.keys(iz).filter((k) => (simdiki[k]?.deger ?? null) !== iz[k]);
+}
+
+// Kişiye bağlı görüntüleme kayıtları (core `case_goruntuleme`): case + kullanıcı → ilk görüntüleme (ms).
+// Karar ya da yeniden açma o case'in kayıtlarını siler (sunucuda eşik son karar anıdır).
+const goruntulemeKayitlari = new Map<string, number>();
+const goruntulemeAnahtari = (caseId: string, kullanici: string) => `${caseId}\u0000${kullanici}`;
+function goruntulemeleriUnut(caseId: string): void {
+  for (const a of [...goruntulemeKayitlari.keys()]) if (a.startsWith(`${caseId}\u0000`)) goruntulemeKayitlari.delete(a);
+}
+/** Testler için: bir kullanıcının görüntüleme kaydını ekler (varsayılan: eşikten önce, "görüldü"). */
+export function mockGoruntulemeEkle(caseId: string, kullanici: string, zamanMs = Date.now() - GORULDU_ESIK_MS - 1000): void {
+  goruntulemeKayitlari.set(goruntulemeAnahtari(caseId, kullanici), zamanMs);
+}
+/** core `goruldu`: bu kullanıcının son karardan sonraki görüntülemesi en az 3 sn önce. */
+function gorulduMu(caseId: string, kullanici: string | null): boolean {
+  if (!kullanici) return false;
+  const t = goruntulemeKayitlari.get(goruntulemeAnahtari(caseId, kullanici));
+  return t !== undefined && Date.now() - t >= GORULDU_ESIK_MS;
+}
+
+/** core `onay_engeli` (taklit: karar bekleyen case'te — taslak: Testçi kabulü, ready: son onay — katalogda olmayan atıf). */
+function onayEngeli(c: TestCase): string | null {
+  if (c.durum !== "draft" && c.durum !== "ready") return null;
+  const b = bilinmeyenAtiflar(c.icerik);
+  return b.length ? `Katalogda olmayan test verisi anahtarı: ${b.join(", ")}` : null;
+}
+
+/** Case yanıtı (core biçimi, `caseYaniti`) + 013 alanları (`goruldu` istekte bulunan kullanıcıya göre; `onay_engeli`; `veri`). */
+function caseGorunumu(c: TestCase, kullanici?: Kullanici | null): Record<string, unknown> {
+  return {
+    ...caseYaniti(c, kullanici),
+    goruldu: gorulduMu(c.id, oturum()?.kullanici_adi ?? null),
+    onay_engeli: onayEngeli(c),
+    veri: caseVerisi(c.icerik),
+    veri_onaydan_sonra_degisen: onaydanSonraDegisen(c),
+  };
+}
+
+/**
+ * core `otokod.kuyruga_al` taklidi (tekli onay): ayar kapalıysa `kapali`; süren ya da açık PR'ı olan
+ * script'e dokunulmaz (K16); değilse kuyruğa alındı sayılır. Örnek veri script üretmez.
+ */
+function otomatikKod(c: TestCase): NonNullable<TestCase["otomatik_kod"]> {
+  if (!otomatikKodAcik()) return { durum: "kapali", neden: null, script_id: null };
+  const acik = veri.scriptler.find((s) => s.case_ids.includes(c.id) && s.durum !== "closed" && s.durum !== "merged" && s.durum !== "failed");
+  if (acik) return { durum: "atlandi", neden: "Açık PR var; yeniden üretim mühendis kararıyla", script_id: acik.id };
+  return { durum: "kuyrukta", neden: null, script_id: null };
+}
+
+function tekliKarar(id: string, govde: unknown): Record<string, unknown> {
+  const yanit = caseKarari(id, govde);
+  // 012: otomatik kod yalnız Analist son onayından (case approved) sonra; Testçi kabulü kod üretmez.
+  if ((govde as { karar?: unknown } | null)?.karar !== "approve") return yanit;
+  return { ...yanit, otomatik_kod: otomatikKod(bul(veri.caseler, id, "Case")) };
+}
+
+/**
+ * core `POST /cases/bulk-decision` (013 §3.2, §9; 012 iki adım): Testçi `accept` (taslak → ready,
+ * `case.decide`) ya da Analist `approve` (ready → approved, `case.approve`). Her öğe kendi hash'iyle
+ * tekli kararın kurallarından geçer; görülmeyen (K13) atlanır; biri diğerini bozmaz. Öğe
+ * `otomatik_kod` null; kod üretimi yalnız son onayda, üst düzeyde tek iş (K16).
+ */
+function topluKarar(govde: unknown) {
+  const g = (govde ?? {}) as { karar?: unknown; ogeler?: unknown };
+  if (g.karar !== "accept" && g.karar !== "approve") throw new ApiError(422, "Toplu karar yalnız accept veya approve olabilir.");
+  const karar = g.karar;
+  const k = izinGerekli(karar === "accept" ? "case.decide" : "case.approve");
+  const bekleyen = karar === "accept" ? "draft" : "ready";
+  if (!Array.isArray(g.ogeler) || g.ogeler.length < 1 || g.ogeler.length > 200) throw new ApiError(422, "1 ile 200 arasında öğe gönderin.");
+  const gorulen = new Set<string>();
+  const sonuclar = (g.ogeler as { case_id?: unknown; icerik_hash?: unknown }[]).map((o) => {
+    const case_id = String(o.case_id ?? "");
+    if (gorulen.has(case_id)) return { case_id, durum: "atlandi", neden: "Case istekte birden çok kez var", otomatik_kod: null };
+    gorulen.add(case_id);
+    const c = veri.caseler.find((x) => x.id === case_id);
+    if (!c) return { case_id, durum: "hata", neden: `Case bulunamadı: ${case_id}`, otomatik_kod: null };
+    if (c.durum === bekleyen && !gorulduMu(c.id, k.kullanici_adi)) {
+      const kayitli = goruntulemeKayitlari.has(goruntulemeAnahtari(c.id, k.kullanici_adi));
+      return { case_id, durum: "atlandi", neden: kayitli ? YENI_GORUNTULEME_NEDENI : GORULMEDI_NEDENI, otomatik_kod: null };
+    }
+    try {
+      caseKarari(case_id, { karar, icerik_hash: o.icerik_hash });
+      return { case_id, durum: "onaylandi", neden: null, otomatik_kod: null };
+    } catch (e) {
+      const neden = e instanceof ApiError ? e.detail : "Beklenmeyen hata";
+      return { case_id, durum: e instanceof ApiError && e.status === 409 ? "atlandi" : "hata", neden, otomatik_kod: null };
+    }
+  });
+  const say = (d: string) => sonuclar.filter((s) => s.durum === d).length;
+  const onaylanan = sonuclar.filter((s) => s.durum === "onaylandi").map((s) => veri.caseler.find((c) => c.id === s.case_id)!);
+  // core `toplu_kuyruga_al` (§10): süren/açık PR'lı case'ler önceden süzülür, `atlanan` listesinde döner.
+  const kararlar = onaylanan.map((c) => ({ c, o: otomatikKod(c) }));
+  const uretilecek = kararlar.filter((x) => x.o.durum === "kuyrukta").map((x) => x.c);
+  const atlanan = kararlar.filter((x) => x.o.durum === "atlandi").map((x) => ({ case_id: x.c.id, neden: x.o.neden }));
+  let otomatik_kod: { durum: string; job_id: string | null; case_sayisi: number; atlanan?: typeof atlanan } | null;
+  if (karar === "accept") {
+    otomatik_kod = null;
+  } else if (!otomatikKodAcik() || onaylanan.length === 0) {
+    otomatik_kod = { durum: otomatikKodAcik() ? "yok" : "kapali", job_id: null, case_sayisi: 0, atlanan: [] };
+  } else if (uretilecek.length) {
+    const job_id = `job-otokod-${++kodIsiSayaci}`;
+    kodIsleri.set(job_id, {
+      job_id,
+      durum: "done",
+      sonuc: {
+        case_sayisi: uretilecek.length,
+        ozet: { kuyrukta: uretilecek.length },
+        sonuclar: uretilecek.map((c) => ({ case_id: c.id, durum: "kuyrukta", neden: null, script_id: null })),
+      },
+    });
+    otomatik_kod = { durum: "kuyrukta", job_id, case_sayisi: uretilecek.length, atlanan };
+  } else {
+    otomatik_kod = { durum: "yok", job_id: null, case_sayisi: 0, atlanan };
+  }
+  denetimEkle("cases.bulk_decision", "toplu", `${karar}: istenen ${sonuclar.length}, ${karar === "accept" ? "kabul" : "onaylandı"} ${say("onaylandi")}, atlandı ${say("atlandi")}`);
+  kaydet();
+  return { karar, sonuclar, ozet: { onaylandi: say("onaylandi"), atlandi: say("atlandi"), hata: say("hata") }, otomatik_kod };
+}
+
+// Toplu onayın kod üretimi işleri (core `job`, tür `codegen.otomatik`): mock örnek veri script üretmez.
+const kodIsleri = new Map<string, unknown>();
+let kodIsiSayaci = 0;
+function kodUretimIsi(jobId: string): unknown {
+  izinGerekli("code.read");
+  const j = kodIsleri.get(jobId);
+  if (!j) throw new ApiError(404, `Kod üretimi işi bulunamadı: ${jobId}`);
+  return j;
+}
+
 // ------------------------------------------------------------------ yönlendirme
 
 type Rota = [string, RegExp, (m: RegExpMatchArray, q: URLSearchParams, govde: unknown) => unknown];
@@ -1727,6 +2244,13 @@ const ROTALAR: Rota[] = [
   // 012 Ş7 (karar tabloları, ilişkiler, oracle): api/mock/kalite.ts. Aşağıdaki `GET /cases`,
   // `POST /cases/:id/decision` ve `GET …/case-metrics` uçlarını sarar (ilk eşleşen rota geçerlidir).
   ...kaliteRotalari({ veri: () => veri, girisGerekli, rolGerekli, kaydet, arkaPlan, denetimEkle, yeniId, caseKarari, caseMetrikleri }),
+  // 013 sprint otomasyonu: test verisi, otomasyon ayarları, Jira tetiği (api/mock/otomasyon.ts).
+  ...otomasyonRotalari(izinGerekli, demoGerekli, () => veri.caseler, (eylem, nesne, ozet) => {
+    denetimEkle(eylem, nesne, ozet);
+    kaydet();
+  }),
+  ["POST", /^\/cases\/bulk-decision$/, (_m, _q, g) => topluKarar(g)],
+  ["GET", /^\/automation\/codegen-jobs\/([^/]+)$/, (m) => kodUretimIsi(decodeURIComponent(m[1]))],
   ["POST", /^\/auth\/login$/, (_m, _q, g) => login(g)],
   ["POST", /^\/auth\/logout$/, () => logout()],
   ["GET", /^\/auth\/me$/, () => girisGerekli()],
@@ -1734,7 +2258,7 @@ const ROTALAR: Rota[] = [
     "GET",
     /^\/requirements$/,
     () => {
-      girisGerekli();
+      izinGerekli("requirement.read");
       return veri.gereksinimler.map((g) => {
         sayaclariGuncelle(g);
         const { on_inceleme: _o, kontrol_turu: _k, kontrol_turu_ust_sinir: _u, jira_url: _j, uyarilar: _w, ...ozet } = g;
@@ -1746,7 +2270,7 @@ const ROTALAR: Rota[] = [
     "POST",
     /^\/requirements\/sync$/,
     () => {
-      rolGerekli("analyst");
+      izinGerekli("requirement.import");
       denetimEkle("requirements.sync", "TPD", "Jira'dan çekim (örnek veri: değişiklik yok)");
       kaydet();
       return is("done", "Jira'dan 4 story çekildi; yeni değişiklik yok.");
@@ -1757,7 +2281,7 @@ const ROTALAR: Rota[] = [
     "GET",
     /^\/requirements\/([^/]+)$/,
     (m) => {
-      girisGerekli();
+      izinGerekli("requirement.read");
       const g = bul(veri.gereksinimler, decodeURIComponent(m[1]), "Gereksinim");
       sayaclariGuncelle(g);
       // Kanıtı doğrulanamayıp elenen bulgular gösterilmez; yalnızca sayısı (core ile aynı alan).
@@ -1775,7 +2299,7 @@ const ROTALAR: Rota[] = [
     "GET",
     /^\/requirements\/([^/]+)\/findings$/,
     (m) => {
-      girisGerekli();
+      izinGerekli("requirement.read");
       const id = decodeURIComponent(m[1]);
       bul(veri.gereksinimler, id, "Gereksinim");
       return veri.bulgular.filter((b) => b.requirement_id === id);
@@ -1784,17 +2308,22 @@ const ROTALAR: Rota[] = [
   ["POST", /^\/findings\/([^/]+)\/decision$/, (m, _q, g) => bulguKarari(decodeURIComponent(m[1]), g)],
   ["POST", /^\/requirements\/([^/]+)\/apply-doc-fixes$/, (m) => duzeltmeleriUygula(decodeURIComponent(m[1]))],
   ["POST", /^\/requirements\/([^/]+)\/po-approve$/, (m, _q, g) => poOnayla(decodeURIComponent(m[1]), g)],
+  ["POST", /^\/requirements\/([^/]+)\/po-reject$/, (m, _q, g) => poReddet(decodeURIComponent(m[1]), g)],
   ["POST", /^\/requirements\/([^/]+)\/generate-cases$/, (m) => caseUret(decodeURIComponent(m[1]))],
   [
     "GET",
     /^\/cases$/,
     (_m, q) => {
-      girisGerekli();
+      const k = izinGerekli("case.read");
       const rid = q.get("requirement_id");
-      return veri.caseler.filter((c) => !rid || c.requirement_id === rid).sort((a, b) => a.sira_no - b.sira_no);
+      const liste = veri.caseler.filter((c) => !rid || c.requirement_id === rid).sort((a, b) => a.sira_no - b.sira_no);
+      // core süzgeci (case.read notu): developer yalnız onaylı/yayınlanmış case'i, karar geçmişi olmadan görür.
+      const r = normalizeRol(k.rol);
+      const gorunen = r && KISITLI_CASE_ROLLERI.includes(r) ? liste.filter((c) => c.durum === "approved" || c.durum === "published") : liste;
+      return gorunen.map((c) => caseGorunumu(c, k));
     },
   ],
-  ["POST", /^\/cases\/([^/]+)\/decision$/, (m, _q, g) => caseKarari(decodeURIComponent(m[1]), g)],
+  ["POST", /^\/cases\/([^/]+)\/decision$/, (m, _q, g) => tekliKarar(decodeURIComponent(m[1]), g)],
   ["POST", /^\/cases\/([^/]+)\/viewed$/, (m) => caseGoruntulendi(decodeURIComponent(m[1]))],
   ["GET", /^\/requirements\/([^/]+)\/case-metrics$/, (m) => caseMetrikleri(decodeURIComponent(m[1]))],
   ["GET", /^\/publish\/preview$/, (_m, q) => yayinOnizleme(q)],
@@ -1802,10 +2331,23 @@ const ROTALAR: Rota[] = [
   ["POST", /^\/code\/generate$/, (_m, _q, g) => kodUret(g)],
   [
     "GET",
+    /^\/code\/languages$/,
+    (_m, q) => {
+      izinGerekli("code.generate");
+      const ham = q.get("platform");
+      const p = ham === null || ham === "" ? "web" : platformUyarla(ham);
+      if (!p) throw new ApiError(422, `platform yalnızca ${PLATFORMLAR.join(", ")} olabilir.`);
+      return kodDilleriYaniti(p, { depoOkunamadi: mockSenaryosu("depo-okunamadi") });
+    },
+  ],
+  [
+    "GET",
     /^\/scripts$/,
     () => {
-      girisGerekli();
-      return veri.scriptler.map((s) => {
+      izinGerekli("code.read");
+      // core `views.list_scripts`: en yeni 200 kayıt (sayfalama yok). `uzun-gecmis`te örnek veri sınırın dışında kalır.
+      const tum = mockSenaryosu("uzun-gecmis") ? [...uzunGecmisListesi(), ...veri.scriptler] : veri.scriptler;
+      return tum.slice(0, 200).map((s) => {
         const { kod: _k, adimlar: _a, yerel_kontrol: _y, ...ozet } = s;
         return ozet;
       });
@@ -1815,7 +2357,7 @@ const ROTALAR: Rota[] = [
     "GET",
     /^\/scripts\/([^/]+)$/,
     (m) => {
-      girisGerekli();
+      izinGerekli("code.read");
       const s = bul(veri.scriptler, decodeURIComponent(m[1]), "Script");
       return { ...s, merge_kabul_gerekli: mergeKabulGerekli(s) };
     },
@@ -1829,23 +2371,23 @@ const ROTALAR: Rota[] = [
     "GET",
     /^\/runs$/,
     () => {
-      girisGerekli();
-      return veri.kosular.map(ozetKosu);
+      const k = izinGerekli("run.read");
+      return veri.kosular.map((x) => kosuMaskele(ozetKosu(x), k));
     },
   ],
   [
     "GET",
     /^\/runs\/([^/]+)$/,
     (m) => {
-      girisGerekli();
-      return bul(veri.kosular, decodeURIComponent(m[1]), "Koşu");
+      const k = izinGerekli("run.read");
+      return kosuMaskele(bul(veri.kosular, decodeURIComponent(m[1]), "Koşu"), k);
     },
   ],
   [
     "GET",
     /^\/failures$/,
     (_m, q) => {
-      girisGerekli();
+      izinGerekli("failure.read");
       const sinif = q.get("sinif");
       const script = q.get("script_id");
       const limit = Math.min(200, Number(q.get("limit") ?? 50) || 50);
@@ -1859,7 +2401,7 @@ const ROTALAR: Rota[] = [
     "GET",
     /^\/failures\/([^/]+)$/,
     (m) => {
-      girisGerekli();
+      izinGerekli("failure.read");
       return bul(veri.hatalar, decodeURIComponent(m[1]), "Hata analizi");
     },
   ],
@@ -1868,7 +2410,7 @@ const ROTALAR: Rota[] = [
     "GET",
     /^\/bug-drafts$/,
     () => {
-      girisGerekli();
+      izinGerekli("bug.read");
       return veri.bugTaslaklari;
     },
   ],
@@ -1876,7 +2418,7 @@ const ROTALAR: Rota[] = [
     "GET",
     /^\/bug-drafts\/([^/]+)$/,
     (m) => {
-      girisGerekli();
+      izinGerekli("bug.read");
       return bul(veri.bugTaslaklari, decodeURIComponent(m[1]), "Bug taslağı");
     },
   ],
@@ -1885,7 +2427,7 @@ const ROTALAR: Rota[] = [
     "POST",
     /^\/bug-drafts\/([^/]+)\/prepare$/,
     (m) => {
-      rolGerekli("tester");
+      izinGerekli("bug.decide");
       const b = bul(veri.bugTaslaklari, decodeURIComponent(m[1]), "Bug taslağı");
       if (b.durum !== "draft") throw new ApiError(409, "Taslak karar beklemiyor");
       const onceki = b.mukerrer_arama ?? null;
@@ -1922,7 +2464,7 @@ const ROTALAR: Rota[] = [
     "POST",
     /^\/demo\/reset$/,
     () => {
-      const k = rolGerekli("presenter");
+      const k = demoGerekli();
       veri = ilkVeri();
       demoKirik = false;
       kuleMockSifirla();
@@ -1938,6 +2480,8 @@ const ROTALAR: Rota[] = [
     () => {
       girisGerekli();
       return {
+        demo_modu: mockOrtam.demoModu,
+        ortam: mockOrtam.ortam,
         forge: { main: demoKirik ? "d3b1c0ffee42" : "9c41e2b07a11", testid: demoKirik ? "cart-add" : "add-to-cart", baseline: "9c41e2b07a11", main_baseline_mi: !demoKirik },
         uygulama: { sha: demoKirik ? "d3b1c0ffee42" : "9c41e2b07a11", kaynak: "build.json", main_ile_eslesiyor: true, neden: null },
         web_yenileme_istegi: null,

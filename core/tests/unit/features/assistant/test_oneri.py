@@ -44,9 +44,11 @@ def _kisi(rol: str) -> Principal:
 # ------------------------------------------------------------------ yükleyici
 
 
-def test_kural_seti_yuklenir_ve_ilk_set_26_kural() -> None:
+def test_kural_seti_yuklenir_ve_28_kural() -> None:
     ks = _ks()
-    assert len(ks.kurallar) == 28  # §17.3'ün 26 kuralı + 012 §4.4'ün iki kuralı
+    # §17.3'ün 26 kuralı + 011 `script-dogrulanmamis` + 012 rol `case-son-onay-bekliyor` + 012 kalite
+    # §4.4'ün iki kuralı (`hata-beklenti-case-duzelt`, `hata-beklenti-bilgi`).
+    assert len(ks.kurallar) == 30
     assert len({k.id for k in ks.kurallar}) == 28
     assert set(ks.taslaklar) == {
         "po-hatirlatma",
@@ -434,10 +436,10 @@ def test_ekran_coz_rol_ve_varlik_denetimi() -> None:
     e = oneri.ekran_coz(_kisi("analyst"), "/gereksinimler/:id", "requirement", str(vid))
     assert e.varlik_id == vid
     # Varlıksız ekranda istemcinin varlık parametreleri yok sayılır.
-    e = oneri.ekran_coz(_kisi("presenter"), "/kosular", "run", str(vid))
+    e = oneri.ekran_coz(_kisi("admin"), "/kosular", "run", str(vid))
     assert (e.varlik_tur, e.varlik_id) == (None, None)
     with pytest.raises(oneri.EkranBulunamadi):  # rolüne kapalı ekran
-        oneri.ekran_coz(_kisi("engineer"), "/claude-code", None, None)
+        oneri.ekran_coz(_kisi("po"), "/claude-code", None, None)
     with pytest.raises(oneri.VarlikBulunamadi):  # tür uyuşmazlığı
         oneri.ekran_coz(_kisi("analyst"), f"/gereksinimler/{vid}", "script", None)
     with pytest.raises(oneri.VarlikBulunamadi):  # yol ve parametre farklı varlık
@@ -449,6 +451,20 @@ def test_ekran_coz_rol_ve_varlik_denetimi() -> None:
 
 
 # ------------------------------------------------------------------ kapsam ve rol hizalama
+
+
+def test_sayfa_rolleri_izin_katalogundan() -> None:
+    """Uçsuz sayfaların rolleri portal sayfa izinleriyle aynı (specs/012-rol-yetki §4)."""
+    from tp_core.auth.yetki import roller_icin
+
+    rotalar = {r.kalip: r for r in _ks().rotalar}
+    for kalip, izin_adi in (
+        ("/claude-code", "claude_code.read"),
+        ("/yol-haritasi", "demo.read"),
+        ("/demo", "demo.manage"),
+    ):
+        acan = {rol for rol in ROLLER if rotalar[kalip].acabilir(rol)}
+        assert acan == set(roller_icin(izin_adi)), kalip
 
 
 def test_kapsam_matrisi_ekranda_kural_var_bilincli_bos_ile_tamamlanir() -> None:
@@ -475,7 +491,7 @@ def test_rol_hizalama_rota_eylemi_ucun_require_role_ve_onay_rolleri_alt_kumesi()
     uclar = _uc_rolleri()
     assert uclar["POST /requirements/{req_id}/po-approve"] == {"po"}
     rota_kurallari = [k for k in _ks().kurallar if k.eylem_turu == "rota"]
-    assert len(rota_kurallari) == 12
+    assert len(rota_kurallari) == 13
     for k in rota_kurallari:
         uc = k.eylem["yetki"]["uc"]
         assert uc in uclar, (k.id, uc)

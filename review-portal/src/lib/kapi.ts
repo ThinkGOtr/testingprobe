@@ -150,6 +150,9 @@ export const ENGEL_TURU: Record<string, string> = {
   case_changed: "Case onaydan sonra değişti",
   flaky: "Kararsız test (tekrarlarda hem geçti hem kırmızı)",
   human_rejected: "İnsan review'ı: değişiklik istendi / reddedildi",
+  // 013 K19: test verisi çözülemedi — gizli kaydın ortam sırrı tanımsız ya da anahtar katalogda yok
+  // (model hatası değil; ayrıntı engel nedeninde).
+  test_verisi: "Test verisi çözülemedi (sır tanımsız ya da kayıt yok)",
 };
 
 /** Script review ret nedenleri (sabit taksonomi; core RET_NEDENLERI). */

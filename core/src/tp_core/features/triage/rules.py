@@ -28,6 +28,12 @@ bağlantı hatası → 1; `NoSuchElementException` / `TimeoutException` (eylem �
 koşulu (öneri sayfa kaynağından, `service.java_locator_analizi`); `java.lang.AssertionError`
 ("beklenen <X>, görülen <Y>") + eleman okundu → 4.
 
+Web + Java testleri (011 üretim dili; Playwright for Java + TestNG, `triage.java_web`): "Java mı"
+sorusu dile bakar (`Girdi.dil`), araç/ortam sorusu platforma. Kalıplar: bağlantı / `net::ERR_` →
+1; `com.microsoft.playwright.TimeoutError` / "waiting for locator" / `Locator.click: Timeout` → 3'ün
+ön koşulu (öneri hata anı DOM'undan, `service.web_java_locator_analizi`); `AssertionFailedError` /
+`AssertionError` + eleman okundu → 4.
+
 Hiçbiri eşleşmezse karar `None` döner ve çağıran LLM'e gider (§8.6 adım 3). Sayısal güven yoktur;
 her karar eşleşen sinyallerin listesini taşır (`{kod, aciklama, kaynak, kanit}`).
 
@@ -151,6 +157,10 @@ class Girdi:
     platform: str | None = None
     sayfa_kaynagi: str | None = None  # hata anı sayfa kaynağı XML'i (güvenilmeyen)
     sayfa_kaynagi_rel: str | None = None
+    # 011: üretim dili (ts | java; None = bilinmiyor) ve web + Java hata anı DOM'u (sayfa.html).
+    dil: str | None = None
+    sayfa_html: str | None = None
+    sayfa_html_rel: str | None = None
     # 012 §4.4: hatanın bağlı olduğu case'in onaylı içeriğine ait karar tablosu karşılaştırmaları
     # (yoksa None; service `_oracle_ekle` doldurur).
     oracle: list[OracleKarsilastirma] | None = None
@@ -162,14 +172,25 @@ class Girdi:
 
     @property
     def java(self) -> bool:
-        """Uygulama (Java/Appium) testi mi? (`triage.java.java_mi`)."""
+        """Java testi mi (Appium ya da web + Playwright for Java)? (`triage.java.java_mi`)."""
         from tp_core.features.triage.java import java_mi
 
-        return java_mi(self.platform, self.dosya, self.mesaj)
+        return java_mi(self.platform, self.dosya, self.mesaj, self.dil)
+
+    @property
+    def web_java(self) -> bool:
+        """Web + Java (Playwright for Java) testi mi? Kanıt web yöntemiyle (trace / DOM) okunur."""
+        from tp_core.features.triage.java import UYGULAMA_PLATFORMLARI
+
+        return self.platform not in UYGULAMA_PLATFORMLARI and (
+            self.dil == "java" or (self.platform == "web" and self.java)
+        )
 
     @property
     def kaynak_adi(self) -> str:
         """Sinyal kaynağının adı (hata metni Playwright'ın mı, Java testinin mi)."""
+        if self.web_java:
+            return "Playwright for Java hata mesajı"
         return "Java/Appium hata mesajı" if self.java else "Playwright hata mesajı"
 
     def tur(self) -> str:
@@ -179,6 +200,12 @@ class Girdi:
         m = self.mesaj or ""
         if _VERI_RE.search(m):
             return "test_data"
+        if self.web_java:
+            from tp_core.features.triage.java_web import playwright_java_turu
+
+            pw = playwright_java_turu(m)
+            if pw is not None:
+                return pw
         if self.java:
             java = _java_turu(m)
             if java is not None:
@@ -307,7 +334,7 @@ def ortam_kurali(g: Girdi) -> list[dict[str, Any]]:
                 sinyal(
                     "ag_hatasi",
                     "Ağ / sayfa yükleme hatası (uygulamaya erişilemedi)"
-                    if not g.java
+                    if not g.java or g.web_java
                     else "Appium oturumu / bağlantı hatası (uygulamaya erişilemedi)",
                     g.kaynak_adi,
                     (g.mesaj or "").splitlines()[0] if g.mesaj else None,
@@ -405,6 +432,16 @@ def urun_yapisi_beklenen(g: Girdi) -> list[dict[str, Any]]:
                 "karşılaştırılmadı",
                 "Java kanıtı sayfa-kaynagi.xml",
                 g.sayfa_kaynagi_rel,
+            )
+        )
+    if g.sayfa_html:
+        out.append(
+            sinyal(
+                "sayfa_yapisi_beklenen",
+                "Hata anı DOM'u var (sayfa render edilmişti); beklenen yapıyla ayrıca "
+                "karşılaştırılmadı",
+                "Playwright for Java kanıtı sayfa.html",
+                g.sayfa_html_rel,
             )
         )
     kirmizi = [d for d in g.tekrar_durumlari if d not in GECEN_DURUMLAR]
@@ -733,6 +770,12 @@ def hata_imzasi(g: Girdi) -> str:
         tids = locator_test_idleri(g.locator)
         if tids:
             hedef = f"{hedef} {tids[-1]}".strip()
+    elif g.web_java:
+        from tp_core.features.triage.java_web import kirik_kimlik
+
+        kimlik, _kapsam, _belirsiz = kirik_kimlik(g.mesaj)
+        if kimlik:
+            hedef = f"{hedef} {kimlik}".strip()
     elif g.java:
         from tp_core.features.triage.java import kimlik_zinciri
 

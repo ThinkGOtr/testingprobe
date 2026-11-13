@@ -153,3 +153,16 @@ def test_baglantilar():
         }
     }
     assert baglantilar(issue) == [("Relates", "TPD-1"), ("Test", "TPD-10")]
+
+
+def test_otomatik_kod_kapali_k20(baglam):
+    import pytest
+
+    from tp_rehearsal.runner import Basarisiz
+
+    b = baglam(api=SahteApi({"/automation-settings": {"otomatik_kod_uretimi": {"acik": False}}}))
+    steps.otomatik_kod_kapali(b)
+    assert b.kontroller[-1].sonuc == "PASS"
+    b = baglam(api=SahteApi({"/automation-settings": {"otomatik_kod_uretimi": {"acik": True}}}))
+    with pytest.raises(Basarisiz):
+        steps.otomatik_kod_kapali(b)

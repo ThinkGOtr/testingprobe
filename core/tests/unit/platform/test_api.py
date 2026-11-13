@@ -114,7 +114,7 @@ def test_giris_deneme_siniri(client: TestClient, make_user: MakeUser) -> None:
 
 def test_baska_istemcinin_denemeleri_kullaniciyi_kilitlemez(db: Db, make_user: MakeUser) -> None:
     """Sınır (kullanıcı adı, istemci IP) çiftinedir: saldırgan adresi kurbanı kilitleyemez."""
-    u = make_user("presenter")
+    u = make_user("admin")
     app = main.create_app()
     with TestClient(app, client=("10.0.0.66", 5000)) as saldirgan:
         for _ in range(6):
@@ -422,7 +422,7 @@ def test_mcp_ucu_yokken_token_uretilmez(
     # Özellik router'ları (ve onlarla gelen /mcp) olmadan kurulan uygulama.
     monkeypatch.setattr(registry, "discover_feature_routers", lambda *a, **k: [])
     with TestClient(main.create_app()) as client:
-        _giris(client, make_user("analyst"))
+        _giris(client, make_user("tester"))
         r = client.post("/tokens", json={"kapsam": "submit"})
     assert r.status_code == 501
     assert "MCP" in r.json()["detail"]
@@ -433,7 +433,7 @@ def test_mcp_ucu_yokken_token_uretilmez(
 def test_parola_degisince_token_gecersiz(
     mcp_client: TestClient, make_user: MakeUser, engine: Engine
 ) -> None:
-    u = make_user("analyst")
+    u = make_user("tester")
     _giris(mcp_client, u)
     raw = mcp_client.post("/tokens", json={"kapsam": "submit"}).json()["token"]
     with Session(engine) as s:
@@ -452,7 +452,7 @@ def test_token_uret_listele_iptal(
     mcp_client: TestClient, make_user: MakeUser, engine: Engine
 ) -> None:
     client = mcp_client
-    u = make_user("analyst")
+    u = make_user("tester")
     _giris(client, u)
     r = client.post("/tokens", json={"kapsam": "submit"})
     assert r.status_code == 201
@@ -486,7 +486,7 @@ def test_suresi_dolan_token_gecersiz(
     mcp_client: TestClient, make_user: MakeUser, engine: Engine
 ) -> None:
     client = mcp_client
-    _giris(client, make_user("analyst"))
+    _giris(client, make_user("tester"))
     raw = client.post("/tokens", json={"kapsam": "publish"}).json()["token"]
     with engine.begin() as c:
         c.execute(text("UPDATE api_token SET son_kullanma = now() - interval '1 second'"))
@@ -494,18 +494,26 @@ def test_suresi_dolan_token_gecersiz(
         assert verify_bearer(s, raw, "publish") is None
 
 
-@pytest.mark.parametrize("rol", ["engineer", "presenter", "po", "tester"])
-def test_token_yalnizca_analist(client: TestClient, make_user: MakeUser, rol: str) -> None:
+@pytest.mark.parametrize("rol", ["engineer", "admin", "po", "analyst"])
+def test_token_yalnizca_testci(
+    client: TestClient, make_user: MakeUser, engine: Engine, rol: str
+) -> None:
+    """012: yayın / IDE token'ı Testçinindir (`token.issue`); red `authz.denied` yazar."""
     _giris(client, make_user(rol))
     r = client.post("/tokens", json={"kapsam": "submit"})
     assert r.status_code == 403 and r.json() == {
         "detail": "Bu işlem için yetkiniz yok",
-        "kod": "yasak",
+        "kod": "yetki_yok",
     }
+    with engine.connect() as c:
+        ozet = c.execute(
+            text("SELECT ozet FROM audit_event WHERE eylem = 'authz.denied'")
+        ).scalar_one()
+    assert ozet["izin"] == "token.issue" and ozet["rol"] == rol
 
 
 def test_gecersiz_kapsam(client: TestClient, make_user: MakeUser) -> None:
-    _giris(client, make_user("analyst"))
+    _giris(client, make_user("tester"))
     assert client.post("/tokens", json={"kapsam": "admin"}).status_code == 422
 
 
@@ -518,7 +526,7 @@ def test_bearer_bagimliligi(db: Db, make_user: MakeUser, engine: Engine) -> None
         return {"kanal": p.kanal, "kapsam": p.kapsam}
 
     app.include_router(router)
-    u = make_user("analyst")
+    u = make_user("tester")
     from tp_core.auth.tokens import issue_token
 
     with Session(engine) as s:
@@ -541,7 +549,7 @@ def test_audit_dogrulama_ai_call_kurcalamasini_gosterir(
 ) -> None:
     from tp_core.audit import PgCallRecorder
 
-    _giris(client, make_user("presenter"))
+    _giris(client, make_user("admin"))
     cid = PgCallRecorder(engine).record_ai_call(
         {"amac": "generate_cases", "saglayici": "anthropic", "model": "m", "mod": "live",
          "maliyet": 0.0123, "cikti": {"b": 1, "a": [1.5]}}
@@ -564,7 +572,7 @@ def test_audit_dogrulama_ve_sayfalama(
     client: TestClient, make_user: MakeUser, engine: Engine
 ) -> None:
     assert client.get("/audit").status_code == 401
-    _giris(client, make_user("presenter"))
+    _giris(client, make_user("admin"))
     with engine.begin() as c:
         for i in range(5):
             append_audit(c, "system", "x.y", f"n:{i % 2}", {"i": i})
@@ -584,7 +592,7 @@ def test_audit_dogrulama_ve_sayfalama(
 
 
 def test_audit_kurcalama_api_da_gorunur(client: TestClient, make_user: MakeUser, db: Db) -> None:
-    _giris(client, make_user("analyst"))
+    _giris(client, make_user("auditor"))
     with db.srv.super_conn(db.name) as c:
         c.execute("SET session_replication_role = replica")
         c.execute("UPDATE audit_event SET ozet = '{\"x\": 1}'")
@@ -680,7 +688,7 @@ def test_ozellik_router_icindeki_mcp_ucu_gorunur(
     client: TestClient, make_user: MakeUser, engine: Engine
 ) -> None:
     """`/mcp` bir özellik router'ı içinden (include_router sarmalayıcısında) bağlanır; görülmeli."""
-    _giris(client, make_user("analyst"))
+    _giris(client, make_user("tester"))
     r = client.post("/tokens", json={"kapsam": "submit"})
     assert r.status_code == 201, r.text
     assert r.json()["mcp_url"].endswith("/mcp")
@@ -695,14 +703,14 @@ def test_me_gorunen_ad_ve_kisi_eslemesi(
     from tp_core.config import get_settings
 
     analist = make_user("analyst", ad="analist")
-    make_user("presenter", ad="sunucu")
+    make_user("admin", ad="sunucu")
     make_user("tester", ad="testci")
     _giris(client, analist)
     me = client.get("/auth/me").json()
     assert me["rol"] == "analyst"
     assert me["gorunen_ad"] == "Cengizhan Gunaydin · Analist"
     assert me["ad_soyad"] == "Cengizhan Gunaydin"
-    assert me["kisiler"]["sunucu"] == "Sunucu"
+    assert me["kisiler"]["sunucu"] == "Sistem Yöneticisi"
     assert me["kisiler"]["testci"] == "Fatih Arslan · Testçi"
 
     # TP_GORUNEN_ADLAR demo varsayılanlarını geçersiz kılar; rol değişmez.

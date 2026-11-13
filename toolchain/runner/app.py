@@ -57,11 +57,12 @@ install_error_handlers(app)
 class RunBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    # Dil (009 §2.1): verilmezse "ts" (Playwright; eski gövde aynen geçer). "java" = e2e-app
-    # (Appium + TestNG) ve `platform` zorunlu; test_files e2e-app köküne göre
+    # Dil (009 §2.1, 011 §2.6): verilmezse "ts" (Playwright; eski gövde aynen geçer). "java" +
+    # uygulama platformu = e2e-app (Appium + TestNG); "java" + `web` (ya da platform yok) = e2e-java
+    # (Playwright for Java + TestNG; Appium yok). test_files proje köküne göre
     # `src/test/java/**/<Ad>Test.java`. Alanlar test_files'tan ÖNCE tanımlıdır (doğrulama sırası).
     lang: Literal["ts", "java"] = "ts"
-    platform: Literal["android", "ios", "windows"] | None = None
+    platform: Literal["web", "android", "ios", "windows"] | None = None
     sha: Annotated[str, AfterValidator(validate_ref)]
     run_id: Annotated[str, AfterValidator(validate_run_id)]
     grep: Annotated[str | None, AfterValidator(validate_grep)] = None
@@ -90,14 +91,14 @@ class RunBody(BaseModel):
     @model_validator(mode="after")
     def _lang(self) -> RunBody:
         if self.lang == "java":
-            if self.platform is None:
-                raise ValueError("lang=java platform ister (android | ios | windows)")
             if self.grep:
                 raise ValueError("Java koşusunda grep desteklenmiyor (test_files kullanın)")
             if self.workers is not None:
-                raise ValueError("Java koşusu tek cihazda tek iş parçacığıdır (workers verilemez)")
-        elif self.platform is not None:
-            raise ValueError("platform yalnızca lang=java ile verilir (web: lang=ts)")
+                raise ValueError("Java koşusu tek iş parçacığıdır (workers verilemez)")
+        elif self.platform not in (None, "web"):
+            raise ValueError(
+                "uygulama platformu yalnızca lang=java ile verilir (lang=ts yalnız web)"
+            )
         self.fault = resolve_fault(self.fault, self.env)
         return self
 
@@ -128,7 +129,8 @@ class RunBody(BaseModel):
             workers=self.workers,
             keep=self.keep,
             lang=self.lang,
-            platform=self.platform,
+            # Java'da etkin platform: verilmediyse `web` (Playwright for Java).
+            platform=(self.platform or "web") if self.lang == "java" else self.platform,
         )
 
 

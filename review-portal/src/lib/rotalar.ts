@@ -17,6 +17,7 @@ export const ROTA_DESENLERI: readonly string[] = [
   "/gereksinimler/:id/yayin",
   // 012 Ş7: karar tabloları ve metamorfik ilişkiler (specs/012 ANALIZ §7).
   "/gereksinimler/:id/karar-tablolari",
+  "/caseler",
   "/kod",
   "/kod/:id",
   "/kosular",
@@ -29,6 +30,8 @@ export const ROTA_DESENLERI: readonly string[] = [
   "/denetim",
   "/claude-code",
   "/demo",
+  "/test-verisi",
+  "/otomasyon",
 ];
 
 /** `/gereksinimler/:id` → `^/gereksinimler/[^/]+$` (parametre tek yol parçası). */

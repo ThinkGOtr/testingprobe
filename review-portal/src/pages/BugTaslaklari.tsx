@@ -4,7 +4,7 @@ import { api } from "../api/client";
 import { useOlay } from "../api/events";
 import type { BugTaslagi, BugTaslakIcerik, MukerrerAday, MukerrerArama } from "../api/types";
 import { useBildirim } from "../components/Bildirim";
-import { AlanHatasi, BosDurum, Cip, Baglanti, HataKutusu, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
+import { AlanHatasi, BosDurum, Cip, Baglanti, HataKutusu, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor, IzinliLink } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { KisiAdi } from "../components/KisiAdi";
 import { BUG_DURUMU, SEVERITY, type Ton } from "../lib/etiketler";
@@ -252,7 +252,7 @@ function MukerrerKarti({
       eylemler={
         taslak &&
         d !== "suruyor" && (
-          <IslemDugmesi roller={["tester"]} tur="ikincil" kucuk calisiyor={calisiyor} onClick={aramayiYenile}>
+          <IslemDugmesi izin="bug.decide" tur="ikincil" kucuk calisiyor={calisiyor} onClick={aramayiYenile}>
             {d === "yapildi" ? "Aramayı yenile" : "Mükerrer aramasını başlat"}
           </IslemDugmesi>
         )
@@ -317,7 +317,7 @@ function MukerrerKarti({
                   {m.sinyaller.length > 0 && <p className="kucuk soluk">{m.sinyaller.join(" · ")}</p>}
                   {taslak && (
                     <div className="aday-eylemler">
-                      <IslemDugmesi roller={["tester"]} tur="ikincil" kucuk calisiyor={calisiyor} onClick={() => bagla(m.key)}>
+                      <IslemDugmesi izin="bug.decide" tur="ikincil" kucuk calisiyor={calisiyor} onClick={() => bagla(m.key)}>
                         {`${m.key} kaydına bağla`}
                       </IslemDugmesi>
                     </div>
@@ -519,7 +519,7 @@ export function BugTaslakDetay() {
               <Cip ton="notr" title="Doğrulanmış kanıttan şablonla yazıldı; model çağrısı yok">Şablon</Cip>
             )}
             {kirma && <KirmaCipi />}
-            {b.failure_id && <Link to={`/hatalar/${encodeURIComponent(b.failure_id)}`}>Triage sonucu</Link>}
+            {b.failure_id && <IzinliLink to={`/hatalar/${encodeURIComponent(b.failure_id)}`}>Triage sonucu</IzinliLink>}
             {b.onaylayan && (
               <span className="soluk">
                 <KisiAdi ad={b.onaylayan} />
@@ -543,14 +543,14 @@ export function BugTaslakDetay() {
       <YayinDurumu b={b} />
       {b.yayin_hatasi && b.durum !== "published" && (
         <p>
-          <IslemDugmesi roller={["tester"]} tur="ikincil" calisiyor={islem.calisiyor} onClick={() => void yayiniYinele()}>
+          <IslemDugmesi izin="bug.decide" tur="ikincil" calisiyor={islem.calisiyor} onClick={() => void yayiniYinele()}>
             Yayını yeniden dene
           </IslemDugmesi>
         </p>
       )}
       {b.durum === "dismissed" && (
         <p>
-          <IslemDugmesi roller={["tester"]} tur="ikincil" calisiyor={islem.calisiyor} onClick={() => void taslagaAl()}>
+          <IslemDugmesi izin="bug.decide" tur="ikincil" calisiyor={islem.calisiyor} onClick={() => void taslagaAl()}>
             Taslağa al
           </IslemDugmesi>
         </p>
@@ -637,7 +637,7 @@ export function BugTaslakDetay() {
 
           {duzenlendi && (
             <p className="satir-ogeler">
-              <IslemDugmesi roller={["tester"]} tur="ikincil" kucuk calisiyor={islem.calisiyor} onClick={() => void kaydet()}>
+              <IslemDugmesi izin="bug.decide" tur="ikincil" kucuk calisiyor={islem.calisiyor} onClick={() => void kaydet()}>
                 Değişiklikleri kaydet
               </IslemDugmesi>
               <span className="kucuk soluk">Kaydetmek onay değildir; Jira'ya yazmak için aşağıdan karar verin.</span>
@@ -656,7 +656,7 @@ export function BugTaslakDetay() {
                 <h3>Yeni kayıt</h3>
                 <p className="soluk kucuk">Düzenlenmiş taslak onaylanan içerik hash'iyle Jira'ya Bug olarak yazılır; story ve teste bağlanır.</p>
                 <IslemDugmesi
-                  roller={["tester"]}
+                  izin="bug.decide"
                   type="submit"
                   tur={kirma ? "ikincil" : "birincil"}
                   calisiyor={islem.calisiyor}
@@ -683,7 +683,7 @@ export function BugTaslakDetay() {
                     ))}
                   </datalist>
                 </div>
-                <IslemDugmesi roller={["tester"]} tur="ikincil" calisiyor={islem.calisiyor} onClick={() => void bagla(baglanacak)}>
+                <IslemDugmesi izin="bug.decide" tur="ikincil" calisiyor={islem.calisiyor} onClick={() => void bagla(baglanacak)}>
                   Mevcut kayda bağla
                 </IslemDugmesi>
               </div>
@@ -708,7 +708,7 @@ export function BugTaslakDetay() {
                   />
                 </div>
                 <IslemDugmesi
-                  roller={["tester"]}
+                  izin="bug.decide"
                   tur="tehlike"
                   calisiyor={islem.calisiyor}
                   disabled={!retGerekcesi.trim()}

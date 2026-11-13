@@ -1,15 +1,15 @@
-// Sunucu (presenter) için demo kontrolleri: locator kırılması (TEKNIK-TASARIM §2 ikinci kırılma
+// Sistem Yöneticisi ve Automation Engineer için demo kontrolleri (`demo.manage`, yalnız TP_DEMO_MODE=1): locator kırılması (TEKNIK-TASARIM §2 ikinci kırılma
 // senaryosu, `make break` eşi) ve demo sıfırlama. Her ikisi de onay ister; ilerleme core olaylarından
 // (`demo.progress`) ve koşu listesinden izlenir — olay gelmese de koşu ve triage görünür.
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
 import { hataMesaji } from "../api/http";
-import type { DemoDurumu, HataAnalizi, HataSinifi, IsYaniti, Kosu, KosuHatasi, PortalOlayi } from "../api/types";
+import type { DemoDurumu, Gereksinim, HataAnalizi, HataSinifi, IsYaniti, Kosu, KosuHatasi, PortalOlayi } from "../api/types";
 import { useBildirim } from "../components/Bildirim";
 import { Cip, IslemDugmesi, Kart, SayfaBasligi, Uyari } from "../components/ui";
-import { HATA_SINIFI, KOSU_DURUMU, TETIK } from "../lib/etiketler";
+import { gereksinimDurumu, HATA_SINIFI, KOSU_DURUMU, TETIK } from "../lib/etiketler";
 import { saat } from "../lib/format";
 import { kisaKosuAdi, kosuHatalari } from "./Kosular";
 
@@ -429,7 +429,7 @@ function LocatorKirmaKarti({ durum }: { durum: DemoDurumu | null }) {
       eylemler={
         !onay && (
           <IslemDugmesi
-            roller={["presenter"]}
+            izin="demo.manage"
             tur="tehlike"
             calisiyor={calisiyor}
             disabled={(!!d && !d.bitti) || engelli}
@@ -530,7 +530,7 @@ function LocatorKirmaKarti({ durum }: { durum: DemoDurumu | null }) {
             merge edilene kadar katalog testleri kırmızı kalır.
           </p>
           <div className="satir-ogeler">
-            <IslemDugmesi roller={["presenter"]} tur="tehlike" calisiyor={calisiyor} onClick={() => void kir()}>
+            <IslemDugmesi izin="demo.manage" tur="tehlike" calisiyor={calisiyor} onClick={() => void kir()}>
               Evet, buton kimliğini değiştir
             </IslemDugmesi>
             <button type="button" className="dugme dugme-ikincil" onClick={() => setOnay(false)} disabled={calisiyor}>
@@ -705,7 +705,7 @@ function SifirlamaKarti() {
       baslik="Demo'yu sıfırla"
       eylemler={
         !onay && (
-          <IslemDugmesi roller={["presenter"]} tur="ikincil" calisiyor={calisiyor} onClick={() => setOnay(true)}>
+          <IslemDugmesi izin="demo.manage" tur="ikincil" calisiyor={calisiyor} onClick={() => setOnay(true)}>
             Demo'yu sıfırla
           </IslemDugmesi>
         )
@@ -725,7 +725,7 @@ function SifirlamaKarti() {
             <span>Forge main baseline'a dönecek ve açık demo PR'ları kapatılacak (kararlar ve Jira kayıtları bu düğmeyle sıfırlanmaz).</span>
           </label>
           <div className="satir-ogeler">
-            <IslemDugmesi roller={["presenter"]} tur="tehlike" calisiyor={calisiyor} disabled={!anladim} onClick={() => void sifirla()}>
+            <IslemDugmesi izin="demo.manage" tur="tehlike" calisiyor={calisiyor} disabled={!anladim} onClick={() => void sifirla()}>
               Sıfırla
             </IslemDugmesi>
             <button type="button" className="dugme dugme-ikincil" onClick={() => setOnay(false)} disabled={calisiyor}>
@@ -771,6 +771,189 @@ function SifirlamaKarti() {
             </li>
           ))}
         </ul>
+      )}
+    </Kart>
+  );
+}
+
+export interface TetikIpucuAyari {
+  acik: boolean;
+  durum: string;
+  /** PO onayından sonra case'leri otomatik üret (bilinmiyorsa kapalı sayılır). */
+  otomatik_case?: boolean;
+  /** İlk (taban) tur henüz koşmadı: duruma girenler yalnız işaretlenir. Bilinmiyorsa undefined. */
+  tabanBekleniyor?: boolean;
+}
+
+/** core `jira_tetik.AKIS_SURUYOR`: inceleme/PO aşaması; story akışa alınır (K21). */
+const AKIS_SURUYOR = new Set(["in_review", "findings_open", "doc_final", "pending_po"]);
+const IZLE = "Sonucu Otomasyon sayfasındaki son turdan izleyin.";
+
+/**
+ * Seçilen story taşınınca Jira tetiğinin ne yapacağı — core `jira_tetik.giris_isle` kurallarının
+ * tahmini (kesin karar sunucuda). `tetiklenir: null`: portal bilemez, sunucu karar verir.
+ */
+export function tetikIpucu(
+  g: Pick<Gereksinim, "durum" | "sayaclar" | "jira_durumu"> | undefined,
+  ayar: TetikIpucuAyari | null,
+): { tetiklenir: boolean | null; metin: string } {
+  if (!ayar) return { tetiklenir: null, metin: `Tetik ayarı okunamadı; sunucu karar verir. ${IZLE}` };
+  if (!ayar.acik) return { tetiklenir: false, metin: "Tetiklenmez: Jira tetiği kapalı (Otomasyon ayarı)." };
+  if (ayar.tabanBekleniyor) {
+    return {
+      tetiklenir: false,
+      metin: `Tetiklenmez: tetiğin ilk (taban) turu henüz koşmadı; o turda "${ayar.durum}" durumundaki story'ler yalnız işaretlenir. Taban turundan sonra taşıyın.`,
+    };
+  }
+  if (!g) return { tetiklenir: true, metin: "TP'de yok: tetik story'yi çeker ve ön incelemeye alır (tetiklenir)." };
+  const ayni = (a: string, b: string) => a.trim().toLocaleLowerCase("tr-TR") === b.trim().toLocaleLowerCase("tr-TR");
+  if (g.jira_durumu && ayni(g.jira_durumu, ayar.durum)) {
+    return {
+      tetiklenir: false,
+      metin: `Tetiklenmez: story zaten "${ayar.durum}" durumunda görüldü; yalnız bu duruma yeniden giren story tetiklenir (içerik değiştiyse Jira içeriği çekilir).`,
+    };
+  }
+  const otomatikCase = ayar.otomatik_case === true;
+  if (g.durum === "new") return { tetiklenir: true, metin: "Tetiklenir: ön incelemeye girer (PO kapısı korunur)." };
+  if (g.durum === "po_approved") {
+    if (!otomatikCase) return { tetiklenir: false, metin: "Tetiklenmez: PO onaylı, ama otomatik case üretimi kapalı; case üretimini elle başlatın." };
+    if (g.sayaclar.case_toplam === 0) return { tetiklenir: true, metin: "Tetiklenir: PO onaylı ve case'i yok; case üretimi hemen başlar." };
+    if (g.sayaclar.case_onayli > 0) return { tetiklenir: false, metin: "Tetiklenmez: PO onaylı ve etkin case'leri var." };
+    // Case'ler taslak (etkin) da olabilir, yalnız reddedilmiş (etkin değil) de: portal ayırt edemez.
+    return { tetiklenir: null, metin: `Sunucu karar verir: etkin case yoksa (yalnız reddedilmişler) case üretimi başlar, taslak case varsa dokunulmaz. ${IZLE}` };
+  }
+  if (AKIS_SURUYOR.has(g.durum)) {
+    return {
+      tetiklenir: true,
+      metin: otomatikCase
+        ? "Akışa alınır: elle çekilmiş gereksinim de akışa alınır; PO onayından sonra case'ler otomatik üretilir."
+        : "Akışa alınır: otomatik case kapalı; PO onayından sonra case üretimini elle başlatın.",
+    };
+  }
+  return {
+    tetiklenir: null,
+    metin: `Sunucu karar verir: TP'de durum "${gereksinimDurumu(g.durum).etiket}"; genelde dokunulmaz, Jira içeriği değiştiyse yeniden değerlendirilir. ${IZLE}`,
+  };
+}
+
+/**
+ * 013 §3.4 demo kontrolü: jira-sim'de bir story'yi Jira tetiğinin izlediği duruma ("QA To Do") taşır.
+ * Yalnız demo/sim modunda; gerçek Jira'da core 409 döner (metni gösterilir). Story her zaman serbest
+ * metinle girilir (TP'ye henüz çekilmemiş story de); TP'deki gereksinimler öneri listesidir.
+ */
+export function JiraDurumKarti() {
+  const id = useId();
+  const bildir = useBildirim();
+  const [gereksinimler, setGereksinimler] = useState<Gereksinim[]>([]);
+  const [anahtar, setAnahtar] = useState("");
+  const [ayar, setAyar] = useState<TetikIpucuAyari | null>(null);
+  const [tabanBekleniyor, setTabanBekleniyor] = useState<boolean | undefined>(undefined);
+  const [calisiyor, setCalisiyor] = useState(false);
+  const [hata, setHata] = useState<string | null>(null);
+  const [sonuc, setSonuc] = useState<string | null>(null);
+  const hedef = ayar?.durum ?? "QA To Do";
+  useEffect(() => {
+    let iptal = false;
+    void api
+      .gereksinimler()
+      .then((l) => !iptal && setGereksinimler(l.filter((g) => !!g.jira_key)))
+      .catch(() => undefined);
+    // Tetiğin izlediği durum adı ayarlanabilir (varsayılan "QA To Do"): ayar okunabilirse o kullanılır.
+    void api
+      .otomasyonAyarlari()
+      .then((a) => !iptal && setAyar({ acik: a.jira_tetik.acik, durum: a.jira_tetik.durum, otomatik_case: a.jira_tetik.otomatik_case }))
+      .catch(() => undefined);
+    // Taban turu: core bildirirse (`taban_bekleniyor`/`taban_kurulu`; ayar değişince taban yeniden kurulur) o;
+    // yoksa tahmin: hiç tur koşmadıysa ilk tur yalnız işaretler (okunamazsa bilinmiyor).
+    void api
+      .jiraTetikDurumu()
+      .then((d) => !iptal && setTabanBekleniyor(d.taban_bekleniyor ?? (d.acik && d.son_tur === null)))
+      .catch(() => undefined);
+    return () => {
+      iptal = true;
+    };
+  }, []);
+  const storyler = [...gereksinimler].sort((a, b) => a.jira_key!.localeCompare(b.jira_key!, "tr", { numeric: true }));
+  const k = anahtar.trim().toUpperCase();
+  const secilen = k ? gereksinimler.find((g) => g.jira_key === k) : undefined;
+  const ipucu = k ? tetikIpucu(secilen, ayar && { ...ayar, tabanBekleniyor }) : null;
+
+  async function tasi() {
+    if (!k) return setHata("Bir story anahtarı girin (ör. TPD-2).");
+    setCalisiyor(true);
+    setHata(null);
+    setSonuc(null);
+    try {
+      const y = await api.demoJiraDurumu(k, hedef);
+      const mesaj =
+        (y && typeof y.mesaj === "string" && y.mesaj) ||
+        (y?.degisti === false ? `${k} zaten "${hedef}" durumunda; değişiklik yapılmadı.` : `${k} jira-sim'de "${hedef}" durumuna taşındı.`);
+      setSonuc(mesaj);
+      bildir(mesaj);
+    } catch (e) {
+      setHata(hataMesaji(e));
+    } finally {
+      setCalisiyor(false);
+    }
+  }
+
+  return (
+    <Kart baslik="Jira durum tetiği (jira-sim)">
+      <p className="soluk kucuk">
+        jira-sim'de story durumunu değiştirir; Jira tetiği bir sonraki turda (bkz. <Link to="/otomasyon">Otomasyon</Link>) story'yi çekip ön
+        incelemeye alır. PO onayı yine gerekir. Gerçek Jira'da çalışmaz.
+      </p>
+      <div className="satir-ogeler">
+        <label htmlFor={`${id}-story`}>Story</label>
+        <input
+          id={`${id}-story`}
+          className="mono"
+          value={anahtar}
+          placeholder="TPD-2"
+          size={12}
+          list={`${id}-oneriler`}
+          autoComplete="off"
+          aria-describedby={`${id}-ipucu`}
+          onChange={(e) => setAnahtar(e.target.value)}
+        />
+        <datalist id={`${id}-oneriler`}>
+          {storyler.map((g) => (
+            <option key={g.id} value={g.jira_key!}>
+              {`${g.baslik} · ${gereksinimDurumu(g.durum).etiket}`}
+            </option>
+          ))}
+        </datalist>
+        <IslemDugmesi izin="demo.manage" calisiyor={calisiyor} disabled={!k} onClick={() => void tasi()}>
+          {hedef === "QA To Do" ? "Story'yi QA To Do'ya taşı" : `Story'yi "${hedef}" durumuna taşı`}
+        </IslemDugmesi>
+      </div>
+      <p id={`${id}-ipucu`} className="kucuk" data-testid="jira-tetik-ipucu">
+        {!k ? (
+          <span className="soluk">TP'deki story'ler öneri olarak listelenir; TP'ye henüz çekilmemiş bir jira-sim story'si de yazılabilir.</span>
+        ) : (
+          <>
+            {secilen ? (
+              <>
+                TP'de: <Cip ton={gereksinimDurumu(secilen.durum).ton}>{gereksinimDurumu(secilen.durum).etiket}</Cip>{" "}
+              </>
+            ) : ipucu?.metin.startsWith("TP'de yok") ? null : (
+              <>TP'de yok. </>
+            )}
+            {ipucu && (
+              <span data-tetiklenir={ipucu.tetiklenir === null ? "bilinmiyor" : String(ipucu.tetiklenir)}>{ipucu.metin}</span>
+            )}
+          </>
+        )}
+      </p>
+      {sonuc && (
+        <p className="kucuk" role="status">
+          {sonuc}
+        </p>
+      )}
+      {hata && (
+        <Uyari ton="hata" baslik="Taşınamadı">
+          {hata}
+        </Uyari>
       )}
     </Kart>
   );
@@ -863,11 +1046,27 @@ export function DemoKontrolleri() {
           </>
         }
       />
-      <div className="iki-sutun">
-        <LocatorKirmaKarti durum={durum} />
-        <SifirlamaKarti />
-      </div>
-      <DurumKarti d={durum} />
+      {durum?.demo_modu === false ? (
+        // core TP_DEMO_MODE=0: kırma/sıfırlama uçları 403 döner; kontroller gösterilmez (ANALIZ 012 §6).
+        <Uyari ton="bilgi" baslik="Demo kontrolleri kapalı">
+          Bu kurulumda demo kipi kapalı (<span className="mono">TP_DEMO_MODE=0</span>
+          {durum.ortam ? (
+            <>
+              , ortam <span className="mono">{durum.ortam}</span>
+            </>
+          ) : null}
+          ). Locator kırılması, demo sıfırlama ve Jira durum taşıma yalnız demo kipinde çalışır.
+        </Uyari>
+      ) : (
+        <>
+          <div className="iki-sutun">
+            <LocatorKirmaKarti durum={durum} />
+            <SifirlamaKarti />
+          </div>
+          <JiraDurumKarti />
+          <DurumKarti d={durum} />
+        </>
+      )}
     </>
   );
 }

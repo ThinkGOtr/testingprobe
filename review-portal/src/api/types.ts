@@ -5,9 +5,12 @@
 // ön inceleme soruları) TEKNIK-TASARIM'daki İngilizce şema adlarını aynen taşır.
 
 import type { Platform } from "../lib/platform";
+import type { Dil, DilKaynagi } from "../lib/dil";
 export type { Platform } from "../lib/platform";
+export type { Dil, DilKaynagi } from "../lib/dil";
 
-export type Rol = "analyst" | "engineer" | "presenter" | "po" | "tester";
+/** TP rolleri (ANALIZ 012 §3; core `yetki.ROLLER`). `presenter` kalktı → `admin`. */
+export type Rol = "admin" | "auditor" | "analyst" | "po" | "tester" | "engineer" | "developer" | "viewer";
 
 /** Model geçidi modu (§8.8). live dışındaki her değer portalda rozetle gösterilir. */
 export type CiktiModu = "live" | "replay" | "replay_miss";
@@ -16,6 +19,11 @@ export interface Kullanici {
   id: string;
   kullanici_adi: string;
   rol: Rol;
+  /**
+   * Etkin rolün izin anahtarları (core `rol_izinleri`, ANALIZ 012 §4). Menü, sayfa ve düğmeler
+   * bununla gösterilir. Yoksa (eski core) portal katalogdan türetir (`lib/yetki.ts`).
+   */
+  izinler?: string[];
   /** Yalnızca gösterim (yetki her zaman `rol`): "Cengizhan Gunaydin · Analist"; ad yoksa rol etiketi. */
   gorunen_ad?: string;
   /** Kişi adı (rol etiketsiz); tanımsızsa null. */
@@ -108,6 +116,10 @@ export interface Gereksinim {
   cekim_zamani: string;
   po: PoDurumu;
   sayaclar: { bulgu_acik: number; case_toplam: number; case_onayli: number };
+  /** 013 §9 (K15): Jira tetiğiyle alınan story'nin otomatik akışı; tetikle alınmadıysa null/yok. */
+  otomatik_akis?: OtomatikAkis | null;
+  /** 013 §3.0: tetiğin gördüğü son Jira durumu (core gönderirse). */
+  jira_durumu?: string | null;
 }
 
 export type SoruTuru = "ambiguity" | "missing_ac" | "conflict" | "untestable";
@@ -348,7 +360,7 @@ export type RetNedeni =
   | "wrong_element";
 
 /** Test case durumları — core `test_case` makinesiyle birebir aynı küme. */
-export const CASE_DURUMLARI = ["draft", "approved", "rejected", "published", "superseded"] as const;
+export const CASE_DURUMLARI = ["draft", "ready", "approved", "rejected", "published", "superseded"] as const;
 export type CaseDurumu = (typeof CASE_DURUMLARI)[number];
 
 export interface TestCase {
@@ -360,8 +372,27 @@ export interface TestCase {
   surum: number;
   icerik: TestCaseIcerik;
   durum: CaseDurumu;
-  /** approve | edit | reject — son insan kararı */
-  karar: "approve" | "edit" | "reject" | null;
+  /**
+   * Son insan kararı: Testçi `accept` | `edit` | `reject`, Analist `approve` | `send_back`
+   * (ANALIZ 012 §5). Eski kayıtlarda Analist `approve`/`edit` kararı da olabilir.
+   */
+  karar: CaseKararTuru | null;
+  /** Son `send_back` gerekçesi (Analist geri gönderdiyse); core `son_onay.gerekce`'den türetilir. */
+  gerekce?: string | null;
+  /**
+   * Testçinin son içerik kararı (`accept` | `edit` | `reject`); Analist onayından sonra da korunur
+   * (ölçümler). 012 öncesi kayıtlarda Testçi kabulü olmadan verilen `approve` bu alanda kalır (eski).
+   */
+  testci_karari?: "accept" | "edit" | "reject" | "approve" | null;
+  /** Testçi kararını veren hesap (core `testci`). */
+  testci?: string | null;
+  /** Analistin son onay kararı (core `son_onay`): `approve` ya da `send_back` (gerekçeli). */
+  son_onay?: SonOnay | null;
+  /** Son onayı veren Analist hesabı ve zamanı (`son_onay.karar === "approve"`'dan türetilir). */
+  onaylayan?: string | null;
+  onay_zamani?: string | null;
+  /** Kısıtlı görünüm (developer): karar geçmişi alanları core'da çıkarıldı. */
+  kisitli?: boolean;
   ret_nedeni: RetNedeni | null;
   karar_veren: string | null;
   karar_zamani: string | null;
@@ -391,6 +422,212 @@ export interface TestCase {
   duzeltme_nedeni?: string | null;
   /** Case gereksinimin önceki (PO onayı değişmiş) içeriğine ait. */
   onceki_icerik?: boolean;
+  /**
+   * 013 §3.2/K13: bu kullanıcı case'i son karardan sonra görüntüledi mi (kart en az 3 sn kesintisiz
+   * ekranda kaldı, görüntüleme ≥ 3 sn önce kaydedildi). Toplu onay yalnız görülmüş taslakları alır;
+   * alan yoksa (eski core) görülmemiş sayılır.
+   */
+  goruldu?: boolean;
+  /**
+   * 013 §9: approve'un reddedeceği neden (durum, gereksinim değişti, bilinmeyen AC, katalogda olmayan
+   * atıf); doluysa toplu onaya girmez. null: engel yok.
+   */
+  onay_engeli?: string | null;
+  /** 013 §3.3: içerikteki `{veri:anahtar}` atıflarının katalog karşılığı (anahtar → kayıt). */
+  veri?: Record<string, CaseVeriAtfi>;
+  /** 013 §3.2: tekli karar yanıtındaki otomatik kod üretimi sonucu. */
+  otomatik_kod?: OtomatikKodSonucu | null;
+  /**
+   * 013 §10 (K10 case yarısı): onaydan sonra katalogda değeri değişen test verisi anahtarları
+   * (yalnız anahtar; değer/özet yok). Core göndermezse ya da boşsa alan yok.
+   */
+  veri_onaydan_sonra_degisen?: string[];
+}
+
+/** Case serileştirmesindeki atıf kaydı (`veri: {anahtar: {deger, gizli, surum, var}}`). */
+export interface CaseVeriAtfi {
+  /** Gizli ya da katalogda yoksa null. */
+  deger: string | null;
+  gizli: boolean;
+  surum: number | null;
+  /** Anahtar katalogda (silinmemiş) var mı. */
+  var: boolean;
+}
+
+/** Onay sonrası otomatik kod üretimi (013 §3.2 `otomatik_kod`). */
+export interface OtomatikKodSonucu {
+  /** `hata`: beklenmeyen hata; onay geçerli kalır, kod elle başlatılır. */
+  durum: "kuyrukta" | "reddedildi" | "kapali" | "atlandi" | "hata";
+  neden: string | null;
+  script_id: string | null;
+}
+
+/** `POST /cases/bulk-decision` öğe sonucu (013 §9: öğe `otomatik_kod` artık null; kod üretimi üst düzeyde). */
+export interface TopluKararSonucu {
+  case_id: string;
+  durum: "onaylandi" | "atlandi" | "hata";
+  neden: string | null;
+  /** Eski core öğe başına gönderiyordu; yeni core null. */
+  otomatik_kod: OtomatikKodSonucu | null;
+}
+
+/**
+ * Toplu onayın kod üretimi (K16): onaylananlar için tek `codegen.otomatik` arka plan işi.
+ * `yok`: onaylanan case yok ya da üretilecek case kalmadı.
+ */
+export interface TopluOtomatikKod {
+  durum: "kuyrukta" | "kapali" | "yok";
+  job_id: string | null;
+  /** İşe giren (üretilecek) case sayısı; atlananlar dahil değil. */
+  case_sayisi: number;
+  /** §10: işe alınmayan onaylı case'ler (açık PR, süren üretim) ve nedeni; core göndermezse yok. */
+  atlanan?: { case_id: string; neden: string | null }[];
+}
+
+/** `GET /automation/codegen-jobs/{job_id}`: toplu onayın kod üretimi işi ve case başına sonuç. */
+export interface KodUretimIsi {
+  job_id: string;
+  durum: "kuyrukta" | "calisiyor" | "tamam" | "hata";
+  case_sayisi: number;
+  /** Sonuç durumu → sayı (kuyrukta, atlandi, reddedildi, kapali, hata). */
+  ozet: Record<string, number>;
+  sonuclar: { case_id: string; durum: OtomatikKodSonucu["durum"]; neden: string | null; script_id: string | null }[];
+  hata: string | null;
+}
+
+export interface TopluKararYaniti {
+  sonuclar: TopluKararSonucu[];
+  ozet: { onaylandi: number; atlandi: number; hata: number };
+  /** Yeni core üst düzeyde gönderir; eski core göndermez (null). */
+  otomatik_kod: TopluOtomatikKod | null;
+}
+
+/** Test verisi kataloğu kaydı (`GET /test-data`; 013 §3.3). Gizli kayıtta `deger` null. */
+export interface TestVerisi {
+  id: string;
+  anahtar: string;
+  grup: string | null;
+  aciklama: string | null;
+  deger: string | null;
+  gizli: boolean;
+  /** Gizli kaydın ortam sırrı adı (değer kataloğa yazılmaz). */
+  sir_adi: string | null;
+  /** Ortam sırrı tanımlı mı (yalnız gizli kayıtta anlamlı). */
+  sir_tanimli: boolean;
+  surum: number;
+  guncelleyen: string | null;
+  guncelleme: string | null;
+  /** Atıf yapan etkin case sayısı. */
+  kullanim: number;
+}
+
+export interface TestVerisiGirdisi {
+  anahtar: string;
+  grup?: string | null;
+  aciklama?: string | null;
+  deger?: string | null;
+  gizli?: boolean;
+  sir_adi?: string | null;
+}
+
+export interface TestVerisiGuncelleme {
+  deger?: string | null;
+  aciklama?: string | null;
+  grup?: string | null;
+  sir_adi?: string | null;
+  /** İyimser kilit: ekranda görülen sürüm; uyuşmazsa 409. */
+  beklenen_surum: number;
+}
+
+/** `GET /test-data/{id}/history` (gizli değer yok). */
+export interface TestVerisiSurumu {
+  surum: number;
+  islem: "olustur" | "guncelle" | "sil";
+  deger: string | null;
+  gizli: boolean;
+  sir_adi: string | null;
+  degistiren: string | null;
+  zaman: string | null;
+}
+
+/** Silme 409'unda atıf yapan case. */
+export interface AtifYapanCase {
+  id: string;
+  /** Core `case_ref` (ör. "TPD-2 #3"); yoksa null. */
+  case_ref: string | null;
+  durum: string | null;
+  requirement_id: string | null;
+  jira_key: string | null;
+  sira_no: number | null;
+  baslik: string;
+}
+
+/** `GET /automation-settings` (013 §3.1). */
+export interface OtomasyonAyarlari {
+  otomatik_kod_uretimi: { acik: boolean; guncelleyen: string | null; guncelleme: string | null };
+  jira_tetik: {
+    acik: boolean;
+    durum: string;
+    aralik_s: number;
+    otomatik_case: boolean;
+    guncelleyen: string | null;
+    guncelleme: string | null;
+  };
+  /**
+   * K23: model geçidi REPLAY kipinde mi (core ayar ucunda `replay` ya da `model_kipi` verirse).
+   * Bilinmiyorsa yok; portal `/demo/status` → `model.mod`'a düşer.
+   */
+  replay?: boolean;
+}
+
+export type OtomasyonAyarAnahtari = Exclude<keyof OtomasyonAyarlari, "replay">;
+
+/** `GET /automation/jira-trigger` (013 §3.4). */
+export interface JiraTetikDurumu {
+  acik: boolean;
+  durum: string;
+  aralik_s: number;
+  son_tur: {
+    zaman: string | null;
+    bulunan: number;
+    tetiklenen: number;
+    /** Tur sınırı (10) yüzünden sonraki tura kalan story sayısı. */
+    ertelenen: number;
+    /** İlk tur (taban): mevcut story'ler yalnız işaretlendi, tetiklenmedi (K14). */
+    taban: boolean;
+    hata: string | null;
+    /** 013 §9: story başına sonuç (ör. `tetiklendi`, `isaretlendi`, `dokunulmadi`) ve Türkçe neden. */
+    sonuclar: JiraTetikTurSonucu[];
+  } | null;
+  /** Story başına son tetik sonucu; `neden` kalıcı Türkçe gerekçe (tur 3; core göndermezse null). */
+  son_tetiklenenler: { jira_key: string; zaman: string | null; sonuc: string | null; neden: string | null }[];
+  /**
+   * Sonraki tur taban turu mu (işaret yok: duruma girenler yalnız işaretlenir). Core `taban_bekleniyor`
+   * ya da `taban_kurulu` verirse; yoksa yok (portal tahmin eder).
+   */
+  taban_bekleniyor?: boolean;
+}
+
+export interface JiraTetikTurSonucu {
+  jira_key: string;
+  sonuc: string;
+  neden: string | null;
+}
+
+/** Gereksinimin Jira tetiğiyle alınmış otomatik akışı (013 §9, K15). */
+export interface OtomatikAkis {
+  tetik_zamani: string | null;
+  durum: "suruyor" | "durdu" | "tamam";
+  /** `durdu` iken neden (ör. içerik değişti, inceleme hata verdi, case üretimi reddedildi). */
+  neden: string | null;
+}
+
+/** core `son_onay`: Analistin son onay kararı. */
+export interface SonOnay {
+  karar: "approve" | "send_back";
+  veren: string | null;
+  zaman: string | null;
+  gerekce: string | null;
 }
 
 export interface CaseAlanFarki {
@@ -435,10 +672,18 @@ export interface CaseMetrikleri {
   uyarilar?: string[];
 }
 
+/** Testçi kararları (`case.decide`). `reopen` "Taslağa al"dır. */
+export type TestciKarari = "accept" | "edit" | "reject" | "reopen";
+/** Analist son onay kararları (`case.approve`; yalnız `ready` case). */
+export type AnalistKarari = "approve" | "send_back";
+export type CaseKararTuru = TestciKarari | AnalistKarari;
+
 export interface CaseKararGirdisi {
   /** Ekranda görülen case içeriğinin hash'i (`TestCase.icerik_hash`); düzeltmede de düzeltme öncesi. */
   icerik_hash: string;
-  karar: "approve" | "edit" | "reject";
+  karar: CaseKararTuru;
+  /** `send_back` için zorunlu, diğerlerinde isteğe bağlı açıklama. */
+  gerekce?: string;
   icerik?: TestCaseIcerik;
   ret_nedeni?: RetNedeni;
   /**
@@ -590,8 +835,10 @@ export interface BreakVerify {
 /**
  * Script durumları — core `script` makinesiyle birebir aynı küme. "Merge'e hazır" ve "zayıf test"
  * durum değildir: `pr_open` + `break_verify.durum` / `zayif_test` alanlarından türetilir.
+ * 011: `unverified` doğrulanmamış dilin (C#, Python) uç durumudur — kod üretildi ama derlenmedi ve
+ * koşulmadı; PR yok, merge yok (`verifying → unverified`; yeniden üretimle `pending` ya da `closed`).
  */
-export const SCRIPT_DURUMLARI = ["pending", "verifying", "checking", "blocked", "pr_open", "merged", "closed", "failed"] as const;
+export const SCRIPT_DURUMLARI = ["pending", "verifying", "checking", "blocked", "pr_open", "merged", "closed", "failed", "unverified"] as const;
 export type ScriptDurumu = (typeof SCRIPT_DURUMLARI)[number];
 
 export interface Script {
@@ -618,10 +865,27 @@ export interface Script {
    * alanı göndermez; o zaman yalnız web üretilebildiği için uyarlayıcı `web` yazar.
    */
   platform?: Platform | null;
+  /**
+   * 011: üretim dili (core `script.dil`: ts | java | csharp | python). 011 öncesi core alanı
+   * göndermez; uyarlayıcı platformun varsayılanını yazar (web → ts, uygulama → java).
+   */
+  dil?: Dil | null;
+  /** 011: dilin kaynağı (core `script.dil_kaynagi`: algilandi | secildi | varsayilan); bilinmiyorsa null. */
+  dil_kaynagi?: DilKaynagi | null;
+  /** 011: doğrulanmamış dilde üretildi (core `dogrulanmamis` = `durum == "unverified"`): derlenmedi, koşulmadı, PR yok. */
+  dogrulanmamis?: boolean;
   /** null: model çağrısı yok ya da mod bilinmiyor ("live" uydurulmaz). */
   mode: CiktiModu | null;
   olusturma: string;
   hata: string | null;
+  /** 013: üretimi kim başlattı (`otomatik` = case onayıyla kuyruğa alındı). Eski core göndermez. */
+  tetik?: "elle" | "otomatik";
+  /** 013 §3.3: üretimde kullanılan test verisi değeri katalogda değişti (`veri_degisen` dolu). */
+  veri_degisti?: boolean;
+  /** 013 §9: üretimde çözülen `{anahtar: değer özeti}` (sha256[:12]; değer değil, sürüm değil). */
+  veri_izi?: Record<string, string>;
+  /** 013 §9: değeri üretimden sonra değişen anahtarlar. */
+  veri_degisen?: string[];
 }
 
 /**
@@ -663,10 +927,29 @@ export interface YerelKontrolHatasi {
   adim: string | null;
 }
 
+/**
+ * Yerel kontrol adımının sonucu. TEK DOĞRU core `codegen/views.py` `_adim_durumu`: dizge
+ * `passed | failed | skipped` (`skipped` = adım koşmadı / sonucu bilinmiyor). Uyum katmanı
+ * (`uyumDemoB.kontrolAdimlariUyarla`) eski/toolchain biçimlerini (boolean, `ok`, `failure` …) de bu üç
+ * değere indirger; ekran yalnız bu kümeyi görür.
+ */
+export type KontrolAdimDurumu = "passed" | "failed" | "skipped";
+
+/** Yerel kontrolün bir statik adımı (core `yerel_kontrol.adimlar[]`: `{ad, durum}`). */
+export interface KontrolAdimi {
+  ad: string;
+  durum: KontrolAdimDurumu;
+}
+
 export interface YerelKontrol {
   tsc: boolean | null;
   eslint: boolean | null;
   ast_guard: boolean | null;
+  /**
+   * 011: dile göre adım listesi (ts: tsc / eslint / ast_guard; java: deps / guard / compile). Core
+   * göndermiyorsa null: portal eski `tsc` / `eslint` / `ast_guard` alanlarına düşer.
+   */
+  adimlar?: KontrolAdimi[] | null;
   tekrar: number;
   /** Playwright koşusunun sonucu; koşu yapılmadıysa null. */
   sonuc: "passed" | "failed" | "error" | null;
@@ -706,6 +989,36 @@ export interface ScriptDetay extends Script {
   gecikme_butcesi_s?: number | null;
 }
 
+// ---------------------------------------------------------------- Üretim dili (011)
+
+/** `GET /code/languages` seçeneği: `hat` tam (derleme + koşu + PR) ya da doğrulanmamış (yalnız kaynak). */
+export interface DilSecenegi {
+  dil: Dil;
+  etiket: string;
+  /** Test çatısı (ör. "Playwright for Java + TestNG"). */
+  cati: string;
+  hat: "tam" | "dogrulanmamis";
+  /** false: bu dilde üretilemez (ör. depoda o dilin test projesi yok); `neden` Türkçe gerekçedir. */
+  kullanilabilir: boolean;
+  neden: string | null;
+}
+
+/** `GET /code/languages?platform=`: platformun dil seçenekleri ve repodan algılanan dil. */
+export interface KodDilleri {
+  platform: Platform;
+  algilanan: Dil;
+  /** `algilandi`: repodaki elle yazılmış testlerden sayıldı; `varsayilan`: algılama sonuçsuz. */
+  kaynak: "algilandi" | "varsayilan";
+  /** Dil başına elle yazılmış test dosyası sayısı (algılamanın dayanağı). */
+  sayilar: Partial<Record<Dil, number>>;
+  secenekler: DilSecenegi[];
+  /**
+   * Algılama yapılamadıysa (ör. depo okunamadı) core'un Türkçe nedeni; `kaynak` o zaman `varsayilan`
+   * olur. null: algılama yapıldı (sonuçlu ya da sonuçsuz).
+   */
+  neden: string | null;
+}
+
 // ---------------------------------------------------------------- Koşular
 
 /** core `run.tetik` (enums.RUN_TETIK; CI workflow `trigger` girdisiyle ortak liste). */
@@ -714,6 +1027,11 @@ export type KosuKaynagi = "local" | "github" | "sauce";
 
 export interface Kosu {
   id: string;
+  /**
+   * Ham artefakt bağlantıları bu rolde gizli (core `run.artifacts` yok: Denetçi, Görüntüleyici);
+   * artefakt alanları null, test ekleri boş gelir.
+   */
+  maskeli?: boolean;
   tetik: Tetik;
   kaynak: KosuKaynagi;
   commit: string;
@@ -730,6 +1048,8 @@ export interface Kosu {
   allure_url: string | null;
   /** Ham allure-results dizini (JSON listesi); rapor varken ikincil bağlantı. */
   allure_sonuclari_url?: string | null;
+  /** Extent (Spark) HTML raporu; yalnızca Java (Appium + TestNG) koşusu üretir, yoksa null. */
+  extent_url?: string | null;
   /** Playwright HTML raporu. */
   rapor_url: string | null;
   /** JUnit XML (core `junit_url`; yoksa yerel artefakt düzeninden türetilir). */
@@ -754,6 +1074,8 @@ export interface Kosu {
    * Bilinmiyorsa null: hiçbir platforma yazılmaz (süzgeçte yalnız "Tümü"nde görünür).
    */
   platform?: Platform | null;
+  /** 011: koşunun dili (core `dil` ya da `ortam.dil`; yalnız tam hat dilleri koşar). Bilinmiyorsa null (uydurulmaz). */
+  dil?: Dil | null;
 }
 
 /** Playwright `test.step` ağacı (core results.json'dan; sınırlı). */
@@ -1107,6 +1429,13 @@ export interface BugKararGirdisi {
 
 /** `GET /demo/status`: forge main ve çalışan demo uygulamasının durumu. */
 export interface DemoDurumu {
+  /**
+   * Demo kontrolleri açık mı (core `TP_DEMO_MODE=1`; ANALIZ 012 §6). `false`: demo kontrolleri
+   * kapalı (core kırma/sıfırlama uçlarında 403 verir). Core vermezse `undefined` (bilinmiyor).
+   */
+  demo_modu?: boolean | null;
+  /** Kurulum ortamı (core `TP_ORTAM`: dev | test | staging | prod); core vermezse yok. */
+  ortam?: string | null;
   forge: {
     main?: string | null;
     /** Uygulama tarafı (web/src) "Sepete ekle" testId'si. */
@@ -1227,6 +1556,11 @@ export interface KontrolKulesi {
     kabul_hedefi: number;
     script_ilk_review: number | null;
     script_hedefi: number;
+    /**
+     * 011 MİM-Y2: son script'i doğrulanmamış (`unverified`; C# / Python) birim sayısı — review başarısının
+     * paydasına girmez, ayrı sayılır (core `ai_katkisi.script_dogrulanmamis`). Core vermezse null: gösterilmez.
+     */
+    script_dogrulanmamis?: number | null;
     /** pass@1 (yerel düzeltme turu öncesi) ve düzeltme sonrası ayrı (§12). */
     pass_at_1: number | null;
     duzeltme_sonrasi: number | null;
@@ -1332,6 +1666,38 @@ export interface IsYaniti {
   mesaj?: string;
   /** apply-doc-fixes "son hâl onayı": kararsız uyarıların accept_difference olarak kaydı (ör. "F2 (tur 1)"). */
   kabul_edilen_uyarilar?: string[];
+}
+
+/**
+ * `POST /code/generate` toplu yanıtında case başına sonuç (core `start_generation` `sonuclar[]`).
+ * `basladi` dışındaki durumlar o case için üretimin başlamadığını söyler; `neden` core'un Türkçe gerekçesi.
+ */
+export type UretimSonucDurumu = "basladi" | "cakisma" | "pr_acik" | "merge_edildi" | "suruyor" | "reddedildi" | "bulunamadi";
+
+export interface UretimSonucu {
+  case_id: string;
+  durum: UretimSonucDurumu | (string & {});
+  neden: string | null;
+  script_id: string | null;
+}
+
+/** `POST /code/generate` yanıtı: iş + case başına sonuçlar (011 K-T12). */
+export interface KodUretYaniti extends IsYaniti {
+  sonuclar: UretimSonucu[];
+  /**
+   * core K-T12 (MİM-D1/D2): başka dilde merge edilmiş testi olduğu için üretilmeyen case sayısı. Alan
+   * varsa core `mesaj`ı bu bilgiyi zaten içerir (portal yinelemez); yoksa (eski core) `sonuclar`'dan sayılır.
+   */
+  cakisma_sayisi?: number;
+}
+
+/**
+ * `GET /scripts` listesi ve sınır bilgisi. core listeyi en yeni 200 kayıtla sınırlar; sınıra ulaşıldıysa
+ * listede olmayan bir case'in eski kodu olabilir (QA-Y4: "Kod yok" yerine "bilinmiyor").
+ */
+export interface ScriptListesi {
+  kayitlar: Script[];
+  sinira_ulasti: boolean;
 }
 
 // ---------------------------------------------------------------- SSE

@@ -24,7 +24,7 @@ def _redler() -> list[AuditEvent]:
 
 
 def test_iptal_edilmis_token_kullanimi_denetime_yazilir(api: TestClient, make_user) -> None:
-    u = make_user("analyst")
+    u = make_user("tester")
     token = _token(u, "publish")
     with session_scope() as s:
         tok = s.scalars(select(ApiToken).where(ApiToken.user_id == u.id)).one()
@@ -65,7 +65,7 @@ def test_bilinmeyen_token_ve_tokensiz_istek(api: TestClient) -> None:
 
 
 def test_localhost_disi_ve_vekil_istekleri_denetime_yazilir(api: TestClient, make_user) -> None:
-    token = _token(make_user("analyst"), "submit")
+    token = _token(make_user("tester"), "submit")
     assert _raw(api, token, INIT, Host="evil.example").status_code == 421
     assert _raw(api, token, INIT, **{"X-Forwarded-For": "172.18.0.5"}).status_code == 403
     host, vekil = _redler()
@@ -76,6 +76,6 @@ def test_localhost_disi_ve_vekil_istekleri_denetime_yazilir(api: TestClient, mak
 
 
 def test_basarili_istek_denetime_red_yazmaz(api: TestClient, make_user) -> None:
-    token = _token(make_user("analyst"), "submit")
+    token = _token(make_user("tester"), "submit")
     assert _raw(api, token, INIT).status_code == 200
     assert _redler() == []

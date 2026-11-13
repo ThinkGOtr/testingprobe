@@ -205,7 +205,7 @@ def _al(engine: Engine, gh: FakeGh) -> uuid.UUID:
 
 def _detay(engine: Engine, rid: uuid.UUID) -> dict[str, Any]:
     with Session(engine) as s:
-        return service.run_detail(s, rid)
+        return service.run_detail(s, rid, artefakt=True)
 
 
 def test_raporlar_yerel_kopyadan_sunulur(engine: Engine, gh: FakeGh, tmp_path: Path) -> None:

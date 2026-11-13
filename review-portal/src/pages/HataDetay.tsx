@@ -145,7 +145,7 @@ function OnarimKarti({ o, hataId, yenile }: { o: LocatorOnarimi; hataId: string;
       eylemler={
         o.durum === "proposed" && oneriVar ? (
           <IslemDugmesi
-            roller={["engineer"]}
+            izin="code.repair"
             calisiyor={islem.calisiyor}
             onClick={async () => {
               const s = await islem.calistir(() => api.onarimPrAc(hataId));
@@ -159,7 +159,7 @@ function OnarimKarti({ o, hataId, yenile }: { o: LocatorOnarimi; hataId: string;
           </IslemDugmesi>
         ) : o.durum === "failed" ? (
           <IslemDugmesi
-            roller={["engineer"]}
+            izin="code.repair"
             tur="ikincil"
             calisiyor={islem.calisiyor}
             title="Core sağlık ve commit eşleşmesini yeniden denetler; ortam hâlâ sağlıksızsa reddeder."
@@ -331,7 +331,7 @@ function OnarimKarti({ o, hataId, yenile }: { o: LocatorOnarimi; hataId: string;
             Bot PR'ı yalnızca locator dosyasındaki testId değerini değiştirir. Merge insan kararıdır ve denetim kaydına yazılır.
           </p>
           <IslemDugmesi
-            roller={["engineer"]}
+            izin="code.merge"
             disabled={mergeEngeli !== null}
             title={mergeEngeli ?? undefined}
             // Engel düğmenin altında zaten görünür yazılı (aşağıdaki p); düğmeye bağlanır.

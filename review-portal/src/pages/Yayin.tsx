@@ -4,9 +4,9 @@ import { api } from "../api/client";
 import { useOlay } from "../api/events";
 import type { YayinOnizlemeKalemi, YayinSonucu } from "../api/types";
 import { jiraKayitAdresi } from "../api/uyum";
-import { useOturum } from "../auth";
+import { useIzin, useOturum } from "../auth";
 import { useBildirim } from "../components/Bildirim";
-import { Baglanti, BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
+import { Baglanti, BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, Uyari, Yukleniyor, IzinliLink } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import type { Ton } from "../lib/etiketler";
 
@@ -29,26 +29,30 @@ export function yayinOzeti(s: YayinSonucu) {
   return { olusan, vardi, basarisiz, kismi: basarisiz > 0 && olusan + vardi > 0 };
 }
 
-/** Yayın önizleme ve yayın analist rolüne açıktır (core `GET /publish/preview` → 403). */
-export const YAYIN_ROLU_GEREKLI = "Yayın analist rolü gerektirir";
+/** Yayın Testçi rolüne açıktır (`case.publish`); önizleme `publish.preview` rollerine salt okunur. */
+export const YAYIN_ROLU_GEREKLI = "Yayın Testçi rolü gerektirir";
+/** Önizlemeyi görebilen roller (`publish.preview`; core `GET /publish/preview` → 403). */
+export const ONIZLEME_YETKISI_YOK = "Yayın önizleme bu rolde görünmez";
 
 export function Yayin() {
   const { kullanici } = useOturum();
-  if (kullanici && kullanici.rol !== "analyst") return <YayinYetkisiz />;
+  const yetkili = useIzin("publish.preview");
+  if (kullanici && !yetkili) return <YayinYetkisiz />;
   return <YayinEkrani />;
 }
 
 function YayinYetkisiz() {
   const { id = "" } = useParams();
+  const caseOkur = useIzin("case.read");
   return (
     <>
       <SayfaBasligi
-        ust={<Link to={`/gereksinimler/${encodeURIComponent(id)}/caseler`}>← Case review</Link>}
+        ust={<IzinliLink to={`/gereksinimler/${encodeURIComponent(id)}/caseler`}>← Case review</IzinliLink>}
         baslik="Yayın önizleme"
       />
-      <Uyari ton="bilgi" baslik={YAYIN_ROLU_GEREKLI}>
-        Case'lerin test yönetimine yayını ve önizlemesi analist rolüyle yapılır. Case'lerin durumunu Case review ekranında
-        görebilirsiniz.
+      <Uyari ton="bilgi" baslik={ONIZLEME_YETKISI_YOK}>
+        Case'lerin test yönetimine yayını Testçi rolüyle yapılır (Analist son onayından sonra).
+        {caseOkur && " Case'lerin durumunu Case review ekranında görebilirsiniz."}
       </Uyari>
     </>
   );
@@ -66,6 +70,7 @@ function YayinEkrani() {
   const [bekleyenIs, setBekleyenIs] = useState<string | null>(null);
   const islem = useIslem();
   const bildir = useBildirim();
+  const yayinYetkili = useIzin("case.publish");
   const sessiz = useGeciktirilmis(() => {
     void onizleme.yenile(true);
     void metrik.yenile(true);
@@ -125,10 +130,15 @@ function YayinEkrani() {
         baslik="Yayın önizleme"
         aciklama="Önizleme: bu ekranda hiçbir kayıt oluşturulmaz. Yalnızca onaylı ve onaydan sonra değişmemiş case'ler yayınlanır; yayın tekrarlansa da aynı içerik ikinci kez oluşturulmaz."
       />
+      {!yayinYetkili && (
+        <Uyari ton="bilgi" baslik="Salt okunur önizleme">
+          {YAYIN_ROLU_GEREKLI}: bu ekranda yayınlanacak kayıtları görebilirsiniz, yayını Testçi başlatır.
+        </Uyari>
+      )}
       {onizleme.yukleniyor && !o ? (
         <Yukleniyor />
       ) : onizleme.hata && !o && onizleme.hataKodu === 403 ? (
-        <Uyari ton="bilgi" baslik={YAYIN_ROLU_GEREKLI}>
+        <Uyari ton="bilgi" baslik={ONIZLEME_YETKISI_YOK}>
           {onizleme.hata}
         </Uyari>
       ) : onizleme.hata && !o ? (
@@ -139,7 +149,7 @@ function YayinEkrani() {
             baslik="Hedef"
             eylemler={
               <IslemDugmesi
-                roller={["analyst"]}
+                izin="case.publish"
                 disabled={secili.size === 0 || bekleyenIs !== null}
                 calisiyor={islem.calisiyor || bekleyenIs !== null}
                 onClick={yayinla}

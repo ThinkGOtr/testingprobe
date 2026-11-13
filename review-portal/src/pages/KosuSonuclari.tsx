@@ -1,7 +1,7 @@
 import { Fragment, useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import type { KosuDetay, PwAdimi, TestDenemesi, TestSonucu } from "../api/types";
-import { Baglanti, BosDurum, Cip, DisBaglanti, Kart } from "../components/ui";
+import { Baglanti, BosDurum, Cip, DisBaglanti, Kart, IzinliLink } from "../components/ui";
 import { altTurEtiketi, HATA_SINIFI, KOSU_DURUMU } from "../lib/etiketler";
 import { sure } from "../lib/format";
 
@@ -399,7 +399,7 @@ export function TestSonuclari({ k }: { k: KosuDetay }) {
                         {s.failure_id ? (
                           <span className="satir-ogeler">
                             <SinifCipi s={s} />
-                            <Link to={`/hatalar/${encodeURIComponent(s.failure_id)}`}>Triage sonucu</Link>
+                            <IzinliLink to={`/hatalar/${encodeURIComponent(s.failure_id)}`}>Triage sonucu</IzinliLink>
                           </span>
                         ) : s.durum === "failed" ? (
                           <span className="soluk kucuk">sınıflandırılıyor</span>

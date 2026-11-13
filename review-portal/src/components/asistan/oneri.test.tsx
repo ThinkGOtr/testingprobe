@@ -546,8 +546,10 @@ describe("vurgu ve mock sözleşmesi", () => {
     await expect(oneriApi.geriBildirim("yok-boyle", { deger: -1 })).rejects.toMatchObject({ status: 422 });
     await expect(oneriApi.geriBildirim("gereksinim-bulgu-karari", { deger: 2, varlik_id: "req-ft-1", jira_anahtari: "tpd" })).rejects.toMatchObject({ status: 422 });
     await expect(oneriApi.geriBildirim("bug-taslagi-karari", { deger: -1, varlik_id: "bug-1" })).rejects.toMatchObject({ status: 404 });
-    await expect(oneriApi.liste({ rota: "/claude-code" })).resolves.toMatchObject({ ekranda_kural_var: false });
+    await expect(oneriApi.liste({ rota: "/claude-code" })).rejects.toMatchObject({ status: 404 });
     await oturumAc("testci");
+    await expect(oneriApi.liste({ rota: "/claude-code" })).resolves.toMatchObject({ ekranda_kural_var: false });
+    await oturumAc("muhendis");
     await expect(oneriApi.liste({ rota: "/claude-code" })).rejects.toMatchObject({ status: 404 });
   });
 });
@@ -637,5 +639,21 @@ describe("012 §4.4: test beklentisi farkı (core `beklenti_farki`)", () => {
     expect(a.oneriler.map((o) => [o.kural_id, o.baslik])).toEqual([
       ["hata-beklenti-case-duzelt", "Case'in beklenen değeri onaylı karar tablosuyla uyuşmuyor; case'i düzeltin"],
     ]);
+  });
+});
+
+describe("öneri kuralları rol modeli v2 (ANALIZ 012 §5)", () => {
+  const kimlikler = (l: OneriListesi) => l.oneriler.map((o) => (o as unknown as { kural_id?: string; id?: string }).kural_id ?? (o as { id?: string }).id);
+
+  it("case kararı bekleyen → Testçi; son onay bekleyen → Analist; yayına hazır → Testçi", async () => {
+    const { mockVerisi } = await import("../../api/mock/handlers");
+    await oturumAc("testci");
+    expect(kimlikler(await oneriApi.liste({ rota: "/gereksinimler/req-tpd-1/caseler" }))).toContain("case-inceleme-bekliyor");
+    await oturumAc("analist");
+    expect(kimlikler(await oneriApi.liste({ rota: "/gereksinimler/req-tpd-1/caseler" }))).not.toContain("case-inceleme-bekliyor");
+    for (const c of mockVerisi().caseler) if (c.requirement_id === "req-tpd-1" && c.durum === "draft") c.durum = "ready";
+    expect(kimlikler(await oneriApi.liste({ rota: "/gereksinimler/req-tpd-1/caseler" }))).toContain("case-son-onay-bekliyor");
+    await oturumAc("testci");
+    expect(kimlikler(await oneriApi.liste({ rota: "/gereksinimler/req-tpd-1/caseler" }))).toContain("case-inceleme-analistte");
   });
 });

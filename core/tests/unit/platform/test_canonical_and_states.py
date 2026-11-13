@@ -95,8 +95,12 @@ def test_makine_tutarli(ad: str) -> None:
 
 def test_kapilar_ve_onaylar() -> None:
     # Constitution I: case, bug ve merge geçişleri insan kapısından geçer.
-    assert ("draft", "approved") in MACHINES["test_case"].gates
+    # 012: Testçi kabulü (draft → ready) ve Analist son onayı (ready → approved) ayrı kapılar.
+    assert ("draft", "ready") in MACHINES["test_case"].gates
+    assert ("ready", "approved") in MACHINES["test_case"].gates
     assert ("approved", "published") in MACHINES["test_case"].gates
+    assert not MACHINES["test_case"].allowed("draft", "approved")
+    assert MACHINES["test_case"].gates[("approved", "published")].kararlar == {"approve"}
     assert ("draft", "approved") in MACHINES["bug_draft"].gates
     assert ("approved", "published") in MACHINES["bug_draft"].gates
     assert ("pr_open", "merged") in MACHINES["script"].gates
@@ -116,6 +120,24 @@ def test_son_durumlar_cikissiz() -> None:
     assert MACHINES["test_case"].transitions["published"] == frozenset()
     assert MACHINES["bug_draft"].transitions["published"] == frozenset()
     assert MACHINES["script"].transitions["merged"] == frozenset()
+
+
+def test_karar_rolleri_izin_katalogundan() -> None:
+    """Durum makinesindeki karar rolleri auth/yetki.py kataloğuyla aynı (ANALIZ §4.3)."""
+    from tp_core.auth.yetki import KARAR_IZNI, roller_icin
+    from tp_core.workflow.service import karar_rolleri
+    from tp_core.workflow.states import TEST_CASE_KARAR_IZNI
+
+    assert set(TEST_CASE_KARAR_IZNI) == KARARLAR["test_case"]
+    for karar, izin_adi in TEST_CASE_KARAR_IZNI.items():
+        assert karar_rolleri("test_case", karar) == roller_icin(izin_adi)
+    assert karar_rolleri("test_case", "accept") == {"tester"}
+    assert karar_rolleri("test_case", "approve") == {"analyst"}
+    assert APPROVER_ROLES["test_case"] == roller_icin("case.decide") | roller_icin("case.approve")
+    for tur in ("bug_draft", "script", "consistency_finding"):
+        assert APPROVER_ROLES[tur] == roller_icin(KARAR_IZNI[tur]), tur
+    # PO teyidi yalnız Jira kanalından (K6); portal kümesi kataloğa bağlanmaz.
+    assert APPROVER_ROLES["requirement"] == {"po"}
 
 
 # ------------------------------------------------------------------- olay yükü

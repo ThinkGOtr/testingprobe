@@ -310,7 +310,8 @@ describe("Jira anahtarları jira-sim seed'iyle uyumlu", () => {
   it("yeni yayın ve bug sıradaki anahtarı alır (seed + mevcutlar üstüne)", async () => {
     await oturumAc("testci");
     const b = await api.bugKarari("bug-1", { icerik_hash: (await api.bugTaslagi("bug-1")).icerik_hash, karar: "new" });
-    expect(b.jira_key).toBe("TPD-12");
+    // TPD-8…13 oluşturulmuş (bug + C1, C2, C3, C8, C9 Test issue'ları): sıradaki TPD-14.
+    expect(b.jira_key).toBe("TPD-14");
   });
 });
 
@@ -395,8 +396,8 @@ describe("ajan adımları ve sayaçlar", () => {
       expect(k.case_sayisi, k.story_key).toBe(g.sayaclar.case_toplam);
     }
     const tpd1 = liste.find((g) => g.jira_key === "TPD-1")!;
-    // 9 golden case, 1 reddedildi → süitte 8; 4'ü onaylı/yayında.
-    expect(tpd1.sayaclar).toMatchObject({ case_toplam: 8, case_onayli: 4 });
+    // 10 golden case, 2 reddedildi → süitte 8; 6'sı onaylı/yayında (C8, C9: 011 dil örnekleri).
+    expect(tpd1.sayaclar).toMatchObject({ case_toplam: 8, case_onayli: 6 });
     // Henüz merge edilmiş script yok (scr-2 merge'e hazır, scr-1 zayıf test): otomasyon %0.
     expect(kule.karne.find((k) => k.story_key === "TPD-1")!.otomasyon_kapsami).toBe(0);
   });

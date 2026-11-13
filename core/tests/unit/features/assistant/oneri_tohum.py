@@ -280,6 +280,14 @@ def _case_bekliyor(t: Tohum, n: datetime) -> Ekran:
     return _ci(req, n)
 
 
+def _case_son_onayda(t: Tohum, n: datetime) -> Ekran:
+    """Testçi kabul etti (`ready`); Analist'in son onayını bekler."""
+    req = t.gereksinim("cases_ready")
+    t.case(req, "ready")
+    t.case(req, "approved")
+    return _ci(req, n)
+
+
 def _case_bitti(t: Tohum, n: datetime) -> Ekran:
     req = t.gereksinim("cases_ready")
     t.case(req, "approved")
@@ -408,14 +416,15 @@ VAKALAR: dict[str, tuple[str, Kurulum, Kurulum]] = {
         _po("jira", 1, durum="doc_final"),
     ),
     "gereksinim-case-uret": (
-        "analyst",
+        "tester",
         _gereksinim("po_approved"),
         _gereksinim("po_approved", ac_missing=True),
     ),
     "gereksinim-basarisiz": ("analyst", _gereksinim("failed"), _gereksinim("done")),
-    "case-inceleme-bekliyor": ("analyst", _case_bekliyor, _case_bitti),
-    "case-yayina-hazir": ("analyst", _case_hazir_olumlu, _case_hazir_olumsuz),
-    "case-inceleme-analistte": ("tester", _case_bekliyor, _case_bitti),
+    "case-inceleme-bekliyor": ("tester", _case_bekliyor, _case_bitti),
+    "case-son-onay-bekliyor": ("analyst", _case_son_onayda, _case_bitti),
+    "case-yayina-hazir": ("tester", _case_hazir_olumlu, _case_son_onayda),
+    "case-inceleme-analistte": ("tester", _case_son_onayda, _case_bitti),
     "script-kirarak-dogrula": (
         "engineer",
         _script("pr_open", "weak"),
@@ -432,8 +441,14 @@ VAKALAR: dict[str, tuple[str, Kurulum, Kurulum]] = {
         # Defect adayında yeniden üretim önerilmez (karar triage'da; Kod.tsx ile aynı).
         _script("blocked", "not_started", engel_turu="defect_candidate"),
     ),
+    # 011 (MİM-L8): doğrulanmamış dil (C#/Python) — yalnız bilgi; PR/merge önerilmez.
+    "script-dogrulanmamis": (
+        "engineer",
+        _script("unverified", None),
+        _script("closed", None),
+    ),
     "kosu-ortam-hatasi-task": ("engineer", _kosu("error"), _kosu("failed")),
-    "kosu-ortam-hatasi-bilgi": ("presenter", _kosu("error"), _kosu("passed")),
+    "kosu-ortam-hatasi-bilgi": ("admin", _kosu("error"), _kosu("passed")),
     "hata-bakim-onarim": (
         "engineer",
         _hata("test_maintenance", alt_tur="locator"),
@@ -460,6 +475,6 @@ VAKALAR: dict[str, tuple[str, Kurulum, Kurulum]] = {
     "hata-test-verisi-bilgi": ("engineer", _hata("test_data"), _hata("unknown")),
     "bug-taslagi-karari": ("tester", _bug("draft"), _bug("dismissed")),
     "bug-taslagi-bulgudan": ("analyst", _bug("draft", bulgu=True), _bug("draft")),
-    "butce-uyarisi": ("presenter", _butce("8.5"), _butce("7.9", gun_sonra=2)),
-    "guncel-kosu-yok": ("presenter", _son_kosu(30), _son_kosu(3)),
+    "butce-uyarisi": ("admin", _butce("8.5"), _butce("7.9", gun_sonra=2)),
+    "guncel-kosu-yok": ("engineer", _son_kosu(30), _son_kosu(3)),
 }

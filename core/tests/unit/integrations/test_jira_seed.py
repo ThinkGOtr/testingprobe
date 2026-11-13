@@ -375,7 +375,7 @@ def test_sim_comment_delete_unknown_id_is_404(sim: TestClient) -> None:
 
 def test_transitions_round_trip(jira: RestJira) -> None:
     names = {t["to"]["name"] for t in jira.transitions("TPD-5")}
-    assert names == {"In Progress", "Done"}
+    assert names == {"In Progress", "QA To Do", "Done"}
     done = next(t for t in jira.transitions("TPD-5") if t["name"] == "Done")
     jira.transition("TPD-5", done["id"])
     assert jira.get_issue("TPD-5").status == "Done"

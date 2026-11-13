@@ -95,7 +95,7 @@ class SahteHome:
         return sum(1 for c in self.cagrilar if c[0] == yol)
 
 
-ADMIN_ROLLERI = frozenset({"po"})  # products/testing-probe.yaml `admin_roles`
+ADMIN_ROLLERI = frozenset({"admin", "po"})  # products/testing-probe.yaml `admin_roles`
 
 
 def _admin_suz(roller: list[str], acr: Any) -> list[str]:
@@ -346,8 +346,24 @@ def test_kod_tekrari_ve_org_reddi(client: TestClient, home: SahteHome) -> None:
     assert r.status_code == 400 and r.json()["kod"] == "giris_kodu_gecersiz"
     r = _giris(client, home, ["tester"], org="baska-org")
     assert r.status_code == 403 and r.json()["kod"] == "org_reddi"
-    r = _giris(client, home, ["admin"])  # TP rolü değil
+    r = _giris(client, home, ["yonetici"])  # TP rolü değil
     assert r.status_code == 403 and r.json()["kod"] == "rol_yok"
+    # Eski `presenter` `admin` sayılır ve MFA ister: home süzmese de (eski ad) acr="1"'de düşer.
+    r = _giris(client, home, ["presenter"], acr="1")
+    assert r.status_code == 403 and r.json()["kod"] == "rol_yok"
+
+
+def test_presenter_rolu_admin_hesabi_acar(
+    client: TestClient, home: SahteHome, engine: Engine
+) -> None:
+    """AI Probe'daki canlı kayıt güncellenene kadar `presenter` → `admin` (JIT `admin` hesabı)."""
+    r = _giris(client, home, ["presenter"])
+    assert r.status_code in (200, 302, 303), r.text
+    me = client.get("/auth/me").json()
+    assert me["rol"] == "admin" and "demo.manage" in me["izinler"]
+    with engine.connect() as c:
+        roller = set(c.execute(text("SELECT rol FROM app_user")).scalars())
+    assert roller == {"admin"}
 
 
 @pytest.mark.parametrize(
@@ -542,7 +558,7 @@ def test_tpt_token_oturumun_auth_time_ini_tasir(
     oturumun `auth_time`/`acr`/`session_epoch_ms`'ini taşıdığı için görülür.
     """
     with _mcp_istemci(home) as client:
-        _giris(client, home, ["analyst"])
+        _giris(client, home, ["tester"])
         r = client.post("/tokens", json={"kapsam": "publish"})
         assert r.status_code == 201, r.text
         raw = r.json()["token"]
@@ -556,7 +572,7 @@ def test_tpt_token_oturumun_auth_time_ini_tasir(
     # iptal edildi; TP'nin bunu henüz görmemiş olması önbellekten gelir.
     iptal_ms = EPOCH_MS + 50
     home.kisiler[UID] = {
-        "roles": ["analyst"],
+        "roles": ["tester"],
         "revoked_at_ms": iptal_ms,
         "valid_after": iptal_ms // 1000,
     }
@@ -603,7 +619,7 @@ def test_local_kipte_token_auth_time_bos(db: Db, make_user: MakeUser, engine: En
     def _mcp() -> dict[str, Any]:
         return {}
 
-    u = make_user("analyst")
+    u = make_user("tester")
     with TestClient(app) as client:
         r = client.post("/auth/login", json={"kullanici_adi": u.kullanici_adi, "parola": PAROLA})
         assert r.status_code == 200
@@ -935,12 +951,20 @@ def test_alembic_tek_bas() -> None:
 
     script = ScriptDirectory.from_config(alembic_config())
     bas = script.get_heads()
-    # 012: `0022_kalite_dogrulama` 0020'nin ardından gelir (ANALIZ V7; feat/case-gen-v3'ün 0021'i
-    # birleşince 0022'nin ebeveyni 0021 olur).
-    assert bas == ["0022"], f"birden çok Alembic başı: {bas} — 0019'u yeniden ebeveynleyin (T051)"
+    # 011: 0021 (script dili) → 0022 (PR zorunlu check'ler); 013: 0023 (asistan güvenlik olayı)
+    # → 0030 (sprint otomasyonu); 012: 0031 (roller, S1) → 0032 (case ready, S2) → 0033 (eski
+    # onay işareti, PO reddi); 012 kalite doğrulama: 0034 (ANALIZ §14.1).
+    assert bas == ["0034"], f"birden çok Alembic başı: {bas} — 0019'u yeniden ebeveynleyin (T051)"
     assert script.get_revision("0019").down_revision == "0018"
     assert script.get_revision("0020").down_revision == "0019"
-    assert script.get_revision("0022").down_revision == "0020"
+    assert script.get_revision("0021").down_revision == "0020"  # 011 script dili
+    assert script.get_revision("0022").down_revision == "0021"
+    assert script.get_revision("0023").down_revision == "0022"  # 013 asistan güvenlik
+    assert script.get_revision("0030").down_revision == "0023"  # 013 sprint otomasyonu
+    assert script.get_revision("0031").down_revision == "0030"  # 012 rol modeli v2
+    assert script.get_revision("0032").down_revision == "0031"
+    assert script.get_revision("0033").down_revision == "0032"
+    assert script.get_revision("0034").down_revision == "0033"  # 012 kalite doğrulama
 
 
 # ------------------------------------------------------------------ inceleme bulguları (2026-11-10)

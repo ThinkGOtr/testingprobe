@@ -173,7 +173,11 @@ def test_aday_kimlik_tek_aday_ve_reddedilenler() -> None:
 
 def test_java_mi_ve_kanit_dizini_adi() -> None:
     assert jv.java_mi(None, SINIF) and jv.java_mi("android", "x")
-    assert not jv.java_mi("web", SINIF)
+    # 011: `web` kısa devresi kalktı — Java mı sorusu dile/dosyaya bakar (web + Playwright for
+    # Java). Dil `ts` diyorsa Java değildir; dil/dosya yoksa web'de istisna metni Java demez.
+    assert jv.java_mi("web", SINIF) and jv.java_mi("web", None, dil="java")
+    assert not jv.java_mi("web", SINIF, dil="ts")
+    assert not jv.java_mi("web", None, "java.lang.AssertionError: x")
     assert not jv.java_mi(None, "tests/cart.spec.ts", "Error: expect(locator)")
     assert jv.java_mi(None, None, "org.openqa.selenium.TimeoutException: x")
     assert jv.kanit_dizini_adi(SINIF, "senaryo") == "TPD1C3_0a1b2c3dTest.senaryo"

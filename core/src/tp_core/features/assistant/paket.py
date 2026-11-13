@@ -68,6 +68,13 @@ HARIC_LISTESI: tuple[str, ...] = (
     "**/dist/**",
     "deploy/**",
     "**/__pycache__/**",
+    # Spec 013 K7: dedektör desenleri, istem parmak izleri ve onları uygulayan modüller (kart /
+    # kanarya desenleri, iz eşleme kuralları) asistanın okuyabildiği pakete girmez: asistan kendi
+    # dedektörünü okuyup atlatma tarifi veremesin.
+    "rules/assistant/sinyaller.yaml",
+    "rules/assistant/istem-izleri.yaml",
+    "core/src/tp_core/features/assistant/guvenlik.py",
+    "core/src/tp_core/features/assistant/guvenlik_cikti.py",
 )
 # Yürünmeyen dizinler (izin listesi bunların altını zaten kapsamaz; hız ve symlink güvenliği).
 _ATLANAN_DIZINLER = frozenset({".git", "node_modules", "dist", "__pycache__", ".venv", "var"})

@@ -24,6 +24,7 @@ import tp_core.features.cases.jobs
 import tp_core.features.publish.jobs  # noqa: F401
 from tp_core.audit import PgCallRecorder
 from tp_core.features.cases import service as cases_service
+from tp_core.features.otomasyon.ayarlar import OTOMATIK_KOD
 from tp_core.features.publish import service as publish_service
 from tp_core.gateway import build_gateway
 from tp_core.gateway.config import GatewaySettings
@@ -31,6 +32,7 @@ from tp_core.gateway.testing import FakeProvider
 from tp_core.integrations.jira import RestJira
 from tp_core.integrations.testmgmt import JiraTestManagement
 from tp_core.models import Requirement, session_scope
+from tp_core.models.otomasyon_feature import OtomasyonAyari
 from tp_core.workflow.jobs import process_one
 from tp_core.workflow.service import (
     SYSTEM,
@@ -246,10 +248,24 @@ def worker(engine: Engine) -> Iterator[None]:
     t.join(timeout=10)
 
 
+def otomatik_kod_ayari(acik: bool) -> None:
+    """013 §3.2: onay sonrası otomatik kod üretimi ayarı (denetim kaydı yazmadan; test kurulumu)."""
+    with session_scope() as s:
+        satir = s.get(OtomasyonAyari, OTOMATIK_KOD)
+        if satir is None:
+            s.add(OtomasyonAyari(anahtar=OTOMATIK_KOD, deger={"acik": acik}, guncelleyen="test"))
+        else:
+            satir.deger = {"acik": acik}
+
+
 @pytest.fixture
 def api(db: Any) -> Iterator[TestClient]:
+    """Uygulama istemcisi. Otomatik kod üretimi (ürün varsayılanı açık) burada KAPALI başlar:
+    bu fikstürü kullanan akış testleri onay sonrası `codegen.generate` işi beklemez (iş kuyruğu
+    ve script sayıları değişmesin). Otomatik kodu sınayan testler `otomatik_kod_ayari(True)`."""
     from tp_core.api.main import create_app
 
+    otomatik_kod_ayari(False)
     with TestClient(create_app(), base_url="http://127.0.0.1:8000") as c:
         yield c
 
@@ -263,3 +279,80 @@ def latest_cases(client: TestClient, rid: uuid.UUID) -> list[dict[str, Any]]:
     r = client.get("/cases", params={"requirement_id": str(rid)})
     assert r.status_code == 200, r.text
     return r.json()
+
+
+def goruntule(client: TestClient, db: Any, *case_ids: str, once_s: int = 5) -> None:
+    """013 K13: case'leri görüntüler ve görüntülemeyi `once_s` sn geriye çeker (toplu onayın
+    "en az 3 sn ekranda" şartı). tp_app `case_goruntuleme`yi güncelleyemez: sahip bağlantısı."""
+    from sqlalchemy import create_engine
+    from sqlalchemy import text as sql_text
+
+    for cid in case_ids:
+        r = client.post(f"/cases/{cid}/viewed")
+        assert r.status_code == 200, r.text
+    sahip = create_engine(db.owner_url)
+    try:
+        with sahip.begin() as conn:
+            conn.execute(
+                sql_text(
+                    "UPDATE case_goruntuleme SET zaman = zaman - make_interval(secs => :s) "
+                    "WHERE test_case_id = ANY(CAST(:ids AS uuid[]))"
+                ),
+                {"s": once_s, "ids": list(case_ids)},
+            )
+    finally:
+        sahip.dispose()
+
+
+# ------------------------------------------------- 012 case akışı: Testçi kararı + Analist onayı
+
+
+def rol_ol(client: TestClient, user: Principal) -> None:
+    """Aynı istemcide hesap değiştir (K1: rol hesapları arasında geçiş)."""
+    client.post("/auth/logout")
+    login(client, user)
+
+
+def karar_ver(client: TestClient, c: dict[str, Any], **govde: Any) -> httpx.Response:
+    return client.post(
+        f"/cases/{c['id']}/decision", json={"icerik_hash": c["icerik_hash"], **govde}
+    )
+
+
+def onayla(
+    client: TestClient,
+    c: dict[str, Any],
+    testci: Principal,
+    analist: Principal,
+    *,
+    sonra: Principal | None = None,
+    icerik: dict[str, Any] | None = None,
+    **govde: Any,
+) -> dict[str, Any]:
+    """Testçi kabulü (`accept`; `icerik` verilirse `edit`) + Analist son onayı (`approve`).
+
+    Sonunda `sonra` (varsayılan: Testçi — yayın Testçinindir) oturumu açık kalır.
+    """
+    rol_ol(client, testci)
+    if icerik is None:
+        r = karar_ver(client, c, karar="accept", **govde)
+    else:
+        r = karar_ver(client, c, karar="edit", icerik=icerik, **govde)
+    assert r.status_code == 200, r.text
+    hazir = r.json()
+    assert hazir["durum"] == "ready", hazir
+    rol_ol(client, analist)
+    r = karar_ver(client, hazir, karar="approve")
+    assert r.status_code == 200, r.text
+    rol_ol(client, sonra or testci)
+    return r.json()
+
+
+def onayla_db(
+    session: Any, tc: Any, testci: Principal, analist: Principal, *, karar: str = "accept"
+) -> None:
+    """Servis düzeyinde 012 onayı: draft → ready (Testçi) → approved (Analist)."""
+    record_approval(session, tc, testci, karar, beklenen_hash=content_hash_of(tc))
+    transition(session, tc, "ready", testci, "draft")
+    record_approval(session, tc, analist, "approve", beklenen_hash=content_hash_of(tc))
+    transition(session, tc, "approved", analist, "ready")

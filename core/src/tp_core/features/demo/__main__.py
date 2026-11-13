@@ -5,9 +5,10 @@
 
 `make break` (host yolu: `scripts/demo-break.sh --make` → `forge-init.sh break`) core API'sini
 atlar; `POST /demo/break-locator`'ın yeşil-koşu ve yerel-forge denetimleri burada da uygulanır.
-Çıktı tek satır JSON'dur. Çıkış: 0 kırılabilir · 3 reddedildi (yeşil temel koşu yok ya da GitHub
-kipinde insan kimliği `GITHUB_MERGE_TOKEN` yok; `demo.break_refused` denetime yazılır) · 2 kullanım
-hatası.
+Çıktı tek satır JSON'dur. Çıkış: 0 kırılabilir · 3 reddedildi (demo kipi kapalı — `TP_DEMO_MODE=0`;
+yeşil temel koşu yok ya da GitHub kipinde insan kimliği `GITHUB_MERGE_TOKEN` yok;
+`demo.break_refused` denetime yazılır) · 2 kullanım hatası. `web-istek --eylem break|baseline` da
+demo kipi kapalıyken 3 döner (`sync` uygulamayı main'e eşitler; demo kontrolü değildir).
 
 `web-istek`: forge `main`'in güncel head'i için demo-app-web yenileme isteği yazar
 (`scripts/demo-web-sync.sh --main`; ör. GitHub kipinde `make up` sonrası çalışan uygulamayı GitHub
@@ -27,10 +28,15 @@ RED_KODU = 3
 
 def kirilma_on_denetimi(isteyen: str, *, zorla: bool = False) -> tuple[int, dict[str, object]]:
     from tp_core.audit import audit_on_commit
+    from tp_core.config import get_settings
     from tp_core.features.demo import service
     from tp_core.models import session_scope
 
     with session_scope() as s:
+        if not get_settings().demo_mode:
+            audit_on_commit(s, isteyen, "demo.break_refused", "forge:main",
+                            {"neden": "demo_kapali", "yol": "make break"})  # fmt: skip
+            return RED_KODU, {"hazir": False, "neden": service.DEMO_KAPALI}
         if not service._yerel_forge_kipi() and not (os.environ.get("GITHUB_MERGE_TOKEN") or ""):
             neden = service.GITHUB_INSAN_KIMLIGI_YOK
             audit_on_commit(s, isteyen, "demo.break_refused", "forge:main",
@@ -73,6 +79,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     w.add_argument("--isteyen", default="demo-web-sync")
     a = p.parse_args(argv)
     if a.komut == "web-istek":
+        from tp_core.config import get_settings
+
+        if a.eylem != "sync" and not get_settings().demo_mode:
+            print(json.dumps({"neden": "Demo kipi kapalı (TP_DEMO_MODE=0)"}, ensure_ascii=False))
+            return RED_KODU
         print(json.dumps(web_istegi(a.eylem, a.isteyen), ensure_ascii=False, default=str))
         return 0
     kod, out = kirilma_on_denetimi(a.isteyen, zorla=a.zorla)

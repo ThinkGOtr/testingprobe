@@ -141,6 +141,7 @@ JOB_PO_REQUEST = "requirements.po_request"
 EV_REQUIREMENT = "requirement.updated"
 EV_FINDING = "finding.verified"
 EV_PO = "po.approved"
+EV_PO_RED = "po.rejected"
 EV_AGENT_STEP = "agent.step"
 
 # Deterministik kimlikler için ad alanı (requirement_review satırı iş akışından türetilir).
@@ -2357,6 +2358,32 @@ def po_approve_portal(
     emit_requirement(s, req, olay="po_approved")
 
 
+def po_reject_portal(
+    s: Session, req: Requirement, user: Principal, icerik_hash: str | None, gerekce: str
+) -> None:
+    """T04: serbest metin gereksiniminde PO reddi (portal, po rolü; specs/012 §4.1).
+
+    Gerekçeli `po_reject` kararı `review`'a içerik hash'iyle yazılır; gereksinim `pending_po` →
+    `new` döner (Analist yeniden inceler; ön inceleme kayıtları geçersizlenir, PO onay alanları
+    temizlenir). Jira kaynaklı gereksinimde ret Jira'dadır.
+    """
+    if req.kaynak == "jira":
+        raise FlowError("Jira yolunda PO kararı Jira'da verilir")
+    if req.durum != "pending_po":
+        raise FlowError(f"Gereksinim PO teyidi beklemiyor (durum: {req.durum})")
+    record_approval(s, req, user, "po_reject", beklenen_hash=icerik_hash, gerekce=gerekce)
+    transition(s, req, "new", user, "pending_po", sebep=f"PO reddi: {gerekce[:200]}")
+    req.kontrol_turu = 0
+    _po_temizle(req)
+    supersede_reviews(s, req.id, user)
+    emit(
+        s,
+        EV_PO_RED,
+        {"id": req.id, "requirement_id": req.id, "reddeden": user.kullanici_adi, "kanal": "portal"},
+    )
+    emit_requirement(s, req, olay="po_rejected")
+
+
 def ensure_po_poll(conn: Connection, *, gecikme_s: float = 0.0) -> uuid.UUID | None:
     """PO etiket sorgusu işini (yoksa) kuyruğa ekler. Tek bekleyen iş kuralı advisory lock ile."""
     idempotency_lock(conn, JOB_PO_POLL)
@@ -2657,11 +2684,27 @@ def po_check(engine: Engine, jira: Any, req_id: uuid.UUID, hesaplar: frozenset[s
             {"id": req.id, "requirement_id": req.id, "onaylayan": onay.author, "kanal": "jira"},
         )
         emit_requirement(s, req, olay="po_approved")
+        _otomatik_case(s, req)
     try:
         jira.remove_labels(key, [PO_PENDING_LABEL])
     except Exception as exc:  # panodaki etiket kozmetik; onay kaydı esastır
         log.warning("%s: %s etiketi kaldırılamadı: %s", key, PO_PENDING_LABEL, exc)
     return "onaylandi"
+
+
+def _otomatik_case(s: Session, req: Requirement) -> None:
+    """Jira durum tetiğiyle akışa alınmış gereksinimde case üretimini kuyruğa alır (specs/013
+    §3.4). Kendi savepoint'inde: hata PO onayını geri almaz (Testçi elle başlatabilir, 012)."""
+    if req.qa_tetik_zamani is None:
+        return  # elle çekilmiş gereksinim: davranış değişmez
+    from tp_core.features.otomasyon import jira_tetik
+    from tp_core.features.otomasyon.otokod import savepoint
+
+    try:
+        with savepoint(s):  # geri alımda bekleyen denetim kayıtları da düşer
+            jira_tetik.po_onayi_sonrasi(s, req)
+    except Exception as exc:
+        log.warning("%s: otomatik case üretimi kuyruğa alınamadı: %s", req.jira_key, exc)
 
 
 # --------------------------------------------------------------------- iş hatası

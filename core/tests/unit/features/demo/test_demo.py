@@ -121,6 +121,8 @@ def ortam(
     o.istek_dosyasi = tmp_path / "forge" / "demo-web-refresh.json"
     monkeypatch.setenv(web.REQUEST_FILE_ENV, str(o.istek_dosyasi))
     monkeypatch.setenv("TP_FORGE", "local")
+    # Demo kontrolleri yalnız demo kipinde çalışır (specs/012-rol-yetki §6).
+    monkeypatch.setenv("TP_DEMO_MODE", "1")
     get_settings.cache_clear()
 
     def jira_reset() -> dict[str, Any]:
@@ -196,7 +198,7 @@ def _eylemler(engine: Engine) -> list[tuple[str, str, Any]]:
 def test_kirilma_bypass_denetim_ve_ci_uygulamayi_bekler(
     engine: Engine, ortam: Ortam, make_user: Any
 ) -> None:
-    sunucu = make_user("presenter")
+    sunucu = make_user("admin")
     once = ortam.forge.head_sha("main")
     with session_scope() as s:
         out = service.request_break(s, sunucu)
@@ -271,7 +273,7 @@ def test_uygulama_yenilenmezse_ci_yok_zaman_asimi(
 ) -> None:
     monkeypatch.setenv(service.WAIT_ENV, "60")
     with session_scope() as s:
-        service.request_break(s, make_user("presenter"))
+        service.request_break(s, make_user("admin"))
     run_jobs(engine, 1)
     run_jobs(engine, 1)  # bekliyor
     ortam.saat += timedelta(seconds=120)
@@ -293,7 +295,7 @@ def test_yalnizca_e2e_farkliysa_uygulama_eslesir(ortam: Ortam) -> None:
 
 
 def test_sifirlama(engine: Engine, ortam: Ortam, make_user: Any) -> None:
-    sunucu = make_user("presenter")
+    sunucu = make_user("admin")
     with session_scope() as s:
         service.request_break(s, sunucu)
     run_jobs(engine, 1)
@@ -354,7 +356,7 @@ def test_uygulanmamis_istek_bekleme_suresi_dolunca_ci_acilir(
     """Host'ta demo-web-sync çalışmıyorsa ve uygulama zaten hedef commit'teyse CI sonsuza dek
     beklemez: istek bekleme süresi (TP_DEMO_WEB_ISTEK_BEKLEME_S) dolunca açılır."""
     monkeypatch.setenv(service.ISTEK_GRACE_ENV, "30")
-    sunucu = make_user("presenter")
+    sunucu = make_user("admin")
     with session_scope() as s:
         service.request_break(s, sunucu)
     run_jobs(engine, 1)
@@ -387,13 +389,14 @@ def test_api_rol_ve_durum(
     assert api.post("/demo/break-locator").status_code == 403
     assert api.post("/demo/reset").status_code == 403
     d = api.get("/demo/status").json()
+    assert d["demo_modu"] is True
     assert d["forge"]["testid"] == "add-to-cart" and d["forge"]["main_baseline_mi"] is True
     assert d["uygulama"]["main_ile_eslesiyor"] is True
 
     assert d["onarim_on_kosulu"]["hazir"] is True
     assert d["onarim_on_kosulu"]["son_yesil_kosu"]["tetik"] == "push"
 
-    login(api, make_user("presenter"))
+    login(api, make_user("admin"))
     r = api.post("/demo/break-locator")  # worker yok: iş kuyrukta kalır → 202
     assert r.status_code == 202, r.text
     # Süren demo işi varken ikinci istek reddedilir.
@@ -415,7 +418,7 @@ def test_kirilma_yesil_temel_kosu_yoksa_reddedilir(
     with engine.begin() as c:
         c.execute(text("DELETE FROM run"))
     once = ortam.forge.head_sha("main")
-    login(api, make_user("presenter"))
+    login(api, make_user("admin"))
     d = api.get("/demo/status").json()
     assert d["onarim_on_kosulu"]["hazir"] is False
     assert "make demo-reset" in d["onarim_on_kosulu"]["yonerge"]
@@ -435,7 +438,7 @@ def test_esszamanli_demo_istekleri_tek_is(engine: Engine, ortam: Ortam, make_use
     ikinci süren işi görür ve reddedilir (iki demo.break_locator işi açılmaz)."""
     import threading
 
-    sunucu = make_user("presenter")
+    sunucu = make_user("admin")
     sonuc: dict[str, Any] = {}
     s1 = session_scope().__enter__()
     try:
@@ -513,7 +516,7 @@ def test_sifirlama_jira_simi_sifirlamaz_anahtarlar_cakismaz(
         s.flush()
         acan_id, baglanan_id = acan.id, baglanan.id
     with session_scope() as s:
-        service.request_reset(s, make_user("presenter"))
+        service.request_reset(s, make_user("admin"))
     assert [x.durum for x in run_jobs(engine, 1)] == ["done"]
 
     from tp_core.features.bugs.serialize import bug_draft_view
@@ -556,7 +559,7 @@ def test_sifirlama_gercek_jiraya_dokunmaz(
             simdi=lambda: ortam.saat,
         )
         with session_scope() as s:
-            service.request_reset(s, make_user("presenter"))
+            service.request_reset(s, make_user("admin"))
         assert [x.durum for x in run_jobs(engine, 1)] == ["done"]
     finally:
         get_jira_settings.cache_clear()
@@ -622,12 +625,12 @@ def test_github_kipinde_kirilma_ve_sifirlama_insan_kimligiyle(
     from tests.unit.integrations.github_repo_fake import BOT_TOKEN, HUMAN_LOGIN
 
     ortam, gh = github_ortam
-    login(api, make_user("presenter"))
+    login(api, make_user("admin"))
     d = api.get("/demo/status").json()
     assert d["locator_demo"]["destekleniyor"] is True and d["locator_demo"]["kip"] == "github"
     assert d["forge"]["main_baseline_mi"] is True and d["locator_durumu"] == "baseline"
 
-    sunucu = make_user("presenter")
+    sunucu = make_user("admin")
     once = gh.refs["heads/main"]
     with session_scope() as s:
         out = service.request_break(s, sunucu)
@@ -682,7 +685,7 @@ def test_github_kipinde_insan_kimligi_yoksa_is_duser(
     )
     once = gh.refs["heads/main"]
     with session_scope() as s:
-        service.request_break(s, make_user("presenter"))
+        service.request_break(s, make_user("admin"))
     assert [x.durum for x in run_jobs(engine, 1)] == ["failed"]
     assert gh.refs["heads/main"] == once and gh.prs == {}
     hata = next(oz for _, e, oz in _eylemler(engine) if e == "demo.break_failed")

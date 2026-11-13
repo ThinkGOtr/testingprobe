@@ -83,21 +83,32 @@ class RepairToolchain:
             govde["scope_test_id"] = scope_test_id
         return self._post("/locator-probe", govde, PROBE_TIMEOUT_S)
 
-    def symbols_platform(self, sha: str, platform: str) -> dict[str, Any]:
-        """Uygulama platformunun (android | ios | windows) Java sembol tablosu (009 §2.5)."""
-        tablo = self._post("/symbols", {"sha": sha, "platform": platform}, SYMBOLS_TIMEOUT_S)
+    def symbols_platform(
+        self, sha: str, platform: str, *, lang: str | None = None
+    ) -> dict[str, Any]:
+        """Uygulama platformunun (android | ios | windows) Java sembol tablosu (009 §2.5);
+        `platform="web", lang="java"` → web + Java (`e2e-java`) tablosu (011 §2.6)."""
+        govde: dict[str, Any] = {"sha": sha, "platform": platform}
+        if lang:
+            govde["lang"] = lang
+        tablo = self._post("/symbols", govde, SYMBOLS_TIMEOUT_S)
         if "page_objects" not in tablo:
             raise ToolchainHatasi(200, "sembol tablosu page_objects içermiyor")
         return tablo
 
     def ast_guard(
-        self, base_sha: str, head_sha: str, *, platform: str | None = None
+        self,
+        base_sha: str,
+        head_sha: str,
+        *,
+        platform: str | None = None,
+        lang: str | None = None,
     ) -> dict[str, Any]:
         """`platform` (android | ios | windows) → Java repair koruması (yalnızca Kimlikler.java
-        kimlik literal'i değişebilir); web/None → TS ast-guard repair modu."""
+        kimlik literal'i değişebilir); `lang="java"` + web → web + Java (`e2e-java`) koruması
+        (011); web/None → TS ast-guard repair modu."""
         govde: dict[str, Any] = {"base_sha": base_sha, "head_sha": head_sha, "mode": "repair"}
-        if platform and platform != "web":
-            govde["platform"] = platform
+        govde.update(_dil_alanlari(platform, lang))
         return self._post("/ast-guard", govde, AST_TIMEOUT_S)
 
     def check(
@@ -108,6 +119,7 @@ class RepairToolchain:
         *,
         retries: int = 1,
         platform: str | None = None,
+        lang: str | None = None,
     ) -> dict[str, Any]:
         """Tam paket (test_files boş: etkilenen tüm testler dahil), onarım modunda AST koruması.
 
@@ -115,10 +127,12 @@ class RepairToolchain:
         kontrolü kırmızıya çevirmez; tek bir ilgisiz flake onarımı düşürmez.
 
         `record_check` verilmez (None): tam kapsamlı, kırılmasız kontrol toolchain tarafından
-        `local-ci` olarak kaydedilir; LocalForge merge kapısı bu head için onu okur.
+        `platform.check_adi` adıyla (web + TS `local-ci`) kaydedilir; LocalForge merge kapısı bu
+        head için onu okur.
 
         `platform` (android | ios | windows): Java yolu (`app → deps → guard → compile → run`,
-        test-runner cihazda koşar); web/None → mevcut Playwright yolu.
+        test-runner cihazda koşar); `lang="java"` + web: web + Java yolu (`{lang: java,
+        platform: web}`, kayıt `local-ci-web-java`; 011 K-T1); web/None → mevcut Playwright yolu.
         """
         govde: dict[str, Any] = {
             "sha": sha,
@@ -131,6 +145,15 @@ class RepairToolchain:
             "run_id": run_id,
             "keep": True,
         }
-        if platform and platform != "web":
-            govde["platform"] = platform
+        govde.update(_dil_alanlari(platform, lang))
         return self._post("/check", govde, self.check_timeout_s)
+
+
+def _dil_alanlari(platform: str | None, lang: str | None) -> dict[str, str]:
+    """İstek gövdesinin dil alanları: web + TS boş (istek baytları değişmez); uygulama
+    `platform`; web + Java `lang=java, platform=web`."""
+    if platform and platform != "web":
+        return {"platform": platform}
+    if lang == "java":
+        return {"lang": "java", "platform": "web"}
+    return {}

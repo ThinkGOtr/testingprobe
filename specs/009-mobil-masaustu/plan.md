@@ -17,6 +17,14 @@ anayasa ilkeleri değişmez; yalnız alttaki sürücü, üretilen kodun dili ve 
 | K2 | Cihaz altyapısı | Android emülatörü ve iOS simülatörü bu Mac'te. Windows: CI'da `windows-latest`; canlı ajan için Mac'te UTM/Parallels içinde Windows 11 ARM sanal makinesi (Docker'da Windows Apple Silicon'da KVM olmadığı için olmaz) |
 | K3 | Üretilen kod dili | **Java 17 + Appium java-client + TestNG** (Maven) |
 
+> **Not (2026-11-11, `specs/011-uretim-dili`):** 011 ile **üretim dili platformdan ayrı bir boyut**
+> oldu (`script.dil`: `ts|java|csharp|python`). K3 uygulama platformları için geçerliliğini korur:
+> android/ios/windows × yalnız `java` (Appium + TestNG). Bu plandaki "platform ≠ web ⇒ Java"
+> çıkarımları 011'de iki soruya ayrıldı: araç/ortam platforma (app-mcp, Appium), kod/derleme/yama
+> dile bakar (`platform.java_mi(dil)`). Web artık Java ile de üretilebilir (Playwright for Java +
+> TestNG, `demo-app/e2e-java`, check `local-ci-web-java`); uygulama check adları
+> (`local-ci-<platform>`) değişmedi.
+
 ### Teknik seçimler (bu planla sabitlenir)
 
 | Konu | Seçim | Gerekçe |

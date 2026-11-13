@@ -256,7 +256,7 @@ def test_kullanici_ve_asistan_gunluk(engine: Engine, make_user) -> None:
 
 
 def test_butce_on_kontrol_kapsam_sirasi(engine: Engine, make_user, monkeypatch) -> None:
-    u = make_user("presenter")
+    u = make_user("admin")
     monkeypatch.setenv("TP_DAILY_BUDGET_USD", "2")
     from tp_core.config import get_settings
 

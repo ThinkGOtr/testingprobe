@@ -48,6 +48,7 @@ from tp_core.audit import audit_on_commit, chain_tip, content_hash
 from tp_core.events.bus import publish_tx
 from tp_core.features.bugs import content, jql, services
 from tp_core.features.bugs.context import BugContext, failure_context, finding_context
+from tp_core.features.testveri.atif import maskele_obje
 from tp_core.integrations import jira_notify
 from tp_core.integrations.jira_adf import with_bot_header
 from tp_core.integrations.testmgmt import AI_LABEL, RELATES_LINK, TEST_LINK, tp_label
@@ -600,7 +601,10 @@ def run_prepare(ctx_job: JobContext, engine: Engine) -> dict[str, Any]:
                 if draft is not None:
                     ek = _ek(s, draft)
                     ek.hazirlik_durum = "basarisiz"
-                    ek.hazirlik_hatasi = f"{type(exc).__name__}: {exc}"[:1000]
+                    # K19 / güvenlik #11: ham istisna metni maskeli saklanır.
+                    ek.hazirlik_hatasi = maskele_obje(
+                        f"{type(exc).__name__}: {exc}"[:1000], ctx.gizli_degerler
+                    )
                     audit_on_commit(
                         s,
                         "system:bugs",
@@ -625,19 +629,25 @@ def run_prepare(ctx_job: JobContext, engine: Engine) -> dict[str, Any]:
             draft.ai_call_id = taslak_sonuc.call_id if taslak_sonuc else None
             draft.uretim_modu = taslak_sonuc.mode if taslak_sonuc else None
             ek.uretim = "ai" if taslak_sonuc else "sablon"
-            ek.ai_icerik = taslak_sonuc.output if taslak_sonuc else None
+            # K19 / güvenlik #11: ham model çıktısı maskeli saklanır (model girdisi değişmez).
+            ek.ai_icerik = (
+                maskele_obje(taslak_sonuc.output, ctx.gizli_degerler) if taslak_sonuc else None
+            )
             ek.duzeltmeler = duzeltmeler
         elif ilk:
             ek.uretim = "sablon"
         draft.mukerrer_adaylari = sirali
         ek.imza = ctx.imza()
+        # K19 / güvenlik #1: terimler sırrın parçalarını içermez; yine de maskeli yazılır.
+        sorgu = maskele_obje(sorgu, ctx.gizli_degerler)
+        arama = maskele_obje(arama, ctx.gizli_degerler)
         ek.jql = sorgu
         ek.arama = arama
         ek.dup_ai_call_id = dup_sonuc.call_id if dup_sonuc else None
         ek.dup_uretim_modu = dup_sonuc.mode if dup_sonuc else None
         ek.oneri = oneri
         ek.hazirlik_durum = "hazir"
-        ek.hazirlik_hatasi = taslak_hatasi
+        ek.hazirlik_hatasi = maskele_obje(taslak_hatasi, ctx.gizli_degerler)
         ozet = {
             "hazirlik_no": no,
             "jql": sorgu,

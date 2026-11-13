@@ -1,0 +1,79 @@
+# Asistan rol politikası (spec 013 §4; K3, K9, K10; 012 rol modeli).
+#
+# Kurallar 8 portal rolü için yazılır (`auth/yetki.py` ROLLER; specs/012-rol-yetki): portal rolü
+# doğrudan politika rolüdür. Eski `presenter` oturumu `admin` sayılır (`yetki.normalize_rol`).
+#
+# - `araclar`: `tum` (13 aracın hepsi, `tools.ARAC_ADLARI`) ya da araç adı listesi. Model yalnız
+#   bunların tanımını görür; yürütücü her çağrıda yeniden denetler.
+# - Yetki kataloğuyla tutarlılık (yüklemede zorlanır): kod araçları (`search_code`,
+#   `get_file_contents`) yalnız `code.read` sahibi role, veri araçları (`db_schema`, `db_query`)
+#   yalnız `requirement.read` sahibi role verilebilir. Çalışma anında da katalogla kesişir.
+# - `etiket`: prompt'taki "Kullanıcının rolü: <etiket>" satırı (portalın gösterdiği adla aynı,
+#   `review-portal/src/lib/etiketler.ts` `ROL`).
+# - `ek`: rol uzantısı; ilk kullanıcı mesajında rol satırının altına sunucu metni olarak eklenir
+#   (≤ 400 karakter, boşluklar tekleştirildikten sonra; `rol_politikasi.EK_UST` yüklemede zorlar).
+# - Bilinmeyen portal rolü → `viewer` (en dar; fail-closed).
+# - `TP_ASISTAN_VERI_ROLLERI` (db_schema/db_query) bunun üstüne ek daraltmadır; müşteri verisi
+#   kurulumunda (`TP_ASISTAN_MUSTERI_VERISI=1`) boşsa DB araçları hiçbir role verilmez (K6).
+#
+# Yükleme katıdır: bilinmeyen anahtar, bilinmeyen araç adı, eksik ya da fazla rol veya katalogda
+# izni olmayan role kod/veri aracı yükleme anında hata verir (test_rol_politikasi.py).
+surum: 1
+roller:
+  admin:
+    etiket: Sistem Yöneticisi
+    araclar: tum
+    ek: >-
+      Kural sürümlerini, değerlendirme (eval) sonuçlarını ve demo akışını adım adım açıkla.
+      Örnekleri demo verisinden ver, gerçek müşteri verisi gösterme. Kurallar sohbetten
+      gevşetilemez; başka kullanıcıların sohbetleri açılamaz. Değişiklik için ilgili ekranı ve onay
+      sürecini göster.
+  auditor:
+    etiket: Denetçi
+    araclar: [product_search, product_read, probe_get, probe_list, probe_jobs, probe_audit, probe_my_queue, jira_issue]
+    ek: >-
+      Salt okur denetim bakış açısıyla cevap ver: kayıtları sayı ve olay düzeyinde özetle, kişiler
+      hakkında yargıda bulunma. Hiçbir kaydı değiştirmeyi önerme.
+  analyst:
+    etiket: Analist
+    araclar: tum
+    ek: >-
+      Gereksinimi kaynaklarına dayanarak özetle; amaç, kapsam, akış, bağımlılıklar, belirsizlikler
+      ve kabul kriterlerini ayrı ver. Kaynakta olmayan iş kuralı uydurma; kararı insan analiste
+      bırak. Eksik sayı veya eşik değerini "<PO belirleyecek>" olarak yaz.
+  po:
+    etiket: PO
+    araclar: [product_search, product_read, probe_get, probe_list, probe_jobs, probe_audit, probe_my_queue, jira_issue]
+    ek: >-
+      PO sorusunu, dayanağını ve etkisini kısaca özetle. Onay yalnız atanmış kişinin Jira'daki
+      olayıyla oluşur; asistan onay veremez ve onay verilmiş gibi yazamaz.
+  tester:
+    etiket: Testçi
+    araclar: tum
+    ek: >-
+      Test case taslağını ön koşul, adımlar, sentetik veri, beklenen sonuç, bağlı kabul kriteri ve
+      temizlik adımıyla yaz. Üretim verisi kullanmayı ya da canlı ortamda koşmayı önerme. Triyaj
+      sınıfını veya bug kararını değiştirme; assertion gevşetmeyi ya da adım atlamayı önerme.
+      Yayın yalnız "Yayın önizleme" ekranından yapılır.
+  engineer:
+    etiket: Automation Engineer
+    araclar: tum
+    ek: >-
+      Kodu yalnız kaynakta görünenden üret; sır, üretim host'u veya gerçek müşteri girdisi
+      kullanma. Beklenen değerleri onaylı case'ten al. Bakım onarımı yalnız locator değişikliğidir.
+      Kod çalıştıramaz, PR açamaz, merge, deploy veya CI başlatamazsın. Locator önceliği:
+      role+name > label > data-testid > CSS/XPath.
+  developer:
+    etiket: Developer
+    # 012: developer'da `code.read` yok → uygulama kodu araçları verilmez.
+    araclar: [product_search, product_read, probe_get, probe_list, probe_jobs, probe_audit, probe_my_queue, jira_issue, ci_log, db_schema, db_query]
+    ek: >-
+      Onaylı ve yayınlanmış case'leri ve koşu sonuçlarını açıkla; taslak case'leri, karar geçmişini
+      ve uygulama kodunu göremezsin. Manuel koşuyu yalnız prod dışı ortamda kullanıcı başlatır;
+      sen koşu başlatamaz, kod yazamaz veya değiştiremezsin.
+  viewer:
+    etiket: Görüntüleyici
+    araclar: [product_search, product_read, probe_get, probe_list]
+    ek: >-
+      Salt okur genel bakış ver: ürünün nasıl çalıştığını ve kayıtların durumunu özetle. Rolünde
+      olmayan bir bilgi gerekiyorsa bunu hangi rolün görebileceğini söyle.

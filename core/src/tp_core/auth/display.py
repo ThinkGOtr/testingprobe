@@ -2,23 +2,23 @@
 
 Yalnızca gösterim içindir: yetki ve kapı kararları her zaman `rol` ile verilir, ada asla
 bakılmaz. Adlar `TP_GORUNEN_ADLAR` (`kullanici_adi=Ad Soyad`, virgülle) ile değiştirilir; yoksa
-`seed.GORUNEN_ADLAR` demo varsayılanları kullanılır. Boş ad → yalnızca rol etiketi ("Sunucu");
-eşlemede olmayan kullanıcı → `kullanici_adi · Rol`.
+`seed.GORUNEN_ADLAR` demo varsayılanları kullanılır. Boş ad → yalnızca rol etiketi
+("Sistem Yöneticisi"); eşlemede olmayan kullanıcı → `kullanici_adi · Rol`.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 
+from tp_core.auth.yetki import ESKI_ROLLER, ROL_ETIKETLERI
 from tp_core.config import get_settings
 from tp_core.seed import GORUNEN_ADLAR
 
+# Rol etiketleri tek kaynaktan (specs/012-rol-yetki §3). Kaldırılan `presenter` eski kayıtlarda
+# yerine geçen rolün etiketiyle gösterilir.
 ROL_ETIKETI: dict[str, str] = {
-    "analyst": "Analist",
-    "engineer": "Mühendis",
-    "presenter": "Sunucu",
-    "po": "PO",
-    "tester": "Testçi",
+    **{eski: ROL_ETIKETLERI[yeni] for eski, yeni in ESKI_ROLLER.items()},
+    **ROL_ETIKETLERI,
 }
 
 

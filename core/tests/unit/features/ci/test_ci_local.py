@@ -188,7 +188,7 @@ def test_saglik_hatasi_error_ve_serilestirmede_gorunur(
     rid = _enqueue(engine)
     run_jobs(engine)
     with Session(engine) as s:
-        k = service.list_runs(s)[0]
+        k = service.list_runs(s, artefakt=True)[0]
     assert k["id"] == str(rid) and k["durum"] == "error"
     assert "sağlık" in k["saglik_hatasi"]
     # Playwright başlatılmadı: kırık rapor bağlantısı verilmez.
@@ -524,8 +524,8 @@ def test_acik_defect_adayinin_kirmizi_kosusu_listeden_dusmez(
     for pr in (31, 32, 33):
         _enqueue(engine, pr=pr)
     with Session(engine) as s:
-        liste = service.list_runs(s, limit=2)
-        filtreli = service.list_runs(s, tetik="pr", limit=2)
+        liste = service.list_runs(s, limit=2, artefakt=True)
+        filtreli = service.list_runs(s, tetik="pr", limit=2, artefakt=True)
     ids = [x["id"] for x in liste]
     assert len(ids) == 3 and ids[-1] == kanit_id  # en eski: sona sıralı
     assert [x["sabit"] for x in liste] == [False, False, True]
@@ -557,13 +557,13 @@ def test_silinmis_kosu_dizini_budandi_isaretlenir_baglanti_uretilmez(
     assert _run(engine, yeni).artefaktlar["dizin"] == f"runs/ci-{yeni}-1"
 
     with Session(engine) as s:
-        d = service.run_detail(s, eski)
+        d = service.run_detail(s, eski, artefakt=True)
         assert d is not None and d["artefakt_budandi"]
         for k in ("rapor_url", "junit_url", "log_url", "allure_url", "artefakt_kok"):
             assert d[k] is None, k
         assert all(not e.get("url") for r in d["sonuclar"] for e in r["ekler"])
         assert service.artifact_dir(s, eski) is None
-        assert service.run_detail(s, yeni)["rapor_url"]
+        assert service.run_detail(s, yeni, artefakt=True)["rapor_url"]
         # İkinci geçiş bir şey değiştirmez (idempotent).
         assert service.mark_pruned_runs(s) == 0
 

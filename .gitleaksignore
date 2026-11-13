@@ -29,3 +29,33 @@
 209eec9a932f0405f49663dd6c273118d50b7134:rules/evaluation/results/assistant-v1-assistant_deep-2026-11-04.calls.jsonl:generic-api-key:77
 209eec9a932f0405f49663dd6c273118d50b7134:rules/evaluation/results/assistant-v1-assistant_deep-2026-11-04.calls.jsonl:generic-api-key:81
 209eec9a932f0405f49663dd6c273118d50b7134:rules/evaluation/results/assistant-v1-assistant_deep-2026-11-04.calls.jsonl:generic-api-key:84
+
+# Çalışma ağacı taraması (security-check 4b, `gitleaks dir /tmp/scan`): aynı yanlış pozitifler —
+# asistan değerlendirme kayıtlarındaki araç argümanı UUID'leri (id_or_key), yukarıdaki geçmiş kayıtlarıyla aynı satırlar.
+/tmp/scan/rules/evaluation/results/assistant-v1-assistant-2026-11-04.calls.jsonl:generic-api-key:1
+/tmp/scan/rules/evaluation/results/assistant-v1-assistant_deep-2026-11-04.calls.jsonl:generic-api-key:1
+/tmp/scan/rules/evaluation/results/assistant-v1-assistant_deep-2026-11-04.calls.jsonl:generic-api-key:6
+/tmp/scan/rules/evaluation/results/assistant-v1-assistant-2026-11-04.calls.jsonl:generic-api-key:7
+/tmp/scan/rules/evaluation/results/assistant-v1-assistant-2026-11-04.calls.jsonl:generic-api-key:14
+/tmp/scan/rules/evaluation/results/assistant-v1-assistant_deep-2026-11-04.calls.jsonl:generic-api-key:21
+/tmp/scan/rules/evaluation/results/assistant-v1-assistant-2026-11-04.calls.jsonl:generic-api-key:25
+/tmp/scan/rules/evaluation/results/assistant-v1-assistant-2026-11-04.calls.jsonl:generic-api-key:32
+/tmp/scan/rules/evaluation/results/assistant-v1-assistant-2026-11-04.calls.jsonl:generic-api-key:46
+/tmp/scan/rules/evaluation/results/assistant-v1-assistant_deep-2026-11-04.calls.jsonl:generic-api-key:47
+/tmp/scan/rules/evaluation/results/assistant-v1-assistant-2026-11-04.calls.jsonl:generic-api-key:48
+/tmp/scan/rules/evaluation/results/assistant-v1-assistant_deep-2026-11-04.calls.jsonl:generic-api-key:50
+/tmp/scan/rules/evaluation/results/assistant-v1-assistant_deep-2026-11-04.calls.jsonl:generic-api-key:53
+/tmp/scan/rules/evaluation/results/assistant-v1-assistant-2026-11-04.calls.jsonl:generic-api-key:57
+/tmp/scan/rules/evaluation/results/assistant-v1-assistant-2026-11-04.calls.jsonl:generic-api-key:59
+/tmp/scan/rules/evaluation/results/assistant-v1-assistant-2026-11-04.calls.jsonl:generic-api-key:61
+/tmp/scan/rules/evaluation/results/assistant-v1-assistant_deep-2026-11-04.calls.jsonl:generic-api-key:62
+/tmp/scan/rules/evaluation/results/assistant-v1-assistant-2026-11-04.calls.jsonl:generic-api-key:72
+/tmp/scan/rules/evaluation/results/assistant-v1-assistant_deep-2026-11-04.calls.jsonl:generic-api-key:72
+/tmp/scan/rules/evaluation/results/assistant-v1-assistant_deep-2026-11-04.calls.jsonl:generic-api-key:77
+/tmp/scan/rules/evaluation/results/assistant-v1-assistant-2026-11-04.calls.jsonl:generic-api-key:81
+/tmp/scan/rules/evaluation/results/assistant-v1-assistant_deep-2026-11-04.calls.jsonl:generic-api-key:81
+/tmp/scan/rules/evaluation/results/assistant-v1-assistant_deep-2026-11-04.calls.jsonl:generic-api-key:84
+/tmp/scan/rules/evaluation/results/assistant-v1-assistant-2026-11-04.calls.jsonl:generic-api-key:85
+/tmp/scan/rules/evaluation/results/assistant-v1-assistant-2026-11-04.calls.jsonl:generic-api-key:88
+/tmp/scan/rules/evaluation/results/assistant-v1-assistant-2026-11-04.calls.jsonl:generic-api-key:91
+/tmp/scan/rules/evaluation/results/assistant-v1-assistant-2026-11-04.calls.jsonl:generic-api-key:93

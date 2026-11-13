@@ -40,13 +40,26 @@
     <selenium.version>4.52.0</selenium.version>
     <testng.version>7.12.0</testng.version>
     <allure.version>2.35.5</allure.version>
+    <extent.version>5.1.2</extent.version>
     <slf4j.version>2.0.20</slf4j.version>
 
     <!-- Varsayılan cihaz süiti; -Dgroups verilirse "gruplu" profili bunu devre dışı bırakır. -->
     <testng.suite>testng.xml</testng.suite>
     <allure.results.directory>${project.build.directory}/allure-results</allure.results.directory>
+    <!-- Extent (Spark) HTML raporu: <dizin>/index.html; birim koşusu ayrı dizine yazar (cihaz raporunu ezmez). -->
+    <extent.rapor.dizini>${project.build.directory}/extent-report</extent.rapor.dizini>
     <!-- JUnit XML dizini; birim koşusu ayrı dizine yazar (ci/run-app-checks.sh), cihaz raporunu ezmez. -->
     <raporlar.dizini>${project.build.directory}/surefire-reports</raporlar.dizini>
+    <!--
+      Surefire test JVM'i: yığın sınırı (test-runner 3 GB kapsayıcı sınırı; Maven JVM ve test JVM
+      aynı kapsayıcıda) ve kodlama. file.encoding JVM başlarken verilmelidir;
+      sistem özelliği olarak verilirse JDK uyarır ve yok sayar. -DargLine=… ile değiştirilebilir.
+      java.io.tmpdir: JVM Linux'ta TMPDIR'i okumaz; geçici dosyalar (Playwright sürücüsü dahil)
+      tp.java.tmpdir altına açılır. Varsayılan Maven JVM'inin java.io.tmpdir'i; toolchain koşusu
+      -Dtp.java.tmpdir=<koşu>/tmp verir.
+    -->
+    <tp.java.tmpdir>${java.io.tmpdir}</tp.java.tmpdir>
+    <argLine>-Xmx512m -Dfile.encoding=UTF-8 -Djava.io.tmpdir=${tp.java.tmpdir}</argLine>
   </properties>
 
   <dependencyManagement>
@@ -94,6 +107,20 @@
       <artifactId>allure-testng</artifactId>
       <version>${allure.version}</version>
       <scope>test</scope>
+    </dependency>
+    <dependency>
+      <!-- Extent Reports 5 (Spark HTML); dinleyici: altyapi/ExtentRaporu (META-INF/services ile yüklenir). -->
+      <groupId>com.aventstack</groupId>
+      <artifactId>extentreports</artifactId>
+      <version>${extent.version}</version>
+      <scope>test</scope>
+      <exclusions>
+        <!-- Yalnızca Extent'in kendi derlemesinde gerekir; sınıf yolunda açıklama işlemcisi olmasın. -->
+        <exclusion>
+          <groupId>org.projectlombok</groupId>
+          <artifactId>lombok</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
     <dependency>
       <groupId>org.slf4j</groupId>
@@ -168,8 +195,8 @@
           <redirectTestOutputToFile>true</redirectTestOutputToFile>
           <systemPropertyVariables>
             <allure.results.directory>${allure.results.directory}</allure.results.directory>
+            <extent.rapor.dizini>${extent.rapor.dizini}</extent.rapor.dizini>
             <kanit.dizini>${project.build.directory}/kanit</kanit.dizini>
-            <file.encoding>UTF-8</file.encoding>
           </systemPropertyVariables>
           <properties>
             <property>

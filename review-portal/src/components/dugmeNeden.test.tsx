@@ -63,7 +63,7 @@ describe("IslemDugmesi görünür pasiflik nedeni", () => {
   it("yetkisiz rolde gereken rol görünür yazılır ve düğmeye bağlanır", async () => {
     await oturumAc("testci");
     sar(
-      <IslemDugmesi roller={["analyst"]} title="Yazılır ve yeniden kontrol başlar">
+      <IslemDugmesi izin="requirement.review" title="Yazılır ve yeniden kontrol başlar">
         Düzeltmeleri uygula
       </IslemDugmesi>,
     );
@@ -149,13 +149,13 @@ describe("grupta ortak neden (tekrar yok)", () => {
     await oturumAc("testci");
     const { container } = sar(
       <div className="eylemler">
-        <IslemDugmesi roller={["analyst"]}>Yeniden denetle</IslemDugmesi>
-        <IslemDugmesi roller={["analyst"]}>Case üret</IslemDugmesi>
-        <IslemDugmesi roller={["analyst", "po"]}>Ölçüm gir</IslemDugmesi>
+        <IslemDugmesi izin="requirement.review">Yeniden denetle</IslemDugmesi>
+        <IslemDugmesi izin="requirement.import">Jira'dan çek</IslemDugmesi>
+        <IslemDugmesi izin={["requirement.review", "baseline.manage"]}>Ölçüm gir</IslemDugmesi>
       </div>,
     );
     const a = await screen.findByRole("button", { name: "Yeniden denetle" });
-    const b = screen.getByRole("button", { name: "Case üret" });
+    const b = screen.getByRole("button", { name: "Jira'dan çek" });
     const c = screen.getByRole("button", { name: "Ölçüm gir" });
     await waitFor(() => expect(container.querySelectorAll(".dugme-neden")).toHaveLength(2));
     const neden = screen.getByText("Bu işlem için gereken rol: Analist");
@@ -164,7 +164,7 @@ describe("grupta ortak neden (tekrar yok)", () => {
     expect(b).toHaveAccessibleDescription("Bu işlem için gereken rol: Analist");
     expect(b.parentElement).not.toHaveClass("neden-var");
     // Farklı metinli neden kendi altında kalır.
-    expect(c).toHaveAccessibleDescription("Bu işlem için gereken rol: Analist / Ürün sahibi (PO)");
+    expect(c).toHaveAccessibleDescription("Bu işlem için gereken rol: Analist / PO");
   });
 
   it("farklı gruplarda neden ayrı ayrı yazılır", async () => {
@@ -172,10 +172,10 @@ describe("grupta ortak neden (tekrar yok)", () => {
     const { container } = sar(
       <>
         <div className="eylemler">
-          <IslemDugmesi roller={["analyst"]}>Bir</IslemDugmesi>
+          <IslemDugmesi izin="requirement.review">Bir</IslemDugmesi>
         </div>
         <div className="eylemler">
-          <IslemDugmesi roller={["analyst"]}>İki</IslemDugmesi>
+          <IslemDugmesi izin="requirement.review">İki</IslemDugmesi>
         </div>
       </>,
     );
@@ -217,27 +217,32 @@ describe("grupta ortak neden (tekrar yok)", () => {
 });
 
 describe("ekranlarda görünür neden", () => {
-  it("Koşular: iki tetik düğmesine açıklama eklenmez (açıklamaları zaten görünür ve bağlı)", async () => {
-    await oturumAc("sunucu");
+  it("Koşular: tetik düğmelerine açıklama eklenmez (açıklamaları zaten görünür ve bağlı)", async () => {
+    await oturumAc("muhendis");
     const { container } = uygulama("/kosular");
     const gece = await screen.findByRole("button", { name: "Gece koşusunu şimdi başlat" });
     const deploy = screen.getByRole("button", { name: "Deploy sonrası testleri koş" });
+    const manuel = screen.getByRole("button", { name: "Manuel koşu başlat" });
     expect(gece).toHaveAttribute("aria-describedby", "kosular-gece-aciklama");
     expect(deploy).toHaveAttribute("aria-describedby", "kosular-deploy-aciklama");
+    expect(manuel).toHaveAttribute("aria-describedby", "kosular-manuel-aciklama");
     expect(container.querySelector(".dugme-neden")).toBeNull();
   });
 
-  it("Koşular (yetkisiz rol): nedenGizli rol nedenini bastırmaz; grupta bir kez yazılır, açıklamayla birlikte bağlı", async () => {
+  it("Koşular: tetik izni olmayan rolde tetik düğmeleri ve açıklamaları çizilmez; developer yalnız manuel", async () => {
     await oturumAc("analist");
-    const { container } = uygulama("/kosular");
-    const gece = await screen.findByRole("button", { name: "Gece koşusunu şimdi başlat" });
-    const deploy = screen.getByRole("button", { name: "Deploy sonrası testleri koş" });
-    expect(gece).toBeDisabled();
-    await waitFor(() => expect(container.querySelectorAll(".dugme-neden")).toHaveLength(1));
-    const neden = container.querySelector(".dugme-neden")!;
-    expect(neden).toHaveTextContent(/^Bu işlem için gereken rol: /);
-    expect(gece.getAttribute("aria-describedby")).toBe(`kosular-gece-aciklama ${neden.id}`);
-    expect(deploy.getAttribute("aria-describedby")).toBe(`kosular-deploy-aciklama ${neden.id}`);
+    const { unmount } = uygulama("/kosular");
+    await screen.findByRole("heading", { name: "Koşular" });
+    await waitFor(() => expect(screen.queryByRole("list", { name: "Tetik düğmeleri" })).toBeNull());
+    for (const ad of ["Gece koşusunu şimdi başlat", "Deploy sonrası testleri koş", "Manuel koşu başlat"]) {
+      expect(screen.queryByRole("button", { name: ad })).toBeNull();
+    }
+    unmount();
+    await oturumAc("gelistirici");
+    uygulama("/kosular");
+    expect(await screen.findByRole("button", { name: "Manuel koşu başlat" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Gece koşusunu şimdi başlat" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Deploy sonrası testleri koş" })).toBeNull();
   });
 
   it("Script detay (defect adayı): kutu nedeni zaten yazdığı için 'Kırarak doğrula' yanında tekrar yok", async () => {
@@ -257,9 +262,9 @@ describe("ekranlarda görünür neden", () => {
     uygulama("/kod/scr-3");
     const d = await screen.findByRole("button", { name: "Kırarak doğrula" });
     expect(d).toBeDisabled();
-    const neden = await screen.findByText("Bu işlem için gereken rol: Mühendis");
+    const neden = await screen.findByText("Bu işlem için gereken rol: Automation Engineer");
     expect(d.getAttribute("aria-describedby")).toBe(`kirma-kapali-neden ${neden.id}`);
-    expect(d).toHaveAccessibleDescription(/^Kırarak doğrulama kapalı.*Bu işlem için gereken rol: Mühendis$/);
+    expect(d).toHaveAccessibleDescription(/^Kırarak doğrulama kapalı.*Bu işlem için gereken rol: Automation Engineer$/);
   });
 
   it("Script detay (analist): PR ret grubundaki iki düğmede rol nedeni bir kez yazılır", async () => {
@@ -267,8 +272,8 @@ describe("ekranlarda görünür neden", () => {
     const { container } = uygulama("/kod/scr-2");
     const reddet = await screen.findByRole("button", { name: "Reddet" });
     const degisiklik = screen.getByRole("button", { name: "Değişiklik iste" });
-    await waitFor(() => expect(reddet).toHaveAccessibleDescription("Bu işlem için gereken rol: Mühendis"));
-    expect(degisiklik).toHaveAccessibleDescription("Bu işlem için gereken rol: Mühendis");
+    await waitFor(() => expect(reddet).toHaveAccessibleDescription("Bu işlem için gereken rol: Automation Engineer"));
+    expect(degisiklik).toHaveAccessibleDescription("Bu işlem için gereken rol: Automation Engineer");
     const grup = reddet.closest(".eylemler")!;
     expect(grup.querySelectorAll(".dugme-neden")).toHaveLength(1);
     // Her eylem grubunda en fazla bir eş neden.
@@ -278,27 +283,26 @@ describe("ekranlarda görünür neden", () => {
     }
   });
 
-  it("Case review: yayın yetkisi olmayan rolde 'Yayın önizleme' nedeni görünür ve bağlı", async () => {
+  it("Yayın önizleme: yayın yetkisi olmayan rolde 'Seçilenleri yayınla' nedeni görünür ve bağlı", async () => {
     await oturumAc("po");
-    uygulama("/gereksinimler/req-tpd-1/caseler");
-    const d = await screen.findByRole("button", { name: "Yayın önizleme" });
+    uygulama("/gereksinimler/req-tpd-1/yayin");
+    const d = await screen.findByRole("button", { name: /Seçilenleri yayınla/ });
     expect(d).toBeDisabled();
-    expect(d).toHaveAttribute("title", "Yayın analist rolü gerektirir");
-    expect(d).toHaveAccessibleDescription("Yayın analist rolü gerektirir");
+    expect(d).toHaveAccessibleDescription("Bu işlem için gereken rol: Testçi");
   });
 
-  it("Case review (karar verilmiş case): 'Yeniden aç' satırı metin + düğme karışık grup; neden düğmenin sarıcısında", async () => {
-    await oturumAc("testci");
+  it("Case review (karar verilmiş case): 'Taslağa al' satırı metin + düğme karışık grup; neden düğmenin sarıcısında", async () => {
+    await oturumAc("analist");
     const { container } = uygulama("/gereksinimler/req-tpd-1/caseler");
-    await screen.findAllByRole("button", { name: "Yeniden aç" });
+    await screen.findAllByRole("button", { name: "Taslağa al" });
     const satirlar = [...container.querySelectorAll(".satir-ogeler")].filter((g) => g.querySelector(":scope > .dugme-neden-sarici.neden-var"));
     expect(satirlar.length).toBeGreaterThan(0);
     for (const g of satirlar) {
       // Karışık satır: düğme dışı doğrudan çocuk (paragraf) var → CSS sarıcıyı sütun bırakır (grup nedeni değil).
       expect(g.querySelector(":scope > p")).not.toBeNull();
       const sarici = g.querySelector(":scope > .dugme-neden-sarici.neden-var")!;
-      expect(sarici.querySelector(":scope > button")).toHaveTextContent("Yeniden aç");
-      expect(sarici.querySelector(":scope > .dugme-neden")).toHaveTextContent("Bu işlem için gereken rol: Analist");
+      expect(sarici.querySelector(":scope > button")).toHaveTextContent("Taslağa al");
+      expect(sarici.querySelector(":scope > .dugme-neden")).toHaveTextContent("Bu işlem için gereken rol: Testçi");
     }
   });
 });

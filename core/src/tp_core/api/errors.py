@@ -73,6 +73,8 @@ class KodluHata(StarletteHTTPException):
     `raise KodluHata(429, "hiz_siniri", "Saatlik soru sınırına ulaştınız")`
     `raise KodluHata(503, "asistan_kapali", "Asistan şu an kapalı", neden="worker_yok")`
     `neden` gövdeye yalnız korunan hizmet durumu kodlarında yazılır.
+    `ek`: 4xx gövdesine eklenen makinece okunur alanlar (ör. 429 `donduruldu` → `kalan_s`);
+    `detail`/`kod` ezilemez, 5xx'te yazılmaz.
     """
 
     def __init__(
@@ -83,10 +85,12 @@ class KodluHata(StarletteHTTPException):
         headers: Mapping[str, str] | None = None,
         *,
         neden: str | None = None,
+        ek: Mapping[str, Any] | None = None,
     ) -> None:
         super().__init__(status_code=status_code, detail=detail, headers=dict(headers or {}))
         self.kod = kod
         self.neden = neden
+        self.ek = {k: v for k, v in (ek or {}).items() if k not in ("detail", "kod")}
 
 
 def _hizmet_durumu_mu(exc: KodluHata) -> bool:
@@ -120,6 +124,8 @@ def install(app: FastAPI) -> None:
             return JSONResponse(hizmet, status_code=exc.status_code, headers=headers)
         kod = _kod_sec(exc.status_code, getattr(exc, "kod", None))
         govde: dict[str, Any] = {"detail": exc.detail, "kod": kod}
+        if isinstance(exc, KodluHata) and exc.ek and exc.status_code < 500:
+            govde.update(exc.ek)
         return JSONResponse(govde, status_code=exc.status_code, headers=headers)
 
     @app.exception_handler(WorkflowError)

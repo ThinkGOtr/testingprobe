@@ -69,6 +69,9 @@ class Requirement(Base):
     po_cevaplari: Mapped[list[Any]] = mapped_column(JSONB, server_default=EMPTY_LIST, default=list)
     # PO onayıyla (`po_approved`'a giriş) yazılan içerik hash'i; case üretimi bunu yeniden denetler.
     onaylanan_hash: Mapped[str | None]
+    # Jira durum tetiği (013): son görülen Jira durumu ve tetikle otomatik akışa alındığı an.
+    jira_durumu: Mapped[str | None]
+    qa_tetik_zamani: Mapped[datetime | None]
     # İçerik alanlarının (baslik/aciklama/kabul_kriterleri) en son değiştiği an. ORM bunu içerik
     # değişince kendisi günceller; Jira'dan ilk çekimde senkron kodu Jira changelog'undaki açıklama
     # değişim zamanını verebilir. Jira kanalındaki PO onayı (etiket zamanı) bundan önceyse geçersiz.
@@ -245,6 +248,8 @@ class Review(Base):
     sonra: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     duzeltme_olculeri: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     onaylanan_hash: Mapped[str]
+    # 012 öncesi analist `edit`'i (son onay); yalnız 0033 göçü işaretler (yeni kayıtlarda false).
+    eski_onay: Mapped[bool] = mapped_column(Boolean, server_default=false(), default=False)
     # Kesin sıra: aynı işlemdeki kararlar `zaman` ile ayrılamaz; son karar = en büyük `sira`.
     sira: Mapped[int] = mapped_column(BigInteger, Identity(always=True), unique=True)
     zaman: Mapped[datetime] = olusturma_col()

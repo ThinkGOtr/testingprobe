@@ -1,8 +1,12 @@
 # AI Automation Testing (Test Engineering Suite) — Demo Teknik Tasarımı
 
-> **Sürüm:** v1.7 · 2026-11-10 · **Hazırlayan:** Gökhan Sipahi · **Gözden geçirecek:** Cengizhan Bey, Hakan, İsmail
+> **Sürüm:** v1.9 · 2026-11-11 · **Hazırlayan:** Gökhan Sipahi · **Gözden geçirecek:** Cengizhan Bey, Hakan, İsmail
 > **Bağlayıcı kaynak:** "AI Automation Testing — Geliştirme Ekibi için Ürün Brief'i" (Cengizhan Bey, 30.10.2026). Bu doküman o brief'in **demo dilimini** tarif eder. Brief'ten sapmalar §19'dadır.
 > **Spec Kit nedir:** GitHub'ın açık kaynak "spesifikasyon güdümlü geliştirme" aracı. Bu doküman önce projenin değişmez kurallarına (constitution, §3), sonra her kilometre taşı için ayrı spec → plan → görev → uygulama döngüsüne (§21) girdi olur.
+>
+> **v1.8 → v1.9 (2026-11-11, 012 rol ve yetki modeli v2, ADR-0002):** 8 rol (`admin` Sistem Yöneticisi, `auditor` Denetçi, `analyst` Analist, `po` PO, `tester` Testçi, `engineer` Automation Engineer, `developer` Developer, `viewer` Görüntüleyici); `presenter` kalktı (→ `admin`). Her uç bir izin anahtarı ister (`tp_core/auth/yetki.py`, MIMARI-SOZLESME §5); red 403 `yetki_yok` + `authz.denied`. Case kararı ve yayını Testçi'ye geçti, son onay Analist'te (yeni `ready` durumu); PO onayı Jira story'sinde yalnız Jira etiketiyle (portal ucu 410 `po_onayi_jira`), serbest metin gereksinimde portalda; CI tetik Automation Engineer; demo kontrolleri `TP_DEMO_MODE=1` ile Sistem Yöneticisi/Automation Engineer. §2, §2.1, §7, §8.10, §8.13, §8.14 güncellendi. Spec `specs/012-rol-yetki/ANALIZ.md`.
+>
+> **v1.7 → v1.8 (2026-11-11, specs/011-uretim-dili):** **Üretim dili** platformdan ayrı bir boyut oldu (`ts | java | csharp | python`; §7 `script`, §8.4–§8.7). Web için Java (Playwright for Java + TestNG, `demo-app/e2e-java`) tam hattır; C# ve Python **doğrulanmamış** üretilir (PR/merge yok, durum `unverified`). Constitution v2.1.0 (MINOR): İlke IV/V/VI dilden bağımsız; doğrulanmamış diller PR'a ve merge'e giremez. İnceleme turu 1 kararları K-T1..K-T9 (`specs/011-uretim-dili/inceleme-tur1.md`) bu sürüme işlendi.
 >
 > **v1.6 → v1.7 (2026-11-10, ADR-0001 onaylandı):** **AI Probe ortak kimliği** (§8.14; §3 satır 12, §8.10, §9, §14 güncellendi). Constitution v2.0.0 (MAJOR): İlke XII — AP ile kod/ekran/DB paylaşımı yok, ortak kimliğe yalnızca belgelenmiş HTTP kimlik API'si (devir + oturum kontrolü) ile bağlanılır, Firebase SDK'sı TP'ye girmez; İlke VII — on-prem `TP_AUTH_MODE=local` varsayılan. Spec `specs/010-aiprobe-sso/`.
 >
@@ -79,11 +83,11 @@ Renkler ekibin diyagramıyla aynı: **AI adımı (taslak)** · **İnsan kapısı
 | 1 | **Jira** — AC ve açıklama | Sistem | Analist | Rovo MCP ile story, açıklama ve kabul kriterleri okunur | Story listesi |
 | 2 | **Ön inceleme** — soru, eksik ve **kod/veri tutarlılığı** | AI + İnsan | AI, Analist | (a) İç tutarlılık: belirsizlik, eksik AC, çelişki, test edilemeyen madde. (b) **Kodla karşılaştırma:** uygulamanın GitHub reposu salt okunur incelenir. (c) **Veriyle karşılaştırma:** uygulamanın veritabanı salt okunur sorgulanır. Her bulgu kanıtlıdır (dosya:satır, sorgu + sonuç) ve kanıt deterministik olarak yeniden doğrulanır. Analist her bulgu için: **dokümanı düzelt** (AI önerisi → onay → sistem Jira'daki açıklama/AC'yi günceller) · **kod/veri hatalı** (bug taslağı) · **bilinçli fark** (gerekçeli). Engelleyici bulgu kalmayana kadar yeniden kontrol → doküman "son hal". Kalan sorular Jira yorumu olarak yazılır, `tp-po-pending` etiketi eklenir (§8.2b) | Portal: bulgu kartları + kanıt; önerilen metin farkı; Jira'da güncellenmiş story |
 | 3 | **PO teyidi** — insan kapısı | İnsan | PO | PO Jira'da soruları cevaplar (gerekirse AC'yi günceller) ve `tp-po-approved` etiketini koyar; ürün etiketi okur, story'yi güncel haliyle yeniden çeker. Etiket yoksa case üretimine geçilmez | Jira'da PO cevabı → portalda "PO onaylı" |
-| 4 | **Test case** — AI iskelet, QA onay | AI + İnsan | AI, Analist (QA) | Şemalı pozitif/negatif/sınır case'ler (AC ve PO cevaplarına bağlı); QA onay/düzelt/reddet; onaylılar `publish_test_cases` ile Jira'ya (önizleme → yayın). **Claude kanalı:** Claude Code taslak üretir → `submit_draft_cases` → aynı QA onayı | Case kartları, sayaç, kabul oranı; Jira'da Test issue'ları |
-| 5 | **Kod taslağı** — AI, ayrı dalda PR | AI | Mühendis + AI | Playwright MCP ile adımlar uygulamada doğrulanır → page object eşlemesi → şablonla TypeScript test → yerel kontrol → bot ayrı dalda PR açar | Adım ekran görüntüleri; PR linki |
-| 6 | **Review** — insan + kasıtlı kırma | İnsan | Mühendis | Mühendis kodu inceler. **Kasıtlı kırma (a), hata yakalama kanıtı:** portaldaki "kırarak doğrula" düğmesi uygulamayı `BREAK_CAMPAIGN` bayrağıyla açar ve testi koşturur; test **kırmızı** olmalı (değilse PR "zayıf test" işaretlenir). Sonra bayraksız yeşil. Ardından merge | Yeşil → kırmızı → yeşil; "test hata yakalıyor ✓" |
+| 4 | **Test case** — AI iskelet, Testçi kararı, Analist onayı | AI + İnsan | AI, Testçi, Analist | Şemalı pozitif/negatif/sınır case'ler (AC ve PO cevaplarına bağlı); Testçi üretir ve kabul/düzelt/reddet kararı verir (`ready`); Analist son onayı verir ya da gerekçeyle geri gönderir; onaylıları Testçi `publish_test_cases` ile Jira'ya yayınlar (önizleme → yayın). **Claude kanalı:** Claude Code taslak üretir → `submit_draft_cases` → aynı Testçi kararı ve Analist onayı (token'ı Testçi alır) | Case kartları, sayaç, kabul oranı; Jira'da Test issue'ları |
+| 5 | **Kod taslağı** — AI, ayrı dalda PR | AI | Automation Engineer + AI | Playwright MCP ile adımlar uygulamada doğrulanır → page object eşlemesi → şablonla TypeScript test → yerel kontrol → bot ayrı dalda PR açar | Adım ekran görüntüleri; PR linki |
+| 6 | **Review** — insan + kasıtlı kırma | İnsan | Automation Engineer | Automation Engineer kodu inceler. **Kasıtlı kırma (a), hata yakalama kanıtı:** portaldaki "kırarak doğrula" düğmesi uygulamayı `BREAK_CAMPAIGN` bayrağıyla açar ve testi koşturur; test **kırmızı** olmalı (değilse PR "zayıf test" işaretlenir). Sonra bayraksız yeşil. Ardından merge | Yeşil → kırmızı → yeşil; "test hata yakalıyor ✓" |
 | 7 | **Kurum git'i** — korumalı ana dal | Sistem | — | Ruleset: doğrudan push yok, CI + 1 insan onayı ile merge | Merge edilmiş PR |
-| 8 | **CI runner** — gece ve deploy | Sistem | — | Workflow tetikleri: PR, `main` push, **gece** (`schedule`), **deploy** (`repository_dispatch`, demoda portal düğmesiyle elle) | Tetiklenen koşu |
+| 8 | **CI runner** — gece ve deploy | Sistem | — | Workflow tetikleri: PR, `main` push, **gece** (`schedule`), **deploy** (`repository_dispatch`, demoda Automation Engineer portal düğmesiyle elle) | Tetiklenen koşu |
 | 9 | **Cihaz ve API** — Sauce, QA ortamı | Sistem | — | Onaylı testler **Sauce Labs** bulut tarayıcısında (Sauce Connect) ve yerel yedek job'da koşar; uygulama QA ortamı olarak CI'da ayağa kalkar | Sauce video linki |
 | 10 | **Sonuçlar** — JUnit XML, Allure | Sistem | — | Playwright reporter'ları: `junit` (JUnit XML), `allure-playwright` (allure-results), JSON; artefakt olarak saklanır ve çekirdek tarafından alınır | Allure raporu linki |
 | 11 | **Kontrol Kulesi** — kalite, flaky, karne | Sistem | — | Çekirdek JUnit XML'i ayrıştırıp veritabanına yazar; portalda tek ekran: son koşular, geçme oranı, flaky testler (aynı commit'te değişen sonuç / retry ile geçen), uygulama/story karnesi, AI katkısı (kabul oranı, süre) | Kontrol Kulesi ekranı |
@@ -93,7 +97,7 @@ Renkler ekibin diyagramıyla aynı: **AI adımı (taslak)** · **İnsan kapısı
 
 **Demoda iki kırılma senaryosu** (karar §0-16):
 - **Hata yakalama (adım 6 ve 12–14):** `BREAK_CAMPAIGN` ile kampanya indirimi yanlış hesaplanır → test kırmızı → triage "gerçek defect" → mükerrer kontrolü → taslak → testçi onayı → Jira'da Bug.
-- **Locator kırılması (adım 12, bakım yolu):** `make break` (`add-to-cart` → `cart-add`) → triage "test bakımı/locator" → yalnızca locator'ı değiştiren onarım PR'ı → mühendis onayı → yeşil.
+- **Locator kırılması (adım 12, bakım yolu):** `make break` (`add-to-cart` → `cart-add`) → triage "test bakımı/locator" → yalnızca locator'ı değiştiren onarım PR'ı → Automation Engineer onayı → yeşil.
 
 Demo story'si mutlaka `add-to-cart` ve kampanya hesabı adımlarını içerir.
 
@@ -111,7 +115,7 @@ Demo story'si mutlaka `add-to-cart` ve kampanya hesabı adımlarını içerir.
 | PII maskeleme | Her model çağrısında | Demoda kapalı (sentetik veri, karar §0-23); geçitte kanca hazır, müşteri verisinde zorunlu |
 | Güvenlik gösterimi | Opsiyonel adım | Kapsam dışı |
 | Erişilebilirlik denetimi | WCAG 2.2 AA, CI'da her koşuda (§20.1) | `@axe-core/playwright` ile demo story'sinin sayfalarında kontrol; ihlal sayısı Kontrol Kulesi'nde; kritik ihlal için bug taslağı |
-| Serbest metin gereksinim | Ürün özelliği (§20.1) | Portalda gereksinim kutusu; PO teyidi Jira yerine portalda (PO rolü); sonra aynı akış |
+| Serbest metin gereksinim | Ürün özelliği (§20.1) | Portalda gereksinim kutusu; PO teyidi Jira yerine portalda (PO rolü, izin `requirement.po_approve_free_text`, içerik hash'i kontrolü; yalnız `kaynak == free_text`); sonra aynı akış. Jira story'sinde portal PO onayı 410 `po_onayi_jira` |
 | Test yönetimi arka uçları | Jira, Xray, TestRail, Zephyr, Octane | Jira + **Xray Cloud (deneme sürümü)**; TestRail ve Zephyr sonra |
 
 ---
@@ -123,9 +127,9 @@ Demo story'si mutlaka `add-to-cart` ve kampanya hesabı adımlarını içerir.
 | 1 | AI üretir, insan onaylar | Onayın doğruluk kaynağı Postgres: core-api oturumdaki kullanıcıyla `review` satırını (`kullanıcı + nesne_id + içerik_hash`) yazar, ardından Temporal **Update** gönderir; iş akışının Update doğrulayıcısı Postgres'te eşleşen satır yoksa Update'i reddeder (Docker ağı içinden sahte Update etkisizdir). DB yazma kimliği yalnızca core-api ve core-worker'da. Yayın ve PR adımları güncel hash'i onaylanan hash ile karşılaştırır (onay sonrası değişiklik → red). Temporal gRPC ve UI yalnızca host'un `127.0.0.1`'inde; portal dışında onay yolu yok |
 | 2 | CI'da AI yok | CI'da model anahtarı, MCP sunucusu ve ajan bağımlılığı yok; workflow `permissions: contents: read`; `pull_request_target` kullanılmaz |
 | 3 | Yapılandırılmış çıktı | Claude'un yerel yapılandırılmış çıktı / strict tool kullanımı; Pydantic doğrulaması; şema hatasında hata mesajıyla en fazla 2 yeniden istek |
-| 4 | Kütüphaneye bağlı kod | Kod modelden değil, doğrulanmış adım→page object eşlemesinden **şablonla** üretilir; ayrıca ESLint (`--no-inline-config`) ve `tsc --strict` PR'da ve CI'da zorunlu |
-| 5 | Uygulamayı gerçekten gör | Her adım Playwright MCP snapshot'ında doğrulanmadan eşleme kabul edilmez; `--caps=vision` kapalı |
-| 6 | Onarım yalnızca locator | `locators.ts` saf veri; AST koruması: anahtar kümesi ve niyet değişmez, yalnızca ilgili `testId` değeri değişir; aynı kontrol CI'da zorunlu check |
+| 4 | Kütüphaneye bağlı kod | Kod modelden değil, doğrulanmış adım→page object eşlemesinden **şablonla** üretilir (her dilde; §8.4 "Üretim dili"); tam hat dillerinde PR'da ve CI'da zorunlu kapı: TypeScript ESLint (`--no-inline-config`) + `tsc --strict`, Java pom kilidi + `java-araclar guard` + derleme. Doğrulanmamış diller (C#, Python) forge'a yazılmaz, PR açılmaz |
+| 5 | Uygulamayı gerçekten gör | Her adım Playwright MCP (web) / app-mcp (uygulama) snapshot'ında doğrulanmadan eşleme kabul edilmez — üretim dili ne olursa olsun; `--caps=vision` kapalı |
+| 6 | Onarım yalnızca locator | `locators.ts` (TS) / `ekranlar/Kimlikler.java` (Java) saf veri; AST koruması (`ast-guard` / `java-araclar`): anahtar kümesi ve niyet değişmez, yalnızca ilgili `testId` değeri değişir; aynı kontrol CI'da zorunlu check |
 | 7 | Veri müşteride kalır | Model geçidinde ters çevrilebilir PII maskeleme (§8.9); demo yalnızca sentetik veri |
 | 8 | Her şey kayıt altında | `ai_call`, `tool_call`, `audit_event` append-only ve `prev_hash` zinciriyle; zincirin son hash'i her yayında Jira yorumuna ve her PR açıklamasına yazılarak dışarıya sabitlenir; her AI çağrısı onaylayan kişiye iş akışı üzerinden bağlı |
 | 9 | Ürün opsiyonel kalabilmeli | `rules/` altındaki prompt, kural ve şemalardan `CLAUDE.md` ve `.github/copilot-instructions.md` üretilir; `publish_test_cases` MCP aracı ürünsüz kanaldan da kullanılabilir |
@@ -137,7 +141,7 @@ Demo story'si mutlaka `add-to-cart` ve kampanya hesabı adımlarını içerir.
 ## 4. Mimari
 
 ```
-            Analist · Mühendis (tarayıcı)          IDE: GitHub Copilot / Claude Code
+            Analist · Automation Engineer (tarayıcı) IDE: GitHub Copilot / Claude Code
                        │                                         │ MCP
           Review Portal (React, nginx) ── REST + SSE ──┐         │
                                                        ▼         ▼
@@ -223,13 +227,13 @@ Demo story'si mutlaka `add-to-cart` ve kampanya hesabı adımlarını içerir.
 
 | Tablo | Alanlar (özet) |
 |---|---|
-| `app_user` | id, ad, rol (`analyst`/`engineer`/`presenter`), parola hash'i |
+| `app_user` | id, ad, rol (`admin`/`auditor`/`analyst`/`po`/`tester`/`engineer`/`developer`/`viewer`; 012 göçü `presenter` → `admin`), parola hash'i |
 | `requirement` | id, jira_key, başlık, kabul kriterleri, kaynak_hash, çekim_zamanı, `ac_missing` |
 | `test_case` | id (deterministik: `uuid5(jira_key + case_sıra_no + üretim_no)`), requirement_id, kanal (`portal`/`ide`), sürüm, tür, risk, ön koşul, adımlar, beklenen sonuç, AC referansları, durum, `ai_generated`, içerik_hash, onaylanan_hash |
 | `review` | id, test_case_id, user_id, karar, ret_nedeni, önce/sonra, düzeltme_ölçüleri (§12), onaylanan_hash, zaman |
 | `api_token` | id, user_id, kapsam (`publish`/`submit`), son_kullanma, iptal |
 | `step_mapping` | id, test_case_id, adım_no, po_sınıfı, po_metodu, argümanlar, doğrulandı, ekran_görüntüsü_ref |
-| `script` | id, dosya_yolu, branch, pr_no, durum, pass@1, onarım_sonrası_sonuç, insan_review_sonucu |
+| `script` | id, dosya_yolu, branch, pr_no, durum, pass@1, onarım_sonrası_sonuç, insan_review_sonucu, platform, **dil** (`ts`/`java`/`csharp`/`python`), **dil_kaynagi** (`algilandi`/`secildi`/`varsayilan`) — 011 |
 | `script_test_case` | script_id, test_case_id |
 | `run` | id, script_id, pr_no, commit, github_run_id, sonuç, artefaktlar, süre |
 | `failure` | id, run_id, test_adı, hata_imzası, sınıf, alt_tür, eşleşen_sinyaller, karar_kaynağı (`rule`/`llm`), öneri_türü, öneri_durumu |
@@ -247,6 +251,8 @@ Demo story'si mutlaka `add-to-cart` ve kampanya hesabı adımlarını içerir.
 | `asistan_durum` | tekil satır, yalnız worker yazar: mod (`live`/`off`), model_hazir, maskeleme, müşteri_verisi, paket_commit, kalp_atışı |
 | `asistan_oneri_geri_bildirim` | id, kullanici_id, kural_id, varlik_id, varlik_durum, değer (`-1` gizle / `1` faydalı / `2` yaptım), jira_anahtari |
 | `asistan_hiz` | kullanici_id (null = global), kova, pencere_başlangıç, sayı (sabit pencere hız sınırı) |
+
+**SCRIPT durum makinesi (tek kaynak `core/src/tp_core/workflow`, sözleşme JSON'u `review-portal/src/api/sozlesme/durum-makineleri.json`):** `pending → verifying → checking → pr_open → merged`; `verifying|checking → blocked` (insana; `blocked → verifying` yeniden deneme), `→ failed` (`failed → pending`), `pr_open|blocked|failed → closed`. **011:** doğrulanmamış dillerde (C#, Python) uç durum **`unverified`**: `verifying → unverified`, `unverified → pending` (başka dilde / yeniden üret), `unverified → closed`; onay kapısı ve `merged` geçişi yoktur. `unverified` kayıt **etkin script sayılmaz** (K-T4): aynı case+platformun `pr_open`/`merged`/devam eden script'ine dokunmaz; yenisi gelince eski `unverified` kayıtlar `closed` olur. Kontrol Kulesi `unverified`'i ilk review başarısı paydasına katmaz, ayrı sayaçta gösterir. Doğrulanmamış kaynak `script_codegen.kaynak_kod`'dadır (forge'a commit edilmez).
 
 `ai_call`, `tool_call`, `audit_event` için uygulama rolünün yalnızca INSERT/SELECT yetkisi vardır. Asistan tabloları append-only değildir (sohbet 90 gün saklanır); asistanın denetim izi `ai_call.ek` (`{kanal:"asistan", kullanici_id, mesaj_id}`) ve `tool_call` (`kanal='asistan'`) üzerinden kalıcıdır.
 
@@ -318,8 +324,8 @@ FailureToFix(run_id)
    - her `po.method` sembol tablosunda var mı; argüman türleri imzaya uyuyor mu;
    - her `expects.args` değeri onaylı case'in `expected` / `expected_result` metninde geçiyor mu (assertion değerini model uyduramaz); karşılaştırma öncesi sayı, para ve boşluk biçimi normalize edilir (`1.250,00 TL` ≡ `1250`).
    Biri tutmazsa durur: eksik metot → mühendise "page object'te eksik metot"; kaynağı olmayan beklenen değer → insana.
-4. **Şablon:** test dosyası eşlemeden şablonla üretilir; model TypeScript yazmaz; değerler `JSON.stringify` ile literal basılır.
-5. **Yerel kontrol (toolchain-worker derler, `test-runner` koşturur; CI ile aynı mekanizma):** ilgili commit checkout edilir, uygulama `test-runner` içinde Playwright `webServer` ile o commit'ten başlatılır; `tsc --strict`, ESLint, `playwright test --repeat-each=3`.
+4. **Şablon:** test dosyası eşlemeden şablonla üretilir; model hiçbir dilde kod yazmaz; değerler dilin literal süzgeciyle basılır (`ts_literal` = `JSON.stringify`, `java_literal`, `cs_literal`, `py_literal`; hepsi enjeksiyona kapalı).
+5. **Yerel kontrol (toolchain-worker derler, `test-runner` koşturur; CI ile aynı mekanizma):** ilgili commit checkout edilir, uygulama `test-runner` içinde Playwright `webServer` ile o commit'ten başlatılır; TS: `tsc --strict`, ESLint, `playwright test --repeat-each=3`; web + Java: `app → deps (pom kilidi) → guard → compile → run` (`--repeat-each=3` karşılığı; tarayıcı imajdaki `/ms-playwright`). Doğrulanmamış dillerde bu adım ve 6 yoktur.
    - Kırmızı ve hata **locator/eşleme** kaynaklıysa 1 düzeltme turu (yeniden eşleme); düzeltme turu `expects`'i değiştiremez.
    - Kırmızı ve hata **assertion** kaynaklıysa düzeltme yapılmaz; insana "defect adayı" olarak gider.
 6. **PR (bot):** branch `tp/case-<uuid>`; önce aynı branch için açık PR aranır; açıklamada case, Jira, doğrulama özeti, "AI-generated".
@@ -327,6 +333,12 @@ FailureToFix(run_id)
 **Ajan sınırları:** case başına en fazla 25 araç çağrısı ve ~150k girdi token'ı; bağlamda yalnızca son snapshot tutulur; sistem prompt'u ve sembol tablosu prompt önbelleğinde. **Araç izin listesi:** `browser_navigate`, `browser_snapshot`, `browser_click`, `browser_type`, `browser_select_option`, `browser_wait_for`, `browser_generate_locator`. Ekran görüntüsü aracı ajana **verilmez** (kural 5). **Gecikme bütçesi:** adım 5 için 120 sn; aşılırsa portal kullanıcıya REPLAY'e geçmeyi önerir.
 
 **Canlı görünürlük:** her ajan eyleminden sonra core-worker, model döngüsünün dışında ayrı bir MCP oturum çağrısıyla ekran görüntüsü alır ve SSE ile portala akıtır; görüntü modele gönderilmez.
+
+**Üretim dili (011, `specs/011-uretim-dili/plan.md`):** dil platformdan ayrı bir boyuttur. `POST /code/generate {case_ids, platform, dil?}`; `dil` yoksa hedef repodaki elle yazılmış testlerden **algılanır** (saf sayım, model yok; `GET /code/languages`), kullanıcı Kod üretimi ekranında değiştirebilir (`dil_kaynagi = algilandi | secildi | varsayilan`). Geçerli çiftler: web × `ts|java|csharp|python`; uygulama × yalnız `java`. Ajan ve amaç platforma bağlıdır (web'de dil ne olursa olsun `verify_and_map` + Playwright MCP); REPLAY anahtarına dil girmez (TS ↔ Java page object eşitliği bir testle sabit). Sembol tablosu hedef dilin projesinden alınır; web'de doğrulama ajanına repoda TS projesi varsa **TS tablosu** verilir, Java tablosu deterministik denetim + render içindir; repoda yalnız e2e-java varsa Java tablosu verilir ve denetime `ajan_tablosu: java` yazılır (K-T5). Doğrulanmamış dillerde tablo repodaki tam hat dilinden alınır ("referans tablo").
+- **Tam hat (ts, java):** adımlar 1–6 aynen. Java web: proje `demo-app/e2e-java` (Playwright for Java + TestNG; paket/konvansiyon e2e-app ile aynı), üretilen dosya `src/test/java/com/antreklabs/bayi/uretilen/<Sınıf>Test.java`, merge kapısı **`local-ci-web-java`** (K-T1; GitHub'da `web-java`).
+- **Doğrulanmamış (csharp, python):** adımlar 1–4 (ajan adımları tarayıcıda yine doğrular), render sonrası kaynak `script_codegen.kaynak_kod`'a yazılır; commit, yerel kontrol, PR, kırarak doğrulama ve merge yoktur; durum `unverified`; portal kodu gösterir ve indirir. Dosya yolu tek kaynak render'dan gelir (`<e2e-csharp kökü>/tests/Generated/<Story>WebC<n>_<u8>Tests.cs` (C# metotları `…Async`) · `<e2e-python kökü>/tests/generated/test_<slug>.py`, K-T6). `unverified` etkin script sayılmaz (§7, K-T4). Tam hat dilinde istek, aynı case+platformda **başka dilde merge edilmiş** script varsa **409** döner ("Bu case'in web testi TypeScript ile merge edildi; dil değiştirmek için önce mevcut testi kaldırın").
+- **GitHub kipi (K-T3):** web + Java üretimi ve Java kardeş koşusu yalnız `java ∈ TP_WEB_DILLERI` iken; değilse `/code/languages` Java'yı `kullanilabilir=false` + neden döner. LocalForge'da repodaki dosyalar belirler.
+- **Yetki (K-T8, 012):** yetki API uçlarındadır (`/code/generate` ve `GET /code/languages` → `code.generate`, Automation Engineer); Kod üretimi (`code.read`) ve Koşular (`run.read`) ekranlarının menü/rota görünürlüğü izin tablosundan gelir (`ROTA_IZINLERI`, ANALIZ 012 §4.2).
 
 **Platform (009):** kod üretimi (case, platform) çiftinedir (`POST /code/generate {case_ids, platform?}`, varsayılan `web`). Uygulama platformlarında amaç `verify_and_map_app`, araç izin listesi `app_launch`, `app_snapshot`, `app_click`, `app_type`, `app_select_option`, `app_wait_for`, `app_generate_locator` (app-mcp); `app_screenshot` yalnız canlı görünüm içindir ve `FORBIDDEN_TOOLS`'tadır. Sembol tablosu `java-araclar symbols`, şablon Java/TestNG, statik kapı `javac` + `java-araclar guard`; dal `tp/case-<platform>-<uuid>`, merge kapısı `local-ci-<platform>`. Adımlar 1–6 ve kurallar değişmez. Ayrıntı: [MOBIL-MASAUSTU.md](MOBIL-MASAUSTU.md).
 
@@ -336,6 +348,7 @@ FailureToFix(run_id)
 - **Adımlar:** `npm ci` (önbellekli) → `tsc --strict` → `eslint --no-inline-config` → AST koruması → `playwright test --retries=1 --project=chromium` (JSON + HTML + trace) → artefakt.
 - **Zaman aşımları:** `actionTimeout` 5 sn, `expect.timeout` 5 sn, test 20 sn (kırık locator'lı kırmızı koşu < 60 sn).
 - **Ayrı job:** Semgrep (SAST).
+- **Web + Java (011):** ayrı iş akışı `web-java.yml` (check `web-java`): `demo-app/ci/run-java-checks.sh` — pom kilidi (CI'da güvenilir pom yoksa hata) → `java-araclar guard` → `test-compile` → birim → tarayıcı koşusu; AI yok. Yalnız Java web projesini değiştiren PR'da `test-local` no-op'tur. Paket koşuları (gece, **push**, deploy) repodaki tüm tam hat dillerini koşar (K-T2: merge sonrası push da paket koşusudur, script'li push'ta da kardeş dağıtımı); koşu kaydı dili `run.ortam.dil`'de taşır. Yerelde script'siz PR CI'ı değişen yollardan dil(ler)i seçer (`e2e/` → `local-ci`, `e2e-java/` → `local-ci-web-java`; ikisi de değiştiyse ikisi); **K-T11:** test köklerinin (`e2e/`, `e2e-java/`, `e2e-app/`) dışında değişiklik (uygulama kodu vb.) varsa repodaki tüm tam hat dilleri koşar ve merge kapısı aynı kuralla (`local-ci` + varsa `local-ci-web-java`); LocalForge'da böyle bir PR yerel CI'ı ~2× yükler. GitHub'da `web-java.yml` yol süzgeci daha dardır (ör. yalnız `mobile/`/`desktop/` değişen PR'da Java koşmaz, `web-java` no-op yeşil; LocalForge koşar). **K-T10:** GitHub kipinde `web-java` check'i `web-java.yml` depoda olduğu sürece her zaman zorunludur (ilgisiz PR'da `changes` + no-op ile hızla yeşil); `TP_WEB_DILLERI` yalnız Java üretimini ve kardeş koşuyu açar. **K-T13:** core'un merge kapısı zorunlu listeyi PR'ın base ∪ head ağacından hesaplar (`web-java.yml` birinde varsa `web-java` zorunlu); ağaç okunamaz ya da kesikse (`truncated`) kapalı taraf; portal aynası listeyi core'dan okur; `web-java.yml`'yi silen PR'da önce ruleset'ten çıkarılır (`docs/GCP-KURULUM.md` §10.2 adım 11). Ruleset güncellemesi mevcut platform check'lerini korur (`scripts/github-ruleset.sh --add-checks web-java`). **K-T14:** toolchain pom kilidi commit'teki `pom.xml`'i imajdaki güvenilir kopyayla karşılaştırdığından pom'u değiştiren dağıtımda (011: e2e-app + e2e-java) toolchain imajının hemen ardından depo/forge eşitlenir (`docs/GCP-KURULUM.md` §10.2 adım 5; LocalForge'da `uretilen/` korunarak). LocalForge'da dil/platform check'leri `TP_REQUIRED_CHECKS`'e yazılmaz (yazılan liste her PR'da zorunludur; yol kuralı ekler). **K-T12:** başka dilde merge edilmiş testin kaldırılması ürün akışı değildir: üretim 409 + çıkış yolu ("mevcut test dosyasını silen bir PR'ı merge edin, sonra yeniden üretin"), elle adım `docs/GCP-KURULUM.md` §10.2 adım 12. Ayrıntı: `.github/CI.md` "Web Java iş akışı".
 - **Zorunlu check'ler her PR'da koşar:** workflow düzeyinde `paths` filtresi **yok**; test, AST koruması ve Semgrep job'ları her PR'da tetiklenir, değişiklik tespiti job içinde (`dorny/paths-filter@<SHA>`) yapılır ve ilgisiz PR'da adımlar "no-op, başarılı" çıkar (atlanan zorunlu check PR'ı bekletir).
 - **Ayarlar:** `permissions: { contents: read, packages: read }`; `concurrency: cancel-in-progress`; Action'lar SHA ile; `npm ci --ignore-scripts` (lockfile sabit).
 - **Hedef süre:** koşu başına ≤ 2 dk (yerel job).
@@ -352,7 +365,8 @@ FailureToFix(run_id)
    - Test verisi ön koşulu sağlanamadı (seed/reset hatası) → `test_data`
 3. **LLM:** yalnızca hiçbir kural eşleşmezse; şemalı sınıf + gerekçe. Deterministik `environment` sonucunu ezemez.
 4. **Gösterim:** sayısal güven yerine eşleşen sinyaller listesi.
-5. **Brief'in 4 sınıfı ile ilişki:** `test_maintenance` brief'teki "kırılan locator için onarım önerisi" yoludur; dört kök neden sınıfının dışında, ayrı izlenir (§19, onaylandı).
+5. **Web + Java (011):** "Java mı" sorusu platforma değil dile/rapora bakar. Playwright Java kalıpları: `com.microsoft.playwright.TimeoutError` / "waiting for locator" → locator; `AssertionFailedError` / `AssertionError` → assertion (ürün hatası adayı); bağlantı hataları → ortam. Kanıt web yöntemiyle (`target/kanit/<Sınıf>.<metot>/{trace.zip, sayfa.html, ekran.png}`); testId eşleme `Kimlikler.java` üzerinden; `sayfa.html` ayrıştırması düğüm/derinlik/testId sayısı ve süreyle sınırlıdır.
+6. **Brief'in 4 sınıfı ile ilişki:** `test_maintenance` brief'teki "kırılan locator için onarım önerisi" yoludur; dört kök neden sınıfının dışında, ayrı izlenir (§19, onaylandı).
 
 ### 8.7 Locator onarımı
 - **`locators.ts` saf veri:** `export const cart = { addToCart: { testId: 'add-to-cart', role: 'button', name: 'Sepete ekle', intent: 'Ürün kartında sepete ekleme butonu' } } as const;`
@@ -367,6 +381,7 @@ FailureToFix(run_id)
 - **AST koruması:** değişen dosyalar yalnızca `pages/**/locators.ts`; anahtar kümesi, `role`, `name`, `intent` değişmemiş; yalnızca ilgili `testId` string değeri değişmiş. Aynı kontrol CI'da zorunlu check.
 - **PR:** yerel kontrol **etkilenen tüm testlerde** yeşilse (AI'ın ürettikleri ve elle yazılmış olanlar) bot açar; insan onayı zorunlu.
 - **Birim testleri:** 0 eşleşme, çoklu eşleşme, anahtar/niyet değişikliği denemesi, test dosyasına dokunan yama.
+- **Web + Java (011):** aday bulma **web yöntemi** (DOM/aria, `/locator-probe`), yama **Java yöntemi**: değişen tek dosya `demo-app/e2e-java/.../ekranlar/Kimlikler.java`, yalnız ilgili sabitin string değeri (`java-araclar locators patch`); kapı `local-ci-web-java`.
 - **Uygulama platformları (009):** aynı kural Java'da: değişen tek dosya `demo-app/e2e-app/.../ekranlar/Kimlikler.java`, yalnız ilgili sabitin string değeri değişir (`java-araclar locators patch` / `locators diff`); triage kanıtı hata anının sayfa kaynağı XML'i + ekran görüntüsüdür.
 
 ### 8.8 Model geçidi
@@ -388,7 +403,8 @@ FailureToFix(run_id)
 
 ### 8.10 Review Portal
 - **Ekranlar:** Story listesi · Case review (onay/düzelt/reddet, ret nedeni, fark, AI süresi, kabul oranı) · Yayın önizlemesi · Kod üretimi (adım ekran görüntüleri canlı, PR linki) · Koşu ve triage (sinyaller, öneri, PR linki, **denetim paneli** ve zincir doğrulaması).
-- **Kimlik (demo):** seed kullanıcılar (`analist`, `muhendis`), oturum çerezi; her karar kullanıcı adına imzalı. `aiprobe`/`both` kipinde giriş AI Probe hesabıyla (§8.14): çok rol hesabına bağlı kişiye rol seçici, üst çubukta "Rol değiştir".
+- **Kimlik (demo):** seed kullanıcılar (rol başına bir hesap: `analist`, `po`, `testci`, `muhendis`, `sunucu` → `admin`; yeni roller için hesaplar `seed.py`'de), oturum çerezi; her karar kullanıcı adına imzalı.
+- **Yetki (012):** her uç bir izin anahtarı ister (`tp_core/auth/yetki.py` `IZINLER`, `izin("case.approve")` bağımlılığı); katalogda olmayan izin reddedilir (yazma ve okuma). Red 403 `yetki_yok` + `authz.denied` denetim kaydı. `GET /auth/me` `izinler` listesini döner; portal menü, sayfa (`IzinGerekli`) ve düğmeleri (`useIzin`) buna göre gösterir — gizleme kontrol değildir, kontrol çekirdektedir. Görevler ayrılığı role göredir: bir kişi birden çok rol alır, rol hesapları arasında geçer (K1, K2). Rol ataması AI Probe'dadır (K5). Okuma süzgeçleri: `developer` yalnız onaylı/yayınlı case ve açılmış/bağlanmış bug görür, `TP_ORTAM=prod` iken koşu başlatamaz; `auditor` ve `viewer` ham artefakt ve canlı olay görmez; denetim kaydının tamamını `admin`/`auditor`, diğerleri kendi olaylarını görür. Rol ve izin tablosu: `specs/012-rol-yetki/ANALIZ.md` §3–§4. `aiprobe`/`both` kipinde giriş AI Probe hesabıyla (§8.14): çok rol hesabına bağlı kişiye rol seçici, üst çubukta "Rol değiştir".
 - **REPLAY rozeti** kayıtlı çıktı kullanıldığında görünür.
 
 ---
@@ -440,7 +456,7 @@ FailureToFix(run_id)
 
 **Bilgi kaynakları (13 salt okuma araç, `ALLOWED_AGENT_TOOLS["assistant"|"assistant_deep"]`):**
 - Ürünün kendisi: `product_search`, `product_read` — imaja değil, `make up` ön adımında üretilen ve yalnız core-worker'a `:ro` bağlanan **bilgi paketinden** (`var/tp-bilgi/`, izin listeli portal/core kaynakları ve dokümanlar, MANIFEST + sha256 + üretim sır taraması).
-- Testing Probe verisi: `probe_get`, `probe_list`, `probe_jobs`, `probe_audit`, `probe_my_queue` — mevcut GET servis fonksiyonları, uç-düzeyi rol kısıtları aynen.
+- Testing Probe verisi: `probe_get`, `probe_list`, `probe_jobs`, `probe_audit`, `probe_my_queue` — mevcut GET servis fonksiyonları; araç → uç tablosu izin kataloğundan türetilir, asistanın okuduğu veri rolün okuma izinlerini aşmaz (012).
 - Test edilen uygulama: mevcut `search_code`, `get_file_contents`, `db_schema`, `db_query` (§8.2b erişim kuralları).
 - Canlı Jira: `jira_issue` — yalnız Testing Probe'da kaydı olan anahtarlar, dar `JiraOkuyucu` (yazma metodu yok, httpx katmanında yalnız GET), kısıtlı yorumlar elenir, kişi kimlikleri modele gitmez; global Jira kovası 30/dk.
 - CI: `ci_log` — DB adım özeti → güvenli açılan yerel log (`O_NOFOLLOW` + inode) → GitHub iş logu (`actions:read`); ≤ 16 KB, sır temizliği + maskeleme.
@@ -451,7 +467,7 @@ FailureToFix(run_id)
 
 **Otomatik yükseltme:** Haiku cevabı ürüne özgü soruda "Emin değil" (veya "Kısmen"/toparlama) ise ve bütçe ön koşulları tutarsa (kalanlar ≥ $0.20, global sayaç) aynı transaction'da **ayrı çocuk mesaj** (`assistant_deep`, `tetik='otomatik'`) açılır; zincir yok; `unique(ust_mesaj_id)` elle basışla yarışı çözer.
 
-**Öneri:** `rules/assistant/oneriler.yaml` kural dosyası (İlke IX), kapalı olgu ve operatör kümesi, ifade değerlendirme yok (İlke XI); modelsiz `GET /assistant/suggestions` (model kapalıyken de çalışır, `ai_call` yazmaz). Eylem: iç rota ("Git"), Jira yorum/kayıt taslağı (kullanıcı kopyalar ve kendisi açar; "Jira'yı aç" bağlantısını yalnız sunucu kurar), Jira kaydı, bilgi. Testing Probe'un kendi onaylı hattı olan işlerde (bug taslağı, case yayını, tutarlılık bulgusu) Jira eylemi yasak. Rol hizalama testi: `rota` eylemli kuralın rolleri, ilgili ucun `require_role` kümesinin alt kümesi. "Neden? Sor" öneriyi sohbete bağlam olarak taşır; "Başka ne yapabilirim?" model destekli ≤ 3 ek öneri ("AI önerisi · doğrulanmadı").
+**Öneri:** `rules/assistant/oneriler.yaml` kural dosyası (İlke IX), kapalı olgu ve operatör kümesi, ifade değerlendirme yok (İlke XI); modelsiz `GET /assistant/suggestions` (model kapalıyken de çalışır, `ai_call` yazmaz). Eylem: iç rota ("Git"), Jira yorum/kayıt taslağı (kullanıcı kopyalar ve kendisi açar; "Jira'yı aç" bağlantısını yalnız sunucu kurar), Jira kaydı, bilgi. Testing Probe'un kendi onaylı hattı olan işlerde (bug taslağı, case yayını, tutarlılık bulgusu) Jira eylemi yasak. Rol hizalama testi: `rota` eylemli kuralın rolleri, ilgili ucun izin anahtarına sahip rollerin (`yetki.py`) alt kümesi. "Neden? Sor" öneriyi sohbete bağlam olarak taşır; "Başka ne yapabilirim?" model destekli ≤ 3 ek öneri ("AI önerisi · doğrulanmadı").
 
 **Bütçe ve hız (K3):** asistan günlük $10, kullanıcı günlük $1, kök soru başı $0.50 (çocuklar dahil); kullanıcı saatte 30 soru, kullanıcı başı 1 bekleyen (kısmi tekil indeks), global 6 bekleyen (advisory lock). Beklenen ≈ $0.03/soru.
 
@@ -465,7 +481,7 @@ FailureToFix(run_id)
 
 **Kip:** `TP_AUTH_MODE=local|aiprobe|both`. `local` (varsayılan; on-prem, İlke VII) bugünkü davranıştır: argon2 giriş, `tp_session` çerezi, dış çağrı yok. `aiprobe`: yalnız ortak kimlik (`POST /auth/login` 404). `both`: ikisi birden (geçiş ve acil erişim); yerel parola yalnız bağsız hesaplar içindir — `kimlik_bagi`'lı hesap yerel girişte 403 `aiprobe_gerekli`. `aiprobe`'da yerel oturum ve bağsız/yerel oturumdan üretilmiş `tpt_` token'ı reddedilir. `aiprobe`/`both`'ta oturum çerezi `__Host-tp_session` (Secure, HttpOnly, SameSite=Lax, Path=/), durum çerezi `__Host-aiprobe_state` (yalnız düz `http://localhost` geliştirmesinde Secure'suz `aiprobe_state`, CONTRACT).
 
-**Giriş devri (PLAN §2.3, CONTRACT "Ürün tarafı"):** `GET /auth/aiprobe/login?continue=` → 32 baytlık `state` + çerez (10 dk) → `{AIPROBE_ID_ORIGIN}/login?product=testing-probe&state=&continue=`. Dönüş `GET /auth/aiprobe/callback?code=&state=` → çerezle sabit zamanlı karşılaştırma → `POST {AIPROBE_HOME_RUN_URL}/v1/handoff/redeem` (TP servis hesabının Google ID token'ı; sağlayıcı enjekte edilebilir, varsayılan GCE metadata sunucusu) → yanıtın `state`'i de eşleşmeli, `org` ∈ `AIPROBE_ALLOWED_ORGS` (boşsa red, fail-closed) → TP rolleri = `roles` ∩ TP rolleri. `continue` yalnız `/` ile başlayan göreli yol (`//`, `\`, kontrol karakteri reddedilir → `/`).
+**Giriş devri (PLAN §2.3, CONTRACT "Ürün tarafı"):** `GET /auth/aiprobe/login?continue=` → 32 baytlık `state` + çerez (10 dk) → `{AIPROBE_ID_ORIGIN}/login?product=testing-probe&state=&continue=`. Dönüş `GET /auth/aiprobe/callback?code=&state=` → çerezle sabit zamanlı karşılaştırma → `POST {AIPROBE_HOME_RUN_URL}/v1/handoff/redeem` (TP servis hesabının Google ID token'ı; sağlayıcı enjekte edilebilir, varsayılan GCE metadata sunucusu) → yanıtın `state`'i de eşleşmeli, `org` ∈ `AIPROBE_ALLOWED_ORGS` (boşsa red, fail-closed) → TP rolleri = `roles` ∩ TP rolleri (012: devirde gelen `presenter`, AI Probe'daki rol kayıtları güncellenene kadar `admin` sayılır). `continue` yalnız `/` ile başlayan göreli yol (`//`, `\`, kontrol karakteri reddedilir → `/`).
 
 **Kişi ↔ rol hesabı:** `kimlik_bagi(external_uid, app_user_id UNIQUE)`. Aday hesaplar = kişiye bağlı ve rolü `roles` içinde olan `app_user`'lar. **JIT:** `roles`'taki bir rol için bağlı hesap yoksa o rol adına yeni `app_user` (`ad_soyad` = devirdeki `name`; kullanılamaz parola özeti → yerel girişle açılamaz) + bağ (`auth.jit_user` denetimi). Tek aday → oturum; birden çok → imzalı 10 dk'lık seçim çerezi + portal `/rol-sec` → `POST /auth/aiprobe/rol-sec`. **Rol değiştir:** `POST /auth/aiprobe/rol-degistir` — parola yok; sunucu bağı ve rolü taze oturum kontrolüyle yeniden doğrular, eski oturumu iptal eder, **yeni oturum kimliği** verir.
 

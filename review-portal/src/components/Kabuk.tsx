@@ -3,9 +3,9 @@ import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { canliDerleme, cekirdekYetenekleri, mockDegisikligineAbone, mockUclari, mockZorunlu, ucVar, type Yetenekler } from "../api/http";
 import { useBaglantiDurumu, type BaglantiDurumu } from "../api/events";
 import type { Rol } from "../api/types";
-import { useOturum } from "../auth";
+import { DEMO_ROTALARI, useDemoModu, useIzin, useIzinler, useOturum } from "../auth";
+import { izinVar, normalizeRol, rolEtiketi, ROTA_IZINLERI } from "../lib/yetki";
 import { useCapayaKaydir } from "../lib/capa";
-import { ROL } from "../lib/etiketler";
 import { TEMA_ETIKETI, useTema } from "../lib/tema";
 import { OneriDugmesi } from "./asistan/OneriDugmesi";
 import { paneliAc, sekmeSec, useAsistanHazir } from "./asistan/kontrol";
@@ -21,32 +21,36 @@ interface NavOgesi {
   ad: string;
   /** Menü öğesinin dekoratif ikonu (aria-hidden; erişilebilir ad `ad`dır). */
   ikon: IkonAdi;
-  /** Yalnızca bu rollere görünür (boşsa herkese). */
-  gorunur?: Rol[];
-  /** Bu rollerin asıl çalışma alanı (vurgulanır). */
+  /** Bu rollerin asıl çalışma alanı (vurgulanır; yalnız gösterim, yetki değil). */
   odak?: Rol[];
   /** Ekranın core'daki veri ucu. Canlı derlemede core bu ucu sunmuyorsa öğe pasiftir ("bu fazda yok"). */
   uc: readonly [string, string];
 }
 
+/** Menü öğeleri; görünürlük `ROTA_IZINLERI`'nden (ANALIZ 012 §4.2): izni olmayan öğe çizilmez. */
 const NAV: { grup: string; ogeler: NavOgesi[] }[] = [
   {
     grup: "İş akışı",
     ogeler: [
-      { yol: "/gereksinimler", ad: "Gereksinimler", ikon: "gereksinim", odak: ["analyst", "po"], uc: ["GET", "/requirements"] },
+      { yol: "/gereksinimler", ad: "Gereksinimler", ikon: "gereksinim", odak: ["analyst", "po", "tester"], uc: ["GET", "/requirements"] },
+      { yol: "/caseler", ad: "Test case'leri", ikon: "caseler", odak: ["analyst", "tester"], uc: ["GET", "/cases"] },
       { yol: "/kod", ad: "Kod üretimi", ikon: "kod", odak: ["engineer"], uc: ["GET", "/scripts"] },
-      { yol: "/kosular", ad: "Koşular", ikon: "kosu", odak: ["presenter", "engineer"], uc: ["GET", "/runs"] },
+      { yol: "/kosular", ad: "Koşular", ikon: "kosu", odak: ["engineer", "developer"], uc: ["GET", "/runs"] },
       { yol: "/bug-taslaklari", ad: "Bug taslakları", ikon: "bug", odak: ["tester"], uc: ["GET", "/bug-drafts"] },
+      // 013 (012'ye uyarlandı): katalogu Analist, Testçi ve Mühendis düzenler (`testdata.manage`);
+      // otomasyon ayarlarını Analist ve Mühendis (`automation.manage`).
+      { yol: "/test-verisi", ad: "Test verisi", ikon: "veri", odak: ["analyst", "tester", "engineer"], uc: ["GET", "/test-data"] },
+      { yol: "/otomasyon", ad: "Otomasyon", ikon: "otomasyon", odak: ["analyst", "engineer"], uc: ["GET", "/automation-settings"] },
     ],
   },
   {
     grup: "İzleme",
     ogeler: [
-      { yol: "/yol-haritasi", ad: "Demo yol haritası", ikon: "harita", odak: ["presenter"], uc: ["GET", "/requirements"] },
-      { yol: "/kontrol-kulesi", ad: "Kontrol Kulesi", ikon: "kule", odak: ["presenter"], uc: ["GET", "/control-tower"] },
-      { yol: "/demo", ad: "Demo kontrolleri", ikon: "demo", gorunur: ["presenter"], odak: ["presenter"], uc: ["POST", "/demo/break-locator"] },
-      { yol: "/denetim", ad: "Denetim", ikon: "denetim", uc: ["GET", "/audit"] },
-      { yol: "/claude-code", ad: "Claude Code kanalı", ikon: "terminal", gorunur: ["analyst"], uc: ["GET", "/tokens"] },
+      { yol: "/yol-haritasi", ad: "Demo yol haritası", ikon: "harita", odak: ["admin"], uc: ["GET", "/requirements"] },
+      { yol: "/kontrol-kulesi", ad: "Kontrol Kulesi", ikon: "kule", odak: ["admin", "viewer"], uc: ["GET", "/control-tower"] },
+      { yol: "/demo", ad: "Demo kontrolleri", ikon: "demo", odak: ["admin"], uc: ["POST", "/demo/break-locator"] },
+      { yol: "/denetim", ad: "Denetim", ikon: "denetim", odak: ["auditor"], uc: ["GET", "/audit"] },
+      { yol: "/claude-code", ad: "Claude Code kanalı", ikon: "terminal", uc: ["GET", "/tokens"] },
     ],
   },
 ];
@@ -143,6 +147,10 @@ export function Kabuk() {
 
 function KabukIcerik() {
   const { kullanici } = useOturum();
+  const izinler = useIzinler();
+  // Demo menü öğeleri (Demo yol haritası, Demo kontrolleri) demo kipi kapalıyken gizlenir.
+  const demoModu = useDemoModu(izinVar(izinler, "demo.read", "demo.manage"));
+  const olaylarAcik = useIzin("events.read");
   const cikis = useCikis();
   const kip = useKimlikKipi();
   const kimlikServisiYok = useKimlikServisiErisilemez();
@@ -296,10 +304,13 @@ function KabukIcerik() {
               </span>
             </span>
           )}
-          <span className={`baglanti baglanti-${b.sinif}`} role="status">
-            <span className="nokta" aria-hidden="true" />
-            <span className="baglanti-metin">{b.etiket}</span>
-          </span>
+          {/* Canlı olaylar rolün izniyle (events.read); Denetçi ve Görüntüleyici'de akış yok, gösterge de yok. */}
+          {olaylarAcik && (
+            <span className={`baglanti baglanti-${b.sinif}`} role="status">
+              <span className="nokta" aria-hidden="true" />
+              <span className="baglanti-metin">{b.etiket}</span>
+            </span>
+          )}
           {kip.kip !== "local" && <AiprobeDegistirici />}
           <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={temaDegistir} aria-label={`${TEMA_ETIKETI[tema]} (değiştir)`}>
             <Ikon ad={tema === "koyu" ? "ay" : tema === "acik" ? "gunes" : "sistem"} />
@@ -309,7 +320,7 @@ function KabukIcerik() {
               <span className="kullanici-avatar" aria-hidden="true">
                 {basHarfler(kullanici.ad_soyad || kullanici.kullanici_adi)}
               </span>
-              <span className="kullanici-ad" title={`${kullanici.gorunen_ad ?? ROL[kullanici.rol]} (${kullanici.kullanici_adi})`}>
+              <span className="kullanici-ad" title={`${kullanici.gorunen_ad ?? rolEtiketi(kullanici.rol)} (${kullanici.kullanici_adi})`}>
                 {kullanici.ad_soyad || kullanici.kullanici_adi}
                 {kullanici.ad_soyad && kullanici.ad_kaynak === "aiprobe" && (
                   <span className="kullanici-ad-kaynak" data-testid="ad-kaynak" title="Ad, AI Probe hesabından alındı">
@@ -318,7 +329,7 @@ function KabukIcerik() {
                   </span>
                 )}
               </span>
-              <span className="kullanici-rol">{ROL[kullanici.rol]}</span>
+              <span className="kullanici-rol">{rolEtiketi(kullanici.rol)}</span>
             </div>
           )}
           <button
@@ -333,7 +344,9 @@ function KabukIcerik() {
       <div className="govde">
         <nav ref={menuRef} id="yan-menu" className={`yan-menu${menuAcik ? " acik" : ""}`} aria-label="Ana menü">
           {NAV.map((g) => {
-            const ogeler = g.ogeler.filter((o) => !o.gorunur || (kullanici && o.gorunur.includes(kullanici.rol)));
+            const ogeler = g.ogeler.filter(
+              (o) => izinVar(izinler, ...(ROTA_IZINLERI[o.yol] ?? [])) && !(demoModu === false && DEMO_ROTALARI.includes(o.yol)),
+            );
             if (ogeler.length === 0) return null;
             return (
               <div key={g.grup} className="menu-grup">
@@ -355,7 +368,7 @@ function KabukIcerik() {
                       <NavLink to={o.yol} className={({ isActive }) => `menu-oge${isActive ? " aktif" : ""}`}>
                         <Ikon ad={o.ikon} />
                         <span>{o.ad}</span>
-                        {kullanici && o.odak?.includes(kullanici.rol) && (
+                        {kullanici && o.odak?.includes(normalizeRol(kullanici.rol) as Rol) && (
                           <span className="odak-isaret" title="Rolünüzün çalışma alanı">
                             <span className="gorunmez">(rolünüzün çalışma alanı)</span>
                           </span>

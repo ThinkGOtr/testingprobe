@@ -231,10 +231,12 @@ make jira-seed
 make security-check     # 10/10; JIRA_WRITE_* yalnızca core-worker'da; okuma hesabında yazma izni yok
 ```
 
-Portalda: analist **Gereksinimler → "Jira'dan çek"** → TPD-1..TPD-4 listelenir; story bağlantıları
+Portalda: Analist **Gereksinimler → "Jira'dan çek"** → TPD-1..TPD-4 listelenir; story bağlantıları
 `https://<site>.atlassian.net/browse/...`'e gider. PO kapısı denemesi: inceleme sonrası PO Jira'da
 `tp-po-approved` etiketini koyar → ≤15 sn içinde portalda "PO onaylı"; aynı etiketi yazma (bot)
-kullanıcısı koyarsa onay **sayılmaz**.
+kullanıcısı koyarsa onay **sayılmaz**. Jira story'sinde PO onayının tek kanalı Jira etiketidir; portal PO
+onay ucu 410 `po_onayi_jira` döner (012 K6). Portal PO onayı yalnız serbest metin gereksinimdedir
+(`requirement.po_approve_free_text`).
 
 > Not: Tasarım belgesindeki Rovo MCP okuma yolu bu sürümde yoktur; okuma da Jira REST v3 ve API
 > token'ıyla yapılır.
@@ -293,8 +295,8 @@ gönderir). Anahtar boşsa o rol bahsedilmez; aynı kişi iki rolde ise bir kez 
 | Onay etiketi kaldırıldı bildirimi (story) | PO |
 | Onaylı doküman düzeltmesi yazıldı, yeniden teyit (story) | PO |
 | Onaylı case'ler Jira/Xray'e yayınlandı — zincir hash yorumu (story) | Testçi |
-| Hata mevcut Bug'a bağlandı — kanıt yorumu (Bug) | Mühendis + Testçi |
-| Yeni Bug açıldı (açıklamanın ilk satırı; ayrı yorum yazılmaz) | Mühendis + Testçi |
+| Hata mevcut Bug'a bağlandı — kanıt yorumu (Bug) | Automation Engineer + Testçi |
+| Yeni Bug açıldı (açıklamanın ilk satırı; ayrı yorum yazılmaz) | Automation Engineer + Testçi |
 
 Test issue'sundaki üretim modu yorumu yalnızca imlidir (bahsetme yok). Locator onarımı Jira'ya yazmaz
 (PR yorumları forge'dadır); bu yüzden onarım için Jira bahsetmesi yoktur.
@@ -407,7 +409,10 @@ Hedef depo: **`ThinkGOtr/testingprobe-demo-app`** (özel). Kimlikler — anayasa
    `test-local`, `ast-guard`, `semgrep`; GitHub-hosted `ubuntu-24.04`; ürün deposundaki ci.yml'den
    golden-drift job'u çıkarılmış — golden kayıtlar ve `rules/` ürün deposunda kalır),
    `break-verify.yml`, `CODEOWNERS` (`@gokhansipahi`; `--codeowner` ile değişir), `dependabot.yml`,
-   `scripts/github-*.sh` (CI yardımcıları), `toolchain/ast-guard/`, `.playwright-version`. Tek ve
+   `scripts/github-*.sh` (CI yardımcıları), `toolchain/ast-guard/`, `.playwright-version`; web +
+   Java hattı (011) için `demo-app/e2e-java/`, `.github/workflows/web-java.yml`,
+   `toolchain/java-araclar/` (üretilen test koruması) ve `toolchain/e2e-java-deps/pom.xml` (güvenilir
+   pom; hedef pom ile bayt eşit — CI'da yoksa `run-java-checks.sh` hata verir). Tek ve
    deterministik bir ilk commit ve onun üzerinde **`demo-baseline`** etiketi oluşturulur (GitHub
    kipindeki demo sıfırlamasının hedef ağacı). `.env*` ve anahtar/token kalıpları bulunursa betik durur.
 3. Gönderin (sizin git kimlik bilgilerinizle; ör. `gh auth setup-git` — workflow dosyaları için
@@ -483,10 +488,20 @@ GITHUB_READ_TOKEN=<salt okuma>
 TP_FORGE_REMOTE_URL=https://github.com/ThinkGOtr/testingprobe-demo-app.git
 TP_FORGE_REMOTE_TOKEN=<salt okuma>
 TP_E2E_ROOT=demo-app/e2e
+TP_E2E_APP_ROOT=demo-app/e2e-app        # 009 uygulama Java hattı
+TP_E2E_JAVA_ROOT=demo-app/e2e-java      # 011 web + Java hattı (toolchain-worker + test-runner)
 TP_APP_PATHS=demo-app/web,demo-app/api
-TP_REQUIRED_CHECKS=                     # boş = test-local,ast-guard,semgrep
+TP_REQUIRED_CHECKS=                     # boş = test-local,ast-guard,semgrep (+ aşağıdakiler)
+TP_PLATFORMS=                           # ör. android,windows → mobil-android, masaustu-windows zorunlu
+TP_WEB_DILLERI=                         # ts,java → web-java zorunlu + web Java üretimi (011 K-T3)
 ```
 
+- **Web + Java (011):** `TP_WEB_DILLERI=ts,java` yazmadan önce (1) demo deposunda `web-java.yml`,
+  `toolchain/java-araclar/`, `toolchain/e2e-java-deps/` olmalı (5.1 `--push --update`), (2) ruleset'e
+  `web-java` eklenmeli (`scripts/github-ruleset.sh --checks test-local,ast-guard,semgrep,web-java
+  --apply`). `java` yazılmazsa Kod üretimi ekranında Java "kullanılamaz" görünür ve paket koşularında
+  Java kardeş koşusu açılmaz (gelmeyen check'i beklemez). Yalnız `ts|java` geçerlidir; başka değer
+  core'u GitHub kipinde başlatmaz. C#/Python doğrulanmamıştır, PR'a girmez.
 - `GH_APP_PRIVATE_KEY_PATH` yalnızca dosya core-worker konteynerinde görünürse işe yarar; compose
   böyle bir bağlama içermez, bu yüzden tek satırlık `GH_APP_PRIVATE_KEY` kullanın.
 - `TP_FORGE_REMOTE_URL` boşsa GitHub modunda "Kırarak doğrula" tamamlanamaz (merge açık kabul notu
@@ -505,18 +520,20 @@ TP_REQUIRED_CHECKS=                     # boş = test-local,ast-guard,semgrep
 | Portal | GitHub |
 |---|---|
 | PR açılması / main'e merge | `pull_request` / `push` |
-| Sunucu · Koşular → "Deploy sonrası testleri koş" | `repository_dispatch` `deploy` (koşu adı `ci deploy [<kimlik>]`) |
-| Sunucu · Koşular → "Gece koşusunu şimdi başlat" | `workflow_dispatch` `ci.yml` `tetik=nightly`; ayrıca zamanlanmış `0 2 * * *` (UTC) |
+| Automation Engineer · Koşular → "Deploy sonrası testleri koş" | `repository_dispatch` `deploy` (koşu adı `ci deploy [<kimlik>]`) |
+| Automation Engineer · Koşular → "Gece koşusunu şimdi başlat" | `workflow_dispatch` `ci.yml` `tetik=nightly`; ayrıca zamanlanmış `0 2 * * *` (UTC) |
 
 Core koşuyu adındaki `[<kimlik>]` ile bulur, artefaktları (`test-local-results`, `sauce-results`)
-indirir; PR CI sonucu PR'a tek yorum olarak yazılır.
+indirir; PR CI sonucu PR'a tek yorum olarak yazılır. `java ∈ TP_WEB_DILLERI` iken gece/push/deploy
+paket koşuları `web-java.yml`'ı da tetikler (kardeş koşu, `web-java-results`; koşu kaydında
+`ortam.dil = java`).
 
 ### 5.7 Locator kırılması/onarımı GitHub kipinde
 
 Kırılma ve sıfırlama **bot ile değil, insan kimliğiyle** (`GITHUB_MERGE_TOKEN`) yapılır;
 onarımı bot önerir, insan merge eder:
 
-1. **Kır** (Sunucu · "Buton kimliğini değiştir" ya da `make break`): core-worker, main'in o anki head'inden
+1. **Kır** (Sistem Yöneticisi / Automation Engineer · "Buton kimliğini değiştir", `TP_DEMO_MODE=1`; ya da `make break`): core-worker, main'in o anki head'inden
    `demo/break-locator-<main12>` dalına tek commit yazar (yalnızca `demo-app/web/src` altındaki
    tırnaklı `add-to-cart` → `cart-add`), PR'ı açar, farkı yerel kipteki aynı kuralla doğrular
    (yalnızca `web/src`, satır sayısı aynı, yalnızca testid) ve PR head'ine bağlı olarak
@@ -527,12 +544,12 @@ onarımı bot önerir, insan merge eder:
    derlenmesi istenir: `make demo-break` / `make break` bunu kendisi uygular
    (`scripts/demo-web-sync.sh`; web arşivi toolchain-worker aynasından). Portal düğmesi
    kullanılıyorsa sunum boyunca `make demo-web-sync A=--watch` açık olsun.
-3. Triage `test_maintenance/locator` → mühendis "Onarım PR'ı aç": **bot** (App) `tp/repair-*`
+3. Triage `test_maintenance/locator` → Automation Engineer "Onarım PR'ı aç": **bot** (App) `tp/repair-*`
    dalında yalnızca `demo-app/e2e/pages/catalog/locators.ts` testId'sini değiştiren PR'ı açar;
    `ast-guard` onarım kipinde koşar.
 4. **İnsan merge eder**: portalda "Merge et" (`GITHUB_MERGE_TOKEN`) ya da GitHub arayüzünde onay +
    merge. `push` CI'ı **yeşil**.
-5. **Sıfırla** (Sunucu · "Demoyu sıfırla" / `make demo-reset`): force-push YOK. Insan kimliğiyle
+5. **Sıfırla** (Sistem Yöneticisi / Automation Engineer · "Demoyu sıfırla", `TP_DEMO_MODE=1`; ya da `make demo-reset`): force-push YOK. Insan kimliğiyle
    main'in üstüne ağacı `demo-baseline` etiketinin ağacıyla birebir aynı tek commit
    (`demo/reset-baseline-<main12>`), PR ve bypass merge. Böylece kırılma, onarım ve üretilen
    testler birlikte geri alınır (yalnızca kırılmayı `git revert` etmek onarılmış e2e'yi bırakır ve
@@ -560,10 +577,10 @@ make security-check                                          # GH_APP_*, GITHUB_
 scripts/demo-web-sync.sh --main     # demo-app-web = GitHub main (toolchain aynası); "GitHub aynası" yazmalı
 ```
 
-Uçtan uca: (1) mühendis bir onaylı case için kod üretir → `tp/case-*` dalında bot PR'ı →
+Uçtan uca: (1) Automation Engineer bir onaylı case için kod üretir → `tp/case-*` dalında bot PR'ı →
 `test-local`, `ast-guard`, `semgrep` → portalda merge kapısı → insan merge → `push` koşusu.
 (2) Locator yolu 5.7 adımlarıyla: yeşil temel `push` koşusu → kır → kırmızı → onarım PR'ı (bot)
-→ insan merge → yeşil → sıfırla. Sunucu "Deploy sonrası testleri koş" →
+→ insan merge → yeşil → sıfırla. Automation Engineer "Deploy sonrası testleri koş" →
 `gh run list --repo ThinkGOtr/testingprobe-demo-app --workflow ci.yml --limit 3` listesinde
 `ci deploy [...]`. Prova listesindeki "bot main'e push dener → reddedilir" maddesi ruleset
 uygulandıktan sonra bot kimliğiyle denenir.

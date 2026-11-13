@@ -101,9 +101,17 @@ describe("örnek veri yalnızca core durumlarını üretir", () => {
     };
     await oturumAc("muhendis");
     await api.kodUret(["case-1-2", "case-1-3", "case-1-1"]);
-    // 009: örnek veride ayrıca uygulama platformlarının script'leri var (scr-and, scr-ios, scr-win).
-    const yeni = () => mockVerisi().scriptler.filter((s) => !["scr-1", "scr-2", "scr-3", "scr-and", "scr-ios", "scr-win"].includes(s.id));
+    // 009: örnek veride ayrıca uygulama platformlarının script'leri var (scr-and, scr-ios, scr-win);
+    // 011: dil örnekleri (scr-java, scr-py).
+    const ESKI = ["scr-1", "scr-2", "scr-3", "scr-and", "scr-ios", "scr-win", "scr-java", "scr-py"];
+    const yeni = () => mockVerisi().scriptler.filter((s) => !ESKI.includes(s.id));
     await izle(() => yeni().length === 3 && yeni().every((s) => ["pr_open", "failed", "blocked"].includes(s.durum)));
+    // 011: doğrulanmamış dil (Python) — verifying → unverified; başka dilde yeniden üretimde unverified → closed.
+    await api.kodUret(["case-1-4"], "web", "python");
+    const py = () => mockVerisi().scriptler.find((s) => s.case_ids.includes("case-1-4") && s.dil === "python");
+    await izle(() => py()?.durum === "unverified");
+    await api.kodUret(["case-1-4"], "web", "java");
+    await izle(() => py()?.durum === "closed" && mockVerisi().scriptler.some((s) => s.case_ids.includes("case-1-4") && s.dil === "java" && s.durum === "pr_open"));
     await api.kirarakDogrula("scr-2");
     await izle(() => mockVerisi().scriptler.find((s) => s.id === "scr-2")!.break_verify.durum === "passed");
     await api.prBirlestir((await api.script("scr-2")).pr!);
@@ -115,7 +123,7 @@ describe("örnek veri yalnızca core durumlarını üretir", () => {
       for (const d of kume) expect(M[ad].states, `${ad}: ${d}`).toContain(d);
     }
     // Ara durumlar gerçekten gözlendi (test boşa geçmiyor).
-    expect([...gorulen.script]).toEqual(expect.arrayContaining(["verifying", "checking", "pr_open", "merged", "failed", "blocked"]));
+    expect([...gorulen.script]).toEqual(expect.arrayContaining(["verifying", "checking", "pr_open", "merged", "failed", "blocked", "unverified", "closed"]));
     expect(gorulen.bug_draft.has("dismissed")).toBe(true);
   });
 });

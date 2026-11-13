@@ -42,8 +42,39 @@ DEVICE_UDID="$(cat ../../var/cihaz/ios.udid)" \
 ```
 
 `run-app-checks.sh`: `test-compile` → birim (`target/birim-raporlari/`) → cihaz koşusu. Sonuçlar
-`target/surefire-reports/TEST-*.xml` (JUnit XML; `core/src/tp_core/features/ci/parse.py`), `target/allure-results/`, başarısız
+`target/surefire-reports/TEST-*.xml` (JUnit XML; `core/src/tp_core/features/ci/parse.py`), `target/allure-results/`,
+`target/extent-report/index.html` (Extent raporu), başarısız
 testin kanıtı `target/kanit/<Sınıf>.<metot>/{ekran.png,sayfa-kaynagi.xml}` (triage okur).
+
+### Raporlar: Allure ve Extent
+
+Her koşu iki okunur rapor kaynağı üretir; ikisi de test kodunda ek çağrı istemez:
+
+- **Allure** — `allure-testng` `target/allure-results/` yazar; HTML raporu test-runner üretir.
+- **Extent (Spark)** — `altyapi/ExtentRaporu` TestNG dinleyicisi (`src/test/resources/META-INF/services/
+  org.testng.ITestNGListener` ile kendiliğinden yüklenir; testng.xml ve `-Dgroups` koşusunda aynı)
+  `target/extent-report/index.html` yazar. Rapor **tek dosyadır ve dış kaynak yüklemez** (css/js/simge
+  yazı tipi gömülü): tarayıcıda doğrudan, ağ olmadan ve portalın sandbox'ında açılır. Başarısız testin
+  kanıt ekran görüntüsü modele ve arşive dosya yolu olarak girer, koşu sonunda rapora gömülür (en çok 50,
+  koşu geneli — önceki tekrarlar dahil; fazlası `../kanit/…` bağlantısı). Ara yazım her 25 testte / 30 sn'de
+  bir; kesintide (SIGTERM) kapanış kancası son durumu yazar. Rapor ve arşiv atomik taşınır: yazım yarıda
+  kalırsa önceki geçerli `index.html` kalır ve yanına `index.uyari.txt` yazılır.
+
+| Özellik | Varsayılan | Not |
+| --- | --- | --- |
+| `extent.rapor.dizini` | `target/extent-report` | boş verilirse (`-Dextent.rapor.dizini=`) rapor üretilmez; birim adımı `target/birim-raporlari/extent-report`'a yazar |
+| `extent.tekrar` | — | tekrarlı koşuda `<i>/<n>` (test-runner verir): test adına `(tekrar 2/3)` eklenir |
+
+Tekrarlar (test-runner'ın `repeat_each` koşuları, `extent.tekrar` `i > 1`) dizindeki `extent.json`
+arşivi üzerinden **tek raporda birleşir**. `extent.tekrar` verilmeyen koşu ve ilk tekrar arşivi siler:
+`clean`'siz yeniden koşuda eski sonuçlar rapora karışmaz.
+
+Test adı `@Test(description)` (yoksa `Sınıf › metot`), altında `Sınıf.metot`; kategoriler TestNG
+gruplarıdır, `tp-case-*` hariç (case kimliği ayrıntıda `Testing Probe case: <uuid>` satırı). Allure:
+`TestTabani` gruplardan etiket ekler — her grup `tag`, Jira anahtarı (`TPD-1`) `story`,
+`tp-case-<uuid>` ayrıca `tp-case=<uuid>` (`altyapi/TestGruplari`). Test JVM'i: pom `argLine` =
+`-Xmx512m -Dfile.encoding=UTF-8`.
+Raporlama hatası testi ya da koşuyu düşürmez: uyarı günlüğe yazılır, o koşuda Extent raporu kapanır.
 
 ## Ayarlar
 

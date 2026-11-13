@@ -99,7 +99,8 @@ def test_rol_filtresi_yalniz_kendi_rolunun_kurallari(
         e = olumlu(tohum, _simdi())
         try:
             sonuc = _hesapla(engine, kisi, e)
-        except oneri.EkranBulunamadi:  # rolüne kapalı ekran (bu sette yok ama sözleşme)
+        except (oneri.EkranBulunamadi, oneri.VarlikBulunamadi):
+            # Rolüne kapalı ekran ya da rolün okuma izni olmayan varlık (specs/012-rol-yetki §4.2)
             continue
         for gelen in _idler(sonuc):
             k = ks.kural(gelen)
@@ -227,9 +228,10 @@ def test_son_kosu_ic_tetikleri_saymaz(engine: Engine, tohum: Tohum, make_user: M
     tohum.kosu("passed", tetik="break_verify", bitis=_simdi())
     tohum.kosu("passed", tetik="local_check", bitis=_simdi())
     with Session(engine) as s:
-        assert oneri.olgular(s, make_user("presenter"), None, None)["son_kosu_saat"] == 40
+        assert oneri.olgular(s, make_user("admin"), None, None)["son_kosu_saat"] == 40
     e = Ekran("/kosular", None, None, _simdi())
-    sonuc = _hesapla(engine, make_user("presenter"), e)
+    # Koşu tetiklemek `run.trigger_scheduled` (engineer) izni ister (specs/012-rol-yetki).
+    sonuc = _hesapla(engine, make_user("engineer"), e)
     assert _idler(sonuc) == ["guncel-kosu-yok"]
     assert sonuc["oneriler"][0]["neden"].startswith("Son koşu 1 gün önce")
     assert sonuc["oneriler"][0]["eylem"] == {"tur": "rota", "rota": "/kosular"}
@@ -239,7 +241,7 @@ def test_butce_yuzdesi_ve_varliksiz_ekran(
     engine: Engine, tohum: Tohum, make_user: MakeUser
 ) -> None:
     tohum.harcama("8.54")
-    sonuc = _hesapla(engine, make_user("presenter"), Ekran("/kontrol-kulesi", None, None, _simdi()))
+    sonuc = _hesapla(engine, make_user("admin"), Ekran("/kontrol-kulesi", None, None, _simdi()))
     assert [c["baslik"] for c in sonuc["oneriler"]] == ["Model bütçesinin %85 kadarı kullanıldı"]
 
 
@@ -256,7 +258,7 @@ def test_varlik_yoksa_ve_ekran_kapaliysa_hata(
         with pytest.raises(oneri.EkranBulunamadi):
             oneri.oneriler(s, kisi, "/demo", None, None, jira=SIM)
         with pytest.raises(oneri.VarlikBulunamadi):
-            oneri.olgular(s, Principal(uuid.uuid4(), "x", "admin"), None, None)
+            oneri.olgular(s, Principal(uuid.uuid4(), "x", "bilinmeyen"), None, None)
 
 
 def test_kuralsiz_ekranda_bos_ve_dugme_gizli(
@@ -265,7 +267,7 @@ def test_kuralsiz_ekranda_bos_ve_dugme_gizli(
     req = tohum.gereksinim("findings_open")
     tohum.bulgu(req)
     sonuc = _hesapla(
-        engine, make_user("presenter"), Ekran(f"/gereksinimler/{req}", None, None, _simdi())
+        engine, make_user("admin"), Ekran(f"/gereksinimler/{req}", None, None, _simdi())
     )
     assert sonuc["ekranda_kural_var"] is False and sonuc["oneriler"] == []
     sonuc = _hesapla(engine, make_user("analyst"), Ekran("/denetim", None, None, _simdi()))
@@ -366,7 +368,7 @@ def test_yaptim_tekrar_saatsiz_kuralda_ayni_durumda_kalici(
 def test_varliksiz_kuralda_yaptim_ertesi_gun_duser(
     engine: Engine, tohum: Tohum, make_user: MakeUser
 ) -> None:
-    sunucu = make_user("presenter")
+    sunucu = make_user("admin")
     tohum.harcama("9")
     # "Bugün" harcama satırının DB saatinden alınır: Python saati UTC gece yarısını geçmiş olsa
     # da gün anahtarı ve günlük harcama aynı güne düşer (sınırda kırılmasın).
@@ -379,7 +381,7 @@ def test_varliksiz_kuralda_yaptim_ertesi_gun_duser(
         and k["varlik_id"] is None
     )
     e = Ekran("/kontrol-kulesi", None, None, bugun)
-    sonuc = _hesapla(engine, make_user("presenter"), e)
+    sonuc = _hesapla(engine, make_user("admin"), e)
     assert _idler(sonuc) == [] and sonuc["bastirilan"][0]["kural_id"] == "butce-uyarisi"
     # Ertesi gün (UTC) aynı uyarı yeniden görünür. Harcama "bugün"e yazıldığından olguyu
     # sabitleyen kural seti kopyasıyla değil, doğrudan bastırma anahtarıyla doğrulanır.
@@ -507,7 +509,7 @@ def test_oneri_hesaplama_hicbir_tabloyu_degistirmez(
     once = _tablo_ozeti(db)
     for e in ekranlar:
         for kisi in kisiler.values():
-            with contextlib.suppress(oneri.EkranBulunamadi):
+            with contextlib.suppress(oneri.EkranBulunamadi, oneri.VarlikBulunamadi):
                 _hesapla(engine, kisi, e)
     sonra = _tablo_ozeti(db)
     assert once == sonra  # ai_call, tool_call, job, asistan_* dahil: modelsiz ve salt okuma

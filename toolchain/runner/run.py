@@ -27,8 +27,9 @@ Akış (tek seferde bir koşu; bayi kullanıcıları bayi1/bayi2 koşular arası
      dışındakiler silinir. Core, sahibi script kapanınca işareti toolchain-worker
      `POST /runs/release` ile daha erken kaldırabilir (ekran görüntüsü saklamasıyla aynı yaşam).
 
-Java (009, `lang=java`, platform android|ios|windows): aynı kilit ve koşu dizini sözleşmesiyle
-`runner/java_run.py` (Maven + Appium; sonuç runner/surefire.py ile aynı biçimde).
+Java (009 + 011 §2.6, `lang=java`): aynı kilit ve koşu dizini sözleşmesiyle `runner/java_run.py`
+(Maven; platform android|ios|windows → Appium, platform web → Playwright for Java; sonuç
+runner/surefire.py ile aynı biçimde).
 
 Eşzamanlılık: süreç içi `RUN_LOCK` + süreçler arası dosya kilidi (`TP_RUN_LOCK_PATH`, flock;
 toolchain_common/runlock.py). Konteynerde elle başlatılan koşular (`make e2e-smoke`) aynı kilidi
@@ -61,6 +62,17 @@ from toolchain_common.validation import RUN_ID_RE
 RUN_LOCK = threading.Lock()
 
 PASS_ENV = ("PATH", "HOME", "LANG", "LC_ALL", "TZ", "PLAYWRIGHT_BROWSERS_PATH", "TMPDIR")
+# Gizli test verisi (K19, 013 ANALIZ §9): üretilen test parolayı koda yazmaz,
+# `process.env.TP_TESTVERI_<AD>` okur. Yalnızca bu dar ada uyan değişkenler test sürecine geçer;
+# başka her değişken (API anahtarları, belirteçler) PASS_ENV izin listesinde değilse geçmez.
+TESTVERI_ENV_RE = re.compile(r"^TP_TESTVERI_[A-Z0-9_]{1,64}$")
+
+
+def testveri_env() -> dict[str, str]:
+    """Ortamdaki gizli test verisi değişkenleri (`TP_TESTVERI_*`, dar ad deseni)."""
+    return {k: v for k, v in os.environ.items() if TESTVERI_ENV_RE.fullmatch(k)}
+
+
 DAY_S = 86_400
 # Rapor türü → config'teki yer (`results/` altında) ve varlığının işareti olan dosya.
 REPORTS = {
@@ -100,7 +112,8 @@ class RunRequest:
     test_files: list[str] = field(default_factory=list)
     workers: int | None = None
     keep: bool = False
-    # Dil (009 §2.1): "ts" Playwright (varsayılan), "java" Appium/TestNG (runner/java_run.py).
+    # Dil (009 §2.1): "ts" Playwright (varsayılan), "java" TestNG (runner/java_run.py): uygulama
+    # platformunda Appium, `web`de Playwright for Java.
     lang: str = "ts"
     platform: str | None = None
     # Ekilmiş hata kodu (012 §4.6); test sürecine TP_FAULT olarak geçer. Kırılma koşusunun bütün
@@ -137,6 +150,7 @@ def playwright_argv(cfg: Settings, e2e: Path, req: RunRequest) -> list[str]:
 
 def playwright_env(cfg: Settings, req: RunRequest) -> dict[str, str]:
     env = {k: os.environ[k] for k in PASS_ENV if k in os.environ}
+    env.update(testveri_env())
     env.update(
         {
             "CI": "1",

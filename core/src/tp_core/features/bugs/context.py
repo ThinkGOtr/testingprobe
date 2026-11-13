@@ -127,6 +127,9 @@ class BugContext:
     bulgu_kanitlari: list[dict[str, Any]] = field(default_factory=list)
     severity: str | None = None
     mevcut_icerik: dict[str, Any] | None = None
+    # 013 K19: bilinen gizli test verisi değerleri. Model girdisi çözülmüş kalır (REPLAY); taslak
+    # içeriği (kullanıcıya görünen, Jira'ya giden) `content` içinde bunlarla maskelenir.
+    gizli_degerler: list[str] = field(default_factory=list)
 
     # ------------------------------------------------------------------ türetilenler
     @property
@@ -148,7 +151,8 @@ class BugContext:
     def terms(self) -> list[str]:
         """Mükerrer araması terimleri: önce ayırt edici metinler (AC/bulgu, case başlığı)."""
         return jql.key_terms(
-            [
+            gizliler=self.gizli_degerler,
+            metinler=[
                 *self.ac_metinleri,
                 self.iddia,
                 self.case_baslik,
@@ -157,11 +161,18 @@ class BugContext:
                 self.test_adi,
                 self.belge_metni,
                 self.gozlem,
-            ]
+            ],
         )
 
     def imza(self) -> dict[str, Any]:
-        """Hata imzası (TEKNIK-TASARIM §8.12): test adı, hata türü, sayfa/AC, anahtar terimler."""
+        """Hata imzası (TEKNIK-TASARIM §8.12): test adı, hata türü, sayfa/AC, anahtar terimler.
+
+        013 K19 (güvenlik #1): bilinen gizli değerler maskeli (taslak API'si ve denetim)."""
+        from tp_core.features.testveri.atif import maskele_obje
+
+        return maskele_obje(self._imza(), self.gizli_degerler)
+
+    def _imza(self) -> dict[str, Any]:
         return {
             "kaynak": self.kaynak,
             "test_adi": self.test_adi,
@@ -316,7 +327,11 @@ def _check_row(s: Session, run: Run, test_adi: str | None) -> dict[str, Any] | N
 
 def _fill_case(s: Session, ctx: BugContext, tc: TestCase) -> None:
     ctx.test_case_id = tc.id
-    icerik = dict(tc.icerik or {})
+    # 013 §3.3: model girdisi bugünküyle aynı kalsın diye test verisi atıfları çözülür.
+    from tp_core.features.testveri.service import case_coz_gevsek, gizli_degerler
+
+    icerik = case_coz_gevsek(s, tc.icerik or {})
+    ctx.gizli_degerler = gizli_degerler(s)
     ctx.case_icerik = icerik
     ctx.case_baslik = temiz(icerik.get("title"), 200)
     ctx.case_adimlar = [a for a in icerik.get("steps") or [] if isinstance(a, Mapping)]
@@ -438,6 +453,10 @@ def failure_context(s: Session, failure_id: uuid.UUID) -> BugContext:
         tc = s.get(TestCase, tr.test_case_id)
         if tc is not None:
             _fill_case(s, ctx, tc)
+    if not ctx.gizli_degerler:  # case'siz başarısızlıkta da hata metni parolayı taşıyabilir
+        from tp_core.features.testveri.service import gizli_degerler
+
+        ctx.gizli_degerler = gizli_degerler(s)
     ctx.ham_failure = _ham_failure(ctx, kanit, mesaj)
     ctx.beklenen = temiz(ctx.ham_failure.get("expected"), 200)
     ctx.gerceklesen = temiz(ctx.ham_failure.get("received"), 200)

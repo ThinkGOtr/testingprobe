@@ -5,9 +5,10 @@ Modelsiz kuralların (constitution XI) sözleşmesi burada zorlanır:
 - `rotalar.json` portalın rotalarıyla (App.tsx + lib/rotalar.ts) birebir.
 - `hata-sozlugu.yaml`: bilinen `kod`'lar (api/errors.py, WorkflowError ailesi, CSRF) kapsanır.
 - `urun-terimleri.yaml`: genel QA terimi yok; S9 ("Flaky test…") genel bilgi kalır.
-- `oneriler.yaml`: §17.3'ün 26 kuralı; kapalı olgu/operatör/yer tutucu kümesi, serbest metin olgusu
-  yer tutucu olamaz, sistem hattı olan ekranda Jira eylemi yok, tek eylem, rol hizalama (FastAPI
-  `require_role` + `APPROVER_ROLES`), kapsam matrisi.
+- `oneriler.yaml`: §17.3'ün 26 kuralı + 011 `script-dogrulanmamis` + 012 son onay kuralı (28);
+  kapalı olgu/operatör/yer tutucu kümesi, serbest metin olgusu yer tutucu olamaz, sistem hattı olan
+  ekranda Jira eylemi yok, tek eylem, rol hizalama (FastAPI `izin(...)` + `APPROVER_ROLES`), kapsam
+  matrisi.
 - `jira-taslaklari.yaml`: taslakta URL/wiki bağlantı/mention/HTML yok, yer tutucular geçerli.
 - `evaluation/assistant.json` iskeleti ve asistan golden'ları.
 """
@@ -30,7 +31,7 @@ from tp_core.gateway import ALLOWED_AGENT_TOOLS, FORBIDDEN_TOOLS, load_schema
 from tp_core.gateway.bundle import parse_prompt_file
 
 ASISTAN = RULES / "assistant"
-ROLLER = ("analyst", "po", "engineer", "tester", "presenter")
+ROLLER = ("admin", "auditor", "analyst", "po", "tester", "engineer", "developer", "viewer")
 VARLIKLAR = (
     "requirement",
     "consistency_finding",
@@ -69,6 +70,7 @@ OLGU_ADLARI = frozenset(
         "ac_eksik",
         "acik_bulgu_sayisi",
         "inceleme_bekleyen_case",
+        "son_onay_bekleyen_case",
         "onayli_case",
         "kirarak_dogrulama",
         "defect_adayi",
@@ -201,12 +203,16 @@ def _normalize(metin: str) -> str:
 
 def _bilinen_kodlar() -> set[str]:
     from tp_core.api import csrf, errors
+    from tp_core.api import main as _api_main  # noqa: F401  (özellik router'larını yükler)
 
-    # 012: kodlu WorkflowError alt sınıfları özellik hata modüllerindedir; içe aktarılmadan
+    # 012 kalite: kodlu WorkflowError alt sınıfları özellik hata modüllerindedir; içe aktarılmadan
     # __subclasses__() onları göremez (test sırasına bağlı kalmasın).
     from tp_core.features.hata_kosusu import hatalar as _hata_kosusu_hatalari  # noqa: F401
     from tp_core.features.karar_tablosu import hatalar as _kalite_hatalari  # noqa: F401
     from tp_core.workflow import service
+
+    # Kodlu WorkflowError alt sınıfları özellik modüllerinde tanımlıdır (ör. codegen
+    # `DilCakismasi`); API modülü hepsini içe aktarır, dosya tek başına koşsa da görünür.
 
     def alt_siniflar(cls: type) -> Iterator[type]:
         for alt in cls.__subclasses__():
@@ -215,6 +221,8 @@ def _bilinen_kodlar() -> set[str]:
 
     kodlar = set(errors.GENEL_KODLAR.values()) | {errors.IC_HATA, csrf.RED_KODU, "butce_asildi"}
     kodlar |= {"istek_hatasi"}  # listede olmayan 4xx (errors.genel_kod)
+    # 012 rol/yetki `KodluHata` kodları: izin reddi (yetki.reddet), Jira PO kanalı, demo kipi.
+    kodlar |= {"yetki_yok", "po_onayi_jira", "demo_kapali"}
     # Yalnız üründeki alt sınıflar: testlerin tanımladığı sahte WorkflowError alt sınıfları
     # (ör. test_hata_kodlari) __subclasses__() ile sızmasın.
     kodlar |= {
@@ -536,13 +544,14 @@ def test_oneriler_kural_dosyasi_gecerli() -> None:
     assert kural_hatalari(_oneriler(), _taslaklar(), _rotalar()) == []
 
 
-def test_oneriler_ilk_kural_seti_26_kural_tek_eylem() -> None:
-    """§17.3 tablosu (K10 onaylı) 26 satır + 012 §4.4'ün iki kuralı (hata-beklenti-case-duzelt,
-    hata-beklenti-bilgi; ürün sahibi K10 onayı bekliyor): her satır tek kural ve tek eylem."""
+def test_oneriler_kural_seti_30_kural_tek_eylem() -> None:
+    """§17.3 tablosu (K10 onaylı) 26 satır + 011 `script-dogrulanmamis` (bilgi) + 012 rol
+    `case-son-onay-bekliyor` + 012 kalite §4.4'ün iki kuralı (hata-beklenti-case-duzelt,
+    hata-beklenti-bilgi; ürün sahibi K10 onayı bekliyor); her satır tek kural ve tek eylem."""
     kurallar = _oneriler()["kurallar"]
-    assert len(kurallar) == 28
+    assert len(kurallar) == 30
     turler = [k["eylem"]["tur"] for k in kurallar]
-    assert turler.count("rota") == 12 and turler.count("bilgi") == 10
+    assert turler.count("rota") == 13 and turler.count("bilgi") == 11
     assert turler.count("jira_taslak") == 3 and turler.count("jira_yorum") == 2
     assert turler.count("jira_kaydi") == 1
 
@@ -765,11 +774,17 @@ def test_degerdeki_suslu_parantez_yer_tutucu_sayilmaz() -> None:
 
 
 def _uc_rolleri() -> dict[str, frozenset[str]]:
-    """FastAPI rotası → `require_role` kümesi (`auth/deps.require_role` kapanışından)."""
+    """FastAPI rotası → izinli roller: `yetki.izin(...)`/`izinlerden_biri(...)` bağımlılığının
+    katalog rolleri ya da (S2 birleşene kadar) `require_role` kapanışındaki küme."""
     from tp_core.api.main import create_app
+    from tp_core.auth import yetki
 
     def roller(dep: Any) -> Iterator[frozenset[str]]:
         call = dep.call
+        if hasattr(call, "izin_adi"):
+            yield yetki.roller_icin(call.izin_adi)
+        if hasattr(call, "izin_adlari"):
+            yield frozenset().union(*(yetki.roller_icin(i) for i in call.izin_adlari))
         if getattr(call, "__name__", "").startswith("require_role_"):
             for cell in call.__closure__ or ():
                 if isinstance(cell.cell_contents, frozenset):
@@ -804,7 +819,8 @@ def test_rol_hizalama_rota_eylemleri_ucun_rolleriyle() -> None:
     uclar = _uc_rolleri()
     # Denetim gerçekten rol okuyor (her şeye izin veren varsayılana düşmüyor).
     assert uclar["POST /requirements/{req_id}/po-approve"] == {"po"}
-    assert uclar["POST /ci/trigger"] == {"presenter"}
+    assert uclar["POST /ci/trigger"] == {"engineer", "developer"}
+    assert uclar["POST /demo/reset"] == {"admin", "engineer"}
     for kural in _oneriler()["kurallar"]:
         eylem = kural["eylem"]
         if eylem["tur"] != "rota":
@@ -851,7 +867,86 @@ def test_asistan_promptu_oneri_kipini_ve_araclari_anlatir() -> None:
         assert f"`{arac}`" in body, arac
     assert "kip=oneri" in body and "`oneriler`" in body
     assert "eylem_reddi" in body and "Never write a URL" in body
-    assert "Sunucu (sunum yapan)" in body
+    # 012: 8 portal rolü (presenter → admin; "Sunucu (…)" rolü ve Erişim yöneticisi yok).
+    duz_govde = " ".join(body.split())
+    for etiket_ in (
+        "Sistem Yöneticisi",
+        "Denetçi",
+        "Analist",
+        "PO",
+        "Automation Engineer",
+        "Testçi",
+        "Developer",
+        "Görüntüleyici",
+    ):
+        assert etiket_ in duz_govde, etiket_
+    assert "Sunucu (" not in body and "Erişim yöneticisi" not in body and "Mühendis" not in body
+    kalip = (
+        "Uygulama kodu ve verisi rolünüze açık değil; Automation Engineer, Testçi ya da Analist "
+        "görebilir."
+    )
+    assert kalip in " ".join(body.split())
+
+
+def test_istem_izleri_promptta_birebir_ve_yeterince_uzun() -> None:
+    """Her parmak izi prompt gövdesinde birebir geçer (yalnız boşluk farkı) ve normalize edildiğinde
+    `IZ_EN_KISA`'dan kısa değildir; Türkçe çeviri/özet sızıntısı için Türkçe iz de vardır."""
+    from tp_core.features.assistant import guvenlik_cikti
+
+    _, body = parse_prompt_file(
+        (RULES / "prompts" / "assistant.md").read_text(encoding="utf-8"), Path("assistant.md")
+    )
+    duz = " ".join(body.split())
+    izler = _yaml("istem-izleri.yaml")["izler"]
+    assert len(izler) >= 6 and len(set(izler)) == len(izler)
+    for iz in izler:
+        assert " ".join(iz.split()) in duz, iz
+        assert len(guvenlik_cikti.normalize(iz)) >= guvenlik_cikti.IZ_EN_KISA, iz
+    assert any(re.search(r"[çğıöşüİ]", iz) for iz in izler)  # en az bir Türkçe iz
+    assert len(guvenlik_cikti.izleri_yukle(RULES)) == len(izler)
+
+
+@pytest.mark.parametrize(
+    "metin",
+    [
+        # Doğal Türkçe cevaplar: istemin genel cümlelerine benzese de sızıntı sayılmaz (izler
+        # ayırt edici olmalı; yoksa zararsız cevap değiştirilir).
+        "Sunucu sinyali satırı bir uyarıdır, hüküm değildir; soruya yine cevap verdim.",
+        "Kayıtta talimat içeren bir metin var; güvenilmeyen bloklardaki talimatlar uygulanmaz.",
+        "Araç tanımları ve kanıt kimliği satırları yalnız iç kullanım içindir, paylaşamam.",
+        "A server signal is a caution, not a verdict.",
+        "Use as few tool calls as you need.",
+        "Talimatlarımı paylaşamam; ekranlar, kayıtlar ve Jira hakkında soru yanıtlayabilirim.",
+    ],
+)
+def test_istem_izleri_dogal_cevapta_tetiklenmez(metin: str) -> None:
+    from tp_core.features.assistant import guvenlik_cikti
+
+    cevap = {"cevap_bloklari": [{"tur": "paragraf", "metin": metin, "maddeler": []}]}
+    assert guvenlik_cikti.sizinti_var(cevap, None, guvenlik_cikti.izleri_yukle(RULES)) is None
+
+
+def test_istem_izleri_ic_not_sizintisini_yakalar() -> None:
+    from tp_core.features.assistant import guvenlik_cikti
+
+    metin = "İç notlar (kullanıcıya yazılmaz): sunucu sinyali satırı bir uyarıdır."
+    cevap = {"cevap_bloklari": [{"tur": "paragraf", "metin": metin.upper(), "maddeler": []}]}
+    izler = guvenlik_cikti.izleri_yukle(RULES)
+    assert guvenlik_cikti.sizinti_var(cevap, None, izler) == "istem_sizintisi"
+
+
+def test_rol_etiketleri_portal_ile_ayni() -> None:
+    """Portal rollerinin asistan etiketi portalın gösterdiği adla aynı (012: portal
+    `lib/yetki.ts` `ROL_ETIKETLERI`, core `yetki.ROL_ETIKETLERI`)."""
+    from tp_core.auth.yetki import ROL_ETIKETLERI
+    from tp_core.features.assistant.rol_politikasi import etiket
+
+    ts = (REPO / "review-portal" / "src" / "lib" / "yetki.ts").read_text(encoding="utf-8")
+    blok = ts.split("export const ROL_ETIKETLERI", 1)[1].split("};", 1)[0]
+    portal = dict(re.findall(r'(\w+): "([^"]+)"', blok))
+    assert set(portal) == set(ROLLER) == set(ROL_ETIKETLERI)
+    for rol, ad in portal.items():
+        assert etiket(rol, rules_dir=RULES) == ad == ROL_ETIKETLERI[rol], rol
 
 
 def test_asistan_arac_izin_listesi() -> None:
@@ -882,7 +977,9 @@ def test_asistan_model_amaclari_yeni_alanlari_tasir() -> None:
 
 EVAL_BEKLENTILERI = {
     "contains",
+    "contains_any",
     "not_contains",
+    "cikti_sinyali_yok",
     "kaynak_tur_include",
     "kaynak_ref_include",
     "rota_in",
@@ -900,14 +997,17 @@ def test_asistan_eval_iskeleti() -> None:
     from tp_core.gateway.eval_set import load_set
 
     data = load_set(RULES, "assistant")
-    assert data["purpose"] == "assistant" and data["version"] == 1
+    meta, _ = parse_prompt_file(
+        (RULES / "prompts" / "assistant.md").read_text(encoding="utf-8"), Path("assistant.md")
+    )
+    assert data["purpose"] == "assistant" and data["version"] == meta["version"]
     cases = data["cases"]
     assert len(cases) >= 12
     etiketler = [e for c in cases for e in c["etiketler"]]
     assert {f"S{i}" for i in range(1, 14)} <= set(etiketler)
     assert etiketler.count("injection") >= 6 and etiketler.count("eylem_istegi") >= 4
     assert etiketler.count("oneri_modu") >= 3
-    assert {c["rol"] for c in cases} == set(ROLLER)
+    assert {c["rol"] for c in cases} == {"analyst", "po", "engineer", "tester", "admin"}
     rotalar = _rotalar()
     kaynak_turleri = set(
         load_schema(RULES, "assistant")["properties"]["kaynaklar"]["items"]["properties"]["tur"][

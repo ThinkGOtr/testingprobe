@@ -163,7 +163,8 @@ def test_portal_girisi_ezilmez_dosya_degisikligi_uygulanir(
     login(api, make_user("analyst"))
     api.post("/requirements/sync")
     rid1, rid3 = (_liste(api)[k]["id"] for k in ("TPD-1", "TPD-3"))
-    # Portal girişi (insan) dosyadan sonra gelir: dosya artık onu ezmez.
+    # Portal girişi (insan, PO — baseline.manage) dosyadan sonra gelir: dosya artık onu ezmez.
+    login(api, make_user("po"))
     r = api.put(f"/requirements/{rid3}/baseline", json={"deger_s": 1800, "not": "yeniden ölçüm"})
     assert r.status_code == 200, r.text
     _baz_dosyasi_yok.write_text(
@@ -177,7 +178,7 @@ def test_portal_girisi_ezilmez_dosya_degisikligi_uygulanir(
     assert g["TPD-1"]["baseline"]["deger_s"] == 3000
     assert (g["TPD-3"]["baseline"]["deger_s"], g["TPD-3"]["baseline"]["giren_rol"]) == (
         1800,
-        "analyst",
+        "po",
     )
     gecmis = api.get(f"/requirements/{rid1}/baseline").json()["gecmis"]
     assert [(x["deger_s"], x["onceki_s"], x["giren"]) for x in gecmis] == [

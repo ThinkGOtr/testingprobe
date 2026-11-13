@@ -98,10 +98,10 @@ test("asistan paneli: açılır, sekmeler, dürüst rozetler, bağlam çipi rota
   // Çip kaldırılabilir; rota değişince (uygulama içi gezinme) yeniden eklenir ve güncellenir.
   await cipler.getByRole("button", { name: "Ekran bağlamını kaldır" }).click();
   await expect(cipler.getByText(/Bu ekran:/)).toHaveCount(0);
-  await page.getByRole("navigation", { name: "Ana menü" }).getByRole("link", { name: /Koşular/ }).click();
-  await expect(page).toHaveURL(/\/kosular$/);
+  await page.getByRole("navigation", { name: "Ana menü" }).getByRole("link", { name: /Bug taslakları/ }).click();
+  await expect(page).toHaveURL(/\/bug-taslaklari$/);
   await expect(panel(page)).toBeVisible();
-  await expect(cipler.getByText("Bu ekran: Koşular")).toBeVisible();
+  await expect(cipler.getByText("Bu ekran: Bug taslakları")).toBeVisible();
 
   // Esc paneli kapatır (odak panel içindeyken).
   await p.getByLabel("Sorunuz").focus();
@@ -118,14 +118,16 @@ test("asistan paneli: açılır, sekmeler, dürüst rozetler, bağlam çipi rota
 
 test('"? Bu ne?": pasif (disabled) düğme seçilir, nedeni sorulur; Esc önce kipten çıkar; "Git" iç rotaya götürür', async ({ page }) => {
   const hatalar = konsolHatalariniTopla(page);
-  await girisYap(page, "analist");
+  // Sunucu: script detayında "Merge et" pasif (yalnız mühendis) ve "Git: Kod üretimi" açabildiği ekran
+  // (Kod üretimi listesi yalnız mühendis + sunucuya açık).
+  await girisYap(page, "sunucu");
   await page.goto("/kod/scr-2");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(/7 adet kampanyalı/);
 
   // Analist için mühendis düğmesi pasif ve nedenini title'da söyler (S1 vakası).
   const merge = page.getByRole("button", { name: "Merge et" });
   await expect(merge).toBeDisabled();
-  await expect(merge).toHaveAttribute("title", "Bu işlem için gereken rol: Mühendis");
+  await expect(merge).toHaveAttribute("title", "Bu işlem için gereken rol: Automation Engineer");
   await merge.scrollIntoViewIfNeeded();
 
   const p = await paneliAc(page);
@@ -290,7 +292,10 @@ test("son hata çipi ve sözlük cevabı (S2, mock örneği)", async ({ page }) 
   await expect(cipler.getByText(/Son hata: Gereksinim bulunamadı/)).toBeVisible();
   await p.getByRole("list", { name: "Soru önerileri" }).getByRole("button", { name: "Az önceki hata ne demek?" }).click();
   const kart = await sonCevap(p);
-  await expect(kart.getByText("Hazır cevap · hata sözlüğü")).toBeVisible();
+  // 013 K12: "Hazır cevap" etiketi kip rozetine birleşti (ŞABLON; açıklama rozetin yanında görünür).
+  await expect(kart.getByTestId("kip-rozeti")).toHaveText("ŞABLON");
+  await expect(kart.getByTestId("kip-aciklamasi")).toHaveText("Yapay zekâ kullanılmadı; hazır açıklama.");
+  await expect(kart.getByTestId("kip-aciklamasi")).toBeVisible();
   await expect(kart.getByText(/Maliyet: ölçülmedi/)).toBeVisible();
   // 404 konsol hatası beklenen (bulunamayan kayıt); başka hata yok.
   expect(hatalar.filter((h) => !/404|Not Found|bulunamadı/i.test(h))).toEqual([]);
@@ -307,7 +312,10 @@ test("dar ekran: panel modal dialog; şablon cevabındaki Git paneli kapatır, s
   await expect(d).toHaveAttribute("aria-modal", "true");
   await d.getByRole("button", { name: "Bugün ne yapmalıyım?" }).click();
   const kart = await sonCevap(d);
-  await expect(kart.getByText("Hazır cevap · kayıt durumu")).toBeVisible();
+  // 013 K12: "Hazır cevap" etiketi kip rozetine birleşti (ŞABLON; açıklama rozetin yanında görünür).
+  await expect(kart.getByTestId("kip-rozeti")).toHaveText("ŞABLON");
+  await expect(kart.getByTestId("kip-aciklamasi")).toHaveText("Yapay zekâ kullanılmadı; hazır açıklama.");
+  await expect(kart.getByTestId("kip-aciklamasi")).toBeVisible();
   await page.screenshot({ path: `${EKRAN_DIZINI}/04-dar-ekran.png` });
 
   // Git: dar ekranda panel kapanır; yeniden açınca aynı sohbet.

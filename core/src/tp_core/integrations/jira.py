@@ -51,6 +51,7 @@ log = logging.getLogger(__name__)
 
 SIM_BASE_URL = "http://jira-sim:8090"
 SIM_XRAY_BASE_URL = "http://jira-sim:8090/xray"
+SIM_SERVICE_NAME = "jira-sim"  # jira-sim `/health` yanıtındaki `service` (sims/jira-sim app.py)
 SIM_READ = ("reader@sim.local", "sim")
 SIM_WRITE = ("writer@sim.local", "sim")
 SIM_PO_ACCOUNTS = ("po@sim.local",)
@@ -504,6 +505,19 @@ class RestJira:
 
     def issue_url(self, key: str) -> str:
         return f"{self.browse_url}/browse/{key}"
+
+    def simulator_mu(self) -> bool:
+        """Bağlı uç gerçekten jira-sim mi: sim'e özgü `/health` yanıtı (`service == "jira-sim"`).
+
+        Host adına güvenilmez (localhost tüneli gerçek Jira'ya çıkabilir): yalnız simülatörün
+        kendi sağlık ucu bu kimliği döndürür. Kimlik bilgisi gönderilmez; hata → False.
+        """
+        try:
+            resp = self._http.get(f"{self.base_url}/health", timeout=self._timeout)
+            govde = resp.json() if resp.status_code == 200 else None
+        except Exception:
+            return False
+        return isinstance(govde, dict) and govde.get("service") == SIM_SERVICE_NAME
 
     # ----------------------------------------------------------------- okuma
     def myself(self, write: bool = False) -> dict[str, Any]:

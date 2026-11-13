@@ -23,11 +23,15 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Sequence
 from decimal import Decimal, InvalidOperation
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 log = logging.getLogger(__name__)
 
 KAYNAK = "testdata:demo-app"
+VERITABANI_YOK = "Veritabanı okunamadı"
 # docs/DEMO-VERISI.md: "bayi1 / Demo123!", "bayi2 / Demo123!" (yerel demo; gerçek kimlik değil).
 DEMO_PAROLA = "Demo123!"
 # demo-app/web arayüzündeki sabit etiketler (LoginPage, CatalogPage, CartPage, Layout).
@@ -73,8 +77,10 @@ def _tutar_mi(anahtar: str) -> bool:
     return any(p in anahtar for p in ("tutar", "limit", "fiyat"))
 
 
-def build_text(sorgu: Sorgu | None) -> str:
-    """Bloğun metni. `sorgu` None ya da hata verirse veritabanı kısmı yok sayılır (not düşülür)."""
+def build_text(sorgu: Sorgu | None, parola: str = DEMO_PAROLA) -> str:
+    """Bloğun metni. `sorgu` None ya da hata verirse veritabanı kısmı yok sayılır (not düşülür).
+
+    `parola`: parola yerine basılacak metin (IDE kanalında atıf `{veri:ortak.demo_parola}`)."""
     satirlar: list[str] = ["Test verisi (demo uygulaması):"]
     veri: dict[str, Sequence[Sequence[Any]]] = {}
     if sorgu is not None:
@@ -86,9 +92,7 @@ def build_text(sorgu: Sorgu | None) -> str:
     if veri:
         satirlar.append("Test kullanıcıları (bayi):")
         for kullanici, ad, limit in veri["bayi"]:
-            satirlar.append(
-                f'- {kullanici} / {DEMO_PAROLA} — bayi adı "{ad}", kredi limiti {tl(limit)}'
-            )
+            satirlar.append(f'- {kullanici} / {parola} — bayi adı "{ad}", kredi limiti {tl(limit)}')
         satirlar.append("Ürünler (kod · ad · birim fiyat):")
         for kod, ad, fiyat in veri["urun"]:
             satirlar.append(f'- {kod} · "{ad}" · {tl(fiyat)}')
@@ -102,8 +106,7 @@ def build_text(sorgu: Sorgu | None) -> str:
             satirlar.append(f"- {anahtar} = {deger}{ek}")
     else:
         satirlar.append(
-            f"- Veritabanı okunamadı; yalnızca sabit bilgiler. Test kullanıcılarının parolası: "
-            f"{DEMO_PAROLA}"
+            f"- {VERITABANI_YOK}; yalnızca sabit bilgiler. Test kullanıcılarının parolası: {parola}"
         )
     satirlar.append("Arayüz etiketleri: " + ", ".join(f'"{e}"' for e in UI_ETIKETLERI))
     satirlar.append("Tutar biçimi: 1.250,00 TL (tr-TR, iki ondalık).")
@@ -131,13 +134,77 @@ def set_query_factory(fabrika: Callable[[], Sorgu | None] | None) -> None:
     _sorgu_fabrikasi = fabrika or demo_db_query
 
 
-def block() -> str:
-    """Modele giden güvenilmeyen veri bloğu (kaynak `testdata:demo-app`)."""
+def model_kipi() -> str | None:
+    """Geçidin yapılandırılmış kipi (`live` | `replay` | `record`); okunamazsa None."""
+    try:
+        from tp_core.gateway.config import GatewaySettings, resolve_mode
+
+        return resolve_mode(GatewaySettings())
+    except Exception as exc:  # pragma: no cover - yapılandırma okunamazsa eski yol
+        log.warning("Model kipi okunamadı: %s", exc)
+        return None
+
+
+def block(session: Session | None = None) -> str:
+    """Modele giden güvenilmeyen veri bloğu (kaynak `testdata:demo-app`).
+
+    K17 (specs/013 §9): model kipi `live`/`record` ve `session` verilmişse blok **test verisi
+    kataloğundan** kurulur (yeni kayıtlar ve değişen değerler dahil; biçim DB bloğuyla aynı
+    kurallar). `replay`'de (ve katalog kurulamazsa) bugünkü demo DB bloğu kullanılır: REPLAY
+    girdileri / golden'lar değişmez.
+    """
     from tp_core.gateway import wrap_untrusted
 
+    if session is not None and model_kipi() in ("live", "record"):
+        katalogdan = _katalog_metni(session)
+        if katalogdan is not None:
+            return wrap_untrusted(katalogdan, source=KAYNAK, kind="data")
+        log.warning("Test verisi bloğu katalogdan kurulamadı; model girdisi demo DB'den")
     try:
         sorgu = _sorgu_fabrikasi()
     except Exception as exc:
         log.warning("Test verisi kaynağı açılamadı: %s", exc)
         sorgu = None
     return wrap_untrusted(build_text(sorgu), source=KAYNAK, kind="data")
+
+
+IDE_PAROLA_ATFI = "{veri:ortak.demo_parola}"
+
+
+def ide_block(session: Session) -> str:
+    """IDE/MCP kanalının (`get_requirement`) test verisi bloğu (K17 netleştirme, güvenlik #3).
+
+    Bu kanalda REPLAY yok: model kipinden bağımsız olarak **her zaman katalogdan** kurulur.
+    Gizli değerler (parola dahil) çözülmüş değil **atıf** olarak verilir: blok API yanıtıyla IDE
+    token sahibine döner; IDE taslağı atfı yazar, sunucu çözer. Katalog kurulamazsa DB bloğu,
+    parola yine atıfla; son olarak bilinen gizli değerler maskelenir.
+    """
+    from tp_core.gateway import wrap_untrusted
+
+    metin = _katalog_metni(session, gizli_atif=True)
+    if metin is None:
+        log.warning("IDE test verisi bloğu katalogdan kurulamadı; demo DB'den (parola atıfla)")
+        try:
+            sorgu = _sorgu_fabrikasi()
+        except Exception as exc:
+            log.warning("Test verisi kaynağı açılamadı: %s", exc)
+            sorgu = None
+        metin = build_text(sorgu, parola=IDE_PAROLA_ATFI)
+    try:
+        from tp_core.features.testveri.atif import maskele
+        from tp_core.features.testveri.service import gizli_degerler
+
+        metin = maskele(metin, gizli_degerler(session))
+    except Exception as exc:  # pragma: no cover - katalog okunamazsa parola zaten atıf
+        log.warning("IDE test verisi bloğu maskelenemedi: %s", type(exc).__name__)
+    return wrap_untrusted(metin, source=KAYNAK, kind="data")
+
+
+def _katalog_metni(session: Session, *, gizli_atif: bool = False) -> str | None:
+    from tp_core.features.testveri.service import blok_metni
+
+    try:
+        return blok_metni(session, gizli_atif=gizli_atif)
+    except Exception as exc:  # katalog okunamazsa model girdisi eski yoldan
+        log.warning("Test verisi bloğu katalogdan kurulamadı: %s", exc)
+        return None

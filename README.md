@@ -31,6 +31,7 @@ Temel kural: hiçbir AI çıktısı insan onayı olmadan test varlığına dön�
 | Faz 3 · Demo-B | Kod üretimi (Playwright MCP ajanı + şablon) → yerel kontrol → PR → kırarak doğrula → merge → yerel CI (PR/push/gece/deploy) → Kontrol Kulesi | Tamam |
 | Faz 4 | Triage (önce kural) → locator onarım PR'ı / mükerrer aramalı bug taslağı → testçi kararı → Jira; demo kontrolleri | Tamam |
 | Faz 5 | Prova, gerçek sistemlere geçiş hazırlığı, ölçülmüş baz değer | Sürüyor |
+| 011 · Üretim dili | Dil platformdan ayrı boyut: repodan algılanır, Kod üretimi ekranında değiştirilir. Web'de TypeScript ve **Java** (Playwright for Java + TestNG, `demo-app/e2e-java`) tam hat (PR, `local-ci-web-java` / GitHub `web-java`); C# ve Python **doğrulanmamış** (yalnız indirilebilir kaynak, PR yok) | Sürüyor (`feat/uretim-dili`, inceleme turu 1). Ayrıntı: [specs/011-uretim-dili/plan.md](specs/011-uretim-dili/plan.md) |
 | 009 · Mobil/masaüstü | Aynı hat Android, iOS ve Windows uygulamalarına: app-mcp ajanı (Appium), Java + Appium + TestNG şablonu, platform başına PR ve kontrol | Sürüyor (`feat/mobil-masaustu`): Android'de uygulama, Java referans testleri ve app-mcp emülatörde yeşil, kod üretimi → PR → merge zinciri henüz uçtan uca koşturulmadı; iOS'ta da uygulama, Java referans testleri (kırarak doğrula dahil) ve app-mcp simülatörde yeşil; Windows yalnız derlendi, CI iş akışları yazıldı ama koşturulmadı. Ayrıntı: [docs/MOBIL-MASAUSTU.md](docs/MOBIL-MASAUSTU.md) §8 |
 
 **Bugün dış hesap yoktur ve bu açıkça etiketlenir:**
@@ -58,7 +59,7 @@ Tüm servisler [`docker-compose.yml`](docker-compose.yml) içindedir. Host'a aç
 | `migrate` | Tek seferlik Alembic migrasyonu | — |
 | `core-api` | Çekirdek REST API (FastAPI), oturum, SSE olayları, onay kayıtları, MCP (`/mcp`, Claude Code kanalı) | http://127.0.0.1:8000 |
 | `core-worker` | Durum makinesi + iş kuyruğu; AI çağrıları **yalnızca burada**; Jira, forge ve test yönetimi yazımı; model anahtarı ve yazma kimlikleri yalnızca burada | — |
-| `toolchain-worker` | TypeScript tarafı: sembol tablosu, `tsc`/`eslint`/AST koruması, locator yoklaması; merge kapısının (`local-ci`) tek yazarı; kod çalıştırmaz, DB kimliği yok | — |
+| `toolchain-worker` | TypeScript ve Java tarafı: sembol tablosu, `tsc`/`eslint`/AST koruması, pom kilidi + `java-araclar guard` + Maven derlemesi, locator yoklaması; merge kapısının (`local-ci`, `local-ci-web-java`, `local-ci-<platform>`) tek yazarı; kod çalıştırmaz, DB kimliği yok | — |
 | `test-runner` | Üretilen testleri koşturan izole servis (internetsiz, sırsız) | — (iç ağ) |
 | `playwright-mcp` | Doğrulama ajanının tarayıcısı; yalnızca demo uygulamasına izinli, `--caps=vision` yok | — (host'a açılmaz) |
 | `review-portal` | İnceleme portalı (React + nginx), Türkçe | http://127.0.0.1:8080 |
@@ -78,6 +79,7 @@ Dış sistemler port + adaptör + yerel simülatör düzenindedir
 | Test yönetimi | Jira Test issue | Jira Test issue · Xray Cloud | `TP_TEST_MGMT` |
 | Git forge + CI | LocalForge (yerel bare git + PR kaydı) + test-runner | GitHub (App, ruleset, Actions) | `TP_FORGE` |
 | Bulut tarayıcı | yerel Chromium | Sauce Labs (GitHub Actions job'u) | GitHub secret'ları |
+| Üretim dili (web) | Repodaki dosyalar belirler (`demo-app/e2e`, `demo-app/e2e-java`) | GitHub kipinde Java yalnız `TP_WEB_DILLERI=ts,java` iken (ruleset'te `web-java`); toolchain kökü `TP_E2E_JAVA_ROOT=demo-app/e2e-java` | `TP_WEB_DILLERI`, `TP_E2E_JAVA_ROOT` |
 | Mobil/masaüstü cihaz | Bu Mac'te Appium 3 (`127.0.0.1:4723`) + Android emülatörü / iOS simülatörü; Windows için isteğe bağlı UTM VM | GitHub Actions emülatör / simülatör / `windows-latest` (`mobil-android`, `mobil-ios`, `masaustu-windows`) | `APPIUM_URL_*`, `make cihaz-*` |
 
 ### Ağlar ve izolasyon
@@ -104,11 +106,16 @@ Parola: `.env` → `SEED_USER_PASSWORD` (`make seed` yükler).
 
 | Kullanıcı | Rol | Ne yapar |
 |---|---|---|
-| `analist` | analyst | Jira'dan çeker, ön inceleme/tutarlılık bulgularına karar verir, case üretir ve onaylar, yayınlar; Claude Code token'ı |
-| `po` | po | Serbest metin gereksinimde PO teyidi (Jira yolunda PO onayı Jira etiketiyle verilir) |
-| `muhendis` | engineer | Kod üretimi, kırarak doğrula, PR review ve merge, locator onarım PR'ı |
-| `testci` | tester | Bug taslağı: yeni kayıt aç / mevcut kayda bağla / düzelt / reddet |
-| `sunucu` | presenter | Deploy ve gece koşusu tetikleri, demo kontrolleri (locator kırma, demo sıfırlama), Kontrol Kulesi |
+| `analist` | analyst | Jira'dan çeker, ön inceleme/tutarlılık bulgularına karar verir, düzeltmeleri Jira'ya yazar; case'lere **son onay** (onayla / geri gönder) |
+| `po` | po | Serbest metin gereksinimde PO teyidi ve geri çevirme (Jira yolunda PO onayı Jira etiketiyle verilir); baz değer |
+| `testci` | tester | Case üretir, kabul eder / düzelterek kabul eder / reddeder, yayınlar; Claude Code token'ı; bug taslağı kararları |
+| `muhendis` | engineer | Kod üretimi, kırarak doğrula, PR review ve merge, locator onarım PR'ı; deploy, gece ve manuel koşu tetikleri |
+| `sunucu` | admin | Sistem Yöneticisi: demo kontrolleri (locator kırma, demo sıfırlama), Kontrol Kulesi, denetim doğrulaması |
+| `denetci` | auditor | Denetim kaydı ve zincir doğrulaması (salt okunur); koşu özetleri |
+| `gelistirici` | developer | Onaylı case'leri ve koşuları görür; non-prod'da manuel koşu |
+| `izleyici` | viewer | Kontrol Kulesi ve koşu özetleri |
+
+Rol ve izin kataloğu: `core/src/tp_core/auth/yetki.py` ([specs/012-rol-yetki/ANALIZ.md](specs/012-rol-yetki/ANALIZ.md)).
 
 jira-sim kullanıcıları: `reader@sim.local` (okuma), `writer@sim.local` (ürünün yazma kullanıcısı),
 `po@sim.local` (PO; parola `.env` → `JIRA_SIM_PO_PASSWORD`). Örnek uygulama: `bayi1` / `Demo123!`
@@ -173,6 +180,8 @@ Tüm hedefler repo kökünden çalışır; çıkış kodu `0` = başarı. `make 
 | `make demo-baseline` | Forge main → demo-baseline + demo-app-web yeniden derleme (PR kaydı korunur) |
 | `make locator-break-verify` | Çevrimdışı ön kontrol: kırılma → yalnızca add-to-cart locator hatası → testId onarımı → yeşil |
 | `make forge-init [F=--force]` | Yerel forge deposunu hazırlar (`make up` zaten çağırır) |
+| `make forge-sync-dizin D=<dizin> [B=--baseline] [K=uretilen]` | Mevcut yerel forge'a `demo-app/<dizin>`'i (ör. `e2e-java`) main'e tek commit ile ekler/eşitler; PR kaydını silmez (`--force`'un aksine). `B=--baseline` demo-baseline'ı da taşır; `K=<alt-yol>` (ör. `uretilen`, `tests/generated`) o yolları forge main'deki hâliyle bırakır (merge edilmiş üretilen testler; 011 pom eşitlemesi: `docs/GCP-KURULUM.md` §10.2 adım 5) |
+| `make playwright-surum-denetle` | Playwright sürüm sabitlerini (`.playwright-version`, toolchain/MCP/e2e manifestleri, imaj, Java sürücü çekirdeği, pom kilidi) denetler; yükseltme listesi [docs/PLAYWRIGHT-YUKSELTME.md](docs/PLAYWRIGHT-YUKSELTME.md) |
 
 **Gerçek sistemler**
 
@@ -195,7 +204,7 @@ testingprobe/
 ├── toolchain/             # toolchain imajı: toolchain-worker, test-runner, playwright-mcp, AST koruması; app-mcp, java-araclar
 ├── tools/appium/          # Appium 3 + sürücü sürümleri (kilit dosyası; make cihaz-kur)
 ├── review-portal/         # inceleme portalı (React + Vite, nginx)
-├── demo-app/              # örnek uygulama: api/, web/, mobile/, desktop/, e2e/ (Playwright), e2e-app/ (Java + Appium), ci/
+├── demo-app/              # örnek uygulama: api/, web/, mobile/, desktop/, e2e/ (Playwright), e2e-java/ (Playwright for Java), e2e-app/ (Java + Appium), ci/
 ├── sims/jira-sim/         # Jira Cloud REST v3 + Xray alt kümesi simülatörü
 ├── rules/                 # prompt, şema, replay kayıtları, değerlendirme setleri — bkz. rules/README.md
 ├── .github/               # CI workflow'ları (AI'sız), CODEOWNERS, ruleset betiği — bkz. .github/CI.md
@@ -222,6 +231,8 @@ testingprobe/
 | [docs/WINDOWS-VM.md](docs/WINDOWS-VM.md) | UTM içinde Windows 11 ARM kurulumu (henüz koşturulmadı) |
 | [docs/MOBIL-DEMO-EKI.md](docs/MOBIL-DEMO-EKI.md) | Canlı demoya Android eki: aynı case → Java testi → PR (provası yapılmadı) |
 | [rules/README.md](rules/README.md) | Model geçidi, REPLAY, canlı değerlendirme |
+| [specs/011-uretim-dili/plan.md](specs/011-uretim-dili/plan.md) | Üretim dili (TS, Java, doğrulanmamış C#/Python): kararlar, sözleşmeler, inceleme turu kararları |
+| [docs/PLAYWRIGHT-YUKSELTME.md](docs/PLAYWRIGHT-YUKSELTME.md) | Playwright yükseltme kontrol listesi (Java sürümü npm'den farklı olabilir) |
 
 ## Çalışma şekli (Spec Kit)
 

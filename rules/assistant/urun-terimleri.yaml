@@ -42,6 +42,10 @@ terimler:
   # Kod ve koşu
   - kırarak doğrula
   - yerel kontrol
+  - üretim dili
+  - dil seçici
+  - doğrulanmamış dil
+  - local-ci-web-java
   - pr merge
   - merge kapısı
   - koşu

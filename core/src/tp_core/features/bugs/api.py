@@ -2,10 +2,10 @@
 
 | Yöntem | Yol | Rol |
 |---|---|---|
-| POST | `/bug-drafts/{id}/decision` `{karar, icerik_hash, icerik?, link_key?, gerekce?}` | tester |
-| POST | `/bug-drafts/{id}/prepare` | tester — mükerrer aramasını ve AI taslağını yeniden hazırla |
-| POST | `/bug-drafts/{id}/publish` | tester — onaylı taslağın yayınını yeniden dene |
-| GET  | `/bug-drafts/{id}/detail` | herkes — Faz 4 ayrıntılı görünüm (hazırlık, adaylar, yayın) |
+| POST | `/bug-drafts/{id}/decision` `{karar, icerik_hash, icerik?, link_key?, gerekce?}` | `bug.decide` |
+| POST | `/bug-drafts/{id}/prepare` | `bug.decide` — mükerrer aramasını ve AI taslağını yeniden hazırla |
+| POST | `/bug-drafts/{id}/publish` | `bug.decide` — onaylı taslağın yayınını yeniden dene |
+| GET  | `/bug-drafts/{id}/detail` | `bug.read` — Faz 4 ayrıntılı görünüm (developer: yalnız yayınlanmış) |
 
 `karar`: `new` (yeni Bug) · `link` (`link_key` mevcut kayda bağla) · `edit` (içerik düzenle;
 onay değildir) · `dismiss` (gerekçe zorunlu) · `reopen` (reddedilmişi taslağa al). Gövdedeki
@@ -15,7 +15,7 @@ yanıt taslak görünümü + `yayin_sonucu` (iş bittiyse) ya da 202 + `job_id`.
 
 Liste ve tekil GET (`/bug-drafts`, `/bug-drafts/{id}`) requirements şeridindedir (Faz 2);
 `serialize.bug_draft_view` aynı alanların üst kümesidir.
-"""
+"""  # noqa: E501
 
 from __future__ import annotations
 
@@ -26,15 +26,16 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
-from tp_core.api.deps import DbSession, Principal, current_user, require_role
+from tp_core.api.deps import DbSession, Principal
+from tp_core.auth.yetki import izin
 from tp_core.db import get_engine
 from tp_core.features.bugs import serialize, service
 from tp_core.models import BugDraft, session_scope
 
 router = APIRouter(tags=["bugs"])
 
-Tester = Annotated[Principal, Depends(require_role("tester"))]
-Herkes = Annotated[Principal, Depends(current_user)]
+Karar = Annotated[Principal, Depends(izin("bug.decide"))]
+Okur = Annotated[Principal, Depends(izin("bug.read"))]
 BEKLEME_S = 20.0
 
 
@@ -46,10 +47,10 @@ class BugKarari(BaseModel):
     gerekce: str | None = Field(default=None, max_length=2000)
 
 
-def _view(draft_id: uuid.UUID) -> dict[str, Any]:
+def _view(draft_id: uuid.UUID, rol: str | None = None) -> dict[str, Any]:
     with session_scope() as s:
         b = s.get(BugDraft, draft_id)
-        if b is None:
+        if b is None or not serialize.gorunur_mu(rol, b.durum):
             raise HTTPException(404, "Bug taslağı bulunamadı")
         return serialize.bug_draft_view(s, b)
 
@@ -68,7 +69,7 @@ async def _bekle(job_id: uuid.UUID, response: Response) -> dict[str, Any]:
 
 @router.post("/bug-drafts/{draft_id}/decision")
 async def decision(
-    draft_id: uuid.UUID, body: BugKarari, user: Tester, response: Response
+    draft_id: uuid.UUID, body: BugKarari, user: Karar, response: Response
 ) -> dict[str, Any]:
     def karar_ver() -> uuid.UUID | None:
         with session_scope() as s:
@@ -91,7 +92,7 @@ async def decision(
 
 
 @router.post("/bug-drafts/{draft_id}/prepare", status_code=202)
-def prepare(draft_id: uuid.UUID, session: DbSession, user: Tester) -> dict[str, Any]:
+def prepare(draft_id: uuid.UUID, session: DbSession, user: Karar) -> dict[str, Any]:
     job_id = service.request_prepare(session, draft_id, user)
     return {
         "job_id": str(job_id),
@@ -101,7 +102,7 @@ def prepare(draft_id: uuid.UUID, session: DbSession, user: Tester) -> dict[str, 
 
 
 @router.post("/bug-drafts/{draft_id}/publish")
-async def publish(draft_id: uuid.UUID, user: Tester, response: Response) -> dict[str, Any]:
+async def publish(draft_id: uuid.UUID, user: Karar, response: Response) -> dict[str, Any]:
     def kuyruga_al() -> uuid.UUID:
         with session_scope() as s:
             return service.retry_publish(s, draft_id, user)
@@ -114,5 +115,5 @@ async def publish(draft_id: uuid.UUID, user: Tester, response: Response) -> dict
 
 
 @router.get("/bug-drafts/{draft_id}/detail")
-def detail(draft_id: uuid.UUID, _u: Herkes) -> dict[str, Any]:
-    return _view(draft_id)
+def detail(draft_id: uuid.UUID, user: Okur) -> dict[str, Any]:
+    return _view(draft_id, user.rol)

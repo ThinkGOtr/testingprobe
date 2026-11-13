@@ -109,7 +109,7 @@ def olcum_verisi(engine: Engine, make_user, kurallar: list[str]) -> dict[str, An
 
 def test_maliyet_assistant_amaclari_ayri_grup(engine: Engine, olcum_verisi) -> None:
     with Session(engine) as s:
-        k = ct.control_tower(s)
+        k = ct.control_tower(s, artefakt=True)
     ai = k["ai_katkisi"]
     g = ai["amac_gruplari"]
     assert g["asistan"]["amaclar"] == ["assistant", "assistant_deep"]
@@ -133,7 +133,7 @@ def test_maliyet_assistant_amaclari_ayri_grup(engine: Engine, olcum_verisi) -> N
 
 def test_oneriler_kural_basina_sayilar(engine: Engine, olcum_verisi, kurallar) -> None:
     with Session(engine) as s:
-        k = ct.control_tower(s)
+        k = ct.control_tower(s, artefakt=True)
     o = k["asistan"]
     satir = {x["kural_id"]: x for x in o["oneriler"]}
     k1, k2 = olcum_verisi["k1"], olcum_verisi["k2"]
@@ -164,7 +164,7 @@ def test_oneriler_kural_basina_sayilar(engine: Engine, olcum_verisi, kurallar) -
 
 def test_kisi_bazli_veri_yok(engine: Engine, olcum_verisi) -> None:
     with Session(engine) as s:
-        k = ct.control_tower(s)
+        k = ct.control_tower(s, artefakt=True)
     metin = json.dumps(k["asistan"], ensure_ascii=False)
     for u in olcum_verisi["kullanicilar"]:
         assert str(u.id) not in metin and u.kullanici_adi not in metin
@@ -174,7 +174,7 @@ def test_kisi_bazli_veri_yok(engine: Engine, olcum_verisi) -> None:
 
 def test_bos_veritabaninda_sifir(engine: Engine, kurallar) -> None:
     with Session(engine) as s:
-        k = ct.control_tower(s)
+        k = ct.control_tower(s, artefakt=True)
     o = k["asistan"]
     assert o["oneri_toplam"] == dict.fromkeys(asistan.SAYAC_ALANLARI, 0)
     assert [x["kural_id"] for x in o["oneriler"]] == kurallar
@@ -206,7 +206,7 @@ def test_bozuk_kural_seti_karti_dusurmez(
 def test_saklama_gunu_ortamdan(engine: Engine, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TP_ASISTAN_SAKLAMA_GUN", "30")
     with Session(engine) as s:
-        assert ct.control_tower(s)["asistan"]["saklama_gun"] == 30
+        assert ct.control_tower(s, artefakt=True)["asistan"]["saklama_gun"] == 30
 
 
 def test_api_asistan_bolumu(api: TestClient, make_user, olcum_verisi) -> None:

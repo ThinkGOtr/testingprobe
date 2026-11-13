@@ -26,7 +26,7 @@ from tp_core.features.assistant import api as asistan_api
 from tp_core.features.assistant import budget, hiz
 from tp_core.workflow.service import Principal
 
-ROLLER = ("analyst", "po", "engineer", "tester", "presenter")
+ROLLER = ("analyst", "po", "engineer", "tester", "admin")
 REPO = Path(__file__).resolve().parents[5]
 
 
@@ -164,6 +164,7 @@ def test_status_alanlari_ve_eski_kalp_atisi(client: TestClient, make_user, engin
     assert d["mod"] == "live" and d["model_hazir"] is True
     assert d["paket_commit"] == "abc123"
     assert d["varsayilan_model"] == "claude-haiku-5-5"
+    assert d["derin_model"] == "claude-sonnet-5-5"
     assert d["degerlendirme"]["paket"] == "assistant"
     assert "hata" not in d["degerlendirme"]
     kalp_atisi(engine, yas_s=121, mod="live", model_hazir=True)
@@ -582,7 +583,7 @@ def test_sir_degerinin_oneki_422_vermez_tami_verir(
 
 
 def test_feedback_dogrulama(client: TestClient, make_user, engine, canli) -> None:
-    giris(client, make_user("presenter"))
+    giris(client, make_user("admin"))
     s = sohbet_ac(client)
     mid = soru_sor_ve_bitir(client, engine, s)
     assert client.post(f"/assistant/messages/{mid}/feedback", json={"deger": 0}).status_code == 422
@@ -600,7 +601,7 @@ def test_origin_evil_403_ve_bearer_401(client: TestClient, make_user, engine, ca
 
     from tp_core.auth.tokens import verify_bearer
 
-    u = make_user("analyst")
+    u = make_user("tester")  # 012: MCP token'ı Testçinindir (token.issue)
     giris(client, u)
     s = sohbet_ac(client)
     r = client.post("/assistant/conversations", headers={"Origin": "http://evil"})
@@ -893,7 +894,7 @@ def test_global_sinir_paralel_ortamdan(client: TestClient, make_user, canli, mon
 def test_saatlik_sinir_iptal_ve_hata_dahil_derin_iki(
     client: TestClient, make_user, engine, canli
 ) -> None:
-    u = make_user("presenter")
+    u = make_user("admin")
     giris(client, u)
     s = sohbet_ac(client)
     ust = soru_sor_ve_bitir(client, engine, s)  # 1

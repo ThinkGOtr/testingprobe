@@ -20,6 +20,9 @@ import { useAsistanKapisi } from "./yetenek";
 
 export const DAR_EKRAN_PX = 760;
 
+/** Panelin kalıcı yapay zekâ bildirimi (013 §7, K12). */
+export const YZ_BILDIRIMI = "Yapay zekâ asistanı; cevaplar hatalı olabilir, kararı ilgili ekranda siz verirsiniz.";
+
 // Panel içeriği (Sohbet / Öneriler sekmeleri, cevap ve öneri kartları) ayrı parçadadır: panel kapalıyken
 // ana pakete girmez; ilk açılışta (ya da başlatıcının üzerine gelinince / odaklanınca) yüklenir. Stiller
 // (asistan.css, oneri.css) başlatıcı ve Öneri düğmesiyle ana pakette kalır: yükleme sırası değişmez.
@@ -541,6 +544,10 @@ export function AsistanPaneli() {
               <Ikon ad="kapat" />
             </button>
           </header>
+          {/* 013 §7 (K12): kalıcı, kapatılamaz yapay zekâ bildirimi; her sekmede görünür. */}
+          <p className="asistan-yz-bildirimi" role="note" data-testid="asistan-yz-bildirimi">
+            {YZ_BILDIRIMI}
+          </p>
           <p className="asistan-denetim-notu soluk kucuk">Sorular denetim kaydına girer; sohbet 90 gün saklanır.</p>
           {!yalnizOneri && (
             <div className="asistan-sekmeler" role="tablist" aria-label="Asistan sekmeleri">

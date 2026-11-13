@@ -2360,6 +2360,10 @@ article.bulgu:is([data-durum="decided"], [data-durum="resolved"], [data-durum="s
 .tk-fonksiyon {
   color: var(--tk-fonksiyon);
 }
+/* Java @Annotation, C# [Attribute], Python @decorator: fonksiyon tonuyla (kontrastı ölçülmüş renk). */
+.tk-ek {
+  color: var(--tk-fonksiyon);
+}
 
 /* ---------------------------------------------------------------- case */
 
@@ -3273,6 +3277,16 @@ body:has(.asistan-panel:not(.asistan-panel-modal)) .bildirimler {
 }
 .filtre-cubugu select {
   min-width: 140px;
+}
+/* Onay kutulu süzgeç (ör. "Eski sürümleri göster"): kutu ve etiketi yan yana, diğer alanlarla aynı tabanda. */
+.filtre-cubugu label.filtre-onay {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+}
+.filtre-cubugu .filtre-story {
+  max-width: 20rem;
 }
 /* Arama kutuları yer tutucuyu kesmesin. */
 #denetim-ara,
@@ -4822,4 +4836,304 @@ td > .satir-baglanti + .cip,
 .sayfa-kaynagi-xml {
   max-height: 24rem;
   overflow: auto;
+}
+
+/* ---------------------------------------------------------------- 013 sprint otomasyonu
+   Toplu onay çubuğu, case metnindeki test verisi atıf çipleri, "Test verisi ekle" seçicisi, Test verisi
+   kataloğu ve Otomasyon ayarları (specs/013-sprint-otomasyonu §3.5). Yalnız mevcut token'lar; anlam renkle
+   birlikte metinle de taşınır (bilinmeyen atıf "katalogda yok", gizli "••• (gizli)"). */
+
+.toplu-onay {
+  padding: 12px 16px;
+}
+.toplu-onay-cubuk {
+  flex-wrap: wrap;
+}
+.toplu-onay > p {
+  margin: 8px 0 0;
+}
+.toplu-sonuc {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--ok);
+  border-radius: var(--radius-sm);
+  background: var(--ok-bg);
+  color: var(--text);
+}
+.toplu-sonuc-uyari {
+  border-left-color: var(--warn);
+  background: var(--warn-bg);
+}
+.toplu-sonuc-hata {
+  border-left-color: var(--err);
+  background: var(--err-bg);
+}
+.toplu-sonuc-baslik {
+  font-size: 0.95rem;
+  margin: 0 0 6px;
+}
+.toplu-sonuc .soluk {
+  color: var(--text-2); /* tonlu zeminde --muted yok */
+}
+.case-sec {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 2px;
+}
+.case-sec input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent-solid);
+}
+.case-sec-neden {
+  flex-basis: 100%;
+  order: 99;
+}
+
+/* Atıf çipi: anahtar (mono, ikincil) + değer. Satır içinde sarılabilir; uzun anahtar taşmaz. */
+.veri-atif {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 6px;
+  max-width: 100%;
+  padding: 0 6px;
+  margin: 0 1px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 0.85em;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  vertical-align: baseline;
+}
+.veri-atif-anahtar {
+  color: var(--text-2);
+  font-size: 0.92em;
+}
+.veri-atif-deger {
+  font-weight: 600;
+}
+.veri-atif-gizli {
+  border-color: color-mix(in srgb, var(--notr) 30%, transparent);
+  background: var(--notr-bg);
+}
+.veri-atif-yok {
+  border-color: color-mix(in srgb, var(--err) 45%, transparent);
+  border-style: dashed;
+  background: var(--err-bg);
+}
+.veri-atif-yok .veri-atif-deger {
+  color: var(--err);
+}
+.veri-atif-bilinmiyor {
+  border-color: var(--border-strong);
+  background: var(--surface-3);
+}
+
+.veri-secici {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.veri-secici-baslik {
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+.veri-secici select {
+  max-width: min(100%, 32rem);
+}
+
+/* Test verisi kataloğu */
+.testveri-arama {
+  max-width: 28rem;
+}
+.testveri-grup + .testveri-grup {
+  margin-top: 18px;
+}
+.testveri-grup-baslik {
+  font-size: 0.95rem;
+  margin: 12px 0 8px;
+}
+.testveri-eylemler {
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+}
+.testveri-form-izgara {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 16px;
+}
+.testveri-form-genis {
+  grid-column: 1 / -1;
+}
+@media (max-width: 640px) {
+  .testveri-form-izgara {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.testveri-form input[readonly] {
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+
+/* Sürüm geçmişi çekmecesi: sayfa akışında açılan bölüm (kipsel değil; Esc ve "Kapat" kapatır). */
+.cekmece {
+  border-left: 3px solid var(--accent);
+}
+.surum-listesi li {
+  padding: 8px 0;
+}
+
+/* Otomasyon ayarları */
+.otomasyon-alanlar:disabled {
+  opacity: 1; /* metin kontrastı korunur; pasiflik denetimin kendisinde görünür */
+}
+.otomasyon-alanlar:disabled label {
+  color: var(--text-2);
+}
+.otomasyon-izgara {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 0 16px;
+}
+@media (max-width: 640px) {
+  .otomasyon-izgara {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+input[type="checkbox"][role="switch"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent-solid);
+}
+
+@media (forced-colors: active) {
+  .veri-atif,
+  .toplu-sonuc,
+  .veri-secici {
+    border-color: CanvasText;
+  }
+  .veri-atif-yok {
+    border-style: dashed;
+    border-width: 2px;
+  }
+  .toplu-sonuc {
+    border-left-width: 3px;
+  }
+  .cekmece {
+    border-left-color: Highlight;
+  }
+}
+
+/* ---------------------------------------------------------------- 011 üretim dili (Ş6) */
+
+/* Dil seçici platform seçicinin hemen altında, aynı segment görünümünde. Kaynak notu (repodan algılandı /
+   elle seçildi / varsayılan) grubun altında; "Algılanana dön" metin düğmesi notun yanında. */
+.dil-secici .platform-secici {
+  margin-bottom: 4px;
+}
+.dil-notu {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin: 0 0 12px;
+  color: var(--text-2);
+}
+.dil-bilgi {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: 0 0 12px;
+}
+.dil-bilgi-etiket {
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+.dil-yukleniyor {
+  margin: 0 0 12px;
+}
+/* Kullanılamayan seçenek: seçilemez ama odaklanır; neden seçeneğin içinde görünür yazılır (yalnız title değil). */
+.platform-secenek.pasif {
+  border-style: dashed;
+  background: var(--surface-3);
+  color: var(--text-2);
+  cursor: not-allowed;
+}
+.platform-secenek.pasif:hover {
+  background: var(--surface-3);
+}
+.platform-secenek-neden {
+  display: block;
+  color: var(--text);
+  font-weight: 500;
+}
+/* Doğrulanmamış script bandı: indirme + başka dilde yeniden üretim, dar ekranda alt alta. */
+.dogrulanmamis-bandi .uyari-kutusu > div {
+  flex: 1 1 100%;
+}
+.dogrulanmamis-bandi p {
+  margin: 0 0 8px;
+}
+.dogrulanmamis-eylemler {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  justify-content: flex-start;
+}
+.dil-yeniden {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.dil-yeniden select {
+  margin-left: 4px;
+  min-width: 9rem;
+}
+.dil-rozeti {
+  vertical-align: middle;
+}
+
+/* ---------------------------------------------------------------- 011 inceleme turu 1 (D4) */
+
+/* Test case'leri "Otomasyon" sütunu: case'in script'leri sıkı satırlar (her script platform + dil + durum + PR). */
+.otomasyon-liste li {
+  padding: 2px 0;
+  border-top: none;
+}
+
+/* Test case'leri satırından gelinen case kartı (`#case-<id>` çapası, programatik odak): halka görünür. */
+.case[tabindex="-1"]:focus {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Kod üretimi "Üretilen testler" dar ekranda kart: Test hücresi kartın başlığıdır (etiketsiz, tam genişlik);
+   başlık ve dosya yolu sarılır, kesilmez. Özgüllük `.tablo.tablo-yigin tbody td:not(.adim-no)` ile aynı, sonra gelir. */
+@media (max-width: 640px) {
+  .tablo.tablo-yigin tbody td.yigin-baslik {
+    padding: 4px 0 6px;
+  }
+  .tablo-yigin td.yigin-baslik::before {
+    display: none;
+  }
+  /* Hata şeridi kartın sol kenarına taşınır (hücre içi şerit kart kipinde başlık metnine biner). */
+  .kod-tablosu .tablo-yigin tbody tr:has(.cip-hata) {
+    border-left: 3px solid var(--err);
+  }
+  .kod-tablosu .tablo-yigin tbody tr:has(.cip-hata) > td:first-child {
+    box-shadow: none;
+  }
 }

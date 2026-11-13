@@ -9,11 +9,14 @@ export interface SoruOnerisi {
 }
 
 const ROL_SORULARI: Record<Rol, SoruOnerisi[]> = {
+  admin: [{ metin: "Son gece koşusunda kaç test kırıldı, neden?", modelsiz: false }],
+  auditor: [{ metin: "Denetim zinciri nasıl doğrulanır?", modelsiz: false }],
   analyst: [{ metin: "Onay bekleyen story'ler hangileri?", modelsiz: false }],
   po: [{ metin: "Onay bekleyen story'ler hangileri?", modelsiz: false }],
-  engineer: [{ metin: "Son koşu neden düştü?", modelsiz: false }],
   tester: [{ metin: "Flaky test nasıl ayıklanır?", modelsiz: false }],
-  presenter: [{ metin: "Son gece koşusunda kaç test kırıldı, neden?", modelsiz: false }],
+  engineer: [{ metin: "Son koşu neden düştü?", modelsiz: false }],
+  developer: [{ metin: "Son koşu neden düştü?", modelsiz: false }],
+  viewer: [{ metin: "Son gece koşusunda kaç test kırıldı, neden?", modelsiz: false }],
 };
 
 const EKRAN_SORULARI: Record<string, SoruOnerisi[]> = {
@@ -30,7 +33,7 @@ export function soruOnerileri(rol: Rol | undefined, ekran: EkranBaglami, opts: {
   const anahtar = ekran.varlik?.anahtar;
   if (anahtar && ekran.varlik?.tur === "requirement") liste.push({ metin: `${anahtar} neden bekliyor?`, modelsiz: true });
   else if (ekran.rota_kalibi) liste.push(...(EKRAN_SORULARI[ekran.rota_kalibi] ?? []));
-  if (rol) liste.push(...ROL_SORULARI[rol]);
+  if (rol) liste.push(...(ROL_SORULARI[rol] ?? []));
   liste.push({ metin: "Bu ekranda ne yapabilirim?", modelsiz: false });
   const tekil = liste.filter((s, i) => liste.findIndex((x) => x.metin === s.metin) === i);
   return (opts.modelAcik ? tekil : tekil.filter((s) => s.modelsiz)).slice(0, 5);

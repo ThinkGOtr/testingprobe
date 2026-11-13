@@ -1,4 +1,10 @@
-"""Java yolu (009 plan §2.3–2.5): sembol tablosu, statik kontrol ve AST koruması.
+"""Java yolu (009 plan §2.3–2.5, 011 §2.6): sembol tablosu, statik kontrol ve AST koruması.
+
+İki hedef proje aynı hattı paylaşır (`JavaKok`): uygulama (`e2e-app`, Appium + TestNG; platform
+android | ios | windows) ve web (`e2e-java`, Playwright for Java + TestNG; platform web). Kök,
+güvenilir pom ve ısıtılmış depo platforma göre seçilir; adımlar ve sertleştirme aynıdır. Aşağıda
+"e2e-app" diye anlatılan her şey web kökü (`TP_E2E_JAVA_ROOT`, `TP_E2E_JAVA_DEPS`) için de
+geçerlidir.
 
 Araç `java-araclar.jar`dır (`toolchain/java-araclar/`, JavaParser): kodu yalnızca AYRIŞTIRIR.
 Statik kontrol çevrimdışı `mvn -o test-compile`dır:
@@ -28,6 +34,7 @@ import os
 import re
 import subprocess
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -35,12 +42,15 @@ from toolchain_common import gitforge, proc
 from toolchain_common.settings import Settings
 
 LANGS = ("ts", "java")
-# platform (§2.1) → dil: web Playwright/TypeScript, diğerleri Appium/Java.
+WEB = "web"
+APP_PLATFORMS = ("android", "ios", "windows")
+# platform (§2.1) → VARSAYILAN dil (`lang` verilmediğinde): web Playwright/TypeScript, diğerleri
+# Appium/Java. Dil ayrı bir boyuttur (011 §2.1): web + java (Playwright for Java) geçerlidir.
 PLATFORM_LANG = {"web": "ts", "android": "java", "ios": "java", "windows": "java"}
 STEPS = ("app", "deps", "guard", "compile", "run")
 GENERATED_DIR = "src/test/java/com/antreklabs/bayi/uretilen"
 KIMLIK_RE = re.compile(r"\A(?:[^/]+/)*ekranlar/Kimlikler\.java\Z")
-# Java test dosyası (e2e-app köküne göre): src/test/java/**/<Ad>Test.java (üretilen) ya da
+# Java test dosyası (proje köküne göre): src/test/java/**/<Ad>Test.java (üretilen) ya da
 # <Ad>Testi.java (elle yazılmış referans testler, testler/)
 JAVA_TEST_FILE_RE = re.compile(
     r"\Asrc/test/java/(?:[A-Za-z_][A-Za-z0-9_]*/)+[A-Za-z_][A-Za-z0-9_]*Testi?\.java\Z"
@@ -62,15 +72,63 @@ class JavaAracError(RuntimeError):
 
 
 def resolve_lang(lang: str | None, platform: str | None) -> str:
-    """`lang` ya da `platform`'dan dil; ikisi de yoksa `ts` (geriye uyum)."""
+    """`lang` ya da `platform`'dan dil; ikisi de yoksa `ts` (geriye uyum).
+
+    Geçerli çiftler (011 §2.1): web × (ts | java); android | ios | windows × yalnız java.
+    `lang` verilmezse platformun varsayılanı (web → ts, uygulama → java).
+    """
     from_platform = PLATFORM_LANG.get(platform) if platform else None
     if platform and from_platform is None:
         raise ValueError(f"platform yalnızca {tuple(PLATFORM_LANG)} olabilir")
     if lang and lang not in LANGS:
         raise ValueError(f"lang yalnızca {LANGS} olabilir")
-    if lang and from_platform and lang != from_platform:
+    if lang == "ts" and platform in APP_PLATFORMS:
         raise ValueError(f"lang={lang} ile platform={platform} uyuşmuyor")
     return lang or from_platform or "ts"
+
+
+def resolve_platform(lang: str | None, platform: str | None) -> str:
+    """Etkin platform: verilmişse o; verilmemişse `web` (ts ve java için de — `lang=java` tek
+    başına web + Java hattıdır, uygulama hattı platformu açıkça ister)."""
+    resolve_lang(lang, platform)
+    return platform or WEB
+
+
+@dataclass(frozen=True)
+class JavaKok:
+    """Bir Java hattının hedef projesi: forge'daki kök + imajdaki güvenilir pom ve ısıtılmış
+    depo."""
+
+    platform: str
+    # Forge deposundaki proje kökü (`TP_E2E_APP_ROOT` | `TP_E2E_JAVA_ROOT`).
+    root: str
+    # İmajdaki güvenilir kopya dizini (`pom.xml`, varsa `.mvn/…`, `m2/`).
+    deps: Path
+    # İletilerdeki ad: proje (`e2e-app` | `e2e-java`) ve depodaki kaynak (`toolchain/<ad>-deps`).
+    ad: str
+
+    @property
+    def web(self) -> bool:
+        return self.platform == WEB
+
+    @property
+    def m2(self) -> Path:
+        """Çevrimdışı Maven deposu (salt okunur; `maven.repo.local.tail`)."""
+        return self.deps / "m2"
+
+
+def java_kok(cfg: Settings, platform: str | None) -> JavaKok:
+    """Platformun Java projesi: web (ya da platform yok) → `e2e-java`, uygulama → `e2e-app`."""
+    if platform in (None, WEB):
+        return JavaKok(WEB, cfg.e2e_java_root, cfg.e2e_java_deps, "e2e-java")
+    if platform not in APP_PLATFORMS:
+        raise ValueError(f"platform yalnızca {tuple(PLATFORM_LANG)} olabilir")
+    return JavaKok(platform, cfg.e2e_app_root, cfg.e2e_app_deps, "e2e-app")
+
+
+def _uygulama_kok(cfg: Settings) -> JavaKok:
+    """`kok` verilmeyen çağrıların varsayılanı (009 davranışı): uygulama projesi."""
+    return JavaKok("android", cfg.e2e_app_root, cfg.e2e_app_deps, "e2e-app")
 
 
 def validate_java_test_file(value: str) -> str:
@@ -120,21 +178,22 @@ def _sha256(path: Path) -> str | None:
         return None
 
 
-def check_deps(cfg: Settings, root: Path) -> dict[str, Any]:
+def check_deps(cfg: Settings, root: Path, kok: JavaKok | None = None) -> dict[str, Any]:
     """Commit'in `pom.xml`'i ve `.mvn/` yapılandırması imajdaki güvenilir kopyayla aynı mı."""
-    want = _sha256(cfg.e2e_app_deps / "pom.xml")
+    kok = kok or _uygulama_kok(cfg)
+    want = _sha256(kok.deps / "pom.xml")
     if want is None:
-        return {"ok": False, "error": "İmajda e2e-app pom.xml yok (toolchain imajı hatalı)."}
+        return {"ok": False, "error": f"İmajda {kok.ad} pom.xml yok (toolchain imajı hatalı)."}
     have = _sha256(root / "pom.xml")
     if have is None:
-        return {"ok": False, "error": f"Commit'te {cfg.e2e_app_root}/pom.xml yok."}
+        return {"ok": False, "error": f"Commit'te {kok.root}/pom.xml yok."}
     if have != want:
         return {
             "ok": False,
             "error": (
-                f"{cfg.e2e_app_root}/pom.xml imajdaki güvenilir kopyadan farklı; çevrimdışı "
+                f"{kok.root}/pom.xml imajdaki güvenilir kopyadan farklı; çevrimdışı "
                 "ortamda yeni bağımlılık/eklenti kurulamaz ve Maven eklentileri kod çalıştırır "
-                "(toolchain imajı yeniden derlenmeli: toolchain/e2e-app-deps/pom.xml)."
+                f"(toolchain imajı yeniden derlenmeli: toolchain/{kok.ad}-deps/pom.xml)."
             ),
             "pom_sha256": have,
             "image_pom_sha256": want,
@@ -149,7 +208,7 @@ def check_deps(cfg: Settings, root: Path) -> dict[str, Any]:
                 continue
             if rel in MVN_WRAPPER_OK and not p.is_symlink():
                 continue
-            trusted = _sha256(cfg.e2e_app_deps / rel)
+            trusted = _sha256(kok.deps / rel)
             if trusted is None or trusted != _sha256(p):
                 return {
                     "ok": False,
@@ -192,7 +251,10 @@ def parse_compile(output: str, root: Path) -> list[dict[str, Any]]:
     return out
 
 
-def compile_argv(cfg: Settings, root: Path, head_repo: Path) -> list[str]:
+def compile_argv(
+    cfg: Settings, root: Path, head_repo: Path, kok: JavaKok | None = None
+) -> list[str]:
+    kok = kok or _uygulama_kok(cfg)
     return [
         cfg.mvn,
         "-B",
@@ -201,17 +263,17 @@ def compile_argv(cfg: Settings, root: Path, head_repo: Path) -> list[str]:
         "-f",
         str(root / "pom.xml"),
         f"-Dmaven.repo.local={head_repo}",
-        f"-Dmaven.repo.local.tail={cfg.e2e_app_m2}",
+        f"-Dmaven.repo.local.tail={kok.m2}",
         "-Dmaven.compiler.proc=none",
         "-Dmaven.resources.skip=true",
         "test-compile",
     ]
 
 
-def run_test_compile(cfg: Settings, root: Path) -> dict[str, Any]:
+def run_test_compile(cfg: Settings, root: Path, kok: JavaKok | None = None) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="tp-m2-") as head_repo:
         res = proc.run(
-            compile_argv(cfg, root, Path(head_repo)),
+            compile_argv(cfg, root, Path(head_repo), kok),
             cwd=root,
             env=_java_env(),
             timeout_s=cfg.mvn_timeout_s,
@@ -290,13 +352,16 @@ def _git_bytes(cfg: Settings, repo: Path, *args: str) -> bytes:
     return out.stdout
 
 
-def repair_guard(cfg: Settings, repo: Path, base: str, head: str) -> dict[str, Any]:
+def repair_guard(
+    cfg: Settings, repo: Path, base: str, head: str, kok: JavaKok | None = None
+) -> dict[str, Any]:
     """Onarım (repair) modu: base..head'de yalnızca Kimlikler.java kimlik literal'leri değişir."""
+    kok = kok or _uygulama_kok(cfg)
     raw = _git_bytes(
         cfg, repo, "diff", "--name-status", "--no-renames", "-z", "--end-of-options", base, head
     ).decode("utf-8", "replace")
     parts = [p for p in raw.split("\0") if p]
-    prefix = cfg.e2e_app_root.strip("/") + "/"
+    prefix = kok.root.strip("/") + "/"
     changed: list[dict[str, Any]] = []
     violations: list[dict[str, Any]] = []
     testid_changes: list[dict[str, Any]] = []
@@ -348,7 +413,7 @@ def repair_guard(cfg: Settings, repo: Path, base: str, head: str) -> dict[str, A
         "noop": not changed,
         "base": base,
         "head": head,
-        "root": cfg.e2e_app_root,
+        "root": kok.root,
         "changed_files": changed,
         "testid_changes": testid_changes,
         "added_entries": [],
@@ -362,15 +427,22 @@ def repair_guard(cfg: Settings, repo: Path, base: str, head: str) -> dict[str, A
 
 
 def guard_report(
-    cfg: Settings, repo: Path, base: str, head: str, mode: str, root: Path
+    cfg: Settings,
+    repo: Path,
+    base: str,
+    head: str,
+    mode: str,
+    root: Path,
+    kok: JavaKok | None = None,
 ) -> dict[str, Any]:
     """`/ast-guard` ve `/check` için tek rapor: üretilen testler + Kimlikler (+ repair farkı).
 
     Biçim TS ast-guard raporuyla aynıdır (`ok`, `violations[]`, `summary`, …); `generated` alt
     raporu ve (repair modunda) `repair` alt raporu ayrıca taşınır.
     """
+    kok = kok or _uygulama_kok(cfg)
     gen = run_guard(cfg, root)
-    rep = repair_guard(cfg, repo, base, head) if mode == "repair" else None
+    rep = repair_guard(cfg, repo, base, head, kok) if mode == "repair" else None
     violations = list(gen.get("violations") or []) + list((rep or {}).get("violations") or [])
     ok = not violations
     return {
@@ -381,7 +453,7 @@ def guard_report(
         "noop": False,
         "base": base,
         "head": head,
-        "root": cfg.e2e_app_root,
+        "root": kok.root,
         "files": gen.get("files", []),
         "changed_files": (rep or {}).get("changed_files", []),
         "testid_changes": (rep or {}).get("testid_changes", []),

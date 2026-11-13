@@ -60,6 +60,14 @@ class UretilenTestKoruyucuTest {
   }
 
   @Test
+  void gizliTestVerisiOrtamdanOkunur() {
+    // specs/013 K19: gizli test verisi yalnız System.getenv("TP_TESTVERI_…") doğrudan argümanı olarak.
+    String m = gecerli.replace("\"Demo123!\"", "System.getenv(\"TP_TESTVERI_DEMO_PAROLA\")");
+    assertTrue(!m.equals(gecerli));
+    assertEquals(List.of(), denetle(m));
+  }
+
+  @Test
   void yanlisKonum() {
     List<UretilenTestKoruyucu.Ihlal> v = UretilenTestKoruyucu.dosyaDenetle(
         "src/test/java/com/antreklabs/bayi/testler/DEMO12C1_ab12cd34Test.java", gecerli, tablo);
@@ -90,6 +98,15 @@ class UretilenTestKoruyucuTest {
         Arguments.of("driver alanı", GIRIS, "driver.quit();", "raw_driver"),
         Arguments.of("driver erişimcisi", GIRIS, "driver().quit();", "raw_driver"),
         Arguments.of("driver zinciri", GIRIS, "driver.findElement(null).click();", "raw_driver"),
+        // --- Playwright for Java tutamaçları (web projesi, 011 §2.6) ------------------------------
+        Arguments.of("page erişimcisi", GIRIS, "page().navigate(\"/giris\");", "raw_driver"),
+        Arguments.of("page alanı", GIRIS, "page.navigate(\"/giris\");", "raw_driver"),
+        Arguments.of("page zinciri", GIRIS, "page().getByTestId(\"login-submit\").click();", "raw_driver"),
+        Arguments.of("sayfa erişimcisi", GIRIS, "sayfa().reload();", "raw_driver"),
+        Arguments.of("browser erişimcisi", GIRIS, "browser().close();", "raw_driver"),
+        Arguments.of("context erişimcisi", GIRIS, "context().clearCookies();", "raw_driver"),
+        Arguments.of("playwright alanı", GIRIS, "playwright.chromium().launch();", "raw_driver"),
+        Arguments.of("playwright erişimcisi", GIRIS, "playwright().close();", "raw_driver"),
         Arguments.of("statik çağrı", GIRIS, "Kimlik.bul(\"login-username\");", "static_call"),
         Arguments.of("System.exit", GIRIS, "System.exit(0);", "static_call"),
         Arguments.of("Thread.sleep", GIRIS, "Thread.sleep(1000);", "thread_sleep"),
@@ -144,6 +161,27 @@ class UretilenTestKoruyucuTest {
         Arguments.of("parantez", ARG, "girisYap(" + "(\"bayi2\")", "non_literal_argument"),
         Arguments.of("birleştirme", ARG, "girisYap(" + "\"bay\" + \"i2\"", "non_literal_argument"),
         Arguments.of("eksi string", ARG, "girisYap(" + "-\"bayi2\"", "non_literal_argument"),
+        // --- gizli test verisi (specs/013 K19) ----------------------------------------------------
+        Arguments.of("getenv başka ad", ARG, "girisYap(" + "System.getenv(\"PATH\")", "static_call"),
+        Arguments.of("getenv küçük harf", ARG, "girisYap(" + "System.getenv(\"TP_TESTVERI_x\")", "static_call"),
+        Arguments.of("getenv boş ek", ARG, "girisYap(" + "System.getenv(\"TP_TESTVERI_\")", "static_call"),
+        Arguments.of("getenv argümansız", ARG, "girisYap(" + "System.getenv()", "static_call"),
+        Arguments.of("getenv iki argüman", ARG, "girisYap(" + "System.getenv(\"TP_TESTVERI_X\", \"Y\")", "static_call"),
+        Arguments.of("getenv değişken", ARG, "girisYap(" + "System.getenv(x)", "static_call"),
+        Arguments.of("getenv metin bloğu", ARG, "girisYap(" + "System.getenv(\"\"\"\n      TP_TESTVERI_X\"\"\")", "static_call"),
+        Arguments.of("getenv tür argümanı", ARG, "girisYap(" + "System.<String>getenv(\"TP_TESTVERI_X\")", "static_call"),
+        Arguments.of("getProperty", ARG, "girisYap(" + "System.getProperty(\"TP_TESTVERI_X\")", "static_call"),
+        Arguments.of("tam adlı System", ARG, "girisYap(" + "java.lang.System.getenv(\"TP_TESTVERI_X\")", "static_call"),
+        Arguments.of("başka kapsam", ARG, "girisYap(" + "Sistem.getenv(\"TP_TESTVERI_X\")", "static_call"),
+        Arguments.of("getenv zinciri", ARG, "girisYap(" + "System.getenv(\"TP_TESTVERI_X\").trim()", "static_call"),
+        Arguments.of("getenv parantez", ARG, "girisYap(" + "(System.getenv(\"TP_TESTVERI_X\"))", "static_call"),
+        Arguments.of("getenv birleştirme", ARG, "girisYap(" + "\"a\" + System.getenv(\"TP_TESTVERI_X\")", "static_call"),
+        Arguments.of("getenv deyim", GIRIS, "System.getenv(\"TP_TESTVERI_X\");", "static_call"),
+        Arguments.of("getenv erişimci argümanı", GIRIS,
+            "girisEkrani(System.getenv(\"TP_TESTVERI_X\")).girisYap(\"bayi2\", \"Demo123!\");", "static_call"),
+        Arguments.of("getenv notasyonda", "@Bayi(\"bayi2\")", "@Bayi(System.getenv(\"TP_TESTVERI_X\"))", "static_call"),
+        Arguments.of("getenv int parametreye", SEPETE,
+            "katalogEkrani().sepeteEkle(\"P-001\", System.getenv(\"TP_TESTVERI_ADET\"));", "arg_type"),
         // --- import -------------------------------------------------------------------------------
         Arguments.of("ek import", "import org.testng.annotations.Test;\n",
             "import org.testng.annotations.Test;\nimport java.io.File;\n", "forbidden_import"),

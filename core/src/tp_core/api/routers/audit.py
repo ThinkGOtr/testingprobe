@@ -2,6 +2,14 @@
 
 Doğrulama iki parçadır: hash zinciri (`verify_chain`) ve zincire sabitlenmiş `ai_call`/`tool_call`
 satır çapaları (`verify_call_anchors`). `verify.ok` ikisi de sağlamsa True'dur.
+
+Kapsam (specs/012-rol-yetki §4.2): `audit.read_all` (admin, auditor) tüm kaydı; `audit.read_own`
+(iş rolleri) yalnız `aktor` = kendi kullanıcı adı olan olayları görür. `verify=true`
+`audit.verify` ister (zincir doğrulaması tüm kaydı okur). İkisi de yoksa 403.
+
+Denetçi (auditor) görünümünde `ozet` PII maskeleyicisinden geçer (`features/assistant/maskeleme`,
+`TP_PII_MASKING`'den bağımsız her zaman açık; yanıt başına tek oturum, yer tutucular tutarlı):
+denetçi olayları ve zinciri inceler, kişisel veriyi görmez. `hash`/`prev_hash` ham kayda aittir.
 """
 
 from __future__ import annotations
@@ -9,14 +17,18 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import text
 
 from tp_core.audit import chain_tip, verify_call_anchors, verify_chain
-from tp_core.auth.deps import CurrentUser, DbSession
+from tp_core.auth import yetki
+from tp_core.auth.deps import DbSession
+from tp_core.workflow.service import Principal
 
 router = APIRouter(tags=["audit"])
+
+Okur = Annotated[Principal, Depends(yetki.izinlerden_biri("audit.read_all", "audit.read_own"))]
 
 
 class AuditEventOut(BaseModel):
@@ -61,25 +73,36 @@ class AuditOut(BaseModel):
 
 @router.get("/audit", response_model=AuditOut)
 def audit(
+    request: Request,
     session: DbSession,
-    _user: CurrentUser,
+    user: Okur,
     verify: bool = False,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     before_id: Annotated[int | None, Query(ge=1)] = None,
     nesne: Annotated[str | None, Query(max_length=200)] = None,
 ) -> AuditOut:
+    if verify and not yetki.izinli(user.rol, "audit.verify"):
+        raise yetki.reddet(session, user, "audit.verify", "rol", request.url.path)
     kosul = ["(CAST(:before AS bigint) IS NULL OR id < CAST(:before AS bigint))"]
     if nesne:
         kosul.append("nesne = :nesne")
+    if not yetki.izinli(user.rol, "audit.read_all"):
+        kosul.append("aktor = :aktor")
     conn = session.connection()
     rows = conn.execute(
         text(
             "SELECT id, zaman, aktor, eylem, nesne, ozet, prev_hash, hash FROM audit_event "
             f"WHERE {' AND '.join(kosul)} ORDER BY id DESC LIMIT :limit"
         ),
-        {"before": before_id, "limit": limit, "nesne": nesne},
+        {"before": before_id, "limit": limit, "nesne": nesne, "aktor": user.kullanici_adi},
     ).all()
     events = [AuditEventOut.model_validate(r._asdict()) for r in rows]
+    if yetki.normalize_rol(user.rol) == yetki.AUDITOR:
+        from tp_core.features.assistant.maskeleme import maskeleyici
+
+        oturum = maskeleyici(enabled=True).new_session()
+        for e in events:
+            e.ozet = oturum.mask(e.ozet)[0]
     sonuc = AuditOut(
         events=events,
         tip_hash=chain_tip(conn),

@@ -129,8 +129,32 @@ kayitlar:
     metinler: []
     baslik: Bu kararı sizin rolünüz veremez
     anlam: Bu kayıt türünde onayı yalnızca belirli bir rol verebilir.
-    neden: Onay yetkisi rol bazlıdır (case kararı Analist, PO onayı Ürün sahibi, PR merge Mühendis, bug taslağı Testçi).
+    neden: Onay yetkisi rol bazlıdır (case kararı Testçi, son onay Analist, PO onayı PO, PR merge Automation Engineer, bug taslağı Testçi).
     cozum: Kararı ilgili role bırakın; isterseniz kayda yorum ya da not ekleyerek iletin.
+    rota: null
+  - id: yetki-yok
+    kodlar: [yetki_yok]
+    metinler: []
+    baslik: Bu işlem için yetkiniz yok
+    anlam: Oturumdaki rolünüz bu ekranı ya da işlemi kullanma iznine sahip değil; istek reddedildi ve denetim kaydına yazıldı.
+    neden: Her işlem rol bazlı bir izin ister (ör. case kararı Testçi, son onay Analist, koşu tetikleme Automation Engineer). Görevler ayrılığı role göredir.
+    cozum: İşlemi yetkili role bırakın; birden fazla rolünüz varsa Rol değiştir ile uygun role geçin.
+    rota: null
+  - id: po-onayi-jira
+    kodlar: [po_onayi_jira]
+    metinler: []
+    baslik: PO onayı Jira'da verilir
+    anlam: Jira kaynaklı gereksinimde PO kararı portaldan verilmez.
+    neden: PO teyidi, PO listesindeki kişinin Jira story'sine koyduğu tp-po-approved etiketiyle ve içerik eşleşmesiyle alınır. Portal onayı yalnız serbest metin gereksinimde vardır.
+    cozum: PO, Jira'daki story'ye tp-po-approved etiketini koysun; Testing Probe etiketi kendisi okur.
+    rota: /gereksinimler/:id
+  - id: demo-kapali
+    kodlar: [demo_kapali]
+    metinler: []
+    baslik: Demo kipi kapalı
+    anlam: Demo kontrolleri (buton kimliğini değiştirme, demo sıfırlama) bu kurulumda kapalı.
+    neden: Demo kontrolleri yalnız TP_DEMO_MODE=1 olan kurulumlarda çalışır; üretim ortamında açılamaz.
+    cozum: Demo kurulumunda sistem yöneticisi .env dosyasına TP_DEMO_MODE=1 ekleyip servisleri yeniden başlatmalı.
     rota: null
   - id: gecersiz-karar
     kodlar: [gecersiz_karar]
@@ -173,6 +197,14 @@ kayitlar:
     neden: Bağlantı eski olabilir ya da kayıt yeniden üretilmiş (yeni kimlikle) olabilir.
     cozum: Listeden kaydı yeniden açın.
     rota: null
+  - id: dil-cakismasi
+    kodlar: [dil_cakismasi]
+    metinler: []
+    baslik: Test başka dilde merge edilmiş
+    anlam: Bu case'in bu platformdaki testi başka bir dilde (ör. TypeScript) merge edilmiş; aynı case için ikinci dilde test üretilemez.
+    neden: Repoda aynı case iki ayrı dilde test olarak bulunmasın diye tam hat dilinde (TypeScript, Java) dil değiştirme engellenir. Mevcut testi kaldırmak ürün akışının parçası değildir.
+    cozum: Mevcut test dosyasını silen bir PR'ı merge edin, sonra kod üretimini seçtiğiniz dilde yeniden başlatın. C# ya da Python ile doğrulanmamış üretim bu engele takılmaz.
+    rota: /kod
   - id: cakisma
     kodlar: [cakisma]
     metinler: []

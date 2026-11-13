@@ -4,7 +4,9 @@ Uygulama testleri (`demo-app/e2e-app`, Java + Appium + TestNG) başarısız olun
 `target/kanit/<Sınıf>.<metot>/{ekran.png, sayfa-kaynagi.xml}` altına yazar (`altyapi/Kanit.java`);
 Surefire JUnit XML'de `testcase@classname` paketli sınıf adı, `@name` metot adıdır.
 
-- `java_mi`: test bir uygulama (Java) testi mi? (platform, dosya/sınıf adı ya da Java istisnası).
+- `java_mi`: test bir Java testi mi? Önce dile bakar (011: `ts` | `java`; koşu raporu / script),
+  sonra uygulama platformuna, sonra dosya/sınıf adına ya da Java istisnasına. `web` artık "Java
+  değil" demek değildir: web + Java (Playwright for Java) testleri `triage.java_web`'de.
 - `kanit_dizini_adi`: `Kanit.dizin` ile aynı indirgeme (`Sınıf.metot`, güvenli karakterler).
 - `sayfa_kaynagi_oku`: koşu dizini içinden (sembolik bağ / kök dışı yol yok, boyut sınırlı) sayfa
   kaynağı + ekran görüntüsü yolu.
@@ -27,9 +29,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from tp_core.features.codegen import platform as platformlar
 from tp_core.features.triage import evidence as ev
 
-UYGULAMA_PLATFORMLARI = frozenset({"android", "ios", "windows"})
+UYGULAMA_PLATFORMLARI = frozenset(platformlar.UYGULAMA_PLATFORMLARI)
 MAX_SAYFA_KAYNAGI = 4 * 1024 * 1024
 MAX_DUGUM = 20_000
 MAX_DERINLIK = 200
@@ -50,15 +53,26 @@ _KIMLIK_RE = re.compile(
 _SOZCUK_RE = re.compile(r"[A-Za-z0-9]+")
 
 
-def java_mi(platform: str | None, dosya: str | None, mesaj: str | None = None) -> bool:
+def java_mi(
+    platform: str | None, dosya: str | None, mesaj: str | None = None, dil: str | None = None
+) -> bool:
+    """Kod/derleme sorusu dile bakar (011 §2.1): `dil` biliniyorsa o karar verir; uygulama
+    platformu her zaman Java'dır; bilinmiyorsa dosya adı (`.java` / paketli sınıf → Java, `.ts` →
+    Playwright TS) ya da (dosya yoksa ve platform web değilse) Java istisna metni."""
     if platform in UYGULAMA_PLATFORMLARI:
         return True
-    if platform == "web":
+    if dil == "java":
+        return True
+    if dil == "ts":
         return False
     d = (dosya or "").strip()
     if d.endswith(".java") or _FQCN_RE.match(d):
         return True
     if d.endswith(".ts"):  # Playwright testi: Java istisna metni geçse de web
+        return False
+    if platform == "web":
+        # Web'de dil ve dosya bilinmiyorsa (eski kayıt) TS varsayılır: metindeki bir Java istisna
+        # adı tek başına Java demek değildir (bugünkü davranış).
         return False
     return bool(_JAVA_ISTISNA_RE.search(mesaj or ""))
 

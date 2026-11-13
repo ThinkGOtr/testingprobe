@@ -34,7 +34,7 @@ from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import UTC, datetime, time, timedelta, timezone
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Final
 
 from sqlalchemy import func, or_, select, text
 from sqlalchemy.engine import Connection, Engine
@@ -42,6 +42,7 @@ from sqlalchemy.orm import Session
 
 from tp_core.audit import audit_on_commit
 from tp_core.events import publish_tx
+from tp_core.features.ci import dil as dilmod
 from tp_core.features.ci import github_artifacts, services
 from tp_core.features.ci.clients import (
     RESULTS_ARTIFACT,
@@ -68,6 +69,7 @@ from tp_core.features.ci.parse import (
     surefire_ayristir,
     temiz,
 )
+from tp_core.features.codegen import platform as platformlar
 from tp_core.models import (
     ExternalRef,
     Failure,
@@ -94,9 +96,6 @@ BITMIS = ("passed", "failed", "error")
 TOOLCHAIN_ADIMLAR = ("deps", "tsc", "eslint", "ast_guard", "run")
 # Java (Appium + TestNG, 009 §2.3) yolunun adımları: toolchain `worker/java.py` `STEPS` ile aynı.
 TOOLCHAIN_ADIMLAR_JAVA = ("app", "deps", "guard", "compile", "run")
-# Uygulama platformları (009 §2.1); `web` mevcut Playwright/TypeScript yoludur.
-UYGULAMA_PLATFORMLARI = ("android", "ios", "windows")
-WEB = "web"
 ISTANBUL_SABIT = timezone(timedelta(hours=3), "+03")
 RUN_DIR_RE = re.compile(r"^runs/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$")
 SHA_RE = re.compile(r"^[0-9a-f]{40}([0-9a-f]{24})?$")
@@ -109,7 +108,12 @@ GITHUB_OLAY = {
     "push": ("push",),
     "nightly": ("schedule", "workflow_dispatch"),
     "deploy": ("repository_dispatch",),
+    # Elle koşu (specs/012-rol-yetki: `run.trigger_manual`) ci.yml workflow_dispatch `tetik=manual`.
+    "manual": ("workflow_dispatch",),
 }
+# Kullanıcının portaldan başlattığı tetikler (`POST /ci/trigger`); koşu `run.tetik`'ine aynen
+# yazılır (`manual` deploy gibi main'in head'inde koşar).
+ELLE_TETIKLER = ("deploy", "nightly", "manual")
 GITHUB_SONUC = {
     "success": "passed",
     "failure": "failed",
@@ -166,7 +170,7 @@ def _kaynak() -> str:
 def validate_sha(sha: str | None) -> str | None:
     if sha is None:
         return None
-    if not isinstance(sha, str) or not REF_RE.match(sha) or ".." in sha:
+    if not isinstance(sha, str) or not REF_RE.fullmatch(sha) or ".." in sha:
         raise CiError(f"geçersiz commit: {sha!r}")
     return sha
 
@@ -196,6 +200,14 @@ def enqueue_ci(
     iş toolchain `/check`'e `lang=java` + `platform` gönderir: tam kapsamlı Java koşusu merge
     kapısının okuduğu `local-ci-<platform>` kaydını yazar; GitHub kipinde platformun iş akışı
     (`mobil-android.yml` …) izlenir.
+
+    **Dil (011 §2.8, K-T1/K-T2):** koşunun dili `script.dil`'dir ve `run.ortam.dil`'e yazılır.
+    Web + Java script'inde yerel iş `/check`'e `lang=java` + `platform=web` gönderir, kayıt
+    `local-ci-web-java`'dır (`platform.check_adi`); GitHub kipinde `web-java.yml` izlenir.
+    Script'siz koşuda dil işte çözülür (`_dilleri_dagit`): PR'da değişen web test köklerine göre
+    (`e2e/` → ts, `e2e-java/` → java; ikisi de değiştiyse iki koşu), paket koşusunda (push |
+    nightly | deploy) repoda web testi bulunan her tam hat dili ayrı koşuda koşar. Script'li push
+    da paket koşusudur: ana koşu script'in dilinde, repodaki diğer diller kardeş koşuda.
     """
     return _enqueue(
         session,
@@ -220,13 +232,16 @@ def _enqueue(
     ref: str = "main",
     script_id: uuid.UUID | None = None,
     dispatch: bool = False,
+    dil: str | None = None,
 ) -> dict[str, Any]:
+    """`dil`: yalnızca script'siz koşuda anlamlıdır (paket koşusunun kardeş dili); script varsa
+    dil script'ten gelir."""
     if trigger not in CI_TETIK:
         raise CiError(f"geçersiz tetik: {trigger!r} (pr | push | nightly | deploy)")
     if trigger == "pr" and pr_number is None:
         raise CiError("pr tetiği için pr_number gerekli")
     sha = validate_sha(sha)
-    if not REF_RE.match(ref) or ".." in ref:
+    if not REF_RE.fullmatch(ref) or ".." in ref:
         raise CiError(f"geçersiz ref: {ref!r}")
     kaynak = _kaynak()
     conn = session.connection()
@@ -236,17 +251,37 @@ def _enqueue(
         if mevcut is not None:
             return {"run_id": mevcut.run_id, "job_id": None, "yeni": False}
     platform = script_platformu(session, script_id)
+    dil = _istenen_dil(session, script_id, platform, trigger, dil)
     # Aynı commit/tetik/PR/platform için etkin koşu varsa ikinci koşu açılmaz (merge sonrası main'de
-    # web ve android koşuları ayrı kontrollerdir: biri ötekinin yerine geçmez).
+    # web ve android koşuları ayrı kontrollerdir: biri ötekinin yerine geçmez). Web'de dil de
+    # ayırır (011): aynı commit'in TS ve Java koşuları birbirini yutmaz. Web + TS anahtarı ve
+    # sorgusu değişmez; dili henüz çözülmemiş istek (dil None) etkin ana koşuya uyar.
     kilit = f"ci_aktif:{trigger}:{kaynak}:{sha or ref}:{pr_number}"
-    jobq.idempotency_lock(conn, kilit if platform == WEB else f"{kilit}:{platform}")
+    web_java = dilmod.web_java_mi(platform, dil)
+    jobq.idempotency_lock(
+        conn,
+        f"{kilit}:java"
+        if web_java
+        else kilit
+        if platform == platformlar.WEB
+        else f"{kilit}:{platform}",
+    )
     q = select(Run).where(
         Run.tetik == trigger,
         Run.kaynak == kaynak,
         Run.sonuc.in_(AKTIF),
         Run.pr_no.is_(None) if pr_number is None else Run.pr_no == pr_number,
-        func.coalesce(Run.ortam["platform"].astext, WEB) == platform,
+        func.coalesce(Run.ortam["platform"].astext, platformlar.WEB) == platform,
     )
+    if platform == platformlar.WEB and dil is not None:
+        q = q.where(func.coalesce(Run.ortam["dil"].astext, platformlar.TS) == dil)
+    elif platform == platformlar.WEB:
+        # Dili çözülmemiş istek yalnız ana koşuya uyar; süren bir kardeş (Java) koşu yeni
+        # paket koşusunu engellemez. Script'siz PR isteği script'li PR koşusuna uymaz (onun dili
+        # script'indir; script'siz PR'ın dilleri değişen yollardan çözülür).
+        q = q.where(Run.ortam["kardes_kosu"].astext.is_(None))
+        if trigger == "pr":
+            q = q.where(Run.script_id.is_(None))
     q = q.where(Run.commit == sha) if sha else q.where(Run.ortam["ref"].astext == ref)
     aktif = session.scalars(q.order_by(Run.olusturma.desc()).limit(1)).first()
     # İşi bitmiş (worker öldü, son deneme beklenmedik hatayla düştü) ama `queued/running`'de
@@ -299,6 +334,9 @@ def _enqueue(
             "dispatch": trigger if (dispatch and kaynak == "github") else None,
             # 009 §2.9: `script.platform` (web | android | ios | windows).
             "platform": platform,
+            # 011 §2.8: koşunun dili (ts | java). None: script'siz web koşusu — iş dilleri
+            # çözünce yazar (`_dilleri_dagit`).
+            **({"dil": dil} if dil is not None else {}),
         },
         artefaktlar={},
     )
@@ -335,6 +373,7 @@ def _enqueue(
             "anahtar": anahtar,
             "job_id": str(job_id),
             "platform": platform,
+            "dil": dil,
         },
     )
     return {"run_id": run.id, "job_id": job_id, "yeni": True}
@@ -343,56 +382,118 @@ def _enqueue(
 def script_platformu(session: Session, script_id: uuid.UUID | None) -> str:
     """Koşunun platformu: script'in `platform`'u; script yoksa ya da bilinmeyen değerse `web`."""
     if script_id is None:
-        return WEB
+        return platformlar.WEB
     sc = session.get(Script, script_id)
     deger = getattr(sc, "platform", None) if sc is not None else None
-    return deger if deger in UYGULAMA_PLATFORMLARI else WEB
+    return deger if deger in platformlar.UYGULAMA_PLATFORMLARI else platformlar.WEB
 
 
 def kosu_platformu(run: Run) -> str:
     """`run.ortam.platform` (eski kayıtlarda yok → `web`)."""
     deger = (run.ortam or {}).get("platform")
-    return deger if deger in UYGULAMA_PLATFORMLARI else WEB
+    return deger if deger in platformlar.UYGULAMA_PLATFORMLARI else platformlar.WEB
+
+
+def script_dili(session: Session, script_id: uuid.UUID | None) -> str | None:
+    """Script'in üretim dili (`script.dil`; boşsa platformun varsayılanı); script yoksa None."""
+    sc = session.get(Script, script_id) if script_id is not None else None
+    return dilmod.script_dili(sc) if sc is not None else None
+
+
+def kosu_dili(run: Run) -> str:
+    """Koşunun dili (011): `run.ortam.dil` → `run.ortam.lang` → platformun varsayılanı
+    (`web → ts`, uygulama → `java`; eski kayıtlar)."""
+    return dilmod.kosu_dili(run)
+
+
+def java_kosusu_mu(run: Run) -> bool:
+    """Rapor/artefakt biçimi sorusu (Surefire, Java adımları): koşunun dili Java mı? Uygulama
+    koşusu her zaman Java'dır; web koşusu `ortam.dil=java` ise."""
+    return (
+        kosu_platformu(run) in platformlar.UYGULAMA_PLATFORMLARI
+        or kosu_dili(run) == platformlar.JAVA
+    )
+
+
+def _istenen_dil(
+    session: Session, script_id: uuid.UUID | None, platform: str, trigger: str, dil: str | None
+) -> str | None:
+    """Yeni koşunun dili. Uygulama → `java`. Web: script'in dili; script'siz koşu verilen `dil`
+    (kardeş koşu) ya da None (işte çözülür: PR'da değişen yollar, paket koşusunda repo)."""
+    if platform in platformlar.UYGULAMA_PLATFORMLARI:
+        return platformlar.JAVA
+    istenen = script_dili(session, script_id) if script_id is not None else dil
+    if istenen is None:
+        return None
+    if istenen not in platformlar.TAM_HAT_DILLERI:
+        # K3: doğrulanmamış diller (csharp | python) derlenmez/koşulmaz; PR'a ve CI'a giremez.
+        raise CiError(f"'{istenen}' dili CI'da koşmaz (yalnızca ts | java tam hattır)")
+    return istenen
 
 
 def gh_is_akisi(run: Run) -> dict[str, str]:
     """GitHub kipinde koşunun iş akışı: web `ci.yml` (varsayılan, argüman verilmez → mevcut
     istemci çağrısı değişmez), uygulama `mobil-android.yml` | `mobil-ios.yml` |
     `masaustu-windows.yml` (PR'da `pull_request` ile kendiliğinden koşar; elle gece/deploy
-    `workflow_dispatch` ile aynı dosyaya gider)."""
-    from tp_core.integrations.forge import GITHUB_PLATFORM_WORKFLOWS
+    `workflow_dispatch` ile aynı dosyaya gider), web + Java `web-java.yml` (011 §2.8)."""
+    from tp_core.integrations.forge import GITHUB_PLATFORM_WORKFLOWS, WEB_JAVA_WORKFLOW
 
     p = kosu_platformu(run)
-    return {"workflow": GITHUB_PLATFORM_WORKFLOWS[p]} if p in UYGULAMA_PLATFORMLARI else {}
+    if p in platformlar.UYGULAMA_PLATFORMLARI:
+        return {"workflow": GITHUB_PLATFORM_WORKFLOWS[p]}
+    return {"workflow": WEB_JAVA_WORKFLOW} if kosu_dili(run) == platformlar.JAVA else {}
 
 
 def gh_sonuc_artefakti(run: Run) -> str:
-    """Sonuç artefaktının adı: web `test-local-results`, uygulama `<job>-results`
-    (.github/CI.md "Uygulama iş akışları")."""
-    from tp_core.integrations.forge import GITHUB_PLATFORM_CHECKS
+    """Sonuç artefaktının adı: web `test-local-results`, uygulama ve web + Java `<job>-results`
+    (.github/CI.md "Uygulama iş akışları"; web + Java'da `web-java-results`)."""
+    from tp_core.integrations.forge import GITHUB_PLATFORM_CHECKS, WEB_JAVA_CHECK
 
     p = kosu_platformu(run)
-    if p in UYGULAMA_PLATFORMLARI:
+    if p in platformlar.UYGULAMA_PLATFORMLARI:
         return f"{GITHUB_PLATFORM_CHECKS[p]}-results"
+    if kosu_dili(run) == platformlar.JAVA:
+        return f"{WEB_JAVA_CHECK}-results"
     return RESULTS_ARTIFACT
 
 
-def check_body_platformu(platform: str) -> dict[str, Any]:
-    """toolchain `/check` gövdesinin dil alanları: web için boş (istek baytları değişmez), uygulama
-    için `lang=java` + `platform` (toolchain `/check` Java yolu, `local-ci-<platform>` kaydı)."""
-    if platform in UYGULAMA_PLATFORMLARI:
+def gh_check_adi(run: Run) -> str:
+    """Koşunun GitHub job/check adı: web + TS `test-local`, web + Java `web-java`, uygulama
+    `mobil-android` | `mobil-ios` | `masaustu-windows` (`gh_sonuc_artefakti` ile aynı mantık)."""
+    from tp_core.integrations.forge import (
+        GITHUB_PLATFORM_CHECKS,
+        GITHUB_WEB_TS_CHECK,
+        WEB_JAVA_CHECK,
+    )
+
+    p = kosu_platformu(run)
+    if p in platformlar.UYGULAMA_PLATFORMLARI:
+        return GITHUB_PLATFORM_CHECKS[p]
+    if kosu_dili(run) == platformlar.JAVA:
+        return WEB_JAVA_CHECK
+    return GITHUB_WEB_TS_CHECK
+
+
+def check_body_platformu(platform: str, dil: str | None = None) -> dict[str, Any]:
+    """toolchain `/check` gövdesinin dil alanları: web + TS için boş (istek baytları değişmez),
+    uygulama için `lang=java` + `platform` (toolchain `/check` Java yolu, `local-ci-<platform>`
+    kaydı), web + Java için `lang=java` + `platform=web` (011 K-T1; kayıt `local-ci-web-java`)."""
+    if platform in platformlar.UYGULAMA_PLATFORMLARI:
         return {"lang": "java", "platform": platform}
+    if dil == platformlar.JAVA:
+        return {"lang": "java", "platform": platformlar.WEB}
     return {}
 
 
 def trigger_manual(session: Session, tetik: str, isteyen: str) -> dict[str, Any]:
-    """Sunucu düğmesi (`POST /ci/trigger`): deploy | nightly, main'in o anki head'inde.
+    """Portal düğmesi (`POST /ci/trigger`): deploy | nightly | manual, main'in o anki head'inde.
 
     local: CI'yı main head'inde koşturur. github: iş `repository_dispatch` (deploy) ya da
-    `workflow_dispatch` (`tetik=nightly`) gönderir ve GitHub koşusunu alır.
+    `workflow_dispatch` (`tetik=nightly|manual`) gönderir ve GitHub koşusunu alır. Rol kontrolü
+    API'dedir (`run.trigger_scheduled` / `run.trigger_manual`).
     """
-    if tetik not in ("deploy", "nightly"):
-        raise CiError("tetik yalnızca deploy | nightly olabilir")
+    if tetik not in ELLE_TETIKLER:
+        raise CiError("tetik yalnızca deploy | nightly | manual olabilir")
     sonuc = _enqueue(session, None, tetik, isteyen=isteyen, dispatch=True)
     kaynak = _kaynak()
     if not sonuc["yeni"]:
@@ -400,7 +501,7 @@ def trigger_manual(session: Session, tetik: str, isteyen: str) -> dict[str, Any]
         durum = "zaten_kuyrukta"
     elif kaynak == "github":
         olay = (
-            "repository_dispatch (deploy)" if tetik == "deploy" else "workflow_dispatch (nightly)"
+            "repository_dispatch (deploy)" if tetik == "deploy" else f"workflow_dispatch ({tetik})"
         )
         mesaj = f"GitHub Actions tetikleniyor: {olay}; sonuç GitHub API'den alınacak."
         durum = "queued"
@@ -593,14 +694,19 @@ def _rel(yol: Any, uzak_dizin: str | None) -> str | None:
     return rel.as_posix() or None
 
 
-def _allure_html(rr: Mapping[str, Any], uzak: str | None) -> str | None:
-    """`reports.allure_html` (`allure-report/` + `index.html`) varsa koşu dizinine göre yolu."""
+def _rapor_html(rr: Mapping[str, Any], uzak: str | None, ad: str) -> str | None:
+    """`reports.<ad>` (rapor dizini + `index.html`) üretildiyse koşu dizinine göre yolu."""
     raporlar = rr.get("reports") if isinstance(rr.get("reports"), Mapping) else {}
-    ah = (raporlar or {}).get("allure_html")
+    ah = (raporlar or {}).get(ad)
     if not isinstance(ah, Mapping) or not ah.get("exists"):
         return None
     dizin = _rel(ah.get("path"), uzak)
     return f"{dizin.rstrip('/')}/index.html" if dizin else None
+
+
+def _allure_html(rr: Mapping[str, Any], uzak: str | None) -> str | None:
+    """`reports.allure_html` (`allure-report/` + `index.html`) varsa koşu dizinine göre yolu."""
+    return _rapor_html(rr, uzak, "allure_html")
 
 
 def _adim_ozeti(adim: Any) -> dict[str, Any]:
@@ -613,10 +719,11 @@ def _adim_ozeti(adim: Any) -> dict[str, Any]:
     return out
 
 
-def _checks_dosyasi(sha: str | None, ad: str = "local-ci") -> dict[str, Any] | None:
+def _checks_dosyasi(sha: str | None, ad: str = platformlar.YEREL_CHECK) -> dict[str, Any] | None:
     """toolchain'in yazdığı `checks/<sha>.json`'u okur (çekirdek bu dosyayı YAZMAZ). `durum` /
-    `conclusion` koşunun kendi kontrolüdür: web `local-ci`, uygulama `local-ci-<platform>`."""
-    if not sha or not SHA_RE.match(sha):
+    `conclusion` koşunun kendi kontrolüdür (`platform.check_adi`): web + TS `local-ci`, web +
+    Java `local-ci-web-java`, uygulama `local-ci-<platform>`."""
+    if not sha or not SHA_RE.fullmatch(sha):
         return None
     yol = services.checks_root() / f"{sha}.json"
     import json
@@ -629,9 +736,11 @@ def _checks_dosyasi(sha: str | None, ad: str = "local-ci") -> dict[str, Any] | N
         return {"yol": f"checks/{sha}.json", "var": True, "hata": temiz(exc, 200)}
     checks = veri.get("checks") if isinstance(veri, dict) else None
     local = next((c for c in checks or [] if isinstance(c, dict) and c.get("name") == ad), None)
-    # Kontroller platform başına ayrı kayıttır (web `local-ci`, uygulama `local-ci-<platform>`,
-    # 009 §2.7); portal her birini ayrıntı bağlantısıyla gösterir.
-    platformlar = {
+    # Kontroller platform/dil başına ayrı kayıttır (web `local-ci`, web + Java
+    # `local-ci-web-java`, uygulama `local-ci-<platform>`); portal her birini ayrıntı
+    # bağlantısıyla gösterir.
+    yerel = platformlar.YEREL_CHECK
+    kontroller = {
         str(c["name"]): {
             "durum": c.get("status"),
             "conclusion": c.get("conclusion"),
@@ -639,14 +748,14 @@ def _checks_dosyasi(sha: str | None, ad: str = "local-ci") -> dict[str, Any] | N
         }
         for c in checks or []
         if isinstance(c, dict) and isinstance(c.get("name"), str)
-        and (c["name"] == "local-ci" or c["name"].startswith("local-ci-"))
+        and (c["name"] == yerel or c["name"].startswith(f"{yerel}-"))
     }  # fmt: skip
     return {
         "yol": f"checks/{sha}.json",
         "var": True,
         "durum": (local or {}).get("status"),
         "conclusion": (local or {}).get("conclusion"),
-        **({"platformlar": platformlar} if platformlar else {}),
+        **({"platformlar": kontroller} if kontroller else {}),
     }
 
 
@@ -683,29 +792,46 @@ def rapor_platformu(report: Mapping[str, Any]) -> str | None:
     (test-runner Java yolu); `lang=java` ise ve platform yoksa None (bilinmiyor)."""
     rr = report.get("run") if isinstance(report.get("run"), Mapping) else {}
     for aday in (report.get("platform"), (rr or {}).get("platform")):
-        if aday in UYGULAMA_PLATFORMLARI:
+        if aday in platformlar.UYGULAMA_PLATFORMLARI or aday == platformlar.WEB:
+            # `platform=web` açıkça bildirilmişse web'dir (011: web + Java raporu
+            # `lang=java, platform=web` taşır).
             return str(aday)
-    if report.get("lang") == "java" or (rr or {}).get("lang") == "java":
+    if rapor_dili(report) == platformlar.JAVA:
         return None
-    return WEB
+    return platformlar.WEB
+
+
+def rapor_dili(report: Mapping[str, Any]) -> str | None:
+    """`/check` raporunun dili: üst düzey `lang` ya da `run.lang` (`java`); bildirilmemişse None
+    (TS raporu `lang` taşımaz)."""
+    rr = report.get("run") if isinstance(report.get("run"), Mapping) else {}
+    for aday in (report.get("lang"), (rr or {}).get("lang")):
+        if aday in (platformlar.TS, platformlar.JAVA):
+            return str(aday)
+    return None
 
 
 def ingest_check_report(session: Session, run: Run, report: Mapping[str, Any]) -> str:
     """toolchain `/check` yanıtını koşuya işler; koşunun sonucunu döndürür (testten bağımsız).
 
-    Java (Appium) raporu (009): adımlar `app → deps → guard → compile → run`; test-runner JSON
-    rapor yazmaz (`run.json` null), sonuçlar Surefire'dan birleştirilmiş `run.junit`'ten okunur ve
-    test kimliği test-runner/triage ile aynı biçime çevrilir (`parse.java_junit_satirlari`).
-    `run.ortam.platform` rapordan (yoksa koşunun kendi platformu) yazılır.
+    Java raporu (009 Appium; 011 web + Playwright for Java): adımlar `app → deps → guard →
+    compile → run`; test-runner JSON rapor yazmaz (`run.json` null), sonuçlar Surefire'dan
+    birleştirilmiş `run.junit`'ten okunur ve test kimliği test-runner/triage ile aynı biçime
+    çevrilir (`parse.java_junit_satirlari`). `run.ortam.platform` ve `run.ortam.dil` rapordan
+    (yoksa koşunun kendi platformu / dili) yazılır. "Java mı" sorusu platforma değil dile bakar:
+    rapor `lang=java` ise ya da (rapor dil bildirmiyorsa) koşunun dili Java ise.
     """
     rr = report.get("run") if isinstance(report.get("run"), Mapping) else {}
     platform = rapor_platformu(report) or kosu_platformu(run)
-    java = platform in UYGULAMA_PLATFORMLARI or report.get("lang") == "java"
+    java = (
+        platform in platformlar.UYGULAMA_PLATFORMLARI
+        or (rapor_dili(report) or dilmod.ortam_dili(run.ortam)) == platformlar.JAVA
+    )
     adim_adlari = TOOLCHAIN_ADIMLAR_JAVA if java else TOOLCHAIN_ADIMLAR
     adimlar = {k: _adim_ozeti(report.get(k)) for k in adim_adlari}
     uzak = rr.get("artifacts_dir") if isinstance(rr.get("artifacts_dir"), str) else None
     dizin_rel = rr.get("artifacts_rel") if isinstance(rr.get("artifacts_rel"), str) else None
-    if dizin_rel is not None and not RUN_DIR_RE.match(dizin_rel):
+    if dizin_rel is not None and not RUN_DIR_RE.fullmatch(dizin_rel):
         dizin_rel = None
     yerel = services.artifacts_root() / dizin_rel if dizin_rel else None
     yollar = {
@@ -715,6 +841,9 @@ def ingest_check_report(session: Session, run: Run, report: Mapping[str, Any]) -
         "allure": _rel(rr.get("allure_dir"), uzak),
         # test-runner'ın ürettiği statik, tek dosyalık Allure raporu (yalnızca üretildiyse).
         "allure_html": _allure_html(rr, uzak),
+        # Java (Appium + TestNG) koşusunun Extent raporu (`target/extent-report/index.html`);
+        # web koşusu ve dinleyicisi olmayan eski commit üretmez → anahtar yazılmaz.
+        "extent_html": _rapor_html(rr, uzak, "extent_html"),
         "log": _rel(rr.get("log"), uzak),
     }
     uyarilar: list[str] = []
@@ -751,6 +880,7 @@ def ingest_check_report(session: Session, run: Run, report: Mapping[str, Any]) -
         "saglik": dict(saglik) if saglik else None,
         "ast_guard_mode": koruma.get("mode"),
         "platform": platform,
+        "dil": platformlar.JAVA if java else platformlar.TS,
         **({"lang": "java"} if java else {}),
     }
     run.artefaktlar = {
@@ -764,8 +894,11 @@ def ingest_check_report(session: Session, run: Run, report: Mapping[str, Any]) -
         "raporlar": ayr.raporlar if ayr else {"junit": False, "json": False},
         "istatistik": ayr.istatistik if ayr else {},
         "uyarilar": uyarilar[:20],
+        # Koşunun kendi kontrolü (011 K-T1): web + TS `local-ci`, web + Java
+        # `local-ci-web-java`, uygulama `local-ci-<platform>`.
         "checks": _checks_dosyasi(
-            run.commit, f"local-ci-{platform}" if platform in UYGULAMA_PLATFORMLARI else "local-ci"
+            run.commit,
+            platformlar.check_adi(platform, platformlar.JAVA if java else platformlar.TS),
         ),
         # Kırarak doğrulamanın kırmızı denetimi (test-runner Java yolu; KirmiziDenetimi kuralı).
         **(
@@ -810,6 +943,7 @@ def _run_job(engine: Engine, run_id: uuid.UUID, *, deneme: int, son_deneme: bool
         if run.sonuc in BITMIS:
             return {"durum": "atlandi", "sonuc": run.sonuc}
         if run.kaynak == "github":
+            _dilleri_dagit(session, run)
             jobq.enqueue(
                 session.connection(),
                 JOB_GITHUB_POLL,
@@ -833,9 +967,11 @@ def _run_job(engine: Engine, run_id: uuid.UUID, *, deneme: int, son_deneme: bool
             audit_on_commit(
                 session, "system", "ci.started", f"run:{run.id}", {"commit": run.commit}
             )
+        _dilleri_dagit(session, run)
         sha = run.commit
         mode = _ast_guard_mode(run)
         platform = kosu_platformu(run)
+        dil = kosu_dili(run)
 
     body = {
         "sha": sha,
@@ -845,7 +981,8 @@ def _run_job(engine: Engine, run_id: uuid.UUID, *, deneme: int, son_deneme: bool
         "ast_guard_mode": mode,
         "run_id": f"ci-{run_id}-{deneme}",
         # Uygulama koşusu: tam kapsamlı Java koşusu → `local-ci-<platform>` (009 §2.7).
-        **check_body_platformu(platform),
+        # Web + Java: `lang=java, platform=web` → `local-ci-web-java` (011 K-T1).
+        **check_body_platformu(platform, dil),
     }
     try:
         report = services.toolchain().check(body)
@@ -866,6 +1003,127 @@ def _run_job(engine: Engine, run_id: uuid.UUID, *, deneme: int, son_deneme: bool
             return {"durum": "atlandi"}
         sonuc = ingest_check_report(session, run, report)
         return {"durum": sonuc, "run_id": str(run_id), **(run.artefaktlar.get("sayilar") or {})}
+
+
+def _web_dilleri(run: Run) -> tuple[str, ...]:
+    """Script'siz web koşusunun dilleri (sıra `ts`, `java`; ilk dil ana koşunundur).
+
+    PR (K-T1, K-T11): PR'ın değiştirdiği web test kökleri (`dilmod.degisen_web_dilleri`); test
+    kökleri dışında bir değişiklik (uygulama kodu) varsa repodaki tüm tam hat dilleri (merge
+    kapısı da aynı kuralla `local-ci` + `local-ci-web-java` ister); fark okunamazsa repodaki tüm
+    tam hat dilleri (güvenli taraf: kapı her iki check'i görebilir).
+    Paket koşusu (push | nightly | deploy): repoda web testi bulunan diller. Forge okunamazsa
+    `ts` (bugünkü davranış)."""
+    from tp_core.features.codegen import service as cg
+
+    o = run.ortam or {}
+    ref = run.commit or o.get("ref") or "main"
+    try:
+        forge = services.forge()
+    except Exception as exc:  # forge kurulamadı: koşu engellenmez, bugünkü davranış
+        log.warning("ci.run %s: forge kurulamadı (%s); ts koşuyor", run.id, exc)
+        return (platformlar.TS,)
+    # Test kökleri tek listeden (MİM-O1): LocalForge kapısı da `e2e_kokleri` kullanır.
+    kokler = platformlar.e2e_kokleri(cg.app_root())
+    try:
+        repodaki = dilmod.repodaki_web_dilleri(
+            forge.list_files, ref, e2e=kokler.e2e, e2e_java=kokler.e2e_java
+        )
+    except Exception as exc:  # forge dosya listesi sunmuyor: bugünkü davranış
+        log.warning("ci.run %s: repodaki diller okunamadı (%s); ts", run.id, exc)
+        repodaki = (platformlar.TS,)
+    if run.tetik == "pr" and run.pr_no is not None and run.commit:
+        try:
+            taban = forge.merge_base(forge.get_pr(run.pr_no).base, run.commit)
+            degisen = forge.changed_paths(taban, run.commit)
+        except Exception as exc:
+            log.warning("ci.run %s: PR farkı okunamadı (%s); repodaki diller", run.id, exc)
+            degisen = None
+        if degisen is not None:
+            # K-T11: test kökleri dışında değişiklik → repodaki tüm tam hat dilleri.
+            return kokler.degisen_web_dilleri(degisen, repodaki)
+    return repodaki
+
+
+def _github_etkin_diller() -> tuple[str, ...]:
+    """GitHub kipinde kardeş koşusu açılabilen web dilleri (K-T3): `TP_WEB_DILLERI`. Java iş
+    akışı (`web-java.yml`) etkin değilse Java kardeşi dağıtılmaz (gelmeyecek olayı beklemez).
+    Geçersiz değer → yalnız `ts`."""
+    from tp_core.integrations.forge import ForgeValidationError, etkin_web_dilleri
+
+    try:
+        return etkin_web_dilleri()
+    except ForgeValidationError as exc:
+        log.warning("ci: TP_WEB_DILLERI geçersiz (%s); yalnız ts", exc)
+        return (platformlar.TS,)
+
+
+def _dilleri_dagit(session: Session, run: Run) -> list[uuid.UUID]:
+    """Web koşusunun kardeş dillerini dağıtır (011 §2.8, K-T1, K-T2, K-T3).
+
+    - Script'siz koşu (PR ya da paket): dilleri `_web_dilleri` çözer; bu koşu ilk dili alır
+      (`run.ortam.dil`), diğer her dil için aynı commit/tetik/PR ile KARDEŞ koşu açılır
+      (`ortam.kardes_kosu` = bu koşu). Kardeşler farklı check'leri yazar (`local-ci` /
+      `local-ci-web-java`): birbirini ezmez.
+    - Script'li push (K-T2): merge sonrası push da paket koşusudur; ana koşu script'in dilinde
+      kalır, repodaki diğer tam hat dilleri kardeş koşuda koşar.
+    - Script'li PR: dağıtım yok (koşu script'in dilindedir).
+    - GitHub kipi (K-T3): yalnız `TP_WEB_DILLERI`'nde etkin diller kardeş alır. LocalForge'da
+      repodaki dosyalar belirler.
+
+    İdempotent: dağıtım `ortam.dil_dagitimi`'na yazılır (yeniden denemede tekrarlanmaz);
+    kardeş koşular ve dili önceden belli script'siz koşular (eski kayıtlar) dağıtılmaz. Dönüş:
+    açılan kardeş koşular.
+    """
+    o = run.ortam or {}
+    if (
+        kosu_platformu(run) != platformlar.WEB
+        or o.get("kardes_kosu")
+        or "dil_dagitimi" in o
+        or (run.script_id is not None and run.tetik == "pr")
+        or (run.script_id is None and dilmod.ortam_dili(o) is not None)
+    ):
+        return []
+    ana = dilmod.ortam_dili(o) if run.script_id is not None else None
+    if ana is not None:
+        # Script'li push: repodaki diller (PR farkı değil); ana koşu script'in dilinde.
+        diller = (ana, *(d for d in _web_dilleri(run) if d != ana))
+    else:
+        diller = _web_dilleri(run)
+    if run.kaynak == "github":
+        etkin = _github_etkin_diller()
+        kalan = tuple(d for d in diller if d in etkin)
+        diller = (ana, *(d for d in kalan if d != ana)) if ana else (kalan or (platformlar.TS,))
+    run.ortam = {**o, "dil": diller[0], "dil_dagitimi": list(diller)}
+    session.flush()
+    kardesler: list[uuid.UUID] = []
+    for d in diller[1:]:
+        sonuc = _enqueue(
+            session,
+            run.commit,
+            run.tetik,
+            run.pr_no if run.tetik == "pr" else None,
+            isteyen=str(o.get("isteyen") or "system"),
+            ref=str(o.get("ref") or "main"),
+            # Elle tetik (GitHub): kardeşin iş akışı ayrı dosyadır, kendi `workflow_dispatch`'i
+            # gerekir (deploy'un `repository_dispatch`'i `web-java.yml`'e ulaşmaz).
+            dispatch=bool(o.get("dispatch")),
+            dil=d,
+        )
+        if sonuc["yeni"]:
+            kardes = session.get(Run, sonuc["run_id"])
+            if kardes is not None:
+                kardes.ortam = {**(kardes.ortam or {}), "kardes_kosu": str(run.id)}
+            kardesler.append(sonuc["run_id"])
+    if kardesler:
+        audit_on_commit(
+            session,
+            "system",
+            "ci.diller_dagitildi",
+            f"run:{run.id}",
+            {"diller": list(diller), "kardes_kosular": [str(k) for k in kardesler]},
+        )
+    return kardesler
 
 
 def finalize_error(engine: Engine, run_id: uuid.UUID, hata: str) -> None:
@@ -971,7 +1229,9 @@ def _dispatch(engine: Engine, run_id: uuid.UUID) -> None:
                 adaylar += gh.workflow_runs(head_sha=None, event=olay, **gh_is_akisi(run))
             if _aday_sec(session, run, adaylar) is not None:
                 ref.durum = "created"
-                ref.external_key = ref.external_key or _dispatch_olayi(tetik)
+                ref.external_key = ref.external_key or _dispatch_olayi(
+                    tetik, bool(gh_is_akisi(run))
+                )
                 audit_on_commit(
                     session,
                     "system",
@@ -1006,10 +1266,14 @@ def _dispatch(engine: Engine, run_id: uuid.UUID) -> None:
     # (2) API çağrısı: işlem dışında; `intent` kalıcı.
     gh = services.github()
     try:
-        if tetik == "deploy":
+        if tetik == "deploy" and not is_akisi:
             gh.repository_dispatch("deploy", {"tetik": "deploy", "tp_run_id": str(run_id)})
         else:
-            gh.workflow_dispatch(hedef_ref, {"tetik": "nightly"}, **is_akisi)
+            # Kendi iş akışı dosyası olan koşu (011: web + Java kardeş koşusu) deploy'da da
+            # `workflow_dispatch` ile gider: `repository_dispatch` depo geneli olaydır ve `ci.yml`
+            # koşusunu ikinci kez tetiklerdi. `istek_id` koşu adına `[<run_id>]` olarak girer
+            # (ci.yml `run-name`): aynı anda bekleyen elle/gece koşuları `_aday_sec`'te karışmaz.
+            gh.workflow_dispatch(hedef_ref, {"tetik": tetik, "istek_id": str(run_id)}, **is_akisi)
     except Exception as exc:
         # Yanıt okunamadıysa (zaman aşımı/bağlantı koptu) istek GitHub'a ulaşmış olabilir: `hata`
         # yazılmaz → sonraki deneme önce koşuyu arar (kör tekrar yok).
@@ -1029,7 +1293,7 @@ def _dispatch(engine: Engine, run_id: uuid.UUID) -> None:
             return
         ref.durum = "created"
         ref.hata = None
-        ref.external_key = _dispatch_olayi(tetik)
+        ref.external_key = _dispatch_olayi(tetik, bool(is_akisi))
         run.ortam = {**(run.ortam or {}), "dispatch_zamani": services.now().isoformat()}
         audit_on_commit(
             session,
@@ -1058,20 +1322,44 @@ def _belirsiz_hata(exc: BaseException) -> bool:
     return False
 
 
-def _dispatch_olayi(tetik: str) -> str:
-    return "repository_dispatch:deploy" if tetik == "deploy" else "workflow_dispatch:nightly"
+def _dispatch_olayi(tetik: str, is_akisi: bool = False) -> str:
+    if tetik == "deploy":
+        return "workflow_dispatch:deploy" if is_akisi else "repository_dispatch:deploy"
+    return f"workflow_dispatch:{tetik}"
 
 
 def _olaylar(run: Run) -> tuple[str, ...]:
     if run.tetik == "nightly":
         # Elle gece → workflow_dispatch; zamanlanmış gece → GitHub'ın kendi cron'u (schedule).
         return ("workflow_dispatch",) if (run.ortam or {}).get("dispatch") else ("schedule",)
+    if run.tetik == "deploy" and (run.ortam or {}).get("dispatch") and gh_is_akisi(run):
+        return ("workflow_dispatch",)  # kendi iş akışına elle deploy (bkz. `_dispatch`)
     return GITHUB_OLAY[run.tetik]
+
+
+_ISTEK_ISARETI = re.compile(r"\[([A-Za-z0-9._-]{1,64})\]\s*$")
+_DISPATCH_OLAYLARI = frozenset({"workflow_dispatch", "repository_dispatch"})
+
+
+def _istek_isareti(aday: Mapping[str, Any]) -> str | None:
+    """Dispatch koşusunun adındaki `[<istek_id>]` (ci.yml `run-name`); yoksa / `elle` ise None."""
+    for alan in ("display_title", "name"):
+        m = _ISTEK_ISARETI.search(str(aday.get(alan) or ""))
+        if m and m.group(1) != "elle":
+            return m.group(1)
+    return None
 
 
 def _aday_sec(
     session: Session, run: Run, adaylar: Iterable[Mapping[str, Any]]
 ) -> dict[str, Any] | None:
+    """Koşuya karşılık gelen GitHub koşusunu seçer.
+
+    Çekirdeğin dispatch ettiği koşular adında `[<run_id>]` taşır (workflow_dispatch `istek_id`,
+    repository_dispatch `tp_run_id`): işaretli aday yalnız kendi koşusuna eşlenir, işaret
+    eşleşirse olay/zaman süzgeci aranmaz. İşaretsiz adaylar (eski workflow, elle tetik) için
+    olay + zaman eşlemesi geriye dönük olarak kalır.
+    """
     kullanilan = set(
         session.scalars(
             select(Run.github_run_id).where(Run.github_run_id.is_not(None), Run.id != run.id)
@@ -1084,8 +1372,13 @@ def _aday_sec(
             continue
         if a.get("event") not in _olaylar(run):
             continue
+        isaret = _istek_isareti(a) if a.get("event") in _DISPATCH_OLAYLARI else None
+        if isaret is not None:
+            if isaret == str(run.id):
+                return dict(a)
+            continue  # başka bir istek / koşunun dispatch'i
         olusma = parse_gh_time(a.get("created_at"))
-        if run.tetik in ("nightly", "deploy") and (olusma is None or olusma < alt_sinir):
+        if run.tetik in ELLE_TETIKLER and (olusma is None or olusma < alt_sinir):
             continue
         if run.commit and run.tetik in ("pr", "push") and a.get("head_sha") != run.commit:
             continue
@@ -1127,7 +1420,7 @@ def _sauce_bilgisi(
                     urls.extend(_urlleri_topla(veri))
         except GitHubCiError as exc:
             log.warning("sauce artefaktı okunamadı: %s", exc)
-    urls = sorted({u for u in urls if SAUCE_URL_RE.match(u)})[:20]
+    urls = sorted({u for u in urls if SAUCE_URL_RE.fullmatch(u)})[:20]
     if is_ is None and not urls and not ozet:
         return None
     durum = ozet.get("durum")
@@ -1380,7 +1673,8 @@ def github_ingest(session: Session, run: Run, wr: Mapping[str, Any]) -> str:
     meta: dict[str, Any] = {}
     dosyalar: Mapping[str, bytes] = {}
     # 009: uygulama iş akışının artefaktı `<job>-results` (Surefire TEST-*.xml + ci-meta.json).
-    java = kosu_platformu(run) in UYGULAMA_PLATFORMLARI
+    # 011: web + Java iş akışı (`web-java.yml`) da aynı düzendedir (`web-java-results`).
+    java = java_kosusu_mu(run)
     art_adi = gh_sonuc_artefakti(run)
     surefire: dict[str, bytes] = {}
     surefire_uyari: list[str] = []
@@ -1447,7 +1741,7 @@ def github_ingest(session: Session, run: Run, wr: Mapping[str, Any]) -> str:
                 for e in t.ekler:
                     e["yol"] = f"{ek_onek}/{e['yol']}"
         uyarilar.extend(ayr.uyarilar)
-    if wr.get("head_sha") and SHA_RE.match(str(wr["head_sha"])):
+    if wr.get("head_sha") and SHA_RE.fullmatch(str(wr["head_sha"])):
         run.commit = str(wr["head_sha"])
     sayac = record_results(session, run, ayr) if ayr is not None else sayilar([])
     # Yeşil koşunun sayfa başına aria snapshot'ları: GitHub kipinde onarımın son yeşil kanıtı.
@@ -1586,7 +1880,8 @@ _SONUC_ETIKETI = {"passed": "geçti", "failed": "kaldı", "error": "hata (sonuç
 
 
 def pr_comment_body(run: Run) -> str:
-    """GitHub PR koşusunun sonucu (§8.5): test-local sonucu, sayılar, GitHub ve Sauce bağlantıları.
+    """GitHub PR koşusunun sonucu (§8.5): dil/check başlığı (OPS-L3), koşunun check'inin
+    (`gh_check_adi`) sonucu, sayılar, GitHub ve Sauce bağlantıları.
 
     Yalnızca doğrulanmış bağlantılar yazılır (Sauce: `SAUCE_URL_RE`; GitHub: koşunun `html_url`'i).
     Sauce job sayfası video ve log'u barındırır.
@@ -1598,13 +1893,18 @@ def pr_comment_body(run: Run) -> str:
     isler = {
         str(j.get("ad") or "").lower(): j for j in gh.get("isler") or [] if isinstance(j, dict)
     }
-    yerel = isler.get("test-local") or {}
+    check = gh_check_adi(run)
+    platform, dil = kosu_platformu(run), kosu_dili(run)
+    yerel = isler.get(check) or {}
     satirlar = [
         PR_YORUM_ISARETI,
         f"### Testing Probe — CI sonucu: {_SONUC_ETIKETI.get(run.sonuc, run.sonuc)}",
+        # OPS-L3: aynı PR'da kardeş koşuların (TS / Java) yorumları ayırt edilsin.
+        f"**{platform} · {platformlar.DIL_ETIKETI.get(dil, dil)} "
+        f"({platformlar.cati(platform, dil)}) · check `{check}`**",
         "",
         f"- Commit: `{(run.commit or '')[:12]}` · tetik: `{run.tetik}`",
-        "- test-local: "
+        f"- {check}: "
         + str(yerel.get("sonuc") or "—")
         + (
             f" — {sayac.get('toplam', 0)} test: {sayac.get('gecen', 0)} geçti, "
@@ -1618,7 +1918,9 @@ def pr_comment_body(run: Run) -> str:
         satirlar.append(f"- GitHub Actions koşusu: {a['ci_url']}")
     if sauce:
         satirlar.append(f"- Sauce Labs job'u: {sauce.get('is_sonucu') or '—'}")
-        urls = [u for u in sauce.get("urls") or [] if isinstance(u, str) and SAUCE_URL_RE.match(u)]
+        urls = [
+            u for u in sauce.get("urls") or [] if isinstance(u, str) and SAUCE_URL_RE.fullmatch(u)
+        ]
         for u in urls[:5]:
             satirlar.append(f"  - Sauce oturumu (video + log): {u}")
         if not urls:
@@ -1755,7 +2057,49 @@ def _imzali_url(run_id: uuid.UUID, rel: str | None, dizin: str | None) -> str | 
     return f"{onek}{rel}" if onek else _url(run_id, rel, dizin)
 
 
-def serialize_runs(session: Session, runs: Sequence[Run]) -> list[dict[str, Any]]:
+# Maskeli görünüm (specs/012-rol-yetki §2): `run.artifacts` izni olmayan roller (auditor, viewer).
+# Artefakt bağlantıları (imzalı rapor dahil), ham çıktı ve dış sistem bağlantıları çıkarılır.
+_MASKE_SILINEN: Final = frozenset({"stdout", "stderr"})
+
+
+def _url_alani(anahtar: str) -> bool:
+    k = anahtar.lower()
+    return k == "url" or k.endswith("_url") or k.endswith("url") or k == "urls"
+
+
+def _maskele_deger(deger: Any) -> Any:
+    if isinstance(deger, Mapping):
+        out: dict[str, Any] = {}
+        for k, v in deger.items():
+            if k in _MASKE_SILINEN:
+                continue
+            if _url_alani(str(k)):
+                out[k] = None
+            elif k == "ekler" and isinstance(v, list):
+                out[k] = []
+            else:
+                out[k] = _maskele_deger(v)
+        return out
+    if isinstance(deger, list):
+        return [_maskele_deger(v) for v in deger]
+    return deger
+
+
+def maskele_kosu(kosu: Mapping[str, Any]) -> dict[str, Any]:
+    """Koşu yanıtının maskeli kopyası: her düzeydeki `*url` alanı boşalır, ekler boş liste,
+    `stdout`/`stderr` çıkarılır, `artefakt_kok` boşalır; `maskeli: true` işaretlenir."""
+    out = _maskele_deger(kosu)
+    out["artefakt_kok"] = None
+    out["maskeli"] = True
+    return out
+
+
+def serialize_runs(
+    session: Session, runs: Sequence[Run], *, artefakt: bool
+) -> list[dict[str, Any]]:
+    """Koşu özetleri. `artefakt=False` → maskeli görünüm (çağıran rolün `run.artifacts`'ı yok)."""
+    if not artefakt:
+        return [maskele_kosu(k) for k in serialize_runs(session, runs, artefakt=True)]
     ids = [r.id for r in runs]
     sayac: dict[uuid.UUID, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     if ids:
@@ -1782,7 +2126,11 @@ def serialize_runs(session: Session, runs: Sequence[Run]) -> list[dict[str, Any]
         if saglik is not None and saglik.get("ok") is False:
             # Sağlık kontrolü başarısız: Playwright başlatılmadı, rapor dosyaları yok
             # (toolchain yolları yine bildirir; kırık bağlantı gösterilmez).
-            a = {k: v for k, v in a.items() if k not in ("html", "allure", "allure_html", "junit")}
+            a = {
+                k: v
+                for k, v in a.items()
+                if k not in ("html", "allure", "allure_html", "extent_html", "junit")
+            }
         sauce = a.get("sauce") if isinstance(a.get("sauce"), dict) else {}
         gy = _github_yerel_ozeti(a)
         if gy["kullanilir"]:
@@ -1813,6 +2161,8 @@ def serialize_runs(session: Session, runs: Sequence[Run]) -> list[dict[str, Any]
                 or a.get("allure_url"),
                 "allure_rapor": bool(a.get("allure_html")),
                 "allure_sonuclari_url": _url(r.id, a.get("allure"), dizin),
+                # Extent (Spark) raporu: yalnızca Java koşusu üretir; yoksa null (bağlantı yok).
+                "extent_url": _url(r.id, a.get("extent_html"), dizin),
                 # Playwright HTML raporu imzalı yoldan: rapor içi ekran görüntüsü/ekler çerezsiz
                 # yüklenir. JUnit bağlantısı ayrıca verilir (portal rapor yolundan türetmesin).
                 "rapor_url": _imzali_url(r.id, _html_index(a.get("html")), dizin)
@@ -1828,7 +2178,14 @@ def serialize_runs(session: Session, runs: Sequence[Run]) -> list[dict[str, Any]
                 "hata_kodu": o.get("hata_kodu"),
                 "hata_kosusu_id": o.get("hata_kosusu_id"),
                 "script_id": str(r.script_id) if r.script_id else None,
-                "platform": o.get("platform") or script_platform.get(r.script_id) or WEB,
+                "platform": o.get("platform")
+                or script_platform.get(r.script_id)
+                or platformlar.WEB,
+                # 011: koşunun dili (`ortam.dil`; eski kayıtta platformun varsayılanı).
+                "dil": dilmod.ortam_dili(o)
+                or platformlar.varsayilan_dil(
+                    o.get("platform") or script_platform.get(r.script_id)
+                ),
                 "saglik_hatasi": (saglik or {}).get("hata")
                 if saglik and not saglik.get("ok")
                 else None,
@@ -1878,6 +2235,7 @@ def list_runs(
     pr_no: int | None = None,
     script_id: uuid.UUID | None = None,
     limit: int = 50,
+    artefakt: bool,
 ) -> list[dict[str, Any]]:
     q = select(Run)
     if tetik:
@@ -1903,7 +2261,7 @@ def list_runs(
             if r.id not in gorulen:
                 runs.append(r)
         runs.sort(key=lambda r: (r.olusturma, str(r.id)), reverse=True)
-    out = serialize_runs(session, runs)
+    out = serialize_runs(session, runs, artefakt=artefakt)
     for o in out:
         o["sabit"] = uuid.UUID(o["id"]) in sabit
     return out
@@ -1933,11 +2291,15 @@ def _defect_adayi_kosulari(session: Session, en_cok: int = 20) -> list[Run]:
     return out
 
 
-def run_detail(session: Session, run_id: uuid.UUID) -> dict[str, Any] | None:
+def run_detail(session: Session, run_id: uuid.UUID, *, artefakt: bool) -> dict[str, Any] | None:
+    """Koşu detayı. `artefakt=False` → maskeli görünüm (`maskele_kosu`)."""
+    if not artefakt:
+        detay = run_detail(session, run_id, artefakt=True)
+        return maskele_kosu(detay) if detay is not None else None
     run = session.get(Run, run_id)
     if run is None:
         return None
-    temel = serialize_runs(session, [run])[0]
+    temel = serialize_runs(session, [run], artefakt=True)[0]
     rows = session.execute(
         select(TestResult, TestResultEk)
         .outerjoin(TestResultEk, TestResultEk.test_result_id == TestResult.id)
@@ -2017,7 +2379,7 @@ def artifact_dir(session: Session, run_id: uuid.UUID) -> Path | None:
         return None
     a = run.artefaktlar or {}
     dizin = a.get("dizin")
-    if isinstance(dizin, str) and RUN_DIR_RE.match(dizin):
+    if isinstance(dizin, str) and RUN_DIR_RE.fullmatch(dizin):
         return services.artifacts_root() / dizin
     gy = _github_yerel_ozeti(a)
     if run.kaynak == "github" and gy["kullanilir"]:
@@ -2052,7 +2414,7 @@ def mark_pruned_runs(session: Session, *, en_cok: int = 500) -> int:
     zaman = services.now().isoformat()
     n = 0
     for run_id, dizin in adaylar:
-        if not dizin or not RUN_DIR_RE.match(dizin):
+        if not dizin or not RUN_DIR_RE.fullmatch(dizin):
             continue
         try:
             if (kok / dizin).is_dir():
@@ -2088,7 +2450,7 @@ def log_yolu(run: Run) -> tuple[Path, str] | None:
     a = run.artefaktlar or {}
     dizin = a.get("dizin")
     log = a.get("log")
-    if isinstance(dizin, str) and RUN_DIR_RE.match(dizin) and isinstance(log, str) and log:
+    if isinstance(dizin, str) and RUN_DIR_RE.fullmatch(dizin) and isinstance(log, str) and log:
         return services.artifacts_root() / dizin, log
     gy = _github_yerel_ozeti(a)
     gy_log = gy["yollar"].get("log")

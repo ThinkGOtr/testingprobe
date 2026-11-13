@@ -48,7 +48,7 @@ log = logging.getLogger(__name__)
 REPORT_ARTIFACT = "playwright-report"
 SONUC_KOK = "src/e2e/results"  # yerel koşunun sonuç dizini (izinli alt ağaç `src/**/results/**`)
 ISARET = ".tp-github.json"
-GH_DIR_RE = re.compile(r"^gh/[0-9]{1,20}-[0-9]{1,4}$")
+GH_DIR_RE = re.compile(r"gh/[0-9]{1,20}-[0-9]{1,4}")  # fullmatch (sonda satır sonu yok)
 GECICI_ESKI_S = 3600  # yarıda kalmış geçici dizinler bu süreden sonra silinir
 MAX_ARAMA = 20_000  # disk taraması üst sınırı (safe_extract_zip dosya sınırıyla aynı)
 
@@ -63,12 +63,12 @@ def dizin_adi(github_run_id: Any, deneme: Any) -> str | None:
     except (TypeError, ValueError):
         return None
     ad = f"gh/{rid}-{max(d, 1)}"
-    return ad if GH_DIR_RE.match(ad) else None
+    return ad if GH_DIR_RE.fullmatch(ad) else None
 
 
 def yol(dizin: Any) -> Path | None:
     """Doğrulanmış koşu dizini (`gh/<id>-<deneme>`) → mutlak yol; geçersizse None."""
-    if not isinstance(dizin, str) or not GH_DIR_RE.match(dizin):
+    if not isinstance(dizin, str) or not GH_DIR_RE.fullmatch(dizin):
         return None
     return kok() / dizin
 
@@ -306,7 +306,7 @@ def budama(
         adaylar = [
             p
             for p in gh_kok.iterdir()
-            if p.is_dir() and not p.is_symlink() and GH_DIR_RE.match(f"gh/{p.name}")
+            if p.is_dir() and not p.is_symlink() and GH_DIR_RE.fullmatch(f"gh/{p.name}")
         ]
     except OSError:
         return []

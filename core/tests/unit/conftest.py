@@ -256,3 +256,11 @@ def _canli_model_anahtari_yok(monkeypatch: pytest.MonkeyPatch) -> None:
     hiçbir test yanlışlıkla canlı model yoluna giremez. Anahtar isteyen test kendi sahte değerini
     `monkeypatch.setenv` ile verir (bu fikstür ondan önce çalışır)."""
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _red_tekrar_suzgeci_temiz() -> None:
+    """`authz.denied` tekrar süzgeci süreç içidir: her test temiz başlar (aynı kullanıcı/yol)."""
+    from tp_core.auth.yetki import red_onbellegini_temizle
+
+    red_onbellegini_temizle()

@@ -1,9 +1,10 @@
 """Demo akışının adımları (TEKNIK-TASARIM §2, ana yol: REPLAY senaryosu `f2-kod-hatasi`).
 
 Beklenen değerlerin kaynağı docs/DEMO-VERISI.md'dir; burada uydurma değer yoktur. Her adım ilgili
-rolün oturumuyla çalışır (analist, po → jira-sim, muhendis, sunucu, testci). Kimlikler (gereksinim,
-case, script, hata) her adımda API'den yeniden bulunur: `denetim` kipi aynı doğrulamaları
-tamamlanmış bir demonun son durumuna karşı, hiçbir şey değiştirmeden koşturur.
+rolün oturumuyla çalışır (012 rol modeli: analist, po → jira-sim, testci, muhendis, sunucu). Case
+üretimi/kabulü/yayını testçinin, son onay analistin, kod ve CI tetikleri mühendisindir. Kimlikler
+(gereksinim, case, script, hata) her adımda API'den yeniden bulunur: `denetim` kipi aynı
+doğrulamaları tamamlanmış bir demonun son durumuna karşı, hiçbir şey değiştirmeden koşturur.
 """
 
 from __future__ import annotations
@@ -28,6 +29,17 @@ AC2_OZGUN = (
     "(7 adette 1 bedava)."
 )
 AC3_DUZELTME_ONEKI = "Kampanyasız siparişlerde minimum sipariş tutarı 750,00 TL"
+# Seed hesapları → 012 rolleri (core/src/tp_core/seed.py; `sunucu` eski presenter, artık admin).
+PORTAL_HESAPLARI = {
+    "analist": "analyst",
+    "po": "po",
+    "testci": "tester",
+    "muhendis": "engineer",
+    "sunucu": "admin",
+    "denetci": "auditor",
+    "gelistirici": "developer",
+    "izleyici": "viewer",
+}
 CASE_SAYISI = 10
 C3_BASLIK = "6 adet kampanyalı üründe bedava ürün verilmez"
 KOD_CASELERI = (1, 2, 3, 5)  # C1 sepet sayacı, C2 7 adet, C3 6 adet, C5 750,00 TL
@@ -296,11 +308,19 @@ def acilis_sayaci_kontrol(b: Baglam, req: dict[str, Any] | None) -> None:
 def on_kontrol(b: Baglam) -> None:
     b.veri["baslangic_iso"] = _simdi_iso()
     roller = {}
-    for rol in ("analist", "po", "muhendis", "sunucu", "testci"):
-        me = b.api.get(rol, "/auth/me")
-        roller[rol] = me.get("rol")
+    for hesap in PORTAL_HESAPLARI:
+        me = b.api.get(hesap, "/auth/me")
+        roller[hesap] = me.get("rol")
     b.kanit["roller"] = roller
-    b.kontrol("5 portal rolü giriş yaptı", len(roller) == 5, str(roller))
+    b.kontrol(
+        f"{len(PORTAL_HESAPLARI)} portal hesabı giriş yaptı, roller 012 kataloğuyla uyumlu",
+        roller == PORTAL_HESAPLARI,
+        str(roller),
+    )
+    if b.prova:
+        # QA #6: provanın İLK kontrolü; açıkken sonraki herhangi bir case onayı kod üretimi
+        # başlatır ve REPLAY-MISS, kontrolden önce oluşurdu.
+        otomatik_kod_kapali(b)
 
     w = b.yigin.worker_ortami()
     b.kanit["core_worker"] = w
@@ -521,7 +541,7 @@ def po_teyidi(b: Baglam) -> None:
 def case_uret(b: Baglam) -> None:
     req_id = b.veri["req_id"]
     if b.prova:
-        b.api.post("analist", f"/requirements/{req_id}/generate-cases", beklenen=(202,))
+        b.api.post("testci", f"/requirements/{req_id}/generate-cases", beklenen=(202,))
         gereksinim_bekle(
             b,
             f"{CASE_SAYISI} case üretildi",
@@ -538,11 +558,47 @@ def case_uret(b: Baglam) -> None:
         mod_kontrol(b, f"C{n}", c.get("mode"))
 
 
+def otomatik_kod_kapali(b: Baglam) -> None:
+    """013 K20/K23: demo ortamında onay sonrası otomatik kod KAPALI olmalı (seed / make reset /
+    demo-reset yazar; P0'ın ilk kontrolü). Açıksa her onay web kod üretimi başlatır;
+    `kod_uret` adımı 4 yeni script alamaz ve strict REPLAY'de kaydı olmayan üretimler
+    REPLAY-MISS verir."""
+    ayar = (b.api.get("analist", "/automation-settings") or {}).get("otomatik_kod_uretimi") or {}
+    b.kontrol(
+        "onay sonrası otomatik kod kapalı (013 K20; make reset/seed yazar)",
+        ayar.get("acik") is False,
+        f"otomatik_kod_uretimi.acik={ayar.get('acik')!r}",
+    )
+
+
+SON_ONAYA_HAZIR = ("ready", "approved", "published")  # Testçi kabulünü geçmiş durumlar
+
+
 def qa_kararlari(b: Baglam) -> None:
+    """012: Testçi 10 case'i kabul eder (draft → ready), Analist son onayı verir (ready → approved).
+
+    Görevler ayrılığı: kabul eden hesap son onayı veremez; içerik değişmez (REPLAY altın uyumu).
+    """
     req_id = b.veri["req_id"]
     if b.prova:
         for _n, c in sorted(caseler(b, req_id).items()):
             if c["durum"] != "draft":
+                continue
+            b.api.post("testci", f"/cases/{c['id']}/viewed", beklenen=(200, 201, 204))
+            b.api.post(
+                "testci",
+                f"/cases/{c['id']}/decision",
+                {"karar": "accept", "icerik_hash": c["icerik_hash"]},
+                beklenen=(200,),
+            )
+        hazir = caseler(b, req_id)
+        b.kontrol(
+            "10 case Testçi kabulüyle ready",
+            sum(1 for c in hazir.values() if c["durum"] in SON_ONAYA_HAZIR) == CASE_SAYISI,
+            str(sorted({c["durum"] for c in hazir.values()})),
+        )
+        for _n, c in sorted(hazir.items()):
+            if c["durum"] != "ready":
                 continue
             b.api.post("analist", f"/cases/{c['id']}/viewed", beklenen=(200, 201, 204))
             b.api.post(
@@ -553,9 +609,26 @@ def qa_kararlari(b: Baglam) -> None:
             )
     cs = caseler(b, req_id)
     onayli = [n for n, c in cs.items() if c["durum"] in ("approved", "published")]
-    b.kontrol("10 case QA onaylı (analist)", len(onayli) == CASE_SAYISI, f"{len(onayli)}/{len(cs)}")
+    b.kontrol(
+        "10 case son onaylı (testçi kabulü → analist onayı)",
+        len(onayli) == CASE_SAYISI,
+        f"{len(onayli)}/{len(cs)}",
+    )
     m = b.api.get("analist", f"/requirements/{req_id}/case-metrics")
+    ilk = m.get("ilk_kararlar") or {}
+    son_onay = m.get("son_onay") or {}
     b.kanit["kabul_orani"] = m.get("kabul_orani")
+    b.kanit["ilk_kararlar"] = ilk
+    b.kanit["son_onay"] = son_onay
+    # Eski (012 öncesi) akışta ilk karar `approve` sayılır; denetim kipinde ikisi de kabul.
+    kabul = ilk.get("accept", 0) + (0 if b.prova else ilk.get("approve", 0))
+    b.kontrol("ilk kararlar: 10 Testçi kabulü", kabul == CASE_SAYISI, str(ilk))
+    b.kontrol(
+        "son onay: 10 analist onayı, geri gönderme yok",
+        son_onay.get("onaylanan") == CASE_SAYISI and not son_onay.get("geri_gonderilen"),
+        str(son_onay),
+        kritik=b.prova or "approve" not in ilk,
+    )
     b.kontrol(
         "kabul oranı ≥ hedef (0,70)",
         (m.get("kabul_orani") or 0) >= (m.get("kabul_hedefi") or 0.7),
@@ -566,7 +639,7 @@ def qa_kararlari(b: Baglam) -> None:
 def yayin(b: Baglam) -> None:
     req_id = b.veri["req_id"]
     if b.prova:
-        on = b.api.get("analist", f"/publish/preview?requirement_id={req_id}")
+        on = b.api.get("testci", f"/publish/preview?requirement_id={req_id}")
         # Yalnız portal üretimi: 012 demosunda IDE'den gelen taslak varyant (onaysız) önizlemede
         # `blocked_not_approved` olarak görünür ve yayına girmez.
         portal = {c["id"] for c in caseler(b, req_id).values()}
@@ -574,7 +647,7 @@ def yayin(b: Baglam) -> None:
         islemler = {k["islem"] for k in kalemler}
         b.kontrol("yayın önizlemesi: tüm kalemler create", islemler == {"create"}, str(islemler))
         ids = [k["case_id"] for k in kalemler if k["islem"] == "create"]
-        y = b.api.post("analist", "/publish", {"case_ids": ids}, beklenen=(200,))
+        y = b.api.post("testci", "/publish", {"case_ids": ids}, beklenen=(200,))
         durumlar = {s["durum"] for s in y["sonuclar"]}
         b.kontrol("yayın: hepsi created", durumlar == {"created"}, str(durumlar))
     cs = caseler(b, req_id)
@@ -827,9 +900,7 @@ def ci_tetikleri(b: Baglam) -> None:
     push = kosu_bekle(
         b,
         "son merge'ün push CI'ı bitti",
-        lambda ks: next(
-            (k for k in ks if k.get("tetik") == "push" and k.get("commit") == sha), None
-        ),
+        lambda ks: next((k for k in ks if _ts_push(k) and k.get("commit") == sha), None),
         300,
     )
     b.kontrol(
@@ -840,7 +911,7 @@ def ci_tetikleri(b: Baglam) -> None:
     tetikler: dict[str, str] = {}
     if b.prova:
         for t in ("deploy", "nightly"):
-            y = b.api.post("sunucu", "/ci/trigger", {"tetik": t}, beklenen=(202,))
+            y = b.api.post("muhendis", "/ci/trigger", {"tetik": t}, beklenen=(202,))
             tetikler[t] = y.get("run_id")
     sonuc = {"push": push}
     for t in ("deploy", "nightly"):
@@ -1357,9 +1428,17 @@ def locator_kir(b: Baglam) -> None:
         )
 
 
+def _ts_push(k: dict[str, Any]) -> bool:
+    """Provanın push koşusu: Playwright TypeScript hattı (011 üretim diliyle aynı push için
+    Java web koşusu da açılır; beklenen sayılar ve triage akışı TS paketine göredir)."""
+    return k.get("tetik") == "push" and (k.get("dil") or "ts") == "ts"
+
+
 def _kirmizi_push(ks: list[dict[str, Any]], sha: str | None) -> dict[str, Any] | None:
     for k in ks:
-        if k.get("tetik") != "push":
+        # 011: aynı commit'e web paketinin Java kardeş koşusu da düşer; locator senaryosunun
+        # beklenen kırmızı sayısı (LOCATOR_KIRMIZI) TS (ana) paketinindir (`_ts_push`).
+        if not _ts_push(k):
             continue
         if sha and k.get("commit") == sha:
             return k
@@ -1531,9 +1610,7 @@ def ci_yesil(b: Baglam) -> None:
     k = kosu_bekle(
         b,
         "onarım merge'ünün push CI'ı bitti",
-        lambda ks: next(
-            (x for x in ks if x.get("tetik") == "push" and x.get("commit") == sha), None
-        ),
+        lambda ks: next((x for x in ks if _ts_push(x) and x.get("commit") == sha), None),
         300,
     )
     b.kanit["push"] = {
@@ -1665,9 +1742,16 @@ def adimlar(kirma_yayinla: bool = False) -> list[Adim]:
             ai_adimi=True,
         ),
         Adim("A5", "PO teyidi (jira-sim, tp-po-approved)", "po", "3", 60, po_teyidi),
-        Adim("A6", "Case üretimi (10 case)", "analist", "4", 60, case_uret, ai_adimi=True),
-        Adim("A7", "QA kararları (10 onay)", "analist", "4", 60, qa_kararlari),
-        Adim("A8", "Yayın: önizleme → Jira Test issue'ları", "analist", "4", 60, yayin),
+        Adim("A6", "Case üretimi (10 case)", "testci", "4", 60, case_uret, ai_adimi=True),
+        Adim(
+            "A7",
+            "Case kararları: Testçi 10 kabul → Analist son onayı",
+            "testci, analist",
+            "4",
+            90,
+            qa_kararlari,
+        ),
+        Adim("A8", "Yayın: önizleme → Jira Test issue'ları", "testci", "4", 60, yayin),
         Adim(
             "B1",
             "Kod üretimi C1/C2/C3/C5 (Playwright MCP ajanı + şablon)",
@@ -1693,7 +1777,9 @@ def adimlar(kirma_yayinla: bool = False) -> list[Adim]:
             420,
             merge,
         ),
-        Adim("B4", "Yerel CI: push (main) + deploy + nightly", "sunucu", "8–10", 420, ci_tetikleri),
+        Adim(
+            "B4", "Yerel CI: push (main) + deploy + nightly", "muhendis", "8–10", 420, ci_tetikleri
+        ),
         Adim("B5", "Kontrol Kulesi", "sunucu", "11", 30, kontrol_kulesi),
         Adim(
             "C1",

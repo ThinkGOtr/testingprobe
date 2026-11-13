@@ -1,15 +1,18 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
 import type { HataSinifi, Kosu, KosuDetay as KosuDetayTuru, KosuHatasi, KosuKaynagi, Tetik } from "../api/types";
+import { useIzin, useOturum } from "../auth";
+import { normalizeRol } from "../lib/yetki";
 import { useBildirim } from "../components/Bildirim";
-import { BosDurum, Cip, Baglanti, HataKutusu, IslemDugmesi, Kart, Metrik, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
+import { BosDurum, Cip, Baglanti, HataKutusu, IslemDugmesi, Kart, Metrik, SayfaBasligi, Uyari, Yukleniyor, IzinliLink } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { altTurEtiketi, HATA_SINIFI, KAYNAK, KOSU_DURUMU, TETIK } from "../lib/etiketler";
 import { sure, tarih } from "../lib/format";
 import { CiAdimlari, githubYedekNotu, TestSonuclari } from "./KosuSonuclari";
 import { PlatformRozeti } from "../components/Platform";
+import { DilRozeti } from "../components/Dil";
 import { checkEtiketi, PLATFORMLAR, PLATFORM_ETIKETI, platformaGoreSuz, platformSecimiOku, type Platform } from "../lib/platform";
 import { EkilmisHataCipi } from "../components/kule/EkilmisHataCipi";
 
@@ -70,6 +73,8 @@ export function KosuTablosu({ kosular, kompakt }: { kosular: Kosu[]; kompakt?: b
                   <>
                     {" "}
                     <PlatformRozeti platform={k.platform} />
+                    {/* 011 §2.8: koşunun dili (core `dil` / `ortam.dil`); bilinmiyorsa çizilmez. */}
+                    <DilRozeti dil={k.dil} platform={k.platform} />
                   </>
                 )}
               </td>
@@ -102,6 +107,12 @@ export function KosuTablosu({ kosular, kompakt }: { kosular: Kosu[]; kompakt?: b
 
 const GECE_ACIKLAMASI =
   "Her gece 02:00'de (UTC) zamanlanmış koşuyu şimdi başlatır: aynı onaylı test paketi; kod değişmese de veri/ortam kaymasını ve kararsız (flaky) testleri yakalar.";
+export const MANUEL_ACIKLAMASI =
+  "Main'deki onaylı testleri şimdi koşturur (manuel tetik). Developer rolü yalnız prod dışı ortamda başlatabilir.";
+/** Maskeli koşu (core `maskeli: true`): ham artefaktlar rolde gizli; "yok" denmez. */
+export const ARTEFAKT_MASKELI = "Ham artefaktlar bu rolde görünmez";
+/** Developer + `TP_ORTAM=prod`: manuel koşu düğmesi pasif (core 403). */
+export const MANUEL_PROD_ENGELI = "Developer prod ortamında manuel koşu başlatamaz (TP_ORTAM=prod).";
 const DEPLOY_ACIKLAMASI =
   "Müşterinin deploy hattının yükleme bitince göndereceği sinyali taklit eder ve testleri koşturur; uygulamayı hiçbir yere yüklemez.";
 
@@ -143,6 +154,27 @@ export function Kosular() {
   // Her düğmenin kendi meşgul durumu: biri koşarken diğeri "dönüyor" görünmez.
   const geceIslem = useIslem();
   const deployIslem = useIslem();
+  const manuelIslem = useIslem();
+  // core: deploy/nightly `run.trigger_scheduled` (Automation Engineer); manual `run.trigger_manual`
+  // (Automation Engineer, Developer; developer prod'da 403 → core'un mesajı gösterilir).
+  const zamanliTetik = useIzin("run.trigger_scheduled");
+  const manuelTetik = useIzin("run.trigger_manual");
+  // Developer prod ortamında manuel koşu başlatamaz (core 403): `/demo/status` → `ortam`.
+  const { kullanici } = useOturum();
+  const gelistirici = normalizeRol(kullanici?.rol) === "developer";
+  const [ortam, setOrtam] = useState<string | null>(null);
+  useEffect(() => {
+    if (!gelistirici || !manuelTetik) return;
+    let iptal = false;
+    api
+      .demoDurumu()
+      .then((d) => !iptal && setOrtam(d.ortam ?? null))
+      .catch(() => undefined);
+    return () => {
+      iptal = true;
+    };
+  }, [gelistirici, manuelTetik]);
+  const manuelProdEngeli = gelistirici && ortam === "prod";
   const bildir = useBildirim();
   const sessiz = useGeciktirilmis(() => void v.yenile(true));
   useOlay(sessiz, ["ci.status", "failure.classified"]);
@@ -177,16 +209,17 @@ export function Kosular() {
   const kirmaVar = tum.some((k) => k.break_campaign);
   const kaynaklar = [...new Set(tum.map((k) => k.kaynak))];
 
-  const tetikle = async (tetik: "deploy" | "nightly") => {
-    const islem = tetik === "deploy" ? deployIslem : geceIslem;
-    (tetik === "deploy" ? geceIslem : deployIslem).temizle();
-    const s = await islem.calistir(() => api.ciTetikle(tetik));
+  const tetikle = async (tetik: "deploy" | "nightly" | "manual") => {
+    const islemler = { deploy: deployIslem, nightly: geceIslem, manual: manuelIslem };
+    for (const [t, i] of Object.entries(islemler)) if (t !== tetik) i.temizle();
+    const s = await islemler[tetik].calistir(() => api.ciTetikle(tetik));
     if (s) {
       bildir(s.mesaj ?? "Koşu tetiklendi.");
-      setSonTetik(s.mesaj ?? `${tetik === "deploy" ? "Deploy" : "Gece"} koşusu tetiklendi.`);
+      setSonTetik(s.mesaj ?? `${tetik === "deploy" ? "Deploy" : tetik === "manual" ? "Manuel" : "Gece"} koşusu tetiklendi.`);
       void v.yenile(true);
     }
   };
+  const tetikHatasi = [geceIslem, deployIslem, manuelIslem].find((i) => i.hata);
 
   return (
     <>
@@ -194,42 +227,72 @@ export function Kosular() {
         baslik="Koşular"
         aciklama="CI yalnızca onaylı, deterministik test kodunu koşturur; CI'da AI yoktur. Yerel test-runner her zaman koşar; GitHub Actions ve Sauce Labs kimlik bilgileri varsa aynı testleri koşturur."
         eylemler={
-          <>
-            <IslemDugmesi
-              roller={["presenter"]}
-              tur="ikincil"
-              calisiyor={geceIslem.calisiyor}
-              title={GECE_ACIKLAMASI}
-              aria-describedby="kosular-gece-aciklama"
-              nedenGizli
-              onClick={() => tetikle("nightly")}
-            >
-              Gece koşusunu şimdi başlat
-            </IslemDugmesi>
-            <IslemDugmesi
-              roller={["presenter"]}
-              calisiyor={deployIslem.calisiyor}
-              title={DEPLOY_ACIKLAMASI}
-              aria-describedby="kosular-deploy-aciklama"
-              nedenGizli
-              onClick={() => tetikle("deploy")}
-            >
-              Deploy sonrası testleri koş
-            </IslemDugmesi>
-          </>
+          (zamanliTetik || manuelTetik) && (
+            <>
+              {zamanliTetik && (
+                <IslemDugmesi
+                  izin="run.trigger_scheduled"
+                  tur="ikincil"
+                  calisiyor={geceIslem.calisiyor}
+                  title={GECE_ACIKLAMASI}
+                  aria-describedby="kosular-gece-aciklama"
+                  nedenGizli
+                  onClick={() => tetikle("nightly")}
+                >
+                  Gece koşusunu şimdi başlat
+                </IslemDugmesi>
+              )}
+              {manuelTetik && (
+                <IslemDugmesi
+                  izin="run.trigger_manual"
+                  tur={zamanliTetik ? "ikincil" : "birincil"}
+                  calisiyor={manuelIslem.calisiyor}
+                  disabled={manuelProdEngeli}
+                  title={manuelProdEngeli ? MANUEL_PROD_ENGELI : MANUEL_ACIKLAMASI}
+                  aria-describedby="kosular-manuel-aciklama"
+                  nedenGizli={!manuelProdEngeli}
+                  onClick={() => tetikle("manual")}
+                >
+                  Manuel koşu başlat
+                </IslemDugmesi>
+              )}
+              {zamanliTetik && (
+                <IslemDugmesi
+                  izin="run.trigger_scheduled"
+                  calisiyor={deployIslem.calisiyor}
+                  title={DEPLOY_ACIKLAMASI}
+                  aria-describedby="kosular-deploy-aciklama"
+                  nedenGizli
+                  onClick={() => tetikle("deploy")}
+                >
+                  Deploy sonrası testleri koş
+                </IslemDugmesi>
+              )}
+            </>
+          )
         }
       />
-      <ul className="tetik-aciklamalari kucuk soluk" aria-label="Tetik düğmeleri">
-        <li id="kosular-gece-aciklama">
-          <strong>Gece koşusunu şimdi başlat:</strong> {GECE_ACIKLAMASI}
-        </li>
-        <li id="kosular-deploy-aciklama">
-          <strong>Deploy sonrası testleri koş:</strong> {DEPLOY_ACIKLAMASI}
-        </li>
-      </ul>
-      {geceIslem.hata && <HataKutusu hata={geceIslem.hata} kaynak={geceIslem.hataNesnesi} />}
-      {deployIslem.hata && <HataKutusu hata={deployIslem.hata} kaynak={deployIslem.hataNesnesi} />}
-      {sonTetik && !geceIslem.hata && !deployIslem.hata && <Uyari ton="bilgi">{sonTetik}</Uyari>}
+      {(zamanliTetik || manuelTetik) && (
+        <ul className="tetik-aciklamalari kucuk soluk" aria-label="Tetik düğmeleri">
+          {zamanliTetik && (
+            <li id="kosular-gece-aciklama">
+              <strong>Gece koşusunu şimdi başlat:</strong> {GECE_ACIKLAMASI}
+            </li>
+          )}
+          {manuelTetik && (
+            <li id="kosular-manuel-aciklama">
+              <strong>Manuel koşu başlat:</strong> {MANUEL_ACIKLAMASI}
+            </li>
+          )}
+          {zamanliTetik && (
+            <li id="kosular-deploy-aciklama">
+              <strong>Deploy sonrası testleri koş:</strong> {DEPLOY_ACIKLAMASI}
+            </li>
+          )}
+        </ul>
+      )}
+      {tetikHatasi && <HataKutusu hata={tetikHatasi.hata!} kaynak={tetikHatasi.hataNesnesi} />}
+      {sonTetik && !tetikHatasi && <Uyari ton="bilgi">{sonTetik}</Uyari>}
       <Kart>
         {v.yukleniyor && !v.veri ? (
           <Yukleniyor />
@@ -343,9 +406,11 @@ function HataListesi({ k }: { k: KosuDetayTuru }) {
             <SinifCipi sinif={h.sinif} alt={h.alt_tur} />
             {/* Koşunun platformu triage kayıtlarının platformudur (aynı koşu, aynı cihaz). */}
             <PlatformRozeti platform={k.platform} />
+            {/* 011 §2.8: koşunun dili (core `dil` / `ortam.dil`); bilinmiyorsa çizilmez. */}
+            <DilRozeti dil={k.dil} platform={k.platform} />
             <span>{h.test_adi}</span>
             {h.ozet && <span className="kucuk soluk">{h.ozet}</span>}
-            <Link to={`/hatalar/${encodeURIComponent(h.id)}`}>Triage sonucunu aç</Link>
+            <IzinliLink to={`/hatalar/${encodeURIComponent(h.id)}`}>Triage sonucunu aç</IzinliLink>
           </li>
         ))}
       </ul>
@@ -448,6 +513,8 @@ export function KosuDetay() {
             <Cip ton="notr">{KAYNAK[k.kaynak] ?? k.kaynak}</Cip>
             <PlatformRozeti platform={k.platform} />
             <EkilmisHataCipi kosu={k} />
+            {/* 011 §2.8: koşunun dili (core `dil` / `ortam.dil`); bilinmiyorsa çizilmez. */}
+            <DilRozeti dil={k.dil} platform={k.platform} />
             <SauceCipi k={k} />
             <span className="mono">{k.commit}</span>
             <span className="soluk">{tarih(k.baslangic)}</span>
@@ -461,6 +528,23 @@ export function KosuDetay() {
         </Uyari>
       )}
       <Kart baslik="Raporlar ve bağlantılar">
+        {k.maskeli ? (
+          <p className="soluk" data-testid="artefakt-maskeli">
+            {ARTEFAKT_MASKELI}
+            {k.ci_url && (
+              <>
+                {" · "}
+                <Baglanti href={k.ci_url}>CI işi</Baglanti>
+              </>
+            )}
+            {k.script_id && (
+              <>
+                {" · "}
+                <IzinliLink to={`/kod/${encodeURIComponent(k.script_id)}`}>Üretilen test</IzinliLink>
+              </>
+            )}
+          </p>
+        ) : (
         <div className="artefakt-baglantilari">
           <Baglanti href={k.rapor_url} yokNedeni="koşu bu raporu üretmedi ya da core sunmuyor">
             Playwright HTML raporu{githubaGider(k.rapor_url) ? " (GitHub)" : ""}
@@ -478,6 +562,8 @@ export function KosuDetay() {
               Allure ham sonuçları (JSON listesi)
             </Baglanti>
           )}
+          {/* Extent raporunu Java koşuları üretir (uygulama: Appium + TestNG; web: Playwright for Java + TestNG); yoksa satır hiç görünmez. */}
+          {k.extent_url && <Baglanti href={k.extent_url}>Extent raporu</Baglanti>}
           {(k.kaynak === "sauce" || k.sauce_url) && (
             <Baglanti href={k.sauce_url} yokNedeni="Sauce bağlantısı yok">
               Sauce Labs videosu
@@ -491,9 +577,10 @@ export function KosuDetay() {
           <ArtefaktBaglantisi href={k.log_url} ghYedek={ghYedek} ciUrl={k.ci_url} yokNedeni="yok">
             Koşu günlüğü
           </ArtefaktBaglantisi>
-          {k.script_id && <Link to={`/kod/${encodeURIComponent(k.script_id)}`}>Üretilen test</Link>}
+          {k.script_id && <IzinliLink to={`/kod/${encodeURIComponent(k.script_id)}`}>Üretilen test</IzinliLink>}
         </div>
-        {ghYedek && <p className="kucuk soluk">{ghYedek}</p>}
+        )}
+        {ghYedek && !k.maskeli && <p className="kucuk soluk">{ghYedek}</p>}
         {k.hata && <p className="kucuk hata-metin">{k.hata}</p>}
         {k.uyarilar.length > 0 && (
           <ul className="kucuk duz-liste">

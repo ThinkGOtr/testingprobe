@@ -153,6 +153,60 @@ def test_kod_aracindaki_hazir_yer_tutucu_etkisizlesir_veri_aracinda_kalir() -> N
     assert "bayi1@ornek.com" not in str(baglam.oturum.unmask(kod_cikti))
 
 
+def _gecerli_tckn() -> str:
+    """Sağlaması tutan sentetik TCKN (çalışma anında üretilir; sabit örnek repoya girmez)."""
+    d = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    d10 = ((d[0] + d[2] + d[4] + d[6] + d[8]) * 7 - (d[1] + d[3] + d[5] + d[7])) % 10
+    d11 = (sum(d) + d10) % 10
+    return "".join(map(str, [*d, d10, d11]))
+
+
+def _asistan_baglami(enabled: bool) -> AracBaglami:
+    """Asistanın mesaj oturumu (`AsistanMaskeOturumu`: TCKN/IBAN bayrak kapalıyken de)."""
+    return dataclasses.replace(_baglam(), oturum=mesaj_oturumu(PiiMasker(enabled=enabled)))
+
+
+def test_mevcut_arac_sonucunda_tckn_bayrak_kapaliyken_de_maskelenir() -> None:
+    """specs/013 §5.1: kod ve veri araçlarının sonucunda da TCKN asistan oturumuyla maskelenir;
+    `db_query` başlığı (SQL, özet) birebir kalır, maske aynı oturumla açılır."""
+    tckn = _gecerli_tckn()
+    baglam = _asistan_baglami(enabled=False)
+    veri = DataTools(SahteDemoDb([("Bayi 1", tckn)]), session=baglam.oturum)
+    sar = AracSarmalayici(
+        baglam,
+        mevcut={
+            "db_query": veri.db_query,
+            "get_file_contents": lambda _a: f"fixture.ts:1: const tckn = '{tckn}'",
+        },
+        mevcut_turleri={"db_query": "uygulama_verisi", "get_file_contents": "uygulama_kodu"},
+    )
+    sql = f"SELECT ad, eposta FROM bayi WHERE eposta = '{tckn}'"
+    veri_cikti = sar("db_query", {"sql": sql})
+    kod_cikti = sar("get_file_contents", {"path": "fixture.ts"})
+    baslik, govde = veri_cikti.split("<untrusted", 1)
+    assert tckn not in govde and "<<PII_TCKN_1>>" in govde
+    assert f"query: {sql}\n" in baslik  # SQL kanıt doğrulamasında birebir kullanılır
+    kanit = sar.havuz.al("k1", "uygulama_verisi")
+    assert kanit is not None and kanit.sql == sql and kanit.result_digest in baslik
+    assert tckn not in kod_cikti and "<<PII_TCKN_1>>" in kod_cikti  # aynı değer, aynı yer tutucu
+    assert tckn in str(baglam.oturum.unmask(kod_cikti))
+
+
+def test_mevcut_veri_araci_bayrak_acikken_cift_maskelenmez() -> None:
+    tckn = _gecerli_tckn()
+    baglam = _asistan_baglami(enabled=True)
+    veri = DataTools(SahteDemoDb([("Bayi 1", f"{tckn} bayi1@ornek.com")]), session=baglam.oturum)
+    sar = AracSarmalayici(
+        baglam,
+        mevcut={"db_query": veri.db_query},
+        mevcut_turleri={"db_query": "uygulama_verisi"},
+    )
+    cikti = sar("db_query", {"sql": "SELECT ad, eposta FROM bayi"})
+    assert "<<PII_TCKN_1>>" in cikti and "<<PII_EMAIL_1>>" in cikti
+    assert "< <PII" not in cikti
+    assert f"{tckn} bayi1@ornek.com" in str(baglam.oturum.unmask(cikti))
+
+
 def test_yeni_arac_tek_kez_sarilir_ve_kimlikler_sirali() -> None:
     sar = AracSarmalayici(
         _baglam(),
@@ -247,7 +301,8 @@ def test_kayit_defteri_gecit_izin_listesiyle_ayni() -> None:
     assert [s.name for s in tool_specs()] == list(ARAC_ADLARI)
 
 
-def test_arac_seti_tum_rollere_ayni_liste_veri_rol_kisiti_uygulamada() -> None:
+def test_arac_seti_veri_rol_kisiti_tanimda_ve_uygulamada() -> None:
+    """Spec 013 §4: daraltılan rol `db_*` tanımını görmez; yürütücü yine de reddeder."""
     veri_cagrildi: list[str] = []
 
     class SahteVeri:
@@ -275,7 +330,8 @@ def test_arac_seti_tum_rollere_ayni_liste_veri_rol_kisiti_uygulamada() -> None:
         )
         for rol in ("analyst", "tester")
     }
-    assert setler["analyst"].adlar == setler["tester"].adlar == frozenset(ARAC_ADLARI)
+    assert setler["analyst"].adlar == frozenset(ARAC_ADLARI)
+    assert setler["tester"].adlar == frozenset(ARAC_ADLARI) - {"db_schema", "db_query"}
     assert setler["analyst"].execute("db_schema", {}).startswith("[kanit:k1]")
     with pytest.raises(AracHatasi, match="rolünüze açık değil"):
         setler["tester"].execute("db_schema", {})
@@ -284,8 +340,46 @@ def test_arac_seti_tum_rollere_ayni_liste_veri_rol_kisiti_uygulamada() -> None:
 
 
 def test_veri_rolleri_ortamdan() -> None:
+    from tp_core.auth.yetki import roller_icin
+
+    # Tanımsız → ek daraltma yok (None); katalog gating `izinli_arac_adlari`'nda (spec 013 K6).
     assert veri_rolleri({}) is None
+    assert veri_rolleri({"TP_ASISTAN_VERI_ROLLERI": " , "}) is None
+    assert not {"auditor", "viewer"} & roller_icin("requirement.read")
     assert veri_rolleri({"TP_ASISTAN_VERI_ROLLERI": " analyst, po ,"}) == {"analyst", "po"}
+    # Ortam katalogu genişletemez; eski `presenter` → admin.
+    assert veri_rolleri({"TP_ASISTAN_VERI_ROLLERI": "viewer,presenter"}) == {"admin"}
+
+
+def test_kod_ve_veri_araclari_rol_izni() -> None:
+    class SahteVeri:
+        def db_schema(self, _a: dict[str, Any]) -> str:
+            return wrap_tool_result("db_schema", "x")
+
+        def db_query(self, _a: dict[str, Any]) -> str:
+            return wrap_tool_result("db_query", "x")
+
+    class SahteKod:
+        def search_code(self, _a: dict[str, Any]) -> str:
+            return wrap_tool_result("search_code", "a.ts:1: x")
+
+        def get_file_contents(self, _a: dict[str, Any]) -> str:
+            return wrap_tool_result("get_file_contents", "a.ts")
+
+    def set_(rol: str) -> Any:
+        return arac_seti(_baglam(rol=rol), urun=object(), kod=SahteKod(), veri=SahteVeri())
+
+    # `code.read`: admin, analyst, tester, engineer; developer/po/auditor/viewer değil.
+    for rol in ("developer", "po", "auditor", "viewer"):
+        for arac in ("search_code", "get_file_contents"):
+            with pytest.raises(AracHatasi, match="rolünüze açık değil"):
+                set_(rol).execute(arac, {"query": "x", "path": "a.ts"})
+    assert set_("engineer").execute("search_code", {"query": "x"}).startswith("[kanit:")
+    # Veri araçları: auditor ve viewer kapalı.
+    for rol in ("auditor", "viewer"):
+        with pytest.raises(AracHatasi, match="rolünüze açık değil"):
+            set_(rol).execute("db_query", {"sql": "select 1"})
+    assert set_("developer").execute("db_schema", {}).startswith("[kanit:")
 
 
 def test_maskeleyici_ortamdan(monkeypatch: pytest.MonkeyPatch) -> None:

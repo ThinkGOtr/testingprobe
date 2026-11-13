@@ -1,4 +1,4 @@
-# Maven çıktıları: derleme, JUnit XML, Allure sonuçları, kanıt (ekran görüntüsü + sayfa kaynağı)
+# Maven çıktıları: derleme, JUnit XML, Allure sonuçları, Extent raporu, kanıt (ekran görüntüsü + sayfa kaynağı)
 target/
 # Maven sarmalayıcısının indirdiği dağıtım (yalnızca betik + özellikler depodadır)
 .mvn/wrapper/maven-wrapper.jar

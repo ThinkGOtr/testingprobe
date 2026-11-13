@@ -17,6 +17,8 @@ Saklama süresi `TP_ASISTAN_SAKLAMA_GUN` (varsayılan 90; geçersiz değer varsa
   (`ust_mesaj_id`) olan mesaj çocukla birlikte sonraki koşuda gider (CASCADE).
 - **Öneri geri bildirimi** (`asistan_oneri_geri_bildirim`): süreden eski satırlar silinir; "Gizle"
   bastırması da bu süre sonunda kalkar.
+- **Güvenlik olayı** (`asistan_guvenlik_olay`, specs/013 §6.1): süreden eski satırlar silinir
+  (aynı `TP_ASISTAN_SAKLAMA_GUN`).
 - **Hız sayacı** (`asistan_hiz`): 1 günden eski pencereler (`hiz.hiz_temizle`).
 - `ai_call` ve `tool_call` append-only denetim kayıtlarıdır, **dokunulmaz** (kişi bağı
   `ai_call.ek` ile kalır; Kontrol Kulesi maliyeti bu yüzden saklama süresinden etkilenmez).
@@ -135,6 +137,11 @@ _GERI_BILDIRIM_SIL = text(
 )
 
 
+_GUVENLIK_OLAY_SIL = text(
+    "DELETE FROM asistan_guvenlik_olay WHERE zaman < now() - make_interval(days => :g)"
+)
+
+
 def temizle(session: Session, *, gun: int | None = None) -> dict[str, int]:
     """Saklama süresini aşan asistan verisini çağıranın işleminde siler; tablo başına sayılar.
 
@@ -146,6 +153,7 @@ def temizle(session: Session, *, gun: int | None = None) -> dict[str, int]:
     mesaj = session.execute(_MESAJ_SIL, {"g": g}).rowcount or 0
     cevap_isi = session.execute(_CEVAP_ISI_SIL, {"t": ASISTAN_IS_TURU, "g": g}).rowcount or 0
     geri_bildirim = session.execute(_GERI_BILDIRIM_SIL, {"g": g}).rowcount or 0
+    guvenlik_olay = session.execute(_GUVENLIK_OLAY_SIL, {"g": g}).rowcount or 0
     hiz_sayisi = hiz.hiz_temizle(session)
     return {
         "saklama_gun": g,
@@ -153,6 +161,7 @@ def temizle(session: Session, *, gun: int | None = None) -> dict[str, int]:
         "mesaj": int(mesaj),
         "cevap_isi": int(cevap_isi),
         "oneri_geri_bildirim": int(geri_bildirim),
+        "guvenlik_olay": int(guvenlik_olay),
         "hiz": int(hiz_sayisi),
     }
 
@@ -194,15 +203,19 @@ def temizlik(_ctx: JobContext) -> dict[str, Any]:
         with Session(engine) as session, session.begin():
             sonuc = temizle(session)
         sonuc["is_kaydi"] = is_kayitlarini_sil(engine)
-        if any(sonuc[k] for k in ("sohbet", "mesaj", "cevap_isi", "oneri_geri_bildirim")):
+        if any(
+            sonuc[k]
+            for k in ("sohbet", "mesaj", "cevap_isi", "oneri_geri_bildirim", "guvenlik_olay")
+        ):
             log.info(
                 "asistan saklama temizliği (%d gün): %d sohbet, %d mesaj, %d cevap işi, "
-                "%d öneri geri bildirimi",
+                "%d öneri geri bildirimi, %d güvenlik olayı",
                 sonuc["saklama_gun"],
                 sonuc["sohbet"],
                 sonuc["mesaj"],
                 sonuc["cevap_isi"],
                 sonuc["oneri_geri_bildirim"],
+                sonuc["guvenlik_olay"],
             )
         return sonuc
     finally:

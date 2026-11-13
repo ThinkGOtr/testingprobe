@@ -510,3 +510,25 @@ def test_unreachable_app_is_error(
     assert data["saglik"]["web"]["status"] is None and data["saglik"]["web"]["hata"]
     assert data["saglik"]["api"]["status"] is None and data["saglik"]["api"]["hata"]
     assert "sağlık kontrolü başarısız" in data["error"]
+
+
+def test_playwright_env_passes_only_testveri_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
+    """K19: `TP_TESTVERI_<AD>` test sürecine geçer; benzer ama desene uymayan adlar geçmez."""
+    from types import SimpleNamespace
+
+    for k, v in {
+        "TP_TESTVERI_DEMO_PAROLA": "gizli",
+        "TP_TESTVERI_X1": "a",
+        "TP_TESTVERI_": "bos-ad",
+        "TP_TESTVERI_kucuk": "b",
+        "TP_TESTVERI_" + "A" * 65: "uzun",
+        "XTP_TESTVERI_A": "onek",
+        "ANTHROPIC_API_KEY": "anahtar",
+    }.items():
+        monkeypatch.setenv(k, v)
+    cfg = SimpleNamespace(base_url="http://b", demo_api_url="http://a", demoapp_test_token="t")
+    env = runner.playwright_env(cfg, runner.RunRequest(sha="a" * 40, run_id="r1"))  # type: ignore[arg-type]
+    secrets = {k: v for k, v in env.items() if "TESTVERI" in k}
+    assert secrets == {"TP_TESTVERI_DEMO_PAROLA": "gizli", "TP_TESTVERI_X1": "a"}
+    assert "ANTHROPIC_API_KEY" not in env
+    assert runner.TESTVERI_ENV_RE.fullmatch("TP_TESTVERI_" + "A" * 64)

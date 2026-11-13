@@ -157,7 +157,7 @@ def senaryo(engine: Engine, make_requirement_case, monkeypatch: pytest.MonkeyPat
 
 def test_kontrol_kulesi_sayilari_satirlardan(engine: Engine, senaryo) -> None:
     with Session(engine) as s:
-        k = ct.control_tower(s)
+        k = ct.control_tower(s, artefakt=True)
     # Son koşular: yalnızca CI tetikleri (kırma koşusu yok).
     assert [r["id"] for r in k["son_kosular"]] == [str(senaryo["c"]), str(senaryo["a"])]
     # Geçme oranı: A failed + C passed (B hariç).
@@ -213,7 +213,7 @@ def test_manuel_baz_verilirse_kullanilir(
 ) -> None:
     monkeypatch.setenv("TP_MANUAL_BASELINE_S", "3600")
     with Session(engine) as s:
-        k = ct.control_tower(s)
+        k = ct.control_tower(s, artefakt=True)
     # Story'ye özel ölçüm yok: ortam değeri ölçüm sayılmaz, sayı olarak gösterilmez.
     assert k["ai_katkisi"]["manuel_baz_ms"] is None
     assert k["ai_katkisi"]["baz_deger_olculmedi"] is True
@@ -227,7 +227,7 @@ def test_manuel_baz_verilirse_kullanilir(
 
 def test_bos_veritabaninda_uydurma_yok(engine: Engine) -> None:
     with Session(engine) as s:
-        k = ct.control_tower(s)
+        k = ct.control_tower(s, artefakt=True)
     assert k["son_kosular"] == [] and k["flaky"] == [] and k["karne"] == []
     assert k["gecme_orani"]["oran"] is None and k["a11y"] is None
     assert k["ai_katkisi"]["kabul_orani"] is None and k["ai_katkisi"]["pass_at_1"] is None
@@ -261,11 +261,13 @@ def _script(
     pr_no: int | None = None,
     ilk_sinif: str | None = None,
     zaman: datetime | None = None,
+    dil: str = "ts",
 ) -> uuid.UUID:
     sc = Script(
         id=uuid.uuid4(),
         dosya_yolu=f"e2e/tests/generated/{uuid.uuid4().hex[:6]}.spec.ts",
         durum=durum,
+        dil=dil,
         pass_at_1=pass_at_1,
         insan_review_sonucu=review,
         head_sha=head_sha,
@@ -343,7 +345,7 @@ def test_script_kpilari_karisik_sonuclar(engine: Engine, make_requirement_case) 
         s.execute(update(TestResult).where(TestResult.run_id == kr).values(commit="d" * 40))
     with Session(engine) as s:
         so = ct.script_olculeri(s)
-        k = ct.control_tower(s)
+        k = ct.control_tower(s, artefakt=True)
     # Payda: U1, U2, U5, U7 = 4; pay: U1.
     assert (so["script_ilk_review"], so["script_review_sayisi"]) == (0.25, 4)
     assert so["script_ilk_review_kabul"] == 1
@@ -427,7 +429,7 @@ def test_betik_onayi_review_suresi_olculmedi(
 
     monkeypatch.setattr(cases, "requirement_metrics", sahte)
     with Session(engine) as s:
-        k = ct.control_tower(s)
+        k = ct.control_tower(s, artefakt=True)
     h = {x["story_key"]: x for x in k["hazirlik"]}
     assert h["TPD-1"]["review_sure_ms"] is None and h["TPD-1"]["review_olculmedi"] is True
     assert h["TPD-1"]["ai_sure_ms"] is None and h["TPD-1"]["toplam_ms"] is None
@@ -457,7 +459,7 @@ def test_karne_uygulama_alani_page_objectlerden(engine: Engine, senaryo) -> None
                 )
             )
     with Session(engine) as s:
-        k = ct.control_tower(s)
+        k = ct.control_tower(s, artefakt=True)
     tpd1 = {x["story_key"]: x for x in k["karne"]}["TPD-1"]
     assert tpd1["alanlar"] == ["CheckoutWizard", "Katalog", "Sepet", "Sipariş"]
     assert tpd1["alan"] == "CheckoutWizard, Katalog, Sepet, Sipariş"
@@ -501,6 +503,37 @@ def test_eksik_metot_ve_replay_miss_review_paydasina_girmez(
     assert (so["script_eksik_metot"], so["script_replay_miss"]) == (1, 1)
     assert (so["script_ortam_hatasi"], so["script_defect_adayi"]) == (0, 0)
     assert (so["pass_at_1"], so["pass_at_1_sayisi"]) == (1.0, 3)
+
+
+def test_dogrulanmamis_script_review_paydasina_girmez(
+    engine: Engine, make_requirement_case
+) -> None:
+    """MİM-Y2: `unverified` (C# / Python) script PR'a ve insan review'una girmez; ilk review
+    başarısının paydasına katılmaz, `script_dogrulanmamis`'ta ayrı sayılır. Eski (yenisi gelince
+    kapanmış) doğrulanmamış kayıt da paydaya girmez; aynı case'in merge edilmiş TS testi birimini
+    korur (doğrulanmamış üretim onu gizlemez)."""
+    c = [make_requirement_case(title=f"case {i}") for i in range(3)]
+    with Session(engine) as s, s.begin(), allow_state_write():
+        _script(s, c[0], "merged", pass_at_1=True, review="kabul", head_sha=SHA_B, pr_no=40,
+                ilk_sinif="gecti")  # fmt: skip
+        r = _run_ekle(s, "pr", "passed", datetime.now(UTC) - timedelta(minutes=5),
+                      [("C0", "passed", c[0])])  # fmt: skip
+        s.execute(update(Run).where(Run.id == r).values(commit=SHA_B))
+        # Aynı case + (aynı hash) için sonradan C# üretimi: TS birimini gizlemez.
+        _script(s, c[0], "unverified", dil="csharp")
+        _script(s, c[1], "unverified", dil="python")
+        _script(s, c[2], "closed", dil="csharp")  # eski doğrulanmamış, yenisi gelince kapandı
+    with Session(engine) as s:
+        so = ct.script_olculeri(s)
+        k = ct.control_tower(s, artefakt=True)
+    assert so["script_dogrulanmamis"] == 2
+    assert (so["script_ilk_review"], so["script_review_sayisi"]) == (1.0, 1)
+    assert (so["pass_at_1"], so["pass_at_1_sayisi"]) == (1.0, 1)
+    # Tur 2 (MİM-L3): üretim sayısı da tam hat üretimleridir; doğrulanmamış dildeki kayıtlar
+    # (unverified + kapanmış eski) yalnız `script_dogrulanmamis`'ta görünür.
+    assert so["script_birim_sayisi"] == 1 and so["script_uretim_sayisi"] == 1
+    # API yanıtı (`GET /control-tower` `ai_katkisi`) alanı taşır.
+    assert k["ai_katkisi"]["script_dogrulanmamis"] == 2
 
 
 def test_demo_kirma_commiti_gecme_oranina_girmez(engine: Engine) -> None:

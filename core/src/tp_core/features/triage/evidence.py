@@ -47,7 +47,7 @@ MAX_METIN = 2_000
 
 RUN_DIR_RE = re.compile(r"^runs/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$")
 TESTID_RE = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}\Z")
-URL_PATH_RE = re.compile(r"^/[A-Za-z0-9/_.~-]{0,200}$")
+URL_PATH_RE = re.compile(r"/[A-Za-z0-9/_.~-]{0,200}")  # fullmatch (sonda satır sonu yok)
 
 # getByTestId('x') · getByTestId("x") · internal:testid=[data-testid="x"s] · [data-testid="x"]
 _TESTID_PARCA_RE = re.compile(
@@ -128,7 +128,7 @@ def guvenli_oku(yol: Path, kok: Path, limit: int) -> bytes | None:
 
 def kosu_dizini(artifacts_root: Path, dizin: Any) -> Path | None:
     """`run.artefaktlar.dizin` (`runs/<id>`) → yerel koşu dizini (biçim doğrulanır)."""
-    if not isinstance(dizin, str) or not RUN_DIR_RE.match(dizin):
+    if not isinstance(dizin, str) or not RUN_DIR_RE.fullmatch(dizin):
         return None
     return artifacts_root / dizin
 
@@ -279,7 +279,7 @@ def _url_yolu(url: Any) -> str | None:
         yol = urlsplit(url).path or "/"
     except ValueError:
         return None
-    return yol if URL_PATH_RE.match(yol) else None
+    return yol if URL_PATH_RE.fullmatch(yol) else None
 
 
 # Playwright frame-snapshot `html` biçimi (snapshotRenderer.ts ile aynı):

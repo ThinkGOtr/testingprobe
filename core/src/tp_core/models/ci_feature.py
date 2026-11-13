@@ -28,7 +28,8 @@ from tp_core.models.base import Base, in_check, olusturma_col, uuid_pk
 from tp_core.models.delivery import TestResult
 from tp_core.models.requirements import EMPTY_LIST, EMPTY_OBJ
 
-CI_TETIK = frozenset({"pr", "push", "nightly", "deploy"})
+# `manual`: portaldan elle koşu (specs/012-rol-yetki `run.trigger_manual`; 0021).
+CI_TETIK = frozenset({"pr", "push", "nightly", "deploy", "manual"})
 CI_KAYNAK = frozenset({"local", "github"})
 
 

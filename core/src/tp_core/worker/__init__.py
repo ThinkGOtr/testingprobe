@@ -551,9 +551,11 @@ def kancalari_dene() -> None:
 
 
 def main() -> None:
-    from tp_core.config import get_settings
+    from tp_core.config import baslangic_denetimi, get_settings
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    # Üretimde demo kipi açıksa başlamaz (specs/012-rol-yetki §2); demo işleri worker'da koşar.
+    baslangic_denetimi()
     yuklenen = discover()
     if yuklenen:
         log.info("özellik işleyici modülleri: %s", ", ".join(yuklenen))

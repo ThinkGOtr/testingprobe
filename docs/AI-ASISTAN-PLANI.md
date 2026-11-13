@@ -43,12 +43,12 @@ soruda ≈ $4.7 (günlük tavan $10). Varsayılan model, teslim içindeki canlı
 | K2 | Model | Varsayılan Haiku 5.5; Sonnet 5.5 otomatik yükseltme (§6.2) ve istek üzerine; teslim içindeki canlı değerlendirmeyle kesinleşir |
 | K3 | Bütçe/hız | **Kabul.** Asistan günlük $10; kullanıcı günlük $1; soru başı $0.50 (otomatik yükseltme dahil, kök soru başına); kullanıcı saatte 30 soru; kullanıcı başı aynı anda 1 bekleyen; 3 paralel işleyici, global 6 bekleyen |
 | K4 | Saklama | Sohbet (silinenler dahil) 90 gün sonra temizlenir. Soru metni maskeli olarak append-only `ai_call`'da kalıcıdır (İlke VIII); silme talepleri bu kaydı silmez → müşteri kurulumunda maskeleme zorunlu |
-| K5 | Test edilen uygulamanın verisi (`db_query`) | Demo: tüm roller. Müşteri ortamında `TP_ASISTAN_VERI_ROLLERI` ile daraltılabilir |
+| K5 | Test edilen uygulamanın verisi (`db_query`) | Gereksinim okuyabilen roller (`requirement.read`; auditor/viewer hariç, specs/012). Müşteri ortamında `TP_ASISTAN_VERI_ROLLERI` ile daraltılabilir |
 | K6 | Kapsam v1 | **Genişletildi:** ürün kodu/dokümanı, Probe verisi, test edilen uygulama kodu/verisi, genel QA bilgisi **+ canlı Jira okuma (§5.6) + CI log okuma (§5.7) + otomatik model yükseltme (§6.2)** |
 | K7 | Anayasa v1.3.0 | **Kabul.** İlke II'ye: "salt okuma bilgi ve yönlendirme asistanı; eylem yok; çıktısı karar dayanağı değildir" |
 | K8 | Öneri düğmesi | **Yeni (§17).** Kural tabanlı öneri + gerekçe + yönlendirme (portal ekranı / Jira taslağı); model destekli ek öneri isteğe bağlı. Jira'ya yazma yok |
 | K9 | Teslim biçimi | **Tek teslim** (§14): tüm kapsam tek dal/PR dizisinde, faz kapısı yok; anayasa X gereği canlı değerlendirme merge öncesi teslimin içinde |
-| K10 | Öneri kural matrisi (§17.3, 26 kural) | **Kabul (2026-11-03).** Şerit R ve G'nin başlama koşulu sağlandı; Şerit S'de yalnız uç yolları/olgu kaynakları koda karşı doğrulanır, kural içeriği değişirse yeniden onay. **Yeniden onay açık (2026-11-04):** kural 1, 8, 11 daraltmaları ve kural 15 (defect adayında önerilmez, eylem rotası `/kod`) — fark listesi `specs/008-ai-asistan/contracts/oneri-kurallari.md` |
+| K10 | Öneri kural matrisi (§17.3, 26 kural) | **Kabul (2026-11-03).** Şerit R ve G'nin başlama koşulu sağlandı; Şerit S'de yalnız uç yolları/olgu kaynakları koda karşı doğrulanır, kural içeriği değişirse yeniden onay. **Yeniden onaylandı (2026-11-12, ürün sahibi):** kural 1, 8, 11 daraltmaları ve kural 15 (defect adayında önerilmez, eylem rotası `/kod`) — fark listesi `specs/008-ai-asistan/contracts/oneri-kurallari.md`; 011 eklemeleri: kural `script-dogrulanmamis` (27. kural), hata sözlüğü `dil-cakismasi`, `rotalar.json` `/kod`–`/kosular` rol kısıtları ve `bos_ekranlar` değişiklikleri (K-T8) |
 
 ## 2. Örnek sorular (kabul testlerinin tohumu)
 
@@ -944,7 +944,7 @@ KRİTİK/ÖNEMLİ bulgu yok.
 **`main` öncesi açık kapılar (durum 2026-11-04; `dev`'e yalnız `TP_ASISTAN_MODEL_MODE=off` bayrağı
 arkasında girilir):**
 
-1. **K10 yeniden onayı** (tasks.md T136): kural 1, 8, 11 daraltmaları ve kural 15 (defect adayı hariç,
+1. ~~**K10 yeniden onayı**~~ — **onaylandı 2026-11-12** (tasks.md T136): kural 1, 8, 11 daraltmaları ve kural 15 (defect adayı hariç,
    eylem rotası `/kod`) ürün sahibince tarihle onaylanır; §1 K10 satırı ve §17.3 tablosundaki
    "uygulanan" notları buna göre güncellenir. Onay çıkmazsa `rules/assistant/oneriler.yaml` §17.3'teki
    hâline döner (fark listesi `specs/008-ai-asistan/contracts/oneri-kurallari.md`).
@@ -970,7 +970,7 @@ birleştirilmez):
   yeşil; `TP_TEST_PERF=1` ile öneri ucu p95 < 300 ms (T132, §16.12)
 - [ ] Gerçek Jira Cloud'da "Jira'yı aç" yeni kayıt yolu denendi (T133)
 - [ ] Çok rollü incelemede KRİTİK/ÖNEMLİ bulgu yok (T134)
-- [ ] K10 yeniden onayı tarihlendi (§1 K10 satırı; T136)
+- [x] K10 yeniden onayı tarihlendi (§1 K10 satırı; T136) — 2026-11-12
 - [ ] Anayasa v1.3.0 teknik lider onayı alındı ve Sync Impact Report'ta tarihlendi (T007)
 
 **Süre (kaba, 3–4 paralel geliştirici/ajan):** S 1–2 gün (kural matrisi onayı dahil); paralel şeritler 6–8 gün (en uzun yol
@@ -1093,21 +1093,21 @@ rol hizalama testinin bağlandığı uçtur.
 
 | # | Ekran | Rol | Koşul (özet) | Öneri (özet) | Eylem | `yetki` |
 |---|---|---|---|---|---|---|
-| 1 | Gereksinim detay | Analist | `findings_open` (uygulanan: `acik_bulgu_sayisi ≥ 1`; K10 yeniden onayı açık) | "N tutarlılık bulgusu kararınızı bekliyor" — doküman finalize edilemez | rota: bulgular (çapa) | `POST /findings/{id}/decision` |
+| 1 | Gereksinim detay | Analist | `findings_open` (uygulanan: `acik_bulgu_sayisi ≥ 1`; K10 yeniden onaylandı 2026-11-12) | "N tutarlılık bulgusu kararınızı bekliyor" — doküman finalize edilemez | rota: bulgular (çapa) | `POST /findings/{id}/decision` |
 | 2 | Gereksinim detay | Analist | `ac_eksik`, `jira_key_var` | "Kabul kriteri eksik; story kaynağında güncellenmeli" | jira_yorum: `ac-eksik` | — |
 | 3 | Gereksinim detay | Analist | `ac_eksik`, `jira_key_yok` | aynı | bilgi | — |
 | 4 | Gereksinim detay | Analist | `pending_po`, `po_bekleme_saat ≥ 24`, `po_kanal=jira` | "PO onayı N gündür bekliyor; hatırlatın" | jira_yorum: `po-hatirlatma` | — |
 | 5 | Gereksinim detay | Analist | `pending_po`, `po_bekleme_saat ≥ 24`, `po_kanal=portal` | "PO onayı N gündür bekliyor; onay portalda" | bilgi | — |
 | 6 | Gereksinim detay | PO | `pending_po`, `po_kanal=portal` | "Onayınız bekleniyor; case üretimi buna bağlı" | rota: onay bölümü (çapa) | `POST /requirements/{id}/po-approve` |
 | 7 | Gereksinim detay | PO | `pending_po`, `po_kanal=jira` | aynı | jira_kaydi | — |
-| 8 | Gereksinim detay | Analist | `po_approved` (uygulanan: `ac_eksik=false`; K10 yeniden onayı açık) | "PO onayladı; case üretimini başlatın" | rota: gereksinim (case üret) | `POST /requirements/{id}/generate-cases` |
+| 8 | Gereksinim detay | Analist | `po_approved` (uygulanan: `ac_eksik=false`; K10 yeniden onaylandı 2026-11-12) | "PO onayladı; case üretimini başlatın" | rota: gereksinim (case üret) | `POST /requirements/{id}/generate-cases` |
 | 9 | Gereksinim detay | Analist | `failed` | "Son işlem başarısız; nedenini sorun" | bilgi ("Neden? Sor" kartta her zaman var) | — |
 | 10 | Case inceleme | Analist | `inceleme_bekleyen_case ≥ 1` | "N case kararınızı bekliyor" | rota: caseler | `POST /cases/{id}/decision` |
-| 11 | Case inceleme | Analist | `cases_ready`, `inceleme_bekleyen_case = 0` (uygulanan: `onayli_case ≥ 1`; K10 yeniden onayı açık) | "İnceleme tamam; yayına hazır" | rota: `/gereksinimler/:id/yayin` | `POST /publish` |
+| 11 | Case inceleme | Analist | `cases_ready`, `inceleme_bekleyen_case = 0` (uygulanan: `onayli_case ≥ 1`; K10 yeniden onaylandı 2026-11-12) | "İnceleme tamam; yayına hazır" | rota: `/gereksinimler/:id/yayin` | `POST /publish` |
 | 12 | Case inceleme | Testçi | `inceleme_bekleyen_case ≥ 1` | "Case'ler analist incelemesinde" | bilgi | — |
 | 13 | Script detay | Mühendis | `pr_open`, `kirarak_dogrulama ∈ {not_started, weak, failed}` | "Merge öncesi kırarak doğrulayın (yeşil→kırmızı→yeşil)" | rota: script | `POST /scripts/{id}/break-verify` |
 | 14 | Script detay | Mühendis | `pr_open`, `kirarak_dogrulama=passed` | "PR merge kararınızı bekliyor" | rota: script (PR bölümü) | `POST /prs/{n}/merge` |
-| 15 | Script detay | Mühendis | `blocked` (uygulanan: defect adayı hariç; K10 yeniden onayı açık) | "Üretim insana düştü; nedenini sorun" | rota: script (uygulanan: `/kod`, "Yeniden üret" listede) | `POST /scripts/{id}/break-verify` (uygulanan: `POST /code/generate`, research R3) |
+| 15 | Script detay | Mühendis | `blocked` (uygulanan: defect adayı hariç; K10 yeniden onaylandı 2026-11-12) | "Üretim insana düştü; nedenini sorun" | rota: script (uygulanan: `/kod`, "Yeniden üret" listede) | `POST /scripts/{id}/break-verify` (uygulanan: `POST /code/generate`, research R3) |
 | 16 | Koşu detay | Mühendis | `ci_sonuc=error` | "Testler koşmadı: CI ortam hatası" | jira_taslak: `ortam-hatasi-task` | — |
 | 17 | Koşu detay | Sunucu | `ci_sonuc=error` | "Koşu ortam hatasıyla bitti; mühendis inceliyor" | bilgi | — |
 | 18 | Hata detay | Mühendis | `hata_sinifi=test_maintenance`, `onarim_durumu=none` | "Bakım hatası; otomatik onarımı başlatın" | rota: hata (Onarımı başlat) | `POST /failures/{id}/fix` |
