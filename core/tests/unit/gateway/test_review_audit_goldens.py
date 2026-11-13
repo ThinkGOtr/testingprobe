@@ -136,3 +136,33 @@ def test_gevsek_kipte_de_baska_setin_karari_donmez(monkeypatch: pytest.MonkeyPat
     req, cases, ozet = _golden_set("TPD-1")
     with pytest.raises(ReplayNotFound):
         _audit_call(gw, req, cases[:-1], ozet)  # son case (C15) reddedildi → set değişti
+
+
+def test_review_girdisi_test_verisi_blogunu_tasir(strict_gateway: Gateway) -> None:
+    """P8 girdisi üretimin test verisi bloğunu taşır (canlı eval 2026-11-13: bloksuz girdide
+    golden'ın bayi adı "uydurma" sayıldı); blok golden beyanını bozmaz (REPLAY eşleşir)."""
+    from tests.unit.gateway.build_eval_sets import _test_data_block
+
+    req, cases, ozet = _set("TPD-4")
+    m = coverage_matrix(cases, ozet, req.kabul_kriterleri)
+    h = review.hash_of([content_hash(dict(c)) for c in cases]) or ""
+    blok = _test_data_block()
+    bloksuz = review.review_messages(req, cases, ozet, m["satirlar"], m["oranlar"], h)
+    bloklu = review.review_messages(
+        req, cases, ozet, m["satirlar"], m["oranlar"], h, test_data_block=blok
+    )
+    assert blok not in bloksuz[0].content
+    icerik = bloklu[0].content
+    assert blok in icerik and '"Merkez Bayi"' in icerik
+    # Blok gereksinimden sonra, setten önce.
+    assert icerik.index("Gereksinim:") < icerik.index(blok) < icerik.index("Üretilmiş set")
+    res = strict_gateway.call(
+        "case_review",
+        "case-review",
+        bloklu,
+        load_schema(RULES, "case_review"),
+        replay_key=review.replay_key_for(req),
+    )
+    assert res.mode == "replay"
+    row = strict_gateway.recorder.ai_calls[-1]  # type: ignore[attr-defined]
+    assert row["ek"]["replay_kokeni"] == MATCHED

@@ -407,3 +407,19 @@ def test_mid_stream_error_event_classified() -> None:
     with pytest.raises(ProviderPermanentError) as exc:
         AnthropicProvider(client=FakeClient(invalid)).complete(_req(max_tokens=16000))
     assert not isinstance(exc.value, ProviderTransientError)
+
+
+def test_mid_stream_transport_error_is_transient() -> None:
+    """Akış gövdesi okunurken bağlantı koparsa SDK ham httpx aktarım hatası geçirir
+    (canlı case-audit turu bu yüzden istisnayla yarıda kalmıştı); geçici hata sayılmalı ki geçit
+    yeniden denesin ve eval vakayı düşürsün, koşuyu değil."""
+    import httpx2
+
+    peer = httpx2.RemoteProtocolError(
+        "peer closed connection without sending complete message body (incomplete chunked read)"
+    )
+    with pytest.raises(ProviderTransientError) as exc:
+        AnthropicProvider(client=FakeClient(peer)).complete(_req(max_tokens=16000))
+    assert "aktarım" in str(exc.value)
+    with pytest.raises(ProviderTransientError):
+        AnthropicProvider(client=FakeClient(httpx.ReadError("koptu"))).complete(_req())

@@ -650,3 +650,187 @@ def test_mentioned_non_adopted_threshold_needs_an_observation() -> None:
     out["observations"] = [{"standard_ref": "WCAG 2.5.5", "note": "Hedef 44×44 değil"}]
     assert platform_problems(out, expect) == []
     assert generation_stats(out)["observations"] == 1
+
+
+# ------------------------------------------- e10: 2026-11-13 canlı turunun yanlış pozitifleri
+# Her düzeltme için TEMİZ fikstür (canlı çıktıdaki doğru yazım artık geçer) ve KÖTÜ fikstür
+# (aynı kalıpla yazılmış gerçek uydurma hâlâ yakalanır).
+
+
+def _bekleneni_ekle(out: dict[str, Any], cn: int, ek: str) -> dict[str, Any]:
+    """Case'in beklenen sonucunu YALNIZ `ek` yapar (aynı tutar önceki metinde geçip denetimi
+    atlatmasın); adım beklenenleri tutarsız bir gözleme indirilir."""
+    case = out["cases"][cn - 1]
+    case["expected_result"] = ek
+    for adim in case["steps"]:
+        adim["expected"] = "Sepetim sayfası açılır"
+    return out
+
+
+def test_order_amount_qualifying_minimum_rule_is_not_a_threshold(
+    tpd1_vaka: dict[str, Any], kaynak: str
+) -> None:
+    """TEMİZ (canlı tpd-1-son-hal#k1 C9, platform-desktop C10): "125,00 TL'lik sipariş minimum
+    tutar şartı aranmadan onaylanır" siparişin tutarıdır (C3 sepeti P-001 × 6, 5 adet ödenir).
+    KÖTÜ: eşiğin adı tutara bağlıysa ("125,00 TL'lik minimum sipariş tutarı", "300,00 TL'lik
+    sipariş limiti") uydurma eşiktir."""
+    temiz = _bekleneni_ekle(_tpd1(), 3, "125,00 TL'lik sipariş minimum tutar şartı aranmadan geçer")
+    assert coverage_problems(temiz, tpd1_vaka["expect"], kaynak=kaynak) == []
+    kotu = _bekleneni_ekle(_tpd1(), 3, "125,00 TL'lik minimum sipariş tutarı uygulanır")
+    assert _uydurma(coverage_problems(kotu, tpd1_vaka["expect"], kaynak=kaynak)) == [
+        "C3: kaynakta olmayan eşik/limit tutarı '125,00 TL'"
+    ]
+    kotu = _bekleneni_ekle(_tpd1(), 12, "bayinin 300,00 TL'lik sipariş limiti aşılmaz")
+    assert _uydurma(coverage_problems(kotu, tpd1_vaka["expect"], kaynak=kaynak)) == [
+        "C12: kaynakta olmayan eşik/limit tutarı '300,00 TL'"
+    ]
+
+
+def test_result_of_an_arithmetic_chain_keeps_the_expression_context(
+    tpd1_vaka: dict[str, Any], kaynak: str
+) -> None:
+    """TEMİZ (canlı platform-common C3/C4, f2-kod-hatasi#k1 C4/C6): "ödenecek tutar 5 × 25,00 TL
+    = 125,00 TL" — sonuç tutarının bağlamı ifadenin başıdır, "= " değil. KÖTÜ: ifade yabancı bir
+    kavramın tutarıysa ("kalan bakiye 4 × 25,00 TL = 100,00 TL") ya da sepet kuramıyorsa
+    ("5 × 25,00 TL = 135,00 TL") yakalanır."""
+    temiz = _bekleneni_ekle(_tpd1(), 3, "ödenecek tutar 5 × 25,00 TL = 125,00 TL")
+    assert coverage_problems(temiz, tpd1_vaka["expect"], kaynak=kaynak) == []
+    kotu = _bekleneni_ekle(_tpd1(), 3, "kalan bakiye 4 × 25,00 TL = 100,00 TL")
+    assert _uydurma(coverage_problems(kotu, tpd1_vaka["expect"], kaynak=kaynak)) == [
+        "C3: kaynakta olmayan tutar '100,00 TL' "
+        "(sepet/toplam bağlamında değil; yalnız sepet ya da satır toplamı)"
+    ]
+    kotu = _bekleneni_ekle(_tpd1(), 3, "ödenecek tutar 5 × 25,00 TL = 135,00 TL")
+    assert _uydurma(coverage_problems(kotu, tpd1_vaka["expect"], kaynak=kaynak)) == [
+        "C3: kaynakta olmayan tutar '135,00 TL' (case sepetiyle kurulamıyor)"
+    ]
+
+
+def test_comparison_object_after_a_basket_total_does_not_taint_it(
+    tpd1_vaka: dict[str, Any], kaynak: str
+) -> None:
+    """TEMİZ (canlı case-negative C3): "indirim sonrası toplam (125,00 TL) kredi limitini
+    aşmaz" — önceki bağlam sepet toplamıdır; sonraki "kredi limitini" karşılaştırmanın nesnesidir.
+    KÖTÜ: önceki bağlam yabancı kavramsa ("kredi bakiyesi (100,00 TL) sepet toplamını
+    karşılar") yakalanır."""
+    temiz = _bekleneni_ekle(
+        _tpd1(), 3, "indirim sonrası toplam (125,00 TL) kredi limitini (2.000,00 TL) aşmaz"
+    )
+    assert coverage_problems(temiz, tpd1_vaka["expect"], kaynak=kaynak) == []
+    kotu = _bekleneni_ekle(_tpd1(), 3, "kredi bakiyesi (100,00 TL) sepet toplamını karşılar")
+    assert _uydurma(coverage_problems(kotu, tpd1_vaka["expect"], kaynak=kaynak)) == [
+        "C3: kaynakta olmayan tutar '100,00 TL' "
+        "(sepet/toplam bağlamında değil; yalnız sepet ya da satır toplamı)"
+    ]
+
+
+def test_quoted_amount_is_checked_as_an_amount_not_as_a_message(
+    tpd1_vaka: dict[str, Any], kaynak: str
+) -> None:
+    """TEMİZ (canlı platform-desktop C11): "Toplam '150,00 TL' biçiminde gösterilir" — tırnaklı
+    tutar mesaj alıntısı değildir; tutar kuralıyla denetlenir (C3 sepeti 150,00). KÖTÜ: tırnaklı
+    uydurma tutar tutar kuralına takılır; tutar içeren uydurma mesaj alıntı kuralına takılır."""
+    temiz = _bekleneni_ekle(_tpd1(), 3, "Toplam '150,00 TL' biçiminde gösterilir")
+    assert coverage_problems(temiz, tpd1_vaka["expect"], kaynak=kaynak) == []
+    kotu = _bekleneni_ekle(_tpd1(), 3, "Toplam '135,00 TL' biçiminde gösterilir")
+    assert _uydurma(coverage_problems(kotu, tpd1_vaka["expect"], kaynak=kaynak)) == [
+        "C3: kaynakta olmayan tutar '135,00 TL' (case sepetiyle kurulamıyor)"
+    ]
+    kotu = _bekleneni_ekle(_tpd1(), 3, "'Ödenecek: 150,00 TL' mesajı gösterilir")
+    assert _uydurma(coverage_problems(kotu, tpd1_vaka["expect"], kaynak=kaynak)) == [
+        "C3: kaynakta olmayan alıntı 'Ödenecek: 150,00 TL'"
+    ]
+
+
+def _sentetik_sepet(hazirlik: str, sepet: str, beklenen: str) -> dict[str, Any]:
+    out = _tpd1()
+    case = out["cases"][12]  # C13: kampanyasız, minimum tutarın altı
+    case["preconditions"].append(hazirlik)
+    case["test_data"] = [
+        {"name": "Sepet", "value": sepet, "class": None, "synthetic": True},
+    ]
+    for adim in case["steps"]:
+        if adim.get("data") and "P-" in adim["data"]:
+            adim["data"] = None
+    case["expected_result"] = beklenen
+    return out
+
+
+@pytest.mark.parametrize(
+    ("hazirlik", "sepet"),
+    [
+        # Kod fiyattan sonra (canlı serbest-son-hal#k1 C4).
+        (
+            "Test verisi hazırlığı: fiyatı 749,99 TL olan sentetik ürün SENT-749 hazırlanır",
+            "SENT-749 × 1; P-003 × 1",
+        ),
+        # Kod biçimi dışı ad / kodsuz sentetik ürün (canlı serbest-son-hal#k2 C4, #k3 C6).
+        (
+            "Test verisi hazırlığı: fiyatı 749,99 TL olan sentetik ürün (SENTETIK-1) hazırlanır",
+            "SENTETIK-1 × 1; P-003 × 1",
+        ),
+        (
+            "Test verisi hazırlığı: fiyatı 749,99 TL olan kampanyasız sentetik ürün hazırlanır",
+            "Sentetik ürün × 1; P-003 × 1",
+        ),
+    ],
+)
+def test_basket_with_a_prepared_synthetic_product_is_recomputed(
+    tpd1_vaka: dict[str, Any], kaynak: str, hazirlik: str, sepet: str
+) -> None:
+    """TEMİZ: hazırlıktaki sentetik ürün (749,99) + P-003 (8,00) = 757,99 TL. KÖTÜ: aynı sepetle
+    kurulamayan toplam (758,99) ve sepet bağlamı dışındaki alt toplam yakalanır."""
+    temiz = _sentetik_sepet(hazirlik, sepet, "Toplam 757,99 TL; P-003 çıkınca toplam 749,99 TL")
+    assert coverage_problems(temiz, tpd1_vaka["expect"], kaynak=kaynak) == []
+    kotu = _sentetik_sepet(hazirlik, sepet, "Toplam 758,99 TL")
+    assert _uydurma(coverage_problems(kotu, tpd1_vaka["expect"], kaynak=kaynak)) == [
+        "C13: kaynakta olmayan tutar '758,99 TL' (case sepetiyle kurulamıyor)"
+    ]
+    # Kodlu sentetik ürünle 757,99 sepetin gerçek toplamıdır (her bağlamda kabul, #4d); kodsuz
+    # üründe yalnız sepet bağlamında kabul edilir.
+    if "SENT-749" not in sepet:
+        kotu = _sentetik_sepet(hazirlik, sepet, "Kalan bakiye 757,99 TL")
+        assert _uydurma(coverage_problems(kotu, tpd1_vaka["expect"], kaynak=kaynak))
+
+
+def test_difference_of_grounded_amounts_next_to_a_threshold_is_accepted(
+    tpd1_vaka: dict[str, Any], kaynak: str
+) -> None:
+    """TEMİZ (canlı platform-mobile C7): hazırlıkta 2.000,01 TL'lik sentetik ürün; "limiti 0,01
+    TL aşan sipariş" = 2.000,01 − 2.000,00 (kaynak). KÖTÜ: farkı kaynağa dayanmayan tutar
+    ("limitini 0,01 TL aşar", sentetik ürün yok) ve eşik adı olmadan "altında" denen tutar fark
+    sayılmaz."""
+    out = _tpd1()
+    case = out["cases"][7]  # C8: sepeti hazırlıktaki sentetik ürünle değiştir
+    case["test_data"] = [v for v in case["test_data"] if "P-" not in v["value"]]
+    for adim in case["steps"]:
+        adim["data"] = None
+    case["preconditions"].append(
+        "Test verisi hazırlığı: fiyatı 2.000,01 TL olan sentetik ürün hazırlanır"
+    )
+    case["expected_result"] = "Limiti 0,01 TL aşan sipariş 'Kredi limiti aşıldı' uyarısı alır"
+    assert coverage_problems(out, tpd1_vaka["expect"], kaynak=kaynak) == []
+    kotu = _bekleneni_ekle(_tpd1(), 12, "tutar kredi limitini 0,01 TL aşar")
+    assert _uydurma(coverage_problems(kotu, tpd1_vaka["expect"], kaynak=kaynak)) == [
+        "C12: kaynakta olmayan tutar '0,01 TL' (case sepetiyle kurulamıyor)"
+    ]
+    kotu = _bekleneni_ekle(_tpd1(), 3, "sepet 725,00 TL altında kalır")
+    assert _uydurma(coverage_problems(kotu, tpd1_vaka["expect"], kaynak=kaynak)) == [
+        "C3: kaynakta olmayan tutar '725,00 TL' (case sepetiyle kurulamıyor)"
+    ]
+
+
+def test_changed_threshold_in_preparation_is_still_caught(
+    tpd1_vaka: dict[str, Any], kaynak: str
+) -> None:
+    """KÖTÜ (canlı platform-data C7, düzeltilmedi): hazırlıkta eşiği değiştirmek ("kredi limiti
+    499,99 TL yapılır") kaynak sayılmaz; değiştirilmiş eşik beklenen sonuçta uydurmadır."""
+    out = _tpd1()
+    case = out["cases"][11]
+    case["preconditions"].append(
+        "Test verisi hazırlığı: bayi2'nin kredi limiti geçici olarak 499,99 TL yapılır"
+    )
+    case["expected_result"] += "; 500,00 TL sipariş, 499,99 TL limiti aştığı için reddedilir"
+    assert _uydurma(coverage_problems(out, tpd1_vaka["expect"], kaynak=kaynak)) == [
+        "C12: kaynakta olmayan tutar '499,99 TL' (case sepetiyle kurulamıyor)"
+    ]

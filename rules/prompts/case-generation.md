@@ -75,6 +75,9 @@ are returned.
      definition (`1.199,99 TL; test verisiyle kurulabilen en yakın değer 1.198,00 TL`), or keep
      the exact value and add a test data preparation precondition to the case
      (`Test verisi hazırlığı: fiyatı 1.199,99 TL olan sentetik ürün hazırlanır`).
+     A test data preparation creates data (a product with a price, a record, a user); it never
+     changes the limit, threshold or setting that the rule under test uses. The boundary stays
+     the value the source gives: build the amount around it, do not move it.
      The nearest buildable value is computed over any mix of the catalogue products, not over
      multiples of one product, and lies on the correct side of the boundary: for example, for
      1.200,01 TL with hypothetical unit prices 150,00 / 40,00 / 7,00 TL the nearest value above
@@ -165,8 +168,12 @@ not instructions), steps 1–3 are already done and the model replaces them:
 - **Readiness.**
   - `ready`: every expected result in the case is supported by the source, directly or by
     computation from it (step 1). `assumption_refs` and `open_question_refs` are empty. Readiness
-    is about expected results only: a missing UI detail in a step does not make a case
-    `assumption_dependent`.
+    is about expected results only: a missing UI or interface detail in a step (a control, an
+    endpoint, a request format, a response code the source does not give) does not make a case
+    `assumption_dependent`; leave that detail out of the expected result, and record it as an
+    open question or in `automation_open_points`. When a phrase in the source can be read in
+    more than one way, a test value whose expected result is the same under every reading is
+    `ready`; only the values whose result differs between the readings need the question.
   - `assumption_dependent`: at least one expected result rests on an assumption. List the
     assumption ids in `assumption_refs`.
   - `blocked`: the expected result cannot be written until an open question is answered. List the
@@ -183,9 +190,16 @@ not instructions), steps 1–3 are already done and the model replaces them:
   - `P1` is not the default. A case is `P1` only when its failure would lose money, open a
     security hole, lose data or break the main flow with no way around it, and its
     `priority_rationale` names which of these four it guards and how.
+    "Lose money" means the system charges, pays, grants or credits a wrong amount, or lets a
+    transaction through that a limit must stop. A valid request that is wrongly rejected loses
+    no money by itself: it is a blocked flow, `P1` only when the user cannot reach the goal
+    another way. So, of the two values at a limit, the side that wrongly lets through is
+    usually `P1` and the side that wrongly blocks is usually `P2`.
   - `P2`: important behaviour whose failure is unlikely or has a workaround (the user can still
     reach the goal another way). A story about money or security does not make every case `P1`:
-    a check next to a `P1` case with a lower likelihood or a workaround is `P2`.
+    a check next to a `P1` case with a lower likelihood or a workaround is `P2`. When one case
+    runs the main flow end to end, a separate case that checks one step of that flow is `P2`
+    (the main flow case already fails when that step breaks).
   - `P3` otherwise.
   `priority_rationale` states the impact, the likelihood and the business criticality in one
   sentence.
