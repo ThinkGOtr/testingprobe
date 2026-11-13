@@ -13,6 +13,7 @@ from typing import Any
 
 import pytest
 
+from tp_core.features.codegen import platform as platformlar
 from tp_core.features.codegen.render import RenderInput, render_java_test, render_test
 from tp_core.features.triage.adim import cagri_argumanlari, hata_alanlari
 from tp_core.gateway import find_rules_dir
@@ -28,7 +29,11 @@ ESLEME: dict[str, Any] = json.loads(
 S4 = "steps[3].expected"
 
 
-def _kaynak(java: bool = False, case: dict[str, Any] | None = None) -> str:
+def _kaynak(
+    java: bool = False, case: dict[str, Any] | None = None, platform: str = "android"
+) -> str:
+    """Java: TS adlı eşleme Java page object adlarına çevrilir (`goto` → `goTo`; 011 §2.5,
+    codegen `java_eslemesi`); `platform="web"` 011 web + Java (Playwright for Java) şablonu."""
     inp = RenderInput(
         case_id=uuid.UUID(int=3),
         case=case or C3,
@@ -38,10 +43,10 @@ def _kaynak(java: bool = False, case: dict[str, Any] | None = None) -> str:
         case_hash="h",
         mode="replay",
         bundle_hash=None,
-        mapping=ESLEME,
+        mapping=platformlar.java_eslemesi(ESLEME) if java else ESLEME,
         dealers={},
     )
-    r = render_java_test(inp, "android", RULES) if java else render_test(inp, RULES)
+    r = render_java_test(inp, platform, RULES) if java else render_test(inp, RULES)
     return r.content
 
 
@@ -50,11 +55,15 @@ def _satir(kaynak: str, parca: str) -> int:
     return n
 
 
-@pytest.mark.parametrize("java", [False, True], ids=["playwright", "java"])
-def test_beklenen_sonuc_dogrulamasi_degerin_gectigi_alanlar(java: bool) -> None:
+@pytest.mark.parametrize(
+    ("java", "platform"),
+    [(False, "web"), (True, "android"), (True, "web")],
+    ids=["playwright", "java-android", "java-web"],
+)
+def test_beklenen_sonuc_dogrulamasi_degerin_gectigi_alanlar(java: bool, platform: str) -> None:
     """C3 `expectFreeQuantity("P-001", 0)` kırmızı (beklenen 0): 0 yalnız S4'ün beklenen
-    metninde ve case'in beklenen sonucunda geçer."""
-    k = _kaynak(java)
+    metninde ve case'in beklenen sonucunda geçer (TS, Appium Java ve 011 web + Java şablonu)."""
+    k = _kaynak(java, platform=platform)
     satir = _satir(k, "expectFreeQuantity(")
     alanlar = hata_alanlari(C3, kaynak=k, satir=satir, java=java, beklenen='"0"')
     assert alanlar == frozenset({S4, "expected_result"})

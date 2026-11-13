@@ -347,3 +347,61 @@ def test_kirmizi_baska_adimdaysa_inceltme_yok(
         ).all()
     assert (f.sinif, ek.kural) == ("product_defect", "product_defect")
     assert not any(x["kod"].startswith("karar_tablosu") for x in f.eslesen_sinyaller)
+
+
+def test_web_java_testi_java_kaynagi_olarak_eslenir(
+    engine: Engine, olgu_modeli: FakeProvider
+) -> None:
+    """011 web + Java (Playwright for Java): üretilen test `script.platform = web`, `dil = java`;
+    adım eşlemesi Java çağrı sözdizimiyle okunur (önceden yalnız Appium platformları Java
+    sayılıyordu). Başarısız `expectFreeQuantity("P-001", 0)` satırı S4 + beklenen sonuca düşer."""
+    from tp_core.features.codegen import platform as platformlar
+    from tp_core.features.codegen.render import render_java_test
+    from tp_core.features.triage.adim import hata_alanlari
+    from tp_core.features.triage.service import (
+        _test_kaynagi,
+        _uretilen_testler,
+        oracle_baglamlari,
+    )
+    from tp_core.models import Run
+
+    rid, cid, h = _kur(engine)
+    _oracle_kontrolu(engine, cid, h)
+    r = render_java_test(
+        RenderInput(
+            case_id=cid,
+            case=C3,
+            sira_no=3,
+            story_key="TPD-1",
+            test_key=None,
+            case_hash=h,
+            mode="replay",
+            bundle_hash=None,
+            mapping=platformlar.java_eslemesi(ESLEME),
+            dealers={},
+        ),
+        "web",
+        RULES,
+    )
+    sid = uuid.uuid4()
+    with Session(engine) as s, s.begin():
+        s.add(Script(id=sid, dosya_yolu=r.repo_path, icerik=r.content, platform="web", dil="java"))
+        s.flush()
+        s.add(
+            ScriptCodegen(
+                script_id=sid,
+                test_case_id=cid,
+                requirement_id=rid,
+                case_hash=h,
+                story_key="TPD-1",
+                sira_no=3,
+            )
+        )
+    with Session(engine) as s:
+        baglam = oracle_baglamlari(s, [cid])
+        adaylar = _uretilen_testler(s, baglam)[cid]
+        kaynak = _test_kaynagi(adaylar, Run(script_id=sid), None)
+    assert kaynak is not None and kaynak[1] is True
+    satir = next(i for i, x in enumerate(r.content.splitlines(), 1) if "expectFreeQuantity(" in x)
+    alanlar = hata_alanlari(C3, kaynak=kaynak[0], satir=satir, java=kaynak[1], beklenen='"0"')
+    assert alanlar == frozenset({"steps[3].expected", "expected_result"})
