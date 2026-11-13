@@ -575,7 +575,7 @@ Dalga 2 (çekirdek birleştirme, 2026-11-12) sonunda uygulamanın §4–§6'dan 
 | Konu | §4–§6'da | Uygulamada |
 |---|---|---|
 | İçerik şemaları | `rules/schemas/karar_tablosu.schema.json` | `rules/schemas/icerik/` (§11.1) |
-| Migrasyon | `0022`, `down_revision="0020"` | Aynı; `test_alembic_tek_bas` başı `0022` bekler. `feat/case-gen-v3` `0021`–`0028`'i kullandığı için birleşmede dosya `0029_kalite_dogrulama.py` olur (`revision="0029"`, `down_revision="0028"`); V7'deki "`0021`" notu geçersizdir (§14.1) |
+| Migrasyon | `0022`, `down_revision="0020"` | **origin/dev birleşmesi (2026-11-13, §15):** dev'in başı `0033`'tü (`0021`–`0023`, `0030`–`0033`); dosya `0034_kalite_dogrulama.py` oldu (`revision="0034"`, `down_revision="0033"`), `test_alembic_tek_bas` başı `0034` bekler. `feat/case-gen-v3` henüz dev'de değil: v3 zinciri (`0021`–`0028`, numaraları dev'le çakışır) birleşirken `0034`'ün üstüne yeniden numaralanır (§14.1); V7'deki "`0021`" ve "`0029`" notları geçersizdir |
 | Model çıktısındaki satır | — | `decision_table_draft` çıktısı satır çıktılarını ve ilişki `donusum`/`iliski`'yi `[{ad, ifade}]` listesi verir; `karar_tablosu.service.taslak_tablo_icerigi` / `taslak_iliski_icerigi` içerik biçimine (`cikti: {ad: ifade}`) çevirir |
 | Tablo araması | iki şeritte ayrı | Tek kaynak `karar_tablosu.service.gecerli_tablolar`; `oracle/tablolar.py` yeniden dışa aktarır. AC atfı boşluksuz büyük harfle karşılaştırılır (`"ac 2"` = `"AC2"`) |
 | Tablo olayı | `karar_tablosu.state` | Durum geçişleri `karar_tablosu.state` / `metamorfik_iliski.state` (iş akışı); içerik ve AI taslağı `karar_tablosu.updated` (`eylem`: `created`, `updated`, `ai_draft`) |
@@ -831,9 +831,34 @@ geçmişi), test rehberi §8 (tur 1/2 davranışı).
   v3 birleşmesinden sonra (`0029`) yeni kolon yeni migrasyon ister. Karar birleşmeden önce
   verilmeli (§14.9 adım 0).
 - **v3 birleşmesi:** plan ve riskler §14'tedir. Ürün sahibi onayı (K7) olmadan hiçbir dal dev'e
-  birleşmez.
+  birleşmez. Dev birleşmesinden (§15) sonra v3'ün planı `0034`'ün üstüne gider: v3 migrasyonları
+  dev'in `0021`–`0023` ve `0030`–`0033`'üyle de çakıştığı için hepsi yeniden numaralanır (`0035`…).
+- **Asistan paketi canlı değerlendirmesi (dev birleşmesi, ürün sahibi):** dev `c45103b`'de
+  `assistant` v2 canlı değerlendirildi (`evaluated`; Haiku 54/56, Sonnet 56/56). Bu dalın eklemeleri
+  (`hata-sozlugu.yaml` +8 kod, `oneriler.yaml` `beklenti_farki` olgusu + iki kural → 30 kural,
+  `rotalar.json` `/gereksinimler/:id/karar-tablolari`, istem ekran listesi) paket hash'ini yeniden
+  değiştirdi → `icerik_degisti`. Birleşmeden sonra `make eval-live A='--bundle assistant --via-flow
+  --update-status'` yeniden koşulmalı (canlı model çağrısı; bu birleşmede koşulmadı).
+- **PO onay kanalı (dev 012-rol-yetki K6):** dev'de Jira kaynaklı gereksinimin PO teyidi yalnız Jira
+  etiketiyle verilir (portal ucu 410 `po_onayi_jira`); karar tablosu / ilişki PO onayı ise portalda
+  kalır (`decision_table.approve`, görülen hash'le). K6 gereksinim teyidi içindir; tablo paketin
+  kapsamadığı bir özelliktir (K7: sahibi PO) ve Jira'da karşılığı yoktur. Karar: tablo onayı da
+  Jira kanalına (etiket + içerik hash'i, PO listesi) taşınmalı mı, yoksa portal onayı kalıcı mı?
+- **Rol eşlemesi onayı (§15.2):** `fault_run.manage` = engineer + admin (eski presenter),
+  ek case türetme = `case.generate` (Testçi), yeniden kontrol = Testçi + Analist, case kontrol
+  sonucunu developer / auditor / viewer görmez. Ürün sahibi onayı bekler.
+- **Kapı iki adımda:** kapı Testçi kabulünde ve Analist son onayında uygulanır; istisnayı ilk veren
+  Testçidir (§15.3). Alternatif: istisna yalnız Analistte (son onay) — karar bekler.
 
 ## 14. `feat/case-gen-v3` ile birleştirme planı
+
+> **Not (origin/dev birleşmesi, 2026-11-13, §15):** bu dal artık dev'in `0033` başının üstündedir
+> (`0034_kalite_dogrulama`). Aşağıdaki "`0029`, `down_revision="0028"`" hedefi geçersizdir: v3 zinciri
+> (`0021`–`0028`) dev'in `0021`–`0023`/`0030`–`0033`'üyle de çakışır; v3 birleşirken tüm v3
+> migrasyonları `0034`'ün üstüne (`0035`…) yeniden numaralanır ve v3'ün `review_nesne_turu_ck`
+> eklemesi (`design_model`) bu dalın sekiz değerlik kümesine göre yazılır (downgrade bu dalın
+> kümesini geri yükler). Yöntem (14.2–14.10) aynen geçerlidir; `cases/toplu.py` yerine dev'in
+> `cases.service.bulk_decide`'ı ve 012-rol iki adımlı kabul/onay akışı esas alınır (§15.3–§15.4).
 
 Durum: 2026-11-12, `feat/case-gen-v3` (`ee35221`, `e0e5015`'ten 353 dosya) ile bu dal yan
 yanadır; ikisi de dev'e girmedi. Bu bölüm v3 dalının kendisi okunarak yazıldı (`git show
@@ -1068,3 +1093,71 @@ review skoru, denetim kararı, tekrar, readiness, içerik denetimi, sürümler).
 | v3'ün yeni case girdileri (deepen, tasarım modeli) bağımsızlık testinin dışında | Tablo içeriği sızarsa fark edilmez | 14.6 test genişletmesi |
 | Kule'de iki "tekrar" / iki "kapsam" | Yanlış okuma | 14.7 etiketler |
 | Kapı v3'ün K6 denetiminden önce koşarsa | Hazır olmayan case için boşuna kontrol işi + 409 | 14.5 sıralama |
+
+## 15. origin/dev birleştirmesi (2026-11-13)
+
+`origin/dev` `c45103b` (dal noktası `e0e5015`'ten 175 commit: 011 üretim dili, 013 asistan
+güvenliği ve sprint otomasyonu, 012-rol-yetki) bu dala `git merge` ile alındı (32 çakışan dosya).
+§12–§14 ile çelişirse bu bölüm geçerlidir.
+
+### 15.1 Migrasyon
+
+`0022_kalite_dogrulama.py` → `0034_kalite_dogrulama.py`, `revision="0034"`, `down_revision="0033"`.
+İçerik değişmedi. Yeniden doğrulanan kısıtlar: `review_nesne_turu_ck` dev zincirinde yalnız
+`0002`'de tanımlıdır (`0032`/`0033` yalnız `review_karar_ck`'ye dokunur); eski küme `0002`'ninkidir,
+downgrade onu `NOT VALID` ile aynen geri yükler (test kısıt tanımını da denetler). Bizim kararlar
+(`approve`, `request_changes`) dev'in `review_karar_ck` kümesindedir; diğer kısıtlar yalnız 012
+tablolarınındır. Testler: `test_aiprobe_sso.py::test_alembic_tek_bas` (`0034` ← `0033`),
+`karar_tablosu/test_durum_makinesi.py::test_0034_geri_alinir_ve_yeniden_yukselir` (`0033`'e iner).
+
+### 15.2 Rol ve izin eşlemesi (dev `auth/yetki.py` kataloğu)
+
+`require_role` kullanımları kaldırıldı; uçlar `izin("<anahtar>")` ister, red 403 `yetki_yok` +
+`authz.denied`. Yeni anahtarlar katalogda (core ve portal `lib/yetki.ts` birebir):
+
+| Eylem | Önce | Şimdi (izin → roller) |
+|---|---|---|
+| Tablo/ilişki oluştur, düzenle, AI taslağı, gönder, geri çek, yeniden aç ("Tablo yanlış" dahil) | analyst | `decision_table.edit` → analyst |
+| Tablo/ilişki onayla, değişiklik iste | po | `decision_table.approve` → po (durum makinesi `KARAR_IZNI`'nden; `record_approval` red mesajı rol etiketiyle) |
+| Tablo listesi, örnekle dene, sınır örnekleri | herkes | `decision_table.read` → admin, analyst, po, tester, engineer, developer |
+| Case kontrol sonucu (`GET /cases/{id}/oracle`), türetme kayıtları | herkes | `case.oracle_read` → admin, analyst, po, tester, engineer (developer kısıtlı case görünümünde `oracle` alanı da yok) |
+| Yeniden kontrol (`oracle-check`, düzeltme ön kontrolü) | analyst | `case.oracle_check` → analyst, tester |
+| Ek case türetme (`metamorphic-cases`) | analyst | `case.generate` → tester (case üretimi Testçide) |
+| Case kabul/düzeltme kapısı | analyst (`approve`/`edit`) | `case.decide` (Testçi `accept`/`edit`) + `case.approve` (Analist `approve`) |
+| Ekilmiş hata koşusu başlat/iptal | engineer, presenter | `fault_run.manage` → engineer, admin (presenter → admin) |
+| Hata koşusu listesi/detayı/katalog | herkes | `run.read` → tüm roller |
+
+Portal: `IslemDugmesi izin=…`, rota `/gereksinimler/:id/karar-tablolari` → `decision_table.read`
+(`ROTA_IZINLERI`; `rotalar.json` rol listesi aynı), Kule kartı `fault_run.manage`, kaçan hatada
+"Bu girdiyle ek case türet" `case.generate` (diğer rollerde "Testçiye ilet"). Öneri kuralı
+`hata-beklenti-case-duzelt` Testçiye, asistan kuyruğunda beklenti farkı Testçiye.
+
+### 15.3 Kapı ve case akışı
+
+- Kapı (`cases.service._oracle_kapisi`, `oracle/kapi.py` değişmedi) Testçinin `accept`/`edit`'inde
+  (taslak → `ready`) ve Analistin `approve`'unda (`_son_onay`, `ready` → `approved`) koşar. Görülen
+  hash kapıdan önce denetlenir. Aynı tür + tablo kümesiyle verilmiş istisna son onayda yeniden
+  gerekçe istemez (`oracle.exception_reused`); kabulden sonra uyuşmazlaşan case son onayda düşer,
+  Analist gerekçeyle onaylayabilir ya da geri gönderir.
+- `oracle.service.KONTROL_DURUMLARI` += `ready` (tablo onayı / yeniden açma kabul edilmiş case'leri de
+  kontrol eder).
+- Portal: kapı kartı (`OracleKapisi`) taslak ve `ready` case'te her role çizilir; istisna düğmesi
+  evrenin iznini ister (taslakta `case.decide`, `ready`'de `case.approve`), "Tablo yanlış"
+  `decision_table.edit`.
+
+### 15.4 Toplu karar (013) ile kapı
+
+`POST /cases/bulk-decision` öğe başına tekli `decide`'ı çağırır; kapının engellediği öğe tek başına
+düşer (`durum: hata`), diğerleri işlenir. Öğe sonucu yeni `kod` alanını taşır (iş kuralı hatasının
+sabit kodu: `oracle_uyumsuz`, `oracle_kontrolsuz`, `oracle_bekleniyor`, `oracle_kontrol_siniri`,
+`onay_hash_uyusmuyor` …; başarılı/atlanan öğede `null`); denetim kaydı (`cases.bulk_decision`) da
+öğe `kod`'unu yazar. İstisna gerekçesi toplu kararda verilmez (§14.5 önerisi). Test:
+`tests/unit/features/oracle/test_toplu_kapi.py`. Portal mock'u aynı (409 kapı kodu `hata` sayılır).
+
+### 15.5 Triage
+
+011 web + Java (`script.dil = java`, `platform = web`) üretilen testleri adım eşlemesinde Java çağrı
+sözdizimiyle okunur (`triage.service._uretilen_testler`; önce yalnız Appium platformları Java
+sayılıyordu). Testler: `triage/test_adim.py` (TS, Appium Java, web Java şablonları),
+`triage/test_karar_tablosu_hatti.py::test_web_java_testi_java_kaynagi_olarak_eslenir`.
+

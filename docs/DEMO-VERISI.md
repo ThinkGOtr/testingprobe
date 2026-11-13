@@ -497,7 +497,7 @@ kapsam 6/9 — "n" ve "REPLAY / elle golden" etiketiyle.
 siparişte minimum tutara eşit toplamda uyarı gösterilir ve onay pasif olur", S4 beklenen "Toplam
 750,00 TL; "Minimum sipariş tutarı 750,00 TL" uyarısı görünür ve "Siparişi onayla" butonu pasiftir".
 Onaylı T2'ye göre 750,00 TL R3'tür (uyarı yok): sonuç **uyumsuz** (`minimum_uyarisi` case doğru,
-tablo yanlış), risk yüksek → "Onayla" pasif, API 422 `oracle_uyumsuz`. Analist case'i düzeltir
+tablo yanlış), risk yüksek → "Kabul et" pasif, API 422 `oracle_uyumsuz`. Testçi case'i düzeltir
 (başlık, S4 ve beklenen sonucu ana yol C6 metnine: "… uyarı gösterilmez ve onay aktif olur",
 "Toplam 750,00 TL; minimum sipariş uyarısı görünmez ve "Siparişi onayla" butonu aktiftir"); önerilen
 içerik ana yol golden'ıyla eşleşir → uyumlu → onay. Gerçek yığında bu case'le (ana yolun C6'sı da
