@@ -282,7 +282,17 @@ function KabukIcerik() {
         <NavLink to="/" className="marka">
           <span className="marka-isaret" aria-hidden="true" />
           <span>
-            <span className="marka-on">AI Testing</span> <strong>Probe</strong> <span className="marka-alt">İnceleme portalı</span>
+            {/* Dar ekranda (styles.css sonu): ≤440 px "Testing Probe", ≤360 px "TP"; erişilebilir ad hep tam. */}
+            <span className="marka-tam">
+              <span className="marka-on">
+                <span className="marka-ai">AI</span> Testing
+              </span>{" "}
+              <strong>Probe</strong>
+            </span>
+            <span className="marka-kisa" aria-hidden="true">
+              T<strong>P</strong>
+            </span>{" "}
+            <span className="marka-alt">İnceleme portalı</span>
           </span>
         </NavLink>
         <div className="ust-sag">

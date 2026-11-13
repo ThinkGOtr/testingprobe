@@ -5852,3 +5852,55 @@ html {
 .denetim-ozet-hucre { max-width: 36rem; }
 .denetim-ozet > summary { cursor: pointer; overflow-wrap: anywhere; }
 .denetim-ozet > pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 0; }
+
+/* ---------------------------------------------------------------- dar üst çubukta marka kısaltması (canlı UI testi)
+   Canlıda 390 px'te marka yalnız "Probe" kalıyordu (ürün adı okunmuyordu). Artık ≤440 px'te:
+   - yalnız "AI" görsel olarak gizlenir → "Testing Probe" (yukarıdaki 440 px kuralının "AI Testing"i
+     (.marka-on) gizlemesi geri alınır);
+   - "Testing Probe" sağ gruba (rozetli Öneri, ÖRNEK VERİ, değiştirici, tema, Çıkış) sığmıyorsa tam ad
+     görsel olarak gizlenir, "TP" kısaltması (aria-hidden) görünür. Karar ekran genişliğine değil markaya
+     kalan alana göre verilir: marka kalan alanı doldurur ve kapsayıcı sorgusunun (container query)
+     kabıdır; sağ grup küçülmez.
+   Erişilebilir ad her genişlikte tam kalır ("AI Testing Probe İnceleme portalı"). */
+.marka-kisa {
+  display: none;
+}
+@media (max-width: 440px) {
+  .ust-cubuk .marka {
+    flex: 1 1 0;
+    container-type: inline-size;
+    container-name: marka;
+  }
+  .ust-cubuk .marka-on {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0;
+    overflow: visible;
+    clip: auto;
+  }
+  .ust-cubuk .marka-ai {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+}
+/* İşaret (24) + aralık (6–10) + "Testing Probe" (~110) ≈ 145 px; payla 150 px altında "TP". */
+@container marka (max-width: 150px) {
+  .marka-tam {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .marka-kisa {
+    display: inline;
+  }
+}

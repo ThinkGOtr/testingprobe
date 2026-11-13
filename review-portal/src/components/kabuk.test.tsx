@@ -252,3 +252,23 @@ describe("Menü adı (K22)", () => {
     expect(await screen.findByRole("heading", { name: "Denetim kaydı", level: 1 })).toBeInTheDocument();
   });
 });
+
+describe("Dar üst çubukta marka (canlı UI: yalnız 'Probe' görünüyordu)", () => {
+  it("erişilebilir ad tam; kısaltma 'TP' aria-hidden; 'AI' ayrı öğede (≤440 px yalnız o gizlenir)", async () => {
+    yalnizKabuk();
+    await screen.findByText("sayfa");
+    const marka = screen.getByRole("link", { name: "AI Testing Probe İnceleme portalı" });
+    expect(marka.querySelector(".marka-kisa")).toHaveAttribute("aria-hidden", "true");
+    expect(marka.querySelector(".marka-kisa")).toHaveTextContent("TP");
+    expect(marka.querySelector(".marka-on")).toHaveTextContent("AI Testing");
+    expect(marka.querySelector(".marka-ai")).toHaveTextContent("AI");
+  });
+
+  it("styles.css: ≤440 px'te 'Testing' görünür, 'TP' yalnız markaya kalan alan darsa (kapsayıcı sorgusu)", () => {
+    const css = readFileSync(resolve(__dirname, "../styles.css"), "utf8");
+    const son = css.slice(css.indexOf("dar üst çubukta marka kısaltması"));
+    expect(son).toMatch(/\.ust-cubuk \.marka-on\s*\{[^}]*position:\s*static/);
+    expect(son).toMatch(/\.ust-cubuk \.marka\s*\{[^}]*container-type:\s*inline-size/);
+    expect(son).toMatch(/@container marka \(max-width: \d+px\)\s*\{[^@]*\.marka-kisa\s*\{\s*display:\s*inline/);
+  });
+});

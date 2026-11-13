@@ -484,7 +484,7 @@ test("mobil menü kapalıyken Tab sırasına girmez (dikey ve yatay telefon); me
   }
 });
 
-test("320–480 px üst çubuk: \"Probe\" markası rozet sayılı Öneri düğmesi ve ÖRNEK VERİ ile de kesilmez", async ({ page }) => {
+test("320–480 px üst çubuk: \"Testing Probe\" / \"TP\" markası rozet sayılı Öneri düğmesi ve ÖRNEK VERİ ile de kesilmez", async ({ page }) => {
   // En dolu üst çubuk: Öneri düğmesi rozetli (bekleyen iş 1) + ÖRNEK VERİ + bağlantı + tema + Çıkış.
   await page.setViewportSize({ width: 320, height: 640 });
   await girisYap(page, "analist");
@@ -499,13 +499,21 @@ test("320–480 px üst çubuk: \"Probe\" markası rozet sayılı Öneri düğme
       const kap = document.querySelector(".ust-cubuk .marka > span:last-child")!;
       return {
         tasma: kap.scrollWidth - kap.clientWidth,
-        sag: document.querySelector(".ust-cubuk .marka strong")!.getBoundingClientRect().right,
+        // Dar alanda "TP" kısaltması (.marka-kisa), değilse tam ad; görünen biçimin vurgusu ölçülür.
+        kisa: getComputedStyle(document.querySelector(".ust-cubuk .marka-kisa")!).display !== "none",
+        sag: document
+          .querySelector(getComputedStyle(document.querySelector(".ust-cubuk .marka-kisa")!).display !== "none" ? ".ust-cubuk .marka-kisa strong" : ".ust-cubuk .marka-tam strong")!
+          .getBoundingClientRect().right,
         kapSag: kap.getBoundingClientRect().right,
         sayfa: document.documentElement.scrollWidth,
+        testing: document.querySelector(".ust-cubuk .marka-on")!.getBoundingClientRect().width,
       };
     });
+    // Yalnız "Probe" kalmaz: alan yetiyorsa "Testing Probe", yetmiyorsa "TP" (en dolu çubukta 480 px'te tam ad).
+    if (!olcu.kisa) expect(olcu.testing, `${genislik}px "Testing" görünür`).toBeGreaterThan(20);
+    if (genislik >= 480) expect(olcu.kisa, `${genislik}px kısaltma yok`).toBe(false);
     expect(olcu.tasma, `${genislik}px marka taşması`).toBeLessThanOrEqual(0);
-    expect(olcu.sag, `${genislik}px "Probe"`).toBeLessThanOrEqual(olcu.kapSag + 0.5);
+    expect(olcu.sag, `${genislik}px marka vurgusu`).toBeLessThanOrEqual(olcu.kapSag + 0.5);
     expect(olcu.sayfa, `${genislik}px yatay kaydırma`).toBeLessThanOrEqual(genislik);
   }
   // Öneri düğmesinin görünüp kaybolması sağ grubu kaydırmaz: düğme grubun en solunda.
