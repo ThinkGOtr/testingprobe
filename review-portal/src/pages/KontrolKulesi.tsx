@@ -90,6 +90,10 @@ export function KontrolKulesi() {
   // 009: platform süzgeci (adres çubuğunda ?platform=). Platform taşıyan veriler: son koşular ve üretilen testler.
   // `GET /scripts` `code.read` ister (Developer, PO, Denetçi, Görüntüleyici'de yok): izinsiz rolde istenmez.
   const kodOkur = useIzin("code.read");
+  // Kule verisi (`dashboard.read`) her rolde aynı toplu sayılardır; core rol süzgeci uygulamaz. Gereksinim
+  // ayrıntısını (`requirement.read`) göremeyen salt-okur rollerde (Denetçi, Görüntüleyici) bu ayrıca
+  // söylenir; boş karne ise "veri yok" olarak kalır (yetkisizlikle karıştırılmaz).
+  const gereksinimOkur = useIzin("requirement.read");
   const scriptler = useVeri(() => (kodOkur ? api.scriptler().catch(() => null) : Promise.resolve(null)), [kodOkur]);
   const [sorgu, setSorgu] = useSearchParams();
   const secim = platformSecimiOku(sorgu.get("platform"));
@@ -345,8 +349,18 @@ export function KontrolKulesi() {
       <CaseKalitesiBolumu />
 
       <Kart baslik="Karne (story ve uygulama alanı)" eylemler={<KaynakIpucu kaynak={k.kaynaklar.karne} />}>
+        {!gereksinimOkur && (
+          <p className="kucuk soluk" data-testid="karne-rol-notu">
+            Bu rol gereksinim ayrıntılarını göremez: karne yalnız story başına toplu sayıları gösterir (story ve case
+            içeriği, gereksinim ekranları bu rolde kapalı).
+          </p>
+        )}
         {k.karne.length === 0 ? (
-          <BosDurum baslik="Karne için story yok." />
+          <BosDurum baslik="Karne için story yok.">
+            <span className="soluk kucuk" data-testid="karne-bos-neden">
+              Henüz case üretilmiş story yok. Bu bir yetki kısıtı değildir: karne her rol için aynı kayıtlardan hesaplanır.
+            </span>
+          </BosDurum>
         ) : (
           <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Karne tablosu">
             <table className="tablo tablo-yigin">

@@ -166,7 +166,12 @@ export function CaseKalitesiIcerik({ k, baslikId }: { k: Veri; baslikId: string 
         <h2 id={baslikId}>Case kalitesi</h2>
       </div>
       <p className="soluk kucuk">
-        {k.requirement_id ? "Seçili gereksinim" : `Proje geneli · ${k.kapsam.n_gereksinim} gereksinim`}. Sayılar kayıtlardan hesaplanır; ölçülmemiş değer
+        {k.requirement_id
+          ? "Seçili gereksinim"
+          : k.kapsam.n_gereksinim > 0
+            ? `Proje geneli · ${k.kapsam.n_gereksinim} gereksinim`
+            : "Proje geneli · henüz güncel case'i olan gereksinim yok (veri boş; yetki kısıtı değil)"}
+        . Sayılar kayıtlardan hesaplanır; ölçülmemiş değer
         “ölçülmedi” yazılır.
       </p>
 
