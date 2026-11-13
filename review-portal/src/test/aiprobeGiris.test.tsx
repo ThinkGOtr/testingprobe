@@ -189,7 +189,7 @@ describe("aiprobe kip", () => {
     expect(cagrildi(f, "POST", "/auth/logout")).toHaveLength(1);
   });
 
-  it("çıkış yanıtında yönlendirme yoksa (ya da yabancıysa) yine home çıkış sayfası (auto=1)", async () => {
+  it("çıkış yanıtında yönlendirme yoksa (ya da yabancıysa) AI Probe ana sayfası", async () => {
     sahteSunucu(
       { "GET /auth/me": { govde: AIPROBE_ME }, "POST /auth/logout": { govde: { ok: true, redirect: "https://evil.test/x" } } },
       AIPROBE_KIPI,
@@ -197,7 +197,7 @@ describe("aiprobe kip", () => {
     const git = vi.spyOn(gezinti, "git").mockImplementation(() => {});
     uygulama("/denetim");
     await userEvent.click(await screen.findByRole("button", { name: "Çıkış" }));
-    await waitFor(() => expect(git).toHaveBeenCalledWith("https://home.test/logout?product=testing-probe&auto=1"));
+    await waitFor(() => expect(git).toHaveBeenCalledWith("https://home.test/"));
   });
 });
 

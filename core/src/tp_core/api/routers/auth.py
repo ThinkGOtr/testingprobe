@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import uuid
 from typing import Annotated
-from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
@@ -207,12 +206,11 @@ def logout(
             audit_on_commit(
                 session, user.kullanici_adi, "auth.logout", f"app_user:{user.id}", {"sid": veri.sid}
             )
-        # AI Probe oturumu: çıkış tüm ürünlerden yapılır (id. çıkış sayfası; PLAN §2.3).
+        # AI Probe oturumu: çıkış yalnız bu ürünün oturumunu kapatır, AI Probe ana sayfasına döner
+        # (AI Probe oturumu açık kalır; tüm ürünlerden çıkış home'daki "Çıkış"tır).
         if harici is not None and aiprobe_acik():
             ayar = get_settings()
-            govde["redirect"] = f"{ayar.aiprobe_id_origin.rstrip('/')}/logout?" + urlencode(
-                {"product": ayar.aiprobe_product_id, "auto": "1"}
-            )
+            govde["redirect"] = f"{ayar.aiprobe_id_origin.rstrip('/')}/"
     yanit = JSONResponse(govde)
     yanit.delete_cookie(
         cookie_name(), path="/", httponly=True, samesite="lax", secure=cookie_secure()

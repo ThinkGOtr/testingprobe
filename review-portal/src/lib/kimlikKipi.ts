@@ -115,12 +115,13 @@ export function aiprobeGirisAdresi(devam: string | null | undefined): string {
 }
 
 /**
- * AI Probe çıkış sayfası (core çıkış yanıtında `redirect` yoksa yedek). `auto=1`: yerel çıkış
- * yapıldı, home onay tıklaması istemeden tüm ürünlerden çıkarır.
+ * Çıkış sonrası dönüş (core çıkış yanıtında `redirect` yoksa yedek): AI Probe ana sayfası. Testing
+ * Probe oturumu kapanır, AI Probe oturumu açık kalır; tüm ürünlerden çıkış home'daki "Çıkış"tır.
  */
 export function aiprobeCikisAdresi(): string | null {
-  const { home, urun } = kipDurumu;
-  return home ? `${home}/logout?product=${encodeURIComponent(urun)}&auto=1` : null;
+  // Testing Probe'dan çıkış AI Probe ana sayfasına döner (AI Probe oturumu açık kalır).
+  const { home } = kipDurumu;
+  return home ? `${home}/` : null;
 }
 
 /**

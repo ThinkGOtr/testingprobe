@@ -689,7 +689,7 @@ def test_cikis_tum_urunlere_yonlendirir(client: TestClient, home: SahteHome) -> 
     _giris(client, home, ["tester"])
     r = client.post("/auth/logout")
     assert r.status_code == 200
-    assert r.json()["redirect"] == f"{ID}/logout?product=testing-probe&auto=1"
+    assert r.json()["redirect"] == f"{ID}/"
     assert client.get("/auth/me").status_code == 401
 
 
@@ -698,7 +698,7 @@ def test_cikis_html_istegine_de_json(client: TestClient, home: SahteHome) -> Non
     _giris(client, home, ["tester"])
     r = client.post("/auth/logout", headers={"accept": "text/html"}, follow_redirects=False)
     assert r.status_code == 200
-    assert r.json()["redirect"] == f"{ID}/logout?product=testing-probe&auto=1"
+    assert r.json()["redirect"] == f"{ID}/"
     assert client.get("/auth/me").status_code == 401
 
 
