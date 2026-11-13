@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api } from "./client";
-import { ApiError, BU_FAZDA_YOK, buFazdaYok, canliDerleme, detayOku, UC_YOK, cakismaMesaji, ICERIK_DEGISTI, kararCakismasi, istek, mockOturumuAyarla, mockUclari, ucuNormallestir, ucVar, yapilandir, yetenekleriAyristir, yetkisizOlunca } from "./http";
+import { ApiError, BU_FAZDA_YOK, buFazdaYok, bulunamadi, GECERSIZ_KIMLIK, canliDerleme, detayOku, UC_YOK, cakismaMesaji, ICERIK_DEGISTI, kararCakismasi, istek, mockOturumuAyarla, mockUclari, ucuNormallestir, ucVar, yapilandir, yetenekleriAyristir, yetkisizOlunca } from "./http";
 
 function yanit(status: number, govde: unknown, json = true): Response {
   return new Response(json ? JSON.stringify(govde) : String(govde), {
@@ -48,6 +48,19 @@ describe("istek (gerçek mod)", () => {
     yapilandir({ mockZorunlu: false });
     vi.stubGlobal("fetch", vi.fn().mockImplementation(() => Promise.resolve(yanit(422, { detail: [{ msg: "alan zorunlu" }, { msg: "çok uzun" }] }))));
     await expect(api.serbestMetin({ baslik: "", aciklama: "", ac: [] })).rejects.toMatchObject({ detail: "alan zorunlu; çok uzun" });
+  });
+
+  it("yol parametresi geçersizse (422 loc=path, ham Pydantic) 404 'Kayıt bulunamadı.' olur", async () => {
+    yapilandir({ mockZorunlu: false });
+    const govde = { detail: [{ type: "uuid_parsing", loc: ["path", "req_id"], msg: "Input should be a valid UUID, invalid character", input: "olmayan-id" }] };
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(() => Promise.resolve(yanit(422, govde))));
+    const e = await api.gereksinim("olmayan-id").catch((x: unknown) => x);
+    expect(e).toBeInstanceOf(ApiError);
+    expect(e).toMatchObject({ status: 404, detail: "Kayıt bulunamadı.", kod: GECERSIZ_KIMLIK });
+    expect(bulunamadi(e)).toBe(true);
+    // Gövde alanı doğrulaması (loc=body) eskisi gibi 422 kalır.
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(() => Promise.resolve(yanit(422, { detail: [{ loc: ["body", "baslik"], msg: "alan zorunlu" }] }))));
+    await expect(api.serbestMetin({ baslik: "", aciklama: "", ac: [] })).rejects.toMatchObject({ status: 422, detail: "alan zorunlu" });
   });
 
   it("genel 404'te (uç yok) mock'a düşer ve ucu kaydeder", async () => {

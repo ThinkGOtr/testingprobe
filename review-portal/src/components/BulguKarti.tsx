@@ -2,9 +2,11 @@ import { useId, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import type { Bulgu, BulguKarari, Gereksinim, GereksinimDurumu, Kanit } from "../api/types";
+import { useBugKisitli } from "../auth";
 import { useIslem } from "../hooks";
+import { BUG_KISITLI_METNI, KISITLI_BUG_DURUMLARI } from "../lib/yetki";
 import { BULGU_DURUMU, BULGU_KARARI, BULGU_TURU, gereksinimDurumu as durumEtiketi } from "../lib/etiketler";
-import { tarih } from "../lib/format";
+import { tarih, tutarlariBicimle } from "../lib/format";
 import { FarkGorunumu } from "./FarkGorunumu";
 import { KisiAdi } from "./KisiAdi";
 import { KodGorunumu } from "./KodGorunumu";
@@ -29,7 +31,9 @@ function KanitGorunumu({ k }: { k: Kanit }) {
     <div className="kanit">
       <div className="kanit-baslik">
         <span className="cip cip-notr">Veri</span>
-        <span className="soluk kucuk">Salt okuma sorgu · özet {k.result_digest}</span>
+        <span className="soluk kucuk" title={k.result_digest ?? undefined}>
+          Salt okuma sorgu · özet {k.result_digest ? tutarlariBicimle(k.result_digest) : k.result_digest}
+        </span>
       </div>
       <pre className="sql" tabIndex={0} aria-label="SQL sorgusu">
         <code>{k.query}</code>
@@ -74,6 +78,7 @@ export function BulguKarti({
   const [dogrulama, setDogrulama] = useState<string | null>(null);
   const islem = useIslem();
   const id = useId();
+  const bugKisitli = useBugKisitli();
   // core: kapı yalnızca open → decided; decided iken karar değiştirilebilir. Diğer durumlar kilitli.
   const bulguKarariAcik = bulgu.durum === "open" || bulgu.durum === "decided";
   const gereksinimKararBekliyor = gereksinimDurumu === undefined || gereksinimDurumu === "findings_open";
@@ -107,7 +112,9 @@ export function BulguKarti({
     <article className={`bulgu bulgu-${bulgu.severity}`} data-durum={bulgu.durum} aria-labelledby={`${id}-baslik`}>
       <header className="bulgu-baslik">
         <div className="satir-ogeler">
-          <Cip ton={bulgu.severity === "blocking" ? "hata" : "uyari"}>{bulgu.severity === "blocking" ? "Engelleyici" : "Uyarı"}</Cip>
+          <Cip ton={bulgu.durum === "stale" ? "notr" : bulgu.severity === "blocking" ? "hata" : "uyari"}>
+            {bulgu.severity === "blocking" ? (bulgu.durum === "stale" ? "Engelleyiciydi" : "Engelleyici") : "Uyarı"}
+          </Cip>
           {bulgu.bulgu_etiketi && (
             <span className="mono" data-testid="bulgu-etiketi" title="Jira düzeltme yorumundaki bulgu etiketi">
               {bulgu.bulgu_etiketi}
@@ -127,7 +134,7 @@ export function BulguKarti({
         )}
       </header>
       <h3 id={`${id}-baslik`} className="bulgu-ozet">
-        {bulgu.ozet}
+        {tutarlariBicimle(bulgu.ozet)}
       </h3>
 
       {bulgu.evidence.length > 0 ? (
@@ -159,11 +166,16 @@ export function BulguKarti({
               <strong>Gerekçe:</strong> {bulgu.gerekce}
             </p>
           )}
-          {bulgu.bug_draft_id && (
-            <p>
-              <Link to={`/bug-taslaklari/${encodeURIComponent(bulgu.bug_draft_id)}`}>Bug taslağına git</Link>
-            </p>
-          )}
+          {bulgu.bug_draft_id &&
+            (bugKisitli && !KISITLI_BUG_DURUMLARI.includes(bulgu.bug_draft_durum ?? "") ? (
+              <p className="soluk kucuk" data-testid="bug-taslagi-kisitli">
+                Bug taslağı hazırlandı. {BUG_KISITLI_METNI}
+              </p>
+            ) : (
+              <p>
+                <Link to={`/bug-taslaklari/${encodeURIComponent(bulgu.bug_draft_id)}`}>Bug taslağına git</Link>
+              </p>
+            ))}
           <p className="soluk kucuk">
             <KisiAdi ad={bulgu.karar_veren} /> · {tarih(bulgu.karar_zamani)} · kontrol turu {bulgu.onceki_karar?.kontrol_turu ?? bulgu.kontrol_turu}
           </p>

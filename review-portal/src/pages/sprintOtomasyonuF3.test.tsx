@@ -8,7 +8,7 @@ import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Rotalar } from "../App";
-import { api } from "../api/client";
+import { api, demoDurumuOnbeleginiTemizle } from "../api/client";
 import { ApiError, yapilandir } from "../api/http";
 import { mockGoruntulemeEkle, mockIstek, mockVerisi } from "../api/mock/handlers";
 import type { TestCase, TopluKararYaniti } from "../api/types";
@@ -347,6 +347,8 @@ describe("K23 ve tetik: Otomasyon sayfası", () => {
     expect(await screen.findByTestId("replay-otokod-uyarisi")).toBeInTheDocument();
     r.unmount();
     mod = "live";
+    // `/demo/status` 60 sn paylaşılır (client önbelleği); süre dolmuş gibi temizlenir.
+    demoDurumuOnbeleginiTemizle();
     uygulama("/otomasyon");
     await screen.findByRole("heading", { name: "Onay sonrası otomatik kod üretimi" });
     await new Promise((x) => setTimeout(x, 50));

@@ -6,6 +6,7 @@ import type { KontrolKulesi as Kule, KpiAnahtari } from "../api/types";
 import { HedefOlcer, OranSutunlari } from "../components/Grafikler";
 import { BosDurum, Cip, HataKutusu, Ilerleme, Kart, Metrik, Olculmedi, SayfaBasligi, Uyari, Yukleniyor, IzinliLink } from "../components/ui";
 import { useGeciktirilmis, useVeri } from "../hooks";
+import { useIzin } from "../auth";
 import { kazancOzeti, type KazancOzeti } from "../api/uyumFaz5";
 import { BAZ_KAYNAGI } from "../components/BazDegerKarti";
 import { dolar, sure, tarih, yuzde } from "../lib/format";
@@ -87,7 +88,9 @@ function KpiBaslik({ ad, k, anahtar }: { ad: string; k: Kule; anahtar: KpiAnahta
 export function KontrolKulesi() {
   const v = useVeri(() => api.kontrolKulesi(), []);
   // 009: platform süzgeci (adres çubuğunda ?platform=). Platform taşıyan veriler: son koşular ve üretilen testler.
-  const scriptler = useVeri(() => api.scriptler().catch(() => null), []);
+  // `GET /scripts` `code.read` ister (Developer, PO, Denetçi, Görüntüleyici'de yok): izinsiz rolde istenmez.
+  const kodOkur = useIzin("code.read");
+  const scriptler = useVeri(() => (kodOkur ? api.scriptler().catch(() => null) : Promise.resolve(null)), [kodOkur]);
   const [sorgu, setSorgu] = useSearchParams();
   const secim = platformSecimiOku(sorgu.get("platform"));
   const secimDegistir = (p: PlatformSecimi) => {

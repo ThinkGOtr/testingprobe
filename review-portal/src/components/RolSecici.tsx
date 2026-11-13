@@ -9,11 +9,43 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { hataMesaji } from "../api/http";
-import type { AiprobeHesabi } from "../api/types";
+import type { AiprobeHesabi, Kullanici } from "../api/types";
 import { useOturum } from "../auth";
 import { useKimlikKipi } from "../lib/kimlikKipi";
 import { rolEtiketi } from "../lib/yetki";
 import { useBildirim } from "./Bildirim";
+
+/** `/auth/me` yarışında (yeni oturum çerezi yazılmadan 401) bir kez yeniden denemeden önce beklenen süre. */
+export const ME_YENIDEN_DENEME_MS = 400;
+
+/**
+ * Rol değişiminden sonra kurulacak oturum: `/auth/me` tam oturumu verirse o; vermezse (401 — yeni
+ * çerez henüz yazılmamış) rol değiştir yanıtındaki `k`. `k` kişiye ait `roles`/`product`/`products`/
+ * `kisiler` alanlarını taşımaz: seçici kaybolmasın diye önceki oturumdan (aynı kişi) alınır. Rol
+ * izinleri (`izinler`) önceki rolden asla taşınmaz.
+ */
+export function rolDegisimOturumu(k: Kullanici, onceki: Kullanici | null): Kullanici {
+  if (!onceki) return k;
+  return {
+    ...k,
+    roles: k.roles ?? onceki.roles,
+    product: k.product ?? onceki.product,
+    products: k.products ?? onceki.products,
+    kisiler: k.kisiler ?? onceki.kisiler,
+    ad_soyad: k.ad_soyad ?? onceki.ad_soyad,
+    ad_kaynak: k.ad_kaynak ?? onceki.ad_kaynak,
+  };
+}
+
+/** `/auth/me`; 401 ise kısa beklemeyle bir kez daha; yine olmazsa null. */
+async function tamOturum(): Promise<Kullanici | null> {
+  try {
+    return await api.me();
+  } catch {
+    await new Promise((r) => setTimeout(r, ME_YENIDEN_DENEME_MS));
+    return api.me().catch(() => null);
+  }
+}
 
 export function RolSecici() {
   const { kullanici, oturumKur } = useOturum();
@@ -63,8 +95,9 @@ export function RolSecici() {
     setHata(null);
     try {
       const k = await api.aiprobeRolDegistir(h.id);
-      // Yanıtta `roles`/`product` yok: seçicinin kaybolmaması için tam oturum /auth/me'den.
-      oturumKur(await api.me().catch(() => k));
+      // Yanıtta `roles`/`product` yok: seçicinin kaybolmaması için tam oturum /auth/me'den. me 401
+      // dönerse (yeni çerez yazılmadan yarış) oturum yanıttaki `k` ile kurulur ve akış sürer.
+      oturumKur((await tamOturum()) ?? rolDegisimOturumu(k, kullanici));
       setAcik(false);
       bildir(`Rol değiştirildi: ${rolEtiketi(k.rol)}.`);
       // Yeni rolün açılış ekranı (önceki ekran bu rolde olmayabilir).

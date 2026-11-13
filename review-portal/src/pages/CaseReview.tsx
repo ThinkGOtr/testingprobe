@@ -424,7 +424,7 @@ export function TopluOnaySonucu({ sonuc, kapat }: { sonuc: TopluSonucDurumu; kap
         <ul className="duz-liste kucuk" aria-label="Kod üretimine alınmayan case'ler">
           {otokodAtlanan.map((a) => (
             <li key={a.case_id}>
-              {ad(a.case_id)} — {a.neden ?? "Süren ya da açık PR'lı bir üretim var; yeniden üretim mühendis kararıyla."}
+              {ad(a.case_id)} — {a.neden ?? "Süren ya da açık PR'lı bir üretim var; yeniden üretim Automation Engineer kararıyla."}
             </li>
           ))}
         </ul>

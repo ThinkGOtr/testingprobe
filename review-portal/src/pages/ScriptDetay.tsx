@@ -9,6 +9,7 @@ import { KodGorunumu } from "../components/KodGorunumu";
 import { DilCakismasiKutusu, dilCakismasiMi, uretimBildirimi } from "../components/UretimSonuclari";
 import { BosDurum, Cip, Baglanti, HataKutusu, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
+import { useIzin } from "../auth";
 import { SCRIPT_DURUMU, scriptIsareti, scriptUretiliyor } from "../lib/etiketler";
 import { ENGEL_TURU, kosuKimligiMi, mergeEngelleri, mergeOnayNotu, mergeUyarilari, RET_NEDENI, YEREL_SINIF } from "../lib/kapi";
 import { saat, tarih } from "../lib/format";
@@ -627,7 +628,9 @@ export function koduIndir(kod: string, dosyaAdi: string): void {
  */
 function DogrulanmamisBandi({ s, calisiyor, uret }: { s: Detay; calisiyor: boolean; uret: (dil: Dil) => void }) {
   const platform: Platform = s.platform ?? "web";
-  const diller = useVeri(() => api.kodDilleri(platform), [platform]);
+  // `code.generate` yoksa uç çağrılmaz (403); platformun geçerli dilleri gösterilir.
+  const uretebilir = useIzin("code.generate");
+  const diller = useVeri(() => (uretebilir ? api.kodDilleri(platform) : Promise.resolve(null)), [platform, uretebilir]);
   const secenekler = (diller.veri?.secenekler ?? gecerliDiller(platform).map((dil) => ({ dil, etiket: DIL_ETIKETI[dil], kullanilabilir: true, neden: null, hat: "tam" as const })))
     .filter((x) => x.dil !== s.dil);
   const ilkTam = secenekler.find((x) => x.kullanilabilir && x.hat === "tam") ?? secenekler.find((x) => x.kullanilabilir);

@@ -31,6 +31,18 @@ export function tl(tutar: number): string {
   return `${para.format(tutar)} TL`;
 }
 
+/**
+ * Metindeki tutar alanlarını TL biçimine çevirir: "min_siparis_tutari = 750.00" →
+ * "min_siparis_tutari = 750,00 TL". Yalnız adı "tutar" içeren anahtarın sayısal değeri değişir
+ * (ham sorgu ve kod metnine uygulanmaz; yalnız gösterilen özet/bulgu cümlesi içindir).
+ */
+export function tutarlariBicimle(metin: string): string {
+  return metin.replace(/(\b[\p{L}_]*tutar[\p{L}_]*\s*[=:]\s*)(\d+(?:[.,]\d{1,2})?)(?![\d.,]|\s*TL)/giu, (_t, anahtar: string, sayi: string) => {
+    const n = Number(sayi.replace(",", "."));
+    return Number.isFinite(n) ? `${anahtar}${tl(n)}` : `${anahtar}${sayi}`;
+  });
+}
+
 export function dolar(tutar: number): string {
   return usd.format(tutar);
 }

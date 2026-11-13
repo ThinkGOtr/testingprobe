@@ -467,6 +467,24 @@ const META_ETIKETI: Record<string, string> = {
 };
 
 /** Yerel CI adımları (toolchain) ya da GitHub işleri + ci-meta.json — ham dosyayı açmadan. */
+/**
+ * Sauce adımı/işi yeşil ama Sauce özeti (`sauce_durum`, core sauce.json) başarısız mı: GitHub'daki
+ * `sauce` işi altyapı hatasında bilerek yeşil biter (core `ci/service.py` `_sauce_bilgisi`). Bu
+ * durumda adım "geçti" gösterilmez; başlıktaki Sauce çipiyle aynı sonucu söyleyen uyarı gösterilir.
+ */
+export function sauceAdimiCelisir(ad: string, gecti: boolean, k: Pick<KosuDetay, "sauce_durum">): boolean {
+  return gecti && ad.trim().toLowerCase() === "sauce" && (k.sauce_durum === "error" || k.sauce_durum === "failed");
+}
+
+function SauceUyumsuzCipi({ k }: { k: Pick<KosuDetay, "sauce_durum" | "sauce_neden"> }) {
+  const metin = k.sauce_durum === "failed" ? "iş yeşil · Sauce kırmızı" : "iş yeşil · Sauce koşmadı";
+  return (
+    <Cip ton={k.sauce_durum === "failed" ? "hata" : "uyari"} title={`CI işi başarılı bitti ama Sauce özeti başarısız${k.sauce_neden ? `: ${k.sauce_neden}` : ""}. Altyapı hatasında iş bilerek yeşil biter.`}>
+      {metin}
+    </Cip>
+  );
+}
+
 export function CiAdimlari({ k }: { k: KosuDetay }) {
   const adimlar = k.adimlar ? Object.entries(k.adimlar) : [];
   const gh = k.github;
@@ -478,7 +496,11 @@ export function CiAdimlari({ k }: { k: KosuDetay }) {
         <ul className="duz-liste" aria-label="Yerel CI adımları">
           {adimlar.map(([ad, a]) => (
             <li key={ad} className="satir-ogeler">
-              <Cip ton={a.atlandi ? "notr" : a.ok ? "basari" : "hata"}>{a.atlandi ? "atlandı" : a.ok ? "geçti" : "kaldı"}</Cip>
+              {!a.atlandi && sauceAdimiCelisir(ad, a.ok, k) ? (
+                <SauceUyumsuzCipi k={k} />
+              ) : (
+                <Cip ton={a.atlandi ? "notr" : a.ok ? "basari" : "hata"}>{a.atlandi ? "atlandı" : a.ok ? "geçti" : "kaldı"}</Cip>
+              )}
               <span>{ADIM_ADI[ad] ?? ad}</span>
               {a.mode && <span className="soluk kucuk">mod: {a.mode}</span>}
               {(a.error || a.reason) && <span className={a.atlandi ? "kucuk soluk" : "kucuk hata-metin"}>{a.error ?? a.reason}</span>}
@@ -490,7 +512,11 @@ export function CiAdimlari({ k }: { k: KosuDetay }) {
         <ul className="duz-liste" aria-label="GitHub işleri">
           {gh.isler.map((j, i) => (
             <li key={`${j.ad}-${i}`} className="satir-ogeler">
-              <Cip ton={GH_SONUC_TONU[j.sonuc ?? ""] ?? "notr"}>{j.sonuc ? (GH_SONUC_ETIKETI[j.sonuc] ?? j.sonuc) : "—"}</Cip>
+              {sauceAdimiCelisir(j.ad, j.sonuc === "success", k) ? (
+                <SauceUyumsuzCipi k={k} />
+              ) : (
+                <Cip ton={GH_SONUC_TONU[j.sonuc ?? ""] ?? "notr"}>{j.sonuc ? (GH_SONUC_ETIKETI[j.sonuc] ?? j.sonuc) : "—"}</Cip>
+              )}
               {j.url ? <DisBaglanti href={j.url}>{j.ad}</DisBaglanti> : <span>{j.ad}</span>}
             </li>
           ))}

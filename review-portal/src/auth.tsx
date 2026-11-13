@@ -4,7 +4,7 @@ import { ApiError, mockOturumuAyarla, yetkisizOlunca } from "./api/http";
 import type { Kullanici, Rol } from "./api/types";
 import { oturumVerileriniTemizle } from "./lib/oturumTemizligi";
 import { formlariSakla } from "./lib/formYedegi";
-import { izinVar, KISITLI_CASE_ROLLERI, normalizeRol, oturumIzinleri, rotaIzinleri, ROTA_IZINLERI, type Izin } from "./lib/yetki";
+import { izinVar, KISITLI_BUG_ROLLERI, KISITLI_CASE_ROLLERI, normalizeRol, oturumIzinleri, rotaIzinleri, ROTA_IZINLERI, type Izin } from "./lib/yetki";
 import { aiprobeCikisAdresi, aiprobeKipinde, cikisYonlendirmesi, kimlikKipi, yonlendirmeSayaciniSifirla } from "./lib/kimlikKipi";
 
 interface OturumBaglami {
@@ -157,6 +157,12 @@ export function useIzin(...izinler: Izin[]): boolean {
 export function useCaseKisitli(): boolean {
   const rol = normalizeRol(useContext(Baglam)?.kullanici?.rol);
   return !!rol && KISITLI_CASE_ROLLERI.includes(rol);
+}
+
+/** Bug taslağını kısıtlı görüyor mu (developer): yalnız yayınlanmış taslak (core süzgeciyle aynı). */
+export function useBugKisitli(): boolean {
+  const rol = normalizeRol(useContext(Baglam)?.kullanici?.rol);
+  return !!rol && KISITLI_BUG_ROLLERI.includes(rol);
 }
 
 /** Demo menü öğeleri ve demo açılış ekranı yalnız demo kipinde (`/demo/status` → `demo_modu`). */

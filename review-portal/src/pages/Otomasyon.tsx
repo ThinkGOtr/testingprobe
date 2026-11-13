@@ -8,7 +8,7 @@ import { api } from "../api/client";
 import type { Gereksinim, JiraTetikDurumu, JiraTetikTurSonucu, OtomasyonAyarlari } from "../api/types";
 import type { Ton } from "../lib/etiketler";
 import { useIzin, useKisiAdi } from "../auth";
-import type { Izin } from "../lib/yetki";
+import { izinRolleriMetni, type Izin } from "../lib/yetki";
 import { useBildirim } from "../components/Bildirim";
 import { AlanHatasi, BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { useIslem, useVeri } from "../hooks";
@@ -22,7 +22,7 @@ export const ARALIK_EN_AZ = 30;
 export const ARALIK_EN_COK = 3600;
 /** K14: tur başına en çok tetiklenen story. */
 export const TUR_BASINA_EN_COK = 10;
-export const DURUM_YALNIZ_MUHENDIS = "Tetikleyen Jira durumunu yalnız Otomasyon mühendisi değiştirir.";
+export const DURUM_YALNIZ_MUHENDIS = `Tetikleyen Jira durumunu yalnız ${izinRolleriMetni("automation.jira_status")} değiştirir.`;
 /** K21: elle çekilmiş gereksinim de akışa alınır (otomatik case ayarına göre iki metin). */
 export const AKIS_METNI_OTOMATIK =
   "Story bu duruma girerse elle çekilmiş gereksinim de akışa alınır; PO onayından sonra case'ler otomatik üretilir.";
@@ -131,10 +131,12 @@ function OtomatikKodKarti({
         </Uyari>
       )}
       <form onSubmit={(e) => void kaydet(e)} noValidate>
+        {/* Denetimler ayrıca kendi `disabled` özniteliğini taşır: fieldset pasifliği DOM `disabled` özelliğine
+            yansımaz; yetkisiz rolde tüm alanlar (durum alanıyla) aynı biçimde pasif görünür ve okunur. */}
         <fieldset disabled={!yetkili} className="otomasyon-alanlar">
           <legend className="gorunmez">Otomatik kod üretimi ayarı</legend>
           <div className="alan alan-satir">
-            <input id={`${id}-acik`} type="checkbox" role="switch" checked={acik} onChange={(e) => setAcik(e.target.checked)} />
+            <input id={`${id}-acik`} type="checkbox" role="switch" checked={acik} disabled={!yetkili} onChange={(e) => setAcik(e.target.checked)} />
             <label htmlFor={`${id}-acik`}>Onaylanan case için kodu otomatik üret</label>
           </div>
         </fieldset>
@@ -221,10 +223,12 @@ function JiraTetikKarti({
         story'ler tetiklenir. Tur başına en çok {TUR_BASINA_EN_COK} story tetiklenir, kalanlar sonraki tura kalır.
       </p>
       <form onSubmit={(e) => void kaydet(e)} noValidate>
+        {/* Denetimler ayrıca kendi `disabled` özniteliğini taşır: fieldset pasifliği DOM `disabled` özelliğine
+            yansımaz; yetkisiz rolde tüm alanlar (durum alanıyla) aynı biçimde pasif görünür ve okunur. */}
         <fieldset disabled={!yetkili} className="otomasyon-alanlar">
           <legend className="gorunmez">Jira durum tetiği ayarı</legend>
           <div className="alan alan-satir">
-            <input id={`${id}-acik`} type="checkbox" role="switch" checked={f.acik} onChange={(e) => setF({ ...f, acik: e.target.checked })} />
+            <input id={`${id}-acik`} type="checkbox" role="switch" checked={f.acik} disabled={!yetkili} onChange={(e) => setF({ ...f, acik: e.target.checked })} />
             <label htmlFor={`${id}-acik`}>Tetik açık</label>
           </div>
           <div className="otomasyon-izgara">
@@ -235,7 +239,7 @@ function JiraTetikKarti({
                 value={f.durum}
                 maxLength={100}
                 aria-required="true"
-                disabled={!durumYetkili}
+                disabled={!yetkili || !durumYetkili}
                 aria-describedby={!durumYetkili ? `${id}-durum-neden` : undefined}
                 onChange={(e) => setF({ ...f, durum: e.target.value })}
               />
@@ -255,6 +259,7 @@ function JiraTetikKarti({
                 max={ARALIK_EN_COK}
                 step={1}
                 value={f.aralik}
+                disabled={!yetkili}
                 aria-describedby={`${id}-aralik-ipucu`}
                 onChange={(e) => setF({ ...f, aralik: e.target.value })}
               />
@@ -269,6 +274,7 @@ function JiraTetikKarti({
               type="checkbox"
               role="switch"
               checked={f.otomatik_case}
+              disabled={!yetkili}
               aria-describedby={`${id}-case-ipucu`}
               onChange={(e) => setF({ ...f, otomatik_case: e.target.checked })}
             />
@@ -451,7 +457,7 @@ export function Otomasyon() {
         baslik="Otomasyon"
         aciklama="Sprint içi akış: Jira'da QA durumuna gelen story ön incelemeye girer, PO onayından sonra case'ler üretilir, onaylanan case'in kodu kendiliğinden üretilir. İnsan kapıları (PO onayı, case onayı, merge) atlanmaz."
       />
-      {!yetkili && <Uyari ton="bilgi">Bu ayarları Analist ve Mühendis değiştirir; siz görüntüleyebilirsiniz.</Uyari>}
+      {!yetkili && <Uyari ton="bilgi">Bu ayarları {izinRolleriMetni("automation.manage")} değiştirir; siz görüntüleyebilirsiniz.</Uyari>}
       {ayarlar.yukleniyor && !ayarlar.veri ? (
         <Yukleniyor />
       ) : ayarlar.hata && !ayarlar.veri ? (

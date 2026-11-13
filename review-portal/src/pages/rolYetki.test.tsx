@@ -92,12 +92,21 @@ describe("case inceleme: Testçi kararı → Analist son onayı", () => {
   });
 });
 
-describe("demo kontrolleri: admin + engineer, yalnız demo kipinde", () => {
-  it("Testçi demo ekranına giremez", async () => {
+describe("demo kontrolleri: ekran demo.read, kontroller admin + engineer, yalnız demo kipinde", () => {
+  it("Testçi demo ekranını görür (demo.read) ama kontroller kilitli (demo.manage)", async () => {
     await oturumAc("testci");
     uygulama("/demo");
+    expect(await screen.findByRole("heading", { name: "Demo kontrolleri", level: 1 })).toBeInTheDocument();
+    expect(screen.queryByText("Bu ekran için yetkiniz yok.")).toBeNull();
+    const kilitli = await screen.findAllByTitle("Bu işlem için gereken rol: Sistem Yöneticisi / Automation Engineer");
+    expect(kilitli.length).toBeGreaterThan(0);
+    for (const d of kilitli) expect(d).toBeDisabled();
+  });
+
+  it("Developer demo ekranına giremez (demo.read yok)", async () => {
+    await oturumAc("gelistirici");
+    uygulama("/demo");
     expect(await screen.findByText("Bu ekran için yetkiniz yok.")).toBeInTheDocument();
-    expect(screen.getByText("Gereken rol: Sistem Yöneticisi / Automation Engineer")).toBeInTheDocument();
   });
 
   it("demo kipi kapalıyken kontroller yerine 'Demo kontrolleri kapalı' notu", async () => {

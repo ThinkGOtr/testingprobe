@@ -49,6 +49,8 @@ export type SegmentSecenegi<T extends string> = {
    */
   pasif?: boolean;
   neden?: string | null;
+  /** Nedenin teknik ayrıntısı (yapılandırma adı vb.): yalnız ipucu (`title`), görünür metinde yok. */
+  nedenAyrinti?: string | null;
 };
 
 /** Segment görünümünde yerel radyo grubu (fieldset + legend). Platform ve dil seçicilerinin ortak gövdesi. */
@@ -78,7 +80,7 @@ export function SegmentGrubu<T extends string>({
           const neden = s.pasif ? s.neden?.trim() || "Bu seçenek kullanılamıyor." : s.neden?.trim() || undefined;
           const alt = !!aciklama || !!neden;
           return (
-            <label key={s.deger} className={`platform-secenek${s.pasif ? " pasif" : ""}`}>
+            <label key={s.deger} className={`platform-secenek${s.pasif ? " pasif" : ""}`} title={s.nedenAyrinti ?? undefined}>
               <input
                 type="radio"
                 name={ad}

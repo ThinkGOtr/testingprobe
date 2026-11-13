@@ -9,7 +9,7 @@ import { ApiError, hataMesaji } from "../api/http";
 import type { AtifYapanCase, CaseDurumu, TestVerisi, TestVerisiSurumu } from "../api/types";
 import { ANAHTAR_RE, SIR_ADI_RE, atifYapanlarUyarla } from "../api/uyumOtomasyon";
 import { useIzin, useKisiAdi } from "../auth";
-import type { Izin } from "../lib/yetki";
+import { izinRolleriMetni, type Izin } from "../lib/yetki";
 import { useBildirim } from "../components/Bildirim";
 import { AlanHatasi, BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { GIZLI_DEGER } from "../components/VeriAtfi";
@@ -482,7 +482,7 @@ export function TestVerisiSayfasi() {
         }
       />
       {!duzenleyebilir && (
-        <Uyari ton="bilgi">Kataloğu Analist, Testçi ve Mühendis düzenler; siz değerleri ve sürüm geçmişini görüntüleyebilirsiniz.</Uyari>
+        <Uyari ton="bilgi">Kataloğu {izinRolleriMetni("testdata.manage")} düzenler; siz değerleri ve sürüm geçmişini görüntüleyebilirsiniz.</Uyari>
       )}
       <KatalogKapsamNotu />
 

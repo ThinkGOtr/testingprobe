@@ -123,7 +123,7 @@ export function denetimiUyarla(govde: unknown, simdi: () => Date = () => new Dat
         zaman: simdi().toISOString(),
       }
     : null;
-  return { olaylar, dogrulama };
+  return { olaylar, dogrulama, sonraki: core.next_before_id === null || core.next_before_id === undefined ? null : String(core.next_before_id) };
 }
 
 // ---------------------------------------------------------------------------------------------

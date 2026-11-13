@@ -33,6 +33,31 @@ function DurumCipi({ d }: { d: string }) {
   return <Cip ton={x.ton}>{x.etiket}</Cip>;
 }
 
+/** Takılmış koşu uyarısı eşikleri: bu süreden uzun "Sırada" / "Koşuyor" kalan koşu uyarı alır. */
+export const TAKILMA_ESIGI_MS = { queued: 60 * 60 * 1000, running: 6 * 60 * 60 * 1000 } as const;
+
+/** "3 saattir sırada — takılmış olabilir"; eşik altında ya da bitmiş koşuda null. */
+export function takilmaUyarisi(k: Pick<Kosu, "durum" | "baslangic">, simdi = Date.now()): string | null {
+  if (k.durum !== "queued" && k.durum !== "running") return null;
+  const t = Date.parse(k.baslangic);
+  if (Number.isNaN(t)) return null;
+  const gecen = simdi - t;
+  if (gecen < TAKILMA_ESIGI_MS[k.durum]) return null;
+  const saat = Math.floor(gecen / 3_600_000);
+  const sure = saat >= 48 ? `${Math.floor(saat / 24)} gündür` : `${saat} saattir`;
+  return `${sure} ${k.durum === "queued" ? "sırada" : "çalışıyor"} — takılmış olabilir`;
+}
+
+function TakilmaCipi({ k }: { k: Pick<Kosu, "durum" | "baslangic"> }) {
+  const u = takilmaUyarisi(k);
+  if (!u) return null;
+  return (
+    <Cip ton="uyari" title="Koşu beklenenden uzun süredir bitmedi; CI kuyruğunu ya da çalıştırıcıyı kontrol edin.">
+      {u}
+    </Cip>
+  );
+}
+
 export function KosuTablosu({ kosular, kompakt }: { kosular: Kosu[]; kompakt?: boolean }) {
   return (
     <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Koşular tablosu">
@@ -85,6 +110,7 @@ export function KosuTablosu({ kosular, kompakt }: { kosular: Kosu[]; kompakt?: b
               )}
               <td data-etiket="Durum">
                 <DurumCipi d={k.durum} />
+                <TakilmaCipi k={k} />
                 {k.flaky > 0 && (
                   <Cip ton="uyari" title="Yeniden denemeyle geçen test">
                     {k.flaky} flaky
@@ -329,7 +355,7 @@ export function Kosular() {
                 Durum
                 <select value={filtre.durum} onChange={(e) => ayarla("durum", e.target.value)}>
                   <option value="">Tümü</option>
-                  {(["queued", "running", "passed", "failed", "error"] as const).map((d) => (
+                  {(["queued", "running", "passed", "failed", "error", "zaman_asimi"] as const).map((d) => (
                     <option key={d} value={d}>
                       {KOSU_DURUMU[d].etiket}
                     </option>
@@ -521,6 +547,12 @@ export function KosuDetay() {
           </span>
         }
       />
+      {takilmaUyarisi(k) && (
+        <Uyari baslik="Koşu takılmış olabilir">
+          <span data-testid="takilma-uyarisi">{takilmaUyarisi(k)}</span>. CI kuyruğunu ya da çalıştırıcıyı kontrol edin; core süre aşımında
+          koşuyu "Zaman aşımı" olarak kapatır.
+        </Uyari>
+      )}
       {k.break_campaign && <Uyari>Bu koşuda kampanya kuralı koşunun bayisi için BREAK_CAMPAIGN ile bozuldu (kasıtlı kırma); başarısızlık beklenir.</Uyari>}
       {k.saglik_hatasi && (
         <Uyari ton="hata" baslik="Ortam sorunu">

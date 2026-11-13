@@ -38,6 +38,16 @@ export const GEREKSINIM_DURUMU: Record<GereksinimDurumu, { etiket: string; ton: 
   failed: { etiket: "Hata", ton: "hata" },
 };
 
+/**
+ * Sunucu metnindeki ham gereksinim durum kodunu ("… (durum: pending_po)") Türkçe etikete çevirir:
+ * "(durum: PO teyidi bekliyor)". Bilinmeyen kod olduğu gibi kalır.
+ */
+export function durumKodunuCevir(metin: string): string {
+  return metin.replace(/\(durum:\s*([a-z_]+)\s*\)/g, (t, d: string) =>
+    d in GEREKSINIM_DURUMU ? `(durum: ${GEREKSINIM_DURUMU[d as GereksinimDurumu].etiket})` : t,
+  );
+}
+
 /** Kabul kriteri olmayan gereksinim için durumun yerine gösterilen etiket. */
 export const AC_EKSIK = { etiket: "AC eksik", ton: "uyari" as Ton };
 
@@ -275,6 +285,8 @@ export const KOSU_DURUMU: Record<string, { etiket: string; ton: Ton }> = {
   passed: { etiket: "Geçti", ton: "basari" },
   failed: { etiket: "Başarısız", ton: "hata" },
   error: { etiket: "Hata", ton: "hata" },
+  /** core takılan koşuyu süre aşımıyla kapattı: başarısız benzeri. */
+  zaman_asimi: { etiket: "Zaman aşımı", ton: "hata" },
   flaky: { etiket: "Flaky", ton: "uyari" },
   skipped: { etiket: "Atlandı", ton: "notr" },
 };

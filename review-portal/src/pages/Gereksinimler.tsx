@@ -1,11 +1,12 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
+import { useIzinler } from "../auth";
 import type { Gereksinim } from "../api/types";
 import { useBildirim } from "../components/Bildirim";
 import { OtomatikAkisRozeti } from "../components/OtomatikAkisRozeti";
-import { AlanHatasi, BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, Yukleniyor } from "../components/ui";
+import { AlanHatasi, BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, SayfaIciOnay, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { adimAdi, akisAdimi } from "../lib/akis";
 import { akisKanitlari, guncelAdim, type SonrakiGirdi } from "../lib/yolHaritasi";
@@ -19,19 +20,25 @@ export function Gereksinimler() {
   const { veri, hata, hataNesnesi, yukleniyor, yenile } = useVeri(() => api.gereksinimler(), []);
   // `done` story'lerin kod → bug adımları (5–14) yol haritasıyla aynı kanıtlardan okunur.
   const tamamVar = (veri ?? []).some((g) => g.durum === "done");
-  const kanit = useVeri(() => (tamamVar ? akisKanitlari() : Promise.resolve(null)), [tamamVar]);
+  const izinler = useIzinler();
+  const kanit = useVeri(() => (tamamVar ? akisKanitlari(undefined, izinler) : Promise.resolve(null)), [tamamVar, izinler]);
   const [formAcik, setFormAcik] = useState(false);
+  const [cekOnay, setCekOnay] = useState(false);
   const [filtre, setFiltre] = useState("");
   const cek = useIslem();
   const bildir = useBildirim();
   const sessizYenile = useGeciktirilmis(() => void yenile(true));
   useOlay(sessizYenile, ["requirement.updated", "case.generated"]);
 
+  const [siralama, setSiralama] = useState<Siralama | null>(null);
   const liste = useMemo(() => {
     const q = filtre.trim().toLocaleLowerCase("tr-TR");
-    if (!veri || !q) return veri ?? [];
-    return veri.filter((g) => `${g.jira_key ?? ""} ${g.baslik}`.toLocaleLowerCase("tr-TR").includes(q));
-  }, [veri, filtre]);
+    const suzulmus = !veri || !q ? (veri ?? []) : veri.filter((g) => `${g.jira_key ?? ""} ${g.baslik}`.toLocaleLowerCase("tr-TR").includes(q));
+    return siralama ? gereksinimSirala(suzulmus, siralama) : suzulmus;
+  }, [veri, filtre, siralama]);
+  const sirala = (alan: SiralamaAlani) =>
+    setSiralama((s) => (s?.alan === alan ? { alan, yon: s.yon === "artan" ? "azalan" : "artan" } : { alan, yon: "artan" }));
+  const baslikOz = (alan: SiralamaAlani) => ({ alan, siralama, sirala });
 
   return (
     <>
@@ -44,13 +51,9 @@ export function Gereksinimler() {
               izin="requirement.import"
               tur="ikincil"
               calisiyor={cek.calisiyor}
-              onClick={async () => {
-                const s = await cek.calistir(() => api.jiradanCek());
-                if (s) {
-                  bildir(s.mesaj ?? "Jira'dan çekim başlatıldı.");
-                  void yenile(true);
-                }
-              }}
+              onClick={() => setCekOnay(true)}
+              aria-expanded={cekOnay}
+              aria-controls={cekOnay ? "jira-cek-onay" : undefined}
             >
               Jira'dan çek
             </IslemDugmesi>
@@ -60,6 +63,28 @@ export function Gereksinimler() {
           </>
         }
       />
+      {cekOnay && (
+        <div id="jira-cek-onay">
+          <SayfaIciOnay
+            baslik="Jira'dan gereksinim çekilsin mi?"
+            onayMetni="Çek"
+            vazgecMetni="İptal"
+            calisiyor={cek.calisiyor}
+            testId="jira-cek-onay"
+            vazgec={() => setCekOnay(false)}
+            onayla={async () => {
+              const s = await cek.calistir(() => api.jiradanCek());
+              setCekOnay(false);
+              if (s) {
+                bildir(s.mesaj ?? "Jira'dan çekim başlatıldı.");
+                void yenile(true);
+              }
+            }}
+          >
+            <p>{jiraCekimMetni(jiraProjeleri(veri))}</p>
+          </SayfaIciOnay>
+        </div>
+      )}
       {cek.hata && <HataKutusu hata={cek.hata} kaynak={cek.hataNesnesi} />}
       {formAcik && <SerbestMetinFormu kapat={() => setFormAcik(false)} />}
 
@@ -87,20 +112,20 @@ export function Gereksinimler() {
             <table className="tablo tablo-yigin">
               <thead>
                 <tr>
-                  <th scope="col">Anahtar</th>
-                  <th scope="col">Başlık</th>
-                  <th scope="col">Durum</th>
-                  <th scope="col">Adım</th>
-                  <th scope="col">PO</th>
-                  <th scope="col" className="sayi baslik-sarar">
+                  <SiralanabilirBaslik {...baslikOz("anahtar")}>Anahtar</SiralanabilirBaslik>
+                  <SiralanabilirBaslik {...baslikOz("baslik")}>Başlık</SiralanabilirBaslik>
+                  <SiralanabilirBaslik {...baslikOz("durum")}>Durum</SiralanabilirBaslik>
+                  <SiralanabilirBaslik {...baslikOz("adim")}>Adım</SiralanabilirBaslik>
+                  <SiralanabilirBaslik {...baslikOz("po")}>PO</SiralanabilirBaslik>
+                  <SiralanabilirBaslik {...baslikOz("bulgu")} className="sayi baslik-sarar">
                     Açık bulgu
-                  </th>
-                  <th scope="col" className="sayi baslik-sarar">
+                  </SiralanabilirBaslik>
+                  <SiralanabilirBaslik {...baslikOz("case")} className="sayi baslik-sarar">
                     Case (onaylı/
                     <wbr />
                     toplam)
-                  </th>
-                  <th scope="col">Çekim</th>
+                  </SiralanabilirBaslik>
+                  <SiralanabilirBaslik {...baslikOz("cekim")}>Çekim</SiralanabilirBaslik>
                 </tr>
               </thead>
               <tbody>
@@ -114,6 +139,96 @@ export function Gereksinimler() {
       </Kart>
     </>
   );
+}
+
+export type SiralamaAlani = "anahtar" | "baslik" | "durum" | "adim" | "po" | "bulgu" | "case" | "cekim";
+export type Siralama = { alan: SiralamaAlani; yon: "artan" | "azalan" };
+
+const PO_SIRASI = { not_requested: 0, pending: 1, approved: 2 } as const;
+
+function siralamaDegeri(g: Gereksinim, alan: SiralamaAlani): string | number {
+  switch (alan) {
+    case "anahtar":
+      return g.jira_key ?? "";
+    case "baslik":
+      return g.baslik;
+    case "durum":
+      return (g.ac_missing && g.durum === "new" ? AC_EKSIK : gereksinimDurumu(g.durum)).etiket;
+    case "adim":
+      return akisAdimi(g.durum, g.adim);
+    case "po":
+      return PO_SIRASI[g.po.durum] ?? -1;
+    case "bulgu":
+      return g.sayaclar.bulgu_acik ?? 0;
+    case "case":
+      return g.sayaclar.case_toplam ? g.sayaclar.case_onayli / g.sayaclar.case_toplam : -1;
+    case "cekim": {
+      const t = g.cekim_zamani ? Date.parse(g.cekim_zamani) : NaN;
+      return Number.isNaN(t) ? -Infinity : t;
+    }
+  }
+}
+
+/** Tablo sıralaması (kararlı): metin tr-TR ve sayı farkında ("TPD-2" < "TPD-10"). */
+export function gereksinimSirala(liste: readonly Gereksinim[], s: Siralama): Gereksinim[] {
+  const carpan = s.yon === "artan" ? 1 : -1;
+  return liste
+    .map((g, i) => ({ g, i, d: siralamaDegeri(g, s.alan) }))
+    .sort((a, b) => {
+      const f =
+        typeof a.d === "number" && typeof b.d === "number"
+          ? a.d === b.d ? 0 : a.d < b.d ? -1 : 1
+          : String(a.d).localeCompare(String(b.d), "tr-TR", { numeric: true, sensitivity: "base" });
+      return f * carpan || a.i - b.i;
+    })
+    .map((x) => x.g);
+}
+
+function SiralanabilirBaslik({
+  alan,
+  siralama,
+  sirala,
+  className,
+  children,
+}: {
+  alan: SiralamaAlani;
+  siralama: Siralama | null;
+  sirala: (a: SiralamaAlani) => void;
+  className?: string;
+  children: ReactNode;
+}) {
+  const etkin = siralama?.alan === alan ? siralama.yon : null;
+  return (
+    <th scope="col" className={className} aria-sort={etkin === "artan" ? "ascending" : etkin === "azalan" ? "descending" : "none"}>
+      <button type="button" className="siralama-dugmesi" onClick={() => sirala(alan)}>
+        {children}
+        <span aria-hidden="true" className="siralama-isareti">
+          {etkin === "artan" ? " ▲" : etkin === "azalan" ? " ▼" : " ↕"}
+        </span>
+      </button>
+    </th>
+  );
+}
+
+/** Listedeki Jira anahtarlarından proje anahtarları ("TPD-1" → "TPD"); sıralı, tekrarsız. */
+export function jiraProjeleri(liste: readonly Pick<Gereksinim, "jira_key">[] | null | undefined): string[] {
+  const k = new Set<string>();
+  for (const g of liste ?? []) {
+    const m = /^([A-Z][A-Z0-9_]*)-\d+$/.exec(g.jira_key ?? "");
+    if (m) k.add(m[1]);
+  }
+  return [...k].sort();
+}
+
+/** "Jira'dan çek" onay metni: ne yapılacağı ve (biliniyorsa) hangi projeden çekileceği. */
+export function jiraCekimMetni(projeler: readonly string[]): string {
+  const kaynak =
+    projeler.length === 1
+      ? `Bağlı Jira projesindeki (${projeler[0]})`
+      : projeler.length > 1
+        ? `Bağlı Jira projelerindeki (${projeler.join(", ")})`
+        : "Yapılandırılmış Jira projesindeki";
+  return `${kaynak} story'ler çekilir: yeni story'ler gereksinim olarak eklenir, değişen story'lerin içeriği güncellenir ve ön inceleme yeniden başlayabilir. Jira'ya bir şey yazılmaz.`;
 }
 
 function GereksinimSatiri({ g, kanit }: { g: Gereksinim; kanit: Omit<SonrakiGirdi, "gereksinim"> | null }) {

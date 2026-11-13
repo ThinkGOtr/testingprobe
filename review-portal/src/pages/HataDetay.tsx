@@ -2,6 +2,8 @@ import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { ARIA_KAYNAKLARI } from "../api/uyumTriage";
 import { useOlay } from "../api/events";
+import { useBugKisitli } from "../auth";
+import { BUG_KISITLI_METNI } from "../lib/yetki";
 import type { BugTaslagi, HataAnalizi, LocatorOnarimi, LocatorProbeSonucu, SaglikSonucu, SaglikUcu, TriageKaniti } from "../api/types";
 import { useBildirim } from "../components/Bildirim";
 import { Baglanti, BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
@@ -510,8 +512,16 @@ export function kanitGruplari(linkler: KanitLinki[]): KanitGrubu[] {
 }
 
 /** Ürün hatası: bug taslağındaki en olası mükerrer adayı (§2 adım 12: "olası mükerrer: XYZ-12"). */
-function MukerrerSatiri({ id }: { id: string }) {
+function MukerrerSatiri({ id, kisitli = false }: { id: string; kisitli?: boolean }) {
   const v = useVeri(() => api.bugTaslagi(id), [id]);
+  // Kısıtlı rol (developer) yalnız yayınlanmış taslağı açabilir: core diğerlerinde 404 döner.
+  if (kisitli && !v.veri) {
+    return v.hata ? (
+      <p className="soluk kucuk" data-testid="bug-taslagi-kisitli">
+        {BUG_KISITLI_METNI}
+      </p>
+    ) : null;
+  }
   if (!v.veri) return null;
   const b = v.veri;
   const karara = b.durum === "published" || b.durum === "dismissed" || b.durum === "approved";
@@ -533,6 +543,13 @@ function MukerrerSatiri({ id }: { id: string }) {
       <p className="kucuk" data-testid="olasi-mukerrer">
         {olasiMukerrerMetni(b)}
       </p>
+      {kisitli && (
+        <p>
+          <Link className="dugme dugme-birincil dugme-kucuk" to={`/bug-taslaklari/${encodeURIComponent(b.id)}`}>
+            Bug taslağına git
+          </Link>
+        </p>
+      )}
     </>
   );
 }
@@ -657,6 +674,7 @@ function KanitKarti({
 export function HataDetay() {
   const { id = "" } = useParams();
   const v = useVeri(() => api.hata(id), [id]);
+  const bugKisitli = useBugKisitli();
   const sessiz = useGeciktirilmis(() => void v.yenile(true));
   useOlay(sessiz, ["failure.classified", "failure.updated", "ci.status", "pr.opened", "pr.merged"], id);
 
@@ -762,11 +780,13 @@ export function HataDetay() {
             <Kart baslik="Öneri">
               <p>
                 Ürün hatası adayı: bug taslağı hazırlandı ve Jira'da mükerrer araması yapıldı. Kayıt yalnızca testçi onayıyla açılır.{" "}
-                <Link className="dugme dugme-birincil dugme-kucuk" to={`/bug-taslaklari/${encodeURIComponent(h.oneri.bug_draft_id)}`}>
-                  Bug taslağına git
-                </Link>
+                {!bugKisitli && (
+                  <Link className="dugme dugme-birincil dugme-kucuk" to={`/bug-taslaklari/${encodeURIComponent(h.oneri.bug_draft_id)}`}>
+                    Bug taslağına git
+                  </Link>
+                )}
               </p>
-              <MukerrerSatiri id={h.oneri.bug_draft_id} />
+              <MukerrerSatiri id={h.oneri.bug_draft_id} kisitli={bugKisitli} />
             </Kart>
           )}
           {/* 012 Ş3: test beklentisi onaylı karar tablosuyla uyuşmuyor → bug/onarım değil, case düzeltilir. */}

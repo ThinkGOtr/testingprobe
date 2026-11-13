@@ -109,6 +109,14 @@ export type Izin = keyof typeof IZINLER;
  */
 export const KISITLI_CASE_ROLLERI: readonly Rol[] = ["developer"];
 
+/**
+ * Bug taslağını kısıtlı gören roller (core `bugs/serialize.py` `DEVELOPER_BUG_DURUMLARI`): yalnız
+ * yayınlanmış (`published`) taslak; diğerlerinde detay 404 döner.
+ */
+export const KISITLI_BUG_ROLLERI: readonly Rol[] = ["developer"];
+export const KISITLI_BUG_DURUMLARI: readonly string[] = ["published"];
+export const BUG_KISITLI_METNI = "Bu rol yayınlanmamış bug taslaklarını göremez.";
+
 /** Rolün katalogdaki izinleri (core `rol_izinleri`; sıralı). */
 export function rolIzinleri(rol: string | null | undefined): Izin[] {
   const r = normalizeRol(rol);
@@ -130,6 +138,13 @@ export function oturumIzinleri(k: { rol: string; izinler?: readonly string[] | n
 /** Verilen izinlerden en az biri var mı. */
 export function izinVar(izinler: ReadonlySet<string>, ...istenen: Izin[]): boolean {
   return istenen.some((i) => izinler.has(i));
+}
+
+/** İzni taşıyan iş rollerinin etiketleri, okunur liste: "Analist ve Automation Engineer". */
+export function izinRolleriMetni(...istenen: Izin[]): string {
+  const ad = [...new Set(istenen.flatMap((i) => IZINLER[i]))].filter((r) => r !== "admin").map((r) => ROL_ETIKETLERI[r]);
+  if (ad.length <= 1) return ad.join("");
+  return `${ad.slice(0, -1).join(", ")} ve ${ad[ad.length - 1]}`;
 }
 
 /** Yetkisiz düğmenin nedeni: "Bu işlem için gereken rol: Testçi". */
@@ -158,8 +173,12 @@ export const ROTA_IZINLERI: Record<string, readonly Izin[]> = {
   "/bug-taslaklari/:id": ["bug.read"],
   "/kontrol-kulesi": ["dashboard.read"],
   "/yol-haritasi": ["demo.read"],
-  "/demo": ["demo.manage"],
+  // Ekran okuma iznine bağlıdır; yazma düğmeleri (kır/sıfırla/Jira durumu) `demo.manage` ile kilitlidir.
+  "/demo": ["demo.read"],
   "/denetim": ["audit.read_all", "audit.read_own"],
+  // `token.read` (kendi token'larını listele/iptal et) API düzeyinde tüm rollerdedir; ekran ise token
+  // üretme kanalını anlatır ve ANALIZ 012 §4.2'de `claude_code.read` ile sınırlıdır (Developer,
+  // PO, Denetçi, Görüntüleyici token üretemez). Developer'a açılacaksa core `claude_code.read`'e eklenir.
   "/claude-code": ["claude_code.read"],
   "/test-verisi": ["case.read"],
   "/otomasyon": ["requirement.read"],

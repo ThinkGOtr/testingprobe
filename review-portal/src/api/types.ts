@@ -306,6 +306,8 @@ export interface Bulgu {
   kontrol_turu: number;
   durum: BulguDurumu;
   bug_draft_id: string | null;
+  /** Bağlı bug taslağının durumu (core gönderirse; developer yalnız `published` taslağı açabilir). */
+  bug_draft_durum?: string | null;
   /** Gösterilen bulgu içeriğinin (tür, ref, kanıt, metinler) hash'i; karar bunu geri gönderir. */
   icerik_hash: string;
   mode: CiktiModu | null;
@@ -1260,7 +1262,8 @@ export interface Kosu {
   kaynak: KosuKaynagi;
   commit: string;
   pr_no: number | null;
-  durum: "queued" | "running" | "passed" | "failed" | "error";
+  /** `zaman_asimi`: core takılan koşuyu süre aşımıyla kapattı (başarısız sayılır). */
+  durum: "queued" | "running" | "passed" | "failed" | "error" | "zaman_asimi";
   baslangic: string;
   sure_ms: number | null;
   toplam: number;
@@ -1857,6 +1860,8 @@ export interface ZincirDogrulama {
 export interface DenetimYaniti {
   olaylar: DenetimOlayi[];
   dogrulama: ZincirDogrulama | null;
+  /** Daha eski olaylar varsa sonraki sayfanın imleci (core `next_before_id`); yoksa null/yok. */
+  sonraki?: string | null;
 }
 
 // ---------------------------------------------------------------- MCP token
