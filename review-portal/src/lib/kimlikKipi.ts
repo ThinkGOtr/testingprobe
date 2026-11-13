@@ -98,6 +98,7 @@ export function useKimlikServisiErisilemez(): boolean {
 export function kimlikKipiniAyarla(k: Partial<KimlikKipi> | null, erisilemez = false): void {
   kipDurumu = k ? { ...YEREL, ...k } : YEREL;
   bozuk = erisilemez;
+  cikiliyor = false;
   bildir();
 }
 
@@ -177,6 +178,24 @@ export function yonlendirmeSayaciniSifirla(): void {
   } catch {
     /* yok say */
   }
+}
+
+// ------------------------------------------------------------ çıkış süreci
+
+/**
+ * Çıkış sürüyor mu: `POST /auth/logout` başladıktan sonra (AI Probe çıkış sayfasına tam sayfa
+ * gidilirken) oturumsuz kalan korumalı rota AI Probe girişini (SSO) yeniden tetiklemesin. Aksi hâlde
+ * `/api/auth/aiprobe/login` çıkış gezintisini ezer ve kullanıcı açık AI Probe oturumuyla `/rol-sec`'e
+ * geri düşer. Tam sayfa geçişte modül zaten yeniden yüklenir; yerel çıkışta ve hatada kapatılır.
+ */
+let cikiliyor = false;
+
+export function cikisSurecinde(): boolean {
+  return cikiliyor;
+}
+
+export function cikisSureciniAyarla(deger: boolean): void {
+  cikiliyor = deger;
 }
 
 /** Tam sayfa gezinti (testte değiştirilebilir). */

@@ -5,7 +5,7 @@ import type { Kullanici, Rol } from "./api/types";
 import { oturumVerileriniTemizle } from "./lib/oturumTemizligi";
 import { formlariSakla } from "./lib/formYedegi";
 import { izinVar, KISITLI_BUG_ROLLERI, KISITLI_CASE_ROLLERI, normalizeRol, oturumIzinleri, rotaIzinleri, ROTA_IZINLERI, type Izin } from "./lib/yetki";
-import { aiprobeCikisAdresi, aiprobeKipinde, cikisYonlendirmesi, kimlikKipi, yonlendirmeSayaciniSifirla } from "./lib/kimlikKipi";
+import { aiprobeCikisAdresi, aiprobeKipinde, cikisSurecinde, cikisSureciniAyarla, cikisYonlendirmesi, kimlikKipi, yonlendirmeSayaciniSifirla } from "./lib/kimlikKipi";
 
 interface OturumBaglami {
   kullanici: Kullanici | null;
@@ -52,7 +52,7 @@ export function OturumProvider({ children }: { children: ReactNode }) {
     yetkisizOlunca(() => {
       // AI Probe kipinde 401 yeniden giriş demektir (tam sayfa yönlendirme): ekrandaki form verisi
       // önce yedeklenir, dönüşte geri konur (lib/formYedegi.ts). `local` kipte davranış aynı.
-      if (aiprobeKipinde()) formlariSakla(window.location.pathname + window.location.search, oncekiId.current);
+      if (aiprobeKipinde() && !cikisSurecinde()) formlariSakla(window.location.pathname + window.location.search, oncekiId.current);
       ayarla(null);
     });
     return () => {
@@ -74,20 +74,34 @@ export function OturumProvider({ children }: { children: ReactNode }) {
   );
 
   const cikisYap = useCallback(async (): Promise<string | null> => {
+    // Çıkış süreci: yanıt beklenirken ya da tam sayfa çıkış gezintisi başlarken oturumsuz kalan
+    // korumalı rota AI Probe girişini (SSO) yeniden tetiklemez (bkz. lib/kimlikKipi.ts).
+    cikisSureciniAyarla(true);
     let hedef: string | null = null;
     try {
       const yanit = await api.logout();
       hedef = cikisYonlendirmesi(yanit?.redirect);
     } catch (e) {
       // Oturum zaten düşmüşse (401) yine de yerelde çıkış yapılır.
-      if (!(e instanceof ApiError)) throw e;
-    } finally {
-      ayarla(null);
+      if (!(e instanceof ApiError)) {
+        cikisSureciniAyarla(false);
+        ayarla(null);
+        throw e;
+      }
     }
     // Yalnız AI Probe kipinde yerel giriş yoktur: `/giris` yeniden AI Probe girişine götüreceği için
     // çıkış (yanıt yönlendirme taşımasa da) AI Probe çıkış sayfasında biter.
     if (!hedef && kimlikKipi().kip === "aiprobe") hedef = aiprobeCikisAdresi();
-    return hedef;
+    if (hedef) {
+      // Tam sayfa çıkış: kullanıcı boşaltılmaz (boşalırsa korumalı rota SSO girişini başlatıp çıkış
+      // gezintisini ezerdi); istemci depoları yine de şimdi temizlenir. Gezintiyi çağıran yapar.
+      oturumVerileriniTemizle();
+      mockOturumuAyarla(null);
+      return hedef;
+    }
+    cikisSureciniAyarla(false);
+    ayarla(null);
+    return null;
   }, [ayarla]);
 
   const oturumKur = useCallback(

@@ -201,6 +201,50 @@ describe("aiprobe kip", () => {
   });
 });
 
+describe("çıkış yarışı (canlı: çıkış → /api/auth/aiprobe/login → /rol-sec)", () => {
+  const ssoyaGitti = (git: { mock: { calls: unknown[][] } }) => git.mock.calls.some(([u]) => String(u).includes("/auth/aiprobe/login"));
+
+  it("çıkışta AI Probe girişine gidilmez; yalnız yanıttaki çıkış hedefine tam sayfa gidilir", async () => {
+    const f = sahteSunucu(
+      {
+        "GET /auth/me": { govde: AIPROBE_ME },
+        "POST /auth/logout": { govde: { ok: true, redirect: "https://home.test/" } },
+      },
+      AIPROBE_KIPI,
+    );
+    const git = vi.spyOn(gezinti, "git").mockImplementation(() => {});
+    uygulama("/denetim");
+    await userEvent.click(await screen.findByRole("button", { name: "Çıkış" }));
+    await waitFor(() => expect(git).toHaveBeenCalledWith("https://home.test/"));
+    // Gezintiden sonra da (React yeniden çizimi, efektler) SSO tetiklenmez.
+    await new Promise((r) => setTimeout(r, 20));
+    expect(git).toHaveBeenCalledTimes(1);
+    expect(ssoyaGitti(git)).toBe(false);
+    expect(cagrildi(f, "GET", "/auth/aiprobe/login")).toHaveLength(0);
+    expect(screen.getByTestId("konum")).not.toHaveTextContent("/rol-sec");
+  });
+
+  it("çıkış 401 dönse de (oturum zaten düşmüş) SSO yerine AI Probe ana sayfası", async () => {
+    sahteSunucu({ "GET /auth/me": { govde: AIPROBE_ME }, "POST /auth/logout": YETKISIZ }, AIPROBE_KIPI);
+    const git = vi.spyOn(gezinti, "git").mockImplementation(() => {});
+    uygulama("/denetim");
+    await userEvent.click(await screen.findByRole("button", { name: "Çıkış" }));
+    await waitFor(() => expect(git).toHaveBeenCalledWith("https://home.test/"));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(ssoyaGitti(git)).toBe(false);
+  });
+
+  it("local kipte çıkış bugünkü gibi: kullanıcı boşalır, /giris", async () => {
+    sahteSunucu({ "GET /auth/me": { govde: ANALIST }, "POST /auth/logout": { govde: { ok: true } } });
+    const git = vi.spyOn(gezinti, "git").mockImplementation(() => {});
+    uygulama("/denetim");
+    await userEvent.click(await screen.findByRole("button", { name: "Çıkış" }));
+    await waitFor(() => expect(screen.getByTestId("konum")).toHaveTextContent("/giris"));
+    expect(await screen.findByLabelText("Kullanıcı adı")).toBeInTheDocument();
+    expect(git).not.toHaveBeenCalled();
+  });
+});
+
 describe("both kip", () => {
   it("/giris yerel formu ve AI Probe düğmesini birlikte gösterir; 401 yönlendirmez", async () => {
     sahteSunucu({ "GET /auth/me": YETKISIZ }, BOTH_KIPI);

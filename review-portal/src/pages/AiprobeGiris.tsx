@@ -3,7 +3,7 @@
 // eder. Girişten dönüşte oturum yine açılamıyorsa sonsuz döngü yerine hata kartı gösterilir.
 
 import { useEffect, useState } from "react";
-import { aiprobeGirisAdresi, gezinti, yonlendirmeSayaciniSifirla, yonlendirmeyeIzinVar } from "../lib/kimlikKipi";
+import { aiprobeGirisAdresi, cikisSurecinde, gezinti, yonlendirmeSayaciniSifirla, yonlendirmeyeIzinVar } from "../lib/kimlikKipi";
 
 function MarkaBasligi() {
   return (
@@ -19,10 +19,22 @@ function MarkaBasligi() {
 export function AiprobeGirisineYonlendir({ devam }: { devam: string }) {
   const [dongu, setDongu] = useState(false);
   useEffect(() => {
+    // Çıkış sürerken (AI Probe çıkış sayfasına gidiliyor) yeniden giriş başlatılmaz.
+    if (cikisSurecinde()) return;
     if (yonlendirmeyeIzinVar()) gezinti.git(aiprobeGirisAdresi(devam));
     else setDongu(true);
   }, [devam]);
 
+  if (cikisSurecinde()) {
+    return (
+      <div className="giris-sayfa">
+        <main className="giris-kart" aria-busy="true">
+          <MarkaBasligi />
+          <p role="status">Çıkış yapılıyor…</p>
+        </main>
+      </div>
+    );
+  }
   if (!dongu) {
     return (
       <div className="giris-sayfa">
