@@ -5357,6 +5357,9 @@ td > .satir-baglanti + .cip,
   }
   .ck-dagilim-deger {
     grid-area: deger;
+  }
+}
+
 /* ---------------------------------------------------------------- 013 sprint otomasyonu
    Toplu onay çubuğu, case metnindeki test verisi atıf çipleri, "Test verisi ekle" seçicisi, Test verisi
    kataloğu ve Otomasyon ayarları (specs/013-sprint-otomasyonu §3.5). Yalnız mevcut token'lar; anlam renkle
