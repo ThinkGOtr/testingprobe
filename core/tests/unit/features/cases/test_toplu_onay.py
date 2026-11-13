@@ -68,9 +68,12 @@ def test_gorulmeyen_atlanir_hash_uyusmazligi_tek_ogeyi_dusurur(api: TestClient, 
     assert out["otomatik_kod"] is None  # 012: Testçi kabulü kod üretmez (yalnız son onay)
     assert sonuc[b["id"]]["durum"] == "hata" and sonuc[b["id"]]["otomatik_kod"] is None
     assert "değişmiş" in sonuc[b["id"]]["neden"] or "hash" in sonuc[b["id"]]["neden"]
+    # 012 kalite §14.5: iş kuralı hatası öğede makinece okunur `kod` taşır.
+    assert sonuc[b["id"]]["kod"] == "onay_hash_uyusmuyor"
+    assert sonuc[a["id"]]["kod"] is None
     assert sonuc[c["id"]] == {
         "case_id": c["id"], "durum": "atlandi", "neden": "Case en az 3 saniye ekranda kalmadı",
-        "otomatik_kod": None,
+        "kod": None, "otomatik_kod": None,
     }  # fmt: skip
     assert out["ozet"] == {"onaylandi": 1, "atlandi": 1, "hata": 1}
     assert (_durum(a["id"]), _durum(b["id"]), _durum(c["id"])) == ("ready", "draft", "draft")
