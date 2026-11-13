@@ -5719,3 +5719,9 @@ input[type="checkbox"][role="switch"] {
     box-shadow: none;
   }
 }
+
+/* fix/canli-portal-b: sıralanabilir tablo başlığı, eskimiş bulgular, takılmış koşu uyarısı */
+.siralama-dugmesi { background: none; border: 0; padding: 0; margin: 0; font: inherit; color: inherit; text-align: inherit; cursor: pointer; }
+.siralama-dugmesi:focus-visible { outline: 2px solid var(--focus, currentColor); outline-offset: 2px; }
+.siralama-isareti { opacity: 0.6; font-size: 0.85em; }
+.bulgu-eskimis { opacity: 0.65; }

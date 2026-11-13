@@ -8,7 +8,7 @@ import { api } from "../api/client";
 import type { Gereksinim, JiraTetikDurumu, JiraTetikTurSonucu, OtomasyonAyarlari } from "../api/types";
 import type { Ton } from "../lib/etiketler";
 import { useIzin, useKisiAdi } from "../auth";
-import type { Izin } from "../lib/yetki";
+import { izinRolleriMetni, type Izin } from "../lib/yetki";
 import { useBildirim } from "../components/Bildirim";
 import { AlanHatasi, BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { useIslem, useVeri } from "../hooks";
@@ -22,7 +22,7 @@ export const ARALIK_EN_AZ = 30;
 export const ARALIK_EN_COK = 3600;
 /** K14: tur başına en çok tetiklenen story. */
 export const TUR_BASINA_EN_COK = 10;
-export const DURUM_YALNIZ_MUHENDIS = "Tetikleyen Jira durumunu yalnız Otomasyon mühendisi değiştirir.";
+export const DURUM_YALNIZ_MUHENDIS = `Tetikleyen Jira durumunu yalnız ${izinRolleriMetni("automation.jira_status")} değiştirir.`;
 /** K21: elle çekilmiş gereksinim de akışa alınır (otomatik case ayarına göre iki metin). */
 export const AKIS_METNI_OTOMATIK =
   "Story bu duruma girerse elle çekilmiş gereksinim de akışa alınır; PO onayından sonra case'ler otomatik üretilir.";
@@ -451,7 +451,7 @@ export function Otomasyon() {
         baslik="Otomasyon"
         aciklama="Sprint içi akış: Jira'da QA durumuna gelen story ön incelemeye girer, PO onayından sonra case'ler üretilir, onaylanan case'in kodu kendiliğinden üretilir. İnsan kapıları (PO onayı, case onayı, merge) atlanmaz."
       />
-      {!yetkili && <Uyari ton="bilgi">Bu ayarları Analist ve Mühendis değiştirir; siz görüntüleyebilirsiniz.</Uyari>}
+      {!yetkili && <Uyari ton="bilgi">Bu ayarları {izinRolleriMetni("automation.manage")} değiştirir; siz görüntüleyebilirsiniz.</Uyari>}
       {ayarlar.yukleniyor && !ayarlar.veri ? (
         <Yukleniyor />
       ) : ayarlar.hata && !ayarlar.veri ? (

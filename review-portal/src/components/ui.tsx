@@ -433,10 +433,13 @@ export function SayfaIciOnay({
   calisiyor,
   tehlikeli,
   testId,
+  vazgecMetni = "Vazgeç",
 }: {
   baslik: string;
   children?: ReactNode;
   onayMetni: string;
+  /** Vazgeç düğmesinin metni (ör. "İptal"). */
+  vazgecMetni?: string;
   onayla: () => void;
   vazgec: () => void;
   calisiyor?: boolean;
@@ -477,7 +480,7 @@ export function SayfaIciOnay({
             {onayMetni}
           </button>
           <button ref={vazgecRef} type="button" className="dugme dugme-ikincil dugme-kucuk" onClick={vazgec} disabled={calisiyor}>
-            Vazgeç
+            {vazgecMetni}
           </button>
         </div>
       </div>

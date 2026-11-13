@@ -386,7 +386,7 @@ describe("Test verisi sayfası", () => {
     expect(screen.queryByRole("button", { name: "Yeni kayıt" })).toBeNull();
     expect(screen.queryByRole("button", { name: /düzenle$/ })).toBeNull();
     expect(screen.getAllByRole("button", { name: /sürüm geçmişi$/ }).length).toBeGreaterThan(0);
-    expect(screen.getByText(/Kataloğu Analist, Testçi ve Mühendis düzenler/)).toBeInTheDocument();
+    expect(screen.getByText(/Kataloğu Analist, Testçi ve Automation Engineer düzenler/)).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: /Test verisi/ }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("link", { name: /Otomasyon/ }).length).toBeGreaterThan(0);
   });
@@ -418,7 +418,7 @@ describe("Otomasyon sayfası", () => {
     // K14: durum alanı yalnız engineer'a açık; analist için pasif + görünür neden.
     const durum = screen.getByLabelText("Tetikleyen Jira durumu");
     expect(durum).toBeDisabled();
-    expect(durum).toHaveAccessibleDescription("Tetikleyen Jira durumunu yalnız Otomasyon mühendisi değiştirir.");
+    expect(durum).toHaveAccessibleDescription("Tetikleyen Jira durumunu yalnız Automation Engineer değiştirir.");
     await u.click(within(jiraKarti).getByRole("button", { name: "Kaydet" }));
     await screen.findByText("Jira tetiği ayarı kaydedildi.");
     expect(cagrilar.find((c) => c.method === "PUT" && c.path === "/automation-settings/jira_tetik")?.govde).toEqual({ aralik_s: 120 });
@@ -498,7 +498,7 @@ describe("Otomasyon sayfası", () => {
     expect(kod).toBeDisabled();
     expect(screen.getByLabelText("Sorgu aralığı (saniye)")).toBeDisabled();
     for (const d of screen.getAllByRole("button", { name: "Kaydet" })) expect(d).toBeDisabled();
-    expect(screen.getByText(/Bu ayarları Analist ve Mühendis değiştirir/)).toBeInTheDocument();
+    expect(screen.getByText(/Bu ayarları Analist ve Automation Engineer değiştirir/)).toBeInTheDocument();
   });
 });
 

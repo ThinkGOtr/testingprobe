@@ -132,6 +132,13 @@ export function izinVar(izinler: ReadonlySet<string>, ...istenen: Izin[]): boole
   return istenen.some((i) => izinler.has(i));
 }
 
+/** İzni taşıyan iş rollerinin etiketleri, okunur liste: "Analist ve Automation Engineer". */
+export function izinRolleriMetni(...istenen: Izin[]): string {
+  const ad = [...new Set(istenen.flatMap((i) => IZINLER[i]))].filter((r) => r !== "admin").map((r) => ROL_ETIKETLERI[r]);
+  if (ad.length <= 1) return ad.join("");
+  return `${ad.slice(0, -1).join(", ")} ve ${ad[ad.length - 1]}`;
+}
+
 /** Yetkisiz düğmenin nedeni: "Bu işlem için gereken rol: Testçi". */
 export function izinNedeni(...istenen: Izin[]): string {
   const roller = [...new Set(istenen.flatMap((i) => IZINLER[i]))];

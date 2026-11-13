@@ -293,7 +293,7 @@ export function YolHaritasi() {
       >
         <p className="soluk kucuk">
           “Sepete ekle” <span className="mono">data-testid</span> <span className="mono">add-to-cart → cart-add</span>: triage “test bakımı /
-          locator” der, onarım PR'ı yalnızca testId değerini değiştirir, mühendis onaylar, CI yeşile döner.
+          locator” der, onarım PR'ı yalnızca testId değerini değiştirir, Automation Engineer onaylar, CI yeşile döner.
         </p>
         <ol className="yh-adimlar" aria-label="Test bakımı yolu">
           {loc.map((a) => (
