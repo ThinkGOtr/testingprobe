@@ -63,7 +63,8 @@ export function RolSecici() {
     setHata(null);
     try {
       const k = await api.aiprobeRolDegistir(h.id);
-      oturumKur(k);
+      // Yanıtta `roles`/`product` yok: seçicinin kaybolmaması için tam oturum /auth/me'den.
+      oturumKur(await api.me().catch(() => k));
       setAcik(false);
       bildir(`Rol değiştirildi: ${rolEtiketi(k.rol)}.`);
       // Yeni rolün açılış ekranı (önceki ekran bu rolde olmayabilir).

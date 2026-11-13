@@ -64,13 +64,14 @@ export function RolSec() {
     try {
       if (degistir) {
         const k = await api.aiprobeRolDegistir(h.id);
-        oturumKur(k);
+        // Yanıtta `roles`/`product` yok: rol seçici ve değiştirici için tam oturum /auth/me'den.
+        oturumKur(await api.me().catch(() => k));
         bildir(`Rol değiştirildi: ${rolEtiketi(k.rol)}.`);
         // Yeni rolün açılış ekranı (önceki ekran bu rolde olmayabilir).
         git("/", { replace: true });
       } else {
         const { continue: donus, ...k } = await api.aiprobeRolSec(h.id);
-        oturumKur(k);
+        oturumKur(await api.me().catch(() => k));
         git(guvenliDevam(donus ?? devam), { replace: true });
       }
     } catch (e) {
