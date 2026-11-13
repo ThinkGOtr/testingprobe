@@ -1,5 +1,5 @@
 """Test kalite doğrulama (012; specs/012-test-kalite-dogrulama/ANALIZ.md §5) tabloları —
-migrasyon 0022.
+migrasyon 0034 (dev birleşmesinden önce 0022).
 
 - `karar_tablosu`: bir hesaplama kuralının PO onaylı girdi → çıktı tanımı (§4.1). `icerik`
   `rules/schemas/icerik/karar_tablosu.schema.json` biçimindedir; `icerik_hash =

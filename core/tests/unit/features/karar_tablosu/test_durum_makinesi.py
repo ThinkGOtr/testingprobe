@@ -345,7 +345,7 @@ def test_iliski_tabloya_baglanir_ve_sira_tekildir(session: Session) -> None:
     session.rollback()
 
 
-# ---------------------------------------------------------------------- migrasyon 0022
+# ---------------------------------------------------------------------- migrasyon 0034
 
 YENI_TABLOLAR = (
     "karar_tablosu",
@@ -454,7 +454,17 @@ def test_tp_app_yazar_ama_silemez(db: Db) -> None:
             )
 
 
-def test_0022_geri_alinir_ve_yeniden_yukselir(db: Db) -> None:
+def _nesne_turu_kisiti(c: psycopg.Connection) -> str:
+    satir = c.execute(
+        "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'review_nesne_turu_ck'"
+    ).fetchone()
+    assert satir is not None
+    return str(satir[0])
+
+
+def test_0034_geri_alinir_ve_yeniden_yukselir(db: Db) -> None:
+    """0034 (dev birleşmesi; önceden 0022) yalnız kendi değişikliklerini geri alır: 0033'e inince
+    `review_nesne_turu_ck` 0002 kümesine döner (dev zincirinde kısıta başka dokunan yok)."""
     dsn = db.owner_url.replace("+psycopg", "")
     ekle = (
         "INSERT INTO review (nesne_turu, nesne_id, harici_onaylayan, karar, onaylanan_hash) "
@@ -462,8 +472,13 @@ def test_0022_geri_alinir_ve_yeniden_yukselir(db: Db) -> None:
     )
     with psycopg.connect(dsn, autocommit=True) as c:
         c.execute(ekle)
-    run_alembic(db.owner_url, "0020", "downgrade")
+    run_alembic(db.owner_url, "0033", "downgrade")
     with psycopg.connect(dsn, autocommit=True) as c:
+        tanim = _nesne_turu_kisiti(c)
+        assert "NOT VALID" in tanim
+        for tur in ("bug_draft", "consistency_finding", "requirement", "script", "test_case"):
+            assert f"'{tur}'" in tanim
+        assert "karar_tablosu" not in tanim and "metamorfik_iliski" not in tanim
         kalan = c.execute(
             "SELECT count(*) FROM pg_tables WHERE tablename = ANY(%s)", (list(YENI_TABLOLAR),)
         ).fetchone()

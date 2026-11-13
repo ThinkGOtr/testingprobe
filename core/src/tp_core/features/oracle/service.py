@@ -422,7 +422,7 @@ def _hiz_siniri(
 ) -> str | None:
     """Son bir dakikada açılan `oracle.check_case` işleri: case, gereksinim ve (verilirse)
     isteyen kullanıcı başına (review 2 g2 Y6). Gereksinim başına işlem kilidi altında sayılır
-    (eşzamanlı iki istek sınırı birlikte aşamaz). Sorgular 0022'deki ifade indekslerini kullanır
+    (eşzamanlı iki istek sınırı birlikte aşamaz). Sorgular 0034'teki ifade indekslerini kullanır
     (`job_oracle_case_ix`, `job_oracle_gereksinim_ix`, `job_oracle_isteyen_ix`). Aşılırsa
     Türkçe neden, değilse None."""
     idempotency_lock(conn, f"oracle.hiz_siniri:{requirement_id}")

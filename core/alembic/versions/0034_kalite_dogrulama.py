@@ -31,16 +31,17 @@ indeksleri (`job_oracle_case_ix`, `job_oracle_gereksinim_ix`, `job_oracle_isteye
 Bitmiş `oracle.check_*` işleri için saklama (silme) süpürmesi ertelendi: `job`'da DELETE yetkisi
 iş kuyruğu şeridinindir; hacim case başına dakikada en çok 10 yeni iştir (hız sınırı).
 
-V7 (review 2 düzeltmesi): `feat/case-gen-v3` `0021`–`0028`'i kullanıyor (kendi `0022`'si
-`0022_tasarim_modeli`). İki dal birleşirken bu dosya `0029_kalite_dogrulama.py` olur
-(`revision="0029"`, `down_revision="0028"`); `review_nesne_turu_ck` listeleri v3'ün
-`design_model`'ini taşır ve downgrade v3 kümesini (`design_model` dahil) geri yükler. Ayrıntı:
-ANALIZ §14.1–§14.2.
+Numara (origin/dev birleşmesi, 2026-11-13): dal önce `0022` (`down_revision="0020"`) idi; dev'in
+zinciri `0021`–`0023`, `0030`–`0033` olduğu için bu dosya `0034_kalite_dogrulama.py` oldu
+(`revision="0034"`, `down_revision="0033"`). İçerik değişmedi. `review_nesne_turu_ck`'ye dev'de
+`0002`'den sonra dokunan migrasyon yoktur: eski küme `0002`'ninkidir ve downgrade onu aynen geri
+yükler. `feat/case-gen-v3` birleşirken v3 zinciri bu dosyanın üstüne yeniden numaralanır ve
+v3'ün `design_model` eklemesi bu kümeye göre yazılır (ANALIZ §14.1–§14.2).
 
 Model ↔ şema eşitliği tests/unit/platform/test_migrations.py'de doğrulanır.
 
-Revision ID: 0022
-Revises: 0020
+Revision ID: 0034
+Revises: 0033
 Create Date: 2026-11-11
 """
 
@@ -48,8 +49,8 @@ from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "0022"
-down_revision: str | None = "0020"
+revision: str = "0034"
+down_revision: str | None = "0033"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -67,6 +68,7 @@ TABLES = (
 # Yalnız SELECT, INSERT (append-only; UPDATE de verilmez).
 APPEND_ONLY = ("oracle_istisna",)
 
+# 0002 kümesi (dev'de başka migrasyon değiştirmez); downgrade bunu aynen geri yükler.
 _NESNE_ESKI = "'bug_draft', 'consistency_finding', 'requirement', 'script', 'test_case'"
 _NESNE_YENI = (
     "'bug_draft', 'consistency_finding', 'karar_tablosu', 'metamorfik_iliski', 'requirement', "

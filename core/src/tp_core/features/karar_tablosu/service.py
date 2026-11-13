@@ -236,7 +236,7 @@ def _icerik_yaz(nesne: Any, icerik: dict[str, Any]) -> None:
 
 # ---------------------------------------------------------------------- düzenleme ve bağ kayıtları
 #
-# Şemada (0022) "son düzenleyen", "insan düzenledi" ve ilişkinin onaylandığı tablo sürümü için
+# Şemada (0034) "son düzenleyen", "insan düzenledi" ve ilişkinin onaylandığı tablo sürümü için
 # kolon yoktur. Bu üç bilgi aşağıdaki erişimcilerin arkasındadır; birleştirmede kolon eklenirse
 # (`son_duzenleyen_id`, `insan_duzenledi`, `metamorfik_iliski.tablo_onaylanan_hash`) yalnız bu
 # işlevler değişir:
@@ -682,7 +682,7 @@ def onayla(
     son = son_duzenleyen(session, n)
     oz_onay = oz_onay_mi(session, n, user)
     record_approval(session, n, user, "approve", beklenen_hash=icerik_hash, sonra=sonra)
-    # Geçişten önce: `approved` satırı `gereksinim_hash`'siz olamaz (0022 `*_onay_hash_ck`).
+    # Geçişten önce: `approved` satırı `gereksinim_hash`'siz olamaz (0034 `*_onay_hash_ck`).
     n.gereksinim_hash = content_hash_of(req)
     transition(session, n, "approved", user, "pending_po")
     session.flush()
