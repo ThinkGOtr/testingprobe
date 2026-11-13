@@ -1161,3 +1161,18 @@ sözdizimiyle okunur (`triage.service._uretilen_testler`; önce yalnız Appium p
 sayılıyordu). Testler: `triage/test_adim.py` (TS, Appium Java, web Java şablonları),
 `triage/test_karar_tablosu_hatti.py::test_web_java_testi_java_kaynagi_olarak_eslenir`.
 
+
+### 15.6 013 test verisi atıfları ve izole yığın
+
+013 kataloğu üretilen case alanlarına `{veri:<anahtar>}` atfı yazar (`bayi1 / {veri:ortak.demo_parola}`).
+Oracle değer çıkarması bu yüzden izole yığında REPLAY-MISS veriyordu (tüm case'ler
+`kontrol_edilemedi`). Değer çıkarma ve alıntı doğrulaması artık atıfları dev'in model girdisi
+kuralıyla çözülmüş metinle yapar (`testveri.case_coz_gevsek`; kod üretimi ve bug taslağı da çözülmüş
+metni görür, gizli değer dahil); kayıt hash'i saklanan içeriğindir. Ortam notu: gizli kayıt
+`TP_TESTVERI_DEMO_PAROLA` `.env`'de tanımlı olmalı (dev `.env.example`); yoksa gizli atıf çözülmez
+ve golden eşleşmez. Açık konu: oracle (`case_facts`) girdisine gizli test verisinin gitmesi dev'in
+kuralıyla tutarlı ama ürün sahibi kararı olarak teyit edilmeli.
+
+Doğrulama (tp-kalite, 2026-11-13): A1–A5 PASS; duman 22/22 (taslak → PO onayı → TPD-1 sonuçları
+§12.2 ile aynı, oran 1.0 · 6 uyumlu · 3 kapsam dışı → rehber §8.6 metni 409 sonra 422
+`oracle_uyumsuz` → web hata koşusu başlat + iptal; rol retleri 403).
