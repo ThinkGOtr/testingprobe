@@ -57,7 +57,7 @@ export function onarimPrNo(kosular: Kosu[], mk: Kosu | null): number | null {
   if (mk.pr_no) return mk.pr_no;
   const t = Date.parse(mk.baslangic);
   const kirmizi = kosular
-    .filter((x) => MAIN_TETIKLERI.includes(x.tetik) && (x.durum === "failed" || x.durum === "error") && Date.parse(x.baslangic) < t)
+    .filter((x) => MAIN_TETIKLERI.includes(x.tetik) && (x.durum === "failed" || x.durum === "error" || x.durum === "zaman_asimi") && Date.parse(x.baslangic) < t)
     .sort((a, b) => Date.parse(b.baslangic) - Date.parse(a.baslangic))[0];
   const alt = kirmizi ? Date.parse(kirmizi.baslangic) : -Infinity;
   const pr = kosular
@@ -284,7 +284,7 @@ function LocatorKirmaKarti({ durum }: { durum: DemoDurumu | null }) {
     void (async () => {
       const k = kirmaKosusu(kosular, g.basladi);
       let hatalar: KosuHatasi[] | null = null;
-      if (k && (k.durum === "failed" || k.durum === "error")) {
+      if (k && (k.durum === "failed" || k.durum === "error" || k.durum === "zaman_asimi")) {
         try {
           hatalar = kosuHatalari(await api.kosu(k.id));
         } catch {
@@ -352,7 +352,7 @@ function LocatorKirmaKarti({ durum }: { durum: DemoDurumu | null }) {
         const k = kirmaKosusu(kosular, d.basladi, runIdRef.current);
         let hatalar: KosuHatasi[] | null = d.hatalar;
         let bitti = Date.now() - d.basladi > YOKLAMA_UST_SINIR_MS;
-        if (k && (k.durum === "failed" || k.durum === "error")) {
+        if (k && (k.durum === "failed" || k.durum === "error" || k.durum === "zaman_asimi")) {
           const detay = await api.kosu(k.id);
           hatalar = kosuHatalari(detay);
           bitti = bitti || (hatalar.length > 0 && hatalar.every((h) => h.sinif !== null));

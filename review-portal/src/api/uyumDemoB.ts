@@ -576,7 +576,7 @@ export function scriptListesiUyarla(govde: unknown, dahaFazla: boolean | null = 
 const TETIKLER = new Set<Tetik>(["pr", "push", "nightly", "deploy", "break_verify", "local_check", "manual"]);
 const KAYNAKLAR = new Set<KosuKaynagi>(["local", "github", "sauce"]);
 const SAUCE_DURUMLARI = new Set(["passed", "failed", "error", "atlandi"]);
-const KOSU_DURUMLARI = new Set<Kosu["durum"]>(["queued", "running", "passed", "failed", "error"]);
+const KOSU_DURUMLARI = new Set<Kosu["durum"]>(["queued", "running", "passed", "failed", "error", "zaman_asimi"]);
 
 function testSonucDurumu(x: unknown): TestSonucu["durum"] {
   const k = metin(x).toLowerCase();

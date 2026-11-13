@@ -1262,7 +1262,8 @@ export interface Kosu {
   kaynak: KosuKaynagi;
   commit: string;
   pr_no: number | null;
-  durum: "queued" | "running" | "passed" | "failed" | "error";
+  /** `zaman_asimi`: core takılan koşuyu süre aşımıyla kapattı (başarısız sayılır). */
+  durum: "queued" | "running" | "passed" | "failed" | "error" | "zaman_asimi";
   baslangic: string;
   sure_ms: number | null;
   toplam: number;

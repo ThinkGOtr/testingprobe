@@ -275,6 +275,8 @@ export const KOSU_DURUMU: Record<string, { etiket: string; ton: Ton }> = {
   passed: { etiket: "Geçti", ton: "basari" },
   failed: { etiket: "Başarısız", ton: "hata" },
   error: { etiket: "Hata", ton: "hata" },
+  /** core takılan koşuyu süre aşımıyla kapattı: başarısız benzeri. */
+  zaman_asimi: { etiket: "Zaman aşımı", ton: "hata" },
   flaky: { etiket: "Flaky", ton: "uyari" },
   skipped: { etiket: "Atlandı", ton: "notr" },
 };

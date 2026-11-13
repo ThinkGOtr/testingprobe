@@ -287,3 +287,52 @@ describe("tutarlılık kartı: güncelliğini yitirmiş bulgular ayrı", () => {
     if (not) expect(not).toHaveTextContent("güncel engelleyici bulgu kalmadı");
   });
 });
+
+describe("koşular: takılmış koşu ve zaman aşımı", () => {
+  it("eşikler: 1 sa sırada, 6 sa çalışıyor; bitmiş koşuda uyarı yok", async () => {
+    const { takilmaUyarisi } = await import("./Kosular");
+    const simdi = Date.parse("2026-11-14T12:00:00Z");
+    const once = (sa: number) => new Date(simdi - sa * 3_600_000).toISOString();
+    expect(takilmaUyarisi({ durum: "queued", baslangic: once(0.5) }, simdi)).toBeNull();
+    expect(takilmaUyarisi({ durum: "queued", baslangic: once(3.2) }, simdi)).toBe("3 saattir sırada — takılmış olabilir");
+    expect(takilmaUyarisi({ durum: "running", baslangic: once(5) }, simdi)).toBeNull();
+    expect(takilmaUyarisi({ durum: "running", baslangic: once(7) }, simdi)).toBe("7 saattir çalışıyor — takılmış olabilir");
+    expect(takilmaUyarisi({ durum: "queued", baslangic: once(72) }, simdi)).toBe("3 gündür sırada — takılmış olabilir");
+    expect(takilmaUyarisi({ durum: "failed", baslangic: once(72) }, simdi)).toBeNull();
+  });
+
+  it("zaman_asimi durumu 'Zaman aşımı' (başarısız tonunda) ve uyarlayıcı korur", async () => {
+    const { KOSU_DURUMU } = await import("../lib/etiketler");
+    expect(KOSU_DURUMU.zaman_asimi).toEqual({ etiket: "Zaman aşımı", ton: "hata" });
+    const { kosuUyarla } = await import("../api/uyumDemoB");
+    expect(kosuUyarla({ id: "k1", durum: "zaman_asimi", tetik: "nightly", kaynak: "github", baslangic: "2026-11-14T00:00:00Z" }).durum).toBe("zaman_asimi");
+  });
+});
+
+describe("Sauce: CI adımı ile Sauce özeti uzlaşır", () => {
+  it("iş yeşil ama Sauce özeti error ise adım 'geçti' değil uyarı gösterir", async () => {
+    const { sauceAdimiCelisir } = await import("./KosuSonuclari");
+    expect(sauceAdimiCelisir("sauce", true, { sauce_durum: "error" })).toBe(true);
+    expect(sauceAdimiCelisir("Sauce", true, { sauce_durum: "failed" })).toBe(true);
+    expect(sauceAdimiCelisir("sauce", true, { sauce_durum: "passed" })).toBe(false);
+    expect(sauceAdimiCelisir("sauce", false, { sauce_durum: "error" })).toBe(false);
+    expect(sauceAdimiCelisir("tests", true, { sauce_durum: "error" })).toBe(false);
+  });
+});
+
+describe("Sauce: CI adımları görünümü", () => {
+  it("GitHub sauce işi success, sauce_durum error → 'iş yeşil · Sauce koşmadı'", async () => {
+    const { CiAdimlari } = await import("./KosuSonuclari");
+    const k = {
+      adimlar: null,
+      github: { isler: [{ ad: "sauce", sonuc: "success", url: null }, { ad: "tests", sonuc: "success", url: null }], meta: {}, conclusion: "success" },
+      log_url: null,
+      sauce_durum: "error",
+      sauce_neden: "saucectl 1 koduyla çıktı",
+    } as unknown as Parameters<typeof CiAdimlari>[0]["k"];
+    render(<CiAdimlari k={k} />);
+    const cip = screen.getByText("iş yeşil · Sauce koşmadı");
+    expect(cip.closest("[title]")?.getAttribute("title")).toContain("saucectl 1 koduyla çıktı");
+    expect(screen.getAllByText("geçti")).toHaveLength(1);
+  });
+});
