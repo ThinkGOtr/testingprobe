@@ -306,6 +306,8 @@ export interface Bulgu {
   kontrol_turu: number;
   durum: BulguDurumu;
   bug_draft_id: string | null;
+  /** Bağlı bug taslağının durumu (core gönderirse; developer yalnız `published` taslağı açabilir). */
+  bug_draft_durum?: string | null;
   /** Gösterilen bulgu içeriğinin (tür, ref, kanıt, metinler) hash'i; karar bunu geri gönderir. */
   icerik_hash: string;
   mode: CiktiModu | null;

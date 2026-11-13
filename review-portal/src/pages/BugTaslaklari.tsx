@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
+import { bulunamadi } from "../api/http";
+import { useBugKisitli, useIzin } from "../auth";
+import { BUG_KISITLI_METNI, izinRolleriMetni } from "../lib/yetki";
 import type { BugTaslagi, BugTaslakIcerik, MukerrerAday, MukerrerArama } from "../api/types";
 import { useBildirim } from "../components/Bildirim";
 import { AlanHatasi, BosDurum, Cip, Baglanti, HataKutusu, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor, IzinliLink } from "../components/ui";
@@ -389,6 +392,9 @@ export function BugTaslakDetay() {
   const [retGerekcesi, setRetGerekcesi] = useState("");
   const islem = useIslem();
   const bildir = useBildirim();
+  // Karar yetkisi (Testçi) yoksa form salt okunur: düzenlenebilir görünen alan, kilitli düğmeyle çelişmesin.
+  const kararYetkisi = useIzin("bug.decide");
+  const bugKisitli = useBugKisitli();
   const tekil = useMemo(() => (v.veri ? [v.veri] : []), [v.veri]);
   const kirma = useKirmaTaslaklari(tekil).has(v.veri?.id ?? "");
 
@@ -401,10 +407,19 @@ export function BugTaslakDetay() {
   }, [v.veri]);
 
   if (v.yukleniyor && !v.veri) return <Yukleniyor />;
-  if (v.hata && !v.veri) return <HataKutusu hata={v.hata} kaynak={v.hataNesnesi} yenile={() => void v.yenile()} />;
+  if (v.hata && !v.veri) {
+    return (
+      <>
+        <HataKutusu hata={v.hata} kaynak={v.hataNesnesi} yenile={() => void v.yenile()} />
+        {bugKisitli && bulunamadi(v.hataNesnesi) && <p className="soluk" data-testid="bug-taslagi-kisitli">{BUG_KISITLI_METNI}</p>}
+      </>
+    );
+  }
   const b = v.veri;
   if (!b || !icerik) return null;
   const taslak = b.durum === "draft";
+  // Denetimler `disabled`ı ayrıca taşır (fieldset pasifliği DOM `disabled` özelliğine yansımaz).
+  const formKilitli = !taslak || !kararYetkisi;
   const d = durum(b);
   const aramaYok = mukerrerAramaDurumu(b) !== "yapildi";
   // Karar, ekranda görülen taslağın hash'iyle bağlanır (düzenlemeler karar gövdesindedir).
@@ -564,13 +579,18 @@ export function BugTaslakDetay() {
         aramayiYenile={() => void aramayiYenile()}
       />
 
-      <Kart baslik={taslak ? "Taslak (düzenlenebilir)" : "Kayıt"}>
+      <Kart baslik={taslak ? (kararYetkisi ? "Taslak (düzenlenebilir)" : "Taslak") : "Kayıt"}>
         <form onSubmit={yeniKayit} className="form" noValidate>
-          <fieldset disabled={!taslak} className="duz-fieldset">
+          {taslak && !kararYetkisi && (
+            <p className="soluk kucuk" data-testid="bug-salt-okunur">
+              Salt okunur: taslağı {izinRolleriMetni("bug.decide")} düzenler ve karara bağlar.
+            </p>
+          )}
+          <fieldset disabled={formKilitli} className="duz-fieldset">
             <div className="alan">
               <label htmlFor="bug-ozet">Özet</label>
               <input
-                id="bug-ozet"
+                id="bug-ozet" disabled={formKilitli}
                 value={icerik.summary}
                 maxLength={OZET_AZAMI}
                 aria-describedby="bug-ozet-sayac"
@@ -582,27 +602,27 @@ export function BugTaslakDetay() {
             </div>
             <div className="alan">
               <label htmlFor="bug-adimlar">Adımlar (her satır bir adım)</label>
-              <textarea id="bug-adimlar" rows={4} value={adimMetni} onChange={(e) => setAdimMetni(e.target.value)} />
+              <textarea id="bug-adimlar" disabled={formKilitli} rows={4} value={adimMetni} onChange={(e) => setAdimMetni(e.target.value)} />
             </div>
             <div className="iki-sutun">
               <div className="alan">
                 <label htmlFor="bug-beklenen">Beklenen</label>
-                <textarea id="bug-beklenen" rows={2} value={icerik.expected} onChange={(e) => alan("expected", e.target.value)} />
+                <textarea id="bug-beklenen" disabled={formKilitli} rows={2} value={icerik.expected} onChange={(e) => alan("expected", e.target.value)} />
               </div>
               <div className="alan">
                 <label htmlFor="bug-gerceklesen">Gerçekleşen</label>
-                <textarea id="bug-gerceklesen" rows={2} value={icerik.actual} onChange={(e) => alan("actual", e.target.value)} />
+                <textarea id="bug-gerceklesen" disabled={formKilitli} rows={2} value={icerik.actual} onChange={(e) => alan("actual", e.target.value)} />
               </div>
             </div>
             <div className="iki-sutun">
               <div className="alan">
                 <label htmlFor="bug-ortam">Ortam</label>
-                <input id="bug-ortam" value={icerik.environment} onChange={(e) => alan("environment", e.target.value)} />
+                <input id="bug-ortam" disabled={formKilitli} value={icerik.environment} onChange={(e) => alan("environment", e.target.value)} />
               </div>
               <div className="alan">
                 <label htmlFor="bug-onem">Önem önerisi</label>
                 <select
-                  id="bug-onem"
+                  id="bug-onem" disabled={formKilitli}
                   value={icerik.severity_suggestion}
                   onChange={(e) => alan("severity_suggestion", e.target.value as BugTaslakIcerik["severity_suggestion"])}
                 >
@@ -674,6 +694,7 @@ export function BugTaslakDetay() {
                     className="mono"
                     value={baglanacak}
                     onChange={(e) => setBaglanacak(e.target.value)}
+                    readOnly={!kararYetkisi}
                     list="mukerrer-anahtarlar"
                     placeholder="TPD-21"
                   />
@@ -705,6 +726,7 @@ export function BugTaslakDetay() {
                     value={retGerekcesi}
                     placeholder={kirma ? "ör. Kasıtlı kırma (BREAK_CAMPAIGN) koşusu; gerçek hata değil." : undefined}
                     onChange={(e) => setRetGerekcesi(e.target.value)}
+                    readOnly={!kararYetkisi}
                   />
                 </div>
                 <IslemDugmesi

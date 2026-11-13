@@ -270,6 +270,11 @@ export async function detayOku(res: Response): Promise<{ detail: string | null; 
         }
         // FastAPI doğrulama hataları: [{loc, msg, type}]
         if (Array.isArray(d)) {
+          // Yol parametresi ayrıştırılamadı (ör. `/requirements/olmayan-id` → "req_id: Input should be a
+          // valid UUID"): kayıt yoktur. Ham İngilizce Pydantic metni yerine "bulunamadı" (bkz. GECERSIZ_KIMLIK).
+          if (d.length > 0 && d.every((x) => x && typeof x === "object" && Array.isArray((x as { loc?: unknown }).loc) && (x as { loc: unknown[] }).loc[0] === "path")) {
+            return { detail: VARSAYILAN_HATA[404], json: true, kod: GECERSIZ_KIMLIK };
+          }
           const mesajlar = d
             .map((x) => (x && typeof x === "object" && "msg" in x ? String((x as { msg: unknown }).msg) : ""))
             .filter(Boolean);
@@ -282,6 +287,17 @@ export async function detayOku(res: Response): Promise<{ detail: string | null; 
   } catch {
     return { detail: null, json: false };
   }
+}
+
+/**
+ * Yol parametresi geçersiz (core 422, `loc: ["path", …]`): istemci bunu 404 "Kayıt bulunamadı." olarak
+ * görür — geçersiz kimlikli kayıt yoktur; ekran bulunamadı görünümünü gösterir, "Tekrar dene" anlamsızdır.
+ */
+export const GECERSIZ_KIMLIK = "gecersiz_kimlik";
+
+/** Kayıt bulunamadı (404 ya da geçersiz kimlik): yeniden denemek sonucu değiştirmez. */
+export function bulunamadi(e: unknown): boolean {
+  return e instanceof ApiError && e.status === 404 && e.detail !== "Not Found";
 }
 
 const VARSAYILAN_HATA: Record<number, string> = {
@@ -419,6 +435,7 @@ async function istekGonder<T>(
   // Canlı derlemede genel 404 (FastAPI'de rota yok) "bu fazda yok" demektir; ham "Not Found" gösterilmez.
   if (res.status === 404 && !ayarlar.mockOtomatik && (detail === "Not Found" || !json)) throw new ApiError(501, BU_FAZDA_YOK);
   if (res.status === 401 && !path.startsWith("/auth/")) yetkisizDinleyici?.();
+  if (res.status === 422 && kod === GECERSIZ_KIMLIK) throw new ApiError(404, VARSAYILAN_HATA[404], { kod });
   // Demo kipi kapalı (core 403 `demo_kapali`): genel "yetkiniz yok" yerine nedeni söylenir.
   if (kod === "demo_kapali") throw new ApiError(res.status, detail && detail !== VARSAYILAN_HATA[403] ? detail : DEMO_KAPALI, { kod, ek, govde, hatalar });
   throw new ApiError(res.status, detail ?? VARSAYILAN_HATA[res.status] ?? `Beklenmeyen hata (HTTP ${res.status}).`, { kod, ek, govde, hatalar });

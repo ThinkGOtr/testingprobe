@@ -2,7 +2,9 @@ import { useId, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import type { Bulgu, BulguKarari, Gereksinim, GereksinimDurumu, Kanit } from "../api/types";
+import { useBugKisitli } from "../auth";
 import { useIslem } from "../hooks";
+import { BUG_KISITLI_METNI, KISITLI_BUG_DURUMLARI } from "../lib/yetki";
 import { BULGU_DURUMU, BULGU_KARARI, BULGU_TURU, gereksinimDurumu as durumEtiketi } from "../lib/etiketler";
 import { tarih } from "../lib/format";
 import { FarkGorunumu } from "./FarkGorunumu";
@@ -74,6 +76,7 @@ export function BulguKarti({
   const [dogrulama, setDogrulama] = useState<string | null>(null);
   const islem = useIslem();
   const id = useId();
+  const bugKisitli = useBugKisitli();
   // core: kapı yalnızca open → decided; decided iken karar değiştirilebilir. Diğer durumlar kilitli.
   const bulguKarariAcik = bulgu.durum === "open" || bulgu.durum === "decided";
   const gereksinimKararBekliyor = gereksinimDurumu === undefined || gereksinimDurumu === "findings_open";
@@ -159,11 +162,16 @@ export function BulguKarti({
               <strong>Gerekçe:</strong> {bulgu.gerekce}
             </p>
           )}
-          {bulgu.bug_draft_id && (
-            <p>
-              <Link to={`/bug-taslaklari/${encodeURIComponent(bulgu.bug_draft_id)}`}>Bug taslağına git</Link>
-            </p>
-          )}
+          {bulgu.bug_draft_id &&
+            (bugKisitli && !KISITLI_BUG_DURUMLARI.includes(bulgu.bug_draft_durum ?? "") ? (
+              <p className="soluk kucuk" data-testid="bug-taslagi-kisitli">
+                Bug taslağı hazırlandı. {BUG_KISITLI_METNI}
+              </p>
+            ) : (
+              <p>
+                <Link to={`/bug-taslaklari/${encodeURIComponent(bulgu.bug_draft_id)}`}>Bug taslağına git</Link>
+              </p>
+            ))}
           <p className="soluk kucuk">
             <KisiAdi ad={bulgu.karar_veren} /> · {tarih(bulgu.karar_zamani)} · kontrol turu {bulgu.onceki_karar?.kontrol_turu ?? bulgu.kontrol_turu}
           </p>

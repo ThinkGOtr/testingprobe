@@ -109,6 +109,14 @@ export type Izin = keyof typeof IZINLER;
  */
 export const KISITLI_CASE_ROLLERI: readonly Rol[] = ["developer"];
 
+/**
+ * Bug taslağını kısıtlı gören roller (core `bugs/serialize.py` `DEVELOPER_BUG_DURUMLARI`): yalnız
+ * yayınlanmış (`published`) taslak; diğerlerinde detay 404 döner.
+ */
+export const KISITLI_BUG_ROLLERI: readonly Rol[] = ["developer"];
+export const KISITLI_BUG_DURUMLARI: readonly string[] = ["published"];
+export const BUG_KISITLI_METNI = "Bu rol yayınlanmamış bug taslaklarını göremez.";
+
 /** Rolün katalogdaki izinleri (core `rol_izinleri`; sıralı). */
 export function rolIzinleri(rol: string | null | undefined): Izin[] {
   const r = normalizeRol(rol);

@@ -1,6 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode, type RefObject } from "react";
 import { Link, type LinkProps } from "react-router-dom";
-import { buFazdaYok } from "../api/http";
+import { buFazdaYok, bulunamadi } from "../api/http";
 import type { CiktiModu, Degerlendirme } from "../api/types";
 import { useIzin, useRotaIzni } from "../auth";
 import { type Ton } from "../lib/etiketler";
@@ -172,7 +172,7 @@ export function HataKutusu({
   return (
     <div className="uyari-kutusu uyari-hata">
       <span role="alert">{hata}</span>
-      {yenile && (
+      {yenile && !bulunamadi(kaynak) && (
         <button type="button" className="dugme dugme-ikincil dugme-kucuk" onClick={yenile}>
           Tekrar dene
         </button>

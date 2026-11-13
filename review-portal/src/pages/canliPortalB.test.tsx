@@ -107,3 +107,77 @@ describe("rol adı tutarlılığı", () => {
     expect(izinRolleriMetni("automation.jira_status")).toBe("Automation Engineer");
   });
 });
+
+describe("bulunamadı görünümü: Tekrar dene yok", () => {
+  it("HataKutusu 404 kaynakta yeniden deneme düğmesi çizmez, diğer hatada çizer", async () => {
+    const { HataKutusu } = await import("../components/ui");
+    const { ApiError } = await import("../api/http");
+    const { rerender } = render(<HataKutusu hata="Kayıt bulunamadı." kaynak={new ApiError(404, "Kayıt bulunamadı.")} yenile={() => {}} />);
+    expect(screen.queryByRole("button", { name: "Tekrar dene" })).toBeNull();
+    rerender(<HataKutusu hata="Çekirdek servise ulaşılamıyor." kaynak={new ApiError(502, "x")} yenile={() => {}} />);
+    expect(screen.getByRole("button", { name: "Tekrar dene" })).toBeInTheDocument();
+  });
+
+  it("olmayan gereksinim kimliği: Türkçe mesaj, Tekrar dene yok", async () => {
+    izle((c) => {
+      if (c.path === "/requirements/olmayan-id") {
+        return (async () => {
+          const { ApiError } = await import("../api/http");
+          throw new ApiError(404, "Kayıt bulunamadı.", { kod: "gecersiz_kimlik" });
+        })();
+      }
+      return undefined;
+    });
+    await oturumAc("analist");
+    uygulama("/gereksinimler/olmayan-id");
+    expect(await screen.findByText("Kayıt bulunamadı.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Tekrar dene" })).toBeNull();
+  });
+});
+
+describe("bug taslağı: kısıtlı rol ve salt okunur form", () => {
+  it("Developer, yayınlanmamış taslağa bağlantı görmez; açıklama görür", async () => {
+    const { mockVerisi } = await import("../api/mock/handlers");
+    const v = mockVerisi();
+    const bulgu = v.bulgular.find((b) => b.bug_draft_id && b.karar && v.bugTaslaklari.find((t) => t.id === b.bug_draft_id)?.durum !== "published")!;
+    expect(bulgu).toBeTruthy();
+    await oturumAc("gelistirici");
+    uygulama(`/gereksinimler/${bulgu.requirement_id}`);
+    const notlar = await screen.findAllByTestId("bug-taslagi-kisitli");
+    expect(notlar[0]).toHaveTextContent("Bu rol yayınlanmamış bug taslaklarını göremez.");
+    expect(screen.queryByRole("link", { name: "Bug taslağına git" })).toBeNull();
+  });
+
+  it("Sistem Yöneticisi taslak formunu salt okunur görür (alanlar pasif)", async () => {
+    const { mockVerisi } = await import("../api/mock/handlers");
+    const taslak = mockVerisi().bugTaslaklari.find((t) => t.durum === "draft")!;
+    await oturumAc("sunucu");
+    uygulama(`/bug-taslaklari/${taslak.id}`);
+    expect(await screen.findByTestId("bug-salt-okunur")).toBeInTheDocument();
+    expect(screen.getByLabelText("Özet")).toBeDisabled();
+    expect(screen.getByLabelText("Beklenen")).toBeDisabled();
+    expect(screen.getByLabelText("Ret gerekçesi")).toHaveAttribute("readonly");
+  });
+
+  it("Testçi taslak formunu düzenleyebilir", async () => {
+    const { mockVerisi } = await import("../api/mock/handlers");
+    const taslak = mockVerisi().bugTaslaklari.find((t) => t.durum === "draft")!;
+    await oturumAc("testci");
+    uygulama(`/bug-taslaklari/${taslak.id}`);
+    expect(await screen.findByLabelText("Özet")).toBeEnabled();
+    expect(screen.queryByTestId("bug-salt-okunur")).toBeNull();
+  });
+});
+
+describe("Otomasyon: yetkisiz rolde tüm alanlar aynı biçimde pasif", () => {
+  it("PO'da onay kutuları, sorgu aralığı ve durum alanı kendi disabled özniteliğini taşır", async () => {
+    await oturumAc("po");
+    uygulama("/otomasyon");
+    const aralik = await screen.findByLabelText("Sorgu aralığı (saniye)");
+    expect(aralik).toHaveAttribute("disabled");
+    expect(screen.getByLabelText("Tetikleyen Jira durumu")).toHaveAttribute("disabled");
+    expect(screen.getByLabelText("Tetik açık")).toHaveAttribute("disabled");
+    expect(screen.getByLabelText("PO onayından sonra case'leri otomatik üret")).toHaveAttribute("disabled");
+    expect(screen.getByLabelText("Onaylanan case için kodu otomatik üret")).toHaveAttribute("disabled");
+  });
+});

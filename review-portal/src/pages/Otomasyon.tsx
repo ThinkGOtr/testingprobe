@@ -131,10 +131,12 @@ function OtomatikKodKarti({
         </Uyari>
       )}
       <form onSubmit={(e) => void kaydet(e)} noValidate>
+        {/* Denetimler ayrıca kendi `disabled` özniteliğini taşır: fieldset pasifliği DOM `disabled` özelliğine
+            yansımaz; yetkisiz rolde tüm alanlar (durum alanıyla) aynı biçimde pasif görünür ve okunur. */}
         <fieldset disabled={!yetkili} className="otomasyon-alanlar">
           <legend className="gorunmez">Otomatik kod üretimi ayarı</legend>
           <div className="alan alan-satir">
-            <input id={`${id}-acik`} type="checkbox" role="switch" checked={acik} onChange={(e) => setAcik(e.target.checked)} />
+            <input id={`${id}-acik`} type="checkbox" role="switch" checked={acik} disabled={!yetkili} onChange={(e) => setAcik(e.target.checked)} />
             <label htmlFor={`${id}-acik`}>Onaylanan case için kodu otomatik üret</label>
           </div>
         </fieldset>
@@ -221,10 +223,12 @@ function JiraTetikKarti({
         story'ler tetiklenir. Tur başına en çok {TUR_BASINA_EN_COK} story tetiklenir, kalanlar sonraki tura kalır.
       </p>
       <form onSubmit={(e) => void kaydet(e)} noValidate>
+        {/* Denetimler ayrıca kendi `disabled` özniteliğini taşır: fieldset pasifliği DOM `disabled` özelliğine
+            yansımaz; yetkisiz rolde tüm alanlar (durum alanıyla) aynı biçimde pasif görünür ve okunur. */}
         <fieldset disabled={!yetkili} className="otomasyon-alanlar">
           <legend className="gorunmez">Jira durum tetiği ayarı</legend>
           <div className="alan alan-satir">
-            <input id={`${id}-acik`} type="checkbox" role="switch" checked={f.acik} onChange={(e) => setF({ ...f, acik: e.target.checked })} />
+            <input id={`${id}-acik`} type="checkbox" role="switch" checked={f.acik} disabled={!yetkili} onChange={(e) => setF({ ...f, acik: e.target.checked })} />
             <label htmlFor={`${id}-acik`}>Tetik açık</label>
           </div>
           <div className="otomasyon-izgara">
@@ -235,7 +239,7 @@ function JiraTetikKarti({
                 value={f.durum}
                 maxLength={100}
                 aria-required="true"
-                disabled={!durumYetkili}
+                disabled={!yetkili || !durumYetkili}
                 aria-describedby={!durumYetkili ? `${id}-durum-neden` : undefined}
                 onChange={(e) => setF({ ...f, durum: e.target.value })}
               />
@@ -255,6 +259,7 @@ function JiraTetikKarti({
                 max={ARALIK_EN_COK}
                 step={1}
                 value={f.aralik}
+                disabled={!yetkili}
                 aria-describedby={`${id}-aralik-ipucu`}
                 onChange={(e) => setF({ ...f, aralik: e.target.value })}
               />
@@ -269,6 +274,7 @@ function JiraTetikKarti({
               type="checkbox"
               role="switch"
               checked={f.otomatik_case}
+              disabled={!yetkili}
               aria-describedby={`${id}-case-ipucu`}
               onChange={(e) => setF({ ...f, otomatik_case: e.target.checked })}
             />
