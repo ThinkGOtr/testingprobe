@@ -296,7 +296,8 @@ def test_asistan_kapisi_beklenti_icin_onarim_onermez() -> None:
     kapi = _failure_kapisi(
         Failure(sinif="test_maintenance", alt_tur="beklenti", oneri_durumu="none")
     )
-    assert kapi is not None and kapi.rol == "analyst" and "case düzeltilmeli" in kapi.ad
+    # 012 rol modeli: case düzeltmesi Testçinin işidir.
+    assert kapi is not None and kapi.rol == "tester" and "case düzeltilmeli" in kapi.ad
     locator = _failure_kapisi(
         Failure(sinif="test_maintenance", alt_tur="locator", oneri_durumu="proposed")
     )

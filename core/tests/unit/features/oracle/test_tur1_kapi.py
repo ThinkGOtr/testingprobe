@@ -136,7 +136,7 @@ def test_istisna_append_only_ve_yeniden_kullanim(api: TestClient, engine: Engine
     r = _karar(
         api,
         c,
-        karar="approve",
+        karar="accept",
         oracle_istisna_turu="uyumsuz",
         oracle_istisna_gerekce="1234567890 123456789 abc",
     )
@@ -145,7 +145,7 @@ def test_istisna_append_only_ve_yeniden_kullanim(api: TestClient, engine: Engine
         _karar(
             api,
             c,
-            karar="approve",
+            karar="accept",
             oracle_istisna_turu="uyumsuz",
             oracle_istisna_gerekce=UZUN_GEREKCE,
         ).status_code
@@ -154,7 +154,7 @@ def test_istisna_append_only_ve_yeniden_kullanim(api: TestClient, engine: Engine
     assert _karar(api, c, karar="reopen").status_code == 200
     c = latest_cases(api, k["rid"])[0]
     assert c["oracle"]["istisna"]["gecerli"] is True
-    r = _karar(api, c, karar="approve")
+    r = _karar(api, c, karar="accept")
     assert r.status_code == 200, r.text
     with session_scope() as s:
         assert len(s.scalars(select(OracleIstisna)).all()) == 1
@@ -178,15 +178,15 @@ def test_basarisiz_is_anahtari_onayi_kilitlemez(api: TestClient, engine: Engine,
     """Mimari 4: kapının açtığı iş `failed` olursa sonraki deneme yeni iş açar (kalıcı 409 yok)."""
     k = kur([basit_case(toplam="30,00")], olgu_sayisi=10)
     c = latest_cases(api, k["rid"])[0]
-    assert _karar(api, c, karar="approve").status_code == 409
+    assert _karar(api, c, karar="accept").status_code == 409
     [is_] = _isler(engine, service.CHECK_CASE_JOB)
     with engine.begin() as conn:
         conn.execute(text("UPDATE job SET durum = 'failed' WHERE id = :i"), {"i": is_.id})
-    assert _karar(api, c, karar="approve").status_code == 409
+    assert _karar(api, c, karar="accept").status_code == 409
     isler = _isler(engine, service.CHECK_CASE_JOB)
     assert len(isler) == 2 and isler[1].idempotency_key == f"{is_.idempotency_key}:yeniden1"
     run_jobs(engine)
-    assert _karar(api, c, karar="approve").status_code == 200
+    assert _karar(api, c, karar="accept").status_code == 200
 
 
 def test_edit_sonrasi_yeni_hash_kontrol_kuyruğunda(api: TestClient, engine: Engine, kur) -> None:
@@ -313,12 +313,17 @@ def test_onaydan_sonra_onaylanan_tablo_onayli_uyumsuz_listesine_duser(
 
     fake_gateway([text_response({"cases": [basit_case(toplam="40,00")]}), olgu_modeli])
     rid = make_requirement()
-    analist, po = make_user("analyst"), make_user("po")
-    login(api, analist)
+    analist, po, testci = make_user("analyst"), make_user("po"), make_user("tester")
+    login(api, testci)
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     run_jobs(engine)
     c = latest_cases(api, rid)[0]
-    assert _karar(api, c, karar="approve").status_code == 200  # tablo yok: serbest
+    assert _karar(api, c, karar="accept").status_code == 200  # tablo yok: serbest
+    # Analist son onayı (012 rol modeli: Testçi kabulü → ready, Analist onayı → approved).
+    api.cookies.clear()
+    login(api, analist)
+    c = latest_cases(api, rid)[0]
+    assert _karar(api, c, karar="approve").status_code == 200
     tablo_ekle(rid, BASIT, analist, po)
     with session_scope() as s:
         service.gereksinim_kontrolu_kuyruga_al(s, rid, "tablo_onaylandi")
@@ -326,7 +331,7 @@ def test_onaydan_sonra_onaylanan_tablo_onayli_uyumsuz_listesine_duser(
     [ev] = _denetim("oracle.onayli_uyumsuz")
     assert ev.nesne == f"test_case:{c['id']}"
     with session_scope() as s:
-        liste = ct.control_tower(s)["onayli_uyumsuz"]
+        liste = ct.control_tower(s, artefakt=True)["onayli_uyumsuz"]
     assert liste == [
         {
             "case_id": c["id"],
@@ -369,14 +374,14 @@ def test_ai_sinir_hatasi_replay_kapisi(
             s, req, cases, uretim_no=1, kanal="ide", ai_call_id=None, uretim_modu=None
         )
     run_jobs(engine, limit=100)
-    login(api, analist)
+    login(api, make_user("tester"))
     by = {c["sira_no"]: c for c in latest_cases(api, rid)}
     assert by[6]["oracle"]["sonuc"] == "uyumsuz", by[6]["oracle"]
     bozuk = [k for k in by[6]["oracle"]["karsilastirmalar"] if not k["uyumlu"]]
     assert {(k["column"], k["case_degeri"], k["tablo_degeri"]) for k in bozuk} == {
         ("minimum_uyarisi", True, False)
     }
-    r = _karar(api, by[6], karar="approve")
+    r = _karar(api, by[6], karar="accept")
     assert r.status_code == 422 and r.json()["kod"] == "oracle_uyumsuz", r.text
     m = api.get(f"/requirements/{rid}/case-metrics").json()["beklenti_dogrulugu"]
     assert (m["uyumlu"], m["uyumsuz"], m["oran"], m["n_case"]) == (5, 1, round(5 / 6, 4), 6)

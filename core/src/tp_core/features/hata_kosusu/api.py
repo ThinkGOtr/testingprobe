@@ -1,12 +1,12 @@
 """Ekilmiş hata koşusu uçları (ANALIZ §4.6, §6).
 
-| Yöntem | Yol | Rol |
+| Yöntem | Yol | İzin (auth/yetki.py) |
 |---|---|---|
-| POST | `/fault-runs` `{platformlar, hatalar?}` | engineer, presenter — 202 `{id, durum}` |
-| GET  | `/fault-runs?limit=` | herkes — son koşular (yeniden eskiye) |
-| GET  | `/fault-runs/catalog` | herkes — hata kataloğu (+ `requirement_id`: TPD-1) |
-| GET  | `/fault-runs/{id}` | herkes — koşu + adımlar |
-| POST | `/fault-runs/{id}/cancel` | engineer, presenter — `{id, durum, iptal_istendi}` |
+| POST | `/fault-runs` `{platformlar, hatalar?}` | `fault_run.manage` — 202 `{id, durum}` |
+| GET  | `/fault-runs?limit=` | `run.read` — son koşular (yeniden eskiye) |
+| GET  | `/fault-runs/catalog` | `run.read` — hata kataloğu (+ `requirement_id`: TPD-1) |
+| GET  | `/fault-runs/{id}` | `run.read` — koşu + adımlar |
+| POST | `/fault-runs/{id}/cancel` | `fault_run.manage` — `{id, durum, iptal_istendi}` |
 
 Süren koşu varken başlatma 409 `hata_kosusu_suruyor`; geçersiz platform/hata kodu 422
 `gecersiz_istek`. İptal: koşan adım yoksa koşu hemen `cancelled`; varsa koşu `running` kalır,
@@ -24,7 +24,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
 from tp_core.api.errors import KodluHata
-from tp_core.auth.deps import CurrentUser, DbSession, require_role
+from tp_core.auth.deps import DbSession
+from tp_core.auth.yetki import izin
 from tp_core.features.hata_kosusu import katalog as kat
 from tp_core.features.hata_kosusu import service
 from tp_core.models import Requirement
@@ -32,7 +33,10 @@ from tp_core.workflow.service import Principal
 
 router = APIRouter(tags=["hata_kosusu"])
 
-Baslatan = Annotated[Principal, Depends(require_role("engineer", "presenter"))]
+# İzinler tek katalogdan (auth/yetki.py): başlatma/iptal `fault_run.manage` (engineer, admin —
+# eski presenter), okuma koşu özetleriyle aynı (`run.read`).
+Baslatan = Annotated[Principal, Depends(izin("fault_run.manage"))]
+Okuyucu = Annotated[Principal, Depends(izin("run.read"))]
 KOD = r"^[a-z0-9_]{1,40}$"
 
 
@@ -54,7 +58,7 @@ def baslat(body: KosuGirdisi, session: DbSession, user: Baslatan) -> dict[str, A
 @router.get("/fault-runs")
 def liste(
     session: DbSession,
-    _user: CurrentUser,
+    _user: Okuyucu,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> list[dict[str, Any]]:
     return service.liste(session, limit)
@@ -65,7 +69,7 @@ KATALOG_STORY = "TPD-1"
 
 
 @router.get("/fault-runs/catalog")
-def katalog(session: DbSession, _user: CurrentUser) -> list[dict[str, Any]]:
+def katalog(session: DbSession, _user: Okuyucu) -> list[dict[str, Any]]:
     """Katalog + `requirement_id` (kural bağlantısı ve "Bu girdiyle ek case türet" için;
     birleştirme turu 2, portal mock'uyla aynı alan). Story yoksa ya da hata bir kurala/tabloya
     bağlı değilse `null`."""
@@ -77,7 +81,7 @@ def katalog(session: DbSession, _user: CurrentUser) -> list[dict[str, Any]]:
 
 
 @router.get("/fault-runs/{kosu_id}")
-def detay(kosu_id: uuid.UUID, session: DbSession, _user: CurrentUser) -> dict[str, Any]:
+def detay(kosu_id: uuid.UUID, session: DbSession, _user: Okuyucu) -> dict[str, Any]:
     d = service.detay(session, kosu_id)
     if d is None:
         raise HTTPException(404, "Ekilmiş hata koşusu bulunamadı")

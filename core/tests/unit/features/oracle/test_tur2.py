@@ -33,7 +33,7 @@ from tp_core.models import (
 )
 from tp_core.models.guard import allow_state_write
 
-from ..cases.helpers import latest_cases, run_jobs
+from ..cases.helpers import latest_cases, login, run_jobs
 from . import tpd1
 from .helpers import BASIT, basit_case, kayit_yaz, tablo_ekle, uyumsuz_ayrinti
 from .test_oracle_db import UZUN_GEREKCE, _karar
@@ -288,16 +288,16 @@ def test_g2_y4_zorunlu_kapida_kismen_gerekce_ister(api: TestClient, kur) -> None
     )
     o = latest_cases(api, k["rid"])[0]["oracle"]
     assert (o["sonuc"], o["kismen_nedeni"]) == ("kismen", ["yok_sayilan"])
-    r = _karar(api, c, karar="approve")
+    r = _karar(api, c, karar="accept")
     assert r.status_code == 422 and r.json()["kod"] == "oracle_kontrolsuz", r.text
     r = _karar(
-        api, c, karar="approve", oracle_istisna_gerekce=UZUN_GEREKCE, oracle_istisna_turu="uyumsuz"
+        api, c, karar="accept", oracle_istisna_gerekce=UZUN_GEREKCE, oracle_istisna_turu="uyumsuz"
     )
     assert r.status_code == 422 and r.json()["kod"] == "gecersiz_karar"
     r = _karar(
         api,
         c,
-        karar="approve",
+        karar="accept",
         oracle_istisna_gerekce=UZUN_GEREKCE,
         oracle_istisna_turu="kontrolsuz",
     )
@@ -312,7 +312,7 @@ def test_g2_y4_yalniz_eksik_girdi_kismen_uyariyla_onaylanir(api: TestClient, kur
     c = latest_cases(api, k["rid"])[0]
     ayr = {"gruplar": [{"karsilastirilamayan": [{"column": "toplam", "neden": "x"}]}]}
     kayit_yaz(uuid.UUID(c["id"]), "kismen", ayr)
-    r = _karar(api, c, karar="approve")
+    r = _karar(api, c, karar="accept")
     assert r.status_code == 200, r.text
     assert any("kısmen" in u for u in r.json()["uyarilar"])
 
@@ -437,11 +437,11 @@ def test_g2_y5_kapi_gecici_kayitta_yeniden_kontrol_ister(
         uuid.UUID(c["id"]), "kontrol_edilemedi", {"gruplar": [], "neden": service.NEDEN_REPLAY_MISS}
     )
     once = len(_isler(engine))
-    r = _karar(api, c, karar="approve")
+    r = _karar(api, c, karar="accept")
     assert r.status_code == 422 and r.json()["kod"] == "oracle_kontrolsuz"
     assert len(_isler(engine)) == once + 1  # ayrı işlemde kuyruğa alındı
     run_jobs(engine)
-    r = _karar(api, latest_cases(api, k["rid"])[0], karar="approve")
+    r = _karar(api, latest_cases(api, k["rid"])[0], karar="accept")
     assert r.status_code == 200, r.text
 
 
@@ -474,7 +474,7 @@ def test_g2_y6_kapi_409_yolu_sinirli(api: TestClient, engine: Engine, kur) -> No
     with session_scope() as s:
         for n in range(service.DAKIKA_SINIRI_CASE):
             service.kontrol_kuyruga_al(s, cid, f"h{n}", idempotency_key=f"t:{n}")
-    r = _karar(api, c, karar="approve")
+    r = _karar(api, c, karar="accept")
     assert r.status_code == 429 and r.json()["kod"] == "oracle_kontrol_siniri", r.text
 
 
@@ -518,7 +518,7 @@ def test_g2_y9_gorulen_kayit_damgasi_degistiyse_409(api: TestClient, kur) -> Non
     assert damga != "yok"
     kayit_yaz(cid, "uyumsuz", uyumsuz_ayrinti(str(k["tid"]), "45.00"))  # yeniden hesaplandı
     govde = {
-        "karar": "approve",
+        "karar": "accept",
         "oracle_istisna_gerekce": UZUN_GEREKCE,
         "oracle_istisna_turu": "uyumsuz",
     }
@@ -534,7 +534,7 @@ def test_g2_y9_gerekce_varsa_tur_zorunlu(api: TestClient, kur) -> None:
     k = kur([basit_case(toplam="40,00")])
     c = latest_cases(api, k["rid"])[0]
     kayit_yaz(uuid.UUID(c["id"]), "uyumsuz", uyumsuz_ayrinti(str(k["tid"])))
-    r = _karar(api, c, karar="approve", oracle_istisna_gerekce=UZUN_GEREKCE)
+    r = _karar(api, c, karar="accept", oracle_istisna_gerekce=UZUN_GEREKCE)
     assert r.status_code == 422 and r.json()["kod"] == "gecersiz_karar"
     assert "oracle_istisna_turu" in r.json()["detail"]
 
@@ -547,7 +547,7 @@ def test_g2_y11_saklanan_istisnanin_yeniden_kullanimi_iz_birakir(api: TestClient
     cid = uuid.UUID(c["id"])
     kayit_yaz(cid, "uyumsuz", uyumsuz_ayrinti(str(k["tid"])))
     r = _karar(
-        api, c, karar="approve", oracle_istisna_gerekce=UZUN_GEREKCE, oracle_istisna_turu="uyumsuz"
+        api, c, karar="accept", oracle_istisna_gerekce=UZUN_GEREKCE, oracle_istisna_turu="uyumsuz"
     )
     assert r.status_code == 200, r.text
     c = latest_cases(api, k["rid"])[0]
@@ -558,7 +558,7 @@ def test_g2_y11_saklanan_istisnanin_yeniden_kullanimi_iz_birakir(api: TestClient
     assert c["oracle"]["istisna"]["id"] == ist_id
     assert _karar(api, c, karar="reopen").status_code == 200
     c = latest_cases(api, k["rid"])[0]
-    r = _karar(api, c, karar="approve")
+    r = _karar(api, c, karar="accept")
     assert r.status_code == 200, r.text
     [ev] = _denetim("oracle.exception_reused")
     assert ev.ozet["istisna_id"] == ist_id and ev.ozet["tur"] == "uyumsuz"
@@ -566,7 +566,7 @@ def test_g2_y11_saklanan_istisnanin_yeniden_kullanimi_iz_birakir(api: TestClient
         olculer = [
             rv.duzeltme_olculeri or {}
             for rv in s.scalars(
-                select(Review).where(Review.nesne_id == cid, Review.karar == "approve")
+                select(Review).where(Review.nesne_id == cid, Review.karar == "accept")
             )
         ]
     assert [o.get("oracle_istisna_id") for o in olculer] == [ist_id, ist_id]
@@ -584,7 +584,7 @@ def test_s1_istisna_gecerli_tur_ve_tablo_kumesine_bagli(api: TestClient, kur) ->
         _karar(
             api,
             c,
-            karar="approve",
+            karar="accept",
             oracle_istisna_gerekce=UZUN_GEREKCE,
             oracle_istisna_turu="kontrolsuz",
         ).status_code
@@ -662,7 +662,7 @@ def test_t2_n1_kayit_yazmadan_biten_is_anahtari_kilitlemez(
     tablo A'ya dönünce aynı anahtar yeni iş açar (önceden kapı sonsuz 409)."""
     k = kur([basit_case(toplam="30,00")], olgu_sayisi=10)
     c = latest_cases(api, k["rid"])[0]
-    r = _karar(api, c, karar="approve")
+    r = _karar(api, c, karar="accept")
     assert r.status_code == 409
     [is_] = [j for j in _isler(engine) if j.durum == "queued"]
     with session_scope() as s:
@@ -676,12 +676,12 @@ def test_t2_n1_kayit_yazmadan_biten_is_anahtari_kilitlemez(
                 "i": is_.id,
             },
         )
-    r = _karar(api, c, karar="approve")
+    r = _karar(api, c, karar="accept")
     assert r.status_code == 409
     yeni = [j for j in _isler(engine) if j.durum == "queued"]
     assert [j.idempotency_key for j in yeni] == [f"{is_.idempotency_key}:yeniden1"]
     run_jobs(engine)
-    assert _karar(api, c, karar="approve").status_code == 200
+    assert _karar(api, c, karar="accept").status_code == 200
 
 
 # ================================================================== t2 N5: kilit sırası
@@ -721,7 +721,7 @@ def test_t2_n14_bayat_hash_kapidan_once_reddedilir(api: TestClient, engine: Engi
     c = latest_cases(api, k["rid"])[0]
     once = len(_isler(engine))
     r = api.post(
-        f"/cases/{c['id']}/decision", json={"karar": "approve", "icerik_hash": "sha256:bayat"}
+        f"/cases/{c['id']}/decision", json={"karar": "accept", "icerik_hash": "sha256:bayat"}
     )
     assert r.status_code == 409 and r.json()["kod"] == "onay_hash_uyusmuyor", r.text
     assert len(_isler(engine)) == once  # kontrol işi açılmadı
@@ -784,6 +784,8 @@ def test_u2_n1_yeniden_acilan_tablonun_uyumsuz_kaydi_sayilmaz(
     m = api.get(f"/requirements/{k['rid']}/case-metrics").json()["beklenti_dogrulugu"]
     assert m["uyumsuz"] == 1
     assert [x["case_id"] for x in api.get("/control-tower").json()["onayli_uyumsuz"]] == [c["id"]]
+    api.cookies.clear()
+    login(api, k["analist"])  # tabloyu yeniden açmak `decision_table.edit` (Analist)
     r = api.post(f"/decision-tables/{k['tid']}/reopen")
     assert r.status_code == 200, r.text
     m = api.get(f"/requirements/{k['rid']}/case-metrics").json()["beklenti_dogrulugu"]

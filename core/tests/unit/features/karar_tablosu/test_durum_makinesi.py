@@ -185,12 +185,19 @@ def test_onay_kaydi_olmadan_onaylanamaz(session: Session, make_user: MakeUser, t
 
 
 @pytest.mark.parametrize("tur", TURLER)
-@pytest.mark.parametrize("rol", ["analyst", "engineer", "tester", "presenter"])
+@pytest.mark.parametrize("rol", ["analyst", "engineer", "tester", "admin", "developer"])
 def test_yalniz_po_karar_verir(session: Session, make_user: MakeUser, tur: str, rol: str) -> None:
+    """012 rol modeli: karar `decision_table.approve` (yalnız PO); red mesajı rol ve nesne
+    etiketini taşır (workflow `karar_red_mesaji`)."""
+    from tp_core.auth.yetki import ROL_ETIKETLERI
+
+    nesne = {"karar_tablosu": "karar tablosu", "metamorfik_iliski": "metamorfik ilişki"}[tur]
     n = _nesne(session, tur)
     transition(session, n, "pending_po", SYSTEM, "draft")
     for karar in ("approve", "request_changes"):
-        with pytest.raises(ApprovalNotAllowed, match=f"{rol} rolü {tur} için karar veremez"):
+        with pytest.raises(
+            ApprovalNotAllowed, match=f"{ROL_ETIKETLERI[rol]} rolü {nesne} için '.+' kararı veremez"
+        ):
             _record(session, n, make_user(rol), karar)
 
 

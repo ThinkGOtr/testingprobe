@@ -1,9 +1,9 @@
 """Oracle uçları (012 ANALIZ §6).
 
-| Yöntem | Yol | Rol |
+| Yöntem | Yol | İzin (auth/yetki.py) |
 |---|---|---|
-| GET  | `/cases/{id}/oracle?icerik_hash=` | herkes — güncel ya da önerilen içeriğin sonucu |
-| POST | `/cases/{id}/oracle-check` `{icerik?}` | analyst — 202 `{job_id, icerik_hash}`) |
+| GET  | `/cases/{id}/oracle?icerik_hash=` | `case.oracle_read` — güncel/önerilen içerik sonucu |
+| POST | `/cases/{id}/oracle-check` `{icerik?}` | `case.oracle_check` → 202 `{job_id,icerik_hash}` |
 
 `POST` önerilen içeriği case içerik doğrulamasıyla (şema + AC atıfları) denetler; içerik case'e
 yazılmaz. Sonuç `oracle.checked` olayıyla duyurulur, `GET` ile okunur. Önerilen içerik kapıyla
@@ -22,7 +22,8 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from tp_core.audit import content_hash
-from tp_core.auth.deps import CurrentUser, DbSession, require_role
+from tp_core.auth.deps import DbSession
+from tp_core.auth.yetki import izin
 from tp_core.features.cases import service as cases_service
 from tp_core.features.cases.schema import content_errors
 from tp_core.features.oracle import service
@@ -31,7 +32,10 @@ from tp_core.workflow.service import Principal
 
 router = APIRouter(tags=["oracle"])
 
-Analyst = Annotated[Principal, Depends(require_role("analyst"))]
+# İzinler tek katalogdan (auth/yetki.py). Kontrol sonucu ve istisna gerekçesi karar geçmişidir:
+# developer (kısıtlı case görünümü), auditor ve viewer okumaz.
+Kontrolcu = Annotated[Principal, Depends(izin("case.oracle_check"))]
+Okuyucu = Annotated[Principal, Depends(izin("case.oracle_read"))]
 
 
 class KontrolIstegi(BaseModel):
@@ -46,7 +50,7 @@ class KontrolYaniti(BaseModel):
 
 @router.get("/cases/{case_id}/oracle")
 def get_oracle(
-    case_id: uuid.UUID, session: DbSession, _user: CurrentUser, icerik_hash: str | None = None
+    case_id: uuid.UUID, session: DbSession, _user: Okuyucu, icerik_hash: str | None = None
 ) -> dict[str, Any]:
     tc = cases_service.get_case(session, case_id)
     return service.case_oracle(session, tc, icerik_hash)
@@ -54,7 +58,7 @@ def get_oracle(
 
 @router.post("/cases/{case_id}/oracle-check", response_model=KontrolYaniti, status_code=202)
 def oracle_check(
-    case_id: uuid.UUID, session: DbSession, user: Analyst, body: KontrolIstegi | None = None
+    case_id: uuid.UUID, session: DbSession, user: Kontrolcu, body: KontrolIstegi | None = None
 ) -> KontrolYaniti:
     tc = cases_service.get_case(session, case_id)
     icerik = body.icerik if body is not None else None

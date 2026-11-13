@@ -253,6 +253,8 @@ NESNE_ETIKETLERI: dict[str, str] = {
     "bug_draft": "bug taslağı",
     "script": "script",
     "consistency_finding": "tutarlılık bulgusu",
+    "karar_tablosu": "karar tablosu",
+    "metamorfik_iliski": "metamorfik ilişki",
 }
 KARAR_ETIKETLERI: dict[str, str] = {
     "accept": "Olduğu gibi kabul",

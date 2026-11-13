@@ -1,27 +1,30 @@
 """Karar tablosu ve metamorfik ilişki uçları (012 ANALIZ §6). `registry` bu `router`'ı bağlar.
 
-| Yöntem | Yol | Rol | Gövde → yanıt |
+İzinler (auth/yetki.py): okuma `decision_table.read`, yazma ve geçişler `decision_table.edit`
+(Analist), PO kararı `decision_table.approve` (PO).
+
+| Yöntem | Yol | İzin | Gövde → yanıt |
 |---|---|---|---|
-| GET  | `/requirements/{id}/decision-tables?tumu=` | herkes | → `{tablolar, iliskiler,
+| GET  | `/requirements/{id}/decision-tables?tumu=` | read | → `{tablolar, iliskiler,
 son_taslak}` |
-| POST | `/requirements/{id}/decision-tables/draft` | analyst | → 202 `{job_id, workflow_id,
+| POST | `/requirements/{id}/decision-tables/draft` | edit | → 202 `{job_id, workflow_id,
 durum, mesaj, uretim_no}` |
-| POST | `/requirements/{id}/decision-tables` | analyst | `{icerik?}` → 201 öğe (boş tablo) |
-| PUT  | `/decision-tables/{id}` | analyst | `{icerik, icerik_hash}` → öğe |
-| POST | `/decision-tables/{id}/submit` | analyst | `{icerik_hash?}` → öğe |
-| POST | `/decision-tables/{id}/withdraw` | analyst | → öğe |
-| POST | `/decision-tables/{id}/reopen` | analyst | `{icerik_hash?, gerekce?, case_id?}` → öğe
+| POST | `/requirements/{id}/decision-tables` | edit | `{icerik?}` → 201 öğe (boş tablo) |
+| PUT  | `/decision-tables/{id}` | edit | `{icerik, icerik_hash}` → öğe |
+| POST | `/decision-tables/{id}/submit` | edit | `{icerik_hash?}` → öğe |
+| POST | `/decision-tables/{id}/withdraw` | edit | → öğe |
+| POST | `/decision-tables/{id}/reopen` | edit | `{icerik_hash?, gerekce?, case_id?}` → öğe
 ("Tablo yanlış" yolu: `case_id` verilirse gerekçe zorunlu, 422 `gecersiz_karar`) |
-| POST | `/decision-tables/{id}/approve` | po | `{icerik_hash, gerekce?}` → öğe |
-| POST | `/decision-tables/{id}/request-changes` | po | `{icerik_hash, gerekce}` → öğe |
-| POST | `/decision-tables/{id}/evaluate` | herkes | `{girdiler, icerik?}` → `{satir_id,
+| POST | `/decision-tables/{id}/approve` | approve | `{icerik_hash, gerekce?}` → öğe |
+| POST | `/decision-tables/{id}/request-changes` | approve | `{icerik_hash, gerekce}` → öğe |
+| POST | `/decision-tables/{id}/evaluate` | read | `{girdiler, icerik?}` → `{satir_id,
 ciktilar, eksik_girdiler, hata}`; `girdiler` en çok 24 ad, ad ≤ 40, metin değer ≤ 300 karakter |
-| GET  | `/decision-tables/{id}/ornekler` | herkes | → `{ornekler: [{girdiler, satir_id, ciktilar,
+| GET  | `/decision-tables/{id}/ornekler` | read | → `{ornekler: [{girdiler, satir_id, ciktilar,
 hata}], uyarilar: [{tur, mesaj, satirlar?, girdiler?}]}` (`ifade.sinir_ornekleri`) |
-| POST | `/requirements/{id}/relations` | analyst | `{icerik, karar_tablosu_id?}` → 201 öğe |
-| PUT  | `/relations/{id}` | analyst | `{icerik, icerik_hash, karar_tablosu_id?}` → öğe |
-| POST | `/relations/{id}/submit` · `/withdraw` · `/reopen` | analyst | tablo uçlarıyla aynı |
-| POST | `/relations/{id}/approve` · `/request-changes` | po | tablo uçlarıyla aynı |
+| POST | `/requirements/{id}/relations` | edit | `{icerik, karar_tablosu_id?}` → 201 öğe |
+| PUT  | `/relations/{id}` | edit | `{icerik, icerik_hash, karar_tablosu_id?}` → öğe |
+| POST | `/relations/{id}/submit` · `/withdraw` · `/reopen` | edit | tablo uçlarıyla aynı |
+| POST | `/relations/{id}/approve` · `/request-changes` | approve | tablo uçlarıyla aynı |
 
 Öğe: `{id, tur, requirement_id, sira_no, durum, icerik, icerik_hash, onaylanan_hash,
 ai_generated, uretim_modu, bayat, olusturma, guncelleme, onaylayan, onay_zamani, son_karar,
@@ -48,15 +51,18 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
-from tp_core.auth.deps import CurrentUser, DbSession, require_role
+from tp_core.auth.deps import DbSession
+from tp_core.auth.yetki import izin
 from tp_core.features.karar_tablosu import service
 from tp_core.features.karar_tablosu.hatalar import IliskiGecersiz, KararTablosuGecersiz
 from tp_core.workflow.service import Principal
 
 router = APIRouter(tags=["karar_tablosu"])
 
-Analyst = Annotated[Principal, Depends(require_role("analyst"))]
-Po = Annotated[Principal, Depends(require_role("po"))]
+# İzinler tek katalogdan (auth/yetki.py; 012-rol-yetki §4.3).
+Analyst = Annotated[Principal, Depends(izin("decision_table.edit"))]
+Po = Annotated[Principal, Depends(izin("decision_table.approve"))]
+Okuyucu = Annotated[Principal, Depends(izin("decision_table.read"))]
 
 HASH = Field(default=None, max_length=128)
 
@@ -149,7 +155,7 @@ def _oge(session: DbSession, nesne: Any) -> dict[str, Any]:
 
 @router.get("/requirements/{requirement_id}/decision-tables")
 def list_tables(
-    requirement_id: uuid.UUID, session: DbSession, _u: CurrentUser, tumu: bool = False
+    requirement_id: uuid.UUID, session: DbSession, _u: Okuyucu, tumu: bool = False
 ) -> dict[str, Any]:
     return service.listele(session, requirement_id, tumu=tumu)
 
@@ -203,13 +209,13 @@ def update_table(
 
 @router.post("/decision-tables/{tablo_id}/evaluate")
 def evaluate_table(
-    tablo_id: uuid.UUID, body: Degerlendir, session: DbSession, _u: CurrentUser
+    tablo_id: uuid.UUID, body: Degerlendir, session: DbSession, _u: Okuyucu
 ) -> dict[str, Any]:
     return service.tablo_degerlendir(session, tablo_id, body.girdiler, body.icerik)
 
 
 @router.get("/decision-tables/{tablo_id}/ornekler")
-def table_examples(tablo_id: uuid.UUID, session: DbSession, _u: CurrentUser) -> dict[str, Any]:
+def table_examples(tablo_id: uuid.UUID, session: DbSession, _u: Okuyucu) -> dict[str, Any]:
     """Sınır örnekleri ve satır uyarıları (çakışan, hiç eşleşmeyen, gölgede kalan satırlar)."""
     return service.tablo_ornekleri(session, tablo_id)
 

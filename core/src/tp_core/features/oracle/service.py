@@ -69,8 +69,9 @@ CHECK_REQUIREMENT_JOB = "oracle.check_requirement"
 OLAY = "oracle.checked"
 OLAY_ONAYLI_UYUMSUZ = "oracle.onayli_uyumsuz"
 # Yeni tablo / üretim sonrası kontrol edilen case durumları (§4.3 "Ne zaman koşar"; review 1:
-# yayınlı case'ler de yeniden denetlenir).
-KONTROL_DURUMLARI = ("draft", "approved", "published")
+# yayınlı case'ler de yeniden denetlenir). `ready`: Testçinin kabul ettiği, Analist son onayını
+# bekleyen case (012 rol modeli; son onay da kapıdan geçer).
+KONTROL_DURUMLARI = ("draft", "ready", "approved", "published")
 ONAYLI_DURUMLAR = ("approved", "published")
 # `check_requirement` birleştirme: gereksinim başına tek bekleyen iş, kısa gecikmeyle (art arda
 # gelen tablo olayları tek taramada toplanır). `TP_ORACLE_BIRLESTIRME_S` ile değişir (testler 0).

@@ -45,7 +45,7 @@ BEKLENTI_ALANLARI = set(BOS_BEKLENTI)
 
 def test_bos_veritabaninda_olculmedi(engine: Engine) -> None:
     with Session(engine) as s:
-        k = ct.control_tower(s)
+        k = ct.control_tower(s, artefakt=True)
     assert k["beklenti_dogrulugu"] == BOS_BEKLENTI
     assert k["onayli_uyumsuz"] == []
     assert k["hata_yakalama"] is None
@@ -63,7 +63,7 @@ def test_beklenti_kaynagi_degerden_kaynaklara_tasinir(
 
     monkeypatch.setattr(metrik, "beklenti_dogrulugu", sahte)
     with Session(engine) as s:
-        k = ct.control_tower(s)
+        k = ct.control_tower(s, artefakt=True)
     assert set(k["beklenti_dogrulugu"]) == BEKLENTI_ALANLARI
     assert k["beklenti_dogrulugu"]["oran"] == 0.75
     assert k["kaynaklar"]["beklenti_dogrulugu"] == "ölçüm kaynağı"
@@ -122,7 +122,7 @@ def test_hata_yakalama_son_tam_katalog_kosusundan(engine: Engine) -> None:
         )
         _kosu(s, "running", None, [("temel", "bekliyor", None, [])])
         s.commit()
-        k = ct.control_tower(s)
+        k = ct.control_tower(s, artefakt=True)
     hy = k["hata_yakalama"]
     assert "kaynak" not in hy
     assert hy["son_kosu"]["id"] == str(tamam.id) and hy["son_kosu"]["durum"] == "done"

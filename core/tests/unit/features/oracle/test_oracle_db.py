@@ -92,7 +92,7 @@ def test_tpd1_replay_akisi_golden_sonuclari(
     analist, po = make_user("analyst"), make_user("po")
     for n in sorted(tpd1.TABLOLAR):
         tablo_ekle(rid, tpd1.TABLOLAR[n], analist, po)
-    login(api, analist)
+    login(api, make_user("tester"))  # 012 rol: üretim ve kabul Testçide
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     run_jobs(engine, limit=100)
     cases = latest_cases(api, rid)
@@ -142,7 +142,7 @@ def test_tpd1_replay_akisi_golden_sonuclari(
     }
     assert "karar tablo" in m["kaynak"]
     # Uyumlu yüksek riskli case serbestçe onaylanır; uyarı yok.
-    r = _karar(api, c2, karar="approve")
+    r = _karar(api, c2, karar="accept")
     assert r.status_code == 200, r.text
     assert not any("tablo" in u for u in r.json()["uyarilar"])
     # Düzeltilmiş (golden'ı olmayan) içerik REPLAY-MISS → nötr → kontrol_edilemedi (asla uyumlu).
@@ -236,7 +236,7 @@ def test_onay_kapisi_matrisi(api: TestClient, engine: Engine, kur, durum: str, r
     elif durum == "bayat_kayit":
         kayit_yaz(cid, "uyumlu", hashler={str(k["tid"]): "sha256:eski"})
     onceki_is = _kuyruktaki(engine, service.CHECK_CASE_JOB)
-    r = _karar(api, c, karar="approve", **govde)
+    r = _karar(api, c, karar="accept", **govde)
     kod, hata, uyari = _beklenen(durum, risk)
     assert r.status_code == kod, r.text
     if hata:
@@ -244,7 +244,7 @@ def test_onay_kapisi_matrisi(api: TestClient, engine: Engine, kur, durum: str, r
         assert latest_cases(api, k["rid"])[0]["durum"] == "draft"
     else:
         out = r.json()
-        assert out["durum"] == "approved"
+        assert out["durum"] == "ready"
         oracle_uyarilari = [u for u in out["uyarilar"] if "tablo" in u]
         assert bool(oracle_uyarilari) is uyari, out["uyarilar"]
         with session_scope() as s:
@@ -278,7 +278,7 @@ def test_istisna_gerekcesi_en_az_20_karakter(api: TestClient, kur) -> None:
     r = _karar(
         api,
         c,
-        karar="approve",
+        karar="accept",
         oracle_istisna_turu="uyumsuz",
         oracle_istisna_gerekce="  kısa gerekçe     ",
     )
@@ -286,15 +286,15 @@ def test_istisna_gerekcesi_en_az_20_karakter(api: TestClient, kur) -> None:
     assert "20" in r.json()["detail"]
     assert _kayitlar(c["id"])[0].istisna_gerekce is None
     r = _karar(
-        api, c, karar="approve", oracle_istisna_turu="uyumsuz", oracle_istisna_gerekce="x" * 2001
+        api, c, karar="accept", oracle_istisna_turu="uyumsuz", oracle_istisna_gerekce="x" * 2001
     )
     assert r.status_code == 422  # gövde sınırı
     r = _karar(
-        api, c, karar="approve", oracle_istisna_turu="uyumsuz", oracle_istisna_gerekce=UZUN_GEREKCE
+        api, c, karar="accept", oracle_istisna_turu="uyumsuz", oracle_istisna_gerekce=UZUN_GEREKCE
     )
     assert r.status_code == 200, r.text
     ev = _denetim("oracle.exception")[0]
-    assert ev.ozet["gerekce"] == UZUN_GEREKCE and ev.aktor == k["analist"].kullanici_adi
+    assert ev.ozet["gerekce"] == UZUN_GEREKCE and ev.aktor == k["testci"].kullanici_adi
     assert ev.ozet["uyusmayan"][0]["column"] == "toplam"
     m = api.get(f"/requirements/{k['rid']}/case-metrics").json()["beklenti_dogrulugu"]
     assert m["istisna"] == 1 and m["uyumsuz"] == 1 and m["oran"] == 0.0
@@ -355,7 +355,7 @@ def test_uretim_kontrol_eder_duzeltme_onerilen_icerikle(
         tc = s.get(TestCase, uuid.UUID(c["id"]))
         assert tc.icerik_hash == content_hash(basit_case(toplam="40,00")) == c["icerik_hash"]
     # Yüksek risk + uyuşmazlık: 422.
-    r = _karar(api, c, karar="approve")
+    r = _karar(api, c, karar="accept")
     assert r.status_code == 422 and r.json()["kod"] == "oracle_uyumsuz"
     # Önerilen düzeltme kontrol edilmeden edit: 409 (V3).
     duzgun = basit_case(toplam="30,00")
@@ -375,7 +375,7 @@ def test_uretim_kontrol_eder_duzeltme_onerilen_icerikle(
     r = _karar(api, c, karar="edit", icerik=duzgun)
     assert r.status_code == 200, r.text
     out = r.json()
-    assert out["durum"] == "approved" and out["oracle"]["sonuc"] == "uyumlu"
+    assert out["durum"] == "ready" and out["oracle"]["sonuc"] == "uyumlu"
     rows = {row.icerik_hash: row for row in _kayitlar(c["id"])}
     assert rows[c["icerik_hash"]].ai_icerik is True  # AI içeriği
     assert rows[content_hash(duzgun)].ai_icerik is False  # insan düzeltmesi
@@ -400,7 +400,7 @@ def test_tablo_degisince_kayit_bayatlar_ve_yeniden_hesaplanir(
     )
     c = latest_cases(api, k["rid"])[0]
     assert c["oracle"]["kontrol_suruyor"] is True and c["oracle"]["sonuc"] is None
-    r = _karar(api, c, karar="approve")
+    r = _karar(api, c, karar="accept")
     assert r.status_code == 409 and r.json()["kod"] == "oracle_bekleniyor"
     run_jobs(engine)
     c = latest_cases(api, k["rid"])[0]
@@ -454,14 +454,14 @@ def test_kapi_tablo_onceki_icerigine_donunce_kalici_409_vermez(
     k = kur([basit_case(toplam="30,00")], olgu_sayisi=10)  # tablo onayı kontrol işi açmaz
     c = latest_cases(api, k["rid"])[0]
     for icerik in (B_TABLO, BASIT):
-        r = _karar(api, c, karar="approve")
+        r = _karar(api, c, karar="accept")
         assert r.status_code == 409 and r.json()["kod"] == "oracle_bekleniyor", r.text
         run_jobs(engine)
         tablo_degistir(k["tid"], icerik, k["analist"], k["po"])
-    r = _karar(api, c, karar="approve")
+    r = _karar(api, c, karar="accept")
     assert r.status_code == 409, r.text
     run_jobs(engine)
-    r = _karar(api, c, karar="approve")
+    r = _karar(api, c, karar="accept")
     assert r.status_code == 200, r.text
     assert r.json()["oracle"]["sonuc"] == "uyumlu"
 
@@ -478,7 +478,7 @@ def test_bayat_ve_kesismeyen_tablo_kullanilmaz(api: TestClient, kur) -> None:
     c = latest_cases(api, k["rid"])[0]
     # Tablosuz üretimde kontrol işi açılmaz; kapsayan tablo da kalmadı: `oracle` yok.
     assert c["oracle"] is None and _kayitlar(c["id"]) == []
-    assert _karar(api, c, karar="approve").status_code == 200
+    assert _karar(api, c, karar="accept").status_code == 200
 
 
 def test_gereksinim_isi_taslak_ve_onayli_icin_ai_icerigini_de_kontrol_eder(
@@ -528,12 +528,12 @@ def test_model_hatasi_son_denemede_kontrol_edilemedi(api: TestClient, engine: En
     c = latest_cases(api, k["rid"])[0]
     assert c["oracle"]["neden"] == "cagri_hatasi"
     # Yüksek risk + kontrol edilemedi (K10): gerekçesiz 422, gerekçeyle kontrolsüz onay.
-    r = _karar(api, c, karar="approve")
+    r = _karar(api, c, karar="accept")
     assert r.status_code == 422 and r.json()["kod"] == "oracle_kontrolsuz"
     r = _karar(
         api,
         c,
-        karar="approve",
+        karar="accept",
         oracle_istisna_gerekce=UZUN_GEREKCE,
         oracle_istisna_turu="kontrolsuz",
     )
@@ -600,12 +600,26 @@ def test_uclar_ve_roller(api: TestClient, engine: Engine, kur, make_user) -> Non
     r = api.post(f"/cases/{c['id']}/oracle-check")
     assert r.status_code == 202 and r.json()["icerik_hash"] == c["icerik_hash"]
     assert api.get(f"/cases/{uuid.uuid4()}/oracle").status_code == 404
-    for rol in ("po", "tester", "engineer"):
+    # 012 rol modeli: yeniden kontrol `case.oracle_check` (Testçi, Analist); sonuç okuma
+    # `case.oracle_read` (developer / auditor / viewer hariç; karar geçmişi sayılır).
+    for rol in ("po", "engineer", "admin"):
         api.cookies.clear()
         login(api, make_user(rol))
         assert api.get(f"/cases/{c['id']}/oracle").status_code == 200
         r = api.post(f"/cases/{c['id']}/oracle-check", json={})
         assert r.status_code == 403, (rol, r.text)
+    for rol in ("tester", "analyst"):
+        api.cookies.clear()
+        login(api, make_user(rol))
+        assert api.post(f"/cases/{c['id']}/oracle-check", json={}).status_code == 202, rol
+    for rol in ("developer", "auditor", "viewer"):
+        api.cookies.clear()
+        login(api, make_user(rol))
+        assert api.get(f"/cases/{c['id']}/oracle").status_code == 403, rol
+        caseler = api.get("/cases", params={"requirement_id": k["rid"]})
+        assert all(
+            "oracle" not in x for x in (caseler.json() if caseler.status_code == 200 else [])
+        )
     api.cookies.clear()
     assert api.get(f"/cases/{c['id']}/oracle").status_code == 401
 
@@ -639,7 +653,7 @@ def test_uretim_girdisi_tablo_icerigi_tasimaz(
         req = cases_service.get_requirement(s, rid)
         assert gecerli_tablolar(s, rid)  # tablo gerçekten onaylı ve geçerli
         mesajlar = cases_service.generation_messages(req, cases_service._onaylanan_sorular(s, rid))
-    login(api, analist)
+    login(api, make_user("tester"))
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     run_jobs(engine)
     gonderilen = str(provider.requests[0].messages) + str(provider.requests[0].system)

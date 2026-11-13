@@ -660,7 +660,7 @@ def test_web_mutlu_yol_adim_basina_is_senaryo_11(
             assert run.artefaktlar["dizin"].startswith("runs/hk-")
         from tp_core.features.ci.service import run_detail
 
-        rd = run_detail(s, uuid.UUID(yak["run_id"]))
+        rd = run_detail(s, uuid.UUID(yak["run_id"]), artefakt=True)
         assert rd["hata_kodu"] == "kampanya_tek_bedava" and rd["hata_kosusu_id"] == str(kid)
 
 
@@ -1330,11 +1330,16 @@ def test_hata_yakalama_ozeti_kule_sekli_ve_kapsam(
 
 
 def test_api_roller_ve_sekiller(api: TestClient, make_user, engine: Engine) -> None:
-    login(api, make_user("analyst"))
-    r = api.post("/fault-runs", json={"platformlar": ["web"]})
-    assert r.status_code == 403
+    # 012 rol modeli: başlatma/iptal `fault_run.manage` (engineer, admin — eski presenter);
+    # okuma `run.read` (tüm roller, viewer dahil).
+    for rol in ("analyst", "tester", "po", "developer"):
+        login(api, make_user(rol))
+        r = api.post("/fault-runs", json={"platformlar": ["web"]})
+        assert r.status_code == 403, rol
+    login(api, make_user("viewer"))
     assert api.get("/fault-runs/catalog").status_code == 200
-    login(api, make_user("presenter"))
+    assert api.get("/fault-runs").status_code == 200
+    login(api, make_user("admin"))
     r = api.post("/fault-runs", json={"platformlar": ["web"], "hatalar": ["kampanya_tek_bedava"]})
     assert r.status_code == 202, r.text
     govde = r.json()

@@ -105,6 +105,9 @@ def test_tpd1_kalite_dogrulama_uctan_uca(
         beyan["acceptance_criteria"],
     )
     analist, po = make_user("analyst"), make_user("po")
+    # 012 rol modeli: case üretimi, kabulü/düzeltmesi ve ek case türetme Testçide; son onay
+    # Analistte (görevler ayrılığı role göre); karar tablosu Analist + PO.
+    testci = make_user("tester")
 
     # 1) AI taslağı (REPLAY golden) → iki tablo + bir ilişki, taslak.
     _rol(api, analist)
@@ -120,6 +123,7 @@ def test_tpd1_kalite_dogrulama_uctan_uca(
     assert iliski["karar_tablosu_id"] == t1["id"]
 
     # 2) Case üretimi (tablolar henüz onaysız: kontrol işi açılmaz).
+    _rol(api, testci)
     _ok(api.post(f"/requirements/{rid}/generate-cases"), 202)
     run_jobs(engine, limit=100)
     cases = _by_sira(latest_cases(api, rid))
@@ -190,16 +194,26 @@ def test_tpd1_kalite_dogrulama_uctan_uca(
         modlar = s.scalars(select(AiCall.mod).where(AiCall.amac == "case_facts")).all()
     assert sorted(modlar) == ["replay"] * 7  # C2–C6, C9, C10; AC1/AC4/AC5 modele gitmez
 
-    # 5) Onay kapısı: uyumlu yüksek riskli C3 serbest.
+    # 5) Onay kapısı: uyumlu yüksek riskli C3 serbest — Testçi kabulü ve Analist son onayı.
+    _rol(api, testci)
     r = _ok(
         api.post(
             f"/cases/{cases[3]['id']}/decision",
-            json={"karar": "approve", "icerik_hash": cases[3]["icerik_hash"]},
+            json={"karar": "accept", "icerik_hash": cases[3]["icerik_hash"]},
+        )
+    )
+    assert r["durum"] == "ready" and not any("tablo" in u for u in r["uyarilar"])
+    _rol(api, analist)
+    r = _ok(
+        api.post(
+            f"/cases/{cases[3]['id']}/decision",
+            json={"karar": "approve", "icerik_hash": r["icerik_hash"]},
         )
     )
     assert r["durum"] == "approved" and not any("tablo" in u for u in r["uyarilar"])
+    _rol(api, testci)
 
-    # 6) Analist C5'i (yüksek risk) rehber §8.6'daki metinle yanlış düzeltir: önerilen içerik
+    # 6) Testçi C5'i (yüksek risk) rehber §8.6'daki metinle yanlış düzeltir: önerilen içerik
     # REPLAY golden'ıyla kontrol edilir → uyumsuz.
     c5 = cases[5]
     yanlis = json.loads(json.dumps(c5["icerik"]))
@@ -235,13 +249,25 @@ def test_tpd1_kalite_dogrulama_uctan_uca(
             json={**karar, "oracle_istisna_gerekce": GEREKCE, "oracle_istisna_turu": "uyumsuz"},
         )
     )
-    assert r["durum"] == "approved"
+    assert r["durum"] == "ready"
     with session_scope() as s:
         ev = s.scalars(select(AuditEvent).where(AuditEvent.eylem == "oracle.exception")).one()
-        assert ev.ozet["gerekce"] == GEREKCE and ev.aktor == analist.kullanici_adi
+        assert ev.ozet["gerekce"] == GEREKCE and ev.aktor == testci.kullanici_adi
         assert ev.ozet["tur"] == "uyumsuz"
         [ist] = s.scalars(select(OracleIstisna)).all()
         assert (ist.tur, ist.icerik_hash) == ("uyumsuz", h)
+    # Analist son onayı da kapıdan geçer: aynı tür + tablo kümesiyle verilmiş istisna yeniden
+    # gerekçe istemez (`oracle.exception_reused`), yeni istisna satırı açılmaz.
+    _rol(api, analist)
+    r = _ok(api.post(f"/cases/{c5['id']}/decision", json={"karar": "approve", "icerik_hash": h}))
+    assert r["durum"] == "approved"
+    with session_scope() as s:
+        assert len(s.scalars(select(OracleIstisna)).all()) == 1
+        ev = s.scalars(
+            select(AuditEvent).where(AuditEvent.eylem == "oracle.exception_reused")
+        ).one()
+        assert ev.aktor == analist.kullanici_adi
+    _rol(api, testci)
 
     # 8) Beklenti doğruluğu: AI içeriği üzerinden (C5'in AI içeriği uyumluydu; düzeltme sayılmaz).
     # C10 = C2 (aynı satır, aynı değerler) tek sayılır; kapsam payda: tablolu story'deki 9 AI

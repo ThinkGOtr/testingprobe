@@ -489,10 +489,11 @@ def test_api_roller_ve_yanit(
     k = kur()
     yol = f"/requirements/{k.rid}/metamorphic-cases"
     govde = {"iliski_id": str(k.iliski_id)}
-    for rol in ("po", "tester", "engineer"):
+    # 012 rol modeli: ilişkiden türetme case üretimidir (`case.generate`, yalnız Testçi).
+    for rol in ("po", "analyst", "engineer", "admin"):
         login(api, make_user(rol))
-        assert api.post(yol, json=govde).status_code == 403
-    login(api, k.analist)
+        assert api.post(yol, json=govde).status_code == 403, rol
+    login(api, make_user("tester"))
     r = api.post(yol, json=govde)
     assert r.status_code == 200, r.text
     veri = r.json()
@@ -515,7 +516,7 @@ def test_api_roller_ve_yanit(
     ]
     assert (c["durum"], c["ai_generated"], c["sira_no"]) == ("draft", False, 2)
 
-    login(api, make_user("tester"))
+    login(api, make_user("po"))
     r = api.get(f"/requirements/{k.rid}/metamorphic-derivations")
     assert r.status_code == 200, r.text
     [satir] = r.json()
@@ -524,11 +525,17 @@ def test_api_roller_ve_yanit(
     assert satir["kaynak_case_id"] == str(k.kaynaklar[0])
     assert satir["iliski_id"] == str(k.iliski_id)
     assert api.get(f"/requirements/{uuid.uuid4()}/metamorphic-derivations").status_code == 404
+    for rol in ("developer", "viewer"):
+        login(api, make_user(rol))
+        r = api.get(f"/requirements/{k.rid}/metamorphic-derivations")
+        assert r.status_code == 403, rol
 
 
-def test_api_hata_kodlari(kur: Callable[..., Kurulum], api: TestClient) -> None:
+def test_api_hata_kodlari(
+    kur: Callable[..., Kurulum], api: TestClient, make_user: Callable[..., Principal]
+) -> None:
     k = kur(iliski_durum="pending_po")
-    login(api, k.analist)
+    login(api, make_user("tester"))
     yol = f"/requirements/{k.rid}/metamorphic-cases"
     r = api.post(yol, json={"iliski_id": str(k.iliski_id)})
     assert r.status_code == 422

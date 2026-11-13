@@ -1,7 +1,7 @@
 """Ekilmiş hata koşusu (F3; specs/012-test-kalite-dogrulama/ANALIZ.md §4.6, §4.7, §13).
 
-Kontrol Kulesi'nden elle başlatılır (K5; `engineer`, `presenter` — V4). Seçilen platformlar
-**sırayla** koşar; platform başına:
+Kontrol Kulesi'nden elle başlatılır (K5; `fault_run.manage`: `engineer`, `admin` — V4). Seçilen
+platformlar **sırayla** koşar; platform başına:
 
 1. `temel`: hatasız tam suite. Ortam/altyapı/derleme hatası (ya da toolchain'e ulaşılamaması) →
    platformun kalan adımları `gecersiz` ("temel koşu yeşil değil"). Temelde **kırmızı testler**

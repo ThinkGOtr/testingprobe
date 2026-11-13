@@ -118,6 +118,8 @@ KISITLI_GIZLI_ALANLAR = (
     "testci_karari",
     "testci",
     "son_onay",
+    # 012 kalite: karar tablosu kontrolü ve istisna gerekçesi karar geçmişidir.
+    "oracle",
 )
 # Case kararı ve yayın yalnızca bu gereksinim durumlarında (PO onayı güncel olmalı). Story değişip
 # gereksinim `new`'e dönünce (PO onayı silinir) eski metinden üretilmiş case'ler kullanılamaz.
@@ -1075,9 +1077,10 @@ def mark_viewed(session: Session, cid: uuid.UUID, user: Principal) -> dict[str, 
 
     K13': portal bunu görünürlüğün BAŞINDA gönderir; review süresi bu andan ölçülür, toplu onay
     bu andan `GORULME_MIN_S` sn sonra açılır. Yalnız kullanıcının kararını bekleyen case'te kayıt
-    açılır (012: taslak → Testçi kararı, `ready` → Analist son onayı): karar ile çakışan (karardan sonra gelen)
-    istek case satırında karar işlemini bekler (FOR SHARE) ve karar bekleyen durumda olmayan case
-    için yeni pencere başlatmaz (`yeni: False`, `ilk_goruntuleme: null`).
+    açılır (012: taslak → Testçi kararı, `ready` → Analist son onayı): karar ile çakışan
+    (karardan sonra gelen) istek case satırında karar işlemini bekler (FOR SHARE) ve karar
+    bekleyen durumda olmayan case için yeni pencere başlatmaz (`yeni: False`,
+    `ilk_goruntuleme: null`).
     """
     if user.id is None:
         raise InvalidDecision("görüntüleme yalnızca oturumlu kullanıcıyla kaydedilir")

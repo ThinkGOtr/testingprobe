@@ -8,7 +8,7 @@
     {"kalip": "/gereksinimler/:id", "ekran": "Gereksinim detay", "varlik": "requirement", "roller": null},
     {"kalip": "/gereksinimler/:id/caseler", "ekran": "Case inceleme", "varlik": "requirement", "roller": null},
     {"kalip": "/gereksinimler/:id/yayin", "ekran": "Yayın", "varlik": "requirement", "roller": null},
-    {"kalip": "/gereksinimler/:id/karar-tablolari", "ekran": "Karar tabloları", "varlik": "requirement", "roller": null},
+    {"kalip": "/gereksinimler/:id/karar-tablolari", "ekran": "Karar tabloları", "varlik": "requirement", "roller": ["admin", "analyst", "developer", "engineer", "po", "tester"]},
     {"kalip": "/caseler", "ekran": "Test case'leri", "varlik": null, "roller": null},
     {"kalip": "/kod", "ekran": "Kod (scriptler)", "varlik": null, "roller": ["admin", "analyst", "tester", "engineer"]},
     {"kalip": "/kod/:id", "ekran": "Script detay", "varlik": "script", "roller": ["admin", "analyst", "tester", "engineer"]},

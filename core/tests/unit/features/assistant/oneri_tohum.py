@@ -456,7 +456,7 @@ VAKALAR: dict[str, tuple[str, Kurulum, Kurulum]] = {
         _hata("test_maintenance", alt_tur="beklenti"),
     ),
     "hata-beklenti-case-duzelt": (
-        "analyst",
+        "tester",  # 012 rol modeli: case düzeltmesi Testçide
         _hata("test_maintenance", alt_tur="beklenti"),
         _hata("test_maintenance", alt_tur="locator"),
     ),
