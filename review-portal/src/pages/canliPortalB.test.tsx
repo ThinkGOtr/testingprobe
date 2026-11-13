@@ -237,3 +237,30 @@ describe("/demo/status önbelleği", () => {
     expect(sayi()).toBe(3);
   });
 });
+
+describe("/kod: pasif Java kartı", () => {
+  it("teknik neden görünür metinde yok, ipucunda; kullanıcı metni anlaşılır", async () => {
+    const { dilNedeni, JAVA_WEB_KAPALI } = await import("../components/Dil");
+    const ham = "GitHub kipinde Java web hattı etkin değil (TP_WEB_DILLERI java içermiyor; web-java iş akışı zorunlu check değil)";
+    expect(dilNedeni(ham)).toEqual({ metin: JAVA_WEB_KAPALI, ayrinti: ham });
+    expect(dilNedeni("Depo okunamadı")).toEqual({ metin: "Depo okunamadı", ayrinti: null });
+    izle((c) =>
+      c.path === "/code/languages"
+        ? {
+            platform: "web",
+            algilanan: "ts",
+            kaynak: "algilandi",
+            secenekler: [
+              { dil: "ts", etiket: "TypeScript", cati: "Playwright Test", kullanilabilir: true, neden: null, hat: "tam" },
+              { dil: "java", etiket: "Java", cati: "Playwright for Java + TestNG", kullanilabilir: false, neden: ham, hat: "tam" },
+            ],
+          }
+        : undefined,
+    );
+    await oturumAc("muhendis");
+    uygulama("/kod");
+    const neden = await screen.findByText(/Kullanılamıyor: Java web hattı bu kurulumda etkin değil/);
+    expect(document.body.textContent).not.toContain("TP_WEB_DILLERI");
+    expect(neden.closest("label")).toHaveAttribute("title", ham);
+  });
+});

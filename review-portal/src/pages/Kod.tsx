@@ -11,7 +11,7 @@ import { YEREL_SINIF } from "../lib/kapi";
 import { tarih } from "../lib/format";
 import { PlatformRozeti, PlatformSecici } from "../components/Platform";
 import { PLATFORM_ETIKETI, type Platform } from "../lib/platform";
-import { DilRozeti, DilSecici } from "../components/Dil";
+import { dilNedeni, DilRozeti, DilSecici } from "../components/Dil";
 import { DIL_ETIKETI, dogrulanmamisDilMi, type Dil } from "../lib/dil";
 import type { Script, UretimSonucu } from "../api/types";
 import { baslamayanlar, DilCakismasiKutusu, dilCakismasiMi, UretimAtlananlar, uretimBildirimi } from "../components/UretimSonuclari";
@@ -85,7 +85,7 @@ export function Kod() {
   const seciliSecenek = dilVerisi?.secenekler.find((s) => s.dil === seciliDil) ?? null;
   const dogrulanmamis = seciliSecenek ? seciliSecenek.hat === "dogrulanmamis" : dogrulanmamisDilMi(seciliDil);
   // Algılanan dil bu depoda üretilemiyorsa (seçenek pasif) üretim başlatılmaz: neden seçenekte yazılıdır.
-  const dilEngeli = seciliSecenek && !seciliSecenek.kullanilabilir ? (seciliSecenek.neden ?? `${seciliSecenek.etiket} bu depoda üretilemiyor.`) : null;
+  const dilEngeli = seciliSecenek && !seciliSecenek.kullanilabilir ? (dilNedeni(seciliSecenek.neden).metin ?? `${seciliSecenek.etiket} bu depoda üretilemiyor.`) : null;
   const islem = useIslem();
   const bildir = useBildirim();
   // K-T12: son isteğin üretimi başlamayan case'leri (çakışma, açık/merge edilmiş PR, süren iş); yeni istekte sıfırlanır.

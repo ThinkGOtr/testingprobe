@@ -5725,3 +5725,6 @@ input[type="checkbox"][role="switch"] {
 .siralama-dugmesi:focus-visible { outline: 2px solid var(--focus, currentColor); outline-offset: 2px; }
 .siralama-isareti { opacity: 0.6; font-size: 0.85em; }
 .bulgu-eskimis { opacity: 0.65; }
+/* fix/canli-portal-b: pasif dil kartı nedeni ızgarayı genişletmesin (ayrıntı ipucunda) */
+.platform-secenekler.aciklamali .platform-secenek { max-width: 20rem; }
+.platform-secenek-neden { overflow-wrap: anywhere; }

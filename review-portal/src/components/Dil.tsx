@@ -7,7 +7,26 @@
 import type { KodDilleri } from "../api/types";
 import { DIL_CATISI, DIL_ETIKETI, type Dil } from "../lib/dil";
 import type { Platform } from "../lib/platform";
+import { ortamAdlariniGizle } from "../api/http";
 import { SegmentGrubu } from "./Platform";
+
+/** core'un Java web engeli ("GitHub kipinde Java web hattı etkin değil (TP_WEB_DILLERI …)"). */
+export const JAVA_WEB_KAPALI = "Java web hattı bu kurulumda etkin değil";
+
+/**
+ * Seçenek nedenini kullanıcı metnine çevirir: yapılandırma adı (TP_*), iş akışı / zorunlu check gibi
+ * iç ayrıntı görünür metinden çıkar, `ayrinti` olarak (yalnız ipucu) döner.
+ */
+export function dilNedeni(neden: string | null | undefined): { metin: string | null; ayrinti: string | null } {
+  const n = neden?.trim();
+  if (!n) return { metin: null, ayrinti: null };
+  const teknik = /\bTP_[A-Z0-9_]+|iş akışı|zorunlu check|Yapılandırma hatası/i.test(n);
+  if (!teknik) return { metin: n, ayrinti: null };
+  if (/Java web hattı etkin değil/i.test(n)) return { metin: JAVA_WEB_KAPALI, ayrinti: n };
+  if (/^Yapılandırma hatası/i.test(n)) return { metin: "Bu dil bu kurulumda yapılandırılmamış", ayrinti: n };
+  const temiz = ortamAdlariniGizle(n.replace(/\s*\([^)]*(?:TP_|iş akışı|check)[^)]*\)/gi, "")).trim();
+  return { metin: temiz || "Bu kurulumda kullanılamıyor", ayrinti: n };
+}
 
 export function DilRozeti({ dil, platform }: { dil: Dil | null | undefined; platform?: Platform | null }) {
   if (!dil) return null;
@@ -86,11 +105,13 @@ export function DilSecici({
           <DilRozeti dil={tek.dil} platform={diller.platform} />
           <span className="kucuk soluk">
             {tek.cati} · bu platformda tek dil
-            {tek.neden && !(diller.neden && tek.kullanilabilir)
-              ? tek.kullanilabilir
-                ? ` · ${tek.neden}`
-                : ` · Kullanılamıyor: ${tek.neden}`
-              : ""}
+            {tek.neden && !(diller.neden && tek.kullanilabilir) ? (
+              <span title={dilNedeni(tek.neden).ayrinti ?? undefined}>
+                {tek.kullanilabilir ? ` · ${dilNedeni(tek.neden).metin}` : ` · Kullanılamıyor: ${dilNedeni(tek.neden).metin}`}
+              </span>
+            ) : (
+              ""
+            )}
           </span>
           {diller.neden && (
             <span className="kucuk" role="status" data-testid="dil-notu" data-kaynak="algilanamadi">
@@ -117,7 +138,8 @@ export function DilSecici({
           pasif: !s.kullanilabilir,
           // Algılama hiç yapılamadıysa (üst düzey `neden`) kullanılabilir seçeneklerdeki aynı "depo
           // okunamadı" nedeni her kutuda tekrarlanmaz; durum altta tek notla söylenir.
-          neden: diller.neden && s.kullanilabilir ? undefined : s.neden,
+          neden: diller.neden && s.kullanilabilir ? undefined : dilNedeni(s.neden).metin,
+          nedenAyrinti: diller.neden && s.kullanilabilir ? undefined : dilNedeni(s.neden).ayrinti,
         }))}
       />
       <div className="dil-notu kucuk">
