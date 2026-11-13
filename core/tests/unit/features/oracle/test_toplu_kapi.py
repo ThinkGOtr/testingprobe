@@ -112,8 +112,8 @@ def test_toplu_karar_kapisi_oge_bazinda(
 
 
 def test_veri_atiflari_degerle_kontrol_edilir(api: TestClient, kur) -> None:
-    """Dev birleşmesi (013 test verisi kataloğu): case alanlarındaki gizli olmayan `{veri:…}`
-    atıfları değer çıkarmadan önce değerine çözülür; gizli ve bilinmeyen atıflar atıf kalır."""
+    """Dev birleşmesi (013 test verisi kataloğu): case alanlarındaki `{veri:…}` atıfları değer
+    çıkarmadan önce değerine çözülür (dev'in model girdisi kuralı); bilinmeyen atıf kalır."""
     from tp_core.features.oracle import service as oracle_service
 
     k = kur([basit_case()])
@@ -124,8 +124,8 @@ def test_veri_atiflari_degerle_kontrol_edilir(api: TestClient, kur) -> None:
     icerik = {
         **basit_case(),
         "steps": [
-            {"id": "S1", "action": "Ekle", "data": "{veri:ortak.adet_metni}", "expected": "Eklenir"},
-            {"id": "S2", "action": "Git", "data": "{veri:ortak.yok}", "expected": "Toplam 30,00 TL"},
+            {"id": "S1", "action": "E", "data": "{veri:ortak.adet_metni}", "expected": "Eklenir"},
+            {"id": "S2", "action": "G", "data": "{veri:ortak.yok}", "expected": "Toplam 30,00 TL"},
         ],
     }
     with session_scope() as s:

@@ -708,9 +708,8 @@ def _check_case(
         # Metamorfik türetilmiş case: olgular dönüşümden bilinir, model çağrılmaz (Ş6).
         turetilen = _turetilen_olgulari(s, tc) if h == tc.icerik_hash and tablolar else None
         # 013 test verisi kataloğu (dev birleşmesi): case alanları `{veri:<anahtar>}` atfı taşır.
-        # Değer çıkarma ve alıntı doğrulaması case'in okunan anlamıyla (gizli olmayan değerler
-        # çözülmüş) yapılır; gizli atıflar atıf kalır, modele sır gitmez. Kayıt hash'i saklanan
-        # içeriğindir (değişmez).
+        # Değer çıkarma ve alıntı doğrulaması case'in okunan anlamıyla (atıflar çözülmüş; dev'in
+        # model girdisi kuralı) yapılır. Kayıt hash'i saklanan içeriğindir (değişmez).
         okunan = _veri_cozulmus(s, icerik) if tablolar and turetilen is None else icerik
 
     call_id: uuid.UUID | None = None
@@ -779,14 +778,13 @@ def _check_case(
 
 
 def _veri_cozulmus(s: Session, icerik: Mapping[str, Any]) -> dict[str, Any]:
-    """Gizli olmayan test verisi atıfları değerine çözülmüş içerik (013 katalog; çözülemeyen ve
-    gizli atıflar olduğu gibi kalır)."""
-    from tp_core.features.testveri import atif
+    """Test verisi atıfları değerine çözülmüş içerik (013 katalog; çözülemeyen atıf kalır).
+
+    Dev'in model girdisi kuralıyla aynı (`testveri.case_coz_gevsek`: bug taslağı; kod üretimi de
+    çözülmüş metni görür): REPLAY golden'larının girdi beyanı bugünkü case metniyle eşleşir."""
     from tp_core.features.testveri import service as testveri
 
-    if not atif.case_atiflari(icerik):
-        return dict(icerik)
-    return atif.case_coz(icerik, testveri.katalog(s), bilinmeyen="birak")
+    return testveri.case_coz_gevsek(s, icerik)
 
 
 def _turetilen_olgulari(s: Session, tc: TestCase) -> Mapping[str, Any] | None:
