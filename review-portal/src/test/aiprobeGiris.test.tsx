@@ -353,6 +353,33 @@ describe("üst çubuk rol seçici", () => {
     expect(screen.getByTestId("konum")).not.toHaveTextContent("/giris");
   });
 
+  it("mobil çekmecede açık rol listesi Escape ile kapanır; çekmece açık kalır, odak rol düğmesine döner", async () => {
+    sahteSunucu(
+      {
+        "GET /auth/me": { govde: AIPROBE_ME },
+        "GET /auth/aiprobe/hesaplar": { govde: { hesaplar: HESAPLAR, aktif_id: "u-analist" } },
+      },
+      AIPROBE_KIPI,
+    );
+    const u = userEvent.setup();
+    uygulama("/gereksinimler");
+    const menuDugmesi = await screen.findByRole("button", { name: "Menü" });
+    await u.click(menuDugmesi);
+    expect(menuDugmesi).toHaveAttribute("aria-expanded", "true");
+    const cekmece = screen.getByTestId("menu-kullanici");
+    const rolDugmesi = within(cekmece).getByRole("button", { name: "Etkin rol: Analist (rol değiştir)" });
+    await u.click(rolDugmesi);
+    expect(await within(cekmece).findByRole("menu", { name: "Atanmış roller" })).toBeInTheDocument();
+    await u.keyboard("{Escape}");
+    expect(within(cekmece).queryByRole("menu", { name: "Atanmış roller" })).toBeNull();
+    expect(menuDugmesi).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByTestId("menu-kullanici")).toBeInTheDocument();
+    expect(rolDugmesi).toHaveFocus();
+    // Liste kapalıyken ikinci Escape çekmeceyi kapatır (Kabuk davranışı korunur).
+    await u.keyboard("{Escape}");
+    expect(menuDugmesi).toHaveAttribute("aria-expanded", "false");
+  });
+
   it("rolDegisimOturumu: kişi alanları önceki oturumdan, izinler asla", async () => {
     const { rolDegisimOturumu } = await import("../components/RolSecici");
     const onceki = { ...AIPROBE_ME, izinler: ["requirement.review"] } as never;

@@ -53,6 +53,7 @@ export function RolSecici() {
   const git = useNavigate();
   const bildir = useBildirim();
   const kap = useRef<HTMLDivElement>(null);
+  const dugme = useRef<HTMLButtonElement>(null);
   const [acik, setAcik] = useState(false);
   const [hesaplar, setHesaplar] = useState<AiprobeHesabi[] | null>(null);
   const [hata, setHata] = useState<string | null>(null);
@@ -71,15 +72,22 @@ export function RolSecici() {
     const disTik = (e: MouseEvent) => {
       if (kap.current && !kap.current.contains(e.target as Node)) setAcik(false);
     };
+    // Escape yalnız rol listesini kapatır: yakalama (capture) evresinde tüketilir ki mobil çekmecenin
+    // (Kabuk) document dinleyicisi çekmeceyi de kapatmasın (defaultPrevented + yayılım durur). Odak rol
+    // düğmesine döner.
     const tus = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setAcik(false);
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      setAcik(false);
+      dugme.current?.focus();
     };
     document.addEventListener("mousedown", disTik);
-    document.addEventListener("keydown", tus);
+    document.addEventListener("keydown", tus, true);
     return () => {
       iptal = true;
       document.removeEventListener("mousedown", disTik);
-      document.removeEventListener("keydown", tus);
+      document.removeEventListener("keydown", tus, true);
     };
   }, [acik]);
 
@@ -112,6 +120,7 @@ export function RolSecici() {
   return (
     <div className="rol-secici" ref={kap}>
       <button
+        ref={dugme}
         type="button"
         className="kullanici-rol rol-secici-dugme"
         aria-haspopup="menu"
