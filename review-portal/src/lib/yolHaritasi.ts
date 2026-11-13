@@ -15,6 +15,7 @@ import type {
 } from "../api/types";
 import { api } from "../api/client";
 import { AKIS_ADIMLARI } from "./etiketler";
+import { kipDugmeMetni, VARSAYILAN_URETIM_KIPI } from "./uretimSecenekleri";
 
 export const DEMO_STORY = "TPD-1";
 
@@ -198,7 +199,14 @@ export function demoAdimlari(x: YolGirdisi): YolAdimi[] {
                 : g?.durum === "model_ready"
                   ? "Tasarım modeli analist onayı bekliyor; onaydan sonra case üretilir."
                   : "Henüz case yok.",
-          ipucu: poGuncel ? "Analist: \"Case üret\"." : null,
+          ipucu:
+            g?.durum === "model_ready"
+              ? "Analist: tasarım modelini inceleyip \"Modeli onayla\"; case'ler (tur 2) otomatik üretilir."
+              : g?.durum === "modeling" || g?.durum === "generating"
+                ? null
+                : poGuncel
+                  ? `Analist: "${kipDugmeMetni(VARSAYILAN_URETIM_KIPI)}" → modeli onayla (tur 2 otomatik).`
+                  : null,
           baglanti: g ? { yol: gYolu, etiket: "Story" } : null,
         })
       : adim(4, {

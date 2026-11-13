@@ -18,6 +18,9 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { maskele } from "./zaman.js";
 
+/** Gereksinim ekranında iki turlu üretimi başlatan düğme (review-portal lib/uretimSecenekleri.ts kipDugmeMetni). */
+const IKI_TUR_DUGMESI = "Tasarım modelini üret (iki tur)";
+
 const BURASI = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(BURASI, "..", "..");
 const KIP = process.env.UI_KIP === "canli" ? "canli" : "tur";
@@ -464,12 +467,17 @@ canliTesti("canlı: 14 adım + locator kırma/onarım arayüzden", async ({ page
   rolSimdi = "analist";
   // 011 K15: iki tur (tasarım modeli → analist onayı → case), otomatik review, denetim kapısı.
   await adim(page, "Tasarım modeli (iki tur, tur 1)", async () => {
+    // Üst düğme seçili kipi söyler (UX-4): iki tur → "Tasarım modelini üret (iki tur)",
+    // tek tur → "Case üret (tek tur)". Varsayılan kip iki tur; kip seçici görünürse iki tur
+    // açıkça seçilir (gereksinimde kayıtlı tercih tek tur olabilir).
+    const uret = page.getByRole("button", { name: IKI_TUR_DUGMESI, exact: true });
     await expect(async () => {
       await page.reload();
-      await expect(page.getByRole("button", { name: "Case üret" })).toBeEnabled({ timeout: 2_000 });
+      const kipSecici = page.getByTestId("uretim-kipi");
+      if (await kipSecici.isVisible()) await kipSecici.getByRole("radio", { name: /İki tur/ }).check();
+      await expect(uret).toBeEnabled({ timeout: 2_000 });
     }).toPass({ timeout: 90_000 });
-    await page.getByTestId("uretim-kipi").getByRole("radio", { name: /İki tur/ }).check();
-    await page.getByRole("button", { name: "Case üret" }).click();
+    await uret.click();
     const panel = page.getByTestId("tasarim-modeli-paneli");
     await expect(panel.getByRole("button", { name: "Modeli onayla" })).toBeEnabled({ timeout: 120_000 });
     await expect(panel.getByTestId("model-ozet")).toContainText("21 kapsam öğesi");
@@ -481,7 +489,10 @@ canliTesti("canlı: 14 adım + locator kırma/onarım arayüzden", async ({ page
     await expect(panel.getByTestId("model-kararlar")).toContainText("Onay — analist", { timeout: 30_000 });
   });
   await adim(page, "Case üretimi (tur 2, onaylı modelden 15 case)", async () => {
-    // 011 K20: tur 2 model onayıyla kendiliğinden başlar; ayrı düğme yok.
+    // 011 K20: tur 2 model onayıyla kendiliğinden başlar. Çekirdek tur 2'yi başlatmadıysa (eski
+    // sürüm: tur2 alanı yok) panel "Case'leri üret" düğmesini gösterir; o zaman tur 2 elle başlatılır.
+    const tur2Dugmesi = page.getByTestId("tasarim-modeli-paneli").getByRole("button", { name: "Case'leri üret" });
+    if (await tur2Dugmesi.isVisible().catch(() => false)) await tur2Dugmesi.click();
     await expect(page.getByRole("link", { name: "Case review" })).toBeVisible({ timeout: 120_000 });
   });
   await adim(page, "Otomatik review (P8): skor 10/12", async () => {

@@ -71,12 +71,18 @@ export function TopluOnayCubugu({
   gorunen,
   secim,
   tamamlandi,
+  gonderilmemisSoru = 0,
 }: {
   /** Listede görünen case'ler (başlık ve hash buradan). */
   gorunen: TestCase[];
   secim: ReturnType<typeof useTopluSecim>;
   /** Toplu onaydan sonra liste ve paneller yenilenir. */
   tamamlandi: () => void;
+  /**
+   * PO'ya gönderilmemiş açık soru sayısı (UX4 Bulgu 2). Onay diyaloğunda uyarı olarak söylenir;
+   * engel değildir (K6 yalnız hazır olmayan case'i engeller — ürün kararı).
+   */
+  gonderilmemisSoru?: number;
 }) {
   const { secili, setSecili, secilebilir } = secim;
   const islem = useIslem();
@@ -113,7 +119,8 @@ export function TopluOnayCubugu({
       .filter((k) => !k.basarili)
       // Sunucu metni "başlık — [ayrıntı]" biçimindeyse başlık yeterli (ayrıntı kartta görünür).
       .map((k) => ({ id: k.case_id, baslik: baslik(k.case_id), hata: hataListesi(k.hata).baslik || k.hata || "Onaylanamadı" }));
-    setSonuc(hatalar.length ? { ozet, hatalar } : null);
+    // Sonuç sayfada kalıcı bir satır olarak kalır (bildirim birkaç saniyede kaybolur).
+    setSonuc({ ozet, hatalar });
     bildir(ozet, s.basarisiz ? "hata" : "basari");
     setSecili(new Set());
     tamamlandi();
@@ -163,9 +170,23 @@ export function TopluOnayCubugu({
           testId="toplu-onay-onayi"
         >
           <p className="kucuk">{n} case kendi görülen içerikleriyle ayrı ayrı onaylanacak. Arada değişen ya da hazır olmayan case onaylanmaz ve nedeni listelenir.</p>
+          {gonderilmemisSoru > 0 && (
+            <p className="kucuk" data-testid="toplu-onay-soru-uyarisi">
+              <strong>Dikkat:</strong> PO'ya gönderilmemiş {gonderilmemisSoru} açık soru var. Onay engellenmez; yanıt kapsamı değiştirebilir,
+              soruları "Açık sorular ve PO yanıtları" panelinden gönderebilirsiniz.
+            </p>
+          )}
         </SayfaIciOnay>
       )}
       {islem.hata && <AlanHatasi asistan={{ hata: islem.hata, kaynak: islem.hataNesnesi }}>{islem.hata}</AlanHatasi>}
+      {sonuc && sonuc.hatalar.length === 0 && (
+        <p className="kucuk toplu-onay-satir" role="status" data-testid="toplu-onay-sonuc">
+          <span>Toplu onay: {sonuc.ozet}.</span>{" "}
+          <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={() => setSonuc(null)}>
+            Kapat
+          </button>
+        </p>
+      )}
       {sonuc && sonuc.hatalar.length > 0 && (
         <div data-testid="toplu-onay-sonuc">
           <Uyari baslik={sonuc.ozet}>

@@ -6,7 +6,7 @@ import { useCallback, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
-import { buFazdaYok, hataMesaji } from "../api/http";
+import { buFazdaYok, hataMesaji, ortamAdlariniGizle } from "../api/http";
 import type { BugTaslagi, DemoDurumu, GereksinimDetay, HataAnalizi, KontrolKulesi, Kosu, Script, TestCase } from "../api/types";
 import { Cip, HataKutusu, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useVeri } from "../hooks";
@@ -83,13 +83,13 @@ function AdimSatiri({ a }: { a: YolAdimi }) {
           <Cip ton={h.ton}>{h.etiket}</Cip>
           <ReplayRozeti mode={a.mode} />
         </div>
-        <p className="yh-kanit">{a.kanit}</p>
+        <p className="yh-kanit">{ortamAdlariniGizle(a.kanit)}</p>
         {a.simulator && (
           <p className="yh-simulator kucuk" data-testid={`yh-simulator-${a.no}`}>
             <Cip ton="notr">Simülatör</Cip> {a.simulator.replace(/^simülatör: /, "")}
           </p>
         )}
-        {a.ipucu && <p className="yh-ipucu">↳ {a.ipucu}</p>}
+        {a.ipucu && <p className="yh-ipucu">↳ {ortamAdlariniGizle(a.ipucu)}</p>}
       </div>
       {a.baglanti ? (
         <Link className="yh-baglanti" to={a.baglanti.yol}>
@@ -135,8 +135,8 @@ function DurumSeridi({ v }: { v: Yuklenen }) {
             {m.strict === true
               ? "Girdisi beyanla eşleşmeyen golden'a düşülmez; sapma REPLAY-MISS olur."
               : m.strict === false
-                ? "Prova için TP_REPLAY_STRICT=1 önerilir."
-                : "Çekirdek bildirmiyor. Prova: TP_REPLAY_STRICT=1, sunum öncesi make demo-check."}
+                ? "Prova için REPLAY strict kipinin açılması önerilir (yönetici ayarı)."
+                : "Çekirdek bildirmiyor. Provada REPLAY strict kipi açık olmalı (yönetici ayarı); sunum öncesi demo kontrolü koşulur."}
           </span>
         </p>
       </Kart>

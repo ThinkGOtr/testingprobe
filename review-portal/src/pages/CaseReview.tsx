@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
 import { ApiError } from "../api/http";
+import type { AcikSorularYaniti } from "../api/acikSoruTipleri";
 import type { BazKaynagi, CaseMetrikleri, ManuelBaz, TestCase } from "../api/types";
 import { bazKaynagiUyarla, manuelBazUyarla } from "../api/uyumFaz5";
 import { useKisiAdi, useOturum } from "../auth";
@@ -17,7 +18,7 @@ import { KapsamPaneli } from "../components/KapsamPaneli";
 import { Cip, IslemDugmesi, Kart, Metrik, ReplayRozeti, SayfaBasligi, Uyari } from "../components/ui";
 import { HedefOlcer } from "../components/Grafikler";
 import { useGeciktirilmis, useVeri } from "../hooks";
-import { caseEski, dogrulamayiYay } from "../lib/caseV3";
+import { caseEski, dogrulamayiYay, gonderilmemisSoruSayisi } from "../lib/caseV3";
 import { dolar, sure, yuzde } from "../lib/format";
 import { YAYIN_ROLU_GEREKLI } from "./Yayin";
 
@@ -58,6 +59,21 @@ export function caseBazi(m?: CaseMetrikleri | null): CaseBazi {
   return { ms, deger_s: ms / 1000, kaynak, giren: null, zaman: null, not: null };
 }
 
+/**
+ * Review süresi kartının alt metni, süre ölçüm sayılmadığında. Toplu onay (K20) ayrı kategoridir:
+ * kısa süre "betik/API onayı" diye yazılmaz (insan kararıdır ama kart başına süre vermez).
+ */
+export function reviewSuresiAlti(
+  ozet: { reviewSure: number; topluOnay?: number },
+  taban: number,
+  tabanAlti: boolean,
+): string {
+  if (!tabanAlti) return "henüz ölçülmedi";
+  if ((ozet.topluOnay ?? 0) > 0)
+    return `ölçülmedi — toplu onay (${ozet.topluOnay} case): kart başına review süresi ölçülmez`;
+  return `ölçülmedi — ${taban / 1000} sn altı (${sure(ozet.reviewSure)}): betik/API onayı, insan review'u sayılmaz`;
+}
+
 export const KAZANC_REPLAY_NEDENI = "REPLAY: AI süresi ölçülmedi — kazanç hesaplanmaz (verimlilik iddiası değil)";
 
 /**
@@ -68,7 +84,7 @@ export const KAZANC_REPLAY_NEDENI = "REPLAY: AI süresi ölçülmedi — kazanç
  */
 export function caseKazanci(
   baz: CaseBazi,
-  ozet: { aiSure: number; reviewSure: number; olculenReview: number },
+  ozet: { aiSure: number; reviewSure: number; olculenReview: number; topluOnay?: number },
   aiOlculmedi: boolean,
   taban = REVIEW_TABANI_MS,
 ): { oran: number | null; reviewOlculdu: boolean; hazirlikMs: number | null; neden: string | null } {
@@ -80,7 +96,9 @@ export function caseKazanci(
   else if (!reviewOlculdu)
     neden =
       ozet.olculenReview > 0
-        ? `review ${taban / 1000} sn altı (betik/API onayı) — kazanç hesaplanmaz`
+        ? (ozet.topluOnay ?? 0) > 0
+          ? "toplu onay: kart başına review süresi ölçülmedi — kazanç hesaplanmaz"
+          : `review ${taban / 1000} sn altı (betik/API onayı) — kazanç hesaplanmaz`
         : "henüz review süresi ölçülmedi";
   // REPLAY: AI süresi ölçülmedi → yalnız review süresiyle oran, verimlilik iddiası değildir
   // (core `kazanca_girer`, Kontrol Kulesi `kazancOzeti` ile aynı kural; hedef %30–50'ye karşı gösterilmez).
@@ -129,6 +147,8 @@ export function caseOzeti(caseler: TestCase[], m?: CaseMetrikleri | null) {
     olculenReview: olculen.length,
     ortReviewSure: olculen.length ? olculen.reduce((a, c) => a + (c.review_sure_ms ?? 0), 0) / olculen.length : 0,
     maliyet: caseler.reduce((a, c) => a + c.maliyet_usd, 0),
+    /** K20 toplu onayla verilen karar sayısı (yalnız çekirdek ölçümünden; yerelde bilinmez). */
+    topluOnay: 0,
   };
   if (!m) return yerel;
   return {
@@ -138,6 +158,7 @@ export function caseOzeti(caseler: TestCase[], m?: CaseMetrikleri | null) {
     aiSure: m.ai_sure_ms,
     reviewSure: m.review_sure_ms,
     ortReviewSure: m.ort_review_sure_ms ?? 0,
+    topluOnay: m.toplu_onay_sayisi ?? 0,
     maliyet: m.maliyet_usd,
   };
 }
@@ -213,6 +234,8 @@ export function CaseReview() {
   const gonderBirincil = gonderBirincilMi(denetim.veri, ozet.bekleyen);
   const yayinBirincil = !gonderBirincil && yayinAcikMi(denetim.veri) && ozet.bekleyen === 0;
   const listeyeGit = useCaseListesineGit();
+  // Açık soru paneli core listesini buraya bildirir (şerit + toplu onay uyarısı; UX4 Bulgu 2).
+  const [acikSorular, setAcikSorular] = useState<AcikSorularYaniti | null>(null);
 
   return (
     <>
@@ -236,7 +259,9 @@ export function CaseReview() {
         }
       />
 
-      {caseler.veri && liste.length > 0 && <CaseDurumSeridi caseler={liste} denetim={denetim.veri} yayinYolu={yayinYolu} />}
+      {caseler.veri && liste.length > 0 && (
+        <CaseDurumSeridi caseler={liste} denetim={denetim.veri} yayinYolu={yayinYolu} acikSorular={acikSorular?.sorular} />
+      )}
 
       <Kart baslik="Özet" eylemler={aiOlculmedi ? <ReplayRozeti mode={mod} /> : undefined}>
         <div className="metrik-izgara">
@@ -258,10 +283,8 @@ export function CaseReview() {
             deger={kz.reviewOlculdu ? sure(ozet.reviewSure) : "—"}
             alt={
               kz.reviewOlculdu
-                ? `${ozet.olculenReview} case · ort. ${sure(ozet.ortReviewSure)}`
-                : reviewBetik
-                  ? `ölçülmedi — ${taban / 1000} sn altı (${sure(ozet.reviewSure)}): betik/API onayı, insan review'u sayılmaz`
-                  : "henüz ölçülmedi"
+                ? `${ozet.olculenReview} case · ort. ${sure(ozet.ortReviewSure)}${ozet.topluOnay ? ` · ${ozet.topluOnay} toplu onay` : ""}`
+                : reviewSuresiAlti(ozet, taban, reviewBetik)
             }
           />
           <Metrik
@@ -368,7 +391,7 @@ export function CaseReview() {
       )}
 
       {/* 011 K16: açık soruların PO'ya gönderimi ve yanıtları; gönderim/yanıt case listesini tazeler. */}
-      {caseler.veri && liste.length > 0 && <AcikSorularPaneli requirementId={id} tazele={() => void caseler.yenile(true)} caseler={liste} />}
+      {caseler.veri && liste.length > 0 && <AcikSorularPaneli requirementId={id} tazele={() => void caseler.yenile(true)} caseler={liste} veriDegisti={setAcikSorular} />}
 
       {review.veri !== null && caseler.veri && liste.length > 0 && (
         <ReviewPaneli
@@ -406,6 +429,7 @@ export function CaseReview() {
       {/* A2: filtre sekmeleri (URL ?filtre= / ?uretim= / ?hazirlik= / ?teknik=), toplu onay ve case kartları. */}
       <CaseListesi
         liste={liste}
+        gonderilmemisSoru={gonderilmemisSoruSayisi(acikSorular?.sorular)}
         yukleniyor={caseler.yukleniyor && !caseler.veri}
         hata={caseler.veri ? null : caseler.hata}
         hataNesnesi={caseler.hataNesnesi}

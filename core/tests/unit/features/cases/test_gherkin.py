@@ -156,7 +156,7 @@ def test_tpd3_hazir_olmayanlar_dahil_degil() -> None:
     metin = _feature("TPD-3")
     assert "Arama alanı temizlenince" not in metin  # varsayıma bağlı
     assert "küçük harfle" not in metin  # engelli
-    assert "# 3 case · 3 senaryo (0 taslak)" in metin
+    assert "# 3 case · 3 senaryo (0 örnek tablolu senaryo)" in metin
 
 
 def test_eski_case_yazilir_ve_birlestirilmez() -> None:

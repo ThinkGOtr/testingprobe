@@ -324,7 +324,13 @@ def test_sablon_dali_durum_rol_kisiti_ve_tool_call(
         ]
         assert m["cevap"]["jira_anahtarlari"] == ["TPD-3"]
         # Rol kısıtı aracın kendisinde: Testçi analiste özel yayın önizlemesini görmez.
-        assert ("yayin_onizleme" in metin) is (rol == "analyst")
+        assert ("Yayın önizlemesi" in metin) is (rol == "analyst")
+        # UX4 Bulgu 6: hazır cevap ham kayıt dökmez (durum kodu, iç kimlik, ISO zaman).
+        ayrinti = m["cevap"]["cevap_bloklari"][2]["maddeler"]
+        assert not any(str(veri["req"]) in x or "pending_po" in x for x in ayrinti), "\n".join(
+            ayrinti
+        )
+        assert "Durum: PO onayı bekleniyor" in ayrinti
         with engine.connect() as c:
             tc = c.execute(
                 text(

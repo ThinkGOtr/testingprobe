@@ -1,6 +1,6 @@
 # language: tr
 # Testing Probe — onaylı ve hazır case'lerden deterministik dönüşüm (model çağrısı yok).
-# 2 case · 2 senaryo (0 taslak)
+# 2 case · 2 senaryo (0 örnek tablolu senaryo)
 Özellik: TPD-4 — Bayi girişi
   # AC1: Bayi geçerli kullanıcı adı ve parolayla giriş yaptığında ürün kataloğu açılır.
   # AC2: Hatalı parola girildiğinde "Kullanıcı adı veya parola hatalı" mesajı gösterilir ve giriş yapılmaz.

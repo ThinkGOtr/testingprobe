@@ -413,6 +413,25 @@ export function ortamAdiniAyikla(metin: string, yedek = "İşlem şu an yapılam
   return kalan || yedek;
 }
 
+/** Son kullanıcı metninde gizlenen ortam değişkeni adları (TP_*, entegrasyon kimlikleri). */
+const ORTAM_ADI = /`?\b(?:TP|GITHUB|JIRA|XRAY|ANTHROPIC|SAUCE)_[A-Z0-9_]+(?:=[^\s,;)`]+)?`?/g;
+
+/**
+ * Metni bozmadan ortam değişkeni adlarını gizler (B16): denetim kaydı özeti, yol haritası kanıtı
+ * gibi cümlenin atılamayacağı yerler için (`ortamAdiniAyikla` cümleyi atar). Parantez başındaki
+ * ad atılır ("(TP_REPLAY_STRICT=1, prova kipi)" → "(prova kipi)"), içi boşalan parantez silinir,
+ * cümle içindeki ad "bir sunucu ayarı" olur.
+ */
+export function ortamAdlariniGizle(metin: string): string {
+  if (!metin || !new RegExp(ORTAM_ADI.source).test(metin)) return metin;
+  return metin
+    .replace(new RegExp(`\\(\\s*\\+?\\s*(?:salt okunur\\s+)?(?:${ORTAM_ADI.source})\\s*[,;]?\\s*`, "g"), "(")
+    .replace(/\s*\(\s*[+,;:-]?\s*\)/g, "")
+    .replace(ORTAM_ADI, "bir sunucu ayarı")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\s+([.,;:!?])/g, "$1");
+}
+
 export function hataMesaji(e: unknown): string {
   if (e instanceof ApiError) {
     // D1: 429 `hiz_siniri` ("Bu gereksinim için son 24 saatte en çok N review|denetim…").

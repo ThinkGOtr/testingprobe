@@ -542,6 +542,8 @@ export interface CaseMetrikleri {
   manuel_baz?: unknown;
   /** İnsan review süresi tabanı (ms; core TP_CT_REVIEW_MIN_S). Yoksa portal 5 sn varsayar. */
   review_tabani_ms?: number;
+  /** K20 toplu onay ("Seçilenleri onayla") ile verilen karar sayısı; ayrı kategori. Eski core'da yok. */
+  toplu_onay_sayisi?: number;
   /** Deterministik kapsam denetimi: hiçbir güncel (onaylı/taslak) case'in atıf yapmadığı AC'ler. */
   kapsanmayan_ac?: string[];
   /** Çekirdeğin ölçüm uyarıları (ör. manuel baz değer yok; REPLAY'de AI süresi ölçülmez). */
@@ -1856,6 +1858,8 @@ export interface CaseKalitesi {
   yetim_soru?: { toplam: number; yetim: number; yetim_gereksinim: number; oran: number | null };
   readiness: { ready: number; assumption_dependent: number; blocked: number; legacy: number };
   teknik: Record<string, number>;
+  /** UX4 Bulgu 9: güncel v3 case'lerin öncelik dağılımı (P1/P2/P3/yok). Eski core'da yok. */
+  oncelik?: { P1: number; P2: number; P3: number; yok: number };
   icerik_kontrolu: {
     n: number;
     gec: number;

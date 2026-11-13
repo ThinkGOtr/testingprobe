@@ -440,6 +440,28 @@ def test_betik_onayi_review_suresi_olculmedi(
     assert not any("Case kabul oranı yalnızca" in u for u in k["uyarilar"])
 
 
+def test_toplu_onay_betik_onayi_sayilmaz(
+    engine: Engine, make_requirement_case, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """K20 toplu onay ayrı kategori: kısa review süresi "betik/API onayı" uyarısına girmez."""
+    from tp_core.features.cases import service as cases
+
+    make_requirement_case()
+
+    def sahte(session: Session, rid: uuid.UUID) -> dict:
+        return {"jira_key": "TPD-1", "uretilen": 15, "kabul": 15, "ai_sure_ms": 0,
+                "review_sure_ms": 1000, "ai_cagri_modlari": {"replay": 1},
+                "toplu_onay_sayisi": 15}  # fmt: skip
+
+    monkeypatch.setattr(cases, "requirement_metrics", sahte)
+    with Session(engine) as s:
+        k = ct.control_tower(s)
+    h = {x["story_key"]: x for x in k["hazirlik"]}
+    assert h["TPD-1"]["review_olculmedi"] is True
+    assert not any("betik/API" in u for u in k["uyarilar"])
+    assert any("toplu onaylandı" in u for u in k["uyarilar"])
+
+
 def test_karne_uygulama_alani_page_objectlerden(engine: Engine, senaryo) -> None:
     """§8.11: karne story VE uygulama alanı bazında; alan = adım eşlemesinin page object'i."""
     c1, c2, c3 = senaryo["cases"]

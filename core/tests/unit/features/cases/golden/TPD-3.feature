@@ -1,6 +1,6 @@
 # language: tr
 # Testing Probe — onaylı ve hazır case'lerden deterministik dönüşüm (model çağrısı yok).
-# 3 case · 3 senaryo (0 taslak)
+# 3 case · 3 senaryo (0 örnek tablolu senaryo)
 Özellik: TPD-3 — Katalogda ürün arama
   # AC1: Bayi katalogda ürün adının bir bölümünü yazdığında yalnızca eşleşen ürünler listelenir.
   # AC2: Eşleşen ürün yoksa "Ürün bulunamadı" mesajı gösterilir.

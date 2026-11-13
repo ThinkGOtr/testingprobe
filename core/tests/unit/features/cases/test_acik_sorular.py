@@ -174,6 +174,8 @@ def test_po_yaniti_soruya_baglanir_ve_case_duzeltilir(
     assert soru["durum"] == "yanitlandi"
     assert soru["yanit"]["metin"] == "5 hatalı denemede hesap 15 dakika kilitlenir."
     assert soru["yanit"]["yazar"] and soru["yanit"]["zaman"]
+    # B17: yazar e-posta değil Jira görünen adı (jira-sim displayName).
+    assert soru["yanit"]["yazar"] == "Ürün Sahibi (PO)" and "@" not in soru["yanit"]["yazar"]
     assert soru["oneri"]["eylem"] == "duzelt_veya_yeniden_uret"
     assert r.json()["sayim"]["yanitlandi"] == 1
 
@@ -564,3 +566,25 @@ def test_yanit_okuma_gereksinim_basina_commit_eder(
     monkeypatch.setattr(flow, "_po_cevaplari", oku)
     assert acik_sorular.poll(jira, frozenset({"po@sim.local"})) == 1
     assert kilitsiz == [True, True]
+
+
+def test_yorum_bagli_case_yoksa_onaylanamaz_demez() -> None:
+    """UX4 Bulgu 3: soruya bağlı case yoksa yorum "ilgili case'ler … onaylanamaz" demez."""
+    soru = SimpleNamespace(tur="soru", etiket="CQ1", sahip="PO", metin=SORU)
+    case = SimpleNamespace(sira_no=3, icerik={"title": "Kilit sayısı"})
+    req = SimpleNamespace(jira_key="TPD-1")
+    yetim = acik_sorular.comment_body(req, [(soru, [])], "m-1")  # type: ignore[list-item]
+    assert "onaylanamaz" not in yetim and "bağlı bir case yok" in yetim
+    bagli = acik_sorular.comment_body(req, [(soru, [case])], "m-2")  # type: ignore[list-item]
+    assert "ilgili case'ler" in bagli and "onaylanamaz" in bagli
+    assert "bekleyen case'ler: #3 Kilit sayısı" in bagli
+
+
+def test_po_yaniti_gorunen_ad_yoksa_po_etiketi(monkeypatch: pytest.MonkeyPatch) -> None:
+    """B17: Jira görünen ad vermezse e-postanın yerel kısmı değil "PO" etiketi yazılır."""
+    from tp_core.integrations.jira import display_name
+
+    assert display_name({"emailAddress": "po@sim.local", "displayName": "  "}) is None
+    assert display_name({"displayName": "Ayşe PO"}) == "Ayşe PO"
+    assert display_name(None) is None
+    assert acik_sorular.PO_YAZAR_ETIKETI == "PO"

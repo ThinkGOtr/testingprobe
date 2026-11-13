@@ -1,5 +1,6 @@
 import { useCallback, type MouseEvent, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import type { AcikSoruKaydi } from "../api/acikSoruTipleri";
 import type { CaseDenetimGorunumu, TestCase } from "../api/types";
 import { acikSoruSayimi, caseHazirlik, type AcikSoruSayimi } from "../lib/caseV3";
 import { DENETIM_KARARI } from "./KalitePanelleri";
@@ -112,17 +113,20 @@ export function CaseDurumSeridi({
   caseler,
   denetim,
   yayinYolu,
+  acikSorular,
 }: {
   caseler: TestCase[];
   denetim: CaseDenetimGorunumu | null | undefined;
   yayinYolu: string;
+  /** Core açık soru listesi (panelden): hiçbir case'e bağlı olmayan soru da sayılır (UX4 Bulgu 2). */
+  acikSorular?: readonly AcikSoruKaydi[] | null;
 }) {
   const location = useLocation();
   const listeyeGit = useCaseListesineGit();
   const bekleyen = caseler.filter((c) => c.durum === "draft").length;
   const hazirDegil = caseler.filter(hazirDegilMi).length;
   const dn = denetimSeritDurumu(denetim);
-  const acik = acikSoruSeritDurumu(acikSoruSayimi(caseler));
+  const acik = acikSoruSeritDurumu(acikSoruSayimi(caseler, acikSorular));
   const yayinAcik = yayinAcikMi(denetim);
   const hazirDegilParam = new URLSearchParams(location.search);
   hazirDegilParam.set("filtre", "hazir-degil");

@@ -2049,11 +2049,14 @@ def requirement_metrics(session: Session, requirement_id: uuid.UUID) -> dict[str
     mesafeler: list[float] = []
     review_sureleri: list[int] = []
     araliklar: list[tuple[datetime, datetime]] = []
+    toplu_onay = 0
     for c in ai_cases:
         durumlar[c.durum] += 1
         kanallar[c.kanal] += 1
         rs = reviews.get(c.id, [])
         for r in rs:
+            if (r.duzeltme_olculeri or {}).get("toplu_onay") is True:
+                toplu_onay += 1
             sure = (r.duzeltme_olculeri or {}).get("review_sure_ms")
             if isinstance(sure, int):
                 review_sureleri.append(sure)
@@ -2124,6 +2127,9 @@ def requirement_metrics(session: Session, requirement_id: uuid.UUID) -> dict[str
         else None,
         "kart_sure_toplam_ms": sum(review_sureleri),
         "review_sure_yontemi": "aralik_birlesimi",
+        # K20 toplu onay ("Seçilenleri onayla") kararı sayısı: ayrı kategori. Süre aralığı yine
+        # birleşime girer; kısa süre betik/API onayı sanılmasın diye portal ve Kule ayrı yazar.
+        "toplu_onay_sayisi": toplu_onay,
         "maliyet_usd": round(sum(v[1] for v in ai.values()), 6),
         "ai_cagri_modlari": {str(k): int(v) for k, v in modlar.items()},
         # Deterministik kapsam denetimi: hiçbir güncel case'in atıf yapmadığı AC'ler.

@@ -1,6 +1,6 @@
 # language: tr
 # Testing Probe — onaylı ve hazır case'lerden deterministik dönüşüm (model çağrısı yok).
-# 15 case · 13 senaryo (1 taslak)
+# 15 case · 13 senaryo (1 örnek tablolu senaryo)
 Özellik: TPD-1 — Sepet ve sipariş
   # AC1: Bayi katalogda bir ürün için "Sepete ekle" butonuna bastığında ürün sepete eklenir ve sepet sayacı artar.
   # AC2: Kampanyalı üründe her 6 adette 1 adet bedava verilir: bayi 5 adet öder, 1 adet bedava alır (6 adette 1, 12 adette 2 bedava).

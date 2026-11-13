@@ -419,12 +419,22 @@ export function HazirlikRozeti({ durum }: { durum: CaseHazirlik }) {
 }
 
 /** Teknik rozeti: kısaltma görünür; tam Türkçe ad `title`'da ve erişilebilir adda. */
-export function TeknikRozeti({ teknik, sade }: { teknik: string; /** Kart özellik listesinde renksiz (UX-12). */ sade?: boolean }) {
+export function TeknikRozeti({
+  teknik,
+  sade,
+  adGorunur,
+}: {
+  teknik: string;
+  /** Kart özellik listesinde renksiz (UX-12). */
+  sade?: boolean;
+  /** Teknik adı rozetin yanında görünür yazılıyorsa gizli ad eklenmez (ad iki kez okunmasın; UX4 Bulgu 9). */
+  adGorunur?: boolean;
+}) {
   const ad = CASE_TEKNIGI[teknik];
   return (
     <span className={sade ? "mono teknik-sade" : "cip cip-bilgi"} title={ad}>
       {teknik}
-      {ad && <span className="gorunmez"> ({ad})</span>}
+      {ad && !adGorunur && <span className="gorunmez"> ({ad})</span>}
     </span>
   );
 }

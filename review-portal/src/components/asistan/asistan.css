@@ -914,3 +914,25 @@ html:has(.asistan-bune-bindirme):has(.asistan-bune-ipucu) {
 .asistan-denetim-ayrinti dd {
   margin: 0 0 6px;
 }
+
+/* ---------------------------------------------------------------- UX4 Bulgu 7: başlatıcı içeriği örtmesin
+   Sabit başlatıcı 1440 px'te kartın Düzelt/Reddet düğmelerini, 390 px'te Kule değerlerini örtüyordu.
+   (1) Her genişlikte yalnız ikon (44 px); ad hover/klavye odağında açılır (aria-label her zaman "Asistanı aç").
+   (2) İçeriğin altına başlatıcı kadar boşluk: sayfanın son satırı/eylemi başlatıcının üstüne kaydırılabilir. */
+.asistan-baslatici {
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 11px;
+  border-radius: 22px;
+}
+.asistan-baslatici-metin {
+  display: none;
+}
+.asistan-baslatici:hover .asistan-baslatici-metin,
+.asistan-baslatici:focus-visible .asistan-baslatici-metin {
+  display: inline;
+}
+body:has(.asistan-baslatici-kap) .icerik {
+  padding-bottom: 96px;
+}

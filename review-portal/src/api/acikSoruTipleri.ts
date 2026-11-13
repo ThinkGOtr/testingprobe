@@ -47,7 +47,8 @@ export interface AcikSoruBekleyenCase {
 
 /** Yanıtlanan soruya bağlı taslak case için öneri. */
 export interface AcikSoruOnerisi {
-  eylem: "duzelt_veya_yeniden_uret";
+  /** `yeniden_uret`: soruya bağlı case yok (core `_oneri`); metin core'dan gelir, portal çıkarım yapmaz. */
+  eylem: "duzelt_veya_yeniden_uret" | "yeniden_uret";
   mesaj: string;
   case_ids?: string[];
   etiketler?: string[];

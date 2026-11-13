@@ -36,6 +36,8 @@ class JiraComment(BaseModel):
     created: datetime | None = None
     # Yetki eşlemesi için yazarın tüm kimlikleri (e-posta ve accountId; görünen ad asla).
     author_ids: list[str] = Field(default_factory=list)
+    # Yalnız gösterim: yazarın Jira görünen adı (displayName). Yetki kararında ASLA kullanılmaz.
+    author_name: str | None = None
 
 
 class LabelChange(BaseModel):

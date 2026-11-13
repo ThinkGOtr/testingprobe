@@ -1,0 +1,20 @@
+# gitleaks yapılandırması: varsayılan kurallar aynen geçerli (useDefault); yalnız aşağıdaki dar
+# istisna eklenir. Gerçek sır için istisna eklenmez. Tekil yanlış alarmlar .gitleaksignore'da.
+[extend]
+useDefault = true
+
+# Eval çağrı defterleri (rules/evaluation/results/*.calls.jsonl): asistan araç argümanındaki
+# "id_or_key": "<UUID>" kayıt kimliğidir, sır değildir. Varsayılan generic-api-key kuralına
+# eklenen istisna (kuralın deseni değişmez) iki koşulun ikisini de ister (AND):
+#   - dosya yalnız bu dizindeki bir .calls.jsonl olmalı,
+#   - eşleşmenin tamamı id_or_key + kanonik küçük harf UUID olmalı.
+# Aynı dosyada, hatta aynı satırda başka bir anahtar/değer (ör. "api_key": "...", ya da
+# id_or_key içinde UUID olmayan bir değer) yine yakalanır.
+[[rules]]
+id = "generic-api-key"
+[[rules.allowlists]]
+description = "eval çağrı defterlerinde id_or_key kayıt UUID'si"
+condition = "AND"
+paths = ['''(^|/)rules/evaluation/results/[^/]+\.calls\.jsonl$''']
+regexTarget = "match"
+regexes = ['''^id_or_key"\s*:\s*"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"$''']

@@ -577,6 +577,12 @@ def submit_block(
         return "Gereksinimin güncel v3 case'i yok; denetlenecek set boş"
     karar = binding_decision(session, req.id, hash_)
     if karar is not None:
+        if karar.karar == KABUL:
+            # UX4 Bulgu 9: KABUL sonrası "düzeltip yeniden gönderin" denmez; yapılacak bir şey yok.
+            return (
+                f"Bu set zaten denetlendi (karar: {karar.karar}); yeniden denetim gerekmez. "
+                "Set değişirse (case düzeltilir, eklenir ya da reddedilir) yeniden gönderilebilir"
+            )
         return (
             f"Bu set zaten denetlendi (karar: {karar.karar}); set değişmeden yeniden denetim "
             "yapılmaz. Case'leri düzeltip yeniden gönderin"

@@ -91,6 +91,16 @@ export function caseKalitesiUyarla(ham: unknown): CaseKalitesi {
       legacy: sayi(readiness.legacy),
     },
     teknik: sayiSozlugu(h.teknik),
+    ...(h.oncelik && typeof h.oncelik === "object"
+      ? {
+          oncelik: {
+            P1: sayi(nesne(h.oncelik).P1),
+            P2: sayi(nesne(h.oncelik).P2),
+            P3: sayi(nesne(h.oncelik).P3),
+            yok: sayi(nesne(h.oncelik).yok),
+          },
+        }
+      : {}),
     icerik_kontrolu: {
       n: sayi(icerik.n),
       gec: sayi(icerik.gec),

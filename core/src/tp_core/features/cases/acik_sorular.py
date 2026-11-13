@@ -59,6 +59,8 @@ DURUM_GONDERILMEDI = "gonderilmedi"
 _ETIKET = re.compile(r"(?<![\w])(C[QA]|Q)(\d{1,3})\s*[:.)\-–]\s*", re.IGNORECASE)
 _SAHIP_TR = {"PO": "PO", "analyst": "analist", "developer": "geliştirici"}
 YANIT_SINIRI = 4000
+# PO yanıtının yazarı Jira görünen adı vermezse gösterilen etiket (e-posta gösterilmez; B17).
+PO_YAZAR_ETIKETI = "PO"
 # Jira yorumunun boyutu (alan sınırı 32.767 karakter; önek ve bahsetmeler için pay bırakılır).
 # Soru metni ve case başlıkları model üretimidir: satır başına kırpılır, sığmayan soru sonraki
 # gönderime kalır.
@@ -418,9 +420,15 @@ def comment_body(
     (portalda bekler, sonraki gönderimde gider)."""
     sorular = [_soru_satiri(s, c) for s, c in gidecek if s.tur == "soru"]
     varsayimlar = [_soru_satiri(s, c) for s, c in gidecek if s.tur == "varsayim"]
+    # Bekleyen case'i olmayan sorular (ör. hiçbir case'in atıf yapmadığı soru) için "case'ler
+    # onaylanamaz" denmez: PO'ya yanlış bilgi verilmez (UX4 Bulgu 3).
+    bagli_case_var = any(c for _, c in gidecek)
     satirlar = [
         "Test case üretiminde açık kalan sorular. Yanıtlanana kadar ilgili case'ler "
-        '"Soru bekliyor" durumunda kalır ve onaylanamaz.',
+        '"Soru bekliyor" durumunda kalır ve onaylanamaz.'
+        if bagli_case_var
+        else "Test case üretiminde açık kalan sorular. Şu an bu sorulara bağlı bir case yok; "
+        "yanıtınız test kapsamının doğru olması için kullanılır.",
     ]
     if sorular:
         satirlar += ["", "Açık sorular:", *sorular]
@@ -666,7 +674,9 @@ def read_answers(
                 continue
             son = parcalar[-1][1]
             satir.yanit = " / ".join(p for p, _ in parcalar)[:YANIT_SINIRI]
-            satir.yanit_yazari = str(son.get("yazar") or "")
+            # B17: portalda e-posta değil görünen ad gösterilir (Jira displayName); yoksa "PO"
+            # etiketi. Denetim kaydında yazarın kimliği (e-posta/accountId) kalır.
+            satir.yanit_yazari = str(son.get("yazar_adi") or "").strip() or PO_YAZAR_ETIKETI
             satir.yanit_zamani = (
                 datetime.fromisoformat(son["zaman"]) if son.get("zaman") else datetime.now(UTC)
             )
@@ -680,7 +690,8 @@ def read_answers(
                 f"requirement:{rid}",
                 {
                     "etiket": satir.etiket,
-                    "yazar": satir.yanit_yazari,
+                    "yazar": str(son.get("yazar") or ""),
+                    "yazar_adi": satir.yanit_yazari,
                     "jira_comment_id": satir.yanit_yorum_id,
                 },
             )

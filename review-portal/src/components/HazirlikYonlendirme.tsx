@@ -103,6 +103,17 @@ export function HazirlikYonlendirme({
             vazgec={() => setOnayAcik(false)}
             testId="varsayim-dogrulama-onayi"
           >
+            {/* UX4 Bulgu 8: kullanıcı neyi doğruladığını kutuda görür (kartın altına inmeden). */}
+            <ul className="case-atif-listesi" data-testid="dogrulanacak-varsayimlar">
+              {y.dogrulanacak.map((k) => {
+                const v = tc.varsayimlar?.find((a) => a.id === k);
+                return (
+                  <li key={k}>
+                    <span className="mono ac-ref">{k}</span> {v?.statement ?? "Varsayım metni bu kayıtta yok; kartın 'Varsayımlar' bölümüne bakın."}
+                  </li>
+                );
+              })}
+            </ul>
             <p className="kucuk">
               Case ekranda gördüğünüz içerikle "Hazır" yapılıp onaylanır; beklenen sonuç değişmez. Varsayım yanlışsa vazgeçip "Düzelt" ile
               beklenen sonucu güncelleyin.

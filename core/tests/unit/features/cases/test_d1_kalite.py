@@ -217,6 +217,8 @@ def test_ayni_set_yeniden_denetlenemez_ve_kapi_en_sert_karari_okur(
     v = api.get(f"/requirements/{rid}/case-audit").json()
     assert v["guncel_karar"]["karar"] == "KABUL" and v["yayin_engeli"] is None
     assert v["gonder_engeli"].startswith("Bu set zaten denetlendi (karar: KABUL)")
+    # UX4 Bulgu 9: KABUL sonrası gerekçe "düzeltip yeniden gönderin" demez.
+    assert "düzeltip" not in v["gonder_engeli"] and "yeniden denetim gerekmez" in v["gonder_engeli"]
     r = api.post(f"/requirements/{rid}/case-audit")
     assert r.status_code == 409 and "zaten denetlendi" in r.json()["detail"]
     # Ek savunma: aynı hash için daha sert bir karar varsa (eski satır) kapı onu okur.

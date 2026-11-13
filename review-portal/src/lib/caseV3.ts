@@ -2,6 +2,7 @@
 // sunucunun 422 hata listesinin ayrıştırılması. Saf işlevler: hem düzeltme formu hem örnek veri
 // (mock) katmanı kullanır. Nihai doğrulama her zaman sunucudadır (`consistency_problems`).
 import type { AcikSoru, CaseHazirlik, CaseUretimOzeti, TestCase, TestCaseIcerik, Varsayim } from "../api/types";
+import type { AcikSoruKaydi } from "../api/acikSoruTipleri";
 import { tarih } from "./format";
 import { CASE_DURUMU, CASE_HAZIRLIK, SORU_SAHIBI } from "./etiketler";
 import { TEKNIK_ONEKI } from "./tasarimModeli";
@@ -309,7 +310,7 @@ export interface AcikSoruSayimi {
  * B8: taslak case'lerin atıf yaptığı açık soruların PO durumu (soru metniyle tekilleştirilir). Core
  * `po_sorulari` yoksa (eski core) null: şeritte öğe çizilmez.
  */
-export function acikSoruSayimi(caseler: TestCase[]): AcikSoruSayimi | null {
+export function acikSoruSayimi(caseler: TestCase[], sorular?: readonly AcikSoruKaydi[] | null): AcikSoruSayimi | null {
   const durumlar = new Map<string, "gonderilmedi" | "gonderildi" | "yanitlandi">();
   let poVar = false;
   for (const c of caseler) {
@@ -322,10 +323,26 @@ export function acikSoruSayimi(caseler: TestCase[]): AcikSoruSayimi | null {
       durumlar.set(anahtar, k?.po_durumu ?? "gonderilmedi");
     }
   }
-  if (!poVar) return null;
+  // UX4 Bulgu 2: hiçbir taslak case'in atıf yapmadığı (bekleyen case'i olmayan) soru da sayılır;
+  // yoksa panel "1 gönderilmedi" derken şerit sessiz kalır. Yalnız eylem gerektiren durumlar
+  // (gönderilmedi / yanıt bekleniyor): yanıtlanan böyle bir sorunun önerisi core'dan gelir
+  // (`oneri`, panelde); portal kendi başına "bağlı case yok" çıkarımı yapmaz.
+  const bagsiz = bagsizSorular(sorular);
+  if (!poVar && !bagsiz.length) return null;
   const s: AcikSoruSayimi = { gonderilmedi: 0, gonderildi: 0, yanitlandi: 0 };
   for (const d of durumlar.values()) s[d] += 1;
+  for (const k of bagsiz) if (k.durum !== "yanitlandi") s[k.durum] += 1;
   return s;
+}
+
+/** Core açık soru listesinde bekleyen taslak case'i olmayan sorular (varsayımlar hariç). */
+export function bagsizSorular(sorular?: readonly AcikSoruKaydi[] | null): AcikSoruKaydi[] {
+  return (sorular ?? []).filter((k) => k.tur === "soru" && k.bekleyen_caseler.length === 0);
+}
+
+/** PO'ya henüz gönderilmemiş açık soru sayısı (core listesinden; varsayımlar hariç). */
+export function gonderilmemisSoruSayisi(sorular?: readonly AcikSoruKaydi[] | null): number {
+  return (sorular ?? []).filter((k) => k.tur === "soru" && k.durum === "gonderilmedi").length;
 }
 
 /**

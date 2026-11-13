@@ -110,6 +110,9 @@ KAYNAKLAR: Final = {
         "readiness anahtarı olmayan eski (v2) case (cases.schema.is_legacy)"
     ),
     "teknik": "güncel case'lerin icerik.technique listesi (bir case birden çok tekniğe sayılır)",
+    "oncelik": (
+        "güncel v3 case'lerin icerik.priority alanı (P1/P2/P3); alan yoksa ya da tanınmıyorsa 'yok'"
+    ),
     "yetim_soru": (
         "güncel üretimlerin birleşik özetindeki açık sorulardan hiçbir güncel case atfında, "
         "not_covered.question_ref'te, negatif kapsam gerekçesinde ya da kapsam öğesi tanımında "
@@ -254,6 +257,8 @@ def case_kalitesi(session: Session, requirement_id: uuid.UUID | None = None) -> 
     n_gereksinim = 0
     readiness = {**dict.fromkeys(READINESS, 0), "legacy": 0}
     teknik: dict[str, int] = defaultdict(int)
+    # UX4 Bulgu 9: öncelik dağılımı (P1/P2/P3; yoksa "yok"). Eski (v2) case dahil değil.
+    oncelik: dict[str, int] = {"P1": 0, "P2": 0, "P3": 0, "yok": 0}
     guncel_hash: dict[uuid.UUID, str | None] = {}
     hazir_veri = False
     soru = {"toplam": 0, "yetim": 0, "yetim_gereksinim": 0}
@@ -267,6 +272,8 @@ def case_kalitesi(session: Session, requirement_id: uuid.UUID | None = None) -> 
             else:
                 r = readiness_of(tc.icerik)
                 readiness[r] = readiness.get(r, 0) + 1
+                p = tc.icerik.get("priority")
+                oncelik[p if p in ("P1", "P2", "P3") else "yok"] += 1
         for t, n in (durum.get("teknik_dagilimi") or {}).items():
             teknik[str(t)] += int(n)
         guncel_hash[req.id] = review_mod.set_hash(session, req)
@@ -498,10 +505,7 @@ def case_kalitesi(session: Session, requirement_id: uuid.UUID | None = None) -> 
     # ---- hedefler
     hedefler = [{**h, "not": HEDEF_NOTU} for h in HEDEFLER]
     if not hedefler:
-        uyarilar.append(
-            "Prompt Seti v2 başlangıç hedefleri repoda bulunamadı (belge repoya girmez); hedef "
-            "gösterilmiyor."
-        )
+        uyarilar.append("Ekip hedefleri henüz tanımlanmadı; hedefle karşılaştırma gösterilmiyor.")
     if readiness["legacy"]:
         uyarilar.append(
             f"{readiness['legacy']} eski (v2) case readiness taşımıyor (K9); review/denetim setine "
@@ -517,6 +521,7 @@ def case_kalitesi(session: Session, requirement_id: uuid.UUID | None = None) -> 
         "yetim_soru": yetim_soru,
         "readiness": readiness,
         "teknik": dict(sorted(teknik.items())),
+        "oncelik": oncelik,
         "icerik_kontrolu": icerik_cikti,
         "surumler": surumler,
         "hedefler": hedefler,
