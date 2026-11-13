@@ -336,3 +336,56 @@ describe("Sauce: CI adımları görünümü", () => {
     expect(screen.getAllByText("geçti")).toHaveLength(1);
   });
 });
+
+describe("denetim: okunur özet ve sayfalama", () => {
+  it("okunurOzet JSON'u anahtar: değer olarak kısaltır, tamamı ayrıca", async () => {
+    const { okunurOzet } = await import("./Denetim");
+    const o = okunurOzet('{"sonuc":{"TPD-1":"yeni"},"baz_dosyasi":2,"jira":"TPD"}');
+    expect(o.kisa).toBe("sonuc: {1 alan} · baz_dosyasi: 2 · jira: TPD");
+    expect(o.tam).toContain('"TPD-1": "yeni"');
+    expect(okunurOzet("Oturum açıldı")).toEqual({ kisa: "Oturum açıldı", tam: "Oturum açıldı" });
+  });
+
+  it("Daha eski olayları yükle: before_id ile sonraki sayfa eklenir", async () => {
+    const olay = (id: number) => ({ id, zaman: "2026-11-14T00:00:00Z", aktor: "sistem", eylem: "x.y", nesne: null, ozet: { n: id }, prev_hash: "a".repeat(64), hash: "b".repeat(64) });
+    const { yapilandir } = await import("../api/http");
+    const cagrilar: string[] = [];
+    yapilandir({
+      mock: async (method, path, q, govde) => {
+        if (path === "/audit") {
+          cagrilar.push(q.toString());
+          const once = q.get("before_id");
+          if (!once) return { events: [3, 2].map(olay), tip_hash: "b".repeat(64), next_before_id: 2, verify: { ok: true, count: 3, tip_hash: "b".repeat(64), broken_at: null, reason: null } };
+          return { events: [olay(1)], tip_hash: "b".repeat(64), next_before_id: null, verify: null };
+        }
+        return mockIstek(method, path, q, govde);
+      },
+    });
+    await oturumAc("sunucu");
+    uygulama("/denetim");
+    expect(await screen.findByText("Olaylar (2+)")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Daha eski olayları yükle" }));
+    expect(await screen.findByText("Olaylar (3)")).toBeInTheDocument();
+    expect(cagrilar.some((q) => q.includes("before_id=2") && q.includes("verify=false"))).toBe(true);
+    expect(screen.queryByTestId("denetim-daha-fazla")).toBeNull();
+  });
+});
+
+describe("metinler: durum kodu ve tutar", () => {
+  it("(durum: pending_po) Türkçe etikete çevrilir", async () => {
+    const { durumKodunuCevir } = await import("../lib/etiketler");
+    expect(durumKodunuCevir("case'leri hazır durumda değil (durum: pending_po); story değiştiyse")).toBe(
+      "case'leri hazır durumda değil (durum: PO teyidi bekliyor); story değiştiyse",
+    );
+    expect(durumKodunuCevir("(durum: bilinmez_kod)")).toBe("(durum: bilinmez_kod)");
+  });
+
+  it("tutar alanları TL biçiminde; zaten TL olan ve tutar olmayan değerler değişmez", async () => {
+    const { tutarlariBicimle } = await import("../lib/format");
+    expect(tutarlariBicimle("ayar tablosunda min_siparis_tutari = 750.00")).toBe("ayar tablosunda min_siparis_tutari = 750,00 TL");
+    expect(tutarlariBicimle("min_siparis_tutari=750.00")).toBe("min_siparis_tutari=750,00 TL");
+    expect(tutarlariBicimle("Minimum sipariş tutarı 500,00 TL")).toBe("Minimum sipariş tutarı 500,00 TL");
+    expect(tutarlariBicimle("tutar: 1250 TL")).toBe("tutar: 1250 TL");
+    expect(tutarlariBicimle("adet = 3.50")).toBe("adet = 3.50");
+  });
+});

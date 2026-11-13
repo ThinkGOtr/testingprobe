@@ -6,7 +6,7 @@ import { useBugKisitli } from "../auth";
 import { useIslem } from "../hooks";
 import { BUG_KISITLI_METNI, KISITLI_BUG_DURUMLARI } from "../lib/yetki";
 import { BULGU_DURUMU, BULGU_KARARI, BULGU_TURU, gereksinimDurumu as durumEtiketi } from "../lib/etiketler";
-import { tarih } from "../lib/format";
+import { tarih, tutarlariBicimle } from "../lib/format";
 import { FarkGorunumu } from "./FarkGorunumu";
 import { KisiAdi } from "./KisiAdi";
 import { KodGorunumu } from "./KodGorunumu";
@@ -31,7 +31,9 @@ function KanitGorunumu({ k }: { k: Kanit }) {
     <div className="kanit">
       <div className="kanit-baslik">
         <span className="cip cip-notr">Veri</span>
-        <span className="soluk kucuk">Salt okuma sorgu · özet {k.result_digest}</span>
+        <span className="soluk kucuk" title={k.result_digest ?? undefined}>
+          Salt okuma sorgu · özet {k.result_digest ? tutarlariBicimle(k.result_digest) : k.result_digest}
+        </span>
       </div>
       <pre className="sql" tabIndex={0} aria-label="SQL sorgusu">
         <code>{k.query}</code>
@@ -132,7 +134,7 @@ export function BulguKarti({
         )}
       </header>
       <h3 id={`${id}-baslik`} className="bulgu-ozet">
-        {bulgu.ozet}
+        {tutarlariBicimle(bulgu.ozet)}
       </h3>
 
       {bulgu.evidence.length > 0 ? (

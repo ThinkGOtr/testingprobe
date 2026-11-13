@@ -1860,6 +1860,8 @@ export interface ZincirDogrulama {
 export interface DenetimYaniti {
   olaylar: DenetimOlayi[];
   dogrulama: ZincirDogrulama | null;
+  /** Daha eski olaylar varsa sonraki sayfanın imleci (core `next_before_id`); yoksa null/yok. */
+  sonraki?: string | null;
 }
 
 // ---------------------------------------------------------------- MCP token

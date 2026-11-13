@@ -5728,3 +5728,7 @@ input[type="checkbox"][role="switch"] {
 /* fix/canli-portal-b: pasif dil kartı nedeni ızgarayı genişletmesin (ayrıntı ipucunda) */
 .platform-secenekler.aciklamali .platform-secenek { max-width: 20rem; }
 .platform-secenek-neden { overflow-wrap: anywhere; }
+/* fix/canli-portal-b: denetim özeti (okunur kısa metin + açılır tam metin) */
+.denetim-ozet-hucre { max-width: 36rem; }
+.denetim-ozet > summary { cursor: pointer; overflow-wrap: anywhere; }
+.denetim-ozet > pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 0; }

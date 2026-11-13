@@ -465,8 +465,12 @@ export const api = {
     caseKalitesiUyarla(
       await istek<unknown>("GET", "/control-tower/case-quality", { sorgu: requirementId ? { requirement_id: requirementId } : undefined }),
     ),
-  denetim: async (dogrula = true): Promise<DenetimYaniti> =>
-    denetimiUyarla(await istek<unknown>("GET", "/audit", { sorgu: { verify: dogrula } })),
+  /**
+   * Denetim olayları (yeniden eskiye, core sayfası 100). `oncesi`: önceki sayfanın `sonraki` imleci
+   * (core `before_id`); sonraki sayfalarda zincir yeniden doğrulanmaz.
+   */
+  denetim: async (dogrula = true, oncesi?: string | null): Promise<DenetimYaniti> =>
+    denetimiUyarla(await istek<unknown>("GET", "/audit", { sorgu: { verify: dogrula, before_id: oncesi ?? undefined } })),
 
   // Agent Probe: AI ajan ürünleri ve ajan testi talepleri (011 F6; bu sürümde simülasyon)
   ajanUrunleri: () => istek<AjanUrunleriYaniti>("GET", "/agent-probe/products"),

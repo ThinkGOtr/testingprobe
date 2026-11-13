@@ -9,7 +9,7 @@ import { useBildirim } from "../components/Bildirim";
 import { DenetimOzeti } from "../components/KalitePanelleri";
 import { Baglanti, BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, Uyari, Yukleniyor, IzinliLink } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
-import type { Ton } from "../lib/etiketler";
+import { durumKodunuCevir, type Ton } from "../lib/etiketler";
 import { hataMetniniAyikla, yayinlanamazOnekiz } from "../lib/kalite";
 
 const ISLEM: Record<YayinOnizlemeKalemi["islem"], { etiket: string; ton: Ton }> = {
@@ -181,7 +181,7 @@ function YayinEkrani() {
               <span className="soluk"> · hedef sunucu yönetici ayarından gelir</span>
             </p>
             {o.uyarilar.map((u) => (
-              <Uyari key={u}>{u}</Uyari>
+              <Uyari key={u}>{durumKodunuCevir(u)}</Uyari>
             ))}
             {kapsanmayan.length > 0 && (
               <div data-testid="yayin-kapsam-uyarisi">
@@ -255,7 +255,7 @@ function YayinEkrani() {
                             {(k.neden || k.islem === "blocked_not_ready") && (
                               <span className="yayin-neden soluk kucuk" data-testid="yayin-engel-nedeni">
                                 {/* Çip "Yayınlanamaz: …" der; core nedeni aynı önekle gelirse ikinci kez yazılmaz. */}
-                                {k.neden ? hataMetniniAyikla(yayinlanamazOnekiz(k.neden)) : HAZIR_DEGIL_NEDENI}
+                                {k.neden ? durumKodunuCevir(hataMetniniAyikla(yayinlanamazOnekiz(k.neden))) : HAZIR_DEGIL_NEDENI}
                               </span>
                             )}
                             {k.external_key && (
