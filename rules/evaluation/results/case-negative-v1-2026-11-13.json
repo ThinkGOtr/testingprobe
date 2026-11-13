@@ -13,128 +13,84 @@
       "id": "tpd-1-negatif",
       "ok": false,
       "failures": [
-        "C3: kaynakta olmayan tutar '525,00 TL' (sepet/toplam bağlamında değil; yalnız sepet ya da satır toplamı)"
+        "0 yeni case, en az 1"
       ],
       "output": {
         "open_questions": [
           {
             "id": "Q2",
-            "question": "Katalogda adet alanı boş bırakılır, harf ya da ondalık değer girilirse \"Sepete ekle\" ne yapar (reddedilir mi, hata metni nedir, sepet değişir mi)? Kaynakta bu davranış yok.",
-            "owner": "PO"
-          },
-          {
-            "id": "Q3",
-            "question": "Oturum açılmadan sepet, sipariş onayı veya sipariş geçmişi adresine doğrudan gidilirse sistem ne yapar (giriş sayfasına yönlendirme, hata sayfası vb.)? Kaynakta yok.",
-            "owner": "PO"
-          },
-          {
-            "id": "Q4",
-            "question": "Aynı sipariş için \"Siparişi onayla\" çift tıklanırsa ya da onaylanmış siparişe Geri tuşuyla dönüp tekrar onaylanırsa ne olur (tek sipariş mi, ikinci sipariş mi, hata mı)? Kaynakta yok.",
+            "question": "Sepete ekle sırasında adet alanına 0, negatif sayı, ondalık veya boş değer girilirse sistem ne yapar (ürün eklenir mi, hata gösterilir mi, hata metni nedir)? Kaynakta adet alanının doğrulama kuralı yok.",
             "owner": "PO"
           }
         ],
-        "assumptions": [
-          {
-            "id": "A1",
-            "statement": "Katalogda 0 ya da negatif adetle \"Sepete ekle\" reddedilir ve hata gösterilir; mesaj metni kaynakta yok. Ürün sepete eklenmez ve sepet sayacı değişmez.",
-            "owner": "PO"
-          }
-        ],
+        "assumptions": [],
         "coverage_items": [
           {
-            "id": "BV-9",
-            "ac_ref": "AC1",
-            "definition": "Adet 0 ile \"Sepete ekle\": ekleme reddedilir (geçerli adedin hemen altı)",
+            "id": "EP-I1",
+            "ac_ref": "AC3",
+            "definition": "Kampanyasız sepet toplamı 750,00 TL altında: \"Minimum sipariş tutarı 750,00 TL\" uyarısı, onay butonu pasif",
             "valid": false
           },
           {
             "id": "EP-I3",
             "ac_ref": "AC1",
-            "definition": "Negatif adet (-1) ile \"Sepete ekle\": ekleme reddedilir",
-            "valid": false
-          },
-          {
-            "id": "EP-I4",
-            "ac_ref": "AC1",
-            "definition": "Adet alanı boş, harf ya da ondalık ile \"Sepete ekle\": sonuç kaynakta yok",
-            "valid": false
-          },
-          {
-            "id": "EP-I5",
-            "ac_ref": "AC5",
-            "definition": "Oturum açılmadan sepet/sipariş sayfasına erişim: sonuç kaynakta yok",
-            "valid": false
-          },
-          {
-            "id": "ST-X1",
-            "ac_ref": "AC5",
-            "definition": "Onaylanmış siparişin Geri tuşuyla tekrar onaylanması (yasak geçiş): sonuç kaynakta yok",
+            "definition": "Sepete ekle sırasında geçersiz adet (0, negatif, ondalık, boş): kaynakta doğrulama kuralı ve sonuç yok",
             "valid": false
           },
           {
             "id": "EG-1",
             "ac_ref": "AC5",
-            "definition": "\"Siparişi onayla\" butonuna çift tıklama: sonuç kaynakta yok",
+            "definition": "Sipariş onay butonuna art arda çift tıklama: tek sipariş oluşması beklenir, kaynakta kural yok",
             "valid": false
           },
           {
-            "id": "DT-R4",
-            "ac_ref": "AC4",
-            "definition": "Sepette yalnız kampanyalı ürün var ve indirimli toplam kredi limitini aşıyor: \"Kredi limiti aşıldı\" uyarısı, sipariş onaylanamaz (AC6 yalnız minimum tutar şartını kaldırır)",
+            "id": "ST-X1",
+            "ac_ref": "AC5",
+            "definition": "Oturum açmadan sipariş geçmişi sayfasına doğrudan erişim: yetkisiz erişim reddedilmeli, kaynakta davranış yok",
             "valid": false
           }
         ],
         "negative_coverage": [
           {
-            "item": "BV-9",
-            "decision": "tested",
-            "rationale": "Adet 0 reddi A1 varsayımına bağlı; hata metni kaynakta olmadığı için AÇIK NOKTA olarak işaretlendi."
+            "item": "EP-I1",
+            "decision": "covered_by",
+            "rationale": "U1-5 mevcut case; 150,00 TL kampanyasız sepette uyarı ve pasif onay sınanıyor."
           },
           {
             "item": "EP-I3",
-            "decision": "tested",
-            "rationale": "Negatif adet sepet toplamını bozabilir; A1 varsayımına bağlı case yazıldı, mesaj metni açık nokta."
-          },
-          {
-            "item": "EP-I4",
             "decision": "out_of_scope",
-            "rationale": "Boş, harf veya ondalık adedin sonucu kaynakta yok; Q2 yanıtlanana kadar case yazılmadı."
-          },
-          {
-            "item": "EP-I5",
-            "decision": "out_of_scope",
-            "rationale": "Oturumsuz erişimin beklenen reddi kaynakta tanımlı değil; Q3 yanıtlanana kadar case yazılmadı."
-          },
-          {
-            "item": "ST-X1",
-            "decision": "out_of_scope",
-            "rationale": "Onaylanmış siparişin tekrar onayı kaynakta tanımlı değil; Q4 yanıtlanana kadar case yazılmadı."
+            "rationale": "Geçersiz adet için kaynakta kural ve sonuç yok; Q2 yanıtlanana kadar case yazılmadı."
           },
           {
             "item": "EG-1",
             "decision": "out_of_scope",
-            "rationale": "Çift tıklama sonucu kaynakta tanımlı değil; Q4 yanıtlanana kadar case yazılmadı."
+            "rationale": "Çift tıklamada tek sipariş oluşacağı kaynakta yazmıyor; beklenen sonuç Q2 kapsamı dışında, ayrı PO sorusu gerekir; sonuç uydurulmadı."
           },
           {
-            "item": "DT-R4",
-            "decision": "tested",
-            "rationale": "Kampanyalı sepette kredi limiti aşımı para riski taşır; AC4 net, bayi2 (500,00 TL) ile sınanıyor."
+            "item": "ST-X1",
+            "decision": "out_of_scope",
+            "rationale": "Oturumsuz erişimde yönlendirme/reddetme davranışı kaynakta yok; sonuç uydurulmadı, PO/analist ile netleştirilmeli."
           }
         ],
         "not_covered": [
           {
-            "item": "N4",
-            "reason": "Hikayede serbest metin girişi yok; özel karakter ve Unicode için sınanacak alan bulunmuyor.",
+            "item": "EP-I3",
+            "reason": "Adet alanı doğrulama kuralı kaynakta yok; beklenen sonuç uydurulmadı.",
+            "question_ref": "Q2"
+          },
+          {
+            "item": "EG-1",
+            "reason": "Tekrarlı onay gönderimi davranışı kaynakta tanımlı değil; beklenen sonuç yazılamıyor.",
             "question_ref": null
           },
           {
-            "item": "N5",
-            "reason": "Hikayede enjeksiyon payload'u girilebilecek serbest metin alanı yok; güvenlik beklentisi tanımlı değil.",
+            "item": "ST-X1",
+            "reason": "Yetkisiz (oturumsuz) erişimde beklenen davranış kaynakta yok.",
             "question_ref": null
           },
           {
             "item": "N9",
-            "reason": "Hikaye ağ veya servis hatası davranışı tanımlamıyor; beklenen sonuç uydurulmadı.",
+            "reason": "Ağ/servis hatası davranışı kaynakta tanımlı değil; ayrı case yazılmadı.",
             "question_ref": null
           }
         ],
@@ -145,216 +101,12 @@
           "constraints": []
         },
         "testability_gaps": [],
-        "cases": [
-          {
-            "title": "Adet 0 ile sepete ekleme reddedilir ve sepet değişmez",
-            "type": "boundary",
-            "technique": [
-              "BVA"
-            ],
-            "covers": [
-              "BV-9"
-            ],
-            "priority": "P2",
-            "priority_rationale": "Geçersiz adet sepet tutarını bozabilir; geçici çözüm var, orta etki.",
-            "acceptance_criteria_refs": [
-              "AC1"
-            ],
-            "platform": null,
-            "test_level": "SYSTEM",
-            "verification_point": "UI",
-            "requires_real_device": false,
-            "standard_refs": [],
-            "readiness": "assumption_dependent",
-            "assumption_refs": [
-              "A1"
-            ],
-            "open_question_refs": [],
-            "preconditions": [
-              "bayi1 hesabı mevcut, sepet boş"
-            ],
-            "test_data": [
-              {
-                "name": "geçersiz adet",
-                "value": "0",
-                "class": "BV-9",
-                "synthetic": true,
-                "is_attack_payload": false
-              }
-            ],
-            "steps": [
-              {
-                "id": "S1",
-                "action": "Giriş sayfasını aç ve bayi1 ile giriş yap",
-                "data": "bayi1 / Demo123!",
-                "expected": "Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir"
-              },
-              {
-                "id": "S2",
-                "action": "\"Limonata 330ml\" (P-002) kartında adedi geçersiz adet değerine ayarla ve \"Sepete ekle\" butonuna bas",
-                "data": "P-002 × geçersiz adet",
-                "expected": "hata gösterilir (mesaj metni: AÇIK NOKTA); ürün eklenmez"
-              },
-              {
-                "id": "S3",
-                "action": "Sepet sayacını kontrol et",
-                "data": null,
-                "expected": "Sepet sayacı değişmez"
-              }
-            ],
-            "expected_result": "Ekleme reddedilir, hata gösterilir (mesaj metni: AÇIK NOKTA); ürün sepete eklenmez ve sepet sayacı değişmez.",
-            "teardown": [
-              "\"Çıkış yap\" ile oturumu kapat"
-            ],
-            "tags": [
-              "AI-generated",
-              "N3",
-              "N1"
-            ]
-          },
-          {
-            "title": "Negatif adetle sepete ekleme reddedilir ve sepet değişmez",
-            "type": "negative",
-            "technique": [
-              "EP"
-            ],
-            "covers": [
-              "EP-I3"
-            ],
-            "priority": "P2",
-            "priority_rationale": "Negatif adet toplamı düşürüp minimum tutar ve kredi kontrolünü atlatabilir; orta-yüksek olasılık.",
-            "acceptance_criteria_refs": [
-              "AC1"
-            ],
-            "platform": null,
-            "test_level": "SYSTEM",
-            "verification_point": "UI",
-            "requires_real_device": false,
-            "standard_refs": [],
-            "readiness": "assumption_dependent",
-            "assumption_refs": [
-              "A1"
-            ],
-            "open_question_refs": [],
-            "preconditions": [
-              "bayi1 hesabı mevcut, sepet boş"
-            ],
-            "test_data": [
-              {
-                "name": "negatif adet",
-                "value": "-1",
-                "class": "EP-I3",
-                "synthetic": true,
-                "is_attack_payload": false
-              }
-            ],
-            "steps": [
-              {
-                "id": "S1",
-                "action": "Giriş sayfasını aç ve bayi1 ile giriş yap",
-                "data": "bayi1 / Demo123!",
-                "expected": "Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir"
-              },
-              {
-                "id": "S2",
-                "action": "\"Maden Suyu 200ml\" (P-003) kartında adedi negatif adet değerine ayarla ve \"Sepete ekle\" butonuna bas",
-                "data": "P-003 × negatif adet",
-                "expected": "hata gösterilir (mesaj metni: AÇIK NOKTA); ürün eklenmez"
-              },
-              {
-                "id": "S3",
-                "action": "Sepet sayacını kontrol et",
-                "data": null,
-                "expected": "Sepet sayacı değişmez"
-              }
-            ],
-            "expected_result": "Ekleme reddedilir, hata gösterilir (mesaj metni: AÇIK NOKTA); ürün sepete eklenmez ve sepet sayacı değişmez.",
-            "teardown": [
-              "\"Çıkış yap\" ile oturumu kapat"
-            ],
-            "tags": [
-              "AI-generated",
-              "N3",
-              "N1"
-            ]
-          },
-          {
-            "title": "Kampanyalı siparişte indirimli toplam kredi limitini aşınca sipariş onaylanamaz",
-            "type": "negative",
-            "technique": [
-              "DT"
-            ],
-            "covers": [
-              "DT-R4"
-            ],
-            "priority": "P1",
-            "priority_rationale": "Kredi limiti kontrolü atlanırsa bayi limit dışı sipariş verir; para etkisi doğrudan.",
-            "acceptance_criteria_refs": [
-              "AC4",
-              "AC6"
-            ],
-            "platform": null,
-            "test_level": "SYSTEM",
-            "verification_point": "UI",
-            "requires_real_device": false,
-            "standard_refs": [],
-            "readiness": "ready",
-            "assumption_refs": [],
-            "open_question_refs": [],
-            "preconditions": [
-              "bayi2 hesabı mevcut (kredi limiti 500,00 TL), sepet boş"
-            ],
-            "test_data": [
-              {
-                "name": "kampanyalı ürün ve adet",
-                "value": "P-001 × 25 (4 bedava, indirimli toplam 525,00 TL)",
-                "class": "DT-R4",
-                "synthetic": true,
-                "is_attack_payload": false
-              }
-            ],
-            "steps": [
-              {
-                "id": "S1",
-                "action": "Giriş sayfasını aç ve bayi2 ile giriş yap",
-                "data": "bayi2 / Demo123!",
-                "expected": "Katalog sayfası \"Sahil Bayi\" oturumuyla görüntülenir"
-              },
-              {
-                "id": "S2",
-                "action": "\"Portakal Gazozu 1L\" (P-001) kartında adedi 25 yapıp \"Sepete ekle\" butonuna bas",
-                "data": "P-001 × 25",
-                "expected": "Sepet sayacı 25 olur"
-              },
-              {
-                "id": "S3",
-                "action": "Üst menüden sepete git",
-                "data": null,
-                "expected": "Bedava adet 4, toplam 525,00 TL; \"Kredi limiti aşıldı\" uyarısı görünür"
-              },
-              {
-                "id": "S4",
-                "action": "\"Siparişi onayla\" butonunun durumunu kontrol et",
-                "data": null,
-                "expected": "Sipariş onaylanamaz; sipariş numarası üretilmez"
-              }
-            ],
-            "expected_result": "Kampanya indirimi sonrası toplam (525,00 TL) kredi limitini (500,00 TL) aştığı için \"Kredi limiti aşıldı\" uyarısı gösterilir ve sipariş onaylanamaz.",
-            "teardown": [
-              "\"Çıkış yap\" ile oturumu kapat"
-            ],
-            "tags": [
-              "AI-generated",
-              "N7",
-              "regression"
-            ]
-          }
-        ]
+        "cases": []
       },
       "mode": "live",
       "error": null,
-      "cost_usd": 0.118493,
-      "sure_ms": 42650
+      "cost_usd": 0.064062,
+      "sure_ms": 8740
     },
     {
       "id": "tpd-4-negatif",
@@ -363,30 +115,19 @@
       "output": {
         "open_questions": [
           {
-            "id": "Q1",
-            "question": "Kayıtlı olmayan bir kullanıcı adıyla giriş denenirse ne olmalı: AC2'deki \"Kullanıcı adı veya parola hatalı\" mesajı mı gösterilir, başka bir mesaj mı? (Kullanıcı adının kayıtlı olup olmadığını ele vermemesi beklenir mi?)",
-            "owner": "PO"
-          },
-          {
             "id": "Q2",
-            "question": "Boş kullanıcı adı veya boş parola ile giriş denenirse ne olmalı: alan bazlı doğrulama mesajı mı, AC2'deki mesaj mı gösterilir? Mesaj metni nedir? Art arda hatalı denemelerde hesap kilitleme veya gecikme uygulanır mı?",
+            "question": "Boş kullanıcı adı veya boş parola ile giriş denenirse ne olmalı: AC2'deki mesaj mı, alan bazlı bir doğrulama mesajı mı gösterilir? Ayrıca art arda hatalı denemelerde hesap kilitleme veya gecikme kuralı var mı?",
             "owner": "PO"
           }
         ],
         "assumptions": [
           {
             "id": "A1",
-            "statement": "Oturumu açık olmayan kullanıcı katalog adresine doğrudan gittiğinde katalog gösterilmez ve giriş sayfasına yönlendirilir; yönlendirme dışında mesaj metni kaynakta yok.",
+            "statement": "Giriş yapılmadan katalog adresine doğrudan gidilirse erişim reddedilir ve kullanıcı giriş sayfasına yönlendirilir; mesaj metni kaynakta yok.",
             "owner": "PO"
           }
         ],
         "coverage_items": [
-          {
-            "id": "EP-I1",
-            "ac_ref": "AC2",
-            "definition": "Kayıtlı kullanıcı adı ve hatalı parola: \"Kullanıcı adı veya parola hatalı\" mesajı, giriş yapılmaz",
-            "valid": false
-          },
           {
             "id": "EP-I2",
             "ac_ref": "AC2",
@@ -396,74 +137,75 @@
           {
             "id": "EP-I3",
             "ac_ref": "AC2",
-            "definition": "Kullanıcı adı veya parola alanı boş (beklenen sonuç kaynakta tanımsız, Q2)",
+            "definition": "Boş kullanıcı adı veya boş parola ile giriş denemesi (beklenen sonuç kaynakta tanımsız, Q2)",
             "valid": false
           },
           {
             "id": "EP-I4",
-            "ac_ref": "AC2",
-            "definition": "Kullanıcı adı alanında SQL injection denemesi metni, parola geçerli olmayan değer",
-            "valid": false
-          },
-          {
-            "id": "EP-I5",
             "ac_ref": "AC1",
-            "definition": "Oturumsuz kullanıcının katalog sayfasına doğrudan erişimi",
+            "definition": "Oturum açılmadan korumalı katalog sayfasına doğrudan erişim denemesi",
             "valid": false
           },
           {
             "id": "EG-1",
             "ac_ref": "AC2",
-            "definition": "Hata mesajı ve ağ yanıtı hesabın var olup olmadığını veya parolayı ifşa etmez",
+            "definition": "Parola alanına SQL injection metni girilmesi: giriş yapılmaz, hata mesajında teknik bilgi sızmaz",
+            "valid": false
+          },
+          {
+            "id": "EG-2",
+            "ac_ref": "AC2",
+            "definition": "Kullanıcı adı alanına XSS metni girilmesi: giriş yapılmaz, metin betik olarak çalışmaz",
+            "valid": false
+          },
+          {
+            "id": "ST-X1",
+            "ac_ref": "AC1",
+            "definition": "Çıkış yapıldıktan sonra Geri düğmesiyle korumalı sayfaya dönme",
             "valid": false
           }
         ],
         "negative_coverage": [
           {
-            "item": "EP-I1",
-            "decision": "covered_by",
-            "rationale": "U1-2 hatalı parolayı mesajıyla zaten sınıyor."
-          },
-          {
             "item": "EP-I2",
             "decision": "out_of_scope",
-            "rationale": "Kayıtlı olmayan kullanıcı adının sonucu kaynakta yok; Q1 yanıtlanmadan case yazılmadı."
+            "rationale": "Kayıtlı olmayan kullanıcı adında sonuç kaynakta yok (Q1); case yazılmadı."
           },
           {
             "item": "EP-I3",
             "decision": "out_of_scope",
-            "rationale": "Boş alan sonucu ve mesaj metni kaynakta yok; Q2 açık, case yazılmadı."
+            "rationale": "Boş alanlarda gösterilecek sonuç kaynakta yok (Q2); case yazılmadı."
           },
           {
             "item": "EP-I4",
             "decision": "tested",
-            "rationale": "Injection metni girişte kabul edilmemeli; AC2 mesajı ve girişin yapılmaması kaynaktan doğrulanabilir."
-          },
-          {
-            "item": "EP-I5",
-            "decision": "tested",
-            "rationale": "Yetkisiz erişim reddi; mesaj metni kaynakta yok, A1 varsayımına bağlı."
+            "rationale": "Yetkisiz erişim riski; reddedilme varsayımı A1 ile kayıtlı, case yazıldı."
           },
           {
             "item": "EG-1",
             "decision": "tested",
-            "rationale": "Hatalı parola yanıtında ek bilgi sızıntısı olmaması güvenlik riski; AC2 mesajı ile sınanır."
+            "rationale": "Giriş formu injection için yüksek risk; AC2 mesajı ve giriş yapılmaması kaynaktan."
+          },
+          {
+            "item": "EG-2",
+            "decision": "tested",
+            "rationale": "Kullanıcı adı alanı yansıtma riski; AC2 sonucu kaynaktan."
+          },
+          {
+            "item": "ST-X1",
+            "decision": "tested",
+            "rationale": "Çıkıştan sonra korumalı sayfaya geri dönüş oturum güvenliği riskidir; reddedilme A1 ile kayıtlı."
           }
         ],
         "not_covered": [
           {
-            "item": "EP-I2",
-            "reason": "Kayıtlı olmayan kullanıcı adı sonucu kaynakta tanımsız.",
-            "question_ref": "Q1"
-          },
-          {
-            "item": "EP-I3",
-            "reason": "Boş alan davranışı ve kilitleme kuralı kaynakta tanımsız.",
+            "item": "N8",
+            "reason": "Art arda hatalı deneme, kilitleme ve gecikme kuralı kaynakta yok; Q2'de soruldu, beklenen sonuç uydurulmadı.",
             "question_ref": "Q2"
           },
           {
-            "item": "N8",
-            "reason": "Zaman aşımı, OTP veya bağlantı süresi kaynakta yok; uygulanmaz.",
+            "item": "N9",
+            "reason": "Ağ ve servis hatası davranışı kaynakta tanımlı değil; beklenen sonuç yazılamaz.",
             "question_ref": null
           }
         ],
@@ -476,16 +218,16 @@
         "testability_gaps": [],
         "cases": [
           {
-            "title": "Kullanıcı adı alanındaki injection denemesi girişe izin vermez",
+            "title": "Parola alanına SQL injection metni girilince giriş reddedilir",
             "type": "negative",
             "technique": [
-              "EP"
+              "EG"
             ],
             "covers": [
-              "EP-I4"
+              "EG-1"
             ],
             "priority": "P1",
-            "priority_rationale": "Kimlik doğrulama atlatma riski güvenlik açığına yol açar.",
+            "priority_rationale": "Kimlik doğrulama atlatma riski güvenlik açığı doğurur ve yetkisiz erişime yol açar.",
             "acceptance_criteria_refs": [
               "AC2"
             ],
@@ -500,19 +242,20 @@
             "assumption_refs": [],
             "open_question_refs": [],
             "preconditions": [
-              "Test ortamında giriş sayfası açılabilir"
+              "Yalnızca test ortamı kullanılır",
+              "bayi1 kayıtlıdır"
             ],
             "test_data": [
               {
-                "name": "sqli_kullanici_adi",
+                "name": "sqli_parola",
                 "value": "' OR '1'='1",
-                "class": "EP-I4",
+                "class": "EG-1",
                 "synthetic": true,
                 "is_attack_payload": true
               },
               {
-                "name": "gecersiz_parola",
-                "value": "Yanlis123!",
+                "name": "kullanıcı adı",
+                "value": "bayi1",
                 "class": null,
                 "synthetic": true,
                 "is_attack_payload": false
@@ -527,30 +270,97 @@
               },
               {
                 "id": "S2",
-                "action": "Kullanıcı adına sqli_kullanici_adi, parolaya gecersiz_parola değerini gir ve \"Giriş yap\" butonuna bas",
-                "data": "sqli_kullanici_adi / gecersiz_parola",
-                "expected": "\"Kullanıcı adı veya parola hatalı\" mesajı görünür, giriş yapılmaz ve katalog açılmaz"
+                "action": "Kullanıcı adına kullanıcı adı verisini, parolaya sqli_parola verisini gir ve \"Giriş yap\" butonuna bas",
+                "data": "kullanıcı adı / sqli_parola",
+                "expected": "\"Kullanıcı adı veya parola hatalı\" mesajı gösterilir, giriş yapılmaz, mesajda SQL veya teknik ayrıntı yoktur"
               }
             ],
-            "expected_result": "\"Kullanıcı adı veya parola hatalı\" mesajı gösterilir, giriş yapılmaz; hata ayrıntısı (SQL, stack trace) görünmez.",
+            "expected_result": "\"Kullanıcı adı veya parola hatalı\" mesajı gösterilir, giriş yapılmaz ve hata mesajında teknik bilgi sızmaz",
             "teardown": [],
             "tags": [
               "AI-generated",
               "N5",
-              "security"
+              "security",
+              "regression"
             ]
           },
           {
-            "title": "Oturumsuz kullanıcı katalog adresine doğrudan erişemez",
+            "title": "Kullanıcı adı alanına XSS metni girilince betik çalışmaz ve giriş reddedilir",
+            "type": "negative",
+            "technique": [
+              "EG"
+            ],
+            "covers": [
+              "EG-2"
+            ],
+            "priority": "P1",
+            "priority_rationale": "Betik çalışması oturum ve veri güvenliğini tehlikeye atar.",
+            "acceptance_criteria_refs": [
+              "AC2"
+            ],
+            "platform": null,
+            "test_level": "SYSTEM",
+            "verification_point": "UI",
+            "requires_real_device": false,
+            "standard_refs": [
+              "WSTG-INPV-01"
+            ],
+            "readiness": "ready",
+            "assumption_refs": [],
+            "open_question_refs": [],
+            "preconditions": [
+              "Yalnızca test ortamı kullanılır"
+            ],
+            "test_data": [
+              {
+                "name": "xss_kullanıcı_adı",
+                "value": "<script>alert(1)</script>",
+                "class": "EG-2",
+                "synthetic": true,
+                "is_attack_payload": true
+              },
+              {
+                "name": "parola",
+                "value": "Demo123!",
+                "class": null,
+                "synthetic": true,
+                "is_attack_payload": false
+              }
+            ],
+            "steps": [
+              {
+                "id": "S1",
+                "action": "Giriş sayfasını aç",
+                "data": null,
+                "expected": "Giriş formu görüntülenir"
+              },
+              {
+                "id": "S2",
+                "action": "Kullanıcı adına xss_kullanıcı_adı verisini, parolaya parola verisini gir ve \"Giriş yap\" butonuna bas",
+                "data": "xss_kullanıcı_adı / parola",
+                "expected": "Giriş yapılmaz, hiçbir açılır pencere veya betik çalışması olmaz, \"Kullanıcı adı veya parola hatalı\" mesajı gösterilir"
+              }
+            ],
+            "expected_result": "Giriş yapılmaz, girilen metin betik olarak çalışmaz ve \"Kullanıcı adı veya parola hatalı\" mesajı gösterilir",
+            "teardown": [],
+            "tags": [
+              "AI-generated",
+              "N5",
+              "security",
+              "regression"
+            ]
+          },
+          {
+            "title": "Oturum açmadan katalog adresine doğrudan gidilince erişim reddedilir",
             "type": "authorization",
             "technique": [
               "EP"
             ],
             "covers": [
-              "EP-I5"
+              "EP-I4"
             ],
             "priority": "P1",
-            "priority_rationale": "Yetkisiz erişim kontrol zafiyeti, bayiye özel kataloğun açığa çıkmasına yol açar.",
+            "priority_rationale": "Yetkisiz erişim güvenlik riskidir ve ana akışın korumasını sınar.",
             "acceptance_criteria_refs": [
               "AC1"
             ],
@@ -559,7 +369,7 @@
             "verification_point": "UI",
             "requires_real_device": false,
             "standard_refs": [
-              "WSTG-ATHZ-02"
+              "WSTG-ATHN-04"
             ],
             "readiness": "assumption_dependent",
             "assumption_refs": [
@@ -567,7 +377,7 @@
             ],
             "open_question_refs": [],
             "preconditions": [
-              "Tarayıcıda açık oturum yok"
+              "Tarayıcıda açık oturum yoktur"
             ],
             "test_data": [],
             "steps": [
@@ -575,10 +385,10 @@
                 "id": "S1",
                 "action": "Oturum açmadan doğrudan Katalog sayfasının adresine git",
                 "data": null,
-                "expected": "Katalog içeriği gösterilmez ve giriş sayfasına yönlendirilir"
+                "expected": "Katalog içeriği görüntülenmez, kullanıcı giriş sayfasına yönlendirilir"
               }
             ],
-            "expected_result": "Katalog gösterilmez, kullanıcı giriş sayfasına yönlendirilir; yönlendirme dışında mesaj metni kaynakta yok.",
+            "expected_result": "Katalog içeriği gösterilmez; erişim reddedilir ve kullanıcı giriş sayfasına yönlendirilir (A1)",
             "teardown": [],
             "tags": [
               "AI-generated",
@@ -587,73 +397,54 @@
             ]
           },
           {
-            "title": "Hatalı parola yanıtı parolayı veya hesap bilgisini ifşa etmez",
+            "title": "Çıkış yapıldıktan sonra Geri düğmesiyle katalog tekrar açılmaz",
             "type": "negative",
             "technique": [
-              "EG"
+              "ST"
             ],
             "covers": [
-              "EG-1"
+              "ST-X1"
             ],
             "priority": "P2",
-            "priority_rationale": "Hata yanıtındaki bilgi sızıntısı hesap keşfini kolaylaştırır.",
+            "priority_rationale": "Ortak bilgisayarda oturum sonrası veri görünmesi riski vardır; geçici çözümü vardır.",
             "acceptance_criteria_refs": [
-              "AC2"
+              "AC1"
             ],
             "platform": null,
             "test_level": "SYSTEM",
-            "verification_point": "API",
+            "verification_point": "UI",
             "requires_real_device": false,
             "standard_refs": [
-              "WSTG-ATHN-04"
+              "WSTG-SESS-06"
             ],
-            "readiness": "ready",
-            "assumption_refs": [],
+            "readiness": "assumption_dependent",
+            "assumption_refs": [
+              "A1"
+            ],
             "open_question_refs": [],
             "preconditions": [
-              "Tarayıcı geliştirici araçlarında ağ sekmesi izlenebilir"
+              "bayi1 ile giriş yapılmış ve katalog açıktır"
             ],
-            "test_data": [
-              {
-                "name": "kayitli_kullanici",
-                "value": "bayi1",
-                "class": null,
-                "synthetic": true,
-                "is_attack_payload": false
-              },
-              {
-                "name": "hatali_parola",
-                "value": "Yanlis123!",
-                "class": "EP-I1",
-                "synthetic": true,
-                "is_attack_payload": false
-              }
-            ],
+            "test_data": [],
             "steps": [
               {
                 "id": "S1",
-                "action": "Giriş sayfasını aç ve ağ trafiğini izlemeye başla",
+                "action": "\"Çıkış yap\" bağlantısını kullan",
                 "data": null,
-                "expected": "Giriş formu görüntülenir"
+                "expected": "Oturum sonlanır ve giriş sayfası görüntülenir"
               },
               {
                 "id": "S2",
-                "action": "kayitli_kullanici ve hatali_parola ile \"Giriş yap\" butonuna bas",
-                "data": "bayi1 / Yanlis123!",
-                "expected": "\"Kullanıcı adı veya parola hatalı\" mesajı görünür ve giriş yapılmaz"
-              },
-              {
-                "id": "S3",
-                "action": "Giriş isteğinin yanıtını ve ekrandaki mesajı incele",
+                "action": "Tarayıcının Geri düğmesine bas",
                 "data": null,
-                "expected": "Yanıtta ve ekranda girilen parola, parola özeti, SQL veya stack trace bulunmaz"
+                "expected": "Katalog içeriği oturum olmadan görüntülenmez, kullanıcı giriş sayfasına yönlendirilir"
               }
             ],
-            "expected_result": "Yalnızca \"Kullanıcı adı veya parola hatalı\" mesajı gösterilir, giriş yapılmaz; yanıtta parola, SQL veya stack trace yer almaz.",
+            "expected_result": "Çıkıştan sonra Geri ile katalog içeriği gösterilmez; erişim reddedilir ve giriş sayfasına yönlendirilir (A1)",
             "teardown": [],
             "tags": [
               "AI-generated",
-              "N5",
+              "N10",
               "security"
             ]
           }
@@ -661,20 +452,20 @@
       },
       "mode": "live",
       "error": null,
-      "cost_usd": 0.090304,
-      "sure_ms": 36870
+      "cost_usd": 0.043432,
+      "sure_ms": 21204
     }
   ],
   "tamamlandi": true,
   "set_vaka_sayisi": 2,
   "kosu_sayisi": 2,
-  "maliyet_usd": 0.208797,
+  "maliyet_usd": 0.107494,
   "butce_usd": 2.0,
   "calisma_alani_basligi": true,
   "guardrails_version": 1,
   "kayit_adaylari": null,
   "cagri_kaydi": "case-negative-v1-2026-11-13.calls.jsonl",
-  "cagri_sayisi": 3,
+  "cagri_sayisi": 2,
   "cagri_defteri": "/Users/gokhansipahi/projects/agent-probe/tp-wt-v3/exports/eval-live/ai_call.jsonl",
   "amac": "case_deepening",
   "via_flow": false,
@@ -684,28 +475,24 @@
     "amac": "case_deepening",
     "output_check": true,
     "vaka": 2,
-    "ilk_deneme_gecis": 0,
-    "ilk_deneme_gecis_orani": 0.0,
-    "kural_yeniden_isteme_orani": 0.5,
+    "ilk_deneme_gecis": 1,
+    "ilk_deneme_gecis_orani": 0.5,
+    "kural_yeniden_isteme_orani": 0.0,
     "sema_yeniden_isteme_orani": 0.0,
-    "duzelme_orani": 1.0,
+    "duzelme_orani": null,
     "kalan_kural_ihlali": 0,
-    "ek_maliyet_usd": 0.050882,
-    "ek_maliyet_orani": 0.2437,
+    "ek_maliyet_usd": 0.0,
+    "ek_maliyet_orani": 0.0,
     "ek_sure_ms": {
-      "p50": 18032.0,
-      "p95": 18032.0
+      "p50": null,
+      "p95": null
     },
-    "kural_turu_histogrami": {
-      "not_covered.question_ref tanımsız açık s": 1,
-      "teknik EG için kapsam öğesi yok": 1,
-      "tekniği technique'te olmayan kapsam öğes": 1
-    },
+    "kural_turu_histogrami": {},
     "ilk_deneme_maskeli_puanlama": 0,
     "esikler": [
       {
         "ad": "ham_gecis_alt_siniri (bilgi)",
-        "deger": 0.0,
+        "deger": 0.5,
         "esik": 0.7,
         "gecti": false,
         "bagliyici": false
@@ -714,12 +501,12 @@
   },
   "dagilim": {
     "maliyet_usd": {
-      "medyan": 0.090304,
-      "p90": 0.118493
+      "medyan": 0.043432,
+      "p90": 0.064062
     },
     "sure_ms": {
-      "medyan": 36870,
-      "p90": 42650
+      "medyan": 8740,
+      "p90": 21204
     }
   }
 }

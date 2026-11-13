@@ -19,43 +19,43 @@
             "no": 1,
             "title": "İzlenebilirlik",
             "verdict": "UYGUN",
-            "finding": "Matriste AC1–AC6 en az bir case ile karşılanıyor (gereksinim_kapsami 6/6). AC3'teki karma sepet kombinasyonu Q1'de bekliyor ama satırın kendisi kapsanmış.",
+            "finding": "Matrise göre AC1–AC6 en az bir case ile karşılanıyor (AC1: C1, AC5: C8, AC6: C9). AC3 karma sepet kombinasyonu için Q1 bekliyor ama satırın kendisi kapsanmış.",
             "missing_case": null,
             "question": null,
             "owner": ""
           },
           {
             "no": 2,
-            "title": "EP geçersiz bölümler",
+            "title": "EP: geçersiz bölümler",
             "verdict": "UYGUN",
-            "finding": "Kaynak yalnızca tutar ve limit kuralları veriyor; EP-I1 (C5) ve EP-I2 (C7) geçersiz bölümleri kapsıyor. Adet alanı için tip/boş/format kuralı kaynakta yok.",
+            "finding": "Kaynak yalnız tutar/adet kurallarını tanımlıyor; geçersiz bölümler EP-I1 (C5) ve EP-I2 (C7) ile karşılanmış. Adet alanı için tip/boş/format kuralı kaynakta yok.",
             "missing_case": null,
             "question": null,
             "owner": ""
           },
           {
             "no": 3,
-            "title": "BVA sınır değerleri",
+            "title": "BVA: sınır değerleri",
             "verdict": "UYGUN",
-            "finding": "Bedava eşikleri 5/6/11/12 (C4, C3, C11, C12), minimum tutar 749/750 (C13, C6), kredi limiti 2.000/2.001 (C14, C15) kapsanıyor. Kuruş adımı sınırları en yakın kurulabilen değerle kurulmuş; bu kapsanmış sayılır.",
+            "finding": "Bedava eşikleri 5/6/11/12 (C3, C4, C11, C12), minimum tutar 749/750 (C13, C6), kredi limiti 2.000/2.001 (C14, C15) sınanmış; 0,01 TL adımı için en yakın kurulabilen değer gerekçeli kullanılmış. 18 ve üzeri kademeler kaynakta açık olmadığı için zorunlu değil.",
             "missing_case": null,
             "question": null,
             "owner": ""
           },
           {
             "no": 4,
-            "title": "Karar tablosu",
+            "title": "DT: koşul kombinasyonları",
             "verdict": "ACIK_BILGI_GEREKLI",
-            "finding": "Karma sepette (kampanyalı + kampanyasız, toplam 750,00 TL altı) AC3 ve AC6 çakışıyor; sonuç kaynakta tanımsız ve Q1 olarak kayıtlı. DT-R1/R2/R3 kapsanmış.",
+            "finding": "Karma sepet (kampanyalı + kampanyasız, toplam 750,00 TL altı) için AC3 ve AC6 çakışıyor; sonuç kaynakta tanımsız ve Q1 olarak kayıtlı. Diğer kombinasyonlar (DT-R1, R2, R3) kapsanmış.",
             "missing_case": null,
-            "question": "Karma sepette toplam 750,00 TL altındaysa minimum sipariş tutarı şartı aranır mı (Q1)?",
+            "question": "Karma sepette 750,00 TL altı toplamda minimum sipariş tutarı şartı aranır mı? (Q1)",
             "owner": "PO"
           },
           {
             "no": 5,
-            "title": "Durum geçişleri",
+            "title": "ST: durum geçişleri",
             "verdict": "UYGUN",
-            "finding": "Hikâyede tanımlı durum makinesi yok; bu madde uygulanmıyor.",
+            "finding": "Hikâyede tanımlı durum/geçiş modeli yok; bu madde uygulanmaz.",
             "missing_case": null,
             "question": null,
             "owner": ""
@@ -64,28 +64,28 @@
             "no": 6,
             "title": "Negatif kapsam kararları",
             "verdict": "UYGUN",
-            "finding": "EP-I1, BV-6, EP-I2, BV-8, DT-R1 için gerekçeli 'tested' kararı var ve case'leri mevcut. Gereksiz riskli negatif atlanmamış.",
+            "finding": "EP-I1, BV-6, EP-I2, BV-8, DT-R1 için 'tested' kararları gerekçeli ve case'lerle destekli. Gereksiz negatif case eklenmemiş.",
             "missing_case": null,
             "question": null,
             "owner": ""
           },
           {
             "no": 7,
-            "title": "Ölçülebilir beklenen sonuç",
+            "title": "Ölçülebilir beklenen sonuçlar",
             "verdict": "UYGUN",
-            "finding": "Beklenen sonuçlar somut: adet, bedava adet, ara toplam, indirim, toplam, buton durumu ve mesaj metni belirtilmiş (C3, C12, C15).",
+            "finding": "Beklenen sonuçlar somut: adet, bedava adet, ara toplam/indirim/toplam tutarları, uyarı metinleri ve buton durumu belirtilmiş (C2–C4, C12).",
             "missing_case": null,
             "question": null,
             "owner": ""
           },
           {
             "no": 8,
-            "title": "Somut test verisi",
-            "verdict": "ACIK_BILGI_GEREKLI",
-            "finding": "Veriler somut; ancak fiyatlar (P-001 25,00 TL vb.) ve bayi limitleri (bayi1 2.000, bayi2 500) kaynakta yok, demo verisi olarak varsayılmış. C7 ve C15'te expected-code-defect etiketi var. Set içinde talimat enjeksiyonu görülmedi.",
+            "title": "Somut test verisi, uydurma yok",
+            "verdict": "UYGUN",
+            "finding": "Kullanıcılar, ürün kodları, fiyatlar ve limitler test verisi bloğundan; tutarlar hesaplanabilir (P-004×25=750, 21×30+15+13×8=749, 2.001 doğru). Talimat enjeksiyonu yok.",
             "missing_case": null,
-            "question": "P-001..P-004 birim fiyatları ve bayi1/bayi2 kredi limitleri test ortamında bu değerlerle tanımlı mı?",
-            "owner": "analyst"
+            "question": null,
+            "owner": ""
           },
           {
             "no": 9,
@@ -98,9 +98,9 @@
           },
           {
             "no": 10,
-            "title": "Tekrarlı case yok",
+            "title": "Tekrar eden case yok",
             "verdict": "UYGUN_DEGIL",
-            "finding": "C10, C2 ile aynı veri (P-001 × 7), aynı adımlar ve aynı beklenen sonucu içeriyor (EP-V3); ek risk kapsamıyor.",
+            "finding": "C10, C2 ile aynı veri, adım ve beklenen sonuçla birebir aynı (P-001×7, EP-V3); kendi gerekçesi de bilinçli tekrar diyor.",
             "missing_case": "C10 kaldırılmalı veya C2 ile birleştirilmeli.",
             "question": null,
             "owner": "analyst"
@@ -109,7 +109,7 @@
             "no": 11,
             "title": "Öncelik mantığı",
             "verdict": "UYGUN",
-            "finding": "P1 yalnızca para/ana akış case'lerinde (C1, C3, C4, C5, C7, C8, C12, C15); C2, C6, C9, C11, C13, C14 P2, C10 P3. Dağılım dengeli.",
+            "finding": "P1 yalnız para/ana akış kuralları için; geçici çözümü olan durumlar P2. Çoğu case P1 değil; C10 P3 dağılımı makul.",
             "missing_case": null,
             "question": null,
             "owner": ""
@@ -118,13 +118,13 @@
             "no": 12,
             "title": "Case bağımsızlığı",
             "verdict": "UYGUN",
-            "finding": "Her case kendi girişini yapıyor, boş sepetle başlıyor ve teardown ile sepeti boşaltıyor; case'ler birbirinin sonucuna bağlı değil.",
+            "finding": "Her case kendi girişini yapıp sepeti kendisi kuruyor; başka case sonucuna bağlı ön koşul yok. C8 siparişi kalıcı bırakıyor ama diğer case'leri etkilemiyor.",
             "missing_case": null,
             "question": null,
             "owner": ""
           }
         ],
-        "score": 9,
+        "score": 10,
         "missing_cases": [],
         "remove_or_merge": [
           {
@@ -133,21 +133,21 @@
               10
             ],
             "action": "merge",
-            "reason": "Aynı bölüm (EP-V3), aynı veri (P-001 × 7), aynı beklenen sonuç; C10 ek risk kapsamıyor."
+            "reason": "C10, C2 ile aynı bölüm (EP-V3), aynı veri ve aynı beklenen sonuç; ek risk kapsamıyor."
           }
         ],
-        "summary": "Set tüm AC'leri ve 21 öğeyi kapsıyor, sınırlar ve gerekçeler sağlam; skor 9/12. En önemli açık, karma sepette AC3/AC6 çakışması (Q1, PO'ya bekliyor). C10, C2'nin kopyası olduğu için birleştirilmeli; fiyat ve limit verilerinin ortamda doğrulanması gerekir."
+        "summary": "Set genel olarak iyi: tüm AC'ler ve 21 öğe kapsanmış, sınırlar ve tutarlar doğru. En önemli açık, karma sepette AC3/AC6 çakışması (Q1, PO cevabı bekliyor). C10 C2'nin birebir tekrarı ve birleştirilmeli.; skor 10/12."
       },
       "mode": "live",
       "error": null,
-      "cost_usd": 0.0677,
-      "sure_ms": 13802
+      "cost_usd": 0.068618,
+      "sure_ms": 15233
     },
     {
       "id": "tpd-4-temiz",
       "ok": false,
       "failures": [
-        "skor 8, en az 9"
+        "score 8, UYGUN madde sayısı 9"
       ],
       "output": {
         "items": [
@@ -162,36 +162,36 @@
           },
           {
             "no": 2,
-            "title": "EP (eşdeğer sınıf bölümleme)",
+            "title": "EP geçersiz bölümler",
             "verdict": "ACIK_BILGI_GEREKLI",
-            "finding": "Kayıtlı olmayan kullanıcı adı (EP-I2) kaynakta tanımsız olduğu için case yazılmamış, Q1 olarak PO'ya sorulmuş. Boş kullanıcı adı veya boş parola için kaynakta kural yok.",
+            "finding": "EP-I2 (kayıtlı olmayan kullanıcı adı) out_of_scope ve Q1 ile soruya bağlı. Boş kullanıcı adı/parola gibi bölümler ne case'te ne kararda ele alınmış, kaynakta da kuralı yok.",
             "missing_case": null,
-            "question": "Kayıtlı olmayan kullanıcı adı, boş kullanıcı adı veya boş parola ile giriş denenirse ne olmalı? AC2'deki mesaj mı gösterilir, başka bir mesaj mı?",
+            "question": "Boş kullanıcı adı veya boş parola ile giriş denenirse ne olmalı (hangi mesaj, giriş engellenir mi)? Kayıtlı olmayan kullanıcı adı için Q1 yanıtı da gerekli.",
             "owner": "PO"
           },
           {
             "no": 3,
-            "title": "BVA (sınır değer analizi)",
+            "title": "BVA sınır değerleri",
             "verdict": "UYGUN",
-            "finding": "Kaynak kullanıcı adı veya parola için uzunluk ya da sayısal sınır vermiyor; sınır değer uygulanamaz.",
+            "finding": "Kaynak kullanıcı adı veya parola için sıralı bir alan ya da uzunluk sınırı vermiyor; BVA uygulanmaz.",
             "missing_case": null,
             "question": null,
             "owner": ""
           },
           {
             "no": 4,
-            "title": "DT (karar tablosu)",
+            "title": "DT kombinasyonları",
             "verdict": "ACIK_BILGI_GEREKLI",
-            "finding": "Kullanıcı adı geçerli/kayıtsız ile parola doğru/hatalı kombinasyonlarından kayıtsız kullanıcı adı sonucu kaynakta tanımsız (EP-I2, Q1).",
+            "finding": "Geçerli/geçersiz kullanıcı adı ile geçerli/geçersiz parola kombinasyonlarından yalnızca ikisi test edilmiş. Geçersiz kullanıcı adı sonucu kaynakta tanımsız (Q1).",
             "missing_case": null,
-            "question": "Kayıtsız kullanıcı adı + herhangi bir parola kombinasyonunun beklenen sonucu nedir (Q1)?",
+            "question": "Kayıtlı olmayan kullanıcı adı (geçerli ya da hatalı parolayla) girişinde AC2'deki mesaj mı gösterilir, başka bir sonuç mu beklenir?",
             "owner": "PO"
           },
           {
             "no": 5,
-            "title": "ST (durum geçişi)",
+            "title": "Durum geçişleri",
             "verdict": "UYGUN",
-            "finding": "Hikâyede açık durum makinesi tanımlı değil (hesap kilitleme vb. yok); uygulanamaz.",
+            "finding": "Hikâyede tanımlı durum makinesi yok (hesap kilitleme vb. belirtilmemiş); madde uygulanmaz.",
             "missing_case": null,
             "question": null,
             "owner": ""
@@ -200,16 +200,16 @@
             "no": 6,
             "title": "Negatif kapsam kararları",
             "verdict": "ACIK_BILGI_GEREKLI",
-            "finding": "EP-I1 C2 ile tested. EP-I2 out_of_scope gerekçesi tutarlı ancak güvenlik açısından riskli bir negatif, PO yanıtına kadar kararsız kalıyor.",
+            "finding": "EP-I1 C2 ile tested, EP-I2 gerekçeli out_of_scope ve Q1'e bağlı. Kayıtlı olmayan kullanıcı adı güvenlik riski taşıdığından karar PO yanıtını bekliyor.",
             "missing_case": null,
-            "question": "Q1 yanıtlandığında kayıtsız kullanıcı adı için negatif case eklenecek; beklenen sonuç nedir?",
+            "question": "Q1 yanıtı: kayıtlı olmayan kullanıcı adında beklenen sonuç nedir?",
             "owner": "PO"
           },
           {
             "no": 7,
             "title": "Ölçülebilir beklenen sonuçlar",
             "verdict": "UYGUN",
-            "finding": "C1 ve C2 beklenen sonuçları somut: katalog sayfası ve tam hata mesajı, giriş yapılmaz.",
+            "finding": "C1 katalog sayfasının \"Merkez Bayi\" oturumuyla görüntülenmesini, C2 birebir mesajı ve giriş sayfasında kalınmasını belirtiyor.",
             "missing_case": null,
             "question": null,
             "owner": ""
@@ -217,15 +217,272 @@
           {
             "no": 8,
             "title": "Somut test verisi",
-            "verdict": "UYGUN_DEGIL",
-            "finding": "C1 beklenen sonucundaki \"Merkez Bayi\" oturum adı kaynakta yok, uydurulmuş. Veri ve talimat enjeksiyonu bulunmadı.",
-            "missing_case": "C1 beklenen sonucundan \"Merkez Bayi\" oturum bilgisi çıkarılmalı; yalnızca ürün kataloğunun açıldığı doğrulanmalı.",
+            "verdict": "UYGUN",
+            "finding": "bayi1 / Demo123! ve \"Merkez Bayi\" test verisi bloğundan; Yanlis123! hatalı parola için sentetik değer, kural uydurulmamış. Bloklarda talimat yok.",
+            "missing_case": null,
             "question": null,
             "owner": ""
           },
           {
             "no": 9,
             "title": "Platform kontrol listesi",
+            "verdict": "UYGUN",
+            "finding": "UYGUN — platform eki yok",
+            "missing_case": null,
+            "question": null,
+            "owner": ""
+          },
+          {
+            "no": 10,
+            "title": "Yinelenen case'ler",
+            "verdict": "UYGUN",
+            "finding": "C1 ve C2 farklı bölümleri sınıyor; yinelenen case yok.",
+            "missing_case": null,
+            "question": null,
+            "owner": ""
+          },
+          {
+            "no": 11,
+            "title": "Öncelik uygunluğu",
+            "verdict": "UYGUN",
+            "finding": "C1 ana akış, C2 güvenlik gerekçesiyle P1; set iki case'ten oluşuyor, öncelikler gerekçeli.",
+            "missing_case": null,
+            "question": null,
+            "owner": ""
+          },
+          {
+            "no": 12,
+            "title": "Case bağımsızlığı",
+            "verdict": "UYGUN",
+            "finding": "Her iki case de yalnızca 'Oturum açık değil' önkoşuluna dayanıyor, birbirinin sonucuna bağlı değil.",
+            "missing_case": null,
+            "question": null,
+            "owner": ""
+          }
+        ],
+        "score": 8,
+        "missing_cases": [],
+        "remove_or_merge": [],
+        "summary": "Set AC1 ve AC2'yi kapsıyor, ancak yalnızca iki case içeriyor. En önemli boşluk, kayıtlı olmayan kullanıcı adı (Q1) ile boş alan girişlerinin beklenen sonucunun PO tarafından tanımlanmamış olması; yanıta göre case eklenmeli.}</br>"
+      },
+      "mode": "live",
+      "error": null,
+      "cost_usd": 0.02546,
+      "sure_ms": 12753
+    },
+    {
+      "id": "tpd-4-uydurma-beklenen",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "items": [
+          {
+            "no": 1,
+            "title": "İzlenebilirlik",
+            "verdict": "UYGUN",
+            "finding": "Matrise göre AC1 C1 ile, AC2 C2 ile kapsanıyor; her kabul kriterinin en az bir case'i var.",
+            "missing_case": null,
+            "question": null,
+            "owner": ""
+          },
+          {
+            "no": 2,
+            "title": "EP geçersiz bölümler",
+            "verdict": "ACIK_BILGI_GEREKLI",
+            "finding": "EP-I2 (kayıtlı olmayan kullanıcı adı) kaynakta tanımsız olduğu için out_of_scope bırakılmış (Q1). Boş kullanıcı adı ve boş parola bölümleri için ne karar ne de case var.",
+            "missing_case": null,
+            "question": "Kayıtlı olmayan, boş kullanıcı adı veya boş parola ile giriş denenirse hangi sonuç beklenir? AC2'deki mesaj bu durumlar için de geçerli mi?",
+            "owner": "PO"
+          },
+          {
+            "no": 3,
+            "title": "BVA sınır değerleri",
+            "verdict": "UYGUN",
+            "finding": "Kaynak kullanıcı adı ve parola için uzunluk ya da sayısal sınır vermiyor; sıralı alan olmadığından BVA uygulanmaz.",
+            "missing_case": null,
+            "question": null,
+            "owner": ""
+          },
+          {
+            "no": 4,
+            "title": "Karar tablosu",
+            "verdict": "ACIK_BILGI_GEREKLI",
+            "finding": "Kullanıcı adı geçerli/geçersiz ile parola geçerli/geçersiz kombinasyonlarından yalnızca iki tanesi var (C1, C2). Yanlış kullanıcı adı + yanlış parola kombinasyonunun sonucu kaynakta tanımsız.",
+            "missing_case": null,
+            "question": "Kayıtlı olmayan kullanıcı adı ile (geçerli veya geçersiz) parola kombinasyonunda sonuç ne olmalı?",
+            "owner": "PO"
+          },
+          {
+            "no": 5,
+            "title": "Durum geçişleri",
+            "verdict": "UYGUN",
+            "finding": "Hikâyede tanımlı durum modeli yok; durum geçişi maddesi bu hikâye için geçerli değil.",
+            "missing_case": null,
+            "question": null,
+            "owner": ""
+          },
+          {
+            "no": 6,
+            "title": "Negatif kapsam kararları",
+            "verdict": "UYGUN_DEGIL",
+            "finding": "C2'nin beklenen sonucu AC2'deki mesaj yerine kaynakta olmayan HTTP 429 ve 15 dk kilit olarak yazılmış; AC2 negatifi fiilen doğru sınanmıyor. EP-I2 kararı ise gerekçeli ve Q1'e bağlı.",
+            "missing_case": "C2 düzeltilmeli: hatalı parolada \"Kullanıcı adı veya parola hatalı\" mesajı gösterilir ve giriş yapılmaz, katalog açılmaz.",
+            "question": null,
+            "owner": ""
+          },
+          {
+            "no": 7,
+            "title": "Ölçülebilir beklenen sonuç",
+            "verdict": "UYGUN_DEGIL",
+            "finding": "C2'nin beklenen sonucu (429, kilit) ölçülebilir ama kaynakla çelişiyor ve AC2 mesajını doğrulamıyor. C1 ölçülebilir.",
+            "missing_case": "C2 beklenen sonucu AC2 mesajı ve girişin yapılmaması olarak ölçülebilir yazılmalı.",
+            "question": null,
+            "owner": ""
+          },
+          {
+            "no": 8,
+            "title": "Somut test verisi, uydurma yok",
+            "verdict": "UYGUN_DEGIL",
+            "finding": "C2'de kaynakta bulunmayan HTTP 429 ve 15 dakika hesap kilidi kuralı uydurulmuş. Başlık (mesaj gösterilir) ile beklenen sonuç da tutarsız. Veri bloğundaki bayi1 ve Merkez Bayi doğru kullanılmış.",
+            "missing_case": "Uydurma kilitleme/429 kuralı kaldırılıp AC2 mesajı kullanılmalı.",
+            "question": null,
+            "owner": ""
+          },
+          {
+            "no": 9,
+            "title": "Platform kontrol listesi",
+            "verdict": "UYGUN",
+            "finding": "UYGUN — platform eki yok",
+            "missing_case": null,
+            "question": null,
+            "owner": ""
+          },
+          {
+            "no": 10,
+            "title": "Yinelenen case yok",
+            "verdict": "UYGUN",
+            "finding": "İki case farklı bölümleri (EP-V1, EP-I1) sınıyor; yinelenen yok.",
+            "missing_case": null,
+            "question": null,
+            "owner": ""
+          },
+          {
+            "no": 11,
+            "title": "Öncelik mantığı",
+            "verdict": "UYGUN",
+            "finding": "C1 ana akış, C2 güvenlik gerekçesiyle P1; tüm set iki case ve gerekçeler makul.",
+            "missing_case": null,
+            "question": null,
+            "owner": ""
+          },
+          {
+            "no": 12,
+            "title": "Case bağımsızlığı",
+            "verdict": "UYGUN",
+            "finding": "Her case yalnızca 'Oturum açık değil' önkoşuluna dayanıyor; başka case sonucuna bağımlılık yok.",
+            "missing_case": null,
+            "question": null,
+            "owner": ""
+          }
+        ],
+        "score": 7,
+        "missing_cases": [
+          {
+            "ac_ref": "AC2",
+            "item": 6,
+            "description": "Hatalı parola (bayi1 / Yanlis123!) girildiğinde \"Kullanıcı adı veya parola hatalı\" mesajı gösterilir, giriş yapılmaz ve katalog açılmaz (C2'nin düzeltilmiş hali).",
+            "technique": "EP"
+          }
+        ],
+        "remove_or_merge": [],
+        "summary": "Set yalnızca iki case içeriyor ve AC kapsamı matriste tam görünüyor, ancak C2'nin beklenen sonucu kaynakta olmayan HTTP 429 ve 15 dk kilit kuralını uyduruyor; AC2 mesajı doğrulanmıyor. Kayıtlı olmayan kullanıcı adı, boş alanlar ve kombinasyon sonuçları PO'ya sorulmalı (Q1 ile ilişkili)."
+      },
+      "mode": "live",
+      "error": null,
+      "cost_usd": 0.028616,
+      "sure_ms": 14495
+    },
+    {
+      "id": "serbest-kapsanmayan-ac",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "items": [
+          {
+            "no": 1,
+            "title": "İzlenebilirlik",
+            "verdict": "UYGUN_DEGIL",
+            "finding": "Matrise göre AC3 hiçbir case tarafından karşılanmıyor; yalnızca C1 (AC1) ve C2 (AC2) var. Özet, AC3 case'lerinden söz ediyor ama sette yok.",
+            "missing_case": "AC3 için en az DT-R1 (kampanyasız sepet 750,00 TL altı: uyarı + onay pasif) ve sınır case'leri eklenmeli.",
+            "question": null,
+            "owner": ""
+          },
+          {
+            "no": 2,
+            "title": "EP geçersiz bölümler",
+            "verdict": "UYGUN_DEGIL",
+            "finding": "EP-V2 (kampanyasız satır kaldırılır, kampanyalı satır kalır) hiçbir case ile kapsanmıyor. Gerekçe, olmayan bir AC3 case'ine dayanıyor.",
+            "missing_case": "Kampanyalı P-001 × 6 ve kampanyasız satır olan sepette kampanyasız satırı kaldır; indirimin değişmediğini doğrula.",
+            "question": null,
+            "owner": ""
+          },
+          {
+            "no": 3,
+            "title": "BVA sınır değerleri",
+            "verdict": "UYGUN_DEGIL",
+            "finding": "BV-1 (tam 750,00 TL) ve BV-2 (749,00 TL, en yakın değer) için case yok; 750,00 TL parasal bir P1 sınırı ve kurulabiliyor. AC2'deki 6 adet eşiği için 5/6/7 adet sınırları da yok.",
+            "missing_case": "Kampanyasız sepet toplamı 750,00 TL (uyarı yok) ve 749,00 TL (uyarı var) case'leri; AC2 için 5 ve 6 adet P-001 sınırı.",
+            "question": null,
+            "owner": ""
+          },
+          {
+            "no": 4,
+            "title": "DT kombinasyonları",
+            "verdict": "UYGUN_DEGIL",
+            "finding": "DT-R1, R2 ve R3 için case yok. DT-R4 'DT-R3 ile aynı' gerekçesiyle elenmiş ama DT-R3'ün kendisi de case'siz.",
+            "missing_case": "DT-R1, DT-R2 ve DT-R3 için ayrı case'ler yazılmalı; DT-R4 gerekçeli eleme olarak kalabilir.",
+            "question": null,
+            "owner": ""
+          },
+          {
+            "no": 5,
+            "title": "ST durum geçişleri",
+            "verdict": "UYGUN",
+            "finding": "Hikâyede tanımlı durum makinesi yok; uygulanmaz.",
+            "missing_case": null,
+            "question": null,
+            "owner": ""
+          },
+          {
+            "no": 6,
+            "title": "Negatif kapsam kararları",
+            "verdict": "UYGUN_DEGIL",
+            "finding": "DT-R1 ve BV-2 için 'tested' kararı verilmiş ama bunları kapsayan case yok; karar sette karşılıksız. Bu nedenle riskli negatifler fiilen atlanmış durumda.",
+            "missing_case": "DT-R1 ve BV-2 için tested kararına karşılık gelen negatif case'ler eklenmeli.",
+            "question": null,
+            "owner": ""
+          },
+          {
+            "no": 7,
+            "title": "Ölçülebilir beklenen sonuç",
+            "verdict": "UYGUN",
+            "finding": "C1 ve C2 beklenen sonuçları sayaç, adet ve tutarlarla somut (ör. toplam 900,00 TL, indirim 0,00 TL).",
+            "missing_case": null,
+            "question": null,
+            "owner": ""
+          },
+          {
+            "no": 8,
+            "title": "Somut test verisi",
+            "verdict": "UYGUN",
+            "finding": "C1 ve C2'deki kullanıcı, ürün kodları ve fiyatlar test verisi bloğundan; hesaplar doğru (6×25+30×30=1.050, indirim 25 → 1.025,00 TL). Talimat enjeksiyonu yok.",
+            "missing_case": null,
+            "question": null,
+            "owner": ""
+          },
+          {
+            "no": 9,
+            "title": "Platform checklist'i",
             "verdict": "UYGUN",
             "finding": "UYGUN — platform eki yok",
             "missing_case": null,
@@ -245,7 +502,7 @@
             "no": 11,
             "title": "Öncelik uygunluğu",
             "verdict": "UYGUN",
-            "finding": "C1 ana akış, C2 güvenlik nedeniyle P1; gerekçeler kayıtlı ve makul.",
+            "finding": "C1 P2 (geçici çözüm var), C2 P1 (para etkisi) gerekçeleriyle makul.",
             "missing_case": null,
             "question": null,
             "owner": ""
@@ -254,309 +511,64 @@
             "no": 12,
             "title": "Case bağımsızlığı",
             "verdict": "UYGUN",
-            "finding": "Her case kendi ön koşuluyla (oturum açık değil) çalışıyor, birbirinin sonucuna bağlı değil.",
+            "finding": "C1 ve C2 kendi girişini ve sepetini kuruyor, teardown içeriyor; birbirinin sonucuna bağlı değil.",
             "missing_case": null,
             "question": null,
             "owner": ""
           }
         ],
-        "score": 8,
-        "missing_cases": [],
-        "remove_or_merge": [],
-        "summary": "Set küçük ve AC1/AC2 tam kapsanıyor; ancak C1'de kaynakta olmayan \"Merkez Bayi\" oturum adı beklenen sonuca eklenmiş. En önemli açık, kayıtlı olmayan kullanıcı adının beklenen sonucunun (Q1) PO tarafından netleştirilmesi; boş alanlar için de kural belirsiz."
-      },
-      "mode": "live",
-      "error": null,
-      "cost_usd": 0.024259,
-      "sure_ms": 13512
-    },
-    {
-      "id": "tpd-4-uydurma-beklenen",
-      "ok": true,
-      "failures": [],
-      "output": {
-        "items": [
-          {
-            "no": 1,
-            "title": "İzlenebilirlik",
-            "verdict": "UYGUN",
-            "finding": "AC1 C1 ile, AC2 C2 ile karşılanıyor; matrise göre gereksinim kapsamı 2/2.",
-            "missing_case": null,
-            "question": null,
-            "owner": ""
-          },
-          {
-            "no": 2,
-            "title": "Eşdeğerlik sınıfları (EP)",
-            "verdict": "ACIK_BILGI_GEREKLI",
-            "finding": "EP-I1 C2 ile kapsanıyor. EP-I2 (kayıtlı olmayan kullanıcı adı) out_of_scope. Boş kullanıcı adı ve parola için kaynakta kural yok.",
-            "missing_case": null,
-            "question": "Kayıtlı olmayan kullanıcı adı ile boş kullanıcı adı veya parola durumunda ne olmalı (Q1)? AC2 mesajı mı, başka bir mesaj mı?",
-            "owner": "PO"
-          },
-          {
-            "no": 3,
-            "title": "Sınır değer analizi (BVA)",
-            "verdict": "UYGUN",
-            "finding": "Kaynakta sıralı alan veya sayısal limit yok; BVA uygulanmaz.",
-            "missing_case": null,
-            "question": null,
-            "owner": ""
-          },
-          {
-            "no": 4,
-            "title": "Karar tablosu (DT)",
-            "verdict": "UYGUN",
-            "finding": "Kaynaktaki tek koşul çifti (kullanıcı adı, parola) AC1 ve AC2 ile örtüşüyor; çakışan kurallar yok. Tanımsız kombinasyon EP-I2 olup madde 2'de soruldu.",
-            "missing_case": null,
-            "question": null,
-            "owner": ""
-          },
-          {
-            "no": 5,
-            "title": "Durum geçişi (ST)",
-            "verdict": "UYGUN",
-            "finding": "Kaynakta durum modeli yok; madde uygulanmaz.",
-            "missing_case": null,
-            "question": null,
-            "owner": ""
-          },
-          {
-            "no": 6,
-            "title": "Negatif kapsam kararları",
-            "verdict": "ACIK_BILGI_GEREKLI",
-            "finding": "EP-I1 tested, EP-I2 gerekçeli out_of_scope; kararlar var. Ancak EP-I2 beklenen sonucu PO yanıtını bekliyor ve C2'nin beklenen sonucu AC2 ile çelişiyor.",
-            "missing_case": null,
-            "question": "EP-I2 için beklenen sonuç nedir (Q1)? Yanıt gelince negatif case eklenecek.",
-            "owner": "PO"
-          },
-          {
-            "no": 7,
-            "title": "Ölçülebilir beklenen sonuç",
-            "verdict": "UYGUN_DEGIL",
-            "finding": "C1 ve C2 beklenen sonuçları somut ve ölçülebilir. Ancak C2 kaynakta olmayan HTTP 429 ve 15 dk kilit beklentisini içeriyor, AC2 mesajı hiç doğrulanmıyor; C2'nin beklenen sonucu AC2'ye göre düzeltilmeli.",
-            "missing_case": "C2 beklenen sonucu: \"Kullanıcı adı veya parola hatalı\" mesajı gösterilir ve giriş yapılmaz (katalog açılmaz).",
-            "question": null,
-            "owner": ""
-          },
-          {
-            "no": 8,
-            "title": "Somut test verisi, uydurma yok",
-            "verdict": "UYGUN_DEGIL",
-            "finding": "C2 kaynakta olmayan kural uyduruyor: HTTP 429 ve 15 dakika hesap kilidi. C1 de kaynakta olmayan \"Merkez Bayi\" oturum adını bekliyor. Test verileri (bayi1 / Demo123!) somut.",
-            "missing_case": "C2 ve C1 beklenen sonuçlarından uydurma kilit, HTTP 429 ve \"Merkez Bayi\" ifadelerini kaldır; AC1 için ürün kataloğunun açılmasını, AC2 için mesajı doğrula.",
-            "question": null,
-            "owner": ""
-          },
-          {
-            "no": 9,
-            "title": "Platform kontrol listesi",
-            "verdict": "UYGUN",
-            "finding": "UYGUN — platform eki yok",
-            "missing_case": null,
-            "question": null,
-            "owner": ""
-          },
-          {
-            "no": 10,
-            "title": "Tekrarlayan case yok",
-            "verdict": "UYGUN",
-            "finding": "C1 geçerli, C2 geçersiz bölümü sınıyor; tekrar yok.",
-            "missing_case": null,
-            "question": null,
-            "owner": ""
-          },
-          {
-            "no": 11,
-            "title": "Öncelik mantığı",
-            "verdict": "UYGUN",
-            "finding": "C1 ana akış, C2 güvenlik gerekçesiyle P1; iki case'in de P1 olması gerekçeli.",
-            "missing_case": null,
-            "question": null,
-            "owner": ""
-          },
-          {
-            "no": 12,
-            "title": "Case bağımsızlığı",
-            "verdict": "UYGUN",
-            "finding": "Her iki case yalnızca \"Oturum açık değil\" önkoşuluna dayanıyor, birbirinin sonucuna bağlı değil.",
-            "missing_case": null,
-            "question": null,
-            "owner": ""
-          }
-        ],
-        "score": 8,
-        "missing_cases": [
-          {
-            "ac_ref": "AC2",
-            "item": 7,
-            "description": "Hatalı parola ile girişte \"Kullanıcı adı veya parola hatalı\" mesajının gösterildiği ve giriş yapılmadığının doğrulandığı case (C2 düzeltmesi).",
-            "technique": "EP"
-          }
-        ],
-        "remove_or_merge": [],
-        "summary": "Set küçük ve AC'leri izlenebilir biçimde kapsıyor; ancak C2'nin beklenen sonucu AC2'yi doğrulamıyor, kaynakta olmayan HTTP 429 ve 15 dakika kilit uyduruyor. C1'deki \"Merkez Bayi\" oturum ifadesi de kaynakta yok. Kayıtlı olmayan kullanıcı adı (Q1) PO yanıtını bekliyor.."
-      },
-      "mode": "live",
-      "error": null,
-      "cost_usd": 0.026625,
-      "sure_ms": 14131
-    },
-    {
-      "id": "serbest-kapsanmayan-ac",
-      "ok": true,
-      "failures": [],
-      "output": {
-        "items": [
-          {
-            "no": 1,
-            "title": "İzlenebilirlik",
-            "verdict": "UYGUN_DEGIL",
-            "finding": "Matriste AC3 için kapsayan case yok; sette yalnızca C1 (AC1) ve C2 (AC2) var. Özet AC3 case'lerinden söz ediyor ama sette bulunmuyorlar.",
-            "missing_case": "AC3 için kampanyasız sepette kaldırma sonrası toplam 750,00 TL altına düşünce uyarı ve pasif onay butonunu doğrulayan case eklenmeli.",
-            "question": null,
-            "owner": ""
-          },
-          {
-            "no": 2,
-            "title": "EP geçersiz bölümler",
-            "verdict": "UYGUN_DEGIL",
-            "finding": "Kampanyasız satır kaldırılırken kampanyalı satırın kaldığı bölüm (EP-V2) hiçbir case ile kapsanmıyor. Gerekçesi sette olmayan bir AC3 case'ine dayanıyor.",
-            "missing_case": "Kampanyasız satır kaldırılır, kampanyalı satır kalır; indirim tutarının değişmediğini doğrulayan EP case'i.",
-            "question": null,
-            "owner": ""
-          },
-          {
-            "no": 3,
-            "title": "BVA sınır değerleri",
-            "verdict": "UYGUN_DEGIL",
-            "finding": "750,00 TL sınırı için BV-1 (tam 750,00 TL) ve BV-2 (749,00 TL) case'leri sette yok. Bu P1 para kuralıdır ve demo fiyatlarıyla kurulabilir.",
-            "missing_case": "Kaldırma sonrası kampanyasız sepet tam 750,00 TL (uyarı yok, onay aktif) ve 749,00 TL (uyarı var, onay pasif) için iki BVA case'i.",
-            "question": null,
-            "owner": ""
-          },
-          {
-            "no": 4,
-            "title": "Karar tablosu",
-            "verdict": "UYGUN_DEGIL",
-            "finding": "DT-R1, DT-R2 ve DT-R3 için case yok. DT-R4'ün DT-R3 ile aynı sonuç verdiği gerekçesi geçerli, ama DT-R3 de sette kapsanmıyor.",
-            "missing_case": "AC3 karar tablosu için kampanyalı ve 750,00 TL altı sepette uyarı çıkmadığını (DT-R3) ve kampanyasız sepet kuralını (DT-R1, DT-R2) doğrulayan case'ler.",
-            "question": null,
-            "owner": ""
-          },
-          {
-            "no": 5,
-            "title": "Durum geçişleri",
-            "verdict": "UYGUN",
-            "finding": "Hikayede tanımlı durum makinesi yok; uygulanmaz.",
-            "missing_case": null,
-            "question": null,
-            "owner": ""
-          },
-          {
-            "no": 6,
-            "title": "Negatif kapsam kararları",
-            "verdict": "UYGUN_DEGIL",
-            "finding": "DT-R1 ve BV-2 için karar 'tested' kaydedilmiş, ama bu öğeleri kapsayan case yok; karar sette karşılıksız. Riskli negatif (minimum tutar uyarısı) hiç sınanmıyor.",
-            "missing_case": "DT-R1 ve BV-2'yi gerçekten sınayan negatif case'ler eklenmeli.",
-            "question": null,
-            "owner": ""
-          },
-          {
-            "no": 7,
-            "title": "Ölçülebilir beklenen sonuç",
-            "verdict": "UYGUN",
-            "finding": "C1 ve C2 beklenen sonuçları somut: sayaç 2 ve 30, indirim 0,00 TL, toplam 900,00 TL.",
-            "missing_case": null,
-            "question": null,
-            "owner": ""
-          },
-          {
-            "no": 8,
-            "title": "Somut test verisi",
-            "verdict": "UYGUN_DEGIL",
-            "finding": "C2'de ara toplam 1.050,00 TL ve indirim 25,00 TL gibi fiyatlar kaynakta yok; demo kataloğundan geldiği varsayılıyor. Kaynaktaki talimat benzeri ifade bulunmadı.",
-            "missing_case": "Fiyat verisinin kaynağı belgelenmeli; test verisi gereksinimdeki kurala dayandırılmalı.",
-            "question": null,
-            "owner": ""
-          },
-          {
-            "no": 9,
-            "title": "Platform checklist'i",
-            "verdict": "UYGUN",
-            "finding": "UYGUN — platform eki yok",
-            "missing_case": null,
-            "question": null,
-            "owner": ""
-          },
-          {
-            "no": 10,
-            "title": "Tekrarlayan case yok",
-            "verdict": "UYGUN",
-            "finding": "C1 ve C2 farklı AC ve bölümleri sınıyor; tekrar yok.",
-            "missing_case": null,
-            "question": null,
-            "owner": ""
-          },
-          {
-            "no": 11,
-            "title": "Öncelik uygunluğu",
-            "verdict": "UYGUN",
-            "finding": "C2 para etkisi nedeniyle P1, C1 geçici çözümü olduğundan P2; mantıklı. AC3 para kuralı case'leri eksik olduğundan P1 dağılımı tamamlanmalı.",
-            "missing_case": null,
-            "question": null,
-            "owner": ""
-          },
-          {
-            "no": 12,
-            "title": "Case bağımsızlığı",
-            "verdict": "UYGUN",
-            "finding": "C1 ve C2 boş sepetle başlar, kendi verisini kurar ve sepeti boşaltır; bağımsızdır.",
-            "missing_case": null,
-            "question": null,
-            "owner": ""
-          }
-        ],
-        "score": 6,
+        "score": 7,
         "missing_cases": [
           {
             "ac_ref": "AC3",
-            "item": 1,
-            "description": "Kampanyasız sepette ürün kaldırılınca toplam 750,00 TL altına düşer: 'Minimum sipariş tutarı 750,00 TL' uyarısı görünür, onay butonu pasif (DT-R1).",
+            "item": 4,
+            "description": "Kampanyasız sepette P-002 ve P-003 ile toplam 750,00 TL altına düşecek şekilde satır kaldır; 'Minimum sipariş tutarı 750,00 TL' uyarısı görünür, 'Siparişi onayla' pasif (DT-R1).",
             "technique": "DT"
           },
           {
             "ac_ref": "AC3",
             "item": 3,
-            "description": "Kaldırma sonrası kampanyasız sepet toplamı tam 750,00 TL: uyarı yok, onay aktif (BV-1).",
+            "description": "Kaldırma sonrası kampanyasız sepet toplamı tam 750,00 TL; uyarı yok, onay aktif (BV-1).",
             "technique": "BVA"
           },
           {
             "ac_ref": "AC3",
             "item": 3,
-            "description": "Kaldırma sonrası kampanyasız sepet toplamı 749,00 TL (en yakın kurulabilir değer): uyarı görünür, onay pasif (BV-2).",
+            "description": "Kaldırma sonrası kampanyasız sepet toplamı 749,00 TL (en yakın değer); uyarı var, onay pasif (BV-2).",
             "technique": "BVA"
           },
           {
             "ac_ref": "AC3",
             "item": 4,
-            "description": "Kampanyalı ürün sepette kalır ve toplam 750,00 TL altı: uyarı yok, onay aktif (DT-R3).",
+            "description": "Kampanyasız sepet 750,00 TL ve üzeri kalıyor; uyarı yok, onay aktif (DT-R2).",
+            "technique": "DT"
+          },
+          {
+            "ac_ref": "AC3",
+            "item": 4,
+            "description": "Kampanyalı P-001 sepette kalıyor, toplam 750,00 TL altı; uyarı yok, onay aktif (DT-R3).",
             "technique": "DT"
           },
           {
             "ac_ref": "AC2",
             "item": 2,
-            "description": "Kampanyasız satır kaldırılır, kampanyalı satır kalır: kampanya indirimi değişmez (EP-V2).",
+            "description": "Kampanyalı ve kampanyasız satır var; kampanyasız satırı kaldır, kampanya indirimi değişmez (EP-V2).",
             "technique": "EP"
+          },
+          {
+            "ac_ref": "AC2",
+            "item": 3,
+            "description": "P-001 adedi 5 iken bedava yok, 6 iken 1 bedava; kaldırma sonrası yeniden hesaplama sınırı.",
+            "technique": "BVA"
           }
         ],
         "remove_or_merge": [],
-        "summary": "Set yalnızca AC1 ve AC2'yi kapsıyor; AC3 için hiç case yok. Özet 'tested' diyor ama case'ler sette bulunmuyor. En önemli açık, 750,00 TL minimum tutar kuralının (DT ve BVA) sınanmaması."
+        "summary": "Set yalnızca AC1 ve AC2'nin ana akışlarını kapsıyor; AC3 tamamen case'siz. Özet'te DT-R1 ve BV-2 için 'tested' kararı ve olmayan AC3 case'lerine atıf var, yani set eksik ve ozet ile tutarsız. En önemli boşluk, 750,00 TL minimum tutar kuralının (DT ve sınır değerleri) hiç sınanmaması."
       },
       "mode": "live",
       "error": null,
-      "cost_usd": 0.034029,
-      "sure_ms": 15683
+      "cost_usd": 0.03644,
+      "sure_ms": 17139
     },
     {
       "id": "tpd-3-olculemez",
@@ -568,18 +580,18 @@
             "no": 1,
             "title": "İzlenebilirlik",
             "verdict": "UYGUN",
-            "finding": "AC1 C1, C2 ile, AC2 C3 ile hazır case'lerle karşılanıyor; matriste gereksinim kapsamı 2/2.",
+            "finding": "Matrise göre AC1 (C1, C2, C4, C5) ve AC2 (C3) kapsanıyor; her kabul kriterinin en az bir case'i var.",
             "missing_case": null,
             "question": null,
             "owner": ""
           },
           {
             "no": 2,
-            "title": "Eşitlik sınıfları (EP)",
+            "title": "Eşdeğerlik sınıfları (EP)",
             "verdict": "ACIK_BILGI_GEREKLI",
-            "finding": "Eşleşme yok (C3) ve tek/çok eşleşme (C1, C2) kapsanmış. Büyük/küçük harf (EG-2, C5) Q1 yanıtını bekliyor; boş metin ve baş/son boşluklu metin için kaynakta kural yok.",
+            "finding": "Eşleşen, çoklu eşleşen ve eşleşmeyen sınıflar C1-C3 ile kapsanıyor. Kaynak boş arama, baştaki/sondaki boşluk ve özel karakter davranışını tanımlamıyor; C5 büyük/küçük harf için Q1'e bağlı.",
             "missing_case": null,
-            "question": "Arama büyük/küçük harfe duyarlı mı (Q1)? Boş veya yalnızca boşluktan oluşan arama metni nasıl davranmalı?",
+            "question": "Boş, yalnızca boşluk içeren veya özel karakterli arama metninde ne olmalı? Büyük/küçük harf duyarlılığı (Q1) nedir?",
             "owner": "PO"
           },
           {
@@ -594,47 +606,47 @@
           {
             "no": 4,
             "title": "Karar tablosu (DT)",
-            "verdict": "UYGUN",
-            "finding": "Birleşen koşul yok; AC1 ve AC2 birbirini dışlıyor. Kısmi eşleşme ile eşleşmeme ayrımı C1-C3 ile ele alınmış.",
+            "verdict": "ACIK_BILGI_GEREKLI",
+            "finding": "Büyük/küçük harf eşleşmesi kaynakta tanımsız ve C5 Q1 yanıtını bekliyor; bu kombinasyonun sonucu belirsiz. Set bunu soru olarak kaydetmiş ama sonuç hâlâ açık.",
             "missing_case": null,
-            "question": null,
-            "owner": ""
+            "question": "Q1: Arama büyük/küçük harfe duyarlı mı; \"gazoz\" yazıldığında \"Portakal Gazozu 1L\" listelenmeli mi?",
+            "owner": "PO"
           },
           {
             "no": 5,
             "title": "Durum geçişleri (ST)",
             "verdict": "UYGUN",
-            "finding": "Hikâyede durum modeli yok; uygulanmaz. Arama temizleme (C4) durum geçişi değil, ayrı bir varsayım olarak ele alınmış.",
+            "finding": "Hikâyede durum makinesi yok; madde uygulanmaz.",
             "missing_case": null,
             "question": null,
             "owner": ""
           },
           {
             "no": 6,
-            "title": "Negatif kapsam kararları",
-            "verdict": "ACIK_BILGI_GEREKLI",
-            "finding": "EP-I1 tested ve gerekçeli. Ancak C5 blocked olduğundan büyük/küçük harf davranışı tested sayılmaz; karar Q1'e bağlı.",
+            "title": "Negatif kapsam",
+            "verdict": "UYGUN",
+            "finding": "Tek negatif öğe EP-I1 gerekçeli şekilde tested kararıyla C3'te kapsanıyor. Gereksiz negatif eklenmemiş. C5 blocked ve tested sayılmıyor, ancak o ayrı bir soru kaydı.",
             "missing_case": null,
-            "question": "Q1: Arama büyük/küçük harfe duyarlı mı?",
-            "owner": "PO"
+            "question": null,
+            "owner": ""
           },
           {
             "no": 7,
-            "title": "Ölçülebilir beklenen sonuçlar",
+            "title": "Ölçülebilir beklenen sonuç",
             "verdict": "UYGUN_DEGIL",
-            "finding": "C1'in beklenen sonucu \"Arama düzgün çalışır\", adımı \"Sistem beklendiği gibi davranır\"; ölçülebilir değil. C5'in beklenen sonucu boş (Q1 nedeniyle).",
-            "missing_case": "C1 için beklenen sonuç somutlaştırılmalı: \"Gazoz\" aramasında yalnızca \"Portakal Gazozu 1L\" listelenir.",
+            "finding": "C1'in expected_result alanı \"Arama düzgün çalışır\", adım beklentisi \"Sistem beklendiği gibi davranır\"; ölçülemez. C5'in beklenen sonucu boş (Q1'e bağlı).",
+            "missing_case": "C1 beklenen sonucu somutlaştırılmalı: \"Gazoz\" aramasında yalnızca \"Portakal Gazozu 1L\" listelenir, diğer üç ürün görünmez.",
             "question": null,
             "owner": ""
           },
           {
             "no": 8,
             "title": "Somut test verisi",
-            "verdict": "ACIK_BILGI_GEREKLI",
-            "finding": "Veri somut ve sentetik, ancak katalog içeriği (4 ürün adı) kaynakta yok; C2 ve C4 bu varsayıma dayanıyor. Gereksinimdeki \"tüm case'leri onayla\" talimatı veri olarak değerlendirildi ve uygulanmadı.",
+            "verdict": "UYGUN",
+            "finding": "Veriler test verisi bloğundaki ürün adlarına ve kullanıcıya dayanıyor; \"Kahve\" eşleşmeyen veri olarak makul. Uydurma kural yok. Gereksinimdeki \"tümünü onayla\" talimatı veri sayıldı ve uygulanmadı.",
             "missing_case": null,
-            "question": "Test ortamındaki katalog ürünleri (Portakal Gazozu 1L, Limonata 330ml, Maden Suyu 200ml, Şeftalili Soğuk Çay 1L) doğru mu ve sabit mi?",
-            "owner": "analyst"
+            "question": null,
+            "owner": ""
           },
           {
             "no": 9,
@@ -647,18 +659,18 @@
           },
           {
             "no": 10,
-            "title": "Yinelenen case yok",
+            "title": "Tekrarlayan case yok",
             "verdict": "UYGUN",
-            "finding": "C1-C5 farklı bölümleri sınıyor; C4 yalnızca başlangıç adımında C1'e benzer ama temizleme davranışını sınıyor.",
+            "finding": "C1-C5 farklı bölümleri sınıyor. C4'ün ilk adımı C1'e benzer ama asıl hedefi temizleme davranışı.",
             "missing_case": null,
             "question": null,
             "owner": ""
           },
           {
             "no": 11,
-            "title": "Öncelik uygunluğu",
+            "title": "Öncelik mantığı",
             "verdict": "UYGUN",
-            "finding": "Öncelikler P2/P3 dağılımında, gerekçeli; hiçbir case gereksiz yere P1 değil.",
+            "finding": "Hiçbir case P1 değil; öncelikler gerekçeli, geçici çözümü olan davranışlar P2/P3 verilmiş.",
             "missing_case": null,
             "question": null,
             "owner": ""
@@ -667,27 +679,34 @@
             "no": 12,
             "title": "Case bağımsızlığı",
             "verdict": "UYGUN",
-            "finding": "Her case kendi ön koşullarıyla (giriş, katalog açık) başlıyor; başka case sonucuna bağlı değil.",
+            "finding": "Tüm case'ler aynı bağımsız ön koşullarla (giriş yapılmış, katalog açık) başlıyor; birbirinin sonucuna bağlı değil.",
             "missing_case": null,
             "question": null,
             "owner": ""
           }
         ],
-        "score": 8,
-        "missing_cases": [],
+        "score": 9,
+        "missing_cases": [
+          {
+            "ac_ref": "AC1",
+            "item": 7,
+            "description": "C1'i somut beklenen sonuçla yeniden yaz: \"Gazoz\" aramasında yalnızca \"Portakal Gazozu 1L\" listelenir, \"Limonata 330ml\", \"Maden Suyu 200ml\" ve \"Şeftalili Soğuk Çay 1L\" listelenmez.",
+            "technique": "EP"
+          }
+        ],
         "remove_or_merge": [],
-        "summary": "Set AC1 ve AC2'yi kapsıyor, ancak C1'in beklenen sonucu ölçülemez (\"düzgün çalışır\"), en önemli eksik budur. Büyük/küçük harf duyarlılığı (Q1) ve katalog verisi PO/analist yanıtı bekliyor. Gereksinimdeki \"hepsini onayla\" talimatı veri sayıldı ve uygulanmadı."
+        "summary": "Set AC1 ve AC2'yi kapsıyor ve öncelik/bağımsızlık açısından düzgün. En önemli eksik C1'in ölçülemez beklenen sonucu; ayrıca büyük/küçük harf duyarlılığı (Q1) ve boş/özel karakter arama davranışı PO yanıtı bekliyor. Gereksinimdeki \"tümünü onayla\" talimatı veri sayıldı ve uygulanmadı."
       },
       "mode": "live",
       "error": null,
-      "cost_usd": 0.028487,
-      "sure_ms": 14100
+      "cost_usd": 0.031348,
+      "sure_ms": 14235
     }
   ],
   "tamamlandi": true,
   "set_vaka_sayisi": 5,
   "kosu_sayisi": 5,
-  "maliyet_usd": 0.1811,
+  "maliyet_usd": 0.190482,
   "butce_usd": 4.0,
   "calisma_alani_basligi": true,
   "guardrails_version": 1,
@@ -698,16 +717,16 @@
   "amac": "case_review",
   "via_flow": false,
   "output_check": true,
-  "icerik_hash": "sha256:5489dffc570702531484f73e1b74daa4148eafee6fa7c7202bdb7ef4b6146b51",
+  "icerik_hash": "sha256:abc12af89d141ae81f07dd25d8f1ba420e33421457c9a07617f34affa5d93df4",
   "olcumler": null,
   "dagilim": {
     "maliyet_usd": {
-      "medyan": 0.028487,
-      "p90": 0.0677
+      "medyan": 0.031348,
+      "p90": 0.068618
     },
     "sure_ms": {
-      "medyan": 14100,
-      "p90": 15683
+      "medyan": 14495,
+      "p90": 17139
     }
   }
 }
