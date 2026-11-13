@@ -5,7 +5,7 @@ import { api } from "../api/client";
 import { ApiError } from "../api/http";
 import { useOlay } from "../api/events";
 import type { Bulgu, GereksinimDetay as Detay } from "../api/types";
-import { useIzin } from "../auth";
+import { useIzin, useIzinler } from "../auth";
 import { AjanUrunuPaneli, useAjanTesti } from "../components/AjanUrunuPaneli";
 import { AkisAdimlari } from "../components/AkisAdimlari";
 import { BazDegerKarti } from "../components/BazDegerKarti";
@@ -57,7 +57,8 @@ export function GereksinimDetay() {
   const ajan = useAjanTesti(id);
   // Gereksinim makinesi `done` ile biter; kod → bug adımları (5–14) yol haritasıyla aynı kanıtlardan.
   const tamamMi = detay.veri?.durum === "done";
-  const kanit = useVeri(() => (tamamMi ? akisKanitlari(id) : Promise.resolve(null)), [id, tamamMi]);
+  const izinler = useIzinler();
+  const kanit = useVeri(() => (tamamMi ? akisKanitlari(id, izinler) : Promise.resolve(null)), [id, tamamMi, izinler]);
   // Ön inceleme ve üretim ayrı işlemler: birinin bekleme göstergesi ötekinin düğmesinde dönmez.
   const inceleme = useIslem();
   const uretim = useIslem();

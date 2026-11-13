@@ -5,6 +5,7 @@ import { useOlay } from "../api/events";
 import { useBildirim } from "../components/Bildirim";
 import { BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
+import { useIzin } from "../auth";
 import { SCRIPT_DURUMU, scriptIsareti } from "../lib/etiketler";
 import { YEREL_SINIF } from "../lib/kapi";
 import { tarih } from "../lib/format";
@@ -72,7 +73,10 @@ export function Kod() {
   const [platform, setPlatform] = useState<Platform>("web");
   // 011: üretim dili ayrı boyuttur. Seçenekler ve repodan algılanan dil core'dan (`GET /code/languages`);
   // uç yoksa (011 öncesi core) `null` döner: seçici çizilmez, üretim bugünkü gibi sürer.
-  const diller = useVeri(() => api.kodDilleri(platform), [platform]);
+  // `GET /code/languages` `code.generate` ister: yalnız üretebilen rol (Automation Engineer) okur;
+  // diğer rollerde istek atılmaz (konsolda 403 ve denetimde sahte `authz.denied` olmasın).
+  const uretebilir = useIzin("code.generate");
+  const diller = useVeri(() => (uretebilir ? api.kodDilleri(platform) : Promise.resolve(null)), [platform, uretebilir]);
   // Kullanıcının elle seçtiği dil (yalnız algılanandan farklıysa); platform değişince sıfırlanır.
   const [elleDil, setElleDil] = useState<Dil | null>(null);
   const dilVerisi = diller.veri ?? null;

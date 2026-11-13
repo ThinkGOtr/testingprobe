@@ -181,3 +181,42 @@ describe("Otomasyon: yetkisiz rolde tüm alanlar aynı biçimde pasif", () => {
     expect(screen.getByLabelText("Onaylanan case için kodu otomatik üret")).toHaveAttribute("disabled");
   });
 });
+
+describe("yetkisi olmayan uç çağrılmaz (403 / sahte authz.denied yok)", () => {
+  it("Testçi ve Analist /kod'da GET /code/languages çağırmaz; Automation Engineer çağırır", async () => {
+    for (const k of ["testci", "analist"]) {
+      const c = izle();
+      await oturumAc(k);
+      const { unmount } = uygulama("/kod");
+      await screen.findByRole("heading", { name: "Kod üretimi", level: 1 });
+      await waitFor(() => expect(c.some((x) => x.path === "/scripts")).toBe(true));
+      expect(c.some((x) => x.path === "/code/languages"), k).toBe(false);
+      unmount();
+    }
+    const c = izle();
+    await oturumAc("muhendis");
+    uygulama("/kod");
+    await waitFor(() => expect(c.some((x) => x.path === "/code/languages")).toBe(true));
+  });
+
+  it("Developer Kontrol Kulesi'nde GET /scripts çağırmaz", async () => {
+    const c = izle();
+    await oturumAc("gelistirici");
+    uygulama("/kontrol-kulesi");
+    await screen.findByRole("heading", { name: "Kontrol Kulesi", level: 1 });
+    await waitFor(() => expect(c.some((x) => x.path === "/control-tower")).toBe(true));
+    expect(c.some((x) => x.path === "/scripts")).toBe(false);
+  });
+
+  it("Developer gereksinim detayında tasarım modeli ve script listesini istemez", async () => {
+    const { mockVerisi } = await import("../api/mock/handlers");
+    const g = mockVerisi().gereksinimler.find((x) => x.durum === "done") ?? mockVerisi().gereksinimler[0];
+    const c = izle();
+    await oturumAc("gelistirici");
+    uygulama(`/gereksinimler/${g.id}`);
+    await waitFor(() => expect(c.some((x) => x.path === `/requirements/${g.id}`)).toBe(true));
+    await screen.findByRole("heading", { level: 1 });
+    expect(c.some((x) => x.path.endsWith("/design-model"))).toBe(false);
+    expect(c.some((x) => x.path === "/scripts")).toBe(false);
+  });
+});

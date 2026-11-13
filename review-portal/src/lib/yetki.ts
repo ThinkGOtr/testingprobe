@@ -173,8 +173,12 @@ export const ROTA_IZINLERI: Record<string, readonly Izin[]> = {
   "/bug-taslaklari/:id": ["bug.read"],
   "/kontrol-kulesi": ["dashboard.read"],
   "/yol-haritasi": ["demo.read"],
-  "/demo": ["demo.manage"],
+  // Ekran okuma iznine bağlıdır; yazma düğmeleri (kır/sıfırla/Jira durumu) `demo.manage` ile kilitlidir.
+  "/demo": ["demo.read"],
   "/denetim": ["audit.read_all", "audit.read_own"],
+  // `token.read` (kendi token'larını listele/iptal et) API düzeyinde tüm rollerdedir; ekran ise token
+  // üretme kanalını anlatır ve ANALIZ 012 §4.2'de `claude_code.read` ile sınırlıdır (Developer,
+  // PO, Denetçi, Görüntüleyici token üretemez). Developer'a açılacaksa core `claude_code.read`'e eklenir.
   "/claude-code": ["claude_code.read"],
   "/test-verisi": ["case.read"],
   "/otomasyon": ["requirement.read"],

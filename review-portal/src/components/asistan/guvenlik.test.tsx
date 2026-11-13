@@ -263,12 +263,18 @@ describe("kip rozeti", () => {
         eylem_reddi: false,
       },
     });
-    // 012: /demo `demo.manage` (Sistem Yöneticisi, Automation Engineer); /claude-code `claude_code.read`.
+    // /demo ekranı `demo.read` (yazma düğmeleri `demo.manage`); /claude-code `claude_code.read`.
     const { unmount } = kart(m, null, "tester");
     expect(screen.getByRole("link", { name: "Git: Kontrol Kulesi" })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Git: Demo kontrolleri" })).toBeNull();
-    expect(screen.getByRole("link", { name: "Git: Claude Code kanalı" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Git: Demo kontrolleri" })).toBeInTheDocument();
     unmount();
+    const k1 = kart(m, null, "developer");
+    expect(screen.queryByRole("link", { name: "Git: Demo kontrolleri" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Git: Claude Code kanalı" })).toBeNull();
+    k1.unmount();
+    const k0 = kart(m, null, "tester");
+    expect(screen.getByRole("link", { name: "Git: Claude Code kanalı" })).toBeInTheDocument();
+    k0.unmount();
     const k2 = kart(m, null, "admin");
     expect(screen.getByRole("link", { name: "Git: Demo kontrolleri" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Git: Claude Code kanalı" })).toBeInTheDocument();

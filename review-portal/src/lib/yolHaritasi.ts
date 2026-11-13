@@ -668,18 +668,25 @@ export function guncelAdim(
  * `done` sonrası adım kanıtları (script, koşu, triage, bug; story'nin case'leri verilirse case bağı
  * da). Script listesi okunamazsa null: adım durumdan gösterilir (tahmin edilmez).
  */
-export async function akisKanitlari(requirementId?: string): Promise<Omit<SonrakiGirdi, "gereksinim"> | null> {
+export async function akisKanitlari(
+  requirementId?: string,
+  /** Oturumun izinleri: verilirse izni olmayan kaynak istenmez (403 / sahte `authz.denied` yok). */
+  izinler?: ReadonlySet<string>,
+): Promise<Omit<SonrakiGirdi, "gereksinim"> | null> {
   const bos = <T,>(p: Promise<T[]>) => p.catch(() => [] as T[]);
+  const izinli = (i: string) => !izinler || izinler.has(i);
+  // Script listesi kanıtın temelidir: okunamıyorsa adım durumdan gösterilir.
+  if (!izinli("code.read")) return null;
   try {
     const [scriptler, kosular, hatalar, bugTaslaklari, caseler, demo] = await Promise.all([
       api.scriptler(),
-      bos(api.kosular()),
-      bos(api.hatalar()),
-      bos(api.bugTaslaklari()),
-      requirementId ? bos(api.caseler(requirementId)) : Promise.resolve([] as TestCase[]),
+      izinli("run.read") ? bos(api.kosular()) : Promise.resolve([]),
+      izinli("failure.read") ? bos(api.hatalar()) : Promise.resolve([]),
+      izinli("bug.read") ? bos(api.bugTaslaklari()) : Promise.resolve([]),
+      requirementId && izinli("case.read") ? bos(api.caseler(requirementId)) : Promise.resolve([] as TestCase[]),
       api.demoDurumu().catch(() => null),
     ]);
-    const kule = await api.kontrolKulesi().catch(() => null);
+    const kule = izinli("dashboard.read") ? await api.kontrolKulesi().catch(() => null) : null;
     return { scriptler, kosular, hatalar, bugTaslaklari, caseler, demo, kule };
   } catch {
     return null;

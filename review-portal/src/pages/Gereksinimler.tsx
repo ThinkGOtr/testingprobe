@@ -2,6 +2,7 @@ import { useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
+import { useIzinler } from "../auth";
 import type { Gereksinim } from "../api/types";
 import { useBildirim } from "../components/Bildirim";
 import { OtomatikAkisRozeti } from "../components/OtomatikAkisRozeti";
@@ -19,7 +20,8 @@ export function Gereksinimler() {
   const { veri, hata, hataNesnesi, yukleniyor, yenile } = useVeri(() => api.gereksinimler(), []);
   // `done` story'lerin kod → bug adımları (5–14) yol haritasıyla aynı kanıtlardan okunur.
   const tamamVar = (veri ?? []).some((g) => g.durum === "done");
-  const kanit = useVeri(() => (tamamVar ? akisKanitlari() : Promise.resolve(null)), [tamamVar]);
+  const izinler = useIzinler();
+  const kanit = useVeri(() => (tamamVar ? akisKanitlari(undefined, izinler) : Promise.resolve(null)), [tamamVar, izinler]);
   const [formAcik, setFormAcik] = useState(false);
   const [cekOnay, setCekOnay] = useState(false);
   const [filtre, setFiltre] = useState("");

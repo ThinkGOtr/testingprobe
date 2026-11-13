@@ -9,6 +9,7 @@ import type { GereksinimDetay } from "../api/types";
 import type { ModelRetNedeni } from "../api/tasarimModeliTipleri";
 import type { DesignModel, TasarimModeliKaydi } from "../api/tasarimModeliTipleri";
 import { useIslem, useVeri } from "../hooks";
+import { useIzin } from "../auth";
 import { MODEL_RET_NEDENI, RET_NEDENI } from "../lib/etiketler";
 import { tarih } from "../lib/format";
 import { MODEL_DURUMU, tur2Bildirimi, YER_TUTUCU_NEDENI, yerTutucuModelMi, type Tur2Bilgisi } from "../lib/tasarimModeli";
@@ -33,7 +34,9 @@ export function TasarimModeliPaneli({
 }) {
   const asamada = MODEL_ASAMASI.has(g.durum);
   // Durum değişince (model üretildi, onaylandı, case üretimi başladı) yeniden okunur.
-  const veri = useVeri(() => api.tasarimModeli(g.id), [g.id, g.durum]);
+  // `GET …/design-model` `case.analysis_read` ister (Developer hariç): izinsiz rolde istenmez, panel çizilmez.
+  const analiz = useIzin("case.analysis_read");
+  const veri = useVeri(() => (analiz ? api.tasarimModeli(g.id) : Promise.resolve(null)), [g.id, g.durum, analiz]);
   const islem = useIslem();
   const bildir = useBildirim();
   const [kip, setKip] = useState<"goster" | "duzelt" | "reddet">("goster");
@@ -44,7 +47,7 @@ export function TasarimModeliPaneli({
   const [tur2, setTur2] = useState<Tur2Bilgisi | null>(null);
 
   const y = veri.veri;
-  const gorunur = asamada || !!y?.model;
+  const gorunur = analiz && (asamada || !!y?.model);
   useEffect(() => {
     gorunurDegisti?.(gorunur);
   }, [gorunur, gorunurDegisti]);
