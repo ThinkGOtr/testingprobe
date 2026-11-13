@@ -78,8 +78,9 @@ def test_oneriler_rol_oturumdan(
     _giris(client, make_user(rol))
     r = client.get(UC, params={"rota": f"/gereksinimler/{req}", "rol": "analyst"})
     if not yetki.izinli(rol, "requirement.read"):
-        # Gereksinim okuma izni yok (auditor, viewer): varlık yokmuş gibi 404.
-        assert r.status_code == 404, r.text
+        # Gereksinim okuma izni yok (auditor, viewer): varlık yokmuş gibi boş liste (200).
+        assert r.status_code == 200, r.text
+        assert r.json()["oneriler"] == [] and r.json()["rota_kalibi"] is None
         return
     assert r.status_code == 200, r.text
     govde = r.json()
@@ -102,20 +103,27 @@ def test_oneriler_rol_oturumdan(
     assert govde["ekranda_kural_var"] is oneri.ekranda_kural_var("/gereksinimler/:id", rol)
 
 
-def test_varlik_ve_ekran_404(client: TestClient, tohum: Tohum, make_user: MakeUser) -> None:
+def test_varlik_ve_ekran_bulunamazsa_bos_liste(
+    client: TestClient, tohum: Tohum, make_user: MakeUser
+) -> None:
+    """Canlı UI: öneri olmayan ekran / kayıt konsolda 404 üretmez; 200 + boş liste."""
     _giris(client, make_user("analyst"))
     for params in (
         {"rota": f"/gereksinimler/{uuid.uuid4()}"},  # varlık yok
         {"rota": "/gereksinimler/:id", "varlik_tur": "requirement", "varlik_id": "TPD-1"},
         {"rota": "/gereksinimler/:id"},  # kimlik yok
         {"rota": f"/gereksinimler/{tohum.script()}"},  # başka türde varlık
-        {"rota": "/demo"},  # Analist açamaz
         {"rota": "/ayarlar"},  # rotalar.json dışı
     ):
         r = client.get(UC, params=params)
-        assert r.status_code == 404, (params, r.text)
-        assert r.json()["kod"] == "bulunamadi"
+        assert r.status_code == 200, (params, r.text)
+        govde = r.json()
+        assert govde["oneriler"] == [] and govde["ekranda_kural_var"] is False
+        assert govde["rota_kalibi"] is None and govde["diger_ekranlar"] == []
     assert client.get(UC).status_code == 422  # rota zorunlu
+    _giris(client, make_user("developer"))
+    r = client.get(UC, params={"rota": "/kod"})  # Developer açamaz
+    assert r.status_code == 200 and r.json()["oneriler"] == [], r.text
 
 
 def test_cerezsiz_ve_bearer_401(client: TestClient) -> None:
@@ -305,7 +313,7 @@ def test_model_kapaliyken_ve_worker_yokken_calisir(
     assert [c["kural_id"] for c in r.json()["oneriler"]] == ["hata-bakim-onarim"]
 
 
-def test_hiz_sayaci_404_ile_biten_istekte_de_artar(
+def test_hiz_sayaci_bulunamayan_istekte_de_artar(
     client: TestClient,
     tohum: Tohum,
     make_user: MakeUser,
@@ -315,7 +323,7 @@ def test_hiz_sayaci_404_ile_biten_istekte_de_artar(
     _giris(client, make_user("analyst"))
     for i in range(60):
         r = client.get(UC, params={"rota": f"/gereksinimler/{uuid.uuid4()}"})
-        assert r.status_code == 404, (i, r.text)
+        assert r.status_code == 200 and r.json()["oneriler"] == [], (i, r.text)
     r = client.get(UC, params={"rota": f"/gereksinimler/{uuid.uuid4()}"})
     assert r.status_code == 429 and r.json()["kod"] == "hiz_siniri"
     for i in range(30):

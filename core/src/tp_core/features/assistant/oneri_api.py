@@ -14,6 +14,7 @@ geri bildirim ucu yalnız `asistan_oneri_geri_bildirim`'e satır ekler.
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
@@ -71,12 +72,25 @@ def suggestions(
         if onceki is not None:
             return onceki
         sonuc = oneri.oneriler_ekran(session, user, ekran)
-    except oneri.EkranBulunamadi:
-        raise HTTPException(404, "Ekran bulunamadı") from None
-    except oneri.VarlikBulunamadi:
-        raise HTTPException(404, "Kayıt bulunamadı") from None
+    except (oneri.EkranBulunamadi, oneri.VarlikBulunamadi):
+        # Canlı UI: rolün açamadığı / kural tanımı olmayan ekranlarda ve olmayan kayıtlarda
+        # portal her sayfada 404 (konsol hatası) alıyordu. Öneri olmaması bir hata değildir:
+        # 200 + boş liste. Varlığın varlığı sızmaz (yok / okunamaz / rol dışı aynı gövde).
+        return bos_sonuc()
     oneri.ONBELLEK.koy(anahtar, sonuc)
     return sonuc
+
+
+def bos_sonuc() -> dict[str, Any]:
+    """Tanınmayan / role kapalı ekran ya da bulunamayan varlık için öneri gövdesi."""
+    return {
+        "rota_kalibi": None,
+        "ekranda_kural_var": False,
+        "oneriler": [],
+        "bastirilan": [],
+        "diger_ekranlar": [],
+        "hesaplandi": datetime.now(UTC).isoformat(),
+    }
 
 
 class GeriBildirim(BaseModel):
