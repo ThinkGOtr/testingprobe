@@ -69,6 +69,7 @@ bundles:
       results: evaluation/results/design-model-v1-2026-11-13.json
       guardrails_version: 1
       calls: evaluation/results/design-model-v1-2026-11-13.calls.jsonl
+      icerik_hash: sha256:9a33853603d4cd2464398e891b14079cd41e3f719667652c7cc197af61d3b839
   case-review:
     version: 1
     status: evaluated
@@ -211,7 +212,7 @@ bundles:
       results: evaluation/results/platform-web-v1-2026-11-13.json
       guardrails_version: 1
       calls: evaluation/results/platform-web-v1-2026-11-13.calls.jsonl
-      icerik_hash: sha256:e7fda723944d94d09b86605fe1b444efe316a336ed1f95f1cc11569978bfcb93
+      icerik_hash: sha256:519b520419b560826ad9acc2c9a9803b3bc493d97f4fd5732980977e33d4479a
   platform-mobile:
     version: 1
     status: evaluated
@@ -275,15 +276,15 @@ bundles:
   case-technique:
     version: 1
     status: evaluated
-    note: 'Canlı değerlendirme 2026-11-12, claude-sonnet-5-5 (anthropic), 2/2 vaka geçti: evaluation/results/case-technique-v1-2026-11-12.json'
+    note: 'Canlı değerlendirme 2026-11-13, claude-sonnet-5-5 (anthropic), 2/2 vaka geçti: evaluation/results/case-technique-v1-2026-11-13.json'
     evaluation:
-      date: '2026-11-12'
+      date: '2026-11-13'
       model: claude-sonnet-5-5
       provider: anthropic
-      results: evaluation/results/case-technique-v1-2026-11-12.json
+      results: evaluation/results/case-technique-v1-2026-11-13.json
       guardrails_version: 1
-      calls: evaluation/results/case-technique-v1-2026-11-12.calls.jsonl
-      icerik_hash: sha256:5efefacd11022c7f0547c564e6244f431de7f57b1a8ce67d37d6872a52636d77
+      calls: evaluation/results/case-technique-v1-2026-11-13.calls.jsonl
+      icerik_hash: sha256:b68270fd80808bcc6b16e831f63e9dbbc21130fa15f951f64bddd5327671b91f
   assistant-guard:
     version: 1
     status: evaluated

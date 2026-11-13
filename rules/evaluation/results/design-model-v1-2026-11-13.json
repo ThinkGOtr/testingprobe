@@ -22,395 +22,305 @@
             ],
             "statement": "Katalogda \"Sepete ekle\" butonuna basılınca ürün sepete eklenir ve sepet sayacı artar.",
             "risk": "high",
-            "rationale": "Ana akışın ilk adımı; bozulursa sipariş verilemez."
+            "rationale": "Sepete ekleme çalışmazsa sipariş akışı hiç başlamaz ve ana akışın etrafından dolaşılamaz."
           },
           {
             "id": "TCOND-2",
             "ac_refs": [
               "AC2"
             ],
-            "statement": "Kampanyalı üründe (P-001) her 6 adette 1 adet bedava verilir; bayi 5 adet öder.",
+            "statement": "Kampanyalı üründe (P-001) her 6 adette 1 adet bedava verilir: 6 adette 5 adet, 12 adette 10 adet bedeli ödenir.",
             "risk": "high",
-            "rationale": "Yanlış hesap doğrudan tutarı ve geliri etkiler."
+            "rationale": "Yanlış hesaplama bayiye yanlış tutar yansıtır, doğrudan para etkisi vardır."
           },
           {
             "id": "TCOND-3",
             "ac_refs": [
-              "AC2"
+              "AC3"
             ],
-            "statement": "Bedava adet 6 adette 1, 12 adette 2 olur; 5 ve 11 adette bir önceki değer geçerlidir.",
-            "risk": "high",
-            "rationale": "Sınır hataları sık görülür ve para kaybı doğurur."
+            "statement": "Kampanyasız siparişte tutar 750,00 TL'nin altındaysa \"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir ve \"Siparişi onayla\" butonu pasif olur.",
+            "risk": "medium",
+            "rationale": "Kural ihlali iş kaybı yaratır ama bayi sepeti düzelterek devam edebilir."
           },
           {
             "id": "TCOND-4",
             "ac_refs": [
-              "AC3"
+              "AC4"
             ],
-            "statement": "Kampanyasız siparişte tutar 750,00 TL altındaysa \"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir ve onay butonu pasif olur.",
+            "statement": "Sipariş tutarı bayinin kredi limitini aşarsa \"Kredi limiti aşıldı\" uyarısı gösterilir ve sipariş onaylanamaz.",
             "risk": "high",
-            "rationale": "İş kuralı ihlali; yanlış siparişe izin verir ya da geçerli siparişi engeller."
+            "rationale": "Limit aşımına izin verilirse mali risk doğar."
           },
           {
             "id": "TCOND-5",
             "ac_refs": [
-              "AC3"
+              "AC5"
             ],
-            "statement": "Kampanyasız siparişte 750,00 TL tam sınırı kabul edilir, altı reddedilir.",
+            "statement": "Sipariş onaylandığında sipariş numarası gösterilir ve sipariş sipariş geçmişinde listelenir.",
             "risk": "high",
-            "rationale": "Sınır değerde dahil/hariç hatası olasılığı yüksek."
+            "rationale": "Onaylanan sipariş kaydedilmez veya görünmezse veri kaybı ve ana akış kırılması olur."
           },
           {
             "id": "TCOND-6",
             "ac_refs": [
-              "AC4"
-            ],
-            "statement": "Sipariş tutarı kredi limitini aşarsa \"Kredi limiti aşıldı\" uyarısı gösterilir ve sipariş onaylanamaz.",
-            "risk": "high",
-            "rationale": "Finansal risk kontrolü; ihlal bayiye limit üstü borç yazar."
-          },
-          {
-            "id": "TCOND-7",
-            "ac_refs": [
-              "AC4"
-            ],
-            "statement": "Tutar limite eşitken sipariş onaylanır, limiti aştığında onaylanmaz.",
-            "risk": "high",
-            "rationale": "Limit sınırında dahil/hariç hatası olasılığı yüksek."
-          },
-          {
-            "id": "TCOND-8",
-            "ac_refs": [
-              "AC5"
-            ],
-            "statement": "Sipariş onaylanınca sipariş numarası gösterilir ve sipariş sipariş geçmişinde listelenir.",
-            "risk": "high",
-            "rationale": "Ana akışın sonucu; kayıt kaybı veri kaybıdır."
-          },
-          {
-            "id": "TCOND-9",
-            "ac_refs": [
               "AC6"
             ],
-            "statement": "Kampanyalı siparişte minimum sipariş tutarı şartı aranmaz.",
-            "risk": "high",
-            "rationale": "Yanlış uygulanırsa kampanyalı geçerli sipariş engellenir."
-          },
-          {
-            "id": "TCOND-10",
-            "ac_refs": [
-              "AC3",
-              "AC4",
-              "AC6"
-            ],
-            "statement": "Onay sonucu; sipariş türüne (kampanyalı/kampanyasız), minimum tutara ve kredi limitine bağlı birleşik karardır.",
-            "risk": "high",
-            "rationale": "Birden çok kural birlikte çalışır; birleşimler hata üretir."
+            "statement": "Kampanyalı siparişlerde minimum sipariş tutarı şartı aranmaz.",
+            "risk": "medium",
+            "rationale": "Yanlışlıkla engellenen kampanyalı sipariş satış kaybı yaratır; bayi sepeti değiştirerek geçici çözüm bulabilir."
           }
         ],
         "techniques": [
           {
             "condition_id": "TCOND-1",
-            "technique": "EP",
-            "rationale": "Kampanyalı/kampanyasız ürün sınıfları aynı davranır."
-          },
-          {
-            "condition_id": "TCOND-1",
             "technique": "UC",
-            "rationale": "Uçtan uca sepet akışının parçası."
+            "rationale": "Sepete ekleme ana akışın ilk adımıdır."
           },
           {
             "condition_id": "TCOND-2",
-            "technique": "EP",
-            "rationale": "Adet aralıkları farklı bedava sayısı verir."
+            "technique": "BVA",
+            "rationale": "Adet sıralı bir değerdir; 6 ve 12 adette bedava sınırı vardır."
           },
           {
             "condition_id": "TCOND-2",
             "technique": "EG",
-            "rationale": "7 ve 13 gibi katı olmayan adetlerde kalan adet hesabı hatası beklenir."
+            "rationale": "Kampanyasız üründe yanlışlıkla bedava verilmesi olası bir hatadır."
           },
           {
             "condition_id": "TCOND-3",
             "technique": "BVA",
-            "rationale": "Adet sıralı bir değerdir; 6 ve 12 limit."
+            "rationale": "750,00 TL tutar sınırı vardır."
+          },
+          {
+            "condition_id": "TCOND-3",
+            "technique": "DT",
+            "rationale": "Sonuç kampanya, minimum tutar ve kredi limiti kombinasyonuna bağlıdır."
+          },
+          {
+            "condition_id": "TCOND-3",
+            "technique": "UC",
+            "rationale": "Uyarı ve pasif buton bir istisna akışıdır."
+          },
+          {
+            "condition_id": "TCOND-4",
+            "technique": "BVA",
+            "rationale": "Kredi limiti tutar sınırıdır."
+          },
+          {
+            "condition_id": "TCOND-4",
+            "technique": "EP",
+            "rationale": "Limit içi ve limit aşan sipariş sınıfları farklı davranır."
           },
           {
             "condition_id": "TCOND-4",
             "technique": "DT",
-            "rationale": "Sonuç sipariş türü ve tutara bağlı."
+            "rationale": "Kredi sonucu diğer koşullarla birlikte değerlendirilir."
           },
           {
             "condition_id": "TCOND-4",
             "technique": "UC",
-            "rationale": "Kullanıcıya görünen uyarı ve pasif buton akışı."
+            "rationale": "Limit aşımı bir istisna akışıdır."
           },
           {
             "condition_id": "TCOND-5",
-            "technique": "BVA",
-            "rationale": "Tutar sıralı; limit 750,00 TL, adım 0,01 TL."
+            "technique": "UC",
+            "rationale": "Onay ve sipariş geçmişi uçtan uca akıştır."
+          },
+          {
+            "condition_id": "TCOND-6",
+            "technique": "EP",
+            "rationale": "Kampanyalı ve kampanyasız sipariş tipleri farklı davranır."
           },
           {
             "condition_id": "TCOND-6",
             "technique": "DT",
-            "rationale": "Sonuç tutar ve limit karşılaştırmasına bağlı."
+            "rationale": "Minimum tutar şartı kampanya durumuna bağlıdır."
           },
           {
             "condition_id": "TCOND-6",
             "technique": "UC",
-            "rationale": "Kredi aşımı istisna akışı."
+            "rationale": "Kampanyalı küçük tutarlı sipariş alternatif akıştır."
           },
           {
-            "condition_id": "TCOND-7",
-            "technique": "BVA",
-            "rationale": "Tutar sıralı; limit bayi1 için 2.000,00 TL."
-          },
-          {
-            "condition_id": "TCOND-8",
-            "technique": "UC",
-            "rationale": "Onay sonrası numara ve geçmiş ana akışın parçası."
-          },
-          {
-            "condition_id": "TCOND-9",
-            "technique": "UC",
-            "rationale": "Kampanyalı sipariş için alternatif akış."
-          },
-          {
-            "condition_id": "TCOND-9",
-            "technique": "DT",
-            "rationale": "Minimum tutar kuralı sipariş türüne bağlı."
-          },
-          {
-            "condition_id": "TCOND-10",
-            "technique": "DT",
-            "rationale": "Birden çok koşulun kombinasyonu sonucu belirler."
+            "condition_id": "TCOND-6",
+            "technique": "EG",
+            "rationale": "Kampanyalı ve kampanyasız ürünün karışık sepeti hata riski taşır."
           }
         ],
         "coverage_items": [
           {
             "id": "EP-V1",
-            "ac_ref": "AC1",
-            "definition": "Kampanyasız ürün (P-002) sepete eklenir, sepet sayacı artar.",
+            "ac_ref": "AC6",
+            "definition": "Kampanyasız sipariş (kampanyalı ürün yok veya kampanya koşulu sağlanmıyor).",
             "valid": true
           },
           {
             "id": "EP-V2",
-            "ac_ref": "AC2",
-            "definition": "Kampanyalı ürün P-001, 1-5 adet: bedava yok, tüm adetler ödenir.",
+            "ac_ref": "AC6",
+            "definition": "Kampanyalı sipariş (P-001, 6 adet ve üzeri).",
             "valid": true
           },
           {
             "id": "EP-V3",
-            "ac_ref": "AC2",
-            "definition": "Kampanyalı ürün P-001, 6-11 adet: 1 adet bedava.",
+            "ac_ref": "AC4",
+            "definition": "Sipariş tutarı bayinin kredi limiti içinde.",
             "valid": true
           },
           {
-            "id": "EP-V4",
-            "ac_ref": "AC2",
-            "definition": "Kampanyalı ürün P-001, 12 ve üzeri adet: her 6 adette 1 bedava (ör. 18 adette 3).",
-            "valid": true
-          },
-          {
-            "id": "EP-V5",
-            "ac_ref": "AC2",
-            "definition": "Kampanyasız ürün (P-002) 6 adet: bedava yok.",
-            "valid": true
+            "id": "EP-I1",
+            "ac_ref": "AC4",
+            "definition": "Sipariş tutarı bayinin kredi limitini aşıyor.",
+            "valid": false
           },
           {
             "id": "BV-1",
-            "ac_ref": "AC2",
-            "definition": "P-001 5 adet: bedava yok (6 sınırının altı).",
+            "ac_ref": "AC3",
+            "definition": "Kampanyasız sipariş tutarı 750,00 TL (sınırın kendisi).",
             "valid": true
           },
           {
             "id": "BV-2",
-            "ac_ref": "AC2",
-            "definition": "P-001 6 adet: 1 bedava (sınırın kendisi).",
-            "valid": true
+            "ac_ref": "AC3",
+            "definition": "Kampanyasız sipariş tutarı 749,99 TL; kurulabilen en yakın değer 749,00 TL.",
+            "valid": false
           },
           {
             "id": "BV-3",
-            "ac_ref": "AC2",
-            "definition": "P-001 11 adet: 1 bedava (12 sınırının altı).",
+            "ac_ref": "AC4",
+            "definition": "Sipariş tutarı bayi1 kredi limitine eşit: 2.000,00 TL.",
             "valid": true
           },
           {
             "id": "BV-4",
-            "ac_ref": "AC2",
-            "definition": "P-001 12 adet: 2 bedava (sınırın kendisi).",
-            "valid": true
-          },
-          {
-            "id": "BV-5",
-            "ac_ref": "AC3",
-            "definition": "Kampanyasız sipariş 749,99 TL; kurulabilen en yakın değer 749,00 TL: uyarı, onay pasif.",
+            "ac_ref": "AC4",
+            "definition": "Sipariş tutarı 2.000,01 TL; kurulabilen en yakın değer 2.001,00 TL.",
             "valid": false
           },
           {
+            "id": "BV-5",
+            "ac_ref": "AC2",
+            "definition": "P-001 5 adet: bedava yok, 5 adet bedeli ödenir (125,00 TL).",
+            "valid": true
+          },
+          {
             "id": "BV-6",
-            "ac_ref": "AC3",
-            "definition": "Kampanyasız sipariş 750,00 TL: minimum şartı sağlanır.",
+            "ac_ref": "AC2",
+            "definition": "P-001 6 adet: 1 adet bedava, 5 adet bedeli ödenir (125,00 TL).",
             "valid": true
           },
           {
             "id": "BV-7",
-            "ac_ref": "AC4",
-            "definition": "bayi1, kampanyasız sipariş 2.000,00 TL: limite eşit, onaylanır.",
+            "ac_ref": "AC2",
+            "definition": "P-001 11 adet: 1 adet bedava (ikinci bedava için sınırın altı).",
             "valid": true
           },
           {
             "id": "BV-8",
-            "ac_ref": "AC4",
-            "definition": "bayi1, kampanyasız sipariş 2.000,01 TL; kurulabilen en yakın değer 2.001,00 TL: \"Kredi limiti aşıldı\".",
-            "valid": false
+            "ac_ref": "AC2",
+            "definition": "P-001 12 adet: 2 adet bedava, 10 adet bedeli ödenir (250,00 TL).",
+            "valid": true
           },
           {
             "id": "DT-R1",
-            "ac_ref": "AC3",
-            "definition": "Kampanyasız, tutar ≥ 750,00 TL, tutar ≤ limit: sipariş onaylanır.",
+            "ac_ref": "AC6",
+            "definition": "Kampanyalı, kredi limiti içinde: minimum tutar aranmaz, sipariş onaylanabilir.",
             "valid": true
           },
           {
             "id": "DT-R2",
-            "ac_ref": "AC3",
-            "definition": "Kampanyasız, tutar < 750,00 TL, tutar ≤ limit: minimum tutar uyarısı, onay pasif.",
+            "ac_ref": "AC4",
+            "definition": "Kampanyalı, kredi limiti aşılıyor: \"Kredi limiti aşıldı\", onaylanamaz.",
             "valid": false
           },
           {
             "id": "DT-R3",
-            "ac_ref": "AC4",
-            "definition": "Kampanyasız, tutar ≥ 750,00 TL, tutar > limit: \"Kredi limiti aşıldı\", onaylanamaz.",
-            "valid": false
+            "ac_ref": "AC3",
+            "definition": "Kampanyasız, tutar 750,00 TL ve üzeri, limit içinde: onaylanabilir.",
+            "valid": true
           },
           {
             "id": "DT-R4",
-            "ac_ref": "AC6",
-            "definition": "Kampanyalı, tutar ≤ limit: minimum şart aranmaz, onaylanır.",
-            "valid": true
+            "ac_ref": "AC3",
+            "definition": "Kampanyasız, tutar 750,00 TL altında, limit içinde: minimum tutar uyarısı, onay butonu pasif.",
+            "valid": false
           },
           {
             "id": "DT-R5",
             "ac_ref": "AC4",
-            "definition": "Kampanyalı, tutar > limit: \"Kredi limiti aşıldı\", onaylanamaz.",
+            "definition": "Kampanyasız, tutar 750,00 TL ve üzeri, limit aşılıyor: \"Kredi limiti aşıldı\", onaylanamaz.",
             "valid": false
           },
           {
             "id": "UC-MF",
             "ac_ref": "AC5",
-            "definition": "Ana akış: giriş, sepete ekle, sepet, onay, sipariş numarası, sipariş geçmişinde listeleme.",
+            "definition": "Giriş, katalogdan sepete ekleme, siparişi onaylama, sipariş numarası ve sipariş geçmişi.",
             "valid": true
           },
           {
             "id": "UC-AF1",
             "ac_ref": "AC6",
-            "definition": "Alternatif akış: kampanyalı sepet 750,00 TL altında olsa da onaylanır.",
+            "definition": "Kampanyalı sipariş 750,00 TL altında olsa da onaylanır.",
             "valid": true
           },
           {
             "id": "UC-EF1",
             "ac_ref": "AC3",
-            "definition": "İstisna akışı: kampanyasız sepet 750,00 TL altında, uyarı ve pasif onay butonu.",
+            "definition": "Kampanyasız sipariş 750,00 TL altında: uyarı ve pasif onay butonu.",
             "valid": false
           },
           {
             "id": "UC-EF2",
             "ac_ref": "AC4",
-            "definition": "İstisna akışı: tutar kredi limitini aşar, uyarı ve onay yapılamaz.",
+            "definition": "Sipariş tutarı kredi limitini aşar: uyarı, onay yok.",
             "valid": false
           },
           {
             "id": "EG-1",
             "ac_ref": "AC2",
-            "definition": "Katı olmayan adetlerde (7 ve 13 adet P-001) bedava adet ve ödenecek tutar hesabı.",
-            "valid": true
+            "definition": "Kampanyasız üründe (P-002) 6 adet eklenince bedava verilmemesi.",
+            "valid": false
+          },
+          {
+            "id": "EG-2",
+            "ac_ref": "AC6",
+            "definition": "P-001 kampanyalı ürün ile kampanyasız ürünün karışık sepetinde minimum tutar şartının uygulanması tanımsız.",
+            "valid": false
           }
         ],
         "partitions": [
           {
-            "field": "Sepete eklenen ürün",
+            "field": "Sipariş tipi",
             "item_id": "EP-V1",
-            "definition": "Kampanyasız ürün sepete eklenir.",
-            "representative": "P-002 Limonata 330ml, 15,00 TL",
+            "definition": "Kampanyasız sipariş.",
+            "representative": "P-002 × 50 = 750,00 TL",
             "valid": true
           },
           {
-            "field": "P-001 adedi",
+            "field": "Sipariş tipi",
             "item_id": "EP-V2",
-            "definition": "1-5 adet: bedava yok.",
-            "representative": "3 adet",
+            "definition": "Kampanyalı sipariş.",
+            "representative": "P-001 × 6",
             "valid": true
           },
           {
-            "field": "P-001 adedi",
+            "field": "Kredi durumu",
             "item_id": "EP-V3",
-            "definition": "6-11 adet: 1 bedava.",
-            "representative": "8 adet",
+            "definition": "Tutar kredi limiti içinde.",
+            "representative": "bayi1, P-004 × 30 = 900,00 TL",
             "valid": true
           },
           {
-            "field": "P-001 adedi",
-            "item_id": "EP-V4",
-            "definition": "12 ve üzeri: her 6 adette 1 bedava.",
-            "representative": "18 adet",
-            "valid": true
-          },
-          {
-            "field": "Kampanyasız ürün adedi",
-            "item_id": "EP-V5",
-            "definition": "Kampanya yok, bedava verilmez.",
-            "representative": "P-002 6 adet (90,00 TL)",
-            "valid": true
+            "field": "Kredi durumu",
+            "item_id": "EP-I1",
+            "definition": "Tutar kredi limitini aşıyor.",
+            "representative": "bayi1, P-004 × 70 = 2.100,00 TL",
+            "valid": false
           }
         ],
         "boundaries": [
           {
-            "field": "P-001 adedi (6 sınırı)",
+            "field": "Kampanyasız sipariş tutarı",
             "item_id": "BV-1",
-            "value": "5",
-            "side": "below",
-            "expected": "accept",
-            "inclusive_source": "AC2",
-            "question_ref": null
-          },
-          {
-            "field": "P-001 adedi (6 sınırı)",
-            "item_id": "BV-2",
-            "value": "6",
-            "side": "on",
-            "expected": "accept",
-            "inclusive_source": "AC2",
-            "question_ref": null
-          },
-          {
-            "field": "P-001 adedi (12 sınırı)",
-            "item_id": "BV-3",
-            "value": "11",
-            "side": "below",
-            "expected": "accept",
-            "inclusive_source": "AC2",
-            "question_ref": null
-          },
-          {
-            "field": "P-001 adedi (12 sınırı)",
-            "item_id": "BV-4",
-            "value": "12",
-            "side": "on",
-            "expected": "accept",
-            "inclusive_source": "AC2",
-            "question_ref": null
-          },
-          {
-            "field": "Kampanyasız sipariş tutarı (minimum)",
-            "item_id": "BV-5",
-            "value": "749,99 TL",
-            "side": "below",
-            "expected": "reject",
-            "inclusive_source": "AC3",
-            "question_ref": null
-          },
-          {
-            "field": "Kampanyasız sipariş tutarı (minimum)",
-            "item_id": "BV-6",
             "value": "750,00 TL",
             "side": "on",
             "expected": "accept",
@@ -418,8 +328,17 @@
             "question_ref": null
           },
           {
-            "field": "Sipariş tutarı (bayi1 kredi limiti)",
-            "item_id": "BV-7",
+            "field": "Kampanyasız sipariş tutarı",
+            "item_id": "BV-2",
+            "value": "749,99 TL (kurulabilen en yakın: 749,00 TL)",
+            "side": "below",
+            "expected": "reject",
+            "inclusive_source": "AC3",
+            "question_ref": null
+          },
+          {
+            "field": "Sipariş tutarı / kredi limiti (bayi1)",
+            "item_id": "BV-3",
             "value": "2.000,00 TL",
             "side": "on",
             "expected": "accept",
@@ -427,12 +346,48 @@
             "question_ref": null
           },
           {
-            "field": "Sipariş tutarı (bayi1 kredi limiti)",
-            "item_id": "BV-8",
-            "value": "2.000,01 TL",
+            "field": "Sipariş tutarı / kredi limiti (bayi1)",
+            "item_id": "BV-4",
+            "value": "2.000,01 TL (kurulabilen en yakın: 2.001,00 TL)",
             "side": "above",
             "expected": "reject",
             "inclusive_source": "AC4",
+            "question_ref": null
+          },
+          {
+            "field": "P-001 adedi (bedava 1. sınır)",
+            "item_id": "BV-5",
+            "value": "5 adet",
+            "side": "below",
+            "expected": "accept",
+            "inclusive_source": "AC2",
+            "question_ref": null
+          },
+          {
+            "field": "P-001 adedi (bedava 1. sınır)",
+            "item_id": "BV-6",
+            "value": "6 adet",
+            "side": "on",
+            "expected": "accept",
+            "inclusive_source": "AC2",
+            "question_ref": null
+          },
+          {
+            "field": "P-001 adedi (bedava 2. sınır)",
+            "item_id": "BV-7",
+            "value": "11 adet",
+            "side": "below",
+            "expected": "accept",
+            "inclusive_source": "AC2",
+            "question_ref": null
+          },
+          {
+            "field": "P-001 adedi (bedava 2. sınır)",
+            "item_id": "BV-8",
+            "value": "12 adet",
+            "side": "on",
+            "expected": "accept",
+            "inclusive_source": "AC2",
             "question_ref": null
           }
         ],
@@ -440,13 +395,13 @@
           {
             "id": "DT1",
             "conditions": [
-              "Sipariş kampanyalı",
-              "Tutar ≥ 750,00 TL",
-              "Tutar ≤ kredi limiti"
+              "Kampanyalı sipariş",
+              "Tutar >= 750,00 TL",
+              "Tutar <= kredi limiti"
             ],
             "actions": [
-              "Sipariş onaylanır",
-              "Minimum tutar uyarısı, onay pasif",
+              "Sipariş onaylanabilir",
+              "Minimum tutar uyarısı ve pasif buton",
               "\"Kredi limiti aşıldı\" uyarısı, onaylanamaz"
             ],
             "rules": [
@@ -454,55 +409,35 @@
                 "item_id": "DT-R1",
                 "condition_values": [
                   {
-                    "condition": "Sipariş kampanyalı",
-                    "value": "H"
-                  },
-                  {
-                    "condition": "Tutar ≥ 750,00 TL",
+                    "condition": "Kampanyalı sipariş",
                     "value": "E"
                   },
                   {
-                    "condition": "Tutar ≤ kredi limiti",
+                    "condition": "Tutar >= 750,00 TL",
+                    "value": "-"
+                  },
+                  {
+                    "condition": "Tutar <= kredi limiti",
                     "value": "E"
                   }
                 ],
                 "actions": [
-                  "Sipariş onaylanır"
+                  "Sipariş onaylanabilir"
                 ]
               },
               {
                 "item_id": "DT-R2",
                 "condition_values": [
                   {
-                    "condition": "Sipariş kampanyalı",
-                    "value": "H"
-                  },
-                  {
-                    "condition": "Tutar ≥ 750,00 TL",
-                    "value": "H"
-                  },
-                  {
-                    "condition": "Tutar ≤ kredi limiti",
-                    "value": "E"
-                  }
-                ],
-                "actions": [
-                  "Minimum tutar uyarısı, onay pasif"
-                ]
-              },
-              {
-                "item_id": "DT-R3",
-                "condition_values": [
-                  {
-                    "condition": "Sipariş kampanyalı",
-                    "value": "H"
-                  },
-                  {
-                    "condition": "Tutar ≥ 750,00 TL",
+                    "condition": "Kampanyalı sipariş",
                     "value": "E"
                   },
                   {
-                    "condition": "Tutar ≤ kredi limiti",
+                    "condition": "Tutar >= 750,00 TL",
+                    "value": "-"
+                  },
+                  {
+                    "condition": "Tutar <= kredi limiti",
                     "value": "H"
                   }
                 ],
@@ -511,38 +446,58 @@
                 ]
               },
               {
-                "item_id": "DT-R4",
+                "item_id": "DT-R3",
                 "condition_values": [
                   {
-                    "condition": "Sipariş kampanyalı",
+                    "condition": "Kampanyalı sipariş",
+                    "value": "H"
+                  },
+                  {
+                    "condition": "Tutar >= 750,00 TL",
                     "value": "E"
                   },
                   {
-                    "condition": "Tutar ≥ 750,00 TL",
-                    "value": "-"
-                  },
-                  {
-                    "condition": "Tutar ≤ kredi limiti",
+                    "condition": "Tutar <= kredi limiti",
                     "value": "E"
                   }
                 ],
                 "actions": [
-                  "Sipariş onaylanır"
+                  "Sipariş onaylanabilir"
+                ]
+              },
+              {
+                "item_id": "DT-R4",
+                "condition_values": [
+                  {
+                    "condition": "Kampanyalı sipariş",
+                    "value": "H"
+                  },
+                  {
+                    "condition": "Tutar >= 750,00 TL",
+                    "value": "H"
+                  },
+                  {
+                    "condition": "Tutar <= kredi limiti",
+                    "value": "E"
+                  }
+                ],
+                "actions": [
+                  "Minimum tutar uyarısı ve pasif buton"
                 ]
               },
               {
                 "item_id": "DT-R5",
                 "condition_values": [
                   {
-                    "condition": "Sipariş kampanyalı",
+                    "condition": "Kampanyalı sipariş",
+                    "value": "H"
+                  },
+                  {
+                    "condition": "Tutar >= 750,00 TL",
                     "value": "E"
                   },
                   {
-                    "condition": "Tutar ≥ 750,00 TL",
-                    "value": "-"
-                  },
-                  {
-                    "condition": "Tutar ≤ kredi limiti",
+                    "condition": "Tutar <= kredi limiti",
                     "value": "H"
                   }
                 ],
@@ -553,12 +508,8 @@
             ],
             "undefined_combinations": [
               {
-                "description": "Sipariş kampanyalı = H, Tutar ≥ 750,00 TL = H, Tutar ≤ kredi limiti = H (iki uyarı birlikte mi, hangisi?)",
-                "question_ref": "Q3"
-              },
-              {
-                "description": "Sepette hem kampanyalı hem kampanyasız ürün var (AC3 mi AC6 mı geçerli?)",
-                "question_ref": "Q1"
+                "description": "Kampanyalı sipariş = H, Tutar >= 750,00 TL = H, Tutar <= kredi limiti = H (iki uyarı birlikte)",
+                "question_ref": "Q2"
               }
             ]
           }
@@ -569,12 +520,12 @@
             "item_id": "UC-MF",
             "kind": "MF",
             "steps": [
-              "bayi1 ile giriş yapılır.",
-              "Katalogda ürün için \"Sepete ekle\" basılır, sayaç artar.",
-              "\"Sepetim\" açılır, tutar ≥ 750,00 TL ve ≤ 2.000,00 TL olur.",
-              "\"Siparişi onayla\" basılır.",
+              "bayi1 ile \"Giriş yap\".",
+              "\"Katalog\"da ürün için \"Sepete ekle\"ye bas; sayaç artar.",
+              "\"Sepetim\"de tutar kontrol edilir.",
+              "\"Siparişi onayla\"ya bas.",
               "Sipariş numarası gösterilir.",
-              "\"Siparişlerim\" sayfasında sipariş listelenir."
+              "\"Siparişlerim\"de sipariş listelenir."
             ],
             "condition": ""
           },
@@ -582,19 +533,19 @@
             "item_id": "UC-AF1",
             "kind": "AF",
             "steps": [
-              "bayi1 ile girişte P-001 sepete eklenir (ör. 6 adet, 125,00 TL ödenir).",
-              "\"Sepetim\" açılır, minimum tutar uyarısı gösterilmez.",
-              "\"Siparişi onayla\" basılır ve sipariş numarası gösterilir."
+              "P-001 × 6 sepete eklenir (125,00 TL).",
+              "\"Siparişi onayla\" aktif kalır.",
+              "Sipariş onaylanır, numara gösterilir."
             ],
-            "condition": "Sipariş kampanyalı ve tutar 750,00 TL altında"
+            "condition": "Kampanyalı sipariş ve tutar 750,00 TL altında"
           },
           {
             "item_id": "UC-EF1",
             "kind": "EF",
             "steps": [
-              "Kampanyasız ürünle sepet 750,00 TL altında oluşturulur.",
+              "Kampanyasız sepet 750,00 TL altında hazırlanır.",
               "\"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir.",
-              "\"Siparişi onayla\" butonu pasiftir."
+              "\"Siparişi onayla\" pasiftir."
             ],
             "condition": "Kampanyasız sipariş tutarı 750,00 TL altında"
           },
@@ -602,11 +553,11 @@
             "item_id": "UC-EF2",
             "kind": "EF",
             "steps": [
-              "bayi2 ile girişte sipariş tutarı 500,00 TL limitini aşan sepet oluşturulur.",
+              "Sepet tutarı bayi kredi limitini aşacak şekilde hazırlanır.",
               "\"Kredi limiti aşıldı\" uyarısı gösterilir.",
               "Sipariş onaylanamaz."
             ],
-            "condition": "Sipariş tutarı bayinin kredi limitini aşar"
+            "condition": "Sipariş tutarı kredi limitini aşar"
           }
         ],
         "pairwise": {
@@ -616,75 +567,51 @@
         "model_issues": [
           {
             "kind": "undefined_combination",
-            "detail": "Kampanyasız, tutar < 750,00 TL ve limit aşımı birlikteyken hangi uyarının gösterileceği kaynakta yok (Q3)."
-          },
-          {
-            "kind": "undefined_combination",
-            "detail": "Kampanyalı ve kampanyasız ürünün karışık olduğu sepette AC3 / AC6 ilişkisi tanımsız (Q1)."
+            "detail": "Kampanyasız, tutar 750,00 TL altında ve kredi limitini aşan sipariş için iki uyarının birlikte davranışı tanımsız (Q2)."
           },
           {
             "kind": "other",
-            "detail": "749,99 TL ve 2.000,01 TL test verisiyle tam kurulamaz (tüm fiyatlar tam sayı); en yakın kurulabilen değerler 749,00 TL ve 2.001,00 TL olarak yazıldı."
+            "detail": "bayi2 (limit 500,00 TL) ile kampanyasız hiçbir sipariş onaylanamaz: tutar ya 750,00 TL altında ya da limit üstündedir. bayi2 yalnız kampanyalı sipariş için uygundur; kampanyasız onaylanabilir senaryolar bayi1 ile kurulmalıdır."
           },
           {
             "kind": "other",
-            "detail": "bayi2 (limit 500,00 TL) ile kampanyasız sipariş hem 750,00 TL altında kalır hem limiti geçer; kampanyasız limit sınırı yalnız bayi1 ile modellenebilir."
+            "detail": "Tutarlar tam liradır (25, 15, 8, 30 TL); 749,99 ve 2.000,01 TL kurulamaz, en yakın kurulabilen değerler kullanılır. Bu sınır sepetlerinde P-001 için 6 adet ve üzeri kullanılmamalı, aksi halde sepet kampanyalı olur."
           }
         ],
         "open_questions": [
           {
             "id": "Q1",
-            "question": "Sepette hem kampanyalı (P-001) hem kampanyasız ürün varsa minimum sipariş tutarı şartı aranır mı (AC3 mü AC6 mı geçerli)?",
+            "question": "Sepette kampanyalı ürün (P-001) ile kampanyasız ürün birlikteyse sipariş \"kampanyalı\" sayılıp minimum tutar şartı (AC6) kalkar mı? Yoksa şart yalnız bedava hakkı kazanılan siparişlerde mi aranmaz?",
             "owner": "PO"
           },
           {
             "id": "Q2",
-            "question": "Kredi limiti kontrolünde karşılaştırılan tutar bedava adetler düşüldükten sonraki ödenecek tutar mıdır? Bayinin mevcut açık siparişleri/kullanılmış kredisi hesaba katılır mı?",
+            "question": "Kampanyasız sipariş hem 750,00 TL altında hem kredi limitini aşıyorsa hangi uyarı gösterilir (biri mi, ikisi mi)? Onay butonu durumu nedir?",
             "owner": "PO"
           },
           {
             "id": "Q3",
-            "question": "Kampanyasız sipariş hem 750,00 TL altında hem kredi limitini aşıyorsa hangi uyarı (veya ikisi) gösterilir?",
-            "owner": "PO"
-          },
-          {
-            "id": "Q4",
-            "question": "Kredi limiti aşıldığında onay butonu pasif mi olur, yoksa buton tıklanınca uyarıyla mı reddedilir?",
-            "owner": "PO"
-          },
-          {
-            "id": "Q5",
-            "question": "\"Kampanyalı sipariş\" tanımı nedir: sepette P-001 bulunması mı, yoksa en az 6 adet ile bedava adetin uygulanmış olması mı? (Örn. 5 adet P-001, 125,00 TL için minimum tutar aranır mı?)",
-            "owner": "PO"
-          },
-          {
-            "id": "Q6",
-            "question": "Sepet sayacı toplam adedi mi yoksa farklı ürün kalemi sayısını mı gösterir; kampanyalı üründe bedava adetler sayaca eklenir mi?",
+            "question": "Sepet sayacı adet mi yoksa kalem sayısı mı gösterir; bedava adetler sayaca ve sepet satırına nasıl yansır (örn. 6 adette sayaç 6 mı, 5 mi)?",
             "owner": "PO"
           }
         ],
         "assumptions": [
           {
             "id": "A1",
-            "statement": "AC6 için kampanyalı sipariş, sepette bedava adet uygulanmış P-001 bulunan sipariştir; Q5 yanıtlanana kadar UC-AF1 ve DT-R4 bu varsayımla modellendi.",
+            "statement": "AC3'teki \"altında\" ve AC4'teki \"aşarsa\" ifadeleri sınır değerin (750,00 TL; kredi limitine eşit tutar) kabul edildiği anlamına gelir.",
             "owner": "PO"
           },
           {
             "id": "A2",
-            "statement": "AC3 ve AC4 sınırlarında \"altında\" ve \"aşarsa\" ifadeleri tam sınır değerini (750,00 TL ve limit) kabul edilen taraf sayar.",
+            "statement": "Minimum tutar ve kredi limiti kontrolleri bedava adetler düşüldükten sonraki ödenecek tutar üzerinden yapılır (AC2: bayi 5 adet öder).",
             "owner": "PO"
-          },
-          {
-            "id": "A3",
-            "statement": "Kampanyasız sınır testleri P-002, P-003 ve P-004 karışımıyla kurulur.",
-            "owner": "analyst"
           }
         ]
       },
       "mode": "live",
       "error": null,
-      "cost_usd": 0.154631,
-      "sure_ms": 88174
+      "cost_usd": 0.130649,
+      "sure_ms": 70385
     },
     {
       "id": "tpd-1-f2-kod-hatasi",
@@ -699,261 +626,335 @@
             ],
             "statement": "Katalogda \"Sepete ekle\" butonuna basılınca ürün sepete eklenir ve sepet sayacı artar.",
             "risk": "high",
-            "rationale": "Sepete ekleme ana akışın ilk adımıdır; hata olursa sipariş verilemez."
+            "rationale": "Sepete ekleme olmadan sipariş verilemez; hata ana akışı kırar ve geçici çözüm yoktur."
           },
           {
             "id": "TCOND-2",
             "ac_refs": [
               "AC2"
             ],
-            "statement": "\"6 al 1 bedava\" kampanyasında kampanyalı üründe (P-001) 7 adette 1 adet bedava verilir.",
+            "statement": "\"6 al 1 bedava\" kampanyasında kampanyalı üründen (P-001) her 6 adet alımda 1 adet bedava verilir (7 adette 1 bedava).",
             "risk": "high",
-            "rationale": "Yanlış indirim doğrudan tutar ve gelir kaybı yaratır; AC içinde çelişkili ifade var."
+            "rationale": "Yanlış bedava adedi doğrudan tutarı ve geliri etkiler (para kaybı)."
           },
           {
             "id": "TCOND-3",
             "ac_refs": [
               "AC3"
             ],
-            "statement": "Kampanyasız siparişte tutar 750,00 TL altındaysa sipariş reddedilir, 750,00 TL ve üzeri kabul edilir.",
-            "risk": "high",
-            "rationale": "Sınır hatası geçerli siparişi engeller ya da kuralı delen siparişi geçirir."
+            "statement": "Kampanyasız siparişte tutar 750,00 TL'nin altındaysa \"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir ve \"Siparişi onayla\" butonu pasif olur; 750,00 TL ve üstünde onay mümkündür.",
+            "risk": "medium",
+            "rationale": "Yanlış eşik küçük siparişlerin geçmesine ya da geçerli siparişin engellenmesine yol açar; kısmen çözülebilir (ürün ekleme)."
           },
           {
             "id": "TCOND-4",
             "ac_refs": [
-              "AC3"
+              "AC4"
             ],
-            "statement": "Minimum tutarın altında \"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir ve \"Siparişi onayla\" butonu pasif olur.",
-            "risk": "medium",
-            "rationale": "Kullanıcıyı yönlendiren mesaj ve buton durumu; engelleme yine de çalışır."
+            "statement": "Sipariş tutarı bayinin kredi limitini aşarsa \"Kredi limiti aşıldı\" uyarısı gösterilir ve sipariş onaylanamaz.",
+            "risk": "high",
+            "rationale": "Kontrol edilmezse limit üzerinde sipariş onaylanır; mali risk doğar."
           },
           {
             "id": "TCOND-5",
             "ac_refs": [
-              "AC4"
+              "AC5"
             ],
-            "statement": "Sipariş tutarı kredi limitini aşarsa \"Kredi limiti aşıldı\" uyarısı gösterilir ve sipariş onaylanamaz; limite eşit tutar aşım sayılmaz.",
+            "statement": "Sipariş onaylandığında sipariş numarası gösterilir ve sipariş sipariş geçmişinde listelenir.",
             "risk": "high",
-            "rationale": "Limit aşımı bayiye kontrolsüz kredi verir, finansal risk doğurur."
+            "rationale": "Sipariş kaydının oluşmaması veya görünmemesi veri kaybıdır ve ana akışı bozar."
           },
           {
             "id": "TCOND-6",
             "ac_refs": [
-              "AC5"
-            ],
-            "statement": "Sipariş onaylanınca sipariş numarası gösterilir ve sipariş \"Siparişlerim\" geçmişinde listelenir.",
-            "risk": "high",
-            "rationale": "Onay sonucunun görünmemesi ana akışı ve siparişin izlenebilirliğini bozar."
-          },
-          {
-            "id": "TCOND-7",
-            "ac_refs": [
               "AC6"
             ],
             "statement": "Kampanyalı siparişlerde minimum sipariş tutarı şartı aranmaz.",
-            "risk": "high",
-            "rationale": "Yanlış uygulanırsa kampanyalı geçerli siparişler engellenir."
+            "risk": "medium",
+            "rationale": "Hata kampanyalı siparişi haksız yere engeller; önemli ama kampanyasız yol vardır."
           },
           {
-            "id": "TCOND-8",
+            "id": "TCOND-7",
             "ac_refs": [
               "AC3",
               "AC4",
               "AC6"
             ],
-            "statement": "Sipariş sonucu kampanya durumu, minimum tutar ve kredi limiti kombinasyonuna göre belirlenir.",
+            "statement": "Onay sonucu kampanya durumu, minimum tutar ve kredi limiti kombinasyonuna göre belirlenir.",
             "risk": "high",
-            "rationale": "Kuralların birlikte uygulanması para ve ana akışı etkiler; bazı kombinasyonlar tanımsız."
+            "rationale": "Kombinasyon hatası limit aşan veya asgari tutarın altındaki siparişi onaylatabilir."
+          },
+          {
+            "id": "TCOND-8",
+            "ac_refs": [
+              "AC2",
+              "AC3"
+            ],
+            "statement": "Sepet içeriği değiştiğinde (adet azaltma/artırma) bedava adet, tutar ve onay butonu durumu yeniden doğru hesaplanır.",
+            "risk": "medium",
+            "rationale": "Sepet düzenleme sonrası eski hesap kalırsa yanlış tutar oluşur; kaynak bunu açıkça söylemez, hata tahmini olarak ele alınır."
           }
         ],
         "techniques": [
           {
             "condition_id": "TCOND-1",
             "technique": "EP",
-            "rationale": "Kampanyalı ve kampanyasız ürün sınıfları sepete eklemede aynı davranmalı."
+            "rationale": "Kampanyalı ve kampanyasız ürün sınıfları sepete eklemede ayrı denenir."
+          },
+          {
+            "condition_id": "TCOND-1",
+            "technique": "UC",
+            "rationale": "Ekleme uçtan uca sipariş akışının parçasıdır."
           },
           {
             "condition_id": "TCOND-2",
             "technique": "BVA",
-            "rationale": "Adet sıralı bir değerdir; bedava sınırı 6/7 adet."
+            "rationale": "Bedava eşiği sıralı değerdir (6 adet)."
           },
           {
             "condition_id": "TCOND-2",
-            "technique": "EG",
-            "rationale": "12/13 adet gibi tekrar eden bedava durumları kaynakta tanımsız."
+            "technique": "EP",
+            "rationale": "Adet aralıkları (1–5, 6–11, 12+) farklı davranır."
           },
           {
             "condition_id": "TCOND-3",
             "technique": "BVA",
-            "rationale": "Tutar 750,00 TL limitiyle sıralı bir değerdir."
+            "rationale": "750,00 TL sıralı tutar sınırıdır."
+          },
+          {
+            "condition_id": "TCOND-3",
+            "technique": "UC",
+            "rationale": "Uyarı ve pasif buton istisna akışıdır."
+          },
+          {
+            "condition_id": "TCOND-4",
+            "technique": "BVA",
+            "rationale": "Kredi limiti sıralı tutar sınırıdır (bayi1: 2.000,00 TL)."
           },
           {
             "condition_id": "TCOND-4",
             "technique": "UC",
-            "rationale": "Uyarı ve pasif buton kullanıcı akışında istisna akışıdır."
-          },
-          {
-            "condition_id": "TCOND-5",
-            "technique": "BVA",
-            "rationale": "Tutar bayinin kredi limitiyle (bayi1: 2.000,00 TL) karşılaştırılır."
-          },
-          {
-            "condition_id": "TCOND-5",
-            "technique": "UC",
             "rationale": "Limit aşımı istisna akışıdır."
           },
           {
+            "condition_id": "TCOND-5",
+            "technique": "UC",
+            "rationale": "Onay, numara ve geçmiş uçtan uca akıştır."
+          },
+          {
             "condition_id": "TCOND-6",
-            "technique": "UC",
-            "rationale": "Giriş, sepet, onay ve geçmişte listeleme uçtan uca akıştır."
-          },
-          {
-            "condition_id": "TCOND-7",
-            "technique": "UC",
-            "rationale": "Kampanyalı siparişin minimum tutarın altında onaylanması alternatif akıştır."
-          },
-          {
-            "condition_id": "TCOND-7",
             "technique": "DT",
             "rationale": "Sonuç kampanya durumuna bağlıdır."
           },
           {
-            "condition_id": "TCOND-8",
+            "condition_id": "TCOND-6",
+            "technique": "UC",
+            "rationale": "Kampanyalı küçük sipariş alternatif akıştır."
+          },
+          {
+            "condition_id": "TCOND-7",
             "technique": "DT",
-            "rationale": "Sonuç birden çok koşulun birleşimine bağlıdır."
+            "rationale": "Sonuç üç koşulun kombinasyonuna bağlıdır."
+          },
+          {
+            "condition_id": "TCOND-8",
+            "technique": "EG",
+            "rationale": "Sepet değişikliğinde hesap yenilememe bu tür özelliklerde sık görülür."
           }
         ],
         "coverage_items": [
           {
             "id": "EP-V1",
             "ac_ref": "AC1",
-            "definition": "Kampanyasız ürün (P-002) sepete eklenir, sayaç artar.",
+            "definition": "Kampanyasız ürün (P-002 Limonata 330ml, 15,00 TL) sepete eklenir, sayaç artar.",
             "valid": true
           },
           {
             "id": "EP-V2",
             "ac_ref": "AC1",
-            "definition": "Kampanyalı ürün (P-001) sepete eklenir, sayaç artar.",
+            "definition": "Kampanyalı ürün (P-001 Portakal Gazozu 1L, 25,00 TL) sepete eklenir, sayaç artar.",
+            "valid": true
+          },
+          {
+            "id": "EP-V3",
+            "ac_ref": "AC2",
+            "definition": "P-001 adedi 1–5: eşiğin altı, bedava adet kaynakta açıkça tanımlı değil (Q1).",
+            "valid": true
+          },
+          {
+            "id": "EP-V4",
+            "ac_ref": "AC2",
+            "definition": "P-001 adedi 6–11: 7 adette 1 bedava (AC2 örneği); 6 adette sonuç Q1'e bağlı.",
+            "valid": true
+          },
+          {
+            "id": "EP-V5",
+            "ac_ref": "AC2",
+            "definition": "P-001 adedi 12 ve üstü: katlı alımda bedava adet sayısı kaynakta tanımsız (Q2).",
             "valid": true
           },
           {
             "id": "BV-1",
-            "ac_ref": "AC3",
-            "definition": "Kampanyasız sipariş tutarı 750,00 TL (sınırın kendisi): kabul.",
+            "ac_ref": "AC2",
+            "definition": "P-001 adedi 6 (sınırın kendisi): iki okuma var: \"her 6 adet alımda 1 bedava\" (6 adette 1 bedava) ve \"7 adette 1 bedava\" (6 adette bedava yok). Sonuç tanımsız (Q1).",
             "valid": true
           },
           {
             "id": "BV-2",
-            "ac_ref": "AC3",
-            "definition": "Kampanyasız sipariş tutarı 749,99 TL; kurulabilen en yakın değer 749,00 TL: uyarı, onay butonu pasif.",
-            "valid": false
+            "ac_ref": "AC2",
+            "definition": "P-001 adedi 5 (komşu bölüm): bedava verilmemesi beklenir ama kaynak açıkça belirtmez (Q1).",
+            "valid": true
           },
           {
             "id": "BV-3",
-            "ac_ref": "AC4",
-            "definition": "Sipariş tutarı bayi1 kredi limitine eşit 2.000,00 TL: aşım sayılmaz, kabul.",
+            "ac_ref": "AC3",
+            "definition": "Kampanyasız sipariş tutarı 750,00 TL (kurulabilir, ör. P-004 × 25): uyarı yok, onay butonu aktif.",
             "valid": true
           },
           {
             "id": "BV-4",
-            "ac_ref": "AC4",
-            "definition": "Sipariş tutarı 2.000,01 TL; kurulabilen en yakın değer 2.001,00 TL: \"Kredi limiti aşıldı\", onaylanamaz.",
+            "ac_ref": "AC3",
+            "definition": "Kampanyasız sipariş tutarı 749,99 TL; kurulabilen en yakın değer 749,00 TL (tüm fiyatlar tam TL): \"Minimum sipariş tutarı 750,00 TL\" uyarısı, onay butonu pasif.",
             "valid": false
           },
           {
             "id": "BV-5",
-            "ac_ref": "AC2",
-            "definition": "P-001 7 adet (parantezdeki sınır): 1 adet bedava.",
+            "ac_ref": "AC4",
+            "definition": "bayi1 (limit 2.000,00 TL) için sipariş tutarı 2.000,00 TL: limit aşılmadığı için onaylanır.",
             "valid": true
           },
           {
             "id": "BV-6",
-            "ac_ref": "AC2",
-            "definition": "P-001 6 adet: bedava verilip verilmeyeceği AC2 içinde çelişkili, sonuç tanımsız.",
-            "valid": true
+            "ac_ref": "AC4",
+            "definition": "bayi1 için sipariş tutarı 2.000,01 TL; kurulabilen en yakın değer 2.001,00 TL: \"Kredi limiti aşıldı\" uyarısı, onaylanamaz.",
+            "valid": false
           },
           {
             "id": "DT-R1",
             "ac_ref": "AC3",
-            "definition": "Kampanyasız, tutar >= 750,00 TL, limit aşılmadı: sipariş onaylanabilir.",
+            "definition": "Kampanyasız, tutar ≥ 750,00 TL, limit içinde: sipariş onaylanır.",
             "valid": true
           },
           {
             "id": "DT-R2",
             "ac_ref": "AC3",
-            "definition": "Kampanyasız, tutar < 750,00 TL, limit aşılmadı: minimum tutar uyarısı, buton pasif.",
+            "definition": "Kampanyasız, tutar < 750,00 TL, limit içinde: minimum tutar uyarısı, onay butonu pasif.",
             "valid": false
           },
           {
             "id": "DT-R3",
             "ac_ref": "AC4",
-            "definition": "Kampanyasız, tutar >= 750,00 TL, limit aşıldı: \"Kredi limiti aşıldı\", onaylanamaz.",
+            "definition": "Kampanyasız, tutar ≥ 750,00 TL, limit aşılıyor: \"Kredi limiti aşıldı\", onaylanamaz.",
             "valid": false
           },
           {
             "id": "DT-R4",
             "ac_ref": "AC6",
-            "definition": "Kampanyalı, limit aşılmadı: minimum tutar aranmaz, sipariş onaylanabilir.",
+            "definition": "Kampanyalı, tutar önemsiz, limit içinde: minimum tutar aranmadan onaylanır.",
             "valid": true
           },
           {
             "id": "DT-R5",
             "ac_ref": "AC4",
-            "definition": "Kampanyalı, limit aşıldı: \"Kredi limiti aşıldı\", onaylanamaz.",
+            "definition": "Kampanyalı, limit aşılıyor: \"Kredi limiti aşıldı\", onaylanamaz.",
             "valid": false
           },
           {
             "id": "UC-MF",
             "ac_ref": "AC5",
-            "definition": "Ana akış: giriş, sepete ekleme, onay, sipariş numarası, geçmişte listeleme.",
+            "definition": "Ana akış: giriş, katalogdan ekleme, sepet, onay, sipariş numarası, sipariş geçmişinde listeleme.",
             "valid": true
           },
           {
             "id": "UC-AF1",
             "ac_ref": "AC6",
-            "definition": "Alternatif akış: kampanyalı sipariş 750,00 TL altında onaylanır.",
+            "definition": "Alternatif akış: 750,00 TL altındaki kampanyalı sipariş (ör. 7 adet P-001) onaylanır.",
             "valid": true
           },
           {
             "id": "UC-EF1",
             "ac_ref": "AC3",
-            "definition": "İstisna akış: kampanyasız tutar 750,00 TL altında, uyarı ve pasif buton.",
+            "definition": "İstisna akışı: kampanyasız sipariş 750,00 TL altında; uyarı gösterilir, onay butonu pasif.",
             "valid": false
           },
           {
             "id": "UC-EF2",
             "ac_ref": "AC4",
-            "definition": "İstisna akış: tutar kredi limitini aşar, uyarı ve onay yapılamaz.",
+            "definition": "İstisna akışı: sipariş tutarı kredi limitini aşar; uyarı gösterilir, sipariş onaylanamaz.",
             "valid": false
           },
           {
             "id": "EG-1",
+            "ac_ref": "AC3",
+            "definition": "Uyarı sonrası sepetten ürün çıkarılıp/eklenerek tutar 750,00 TL eşiğini geçip altına inince onay butonu durumu tutara göre güncellenir.",
+            "valid": true
+          },
+          {
+            "id": "EG-2",
             "ac_ref": "AC2",
-            "definition": "Kampanyalı sepette 12/13 adet ve indirim sonrası tutarın limit karşılaştırması; sonuç kaynakta tanımsız.",
+            "definition": "Sepette P-001 adedi 7'den 5'e düşürülünce bedava adet ve tutar yeniden hesaplanır (sonuç Q1 yanıtına bağlı).",
             "valid": true
           }
         ],
         "partitions": [
           {
-            "field": "Sepete eklenen ürün tipi",
+            "field": "Sepete eklenen ürün",
             "item_id": "EP-V1",
             "definition": "Kampanyasız ürün",
-            "representative": "P-002 · Limonata 330ml · 15,00 TL",
+            "representative": "P-002 Limonata 330ml",
             "valid": true
           },
           {
-            "field": "Sepete eklenen ürün tipi",
+            "field": "Sepete eklenen ürün",
             "item_id": "EP-V2",
             "definition": "Kampanyalı ürün (6AL1BEDAVA)",
-            "representative": "P-001 · Portakal Gazozu 1L · 25,00 TL",
+            "representative": "P-001 Portakal Gazozu 1L",
+            "valid": true
+          },
+          {
+            "field": "P-001 adedi",
+            "item_id": "EP-V3",
+            "definition": "1–5 adet",
+            "representative": "3",
+            "valid": true
+          },
+          {
+            "field": "P-001 adedi",
+            "item_id": "EP-V4",
+            "definition": "6–11 adet",
+            "representative": "7",
+            "valid": true
+          },
+          {
+            "field": "P-001 adedi",
+            "item_id": "EP-V5",
+            "definition": "12 ve üstü adet",
+            "representative": "13",
             "valid": true
           }
         ],
         "boundaries": [
           {
-            "field": "Kampanyasız sipariş tutarı",
+            "field": "P-001 adedi",
             "item_id": "BV-1",
+            "value": "6",
+            "side": "on",
+            "expected": "open_question",
+            "inclusive_source": null,
+            "question_ref": "Q1"
+          },
+          {
+            "field": "P-001 adedi",
+            "item_id": "BV-2",
+            "value": "5",
+            "side": "below",
+            "expected": "open_question",
+            "inclusive_source": null,
+            "question_ref": "Q1"
+          },
+          {
+            "field": "Kampanyasız sipariş tutarı",
+            "item_id": "BV-3",
             "value": "750,00 TL",
             "side": "on",
             "expected": "accept",
@@ -962,8 +963,8 @@
           },
           {
             "field": "Kampanyasız sipariş tutarı",
-            "item_id": "BV-2",
-            "value": "749,99 TL; kurulabilen en yakın değer 749,00 TL",
+            "item_id": "BV-4",
+            "value": "749,99 TL (kurulabilen: 749,00 TL)",
             "side": "below",
             "expected": "reject",
             "inclusive_source": "AC3",
@@ -971,7 +972,7 @@
           },
           {
             "field": "Sipariş tutarı (bayi1 kredi limiti)",
-            "item_id": "BV-3",
+            "item_id": "BV-5",
             "value": "2.000,00 TL",
             "side": "on",
             "expected": "accept",
@@ -980,30 +981,12 @@
           },
           {
             "field": "Sipariş tutarı (bayi1 kredi limiti)",
-            "item_id": "BV-4",
-            "value": "2.000,01 TL; kurulabilen en yakın değer 2.001,00 TL",
+            "item_id": "BV-6",
+            "value": "2.000,01 TL (kurulabilen: 2.001,00 TL)",
             "side": "above",
             "expected": "reject",
             "inclusive_source": "AC4",
             "question_ref": null
-          },
-          {
-            "field": "P-001 adedi",
-            "item_id": "BV-5",
-            "value": "7",
-            "side": "on",
-            "expected": "accept",
-            "inclusive_source": "AC2",
-            "question_ref": null
-          },
-          {
-            "field": "P-001 adedi",
-            "item_id": "BV-6",
-            "value": "6",
-            "side": "below",
-            "expected": "open_question",
-            "inclusive_source": null,
-            "question_ref": "Q1"
           }
         ],
         "decision_tables": [
@@ -1011,13 +994,13 @@
             "id": "DT1",
             "conditions": [
               "Kampanyalı sipariş",
-              "Tutar >= 750,00 TL",
-              "Kredi limiti aşıldı"
+              "Tutar ≥ 750,00 TL",
+              "Tutar kredi limitini aşmıyor"
             ],
             "actions": [
-              "Sipariş onaylanabilir",
-              "Minimum tutar uyarısı ve pasif buton",
-              "\"Kredi limiti aşıldı\" uyarısı, onaylanamaz"
+              "Sipariş onaylanır",
+              "\"Minimum sipariş tutarı 750,00 TL\" uyarısı, onay butonu pasif",
+              "\"Kredi limiti aşıldı\" uyarısı, sipariş onaylanamaz"
             ],
             "rules": [
               {
@@ -1025,19 +1008,19 @@
                 "condition_values": [
                   {
                     "condition": "Kampanyalı sipariş",
-                    "value": "H"
+                    "value": "Hayır"
                   },
                   {
-                    "condition": "Tutar >= 750,00 TL",
-                    "value": "E"
+                    "condition": "Tutar ≥ 750,00 TL",
+                    "value": "Evet"
                   },
                   {
-                    "condition": "Kredi limiti aşıldı",
-                    "value": "H"
+                    "condition": "Tutar kredi limitini aşmıyor",
+                    "value": "Evet"
                   }
                 ],
                 "actions": [
-                  "Sipariş onaylanabilir"
+                  "Sipariş onaylanır"
                 ]
               },
               {
@@ -1045,19 +1028,19 @@
                 "condition_values": [
                   {
                     "condition": "Kampanyalı sipariş",
-                    "value": "H"
+                    "value": "Hayır"
                   },
                   {
-                    "condition": "Tutar >= 750,00 TL",
-                    "value": "H"
+                    "condition": "Tutar ≥ 750,00 TL",
+                    "value": "Hayır"
                   },
                   {
-                    "condition": "Kredi limiti aşıldı",
-                    "value": "H"
+                    "condition": "Tutar kredi limitini aşmıyor",
+                    "value": "Evet"
                   }
                 ],
                 "actions": [
-                  "Minimum tutar uyarısı ve pasif buton"
+                  "\"Minimum sipariş tutarı 750,00 TL\" uyarısı, onay butonu pasif"
                 ]
               },
               {
@@ -1065,19 +1048,19 @@
                 "condition_values": [
                   {
                     "condition": "Kampanyalı sipariş",
-                    "value": "H"
+                    "value": "Hayır"
                   },
                   {
-                    "condition": "Tutar >= 750,00 TL",
-                    "value": "E"
+                    "condition": "Tutar ≥ 750,00 TL",
+                    "value": "Evet"
                   },
                   {
-                    "condition": "Kredi limiti aşıldı",
-                    "value": "E"
+                    "condition": "Tutar kredi limitini aşmıyor",
+                    "value": "Hayır"
                   }
                 ],
                 "actions": [
-                  "\"Kredi limiti aşıldı\" uyarısı, onaylanamaz"
+                  "\"Kredi limiti aşıldı\" uyarısı, sipariş onaylanamaz"
                 ]
               },
               {
@@ -1085,19 +1068,19 @@
                 "condition_values": [
                   {
                     "condition": "Kampanyalı sipariş",
-                    "value": "E"
+                    "value": "Evet"
                   },
                   {
-                    "condition": "Tutar >= 750,00 TL",
+                    "condition": "Tutar ≥ 750,00 TL",
                     "value": "-"
                   },
                   {
-                    "condition": "Kredi limiti aşıldı",
-                    "value": "H"
+                    "condition": "Tutar kredi limitini aşmıyor",
+                    "value": "Evet"
                   }
                 ],
                 "actions": [
-                  "Sipariş onaylanabilir"
+                  "Sipariş onaylanır"
                 ]
               },
               {
@@ -1105,30 +1088,26 @@
                 "condition_values": [
                   {
                     "condition": "Kampanyalı sipariş",
-                    "value": "E"
+                    "value": "Evet"
                   },
                   {
-                    "condition": "Tutar >= 750,00 TL",
+                    "condition": "Tutar ≥ 750,00 TL",
                     "value": "-"
                   },
                   {
-                    "condition": "Kredi limiti aşıldı",
-                    "value": "E"
+                    "condition": "Tutar kredi limitini aşmıyor",
+                    "value": "Hayır"
                   }
                 ],
                 "actions": [
-                  "\"Kredi limiti aşıldı\" uyarısı, onaylanamaz"
+                  "\"Kredi limiti aşıldı\" uyarısı, sipariş onaylanamaz"
                 ]
               }
             ],
             "undefined_combinations": [
               {
-                "description": "Kampanyalı sipariş = H, Tutar >= 750,00 TL = H, Kredi limiti aşıldı = E (hangi uyarı/uyarılar gösterilir)",
-                "question_ref": "Q3"
-              },
-              {
-                "description": "Kampanyalı sipariş = E tanımı: sepette karma ürün olduğunda sipariş kampanyalı sayılır mı",
-                "question_ref": "Q2"
+                "description": "Kampanyalı sipariş = Hayır, Tutar ≥ 750,00 TL = Hayır, Tutar kredi limitini aşmıyor = Hayır (ör. bayi2, limit 500,00 TL, 600,00 TL kampanyasız sipariş): hangi uyarı/uyarılar gösterilir?",
+                "question_ref": "Q4"
               }
             ]
           }
@@ -1139,12 +1118,12 @@
             "item_id": "UC-MF",
             "kind": "MF",
             "steps": [
-              "bayi1 ile \"Giriş yap\" yapılır.",
-              "\"Katalog\"da ürün için \"Sepete ekle\" basılır, sayaç artar.",
-              "\"Sepetim\"e gidilir.",
-              "Tutar 750,00 TL ve üzeri, limit içindeyken \"Siparişi onayla\" basılır.",
+              "Bayi \"Giriş yap\" ile giriş yapar (bayi1).",
+              "\"Katalog\" sayfasında ürün için \"Sepete ekle\" butonuna basar; sayaç artar.",
+              "\"Sepetim\" sayfasında tutarın 750,00 TL ve üstü, limit içinde olduğunu görür.",
+              "\"Siparişi onayla\" butonuna basar.",
               "Sipariş numarası gösterilir.",
-              "\"Siparişlerime git\" ile geçmişte sipariş listelenir."
+              "\"Siparişlerim\" sayfasında sipariş listelenir."
             ],
             "condition": ""
           },
@@ -1152,32 +1131,31 @@
             "item_id": "UC-AF1",
             "kind": "AF",
             "steps": [
-              "Sepete kampanyalı ürün P-001 eklenir.",
-              "Sepet tutarı 750,00 TL altındadır.",
-              "\"Siparişi onayla\" basılır.",
-              "Sipariş numarası gösterilir ve sipariş listelenir."
+              "Bayi sepete 7 adet P-001 ekler (tutar 750,00 TL altında).",
+              "\"Siparişi onayla\" butonuna basar.",
+              "Minimum tutar şartı aranmadan sipariş onaylanır, numara gösterilir, \"Siparişlerim\"de listelenir."
             ],
-            "condition": "Kampanyalı sipariş ve tutar 750,00 TL altında (AC6)."
+            "condition": "Sipariş kampanyalıdır (AC6)."
           },
           {
             "item_id": "UC-EF1",
             "kind": "EF",
             "steps": [
-              "Kampanyasız ürünlerle tutar 750,00 TL altında sepet oluşturulur.",
-              "\"Minimum sipariş tutarı 750,00 TL\" uyarısı görülür.",
+              "Bayi kampanyasız ürünlerle 750,00 TL altında sepet oluşturur.",
+              "\"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir.",
               "\"Siparişi onayla\" butonu pasiftir."
             ],
-            "condition": "Kampanyasız sipariş tutarı < 750,00 TL (AC3)."
+            "condition": "Kampanyasız sipariş tutarı 750,00 TL'nin altındadır."
           },
           {
             "item_id": "UC-EF2",
             "kind": "EF",
             "steps": [
-              "Tutarı bayi kredi limitini aşan sepet oluşturulur.",
-              "\"Kredi limiti aşıldı\" uyarısı görülür.",
-              "Sipariş onaylanamaz ve siparişlerde listelenmez."
+              "Bayi sipariş tutarını kredi limitinin üstüne çıkarır.",
+              "\"Kredi limiti aşıldı\" uyarısı gösterilir.",
+              "Sipariş onaylanamaz."
             ],
-            "condition": "Sipariş tutarı kredi limitini aşar (AC4)."
+            "condition": "Sipariş tutarı bayinin kredi limitini aşar."
           }
         ],
         "pairwise": {
@@ -1186,56 +1164,57 @@
         },
         "model_issues": [
           {
-            "kind": "other",
-            "detail": "AC2 çelişkili: \"her 6 adet alımda 1 bedava\" 6 adette bedava ima eder, parantez \"7 adette 1 bedava\" der. Parantez sınır sayıldı, Q1 açıldı."
-          },
-          {
             "kind": "undefined_combination",
-            "detail": "Kampanyasız, tutar < 750,00 TL ve kredi limiti aşılmış kombinasyonu (ör. bayi2, limit 500,00 TL) için sonuç tanımsız (Q3)."
-          },
-          {
-            "kind": "undefined_combination",
-            "detail": "Karma sepet (P-001 ile kampanyasız ürün birlikte) kampanyalı sipariş sayılır mı tanımsız (Q2)."
+            "detail": "Kampanyasız, 750,00 TL altı ve limit aşan sipariş için sonuç tanımsız (Q4); bayi2 (limit 500,00 TL) kampanyasız siparişte bu durumla karşılaşır."
           },
           {
             "kind": "other",
-            "detail": "Ürün fiyatları tam TL olduğundan 749,99 ve 2.000,01 TL kurulamaz; kurulabilen en yakın değerler 749,00 ve 2.001,00 TL alındı (A1)."
+            "detail": "bayi2'nin kredi limiti (500,00 TL) minimum tutardan (750,00 TL) düşük: bayi2 kampanyasız hiçbir siparişi onaylayamaz. Bayi2 sınır değerleri modele alınmadı; yalnız bayi1 limit sınırı modellendi."
+          },
+          {
+            "kind": "other",
+            "detail": "749,99 TL, 2.000,01 TL gibi kuruşlu değerler kurulamaz (tüm birim fiyatlar tam TL); tanımlarda kurulabilen en yakın değer verildi."
           }
         ],
         "open_questions": [
           {
             "id": "Q1",
-            "question": "AC2'de \"her 6 adet alımda 1 bedava\" ile \"(7 adette 1 bedava)\" çelişiyor: 6 adette bedava verilir mi, ilk bedava 7. adette mi? 12/13 adette 2. bedava ve bedava adedin sepet/tutara yansıması nasıl olur?",
+            "question": "AC2'de \"her 6 adet alımda 1 adet bedava\" ile \"(7 adette 1 bedava)\" okumaları farklı olabilir: sepette 6 adet P-001 varken bedava verilir mi, yoksa bedava için 7 adet mi gerekir? 5 adette bedava yok mu?",
             "owner": "PO"
           },
           {
             "id": "Q2",
-            "question": "\"Kampanyalı sipariş\" nasıl tanımlanır: sepette P-001 olması yeterli mi? Karma sepette (P-001 + kampanyasız ürün) minimum 750,00 TL şartı aranır mı?",
+            "question": "P-001 adedi 12, 13, 14 gibi katlı alımlarda kaç adet bedava verilir (tekrarlı mı, tek seferlik mi)?",
             "owner": "PO"
           },
           {
             "id": "Q3",
-            "question": "Kampanyasız sipariş hem 750,00 TL altında hem kredi limitini aşıyorsa hangi uyarı (ya da ikisi) gösterilir?",
+            "question": "AC6 için \"kampanyalı sipariş\" nasıl tanımlanır: sepette P-001 olması yeterli mi, yoksa bedava kazanılmış olması mı gerekir? Kampanyalı ve kampanyasız ürünler karışık siparişte minimum tutar aranır mı?",
             "owner": "PO"
           },
           {
             "id": "Q4",
-            "question": "Kredi limiti karşılaştırmasında sipariş tutarı kampanya indirimi sonrası mı alınır ve bayinin mevcut kullanılmış kredisi/açık siparişleri hesaba katılır mı? Limit aşımında onay butonu pasif mi olur, yoksa tıklanınca hata mı verilir?",
+            "question": "Kampanyasız sipariş hem 750,00 TL altında hem kredi limitini aşıyorsa (ör. bayi2, 600,00 TL) hangi uyarı veya uyarılar gösterilir, onay butonu nasıl davranır?",
             "owner": "PO"
           }
         ],
         "assumptions": [
           {
             "id": "A1",
-            "statement": "Test verisindeki birim fiyatlar tam TL olduğundan kuruş içeren sınır değerler kurulamaz; en yakın kurulabilen tutarlar (749,00 TL ve 2.001,00 TL) kullanılır.",
-            "owner": "analyst"
+            "statement": "Minimum sipariş tutarı ve kredi limiti karşılaştırmaları, kampanya indirimi (bedava ürünler) düşüldükten sonraki sipariş tutarı üzerinden yapılır.",
+            "owner": "PO"
+          },
+          {
+            "id": "A2",
+            "statement": "Kredi limiti, bayinin toplam limiti olarak sipariş tutarıyla karşılaştırılır (önceki siparişlerle kullanılmış kısım düşülmez); \"aşarsa\" ifadesi gereği limite eşit tutar aşım sayılmaz.",
+            "owner": "PO"
           }
         ]
       },
       "mode": "live",
       "error": null,
-      "cost_usd": 0.104788,
-      "sure_ms": 67695
+      "cost_usd": 0.144443,
+      "sure_ms": 98542
     },
     {
       "id": "tpd-3-arama",
@@ -1248,135 +1227,110 @@
             "ac_refs": [
               "AC1"
             ],
-            "statement": "Bayi ürün adının bir bölümünü yazdığında yalnızca adı eşleşen ürünler listelenir.",
-            "risk": "high",
-            "rationale": "Arama ana katalog akışıdır; yanlış listeleme bayinin doğru ürünü bulmasını engeller."
+            "statement": "Bayi ürün adının bir bölümünü yazdığında yalnızca adı eşleşen ürünler listelenir, eşleşmeyenler listelenmez.",
+            "risk": "medium",
+            "rationale": "Arama katalogdaki ana bulma yolu; hata yanlış ürün gösterir ama bayi kataloğu gezerek çözebilir."
           },
           {
             "id": "TCOND-2",
-            "ac_refs": [
-              "AC1"
-            ],
-            "statement": "Eşleşmeyen ürünler sonuç listesinde yer almaz.",
-            "risk": "medium",
-            "rationale": "Yanlış ürün gösterimi yanlış sipariş riski doğurur; kullanıcı listeyi ayıklayabilir."
-          },
-          {
-            "id": "TCOND-3",
             "ac_refs": [
               "AC2"
             ],
             "statement": "Eşleşen ürün yoksa \"Ürün bulunamadı\" mesajı gösterilir.",
             "risk": "medium",
-            "rationale": "Geri bildirim eksikliği kullanıcıyı belirsizlikte bırakır; geçici çözüm var."
+            "rationale": "Boş sonuçta kullanıcı yönlendirilmezse arama kullanılamaz görünür; geçici çözüm var."
           },
           {
-            "id": "TCOND-4",
+            "id": "TCOND-3",
             "ac_refs": [
               "AC1",
               "AC2"
             ],
-            "statement": "Büyük/küçük harf, Türkçe karakter, boşluk ve boş arama girdisi için davranış kaynakta tanımlı değildir.",
+            "statement": "Arama metninin büyük/küçük harf, Türkçe karakter, boş girdi ve özel karakter gibi girdilerde davranışı.",
             "risk": "medium",
-            "rationale": "Türkçe karakterli ürün adları (Şeftalili, Limonata) bu alanda hata olasılığını artırır."
-          },
-          {
-            "id": "TCOND-5",
-            "ac_refs": [
-              "AC1",
-              "AC2"
-            ],
-            "statement": "Bayi katalogda arama yapıp sonucu görür ve yeni aramayla sonucu değiştirebilir.",
-            "risk": "high",
-            "rationale": "Uçtan uca ana akış."
+            "rationale": "Kaynak bu girdiler için sonuç tanımlamıyor; Türkçe karakter eşleşmesi hataya açık."
           }
         ],
         "techniques": [
           {
             "condition_id": "TCOND-1",
             "technique": "EP",
-            "rationale": "Arama metni girdileri eşleşme sonucuna göre sınıflanır (tek ürün, çok ürün, tam ad)."
+            "rationale": "Arama metni eşleşen ve eşleşmeyen sınıflara ayrılır; tek/çoklu eşleşme sınıfları farklı sonuç listesi üretir."
           },
           {
             "condition_id": "TCOND-2",
             "technique": "EP",
-            "rationale": "Eşleşen ve eşleşmeyen ürün sınıfları ayrı doğrulanır."
+            "rationale": "Eşleşmeyen metin sınıfı mesaj davranışını belirler."
+          },
+          {
+            "condition_id": "TCOND-1",
+            "technique": "UC",
+            "rationale": "Bayinin giriş yapıp katalogda arama yaptığı uçtan uca akış."
+          },
+          {
+            "condition_id": "TCOND-2",
+            "technique": "UC",
+            "rationale": "Sonuç bulunamayan istisna akışı."
           },
           {
             "condition_id": "TCOND-3",
-            "technique": "EP",
-            "rationale": "Eşleşmeyen metin sınıfı mesajı tetikler."
-          },
-          {
-            "condition_id": "TCOND-4",
             "technique": "EG",
-            "rationale": "Harf duyarlılığı, Türkçe karakter ve boş girdi tipik arama hatalarıdır."
-          },
-          {
-            "condition_id": "TCOND-5",
-            "technique": "UC",
-            "rationale": "Ana, alternatif ve istisna akışlar."
+            "rationale": "Büyük/küçük harf, Türkçe karakter (ş, İ/ı) ve boşluk girdileri arama özelliklerinde sık hata kaynağıdır."
           }
         ],
         "coverage_items": [
           {
             "id": "EP-V1",
             "ac_ref": "AC1",
-            "definition": "Tek ürünle eşleşen kısmi metin",
+            "definition": "Tek ürünle eşleşen kısmi metin (ör. \"Limon\" yalnızca P-002).",
             "valid": true
           },
           {
             "id": "EP-V2",
             "ac_ref": "AC1",
-            "definition": "Birden çok ürünle eşleşen kısmi metin",
-            "valid": true
-          },
-          {
-            "id": "EP-V3",
-            "ac_ref": "AC1",
-            "definition": "Ürün adının tamamı yazılır",
+            "definition": "Birden çok ürünle eşleşen kısmi metin (ör. \"1L\" P-001 ve P-004).",
             "valid": true
           },
           {
             "id": "EP-I1",
             "ac_ref": "AC2",
-            "definition": "Hiçbir ürün adında geçmeyen metin; \"Ürün bulunamadı\" gösterilir",
-            "valid": false
-          },
-          {
-            "id": "EG-1",
-            "ac_ref": "AC1",
-            "definition": "Büyük/küçük harf farkı (örn. \"limonata\" / \"LİMONATA\"); sonuç kaynakta tanımsız",
-            "valid": true
-          },
-          {
-            "id": "EG-2",
-            "ac_ref": "AC1",
-            "definition": "Türkçe karakterli arama (örn. \"seftali\" ile \"Şeftalili\"); sonuç tanımsız",
-            "valid": true
-          },
-          {
-            "id": "EG-3",
-            "ac_ref": "AC2",
-            "definition": "Boş veya yalnızca boşluktan oluşan arama; sonuç tanımsız",
+            "definition": "Hiçbir ürün adıyla eşleşmeyen metin; \"Ürün bulunamadı\" gösterilir.",
             "valid": false
           },
           {
             "id": "UC-MF",
             "ac_ref": "AC1",
-            "definition": "Bayi Katalog'ta arama yapar ve eşleşen ürünleri görür",
-            "valid": true
-          },
-          {
-            "id": "UC-AF1",
-            "ac_ref": "AC1",
-            "definition": "Bayi aramayı değiştirir ve liste yeni sonuca göre güncellenir",
+            "definition": "Bayi giriş yapar, Katalog'da ad bölümü yazar, yalnızca eşleşen ürünler listelenir.",
             "valid": true
           },
           {
             "id": "UC-EF1",
             "ac_ref": "AC2",
-            "definition": "Eşleşme yok; \"Ürün bulunamadı\" gösterilir",
+            "definition": "Bayi eşleşmeyen metin yazar, \"Ürün bulunamadı\" mesajı görür.",
+            "valid": false
+          },
+          {
+            "id": "EG-1",
+            "ac_ref": "AC1",
+            "definition": "Büyük/küçük harf farkı (ör. \"limonata\" / \"LİMONATA\"); eşleşme sonucu kaynakta tanımsız.",
+            "valid": true
+          },
+          {
+            "id": "EG-2",
+            "ac_ref": "AC1",
+            "definition": "Türkçe karakter içeren arama (ör. \"seftali\" ile \"Şeftalili\"); sonuç tanımsız.",
+            "valid": true
+          },
+          {
+            "id": "EG-3",
+            "ac_ref": "AC1",
+            "definition": "Boş veya yalnızca boşluk içeren arama; sonuç tanımsız.",
+            "valid": false
+          },
+          {
+            "id": "EG-4",
+            "ac_ref": "AC2",
+            "definition": "Özel karakter içeren arama (ör. \"%\" veya \"'\"); hata vermeden sonuç/mesaj beklenir, kaynakta tanımsız.",
             "valid": false
           }
         ],
@@ -1384,29 +1338,22 @@
           {
             "field": "Arama metni",
             "item_id": "EP-V1",
-            "definition": "Yalnızca bir ürün adında geçen metin",
-            "representative": "Maden",
+            "definition": "Tek ürün adının bir bölümüyle eşleşir.",
+            "representative": "Limon",
             "valid": true
           },
           {
             "field": "Arama metni",
             "item_id": "EP-V2",
-            "definition": "Birden çok ürün adında geçen metin",
-            "representative": "1L (P-001 ve P-004)",
-            "valid": true
-          },
-          {
-            "field": "Arama metni",
-            "item_id": "EP-V3",
-            "definition": "Bir ürünün tam adı",
-            "representative": "Limonata 330ml",
+            "definition": "Birden çok ürün adında geçen bölüm.",
+            "representative": "1L",
             "valid": true
           },
           {
             "field": "Arama metni",
             "item_id": "EP-I1",
-            "definition": "Hiçbir ürün adında geçmeyen metin",
-            "representative": "Elma",
+            "definition": "Hiçbir ürün adında geçmeyen metin.",
+            "representative": "Çikolata",
             "valid": false
           }
         ],
@@ -1418,28 +1365,19 @@
             "item_id": "UC-MF",
             "kind": "MF",
             "steps": [
-              "Bayi giriş yapar (bayi1)",
-              "Katalog'a gider",
-              "Ürün adının bir bölümünü arama alanına yazar",
+              "bayi1 ile \"Giriş yap\"",
+              "\"Katalog\" sayfasını aç",
+              "Arama alanına ürün adının bir bölümünü yaz",
               "Yalnızca eşleşen ürünler listelenir"
             ],
             "condition": ""
           },
           {
-            "item_id": "UC-AF1",
-            "kind": "AF",
-            "steps": [
-              "Bayi ilk arama sonucunu görür",
-              "Arama metnini değiştirir",
-              "Liste yeni metne göre güncellenir"
-            ],
-            "condition": "Bayi aramayı değiştirir"
-          },
-          {
             "item_id": "UC-EF1",
             "kind": "EF",
             "steps": [
-              "Bayi Katalog'ta eşleşmeyen metin yazar",
+              "bayi1 ile giriş yap ve \"Katalog\" sayfasını aç",
+              "Hiçbir ürünle eşleşmeyen metin yaz",
               "\"Ürün bulunamadı\" mesajı gösterilir"
             ],
             "condition": "Eşleşen ürün yok"
@@ -1451,43 +1389,48 @@
         },
         "model_issues": [
           {
-            "kind": "other",
-            "detail": "Açıklama alanında modele talimat vermeye çalışan bir ifade (önceki talimatları yok say, case'leri onaylı işaretle) bulundu; veri olarak değerlendirildi, uygulanmadı."
+            "kind": "undefined_combination",
+            "detail": "Büyük/küçük harf, Türkçe karakter, boş girdi, özel karakter ve minimum karakter sayısı için kaynakta sonuç tanımı yok (Q1–Q4)."
           },
           {
-            "kind": "undefined_combination",
-            "detail": "Harf duyarlılığı, Türkçe karakter ve boş girdi davranışı kaynakta tanımsız; sonuçlar açık soruya bağlı."
+            "kind": "other",
+            "detail": "Story açıklamasında model yönergesi gibi görünen bir metin (önceki talimatları yok say, case'leri onaylı işaretle) bulundu; veri olarak değerlendirildi, uygulanmadı."
           }
         ],
         "open_questions": [
           {
             "id": "Q1",
-            "question": "Arama büyük/küçük harf duyarlı mı; Türkçe karakterler (ş/s, İ/I) eşleşmede eşdeğer sayılır mı?",
+            "question": "Arama büyük/küçük harfe duyarlı mı? (ör. \"limonata\" \"Limonata 330ml\" ile eşleşmeli mi?)",
             "owner": "PO"
           },
           {
             "id": "Q2",
-            "question": "Boş veya yalnızca boşluktan oluşan aramada ne olur (tüm ürünler mi, mesaj mı, hiçbir şey mi)?",
+            "question": "Türkçe karakter duyarsız eşleşme var mı? (ör. \"seftali\" \"Şeftalili Soğuk Çay 1L\" ile eşleşir mi; İ/ı davranışı)",
             "owner": "PO"
           },
           {
             "id": "Q3",
-            "question": "Arama ürün adının herhangi bir yerinde mi (içerir) yoksa yalnızca başında mı eşleşir? 'Bir bölümü' ifadesi netleştirilmeli.",
+            "question": "Boş veya yalnızca boşluk içeren arama metninde ne olmalı: tüm katalog mu, mesaj mı, değişiklik yok mu?",
+            "owner": "PO"
+          },
+          {
+            "id": "Q4",
+            "question": "Özel karakterler içeren aramada beklenen sonuç nedir ve minimum arama uzunluğu var mı?",
             "owner": "PO"
           }
         ],
         "assumptions": [
           {
             "id": "A1",
-            "statement": "Arama yalnızca ürün adı üzerinden yapılır; ürün kodu (P-001) ile arama kapsam dışıdır.",
+            "statement": "\"Bir bölümü\" ifadesi ürün adının herhangi bir yerinde geçen alt metin (içerir) eşleşmesi olarak yorumlandı; yalnızca başlangıç eşleşmesi değil.",
             "owner": "PO"
           }
         ]
       },
       "mode": "live",
       "error": null,
-      "cost_usd": 0.03014,
-      "sure_ms": 16331
+      "cost_usd": 0.029245,
+      "sure_ms": 16243
     },
     {
       "id": "tpd-4-giris",
@@ -1502,7 +1445,7 @@
             ],
             "statement": "Geçerli kullanıcı adı ve geçerli parola ile giriş yapıldığında ürün kataloğu açılır.",
             "risk": "high",
-            "rationale": "Ana akış; giriş çalışmazsa bayi portalı kullanamaz."
+            "rationale": "Giriş çalışmazsa bayi portalı kullanamaz; ana akış kırılır."
           },
           {
             "id": "TCOND-2",
@@ -1511,7 +1454,7 @@
             ],
             "statement": "Hatalı parola girildiğinde \"Kullanıcı adı veya parola hatalı\" mesajı gösterilir ve giriş yapılmaz.",
             "risk": "high",
-            "rationale": "Yetkisiz erişimi önleyen güvenlik kontrolü."
+            "rationale": "Hatalı parolayla giriş yapılabilirse yetkisiz erişim (güvenlik açığı) oluşur."
           },
           {
             "id": "TCOND-3",
@@ -1519,30 +1462,36 @@
               "AC1",
               "AC2"
             ],
-            "statement": "Kullanıcı adı/parola kombinasyonuna göre sonuç (katalog veya hata) belirlenir.",
-            "risk": "high",
-            "rationale": "Doğru/yanlış kombinasyonların yanlış değerlendirilmesi erişim açığı veya engelleme yaratır."
+            "statement": "Giriş sonucu kullanıcı adı ve parolanın geçerlilik kombinasyonuna bağlıdır; kaynak yalnızca geçerli/geçerli ve geçerli kullanıcı + hatalı parola durumlarını tanımlar.",
+            "risk": "medium",
+            "rationale": "Diğer kombinasyonlar tanımsız; yanlış davranış güvenlik veya kullanılabilirlik sorunu yaratabilir."
           },
           {
             "id": "TCOND-4",
             "ac_refs": [
+              "AC1",
               "AC2"
             ],
-            "statement": "Kaynakta tanımsız girdiler (bilinmeyen kullanıcı adı, boş alanlar) için sonuç belirsizdir.",
-            "risk": "medium",
-            "rationale": "Beklenen sonuç AC'de tanımlı değil; güvenlik ve kullanılabilirlik etkisi var."
+            "statement": "Başarısız girişte kullanıcı oturum açmış sayılmaz ve kataloğa erişemez.",
+            "risk": "high",
+            "rationale": "Doğrudan katalog erişimi yetkisiz erişim riskidir."
           }
         ],
         "techniques": [
           {
             "condition_id": "TCOND-1",
             "technique": "UC",
-            "rationale": "Uçtan uca başarılı giriş akışı."
+            "rationale": "Uçtan uca giriş ana akışı."
           },
           {
             "condition_id": "TCOND-1",
             "technique": "EP",
-            "rationale": "Geçerli kullanıcı/parola bölümleri."
+            "rationale": "Geçerli kullanıcı/parola bölümleri (bayi1, bayi2)."
+          },
+          {
+            "condition_id": "TCOND-2",
+            "technique": "EP",
+            "rationale": "Hatalı parola geçersiz bölümü."
           },
           {
             "condition_id": "TCOND-2",
@@ -1550,87 +1499,76 @@
             "rationale": "Hatalı parola istisna akışı."
           },
           {
-            "condition_id": "TCOND-2",
-            "technique": "EP",
-            "rationale": "Geçersiz parola bölümü."
-          },
-          {
             "condition_id": "TCOND-3",
             "technique": "DT",
-            "rationale": "Sonuç kullanıcı adı ve parola geçerliliğinin birleşimine bağlı."
+            "rationale": "Sonuç kullanıcı adı ve parola geçerliliği kombinasyonuna bağlı."
           },
           {
             "condition_id": "TCOND-4",
             "technique": "EG",
-            "rationale": "Giriş özelliklerinde sık görülen boş/bilinmeyen girdi hataları."
+            "rationale": "Başarısız girişten sonra korumalı sayfaya doğrudan erişim denemesi bu tür özelliklerde olası hatadır."
           }
         ],
         "coverage_items": [
           {
             "id": "EP-V1",
             "ac_ref": "AC1",
-            "definition": "Geçerli kullanıcı adı: bayi1 (kayıtlı bayi)",
+            "definition": "Geçerli kullanıcı adı: bayi1 (kayıtlı bayi).",
             "valid": true
           },
           {
             "id": "EP-V2",
             "ac_ref": "AC1",
-            "definition": "Geçerli parola: kayıtlı kullanıcının parolası",
+            "definition": "Geçerli parola: kayıtlı kullanıcının parolası (Demo123!).",
             "valid": true
           },
           {
             "id": "EP-I1",
             "ac_ref": "AC2",
-            "definition": "Geçersiz parola: kayıtlı kullanıcı için hatalı parola",
+            "definition": "Hatalı parola: kayıtlı kullanıcı için yanlış parola.",
             "valid": false
           },
           {
             "id": "EP-I2",
-            "ac_ref": null,
-            "definition": "Kayıtlı olmayan kullanıcı adı; sonuç kaynakta tanımsız",
+            "ac_ref": "AC2",
+            "definition": "Kayıtlı olmayan kullanıcı adı: sonuç kaynakta tanımsız (Q1).",
             "valid": false
           },
           {
             "id": "EP-I3",
-            "ac_ref": null,
-            "definition": "Boş kullanıcı adı veya boş parola; sonuç kaynakta tanımsız",
+            "ac_ref": "AC2",
+            "definition": "Boş kullanıcı adı veya boş parola: sonuç kaynakta tanımsız (Q2).",
             "valid": false
           },
           {
             "id": "DT-R1",
             "ac_ref": "AC1",
-            "definition": "Kullanıcı adı geçerli, parola doğru: katalog açılır",
+            "definition": "Kullanıcı adı geçerli, parola doğru → katalog açılır.",
             "valid": true
           },
           {
             "id": "DT-R2",
             "ac_ref": "AC2",
-            "definition": "Kullanıcı adı geçerli, parola hatalı: hata mesajı, giriş yapılmaz",
+            "definition": "Kullanıcı adı geçerli, parola hatalı → mesaj gösterilir, giriş yapılmaz.",
             "valid": false
           },
           {
             "id": "UC-MF",
             "ac_ref": "AC1",
-            "definition": "Ana akış: başarılı giriş ve katalog",
+            "definition": "Ana akış: giriş sayfası, geçerli bilgiler, \"Giriş yap\", katalog açılır.",
             "valid": true
           },
           {
             "id": "UC-EF1",
             "ac_ref": "AC2",
-            "definition": "İstisna akışı: hatalı parola",
+            "definition": "İstisna akış: hatalı parola, mesaj, giriş yapılmaz.",
             "valid": false
           },
           {
             "id": "EG-1",
-            "ac_ref": null,
-            "definition": "Bir bayinin parolasıyla diğer bayinin kullanıcı adı denenmesi (bayi1 adı + bayi2 parolası; test verisinde aynı parola, tanımsız)",
-            "valid": false
-          },
-          {
-            "id": "EG-2",
             "ac_ref": "AC2",
-            "definition": "Hata sonrası doğru parolayla tekrar giriş yapılabilmesi",
-            "valid": true
+            "definition": "Başarısız giriş sonrası katalog URL'sine doğrudan gitmek erişim vermemeli (sonuç kaynakta tanımsız, Q3).",
+            "valid": false
           }
         ],
         "partitions": [
@@ -1644,15 +1582,15 @@
           {
             "field": "Kullanıcı adı",
             "item_id": "EP-I2",
-            "definition": "Kayıtlı olmayan kullanıcı adı (sonuç tanımsız)",
+            "definition": "Kayıtlı olmayan kullanıcı adı; sonuç tanımsız",
             "representative": "Test verisinde yok; hazırlanmalı",
             "valid": false
           },
           {
-            "field": "Kullanıcı adı",
+            "field": "Kullanıcı adı / Parola",
             "item_id": "EP-I3",
-            "definition": "Boş değer (sonuç tanımsız)",
-            "representative": "(boş)",
+            "definition": "Boş değer; sonuç tanımsız",
+            "representative": "boş alan",
             "valid": false
           },
           {
@@ -1665,8 +1603,8 @@
           {
             "field": "Parola",
             "item_id": "EP-I1",
-            "definition": "Kayıtlı kullanıcı için hatalı parola",
-            "representative": "Demo123 (hatalı; test verisinde yok, hazırlanmalı)",
+            "definition": "Kayıtlı kullanıcı için yanlış parola",
+            "representative": "Test verisinde yok; geçerli paroladan farklı bir değer hazırlanmalı",
             "valid": false
           }
         ],
@@ -1720,7 +1658,7 @@
             ],
             "undefined_combinations": [
               {
-                "description": "Kullanıcı adı kayıtlı değil (parola = -)",
+                "description": "Kullanıcı adı kayıtlı = H (parola herhangi)",
                 "question_ref": "Q1"
               },
               {
@@ -1737,9 +1675,9 @@
             "kind": "MF",
             "steps": [
               "Bayi giriş sayfasını açar",
-              "Kullanıcı adı bayi1 ve parola Demo123! girilir",
-              "\"Giriş yap\" seçilir",
-              "Ürün kataloğu (\"Katalog\") açılır"
+              "Geçerli kullanıcı adı ve parolayı girer",
+              "\"Giriş yap\" düğmesine tıklar",
+              "Ürün kataloğu açılır"
             ],
             "condition": ""
           },
@@ -1748,9 +1686,10 @@
             "kind": "EF",
             "steps": [
               "Bayi giriş sayfasını açar",
-              "Geçerli kullanıcı adı ve hatalı parola girilir",
-              "\"Giriş yap\" seçilir",
-              "\"Kullanıcı adı veya parola hatalı\" mesajı gösterilir; giriş yapılmaz"
+              "Geçerli kullanıcı adı ve hatalı parola girer",
+              "\"Giriş yap\" düğmesine tıklar",
+              "\"Kullanıcı adı veya parola hatalı\" mesajı gösterilir",
+              "Giriş yapılmaz"
             ],
             "condition": "Parola hatalı"
           }
@@ -1762,43 +1701,36 @@
         "model_issues": [
           {
             "kind": "undefined_combination",
-            "detail": "Kayıtlı olmayan kullanıcı adı ve boş alan sonuçları AC'de tanımlı değil."
+            "detail": "Kayıtlı olmayan kullanıcı adı ve boş alanlar için kaynakta sonuç tanımlı değil."
+          },
+          {
+            "kind": "other",
+            "detail": "Test verisinde hatalı parola ve kayıtlı olmayan kullanıcı değeri yok; hazırlanmalı."
           }
         ],
         "open_questions": [
           {
             "id": "Q1",
-            "question": "Kayıtlı olmayan kullanıcı adıyla girişte hangi mesaj gösterilir (AC2'deki mesaj mı)?",
+            "question": "Kayıtlı olmayan kullanıcı adıyla giriş denendiğinde de \"Kullanıcı adı veya parola hatalı\" mesajı mı gösterilir?",
             "owner": "PO"
           },
           {
             "id": "Q2",
-            "question": "Kullanıcı adı veya parola boş bırakıldığında beklenen davranış/mesaj nedir?",
+            "question": "Kullanıcı adı veya parola boş bırakıldığında hangi davranış/mesaj beklenir?",
             "owner": "PO"
           },
           {
             "id": "Q3",
-            "question": "Hatalı parola denemesi sayısına bağlı bir kilitleme veya sınır var mı? Kaynakta belirtilmemiştir.",
+            "question": "Başarısız girişten sonra korumalı katalog sayfasına doğrudan erişilirse beklenen davranış nedir (örn. giriş sayfasına yönlendirme)?",
             "owner": "PO"
           }
         ],
-        "assumptions": [
-          {
-            "id": "A1",
-            "statement": "Hatalı parola için test verisinde olmayan bir değer (ör. Demo123) kullanılacaktır.",
-            "owner": "analyst"
-          },
-          {
-            "id": "A2",
-            "statement": "EG-1 için bayi1 kullanıcı adı ile bayi2 parolası aynı olduğundan, farklı kullanıcının parolası senaryosu ayırt edici değildir; kapsam öğesi yalnızca hata tahmini olarak tutulur.",
-            "owner": "analyst"
-          }
-        ]
+        "assumptions": []
       },
       "mode": "live",
       "error": null,
-      "cost_usd": 0.033946,
-      "sure_ms": 17812
+      "cost_usd": 0.033891,
+      "sure_ms": 16760
     },
     {
       "id": "serbest-son-hal",
@@ -1811,9 +1743,9 @@
             "ac_refs": [
               "AC1"
             ],
-            "statement": "\"Kaldır\" butonuna basıldığında ilgili ürün satırı sepetten çıkar.",
-            "risk": "high",
-            "rationale": "Ana akış; satır kalırsa bayi yanlış ürünü sipariş edebilir."
+            "statement": "\"Kaldır\" butonuna basılınca seçilen ürün satırı sepetten çıkar.",
+            "risk": "medium",
+            "rationale": "Ana akış; hata olursa bayi istenmeyen ürünü sepetten çıkaramaz ve yanlış sipariş verebilir."
           },
           {
             "id": "TCOND-2",
@@ -1821,17 +1753,17 @@
               "AC1"
             ],
             "statement": "Satır kaldırıldığında sepet sayacı azalır.",
-            "risk": "medium",
-            "rationale": "Sayaç yanlış kalırsa kullanıcı yanıltılır; sepet içeriğinden kontrol edilebilir."
+            "risk": "low",
+            "rationale": "Gösterge hatası; sepet içeriği ve tutarlar doğru kaldığı için etkisi sınırlı."
           },
           {
             "id": "TCOND-3",
             "ac_refs": [
               "AC2"
             ],
-            "statement": "Kaldırma sonrası kampanya indirimi \"her 6 adette 1 bedava\" kuralıyla yeniden hesaplanır ve toplamlar güncellenir.",
+            "statement": "Kaldırma sonrası kampanya indirimi her 6 adette 1 bedava kuralıyla yeniden hesaplanır.",
             "risk": "high",
-            "rationale": "Yanlış indirim doğrudan tutar hatası ve para kaybı yaratır."
+            "rationale": "Yanlış indirim tutarı doğrudan para kaybı veya yanlış fatura doğurur."
           },
           {
             "id": "TCOND-4",
@@ -1840,172 +1772,166 @@
             ],
             "statement": "Sepette kampanyalı ürün yoksa ve tutar 750,00 TL altına düşerse \"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir ve onay butonu pasif olur.",
             "risk": "high",
-            "rationale": "Minimum tutar altında siparişin onaylanması iş kuralını ihlal eder."
+            "rationale": "Hata, minimum tutarın altındaki siparişin onaylanmasına izin verir; iş kuralı ihlal edilir."
           },
           {
             "id": "TCOND-5",
             "ac_refs": [
               "AC3"
             ],
-            "statement": "Kampanyasız sepet tutarı tam 750,00 TL olduğunda uyarı gösterilmez (eşik sınırı).",
-            "risk": "high",
-            "rationale": "Sınır hatası geçerli siparişi engelleyebilir veya geçersizi geçirebilir."
+            "statement": "Kampanyasız sepette tutar tam 750,00 TL iken \"altına düşerse\" ifadesi gereği uyarı gösterilmez ve onay butonu aktif kalır.",
+            "risk": "medium",
+            "rationale": "Sınırda yanlış karşılaştırma (<=) geçerli siparişi engeller; geçici çözüm ürün eklemektir."
           },
           {
             "id": "TCOND-6",
             "ac_refs": [
               "AC3"
             ],
-            "statement": "Sepette kampanyalı ürün varken tutar 750,00 TL altındaysa sonuç kaynakta tanımlı değildir.",
+            "statement": "Kampanyalı ürün sepetteyken minimum tutar uyarısının davranışı (tutar 750,00 TL altı dahil).",
             "risk": "medium",
-            "rationale": "Tanımsız sonuç; beklenen davranış PO'dan netleşmeli."
+            "rationale": "Kaynak yalnızca kampanyalı ürün yokken uyarıyı tanımlıyor; diğer kombinasyon belirsiz ve sipariş onayını etkiler."
           },
           {
             "id": "TCOND-7",
             "ac_refs": [
               "AC1",
-              "AC2"
+              "AC3"
             ],
-            "statement": "Son satır kaldırıldığında (sepet boş) ve art arda kaldırmalarda sayaç ve toplamlar tutarlı kalır.",
+            "statement": "Son satır kaldırılıp sepet boşaldığında toplam, sayaç ve uyarı davranışı.",
             "risk": "medium",
-            "rationale": "Boş sepet ve tekrarlı işlem tipik hata alanıdır."
+            "rationale": "Sık görülen uç durum; kaynak sonucu tanımlamıyor."
           }
         ],
         "techniques": [
           {
             "condition_id": "TCOND-1",
             "technique": "EP",
-            "rationale": "Kampanyalı (P-001) ve kampanyasız satır sınıfları ayrı davranabilir."
+            "rationale": "Kaldırılan satır kampanyalı veya kampanyasız ürün olabilir; iki sınıf farklı yeniden hesaplama tetikler."
           },
           {
             "condition_id": "TCOND-1",
             "technique": "UC",
-            "rationale": "Uçtan uca kaldırma akışı."
+            "rationale": "Sepete ekle → Sepetim → Kaldır uçtan uca akışı."
           },
           {
             "condition_id": "TCOND-2",
             "technique": "UC",
-            "rationale": "Sayaç, ana akışın doğrulama adımıdır."
+            "rationale": "Sayaç değişimi ana akışın gözlenen sonucudur."
           },
           {
             "condition_id": "TCOND-3",
             "technique": "BVA",
-            "rationale": "6 adet sıralı bir değer ve sınır içerir."
+            "rationale": "P-001 adedi sıralı bir değer; 6 adet sınırı var."
           },
           {
             "condition_id": "TCOND-3",
-            "technique": "UC",
-            "rationale": "Kampanyalı satır kaldırılınca indirimin sıfırlanması alternatif akıştır."
+            "technique": "EG",
+            "rationale": "Kaldırma sonrası eski indirimin kalması tipik hatadır."
           },
           {
             "condition_id": "TCOND-4",
             "technique": "DT",
-            "rationale": "Sonuç kampanyalı ürün var mı ve tutar eşik altı mı birleşimine bağlı."
+            "rationale": "Sonuç kampanyalı ürün varlığı ve tutar kombinasyonuna bağlı."
           },
           {
             "condition_id": "TCOND-4",
             "technique": "UC",
-            "rationale": "Uyarı ve pasif onay butonu istisna akışıdır."
+            "rationale": "Kaldırma sonrası tutarın 750,00 TL altına düştüğü alternatif akış."
           },
           {
             "condition_id": "TCOND-5",
             "technique": "BVA",
-            "rationale": "Tutar sıralı değerdir; 750,00 TL limit."
+            "rationale": "Sepet tutarı sıralı bir değer; 750,00 TL limiti."
           },
           {
             "condition_id": "TCOND-6",
             "technique": "DT",
-            "rationale": "Tanımsız kombinasyon açık soru olarak kayda geçer."
+            "rationale": "Kampanyalı ürün var ve tutar altı kombinasyonu kaynakta tanımsız."
           },
           {
             "condition_id": "TCOND-7",
             "technique": "EG",
-            "rationale": "Boş sepet ve çift tıklama gibi tahmini hatalar."
+            "rationale": "Boş sepet, kaldırma özelliklerinde sık hata kaynağıdır."
           }
         ],
         "coverage_items": [
           {
             "id": "EP-V1",
-            "ac_ref": "AC2",
-            "definition": "Kampanyalı ürün (P-001) satırının kaldırılması.",
+            "ac_ref": "AC1",
+            "definition": "Kampanyalı ürün (P-001) satırı kaldırılır.",
             "valid": true
           },
           {
             "id": "EP-V2",
             "ac_ref": "AC1",
-            "definition": "Kampanyasız ürün (P-002/P-003/P-004) satırının kaldırılması.",
+            "definition": "Kampanyasız ürün (P-002, P-003 veya P-004) satırı kaldırılır.",
             "valid": true
           },
           {
             "id": "BV-1",
-            "ac_ref": "AC2",
-            "definition": "P-001 adedi 6 (kural sınırı); 1 bedava mı 7. adette mi sonucu belirsiz.",
+            "ac_ref": "AC3",
+            "definition": "Kampanyasız sepet tutarı 750,00 TL (sınırın kendisi): \"altına düşerse\" gereği uyarı yok, onay aktif.",
             "valid": true
           },
           {
             "id": "BV-2",
-            "ac_ref": "AC2",
-            "definition": "P-001 adedi 5 (sınırın altı); bedava ürün yok.",
+            "ac_ref": "AC3",
+            "definition": "Kampanyasız sepet tutarı 749,99 TL; kurulabilen en yakın değer 749,00 TL (P-002, P-003, P-004 karışımı, örn. 1×15,00 + 88×8,00 + 1×30,00): uyarı ve pasif onay.",
             "valid": false
           },
           {
             "id": "BV-3",
-            "ac_ref": "AC3",
-            "definition": "Kampanyasız sepet tutarı 749,99 TL; kurulabilen en yakın değer 749,00 TL: uyarı ve pasif onay.",
-            "valid": false
+            "ac_ref": "AC2",
+            "definition": "P-001 adedi 6: 1 bedava mı (toplam 6 adet) yoksa 6 ödenen + 1 bedava mı olduğu belirsiz (Q1).",
+            "valid": true
           },
           {
             "id": "BV-4",
-            "ac_ref": "AC3",
-            "definition": "Kampanyasız sepet tutarı 750,00 TL: uyarı yok.",
-            "valid": true
+            "ac_ref": "AC2",
+            "definition": "P-001 adedi 5: 6 adetin altında; indirim beklenmez, ancak sınırın yorumu Q1'e bağlı.",
+            "valid": false
           },
           {
             "id": "DT-R1",
             "ac_ref": "AC3",
             "definition": "Kampanyalı ürün yok, tutar < 750,00 TL: uyarı gösterilir, onay pasif.",
-            "valid": true
+            "valid": false
           },
           {
             "id": "DT-R2",
             "ac_ref": "AC3",
-            "definition": "Kampanyalı ürün yok, tutar >= 750,00 TL: uyarı gösterilmez.",
+            "definition": "Kampanyalı ürün yok, tutar >= 750,00 TL: uyarı yok, onay aktif (A1).",
             "valid": true
           },
           {
             "id": "DT-R3",
             "ac_ref": "AC3",
-            "definition": "Kampanyalı ürün var, tutar >= 750,00 TL: uyarı gösterilmez.",
+            "definition": "Kampanyalı ürün var, tutar >= 750,00 TL: AC3 koşulu oluşmaz, uyarı yok (A1).",
             "valid": true
           },
           {
             "id": "UC-MF",
             "ac_ref": "AC1",
-            "definition": "Ana akış: bayi sepetten bir satırı kaldırır, satır kalkar, sayaç ve toplam güncellenir.",
+            "definition": "Ana akış: sepetten ürün satırı kaldırılır, satır kaybolur, sayaç ve toplamlar güncellenir.",
             "valid": true
           },
           {
             "id": "UC-AF1",
-            "ac_ref": "AC2",
-            "definition": "Alternatif akış: P-001 satırı kaldırılır, indirim yeniden hesaplanır.",
-            "valid": true
-          },
-          {
-            "id": "UC-EF1",
             "ac_ref": "AC3",
-            "definition": "İstisna akışı: kaldırma sonrası kampanyasız tutar 750,00 TL altına düşer; uyarı ve pasif onay.",
+            "definition": "Alternatif akış: kaldırma sonrası kampanyasız sepet tutarı 750,00 TL altına düşer; uyarı ve pasif onay.",
             "valid": false
           },
           {
             "id": "EG-1",
             "ac_ref": "AC1",
-            "definition": "Son satır kaldırılır, sepet boş kalır; sonuç kaynakta tanımsız.",
+            "definition": "Sepetteki tek/son satır kaldırılır; boş sepette toplam, sayaç ve uyarı sonucu tanımsız (Q3).",
             "valid": false
           },
           {
             "id": "EG-2",
-            "ac_ref": "AC1",
-            "definition": "Aynı satırın \"Kaldır\" butonuna art arda hızlı basılır; sayaç ve toplam tutarlı kalmalı.",
+            "ac_ref": "AC2",
+            "definition": "P-001 satırı kaldırılınca eski bedava indirimi toplamda kalmamalı.",
             "valid": false
           }
         ],
@@ -2013,22 +1939,40 @@
           {
             "field": "Kaldırılan satır",
             "item_id": "EP-V1",
-            "definition": "Kampanyalı ürün satırı (6AL1BEDAVA, P-001).",
-            "representative": "P-001 · Portakal Gazozu 1L · 25,00 TL",
+            "definition": "Kampanyalı ürün satırı (6AL1BEDAVA kapsamındaki P-001).",
+            "representative": "P-001 · Portakal Gazozu 1L",
             "valid": true
           },
           {
             "field": "Kaldırılan satır",
             "item_id": "EP-V2",
             "definition": "Kampanyasız ürün satırı.",
-            "representative": "P-002 · Limonata 330ml · 15,00 TL",
+            "representative": "P-002 · Limonata 330ml",
             "valid": true
           }
         ],
         "boundaries": [
           {
-            "field": "P-001 adedi",
+            "field": "Sepet tutarı (kampanyasız)",
             "item_id": "BV-1",
+            "value": "750,00 TL",
+            "side": "on",
+            "expected": "accept",
+            "inclusive_source": "AC3",
+            "question_ref": null
+          },
+          {
+            "field": "Sepet tutarı (kampanyasız)",
+            "item_id": "BV-2",
+            "value": "749,99 TL",
+            "side": "below",
+            "expected": "reject",
+            "inclusive_source": "AC3",
+            "question_ref": null
+          },
+          {
+            "field": "P-001 adedi",
+            "item_id": "BV-3",
             "value": "6",
             "side": "on",
             "expected": "open_question",
@@ -2037,58 +1981,40 @@
           },
           {
             "field": "P-001 adedi",
-            "item_id": "BV-2",
+            "item_id": "BV-4",
             "value": "5",
             "side": "below",
-            "expected": "reject",
-            "inclusive_source": "AC2",
-            "question_ref": null
-          },
-          {
-            "field": "Kampanyasız sepet tutarı",
-            "item_id": "BV-3",
-            "value": "749,99 TL; kurulabilen en yakın değer 749,00 TL",
-            "side": "below",
-            "expected": "reject",
-            "inclusive_source": "AC3",
-            "question_ref": null
-          },
-          {
-            "field": "Kampanyasız sepet tutarı",
-            "item_id": "BV-4",
-            "value": "750,00 TL",
-            "side": "on",
-            "expected": "accept",
-            "inclusive_source": "AC3",
-            "question_ref": null
+            "expected": "open_question",
+            "inclusive_source": null,
+            "question_ref": "Q1"
           }
         ],
         "decision_tables": [
           {
             "id": "DT1",
             "conditions": [
-              "Sepette kampanyalı ürün var",
-              "Sepet tutarı < 750,00 TL"
+              "Kampanyalı ürün sepette",
+              "Sepet tutarı 750,00 TL altında"
             ],
             "actions": [
-              "\"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir",
-              "Onay butonu pasif olur"
+              "Minimum sipariş tutarı uyarısı",
+              "Onay butonu pasif"
             ],
             "rules": [
               {
                 "item_id": "DT-R1",
                 "condition_values": [
                   {
-                    "condition": "Sepette kampanyalı ürün var",
+                    "condition": "Kampanyalı ürün sepette",
                     "value": "Hayır"
                   },
                   {
-                    "condition": "Sepet tutarı < 750,00 TL",
+                    "condition": "Sepet tutarı 750,00 TL altında",
                     "value": "Evet"
                   }
                 ],
                 "actions": [
-                  "Uyarı gösterilir",
+                  "Uyarı: \"Minimum sipariş tutarı 750,00 TL\"",
                   "Onay butonu pasif"
                 ]
               },
@@ -2096,39 +2022,41 @@
                 "item_id": "DT-R2",
                 "condition_values": [
                   {
-                    "condition": "Sepette kampanyalı ürün var",
+                    "condition": "Kampanyalı ürün sepette",
                     "value": "Hayır"
                   },
                   {
-                    "condition": "Sepet tutarı < 750,00 TL",
+                    "condition": "Sepet tutarı 750,00 TL altında",
                     "value": "Hayır"
                   }
                 ],
                 "actions": [
-                  "Uyarı gösterilmez"
+                  "Uyarı yok",
+                  "Onay butonu aktif"
                 ]
               },
               {
                 "item_id": "DT-R3",
                 "condition_values": [
                   {
-                    "condition": "Sepette kampanyalı ürün var",
+                    "condition": "Kampanyalı ürün sepette",
                     "value": "Evet"
                   },
                   {
-                    "condition": "Sepet tutarı < 750,00 TL",
+                    "condition": "Sepet tutarı 750,00 TL altında",
                     "value": "Hayır"
                   }
                 ],
                 "actions": [
-                  "Uyarı gösterilmez"
+                  "Uyarı yok",
+                  "Onay butonu aktif"
                 ]
               }
             ],
             "undefined_combinations": [
               {
-                "description": "Sepette kampanyalı ürün var = Evet, Sepet tutarı < 750,00 TL = Evet: uyarı ve onay butonu sonucu tanımsız.",
-                "question_ref": "Q4"
+                "description": "Kampanyalı ürün sepette = Evet, Sepet tutarı 750,00 TL altında = Evet: AC3 sonucu tanımlamıyor.",
+                "question_ref": "Q2"
               }
             ]
           }
@@ -2139,10 +2067,11 @@
             "item_id": "UC-MF",
             "kind": "MF",
             "steps": [
-              "Bayi giriş yapar ve sepetine ürünler ekler.",
+              "Bayi giriş yapar (bayi1).",
+              "Katalogdan ürünleri sepete ekler.",
               "\"Sepetim\" sayfasını açar.",
               "Bir satırdaki \"Kaldır\" butonuna basar.",
-              "Satır sepetten çıkar, sayaç azalır, toplamlar ve indirim yeniden hesaplanır."
+              "Satır sepetten çıkar, sayaç azalır, toplam ve kampanya indirimi yeniden hesaplanır."
             ],
             "condition": ""
           },
@@ -2150,22 +2079,12 @@
             "item_id": "UC-AF1",
             "kind": "AF",
             "steps": [
-              "Sepette P-001 satırı bulunur.",
-              "Bayi P-001 satırında \"Kaldır\"a basar.",
-              "Kampanya indirimi yeniden hesaplanır; indirim kalkar, toplam güncellenir."
+              "Kampanyalı ürün içermeyen sepette bir satır kaldırılır.",
+              "Sepet tutarı 750,00 TL altına düşer.",
+              "\"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir.",
+              "\"Siparişi onayla\" butonu pasif olur."
             ],
-            "condition": "Kaldırılan satır kampanyalı üründür (P-001)."
-          },
-          {
-            "item_id": "UC-EF1",
-            "kind": "EF",
-            "steps": [
-              "Sepette yalnızca kampanyasız ürünler kalır.",
-              "Bayi bir satırı kaldırır; tutar 750,00 TL altına düşer.",
-              "\"Minimum sipariş tutarı 750,00 TL\" uyarısı görünür.",
-              "\"Siparişi onayla\" butonu pasiftir."
-            ],
-            "condition": "Sepette kampanyalı ürün yok ve tutar 750,00 TL altında."
+            "condition": "Kampanyalı ürün yok ve kaldırma sonrası tutar 750,00 TL altında."
           }
         ],
         "pairwise": {
@@ -2175,61 +2094,51 @@
         "model_issues": [
           {
             "kind": "undefined_combination",
-            "detail": "Kampanyalı ürün var ve tutar 750,00 TL altı: AC3 sonucu tanımlamıyor (Q4)."
+            "detail": "Kampanyalı ürün var ve tutar 750,00 TL altında kombinasyonunun sonucu kaynakta yok (Q2)."
           },
           {
             "kind": "other",
-            "detail": "AC2 \"her 6 adette 1 bedava\" ile kampanya adı \"6 al 1 bedava\" farklı okunabilir; BV-1 sonucu açık (Q1)."
+            "detail": "\"Her 6 adette 1 bedava\" ile kampanya adı \"6 al 1 bedava\" farklı okunabilir; BV-3/BV-4 beklenen sonucu açık soru (Q1)."
           },
           {
             "kind": "other",
-            "detail": "749,99 TL kampanyasız ürünlerle (15, 8, 30 TL) kurulamaz; en yakın kurulabilen değer 749,00 TL (13 × 8,00 + 43 × 15,00)."
+            "detail": "749,99 TL test verisiyle kurulamaz (birim fiyatlar tam TL); kurulabilen en yakın değer 749,00 TL."
           }
         ],
         "open_questions": [
           {
             "id": "Q1",
-            "question": "AC2'de \"her 6 adette 1 bedava\" ile kampanya adı \"6 al 1 bedava\" çelişkili olabilir: 6 adette mi 1 bedava yoksa 6 al ve 7. bedava mı? 12 ve 13 adette kaç bedava?",
+            "question": "AC2: 6 adet P-001 sepette iken 1 adet bedava mı (toplam 6 adetten 1'i), yoksa 6 adet ödenip 7. adet mi bedava (\"6 al 1 bedava\")? Eşik 6 mı 7 mi?",
             "owner": "PO"
           },
           {
             "id": "Q2",
-            "question": "Sepet sayacı satır sayısını mı yoksa toplam adedi mi gösterir? Kaldırma sonrası ne kadar azalır?",
+            "question": "AC3: Sepette kampanyalı ürün varken tutar 750,00 TL altına düşerse uyarı/pasif onay olur mu? İndirimli mi indirimsiz tutar mı karşılaştırılır?",
             "owner": "PO"
           },
           {
             "id": "Q3",
-            "question": "750,00 TL kontrolü indirim öncesi mi yoksa indirim sonrası sepet tutarı üzerinden mi yapılır?",
+            "question": "Son satır kaldırılıp sepet boşalınca ne gösterilir (boş sepet mesajı mı, minimum tutar uyarısı mı) ve onay butonu durumu nedir?",
             "owner": "PO"
           },
           {
             "id": "Q4",
-            "question": "Sepette kampanyalı ürün varken tutar 750,00 TL altına düşerse uyarı gösterilir mi ve onay butonu pasif olur mu?",
-            "owner": "PO"
-          },
-          {
-            "id": "Q5",
-            "question": "Son satır kaldırıldığında boş sepet için ne gösterilir; uyarı ve onay butonu durumu nedir?",
+            "question": "AC1: Sepet sayacı satır sayısını mı toplam adedi mi gösterir; çok adetli satır kaldırılınca ne kadar azalır?",
             "owner": "PO"
           }
         ],
         "assumptions": [
           {
             "id": "A1",
-            "statement": "AC3'teki \"750,00 TL altına düşerse\" ifadesi eşiğin hariç olduğu anlamına gelir: tam 750,00 TL'de uyarı yoktur.",
-            "owner": "PO"
-          },
-          {
-            "id": "A2",
-            "statement": "\"Kaldır\" butonu satırın tamamını kaldırır (adet azaltmaz).",
+            "statement": "AC3 koşulu oluşmadığında (kampanyasız ve tutar >= 750,00 TL ya da kampanyalı ve tutar >= 750,00 TL) uyarı gösterilmez ve onay butonu aktif kalır.",
             "owner": "PO"
           }
         ]
       },
       "mode": "live",
       "error": null,
-      "cost_usd": 0.08297,
-      "sure_ms": 54536
+      "cost_usd": 0.084105,
+      "sure_ms": 55044
     },
     {
       "id": "hesap-kilidi-st",
@@ -2244,7 +2153,7 @@
             ],
             "statement": "Doğru parolayla giriş yapan bayi için ürün kataloğu açılır.",
             "risk": "high",
-            "rationale": "Ana giriş akışı; bozulursa bayi sipariş veremez."
+            "rationale": "Ana giriş akışı; bozulursa bayi portala erişemez ve sipariş veremez."
           },
           {
             "id": "TCOND-2",
@@ -2253,7 +2162,7 @@
             ],
             "statement": "Doğru parolayla başarılı girişte hatalı deneme sayacı sıfırlanır.",
             "risk": "medium",
-            "rationale": "Sayaç sıfırlanmazsa bayi gereksiz yere kilitlenebilir; geçici çözüm kilidi açtırmaktır."
+            "rationale": "Sayaç sıfırlanmazsa bayi gereksiz yere kilitlenir; yönetici kilidi açarak çözebilir."
           },
           {
             "id": "TCOND-3",
@@ -2262,25 +2171,25 @@
             ],
             "statement": "Art arda 3 hatalı parola denemesinde hesap kilitlenir ve \"Hesabınız kilitlendi\" mesajı gösterilir.",
             "risk": "high",
-            "rationale": "Güvenlik kontrolü; çalışmazsa kaba kuvvet saldırısına açık kalır."
+            "rationale": "Kaba kuvvet denemelerine karşı güvenlik kontrolü; çalışmazsa güvenlik açığı oluşur."
           },
           {
             "id": "TCOND-4",
             "ac_refs": [
               "AC2"
             ],
-            "statement": "3 denemeden az hatalı denemede hesap kilitlenmez.",
+            "statement": "3'ten az hatalı denemede hesap kilitlenmez (1. ve 2. hatalı deneme).",
             "risk": "medium",
-            "rationale": "Erken kilitlenme meşru bayiyi engeller."
+            "rationale": "Erken kilitleme bayiyi gereksiz engeller; yönetici açabilir."
           },
           {
             "id": "TCOND-5",
             "ac_refs": [
               "AC3"
             ],
-            "statement": "Kilitli hesapla doğru parola girildiğinde giriş yapılmaz ve \"Hesabınız kilitlendi\" mesajı gösterilir.",
+            "statement": "Kilitli hesapla doğru parola girilse de giriş yapılmaz ve \"Hesabınız kilitlendi\" mesajı gösterilir.",
             "risk": "high",
-            "rationale": "Kilit atlatılırsa güvenlik açığı oluşur."
+            "rationale": "Kilit atlatılabilirse güvenlik kontrolü anlamsız kalır."
           },
           {
             "id": "TCOND-6",
@@ -2289,19 +2198,17 @@
             ],
             "statement": "Portal yöneticisi kilidi açtığında bayi doğru parolayla giriş yapabilir.",
             "risk": "high",
-            "rationale": "Kilit açılamazsa bayi süresiz erişemez."
+            "rationale": "Kilit açılamazsa bayi kalıcı olarak portala erişemez."
           },
           {
             "id": "TCOND-7",
             "ac_refs": [
               "AC1",
-              "AC2",
-              "AC3",
-              "AC4"
+              "AC2"
             ],
-            "statement": "Hesap durumu ve olaya göre (aktif/kilitli; doğru/hatalı parola; yönetici kilit açma) sonuç belirlenir.",
-            "risk": "high",
-            "rationale": "Durum bağımlı davranış; kilit mantığının bütünü."
+            "statement": "Hatalı denemeler arasında başarılı giriş olursa sayaç sıfırlanır ve 'art arda' sayımı yeniden başlar.",
+            "risk": "medium",
+            "rationale": "Art arda kuralının doğru uygulanması gerekir; hata yanlış kilide yol açar."
           }
         ],
         "techniques": [
@@ -2311,162 +2218,323 @@
             "rationale": "Uçtan uca giriş akışı."
           },
           {
+            "condition_id": "TCOND-1",
+            "technique": "EP",
+            "rationale": "Doğru ve hatalı parola sınıfları."
+          },
+          {
             "condition_id": "TCOND-2",
             "technique": "ST",
-            "rationale": "Sayaç durumu doğru girişle sıfırlanır; durum geçişi."
+            "rationale": "Sayaç durumu başarılı girişle sıfırlanır."
           },
           {
             "condition_id": "TCOND-3",
             "technique": "BVA",
-            "rationale": "Sayı eşiği 3, sıralı değer."
+            "rationale": "Sıralı değer: hatalı deneme sayısı, limit 3."
           },
           {
             "condition_id": "TCOND-3",
-            "technique": "UC",
-            "rationale": "Kilitlenme istisna akışı."
+            "technique": "ST",
+            "rationale": "Hesap durumu olayla kilitli olur."
           },
           {
             "condition_id": "TCOND-4",
             "technique": "BVA",
-            "rationale": "Eşiğin altı 2 deneme."
+            "rationale": "Limitin altındaki komşu değer."
+          },
+          {
+            "condition_id": "TCOND-5",
+            "technique": "DT",
+            "rationale": "Sonuç hesap durumu ve parola doğruluğu kombinasyonuna bağlı."
           },
           {
             "condition_id": "TCOND-5",
             "technique": "ST",
-            "rationale": "Kilitli durumda doğru parola olayı."
+            "rationale": "Kilitli durumda giriş olayı yasak geçiştir."
+          },
+          {
+            "condition_id": "TCOND-6",
+            "technique": "ST",
+            "rationale": "Kilitli → açık geçişi yönetici olayıyla olur."
           },
           {
             "condition_id": "TCOND-6",
             "technique": "UC",
-            "rationale": "Yönetici kilit açma alternatif akışı."
-          },
-          {
-            "condition_id": "TCOND-7",
-            "technique": "ST",
-            "rationale": "Durum + olay bağımlı davranış."
+            "rationale": "Kilitlenme–açma–giriş uçtan uca akış."
           },
           {
             "condition_id": "TCOND-7",
             "technique": "EG",
-            "rationale": "Art arda olmayan hatalı denemelerin sayılması ve kilit süresi gibi tipik hatalar."
+            "rationale": "Sayacın sıfırlanmaması tipik hatadır."
+          },
+          {
+            "condition_id": "TCOND-3",
+            "technique": "EG",
+            "rationale": "Kilit sonrası ek hatalı deneme ve kilidin süresi gibi tipik hatalar."
           }
         ],
         "coverage_items": [
           {
+            "id": "EP-V1",
+            "ac_ref": "AC1",
+            "definition": "Kilitli olmayan hesap, doğru parola (bayi1 / Demo123!).",
+            "valid": true
+          },
+          {
+            "id": "EP-I1",
+            "ac_ref": "AC2",
+            "definition": "Kilitli olmayan hesap, hatalı parola.",
+            "valid": false
+          },
+          {
             "id": "BV-1",
             "ac_ref": "AC2",
-            "definition": "2 art arda hatalı deneme: hesap kilitlenmez (eşiğin altı).",
+            "definition": "2 art arda hatalı deneme: hesap henüz kilitlenmez (limitin altındaki komşu değer).",
             "valid": true
           },
           {
             "id": "BV-2",
             "ac_ref": "AC2",
-            "definition": "3 art arda hatalı deneme: hesap kilitlenir, \"Hesabınız kilitlendi\" gösterilir (eşik).",
+            "definition": "3 art arda hatalı deneme: hesap kilitlenir ve \"Hesabınız kilitlendi\" gösterilir.",
+            "valid": false
+          },
+          {
+            "id": "DT-R1",
+            "ac_ref": "AC1",
+            "definition": "Hesap kilitli değil, parola doğru: katalog açılır, sayaç sıfırlanır.",
+            "valid": true
+          },
+          {
+            "id": "DT-R2",
+            "ac_ref": "AC2",
+            "definition": "Hesap kilitli değil, parola hatalı: giriş yapılmaz, sayaç artar (3. denemede kilitlenir).",
+            "valid": false
+          },
+          {
+            "id": "DT-R3",
+            "ac_ref": "AC3",
+            "definition": "Hesap kilitli, parola doğru: giriş yapılmaz, \"Hesabınız kilitlendi\" gösterilir.",
+            "valid": false
+          },
+          {
+            "id": "DT-R4",
+            "ac_ref": "AC3",
+            "definition": "Hesap kilitli, parola hatalı: sonuç kaynakta tanımsız (Q1); beklenen sonuç belirlenmedi.",
             "valid": false
           },
           {
             "id": "ST-T1",
-            "ac_ref": "AC1",
-            "definition": "Aktif (sayaç 0) + doğru parola → katalog açılır, sayaç 0.",
+            "ac_ref": "AC2",
+            "definition": "Açık (sayaç 0) + hatalı parola → Açık (sayaç 1).",
             "valid": true
           },
           {
             "id": "ST-T2",
             "ac_ref": "AC2",
-            "definition": "Aktif + hatalı parola (3. eşiğin altında) → Aktif, sayaç artar.",
+            "definition": "Açık (sayaç 1) + hatalı parola → Açık (sayaç 2).",
             "valid": true
           },
           {
             "id": "ST-T3",
             "ac_ref": "AC2",
-            "definition": "Aktif (2 hatalı deneme) + 3. hatalı parola → Kilitli, \"Hesabınız kilitlendi\".",
+            "definition": "Açık (sayaç 2) + hatalı parola → Kilitli.",
             "valid": true
           },
           {
             "id": "ST-T4",
             "ac_ref": "AC1",
-            "definition": "Aktif (sayaç > 0) + doğru parola → Aktif, sayaç sıfırlanır, katalog açılır.",
+            "definition": "Açık (sayaç 1 veya 2) + doğru parola → Açık (sayaç 0), katalog açılır.",
             "valid": true
           },
           {
             "id": "ST-T5",
             "ac_ref": "AC4",
-            "definition": "Kilitli + yönetici kilidi açar → Aktif.",
+            "definition": "Kilitli + yönetici kilidi açar → Açık.",
+            "valid": true
+          },
+          {
+            "id": "ST-T6",
+            "ac_ref": "AC4",
+            "definition": "Açık (kilit açılmış) + doğru parola → giriş yapılır, katalog açılır.",
             "valid": true
           },
           {
             "id": "ST-X1",
             "ac_ref": "AC3",
-            "definition": "Kilitli + doğru parola → giriş yok, \"Hesabınız kilitlendi\".",
+            "definition": "Kilitli + doğru parola ile giriş yasak: giriş yapılmaz, \"Hesabınız kilitlendi\" gösterilir.",
             "valid": false
           },
           {
             "id": "UC-MF",
             "ac_ref": "AC1",
-            "definition": "Ana akış: doğru parolayla giriş, katalog açılır.",
+            "definition": "Ana akış: bayi doğru parolayla giriş yapar, katalog açılır.",
             "valid": true
           },
           {
             "id": "UC-AF1",
             "ac_ref": "AC4",
-            "definition": "Alternatif akış: yönetici kilidi açar, bayi doğru parolayla girer.",
+            "definition": "Alternatif akış: kilitlenen hesabı yönetici açar, bayi doğru parolayla girer.",
             "valid": true
           },
           {
             "id": "UC-EF1",
             "ac_ref": "AC2",
-            "definition": "İstisna akışı: 3 hatalı deneme ile kilitlenme.",
+            "definition": "İstisna akışı: 3 art arda hatalı parola, hesap kilitlenir.",
             "valid": false
           },
           {
             "id": "EG-1",
-            "ac_ref": "AC2",
-            "definition": "Hatalı denemeler arasında doğru giriş olursa sayaç sıfırlanır; sonraki hatalar baştan sayılır (art arda).",
+            "ac_ref": "AC1",
+            "definition": "2 hatalı denemeden sonra doğru girişle sayaç sıfırlanır; ardından 2 hatalı deneme hesabı kilitlemez.",
             "valid": true
           },
           {
             "id": "EG-2",
-            "ac_ref": "AC3",
-            "definition": "Kilitli hesapta hatalı parola girildiğinde sonuç kaynakta tanımsız.",
+            "ac_ref": "AC2",
+            "definition": "Kilitlendikten sonra ek hatalı deneme: mesaj ve kilit durumu bozulmaz (sonuç kaynakta tanımsız).",
             "valid": false
           }
         ],
-        "partitions": [],
-        "boundaries": [
+        "partitions": [
           {
-            "field": "Art arda hatalı parola denemesi sayısı",
-            "item_id": "BV-2",
-            "value": "3",
-            "side": "on",
-            "expected": "reject",
-            "inclusive_source": "AC2",
-            "question_ref": null
+            "field": "Parola / hesap durumu",
+            "item_id": "EP-V1",
+            "definition": "Kilitli olmayan hesap, doğru parola",
+            "representative": "bayi1 / Demo123!",
+            "valid": true
           },
           {
-            "field": "Art arda hatalı parola denemesi sayısı",
+            "field": "Parola / hesap durumu",
+            "item_id": "EP-I1",
+            "definition": "Kilitli olmayan hesap, hatalı parola",
+            "representative": "bayi1 / hatalı parola (ör. Yanlis1!)",
+            "valid": false
+          }
+        ],
+        "boundaries": [
+          {
+            "field": "Art arda hatalı deneme sayısı",
             "item_id": "BV-1",
             "value": "2",
             "side": "below",
             "expected": "accept",
             "inclusive_source": "AC2",
             "question_ref": null
+          },
+          {
+            "field": "Art arda hatalı deneme sayısı",
+            "item_id": "BV-2",
+            "value": "3",
+            "side": "on",
+            "expected": "reject",
+            "inclusive_source": "AC2",
+            "question_ref": null
           }
         ],
-        "decision_tables": [],
+        "decision_tables": [
+          {
+            "id": "DT1",
+            "conditions": [
+              "Hesap kilitli",
+              "Parola doğru"
+            ],
+            "actions": [
+              "Giriş yapılır, katalog açılır",
+              "Sayaç sıfırlanır",
+              "Sayaç artar",
+              "\"Hesabınız kilitlendi\" gösterilir"
+            ],
+            "rules": [
+              {
+                "item_id": "DT-R1",
+                "condition_values": [
+                  {
+                    "condition": "Hesap kilitli",
+                    "value": "Hayır"
+                  },
+                  {
+                    "condition": "Parola doğru",
+                    "value": "Evet"
+                  }
+                ],
+                "actions": [
+                  "Giriş yapılır, katalog açılır",
+                  "Sayaç sıfırlanır"
+                ]
+              },
+              {
+                "item_id": "DT-R2",
+                "condition_values": [
+                  {
+                    "condition": "Hesap kilitli",
+                    "value": "Hayır"
+                  },
+                  {
+                    "condition": "Parola doğru",
+                    "value": "Hayır"
+                  }
+                ],
+                "actions": [
+                  "Sayaç artar"
+                ]
+              },
+              {
+                "item_id": "DT-R3",
+                "condition_values": [
+                  {
+                    "condition": "Hesap kilitli",
+                    "value": "Evet"
+                  },
+                  {
+                    "condition": "Parola doğru",
+                    "value": "Evet"
+                  }
+                ],
+                "actions": [
+                  "\"Hesabınız kilitlendi\" gösterilir"
+                ]
+              },
+              {
+                "item_id": "DT-R4",
+                "condition_values": [
+                  {
+                    "condition": "Hesap kilitli",
+                    "value": "Evet"
+                  },
+                  {
+                    "condition": "Parola doğru",
+                    "value": "Hayır"
+                  }
+                ],
+                "actions": []
+              }
+            ],
+            "undefined_combinations": [
+              {
+                "description": "Hesap kilitli = Evet, Parola doğru = Hayır (DT-R4: sonuç tanımsız, aksiyon belirtilmedi)",
+                "question_ref": "Q1"
+              }
+            ]
+          }
+        ],
         "state_models": [
           {
             "id": "SM1",
             "states": [
               {
                 "id": "S1",
-                "name": "Aktif (sayaç 0)"
+                "name": "Açık (sayaç 0)"
               },
               {
                 "id": "S2",
-                "name": "Aktif (sayaç 1-2)"
+                "name": "Açık (sayaç 1)"
               },
               {
                 "id": "S3",
+                "name": "Açık (sayaç 2)"
+              },
+              {
+                "id": "S4",
                 "name": "Kilitli"
               }
             ],
@@ -2474,52 +2542,58 @@
               {
                 "item_id": "ST-T1",
                 "from": "S1",
-                "event": "doğru parola",
-                "to": "S1"
-              },
-              {
-                "item_id": "ST-T2",
-                "from": "S1",
                 "event": "hatalı parola",
                 "to": "S2"
               },
               {
-                "item_id": "ST-T3",
+                "item_id": "ST-T2",
                 "from": "S2",
-                "event": "3. art arda hatalı parola",
+                "event": "hatalı parola",
                 "to": "S3"
               },
               {
+                "item_id": "ST-T3",
+                "from": "S3",
+                "event": "hatalı parola",
+                "to": "S4"
+              },
+              {
                 "item_id": "ST-T4",
-                "from": "S2",
+                "from": "S3",
                 "event": "doğru parola",
                 "to": "S1"
               },
               {
                 "item_id": "ST-T5",
-                "from": "S3",
+                "from": "S4",
                 "event": "yönetici kilidi açar",
+                "to": "S1"
+              },
+              {
+                "item_id": "ST-T6",
+                "from": "S1",
+                "event": "doğru parola",
                 "to": "S1"
               }
             ],
             "invalid_transitions": [
               {
                 "item_id": "ST-X1",
-                "from": "S3",
+                "from": "S4",
                 "event": "doğru parola"
               }
             ],
             "undefined_transitions": [
               {
-                "description": "Kilitli + hatalı parola: sonuç tanımsız.",
+                "description": "S4 (Kilitli) + hatalı parola: sonuç tanımsız",
                 "question_ref": "Q1"
               },
               {
-                "description": "Kilitli durumun süresi/otomatik açılması tanımsız.",
+                "description": "S4 (Kilitli): kilidin süresi veya otomatik açılması tanımsız",
                 "question_ref": "Q2"
               },
               {
-                "description": "Aktif (sayaç 1-2) + hatalı parola (2. deneme): sayaç değeri ve mesaj kaynakta tanımsız.",
+                "description": "S4 + yönetici kilidi açtığında sayacın değeri tanımsız",
                 "question_ref": "Q3"
               }
             ]
@@ -2530,9 +2604,9 @@
             "item_id": "UC-MF",
             "kind": "MF",
             "steps": [
-              "Bayi giriş sayfasını açar.",
-              "Geçerli kullanıcı adı ve doğru parolayı girer, \"Giriş yap\" seçer.",
-              "Ürün kataloğu açılır."
+              "Bayi giriş sayfasını açar",
+              "Doğru kullanıcı adı ve parolayı girer, \"Giriş yap\" seçer",
+              "Ürün kataloğu açılır"
             ],
             "condition": ""
           },
@@ -2540,22 +2614,22 @@
             "item_id": "UC-AF1",
             "kind": "AF",
             "steps": [
-              "Hesap kilitlidir.",
-              "Portal yöneticisi kilidi açar.",
-              "Bayi doğru parolayla giriş yapar.",
-              "Ürün kataloğu açılır."
+              "Hesap kilitlidir",
+              "Portal yöneticisi kilidi açar",
+              "Bayi doğru parolayla giriş yapar",
+              "Ürün kataloğu açılır"
             ],
-            "condition": "Hesap kilitli ve yönetici kilidi açmıştır."
+            "condition": "Hesap kilitlendikten sonra yönetici kilidi açar"
           },
           {
             "item_id": "UC-EF1",
             "kind": "EF",
             "steps": [
-              "Bayi art arda 3 kez hatalı parola girer.",
-              "\"Hesabınız kilitlendi\" mesajı gösterilir.",
-              "Doğru parola girilse de giriş yapılmaz."
+              "Bayi art arda 3 hatalı parola girer",
+              "Hesap kilitlenir",
+              "\"Hesabınız kilitlendi\" mesajı gösterilir"
             ],
-            "condition": "3 art arda hatalı parola denemesi."
+            "condition": "3 art arda hatalı parola"
           }
         ],
         "pairwise": {
@@ -2565,80 +2639,97 @@
         "model_issues": [
           {
             "kind": "undefined_combination",
-            "detail": "Kilitli hesapta hatalı parola, kilit süresi ve 1-2. hatalı denemede gösterilecek mesaj kaynakta tanımsız."
+            "detail": "Kilitli hesap + hatalı parola sonucu kaynakta tanımsız (Q1); DT-R4 kuralı aksiyonsuz tutuldu, sonuç tahmin edilmedi."
           },
           {
             "kind": "other",
-            "detail": "EG-2 kaynakta tanımsız sonucu içerir; Q1 yanıtlanana kadar beklenen sonuç belirlenemez."
+            "detail": "AC4 yönetici kilit açma arayüzü ve test kullanıcısı test verisinde yok; yönetici hesabı hazırlanmalı."
+          },
+          {
+            "kind": "other",
+            "detail": "EG-2 sonucu kaynakta tanımsız; beklenen sonuç Q1 yanıtına bağlı."
           }
         ],
         "open_questions": [
           {
             "id": "Q1",
-            "question": "Kilitli hesapta hatalı parola girildiğinde hangi mesaj gösterilir ve sayaç etkilenir mi?",
+            "question": "Kilitli hesapla hatalı parola girildiğinde ne olur (mesaj, sayaç)? AC yalnızca doğru parolayı tanımlıyor.",
             "owner": "PO"
           },
           {
             "id": "Q2",
-            "question": "Kilit süresi var mı, otomatik açılır mı, yoksa yalnız yönetici mi açar?",
+            "question": "Kilit süresiz mi, yoksa süre sonunda otomatik açılır mı? Yalnızca yönetici açıyor diyor ama süre belirtilmemiş.",
             "owner": "PO"
           },
           {
             "id": "Q3",
-            "question": "1. ve 2. hatalı denemede kullanıcıya hangi mesaj gösterilir?",
+            "question": "Yönetici kilidi açtığında hatalı deneme sayacı sıfırlanır mı?",
+            "owner": "PO"
+          },
+          {
+            "id": "Q4",
+            "question": "Hatalı deneme sayacı kullanıcı bazında mı tutulur; var olmayan kullanıcı adı denemeleri nasıl işlenir?",
             "owner": "PO"
           }
         ],
         "assumptions": [
           {
             "id": "A1",
-            "statement": "\"Art arda\" ifadesi, arada başarılı giriş olmadan peş peşe hatalı denemeler anlamına gelir.",
+            "statement": "Art arda sayımı, araya başarılı bir giriş girmeyen hatalı denemelerdir; başarılı giriş sayacı sıfırlar (AC1).",
             "owner": "PO"
+          },
+          {
+            "id": "A2",
+            "statement": "Portal yöneticisi kilidi açmak için kullanılabilecek bir yönetici hesabı/arayüzü test ortamında mevcuttur.",
+            "owner": "analyst"
           }
         ]
       },
       "mode": "live",
       "error": null,
-      "cost_usd": 0.03987,
-      "sure_ms": 21165
+      "cost_usd": 0.128968,
+      "sure_ms": 57900
     }
   ],
   "tamamlandi": true,
   "set_vaka_sayisi": 6,
   "kosu_sayisi": 6,
-  "maliyet_usd": 0.446345,
+  "maliyet_usd": 0.551301,
   "butce_usd": 3.0,
   "calisma_alani_basligi": true,
   "guardrails_version": 1,
   "kayit_adaylari": null,
   "cagri_kaydi": "design-model-v1-2026-11-13.calls.jsonl",
-  "cagri_sayisi": 6,
+  "cagri_sayisi": 7,
   "cagri_defteri": "/Users/gokhansipahi/projects/agent-probe/tp-wt-v3/exports/eval-live/ai_call.jsonl",
   "amac": "design_model",
   "via_flow": false,
   "output_check": true,
-  "icerik_hash": null,
+  "icerik_hash": "sha256:9a33853603d4cd2464398e891b14079cd41e3f719667652c7cc197af61d3b839",
   "olcumler": {
     "amac": "design_model",
     "output_check": true,
     "vaka": 6,
-    "ilk_deneme_gecis": 6,
-    "ilk_deneme_gecis_orani": 1.0,
-    "kural_yeniden_isteme_orani": 0.0,
+    "ilk_deneme_gecis": 5,
+    "ilk_deneme_gecis_orani": 0.8333,
+    "kural_yeniden_isteme_orani": 0.1667,
     "sema_yeniden_isteme_orani": 0.0,
-    "duzelme_orani": null,
+    "duzelme_orani": 1.0,
     "kalan_kural_ihlali": 0,
-    "ek_maliyet_usd": 0.0,
-    "ek_maliyet_orani": 0.0,
+    "ek_maliyet_usd": 0.073623,
+    "ek_maliyet_orani": 0.1335,
     "ek_sure_ms": {
-      "p50": null,
-      "p95": null
+      "p50": 29023.0,
+      "p95": 29023.0
     },
-    "kural_turu_histogrami": {},
+    "kural_turu_histogrami": {
+      "DT-R4": 1
+    },
+    "ilk_deneme_maskeli_puanlama": 0,
     "esikler": [
       {
         "ad": "ham_gecis_alt_siniri (bilgi)",
-        "deger": 1.0,
+        "deger": 0.8333,
         "esik": 0.7,
         "gecti": true,
         "bagliyici": false
@@ -2647,12 +2738,12 @@
   },
   "dagilim": {
     "maliyet_usd": {
-      "medyan": 0.03987,
-      "p90": 0.154631
+      "medyan": 0.084105,
+      "p90": 0.144443
     },
     "sure_ms": {
-      "medyan": 21165,
-      "p90": 88174
+      "medyan": 55044,
+      "p90": 98542
     }
   }
 }
