@@ -707,6 +707,11 @@ def _check_case(
         ai_icerik = ai_orijinal is not None and content_hash(ai_orijinal) == h
         # Metamorfik türetilmiş case: olgular dönüşümden bilinir, model çağrılmaz (Ş6).
         turetilen = _turetilen_olgulari(s, tc) if h == tc.icerik_hash and tablolar else None
+        # 013 test verisi kataloğu (dev birleşmesi): case alanları `{veri:<anahtar>}` atfı taşır.
+        # Değer çıkarma ve alıntı doğrulaması case'in okunan anlamıyla (gizli olmayan değerler
+        # çözülmüş) yapılır; gizli atıflar atıf kalır, modele sır gitmez. Kayıt hash'i saklanan
+        # içeriğindir (değişmez).
+        okunan = _veri_cozulmus(s, icerik) if tablolar and turetilen is None else icerik
 
     call_id: uuid.UUID | None = None
     mod: str | None = None
@@ -718,9 +723,9 @@ def _check_case(
         ayrintilar["kaynak"] = "metamorfik"
     else:
         cikti, call_id, mod, cagri_hatasi = _olgulari_cikar(
-            ctx, engine, gateway, icerik, story, sira_no, tablolar
+            ctx, engine, gateway, okunan, story, sira_no, tablolar
         )
-        sonuc, ayrintilar = dogrulama.degerlendir(icerik, tablolar, cikti)
+        sonuc, ayrintilar = dogrulama.degerlendir(okunan, tablolar, cikti)
         if cagri_hatasi:
             ayrintilar["neden"] = NEDEN_CAGRI_HATASI
         elif mod == "replay_miss":
@@ -771,6 +776,17 @@ def _check_case(
             "mode": mod,
             **({"onayli_uyumsuz": True} if onayli_uyumsuz else {}),
         }
+
+
+def _veri_cozulmus(s: Session, icerik: Mapping[str, Any]) -> dict[str, Any]:
+    """Gizli olmayan test verisi atıfları değerine çözülmüş içerik (013 katalog; çözülemeyen ve
+    gizli atıflar olduğu gibi kalır)."""
+    from tp_core.features.testveri import atif
+    from tp_core.features.testveri import service as testveri
+
+    if not atif.case_atiflari(icerik):
+        return dict(icerik)
+    return atif.case_coz(icerik, testveri.katalog(s), bilinmeyen="birak")
 
 
 def _turetilen_olgulari(s: Session, tc: TestCase) -> Mapping[str, Any] | None:

@@ -109,3 +109,27 @@ def test_toplu_karar_kapisi_oge_bazinda(
             select(AuditEvent).where(AuditEvent.eylem == "oracle.exception_reused")
         ).all()
         assert ev.aktor == k["analist"].kullanici_adi
+
+
+def test_veri_atiflari_degerle_kontrol_edilir(api: TestClient, kur) -> None:
+    """Dev birleşmesi (013 test verisi kataloğu): case alanlarındaki gizli olmayan `{veri:…}`
+    atıfları değer çıkarmadan önce değerine çözülür; gizli ve bilinmeyen atıflar atıf kalır."""
+    from tp_core.features.oracle import service as oracle_service
+
+    k = kur([basit_case()])
+    api.cookies.clear()
+    login(api, k["analist"])
+    r = api.post("/test-data", json={"anahtar": "ortak.adet_metni", "deger": "adet 3"})
+    assert r.status_code in (200, 201), r.text
+    icerik = {
+        **basit_case(),
+        "steps": [
+            {"id": "S1", "action": "Ekle", "data": "{veri:ortak.adet_metni}", "expected": "Eklenir"},
+            {"id": "S2", "action": "Git", "data": "{veri:ortak.yok}", "expected": "Toplam 30,00 TL"},
+        ],
+    }
+    with session_scope() as s:
+        okunan = oracle_service._veri_cozulmus(s, icerik)
+    assert okunan["steps"][0]["data"] == "adet 3"
+    assert okunan["steps"][1]["data"] == "{veri:ortak.yok}"
+    assert icerik["steps"][0]["data"] == "{veri:ortak.adet_metni}"  # girdi değişmez
