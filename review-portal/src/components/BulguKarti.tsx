@@ -110,7 +110,9 @@ export function BulguKarti({
     <article className={`bulgu bulgu-${bulgu.severity}`} data-durum={bulgu.durum} aria-labelledby={`${id}-baslik`}>
       <header className="bulgu-baslik">
         <div className="satir-ogeler">
-          <Cip ton={bulgu.severity === "blocking" ? "hata" : "uyari"}>{bulgu.severity === "blocking" ? "Engelleyici" : "Uyarı"}</Cip>
+          <Cip ton={bulgu.durum === "stale" ? "notr" : bulgu.severity === "blocking" ? "hata" : "uyari"}>
+            {bulgu.severity === "blocking" ? (bulgu.durum === "stale" ? "Engelleyiciydi" : "Engelleyici") : "Uyarı"}
+          </Cip>
           {bulgu.bulgu_etiketi && (
             <span className="mono" data-testid="bulgu-etiketi" title="Jira düzeltme yorumundaki bulgu etiketi">
               {bulgu.bulgu_etiketi}

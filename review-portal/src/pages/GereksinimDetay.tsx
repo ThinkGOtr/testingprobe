@@ -105,6 +105,11 @@ export function GereksinimDetay() {
   // Constitution XI: kanıtı deterministik olarak doğrulanmamış bulgu gösterilmez. `unverified`
   // (doğrulama sürüyor) ve `discarded` (doğrulanamadı, elendi) yalnızca sayı olarak görünür.
   const turdakiBulgular = liste.filter((b) => b.kontrol_turu >= 1 && b.durum !== "discarded" && b.durum !== "unverified");
+  // Güncelliğini yitirmiş (doküman değişti, `stale`) bulgular ayrı ve soluk listelenir; başlıklar ve
+  // "engelleyici kalmadı" notu yalnız güncel bulgulara bakar.
+  const guncelBulgular = turdakiBulgular.filter((b) => b.durum !== "stale");
+  const eskimisBulgular = turdakiBulgular.filter((b) => b.durum === "stale");
+  const guncelEngelleyici = guncelBulgular.filter((b) => b.severity === "blocking" && (b.durum === "open" || b.durum === "decided")).length;
   const dogrulaniyor = liste.filter((b) => b.durum === "unverified").length;
   const elenen = Math.max(g.elenen_bulgu ?? 0, liste.filter((b) => b.durum === "discarded").length);
   const turSiniri = g.kontrol_turu >= g.kontrol_turu_ust_sinir;
@@ -520,8 +525,10 @@ export function GereksinimDetay() {
             </p>
             {sonHalSonrasi && (
               <p className="kucuk" data-testid="son-hal-notu">
-                Düzeltmeler Jira'ya yazıldı ve son kontrol turunda engelleyici bulgu kalmadı. Aşağıdaki kartlar bu turun kaydıdır;
-                karar gerekmez.
+                {guncelEngelleyici === 0
+                  ? "Düzeltmeler Jira'ya yazıldı ve son kontrol turunda güncel engelleyici bulgu kalmadı. Aşağıdaki kartlar bu turun kaydıdır; karar gerekmez."
+                  : "Düzeltmeler Jira'ya yazıldı. Aşağıdaki kartlar bu turun kaydıdır; karar gerekmez."}
+                {eskimisBulgular.length > 0 && " Güncelliğini yitirmiş bulgular ayrıca listelenir."}
               </p>
             )}
             {g.kontrol_turu > 0 && (
@@ -533,8 +540,13 @@ export function GereksinimDetay() {
                   </strong>
                 </span>
                 <span>
-                  Gösterilen <strong>{turdakiBulgular.length}</strong>
+                  Gösterilen <strong>{guncelBulgular.length}</strong>
                 </span>
+                {eskimisBulgular.length > 0 && (
+                  <span title="Doküman değiştiği için güncelliğini yitirmiş bulgular (ayrı listelenir)">
+                    Güncelliğini yitiren <strong>{eskimisBulgular.length}</strong>
+                  </span>
+                )}
                 {dogrulaniyor > 0 && (
                   <span>
                     Kanıt doğrulanıyor <strong>{dogrulaniyor}</strong>
@@ -564,18 +576,40 @@ export function GereksinimDetay() {
                 {g.durum === "in_review" ? <Yukleniyor metin={bosBulgu} /> : <BosDurum baslik={bosBulgu} />}
               </div>
             ) : (
-              <div className="bulgu-liste">
-                {turdakiBulgular.map((b) => (
-                  <BulguKarti
-                    key={`${b.id}-${b.durum}`}
-                    bulgu={b}
-                    gereksinimDurumu={g.durum}
-                    kaynak={g.kaynak}
-                    guncellendi={bulguGuncelle}
-                    yenile={tumunuYenile}
-                  />
-                ))}
-              </div>
+              <>
+                {guncelBulgular.length > 0 && (
+                  <div className="bulgu-liste">
+                    {guncelBulgular.map((b) => (
+                      <BulguKarti
+                        key={`${b.id}-${b.durum}`}
+                        bulgu={b}
+                        gereksinimDurumu={g.durum}
+                        kaynak={g.kaynak}
+                        guncellendi={bulguGuncelle}
+                        yenile={tumunuYenile}
+                      />
+                    ))}
+                  </div>
+                )}
+                {eskimisBulgular.length > 0 && (
+                  <details className="bulgu-eskimis" data-testid="eskimis-bulgular" open={guncelBulgular.length === 0}>
+                    <summary>Güncelliğini yitirmiş bulgular ({eskimisBulgular.length})</summary>
+                    <p className="soluk kucuk">Doküman bu bulgulardan sonra değişti; karar gerekmez, yalnız kayıt olarak gösterilir.</p>
+                    <div className="bulgu-liste">
+                      {eskimisBulgular.map((b) => (
+                        <BulguKarti
+                          key={`${b.id}-${b.durum}`}
+                          bulgu={b}
+                          gereksinimDurumu={g.durum}
+                          kaynak={g.kaynak}
+                          guncellendi={bulguGuncelle}
+                          yenile={tumunuYenile}
+                        />
+                      ))}
+                    </div>
+                  </details>
+                )}
+              </>
             )}
           </Kart>
         </div>

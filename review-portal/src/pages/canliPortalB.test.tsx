@@ -264,3 +264,26 @@ describe("/kod: pasif Java kartı", () => {
     expect(neden.closest("label")).toHaveAttribute("title", ham);
   });
 });
+
+describe("tutarlılık kartı: güncelliğini yitirmiş bulgular ayrı", () => {
+  it("eskimiş engelleyici bulgu ayrı bölümde; not yalnız güncel bulgulara bakar", async () => {
+    const { mockVerisi, mockIstek: ham } = await import("../api/mock/handlers");
+    const g = mockVerisi().gereksinimler.find((x) => x.jira_key === "TPD-1")!;
+    izle((c) => {
+      if (c.path === `/requirements/${g.id}/findings`) {
+        return (ham("GET", c.path, new URLSearchParams(), undefined) as Promise<Record<string, unknown>[]>).then((l) => {
+          const [ilk, ...geri] = l;
+          return [{ ...ilk, severity: "blocking", durum: "stale", kontrol_turu: 1 }, ...geri.map((b) => ({ ...b, severity: "warning", durum: "resolved" }))];
+        });
+      }
+      return undefined;
+    });
+    await oturumAc("analist");
+    uygulama(`/gereksinimler/${g.id}`);
+    const eski = await screen.findByTestId("eskimis-bulgular");
+    expect(within(eski).getByText(/Güncelliğini yitirmiş bulgular \(1\)/)).toBeInTheDocument();
+    expect(within(eski).getByText("Engelleyiciydi")).toBeInTheDocument();
+    const not = screen.queryByTestId("son-hal-notu");
+    if (not) expect(not).toHaveTextContent("güncel engelleyici bulgu kalmadı");
+  });
+});
