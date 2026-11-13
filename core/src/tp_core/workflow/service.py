@@ -256,6 +256,8 @@ NESNE_ETIKETLERI: dict[str, str] = {
     "script": "script",
     "consistency_finding": "tutarlılık bulgusu",
     "design_model": "tasarım modeli",
+    "karar_tablosu": "karar tablosu",
+    "metamorfik_iliski": "metamorfik ilişki",
 }
 KARAR_ETIKETLERI: dict[str, str] = {
     "accept": "Olduğu gibi kabul",

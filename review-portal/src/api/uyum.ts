@@ -50,6 +50,7 @@ import type {
   YayinSonucu,
   ZincirDogrulama,
 } from "./types";
+import { caseOracleAlani } from "./uyumKalite";
 
 /** core-api GET /audit gövdesi (tp_core.api.routers.audit.AuditOut). */
 interface CoreDenetimOlayi {
@@ -591,6 +592,8 @@ export function caseUyarla(c: Ham): TestCase {
     ...(c.po_yanit_onerisi !== undefined ? { po_yanit_onerisi: poYanitOnerisiUyarla(c.po_yanit_onerisi) } : {}),
     // D6: atıf kimliği → PO durumu (hazır olmayan case yönlendirmesi metni buna göre değişir).
     ...(nesneMi(c.po_sorulari) ? { po_sorulari: c.po_sorulari as NonNullable<TestCase["po_sorulari"]> } : {}),
+    // 012 Ş7: beklenen sonuç kontrolü (alan yoksa eklenmez: çekirdek sunmuyor).
+    ...caseOracleAlani(c),
     ...caseOtomasyonAlanlari(c),
   };
 }

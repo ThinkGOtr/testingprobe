@@ -168,12 +168,15 @@ class ToolchainClient:
         keep: bool = False,
         platform: str | None = None,
         lang: str | None = None,
+        fault: str | None = None,
     ) -> dict[str, Any]:
         """`keep=True`: koşu dizini test-runner temizliğinde silinmez (`.keep`; kırarak doğrulama
         ve defect adayı kanıtı, MIMARI-SOZLESME §2). `platform` (`android|ios|windows`): Java
         yolu; `test_files` e2e-app köküne göre (`src/test/java/…/<Ad>Test.java`). `lang="java"` +
         web (011 §2.6): gövde `{lang: "java", platform: "web"}`, `test_files` e2e-java köküne
-        göre. `lang` yoksa platformun varsayılanı (web → ts: gövde değişmez)."""
+        göre. `lang` yoksa platformun varsayılanı (web → ts: gövde değişmez). `fault`: ekilmiş
+        hata kodu (012 §4.6; test süreci her testten önce bayiye uygular); None ise gövdeye
+        yazılmaz (eski toolchain'lerle istek baytları aynı kalır)."""
         body: dict[str, Any] = {
             "sha": sha,
             "test_files": list(test_files),
@@ -184,6 +187,8 @@ class ToolchainClient:
         }
         if run_id:
             body["run_id"] = run_id
+        if fault is not None:
+            body["fault"] = fault
         yol = _hedef(platform, lang)
         if yol.java:
             # Java yolu açıkça (`lang`) + sürücü/ortam (`platform`: Appium platformu ya da `web`).

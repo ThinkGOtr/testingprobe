@@ -253,6 +253,63 @@ kayitlar:
     neden: Sistemi korumak için kullanıcı başına istek sınırı vardır.
     cozum: Biraz bekleyip yeniden deneyin.
     rota: null
+  # --- Test kalite doğrulama (012: karar tablosu, beklenen sonuç kontrolü, ekilmiş hata) -------
+  - id: oracle-uyumsuz
+    kodlar: [oracle_uyumsuz]
+    metinler: []
+    baslik: Beklenen değer karar tablosuyla uyuşmuyor
+    anlam: Yüksek riskli case'in beklenen değeri, PO'nun onayladığı karar tablosunun hesapladığı değerden farklı; case bu haliyle onaylanamaz.
+    neden: Case'in beklenen değeri onaydan önce karar tablosuyla karşılaştırılır. Yüksek riskte uyuşmazlık onayı engeller; orta ve düşük riskte yalnız uyarı verilir.
+    cozum: Karşılaştırma tablosundaki farkı inceleyin. Case yanlışsa düzeltip onaylayın; tablo yanlışsa karar tablosunu düzelttirip PO'ya yeniden onaylatın. Fark bilinçliyse gerekçe yazarak istisnayla onaylayın.
+    rota: /gereksinimler/:id/caseler
+  - id: oracle-kontrolsuz
+    kodlar: [oracle_kontrolsuz]
+    metinler: []
+    baslik: Beklenen değerler karar tablosuyla kontrol edilemedi
+    anlam: Yüksek riskli case'i kapsayan onaylı bir karar tablosu var ama case'ten tabloyla karşılaştırılabilir değer çıkarılamadı (ya da model çağrısı başarısız oldu); case gerekçesiz onaylanamaz.
+    neden: Kontrol edilemeyen yüksek riskli bir case sessizce onaylanırsa karar tablosu kapısı atlanmış olur. Bu yüzden onay, gerekçe yazılarak ("kontrolsüz onay") verilir ve Kontrol Kulesi'nde sayılır.
+    cozum: Case'in beklenen değerlerini tablo kolonlarına uyan, açık bir dille yazın ve kontrolü yeniden çalıştırın; olmuyorsa en az 20 karakterlik (10 harf) bir gerekçeyle onaylayın.
+    rota: /gereksinimler/:id/caseler
+  - id: oracle-kontrol-siniri
+    kodlar: [oracle_kontrol_siniri]
+    metinler: []
+    baslik: Çok fazla karar tablosu kontrolü istendi
+    anlam: Aynı case için kısa sürede izin verilenden fazla kontrol istendi.
+    neden: Her kontrol bir model çağrısı yapabilir; hız sınırı maliyeti ve kuyruğu korur.
+    cozum: Bir dakika bekleyip yeniden deneyin; önceki kontrolün sonucu gelince ekran kendiliğinden güncellenir.
+    rota: /gereksinimler/:id/caseler
+  - id: oracle-bekleniyor
+    kodlar: [oracle_bekleniyor]
+    metinler: []
+    baslik: Karar tablosu kontrolü henüz bitmedi
+    anlam: Yüksek riskli case için beklenen sonuç kontrolü sürüyor; kontrol bitmeden onay verilemez.
+    neden: Kontrol arka planda çalışır. Kapsayan onaylı bir karar tablosu varken sonuç gelmeden verilen onay kapıyı atlamış olur.
+    cozum: Kısa süre bekleyip sayfayı yenileyin; kontrol sonucu göründüğünde kararınızı verin.
+    rota: /gereksinimler/:id/caseler
+  - id: karar-tablosu-gecersiz
+    kodlar: [karar_tablosu_gecersiz]
+    metinler: []
+    baslik: Karar tablosu geçersiz
+    anlam: Karar tablosunun içeriği kurallara uymuyor; kaydedilmedi.
+    neden: Bir koşul ya da çıktı ifadesi hatalı, bilinmeyen bir ad kullanılmış, bir satırda çıktı eksik ya da sınırlar (12 girdi, 12 çıktı, 60 satır, 300 karakter) aşılmış olabilir.
+    cozum: Hata metnindeki satırı ve konumu düzeltin. İfadelerde yalnız tanımlı girdi adları, sayılar, ve / veya / degil ile min, max, yuvarla, taban, tavan, eger işlevleri kullanılır.
+    rota: /gereksinimler/:id
+  - id: iliski-gecersiz
+    kodlar: [iliski_gecersiz]
+    metinler: []
+    baslik: İlişki geçersiz
+    anlam: İlişkinin içeriği kurallara uymuyor ya da ilişki bu case'e uygulanamıyor; işlem yapılmadı.
+    neden: Ön koşul, dönüşüm ya da ilişki ifadesi hatalı olabilir, tabloda olmayan bir girdi ya da çıktı adı kullanılmış olabilir veya ilişki onaylı değildir.
+    cozum: Hata metnindeki alanı düzeltin; ilişkinin bağlı olduğu karar tablosundaki girdi ve çıktı adlarını kullanın. Ek case türetmek için ilişkinin PO tarafından onaylanmış olması gerekir.
+    rota: /gereksinimler/:id
+  - id: hata-kosusu-suruyor
+    kodlar: [hata_kosusu_suruyor]
+    metinler: []
+    baslik: Süren bir ekilmiş hata koşusu var
+    anlam: Bir ekilmiş hata koşusu kuyrukta ya da çalışıyor; bitmeden yenisi başlatılamaz.
+    neden: Koşu demo uygulamaya bilerek hata koyar ve tek cihazı kullanır; iki koşu aynı anda çalışırsa sonuçlar birbirine karışır.
+    cozum: Kontrol Kulesi'ndeki koşunun bitmesini bekleyin ya da koşuyu iptal edip yeniden başlatın.
+    rota: /kontrol-kulesi
   - id: butce-asildi
     kodlar: [butce_asildi]
     metinler: []
@@ -269,3 +326,19 @@ kayitlar:
     neden: Geçici bir altyapı sorunu ya da hata olabilir.
     cozum: Bir süre sonra yeniden deneyin; sürerse Denetim ekranındaki kayıtlarla birlikte yöneticiye iletin.
     rota: /denetim
+  - id: iliski-bulunamadi
+    kodlar: [iliski_bulunamadi]
+    metinler: []
+    baslik: İlişki bulunamadı
+    anlam: İstenen metamorfik ilişki bu gereksinimde yok; ek case türetilmedi.
+    neden: İlişki başka bir gereksinime ait olabilir ya da bağlantı eski olabilir.
+    cozum: Gereksinimin karar tabloları ekranını yenileyin ve listedeki onaylı ilişkilerden birini seçin.
+    rota: /gereksinimler/:id
+  - id: oracle-kayit-degisti
+    kodlar: [oracle_kayit_degisti]
+    metinler: []
+    baslik: Karar tablosu kontrolü siz baktıktan sonra değişti
+    anlam: Onay ya da istisna, ekranda gördüğünüz kontrol kaydına bağlıdır; o kayıt siz karar verirken yeniden hesaplandı (sonuç ya da tablolar değişmiş olabilir).
+    neden: İstisna gerekçesi görülmemiş bir karşılaştırmaya verilmesin diye karar, görülen kaydın damgasını taşır; damga uymazsa karar uygulanmaz.
+    cozum: Case'i yenileyin, güncel karar tablosu sonucunu inceleyin ve kararınızı yeniden verin.
+    rota: /gereksinimler/:id/caseler

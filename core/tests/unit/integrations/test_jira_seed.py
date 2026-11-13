@@ -439,8 +439,11 @@ def test_golden_specs_cover_every_round_and_scenario() -> None:
     assert "consistency_check/golden/f2-kod-hatasi/TPD-1-r2.json" in names
     assert "case_generation/golden/f2-kod-hatasi/TPD-1.json" in names
     assert "design_model/golden/f2-kod-hatasi/TPD-1.json" in names
+    # 012: karar tablosu taslağı da PO onaylı story metnini beyan eder (case_facts beyanı case'tir).
+    assert "decision_table_draft/golden/TPD-1.json" in names
     # 14 (011 öncesi) + design_model (TPD-1, f2, TPD-3, TPD-4) + case_deepening (2)
-    assert len(names) == 20
+    # + decision_table_draft (1)
+    assert len(names) == 21
 
 
 @pytest.mark.parametrize(("name", "spec"), GOLDEN_SPECS, ids=[n for n, _ in GOLDEN_SPECS])

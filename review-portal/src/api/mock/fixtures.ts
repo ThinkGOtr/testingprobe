@@ -51,7 +51,7 @@ import { uygulamaHatalari, uygulamaKosulari, uygulamaScriptleri } from "./platfo
 import { dilScriptleri } from "./diller";
 import kaynaklar from "./golden/kaynaklar.json";
 import type { TasarimModeliKaydi } from "../tasarimModeliTipleri";
-import type { KaliteKaydi } from "./kalite";
+import type { KaliteKaydi } from "./kaliteSeti";
 
 import { uretimOzetiUyarla } from "../uyum";
 import type { MockAcikSoru } from "./acikSorular";
@@ -80,8 +80,8 @@ export interface MockVeri {
   caseUretimleri?: Record<string, CaseUretimOzeti[]>;
   /** Test tasarım modelleri (011 F3, iki tur; gereksinim kimliği → sürümler, eskiden yeniye). */
   tasarimModelleri?: Record<string, TasarimModeliKaydi[]>;
-  /** Case seti review (P8) ve denetim (P9) kayıtları (gereksinim kimliği → kayıt; mock/kalite.ts). */
-  kalite?: Record<string, KaliteKaydi>;
+  /** Case seti review (P8) ve denetim (P9) kayıtları (gereksinim kimliği → kayıt; mock/kaliteSeti.ts). */
+  kaliteSeti?: Record<string, KaliteKaydi>;
   /** Gereksinimde saklanan son üretim seçenekleri (011 K5; gereksinim kimliği → seçenekler). */
   uretimSecenekleri?: Record<string, UretimSecenekleri>;
   /** D1: gereksinimde saklanan son üretim kipi (generation-options `kayitli.kip`). */
@@ -623,6 +623,23 @@ export function icerikHash(icerik: TestCaseIcerik): string {
   return `sha256:${sha256Hex(kanonikJson(icerik)).slice(0, 16)}`;
 }
 
+/**
+ * u2 N2 — AI'ın sınır hatası yaptığı C6 (`rules/replay/case_facts/golden/ai-sinir-hatasi/TPD-1-C6.json`, girdi
+ * beyanı `input_match.case_text`): tam 750,00 TL'de uyarı "görünür" der; story "altında uyarı" der (750 dahil geçer).
+ * Golden C6'dan yalnız başlık, S4 beklenen ve beklenen sonuç ayrılır; fixtures.test.ts golden metniyle birebir denetler.
+ */
+export const TPD1_C6_SINIR_HATASI: TestCaseIcerik = {
+  ...TPD1_GOLDEN_CASELER[5],
+  // 012 demo (u2 N2): AI'ın sınır hatası yüksek riskli uyuşmazlık olarak kapıya takılır. v3 içerikte
+  // `risk` yok; core `yuksek_risk_mi` v3'te `priority == "P1"` ile yüksek risk sayar (golden C6 = P2).
+  ...(TPD1_GOLDEN_CASELER[5].risk === undefined ? { priority: "P1" as const } : {}),
+  title: "Kampanyasız siparişte minimum tutara eşit toplamda uyarı gösterilir ve onay pasif olur",
+  steps: TPD1_GOLDEN_CASELER[5].steps.map((s, i) =>
+    i === 3 ? { ...s, expected: 'Toplam 750,00 TL; "Minimum sipariş tutarı 750,00 TL" uyarısı görünür ve "Siparişi onayla" butonu pasiftir' } : s,
+  ),
+  expected_result: 'Toplam 750,00 TL olduğunda "Minimum sipariş tutarı 750,00 TL" uyarısı gösterilir ve sipariş onaylanamaz',
+};
+
 function caseler(): TestCase[] {
   const ortak = {
     requirement_id: "req-tpd-1",
@@ -670,7 +687,9 @@ function caseler(): TestCase[] {
     // İnsan kararı: 6 ve 7 adet case'leri kampanya sınırını zaten kapsıyor.
     karar("case-1-6", 4, G[3], { ...analist, durum: "rejected", karar: "reject", ret_nedeni: "duplicate", karar_zamani: t(30, "10:38"), review_sure_ms: 30000 }),
     karar("case-1-4", 5, G[4], { ...analist, durum: "approved", karar: "approve", karar_zamani: t(30, "10:41"), duzeltme_olcusu: 0, review_sure_ms: 52000 }),
-    karar("case-1-7", 6, G[5], { durum: "draft" }),
+    // u2 N2: AI'ın sınır hatası (750,00 TL'de uyarı görünür). T2 düzeltilip onaylanınca kapı bu case'i engeller.
+    // DEMO-AKISI §6: varyant IDE kanalından (Claude Code `submit_drafts`) taslak olarak gelir.
+    karar("case-1-7", 6, TPD1_C6_SINIR_HATASI, { durum: "draft", kanal: "ide" }),
     // Kredi limiti case'i bilinen kod hatasını hedefler (golden etiketi expected-code-defect).
     karar("case-1-5", 7, G[6], { durum: "draft", kanal: "ide", mode: "replay" }),
     // 011: C8 (sipariş geçmişi) ve C9 (kampanyalı sepette minimum tutar yok) yayınlandı; kodları üretim dili
@@ -1513,6 +1532,14 @@ function hatalar(): HataAnalizi[] {
         { kod: "consistent", aciklama: "3 tekrarın 3'ünde aynı assertion farkı (flaky değil)", kaynak: "playwright-json", kanit: "repeat-each 3: failed ×3" },
         { kod: "locator_resolved", aciklama: "Locator tek eleman buldu; sayfa yapısı beklenen", kaynak: "aria-snapshot", kanit: '- row "Portakal Gazozu 1L 6 adet":\n  - status "Bedava": 1 adet' },
         { kod: "assertion_mismatch", aciklama: "cart-line-free-P-001 beklenen \"0\", gerçekleşen \"1\"", kaynak: "trace", kanit: "expect(getByTestId('cart-line-free-P-001')).toHaveText('0')" },
+        // 012 R3: karar tablosu sinyali tek satır başlıkla (core `baslik`), ayrıntı `aciklama`'da.
+        {
+          kod: "karar_tablosu_uyumlu",
+          baslik: "Uygulama onaylı kurala aykırı (T1 · R2: adet 6 → bedava_adet 0)",
+          aciklama: "Test beklentisi 0, gerçekleşen 1, onaylı karar tablosu (T1, satır R2) 0: test tabloyla aynı, uygulama farklı → ürün hatası adayı.",
+          kaynak: "karar_tablosu",
+          kanit: null,
+        },
       ],
       karar_kaynagi: "rule",
       llm_yorumu: null,

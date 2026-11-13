@@ -31,6 +31,7 @@ import { IzinGerekli } from "./components/IzinGerekli";
 import { useKimlikKipi } from "./lib/kimlikKipi";
 import { AiprobeGirisineYonlendir } from "./pages/AiprobeGiris";
 import { RolSec } from "./pages/RolSec";
+import { KararTablolari } from "./pages/kalite/KararTablolari";
 
 function OturumGerekli({ children }: { children: ReactNode }) {
   const { kullanici, yukleniyor } = useOturum();
@@ -106,6 +107,7 @@ export function Rotalar() {
         <Route path="gereksinimler/:id/caseler" element={<Korumali yol="/gereksinimler/:id/caseler"><CaseReview /></Korumali>} />
         {/* Yayın ekranı kendi bilgi kartıyla korunur (`publish.preview` salt okunur; yayın `case.publish`). */}
         <Route path="gereksinimler/:id/yayin" element={<Yayin />} />
+        <Route path="gereksinimler/:id/karar-tablolari" element={<Korumali yol="/gereksinimler/:id/karar-tablolari"><KararTablolari /></Korumali>} />
         <Route path="caseler" element={<Korumali yol="/caseler"><TestCaseleri /></Korumali>} />
         <Route path="kod" element={<Korumali yol="/kod"><Kod /></Korumali>} />
         <Route path="kod/:id" element={<Korumali yol="/kod/:id"><ScriptDetay /></Korumali>} />

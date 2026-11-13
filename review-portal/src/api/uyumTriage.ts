@@ -26,6 +26,7 @@ import type {
 import { dizgeler, ilk, jiraKayitAdresi, kimlik, metin, metinYaDaNull, modUyarla, nesneMi, sayiYaDaNull, type Ham } from "./uyum";
 import { adresUyarla, prUyarla } from "./uyumDemoB";
 import { platformUyarla } from "../lib/platform";
+import { triageCaseBagi } from "./uyumKalite";
 
 const nesne = (x: unknown): Ham => (nesneMi(x) ? x : {});
 const dizi = (x: unknown): unknown[] => (Array.isArray(x) ? x : []);
@@ -81,9 +82,11 @@ function sinyalUyarla(x: unknown, i: number): EslesenSinyal | null {
   const kod = metin(ilk(x, "kod", "code", "id", "sinyal", "signal"), `s${i + 1}`);
   if (!aciklama && !kod) return null;
   const k = ilk(x, "kanit", "evidence", "deger", "value");
+  const baslik = metinYaDaNull(ilk(x, "baslik", "title"));
   return {
     kod,
-    aciklama: aciklama || kod,
+    ...(baslik ? { baslik } : {}),
+    aciklama: aciklama || baslik || kod,
     kaynak: metin(ilk(x, "kaynak", "source")),
     kanit: typeof k === "string" ? k || null : nesneMi(k) || Array.isArray(k) ? JSON.stringify(k) : typeof k === "number" ? String(k) : null,
   };
@@ -360,6 +363,8 @@ export function hataAnaliziUyarla(h: Ham): HataAnalizi {
     zaman: metin(ilk(h, "zaman", "olusturma", "created_at")),
     script_id: metinYaDaNull(kimlik(h.script_id)),
     platform: platformUyarla(h.platform) ?? platformUyarla(nesne(ilk(h, "oneri", "onarim")).platform),
+    // 012 Ş7: case bağı (alt tür `beklenti` için "Case düzeltilmeli").
+    ...triageCaseBagi(h),
   };
 }
 

@@ -49,6 +49,7 @@ import logging
 import uuid
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -143,6 +144,8 @@ KISITLI_GIZLI_ALANLAR = (
     "testci_karari",
     "testci",
     "son_onay",
+    # 012 kalite: karar tablosu kontrolü ve istisna gerekçesi karar geçmişidir.
+    "oracle",
 )
 # Case kararı ve yayın yalnızca bu gereksinim durumlarında (PO onayı güncel olmalı). Story değişip
 # gereksinim `new`'e dönünce (PO onayı silinir) eski metinden üretilmiş case'ler kullanılamaz.
@@ -948,6 +951,13 @@ def store_cases(
                 tc.icerik = atif.case_gizli_esle(esli[tc.id], gizli_kalan)
                 tc.icerik_hash = content_hash(tc.icerik)
     session.flush()
+    # --- 012 oracle kancası: case'lerin yazıldığı tek yer (portal üretimi, IDE/MCP taslakları);
+    # geçerli karar tablosu varsa beklenen sonuç kontrolü işleri (features/oracle) ---
+    if eklenen:
+        from tp_core.features.oracle import service as oracle_service
+
+        oracle_service.uretim_sonrasi(session, req.id)
+    # --- /012 ---
     return eklenen, tekrar
 
 
@@ -1716,6 +1726,56 @@ def onay_engeli(
     return hata.mesaj if isinstance(hata, InvalidCaseContent) else str(hata)
 
 
+# --- 012 oracle kancası: kapı girdisi ve çağrısı (features/oracle/kapi.py) ---
+@dataclass(frozen=True)
+class OracleKarari:
+    """Karar gövdesinin karar tablosu kapısı alanları (012 §13.2)."""
+
+    gerekce: str | None = None
+    tur: str | None = None
+    kayit_damgasi: str | None = None
+
+
+def _oracle_kapisi(
+    session: Session,
+    tc: TestCase,
+    user: Principal,
+    icerik_hash: str,
+    icerik: Mapping[str, Any] | None,
+    girdi: OracleKarari,
+    olculer: dict[str, Any],
+) -> None:
+    """Kapıyı uygular; uyarı ve istisna kimliğini karar ölçülerine yazar. Görülen hash kapıdan
+    ÖNCE denetlenir (review 2 t2 N14): bayat istek kontrol işi, düşürme denetimi ya da ikinci
+    bağlantı açmaz (record_approval aynı denetimi yineler)."""
+    from tp_core.features.oracle import kapi as oracle_kapi
+    from tp_core.workflow.service import OnayHashUyusmuyor
+
+    if icerik_hash != tc.icerik_hash:
+        raise OnayHashUyusmuyor(
+            "test_case: içerik siz görüntüledikten sonra değişmiş; yenileyip tekrar karar verin"
+        )
+    kapi_sonucu = oracle_kapi.onay_denetimi(
+        session,
+        tc,
+        content_hash(dict(icerik)) if icerik is not None else tc.icerik_hash,
+        girdi.gerekce,
+        user,
+        icerik=icerik,
+        istisna_turu=girdi.tur,
+        kayit_damgasi=girdi.kayit_damgasi,
+    )
+    if kapi_sonucu.uyarilar:
+        olculer["oracle_uyarilari"] = kapi_sonucu.uyarilar
+    if kapi_sonucu.istisna_id is not None:  # yeni ya da yeniden kullanılan (g2 Y11)
+        olculer["oracle_istisna_id"] = str(kapi_sonucu.istisna_id)
+        if kapi_sonucu.istisna_yeniden:
+            olculer["oracle_istisna_yeniden"] = True
+
+
+# --- /012 ---
+
+
 MASKELI_DUZELTME_METNI = "Gizli değer maskeli görünüyor; {veri:…} atfını kullanın"
 DUZ_GIZLI_DUZELTME_METNI = "Gizli değer düz yazılmış ve atfa çevrilemedi; {veri:…} atfını kullanın"
 
@@ -1733,6 +1793,9 @@ def decide(
     beklenen_anlam_degisti: bool | None = None,
     toplu: bool = False,
     ek_olculer: Mapping[str, Any] | None = None,
+    oracle_istisna_gerekce: str | None = None,
+    oracle_istisna_turu: str | None = None,
+    oracle_kayit_damgasi: str | None = None,
 ) -> TestCase:
     """Portal kararı (Constitution I): görülen hash ile `review` kaydı + durum geçişi.
 
@@ -1749,9 +1812,30 @@ def decide(
     if icerik_hash is None:
         raise InvalidDecision("karar, görüntülenen içeriğin hash'ini (icerik_hash) taşımalı")
     if karar == "reopen":
-        return _reopen(session, tc, user, icerik_hash, gerekce)
+        tc = _reopen(session, tc, user, icerik_hash, gerekce)
+        # --- 012 oracle kancası: taslağa alınan case'in güncel hash'i kontrol edilir ---
+        from tp_core.features.oracle import service as oracle_service
+
+        oracle_service.karar_sonrasi(session, tc)
+        # --- /012 ---
+        return tc
+    oracle_girdisi = OracleKarari(
+        gerekce=oracle_istisna_gerekce,
+        tur=oracle_istisna_turu,
+        kayit_damgasi=oracle_kayit_damgasi,
+    )
     if karar in ("approve", "send_back"):
-        return _son_onay(session, tc, user, karar, icerik_hash, icerik, gerekce, toplu=toplu)
+        return _son_onay(
+            session,
+            tc,
+            user,
+            karar,
+            icerik_hash,
+            icerik,
+            gerekce,
+            toplu=toplu,
+            oracle_girdisi=oracle_girdisi,
+        )
     req = get_requirement(session, tc.requirement_id)
     # PO onayı sıfırlanmış/değişmiş metnin case'i onaylanamaz (ret de eski metne aittir).
     hata = _karar_engeli(tc, req)
@@ -1829,6 +1913,13 @@ def decide(
         raise InvalidDecision("İçerik yalnızca 'edit' kararında gönderilir")
     elif karar == "accept":
         olculer = {"mesafe": 0.0, "kucuk_duzeltme": True, "degisen_alanlar": []}
+    # --- 012 oracle kancası: karar tablosu onay kapısı (features/oracle/kapi.py). Testçinin
+    # kabulü (`accept`/`edit`, taslak → ready) içeriği kabul eder; Analistin son onayı
+    # (`approve`, `_son_onay`) kapıdan yeniden geçer (aynı tür + tablo kümesiyle verilmiş istisna
+    # yeniden gerekçe istemez). ---
+    if karar in TEST_CASE_KABUL:
+        _oracle_kapisi(session, tc, user, icerik_hash, icerik, oracle_girdisi, olculer)
+    # --- /012 ---
     if karar in TEST_CASE_KABUL:
         # K10 case yarısı: kabul edilen içeriğin atıfladığı test verisinin değer özetleri
         # (Analist son onayı da kendi anındaki izi yazar; `_son_onay`).
@@ -1854,6 +1945,13 @@ def decide(
         tc.surum += 1
     hedef = "ready" if karar in TEST_CASE_KABUL else "rejected"
     transition(session, tc, hedef, user, "draft", sebep=f"karar: {karar}")
+    # --- 012 oracle kancası: düzeltilen case'in yeni güncel hash'i aynı işlemde kontrol kuyruğuna
+    # girer (kapı kayıt istemediyse de; onaylı-uyumsuz sinyali için) ---
+    if karar == "edit":
+        from tp_core.features.oracle import service as oracle_service
+
+        oracle_service.karar_sonrasi(session, tc)
+    # --- /012 ---
     return tc
 
 
@@ -1895,8 +1993,11 @@ def _son_onay(
     gerekce: str | None,
     *,
     toplu: bool = False,
+    oracle_girdisi: OracleKarari | None = None,
 ) -> TestCase:
-    """Analist son onayı: `approve` ready → approved, `send_back` ready → draft (gerekçeli)."""
+    """Analist son onayı: `approve` ready → approved, `send_back` ready → draft (gerekçeli).
+
+    012: `approve` karar tablosu kapısından yeniden geçer (`_oracle_kapisi`)."""
     if icerik is not None:
         raise InvalidDecision("İçerik yalnızca Testçinin 'edit' kararında gönderilir")
     if tc.durum != "ready":
@@ -1931,6 +2032,12 @@ def _son_onay(
         "review_sure_ms": _review_sure_ms(session, tc, user),
         "son_onay": True,
     }
+    # --- 012 oracle kancası: son onay da karar tablosu kapısından geçer ---
+    if karar == "approve":
+        _oracle_kapisi(
+            session, tc, user, icerik_hash, None, oracle_girdisi or OracleKarari(), olculer
+        )
+    # --- /012 ---
     if karar == "approve":
         # K10 case yarısı: son onay anındaki test verisi izi (`veri_onaydan_sonra_degisen`).
         olculer["veri_izi"] = _veri_izi(session, tc.icerik)
@@ -2013,6 +2120,13 @@ BEKLENMEYEN_HATA_NEDENI = "Beklenmeyen hata; bu case için yeniden deneyin"
 TOPLU_KARARLAR = frozenset({"accept", "approve"})
 
 
+def _hata_kodu(exc: WorkflowError) -> str:
+    """Toplu karar öğesinin hata kodu: sınıfın sabit `kod`'u, yoksa durum kodundan genel kod."""
+    from tp_core.api.errors import genel_kod
+
+    return exc.kod or genel_kod(exc.status_code)
+
+
 def bulk_decide(
     session: Session,
     ogeler: Sequence[tuple[uuid.UUID, str]],
@@ -2032,6 +2146,8 @@ def bulk_decide(
       `GORULMEDI_NEDENI`, var ama süre dolmamışsa `YENI_GORUNTULEME_NEDENI`).
     - Kilitler case_id sırasıyla alınır (eşzamanlı toplu onaylarda deadlock yok); yanıt istek
       sırasındadır. Bir öğenin hatası (iş kuralı, DB hatası, beklenmeyen) yalnız o öğeyi düşürür.
+      İş kuralı hatasında öğe `kod` taşır (012 §14.5: karar tablosu kapısı `oracle_uyumsuz`,
+      `oracle_kontrolsuz`, `oracle_bekleniyor` …; istisna yalnız tekil kararda verilir).
     - Kod üretimi onaydan ayrıdır (K16): yalnız Analist son onayında, onaylananlar için tek
       `codegen.otomatik` işi kuyruğa alınır (`otokod.toplu_kuyruga_al`); öğelerde `otomatik_kod`
       null. Toplu kabulde (`accept`) kod üretimi yoktur (`otomatik_kod: null`).
@@ -2050,7 +2166,7 @@ def bulk_decide(
     islenen: set[uuid.UUID] = set()
     for cid, icerik_hash in ogeler:
         sonuc: dict[str, Any] = {"case_id": str(cid), "durum": "onaylandi", "neden": None,
-                                 "otomatik_kod": None}  # fmt: skip
+                                 "kod": None, "otomatik_kod": None}  # fmt: skip
         sonuclar.append(sonuc)
         if cid in islenen:
             sonuc.update(durum="atlandi", neden="Case istekte birden çok kez var")
@@ -2070,7 +2186,10 @@ def bulk_decide(
                 decide(session, cid, user, karar=karar, icerik_hash=icerik_hash, toplu=True)
                 session.flush()
         except WorkflowError as exc:
-            sonuc.update(durum="hata", neden=str(exc))
+            # 012 §14.5: öğe hatasının makinece okunur kodu (ör. karar tablosu kapısının
+            # `oracle_uyumsuz` / `oracle_kontrolsuz` / `oracle_bekleniyor`); istisna gerekçesi
+            # toplu kararda verilmez, case tekil kararda istisnayla onaylanır.
+            sonuc.update(durum="hata", neden=str(exc), kod=_hata_kodu(exc))
             continue
         except DBAPIError:
             log.exception("toplu onay: case %s veritabanı hatası", cid)
@@ -2095,7 +2214,7 @@ def bulk_decide(
             "istenen": len(ogeler),
             **ozet,
             "ogeler": [
-                {"case_id": s["case_id"], "durum": s["durum"], "neden": s["neden"]}
+                {"case_id": s["case_id"], "durum": s["durum"], "neden": s["neden"], "kod": s["kod"]}
                 for s in sonuclar
             ],
             "otomatik_kod": otomatik_kod,
@@ -2296,6 +2415,11 @@ def serialize_cases(
     for r in reqs.values():
         eski |= old_content_case_ids(session, r)
     denetim_ozetleri = {rid_: ozet_modulu.AuditSummaries(session, r) for rid_, r in reqs.items()}
+    # --- 012 oracle kancası: karar tablosu kontrol sonucu (features/oracle) ---
+    from tp_core.features.oracle import service as oracle_service
+
+    oracle_ozetleri = oracle_service.case_oracle_ozetleri(session, cases)
+    # --- /012 ---
     veri_haritasi = testveri.veri_haritasi(session)
     katalog_anahtarlari = testveri.anahtarlar(session)
     # K22: case alanlarında gizli değer `{veri:<anahtar>}` atfı (eski case'ler dahil; yalnız
@@ -2355,6 +2479,7 @@ def serialize_cases(
                 "Bu case gereksinimin önceki (PO onayı yenilenmiş) içeriği için üretildi; "
                 "yeni metne göre gözden geçirin."
             )
+        uyarilar += list(olcu.get("oracle_uyarilari") or [])  # 012: kararda kayda geçen uyarılar
         # AI özgün içeriği = ilk düzeltme kararından ÖNCEKİ içerik (§8.10 "fark").
         ilk_edit = next((r for r in rs if r.karar == "edit"), None)
         ai_icerik = _gorunum(
@@ -2427,6 +2552,7 @@ def serialize_cases(
                 "veri_onaydan_sonra_degisen": testveri.degisen_anahtarlar(
                     session, onay_izleri.get(c.id), guncel_ozetler
                 ),
+                "oracle": oracle_ozetleri.get(c.id),  # 012
             }
         )
     # 011 K16 (D6): atıf yapılan soruların PO'ya gönderim/yanıt durumu + düzelt önerisi.
@@ -2772,6 +2898,8 @@ def requirement_metrics(session: Session, requirement_id: uuid.UUID) -> dict[str
         "manuel_baz_ms": manuel_baz,
         "manuel_baz_kaynagi": baz["kaynak"],
         "manuel_baz": baz,
+        # 012 §4.7: AI'ın beklenen değerlerinin karar tablosuyla uyuşması (features/oracle).
+        "beklenti_dogrulugu": _beklenti_dogrulugu(session, req.id),
     }
 
 
@@ -2794,6 +2922,12 @@ def requirement_metrics_kisitli(session: Session, requirement_id: uuid.UUID) -> 
         "durumlar": {str(k): int(v) for k, v in durumlar.items()},
         "kisitli": True,
     }
+
+
+def _beklenti_dogrulugu(session: Session, requirement_id: uuid.UUID) -> dict[str, Any]:
+    from tp_core.features.oracle import metrik as oracle_metrik
+
+    return oracle_metrik.beklenti_dogrulugu(session, requirement_id)
 
 
 # Demo-A (§17, başarı ölçütü 6): "AI + review süresi manuel baz değerle yan yana". Baz değer

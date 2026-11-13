@@ -44,11 +44,12 @@ def _kisi(rol: str) -> Principal:
 # ------------------------------------------------------------------ yükleyici
 
 
-def test_kural_seti_yuklenir_ve_28_kural() -> None:
+def test_kural_seti_yuklenir_ve_30_kural() -> None:
     ks = _ks()
-    # §17.3'ün 26 kuralı + 011 `script-dogrulanmamis` + 012 `case-son-onay-bekliyor`.
-    assert len(ks.kurallar) == 28
-    assert len({k.id for k in ks.kurallar}) == 28
+    # §17.3'ün 26 kuralı + 011 `script-dogrulanmamis` + 012 rol `case-son-onay-bekliyor` +
+    # 012 kalite §4.4'ün iki kuralı (`hata-beklenti-case-duzelt`, `hata-beklenti-bilgi`).
+    assert len(ks.kurallar) == 30
+    assert len({k.id for k in ks.kurallar}) == 30
     assert set(ks.taslaklar) == {
         "po-hatirlatma",
         "ac-eksik",

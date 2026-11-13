@@ -56,7 +56,7 @@ def fake_playwright(
             "argv": sys.argv[1:],
             "env": {{k: os.environ.get(k) for k in (
                 "BASE_URL", "DEMO_API_URL", "DEMOAPP_TEST_TOKEN", "BREAK_CAMPAIGN", "CI",
-                "TP_RUN_ID", "ANTHROPIC_API_KEY")}},
+                "TP_RUN_ID", "ANTHROPIC_API_KEY", "TP_FAULT")}},
             "node_modules_link": os.path.islink("node_modules"),
         }}))
         time.sleep({sleep_s})
@@ -183,7 +183,9 @@ def test_passed_run_layout_env_and_argv(
         "CI": "1",
         "TP_RUN_ID": "r1",
         "ANTHROPIC_API_KEY": None,
+        "TP_FAULT": "",
     }
+    assert data["break_campaign"] is False and data["fault"] is None
     assert demo_api.calls == []  # kırılma istenmedi → /test/break çağrılmaz
     # Koşu öncesi sağlık kontrolü raporda (Faz 4 triyaj kuralı 1'in deterministik sinyali).
     assert demo_api.gets == ["/web/", "/health"]
@@ -303,6 +305,12 @@ def test_unknown_commit_404(client: TestClient) -> None:
         {"sha": "main", "test_files": ["../x.spec.ts"]},
         {"sha": "main", "env": {"NODE_OPTIONS": "--require=/tmp/x.js"}},
         {"sha": "main", "env": {"BREAK_CAMPAIGN": "evet"}},
+        {"sha": "main", "fault": "Kampanya-Yok"},
+        {"sha": "main", "fault": "x" * 41},
+        {"sha": "main", "fault": "a_b\n"},
+        {"sha": "main", "fault": 7},
+        {"sha": "main", "env": {"TP_FAULT": "a b"}},
+        {"sha": "main", "fault": "min_siparis_500", "env": {"TP_FAULT": "min_siparis_1000"}},
         {"sha": "main", "repeat_each": 0},
         {"sha": "main", "retries": 9},
         {"sha": "main", "workers": 3},
@@ -322,6 +330,123 @@ def test_break_requires_token(
     resp = _run(client, sha=forge.main, break_campaign=True)
     assert resp.status_code == 422
     assert "DEMOAPP_TEST_TOKEN" in resp.json()["detail"]
+
+
+# ------------------------------------------------------------------ ekilmiş hata (012 §4.6)
+
+
+@pytest.mark.parametrize(
+    "istek",
+    [
+        {"fault": "min_siparis_500"},
+        {"env": {"TP_FAULT": "min_siparis_500"}},
+        {"fault": "min_siparis_500", "env": {"TP_FAULT": "min_siparis_500"}},
+    ],
+)
+def test_fault_run_passes_env_reports_and_restores(
+    client: TestClient,
+    forge: Forge,
+    env: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    demo_api: DemoApi,
+    istek: dict[str, Any],
+) -> None:
+    """`fault` (ya da eş anlamlısı env.TP_FAULT) test sürecine TP_FAULT olarak geçer, raporda
+    `break_campaign`'in yanında durur ve koşu sonunda her bayi için geri alınır."""
+    monkeypatch.setenv("TP_NODE", str(fake_playwright(tmp_path, report=REPORT_PASSED)))
+    resp = _run(client, sha=forge.main, **istek)
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["status"] == "passed"
+    assert (data["fault"], data["break_campaign"]) == ("min_siparis_500", False)
+    rec = json.loads(Path(data["json"]).with_name("argv.json").read_text())
+    assert (rec["env"]["TP_FAULT"], rec["env"]["BREAK_CAMPAIGN"]) == ("min_siparis_500", "")
+    assert data["break_restore"] == {"ok": True, "bayiler": {"bayi1": "ok", "bayi2": "ok"}}
+    assert [(c["path"], c["token"], c["body"]) for c in demo_api.calls] == [
+        ("/test/break", "test-belirteci", {"kullanici_adi": "bayi1", "kampanya": False}),
+        ("/test/break", "test-belirteci", {"kullanici_adi": "bayi2", "kampanya": False}),
+    ]
+    kayit = json.loads((env / "runs" / "r1" / "run.json").read_text())
+    assert (kayit["fault"], kayit["break_campaign"]) == ("min_siparis_500", False)
+
+
+def test_fault_with_break_campaign_passes_both(
+    client: TestClient,
+    forge: Forge,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    demo_api: DemoApi,
+) -> None:
+    """İkisi birlikte verilebilir; hangisinin uygulanacağına fixture karar verir (TP_FAULT)."""
+    monkeypatch.setenv("TP_NODE", str(fake_playwright(tmp_path, report=REPORT_PASSED)))
+    data = _run(client, sha=forge.main, fault="fiyat_p004_31", break_campaign=True).json()
+    assert (data["fault"], data["break_campaign"]) == ("fiyat_p004_31", True)
+    rec = json.loads(Path(data["json"]).with_name("argv.json").read_text())
+    assert (rec["env"]["TP_FAULT"], rec["env"]["BREAK_CAMPAIGN"]) == ("fiyat_p004_31", "1")
+    assert len(demo_api.calls) == 2  # tek geri alma turu
+
+
+def test_empty_fault_is_no_fault(
+    client: TestClient,
+    forge: Forge,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    demo_api: DemoApi,
+) -> None:
+    monkeypatch.setenv("TP_NODE", str(fake_playwright(tmp_path, report=REPORT_PASSED)))
+    data = _run(client, sha=forge.main, fault="", env={"TP_FAULT": ""}).json()
+    assert data["fault"] is None and data["break_restore"] is None
+    assert demo_api.calls == []
+
+
+def test_fault_requires_token(
+    client: TestClient, forge: Forge, monkeypatch: pytest.MonkeyPatch, demo_api: DemoApi
+) -> None:
+    monkeypatch.setenv("DEMOAPP_TEST_TOKEN", "")
+    resp = _run(client, sha=forge.main, fault="kampanya_esik_7")
+    assert resp.status_code == 422
+    assert "DEMOAPP_TEST_TOKEN" in resp.json()["detail"]
+    assert "Ekilmiş hata koşusu" in resp.json()["detail"]
+    assert demo_api.calls == [] and demo_api.gets == []
+
+
+def test_fault_restored_after_timeout_and_restore_failure_is_error(
+    client: TestClient,
+    forge: Forge,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    demo_api: DemoApi,
+) -> None:
+    monkeypatch.setenv("TP_NODE", str(fake_playwright(tmp_path, report=None, sleep_s=30)))
+    monkeypatch.setenv("TP_RUN_TIMEOUT_S", "1")
+    data = _run(client, sha=forge.main, fault="kampanya_esik_7").json()
+    assert data["status"] == "error" and "süre sınırını" in data["error"]
+    assert len(demo_api.calls) == 2  # süre aşımında da her bayi için geri alındı
+
+    demo_api.status = 500
+    monkeypatch.setenv("TP_NODE", str(fake_playwright(tmp_path, report=REPORT_PASSED)))
+    data = client.post(
+        "/run", json={"run_id": "r2", "sha": forge.main, "fault": "kampanya_esik_7"}
+    ).json()
+    assert data["status"] == "error"
+    assert data["error"] == "Ekilmiş hata geri alınamadı."
+    assert data["break_restore"]["ok"] is False
+
+
+def test_fault_not_restored_when_app_unhealthy(
+    client: TestClient,
+    forge: Forge,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    demo_api: DemoApi,
+) -> None:
+    demo_api.get_status["/health"] = 503
+    monkeypatch.setenv("TP_NODE", str(fake_playwright(tmp_path, report=REPORT_PASSED)))
+    data = _run(client, sha=forge.main, fault="kampanya_esik_7").json()
+    assert data["status"] == "error" and data["fault"] == "kampanya_esik_7"
+    # Playwright hiç koşmadı: hata uygulanmadı, geri alma da yok.
+    assert demo_api.calls == [] and data["break_restore"] is None
 
 
 def test_runs_are_serialized(

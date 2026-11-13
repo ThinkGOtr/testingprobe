@@ -74,6 +74,56 @@
       "superseded": []
     }
   },
+  "karar_tablosu": {
+    "initial": "draft",
+    "states": [
+      "approved",
+      "draft",
+      "pending_po",
+      "superseded"
+    ],
+    "transitions": {
+      "approved": [
+        "draft",
+        "superseded"
+      ],
+      "draft": [
+        "pending_po",
+        "superseded"
+      ],
+      "pending_po": [
+        "approved",
+        "draft",
+        "superseded"
+      ],
+      "superseded": []
+    }
+  },
+  "metamorfik_iliski": {
+    "initial": "draft",
+    "states": [
+      "approved",
+      "draft",
+      "pending_po",
+      "superseded"
+    ],
+    "transitions": {
+      "approved": [
+        "draft",
+        "superseded"
+      ],
+      "draft": [
+        "pending_po",
+        "superseded"
+      ],
+      "pending_po": [
+        "approved",
+        "draft",
+        "superseded"
+      ],
+      "superseded": []
+    }
+  },
   "requirement": {
     "initial": "new",
     "states": [

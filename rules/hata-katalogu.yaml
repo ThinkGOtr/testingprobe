@@ -1,0 +1,127 @@
+# Ekilmiş hata kataloğu (012 test kalite doğrulama; specs/012-test-kalite-dogrulama/ANALIZ.md §4.6, §13 K9).
+#
+# Demo uygulamaya yalnız test kipinde, bayi bazında uygulanan bilinçli hatalar. Ekilmiş hata
+# koşusu (Kontrol Kulesi → "Ekilmiş hata koşusu") her hata için suite'i koşar; temelde yeşil olup
+# hatalı koşuda assertion ile kırmızıya dönen test varsa hata "yakalandı", yoksa "kaçtı" sayılır
+# (K12). Ana oran yalnız onaylı case'lerden üretilen testlerden hesaplanır.
+#
+# Kodların yetkili uygulaması demo uygulamadadır (`demo-app/api/src/demoapp_api/faults.py`,
+# `GET /test/faults`); bu dosya ürün tarafındaki kopyadır ve iki kataloğun eşitliği (kod, tür)
+# testle denetlenir. Core demo uygulamaya yazmaz: hatayı test fixture'ı uygular (`TP_FAULT=<kod>`).
+#
+# Alanlar:
+# - `kod` (tekil, ^[a-z0-9_]{1,40}$), `ad` (kısa görünen ad), `tur` (`kod` = demo uygulamada
+#   bayraklı kod hatası · `veri` = bayi için okunurken ezilen parametre/veri hatası),
+#   `aciklama` (hatanın etkisi), `yakalayan_kural` (hangi iş kuralının testleri yakalamalı).
+# - `ac_refs`: hatanın çiğnediği TPD-1 kabul kriterleri (boş liste: story'de kural yok).
+# - `tablo`: hatayı ayırt eden onaylı karar tablosu (TPD-1 demo tabloları: `T1` kampanya, `T2`
+#   minimum sipariş; ANALIZ §12.2, §13 V9) ya da `null` (kural bir tabloda değil).
+# - `ayirt_edici`: hatayı gösteren en küçük girdi ve o girdide doğru / hatalı çıktı
+#   (`{girdi, dogru, hatali}`; tablo kolon adlarıyla, tutarlar TL). Doğru değer hem onaylı tabloya
+#   hem demo uygulamanın normal davranışına uyan değerdir; üretilen testin bu girdiyi kapsaması
+#   hatayı yakalamaya yeter.
+#
+# Not: T1 story'yi izler (`adet // 7`, "7 adette 1 bedava"); demo uygulama `adet // 6` uygular.
+# Ayırt edici girdiler iki kuralın aynı sonucu verdiği adetlerden seçilir (7, 14). Story'nin
+# AC3 metni minimum tutarı 500,00 TL yazar; onaylı T2 750,00 TL'dir.
+version: 1
+hatalar:
+  - kod: kampanya_bedava_yok
+    ad: Kampanyada bedava ürün verilmiyor
+    tur: kod
+    aciklama: Kampanyalı üründe bedava adet her zaman 0 hesaplanır, indirim uygulanmaz (mevcut kırılma; BREAK_CAMPAIGN ile aynı etki).
+    yakalayan_kural: Kampanya (6 al 1 bedava)
+    ac_refs: [AC2]
+    tablo: T1
+    ayirt_edici:
+      girdi: {adet: 7, ara_toplam: 175.00}
+      dogru: {bedava_adet: 1, indirim: 25.00, toplam: 150.00}
+      hatali: {bedava_adet: 0, indirim: 0.00, toplam: 175.00}
+  - kod: kampanya_tek_bedava
+    ad: Kampanyada en çok 1 bedava
+    tur: kod
+    aciklama: "Ayırt edici girdi 14 adet: doğru 2 bedava, hatalı 1. Bedava adet en çok 1 verilir (min(1, adet // 6)). Hatasız uygulamayla 6 ve 7 adette aynı sonucu verir; 14 adette (7'nin 2 katı) ayrılır."
+    yakalayan_kural: Kampanya (çoklu bedava adet)
+    ac_refs: [AC2]
+    tablo: T1
+    ayirt_edici:
+      girdi: {adet: 14, ara_toplam: 350.00}
+      dogru: {bedava_adet: 2, indirim: 50.00, toplam: 300.00}
+      hatali: {bedava_adet: 1, indirim: 25.00, toplam: 325.00}
+  - kod: kampanya_cift_indirim
+    ad: Kampanya indirimi iki kez düşülüyor
+    tur: kod
+    aciklama: Kampanya indirimi satır tutarından iki kez düşülür; bedava adet doğru kalır.
+    yakalayan_kural: Kampanyalı sepetin indirimi ve toplamı
+    ac_refs: [AC2]
+    tablo: T1
+    ayirt_edici:
+      girdi: {adet: 7, ara_toplam: 175.00}
+      dogru: {indirim: 25.00, toplam: 150.00}
+      hatali: {indirim: 50.00, toplam: 125.00}
+  - kod: min_siparis_haric
+    ad: Minimum sipariş sınırı dahil değil
+    tur: kod
+    aciklama: Toplam minimum tutara (750,00 TL) eşitken uyarı gösterilir ve sipariş onaylanamaz (sınır dahil olması gerekirken hariç tutulur).
+    yakalayan_kural: Minimum sipariş tutarı sınır değeri
+    ac_refs: [AC3]
+    tablo: T2
+    ayirt_edici:
+      girdi: {kampanyali_sepet: false, sepet_tutari: 750.00}
+      dogru: {minimum_uyarisi: false}
+      hatali: {minimum_uyarisi: true}
+  - kod: min_siparis_muafiyet_yok
+    ad: Kampanyalı sepet minimumdan muaf değil
+    tur: kod
+    aciklama: Kampanyalı sepet de minimum sipariş tutarına tabi tutulur (AC6 muafiyeti uygulanmaz).
+    yakalayan_kural: Minimum sipariş muafiyeti (kampanyalı sepet)
+    ac_refs: [AC6]
+    tablo: T2
+    ayirt_edici:
+      girdi: {kampanyali_sepet: true, sepet_tutari: 150.00}
+      dogru: {minimum_uyarisi: false}
+      hatali: {minimum_uyarisi: true}
+  - kod: min_siparis_500
+    ad: Minimum sipariş tutarı 500
+    tur: veri
+    aciklama: Minimum sipariş tutarı 750,00 TL yerine 500,00 TL okunur. 500,00 TL story'nin AC3 metnindeki eski değerdir; onaylı T2 750,00 TL'dir, bu yüzden story metninden (tablo olmadan) üretilen test bu hatayı yakalamaz.
+    yakalayan_kural: Minimum sipariş tutarı
+    ac_refs: [AC3]
+    tablo: T2
+    ayirt_edici:
+      girdi: {kampanyali_sepet: false, sepet_tutari: 600.00}
+      dogru: {minimum_uyarisi: true}
+      hatali: {minimum_uyarisi: false}
+  - kod: min_siparis_1000
+    ad: Minimum sipariş tutarı 1000
+    tur: veri
+    aciklama: Minimum sipariş tutarı 750,00 TL yerine 1.000,00 TL okunur.
+    yakalayan_kural: Minimum sipariş tutarı
+    ac_refs: [AC3]
+    tablo: T2
+    ayirt_edici:
+      girdi: {kampanyali_sepet: false, sepet_tutari: 800.00}
+      dogru: {minimum_uyarisi: false}
+      hatali: {minimum_uyarisi: true}
+  - kod: fiyat_p004_31
+    ad: P-004 fiyatı 31
+    tur: veri
+    aciklama: P-004 ürününün birim fiyatı 30,00 TL yerine 31,00 TL okunur. Fiyat bayi/ürün verisidir; story'de ve onaylı tablolarda kural olarak geçmez.
+    yakalayan_kural: Satır ve sepet toplamı
+    ac_refs: []
+    tablo: null
+    ayirt_edici:
+      girdi: {urun: P-004, adet: 1}
+      dogru: {ara_toplam: 30.00}
+      hatali: {ara_toplam: 31.00}
+  - kod: kampanya_urunu_p002
+    ad: Kampanyalı ürün P-002
+    tur: veri
+    aciklama: Kampanya P-001 yerine P-002 ürününde geçerli okunur. Hangi ürünün kampanyalı olduğu tablo girdisi değildir; T1 kampanyalı satırın sonucunu, T2 kampanyalı sepetin muafiyetini belirler.
+    yakalayan_kural: Kampanya (kampanyalı ürün)
+    ac_refs: [AC2, AC6]
+    tablo: T1
+    ayirt_edici:
+      girdi: {urun: P-001, adet: 7, ara_toplam: 175.00}
+      dogru: {bedava_adet: 1, indirim: 25.00, toplam: 150.00}
+      hatali: {bedava_adet: 0, indirim: 0.00, toplam: 175.00}

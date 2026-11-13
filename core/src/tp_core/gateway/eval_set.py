@@ -145,6 +145,42 @@ def load_set(rules_dir: Path, bundle: str) -> dict[str, Any]:
     return data
 
 
+def _fact_value(value: Any) -> Any:
+    """Olgu değerinin karşılaştırma biçimi: sayı/sayı metni → Decimal, diğerleri olduğu gibi."""
+    from decimal import Decimal, InvalidOperation
+
+    if isinstance(value, bool) or value is None:
+        return value
+    try:
+        return Decimal(str(value).strip())
+    except InvalidOperation:
+        return str(value).strip()
+
+
+def case_facts_problems(output: Mapping[str, Any], expect: Mapping[str, Any]) -> list[str]:
+    """`case_facts` (012 §4.3): beklenen her olgu (`table_ref`, `column`, `value`, `kind`) çıktıda
+    var; çıktı yalnız beyan edilen tablolara atıf yapar. Alıntıların birebir doğrulaması ürünün
+    deterministik adımıdır (`features/oracle/dogrulama.py`); burada değer ve kolon denetlenir."""
+    failures: list[str] = []
+    have: set[tuple[str, str, str, Any]] = set()
+    tables = set(expect.get("table_refs") or [])
+    for group in output.get("groups") or []:
+        if not isinstance(group, Mapping):
+            continue
+        ref = str(group.get("table_ref"))
+        if tables and ref not in tables:
+            failures.append(f"beyan dışı tablo: {ref}")
+        for kind in ("inputs", "expected"):
+            for fact in group.get(kind) or []:
+                if isinstance(fact, Mapping):
+                    have.add((ref, kind, str(fact.get("column")), _fact_value(fact.get("value"))))
+    for fact in expect.get("facts") or []:
+        key = (fact["table_ref"], fact["kind"], fact["column"], _fact_value(fact["value"]))
+        if key not in have:
+            failures.append(f"olgu yok: {fact['table_ref']}.{fact['column']} = {fact['value']!r}")
+    return failures
+
+
 def _text(value: Any) -> str:
     if isinstance(value, list):
         return "\n".join(str(v) for v in value)
@@ -208,6 +244,8 @@ def check_output(
         failures += review_set_problems(out, expect)
     elif purpose == "case_audit":
         failures += audit_problems(out, expect)
+    elif purpose == "case_facts":
+        failures += case_facts_problems(out, expect)
     elif purpose in ASISTAN_AMACLARI:
         failures += asistan_problems(output, expect, purpose=purpose)
     elif purpose == "assistant_guard":

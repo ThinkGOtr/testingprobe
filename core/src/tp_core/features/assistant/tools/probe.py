@@ -359,6 +359,10 @@ def _failure_kapisi(f: Failure) -> Kapi | None:
     if f.oneri_durumu in ("merged", "rejected"):
         return None
     if f.sinif == "test_maintenance":
+        if f.alt_tur == "beklenti":  # 012 §4.4: onarım/bug yok; case düzeltilir
+            return Kapi(
+                "Case beklentisi onaylı karar tablosuyla uyuşmuyor; case düzeltilmeli", "tester"
+            )
         if f.oneri_durumu == "pr_open":
             return Kapi("Onarım PR'ı açık; merge kararı", "engineer")
         return Kapi("Bakım hatası; otomatik onarım başlatılabilir", "engineer")

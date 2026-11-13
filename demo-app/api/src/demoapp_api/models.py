@@ -135,9 +135,11 @@ class SiparisSatiri(Base):
 
 
 class TestKirilma(Base):
-    """Bayi kapsamlı demo kırılması (`POST /test/break`, yalnızca test modu). Satır yoksa normal.
+    """Bayi kapsamlı ekilmiş hata (`POST /test/break`, yalnızca test modu). Satır yoksa normal.
 
-    Ad `Test` ile başlasa da pytest sınıfı değildir."""
+    `hata`: `faults.KATALOG` kodu (bayi başına en çok bir etkin hata). `kampanya` eski kolondur ve
+    `hata == "kampanya_bedava_yok"` ile eşanlamlı tutulur. Ad `Test` ile başlasa da pytest sınıfı
+    değildir."""
 
     __test__ = False
     __tablename__ = "test_kirilma"
@@ -146,4 +148,6 @@ class TestKirilma(Base):
         ForeignKey("bayi.id", ondelete="CASCADE"), primary_key=True
     )
     kampanya: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Sonradan eklendi: var olan veritabanında `db.kolonlari_tamamla` açılışta ekler.
+    hata: Mapped[str | None] = mapped_column(String(40), nullable=True, default=None)
     guncelleme: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=simdi)

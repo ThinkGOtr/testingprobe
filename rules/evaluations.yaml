@@ -297,3 +297,18 @@ bundles:
       guardrails_version: 1
       calls: evaluation/results/assistant-guard-v1-2026-11-12.calls.jsonl
       icerik_hash: sha256:5d9bd148735976909e1d337d6eb23855a06e3c80e687d0df309546c3d889e0bb
+  decision-table-draft:
+    version: 2
+    status: pending
+    note: '012 Ş1: karar tablosu ve metamorfik ilişki taslağı paketi v1. REPLAY golden''ı
+      (decision_table_draft/golden/TPD-1, demo ana yolu f2-kod-hatasi metni) elle hazırlandı; çıktı
+      ifade diliyle (karar_tablosu/ifade.py) deterministik doğrulanır. Değerlendirme seti:
+      rules/evaluation/decision-table-draft.json. Bu model değerlendirmesi değildir. Canlı
+      değerlendirme yapılmadı; onaylı istisna yok.'
+  case-facts:
+    version: 2
+    status: pending
+    note: '012 Ş2: case değer çıkarma paketi v2 (karar tablosu kontrolü; review 1: her geçiş ayrı olgu,
+      kolonsuz sayılar ignored, model tablo adı/açıklaması görmez). REPLAY golden''ları (case_facts/golden/TPD-1-C*,
+      rehber-duzeltme/, ai-sinir-hatasi/) elle hazırlandı; alıntılar deterministik doğrulamadan geçer. Değerlendirme
+      seti: rules/evaluation/case-facts.json. Canlı değerlendirme yapılmadı; onaylı istisna yok.'

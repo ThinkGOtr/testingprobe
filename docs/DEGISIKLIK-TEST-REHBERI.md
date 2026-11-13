@@ -112,3 +112,44 @@ Koşular (`run.read`) ekran görünürlüğü 012 izin tablosundan gelir, yetki 
 **Bilinen sınırlar (hata sayma):** Flaky kartı demo uygulaması deterministik olduğu için boştur.
 "Case başına AI + review" ve maliyet REPLAY'de ölçülmez. Allure'un HTML raporu yoktur (CI yalnız ham
 sonuç üretir; portal listeler). Trace tarayıcıda açılmaz, indirilir.
+
+## 8. Test kalite doğrulama (012)
+
+Ayrıntı: [specs/012-test-kalite-dogrulama/ANALIZ.md](../specs/012-test-kalite-dogrulama/ANALIZ.md)
+§9 kabul senaryoları, §12.2 TPD-1 sonuç tablosu ve §13.2 sözleşme (review turu 1/2 davranışı:
+`kismen`, kontrolsüz onay, iki yollu istisna, sınır örnekleri, K12 sayımı, Kule'de AI / el yazısı
+ayrımı). Ön koşul: TPD-1 F2 `code_defect` yolunda (AC2 özgün) PO onaylı, case'ler üretilmiş. Veri ve
+beklenen değerler: [DEMO-VERISI.md](DEMO-VERISI.md) "Test kalite doğrulama (012)". Kapı 409
+`oracle_bekleniyor` dönerse kontrol arka planda kuyruğa alınmıştır; birkaç saniye sonra yeniden
+deneyin.
+
+**Roller (012 rol modeli, dev birleşmesi 2026-11-13):** case kararı Testçide ("Kabul et",
+"Düzelterek kabul" → `ready`), son onay Analistte ("Onayla" → `approved`); karar tablosu kapısı
+ikisinde de uygulanır (Testçinin verdiği istisna aynı tür + tablo kümesiyle son onayda yeniden
+gerekçe istemez). Aşağıdaki "Onayla" adımları Testçi kabulü + Analist son onayı olarak okunur.
+Ek case türetme Testçi; karar tablosu yazma/gönderme Analist, onay PO; ekilmiş hata koşusu
+Automation Engineer ya da Sistem Yöneticisi. Toplu kararda kapının engellediği case tek başına düşer
+(öğe `kod`: `oracle_uyumsuz` …); istisna yalnız tekil kararda verilir.
+
+| # | Ne yap | Beklenen | ☐ |
+|---|---|---|---|
+| 8.1 | Analist → TPD-1 → Karar tabloları → "AI taslağı" | Mor "AI" taslak: T1 (Kampanya: 7 adette 1 bedava; girdiler adet, ara toplam), T2 (Minimum sipariş 750; AI taslağında R2 **`sepet_tutari <= 750`** — bilerek konmuş AI sınır hatası) ve bir ilişki (adet ×2). T1 "Sınır örnekleri" ızgarası: 6 → bedava 0; 7 → 1 (indirim 25,00, toplam 150,00); 8 → 1; 13 → 1; 14 → 2 (indirim 50,00); satır anlamları düz Türkçe; örtüşme / hiç eşleşmeyen satır uyarısı yok | ☐ |
+| 8.2 | Analist T1 ve ilişkiyi "PO onayına gönder" → PO "Onayla". T2'yi gönder → PO T2 ızgarasında 750,00 satırına bakar → "Değişiklik iste" (gerekçe zorunlu) → analist R2'yi `sepet_tutari < 750` yapıp yeniden gönderir → PO "Onayla" | T2 ızgarasında düzeltmeden önce 750,00 → "uyarı görünür" (AC3 "altında" der: yanlış), sonra 749,99 uyarı var / 750,00 yok. Tablolar `approved`, onaylayan ve zaman görünür; değişiklik isteği gerekçesiyle kayıtlı; case kartlarında kontrol çipleri birkaç saniyede dolar | ☐ |
+| 8.3 | Case review: C3 (6 adette bedava yok) | "Tabloyla uyumlu ✓"; karşılaştırma bedava adet 0 = 0, indirim 0,00 = 0, toplam 150,00 = ara toplam; "Onayla" serbest | ☐ |
+| 8.4 | C2 kartı | "Tabloyla uyumlu ✓"; 7 değer karşılaştırıldı: bedava adet 1, indirim 25,00 (= 175,00 / 7), toplam 150,00; karşılaştırılamayan yok | ☐ |
+| 8.5 | C1, C7, C8 | "Tablo yok" (kapsam dışı) | ☐ |
+| 8.6 | C5'i düzelt: yalnız S4 "Beklenen" alanını şu metinle değiştir (birebir kopyala; başka alana dokunma), gönder: `Toplam 150,00 TL; "Minimum sipariş tutarı 750,00 TL" uyarısı görünmez ve "Siparişi onayla" butonu aktiftir` | Önce kontrol beklenir; sonra "Tabloyla uyuşmuyor ✗" (REPLAY golden `case_facts/golden/rehber-duzeltme/TPD-1-C5`; metin farklıysa "kontrol edilemedi" olur), "Onayla" pasif, API 422 `oracle_uyumsuz` | ☐ |
+| 8.7 | Aynı düzeltmede "İstisnayla onayla" → **"Case doğru, tabloya rağmen onayla"** yolu, gerekçe (en az 20 karakter, 10 harf) | Onaylanır; `oracle_istisna` kaydı (tür `uyumsuz`), denetimde `oracle.exception`; kartta "istisna verildi"; Kontrol Kulesi istisna sayacı 1. Gerekçesiz ya da kısa gerekçe 422 `gecersiz_karar` | ☐ |
+| 8.8 | Kontrol Kulesi | "Beklenti doğruluğu" %100 (6 uyumlu, 0 kısmen, 3 kapsam dışı, 1 tekrar: C10 = C2 tek sayılır; tablosu olan story'lerde kapsam %67 = 6/9; n ve "REPLAY / elle golden" etiketi görünür — gösterge, model ölçümü değil); ekilmiş hata koşusu yoksa "Hata yakalama oranı" ölçülmedi; kaynak metinleri görünür | ☐ |
+| 8.9 | Karar tabloları → İlişkiler → "Ek case türet" | C2 ve C10'dan iki `draft` case (14 adet, bedava 2, indirim 50,00); C3, C4 "ön koşul sağlanmadı"; ek case'ler beklenti doğruluğunu değiştirmez | ☐ |
+| 8.10 | Gereksinim metnini değiştir | Tablolar "bayat"; kontrolde kullanılmaz | ☐ |
+| 8.11 | C3 testinin kırmızı koşusu (uygulama 6 adette 1 bedava) → Hata detay | "Ürün hatası"; sinyal "Test beklentisi onaylı karar tablosu … ile aynı, uygulama tablodan farklı (test beklentisi 0, gerçekleşen 1, tablo 0)" | ☐ |
+| 8.12 | Beklenti farkı sınıflı bir hata (test_maintenance/beklenti) → Öneri | Automation Engineer "otomatik onarımı başlatın" görmez; Testçi "Case'in beklenen değeri onaylı karar tablosuyla uyuşmuyor; case'i düzeltin" görür | ☐ |
+| 8.13 | Automation Engineer / Sistem Yöneticisi → Kontrol Kulesi → Ekilmiş hata koşusu (web) | Temel yeşil → her hata için yakalandı / kaçtı / geçersiz → kapanış yeşil. Bir hata yalnız **temelde yeşil** bir testin hatalı koşuda **assertion** kırmızısıyla "yakalandı" sayılır (locator / zaman aşımı kırmızısı sayılmaz); temelde kırmızı testler hariç tutulur ve listelenir; geçersiz adım paydaya girmez. Ana oran yalnız onaylı case'lerden **üretilen** testlerdendir (depoda yoksa "ölçülmedi"); el yazısı suite ayrı sütundur (ölçülen: el yazısı 8/9; prova Demo-B'si sonrası üretilmiş C1, C2, C5 ile AI 5/9; hiçbir testin yakalamadığı tek hata `kampanya_tek_bedava`; temelde kırmızı üretilmiş test "temelde kırmızı, hariç" listelenir). Kural × hata dağılımı görünür; bu koşular geçme oranına girmez, bug taslağı açılmaz | ☐ |
+| 8.14 | Başka bir uyuşmazlıkta "İstisnayla onayla" → **"Tablo yanlış"** yolu | Case onaylanmaz; tablo analist taslağına döner (yeniden açılır) ve PO onayı yeniden gerekir; o tablonun kapsadığı case'lerin kontrolü PO onayına kadar durur (kapsayan geçerli tablo yok). Bu yoldan kapanan uyuşmazlık AI'ın beklenti doğruluğuna yazılmaz | ☐ |
+| 8.15 | "Kısmen" çipli bir case (varsa; ör. beklenen alanında tabloya bağlanamayan bir sayı geçen) | Çip "Kısmen"; değer düzeyinde sayım ("n uyumlu · m karşılaştırılamadı") ve karşılaştırılamayan değerler gri satırda; onay serbest, uyarı karar kaydına yazılır; beklenti doğruluğu oranına girmez | ☐ |
+| 8.16 | 8.9'da türetilen 14 adetlik case'i "Onayla" (yüksek risk) | Türetilen case ilişkinin hesapladığı olgularla kontrol edilir (model çağrısı yok): izole yığında çip "Uyumlu" (bedava 2, indirim 50,00, toplam 300,00 · T1), onay serbest. Kontrol edilemeyen yüksek riskli bir case'te (golden'ı olmayan elle case) "Onayla" 422 `oracle_kontrolsuz`; gerekçeyle onay (tür `kontrolsuz`) → Kontrol Kulesi "kontrolsüz onay" 1. Orta / düşük riskte yalnız uyarı | ☐ |
+| 8.17 | AI sınır hatası: `ai-sinir-hatasi` C6 varyantını IDE kanalından taslak gönder (Claude Code, MCP `submit_draft_cases`; portal üretimi bu case'i üretmez; liste ana yolun C1–C5'i + 6. sırada varyant — yoksa `sira_no` 1 olur, golden eşleşmez, "Kontrol edilemedi") | Çip "Tabloyla uyuşmuyor ✗" (uyarı: case "görünür", tablo "görünmez", T2 · R3), yüksek risk → "Onayla" pasif, 422 `oracle_uyumsuz`. "Düzelt" ile başlık, S4 ve beklenen sonuç ana yol C6 metnine çevrilince "uyumlu" → onay. Beklenti doğruluğu düzeltmeden önce 6/7 (ana yol C6 da sayılır; portal sahte verisinde 5/6), kapsam 7/10 | ☐ |
+| 8.18 | Kontrol Kulesi → Ekilmiş hata → Kaçan hatalar → `kampanya_tek_bedava` → "Bu girdiyle ek case türet" | Ayırt edici girdi (14 adet → doğru 2 bedava, hatalı 1), ilişki ve kaynak case (C2) hazır gelir; 14 adetlik `draft` case önizlenir. Testçi dışı rolde düğme "Testçiye ilet" olur | ☐ |
+
+---

@@ -1639,6 +1639,70 @@ def platform_cases(bundle: str) -> list[dict[str, Any]]:
     return out
 
 
+def decision_table_draft_cases() -> list[dict[str, Any]]:
+    """012 karar tablosu taslağı: PO onaylı story bloğu + PO cevapları (üretimin
+    `taslak_mesajlari` kurucusu; kod, veri ve case yok). TPD-1 demo ana yolunun (f2-kod-hatasi)
+    metni; hesaplama kuralı olmayan TPD-3/TPD-4'te tablo beklenmez. `evaluate`: tablonun bu
+    girdilerle vermesi gereken çıktılar (story metninden: 7 adette 1 bedava, 6 adette yok; V9:
+    indirim bedava adetlerin birim fiyatı, toplam = ara toplam - indirim)."""
+    from types import SimpleNamespace
+
+    from tp_core.features.karar_tablosu.service import taslak_mesajlari
+
+    stories = _stories()
+    plan = [
+        (
+            "tpd-1-f2-kod-hatasi",
+            "TPD-1",
+            _golden_acs("case_generation", "f2-kod-hatasi/TPD-1"),
+            {
+                "ac_refs_include": ["AC2", "AC3", "AC6"],
+                "min_tables": 2,
+                "evaluate": [
+                    {
+                        "ac": "AC2",
+                        "girdiler": {"adet": 7, "ara_toplam": "175.00"},
+                        "ciktilar": {"bedava_adet": "1", "indirim": "25.00", "toplam": "150.00"},
+                    },
+                    {
+                        "ac": "AC2",
+                        "girdiler": {"adet": 6, "ara_toplam": "150.00"},
+                        "ciktilar": {"bedava_adet": "0", "indirim": "0", "toplam": "150.00"},
+                    },
+                    {
+                        "ac": "AC2",
+                        "girdiler": {"adet": 14, "ara_toplam": "350.00"},
+                        "ciktilar": {"bedava_adet": "2", "indirim": "50.00", "toplam": "300.00"},
+                    },
+                ],
+            },
+        ),
+        ("tpd-3-arama", "TPD-3", None, {"max_tables": 0}),
+        ("tpd-4-giris", "TPD-4", None, {"max_tables": 0}),
+    ]
+    out = []
+    for case_id, key, acs, exp in plan:
+        st = stories[key]
+        req = SimpleNamespace(
+            id=FREE_TEXT_ID,
+            jira_key=key,
+            baslik=st["summary"],
+            aciklama=st["description"],
+            kabul_kriterleri=list(acs if acs is not None else st["acs"]),
+            po_cevaplari=[],
+        )
+        out.append(
+            {
+                "id": case_id,
+                "description": f"{key}: PO onaylı story'den karar tablosu taslağı",
+                "replay_key": _key(key),
+                "messages": _msgs(taslak_mesajlari(req)),
+                "expect": exp,
+            }
+        )
+    return out
+
+
 DEEPENING_PLAN: dict[str, list[tuple[str, str, str | None, int]]] = {
     # (vaka, story, teknik, en az yeni case). Mevcut set = story'nin ana case_generation golden'ı.
     "case-negative": [("tpd-1-negatif", "TPD-1", None, 1), ("tpd-4-negatif", "TPD-4", None, 0)],
@@ -1698,6 +1762,61 @@ def deepening_cases(bundle: str) -> list[dict[str, Any]]:
                     )
                 ),
                 "expect": expect,
+            }
+        )
+    return out
+
+
+def case_facts_cases() -> list[dict[str, Any]]:
+    """Değer çıkarma (012 §4.3): üretimin `facts_messages` kurucusu, TPD-1 demo tabloları (Ş1
+    taslak golden'ından; `tests.unit.features.oracle.tpd1`); beklenen olgular golden'ın
+    olgularıdır (kolon + değer, tekilleştirilmiş). Demo ana yolunun C3'ü (f2-kod-hatasi, "6
+    adette bedava yok") defect adayı anının girdisidir."""
+    from tests.unit.features.oracle import tpd1
+    from tp_core.features.oracle.cikarma import case_ref, facts_messages, replay_key_for
+
+    tables = tpd1.kolon_girdisi()
+    plan = [
+        ("tpd-1-c2", 2, None, "7 adette 1 bedava; ara toplam, indirim, toplam (T1)"),
+        ("tpd-1-c3-f2", 3, tpd1.SENARYO, "6 adette bedava yok — demo ana yolu (T1)"),
+        ("tpd-1-c5", 5, None, "minimum altı, kampanyasız (T2)"),
+        # Tuzaklı vakalar: case yanlış; model düzeltmeden, yazıldığı gibi çıkarmalı (olumsuzluk
+        # alıntıda kalır).
+        ("tpd-1-c5-rehber", 5, tpd1.REHBER, "analistin yanlış düzeltmesi: uyarı görünmez (T2)"),
+        ("tpd-1-c6-ai-hatasi", 6, tpd1.AI_HATASI, "AI sınır hatası: 750,00 TL'de uyarı (T2)"),
+    ]
+    out = []
+    for case_id, n, senaryo, title in plan:
+        varyant = (senaryo, n) in tpd1.VARYANT_CASELERI
+        case = tpd1.VARYANT_CASELERI[(senaryo, n)]() if varyant else tpd1.tpd1_cases(senaryo)[n - 1]
+        refs = {"AC2": "T1", "AC3": "T2", "AC6": "T2"}
+        covering = {refs[r] for r in case["acceptance_criteria_refs"] if r in refs}
+        cikti = tpd1.VARYANT_OLGULARI[(senaryo, n)] if varyant else tpd1.olgular(n, senaryo)
+        groups = (cikti or {}).get("groups") or []
+        facts = list(
+            {
+                (g["table_ref"], kind, f["column"], json.dumps(f["value"])): {
+                    "table_ref": g["table_ref"],
+                    "kind": kind,
+                    "column": f["column"],
+                    "value": f["value"],
+                }
+                for g in groups
+                for kind in ("inputs", "expected")
+                for f in g[kind]
+            }.values()
+        )
+        out.append(
+            {
+                "id": case_id,
+                "description": f"TPD-1-C{n}{' (' + senaryo + ')' if senaryo else ''}: {title}",
+                "replay_key": replay_key_for("TPD-1", n),
+                "messages": _msgs(
+                    facts_messages(
+                        case, case_ref("TPD-1", n), [t for t in tables if t["ref"] in covering]
+                    )
+                ),
+                "expect": {"table_refs": sorted(covering), "facts": facts},
             }
         )
     return out
@@ -1891,6 +2010,8 @@ SETS: dict[str, tuple[str, Callable[[], list[dict[str, Any]]]]] = {
         paket: ("case_deepening", (lambda paket=paket: deepening_cases(paket)))
         for paket in DEEPENING_PLAN
     },
+    "decision-table-draft": ("decision_table_draft", decision_table_draft_cases),
+    "case-facts": ("case_facts", case_facts_cases),
 }
 # Set düzeyi ek alanlar: §12 koşu sayısı, ajan araç ortamı (`tp_core.gateway.eval_agents`).
 EXTRA: dict[str, dict[str, Any]] = {

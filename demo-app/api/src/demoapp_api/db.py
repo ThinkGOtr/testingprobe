@@ -11,7 +11,8 @@ import threading
 from collections.abc import Iterator
 from functools import lru_cache
 
-from sqlalchemy import Engine, create_engine, event, text
+from sqlalchemy import Engine, create_engine, event, inspect, text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session, sessionmaker
 
 from demoapp_api.models import Base
@@ -101,6 +102,37 @@ def grant_readonly(conn) -> bool:
     return True
 
 
+# `create_all` var olan tabloya kolon eklemez (migrasyon yok); sonradan eklenen kolonlar burada.
+# (tablo, kolon, DDL tipi) — adlar modül sabitidir, kullanıcı girdisi değildir.
+SONRADAN_EKLENEN_KOLONLAR = (("test_kirilma", "hata", "VARCHAR(40)"),)
+
+
+def kolonlari_tamamla(engine: Engine) -> list[str]:
+    """Eski şemayla kurulmuş veritabanına eksik kolonları ekler (SQLite + Postgres, idempotent).
+
+    Eklenen "tablo.kolon" adlarını döndürür. Kolonlar null kabul eder: var olan satırlar ve eski
+    sürümle yazan süreçler bozulmaz. Salt okuma rolünün yetkileri tablo/kolon listesiyle verilir
+    (`grant_readonly`); `test_kirilma` o listede olmadığından yetkiler değişmez."""
+    eklenen: list[str] = []
+    for tablo, kolon, tip in SONRADAN_EKLENEN_KOLONLAR:
+        if kolon in {c["name"] for c in inspect(engine).get_columns(tablo)}:
+            continue
+        # Postgres: eşzamanlı açılan iki süreç için IF NOT EXISTS; SQLite bu sözdizimini bilmez.
+        kosul = "IF NOT EXISTS " if engine.dialect.name == "postgresql" else ""
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
+        komut = text(f"ALTER TABLE {tablo} ADD COLUMN {kosul}{kolon} {tip}")
+        try:
+            with engine.begin() as conn:
+                conn.execute(komut)
+        except DBAPIError:
+            # Başka bir süreç aynı anda eklemiş olabilir (SQLite: "duplicate column name").
+            if kolon not in {c["name"] for c in inspect(engine).get_columns(tablo)}:
+                raise
+        else:
+            eklenen.append(f"{tablo}.{kolon}")
+    return eklenen
+
+
 _init_lock = threading.Lock()
 _initialized = False
 
@@ -111,6 +143,7 @@ def init_db() -> None:
 
     engine = get_engine()
     Base.metadata.create_all(engine)
+    kolonlari_tamamla(engine)
     with engine.begin() as conn:
         grant_readonly(conn)
     with session_scope() as s:

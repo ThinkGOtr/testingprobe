@@ -92,6 +92,7 @@ Raporlama hatası testi ya da koşuyu düşürmez: uyarı günlüğe yazılır, 
 | `demo.api.url` | `DEMO_API_URL` | `http://127.0.0.1:8081/api` | `/test/*` kökü. Compose'daki nginx `/api/test/`'i açmaz: orada doğrudan API adresi verin |
 | `demoapp.test.token` | `DEMOAPP_TEST_TOKEN` | — | **Sır.** Yalnızca ortamdan; başlıkta taşınır, rapora/kanıta yazılmaz |
 | `break.campaign` | `BREAK_CAMPAIGN` | — | `1`: bayi kapsamlı kampanya kırılması |
+| `tp.fault` | `TP_FAULT` | — | Ekilmiş hata kodu (`^[a-z0-9_]{1,40}$`, demo API `faults.py`): bayi kapsamlı `/test/break {hata}`; `BREAK_CAMPAIGN` ile birlikteyse bu geçerlidir |
 | `tp.e2e.no.reset` | `TP_E2E_NO_RESET` | — | `1` + token yok: yalnızca sepet yalıtımı |
 | `bekleme.ms` | `BEKLEME_MS` | `10000` | eylem/beklenti üst sınırı |
 | `bayi.kilit.ms` | `BAYI_KILIT_MS` | `40000` | bayi kilidi bekleme |
@@ -115,7 +116,7 @@ Raporlama hatası testi ya da koşuyu düşürmez: uyarı günlüğe yazılır, 
   üstünde kısa bir sürükleme.
 - **Uygulama sıfırlama**: her test yeni Appium oturumu (`noReset=false`); oturum taşınmaz.
 - **Hazırlık testin içinde** (`TestTabani` TestNG `IHookable`): bayi kilidi → `/test/reset` (ya da
-  sepet boşaltma) → `BREAK_CAMPAIGN` ise `/test/break` → oturum → `@OturumAcik` ise arayüzden giriş →
+  sepet boşaltma) → `TP_FAULT` ya da `BREAK_CAMPAIGN` ise `/test/break` → oturum → `@OturumAcik` ise arayüzden giriş →
   `hazirlikSonrasi()`. Hazırlık hatası testin kendi hatasıdır; JUnit XML'de test başına tek satır.
 - **Bayi**: varsayılan `bayi1`; `@Bayi("bayi2")` sınıfı sabitler (web `test.use({ dealerUsername })`).
   `bayi3` doğrulama ajanınındır, e2e'ye kapalıdır. Aynı demo API'ye karşı koşan Java süreçleri (ör.

@@ -104,7 +104,7 @@ describe("mock: review (P8) ve denetim (P9) akışı", () => {
 
   it("denetime gönder koşulu: review tamamlanmadıysa en az bir onaylı case", async () => {
     await uret();
-    const k = mockVerisi().kalite![RID];
+    const k = mockVerisi().kaliteSeti![RID];
     k.review = { ...k.review!, durum: "hata", hata: "test" };
     const d = await api.caseDenetim(RID);
     expect(d.gonder_engeli).toMatch(/review'u tamamlanmadı ve onaylı case yok/);

@@ -28,6 +28,8 @@ export interface ApiHataEki {
   yol?: string;
   /** Başka bir hatadan dönüştürülen hata, son hata kaydının kimliğini taşır. */
   kayitId?: string;
+  /** Doğrulama hatası listesi (`{"detail", "kod", "hatalar": [...]}`; ör. `karar_tablosu_gecersiz`). */
+  hatalar?: string[];
   /** Hata yanıtının ayrıştırılmış JSON gövdesi (ör. 409'da atıf yapan case listesi). */
   govde?: unknown;
   /** Hata gövdesinin ek sayısal alanları (ör. 429 `donduruldu` → `kalan_s`); metin alanı taşınmaz. */
@@ -49,6 +51,8 @@ export class ApiError extends Error {
   yol?: string;
   /** Son hata deposundaki kaydın kimliği ("Asistana sor" bu kaydın bağlamıyla açar). */
   readonly kayitId: string;
+  /** Sunucunun alan bazlı doğrulama mesajları (varsa). */
+  hatalar?: string[];
   /** Hata yanıtının JSON gövdesi (varsa). */
   readonly govde?: unknown;
   /** Gövdenin ek sayısal alanları (`ApiHataEki.ek`). */
@@ -63,6 +67,7 @@ export class ApiError extends Error {
     this.method = ek.method;
     this.yol = ek.yol;
     this.kayitId = ek.kayitId ?? yeniKayitId();
+    this.hatalar = ek.hatalar;
     this.govde = ek.govde;
     this.ek = ek.ek ?? {};
   }
@@ -236,7 +241,7 @@ function sayisalEk(govde: object): Record<string, number> | undefined {
   return Object.keys(ek).length ? ek : undefined;
 }
 
-export async function detayOku(res: Response): Promise<{ detail: string | null; json: boolean; kod?: string; ek?: Record<string, number>; govde?: unknown }> {
+export async function detayOku(res: Response): Promise<{ detail: string | null; json: boolean; kod?: string; ek?: Record<string, number>; govde?: unknown; hatalar?: string[] }> {
   const metin = await res.text().catch(() => "");
   if (!metin) return { detail: null, json: false };
   try {
@@ -245,11 +250,17 @@ export async function detayOku(res: Response): Promise<{ detail: string | null; 
       const hamKod = (govde as { kod?: unknown }).kod;
       const kod = typeof hamKod === "string" && hamKod ? hamKod : undefined;
       const ek = Array.isArray(govde) ? undefined : sayisalEk(govde);
+      // Doğrulama listesi: `hatalar: [metin]` ya da `detail: [metin]` (ör. 422 `karar_tablosu_gecersiz`).
+      const metinListesi = (x: unknown) => (Array.isArray(x) && x.length > 0 && x.every((m) => typeof m === "string") ? (x as string[]) : undefined);
+      const hatalar = metinListesi((govde as { hatalar?: unknown }).hatalar) ?? metinListesi((govde as { detail?: unknown }).detail);
+      if (hatalar && !("detail" in govde && typeof (govde as { detail: unknown }).detail === "string")) {
+        return { detail: hatalar.join("; "), json: true, kod, hatalar, ek };
+      }
       if ("detail" in govde) {
         const d = (govde as { detail: unknown }).detail;
         // Gövde yalnız detay/kod dışında alan taşıyorsa eklenir (ör. 409 + atıf yapan case listesi).
-        const ekAlan = Object.keys(govde).some((k) => k !== "detail" && k !== "kod");
-        if (typeof d === "string") return { detail: d, json: true, kod, ek, ...(ekAlan ? { govde } : {}) };
+        const ekAlan = Object.keys(govde).some((k) => k !== "detail" && k !== "kod" && k !== "hatalar");
+        if (typeof d === "string") return { detail: d, json: true, kod, ek, hatalar, ...(ekAlan ? { govde } : {}) };
         // Yapılı detay (`HTTPException(detail={...})`): içindeki Türkçe mesaj ve kod alınır, gövde korunur.
         if (d && typeof d === "object" && !Array.isArray(d)) {
           const o = d as Record<string, unknown>;
@@ -399,7 +410,7 @@ async function istekGonder<T>(
     }
   }
 
-  const { detail, json, kod, ek, govde } = await detayOku(res);
+  const { detail, json, kod, ek, govde, hatalar } = await detayOku(res);
   if (res.status === 404 && ayarlar.mockOtomatik && (detail === "Not Found" || !json)) {
     // Kaynağı çekirdekten gelen bir işlem örnek veriye düşmez (bkz. IstekSecenegi.kaynak).
     if (secenek.kaynak && !mockUclar.has(ucuNormallestir(...secenek.kaynak))) throw new ApiError(501, UC_YOK);
@@ -409,8 +420,8 @@ async function istekGonder<T>(
   if (res.status === 404 && !ayarlar.mockOtomatik && (detail === "Not Found" || !json)) throw new ApiError(501, BU_FAZDA_YOK);
   if (res.status === 401 && !path.startsWith("/auth/")) yetkisizDinleyici?.();
   // Demo kipi kapalı (core 403 `demo_kapali`): genel "yetkiniz yok" yerine nedeni söylenir.
-  if (kod === "demo_kapali") throw new ApiError(res.status, detail && detail !== VARSAYILAN_HATA[403] ? detail : DEMO_KAPALI, { kod, ek, govde });
-  throw new ApiError(res.status, detail ?? VARSAYILAN_HATA[res.status] ?? `Beklenmeyen hata (HTTP ${res.status}).`, { kod, ek, govde });
+  if (kod === "demo_kapali") throw new ApiError(res.status, detail && detail !== VARSAYILAN_HATA[403] ? detail : DEMO_KAPALI, { kod, ek, govde, hatalar });
+  throw new ApiError(res.status, detail ?? VARSAYILAN_HATA[res.status] ?? `Beklenmeyen hata (HTTP ${res.status}).`, { kod, ek, govde, hatalar });
 }
 
 /** core 403 `demo_kapali` iletisi (TP_DEMO_MODE=0). */
@@ -418,6 +429,8 @@ export const DEMO_KAPALI = "Demo kipi kapalı (TP_DEMO_MODE=0)";
 
 /** Karar uçlarında 409'un kullanıcıya gösterilen hâli (içerik görüntülendikten sonra değişti). */
 export const ICERIK_DEGISTI = "İçerik değişti, yeniden inceleyin.";
+/** Tur 2 (Y9): 409 `oracle_kayit_degisti` — karar, analistin gördüğü kontrol kaydına bağlıdır. */
+export const ORACLE_KAYIT_DEGISTI = "Kontrol sonucu siz bakarken değişti; yeniden gözden geçirin.";
 
 /** İnsan kararı uçlarından dönen çakışma (409): ekran eski içeriği gösteriyor, yeniden yüklenmeli. */
 export function kararCakismasi(e: unknown): e is ApiError {
@@ -430,7 +443,7 @@ export function kararCakismasi(e: unknown): e is ApiError {
  * yalnızca sunucunun gerekçesi — içerik değişmediği için "İçerik değişti" denmez.
  */
 export function cakismaMesaji(e: ApiError): string {
-  const metin = /[iİ]çerik[^.]*değiş|head sha|hash/.test(e.detail) ? ICERIK_DEGISTI : e.detail;
+  const metin = e.kod === "oracle_kayit_degisti" ? ORACLE_KAYIT_DEGISTI : /[iİ]çerik[^.]*değiş|head sha|hash/.test(e.detail) ? ICERIK_DEGISTI : e.detail;
   // Kullanıcının gördüğü metin son hata kaydına eklenir (asistan bağlamı, §5.5).
   gorunenMetinEkle(e.kayitId, metin);
   return metin;

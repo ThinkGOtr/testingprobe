@@ -1,0 +1,9 @@
+{
+  "kind": "call",
+  "purpose": "case_facts",
+  "note": "Nötr REPLAY-MISS yedeği (golden değildir, model çıktısı değildir). Değer çıkarma (012 §4.3) case'e özgüdür: girdi, adlandırılmış golden'ın girdi beyanına (input_match: case metni) uymadığında ya da golden yoksa (düzeltilmiş/önerilen içerik, başka story) golden'ın olguları başka bir case'e aittir; alıntıları bu case'te geçse bile yanlış değerle karşılaştırma yapılabilir. Geçit onların yerine bu çıktıyı döner (ai_call.ek.replay_kokeni = miss_neutral, cikti_kokeni = notr_yedek, model = golden-elle). Olgu üretilmez; kapsayan tablo varsa sonuç 'kontrol_edilemedi' olur (asla 'uyumlu' denmez; yüksek riskli case uyarıyla onaylanabilir, V2). Bkz. rules/replay/README.md.",
+  "output": {
+    "groups": [],
+    "ignored": []
+  }
+}

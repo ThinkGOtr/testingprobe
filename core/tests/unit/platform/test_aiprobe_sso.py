@@ -953,8 +953,9 @@ def test_alembic_tek_bas() -> None:
     bas = script.get_heads()
     # 011: 0021 (script dili) → 0022 (PR zorunlu check'ler); 013: 0023 (asistan güvenlik olayı)
     # → 0030 (sprint otomasyonu); 012: 0031 (roller, S1) → 0032 (case ready, S2) → 0033 (eski
-    # onay işareti, PO reddi); 011 test üretimi v3: 0034 (case_uretim) → … → 0041 (açık soru).
-    assert bas == ["0041"], f"birden çok Alembic başı: {bas} — 0019'u yeniden ebeveynleyin (T051)"
+    # onay işareti, PO reddi); 012 kalite doğrulama: 0034 (ANALIZ §14.1); 011 test üretimi v3:
+    # 0035 (case_uretim) → … → 0042 (açık soru).
+    assert bas == ["0042"], f"birden çok Alembic başı: {bas} — 0019'u yeniden ebeveynleyin (T051)"
     assert script.get_revision("0019").down_revision == "0018"
     assert script.get_revision("0020").down_revision == "0019"
     assert script.get_revision("0021").down_revision == "0020"  # 011 script dili
@@ -964,8 +965,9 @@ def test_alembic_tek_bas() -> None:
     assert script.get_revision("0031").down_revision == "0030"  # 012 rol modeli v2
     assert script.get_revision("0032").down_revision == "0031"
     assert script.get_revision("0033").down_revision == "0032"
-    assert script.get_revision("0034").down_revision == "0033"  # 011 v3 case_uretim
-    for rev in range(35, 42):
+    assert script.get_revision("0034").down_revision == "0033"  # 012 kalite doğrulama
+    assert script.get_revision("0035").down_revision == "0034"  # 011 v3 case_uretim
+    for rev in range(36, 43):
         assert script.get_revision(f"00{rev}").down_revision == f"00{rev - 1}"
 
 

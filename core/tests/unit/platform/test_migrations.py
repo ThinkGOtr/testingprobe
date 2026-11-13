@@ -301,18 +301,18 @@ def test_0008_downgrade_reopen_kararini_silmez(pg: PgServer) -> None:
             c.execute(f'DROP DATABASE IF EXISTS "{ad}" WITH (FORCE)')
 
 
-# 0039 (eski 0026; specs/011 D1 #19): kalite tabloları en az yetkiyle; tamamlanan denetim kararlı.
+# 0040 (eski 0026; specs/011 D1 #19): kalite tabloları en az yetkiyle; tamamlanan denetim kararlı.
 KALITE_TABLOLARI = ("case_uretim", "tasarim_modeli", "case_set_review", "case_set_audit")
 
 
 @pytest.mark.parametrize("tablo", KALITE_TABLOLARI)
 @pytest.mark.parametrize("islem", ["DELETE FROM {t}", "TRUNCATE {t}"])
-def test_0039_tp_app_kalite_kayitlarini_silemez(db: Db, tablo: str, islem: str) -> None:
+def test_0040_tp_app_kalite_kayitlarini_silemez(db: Db, tablo: str, islem: str) -> None:
     with _app(db) as c, pytest.raises(psycopg.errors.InsufficientPrivilege):
         c.execute(islem.format(t=tablo))
 
 
-def test_0039_tamamlanan_denetim_kararsiz_yazilamaz(db: Db) -> None:
+def test_0040_tamamlanan_denetim_kararsiz_yazilamaz(db: Db) -> None:
     rid = uuid.uuid4()
     with _app(db) as c:
         c.execute(

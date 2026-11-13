@@ -78,6 +78,7 @@ OLGU_ADLARI = frozenset(
         "basarisiz_adimlar",
         "hata_sinifi",
         "onarim_durumu",
+        "beklenti_farki",
         "flaky_tekrar",
         "bug_taslagi_var",
         "bug_taslagi_id",
@@ -204,6 +205,11 @@ def _bilinen_kodlar() -> set[str]:
     from tp_core.api import csrf, errors
     from tp_core.api import main as _api_main  # noqa: F401  (özellik router'larını yükler)
     from tp_core.api.registry import discover_feature_routers
+
+    # 012 kalite: kodlu WorkflowError alt sınıfları özellik hata modüllerindedir; içe aktarılmadan
+    # __subclasses__() onları göremez (test sırasına bağlı kalmasın).
+    from tp_core.features.hata_kosusu import hatalar as _hata_kosusu_hatalari  # noqa: F401
+    from tp_core.features.karar_tablosu import hatalar as _kalite_hatalari  # noqa: F401
     from tp_core.workflow import service
 
     # Kodlu WorkflowError alt sınıfları özellik modüllerinde tanımlıdır (ör. codegen
@@ -541,13 +547,14 @@ def test_oneriler_kural_dosyasi_gecerli() -> None:
     assert kural_hatalari(_oneriler(), _taslaklar(), _rotalar()) == []
 
 
-def test_oneriler_kural_seti_27_kural_tek_eylem() -> None:
-    """§17.3 tablosu (K10 onaylı) 26 satır + 011 `script-dogrulanmamis` (bilgi) + 012
-    `case-son-onay-bekliyor`; her satır tek kural ve tek eylem."""
+def test_oneriler_kural_seti_30_kural_tek_eylem() -> None:
+    """§17.3 tablosu (K10 onaylı) 26 satır + 011 `script-dogrulanmamis` (bilgi) + 012 rol
+    `case-son-onay-bekliyor` + 012 kalite §4.4'ün iki kuralı (hata-beklenti-case-duzelt,
+    hata-beklenti-bilgi; ürün sahibi K10 onayı bekliyor); her satır tek kural ve tek eylem."""
     kurallar = _oneriler()["kurallar"]
-    assert len(kurallar) == 28
+    assert len(kurallar) == 30
     turler = [k["eylem"]["tur"] for k in kurallar]
-    assert turler.count("rota") == 13 and turler.count("bilgi") == 9
+    assert turler.count("rota") == 13 and turler.count("bilgi") == 11
     assert turler.count("jira_taslak") == 3 and turler.count("jira_yorum") == 2
     assert turler.count("jira_kaydi") == 1
 

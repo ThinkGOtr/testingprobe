@@ -93,12 +93,17 @@ def bulgular_tur1(b: Baglam, req_id: str) -> dict[str, dict[str, Any]]:
 
 
 def caseler(b: Baglam, req_id: str) -> dict[int, dict[str, Any]]:
-    """Güncel üretimin case'leri, sıra numarasına göre."""
+    """Güncel portal üretiminin case'leri, sıra numarasına göre.
+
+    IDE kanalından gelen taslaklar (012 demo: `ai-sinir-hatasi` C6 varyantı, MCP
+    `submit_draft_cases`) yeni bir üretim açar; prova akışı portal üretimini izler. Portal üretimi
+    yoksa en son üretim kullanılır."""
     hepsi = b.api.get("analist", f"/cases?requirement_id={req_id}")
     if not hepsi:
         return {}
-    son = max(c.get("uretim_no") or 0 for c in hepsi)
-    return {c["sira_no"]: c for c in hepsi if (c.get("uretim_no") or 0) == son}
+    portal = [c for c in hepsi if c.get("kanal", "portal") == "portal"] or hepsi
+    son = max(c.get("uretim_no") or 0 for c in portal)
+    return {c["sira_no"]: c for c in portal if (c.get("uretim_no") or 0) == son}
 
 
 def script_bul(b: Baglam, sira: int) -> dict[str, Any] | None:
@@ -862,9 +867,13 @@ def yayin(b: Baglam) -> None:
     req_id = b.veri["req_id"]
     if b.prova:
         on = b.api.get("testci", f"/publish/preview?requirement_id={req_id}")
-        islemler = {k["islem"] for k in on["kalemler"]}
+        # Yalnız portal üretimi: 012 demosunda IDE'den gelen taslak varyant (onaysız) önizlemede
+        # `blocked_not_approved` olarak görünür ve yayına girmez.
+        portal = {c["id"] for c in caseler(b, req_id).values()}
+        kalemler = [k for k in on["kalemler"] if k["case_id"] in portal]
+        islemler = {k["islem"] for k in kalemler}
         b.kontrol("yayın önizlemesi: tüm kalemler create", islemler == {"create"}, str(islemler))
-        ids = [k["case_id"] for k in on["kalemler"] if k["islem"] == "create"]
+        ids = [k["case_id"] for k in kalemler if k["islem"] == "create"]
         y = b.api.post("testci", "/publish", {"case_ids": ids}, beklenen=(200,))
         durumlar = {s["durum"] for s in y["sonuclar"]}
         b.kontrol("yayın: hepsi created", durumlar == {"created"}, str(durumlar))

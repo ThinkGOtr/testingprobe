@@ -133,6 +133,13 @@ olgular:
     kaynak: Failure sınıfı (models/enums.FAILURE_SINIF)
     degerler: [environment, flaky, test_maintenance, product_defect, test_data, unknown]
     yer_tutucu: false
+  beklenti_farki:
+    tur: bool
+    varliklar: [failure]
+    kaynak: >-
+      Failure.sinif = test_maintenance ve Failure.alt_tur = beklenti (012 §4.4: test beklentisi
+      onaylı karar tablosundan farklı, uygulama tabloya uygun; locator onarımı ve bug taslağı açılmaz)
+    yer_tutucu: false
   onarim_durumu:
     tur: enum
     varliklar: [failure]
@@ -486,7 +493,7 @@ kurallar:
     ekran: /hatalar/:id
     varlik: failure
     roller: [engineer]
-    kosul: {hata_sinifi_esit: test_maintenance, onarim_durumu_esit: none}
+    kosul: {hata_sinifi_esit: test_maintenance, onarim_durumu_esit: none, beklenti_farki_esit: false}
     oncelik: 85
     baslik: Bakım hatası; otomatik onarımı başlatın
     neden: Test, değişmeyen bir niyet için güncelliğini yitirdi; onarılmazsa her koşuda kırmızı kalır.
@@ -498,6 +505,38 @@ kurallar:
     aciklama: >-
       Triage bu hatayı test bakımı (ör. locator) olarak sınıfladı. Otomatik onarım bir öneri PR'ı
       hazırlar; PR'ı siz inceler ve merge edersiniz, beklenen değerlere dokunulmaz.
+
+  - id: hata-beklenti-case-duzelt                                   # 012 §4.4
+    ekran: /hatalar/:id
+    varlik: failure
+    roller: [tester]
+    kosul: {hata_sinifi_esit: test_maintenance, beklenti_farki_esit: true}
+    oncelik: 85
+    baslik: Case'in beklenen değeri onaylı karar tablosuyla uyuşmuyor; case'i düzeltin
+    neden: >-
+      Uygulama PO onaylı karar tablosuna uygun, test beklentisi değil; case düzeltilmeden test her
+      koşuda kırmızı kalır ve otomatik onarım beklenen değere dokunmaz.
+    eylem: {tur: bilgi}
+    aciklama: >-
+      Triage bu hatayı test beklentisi farkı olarak sınıfladı: testin beklediği değer onaylı karar
+      tablosundan farklı, uygulamanın ürettiği değer tabloyla aynı. Gereksinimin case ekranında bu
+      case'i taslağa alıp düzeltme formuyla tablodaki değere getirin; önerilen içerik kabulden önce
+      tabloyla yeniden kontrol edilir, ardından Analist son onayını verir. Bug taslağı ve locator
+      onarımı açılmaz.
+
+  - id: hata-beklenti-bilgi                                         # 012 §4.4
+    ekran: /hatalar/:id
+    varlik: failure
+    roller: [engineer]
+    kosul: {hata_sinifi_esit: test_maintenance, beklenti_farki_esit: true}
+    oncelik: 60
+    baslik: Test beklentisi karar tablosundan farklı; case'i Testçi düzeltir
+    neden: Sorun locator'da ya da kodda değil, case'in beklenen değerinde; otomatik onarım bunu düzeltmez.
+    eylem: {tur: bilgi}
+    aciklama: >-
+      Bu hata test beklentisi farkı olarak sınıflandı (uygulama onaylı karar tablosuna uygun). Case
+      düzeltmesi Testçi rolündedir; düzeltilen case Analist son onayından geçince test yeniden
+      üretilip koşturulabilir.
 
   - id: hata-bug-taslagi-karari                                     # §17.3 #19
     ekran: /hatalar/:id
@@ -622,6 +661,7 @@ bos_ekranlar:
   - {ekran: /gereksinimler/:id, roller: [admin, auditor, engineer, developer, viewer]}
   - {ekran: /gereksinimler/:id/caseler, roller: [admin, auditor, po, engineer, developer, viewer]}
   - {ekran: /gereksinimler/:id/yayin, roller: [admin, auditor, analyst, po, tester, engineer, developer, viewer]}
+  - {ekran: /gereksinimler/:id/karar-tablolari, roller: [admin, analyst, po, tester, engineer, developer]}
   - {ekran: /caseler, roller: [admin, auditor, analyst, po, tester, engineer, developer, viewer]}
   - {ekran: /kod, roller: [admin, analyst, tester, engineer]}
   - {ekran: /kod/:id, roller: [admin, analyst, tester]}

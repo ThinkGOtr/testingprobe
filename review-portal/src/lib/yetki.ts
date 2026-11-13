@@ -69,6 +69,12 @@ export const IZINLER = {
   "design_model.decide": ["tester"],
   "case.ask_po": ["analyst"],
   "agent_test.run": ["tester"],
+  // 012 test kalite doğrulama: karar tablosu / ilişki (Analist yazar, PO onaylar), kontrolü
+  // yeniden isteme (Testçi, Analist), ekilmiş hata koşusu (engineer, admin — eski presenter).
+  "decision_table.edit": ["analyst"],
+  "decision_table.approve": ["po"],
+  "case.oracle_check": ["analyst", "tester"],
+  "fault_run.manage": ["admin", "engineer"],
   // okuma
   "dashboard.read": HEPSI,
   "requirement.read": IS_ROLLERI,
@@ -89,6 +95,10 @@ export const IZINLER = {
   "publish.preview": ["admin", "analyst", "po", "tester", "engineer"],
   "claude_code.read": ["admin", "analyst", "tester", "engineer"],
   "demo.read": ["admin", "analyst", "po", "tester", "engineer"],
+  // 012 test kalite doğrulama: tablolar gereksinim düzeyi (developer görür); case kontrol sonucu
+  // ve istisna gerekçesi karar geçmişidir (developer, auditor, viewer görmez).
+  "decision_table.read": IS_ROLLERI,
+  "case.oracle_read": ["admin", "analyst", "po", "tester", "engineer"],
 } as const satisfies Record<string, readonly Rol[]>;
 
 export type Izin = keyof typeof IZINLER;
@@ -138,6 +148,7 @@ export const ROTA_IZINLERI: Record<string, readonly Izin[]> = {
   "/gereksinimler/:id/caseler": ["case.read"],
   "/caseler": ["case.read"],
   "/gereksinimler/:id/yayin": ["publish.preview"],
+  "/gereksinimler/:id/karar-tablolari": ["decision_table.read"],
   "/kod": ["code.read"],
   "/kod/:id": ["code.read"],
   "/kosular": ["run.read"],

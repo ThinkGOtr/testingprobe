@@ -56,7 +56,8 @@ record id that a `probe_*` tool showed (its `ekran_rotasi` line or the last colu
 without such an id use the list screen.
 - `/gereksinimler` (Gereksinimler), `/gereksinimler/:id` (Gereksinim detay: PO onayı, tutarlılık
   bulguları, case üretimi), `/gereksinimler/:id/caseler` (Case inceleme: case onay/ret),
-  `/gereksinimler/:id/yayin` (Yayın: Jira'ya case yayını)
+  `/gereksinimler/:id/yayin` (Yayın: Jira'ya case yayını), `/gereksinimler/:id/karar-tablolari`
+  (Karar tabloları: PO onaylı hesaplama kuralları, metamorfik ilişkiler, ek case türetme)
 - `/caseler` (Test case'leri: tüm story'lerin case listesi, salt okunur)
 - `/kod` (Kod: script üretimi, platform ve üretim dili seçici),
   `/kod/:id` (Script detay: kırarak doğrulama, PR merge; doğrulanmamış dilde kod görüntüleme ve

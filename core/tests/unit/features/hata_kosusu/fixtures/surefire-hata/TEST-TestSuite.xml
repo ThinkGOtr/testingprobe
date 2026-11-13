@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report.xsd" version="3.0.2" name="TestSuite" time="58.104" tests="4" errors="2" skipped="0" failures="2">
+  <properties>
+    <property name="java.version" value="17.0.12"/>
+    <property name="surefire.test.class.path" value="target/test-classes"/>
+  </properties>
+  <testcase name="ondortAdetteIkiBedava" classname="com.antreklabs.bayi.uretilen.TPD1AndroidC11_1a2b3c4dTest" time="14.077">
+    <failure message="'free-qty' metni: beklenen &lt;2&gt;, görülen &lt;1&gt; (10000 ms)" type="java.lang.AssertionError"><![CDATA[java.lang.AssertionError: 'free-qty' metni: beklenen <2>, görülen <1> (10000 ms)
+	at com.antreklabs.bayi.altyapi.Bekle.dogrula(Bekle.java:76)
+	at com.antreklabs.bayi.ekranlar.SepetEkrani.dogrulaBedavaAdet(SepetEkrani.java:52)
+	at com.antreklabs.bayi.uretilen.TPD1AndroidC11_1a2b3c4dTest.ondortAdetteIkiBedava(TPD1AndroidC11_1a2b3c4dTest.java:34)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+]]></failure>
+  </testcase>
+  <testcase name="siparisOnaylanir" classname="com.antreklabs.bayi.testler.SiparisTesti" time="21.390">
+    <error message="Expected condition failed: öğe tıklanabilir olmadı: kimlik 'confirm-order' (tried for 10 second(s) with 250 milliseconds interval)" type="org.openqa.selenium.TimeoutException"><![CDATA[org.openqa.selenium.TimeoutException: Expected condition failed: öğe tıklanabilir olmadı: kimlik 'confirm-order' (tried for 10 second(s) with 250 milliseconds interval)
+	at org.openqa.selenium.support.ui.WebDriverWait.timeoutException(WebDriverWait.java:84)
+	at com.antreklabs.bayi.ekranlar.Ekran.tikla(Ekran.java:125)
+	at com.antreklabs.bayi.ekranlar.SepetEkrani.onayla(SepetEkrani.java:97)
+	at com.antreklabs.bayi.testler.SiparisTesti.siparisOnaylanir(SiparisTesti.java:40)
+]]></error>
+  </testcase>
+  <testcase name="minimumUyarisiGorunur" classname="com.antreklabs.bayi.testler.SepetTesti" time="10.668">
+    <error message="Expected condition failed: öğe görünmedi: kimlik 'min-order-warning' (tried for 10 second(s) with 250 milliseconds interval)" type="org.openqa.selenium.TimeoutException"><![CDATA[org.openqa.selenium.TimeoutException: Expected condition failed: öğe görünmedi: kimlik 'min-order-warning' (tried for 10 second(s) with 250 milliseconds interval)
+	at org.openqa.selenium.support.ui.WebDriverWait.timeoutException(WebDriverWait.java:84)
+	at com.antreklabs.bayi.ekranlar.Ekran.bul(Ekran.java:97)
+	at com.antreklabs.bayi.testler.SepetTesti.minimumUyarisiGorunur(SepetTesti.java:48)
+]]></error>
+  </testcase>
+  <testcase name="krediLimitiUyarisi" classname="com.antreklabs.bayi.testler.SepetTesti" time="11.970">
+    <failure message="'credit-warning' metni: beklenen &lt;Kredi limiti aşıldı&gt;, görülen &lt;(öğe yok)&gt; (10000 ms)" type="java.lang.AssertionError"><![CDATA[java.lang.AssertionError: 'credit-warning' metni: beklenen <Kredi limiti aşıldı>, görülen <(öğe yok)> (10000 ms)
+	at com.antreklabs.bayi.altyapi.Bekle.dogrula(Bekle.java:76)
+	at com.antreklabs.bayi.ekranlar.SepetEkrani.dogrulaKrediUyarisi(SepetEkrani.java:88)
+	at com.antreklabs.bayi.testler.SepetTesti.krediLimitiUyarisi(SepetTesti.java:61)
+]]></failure>
+  </testcase>
+</testsuite>

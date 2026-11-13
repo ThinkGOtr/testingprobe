@@ -179,12 +179,14 @@ class Tohum:
         oneri_durumu: str = "none",
         run_id: uuid.UUID | None = None,
         test_adi: str = "kampanya testi",
+        alt_tur: str | None = None,
     ) -> uuid.UUID:
         f = Failure(
             run_id=run_id or self.kosu("failed"),
             test_adi=test_adi,
             hata_imzasi="imza",
             sinif=sinif,
+            alt_tur=alt_tur,
             oneri_durumu=oneri_durumu,
         )
         self._ekle(f)
@@ -449,8 +451,19 @@ VAKALAR: dict[str, tuple[str, Kurulum, Kurulum]] = {
     "kosu-ortam-hatasi-bilgi": ("admin", _kosu("error"), _kosu("passed")),
     "hata-bakim-onarim": (
         "engineer",
-        _hata("test_maintenance"),
-        _hata("test_maintenance", oneri_durumu="pr_open"),
+        _hata("test_maintenance", alt_tur="locator"),
+        # 012 §4.4: beklenti farkında otomatik locator onarımı önerilmez.
+        _hata("test_maintenance", alt_tur="beklenti"),
+    ),
+    "hata-beklenti-case-duzelt": (
+        "tester",  # 012 rol modeli: case düzeltmesi Testçide
+        _hata("test_maintenance", alt_tur="beklenti"),
+        _hata("test_maintenance", alt_tur="locator"),
+    ),
+    "hata-beklenti-bilgi": (
+        "engineer",
+        _hata("test_maintenance", alt_tur="beklenti"),
+        _hata("product_defect"),
     ),
     "hata-bug-taslagi-karari": (
         "tester",

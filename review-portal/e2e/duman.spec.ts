@@ -23,6 +23,16 @@ async function girisYap(page: Page, kullanici: string) {
   await fontlariBekle(page);
 }
 
+/**
+ * Tam sayfa görüntüsü sayfa tepesinden: sayfa kaydırılmışken (ör. tıklanan düğme görünüme kaydırıldı)
+ * Chromium tam sayfa yakalamada yapışkan üst çubuk ve yan menüyü o kaydırma konumunda çizer; görüntüde
+ * sayfanın ortasında ikinci bir başlık varmış gibi görünür (yerleşim hatası değil, viewport'ta tektir).
+ */
+async function tamSayfaUstten(page: Page, path: string) {
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({ path, fullPage: true });
+}
+
 /** Akış göstergesinde kutuları üst üste binen adım adı çiftleri (1 px tolerans). */
 async function akisAdCakismalari(page: Page): Promise<string[]> {
   return page.evaluate(() => {
@@ -77,6 +87,8 @@ const ROTALAR: { yol: string; ad: string; baslik: RegExp; rol?: string }[] = [
   { yol: "/bug-taslaklari/bug-3", ad: "43-bug-f2-tutarlilik", baslik: /TPD-1 AC2/ },
   { yol: "/kosular/run-109", ad: "44-kosu-ortam-hatasi", baslik: /run-109/ },
   { yol: "/yol-haritasi", ad: "52-yol-haritasi", baslik: /^Demo yol haritası$/, rol: "sunucu" },
+  // 012 Ş7: karar tabloları ve ilişkiler.
+  { yol: "/gereksinimler/req-tpd-1/karar-tablolari", ad: "70-karar-tablolari", baslik: /^Karar tabloları$/ },
 ];
 
 test("giriş ekranı", async ({ page }) => {
@@ -315,6 +327,69 @@ test("Sistem Yöneticisi (sunucu): açılış Demo yol haritası; Kontrol Kulesi
   await page.goto("/kosular/run-108");
   await expect(page.getByRole("region", { name: "Raporlar ve bağlantılar" })).toContainText("Playwright HTML raporu");
   await page.screenshot({ path: `${EKRAN_DIZINI}/28-kosu-yerel-kontrol.png`, fullPage: true });
+  expect(hatalar).toEqual([]);
+});
+
+test("sunucu: Kontrol Kulesi'nde ekilmiş hata koşusu başlatır (web); ilerleme, hata × platform tablosu ve kaçan hatalar (012)", async ({ page }) => {
+  const hatalar = konsolHatalariniTopla(page);
+  await girisYap(page, "sunucu");
+  await page.goto("/kontrol-kulesi");
+  // KPI şeridi: iki kalite karosu ve kaynak ipuçları.
+  // u2 N1: örnek veriden hesaplanır (başlangıçta yalnız T1 onaylı: 3/3).
+  await expect(page.getByTestId("beklenti-dogrulugu")).toHaveText("%100");
+  // K12 + u2 N4: ana oran üretilmiş (AI) testlerle — C2 testi 3 kampanya hatasını yakalar; C3 temelde kırmızı (hariç).
+  await expect(page.getByTestId("hata-yakalama")).toHaveText("%35");
+  await expect(page.getByRole("img", { name: /^Kaynak: Son tamamlanan tam katalog ekilmiş hata koşusu/ })).toBeVisible();
+  const kart = page.getByRole("region", { name: "Ekilmiş hata koşusu" });
+  // Örnek verideki bitmiş koşu (web + android): web demo uygulamada ölçülen gerçek matris (el yazısı suite
+  // 8/9, yalnız kampanya_tek_bedava kaçar — K9); geçersiz adım orana girmez; kaçan hatalar ayrı listede.
+  await expect(kart.getByTestId("hk-oran-web")).toHaveText("%89 (8/9)");
+  await expect(kart.getByTestId("hk-oran-android")).toContainText("%88 (7/8)");
+  await expect(kart.getByTestId("hk-oran-android")).toContainText("1 geçersiz (orana girmez)");
+  await expect(kart.getByTestId("hk-hucre-android-min_siparis_1000")).toContainText("Neden: Cihaz/Appium erişilemiyor");
+  await expect(kart.locator(".hk-kacan-liste > li")).toHaveCount(1);
+  await expect(kart.getByTestId("hk-ai-kacanlar")).toContainText("AI testlerinin kaçırdıkları (6)");
+  await tamSayfaUstten(page, `${EKRAN_DIZINI}/60-kule-ekilmis-hata.png`);
+
+  // Yalnız iki hatayla web koşusu (web işaretli gelir; uygulama platformları işaretsiz).
+  await expect(kart.getByRole("checkbox", { name: "Web" })).toBeChecked();
+  await expect(kart.getByRole("checkbox", { name: "Android" })).not.toBeChecked();
+  for (const ad of [
+    "Kampanya indirimi iki kez düşülüyor",
+    "Minimum sipariş sınırı dahil değil",
+    "Kampanyalı sepet minimumdan muaf değil",
+    "Minimum sipariş tutarı 500",
+    "Minimum sipariş tutarı 1000",
+    "P-004 fiyatı 31",
+    "Kampanyalı ürün P-002",
+  ]) {
+    await kart.getByRole("checkbox", { name: ad }).uncheck();
+  }
+  await expect(kart.getByTestId("hk-tahmin")).toContainText("2 hata + 2 çerçeve koşusu (temel, kapanış) = 4 koşu / platform");
+  await kart.getByRole("button", { name: "Koşuyu başlat" }).click();
+  await expect(kart.getByTestId("hk-ilerleme")).toBeVisible();
+  await expect(kart.getByTestId("hk-sayac")).toContainText("/ 4");
+  await expect(kart.getByRole("button", { name: "Koşuyu başlat" })).toBeDisabled();
+  await tamSayfaUstten(page, `${EKRAN_DIZINI}/61-kule-ekilmis-hata-ilerleme.png`);
+  // Koşu biter: ilerleme kapanır, tablo yeni koşuyu gösterir.
+  await expect(kart.getByTestId("hk-ilerleme")).toHaveCount(0, { timeout: 30_000 });
+  await expect(kart.getByTestId("hk-sonuc")).toHaveAttribute("data-kosu", "hk-2");
+  await expect(kart.getByRole("region", { name: "Ekilmiş hata sonuç tablosu" }).getByRole("columnheader")).toHaveText(["Hata", "Web"]);
+  await expect(kart.getByTestId("hk-temel-web")).toContainText("✓ yeşil");
+  await expect(kart.getByTestId("hk-hucre-web-kampanya_bedava_yok")).toContainText("✓ yakalandı");
+  await expect(kart.getByTestId("hk-hucre-web-kampanya_tek_bedava")).toContainText("✗ kaçtı");
+  await expect(kart.getByTestId("hk-kapanis-web")).toContainText("✓ yeşil");
+  await expect(kart.getByTestId("hk-oran-web")).toHaveText("%50 (1/2)");
+  await expect(kart.getByTestId("hk-kacan-kampanya_tek_bedava")).toContainText("Kampanyada en çok 1 bedava · Web");
+  // Kule ölçüsüne yalnız tam katalog koşusu girer (kısmi seçim girmez); geçmişte iki koşu.
+  await expect(page.getByTestId("hata-yakalama")).toHaveText("%35");
+  await expect(kart.getByTestId("hk-gecmis").getByRole("row")).toHaveCount(3);
+  await tamSayfaUstten(page, `${EKRAN_DIZINI}/62-kule-ekilmis-hata-sonuc.png`);
+  // Hücre kendi koşusuna bağlanır.
+  await kart.getByTestId("hk-hucre-web-kampanya_bedava_yok").getByRole("link").click();
+  await expect(page).toHaveURL(/\/kosular\/hk-2-r2$/);
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("Kırarak doğrula koşusu");
+  await expect(page.getByText(/Ekilmiş hata koşusu: uygulama bu koşuda bilerek bozuldu/)).toBeVisible();
   expect(hatalar).toEqual([]);
 });
 
@@ -624,6 +699,20 @@ const AXE_SAYFALARI: { yol: string; ad: string; hazir: (p: Page) => Promise<void
   { yol: "/denetim", ad: "16-denetim", hazir: (p) => expect(p.getByText("Zincir doğrulandı").first()).toBeVisible() },
   { yol: "/claude-code", ad: "17-claude-code", hazir: (p) => expect(p.getByText("Token oluştur").first()).toBeVisible() },
   { yol: "/yol-haritasi", ad: "52-yol-haritasi", hazir: (p) => expect(p.getByText("Test bakımı yolu").first()).toBeVisible() },
+  // 012 Ş7: "Örnekle dene" açık (form alanları da denetlensin).
+  {
+    yol: "/gereksinimler/req-tpd-1/karar-tablolari",
+    ad: "70-karar-tablolari",
+    hazir: async (p) => {
+      const t1 = p.getByRole("region", { name: /T1 · Kampanya/ });
+      await expect(t1).toBeVisible();
+      await t1.getByText("Örnekle dene").click();
+      await expect(t1.getByRole("button", { name: "Dene" })).toBeVisible();
+      // Satır anlamı ve sınır örnekleriyle kart uzadı: tıklama sayfayı kaydırır; yapışkan üst çubuk içeriğin
+      // üstünde kalınca axe çubuktaki metnin zeminini çözemez ("incomplete"). Ölçüm F0'daki gibi sayfa tepesinden.
+      await p.evaluate(() => window.scrollTo(0, 0));
+    },
+  },
 ];
 
 /**
@@ -657,6 +746,8 @@ const F0_INCOMPLETE: Record<string, [number, number, number, number, number]> = 
   "/kosular/run-108": [1, 1, 1, 1, 1],
   "/bug-taslaklari": [0, 0, 0, 0, 0],
   "/demo": [0, 0, 0, 0, 0],
+  // 012 Ş7 (yeni sayfa; ilk ölçüm 2026-11-11).
+  "/gereksinimler/req-tpd-1/karar-tablolari": [0, 0, 0, 0, 0],
 };
 
 function f0Taban(yol: string, tema: TemaTuru["tema"], genislik: number): number {
@@ -1118,6 +1209,93 @@ test("v3 case review (req-ft-2) axe: ciddi ihlal yok; özellik listesi definitio
     const liste = sonuc.violations.filter((x) => x.id === "definition-list" || x.id === "aria-allowed-role").map((v) => v.id);
     expect(liste).toEqual([]);
   }
+});
+
+test("012 demo adım 2–3: PO ızgarada AI sınır hatasını görür → değişiklik iste → analist `< 750` → PO onaylar → AI'ın C6 hatası engellenir → Testçi istisnayla kabul eder", async ({ page }) => {
+  const hatalar = konsolHatalariniTopla(page);
+  await girisYap(page, "po");
+  await page.goto("/gereksinimler/req-tpd-1/karar-tablolari");
+  let t2 = page.getByRole("region", { name: /T2 · Minimum sipariş/ });
+  await expect(t2.getByText("PO onayı bekliyor")).toBeVisible();
+  // Sınır örnekleri açık: 750,00 eşik satırında AI'ın `<= 750` taslağı "uyarı görünür" der; story "altında" der.
+  const esik = t2.locator("tr[data-esik='true']").filter({ hasText: /^yanlış750/ });
+  await expect(esik).toContainText("uyarı görünür");
+  await expect(esik).toContainText("AC3:");
+  await tamSayfaUstten(page, `${EKRAN_DIZINI}/71-karar-tablosu-po-sinir-hatasi.png`);
+  await t2.getByRole("button", { name: "Değişiklik iste" }).click();
+  await t2.getByLabel("Değişiklik gerekçesi").fill("AC3 'altında' diyor; tam 750,00 TL'de uyarı olmamalı.");
+  await t2.getByRole("button", { name: "Değişiklik isteğini gönder" }).click();
+  await expect(t2.getByText("PO değişiklik istedi")).toBeVisible();
+  await page.getByRole("button", { name: "Çıkış" }).click();
+  await expect(page.getByRole("heading", { name: "Oturum aç" })).toBeVisible();
+
+  await girisYap(page, "analist");
+  await page.goto("/gereksinimler/req-tpd-1/karar-tablolari");
+  await t2.getByRole("button", { name: "Düzenle" }).click();
+  await t2.getByRole("group", { name: "Satır R2" }).getByLabel("Koşul").fill("sepet_tutari < 750");
+  await t2.getByRole("button", { name: "Kaydet" }).click();
+  await expect(t2.getByTestId("kt-duzenleyici")).toHaveCount(0);
+  await expect(t2.getByTestId("kt-ai-ozgun")).toContainText("AI taslağında: sepet_tutari <= 750");
+  await t2.getByRole("button", { name: "PO onayına gönder" }).click();
+  await expect(t2.getByText("PO onayı bekliyor")).toBeVisible();
+  await page.getByRole("button", { name: "Çıkış" }).click();
+  await expect(page.getByRole("heading", { name: "Oturum aç" })).toBeVisible();
+
+  await girisYap(page, "po");
+  await page.goto("/gereksinimler/req-tpd-1/karar-tablolari");
+  t2 = page.getByRole("region", { name: /T2 · Minimum sipariş/ });
+  await expect(t2.locator("tr[data-esik='true']").filter({ hasText: /^yanlış750/ })).toContainText("uyarı görünmez");
+  await t2.getByRole("button", { name: "PO olarak onayla" }).click();
+  await expect(t2.getByText("Onaylı", { exact: true })).toBeVisible();
+  await expect(t2.getByTestId("kt-onay")).toContainText("PO onayı:");
+  await page.getByRole("button", { name: "Çıkış" }).click();
+  await expect(page.getByRole("heading", { name: "Oturum aç" })).toBeVisible();
+
+  // 012 rol modeli: kapı Testçinin kabulünde ("Kabul et"); Analist son onayında yeniden uygulanır.
+  await girisYap(page, "testci");
+  await page.goto("/gereksinimler/req-tpd-1/caseler");
+  const c6 = page.getByRole("article", { name: /minimum tutara eşit toplamda/ });
+  await expect(c6.getByText("Tabloyla uyuşmuyor ✗")).toBeVisible();
+  await expect(c6.getByRole("button", { name: "Kabul et", exact: true })).toBeDisabled();
+  await expect(c6.locator(".dugme-neden").filter({ hasText: "gerekçeli istisna olmadan onaylanamaz" })).toBeVisible();
+  await page.screenshot({ path: `${EKRAN_DIZINI}/72-case-tablo-uyusmazligi.png`, fullPage: true });
+  // V10: iki yol; "Case doğru, istisnayla onayla" gerekçe ister (≥ 20 karakter, ≥ 10 harf).
+  await expect(c6.getByTestId("oracle-tablo-yanlis")).toBeVisible();
+  await c6.getByRole("button", { name: "Case doğru, istisnayla onayla" }).click();
+  const gerekce = c6.getByLabel("İstisna gerekçesi");
+  await expect(gerekce).toBeFocused();
+  await gerekce.fill("PO ile görüşüldü: 750,00 TL sınırı dahil kabul edildi.");
+  await c6.getByTestId("istisna-formu").getByRole("button", { name: "Case doğru, istisnayla onayla" }).click();
+  await expect(c6.getByTestId("oracle-istisna")).toContainText("PO ile görüşüldü");
+  await expect(c6.getByTestId("case-karar-kilit")).toBeVisible();
+  await page.getByRole("button", { name: "Çıkış" }).click();
+  await expect(page.getByRole("heading", { name: "Oturum aç" })).toBeVisible();
+
+  // Analist son onayı: aynı tür + tablo kümesiyle verilmiş istisna yeniden gerekçe istemez.
+  await girisYap(page, "analist");
+  await page.goto("/gereksinimler/req-tpd-1/caseler");
+  const c6b = page.getByRole("article", { name: /minimum tutara eşit toplamda/ });
+  await expect(c6b.getByTestId("oracle-kapi")).toHaveAttribute("data-tur", "sakli");
+  await c6b.getByRole("button", { name: "Onayla", exact: true }).click();
+  await expect(c6b.getByTestId("case-karar-kilit")).toContainText("Analist onayladı");
+  expect(hatalar).toEqual([]);
+});
+
+test("012 mobil (390 px) karar tabloları: sayfa ve düzenleyici yatay taşmaz", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await girisYap(page, "analist");
+  await page.goto("/gereksinimler/req-tpd-1/karar-tablolari");
+  const t2 = page.getByRole("region", { name: /T2 · Minimum sipariş/ });
+  await expect(t2).toBeVisible();
+  await fontlariBekle(page);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  // T2 PO onayı bekler (u2 N2): analist geri çekip düzenler.
+  await t2.getByRole("button", { name: "Geri çek" }).click();
+  await t2.getByRole("button", { name: "Düzenle" }).click();
+  await t2.getByText("Örnekle dene").click();
+  await expect(t2.getByTestId("kt-duzenleyici")).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await page.screenshot({ path: `${EKRAN_DIZINI}/73-mobil-karar-tablosu-duzenleyici.png`, fullPage: true });
 });
 
 // 011 üretim dili: Kod üretimi dil seçicisi (algılanan → elle seçim → doğrulanmamış uyarı) ve

@@ -11,6 +11,7 @@ import { Rotalar } from "../../App";
 import { asistanApi, oneriApi, type OneriListesi } from "../../api/asistan";
 import { ApiError, yapilandir } from "../../api/http";
 import { asistanMockAyarla, asistanMockBekleyenler, asistanMockIsle } from "../../api/mock/asistan";
+import { mockVerisi } from "../../api/mock/handlers";
 import { mockOlayYayinla } from "../../api/mock/olaylar";
 import { oneriMockAyarla, oneriMockGeriBildirimleri } from "../../api/mock/oneri";
 import { OturumProvider } from "../../auth";
@@ -612,6 +613,32 @@ describe.each([
       sunucu: /Bakım hatası/,
     }[kullanici]!;
     expect(sekme().textContent).not.toMatch(yabanci);
+  });
+});
+
+describe("012 §4.4: test beklentisi farkı (core `beklenti_farki`)", () => {
+  const beklentiYap = () =>
+    Object.assign(mockVerisi().hatalar.find((x) => x.id === "fail-2")!, { sinif: "test_maintenance", alt_tur: "beklenti", oneri: null });
+  const idler = async () => (await oneriApi.liste({ rota: "/hatalar/fail-2", varlik_tur: "failure", varlik_id: "fail-2" })).oneriler.map((o) => o.kural_id);
+
+  it("locator bakımında mühendis otomatik onarım önerisini görür (beklenti farkı yok)", async () => {
+    Object.assign(mockVerisi().hatalar.find((x) => x.id === "fail-2")!, { oneri: null });
+    await oturumAc("muhendis");
+    expect(await idler()).toContain("hata-bakim-onarim");
+  });
+
+  it("beklenti farkında onarım önerilmez; mühendise bilgi, Testçiye case düzeltme önerisi", async () => {
+    beklentiYap();
+    await oturumAc("muhendis");
+    const m = await idler();
+    expect(m).not.toContain("hata-bakim-onarim");
+    expect(m).toContain("hata-beklenti-bilgi");
+    await oturumAc("testci");
+    const a = await oneriApi.liste({ rota: "/hatalar/fail-2", varlik_tur: "failure", varlik_id: "fail-2" });
+    expect(a.ekranda_kural_var).toBe(true);
+    expect(a.oneriler.map((o) => [o.kural_id, o.baslik])).toEqual([
+      ["hata-beklenti-case-duzelt", "Case'in beklenen değeri onaylı karar tablosuyla uyuşmuyor; case'i düzeltin"],
+    ]);
   });
 });
 

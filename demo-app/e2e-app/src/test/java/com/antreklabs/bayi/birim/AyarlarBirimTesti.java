@@ -58,6 +58,63 @@ public class AyarlarBirimTesti {
   }
 
   @Test(groups = "birim")
+  public void ekilmisHataAyari() {
+    assertEquals(Ayarlar.haritadan(Map.of(), Map.of()).ekilmisHata(), Optional.empty());
+    assertEquals(Ayarlar.haritadan(Map.of(), Map.of("TP_FAULT", " ")).ekilmisHata(), Optional.empty());
+    assertEquals(Ayarlar.haritadan(Map.of(), Map.of("TP_FAULT", "min_siparis_500")).ekilmisHata(), Optional.of("min_siparis_500"));
+    assertEquals(
+        Ayarlar.haritadan(Map.of("tp.fault", "fiyat_p004_31"), Map.of("TP_FAULT", "min_siparis_500")).ekilmisHata(),
+        Optional.of("fiyat_p004_31"),
+        "sistem özelliği ortamı ezer");
+    for (String kotu : java.util.List.of("Kampanya", "a-b", "a b", "ğ", "a\"b", "x".repeat(41))) {
+      assertTrue(
+          org.testng.Assert.expectThrows(
+                  IllegalArgumentException.class, () -> Ayarlar.haritadan(Map.of(), Map.of("TP_FAULT", kotu)).ekilmisHata())
+              .getMessage()
+              .contains("TP_FAULT geçersiz"),
+          kotu);
+    }
+    assertEquals(Ayarlar.haritadan(Map.of(), Map.of("TP_FAULT", "x".repeat(40))).ekilmisHata(), Optional.of("x".repeat(40)));
+  }
+
+  @Test(groups = "birim")
+  public void kirilmaSecimiVeGovdesi() {
+    // Hiçbiri yok → kırılma yok.
+    assertEquals(TestVerisi.kirilma(Ayarlar.haritadan(Map.of(), Map.of("DEMOAPP_TEST_TOKEN", "t"))), Optional.empty());
+
+    // BREAK_CAMPAIGN=1 (değişmedi): {"kampanya": true} açar, {"kampanya": false} kapatır.
+    TestVerisi.Kirilma kampanya = TestVerisi.kirilma(Ayarlar.haritadan(Map.of(), Map.of("BREAK_CAMPAIGN", "1"))).orElseThrow();
+    assertEquals(kampanya.hataKodu(), null);
+    assertEquals(kampanya.govde("bayi1", true), "{\"kullanici_adi\":\"bayi1\",\"kampanya\":true}");
+    assertEquals(kampanya.govde("bayi1", false), "{\"kullanici_adi\":\"bayi1\",\"kampanya\":false}");
+
+    // TP_FAULT: {"hata": kod} açar, {"hata": null} kaldırır.
+    TestVerisi.Kirilma hata = TestVerisi.kirilma(Ayarlar.haritadan(Map.of(), Map.of("TP_FAULT", "kampanya_tek_bedava"))).orElseThrow();
+    assertEquals(hata.hataKodu(), "kampanya_tek_bedava");
+    assertEquals(hata.govde("bayi2", true), "{\"kullanici_adi\":\"bayi2\",\"hata\":\"kampanya_tek_bedava\"}");
+    assertEquals(hata.govde("bayi2", false), "{\"kullanici_adi\":\"bayi2\",\"hata\":null}");
+
+    // İkisi birlikte → TP_FAULT geçerli.
+    TestVerisi.Kirilma ikisi =
+        TestVerisi.kirilma(Ayarlar.haritadan(Map.of(), Map.of("BREAK_CAMPAIGN", "1", "TP_FAULT", "fiyat_p004_31"))).orElseThrow();
+    assertEquals(ikisi.govde("bayi1", true), "{\"kullanici_adi\":\"bayi1\",\"hata\":\"fiyat_p004_31\"}");
+
+    // Biçimi bozuk kod hazırlıkta durur; istek gönderilmez.
+    assertThrows(IllegalArgumentException.class, () -> TestVerisi.kirilma(Ayarlar.haritadan(Map.of(), Map.of("TP_FAULT", "a\"b"))));
+
+    // Token yokken ekilmiş hata istenemez (yalnızca sepet kipinde de).
+    assertTrue(
+        org.testng.Assert.expectThrows(
+                IllegalStateException.class,
+                () -> TestVerisi.kip(Ayarlar.haritadan(Map.of(), Map.of("TP_FAULT", "kampanya_tek_bedava", "TP_E2E_NO_RESET", "1"))))
+            .getMessage()
+            .contains("TP_FAULT için DEMOAPP_TEST_TOKEN gerekir"));
+    assertEquals(
+        TestVerisi.kip(Ayarlar.haritadan(Map.of(), Map.of("TP_FAULT", "kampanya_tek_bedava", "DEMOAPP_TEST_TOKEN", "t"))),
+        TestVerisi.Kip.SIFIRLAMA);
+  }
+
+  @Test(groups = "birim")
   public void androidSecenekleri() {
     Ayarlar a = Ayarlar.haritadan(Map.of("app.path", "/x/bayi.apk", "device.name", "emulator-5554"), Map.of());
     BaseOptions<?> o = SurucuFabrikasi.secenekler(Platform.ANDROID, a);

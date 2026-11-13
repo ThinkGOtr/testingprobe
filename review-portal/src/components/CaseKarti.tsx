@@ -54,6 +54,7 @@ import { useBildirim } from "./Bildirim";
 import { FarkGorunumu } from "./FarkGorunumu";
 import { HazirlikYonlendirme } from "./HazirlikYonlendirme";
 import { AlanHatasi, Cip, IslemDugmesi, ReplayRozeti, Uyari } from "./ui";
+import { damgaAlani, DuzeltmeOnKontrolPaneli, OracleAyrinti, OracleCipi, OracleKapisi, oracleHatasindaYenile, TuretmeCipi, useDuzeltmeOnKontrolu, useOracleKapisi } from "./kalite/oracle";
 import { AtifliMetin, GIZLI_DEGER } from "./VeriAtfi";
 
 type Mod = "goster" | "duzenle" | "reddet" | "geriGonder";
@@ -404,7 +405,8 @@ export function CaseKarti({
   const hataAyrik = hataListesi(islem.hata);
 
   async function karar(fn: () => Promise<TestCase>) {
-    const yeni = await islem.calistir(fn, {
+    // 012: sunucu kapı hatası (422 oracle_uyumsuz) verirse liste yenilenir; 409 aşağıdaki çakışma yoluna girer.
+    const yeni = await islem.calistir(oracleHatasindaYenile(fn, yenile), {
       cakismada: () => {
         setMod("goster");
         yenile?.();
@@ -418,6 +420,22 @@ export function CaseKarti({
       if (yeni.otomatik_kod) bildir(otomatikKodMetni(yeni.otomatik_kod), yeni.otomatik_kod.durum === "reddedildi" || yeni.otomatik_kod.durum === "hata" ? "hata" : "bilgi");
     }
   }
+
+  // 012 (ANALIZ §4.3): beklenen sonuç kontrolü kapısı ve düzeltme ön kontrolü.
+  const kapi = useOracleKapisi(tc);
+  const onKontrol = useDuzeltmeOnKontrolu(tc, (icerik, beklenenAnlamDegisti, istisnaGerekce, istisnaTuru, damga) =>
+    karar(() =>
+      api.caseKarari(tc.id, {
+        ...bag,
+        karar: "edit",
+        icerik,
+        ...(beklenenAnlamDegisti !== undefined ? { beklenen_anlam_degisti: beklenenAnlamDegisti } : {}),
+        // Tur 2 (Y9): gerekçe verilince tür her zaman gönderilir; karar görülen kontrol kaydının damgasını taşır.
+        ...(istisnaGerekce && istisnaTuru ? { oracle_istisna_gerekce: istisnaGerekce, oracle_istisna_turu: istisnaTuru } : {}),
+        ...(damga ? { oracle_kayit_damgasi: damga } : {}),
+      }),
+    ),
+  );
 
   return (
     // Kalıcı çapa (`#case-<id>`): Test case'leri satırı doğrudan bu karta götürür (lib/capa.ts kaydırır, odaklar).
@@ -452,6 +470,8 @@ export function CaseKarti({
               eski şema
             </span>
           )}
+          <OracleCipi tc={tc} />
+          <TuretmeCipi tc={tc} />
         </div>
         {tc.jira_test_key && <span className="mono">{tc.jira_test_key}</span>}
       </header>
@@ -473,21 +493,17 @@ export function CaseKarti({
           <CaseDuzenleyici
             ilk={tc.icerik}
             soruEtiketleri={(tc.icerik.open_question_refs ?? []).filter((q) => soruKimligi(tc, q) !== q).map((q) => `${q} = ${soruKimligi(tc, q)}`)}
-            calisiyor={islem.calisiyor}
+            calisiyor={islem.calisiyor || onKontrol.bekliyor}
             hata={islem.hata}
             hataKaynagi={islem.hataNesnesi}
-            vazgec={() => setMod("goster")}
-            kaydet={(icerik, beklenenAnlamDegisti) =>
-              karar(() =>
-                api.caseKarari(tc.id, {
-                  ...bag,
-                  karar: "edit",
-                  icerik,
-                  ...(beklenenAnlamDegisti !== undefined ? { beklenen_anlam_degisti: beklenenAnlamDegisti } : {}),
-                }),
-              )
-            }
+            vazgec={() => {
+              onKontrol.sifirla();
+              setMod("goster");
+            }}
+            kaydet={onKontrol.gonder}
+            degisti={onKontrol.icerikDegisti}
           />
+          <DuzeltmeOnKontrolPaneli kontrol={onKontrol} calisiyor={islem.calisiyor} />
         </>
       ) : (
         <>
@@ -567,6 +583,7 @@ export function CaseKarti({
               </ol>
             </div>
           )}
+          <OracleAyrinti tc={tc} />
         </>
       )}
 
@@ -592,7 +609,14 @@ export function CaseKarti({
 
       <footer className="case-alt">
         <span className="soluk kucuk">
-          {tc.mode === "replay" || tc.mode === "replay_miss" ? "AI: REPLAY — ölçülmedi" : `AI ${sure(tc.ai_sure_ms)}`}
+          {/* u2 N11: AI çıktısı olmayan case'te (ilişkiden türetilen, elle) "AI 0 ms" yazılmaz. */}
+          {!tc.ai_generated
+            ? tc.icerik.tags?.includes("metamorfik")
+              ? "İlişkiden türetildi (model çağrısı yok)"
+              : "Elle yazıldı (model çağrısı yok)"
+            : tc.mode === "replay" || tc.mode === "replay_miss"
+              ? "AI: REPLAY — ölçülmedi"
+              : `AI ${sure(tc.ai_sure_ms)}`}
           {!kisitli && (
             <>
               {tc.review_sure_ms !== null && ` · review ${sure(tc.review_sure_ms)}`}
@@ -613,10 +637,10 @@ export function CaseKarti({
             <IslemDugmesi
               izin="case.decide"
               kucuk
-              disabled={kabulEngeli !== undefined}
-              title={kabulEngeli}
+              disabled={kabulEngeli !== undefined || !!kapi.engel}
+              title={kabulEngeli ?? kapi.engel ?? undefined}
               calisiyor={islem.calisiyor}
-              onClick={() => karar(() => api.caseKarari(tc.id, { ...bag, karar: "accept" }))}
+              onClick={() => karar(() => api.caseKarari(tc.id, { ...bag, karar: "accept", ...damgaAlani(tc.oracle) }))}
             >
               Kabul et
             </IslemDugmesi>
@@ -647,10 +671,10 @@ export function CaseKarti({
             <IslemDugmesi
               izin="case.approve"
               kucuk
-              disabled={sonOnayEngeli !== undefined}
-              title={sonOnayEngeli}
+              disabled={sonOnayEngeli !== undefined || !!kapi.engel}
+              title={sonOnayEngeli ?? kapi.engel ?? undefined}
               calisiyor={islem.calisiyor}
-              onClick={() => karar(() => api.caseKarari(tc.id, { ...bag, karar: "approve" }))}
+              onClick={() => karar(() => api.caseKarari(tc.id, { ...bag, karar: "approve", ...damgaAlani(tc.oracle) }))}
             >
               Onayla
             </IslemDugmesi>
@@ -667,6 +691,28 @@ export function CaseKarti({
           </div>
         )}
       </footer>
+      {/* 012 (ANALIZ §13.2): karar tablosu kapısı Testçi kabulünde ve Analist son onayında aynıdır;
+          istisna formu bu evrenin kararını (taslakta accept, ready'de approve) gerekçeyle gönderir. Kart
+          her role çizilir: yetkisiz düğmeler nedenini gösterir ("Tablo yanlış" Analistin işidir). */}
+      {mod === "goster" && !kisitli && (testciKarari || analistKarari) && (
+        <OracleKapisi
+          kapi={kapi}
+          tc={tc}
+          izin={testciKarari ? "case.decide" : "case.approve"}
+          calisiyor={islem.calisiyor}
+          onayla={(gerekce, tur) =>
+            karar(() =>
+              api.caseKarari(tc.id, {
+                ...bag,
+                karar: testciKarari ? "accept" : "approve",
+                oracle_istisna_gerekce: gerekce,
+                oracle_istisna_turu: tur,
+                ...damgaAlani(tc.oracle),
+              }),
+            )
+          }
+        />
+      )}
       {!kisitli && <KararIzi tc={tc} />}
       {mod === "goster" && !kisitli && kararVerildi && (
         <div className="satir-ogeler">
@@ -1264,10 +1310,13 @@ function CaseDuzenleyici({
   hata,
   hataKaynagi,
   soruEtiketleri = [],
+  degisti,
 }: {
   ilk: TestCaseIcerik;
   /** B7: PO'ya gönderilen soruların üretim kimliği ↔ PO kimliği eşlemesi ("Q1 = CQ1"). */
   soruEtiketleri?: string[];
+  /** Formdaki herhangi bir değişiklik (ön kontrol engelini düşürür: eski içerik istisnayla gönderilmez). */
+  degisti?: () => void;
   kaydet: (i: TestCaseIcerik, beklenenAnlamDegisti?: boolean) => void;
   vazgec: () => void;
   calisiyor: boolean;
@@ -1295,6 +1344,17 @@ function CaseDuzenleyici({
   const [varsayimMetni, setVarsayimMetni] = useState(() => (ilk.assumption_refs ?? []).join(", "));
   const [soruMetni, setSoruMetni] = useState(() => (ilk.open_question_refs ?? []).join(", "));
   const [temizlikMetni, setTemizlikMetni] = useState(() => listeMetni(ilk.teardown ?? []));
+  // Her düzenleme (adım ekleme/kaldırma dahil) çağırana bildirilir; ilk çizim sayılmaz.
+  const degistiRef = useRef(degisti);
+  degistiRef.current = degisti;
+  const ilkCizim = useRef(true);
+  useEffect(() => {
+    if (ilkCizim.current) {
+      ilkCizim.current = false;
+      return;
+    }
+    degistiRef.current?.();
+  }, [icerik, onKosulMetni, acMetni, kapsamMetni, varsayimMetni, soruMetni, temizlikMetni, anlamDegisti]);
 
   // 013 §3.5 "Test verisi ekle": atıf, en son odaklanılan atıf alanında imlecin olduğu yere eklenir.
   const imlec = useRef<{ alan: string; bas: number; son: number } | null>(null);

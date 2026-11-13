@@ -147,6 +147,15 @@ export function AsistanPaneli() {
   const panelRef = useRef<HTMLDivElement>(null);
   const baslikRef = useRef<HTMLHeadingElement>(null);
   const baslaticiRef = useRef<HTMLButtonElement>(null);
+  // u2 N17: sayfa kaydırılınca başlatıcı yalnız ikona küçülür (geniş düğme sağ sütunu ve son eylemleri örtüyordu);
+  // sayfa tepesinde görünür adıyla kalır.
+  const [kaydirildi, setKaydirildi] = useState(false);
+  useEffect(() => {
+    const izle = () => setKaydirildi(window.scrollY > 64);
+    izle();
+    window.addEventListener("scroll", izle, { passive: true });
+    return () => window.removeEventListener("scroll", izle);
+  }, []);
   /** Panel dışında en son odaklanan öğe: kapanınca odak oraya (yoksa başlatıcıya) döner. */
   const disOdakRef = useRef<HTMLElement | null>(null);
   const oncekiAcik = useRef(kontrol.acik);
@@ -456,7 +465,7 @@ export function AsistanPaneli() {
           <button
             ref={baslaticiRef}
             type="button"
-            className={`asistan-baslatici${pasifNeden ? " pasif" : ""}`}
+            className={`asistan-baslatici${pasifNeden ? " pasif" : ""}${kaydirildi ? " kucuk" : ""}`}
             data-asistan-gizli
             title={pasifNeden ?? "Asistanı aç"}
             aria-label={pasifNeden ? "Asistan (kapalı)" : "Asistanı aç"}

@@ -104,6 +104,15 @@ IZINLER: Final[dict[str, frozenset[str]]] = {
     "design_model.decide": _r(TESTER),  # tasarım modeli approve | edit | reject
     "case.ask_po": _r(ANALYST),  # açık soru / varsayımı PO'ya Jira yorumu olarak gönderme
     "agent_test.run": _r(TESTER),  # Agent Probe ajan testi başlatma / durum sorgulama
+    # 012 test kalite doğrulama (specs/012-test-kalite-dogrulama/ANALIZ.md §13.3 rol eşlemesi).
+    # Karar tablosu / metamorfik ilişki: Analist yazar ve PO onayına gönderir, PO portalda onaylar
+    # (paketin kapsamadığı özellik, K7: sahibi PO). Kontrolü yeniden isteme case'i kabul eden
+    # Testçi ve son onayı veren Analist'te. Ekilmiş hata koşusu: eski `engineer` + `presenter`
+    # (→ `admin`). İlişkiden ek case türetme case üretimidir (`case.generate`, Testçi).
+    "decision_table.edit": _r(ANALYST),
+    "decision_table.approve": _r(PO),
+    "case.oracle_check": _r(ANALYST, TESTER),
+    "fault_run.manage": _r(ADMIN, ENGINEER),
     # okuma
     "dashboard.read": _HEPSI,
     "requirement.read": _IS_ROLLERI,
@@ -125,6 +134,11 @@ IZINLER: Final[dict[str, frozenset[str]]] = {
     # Sayfa izinleri (çekirdek ucu yok; portal menü/rota koruması için).
     "claude_code.read": _r(ADMIN, ANALYST, TESTER, ENGINEER),
     "demo.read": _r(ADMIN, ANALYST, PO, TESTER, ENGINEER),
+    # 012 test kalite doğrulama: tablolar gereksinim düzeyi tanımdır (developer görür); case'in
+    # kontrol sonucu ve istisna gerekçesi karar geçmişidir (developer, auditor, viewer görmez).
+    # Hata koşuları koşu özetidir (`run.read`).
+    "decision_table.read": _IS_ROLLERI,
+    "case.oracle_read": _r(ADMIN, ANALYST, PO, TESTER, ENGINEER),
 }
 
 # Durum makinesi kapılarında karar verebilecek roller (derinlemesine savunma; workflow/states.py).
@@ -136,6 +150,8 @@ KARAR_IZNI: Final[dict[str, str]] = {
     "bug_draft": "bug.decide",
     "script": "code.merge",
     "design_model": "design_model.decide",  # 011 F3 tasarım modeli kararı (Testçi)
+    "karar_tablosu": "decision_table.approve",
+    "metamorfik_iliski": "decision_table.approve",
 }
 
 

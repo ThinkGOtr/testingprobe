@@ -331,13 +331,39 @@ export const MOCK_KURALLAR: MockKural[] = [
     id: "hata-bakim-onarim",
     ekran: "/hatalar/:id",
     roller: ["engineer"],
-    kosul: (o) => o.hata_sinifi === "test_maintenance" && o.onarim_durumu === "none",
+    // 012 §4.4: test beklentisi farkında (alt tür `beklenti`) locator onarımı önerilmez.
+    kosul: (o) => o.hata_sinifi === "test_maintenance" && o.onarim_durumu === "none" && o.beklenti_farki === false,
     oncelik: 85,
     baslik: "Bakım hatası; otomatik onarımı başlatın",
     neden: "Test, değişmeyen bir niyet için güncelliğini yitirdi; onarılmazsa her koşuda kırmızı kalır.",
     eylem: { tur: "rota", rota: "/hatalar/:id", capa: "onarim" },
     aciklama:
       "Triage bu hatayı test bakımı (ör. locator) olarak sınıfladı. Otomatik onarım bir öneri PR'ı hazırlar; PR'ı siz inceler ve merge edersiniz, beklenen değerlere dokunulmaz.",
+  },
+  {
+    id: "hata-beklenti-case-duzelt",
+    ekran: "/hatalar/:id",
+    roller: ["tester"],
+    kosul: (o) => o.hata_sinifi === "test_maintenance" && o.beklenti_farki === true,
+    oncelik: 85,
+    baslik: "Case'in beklenen değeri onaylı karar tablosuyla uyuşmuyor; case'i düzeltin",
+    neden:
+      "Uygulama PO onaylı karar tablosuna uygun, test beklentisi değil; case düzeltilmeden test her koşuda kırmızı kalır ve otomatik onarım beklenen değere dokunmaz.",
+    eylem: { tur: "bilgi" },
+    aciklama:
+      "Triage bu hatayı test beklentisi farkı olarak sınıfladı: testin beklediği değer onaylı karar tablosundan farklı, uygulamanın ürettiği değer tabloyla aynı. Gereksinimin case ekranında bu case'i taslağa alıp düzeltme formuyla tablodaki değere getirin; önerilen içerik kabulden önce tabloyla yeniden kontrol edilir, ardından Analist son onayını verir. Bug taslağı ve locator onarımı açılmaz.",
+  },
+  {
+    id: "hata-beklenti-bilgi",
+    ekran: "/hatalar/:id",
+    roller: ["engineer"],
+    kosul: (o) => o.hata_sinifi === "test_maintenance" && o.beklenti_farki === true,
+    oncelik: 60,
+    baslik: "Test beklentisi karar tablosundan farklı; case'i Testçi düzeltir",
+    neden: "Sorun locator'da ya da kodda değil, case'in beklenen değerinde; otomatik onarım bunu düzeltmez.",
+    eylem: { tur: "bilgi" },
+    aciklama:
+      "Bu hata test beklentisi farkı olarak sınıflandı (uygulama onaylı karar tablosuna uygun). Case düzeltmesi Testçi rolündedir; düzeltilen case Analist son onayından geçince test yeniden üretilip koşturulabilir.",
   },
   {
     id: "hata-bug-taslagi-karari",
@@ -559,6 +585,8 @@ function olgular(veri: MockVeri, tur: string | null, id: string | null, simdi: n
     const flaky = son10.filter((k) => (k as { sonuclar?: { test_adi: string; durum: string }[] }).sonuclar?.some((s) => s.test_adi === f.test_adi && s.durum === "flaky")).length;
     return {
       hata_sinifi: f.sinif,
+      // core `beklenti_farki`: sınıf test_maintenance ve alt tür `beklenti` (012 §4.4).
+      beklenti_farki: f.sinif === "test_maintenance" && (f as { alt_tur?: string | null }).alt_tur === "beklenti",
       onarim_durumu: onarim,
       flaky_tekrar: flaky,
       bug_taslagi_var: !!bugId,

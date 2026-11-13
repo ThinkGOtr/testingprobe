@@ -1,4 +1,5 @@
-"""Varlık durum makineleri (TEKNIK-TASARIM §2, §2.1, §8.2a, §8.2b, §8.3, §8.4, §8.7, §8.12).
+"""Varlık durum makineleri (TEKNIK-TASARIM §2, §2.1, §8.2a, §8.2b, §8.3, §8.4, §8.7, §8.12;
+karar tablosu ve metamorfik ilişki: specs/012-test-kalite-dogrulama/ANALIZ.md §4.1, §4.5).
 
 Bu modül saf veridir (model veya DB içe aktarmaz); hem `tp_core.models` (CHECK kısıtları, yazma
 koruması) hem `tp_core.workflow.service.transition()` buradan okur. `durum` alanları YALNIZCA
@@ -89,6 +90,18 @@ bug_draft (başlangıç ``draft``)::
     dismissed  -> draft
     published: son durum
 
+karar_tablosu ve metamorfik_iliski (012 §4.1, §4.5; aynı makine, başlangıç ``draft``)::
+
+    draft      -> pending_po (analist PO onayına gönderir), superseded
+    pending_po -> approved [KAPI: approve (PO)], draft (analist geri çeker ya da PO
+                  `request_changes` kararı verir), superseded
+    approved   -> draft (analist yeniden açar), superseded
+    superseded: son durum (yeni taslak üretimi eskisini geçersiz kılar)
+
+    İçerik yalnız `draft`'ta değişir (servis denetler). `approved`'a girişte onaylanan içerik
+    hash'i `onaylanan_hash`'e yazılır; `draft`'a dönüş siler. Analistin gönder / geri çek /
+    yeniden aç geçişleri onay kaydı istemez; onay kaydını yalnız PO yazar.
+
 workflow_instance (başlangıç ``running``)::
 
     running       -> waiting_human, done, failed, paused, cancelled
@@ -178,6 +191,10 @@ REQUIREMENT_RED_KARARLARI = frozenset({"po_reject"})
 BUG_DRAFT_KARARLARI = frozenset({"new", "link", "dismiss"})
 SCRIPT_KARARLARI = frozenset({"merge", "request_changes"})
 FINDING_KARARLARI = frozenset({"fix_doc", "code_defect", "accept_difference"})
+# 012: PO karar tablosunu / ilişkiyi onaylar (`approve`) ya da değişiklik ister
+# (`request_changes`; onaylamayan kayıtlı karar, gerekçesi `review.gerekce`'de).
+KARAR_TABLOSU_KARARLARI = frozenset({"approve", "request_changes"})
+METAMORFIK_ILISKI_KARARLARI = KARAR_TABLOSU_KARARLARI
 
 # Onaylayan (kapıyı açan) kararlar; yayın/PR/bug kapıları bunlardan birini ister.
 APPROVING: dict[str, frozenset[str]] = {
@@ -188,6 +205,8 @@ APPROVING: dict[str, frozenset[str]] = {
     "bug_draft": frozenset({"new", "link"}),
     "script": frozenset({"merge"}),
     "consistency_finding": FINDING_KARARLARI,
+    "karar_tablosu": frozenset({"approve"}),
+    "metamorfik_iliski": frozenset({"approve"}),
 }
 
 KARARLAR: dict[str, frozenset[str]] = {
@@ -197,6 +216,8 @@ KARARLAR: dict[str, frozenset[str]] = {
     "bug_draft": BUG_DRAFT_KARARLARI,
     "script": SCRIPT_KARARLARI,
     "consistency_finding": FINDING_KARARLARI,
+    "karar_tablosu": KARAR_TABLOSU_KARARLARI,
+    "metamorfik_iliski": METAMORFIK_ILISKI_KARARLARI,
 }
 
 # Karar verebilecek roller (API izin kontrolüne ek, derinlemesine savunma). Bu modül saf veri
@@ -211,6 +232,8 @@ APPROVER_ROLES: dict[str, frozenset[str]] = {
     "bug_draft": frozenset({"tester"}),
     "script": frozenset({"engineer"}),
     "consistency_finding": frozenset({"analyst"}),
+    "karar_tablosu": frozenset({"po"}),
+    "metamorfik_iliski": frozenset({"po"}),
 }
 
 # Ret nedeni taksonomisi (TEKNIK-TASARIM §7): halüsinasyon adımı · eksik kabul kriteri ·
@@ -433,6 +456,26 @@ BUG_DRAFT = Machine(
     approval_consumers=frozenset({"published"}),
 )
 
+
+def _po_onayli_tanim(entity: str) -> Machine:
+    """PO onaylı tanım makinesi (012 §4.1): karar tablosu ve metamorfik ilişki aynı akışı izler."""
+    return Machine(
+        entity=entity,
+        initial="draft",
+        transitions=_t(
+            draft=("pending_po", "superseded"),
+            pending_po=("approved", "draft", "superseded"),
+            approved=("draft", "superseded"),
+            superseded=(),
+        ),
+        gates={("pending_po", "approved"): Gate(APPROVING[entity])},
+        approval_targets=frozenset({"approved"}),
+    )
+
+
+KARAR_TABLOSU = _po_onayli_tanim("karar_tablosu")
+METAMORFIK_ILISKI = _po_onayli_tanim("metamorfik_iliski")
+
 WORKFLOW_INSTANCE = Machine(
     entity="workflow_instance",
     initial="running",
@@ -456,6 +499,8 @@ MACHINES: dict[str, Machine] = {
         DESIGN_MODEL,
         SCRIPT,
         BUG_DRAFT,
+        KARAR_TABLOSU,
+        METAMORFIK_ILISKI,
         WORKFLOW_INSTANCE,
     )
 }
@@ -492,6 +537,8 @@ CONTENT_FIELDS: dict[str, tuple[str, ...]] = {
     "bug_draft": ("icerik",),
     "script": ("dosya_yolu", "icerik", "head_sha"),
     "requirement": ("baslik", "aciklama", "kabul_kriterleri"),
+    "karar_tablosu": ("icerik",),
+    "metamorfik_iliski": ("icerik",),
     "consistency_finding": (
         "tur",
         "doc_ref",

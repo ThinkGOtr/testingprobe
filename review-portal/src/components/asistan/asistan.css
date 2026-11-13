@@ -983,3 +983,22 @@ html:has(.asistan-bune-bindirme):has(.asistan-bune-ipucu) {
 body:has(.asistan-baslatici-kap) .icerik {
   padding-bottom: 96px;
 }
+
+/* u2 N17 (tur 2): 1440 px'te geniş yüzen başlatıcı içeriğin sağ sütununu (T1 "Tolerans", case "Reddet") örtüyordu.
+   Sayfa kaydırılınca (AsistanPaneli `kucuk`) başlatıcı yalnız ikona (44 px daire; ad aria-label'da) küçülür; sayfa
+   tepesinde adıyla durur. İçerik yerleşimi değişmez (axe color-contrast tabanı korunur). */
+.asistan-baslatici.kucuk {
+  justify-content: center;
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border-radius: 50%;
+}
+.asistan-baslatici.kucuk .asistan-baslatici-metin {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

@@ -932,6 +932,48 @@ def a11y(session: Session) -> dict[str, Any] | None:
     }
 
 
+# ------------------------------------------------------------------------------ 012 kalite
+
+HATA_YAKALAMA_KOSU_YOK = (
+    "hata_kosusu + hata_kosusu_adim: son tamamlanmış (done) ekilmiş hata koşusu; henüz yok "
+    "(ölçülmedi). Oran = yakalanan / (yakalanan + kaçan); geçersiz adımlar paydaya girmez"
+)
+
+
+def kalite_beklenti(session: Session) -> tuple[dict[str, Any], str]:
+    """`beklenti_dogrulugu` (012 §4.7, F4) ve kaynak metni. Değer `kaynak` taşımaz (Kule kuralı:
+    kaynak `kaynaklar`'dadır); `/requirements/{id}/case-metrics` aynı işlevi kaynakla döndürür."""
+    from tp_core.features.oracle import metrik
+
+    deger = dict(metrik.beklenti_dogrulugu(session))
+    return deger, str(deger.pop("kaynak", None) or metrik.KAYNAK)
+
+
+ONAYLI_UYUMSUZ_KAYNAGI = (
+    "case_oracle_kontrol + oracle_istisna: onaylı/yayınlı case'lerden güncel içeriğinin geçerli "
+    "karar tablosu kontrolü 'uyumsuz' olup aynı tablolarla verilmiş istisnası olmayanlar (ör. "
+    "tablo case onayından sonra onaylandı ya da değişti); olay oracle.onayli_uyumsuz"
+)
+
+
+def kalite_onayli_uyumsuz(session: Session) -> list[dict[str, Any]]:
+    """012 §13.2 `onayli_uyumsuz`: `[{case_id, requirement_id, baslik, jira_key, sira_no}]`."""
+    from tp_core.features.oracle import service as oracle_service
+
+    return oracle_service.onayli_uyumsuz(session)
+
+
+def kalite_hata_yakalama(session: Session) -> tuple[dict[str, Any] | None, str]:
+    """`hata_yakalama` (012 §4.7, F3): son tamamlanmış ekilmiş hata koşusu; yoksa `None`."""
+    from tp_core.features.hata_kosusu import hata_yakalama_ozeti
+
+    ozet = hata_yakalama_ozeti(session)
+    if ozet is None:
+        return None, HATA_YAKALAMA_KOSU_YOK
+    deger = dict(ozet)
+    return deger, str(deger.pop("kaynak", None) or HATA_YAKALAMA_KOSU_YOK)
+
+
 # ------------------------------------------------------------------------------ toplam
 
 
@@ -945,6 +987,8 @@ def control_tower(session: Session, *, artefakt: bool) -> dict[str, Any]:
     if not kosular:
         uyarilar.append("Henüz CI koşusu yok: geçme oranı, flaky ve son sonuçlar boş.")
     a = a11y(session)
+    beklenti, beklenti_kaynagi = kalite_beklenti(session)
+    yakalama, yakalama_kaynagi = kalite_hata_yakalama(session)
     return {
         "son_kosular": kosular,
         "gecme_orani": gecme_orani(session, n),
@@ -958,6 +1002,10 @@ def control_tower(session: Session, *, artefakt: bool) -> dict[str, Any]:
         "hazirlik": hazirlik,
         "a11y": a,
         "asistan": asistan.asistan_olcumu(session, katki["amac_gruplari"]),
+        # 012 §4.7: okuma anında hesaplanır; kaynak metni yalnız `kaynaklar`'da.
+        "beklenti_dogrulugu": beklenti,
+        "onayli_uyumsuz": kalite_onayli_uyumsuz(session),
+        "hata_yakalama": yakalama,
         "kaynaklar": {
             "son_kosular": f"run tablosu, son {n} CI koşusu (tetik pr/push/nightly/deploy/manual)",
             "gecme_orani": (
@@ -1040,6 +1088,9 @@ def control_tower(session: Session, *, artefakt: bool) -> dict[str, Any]:
                 "amac_gruplari: 'assistant*' amaçları (asistan) ve diğerleri ayrı"
             ),
             "asistan": asistan.KAYNAK,
+            "beklenti_dogrulugu": beklenti_kaynagi,
+            "onayli_uyumsuz": ONAYLI_UYUMSUZ_KAYNAGI,
+            "hata_yakalama": yakalama_kaynagi,
             "a11y": (
                 "test_result_ek.a11y: Playwright JSON raporundaki axe-<sayfa>.json ekleri, "
                 "a11y verisi olan en son kırma olmayan koşu"

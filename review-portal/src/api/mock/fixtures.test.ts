@@ -22,6 +22,7 @@ import {
   refsiz,
   SEPET_TEST_KODU,
   SINIR_TEST_KODU,
+  TPD1_C6_SINIR_HATASI,
   TPD1_GOLDEN_CASELER,
   turGoldenAdi,
 } from "./fixtures";
@@ -228,8 +229,11 @@ describe("case ve bug taslakları golden kayıtlardan", () => {
     expect(TPD1_GOLDEN_CASELER).toHaveLength(15);
     expect(caseler).toHaveLength(10);
     // İnsan düzeltmesi (edit) başlığı da değiştirebilir (C3: Demo-B sınır case'i, story esas alındı).
-    for (const c of caseler) if (c.karar !== "edit") expect(basliklar.has(c.icerik.title), c.icerik.title).toBe(true);
-    for (const c of caseler) {
+    // u2 N2: C6, AI'ın sınır hatası varyantıdır (`ai-sinir-hatasi` case_facts golden'ı; aşağıdaki testte birebir).
+    const varyant = (c: { sira_no: number }) => c.sira_no === 6;
+    for (const c of caseler) if (c.karar !== "edit" && !varyant(c)) expect(basliklar.has(c.icerik.title), c.icerik.title).toBe(true);
+    expect(caseler.find(varyant)?.icerik).toEqual(TPD1_C6_SINIR_HATASI);
+    for (const c of caseler.filter((x) => !varyant(x))) {
       const g = TPD1_GOLDEN_CASELER[c.sira_no - 1];
       if (c.karar === "edit") {
         expect(c.icerik).not.toEqual(g);
@@ -503,5 +507,27 @@ describe("Demo-B örnek verisi: assertion değerleri onaylı case metninden (§8
         expect(s.eslemeler.some((e) => e.method === m[1]), `${s.id}: ${m[1]}`).toBe(true);
       }
     }
+  });
+});
+
+describe("u2 N2: AI sınır hatası C6 (ai-sinir-hatasi golden'ı)", () => {
+  const golden = yol("rules/replay/case_facts/golden/ai-sinir-hatasi/TPD-1-C6.json");
+  it.skipIf(!existsSync(golden))("örnek C6 metni golden girdi beyanıyla (case_text) birebir", () => {
+    const g = json("rules/replay/case_facts/golden/ai-sinir-hatasi/TPD-1-C6.json") as { input_match: { case_text: string } };
+    const c = TPD1_C6_SINIR_HATASI;
+    const RISK: Record<string, string> = { high: "high", medium: "medium", low: "low" };
+    const metin = [
+      `Başlık: ${c.title}`,
+      // core `approved_case_text`: v3 case'te risk yok, satır yalnız türü taşır.
+      `Tür: ${c.type}${c.risk ? ` · Risk: ${RISK[c.risk]}` : ""}`,
+      `Kabul kriterleri: ${c.acceptance_criteria_refs.join(", ")}`,
+      "Ön koşullar:",
+      ...c.preconditions.map((p) => `- ${p}`),
+      "Adımlar:",
+      ...c.steps.flatMap((s, i) => [`S${i + 1}: ${s.action}`, `  Veri: ${s.data ?? "(yok)"}`, `  Beklenen: ${s.expected}`]),
+      `Beklenen sonuç: ${c.expected_result}`,
+      `Etiketler: ${c.tags.join(", ")}`,
+    ].join("\n");
+    expect(metin).toBe(g.input_match.case_text);
   });
 });

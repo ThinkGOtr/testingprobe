@@ -1,0 +1,114 @@
+{
+  "kind": "call",
+  "purpose": "case_facts",
+  "golden": "TPD-1-C10",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Olgular elle hazırlandı (canlı model çıktısı değil; ai_call.model = golden-elle): case metninden dikkatli bir modelin çıkaracağı değerler, alıntılar case alanlarından birebir, bir değerin her geçişi ayrı olgu; beklenen alanlardaki kolonsuz sayılar ignored'da. Kolon adları Ş1'in TPD-1 taslak golden'ındaki demo tablolarınındır (T1 kampanya: adet, ara_toplam → bedava_adet, indirim, toplam; T2 minimum sipariş: kampanyali_sepet, sepet_tutari → minimum_uyarisi). Elle golden'la ölçülen doğruluk bir model ölçümü değildir. Üretildi: python -m tests.unit.features.oracle.tpd1 (elle düzenlemeyin). Girdi beyanı (input_match.case_text) eşleşirse mod REPLAY (köken golden_matched); case başka bir metne düzeltilirse REPLAY-MISS ve nötr çıktı (groups: [] → kontrol_edilemedi). Canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record).",
+  "input_match": {
+    "sources": [
+      "case:TPD-1-C10"
+    ],
+    "case_text": "Başlık: Kampanyalı üründen 7 adet sepete eklenince bedava adet ve tutarlar doğru hesaplanır\nTür: positive\nKabul kriterleri: AC2\nÖn koşullar:\n- Sepet boş\n- P-001 \"6 al 1 bedava\" kampanyasında\nAdımlar:\nS1: Giriş sayfasını aç\n  Veri: (yok)\n  Beklenen: Giriş formu görüntülenir\nS2: Bayi kullanıcısıyla giriş yap\n  Veri: bayi1 / Demo123!\n  Beklenen: Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir\nS3: \"Portakal Gazozu 1L\" (P-001) kartında adedi 7 yapıp \"Sepete ekle\" butonuna bas\n  Veri: P-001 × 7\n  Beklenen: Sepet sayacı 7 olur\nS4: Üst menüden sepete git\n  Veri: (yok)\n  Beklenen: P-001 satırında adet 7, bedava adet 1; ara toplam 175,00 TL, indirim 25,00 TL, toplam 150,00 TL\nBeklenen sonuç: 7 adette 1 adet bedava verilir; indirim 25,00 TL, toplam 150,00 TL\nEtiketler: AI-generated"
+  },
+  "case": {
+    "jira_key": "TPD-1",
+    "sira_no": 10,
+    "title": "Kampanyalı üründen 7 adet sepete eklenince bedava adet ve tutarlar doğru hesaplanır",
+    "case_golden": "TPD-1"
+  },
+  "output": {
+    "groups": [
+      {
+        "table_ref": "T1",
+        "inputs": [
+          {
+            "column": "adet",
+            "value": "7",
+            "field": "title",
+            "quote": "7"
+          },
+          {
+            "column": "adet",
+            "value": "7",
+            "field": "steps[2].action",
+            "quote": "7"
+          },
+          {
+            "column": "adet",
+            "value": "7",
+            "field": "steps[2].data",
+            "quote": "7"
+          },
+          {
+            "column": "adet",
+            "value": "7",
+            "field": "test_data[1].value",
+            "quote": "7"
+          },
+          {
+            "column": "adet",
+            "value": "7",
+            "field": "steps[2].expected",
+            "quote": "7"
+          },
+          {
+            "column": "adet",
+            "value": "7",
+            "field": "steps[3].expected",
+            "quote": "7"
+          },
+          {
+            "column": "adet",
+            "value": "7",
+            "field": "expected_result",
+            "quote": "7"
+          },
+          {
+            "column": "ara_toplam",
+            "value": "175.00",
+            "field": "steps[3].expected",
+            "quote": "175,00 TL"
+          }
+        ],
+        "expected": [
+          {
+            "column": "bedava_adet",
+            "value": "1",
+            "field": "steps[3].expected",
+            "quote": "adet 1"
+          },
+          {
+            "column": "bedava_adet",
+            "value": "1",
+            "field": "expected_result",
+            "quote": "1 adet"
+          },
+          {
+            "column": "indirim",
+            "value": "25.00",
+            "field": "steps[3].expected",
+            "quote": "25,00 TL"
+          },
+          {
+            "column": "indirim",
+            "value": "25.00",
+            "field": "expected_result",
+            "quote": "25,00 TL"
+          },
+          {
+            "column": "toplam",
+            "value": "150.00",
+            "field": "steps[3].expected",
+            "quote": "150,00 TL"
+          },
+          {
+            "column": "toplam",
+            "value": "150.00",
+            "field": "expected_result",
+            "quote": "150,00 TL"
+          }
+        ]
+      }
+    ],
+    "ignored": []
+  }
+}

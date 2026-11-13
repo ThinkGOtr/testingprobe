@@ -7,6 +7,11 @@ import { tarih } from "./format";
 import { CASE_HAZIRLIK, SORU_SAHIBI } from "./etiketler";
 import { TEKNIK_ONEKI } from "./tasarimModeli";
 
+/** core `yuksek_risk_mi` (V11): `risk == "high"` ya da (v3 içeriği, 011 K18) `priority == "P1"`. */
+export function icerikYuksekRisk(icerik: Pick<TestCaseIcerik, "risk" | "priority"> | null | undefined): boolean {
+  return icerik?.risk === "high" || icerik?.priority === "P1";
+}
+
 /** Eski (v2) içerik: `readiness` anahtarı yok (K9). */
 export const eskiIcerik = (i: TestCaseIcerik): boolean => i.readiness === undefined;
 

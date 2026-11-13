@@ -60,6 +60,8 @@ rules/
 | `assistant` | `assistant` | Haiku 5.5 | ajan | Asistan cevabı (AI-ASISTAN-PLANI §7.2): `cevap_bloklari[]`, `kaynaklar[]`, `oneriler[]` |
 | `assistant_deep` | `assistant` | Sonnet 5.5 | ajan | `assistant` ile aynı şema ("Daha ayrıntılı incele", otomatik yükseltme) |
 | `assistant_guard` | `assistant-guard` | Haiku 5.5 | çağrı | 011 F7 asistan denetimi: `puan` (0–100), `kategoriler[]`, `gerekce`; karar kodda (`TP_ASISTAN_DENETIM_ENGEL`/`_UYARI`) |
+| `decision_table_draft` | `decision-table-draft` | Sonnet 5.5 | çağrı | 012 §4.1: karar tablosu `tables[]`, metamorfik ilişki `relations[]`, `notes` |
+| `case_facts` | `case-facts` | Haiku 5.5 | çağrı | 012 §4.3 değer çıkarma: `groups[]` (`table_ref`, `inputs[]`, `expected[]`; olgu `{column, value, field, quote}`) |
 
 ## Portal asistanı kuralları (`assistant/`)
 
@@ -292,8 +294,10 @@ varsa çıkış 1. Bu tablo kayıtla aynı olmalıdır (`test_evaluation_status.
 | `triage` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
 | `bug-draft` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
 | `dup-rank` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
-| `assistant` (portal asistanı; `assistant` + `assistant_deep` amaçları, `assistant/*` kuralları) | v2 | **değerlendirme sonrası içerik değişti (içerik hash'i uyuşmuyor)**: son canlı değerlendirme 2026-11-12, 012 rol göçü sonrası (Haiku 54/56, Sonnet 56/56; `evaluation/results/assistant-v2-*-2026-11-12.json`); ardından 011 test üretimi v3 dev'e birleşti: `/ajan-urunleri` rotası, asistan içerik kontrolü (`assistant-guard`) entegrasyonu, belirsizlik ifadesinde otomatik ayrıntılı inceleme, `cases_ready`/`model_ready` kapı metinleri (012 rollerine göre), bilgi sorusunda `eylem_reddi` yok, kaynaksız rol/AC iddiası yok, belirsizlikte `guven=dusuk` ve çağrılan fonksiyon tanımını açma yönergeleri. `main` öncesi `make eval-live A='--bundle assistant --via-flow --update-status'` yeniden koşulmalı |
+| `assistant` (portal asistanı; `assistant` + `assistant_deep` amaçları, `assistant/*` kuralları) | v2 | **değerlendirme sonrası içerik değişti (içerik hash'i uyuşmuyor)**: son canlı değerlendirme 2026-11-12 (spec 013 güvenlik katmanı; Haiku 54/56, Sonnet 55/56; `evaluation/results/`); ardından 012 rol göçü geldi (`assistant/*` ve `rol-politikasi.yaml` rolleri 8 portal rolüne, `presenter` → `admin`, ekran erişimi izin tablosundan; case üretimi/kararı/yayını testçide, `case-son-onay-bekliyor` → 28 kural; araçlar yetki kataloğunun okuma izinlerine bağlı); 013 sprint otomasyonu ekran listesine `/test-verisi` ve `/otomasyon` ekledi. 2026-11-13: 012 rol sonrası canlı değerlendirme geçti (Haiku 54/56, Sonnet 56/56; `evaluated`, c45103b); ardından 012 kalite doğrulama birleşmesi asistan paketini yeniden değiştirdi (`hata-sozlugu.yaml` +8 kod, `oneriler.yaml` `beklenti_farki` olgusu ve iki kural → 30 kural, `rotalar.json` `/gereksinimler/:id/karar-tablolari`, istem ekran listesi). Ayrıca 011 test üretimi v3 birleşmesi `/ajan-urunleri` rotası, içerik kontrolü (`assistant-guard`) entegrasyonu, belirsizlik ifadesinde otomatik ayrıntılı inceleme, `cases_ready`/`model_ready` kapı metinleri ve bilgi sorusu/kaynaksız iddia/belirsizlikte `guven=dusuk` yönergelerini ekledi. `main` öncesi `make eval-live A='--bundle assistant --via-flow --update-status'` yeniden koşulmalı |
 | `assistant-guard` (011 F7 asistan denetimi; Agent Probe portu) | v1 | **canlı değerlendirildi** — 2026-11-12 (`evaluation/results/assistant-guard-v1-2026-11-12.json`, 18/18; cevaptaki injection reddi/bildirimi `prompt_injection` sayılmaz netleştirmesi ve `injection-reddi-cevap` vakası dahil) |
+| `decision-table-draft` (+ `decision_table_draft` golden'ı; 012 karar tablosu) | v2 | **canlı değerlendirme bekliyor** |
+| `case-facts` (+ `case_facts` golden'ları; 012 karar tablosu kontrolü) | v2 | **canlı değerlendirme bekliyor** |
 
 2026-11-01'de `requirement-review` v3, `triage`, `bug-draft` ve `dup-rank` v2 canlı modelle
 (`make eval-live A='--bundle … --update-status'`, sert bütçe tavanı 1,50 USD, gerçek harcama

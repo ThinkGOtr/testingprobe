@@ -285,3 +285,141 @@ export const SEVERITY: Record<string, string> = {
   minor: "Düşük",
   trivial: "Önemsiz",
 };
+
+// ---------------------------------------------------------------- 012/Ş8: ekilmiş hata koşusu
+
+import type { HataAdimSonucu, HataKosusuDurumu, HataTuru } from "../api/types";
+
+/** `hata_kosusu.durum` etiketi. */
+export const HATA_KOSUSU_DURUMU: Record<HataKosusuDurumu, { etiket: string; ton: Ton }> = {
+  queued: { etiket: "Sırada", ton: "notr" },
+  running: { etiket: "Koşuyor", ton: "bilgi" },
+  done: { etiket: "Tamamlandı", ton: "notr" },
+  failed: { etiket: "Tamamlanamadı", ton: "hata" },
+  cancelled: { etiket: "İptal edildi", ton: "notr" },
+};
+
+/** Adım sonucu: işaret metindir (renk tek başına anlam taşımaz). */
+export const HATA_ADIM_SONUCU: Record<HataAdimSonucu, { etiket: string; ton: Ton }> = {
+  bekliyor: { etiket: "bekliyor", ton: "notr" },
+  yakalandi: { etiket: "✓ yakalandı", ton: "basari" },
+  kacti: { etiket: "✗ kaçtı", ton: "hata" },
+  gecersiz: { etiket: "⚠ geçersiz", ton: "uyari" },
+  yesil: { etiket: "✓ yeşil", ton: "basari" },
+  kirmizi: { etiket: "✗ kırmızı", ton: "hata" },
+};
+
+export const HATA_TURU: Record<HataTuru, string> = { kod: "Kod hatası", veri: "Veri hatası" };
+
+/**
+ * Hata kodunun görünen adı (core `rules/hata-katalogu.yaml` ile aynı dokuz kod, ANALIZ §4.6). Katalog
+ * ucu okunabildiyse oradaki ad önceliklidir; bu tablo katalog yokken (koşu listeleri) yedektir.
+ */
+export const EKILMIS_HATA_ADI: Record<string, string> = {
+  kampanya_bedava_yok: "Kampanyada bedava ürün verilmiyor",
+  kampanya_esik_7: "Kampanya eşiği 6 yerine 7",
+  kampanya_tek_bedava: "Kampanyada en çok 1 bedava",
+  kampanya_cift_indirim: "Kampanya indirimi iki kez düşülüyor",
+  min_siparis_haric: "Minimum sipariş sınırı dahil değil",
+  min_siparis_muafiyet_yok: "Kampanyalı sepet minimumdan muaf değil",
+  min_siparis_500: "Minimum sipariş tutarı 500",
+  min_siparis_1000: "Minimum sipariş tutarı 1000",
+  fiyat_p004_31: "P-004 fiyatı 31",
+  kampanya_urunu_p002: "Kampanyalı ürün P-002",
+};
+
+export function ekilmisHataAdi(kod: string, katalogAdi?: string | null): string {
+  return katalogAdi?.trim() || EKILMIS_HATA_ADI[kod] || kod;
+}
+
+/** Ekilmiş hata koşusunun adımı olan koşunun etiketi ("Ekilmiş hata: <ad>"); başka koşuda null. */
+export function ekilmisHataEtiketi(k: { hata_kodu?: string | null }, katalogAdi?: string | null): string | null {
+  return k.hata_kodu ? `Ekilmiş hata: ${ekilmisHataAdi(k.hata_kodu, katalogAdi)}` : null;
+}
+// ---------------------------------------------------------------- 012 Ş7: test kalite doğrulama
+import type { KararTablosuDurumu, KolonTuru, TuretmeAtlamaSonucu } from "../api/types";
+
+/** Karar tablosu ve metamorfik ilişki durumları (ANALIZ §4.1). Yeşil yalnız PO onayı (insan kapısı). */
+export const KARAR_TABLOSU_DURUMU: Record<KararTablosuDurumu, { etiket: string; ton: Ton }> = {
+  draft: { etiket: "Taslak", ton: "notr" },
+  pending_po: { etiket: "PO onayı bekliyor", ton: "uyari" },
+  approved: { etiket: "Onaylı", ton: "basari" },
+  superseded: { etiket: "Yerini yenisi aldı", ton: "notr" },
+};
+
+export const KOLON_TURU: Record<KolonTuru, string> = { sayi: "Sayı", metin: "Metin", mantiksal: "Mantıksal" };
+
+/**
+ * Case kartındaki beklenen sonuç kontrolü çipi (ANALIZ §7). "uyumlu" yeşil değildir: makine
+ * karşılaştırmasıdır, insan onayı değil (yeşil yalnız insan kapısı) — bilgi tonu + ✓ işareti.
+ */
+export type OracleGorunumu = "uyumlu" | "uyumsuz" | "kismen" | "kontrol_edilemedi" | "tablo_yok" | "suruyor";
+export const ORACLE_DURUMU: Record<OracleGorunumu, { etiket: string; ton: Ton; aciklama: string }> = {
+  uyumlu: { etiket: "Tabloyla uyumlu ✓", ton: "bilgi", aciklama: "Beklenen değerler onaylı karar tablosuyla aynı." },
+  uyumsuz: { etiket: "Tabloyla uyuşmuyor ✗", ton: "hata", aciklama: "En az bir beklenen değer onaylı karar tablosundan farklı." },
+  kismen: {
+    etiket: "Kısmen uyumlu",
+    ton: "uyari",
+    aciklama: "Karşılaştırılan değerler tabloyla aynı, ama bazı beklenen değerler tabloyla kontrol edilemedi. Onay engellenmez; kontrol edilemeyen değerleri elle doğrulayın.",
+  },
+  kontrol_edilemedi: {
+    etiket: "Kontrol edilemedi",
+    ton: "uyari",
+    aciklama: "Case metninden tabloyla karşılaştırılacak değer çıkarılamadı. Uyuşmazlık değildir; değerleri elle doğrulayın.",
+  },
+  tablo_yok: { etiket: "Tablo yok", ton: "notr", aciklama: "Bu case'in kabul kriterlerini kapsayan onaylı karar tablosu yok." },
+  suruyor: { etiket: "Kontrol sürüyor", ton: "notr", aciklama: "Kapsayan onaylı tablo var; beklenen sonuç kontrolü henüz bitmedi." },
+};
+
+/** "Ek case türet" sonucunda atlanan kaynak case'in nedeni (§4.5). */
+export const TURETME_ATLAMA: Record<TuretmeAtlamaSonucu, string> = {
+  iliski_gecersiz: "ilişkinin ön koşulu bu case için sağlanmıyor",
+  belirsiz_alinti: "değer metinde birden çok yerde farklı anlamlarla geçiyor",
+  olgu_yok: "kaynak case'te gerekli değer bulunamadı",
+  zaten_turetildi: "bu case'ten bu ilişkiyle daha önce türetildi",
+  tutarsiz_kalan_deger: "türetilen case'te güncellenmeyen değer kalırdı",
+};
+
+/** Kontrol sonucunun nedeni (§13.2 `oracle.neden`); bilinmeyen kod gösterilmez. */
+export const ORACLE_NEDENI: Record<string, string> = {
+  cagri_hatasi: "Kontrol yapılamadı (model hatası)",
+  replay_miss: "Kayıtlı yanıt yok (REPLAY)",
+};
+/** Nedenin açıklama cümlesi (karşılaştırma ayrıntısında). */
+export const ORACLE_NEDENI_ACIKLAMA: Record<string, string> = {
+  cagri_hatasi: "değer çıkarma adımı model çağrısında hata aldı; tablo ile case karşılaştırılmadı.",
+  replay_miss: "bu case metni için kayıtlı (REPLAY) model yanıtı yok — metin kayıttaki golden'la birebir değil; tablo ile case karşılaştırılmadı.",
+};
+
+/** Tur 2: `kismen` sonucun nedenleri, düz Türkçe (bilinmeyen kod aynen gösterilir). */
+export const KISMEN_NEDENI: Record<string, string> = {
+  eksik_girdi: "case metninde tablonun bir girdisi yok; o değer hesaplanamadı",
+  atilan_olgu: "case'ten çıkarılan bir değer metinde doğrulanamadığı için atıldı",
+  kapsanmayan_sayi: "beklenen sonuçta tabloyla eşleştirilemeyen bir sayı var",
+  yok_sayilan: "beklenen sonuçtaki bir ifade kontrol dışında bırakıldı",
+};
+export const kismenNedeniMetni = (n: string): string => KISMEN_NEDENI[n] ?? n;
+
+/** 012 Ş3 triage ayrımı (ANALIZ §4.4): alt tür etiketleri; bilinmeyen alt tür ham gösterilir. */
+export const TRIAGE_ALT_TUR: Record<string, string> = {
+  beklenti: "Test beklentisi (karar tablosu)",
+};
+export const altTurEtiketi = (alt: string | null | undefined): string | null => (alt ? (TRIAGE_ALT_TUR[alt] ?? alt) : null);
+
+/** 012 Ş3 karar tablosu sinyalleri (kural `karar_tablosu`). */
+export const KARAR_TABLOSU_SINYALI: Record<string, string> = {
+  karar_tablosu_uyumlu: "Test beklentisi onaylı karar tablosuyla aynı; uygulama tabloya aykırı",
+  karar_tablosu_beklenti_farkli: "Uygulama onaylı karar tablosuyla aynı; test beklentisi farklı",
+  karar_tablosu_ikisi_de_farkli: "Hem test beklentisi hem uygulama onaylı karar tablosundan farklı",
+  // R3: ürün hatası adayı ama tablonun kendisi de yanlış olabilir (ör. story'den sonra değişen kural).
+  karar_tablosu_tablo_suphesi: "Tablo da yanlış olabilir",
+};
+
+/**
+ * Sinyalin tek satırlık başlığı ve ayrıntısı (analist/PO 19): core `baslik` verirse başlık odur, `aciklama`
+ * ayrıntıdır; vermezse karar tablosu sinyalinde etiket başlık olur, diğerlerinde açıklama tek satırdır.
+ */
+export function sinyalBasligi(s: { kod: string; baslik?: string | null; aciklama: string }): { baslik: string; ayrinti: string | null } {
+  const baslik = s.baslik || KARAR_TABLOSU_SINYALI[s.kod] || s.aciklama;
+  return { baslik, ayrinti: s.aciklama && s.aciklama !== baslik ? s.aciklama : null };
+}

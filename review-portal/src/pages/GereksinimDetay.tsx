@@ -176,7 +176,16 @@ export function GereksinimDetay() {
   return (
     <>
       <SayfaBasligi
-        ust={<Link to="/gereksinimler">← Gereksinimler</Link>}
+        ust={
+          <>
+            <Link to="/gereksinimler">← Gereksinimler</Link>
+            {/* 012 Ş7: başlık düğme grubu %125'te sarmasın diye bağlantı üst satırda. */}
+            <span className="soluk" aria-hidden="true">
+              {" · "}
+            </span>
+            <Link to={`/gereksinimler/${encodeURIComponent(g.id)}/karar-tablolari`}>Karar tabloları</Link>
+          </>
+        }
         baslik={
           <>
             {g.jira_key && <span className="mono baslik-anahtar">{g.jira_key}</span>} {g.baslik}

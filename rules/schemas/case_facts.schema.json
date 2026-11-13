@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tp:case_facts",
+  "title": "Case değer çıkarma (012 §4.3 adım 2): karar tablosu kolonlarına karşılık gelen olgular",
+  "x-version": 2,
+  "type": "object",
+  "properties": {
+    "groups": {
+      "type": "array",
+      "description": "Case'teki her somut senaryo/örnek için bir grup; çıkarılacak değer yoksa boş liste.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "table_ref": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Kolon tanımlarındaki tablonun ref'i (ör. T1)."
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "column": { "type": "string", "minLength": 1 },
+                "value": {
+                  "anyOf": [{ "type": "string" }, { "type": "number" }, { "type": "boolean" }]
+                },
+                "field": { "type": "string", "minLength": 1 },
+                "quote": { "type": "string", "minLength": 1 }
+              },
+              "required": ["column", "value", "field", "quote"],
+              "additionalProperties": false
+            }
+          },
+          "expected": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "column": { "type": "string", "minLength": 1 },
+                "value": {
+                  "anyOf": [{ "type": "string" }, { "type": "number" }, { "type": "boolean" }]
+                },
+                "field": { "type": "string", "minLength": 1 },
+                "quote": { "type": "string", "minLength": 1 }
+              },
+              "required": ["column", "value", "field", "quote"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["table_ref", "inputs", "expected"],
+        "additionalProperties": false
+      }
+    },
+    "ignored": {
+      "type": "array",
+      "description": "Beklenen alanlarda (steps[i].expected, expected_result, verification_point) geçen ama hiçbir kolona ait olmayan sayılar, alıntısıyla. Ne olgu ne de burada listelenen sayı kontrol edilmemiş sayılır.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "field": { "type": "string", "minLength": 1 },
+          "quote": { "type": "string", "minLength": 1 },
+          "reason": { "type": "string" }
+        },
+        "required": ["field", "quote", "reason"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["groups", "ignored"],
+  "additionalProperties": false
+}

@@ -9,7 +9,7 @@ import type { CaseDurumu, CaseKararGirdisi } from "../types";
 type Makine = { initial: string; states: string[]; transitions: Record<string, string[]> };
 const M = makineler as Record<string, Makine>;
 
-export type MakineAdi = "requirement" | "requirement_review" | "consistency_finding" | "test_case" | "script" | "bug_draft" | "workflow_instance" | "design_model";
+export type MakineAdi = "requirement" | "requirement_review" | "consistency_finding" | "test_case" | "script" | "bug_draft" | "karar_tablosu" | "metamorfik_iliski" | "workflow_instance" | "design_model";
 
 export function gecisVar(makine: MakineAdi, mevcut: string, hedef: string): boolean {
   return M[makine]?.transitions[mevcut]?.includes(hedef) ?? false;

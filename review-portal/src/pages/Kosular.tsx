@@ -8,12 +8,13 @@ import { normalizeRol } from "../lib/yetki";
 import { useBildirim } from "../components/Bildirim";
 import { BosDurum, Cip, Baglanti, HataKutusu, IslemDugmesi, Kart, Metrik, SayfaBasligi, Uyari, Yukleniyor, IzinliLink } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
-import { HATA_SINIFI, KAYNAK, KOSU_DURUMU, TETIK } from "../lib/etiketler";
+import { altTurEtiketi, HATA_SINIFI, KAYNAK, KOSU_DURUMU, TETIK } from "../lib/etiketler";
 import { sure, tarih } from "../lib/format";
 import { CiAdimlari, githubYedekNotu, TestSonuclari } from "./KosuSonuclari";
 import { PlatformRozeti } from "../components/Platform";
 import { DilRozeti } from "../components/Dil";
 import { checkEtiketi, PLATFORMLAR, PLATFORM_ETIKETI, platformaGoreSuz, platformSecimiOku, type Platform } from "../lib/platform";
+import { EkilmisHataCipi } from "../components/kule/EkilmisHataCipi";
 
 const TETIK_TONU: Partial<Record<Tetik, "notr" | "bilgi" | "vurgu" | "uyari">> = {
   nightly: "notr",
@@ -62,6 +63,8 @@ export function KosuTablosu({ kosular, kompakt }: { kosular: Kosu[]; kompakt?: b
                     kırma
                   </Cip>
                 )}
+                {/* 012/Ş8: ekilmiş hata koşusunun adımı ("Ekilmiş hata: <ad>"); diğer koşularda çizilmez. */}
+                <EkilmisHataCipi kosu={k} />
               </td>
               <td>
                 <Cip ton={TETIK_TONU[k.tetik] ?? "notr"}>{TETIK[k.tetik] ?? k.tetik}</Cip>
@@ -371,7 +374,7 @@ function SinifCipi({ sinif, alt }: { sinif: HataSinifi | null; alt: string | nul
   return (
     <Cip ton={x.ton}>
       {x.etiket}
-      {alt ? ` · ${alt}` : ""}
+      {alt ? ` · ${altTurEtiketi(alt)}` : ""}
     </Cip>
   );
 }
@@ -509,6 +512,7 @@ export function KosuDetay() {
             </Cip>
             <Cip ton="notr">{KAYNAK[k.kaynak] ?? k.kaynak}</Cip>
             <PlatformRozeti platform={k.platform} />
+            <EkilmisHataCipi kosu={k} />
             {/* 011 §2.8: koşunun dili (core `dil` / `ortam.dil`); bilinmiyorsa çizilmez. */}
             <DilRozeti dil={k.dil} platform={k.platform} />
             <SauceCipi k={k} />

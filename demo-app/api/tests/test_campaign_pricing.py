@@ -141,6 +141,6 @@ def test_negatif_adet_reddedilir():
 def test_bozuk_parametresi_indirimi_kapatir():
     assert bedava_adet(12, bozuk=True) == 0
     h = sepet_hesapla(
-        [SatirGirdi(**P001, adet=7, kampanyali=True)], Decimal("750"), kampanya_bozuk=True
+        [SatirGirdi(**P001, adet=7, kampanyali=True)], Decimal("750"), hata="kampanya_bedava_yok"
     )
     assert (h.indirim, h.toplam) == (Decimal("0.00"), Decimal("175.00"))

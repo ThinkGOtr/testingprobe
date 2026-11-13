@@ -1409,6 +1409,8 @@ export interface Degerlendirme {
 
 export interface EslesenSinyal {
   kod: string;
+  /** R3: tek satırlık başlık (ör. "Uygulama onaylı kurala aykırı (T1 · R2: adet 6 → bedava_adet 0)"); core vermezse alan yok. */
+  baslik?: string | null;
   aciklama: string;
   kaynak: string;
   /** Sinyalin dayandığı ham kanıt parçası (hata metni, aria satırı, probe sonucu …); yoksa null. */
@@ -1723,7 +1725,10 @@ export type KpiAnahtari =
   | "a11y"
   | "son_kosular"
   /** Asistan ölçümü (Kule "Öneriler ve asistan" kartı; core `asistan.KAYNAK`). */
-  | "asistan";
+  | "asistan"
+  /** 012 §4.7: beklenti doğruluğu ve hata yakalama oranı (Kule KPI şeridi). */
+  | "beklenti_dogrulugu"
+  | "hata_yakalama";
 
 /**
  * Ölçülmemiş değerler `null`'dır: portal "ölçülmedi" / "veri yok" yazar, sayı uydurmaz
@@ -2260,4 +2265,628 @@ export interface VarsayimDogrulamaGirdisi {
   icerik_hash: string;
   varsayim_id: string | string[];
   gerekce?: string;
+}
+
+// ---------------------------------------------------------------- 012/Ş8: ekilmiş hata koşusu ve kalite KPI'ları
+// (specs/012-test-kalite-dogrulama/ANALIZ.md §4.6, §4.7, §5). Bu blok yalnız ekleme yapar; `Kosu` ve
+// `KontrolKulesi` arayüz birleştirmesiyle (declaration merging) genişler, var olan satırlar değişmez.
+
+export type HataTuru = "kod" | "veri";
+
+/** `GET /fault-runs/catalog` öğesi (core `rules/hata-katalogu.yaml`: kod, ad, tür, açıklama, yakalayan kural). */
+export interface HataKatalogOgesi {
+  kod: string;
+  ad: string;
+  tur: HataTuru;
+  aciklama: string;
+  /** Hatayı yakalaması beklenen kural (ANALIZ §4.6 tablosu, ör. "kampanya"); core vermezse null. */
+  yakalayan_kural: string | null;
+  /** K9 (§13.1): kuralın kabul kriterleri (ör. ["AC2"]); core vermezse alan yok. */
+  ac_refs?: string[];
+  /** K9: kuralın karar tablosu etiketi (ör. "T1"); tablosuz kuralda null; core vermezse alan yok. */
+  tablo?: string | null;
+  /** K9: hatayı ayırt eden örnek — girdi ve doğru / hatalı çıktı (düz metin); core vermezse alan yok. */
+  ayirt_edici?: AyirtEdiciOrnek | null;
+  /** Kuralın gereksinimi (bağlantı için); sözleşmede yok, core verirse kullanılır (uydurulmaz). */
+  requirement_id?: string | null;
+}
+
+/** K9 `ayirt_edici`: `{girdi, dogru, hatali}`; nesne gelirse "ad = değer" metnine çevrilir. */
+export interface AyirtEdiciOrnek {
+  girdi: string;
+  dogru: string;
+  hatali: string;
+}
+
+/** §13.2 `kiran_testler[]` öğesi; eski çekirdek yalnız test adını verir → `kaynak: null` (bilinmiyor). */
+export interface KiranTest {
+  test: string;
+  /** "ai": onaylı case'ten üretilen test (`tests/generated/`, `uretilen/`); "el": el yazısı suite. */
+  kaynak: "ai" | "el" | null;
+}
+
+/** §13.2 `el_yazisi`: el yazısı suite'in ayrı yakalama sayısı (ana oran yalnız AI testleriyle, K12). */
+export interface ElYazisiYakalama {
+  oran: number | null;
+  yakalanan: number;
+  kacan: number;
+}
+
+/** §13.2 `kapsam`: koşulan hata / katalog ve platformlar. */
+export interface HataKosusuKapsami {
+  kosulan_hata: number;
+  katalog: number;
+  platformlar: Platform[];
+  /** R4: koşu tüm kataloğu kapsıyor (yalnız böyle koşular Kule ölçüsüne girer); core vermezse alan yok. */
+  tam_katalog?: boolean;
+  /** R4: geçerli (yakalandı | kaçtı) adım sayısı; core vermezse alan yok. */
+  gecerli_adim?: number;
+  /** Y10: platform başına geçerli adım alt eşiği (katalog oranı, ör. 0,5); core vermezse alan yok. */
+  esik?: number;
+  /** Y10: her platformda geçerli adım ≥ eşik; false ise Kule oranları null ve `not` nedeni söyler. */
+  yeterli?: boolean;
+  /** Y10: yetersizlik nedeni ("Geçerli hata adımı kataloğun %50'sinin altında …"). */
+  not?: string | null;
+}
+
+/** `hata_kosusu.durum`. */
+export type HataKosusuDurumu = "queued" | "running" | "done" | "failed" | "cancelled";
+/** `hata_kosusu_adim.asama`. */
+export type HataAdimAsamasi = "temel" | "hata" | "kapanis";
+/**
+ * `hata_kosusu_adim.sonuc`. Hata adımı: `yakalandi | kacti | gecersiz`; temel ve kapanış koşusu:
+ * `yesil | kirmizi` (koşulamadıysa `gecersiz`); henüz koşmadıysa `bekliyor`.
+ */
+export type HataAdimSonucu = "bekliyor" | "yakalandi" | "kacti" | "gecersiz" | "yesil" | "kirmizi";
+
+/** `hata_kosusu_adim` satırı (koşu detayında `adimlar[]`). */
+export interface HataKosusuAdimi {
+  id: string;
+  platform: Platform;
+  /** Temel ve kapanış koşusunda null. */
+  hata_kodu: string | null;
+  asama: HataAdimAsamasi;
+  /** Adımın `run` kaydı (`/kosular/:id`); koşu açılmadıysa null. */
+  run_id: string | null;
+  sonuc: HataAdimSonucu;
+  /** `yakalandi` adımında kırmızıya dönen testler ve kaynakları (§13.2; eski biçimde kaynak null). */
+  kiran_testler: KiranTest[];
+  /** K12: hatasız temelde zaten kırmızı olduğu için sayılmayan testler; core vermezse alan yok. */
+  temelde_kirmizi?: string[];
+  /** `gecersiz` (ve kırmızı temel/kapanış) adımının nedeni. */
+  neden: string | null;
+  sure_ms: number | null;
+  sira: number;
+  /** Katalogdaki görünen ad (core `hata_adi`); temel/kapanışta ya da core vermezse null. */
+  hata_adi?: string | null;
+}
+
+export interface HataYakalamaPlatformu {
+  platform: Platform;
+  /** `yakalanan / (yakalanan + kacan)`; payda 0 ise null (ölçülmedi). `el_yazisi` varsa yalnız AI testleri (K12). */
+  oran: number | null;
+  /** §13.2 el yazısı suite ayrı sütunu; core vermezse alan yok (eski biçim: `oran` tüm testler). */
+  el_yazisi?: ElYazisiYakalama;
+  /** R4: AI + el yazısı birlikte (hangi testle olursa olsun yakalandı); core vermezse alan yok. */
+  tum_testler?: ElYazisiYakalama;
+  /** R4: koşulan suite'teki üretilmiş (AI) ve el yazısı test sayıları; core vermezse alan yok. */
+  uretilen_test?: number;
+  el_test?: number;
+  yakalanan: number;
+  kacan: number;
+  gecersiz: number;
+  /** Koşu özetinde (core `ozet_hesapla`): koşmamış hata adımları ve temel/kapanış sonucu. Kule ölçüsünde yok. */
+  bekleyen?: number;
+  temel?: HataAdimSonucu | null;
+  kapanis?: HataAdimSonucu | null;
+  /** Q2: platformun geçerli hata adımı (yakalandı + kaçtı); core vermezse alan yok. */
+  gecerli_adim?: number;
+}
+
+export interface KacanHata {
+  hata_kodu: string;
+  ad: string;
+  platform: Platform;
+}
+
+/** `hata_kosusu.ozet` (JSONB): koşu bitince yazılır; süren koşuda null. */
+export interface HataKosusuOzeti {
+  oran: number | null;
+  yakalanan: number;
+  kacan: number;
+  gecersiz: number;
+  /** Koşmamış (`bekliyor`) hata adımları (core verirse; iptal edilen koşuda > 0 olabilir). */
+  bekleyen?: number;
+  platformlar: HataYakalamaPlatformu[];
+  /** Hiçbir testin (hiçbir kaynak) yakalamadığı hatalar (kabul senaryosu 12). */
+  kacanlar: KacanHata[];
+  /** Q2: üretilen (AI) testlerin kaçırdığı hatalar (el yazısı yakalamış olabilir); core vermezse alan yok. */
+  ai_kacanlar?: KacanHata[];
+  /** §13.2: `oran` yalnız AI testleri; el yazısı ayrı. Alan yoksa eski biçim (`oran` tüm testler). */
+  el_yazisi?: ElYazisiYakalama;
+  /** R4: AI + el yazısı birlikte. */
+  tum_testler?: ElYazisiYakalama;
+  kapsam?: HataKosusuKapsami;
+}
+
+/** `hata_kosusu` satırı (`GET /fault-runs` öğesi). */
+export interface HataKosusu {
+  id: string;
+  durum: HataKosusuDurumu;
+  platformlar: Platform[];
+  hatalar: string[];
+  commit: string | null;
+  /** Başlatan kullanıcının kimliği (`baslatan_id`) ve — core verirse — kullanıcı adı (`baslatan`). */
+  baslatan_id: string | null;
+  baslatan: string | null;
+  ozet: HataKosusuOzeti | null;
+  uyarilar: string[];
+  baslama: string | null;
+  bitis: string | null;
+  olusturma: string;
+  /** R4: iptal istendi; durum adım bitene dek `running` kalır. Core vermezse alan yok. */
+  iptal_istendi?: boolean;
+}
+
+/** `GET /fault-runs/{id}`: koşu + adımları (sıra numarasına göre). */
+export interface HataKosusuDetay extends HataKosusu {
+  adimlar: HataKosusuAdimi[];
+}
+
+/** `POST /fault-runs` gövdesi; `hatalar` verilmezse kataloğun tamamı. */
+export interface HataKosusuGirdisi {
+  platformlar: Platform[];
+  hatalar?: string[];
+}
+
+/** `GET /control-tower` → `beklenti_dogrulugu` (§4.7). `oran = uyumlu / (uyumlu + uyumsuz)`; payda 0 ise null. */
+export interface KuleBeklentiDogrulugu {
+  oran: number | null;
+  uyumlu: number;
+  uyumsuz: number;
+  kapsam_disi: number;
+  kontrol_edilemedi: number;
+  /** Uyuşmazlığa rağmen gerekçeli istisnayla onaylanan case sayısı. */
+  istisna: number;
+  /** Karar tablosu kapsamındaki case'lerin payı; core vermezse null. */
+  kapsam_orani: number | null;
+  // §13.2 ekleri: core vermezse alan yok (sayı uydurulmaz).
+  /** K11 kısmen uyumlu (orana girmez). */
+  kismen?: number;
+  /** K10 gerekçeyle "kontrol edilemedi, yine de onayla" sayısı. */
+  kontrolsuz_onay?: number;
+  n_case?: number;
+  n_story?: number;
+  tablolu_story?: number;
+  toplam_story?: number;
+  /** REPLAY (elle hazırlanmış golden) ile üretilmiş kayıt sayısı. */
+  golden_kaynakli?: number;
+  /** §13.2 aynı satırı aynı değerlerle denetleyen, tek sayılan case'ler (paydadan da düşülür). */
+  tekrar?: number;
+}
+
+/** §13.2 Kule `onayli_uyumsuz[]`: onaylandıktan sonra tabloyla uyuşmayan case. */
+export interface OnayliUyumsuzCase {
+  case_id: string;
+  requirement_id: string;
+  baslik: string;
+  /** Tur 2 (portal isteği): gereksinim anahtarı ve case sıra no ("TPD-1 · C5"); core vermezse alan yok. */
+  jira_key?: string | null;
+  sira_no?: number | null;
+}
+
+/** `GET /control-tower` → `hata_yakalama` (§4.7); hiç koşu yoksa anahtar `null`. */
+export interface KuleHataYakalama {
+  son_kosu: { id: string; bitis: string | null; durum: HataKosusuDurumu };
+  oran: number | null;
+  yakalanan: number;
+  kacan: number;
+  gecersiz: number;
+  platformlar: HataYakalamaPlatformu[];
+  /** Hiçbir testin yakalamadığı hatalar. */
+  kacanlar: KacanHata[];
+  /** Q2: üretilen (AI) testlerin kaçırdığı hatalar; core vermezse alan yok. */
+  ai_kacanlar?: KacanHata[];
+  /** §13.2: `oran` yalnız AI testleri; el yazısı ayrı. Alan yoksa eski biçim. */
+  el_yazisi?: ElYazisiYakalama;
+  /** R4: AI + el yazısı birlikte. */
+  tum_testler?: ElYazisiYakalama;
+  kapsam?: HataKosusuKapsami;
+}
+
+export interface KontrolKulesi {
+  /** `undefined`: core bu anahtarı sunmuyor (eski sürüm); `null`: ölçülmedi. Sıfır uydurulmaz. */
+  beklenti_dogrulugu?: KuleBeklentiDogrulugu | null;
+  /** `undefined`: core sunmuyor; `null`: henüz ekilmiş hata koşusu yok. */
+  hata_yakalama?: KuleHataYakalama | null;
+  /** §13.2: `undefined` core sunmuyor; boş dizi: yok. */
+  onayli_uyumsuz?: OnayliUyumsuzCase[];
+}
+
+export interface Kosu {
+  /** Ekilmiş hata koşusunun adımıysa hatanın kodu (core `run.ortam.hata_kodu`, V6); değilse yok. */
+  hata_kodu?: string | null;
+  /** Bağlı ekilmiş hata koşusu (core `run.ortam.hata_kosusu_id`). */
+  hata_kosusu_id?: string | null;
+}
+
+
+// ---------------------------------------------------------------- 012 Ş7: test kalite doğrulama
+// Karar tablosu, beklenen sonuç kontrolü (oracle) ve ilişki tabanlı ek case (specs/012 ANALIZ §4, §6).
+// Var olan arayüzlere eklenen alanlar bildirim birleştirmesiyle (aynı adlı `interface`) bu blokta durur.
+
+/** Karar tablosu ve metamorfik ilişki durumları (ANALIZ §4.1; core `karar_tablosu` makinesi). */
+export const KARAR_TABLOSU_DURUMLARI = ["draft", "pending_po", "approved", "superseded"] as const;
+export type KararTablosuDurumu = (typeof KARAR_TABLOSU_DURUMLARI)[number];
+
+export type KolonTuru = "sayi" | "metin" | "mantiksal";
+
+export interface KararTablosuGirdisi {
+  ad: string;
+  tur: KolonTuru;
+  birim?: string;
+  aciklama?: string;
+}
+
+export interface KararTablosuCiktisi {
+  ad: string;
+  tur: KolonTuru;
+  birim?: string;
+  /** Sayısal karşılaştırma toleransı (metin olarak ondalık; verilmezse 0). */
+  tolerans?: string;
+  aciklama?: string;
+}
+
+export interface KararTablosuSatiri {
+  id: string;
+  /** Sınırlı ifade dili (§4.2); ilk koşulu sağlayan satır geçerlidir. */
+  kosul: string;
+  /** Çıktı adı → ifade. */
+  cikti: Record<string, string>;
+}
+
+/** `karar_tablosu.icerik` (şema `rules/schemas/karar_tablosu.schema.json`). */
+export interface KararTablosuIcerik {
+  ad: string;
+  ac_refs: string[];
+  aciklama?: string;
+  girdiler: KararTablosuGirdisi[];
+  ciktilar: KararTablosuCiktisi[];
+  satirlar: KararTablosuSatiri[];
+}
+
+/** PO'nun son kararı (`approve` | `request_changes`); "Değişiklik iste" gerekçesi buradan gösterilir. */
+export interface KaliteSonKarar {
+  karar: string;
+  gerekce: string | null;
+  kullanici: string | null;
+  zaman: string | null;
+  /** Geçişin yapıldığı içerik hash'i (geçmiş satırı; çekirdek vermezse alan yok). */
+  icerik_hash?: string | null;
+  /** "Tablo yanlış" yolu: yeniden açmayı tetikleyen case (çekirdek vermezse alan yok). */
+  case_id?: string | null;
+}
+
+interface KaliteKaydi {
+  id: string;
+  /** `karar_tablosu` | `metamorfik_iliski`. */
+  tur: "karar_tablosu" | "metamorfik_iliski";
+  requirement_id: string;
+  sira_no: number;
+  icerik_hash: string;
+  onaylanan_hash: string | null;
+  durum: KararTablosuDurumu;
+  /** Gereksinim onaydan sonra değişti (hesaplanan özellik); bayat kayıt kontrolde kullanılmaz. */
+  bayat: boolean;
+  ai_generated: boolean;
+  uretim_modu: CiktiModu | null;
+  /** Yalnız `approved` iken dolu. */
+  onaylayan: string | null;
+  onay_zamani: string | null;
+  son_karar: KaliteSonKarar | null;
+  olusturma: string | null;
+  guncelleme: string | null;
+  /** R2: içeriği son düzenleyen kullanıcı; çekirdek vermezse alan yok. */
+  son_duzenleyen?: string | null;
+  /** Geçiş geçmişi (eskiden yeniye: gönderme, değişiklik isteği, yeniden açma + gerekçe…); çekirdek vermezse alan yok. */
+  gecmis?: KaliteSonKarar[];
+}
+
+export interface KararTablosu extends KaliteKaydi {
+  icerik: KararTablosuIcerik;
+  /**
+   * AI taslağındaki özgün içerik (analist düzenlemesinden önce). Sözleşmede yok; çekirdek verirse satırlar
+   * "analist değiştirdi" diye işaretlenir, vermezse alan yok (işaret çizilmez).
+   */
+  ai_icerik?: KararTablosuIcerik | null;
+}
+
+/** R2 `GET /decision-tables/{id}/ornekler`: sınır değerlerinden örnek ızgarası (tabloyla değerlendirilmiş). */
+export interface TabloOrnegi {
+  girdiler: Record<string, string | number | boolean | null>;
+  satir_id: string | null;
+  ciktilar: Record<string, string | number | boolean | null>;
+  /** Değerlendirme hatası (ör. sıfıra bölme); yoksa null. */
+  hata: string | null;
+}
+/** Tablo tasarım uyarısı: `ortusme | hic_eslesmez | golgede | satir_yok | hata | ornek_sinirli | gecersiz` (bilinmeyen tür aynen). */
+export interface TabloOrnekUyarisi {
+  tur: string;
+  mesaj: string;
+  /** Q1: `ortusme` için `uyari` (aynı girdiyi kısıtlayan koşullar) | `bilgi` (yalnız öncelik notu); yoksa alan yok. */
+  onem?: "uyari" | "bilgi";
+  satirlar?: string[];
+  girdiler?: Record<string, string | number | boolean | null>;
+}
+export interface TabloOrnekleri {
+  ornekler: TabloOrnegi[];
+  uyarilar: TabloOrnekUyarisi[];
+}
+
+/** `metamorfik_iliski.icerik` (§4.5). */
+export interface MetamorfikIliskiIcerik {
+  ad: string;
+  ac_refs: string[];
+  /** Bağlı tablonun atfı ("T<sira_no>"); tablosuz ilişkide null. */
+  tablo_ref?: string | null;
+  on_kosul: string;
+  /** Girdi adı → yeni girdinin ifadesi (kaynak case değerlerinden). */
+  donusum: Record<string, string>;
+  /** Çıktı adı → yeni beklenen değerin ifadesi (kaynak case değerlerinden). */
+  iliski: Record<string, string>;
+  aciklama?: string;
+  /** R2: dönüşümde değişmemesi gereken kolonlar (isteğe bağlı). */
+  degismez?: string[];
+}
+
+export interface MetamorfikIliski extends KaliteKaydi {
+  karar_tablosu_id: string | null;
+  /** R2: ilişkinin PO onayına gidemediği / kullanılamadığı neden (bağlı tablo yok, onaylı değil, değişti); yoksa null; çekirdek vermezse alan yok. */
+  tablo_engeli?: string | null;
+  icerik: MetamorfikIliskiIcerik;
+}
+
+/** Son AI taslak işi (`son_taslak`); `sonuc.atilan`: şemaya/doğrulamaya uymadığı için yazılmayan öğeler. */
+export interface KaliteTaslakIsi {
+  job_id: string | null;
+  workflow_id: string | null;
+  durum: string;
+  sonuc: { atilan: { tur: string; ref: string | null; ad: string | null; hatalar: string[] }[]; [k: string]: unknown } | null;
+  hata: string | null;
+  /** R2: `hata`nın kategorisi (ör. `model_hatasi`, `gecersiz_cikti`); çekirdek vermezse alan yok. */
+  hata_kodu?: string | null;
+  olusturma: string | null;
+}
+
+/** `GET /requirements/{id}/decision-tables?tumu=` (tumu=true yerini yenisi alanları da içerir). */
+export interface KararTablolariYaniti {
+  tablolar: KararTablosu[];
+  iliskiler: MetamorfikIliski[];
+  son_taslak: KaliteTaslakIsi | null;
+}
+
+/** Tablo/ilişki içerik güncellemesi: ekranda görülen hash ile iyimser eşzamanlılık (409). */
+export interface KararTablosuGuncelleme {
+  icerik: KararTablosuIcerik;
+  icerik_hash: string;
+}
+export interface IliskiGuncelleme {
+  icerik: MetamorfikIliskiIcerik;
+  icerik_hash: string;
+  /** Yoksa bağ korunur; `null` bağı kaldırır. */
+  karar_tablosu_id?: string | null;
+}
+
+/** `POST /requirements/{id}/relations`. */
+export interface IliskiOlusturma {
+  icerik: MetamorfikIliskiIcerik;
+  karar_tablosu_id?: string | null;
+}
+
+/** Durum geçişi gövdesi: görülen hash (submit isteğe bağlı, approve / request-changes zorunlu); "Değişiklik iste"de gerekçe. withdraw / reopen gövdesizdir. */
+export interface KaliteGecisGirdisi {
+  icerik_hash?: string;
+  gerekce?: string;
+  /** "Tablo yanlış" yolu (reopen): tabloyu yeniden açtıran case. */
+  case_id?: string;
+}
+
+/** `POST /requirements/{id}/decision-tables/draft` (202). Bir taslak işi sürerken aynı iş döner. */
+export interface KaliteTaslakYaniti {
+  job_id: string | null;
+  workflow_id: string | null;
+  durum: string;
+  mesaj?: string;
+  uretim_no: number | null;
+}
+
+/** `GET /requirements/{id}/metamorphic-derivations`. */
+export interface MetamorfikTuretme {
+  id: string;
+  iliski_id: string;
+  kaynak_case_id: string;
+  turetilen_case_id: string | null;
+  sonuc: string;
+  neden: string | null;
+  olusturan_id: string | null;
+  olusturma: string | null;
+}
+
+export type KaliteGecisi = "submit" | "withdraw" | "reopen" | "approve" | "request-changes";
+
+/** `POST /decision-tables/{id}/evaluate` yanıtı (core `Degerlendirme`; önizleme, kayıt yok). */
+export interface TabloDegerlendirmesi {
+  satir_id: string | null;
+  /** Sayılar core'da Decimal'dir: metin ("25.00") ya da sayı gelebilir. */
+  ciktilar: Record<string, string | number | boolean | null>;
+  eksik_girdiler: string[];
+  hata: string | null;
+}
+
+export type OracleSonucu = "uyumlu" | "uyumsuz" | "kismen" | "kapsam_disi" | "kontrol_edilemedi";
+
+/** §13.2 istisna türü: tabloyla uyuşmazlığa rağmen onay (`uyumsuz`) ya da kontrol edilemeden onay (`kontrolsuz`). */
+export type OracleIstisnaTuru = "uyumsuz" | "kontrolsuz";
+
+/** §13.2 değer düzeyinde sayım (`oracle.degerler`). */
+export interface OracleDegerSayimi {
+  uyumlu: number;
+  uyumsuz: number;
+  karsilastirilamayan: number;
+  atilan: number;
+}
+
+/** Bir beklenen olgunun tabloyla karşılaştırması (§4.3 `ayrintilar.gruplar[].karsilastirmalar[]`). */
+export interface OracleKarsilastirma {
+  column: string;
+  /** Case içindeki yol (`steps[3].expected`, `expected_result` …). */
+  alan: string;
+  alinti: string;
+  case_degeri: string | number | boolean | null;
+  tablo_degeri: string | number | boolean | null;
+  uyumlu: boolean;
+  tablo_id?: string | null;
+  tablo_ad?: string | null;
+  satir_id?: string | null;
+}
+
+/**
+ * Case'te doğrulanmış ama tablonun eksik girdi yüzünden hesaplayamadığı beklenen değer (core
+ * `karsilastirilamayanlar`; ör. birim fiyat yazmayan case'te `indirim`). Sonuca girmez.
+ */
+export interface OracleKarsilastirilamayan {
+  tablo_id: string | null;
+  tablo_ad: string | null;
+  column: string;
+  alan: string;
+  alinti: string;
+  case_degeri: string | number | boolean | null;
+  neden: string;
+}
+
+export interface OracleIstisnasi {
+  gerekce: string;
+  veren: string | null;
+  zaman: string | null;
+  /** §13.2; eski çekirdek vermez → alan yok. */
+  tur?: OracleIstisnaTuru;
+  /** Kaydın ait olduğu içerik hash'i (son kayıt başka içeriğe ait olabilir); çekirdek vermezse alan yok. */
+  icerik_hash?: string | null;
+  /**
+   * Tur 2 (S1): aynı içerik + aynı tablo kümesiyle verilmiş, hâlâ geçerli istisna. Aynı türde geçerliyse kapı
+   * gerekçeyi yeniden istemez (çekirdek `oracle.exception_reused` yazar). Çekirdek vermezse alan yok.
+   */
+  gecerli?: boolean;
+  /** Q1: append-only `oracle_istisna` satır kimliği; çekirdek vermezse alan yok. */
+  id?: string | null;
+}
+
+/** K11 kısmen uyumlu sonucun nedenleri (tur 2): `eksik_girdi` dışındaki nedenler zorunlu kapıda gerekçe ister. */
+export type KismenNedeni = "eksik_girdi" | "atilan_olgu" | "kapsanmayan_sayi" | "yok_sayilan";
+
+/** `GET /cases` ve `GET /cases/{id}` yanıtındaki `oracle` ve `GET /cases/{id}/oracle`. */
+export interface CaseOracle {
+  /** `null` yalnız `kontrol_suruyor` iken (bu içerik için henüz sonuç yok). */
+  sonuc: OracleSonucu | null;
+  ozet: string;
+  karsilastirmalar: OracleKarsilastirma[];
+  /** Karşılaştırılamayan beklenen değerler (sonucu etkilemez); core vermezse boş. */
+  karsilastirilamayan: OracleKarsilastirilamayan[];
+  istisna: OracleIstisnasi | null;
+  /** Kontrolün yapıldığı case içeriğinin hash'i (güncel ya da önerilen içerik). */
+  icerik_hash: string | null;
+  /** Bu içerik için kontrol işi kuyrukta / çalışıyor (yüksek riskte onay 409 `oracle_bekleniyor`). */
+  kontrol_suruyor: boolean;
+  /** §13.2 değer düzeyinde sayım; çekirdek vermezse alan yok (sayı uydurulmaz). */
+  degerler?: OracleDegerSayimi;
+  /** §13.2 sonucun nedeni (ör. `cagri_hatasi`: model çağrısı hatası); çekirdek vermezse alan yok. */
+  neden?: string | null;
+  /** Tur 2: kayıt damgası; karar gövdesinde `oracle_kayit_damgasi` olarak geri gönderilir. Çekirdek vermezse alan yok. */
+  damga?: string | null;
+  /** Tur 2: `kismen` nedenleri (bilinmeyen kod aynen); çekirdek vermezse alan yok. */
+  kismen_nedeni?: (KismenNedeni | (string & {}))[];
+}
+
+/** `POST /cases/{id}/oracle-check` (202): `{job_id, icerik_hash}`; sonuç `oracle.checked` ile gelir. */
+export interface OracleKontrolYaniti {
+  job_id: string | null;
+  icerik_hash: string | null;
+}
+
+/** Atlanan kaynak case'in nedeni (§4.5; `zaten_turetildi`: aynı kaynak + ilişki çifti daha önce türetildi). */
+export type TuretmeAtlamaSonucu = "iliski_gecersiz" | "belirsiz_alinti" | "olgu_yok" | "zaten_turetildi" | "tutarsiz_kalan_deger";
+
+export interface TuretilenCase {
+  case_id: string;
+  kaynak_case_id: string;
+  baslik: string;
+}
+
+export interface AtlananKaynak {
+  kaynak_case_id: string;
+  /** Bilinen kodlar `TuretmeAtlamaSonucu`; tanınmayan kod olduğu gibi kalır. */
+  sonuc: TuretmeAtlamaSonucu | (string & {});
+  neden: string | null;
+  /** `zaten_turetildi`: önceki türetmenin case'i (bağlantı için; çekirdek vermeyebilir). */
+  case_id?: string | null;
+}
+
+/** `POST /requirements/{id}/metamorphic-cases`. */
+export interface TuretmeYaniti {
+  turetilen: TuretilenCase[];
+  atlanan: AtlananKaynak[];
+}
+
+export interface TuretmeGirdisi {
+  iliski_id: string;
+  case_ids?: string[];
+}
+
+/** §4.7 beklenti doğruluğu (gereksinim kapsamında `case-metrics`, genelde `control-tower`). */
+export interface BeklentiDogrulugu {
+  /** uyumlu / (uyumlu + uyumsuz); payda 0 ise null ("ölçülmedi"). */
+  oran: number | null;
+  uyumlu: number;
+  uyumsuz: number;
+  kapsam_disi: number;
+  kontrol_edilemedi: number;
+  istisna: number;
+  kapsam_orani: number | null;
+  // §13.2 ekleri: çekirdek vermezse alan yok (sayı uydurulmaz).
+  kismen?: number;
+  kontrolsuz_onay?: number;
+  n_case?: number;
+  n_story?: number;
+  tablolu_story?: number;
+  toplam_story?: number;
+  golden_kaynakli?: number;
+  /** §13.2 aynı satırı aynı değerlerle denetleyen, tek sayılan case'ler (paydadan da düşülür). */
+  tekrar?: number;
+}
+
+export interface TestCase {
+  /**
+   * Güncel içeriğin beklenen sonuç kontrolü. `null`: kontrol kaydı yok; alan hiç yoksa çekirdek
+   * bu özelliği sunmuyor (çip çizilmez).
+   */
+  oracle?: CaseOracle | null;
+}
+
+export interface CaseMetrikleri {
+  beklenti_dogrulugu?: BeklentiDogrulugu | null;
+}
+
+export interface CaseKararGirdisi {
+  /** Yüksek riskli uyuşmazlıkta gerekçeli istisna (en az 20 karakter; denetim kaydına düşer). */
+  oracle_istisna_gerekce?: string;
+  /** §13.2: `uyumsuz` (tabloya rağmen) | `kontrolsuz` (kontrol edilemedi, yine de). Gerekçe verilince portal her zaman gönderir. */
+  oracle_istisna_turu?: OracleIstisnaTuru;
+  /** Tur 2 (Y9): kararın dayandığı kontrol kaydının damgası; kayıt değiştiyse 409 `oracle_kayit_degisti`. */
+  oracle_kayit_damgasi?: string;
+}
+
+/** 012 Ş7: triage kaydının bağlı olduğu case (alt tür `beklenti` → "Case düzeltilmeli" bağlantısı). */
+export interface HataAnalizi {
+  case_id?: string | null;
+  requirement_id?: string | null;
 }

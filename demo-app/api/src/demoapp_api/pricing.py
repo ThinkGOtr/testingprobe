@@ -1,12 +1,13 @@
 """Sepet hesabı: satır tutarları, kampanya indirimi, minimum sipariş kontrolü.
 
-Saf fonksiyonlar; veritabanı bilmez. Kampanya kuralı `campaign.bedava_adet` içindedir.
+Saf fonksiyonlar; veritabanı bilmez. Kampanya kuralı `campaign.bedava_adet`, ekilmiş hatalar
+(`hata`: bayi bazlı kod, yoksa normal hesap) `faults.py` içindedir.
 """
 
 from dataclasses import dataclass, field
 from decimal import Decimal
 
-from demoapp_api.campaign import bedava_adet
+from demoapp_api import faults
 from demoapp_api.money import format_tl, tutar
 
 UYARI_MIN_SIPARIS = "min_siparis"
@@ -58,14 +59,14 @@ def min_siparis_mesaji(min_tutar: Decimal) -> str:
     return f"Minimum sipariş tutarı {format_tl(min_tutar)}"
 
 
-def satir_hesapla(girdi: SatirGirdi, kampanya_bozuk: bool = False) -> SatirSonuc:
+def satir_hesapla(girdi: SatirGirdi, hata: str | None = None) -> SatirSonuc:
     if girdi.adet < 0:
         raise ValueError("adet negatif olamaz")
     fiyat = tutar(girdi.birim_fiyat)
-    bedava = bedava_adet(girdi.adet, kampanya_bozuk) if girdi.kampanyali else 0
+    bedava = faults.bedava_adet(girdi.adet, hata) if girdi.kampanyali else 0
     bedava = max(0, min(bedava, girdi.adet))
     ara = tutar(fiyat * girdi.adet)
-    indirim = tutar(fiyat * bedava)
+    indirim = tutar(fiyat * bedava * faults.indirim_kati(hata))
     return SatirSonuc(
         urun_kod=girdi.urun_kod,
         urun_ad=girdi.urun_ad,
@@ -81,19 +82,18 @@ def satir_hesapla(girdi: SatirGirdi, kampanya_bozuk: bool = False) -> SatirSonuc
 
 
 def sepet_hesapla(
-    girdiler: list[SatirGirdi], min_siparis_tutari: Decimal, kampanya_bozuk: bool = False
+    girdiler: list[SatirGirdi], min_siparis_tutari: Decimal, hata: str | None = None
 ) -> SepetSonuc:
-    """`kampanya_bozuk`: demo kırılması (bkz. `campaign.bedava_adet`)."""
-    satirlar = [satir_hesapla(g, kampanya_bozuk) for g in girdiler]
+    satirlar = [satir_hesapla(g, hata) for g in girdiler]
     ara_toplam = tutar(sum((s.ara_tutar for s in satirlar), Decimal(0)))
     indirim = tutar(sum((s.indirim for s in satirlar), Decimal(0)))
     toplam = ara_toplam - indirim
     min_tutar = tutar(min_siparis_tutari)
     bos = not satirlar
-    saglandi = toplam >= min_tutar
+    saglandi = faults.min_saglandi(toplam, min_tutar, hata)
     min_aranir = not any(s.kampanyali for s in satirlar)  # kampanyalı siparişte aranmaz
     uyarilar: list[Uyari] = []
-    if not bos and min_aranir and not saglandi:
+    if not bos and (min_aranir or faults.muafiyet_yok(hata)) and not saglandi:
         uyarilar.append(Uyari(UYARI_MIN_SIPARIS, min_siparis_mesaji(min_tutar)))
     return SepetSonuc(
         satirlar=satirlar,

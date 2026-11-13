@@ -77,6 +77,26 @@ ASISTAN_OLAY_TUR = frozenset(
 )
 ASISTAN_CIDDI_OLAY = frozenset({"sir_icerik", "kanarya", "istem_sizintisi"})
 
+# 012 test kalite doğrulama (0022; specs/012-test-kalite-dogrulama/ANALIZ.md §4–§5).
+# Karar tablosu kolon türleri (`icerik.girdiler[].tur`, `icerik.ciktilar[].tur`).
+KARAR_TABLOSU_TUR = frozenset({"sayi", "metin", "mantiksal"})
+ORACLE_SONUC = frozenset({"uyumlu", "uyumsuz", "kismen", "kapsam_disi", "kontrol_edilemedi"})
+# `oracle_istisna.tur` (review 1 K10/V10): uyuşmazlığa ya da kontrol edilemeyen yüksek riskli
+# case'e verilen gerekçeli onay.
+ORACLE_ISTISNA_TUR = frozenset({"uyumsuz", "kontrolsuz"})
+TURETME_SONUC = frozenset(
+    {"turetildi", "iliski_gecersiz", "belirsiz_alinti", "olgu_yok", "tutarsiz_kalan_deger"}
+)
+# `hata_kosusu.durum` workflow.MACHINES'e konmaz (insan kapısı yok; iş kendi yazar).
+HATA_KOSUSU_DURUM = frozenset({"queued", "running", "done", "failed", "cancelled"})
+HATA_KOSUSU_SUREN = frozenset({"queued", "running"})
+HATA_KOSUSU_ASAMA = frozenset({"temel", "hata", "kapanis"})
+HATA_KOSUSU_ADIM_SONUC = frozenset(
+    {"bekliyor", "yakalandi", "kacti", "gecersiz", "yesil", "kirmizi"}
+)
+# Ekilmiş hata türü (`rules/hata-katalogu.yaml` `tur`).
+HATA_TURU = frozenset({"kod", "veri"})
+
 
 def durumlar(entity: str) -> frozenset[str]:
     return MACHINES[entity].states

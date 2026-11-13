@@ -34,6 +34,25 @@ class Job(Base):
             unique=True,
             postgresql_where=text("idempotency_key IS NOT NULL"),
         ),
+        # 012 oracle hız sınırı ve gereksinim işi birleştirme (migrasyon 0034; review 2 t2 N10).
+        Index(
+            "job_oracle_case_ix",
+            text("(yuk ->> 'case_id')"),
+            "olusturma",
+            postgresql_where=text("tur = 'oracle.check_case'"),
+        ),
+        Index(
+            "job_oracle_gereksinim_ix",
+            text("(yuk ->> 'requirement_id')"),
+            "olusturma",
+            postgresql_where=text("tur IN ('oracle.check_case', 'oracle.check_requirement')"),
+        ),
+        Index(
+            "job_oracle_isteyen_ix",
+            text("(yuk ->> 'isteyen_id')"),
+            "olusturma",
+            postgresql_where=text("tur = 'oracle.check_case'"),
+        ),
         # 0030: gereksinim → son otomatik case işi (otomatik akış rozeti, 013 §9).
         Index(
             "job_otomatik_case_req_ix",

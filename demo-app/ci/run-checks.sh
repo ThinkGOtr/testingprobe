@@ -5,7 +5,8 @@
 #
 # BASE_URL tanımlı değilse Playwright uygulamayı webServer ile kendisi başlatır; bunun için
 # web bağımlılıkları (npm ci) ve API ortamı (uv sync) da hazırlanır.
-# Ortam: BREAK_CAMPAIGN (bayi kapsamlı kırılma; fixture /test/break), DEMO_API_COMMAND (uv yoksa API başlatma komutu),
+# Ortam: BREAK_CAMPAIGN (bayi kapsamlı kırılma; fixture /test/break), TP_FAULT=<kod> (bayi kapsamlı
+#        ekilmiş hata; aynı fixture yolu, ikisi birlikteyse TP_FAULT geçerli), DEMO_API_COMMAND (uv yoksa API başlatma komutu),
 #        SKIP_INSTALL=1 (bağımlılıklar hazırsa kurulum adımlarını atla; çevrimdışı runner),
 #        DEMOAPP_TEST_TOKEN + DEMO_API_URL ya da TP_E2E_NO_RESET=1 (BASE_URL modu; bkz. tests/fixtures.ts).
 set -euo pipefail
