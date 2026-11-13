@@ -238,6 +238,9 @@ def test_pr_kosusu_github_dan_alinir(engine: Engine, gh: FakeGitHub) -> None:
         detay = service.run_detail(s, rid, artefakt=True)
     assert detay["sauce_url"].startswith("https://app.eu-central-1.saucelabs.com/")
     assert detay["sauce_durum"] == "passed"  # sauce.json: Sauce gerçekten koştu
+    sauce_isi = [j for j in detay["github"]["isler"] if j["ad"] == "sauce"]
+    assert sauce_isi and sauce_isi[0]["sauce_durum"] == "passed"
+    assert sauce_isi[0]["sauce_celiski"] is False
     # Artefakt Playwright HTML raporu taşımıyor: rapor bağlantısı GitHub'a düşer; JUnit ve kök
     # core'un yerel kopyasından (bkz. test_github_artifacts.py).
     assert detay["rapor_url"] == f"https://github.com/{REPO}/actions/runs/101#artifacts"
@@ -507,3 +510,18 @@ def test_pr_yorumu_dil_ve_check_basligi_tasir() -> None:
     android = govde({"platform": "android"}, [{"ad": "mobil-android", "sonuc": "success"}])
     assert "**android · Java (Appium + TestNG) · check `mobil-android`**" in android
     assert "- mobil-android: success" in android
+
+
+def test_sauce_isi_yesil_ozet_hata_celiski_olarak_isaretlenir() -> None:
+    """Canlı: başlık "Sauce koşmadı: saucectl 1 koduyla çıktı" iken CI adımında sauce "geçti"."""
+    a = {
+        "sauce": {"durum": "error", "neden": "saucectl 1 koduyla çıktı"},
+        "github": {
+            "isler": [{"ad": "e2e", "sonuc": "success"}, {"ad": "sauce", "sonuc": "success"}]
+        },
+    }
+    gh = service._github_gorunumu(a)
+    assert gh is not None
+    assert gh["isler"][0] == {"ad": "e2e", "sonuc": "success"}
+    assert gh["isler"][1]["sauce_durum"] == "error" and gh["isler"][1]["sauce_celiski"] is True
+    assert service._github_gorunumu({"github": None}) is None

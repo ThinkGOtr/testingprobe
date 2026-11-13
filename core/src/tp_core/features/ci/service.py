@@ -2460,11 +2460,33 @@ def run_detail(session: Session, run_id: uuid.UUID, *, artefakt: bool) -> dict[s
         "raporlar": a.get("raporlar"),
         "checks": a.get("checks"),
         "sauce": a.get("sauce"),
-        "github": a.get("github"),
+        "github": _github_gorunumu(a),
         "artefakt_kok": f"/api/artifacts/runs/{run.id}/" if dizin else None,
         "ortam": {k: v for k, v in (run.ortam or {}).items() if k != "saglik"},
         "saglik": (run.ortam or {}).get("saglik"),
     }
+
+
+def _github_gorunumu(a: Mapping[str, Any]) -> dict[str, Any] | None:
+    """`artefaktlar.github`; `sauce` işine Sauce özeti eklenir. Canlı: başlık "Sauce koşmadı"
+    derken CI adımlarında sauce işi "geçti" görünüyordu — altyapı hatasında iş bilerek yeşil biter
+    (`_sauce_bilgisi`); asıl Sauce sonucu `sauce.json` özetidir. `sauce_durum` (passed | failed |
+    error | atlandi) ve `sauce_celiski` (iş yeşil, özet başarısız) aynı kaynaktan gelir."""
+    gh = a.get("github")
+    if not isinstance(gh, Mapping):
+        return None
+    sauce = a.get("sauce") if isinstance(a.get("sauce"), Mapping) else {}
+    durum = sauce.get("durum")
+    isler = []
+    for j in gh.get("isler") or []:
+        if isinstance(j, Mapping) and str(j.get("ad") or "").strip().lower() == "sauce" and durum:
+            j = {
+                **j,
+                "sauce_durum": durum,
+                "sauce_celiski": j.get("sonuc") == "success" and durum in ("failed", "error"),
+            }
+        isler.append(j)
+    return {**gh, "isler": isler}
 
 
 def artifact_dir(session: Session, run_id: uuid.UUID) -> Path | None:
