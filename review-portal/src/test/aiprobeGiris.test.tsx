@@ -280,3 +280,40 @@ describe("/rol-sec", () => {
     expect(screen.getByTestId("konum")).toHaveTextContent("/rol-sec");
   });
 });
+
+describe("üst çubuk rol seçici", () => {
+  const HESAPLAR = [
+    { id: "u-analist", kullanici_adi: "ayse-analyst", rol: "analyst", gorunen_ad: "Ayşe · Analist" },
+    { id: "h-po", kullanici_adi: "ayse-po", rol: "po", gorunen_ad: "Ayşe · PO" },
+  ];
+
+  it("rol-degistir 200 sonrası /auth/me 401 dönerse oturum yanıttaki rolle kurulur, seçici kaybolmaz", async () => {
+    let meSayisi = 0;
+    const f = sahteSunucu(
+      {
+        // İlk me: açık oturum; rol değişiminden sonrakiler 401 (yeni çerez henüz yazılmadı).
+        "GET /auth/me": () => (meSayisi++ === 0 ? { govde: AIPROBE_ME } : YETKISIZ),
+        "GET /auth/aiprobe/hesaplar": { govde: { hesaplar: HESAPLAR, aktif_id: "u-analist" } },
+        "POST /auth/aiprobe/rol-degistir": { govde: { id: "h-po", kullanici_adi: "ayse-po", rol: "po" } },
+      },
+      AIPROBE_KIPI,
+    );
+    uygulama("/gereksinimler");
+    await userEvent.click(await screen.findByRole("button", { name: "Etkin rol: Analist (rol değiştir)" }));
+    await userEvent.click(await screen.findByRole("menuitemradio", { name: /PO/ }));
+    await waitFor(() => expect(cagrildi(f, "POST", "/auth/aiprobe/rol-degistir")).toHaveLength(1));
+    expect(await screen.findByText("Rol değiştirildi: PO.")).toBeInTheDocument();
+    // me bir kez yeniden denendi; oturum yanıttaki rolle kuruldu, giriş ekranına düşülmedi.
+    expect(cagrildi(f, "GET", "/auth/me").length).toBeGreaterThanOrEqual(3);
+    expect(await screen.findByRole("button", { name: "Etkin rol: PO (rol değiştir)" })).toBeInTheDocument();
+    expect(screen.getByTestId("konum")).not.toHaveTextContent("/giris");
+  });
+
+  it("rolDegisimOturumu: kişi alanları önceki oturumdan, izinler asla", async () => {
+    const { rolDegisimOturumu } = await import("../components/RolSecici");
+    const onceki = { ...AIPROBE_ME, izinler: ["requirement.review"] } as never;
+    const y = rolDegisimOturumu({ id: "h-po", kullanici_adi: "ayse-po", rol: "po" }, onceki);
+    expect(y).toMatchObject({ id: "h-po", rol: "po", roles: ["analyst", "po"], product: "testing-probe" });
+    expect(y.izinler).toBeUndefined();
+  });
+});
