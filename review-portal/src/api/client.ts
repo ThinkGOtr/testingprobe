@@ -1,6 +1,7 @@
 // MIMARI-SOZLESME §5'teki her uç için türlü istemci.
 import type { AcikSorularYaniti } from "./acikSoruTipleri";
 import { ApiError, istek } from "./http";
+import { oturumDegisinceTemizle } from "../lib/oturumTemizligi";
 import {
   bulguUyarla,
   caseKapsamOzetiUyarla,
@@ -523,11 +524,16 @@ export const api = {
   // Sunum
   /** jira-sim'de story durumunu değiştirir (yalnız demo/sim; gerçek Jira'da 409). */
   demoJiraDurumu: (jira_key: string, durum: string) =>
-    istek<{ mesaj?: string; jira_key?: string; durum?: string; degisti?: boolean } | undefined>("POST", "/demo/jira-status", { govde: { jira_key, durum } }),
-  demoKir: () => istek<IsYaniti>("POST", "/demo/break-locator"),
-  demoSifirla: () => istek<IsYaniti>("POST", "/demo/reset"),
-  /** Forge main / çalışan demo uygulaması eşleşmesi (salt okuma). */
-  demoDurumu: async (): Promise<DemoDurumu> => demoDurumuUyarla(await istek<unknown>("GET", "/demo/status")),
+    demoOnbellegiDegisti(istek<{ mesaj?: string; jira_key?: string; durum?: string; degisti?: boolean } | undefined>("POST", "/demo/jira-status", { govde: { jira_key, durum } })),
+  demoKir: () => demoOnbellegiDegisti(istek<IsYaniti>("POST", "/demo/break-locator")),
+  demoSifirla: () => demoOnbellegiDegisti(istek<IsYaniti>("POST", "/demo/reset")),
+  /**
+   * Forge main / çalışan demo uygulaması eşleşmesi (salt okuma). Uç yavaştır (forge + uygulama
+   * yoklaması, 3–8 sn) ve kabuk, akış kanıtları, sayfalar aynı anda ister: yanıt
+   * `DEMO_DURUMU_TTL_MS` boyunca paylaşılır (eş zamanlı istekler tek isteğe iner; sayfa yenilense de
+   * oturum deposundan okunur). `taze`: önbelleği atlar (Demo kontrolleri, demo olayından sonra).
+   */
+  demoDurumu: (taze = false): Promise<DemoDurumu> => demoDurumuOku(taze),
 
   // ---- 012 Ş7: karar tabloları, ilişkiler, beklenen sonuç kontrolü (specs/012 ANALIZ §6)
   /** Tablolar + ilişkiler + son taslak işi. `tumu`: yerini yenisi alanlar da gelir. */
@@ -582,6 +588,67 @@ export type Api = typeof api;
 
 // ---------------------------------------------------------------- 012/Ş8: ekilmiş hata koşusu (ANALIZ §4.6)
 // Ayrı nesne (`api`'ye dokunmadan): Ş7 ile aynı dosyaya ekleme yapılırken çakışmasın.
+// ---- /demo/status önbelleği (görev: her sayfada 3–8 sn'lik çağrı)
+/** `/demo/status` yanıtının paylaşıldığı süre. */
+export const DEMO_DURUMU_TTL_MS = 60_000;
+const DEMO_DURUMU_ANAHTARI = "tp.demoDurumu";
+let demoDurumuKaydi: { zaman: number; soz: Promise<DemoDurumu> } | null = null;
+
+function demoDurumuDeposu(): { zaman: number; veri: unknown } | null {
+  try {
+    const ham = sessionStorage.getItem(DEMO_DURUMU_ANAHTARI);
+    if (!ham) return null;
+    const k = JSON.parse(ham) as { zaman?: unknown; veri?: unknown };
+    return typeof k.zaman === "number" ? { zaman: k.zaman, veri: k.veri } : null;
+  } catch {
+    return null;
+  }
+}
+
+function demoDurumuOku(taze: boolean): Promise<DemoDurumu> {
+  const simdi = Date.now();
+  if (!taze) {
+    if (demoDurumuKaydi && simdi - demoDurumuKaydi.zaman < DEMO_DURUMU_TTL_MS) return demoDurumuKaydi.soz;
+    const d = demoDurumuDeposu();
+    if (d && simdi - d.zaman >= 0 && simdi - d.zaman < DEMO_DURUMU_TTL_MS) {
+      const soz = Promise.resolve(demoDurumuUyarla(d.veri));
+      demoDurumuKaydi = { zaman: d.zaman, soz };
+      return soz;
+    }
+  }
+  const soz = istek<unknown>("GET", "/demo/status").then((ham) => {
+    try {
+      sessionStorage.setItem(DEMO_DURUMU_ANAHTARI, JSON.stringify({ zaman: simdi, veri: ham }));
+    } catch {
+      /* depo yoksa yalnız bellekte */
+    }
+    return demoDurumuUyarla(ham);
+  });
+  const kayit = { zaman: simdi, soz };
+  demoDurumuKaydi = kayit;
+  // Hata önbellekte tutulmaz: sonraki çağrı yeniden dener.
+  soz.catch(() => {
+    if (demoDurumuKaydi === kayit) demoDurumuKaydi = null;
+  });
+  return soz;
+}
+
+/** `/demo/status` önbelleğini siler (oturum değişimi, demo yazımı, testler). */
+export function demoDurumuOnbeleginiTemizle(): void {
+  demoDurumuKaydi = null;
+  try {
+    sessionStorage.removeItem(DEMO_DURUMU_ANAHTARI);
+  } catch {
+    /* yoksay */
+  }
+}
+oturumDegisinceTemizle(demoDurumuOnbeleginiTemizle);
+
+function demoOnbellegiDegisti<T>(p: Promise<T>): Promise<T> {
+  demoDurumuOnbeleginiTemizle();
+  return p.finally(demoDurumuOnbeleginiTemizle);
+}
+
 import { hataKataloguUyarla, hataKosusuDetayUyarla, hataKosusuKimligi, hataKosusuUyarla } from "./uyumKule";
 import type { HataKatalogOgesi, HataKosusu, HataKosusuDetay, HataKosusuGirdisi } from "./types";
 

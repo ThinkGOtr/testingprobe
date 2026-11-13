@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach } from "vitest";
+import { demoDurumuOnbeleginiTemizle } from "../api/client";
 import { mockKayitlariniSifirla, yapilandir } from "../api/http";
 import { mockSifirla } from "../api/mock/handlers";
 import { asistanIceriginiYukle } from "../components/asistan/AsistanPaneli";
@@ -14,6 +15,7 @@ beforeAll(() => asistanIceriginiYukle());
 beforeEach(() => {
   mockSifirla();
   mockKayitlariniSifirla();
+  demoDurumuOnbeleginiTemizle();
   // Uç keşfi (openapi.json) yalnızca onu sınayan testlerde açılır; diğerlerinde fetch sahtesi
   // ilk çağrıyı keşif isteğine harcamasın.
   yapilandir({ mockZorunlu: true, mockOtomatik: true, yetenekKesfi: false });

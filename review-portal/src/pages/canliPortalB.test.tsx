@@ -220,3 +220,20 @@ describe("yetkisi olmayan uç çağrılmaz (403 / sahte authz.denied yok)", () =
     expect(c.some((x) => x.path === "/scripts")).toBe(false);
   });
 });
+
+describe("/demo/status önbelleği", () => {
+  it("eş zamanlı ve 60 sn içindeki çağrılar tek isteğe iner; taze ve demo yazımı yeniden okur", async () => {
+    const { api } = await import("../api/client");
+    const c = izle();
+    await oturumAc("sunucu");
+    const sayi = () => c.filter((x) => x.path === "/demo/status").length;
+    await Promise.all([api.demoDurumu(), api.demoDurumu(), api.demoDurumu()]);
+    await api.demoDurumu();
+    expect(sayi()).toBe(1);
+    await api.demoDurumu(true);
+    expect(sayi()).toBe(2);
+    await api.demoSifirla().catch(() => undefined);
+    await api.demoDurumu();
+    expect(sayi()).toBe(3);
+  });
+});

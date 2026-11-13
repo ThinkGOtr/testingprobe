@@ -964,7 +964,7 @@ function useDemoDurumu(): DemoDurumu | null {
   const [d, setD] = useState<DemoDurumu | null>(null);
   const yukle = useCallback(async () => {
     try {
-      setD(await api.demoDurumu());
+      setD(await api.demoDurumu(true));
     } catch {
       /* durum ucu yoksa kartlar durumsuz çalışır */
     }
