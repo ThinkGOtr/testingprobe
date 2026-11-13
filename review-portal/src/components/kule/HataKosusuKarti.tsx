@@ -1,16 +1,16 @@
 // 012/Ş8 (ANALIZ §4.6, §7): Kontrol Kulesi "Ekilmiş hata koşusu" kartı.
 // Demo uygulama her seferinde tek bir hatayla bilerek bozulur, onaylı test paketi koşar; en az bir test
-// kırmızıya dönerse hata "yakalandı", hepsi yeşil kalırsa "kaçtı". Kart: başlatma formu (engineer,
-// presenter), süren koşunun ilerlemesi, hata × platform sonuç tablosu, kaçan hatalar ve son koşular.
+// kırmızıya dönerse hata "yakalandı", hepsi yeşil kalırsa "kaçtı". Kart: başlatma formu (`fault_run.manage`:
+// engineer, admin), süren koşunun ilerlemesi, hata × platform sonuç tablosu, kaçan hatalar ve son koşular.
 // Renk tek başına anlam taşımaz: sonuçlar ✓ ✗ ⚠ işaretli metindir; `gecersiz` adımın nedeni görünür yazılır.
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import { Link } from "react-router-dom";
 import { api, HATA_KOSUSU_SURUYOR, hataKosusuApi } from "../../api/client";
 import { useOlay } from "../../api/events";
 import { ApiError, hataMesaji } from "../../api/http";
-import type { HataKatalogOgesi, HataKosusu, HataKosusuAdimi, HataKosusuDetay, HataKosusuKapsami, HataTuru, KiranTest, MetamorfikIliski, Rol, TestCase } from "../../api/types";
+import type { HataKatalogOgesi, HataKosusu, HataKosusuAdimi, HataKosusuDetay, HataKosusuKapsami, HataTuru, KiranTest, MetamorfikIliski, TestCase } from "../../api/types";
 import { hataKosusuSuruyorMu, kaynakBilgisiVar, kaynakOrani, yakalamaOrani } from "../../api/uyumKule";
-import { useOturum } from "../../auth";
+import { useIzin } from "../../auth";
 import { useGeciktirilmis, useVeri } from "../../hooks";
 import { ekilmisHataAdi, HATA_ADIM_SONUCU, HATA_KOSUSU_DURUMU, HATA_TURU } from "../../lib/etiketler";
 import { sure, tarih, yuzde } from "../../lib/format";
@@ -21,7 +21,8 @@ import { BosDurum, Cip, HataKutusu, Ilerleme, IslemDugmesi, Kart, Olculmedi, Uya
 import "./kule-hata.css";
 
 /** V4: koşuyu başlatabilen ve iptal edebilen roller. */
-export const HATA_KOSUSU_ROLLERI: Rol[] = ["engineer", "presenter"];
+/** Başlatma/iptal izni (core `fault_run.manage`: engineer, admin — eski presenter). */
+export const HATA_KOSUSU_IZNI = "fault_run.manage" as const;
 const TURLER: HataTuru[] = ["kod", "veri"];
 const SURUYOR_MESAJI = "Süren bir ekilmiş hata koşusu var. Bitmesini bekleyin ya da koşuyu iptal edin.";
 /** ANALIZ §10: uygulama platformlarında koşu hata başına 3–5 dakika sürer. */
@@ -66,8 +67,7 @@ function oranMetni(o: { oran: number | null; yakalanan: number; kacan: number })
 }
 
 export function HataKosusuKarti({ olcuDegisti, olculenKosuId = null }: { olcuDegisti?: () => void; olculenKosuId?: string | null }) {
-  const { kullanici } = useOturum();
-  const yetkili = !!kullanici && HATA_KOSUSU_ROLLERI.includes(kullanici.rol);
+  const yetkili = useIzin(HATA_KOSUSU_IZNI);
   const katalog = useVeri(() => hataKosusuApi.katalog(), []);
   const liste = useVeri(() => hataKosusuApi.liste(5), []);
   const [secili, setSecili] = useState<string | null>(null);
@@ -319,7 +319,7 @@ export function HataKosusuKarti({ olcuDegisti, olculenKosuId = null }: { olcuDeg
               Bu seçim yaklaşık {dkAraligi(tahmin.dk)} dakika sürer ({tahmin.toplam} koşu). Bu sürede başka ekilmiş hata koşusu başlatılamaz. Başlatılsın mı?
             </Uyari>
             <div className="satir-ogeler">
-              <IslemDugmesi roller={HATA_KOSUSU_ROLLERI} calisiyor={calisiyor} onClick={() => void baslat(true)}>
+              <IslemDugmesi izin={HATA_KOSUSU_IZNI} calisiyor={calisiyor} onClick={() => void baslat(true)}>
                 Evet, başlat
               </IslemDugmesi>
               <button
@@ -337,7 +337,7 @@ export function HataKosusuKarti({ olcuDegisti, olculenKosuId = null }: { olcuDeg
         ) : (
           <div className="satir-ogeler" ref={baslatRef}>
             <IslemDugmesi
-              roller={HATA_KOSUSU_ROLLERI}
+              izin={HATA_KOSUSU_IZNI}
               calisiyor={calisiyor && !suren}
               disabled={!!baslatmaNedeni}
               title={baslatmaNedeni}
@@ -461,7 +461,7 @@ function Ilerlemesi({
         </div>
         <div className="satir-ogeler">
           <IslemDugmesi
-            roller={HATA_KOSUSU_ROLLERI}
+            izin={HATA_KOSUSU_IZNI}
             tur="ikincil"
             kucuk
             calisiyor={calisiyor}
@@ -566,7 +566,7 @@ export function kuralEtiketi(oge: HataKatalogOgesi | undefined): string {
   return oge.yakalayan_kural ?? "Kural bilinmiyor";
 }
 
-/** Kaçan hata için analiste iletilecek case isteği (düz metin; panoya kopyalanır). */
+/** Kaçan hata için Testçiye iletilecek case isteği (düz metin; panoya kopyalanır). */
 export function caseIstegiMetni(kod: string, oge: HataKatalogOgesi | undefined, platformlar: readonly Platform[]): string {
   const ad = ekilmisHataAdi(kod, oge?.ad);
   const parcalar = [
@@ -645,7 +645,6 @@ export function turetmeOnerisi(
 
 function KacanHata({ kod, oge, platformlar }: { kod: string; oge: HataKatalogOgesi | undefined; platformlar: Platform[] }) {
   const bildir = useBildirim();
-  const { kullanici } = useOturum();
   const istek = caseIstegiMetni(kod, oge, platformlar);
   const a = oge?.ayirt_edici ?? null;
   const req = oge?.requirement_id ?? null;
@@ -662,7 +661,8 @@ function KacanHata({ kod, oge, platformlar }: { kod: string; oge: HataKatalogOge
         oneri ? `?${new URLSearchParams({ iliski: oneri.iliski.id, kaynak: oneri.kaynak.id, girdi: oneri.girdi }).toString()}` : ""
       }#ek-case-turet`
     : null;
-  const analist = kullanici?.rol === "analyst";
+  // 012 rol modeli: ek case türetmek case üretimidir (`case.generate`, Testçi).
+  const turetebilir = useIzin("case.generate");
   async function kopyala(metin = istek, bildiri = "Case isteği panoya kopyalandı.") {
     try {
       await navigator.clipboard.writeText(metin);
@@ -710,20 +710,20 @@ function KacanHata({ kod, oge, platformlar }: { kod: string; oge: HataKatalogOge
           </p>
         )}
         <div className="satir-ogeler">
-          {req && a && turetYolu && analist && (
+          {req && a && turetYolu && turetebilir && (
             <Link className="dugme dugme-ikincil dugme-kucuk" to={turetYolu} data-testid={`hk-turet-${kod}`}>
               Bu girdiyle ek case türet
             </Link>
           )}
-          {/* u2 N7: ek case türetmek analistin işi; diğer rollerde düğme analiste iletilecek metni kopyalar. */}
-          {req && a && turetYolu && !analist && (
+          {/* u2 N7: ek case türetmek Testçinin işi; diğer rollerde düğme Testçiye iletilecek metni kopyalar. */}
+          {req && a && turetYolu && !turetebilir && (
             <button
               type="button"
               className="dugme dugme-ikincil dugme-kucuk"
               data-testid={`hk-analiste-ilet-${kod}`}
-              onClick={() => void kopyala(`${istek}${oneri ? ` Önerilen türetme: ${oneri.girdi} (ilişki İ${oneri.iliski.sira_no}, kaynak C${oneri.kaynak.sira_no}).` : ""} Bağlantı: ${window.location.origin}${turetYolu}`, "Analiste iletilecek istek panoya kopyalandı.")}
+              onClick={() => void kopyala(`${istek}${oneri ? ` Önerilen türetme: ${oneri.girdi} (ilişki İ${oneri.iliski.sira_no}, kaynak C${oneri.kaynak.sira_no}).` : ""} Bağlantı: ${window.location.origin}${turetYolu}`, "Testçiye iletilecek istek panoya kopyalandı.")}
             >
-              Analiste ilet (kopyala)
+              Testçiye ilet (kopyala)
             </button>
           )}
           <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={() => void kopyala()}>

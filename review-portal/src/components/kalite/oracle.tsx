@@ -18,6 +18,7 @@ import type {
 } from "../../api/types";
 import { beklentiDogruluguUyarla } from "../../api/uyumKalite";
 import { useKisiAdi } from "../../auth";
+import type { Izin } from "../../lib/yetki";
 import { useGeciktirilmis, useVeri } from "../../hooks";
 import { kismenNedeniMetni, ORACLE_DURUMU, ORACLE_NEDENI, ORACLE_NEDENI_ACIKLAMA, type OracleGorunumu } from "../../lib/etiketler";
 import { alintiMetni, mantiksalMi, mantiksalOku } from "../../lib/ifadeAciklama";
@@ -433,7 +434,7 @@ export function KontrolYenidenIste({ tc }: { tc: TestCase }) {
   }
   return (
     <span className="satir-ogeler" data-testid="oracle-yeniden-iste">
-      <IslemDugmesi roller={["analyst"]} kucuk tur="ikincil" calisiyor={calisiyor} onClick={() => void iste()}>
+      <IslemDugmesi izin="case.oracle_check" kucuk tur="ikincil" calisiyor={calisiyor} onClick={() => void iste()}>
         Kontrolü yeniden iste
       </IslemDugmesi>
       <span role="status" className="soluk kucuk">
@@ -509,12 +510,15 @@ export function IstisnaFormu({
   calisiyor,
   dugmeMetni = "İstisnayla onayla",
   tur = "uyumsuz",
+  izin = "case.decide",
 }: {
   gonder: (gerekce: string) => void;
   vazgec: () => void;
   calisiyor: boolean;
   dugmeMetni?: string;
   tur?: OracleIstisnaTuru;
+  /** Kararı veren rolün izni: Testçi kabulü/düzeltmesi `case.decide`, Analist son onayı `case.approve`. */
+  izin?: Izin;
 }) {
   const [gerekce, setGerekce] = useState("");
   const [uyari, setUyari] = useState<string | null>(null);
@@ -556,7 +560,7 @@ export function IstisnaFormu({
       </div>
       {uyari && <AlanHatasi>{uyari}</AlanHatasi>}
       <div className="eylemler">
-        <IslemDugmesi roller={["analyst"]} type="submit" kucuk calisiyor={calisiyor}>
+        <IslemDugmesi izin={izin} type="submit" kucuk calisiyor={calisiyor}>
           {dugmeMetni}
         </IslemDugmesi>
         <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={vazgec}>
@@ -666,7 +670,7 @@ function TabloYanlisYolu({ tc }: { tc: TestCase }) {
           </div>
           {uyari && <AlanHatasi>{uyari}</AlanHatasi>}
           <div className="eylemler">
-            <IslemDugmesi roller={["analyst"]} type="submit" kucuk tur="tehlike" calisiyor={calisiyor}>
+            <IslemDugmesi izin="decision_table.edit" type="submit" kucuk tur="tehlike" calisiyor={calisiyor}>
               Tabloyu yeniden aç
             </IslemDugmesi>
             <button
@@ -683,7 +687,7 @@ function TabloYanlisYolu({ tc }: { tc: TestCase }) {
         </form>
       ) : tablo ? (
         <span ref={acan} className="satir-ogeler">
-          <IslemDugmesi roller={["analyst"]} kucuk tur="ikincil" onClick={() => setDurum("onay")}>
+          <IslemDugmesi izin="decision_table.edit" kucuk tur="ikincil" onClick={() => setDurum("onay")}>
             Tablo yanlış → tabloyu yeniden aç
           </IslemDugmesi>
           <Link className="kucuk" to={yolu}>
@@ -710,12 +714,15 @@ export function OracleKapisi({
   calisiyor,
   onayla,
   tc,
+  izin = "case.decide",
 }: {
   kapi: OracleKapisiDurumu;
   calisiyor: boolean;
   onayla: (gerekce: string, tur: OracleIstisnaTuru) => void;
   /** Verilirse uyuşmazlıkta "Tablo yanlış" yolu ve süren kontrolde "Kontrolü yeniden iste" sunulur. */
   tc?: TestCase;
+  /** 012 rol modeli: kapı Testçi kabulünde (`case.decide`) ve Analist son onayında (`case.approve`). */
+  izin?: Izin;
 }) {
   const [acik, setAcik] = useState(false);
   const dugme = useRef<HTMLSpanElement | null>(null);
@@ -751,6 +758,7 @@ export function OracleKapisi({
           calisiyor={calisiyor}
           tur={tur}
           dugmeMetni={metin}
+          izin={izin}
           gonder={(g) => onayla(g, tur)}
           vazgec={() => {
             setAcik(false);
@@ -760,7 +768,7 @@ export function OracleKapisi({
         />
       ) : null}
       <span ref={dugme} className="satir-ogeler" hidden={acik}>
-        <IslemDugmesi roller={["analyst"]} kucuk tur="ikincil" onClick={() => setAcik(true)}>
+        <IslemDugmesi izin={izin} kucuk tur="ikincil" onClick={() => setAcik(true)}>
           {metin}
         </IslemDugmesi>
         <span className="soluk kucuk">
@@ -805,7 +813,7 @@ export interface DuzeltmeOnKontrolu {
 }
 
 /**
- * "Düzeltip onayla" ön kontrolü (§7): case bir tabloyla kapsanıyorsa önerilen içerik için kontrol
+ * "Düzelterek kabul et" ön kontrolü (§7): case bir tabloyla kapsanıyorsa önerilen içerik için kontrol
  * istenir (`POST /cases/{id}/oracle-check`), o içerik hash'inin sonucu beklenir (`oracle.checked` olayı
  * + yoklama, zaman aşımlı), sonra karar gönderilir. Yüksek riskli uyuşmazlıkta ya da kontrol
  * edilemediğinde karar gönderilmez; gerekçe formu sunulur.

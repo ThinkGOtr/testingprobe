@@ -576,8 +576,9 @@ export function CaseKarti({
         )}
       </footer>
       {/* 012 (ANALIZ §13.2): karar tablosu kapısı Testçi kabulünde ve Analist son onayında aynıdır;
-          istisna formu kararı veren rolün kendi kararını (accept | approve) gerekçeyle gönderir. */}
-      {mod === "goster" && !kisitli && ((testciKarari && testci) || (analistKarari && onaylayici)) && (
+          istisna formu bu evrenin kararını (taslakta accept, ready'de approve) gerekçeyle gönderir. Kart
+          her role çizilir: yetkisiz düğmeler nedenini gösterir ("Tablo yanlış" Analistin işidir). */}
+      {mod === "goster" && !kisitli && (testciKarari || analistKarari) && (
         <OracleKapisi
           kapi={kapi}
           tc={tc}

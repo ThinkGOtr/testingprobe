@@ -141,7 +141,7 @@ export function IliskiKarti({
             taslak && !duzenle ? (
               <IslemDugmesi
                 id={duzenleId}
-                roller={["analyst"]}
+                izin="decision_table.edit"
                 kucuk
                 tur="ikincil"
                 disabled={kriterler === null}
@@ -381,7 +381,7 @@ export function IliskiDuzenleyici({
         </p>
       )}
       <div className="eylemler">
-        <IslemDugmesi roller={["analyst"]} type="submit" calisiyor={islem.calisiyor}>
+        <IslemDugmesi izin="decision_table.edit" type="submit" calisiyor={islem.calisiyor}>
           {iliski ? "Kaydet" : "İlişkiyi oluştur"}
         </IslemDugmesi>
         <button type="button" className="dugme dugme-hayalet" onClick={vazgec}>

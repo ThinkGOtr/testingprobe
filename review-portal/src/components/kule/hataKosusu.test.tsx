@@ -189,8 +189,8 @@ describe("Ekilmiş hata koşusu kartı: form ve rol kapısı", () => {
       expect(k.querySelector(".dugme-neden")).toBeNull();
     } else {
       expect(dugme).toBeDisabled();
-      expect(dugme).toHaveAccessibleDescription("Bu işlem için gereken rol: Mühendis / Sunucu");
-      expect(within(k).getByText("Bu işlem için gereken rol: Mühendis / Sunucu")).toHaveClass("dugme-neden");
+      expect(dugme).toHaveAccessibleDescription("Bu işlem için gereken rol: Sistem Yöneticisi / Automation Engineer");
+      expect(within(k).getByText("Bu işlem için gereken rol: Sistem Yöneticisi / Automation Engineer")).toHaveClass("dugme-neden");
       for (const c of within(k).getAllByRole("checkbox")) expect(c).toBeDisabled();
     }
     expect(await within(k).findByTestId("hk-sonuc")).toBeInTheDocument();
@@ -294,7 +294,7 @@ describe("Ekilmiş hata koşusu kartı: sonuç tablosu, kaçan hatalar, geçmiş
   });
 
   it("kaçan hata uygulanabilir: kural bağlantısı (T1 · AC2), ayırt edici girdi, 'Bu girdiyle ek case türet' ve kopyalanabilir case isteği", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci"); // 012 rol modeli: türetme `case.generate` (Testçi)
     const u = userEvent.setup();
     const yaz = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", { value: { writeText: yaz }, configurable: true });
@@ -334,7 +334,7 @@ describe("Ekilmiş hata koşusu kartı: sonuç tablosu, kaçan hatalar, geçmiş
     // §13.2: AI ve el yazısı ayrı.
     expect(yeni.getByRole("cell", { name: "AI %50 (1/2) · el yazısı %50 (1/2)" })).toBeInTheDocument();
     expect(yeni.getByText("Web")).toBeInTheDocument();
-    expect(yeni.getByText("Gokhan Sipahi · Mühendis")).toBeInTheDocument();
+    expect(yeni.getByText("Gokhan Sipahi · Automation Engineer")).toBeInTheDocument();
     expect(yeni.getByText("gösteriliyor")).toBeInTheDocument();
     expect(eski.getByText(/el yazısı %88 \(15\/17\)/)).toBeInTheDocument();
     expect(eski.getByText("Web, Android")).toBeInTheDocument();
@@ -495,7 +495,7 @@ describe("Ekilmiş hata koşusu kartı: başlat → ilerleme → bitiş, 409, ip
     sar(<HataKosusuKarti />);
     const ilerleme = within(await screen.findByTestId("hk-ilerleme"));
     expect(ilerleme.getByRole("button", { name: "İptal et" })).toBeDisabled();
-    expect(ilerleme.getByRole("button", { name: "İptal et" })).toHaveAccessibleDescription("Bu işlem için gereken rol: Mühendis / Sunucu");
+    expect(ilerleme.getByRole("button", { name: "İptal et" })).toHaveAccessibleDescription("Bu işlem için gereken rol: Sistem Yöneticisi / Automation Engineer");
   });
 });
 

@@ -126,12 +126,12 @@ export function KararTablolari() {
       <Link className="dugme dugme-ikincil" to={`/gereksinimler/${encodeURIComponent(id)}/caseler`}>
         Case review
       </Link>
-      <IslemDugmesi roller={["analyst"]} tur="ikincil" calisiyor={ekleIslem.calisiyor} disabled={!!taslakNedeni} title={taslakNedeni} onClick={() => void bosTabloEkle()}>
+      <IslemDugmesi izin="decision_table.edit" tur="ikincil" calisiyor={ekleIslem.calisiyor} disabled={!!taslakNedeni} title={taslakNedeni} onClick={() => void bosTabloEkle()}>
         Boş tablo ekle
       </IslemDugmesi>
       <IslemDugmesi
         id="kt-ai-taslak"
-        roller={["analyst"]}
+        izin="decision_table.edit"
         calisiyor={uretIslem.calisiyor || uretiliyor === "suruyor"}
         disabled={!!taslakNedeni}
         title={taslakNedeni}
@@ -179,7 +179,7 @@ export function KararTablolari() {
             kullanılmaz hâle gelir. Yeni taslaklar yeniden düzenlenip PO onayından geçmelidir.
           </Uyari>
           <div className="eylemler">
-            <IslemDugmesi roller={["analyst"]} kucuk calisiyor={uretIslem.calisiyor} onClick={() => void taslakUret()}>
+            <IslemDugmesi izin="decision_table.edit" kucuk calisiyor={uretIslem.calisiyor} onClick={() => void taslakUret()}>
               Evet, yeni taslak üret
             </IslemDugmesi>
             <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={onayiKapat}>
@@ -276,7 +276,7 @@ export function KararTablolari() {
             </p>
             <div className="eylemler kt-iliski-eylem">
               {!yeniIliski && (
-                <IslemDugmesi id="kt-yeni-iliski" roller={["analyst"]} tur="ikincil" kucuk disabled={!!taslakNedeni} title={taslakNedeni} onClick={() => setYeniIliski(true)}>
+                <IslemDugmesi id="kt-yeni-iliski" izin="decision_table.edit" tur="ikincil" kucuk disabled={!!taslakNedeni} title={taslakNedeni} onClick={() => setYeniIliski(true)}>
                   Yeni ilişki
                 </IslemDugmesi>
               )}

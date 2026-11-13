@@ -310,14 +310,14 @@ export function DurumEylemleri<T extends Kayit>({
       )}
       <div className="eylemler">
         {kayit.durum === "draft" && (
-          <IslemDugmesi roller={["analyst"]} {...ortak} onClick={() => void yap("submit")}>
+          <IslemDugmesi izin="decision_table.edit" {...ortak} onClick={() => void yap("submit")}>
             PO onayına gönder
           </IslemDugmesi>
         )}
         {kayit.durum === "pending_po" && (
           <>
             <IslemDugmesi
-              roller={["po"]}
+              izin="decision_table.approve"
               {...ortak}
               disabled={!!engel || icerikDegisti}
               title={engel ?? (icerikDegisti ? "İçerik siz bakarken değişti; önce güncel içeriği gözden geçirin." : undefined)}
@@ -326,17 +326,17 @@ export function DurumEylemleri<T extends Kayit>({
               PO olarak onayla
             </IslemDugmesi>
             <span ref={istekDugmesi} className="satir-ogeler">
-              <IslemDugmesi roller={["po"]} {...ortak} tur="ikincil" aria-expanded={istekAcik} onClick={() => setIstekAcik((a) => !a)}>
+              <IslemDugmesi izin="decision_table.approve" {...ortak} tur="ikincil" aria-expanded={istekAcik} onClick={() => setIstekAcik((a) => !a)}>
                 Değişiklik iste
               </IslemDugmesi>
             </span>
-            <IslemDugmesi roller={["analyst"]} {...ortak} tur="ikincil" onClick={() => void yap("withdraw")}>
+            <IslemDugmesi izin="decision_table.edit" {...ortak} tur="ikincil" onClick={() => void yap("withdraw")}>
               Geri çek
             </IslemDugmesi>
           </>
         )}
         {kayit.durum === "approved" && (
-          <IslemDugmesi roller={["analyst"]} {...ortak} tur="ikincil" onClick={() => void yap("reopen")}>
+          <IslemDugmesi izin="decision_table.edit" {...ortak} tur="ikincil" onClick={() => void yap("reopen")}>
             Yeniden aç
           </IslemDugmesi>
         )}
@@ -351,7 +351,7 @@ export function DurumEylemleri<T extends Kayit>({
           </div>
           {uyari && <AlanHatasi>{uyari}</AlanHatasi>}
           <div className="eylemler">
-            <IslemDugmesi roller={["po"]} type="submit" kucuk tur="ikincil" calisiyor={islem.calisiyor}>
+            <IslemDugmesi izin="decision_table.approve" type="submit" kucuk tur="ikincil" calisiyor={islem.calisiyor}>
               Değişiklik isteğini gönder
             </IslemDugmesi>
             <button

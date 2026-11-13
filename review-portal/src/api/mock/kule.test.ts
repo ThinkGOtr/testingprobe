@@ -199,8 +199,12 @@ describe("Kule onayli_uyumsuz (§13.2)", () => {
     const c = (await api.caseler("req-tpd-1")).find((x) => x.id === "case-1-7")!;
     expect(c.oracle?.sonuc).toBe("uyumsuz");
     expect((await api.kontrolKulesi()).onayli_uyumsuz).toEqual([]);
-    // Gerekçeli istisnayla onay: aynı tablo kümesiyle geçerli istisna → "onaylı uyumsuz" sayılmaz.
-    await api.caseKarari(c.id, { icerik_hash: c.icerik_hash, karar: "approve", oracle_istisna_gerekce: "PO ile görüşüldü: sınır dahil kabul edildi.", oracle_istisna_turu: "uyumsuz" });
+    // Gerekçeli istisnayla kabul (Testçi) + son onay (Analist; istisna yeniden kullanılır): aynı tablo
+    // kümesiyle geçerli istisna → "onaylı uyumsuz" sayılmaz.
+    await oturumAc("testci");
+    const kabul = await api.caseKarari(c.id, { icerik_hash: c.icerik_hash, karar: "accept", oracle_istisna_gerekce: "PO ile görüşüldü: sınır dahil kabul edildi.", oracle_istisna_turu: "uyumsuz" });
+    await oturumAc("analist");
+    expect((await api.caseKarari(c.id, { icerik_hash: kabul.icerik_hash, karar: "approve" })).durum).toBe("approved");
     expect((await api.kontrolKulesi()).onayli_uyumsuz).toEqual([]);
     // Tablo sonradan değişir (yeniden açılıp yeni içerikle onaylanır): istisna geçersizleşir, case listeye girer.
     const t2 = (await api.kararTablolari("req-tpd-1")).tablolar.find((x) => /Minimum/.test(x.icerik.ad) && x.durum !== "superseded")!;

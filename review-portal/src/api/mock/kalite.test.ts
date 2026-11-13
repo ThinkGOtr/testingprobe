@@ -260,6 +260,9 @@ describe("ilişkiler ve ek case türetme (§4.5)", () => {
     const y = await api.kararTablolari(REQ);
     const onayli = y.iliskiler.find((r) => r.durum === "approved")!;
     const taslak = await elleIliski();
+    // 012 rol modeli: ilişkiden ek case türetmek case üretimidir (Testçi); Analist türetemez.
+    expect((await hata(api.ekCaseTuret(REQ, { iliski_id: onayli.id }))).status).toBe(403);
+    await oturumAc("testci");
     expect(await hata(api.ekCaseTuret(REQ, { iliski_id: taslak.id }))).toMatchObject({ status: 422, kod: "iliski_gecersiz" });
     const s = await api.ekCaseTuret(REQ, { iliski_id: onayli.id, case_ids: ["case-1-2", "case-1-3", "case-1-1"] });
     expect(s.turetilen.map((x) => x.kaynak_case_id)).toEqual(["case-1-2"]);
@@ -290,7 +293,7 @@ describe("ilişkiler ve ek case türetme (§4.5)", () => {
   });
 
   it("aynı alıntı bir alanda iki olguya aitse türetilmez (belirsiz alıntı)", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const c = mockVerisi().caseler.find((x) => x.id === "case-1-2")!;
     c.icerik = { ...c.icerik, title: "7 adet alımda 7 adet bedava" };
     const onayli = (await api.kararTablolari(REQ)).iliskiler.find((r) => r.durum === "approved")!;
@@ -380,9 +383,10 @@ describe("beklenen sonuç kontrolü ve onay kapısı (§4.3)", () => {
 
   it("tablo onaylanınca case'ler yeniden kontrol edilir; iş sürerken yüksek riskli onay 409 oracle_bekleniyor", async () => {
     await t2Onayla({ bekle: false });
+    await oturumAc("testci"); // 012 rol modeli: kabul kapısı Testçide
     const c7 = mockVerisi().caseler.find((c) => c.id === "case-1-7")!;
     expect((await caseBul("case-1-7")).oracle).toMatchObject({ sonuc: null, kontrol_suruyor: true });
-    expect(await hata(api.caseKarari("case-1-7", { icerik_hash: c7.icerik_hash, karar: "approve" }))).toMatchObject({ status: 409, kod: "oracle_bekleniyor" });
+    expect(await hata(api.caseKarari("case-1-7", { icerik_hash: c7.icerik_hash, karar: "accept" }))).toMatchObject({ status: 409, kod: "oracle_bekleniyor" });
     await isBitsin();
     expect((await caseBul("case-1-7")).oracle).toMatchObject({ sonuc: "uyumsuz", istisna: null });
     expect((await caseBul("case-1-4")).oracle?.sonuc).toBe("uyumlu");
@@ -399,8 +403,9 @@ describe("beklenen sonuç kontrolü ve onay kapısı (§4.3)", () => {
 
   it("yüksek risk + uyuşmazlık: 422 oracle_uyumsuz; kısa gerekçe reddedilir; geçerli istisnayla onay ve denetim kaydı", async () => {
     await minSiparisOnayla();
+    await oturumAc("testci"); // 012 rol modeli: kabul kapısı Testçide
     const c = await caseBul("case-1-7");
-    const g = { icerik_hash: c.icerik_hash, karar: "approve" as const };
+    const g = { icerik_hash: c.icerik_hash, karar: "accept" as const };
     expect(await hata(api.caseKarari(c.id, g))).toMatchObject({ status: 422, kod: "oracle_uyumsuz" });
     expect(await hata(api.caseKarari(c.id, { ...g, oracle_istisna_gerekce: "kısa", oracle_istisna_turu: "uyumsuz" }))).toMatchObject({ status: 422, kod: "oracle_uyumsuz" });
     expect(mockVerisi().caseler.find((x) => x.id === c.id)!.durum).toBe("draft");
@@ -411,19 +416,26 @@ describe("beklenen sonuç kontrolü ve onay kapısı (§4.3)", () => {
       kod: "gecersiz_karar",
     });
     const onayli = await api.caseKarari(c.id, { ...g, oracle_istisna_gerekce: "PO ile görüşüldü: sınır dahil kabul edildi.", oracle_istisna_turu: "uyumsuz" });
-    expect(onayli).toMatchObject({ durum: "approved", oracle: { sonuc: "uyumsuz", istisna: { veren: "analist", gerekce: "PO ile görüşüldü: sınır dahil kabul edildi." } } });
+    expect(onayli).toMatchObject({ durum: "ready", oracle: { sonuc: "uyumsuz", istisna: { veren: "testci", gerekce: "PO ile görüşüldü: sınır dahil kabul edildi." } } });
     expect(mockVerisi().denetim.at(-1)).toMatchObject({ eylem: "oracle.exception", nesne: c.id });
     expect((await api.caseMetrikleri(REQ)).beklenti_dogrulugu?.istisna).toBe(1);
     expect(onayli.oracle?.istisna).toMatchObject({ tur: "uyumsuz", gecerli: true });
+    // 012 rol modeli: Analist son onayı kapıdan yeniden geçer; aynı tür + tablo kümesiyle verilmiş
+    // istisna yeniden gerekçe istemez (yeniden kullanım denetime yazılır).
+    await oturumAc("analist");
+    expect((await api.caseKarari(c.id, { icerik_hash: onayli.icerik_hash, karar: "approve" })).durum).toBe("approved");
+    expect(mockVerisi().denetim.at(-1)).toMatchObject({ eylem: "oracle.exception_reused", nesne: c.id });
+    await oturumAc("testci");
     // S1 (tur 2, çekirdekle tek kural): aynı içerik + tür + tablo kümesiyle geçerli saklı istisna kapıyı açar;
     // yeniden kullanım denetime yazılır, yeni istisna satırı açılmaz.
     const acik = await api.caseYenidenAc(onayli);
     expect(acik.oracle?.istisna).toMatchObject({ gecerli: true, tur: "uyumsuz" });
-    expect((await api.caseKarari(c.id, { icerik_hash: acik.icerik_hash, karar: "approve" })).durum).toBe("approved");
+    expect((await api.caseKarari(c.id, { icerik_hash: acik.icerik_hash, karar: "accept" })).durum).toBe("ready");
     expect(mockVerisi().denetim.at(-1)).toMatchObject({ eylem: "oracle.exception_reused", nesne: c.id });
     expect(kaliteVerisi(mockVerisi()).istisnalar?.filter((i) => i.test_case_id === c.id)).toHaveLength(1);
     // Tablo kümesi değişince (T2 yeniden açılıp başka içerikle onaylanınca) istisna geçersizleşir; gerekçe yeniden istenir.
     const acik2 = await api.caseYenidenAc(await caseBul(c.id));
+    await oturumAc("analist");
     const t2 = await tablo(/Minimum/);
     await api.kararTablosuGecis(t2.id, "reopen");
     await t2Duzelt({ ...MIN_SIPARIS_DOGRU, aciklama: "Düzeltilmiş: tam 750,00 TL'de uyarı yok." });
@@ -431,16 +443,16 @@ describe("beklenen sonuç kontrolü ve onay kapısı (§4.3)", () => {
     const t2c = await tablo(/Minimum/);
     await api.kararTablosuGecis(t2c.id, "approve", { icerik_hash: t2c.icerik_hash });
     await isBitsin();
-    await oturumAc("analist");
+    await oturumAc("testci");
     expect((await caseBul(c.id)).oracle?.istisna).toMatchObject({ gecerli: false });
-    expect(await hata(api.caseKarari(c.id, { icerik_hash: acik2.icerik_hash, karar: "approve" }))).toMatchObject({ status: 422, kod: "oracle_uyumsuz" });
+    expect(await hata(api.caseKarari(c.id, { icerik_hash: acik2.icerik_hash, karar: "accept" }))).toMatchObject({ status: 422, kod: "oracle_uyumsuz" });
     // §13.2 gerekçe: ≥ 20 karakter ve ≥ 10 harf (dolgu reddedilir).
     expect(
-      await hata(api.caseKarari(c.id, { icerik_hash: acik2.icerik_hash, karar: "approve", oracle_istisna_gerekce: "1234567890 1234567890 !!", oracle_istisna_turu: "uyumsuz" })),
+      await hata(api.caseKarari(c.id, { icerik_hash: acik2.icerik_hash, karar: "accept", oracle_istisna_gerekce: "1234567890 1234567890 !!", oracle_istisna_turu: "uyumsuz" })),
     ).toMatchObject({ status: 422 });
     expect(
-      (await api.caseKarari(c.id, { icerik_hash: acik2.icerik_hash, karar: "approve", oracle_istisna_gerekce: "İkinci onay: PO kararı değişmedi.", oracle_istisna_turu: "uyumsuz" })).durum,
-    ).toBe("approved");
+      (await api.caseKarari(c.id, { icerik_hash: acik2.icerik_hash, karar: "accept", oracle_istisna_gerekce: "İkinci onay: PO kararı değişmedi.", oracle_istisna_turu: "uyumsuz" })).durum,
+    ).toBe("ready");
     // İstisnalar append-only; sayaç case başına.
     expect(kaliteVerisi(mockVerisi()).istisnalar?.filter((i) => i.test_case_id === c.id)).toHaveLength(2);
     expect((await api.caseMetrikleri(REQ)).beklenti_dogrulugu?.istisna).toBe(1);
@@ -448,42 +460,46 @@ describe("beklenen sonuç kontrolü ve onay kapısı (§4.3)", () => {
 
   it("orta/düşük risk + uyuşmazlık: onaylanır, uyarı kaydı düşer; kontrol edilemeyen yüksek riskli case gerekçe ister (K10)", async () => {
     await minSiparisOnayla();
+    await oturumAc("testci"); // 012 rol modeli: kabul kapısı Testçide
     const c7 = mockVerisi().caseler.find((c) => c.id === "case-1-7")!;
     c7.icerik = { ...c7.icerik, risk: "medium" };
     c7.icerik_hash = (await api.caseOracleKontrol(c7.id, c7.icerik)).icerik_hash!;
     await isBitsin();
     const c = await caseBul("case-1-7");
     expect(c.oracle?.sonuc).toBe("uyumsuz");
-    expect((await api.caseKarari(c.id, { icerik_hash: c.icerik_hash, karar: "approve" })).durum).toBe("approved");
+    expect((await api.caseKarari(c.id, { icerik_hash: c.icerik_hash, karar: "accept" })).durum).toBe("ready");
     expect(mockVerisi().denetim.at(-1)).toMatchObject({ eylem: "oracle.warning" });
     const c9 = mockVerisi().caseler.find((x) => x.id === "case-1-9")!;
     // Kampanya bilgisi metinden çıkarılınca T2'nin ilk koşulu karar veremez → kontrol edilemedi.
+    c9.durum = "draft";
     c9.icerik = { ...c9.icerik, risk: "high", preconditions: ["Sepet boş"], expected_result: "Toplam 150,00 TL olsa da minimum sipariş uyarısı gösterilmez" };
     c9.icerik_hash = (await api.caseOracleKontrol(c9.id, c9.icerik)).icerik_hash!;
     await isBitsin();
     const y = await caseBul("case-1-9");
     expect(y.oracle?.sonuc).toBe("kontrol_edilemedi");
-    expect(await hata(api.caseKarari(y.id, { icerik_hash: y.icerik_hash, karar: "approve" }))).toMatchObject({ status: 422, kod: "oracle_kontrolsuz" });
-    const o = await api.caseKarari(y.id, { icerik_hash: y.icerik_hash, karar: "approve", oracle_istisna_gerekce: "Uyarının görünmediği elle doğrulandı.", oracle_istisna_turu: "kontrolsuz" });
-    expect(o).toMatchObject({ durum: "approved", oracle: { istisna: { tur: "kontrolsuz" } } });
+    expect(await hata(api.caseKarari(y.id, { icerik_hash: y.icerik_hash, karar: "accept" }))).toMatchObject({ status: 422, kod: "oracle_kontrolsuz" });
+    const o = await api.caseKarari(y.id, { icerik_hash: y.icerik_hash, karar: "accept", oracle_istisna_gerekce: "Uyarının görünmediği elle doğrulandı.", oracle_istisna_turu: "kontrolsuz" });
+    expect(o).toMatchObject({ durum: "ready", oracle: { istisna: { tur: "kontrolsuz" } } });
     expect(mockVerisi().denetim.at(-1)).toMatchObject({ eylem: "oracle.exception" });
     expect((await api.caseMetrikleri(REQ)).beklenti_dogrulugu).toMatchObject({ kontrolsuz_onay: 1, istisna: 0 });
   });
 
   it("uyumlu, kapsam dışı ve tablosuz yüksek riskli case'ler engelsiz onaylanır; ret kapıya takılmaz", async () => {
     await minSiparisOnayla();
+    await oturumAc("testci"); // 012 rol modeli: kabul kapısı Testçide
     const c7 = await caseBul("case-1-7");
     expect((await api.caseKarari(c7.id, { icerik_hash: c7.icerik_hash, karar: "reject", ret_nedeni: "duplicate" })).durum).toBe("rejected");
     const c5 = await caseBul("case-1-5");
     expect(c5.oracle?.sonuc).toBe("kapsam_disi");
-    expect((await api.caseKarari(c5.id, { icerik_hash: c5.icerik_hash, karar: "approve" })).durum).toBe("approved");
+    expect((await api.caseKarari(c5.id, { icerik_hash: c5.icerik_hash, karar: "accept" })).durum).toBe("ready");
     const c4 = await api.caseYenidenAc(await caseBul("case-1-4"));
     expect(c4.icerik.risk).toBe("high");
-    expect((await api.caseKarari(c4.id, { icerik_hash: c4.icerik_hash, karar: "approve" })).oracle?.sonuc).toBe("uyumlu");
+    expect((await api.caseKarari(c4.id, { icerik_hash: c4.icerik_hash, karar: "accept" })).oracle?.sonuc).toBe("uyumlu");
   });
 
   it("düzeltme: önerilen içerik kontrol edilmeden yüksek riskli onay 409; kontrol sonrası tabloya getirilen değer onaylanır", async () => {
     await minSiparisOnayla();
+    await oturumAc("testci"); // 012 rol modeli: kabul kapısı Testçide
     const c = await caseBul("case-1-7");
     // Demo adımı 3'ün düzeltmesi: AI'ın sınır hatası ana yol C6 metnine çevrilir ("uyarı görünmez").
     const duzeltilmis: TestCaseIcerik = JSON.parse(JSON.stringify(TPD1_GOLDEN_CASELER[5])) as TestCaseIcerik;
@@ -491,7 +507,7 @@ describe("beklenen sonuç kontrolü ve onay kapısı (§4.3)", () => {
     expect(await hata(api.caseKarari(c.id, g))).toMatchObject({ status: 409, kod: "oracle_bekleniyor" });
     await oturumAc("po");
     expect((await hata(api.caseOracleKontrol(c.id, duzeltilmis))).status).toBe(403);
-    await oturumAc("analist");
+    await oturumAc("testci");
     const is = await api.caseOracleKontrol(c.id, duzeltilmis);
     expect(is.icerik_hash).toMatch(/^sha256:/);
     expect(await api.caseOracle(c.id, is.icerik_hash!)).toMatchObject({ sonuc: null, kontrol_suruyor: true, icerik_hash: is.icerik_hash });
@@ -499,7 +515,7 @@ describe("beklenen sonuç kontrolü ve onay kapısı (§4.3)", () => {
     expect(await api.caseOracle(c.id, is.icerik_hash!)).toMatchObject({ sonuc: "uyumlu", icerik_hash: is.icerik_hash, kontrol_suruyor: false });
     expect((await api.caseOracle(c.id))?.sonuc).toBe("uyumsuz");
     const onayli = await api.caseKarari(c.id, g);
-    expect(onayli).toMatchObject({ durum: "approved", karar: "edit", icerik_hash: is.icerik_hash, oracle: { sonuc: "uyumlu" } });
+    expect(onayli).toMatchObject({ durum: "ready", karar: "edit", icerik_hash: is.icerik_hash, oracle: { sonuc: "uyumlu" } });
     // Metrik AI'ın özgün içeriğinin sonucunu saymaya devam eder (insan düzeltmesinden önceki hash).
     expect((await api.caseMetrikleri(REQ)).beklenti_dogrulugu).toMatchObject({ uyumsuz: 1 });
     expect(kaliteVerisi(mockVerisi()).kontroller.filter((r) => r.test_case_id === c.id).length).toBe(2);
@@ -562,7 +578,7 @@ describe("çekirdek sözleşmesiyle hizalı uçlar", () => {
   });
 
   it("türetme kayıtları listelenir; gereksinim case review aşamasında değilse 409", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const onayli = (await api.kararTablolari(REQ)).iliskiler.find((r) => r.durum === "approved")!;
     await api.ekCaseTuret(REQ, { iliski_id: onayli.id, case_ids: ["case-1-2", "case-1-3"] });
     const kayitlar = await api.metamorfikTuretmeler(REQ);
@@ -570,7 +586,7 @@ describe("çekirdek sözleşmesiyle hizalı uçlar", () => {
       ["case-1-2", "turetildi", true],
       ["case-1-3", "iliski_gecersiz", false],
     ]);
-    expect(kayitlar[0]).toMatchObject({ iliski_id: onayli.id, olusturan_id: "analist" });
+    expect(kayitlar[0]).toMatchObject({ iliski_id: onayli.id, olusturan_id: "testci" });
     mockVerisi().gereksinimler.find((g) => g.id === REQ)!.durum = "po_approved";
     expect(await hata(api.ekCaseTuret(REQ, { iliski_id: onayli.id }))).toMatchObject({ status: 409 });
   });
@@ -589,7 +605,8 @@ describe("review turu 1: kısmen, sınır örnekleri, tutarsız türetme, ilişk
     expect(y.oracle).toMatchObject({ sonuc: "kismen", degerler: { uyumsuz: 0 } });
     expect(y.oracle!.degerler!.karsilastirilamayan).toBeGreaterThan(0);
     expect(y.oracle!.ozet).toMatch(/^Kısmen uyumlu: /);
-    expect((await api.caseKarari(y.id, { icerik_hash: y.icerik_hash, karar: "approve" })).durum).toBe("approved");
+    await oturumAc("testci");
+    expect((await api.caseKarari(y.id, { icerik_hash: y.icerik_hash, karar: "accept" })).durum).toBe("ready");
     expect(mockVerisi().denetim.at(-1)).toMatchObject({ eylem: "oracle.warning" });
   });
 
@@ -621,7 +638,7 @@ describe("review turu 1: kısmen, sınır örnekleri, tutarsız türetme, ilişk
     await api.iliskiGecis(r.id, "submit", { icerik_hash: r.icerik_hash });
     await oturumAc("po");
     await api.iliskiGecis(r.id, "approve", { icerik_hash: r.icerik_hash });
-    await oturumAc("analist");
+    await oturumAc("testci");
     const s = await api.ekCaseTuret(REQ, { iliski_id: r.id, case_ids: ["case-1-2"] });
     expect(s.turetilen).toEqual([]);
     expect(s.atlanan[0]).toMatchObject({ sonuc: "tutarsiz_kalan_deger" });

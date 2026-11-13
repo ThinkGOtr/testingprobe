@@ -88,7 +88,7 @@ export function KararTablosuKarti({
               taslak && !duzenle ? (
                 <IslemDugmesi
                 id={duzenleId}
-                roller={["analyst"]}
+                izin="decision_table.edit"
                 kucuk
                 tur="ikincil"
                 disabled={kriterler === null}

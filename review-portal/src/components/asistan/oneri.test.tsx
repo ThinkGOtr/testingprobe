@@ -627,13 +627,13 @@ describe("012 §4.4: test beklentisi farkı (core `beklenti_farki`)", () => {
     expect(await idler()).toContain("hata-bakim-onarim");
   });
 
-  it("beklenti farkında onarım önerilmez; mühendise bilgi, analiste case düzeltme önerisi", async () => {
+  it("beklenti farkında onarım önerilmez; mühendise bilgi, Testçiye case düzeltme önerisi", async () => {
     beklentiYap();
     await oturumAc("muhendis");
     const m = await idler();
     expect(m).not.toContain("hata-bakim-onarim");
     expect(m).toContain("hata-beklenti-bilgi");
-    await oturumAc("analist");
+    await oturumAc("testci");
     const a = await oneriApi.liste({ rota: "/hatalar/fail-2", varlik_tur: "failure", varlik_id: "fail-2" });
     expect(a.ekranda_kural_var).toBe(true);
     expect(a.oneriler.map((o) => [o.kural_id, o.baslik])).toEqual([

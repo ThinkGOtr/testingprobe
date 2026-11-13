@@ -73,7 +73,7 @@ import { bilinmeyenAtiflar, caseVerisi, otomasyonMockSifirla, otomasyonRotalari,
 import { oneriKuleOlcumu, oneriMockSifirla, oneriRotalari } from "./oneri";
 import { kuleKaliteKaynaklariMock, kuleKaliteOlcumu, kuleMockSifirla, kuleRotalari } from "./kule";
 import { KULE_KALITE_KAYNAKLARI } from "./kuleVerisi";
-import { kaliteRotalari } from "./kalite";
+import { kaliteKapisi, kaliteRotalari } from "./kalite";
 import type { AsistanliKule } from "../../components/asistan/OnerilerOlcumKarti";
 import { kirmaTaslagiMi } from "../../lib/yolHaritasi";
 import { BAZ_NOT_EN_AZ, BAZ_NOT_EN_COK, BAZ_UST_SINIR_S, kazancOzeti } from "../uyumFaz5";
@@ -2163,6 +2163,17 @@ function tekliKarar(id: string, govde: unknown): Record<string, unknown> {
  * tekli kararın kurallarından geçer; görülmeyen (K13) atlanır; biri diğerini bozmaz. Öğe
  * `otomatik_kod` null; kod üretimi yalnız son onayda, üst düzeyde tek iş (K16).
  */
+/** core `GET /cases`: izin, developer süzgeci ve görünüm (012 kalite mock'u `oracle` ekler). */
+function caseListesi(q: URLSearchParams): Record<string, unknown>[] {
+  const k = izinGerekli("case.read");
+  const rid = q.get("requirement_id");
+  const liste = veri.caseler.filter((c) => !rid || c.requirement_id === rid).sort((a, b) => a.sira_no - b.sira_no);
+  // core süzgeci (case.read notu): developer yalnız onaylı/yayınlanmış case'i, karar geçmişi olmadan görür.
+  const r = normalizeRol(k.rol);
+  const gorunen = r && KISITLI_CASE_ROLLERI.includes(r) ? liste.filter((c) => c.durum === "approved" || c.durum === "published") : liste;
+  return gorunen.map((c) => caseGorunumu(c, k));
+}
+
 function topluKarar(govde: unknown) {
   const g = (govde ?? {}) as { karar?: unknown; ogeler?: unknown };
   if (g.karar !== "accept" && g.karar !== "approve") throw new ApiError(422, "Toplu karar yalnız accept veya approve olabilir.");
@@ -2173,20 +2184,24 @@ function topluKarar(govde: unknown) {
   const gorulen = new Set<string>();
   const sonuclar = (g.ogeler as { case_id?: unknown; icerik_hash?: unknown }[]).map((o) => {
     const case_id = String(o.case_id ?? "");
-    if (gorulen.has(case_id)) return { case_id, durum: "atlandi", neden: "Case istekte birden çok kez var", otomatik_kod: null };
+    if (gorulen.has(case_id)) return { case_id, durum: "atlandi", neden: "Case istekte birden çok kez var", kod: null, otomatik_kod: null };
     gorulen.add(case_id);
     const c = veri.caseler.find((x) => x.id === case_id);
-    if (!c) return { case_id, durum: "hata", neden: `Case bulunamadı: ${case_id}`, otomatik_kod: null };
+    if (!c) return { case_id, durum: "hata", neden: `Case bulunamadı: ${case_id}`, kod: "bulunamadi", otomatik_kod: null };
     if (c.durum === bekleyen && !gorulduMu(c.id, k.kullanici_adi)) {
       const kayitli = goruntulemeKayitlari.has(goruntulemeAnahtari(c.id, k.kullanici_adi));
-      return { case_id, durum: "atlandi", neden: kayitli ? YENI_GORUNTULEME_NEDENI : GORULMEDI_NEDENI, otomatik_kod: null };
+      return { case_id, durum: "atlandi", neden: kayitli ? YENI_GORUNTULEME_NEDENI : GORULMEDI_NEDENI, kod: null, otomatik_kod: null };
     }
     try {
-      caseKarari(case_id, { karar, icerik_hash: o.icerik_hash });
-      return { case_id, durum: "onaylandi", neden: null, otomatik_kod: null };
+      // 012 kalite: karar tablosu kapısı öğe başına (istisna gerekçesi toplu kararda verilmez).
+      (kaliteKapisi.karar ?? caseKarari)(case_id, { karar, icerik_hash: o.icerik_hash });
+      return { case_id, durum: "onaylandi", neden: null, kod: null, otomatik_kod: null };
     } catch (e) {
       const neden = e instanceof ApiError ? e.detail : "Beklenmeyen hata";
-      return { case_id, durum: e instanceof ApiError && e.status === 409 ? "atlandi" : "hata", neden, otomatik_kod: null };
+      // core: öğe hatası makinece okunur `kod` taşır (ör. `oracle_uyumsuz`, `oracle_bekleniyor`).
+      const kod = e instanceof ApiError ? (e.kod ?? null) : null;
+      const kapi = kod !== null && kod.startsWith("oracle_");
+      return { case_id, durum: e instanceof ApiError && e.status === 409 && !kapi ? "atlandi" : "hata", neden, kod, otomatik_kod: null };
     }
   });
   const say = (d: string) => sonuclar.filter((s) => s.durum === d).length;
@@ -2240,10 +2255,10 @@ const ROTALAR: Rota[] = [
   // Öneri düğmesi (§17, uç 10–11): api/mock/oneri.ts.
   ...oneriRotalari(girisGerekli, () => veri),
   // 012/Ş8 ekilmiş hata koşusu (ANALIZ §4.6): api/mock/kule.ts.
-  ...kuleRotalari(girisGerekli, rolGerekli),
+  ...kuleRotalari(girisGerekli, izinGerekli),
   // 012 Ş7 (karar tabloları, ilişkiler, oracle): api/mock/kalite.ts. Aşağıdaki `GET /cases`,
   // `POST /cases/:id/decision` ve `GET …/case-metrics` uçlarını sarar (ilk eşleşen rota geçerlidir).
-  ...kaliteRotalari({ veri: () => veri, girisGerekli, rolGerekli, kaydet, arkaPlan, denetimEkle, yeniId, caseKarari, caseMetrikleri }),
+  ...kaliteRotalari({ veri: () => veri, girisGerekli, izinGerekli, kaydet, arkaPlan, denetimEkle, yeniId, caseKarari: tekliKarar, caseListesi, caseMetrikleri }),
   // 013 sprint otomasyonu: test verisi, otomasyon ayarları, Jira tetiği (api/mock/otomasyon.ts).
   ...otomasyonRotalari(izinGerekli, demoGerekli, () => veri.caseler, (eylem, nesne, ozet) => {
     denetimEkle(eylem, nesne, ozet);
@@ -2310,19 +2325,7 @@ const ROTALAR: Rota[] = [
   ["POST", /^\/requirements\/([^/]+)\/po-approve$/, (m, _q, g) => poOnayla(decodeURIComponent(m[1]), g)],
   ["POST", /^\/requirements\/([^/]+)\/po-reject$/, (m, _q, g) => poReddet(decodeURIComponent(m[1]), g)],
   ["POST", /^\/requirements\/([^/]+)\/generate-cases$/, (m) => caseUret(decodeURIComponent(m[1]))],
-  [
-    "GET",
-    /^\/cases$/,
-    (_m, q) => {
-      const k = izinGerekli("case.read");
-      const rid = q.get("requirement_id");
-      const liste = veri.caseler.filter((c) => !rid || c.requirement_id === rid).sort((a, b) => a.sira_no - b.sira_no);
-      // core süzgeci (case.read notu): developer yalnız onaylı/yayınlanmış case'i, karar geçmişi olmadan görür.
-      const r = normalizeRol(k.rol);
-      const gorunen = r && KISITLI_CASE_ROLLERI.includes(r) ? liste.filter((c) => c.durum === "approved" || c.durum === "published") : liste;
-      return gorunen.map((c) => caseGorunumu(c, k));
-    },
-  ],
+  ["GET", /^\/cases$/, (_m, q) => caseListesi(q)],
   ["POST", /^\/cases\/([^/]+)\/decision$/, (m, _q, g) => tekliKarar(decodeURIComponent(m[1]), g)],
   ["POST", /^\/cases\/([^/]+)\/viewed$/, (m) => caseGoruntulendi(decodeURIComponent(m[1]))],
   ["GET", /^\/requirements\/([^/]+)\/case-metrics$/, (m) => caseMetrikleri(decodeURIComponent(m[1]))],

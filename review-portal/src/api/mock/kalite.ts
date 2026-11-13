@@ -26,7 +26,6 @@ import type {
   OracleIstisnaTuru,
   OracleKarsilastirma,
   OracleSonucu,
-  Rol,
   TabloDegerlendirmesi,
   TestCase,
   TestCaseIcerik,
@@ -51,6 +50,7 @@ import {
 } from "./kaliteIfade";
 import { CIKARMA_KURALLARI, ILK_ILISKILER, ILK_TABLO_AI_ICERIKLERI, ILK_TABLOLAR, KALITE_REQ, ornekGirdileri, taslakCiktisi } from "./kaliteVerisi";
 import { mockOlayYayinla } from "./olaylar";
+import type { Izin } from "../../lib/yetki";
 
 // ------------------------------------------------------------------ durum
 
@@ -138,13 +138,15 @@ export interface KaliteVerisi {
 export interface KaliteBagimliliklari {
   veri: () => MockVeri;
   girisGerekli: () => Kullanici;
-  rolGerekli: (...roller: Rol[]) => Kullanici;
+  izinGerekli: (...izinler: [Izin, ...Izin[]]) => Kullanici;
   kaydet: () => void;
   arkaPlan: (adimlar: (() => void)[]) => void;
   denetimEkle: (eylem: string, nesne: string, ozet: string, aktor?: string) => void;
   yeniId: (onek: string) => string;
-  /** handlers.ts'in özgün karar ucu (durum makinesi, hash, ölçümler). */
-  caseKarari: (id: string, govde: unknown) => TestCase;
+  /** handlers.ts'in özgün karar ucu (durum makinesi, hash, ölçümler, otomatik kod). */
+  caseKarari: (id: string, govde: unknown) => Record<string, unknown>;
+  /** handlers.ts'in `GET /cases` yanıtı (izin, developer süzgeci, 013 alanları). */
+  caseListesi: (q: URLSearchParams) => Record<string, unknown>[];
   caseMetrikleri: (rid: string) => CaseMetrikleri;
 }
 
@@ -700,14 +702,20 @@ const GECIS_ADI: Record<KaliteGecisi, string> = {
   "request-changes": "değişiklik isteği",
 };
 const DURUM_ADI: Record<KararTablosuDurumu, string> = { draft: "Taslak", pending_po: "PO onayı bekliyor", approved: "Onaylı", superseded: "Yerini yenisi aldı" };
-/** ANALIZ §4.1 durum makinesi: geçiş → [önceki durum, sonraki durum, rol]. */
-export const KALITE_GECISLERI: Record<KaliteGecisi, { once: KararTablosuDurumu; sonra: KararTablosuDurumu; rol: Rol }> = {
-  submit: { once: "draft", sonra: "pending_po", rol: "analyst" },
-  withdraw: { once: "pending_po", sonra: "draft", rol: "analyst" },
-  reopen: { once: "approved", sonra: "draft", rol: "analyst" },
-  approve: { once: "pending_po", sonra: "approved", rol: "po" },
-  "request-changes": { once: "pending_po", sonra: "draft", rol: "po" },
+/** ANALIZ §4.1 durum makinesi: geçiş → [önceki durum, sonraki durum, izin] (core `auth/yetki.py`). */
+export const KALITE_GECISLERI: Record<KaliteGecisi, { once: KararTablosuDurumu; sonra: KararTablosuDurumu; izin: Izin }> = {
+  submit: { once: "draft", sonra: "pending_po", izin: "decision_table.edit" },
+  withdraw: { once: "pending_po", sonra: "draft", izin: "decision_table.edit" },
+  reopen: { once: "approved", sonra: "draft", izin: "decision_table.edit" },
+  approve: { once: "pending_po", sonra: "approved", izin: "decision_table.approve" },
+  "request-changes": { once: "pending_po", sonra: "draft", izin: "decision_table.approve" },
 };
+
+/**
+ * Karar tablosu kapısı (kaliteRotalari kurar): handlers.ts toplu kararı (`POST /cases/bulk-decision`)
+ * öğe başına buradan geçirir; kapı kurulmamışsa özgün karar ucu kullanılır.
+ */
+export const kaliteKapisi: { karar: ((id: string, govde: unknown) => unknown) | null } = { karar: null };
 const URETIM_DURUMLARI = new Set(["po_approved", "generating", "cases_ready", "done"]);
 
 export function kaliteRotalari(b: KaliteBagimliliklari): Rota[] {
@@ -847,12 +855,11 @@ export function kaliteRotalari(b: KaliteBagimliliklari): Rota[] {
     kapsayan_tablolar: (icerik ? kapsayanlar(c.requirement_id, icerik) : []).map((t) => ({ id: t.id, ref: `T${t.sira_no}`, ad: t.icerik.ad, icerik_hash: t.icerik_hash })),
     oracle,
   });
-  const oracleli = (c: TestCase): TestCase => ({ ...c, oracle: guncelOracle(c) });
   const kontrolOlayi = (c: TestCase, r: OracleKaydi) =>
     mockOlayYayinla({ type: "oracle.checked", id: c.id, data: { case_id: c.id, requirement_id: c.requirement_id, icerik_hash: r.icerik_hash, sonuc: r.sonuc } });
-  /** Tablo onaylanınca: gereksinimin `draft` ve `approved` case'leri yeniden kontrol edilir (iş). */
+  /** Tablo onaylanınca: gereksinimin `draft`, `ready` ve `approved` case'leri yeniden kontrol edilir (iş). */
   const kontrolleriKuyrukla = (rid: string) => {
-    const cs = b.veri().caseler.filter((c) => c.requirement_id === rid && (c.durum === "draft" || c.durum === "approved"));
+    const cs = b.veri().caseler.filter((c) => c.requirement_id === rid && (c.durum === "draft" || c.durum === "ready" || c.durum === "approved"));
     for (const c of cs) bekleyen.add(`${c.id}|${c.icerik_hash}`);
     if (cs.length)
       b.arkaPlan(
@@ -868,8 +875,12 @@ export function kaliteRotalari(b: KaliteBagimliliklari): Rota[] {
   const gerekceGecerli = (g: string) => g.length >= 20 && (g.match(/\p{L}/gu) ?? []).length >= 10;
   /** Tur 2 (Y4): kısmen sonucun eksik girdi dışındaki nedeni (atılan olgu, kapsanmayan sayı, yok sayılan) zorunlu kapıda gerekçe ister. */
   const kismenRiskli = (r: OracleKaydi) => r.sonuc === "kismen" && (r.kismen_nedeni ?? []).some((n) => n !== "eksik_girdi");
-  function kararKapisi(id: string, govde: unknown): TestCase {
-    const k = b.rolGerekli("analyst");
+  /**
+   * 012 rol modeli: kapı Testçinin kabulünde (`accept`/`edit`, taslak → ready) ve Analistin son
+   * onayında (`approve`, ready → approved) uygulanır; izin denetimi özgün karar ucundadır.
+   */
+  function kararKapisi(id: string, govde: unknown): Record<string, unknown> {
+    const k = b.girisGerekli();
     const c = b.veri().caseler.find((x) => x.id === id);
     const g = (govde ?? {}) as Partial<CaseKararGirdisi>;
     let istisna: { kayit: OracleKaydi; tur: OracleIstisnaTuru } | null = null;
@@ -877,7 +888,9 @@ export function kaliteRotalari(b: KaliteBagimliliklari): Rota[] {
     let uyariKaydi: OracleKaydi | null = null;
     const duzeltme = g.karar === "edit";
     const gerekce = (g.oracle_istisna_gerekce ?? "").trim();
-    if (c && c.durum === "draft" && g.icerik_hash === c.icerik_hash && (g.karar === "approve" || (duzeltme && g.icerik?.steps?.length && g.icerik.title?.trim()))) {
+    const kabul = c?.durum === "draft" && (g.karar === "accept" || (duzeltme && !!g.icerik?.steps?.length && !!g.icerik.title?.trim()));
+    const sonOnay = c?.durum === "ready" && g.karar === "approve";
+    if (c && g.icerik_hash === c.icerik_hash && (kabul || sonOnay)) {
       // Y9: gerekçe verildiyse tür zorunlu (sonuçtan çıkarılmaz).
       if (gerekce && g.oracle_istisna_turu !== "uyumsuz" && g.oracle_istisna_turu !== "kontrolsuz")
         throw new ApiError(422, "Gerekçe verildiğinde istisna türü (oracle_istisna_turu) gönderilmeli.", { kod: "gecersiz_karar" });
@@ -953,13 +966,15 @@ export function kaliteRotalari(b: KaliteBagimliliklari): Rota[] {
       );
     }
     b.kaydet();
-    return oracleli(b.veri().caseler.find((x) => x.id === id) ?? sonuc);
+    const guncel = b.veri().caseler.find((x) => x.id === id);
+    return guncel && !sonuc.kisitli ? { ...sonuc, oracle: guncelOracle(guncel) } : sonuc;
   }
+  kaliteKapisi.karar = kararKapisi;
 
   // ---- geçişler (tablo ve ilişki aynı makine)
   function gecis<T extends TabloKaydi | IliskiKaydi>(tur: "karar_tablosu" | "metamorfik_iliski", x: T, eylem: KaliteGecisi, govde: unknown, eksik: () => string[]): T {
     const kural = KALITE_GECISLERI[eylem];
-    const k = b.rolGerekli(kural.rol);
+    const k = b.izinGerekli(kural.izin);
     if (x.durum !== kural.once) throw new ApiError(409, `Bu durumda ${GECIS_ADI[eylem]} yapılamaz (durum: ${DURUM_ADI[x.durum]}).`, { kod: "eszamanli_gecis" });
     // withdraw gövdesiz; submit ve reopen ("Tablo yanlış" yolu) hash'i isteğe bağlı (core ile aynı); PO kararlarında zorunlu.
     if (eylem === "submit" || eylem === "reopen") hashGerekli(govde, x.icerik_hash, false);
@@ -1034,7 +1049,7 @@ export function kaliteRotalari(b: KaliteBagimliliklari): Rota[] {
 
   // ---- AI taslağı (amaç `decision_table_draft`)
   function taslakUret(rid: string): KaliteTaslakYaniti {
-    b.rolGerekli("analyst");
+    b.izinGerekli("decision_table.edit");
     const g = gereksinim(rid);
     if (!URETIM_DURUMLARI.has(g.durum)) throw new ApiError(409, "Karar tablosu taslağı için gereksinim PO onaylı olmalı.", { kod: "cakisma" });
     const k = K();
@@ -1208,7 +1223,7 @@ export function kaliteRotalari(b: KaliteBagimliliklari): Rota[] {
   }
 
   function ekCaseTuret(rid: string, govde: unknown) {
-    b.rolGerekli("analyst");
+    b.izinGerekli("case.generate");
     const gr = gereksinim(rid);
     const g = (govde ?? {}) as { iliski_id?: unknown; case_ids?: unknown };
     if (typeof g.iliski_id !== "string" || !g.iliski_id) throw new ApiError(422, "iliski_id zorunludur.");
@@ -1294,7 +1309,7 @@ export function kaliteRotalari(b: KaliteBagimliliklari): Rota[] {
       "GET",
       /^\/requirements\/([^/]+)\/decision-tables$/,
       (m, q) => {
-        b.girisGerekli();
+        b.izinGerekli("decision_table.read");
         const rid = kimlik(m);
         gereksinim(rid);
         const k = K();
@@ -1312,7 +1327,7 @@ export function kaliteRotalari(b: KaliteBagimliliklari): Rota[] {
       "POST",
       /^\/requirements\/([^/]+)\/decision-tables$/,
       (m, _q, govde) => {
-        b.rolGerekli("analyst");
+        b.izinGerekli("decision_table.edit");
         const rid = kimlik(m);
         const g = gereksinim(rid);
         if (!URETIM_DURUMLARI.has(g.durum)) throw new ApiError(409, "Karar tablosu için gereksinim PO onaylı olmalı.", { kod: "cakisma" });
@@ -1352,7 +1367,7 @@ export function kaliteRotalari(b: KaliteBagimliliklari): Rota[] {
       "PUT",
       /^\/decision-tables\/([^/]+)$/,
       (m, _q, govde) => {
-        const kul = b.rolGerekli("analyst");
+        const kul = b.izinGerekli("decision_table.edit");
         const t = tabloBul(kimlik(m));
         yalnizTaslak(t);
         hashGerekli(govde, t.icerik_hash);
@@ -1388,7 +1403,7 @@ export function kaliteRotalari(b: KaliteBagimliliklari): Rota[] {
       "GET",
       /^\/decision-tables\/([^/]+)\/ornekler$/,
       (m) => {
-        b.girisGerekli();
+        b.izinGerekli("decision_table.read");
         return ornekler(tabloBul(kimlik(m)));
       },
     ],
@@ -1396,7 +1411,7 @@ export function kaliteRotalari(b: KaliteBagimliliklari): Rota[] {
       "POST",
       /^\/decision-tables\/([^/]+)\/evaluate$/,
       (m, _q, govde) => {
-        b.girisGerekli();
+        b.izinGerekli("decision_table.read");
         const t = tabloBul(kimlik(m));
         const g = (govde ?? {}) as { girdiler?: unknown; icerik?: KararTablosuIcerik };
         if (!g.girdiler || typeof g.girdiler !== "object") throw new ApiError(422, "girdiler nesnesi zorunludur.");
@@ -1415,7 +1430,7 @@ export function kaliteRotalari(b: KaliteBagimliliklari): Rota[] {
       "PUT",
       /^\/relations\/([^/]+)$/,
       (m, _q, govde) => {
-        const kul = b.rolGerekli("analyst");
+        const kul = b.izinGerekli("decision_table.edit");
         const r = iliskiBul(kimlik(m));
         yalnizTaslak(r);
         hashGerekli(govde, r.icerik_hash);
@@ -1443,7 +1458,7 @@ export function kaliteRotalari(b: KaliteBagimliliklari): Rota[] {
       "POST",
       /^\/requirements\/([^/]+)\/relations$/,
       (m, _q, govde) => {
-        b.rolGerekli("analyst");
+        b.izinGerekli("decision_table.edit");
         const rid = kimlik(m);
         const gr = gereksinim(rid);
         if (!URETIM_DURUMLARI.has(gr.durum)) throw new ApiError(409, "İlişki için gereksinim PO onaylı olmalı.", { kod: "cakisma" });
@@ -1501,7 +1516,7 @@ export function kaliteRotalari(b: KaliteBagimliliklari): Rota[] {
       "GET",
       /^\/requirements\/([^/]+)\/metamorphic-derivations$/,
       (m) => {
-        b.girisGerekli();
+        b.izinGerekli("case.oracle_read");
         const rid = kimlik(m);
         gereksinim(rid);
         const iliskiIdleri = new Set(K().iliskiler.filter((r) => r.requirement_id === rid).map((r) => r.id));
@@ -1523,13 +1538,11 @@ export function kaliteRotalari(b: KaliteBagimliliklari): Rota[] {
       "GET",
       /^\/cases$/,
       (_m, q) => {
-        b.girisGerekli();
-        const rid = q.get("requirement_id");
-        const liste = b
-          .veri()
-          .caseler.filter((c) => !rid || c.requirement_id === rid)
-          .sort((a, z) => a.sira_no - z.sira_no)
-          .map(oracleli);
+        // Özgün liste (izin, developer süzgeci, 013 alanları) + case başına `oracle` (kısıtlı görünümde yok).
+        const liste = b.caseListesi(q).map((x) => {
+          const c = x.kisitli ? undefined : b.veri().caseler.find((y) => y.id === x.id);
+          return c ? { ...x, oracle: guncelOracle(c) } : x;
+        });
         b.kaydet();
         return liste;
       },
@@ -1538,7 +1551,7 @@ export function kaliteRotalari(b: KaliteBagimliliklari): Rota[] {
       "GET",
       /^\/cases\/([^/]+)\/oracle$/,
       (m, q) => {
-        b.girisGerekli();
+        b.izinGerekli("case.oracle_read");
         const c = b.veri().caseler.find((x) => x.id === kimlik(m));
         if (!c) throw new ApiError(404, `Case bulunamadı: ${kimlik(m)}`);
         const h = q.get("icerik_hash");
@@ -1552,7 +1565,7 @@ export function kaliteRotalari(b: KaliteBagimliliklari): Rota[] {
       "POST",
       /^\/cases\/([^/]+)\/oracle-check$/,
       (m, _q, govde) => {
-        b.rolGerekli("analyst");
+        b.izinGerekli("case.oracle_check");
         const c = b.veri().caseler.find((x) => x.id === kimlik(m));
         if (!c) throw new ApiError(404, `Case bulunamadı: ${kimlik(m)}`);
         const onerilen = (govde as { icerik?: TestCaseIcerik } | null)?.icerik;

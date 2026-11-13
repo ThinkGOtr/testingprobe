@@ -375,7 +375,7 @@ export function TabloDuzenleyici({
         </p>
       )}
       <div className="eylemler">
-        <IslemDugmesi roller={["analyst"]} type="submit" calisiyor={islem.calisiyor}>
+        <IslemDugmesi izin="decision_table.edit" type="submit" calisiyor={islem.calisiyor}>
           Kaydet
         </IslemDugmesi>
         <button type="button" className="dugme dugme-hayalet" onClick={vazgec}>

@@ -1192,7 +1192,7 @@ test("Faz 5: analist TPD-1'e ölçülmüş baz değer girer → Kontrol Kulesi k
   expect(hatalar).toEqual([]);
 });
 
-test("012 demo adım 2–3: PO ızgarada AI sınır hatasını görür → değişiklik iste → analist `< 750` → PO onaylar → AI'ın C6 hatası engellenir → istisnayla onay", async ({ page }) => {
+test("012 demo adım 2–3: PO ızgarada AI sınır hatasını görür → değişiklik iste → analist `< 750` → PO onaylar → AI'ın C6 hatası engellenir → Testçi istisnayla kabul eder", async ({ page }) => {
   const hatalar = konsolHatalariniTopla(page);
   await girisYap(page, "po");
   await page.goto("/gereksinimler/req-tpd-1/karar-tablolari");
@@ -1232,11 +1232,12 @@ test("012 demo adım 2–3: PO ızgarada AI sınır hatasını görür → deği
   await page.getByRole("button", { name: "Çıkış" }).click();
   await expect(page.getByRole("heading", { name: "Oturum aç" })).toBeVisible();
 
-  await girisYap(page, "analist");
+  // 012 rol modeli: kapı Testçinin kabulünde ("Kabul et"); Analist son onayında yeniden uygulanır.
+  await girisYap(page, "testci");
   await page.goto("/gereksinimler/req-tpd-1/caseler");
   const c6 = page.getByRole("article", { name: /minimum tutara eşit toplamda/ });
   await expect(c6.getByText("Tabloyla uyuşmuyor ✗")).toBeVisible();
-  await expect(c6.getByRole("button", { name: "Onayla", exact: true })).toBeDisabled();
+  await expect(c6.getByRole("button", { name: "Kabul et", exact: true })).toBeDisabled();
   await expect(c6.locator(".dugme-neden").filter({ hasText: "gerekçeli istisna olmadan onaylanamaz" })).toBeVisible();
   await page.screenshot({ path: `${EKRAN_DIZINI}/72-case-tablo-uyusmazligi.png`, fullPage: true });
   // V10: iki yol; "Case doğru, istisnayla onayla" gerekçe ister (≥ 20 karakter, ≥ 10 harf).
@@ -1248,6 +1249,16 @@ test("012 demo adım 2–3: PO ızgarada AI sınır hatasını görür → deği
   await c6.getByTestId("istisna-formu").getByRole("button", { name: "Case doğru, istisnayla onayla" }).click();
   await expect(c6.getByTestId("oracle-istisna")).toContainText("PO ile görüşüldü");
   await expect(c6.getByTestId("case-karar-kilit")).toBeVisible();
+  await page.getByRole("button", { name: "Çıkış" }).click();
+  await expect(page.getByRole("heading", { name: "Oturum aç" })).toBeVisible();
+
+  // Analist son onayı: aynı tür + tablo kümesiyle verilmiş istisna yeniden gerekçe istemez.
+  await girisYap(page, "analist");
+  await page.goto("/gereksinimler/req-tpd-1/caseler");
+  const c6b = page.getByRole("article", { name: /minimum tutara eşit toplamda/ });
+  await expect(c6b.getByTestId("oracle-kapi")).toHaveAttribute("data-tur", "sakli");
+  await c6b.getByRole("button", { name: "Onayla", exact: true }).click();
+  await expect(c6b.getByTestId("case-karar-kilit")).toContainText("Analist onayladı");
   expect(hatalar).toEqual([]);
 });
 

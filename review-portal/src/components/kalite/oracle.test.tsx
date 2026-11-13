@@ -66,7 +66,10 @@ const durumOlsun = async (id: string, durum: TestCase["durum"]) => {
 async function minSiparisOnayla(bekle = true) {
   await t2Onayla({ bekle: false });
   if (bekle) await isBitsin();
-  await oturumAc("analist");
+  // 012 rol modeli: kapı Testçinin kabulünde ("Kabul et" / "Düzelterek kabul"). C9 (AC6) örnek veride
+  // yayınlı; kapı senaryoları için taslağa çekilir.
+  mockVerisi().caseler.find((x) => x.id === "case-1-9")!.durum = "draft";
+  await oturumAc("testci");
 }
 /** C6'yı ana yol metnine çevirir: "uyarı görünür" → "görünmez" (S4 beklenen), "gösterilir" → "gösterilmez" (beklenen sonuç). */
 const C6_DUZELTME: [string, string, string][] = [
@@ -190,7 +193,7 @@ describe("onay kapısı matrisi (ANALIZ §4.3 + §13 K10, K11, V11)", () => {
 // ------------------------------------------------------------------ case review ekranı
 describe("case review: kontrol çipi, karşılaştırma ve metrik", () => {
   it("başlangıç: uyumlu, kontrol edilemedi ve tablo yok çipleri; karşılaştırma tablosu ve tabloya bağlantı", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     uygulama(`/gereksinimler/${REQ}/caseler`);
     const c2 = await kart(/^7 adet kampanyalı/);
     expect(await within(c2).findByText("Tabloyla uyumlu ✓")).toBeInTheDocument();
@@ -206,7 +209,7 @@ describe("case review: kontrol çipi, karşılaştırma ve metrik", () => {
     expect(cipler).not.toContain("Kontrol edilemedi");
     expect(within(await kart(/^Kampanyalı siparişte minimum/)).getByText("Tablo yok")).toBeInTheDocument();
     // Uyumlu / tablo yok case'lerinde onay açık.
-    expect(within(await kart(C6_BASLIK)).getByRole("button", { name: "Onayla" })).toBeEnabled();
+    expect(within(await kart(C6_BASLIK)).getByRole("button", { name: "Kabul et" })).toBeEnabled();
     // Özet kartı: beklenti doğruluğu "3/3" (C10, C2'nin tekrarı), n = payda.
     expect(await screen.findByTestId("beklenti-dogrulugu")).toHaveTextContent("%100");
     expect(screen.getByTestId("beklenti-n")).toHaveTextContent("n = 3 case · 1 tekrar");
@@ -216,7 +219,7 @@ describe("case review: kontrol çipi, karşılaştırma ve metrik", () => {
   });
 
   it("beklenti doğruluğu ölçülmeyen gereksinimde 'ölçülmedi'", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     uygulama("/gereksinimler/req-tpd-3/caseler");
     await waitFor(() => expect(screen.getByTestId("beklenti-dogrulugu")).toHaveTextContent("ölçülmedi"));
   });
@@ -228,7 +231,7 @@ describe("case review: kontrol çipi, karşılaştırma ve metrik", () => {
     uygulama(`/gereksinimler/${REQ}/caseler`);
     const c = await kart(C6_BASLIK);
     expect(await within(c).findByText("Kontrol sürüyor")).toBeInTheDocument();
-    expect(within(c).getByRole("button", { name: "Onayla" })).toBeDisabled();
+    expect(within(c).getByRole("button", { name: "Kabul et" })).toBeDisabled();
     expect(within(c).getByText(ENGEL_SURUYOR)).toHaveClass("dugme-neden");
     // Onyüz 2: sunucu "sürüyor" dedikçe analist kontrolü yeniden isteyebilir (kalıcı kilit yok).
     expect(within(c).getAllByRole("button", { name: "Kontrolü yeniden iste" }).length).toBeGreaterThan(0);
@@ -244,7 +247,7 @@ describe("yüksek riskli uyuşmazlık: kapı ve istisna", () => {
     uygulama(`/gereksinimler/${REQ}/caseler`);
     const c = await kart(C6_BASLIK);
     expect(await within(c).findByText("Tabloyla uyuşmuyor ✗")).toBeInTheDocument();
-    const onayla = within(c).getByRole("button", { name: "Onayla" });
+    const onayla = within(c).getByRole("button", { name: "Kabul et" });
     expect(onayla).toBeDisabled();
     expect(within(c).getByText(ENGEL_UYUMSUZ)).toHaveClass("dugme-neden");
     // Karşılaştırma uyuşmazlıkta açık gelir; farklı satır işaretli.
@@ -270,8 +273,8 @@ describe("yüksek riskli uyuşmazlık: kapı ve istisna", () => {
     await userEvent.type(alan, "kısa — PO ile görüşüldü, sınır dahil kabul edildi");
     const kararSpy = vi.spyOn(api, "caseKarari");
     await userEvent.click(within(form).getByRole("button", { name: "Case doğru, istisnayla onayla" }));
-    await durumOlsun(C6, "approved");
-    expect(kararSpy).toHaveBeenCalledWith(C6, expect.objectContaining({ karar: "approve", oracle_istisna_turu: "uyumsuz" }));
+    await durumOlsun(C6, "ready");
+    expect(kararSpy).toHaveBeenCalledWith(C6, expect.objectContaining({ karar: "accept", oracle_istisna_turu: "uyumsuz" }));
     const sonra = await kart(C6_BASLIK);
     expect(await within(sonra).findByTestId("oracle-istisna")).toHaveTextContent("PO ile görüşüldü");
     expect(mockVerisi().denetim.at(-1)).toMatchObject({ eylem: "oracle.exception", nesne: C6 });
@@ -290,6 +293,7 @@ describe("yüksek riskli uyuşmazlık: kapı ve istisna", () => {
 
   it("V10 / u2 N5 'Tablo yanlış': etki onayı ('N case'in kontrolü durur'), zorunlu gerekçe; tablo yeniden açılır, gerekçe PO'nun gördüğü geçmişe yazılır", async () => {
     await minSiparisOnayla();
+    await oturumAc("analist"); // tabloyu yeniden açmak `decision_table.edit`
     uygulama(`/gereksinimler/${REQ}/caseler`);
     const c = await kart(C6_BASLIK);
     const yol = await within(c).findByTestId("oracle-tablo-yanlis");
@@ -318,6 +322,7 @@ describe("yüksek riskli uyuşmazlık: kapı ve istisna", () => {
 
   it("u2 N5: 'Tablo yanlış' Vazgeç ile kapanır, tablo değişmez, odak düğmeye döner", async () => {
     await minSiparisOnayla();
+    await oturumAc("analist"); // tabloyu yeniden açmak `decision_table.edit`
     uygulama(`/gereksinimler/${REQ}/caseler`);
     const c = await kart(C6_BASLIK);
     const yol = await within(c).findByTestId("oracle-tablo-yanlis");
@@ -332,7 +337,7 @@ describe("yüksek riskli uyuşmazlık: kapı ve istisna", () => {
     const c6 = (await api.caseler(REQ)).find((x) => x.id === C6)!;
     const onayli = await api.caseKarari(C6, {
       icerik_hash: c6.icerik_hash,
-      karar: "approve",
+      karar: "accept",
       oracle_istisna_gerekce: "PO ile görüşüldü, sınır dahil kabul.",
       oracle_istisna_turu: "uyumsuz",
     });
@@ -342,14 +347,14 @@ describe("yüksek riskli uyuşmazlık: kapı ve istisna", () => {
     const not = await within(c).findByTestId("oracle-sakli-istisna");
     expect(not).toHaveTextContent(/Saklı istisna geçerli: PO ile görüşüldü, sınır dahil kabul\. — .+, /);
     expect(within(c).queryByTestId("oracle-istisna")).toBeNull();
-    const onayla = within(c).getByRole("button", { name: "Onayla" });
+    const onayla = within(c).getByRole("button", { name: "Kabul et" });
     expect(onayla).toBeEnabled();
     expect(within(c).queryByRole("button", { name: "Case doğru, istisnayla onayla" })).toBeNull();
     const kararSpy = vi.spyOn(api, "caseKarari");
     await userEvent.click(onayla);
-    await durumOlsun(C6, "approved");
+    await durumOlsun(C6, "ready");
     // Karar görülen kontrol kaydının damgasını taşır (Y9); gerekçe gönderilmez.
-    expect(kararSpy.mock.calls[0][1]).toMatchObject({ karar: "approve", oracle_kayit_damgasi: expect.stringMatching(/^kd-/) });
+    expect(kararSpy.mock.calls[0][1]).toMatchObject({ karar: "accept", oracle_kayit_damgasi: expect.stringMatching(/^kd-/) });
     expect(kararSpy.mock.calls[0][1]).not.toHaveProperty("oracle_istisna_gerekce");
     expect(mockVerisi().denetim.at(-1)).toMatchObject({ eylem: "oracle.exception_reused", nesne: C6 });
   });
@@ -363,9 +368,9 @@ describe("yüksek riskli uyuşmazlık: kapı ve istisna", () => {
     // Ekran açıkken kayıt yeniden yazılır (ör. tablo yeniden onaylandı): damga değişir.
     await api.caseOracleKontrol(c9.id);
     await isBitsin();
-    await oturumAc("analist");
+    await oturumAc("testci");
     const caselerSpy = vi.spyOn(api, "caseler");
-    await userEvent.click(within(c).getByRole("button", { name: "Onayla" }));
+    await userEvent.click(within(c).getByRole("button", { name: "Kabul et" }));
     expect((await screen.findAllByText("Kontrol sonucu siz bakarken değişti; yeniden gözden geçirin.")).length).toBeGreaterThan(0);
     await waitFor(() => expect(caselerSpy).toHaveBeenCalled());
     expect(mockVerisi().caseler.find((x) => x.id === c9.id)!.durum).toBe("draft");
@@ -380,11 +385,11 @@ describe("yüksek riskli uyuşmazlık: kapı ve istisna", () => {
     uygulama(`/gereksinimler/${REQ}/caseler`);
     const c = await kart(C6_BASLIK);
     expect(await within(c).findByTestId("oracle-uyari")).toHaveTextContent(UYARI_UYUMSUZ);
-    const onayla = within(c).getByRole("button", { name: "Onayla" });
+    const onayla = within(c).getByRole("button", { name: "Kabul et" });
     expect(onayla).toBeEnabled();
     expect(within(c).queryByRole("button", { name: "İstisnayla onayla" })).toBeNull();
     await userEvent.click(onayla);
-    await durumOlsun(C6, "approved");
+    await durumOlsun(C6, "ready");
     expect(mockVerisi().denetim.at(-1)).toMatchObject({ eylem: "oracle.warning" });
   });
 
@@ -398,7 +403,7 @@ describe("yüksek riskli uyuşmazlık: kapı ve istisna", () => {
     uygulama(`/gereksinimler/${REQ}/caseler`);
     const c = await kart(new RegExp(c9.icerik.title.slice(0, 20)));
     expect(await within(c).findByText("Kontrol edilemedi")).toBeInTheDocument();
-    expect(within(c).getByRole("button", { name: "Onayla" })).toBeDisabled();
+    expect(within(c).getByRole("button", { name: "Kabul et" })).toBeDisabled();
     expect(within(c).getByText(ENGEL_KONTROLSUZ)).toHaveClass("dugme-neden");
     expect(within(c).getByTestId("oracle-kapi")).toHaveAttribute("data-tur", "kontrolsuz");
     await userEvent.click(within(c).getByRole("button", { name: "Kontrol edilemedi, yine de onayla" }));
@@ -406,7 +411,7 @@ describe("yüksek riskli uyuşmazlık: kapı ve istisna", () => {
     await userEvent.type(within(form).getByLabelText("Neden kontrolsüz onaylıyorsunuz?"), "Uyarının görünmediği elle doğrulandı.");
     const kararSpy = vi.spyOn(api, "caseKarari");
     await userEvent.click(within(form).getByRole("button", { name: "Kontrol edilemedi, yine de onayla" }));
-    await durumOlsun(c9.id, "approved");
+    await durumOlsun(c9.id, "ready");
     expect(kararSpy).toHaveBeenCalledWith(c9.id, expect.objectContaining({ oracle_istisna_gerekce: "Uyarının görünmediği elle doğrulandı.", oracle_istisna_turu: "kontrolsuz" }));
   });
 
@@ -419,19 +424,19 @@ describe("yüksek riskli uyuşmazlık: kapı ve istisna", () => {
     uygulama(`/gereksinimler/${REQ}/caseler`);
     const c = await kart(new RegExp(c9.icerik.title.slice(0, 20)));
     expect(await within(c).findByTestId("oracle-uyari")).toHaveTextContent(UYARI_KONTROL_EDILEMEDI);
-    expect(within(c).getByRole("button", { name: "Onayla" })).toBeEnabled();
+    expect(within(c).getByRole("button", { name: "Kabul et" })).toBeEnabled();
   });
 
   it("ekran eski sonucu gösterirken sunucu 422 oracle_uyumsuz verirse hata görünür ve liste yenilenir", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     uygulama(`/gereksinimler/${REQ}/caseler`);
     const c = await kart(C6_BASLIK);
     await within(c).findByText("Tablo yok");
     // Ekran açıkken tablo arka planda onaylandı ve kontrol bitti (olay kaçmış gibi): ekran hâlâ "Tablo yok".
     const caselerSpy = vi.spyOn(api, "caseler");
     await minSiparisOnayla();
-    await oturumAc("analist");
-    await userEvent.click(within(c).getByRole("button", { name: "Onayla" }));
+    await oturumAc("testci");
+    await userEvent.click(within(c).getByRole("button", { name: "Kabul et" }));
     expect((await within(c).findAllByText(/gerekçeli istisna olmadan onaylanamaz/)).length).toBeGreaterThan(0);
     await waitFor(() => expect(caselerSpy).toHaveBeenCalled());
     expect(await within(await kart(C6_BASLIK)).findByText("Tabloyla uyuşmuyor ✗")).toBeInTheDocument();
@@ -445,7 +450,7 @@ describe("düzeltme formu: önerilen içerik ön kontrolü", () => {
     uygulama(`/gereksinimler/${REQ}/caseler`);
     const c = await kart(C6_BASLIK);
     await within(c).findByText("Tabloyla uyuşmuyor ✗");
-    await userEvent.click(within(c).getByRole("button", { name: "Düzelt" }));
+    await userEvent.click(within(c).getByRole("button", { name: "Düzelterek kabul" }));
     return c;
   }
   async function anlamYanitla(c: HTMLElement) {
@@ -468,10 +473,10 @@ describe("düzeltme formu: önerilen içerik ön kontrolü", () => {
       await userEvent.paste(deger);
     }
     await anlamYanitla(c);
-    await userEvent.click(within(c).getByRole("button", { name: "Düzeltip onayla" }));
+    await userEvent.click(within(c).getByRole("button", { name: "Düzelterek kabul et" }));
     expect(await within(c).findByText("Beklenen sonuç kontrol ediliyor…")).toBeInTheDocument();
     expect(kontrolSpy).toHaveBeenCalledWith(C6, expect.objectContaining({ expected_result: expect.stringContaining("uyarısı gösterilmez") }));
-    await durumOlsun(C6, "approved");
+    await durumOlsun(C6, "ready");
     const sonra = await kart(C6_BASLIK);
     expect(await within(sonra).findByText("Tabloyla uyumlu ✓")).toBeInTheDocument();
   });
@@ -481,7 +486,7 @@ describe("düzeltme formu: önerilen içerik ön kontrolü", () => {
     const kararSpy = vi.spyOn(api, "caseKarari");
     const baslik = within(c).getByLabelText("Başlık");
     await userEvent.type(baslik, " (sınır)");
-    await userEvent.click(within(c).getByRole("button", { name: "Düzeltip onayla" }));
+    await userEvent.click(within(c).getByRole("button", { name: "Düzelterek kabul et" }));
     const panel = await within(c).findByText("Önerilen içerik tabloyla uyuşmuyor ✗");
     expect(panel).toBeInTheDocument();
     expect(kararSpy).not.toHaveBeenCalled();
@@ -490,7 +495,7 @@ describe("düzeltme formu: önerilen içerik ön kontrolü", () => {
     await waitFor(() => expect(alan).toHaveFocus());
     await userEvent.type(alan, "Sınır değeri PO ile ayrıca teyit edildi.");
     await userEvent.click(within(c).getByRole("button", { name: "İstisnayla düzeltip onayla" }));
-    await durumOlsun(C6, "approved");
+    await durumOlsun(C6, "ready");
     expect(kararSpy).toHaveBeenCalledWith(
       C6,
       expect.objectContaining({ karar: "edit", oracle_istisna_gerekce: "Sınır değeri PO ile ayrıca teyit edildi.", oracle_istisna_turu: "uyumsuz" }),
@@ -503,7 +508,7 @@ describe("düzeltme formu: önerilen içerik ön kontrolü", () => {
     const kontrolSpy = vi.spyOn(api, "caseOracleKontrol");
     const baslik = within(c).getByLabelText("Başlık");
     await userEvent.type(baslik, " (sınır)");
-    await userEvent.click(within(c).getByRole("button", { name: "Düzeltip onayla" }));
+    await userEvent.click(within(c).getByRole("button", { name: "Düzelterek kabul et" }));
     await within(c).findByText("Önerilen içerik tabloyla uyuşmuyor ✗");
     // Analist engelden sonra değeri tabloya getirir: panel (ve eski içeriğin istisna formu) kapanır.
     for (const [etiket, eski, yeni] of C6_DUZELTME) {
@@ -516,8 +521,8 @@ describe("düzeltme formu: önerilen içerik ön kontrolü", () => {
     expect(within(c).queryByTestId("istisna-formu")).toBeNull();
     expect(within(c).queryByText("Önerilen içerik tabloyla uyuşmuyor ✗")).toBeNull();
     await anlamYanitla(c);
-    await userEvent.click(within(c).getByRole("button", { name: "Düzeltip onayla" }));
-    await durumOlsun(C6, "approved");
+    await userEvent.click(within(c).getByRole("button", { name: "Düzelterek kabul et" }));
+    await durumOlsun(C6, "ready");
     // Gönderilen içerik güncel olandır; istisna gerekçesi yok.
     expect(kontrolSpy).toHaveBeenLastCalledWith(C6, expect.objectContaining({ expected_result: expect.stringContaining("uyarısı gösterilmez") }));
     expect(kararSpy).toHaveBeenCalledTimes(1);
@@ -533,7 +538,7 @@ describe("düzeltme formu: önerilen içerik ön kontrolü", () => {
     vi.spyOn(api, "caseOracle").mockResolvedValue(oracle(null, { kontrol_suruyor: true }));
     const kullanici = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     await kullanici.type(within(c).getByLabelText("Başlık"), " x");
-    await kullanici.click(within(c).getByRole("button", { name: "Düzeltip onayla" }));
+    await kullanici.click(within(c).getByRole("button", { name: "Düzelterek kabul et" }));
     expect(await within(c).findByText("Beklenen sonuç kontrol ediliyor…")).toBeInTheDocument();
     await vi.advanceTimersByTimeAsync(19000);
     expect(within(c).queryByText("Kontrol zamanında bitmedi")).toBeNull();
@@ -545,22 +550,22 @@ describe("düzeltme formu: önerilen içerik ön kontrolü", () => {
   });
 
   it("tablo kapsamı dışındaki case'te ön kontrol istenmez", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const spy = vi.spyOn(api, "caseOracleKontrol");
     uygulama(`/gereksinimler/${REQ}/caseler`);
     const c = await kart(C6_BASLIK);
     await within(c).findByText("Tablo yok");
-    await userEvent.click(within(c).getByRole("button", { name: "Düzelt" }));
+    await userEvent.click(within(c).getByRole("button", { name: "Düzelterek kabul" }));
     await userEvent.type(within(c).getByLabelText("Başlık"), " x");
-    await userEvent.click(within(c).getByRole("button", { name: "Düzeltip onayla" }));
-    await durumOlsun(C6, "approved");
+    await userEvent.click(within(c).getByRole("button", { name: "Düzelterek kabul et" }));
+    await durumOlsun(C6, "ready");
     expect(spy).not.toHaveBeenCalled();
   });
 });
 
 describe("karşılaştırılamayan değerler ve kısmen uyumlu (K11)", () => {
   it("V9: C2'de bedava adet, indirim ve toplam karşılaştırılır; karşılaştırılamayan yok, tolerans görünür", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const c2 = (await api.caseler(REQ)).find((c) => c.id === "case-1-2")!;
     expect(c2.oracle?.sonuc).toBe("uyumlu");
     expect(c2.oracle?.karsilastirilamayan).toEqual([]);
@@ -576,7 +581,7 @@ describe("karşılaştırılamayan değerler ve kısmen uyumlu (K11)", () => {
   });
 
   it("ara toplam yazmayan case: 'Kısmen uyumlu — n değer kontrol edilemedi' çipi, soluk grup ve uyarıyla açık onay", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci");
     const c = mockVerisi().caseler.find((x) => x.id === "case-1-10")!;
     c.durum = "draft";
     c.icerik = JSON.parse(JSON.stringify(c.icerik).replaceAll(/ara toplam [0-9.,]+ TL, /g, "")) as TestCase["icerik"];
@@ -593,7 +598,7 @@ describe("karşılaştırılamayan değerler ve kısmen uyumlu (K11)", () => {
     const grup = within(k).getAllByTestId("oracle-karsilastirilamadi")[0];
     expect(within(grup).getByRole("rowheader", { name: "Karşılaştırılamadı: case'te bulunamayan girdi: ara_toplam" })).toBeInTheDocument();
     expect(within(k).getByTestId("oracle-uyari")).toHaveTextContent(UYARI_KISMEN);
-    expect(within(k).getByRole("button", { name: "Onayla" })).toBeEnabled();
+    expect(within(k).getByRole("button", { name: "Kabul et" })).toBeEnabled();
   });
 });
 
@@ -668,7 +673,7 @@ describe("t2 N2: §13.2 kapı tablosu — mock kararı ekran kapısıyla ve tabl
     try {
       await api.caseKarari(C9, {
         icerik_hash: tc.icerik_hash,
-        karar: "approve",
+        karar: "accept",
         ...(s.gerekce ? { oracle_istisna_gerekce: "Değerler PO ile elle doğrulandı.", oracle_istisna_turu: tur } : {}),
       });
       const eylemler = mockVerisi().denetim.slice(denetim).map((d) => d.eylem);

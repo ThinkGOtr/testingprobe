@@ -1,5 +1,5 @@
 // 012/Ş8 mock arka ucu: ekilmiş hata koşusu uçları (ANALIZ §4.6) ve Kule'nin iki kalite anahtarı (§4.7).
-// Sözleşme gibi davranır: yalnız engineer/presenter başlatır ve iptal eder, süren koşu varken 409
+// Sözleşme gibi davranır: yalnız `fault_run.manage` (engineer, admin) başlatır ve iptal eder, süren koşu varken 409
 // `hata_kosusu_suruyor`, platformlar sırayla koşar (temel → her hata → kapanış), her adımda
 // `hata_kosusu.ilerleme` olayı. Koşu tek bir zamanlayıcıyla ilerler; `kuleMockSifirla` zamanlayıcıyı
 // temizler (testler arasında sızmaz) ve testler `kuleMockIlerlet` ya da sahte saatle adım adım sürer.
@@ -14,10 +14,10 @@ import type {
   KontrolKulesi,
   KosuDetay,
   Kullanici,
-  Rol,
 } from "../types";
 import { kaynakOrani, yakalamaOrani } from "../uyumKule";
 import { mockOlayYayinla } from "./olaylar";
+import type { Izin } from "../../lib/yetki";
 import { adimiSonuclandir, adimIskeleti, AI_TESTLERI, HATA_KATALOGU, ilkHataKosulari, KULE_KALITE_KAYNAKLARI, PAKET_TESTLERI, TEMELDE_KIRMIZI } from "./kuleVerisi";
 import type { MockVeri } from "./fixtures";
 import { beklentiDogruluguHesapla, onayliUyumsuzHesapla } from "./kalite";
@@ -27,7 +27,7 @@ const testModu = import.meta.env.MODE === "test";
 const VARSAYILAN_ADIM_MS = testModu ? 20 : 1400;
 export const kuleAyar = { adimMs: VARSAYILAN_ADIM_MS };
 
-const BASLATAN_ROLLER: Rol[] = ["engineer", "presenter"];
+const BASLATMA_IZNI: Izin = "fault_run.manage";
 /** core `TP_HATA_KOSUSU_GECERLI_ESIK` varsayılanı (Y10). */
 const GECERLI_ESIK = 0.5;
 const HATA_KODU_KALIBI = /^[a-z0-9_]{1,40}$/;
@@ -412,7 +412,7 @@ export function kuleKaliteKaynaklariMock(): { beklenti_dogrulugu: string; hata_y
 type Rota = [string, RegExp, (m: RegExpMatchArray, q: URLSearchParams, govde: unknown) => unknown];
 
 /** handlers.ts ROTALAR'ına eklenen uçlar. `/fault-runs/catalog`, `/fault-runs/{id}`'den önce eşleşmeli. */
-export function kuleRotalari(girisGerekli: () => Kullanici, rolGerekli: (...roller: Rol[]) => Kullanici): Rota[] {
+export function kuleRotalari(girisGerekli: () => Kullanici, izinGerekli: (...izinler: [Izin, ...Izin[]]) => Kullanici): Rota[] {
   return [
     [
       "GET",
@@ -431,7 +431,7 @@ export function kuleRotalari(girisGerekli: () => Kullanici, rolGerekli: (...roll
         return kosular.slice(0, limit).map(ozet);
       },
     ],
-    ["POST", /^\/fault-runs$/, (_m, _q, g) => baslat(rolGerekli(...BASLATAN_ROLLER), g)],
+    ["POST", /^\/fault-runs$/, (_m, _q, g) => baslat(izinGerekli(BASLATMA_IZNI), g)],
     [
       "GET",
       /^\/fault-runs\/([^/]+)$/,
@@ -446,7 +446,7 @@ export function kuleRotalari(girisGerekli: () => Kullanici, rolGerekli: (...roll
       "POST",
       /^\/fault-runs\/([^/]+)\/cancel$/,
       (m) => {
-        return iptal(decodeURIComponent(m[1]), rolGerekli(...BASLATAN_ROLLER));
+        return iptal(decodeURIComponent(m[1]), izinGerekli(BASLATMA_IZNI));
       },
     ],
     // Ekilmiş hata adımlarının koşu kayıtları (kimlik `hk-<n>-r<sıra>`); diğer koşular handlers.ts'te.

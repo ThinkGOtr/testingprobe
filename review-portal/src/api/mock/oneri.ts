@@ -343,7 +343,7 @@ export const MOCK_KURALLAR: MockKural[] = [
   {
     id: "hata-beklenti-case-duzelt",
     ekran: "/hatalar/:id",
-    roller: ["analyst"],
+    roller: ["tester"],
     kosul: (o) => o.hata_sinifi === "test_maintenance" && o.beklenti_farki === true,
     oncelik: 85,
     baslik: "Case'in beklenen değeri onaylı karar tablosuyla uyuşmuyor; case'i düzeltin",
@@ -351,7 +351,7 @@ export const MOCK_KURALLAR: MockKural[] = [
       "Uygulama PO onaylı karar tablosuna uygun, test beklentisi değil; case düzeltilmeden test her koşuda kırmızı kalır ve otomatik onarım beklenen değere dokunmaz.",
     eylem: { tur: "bilgi" },
     aciklama:
-      "Triage bu hatayı test beklentisi farkı olarak sınıfladı: testin beklediği değer onaylı karar tablosundan farklı, uygulamanın ürettiği değer tabloyla aynı. Gereksinimin case ekranında bu case'i düzeltme formuyla tablodaki değere getirin; önerilen içerik onaydan önce tabloyla yeniden kontrol edilir. Bug taslağı ve locator onarımı açılmaz.",
+      "Triage bu hatayı test beklentisi farkı olarak sınıfladı: testin beklediği değer onaylı karar tablosundan farklı, uygulamanın ürettiği değer tabloyla aynı. Gereksinimin case ekranında bu case'i taslağa alıp düzeltme formuyla tablodaki değere getirin; önerilen içerik kabulden önce tabloyla yeniden kontrol edilir, ardından Analist son onayını verir. Bug taslağı ve locator onarımı açılmaz.",
   },
   {
     id: "hata-beklenti-bilgi",
@@ -359,11 +359,11 @@ export const MOCK_KURALLAR: MockKural[] = [
     roller: ["engineer"],
     kosul: (o) => o.hata_sinifi === "test_maintenance" && o.beklenti_farki === true,
     oncelik: 60,
-    baslik: "Test beklentisi karar tablosundan farklı; case'i analist düzeltir",
+    baslik: "Test beklentisi karar tablosundan farklı; case'i Testçi düzeltir",
     neden: "Sorun locator'da ya da kodda değil, case'in beklenen değerinde; otomatik onarım bunu düzeltmez.",
     eylem: { tur: "bilgi" },
     aciklama:
-      "Bu hata test beklentisi farkı olarak sınıflandı (uygulama onaylı karar tablosuna uygun). Case düzeltmesi Analist rolündedir; düzeltilen case onaylanınca test yeniden üretilip koşturulabilir.",
+      "Bu hata test beklentisi farkı olarak sınıflandı (uygulama onaylı karar tablosuna uygun). Case düzeltmesi Testçi rolündedir; düzeltilen case Analist son onayından geçince test yeniden üretilip koşturulabilir.",
   },
   {
     id: "hata-bug-taslagi-karari",

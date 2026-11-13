@@ -120,7 +120,7 @@ export function EkCaseTuret({
           )}
         </fieldset>
         <div className="eylemler">
-          <IslemDugmesi roller={["analyst"]} type="submit" calisiyor={islem.calisiyor} disabled={!secilen} title={!secilen ? "Önce bir ilişkiyi PO onayına gönderip onaylatın." : undefined}>
+          <IslemDugmesi izin="case.generate" type="submit" calisiyor={islem.calisiyor} disabled={!secilen} title={!secilen ? "Önce bir ilişkiyi PO onayına gönderip onaylatın." : undefined}>
             Ek case türet
           </IslemDugmesi>
         </div>

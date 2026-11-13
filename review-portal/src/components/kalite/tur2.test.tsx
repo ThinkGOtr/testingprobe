@@ -119,7 +119,7 @@ describe("u2 N9: PO incelerken içerik değişirse satır farkı", () => {
 
 describe("u2 N7, N12: Kule'den 'Bu girdiyle ek case türet'", () => {
   it("bağlantı parametreleri ilişkiyi ve C2'yi seçer, 'türetilecek girdi: adet 14' görünür; türetme 14 adetlik case üretir", async () => {
-    await oturumAc("analist");
+    await oturumAc("testci"); // 012 rol modeli: ek case türetme case üretimidir (Testçi)
     uygulama(`${YOL}?iliski=mi-1&kaynak=case-1-2&girdi=adet+14#ek-case-turet`);
     const bolum = await screen.findByTestId("ek-case-turet");
     expect(await within(bolum).findByTestId("turet-onizleme")).toHaveTextContent("Kaçan hata için hazırlandı: İ1 ilişkisi, kaynak C2 · türetilecek girdi: adet 14");
@@ -147,14 +147,14 @@ describe("u2 N7, N12: Kule'den 'Bu girdiyle ek case türet'", () => {
     expect(oneri).toMatchObject({ iliski: { id: "mi-1" }, kaynak: { id: "case-1-2" }, girdi: "adet 14" });
   });
 
-  it("analist dışı rolde düğme 'Analiste ilet (kopyala)': istek + önerilen türetme + bağlantı panoya", async () => {
+  it("Testçi dışı rolde düğme 'Testçiye ilet (kopyala)': istek + önerilen türetme + bağlantı panoya", async () => {
     await oturumAc("muhendis");
     const yaz = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", { value: { writeText: yaz }, configurable: true });
     sar(<HataKosusuKarti />);
     const kacan = within(await screen.findByTestId("hk-kacan-kampanya_tek_bedava"));
     expect(kacan.queryByRole("link", { name: "Bu girdiyle ek case türet" })).toBeNull();
-    const ilet = await kacan.findByRole("button", { name: "Analiste ilet (kopyala)" });
+    const ilet = await kacan.findByRole("button", { name: "Testçiye ilet (kopyala)" });
     await waitFor(() => expect(kacan.getByTestId("hk-turet-onizleme-kampanya_tek_bedava")).toBeInTheDocument());
     await userEvent.click(ilet);
     expect(yaz).toHaveBeenCalledWith(expect.stringMatching(/Önerilen türetme: adet 14 \(ilişki İ1, kaynak C2\)\. Bağlantı: .*karar-tablolari\?iliski=mi-1&kaynak=case-1-2&girdi=adet\+14#ek-case-turet$/));
@@ -298,7 +298,9 @@ describe("tur 2: kısmen nedenleri düz Türkçe", () => {
   it("yüksek riskte atılan olgu nedeni: nedenler listelenir, 'Değerleri elle doğruladım, onayla' gerekçe formu (tür kontrolsuz)", async () => {
     await t2Onayla();
     await isleriBekle();
+    await oturumAc("testci"); // 012 rol modeli: kabul kapısı Testçide
     const c = mockVerisi().caseler.find((x) => x.id === "case-1-9")!;
+    c.durum = "draft"; // örnek veride yayınlı
     c.icerik = { ...c.icerik, risk: "high" };
     c.icerik_hash = (await api.caseOracleKontrol(c.id, c.icerik)).icerik_hash!;
     await isleriBekle();
@@ -310,13 +312,13 @@ describe("tur 2: kısmen nedenleri düz Türkçe", () => {
     const neden = await within(k).findByTestId("oracle-kismen-nedeni");
     expect(neden).toHaveTextContent("case metninde tablonun bir girdisi yok");
     expect(neden).toHaveTextContent("case'ten çıkarılan bir değer metinde doğrulanamadığı için atıldı");
-    expect(within(k).getByRole("button", { name: "Onayla" })).toBeDisabled();
+    expect(within(k).getByRole("button", { name: "Kabul et" })).toBeDisabled();
     expect(within(k).getByTestId("oracle-kapi")).toHaveAttribute("data-tur", "kontrolsuz");
     const kararSpy = vi.spyOn(api, "caseKarari");
     await userEvent.click(within(k).getByRole("button", { name: "Değerleri elle doğruladım, onayla" }));
     await userEvent.type(within(k).getByLabelText("Neden kontrolsüz onaylıyorsunuz?"), "Atılan değer elle karşılaştırıldı, doğru.");
     await userEvent.click(within(k).getByRole("button", { name: "Değerleri elle doğruladım, onayla" }));
-    await waitFor(() => expect(mockVerisi().caseler.find((x) => x.id === c.id)!.durum).toBe("approved"));
+    await waitFor(() => expect(mockVerisi().caseler.find((x) => x.id === c.id)!.durum).toBe("ready"));
     expect(kararSpy).toHaveBeenCalledWith(c.id, expect.objectContaining({ oracle_istisna_turu: "kontrolsuz", oracle_kayit_damgasi: kayit.damga }));
   });
 });
