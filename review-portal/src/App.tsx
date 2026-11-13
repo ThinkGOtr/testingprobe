@@ -105,8 +105,8 @@ export function Rotalar() {
         <Route path="gereksinimler" element={<Korumali yol="/gereksinimler"><Gereksinimler /></Korumali>} />
         <Route path="gereksinimler/:id" element={<Korumali yol="/gereksinimler/:id"><GereksinimDetay /></Korumali>} />
         <Route path="gereksinimler/:id/caseler" element={<Korumali yol="/gereksinimler/:id/caseler"><CaseReview /></Korumali>} />
-        {/* Yayın ekranı kendi bilgi kartıyla korunur (`publish.preview` salt okunur; yayın `case.publish`). */}
-        <Route path="gereksinimler/:id/yayin" element={<Yayin />} />
+        {/* Yayın önizleme `publish.preview` (salt okunur); yayın düğmesi ayrıca `case.publish` ister. */}
+        <Route path="gereksinimler/:id/yayin" element={<Korumali yol="/gereksinimler/:id/yayin"><Yayin /></Korumali>} />
         <Route path="gereksinimler/:id/karar-tablolari" element={<Korumali yol="/gereksinimler/:id/karar-tablolari"><KararTablolari /></Korumali>} />
         <Route path="caseler" element={<Korumali yol="/caseler"><TestCaseleri /></Korumali>} />
         <Route path="kod" element={<Korumali yol="/kod"><Kod /></Korumali>} />

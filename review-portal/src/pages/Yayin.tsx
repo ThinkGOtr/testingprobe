@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
 import type { YayinOnizlemeKalemi, YayinSonucu } from "../api/types";
 import { jiraKayitAdresi } from "../api/uyum";
-import { useIzin, useOturum } from "../auth";
+import { useIzin } from "../auth";
 import { useBildirim } from "../components/Bildirim";
 import { DenetimOzeti } from "../components/KalitePanelleri";
 import { Baglanti, BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, Uyari, Yukleniyor, IzinliLink } from "../components/ui";
@@ -42,28 +42,12 @@ export const YAYIN_ROLU_GEREKLI = "Yayın Testçi rolü gerektirir";
 /** Önizlemeyi görebilen roller (`publish.preview`; core `GET /publish/preview` → 403). */
 export const ONIZLEME_YETKISI_YOK = "Yayın önizleme bu rolde görünmez";
 
+/**
+ * Yayın ekranı. Rota koruması (App.tsx `Korumali`, `publish.preview`) yetkisiz rolde standart
+ * "Erişim yok" ekranını çizer; bu bileşen yalnız izinli oturumda çizilir.
+ */
 export function Yayin() {
-  const { kullanici } = useOturum();
-  const yetkili = useIzin("publish.preview");
-  if (kullanici && !yetkili) return <YayinYetkisiz />;
   return <YayinEkrani />;
-}
-
-function YayinYetkisiz() {
-  const { id = "" } = useParams();
-  const caseOkur = useIzin("case.read");
-  return (
-    <>
-      <SayfaBasligi
-        ust={<IzinliLink to={`/gereksinimler/${encodeURIComponent(id)}/caseler`}>← Case review</IzinliLink>}
-        baslik="Yayın önizleme"
-      />
-      <Uyari ton="bilgi" baslik={ONIZLEME_YETKISI_YOK}>
-        Case'lerin test yönetimine yayını Testçi rolüyle yapılır (Analist son onayından sonra).
-        {caseOkur && " Case'lerin durumunu Case review ekranında görebilirsiniz."}
-      </Uyari>
-    </>
-  );
 }
 
 function YayinEkrani() {
@@ -137,7 +121,7 @@ function YayinEkrani() {
   return (
     <>
       <SayfaBasligi
-        ust={<Link to={`/gereksinimler/${encodeURIComponent(id)}/caseler`}>← Case review</Link>}
+        ust={<IzinliLink to={`/gereksinimler/${encodeURIComponent(id)}/caseler`}>← Case review</IzinliLink>}
         baslik="Yayın önizleme"
         aciklama="Önizleme: bu ekranda hiçbir kayıt oluşturulmaz. Yalnızca onaylı ve onaydan sonra değişmemiş case'ler yayınlanır; yayın tekrarlansa da aynı içerik ikinci kez oluşturulmaz."
       />

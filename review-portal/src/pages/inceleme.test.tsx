@@ -409,11 +409,14 @@ describe("yayın rolü", () => {
     expect(d).toHaveAccessibleDescription("Bu işlem için gereken rol: Testçi");
   });
 
-  it("Developer yayın ekranına gelirse önizleme istenmez; bilgi notu, 'Tekrar dene' yok", async () => {
+  it("Developer yayın ekranına gelirse önizleme istenmez; standart 'Erişim yok', yetkisiz bağlantı yok", async () => {
     await oturumAc("gelistirici");
     const casus = vi.spyOn(api, "yayinOnizleme");
     uygulama("/gereksinimler/req-tpd-1/yayin");
-    expect(await screen.findByText("Yayın önizleme bu rolde görünmez")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Erişim yok" })).toBeInTheDocument();
+    expect(screen.getByText("Bu ekran için yetkiniz yok.")).toBeInTheDocument();
+    expect(screen.queryByText("Yayın önizleme bu rolde görünmez")).toBeNull();
+    expect(screen.queryByRole("link", { name: /Case review/ })).toBeNull();
     expect(screen.queryByRole("button", { name: "Tekrar dene" })).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
     expect(casus).not.toHaveBeenCalled();
