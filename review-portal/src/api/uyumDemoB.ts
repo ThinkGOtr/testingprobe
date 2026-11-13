@@ -673,7 +673,9 @@ export function kosuUyarla(k: Ham): Kosu {
   const say = (alan: string, fn: (t: TestSonucu) => boolean) => sayiYaDaNull(k[alan]) ?? sonuclar.filter(fn).length;
   const tetik = metin(k.tetik) as Tetik;
   const kaynak = metin(k.kaynak, "local") as KosuKaynagi;
-  const durum = metin(ilk(k, "durum", "sonuc", "status"), "queued") as Kosu["durum"];
+  const hamDurum = metin(ilk(k, "durum", "sonuc", "status"), "queued") as Kosu["durum"];
+  // Core zaman aşımıyla kapattığı koşuyu `sonuc=error` + `zaman_asimi=true` döndürür.
+  const durum: Kosu["durum"] = hamDurum === "error" && k.zaman_asimi === true ? "zaman_asimi" : hamDurum;
   const bc = ilk(k, "break_campaign", "kirma");
   const ortamKirma = ilk(ortam, "BREAK_CAMPAIGN", "break_campaign");
   return {

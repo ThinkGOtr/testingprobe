@@ -74,6 +74,18 @@ def ci_nightly(ctx: JobContext) -> dict[str, Any]:
     return service.nightly_job(get_engine(), tarih)
 
 
+@job_handler(service.JOB_ZAMAN_ASIMI, max_deneme=2, backoff_s=60.0, zaman_asimi_s=120)
+def ci_zaman_asimi(ctx: JobContext) -> dict[str, Any]:
+    """Sırada / sürüyor kalan koşuları zaman aşımıyla kapatır; sonraki taramayı planlar."""
+    engine = get_engine()
+    try:
+        return service.timeout_sweep_job(engine)
+    finally:
+        # Zincir kopmasın: tarama hata verse de sonraki tarama planlanır (bu iş artık `running`).
+        with engine.begin() as conn:
+            service.plan_timeout_sweep(conn)
+
+
 def on_worker_start(conn: Connection) -> None:
     """Worker açılışı: işi bitmiş ama `queued/running`'de kalmış koşular `error` olur; sonraki
     gece koşusu planlı değilse planlanır (idempotent anahtar: `ci.nightly:<tarih>`)."""
@@ -83,6 +95,17 @@ def on_worker_start(conn: Connection) -> None:
     if n:
         logging.getLogger(__name__).info("yarıda kalan %d CI koşusu error olarak kapatıldı", n)
     service.plan_nightly(conn)
+    # Takılı koşu zaman aşımı (TP_CI_KOSU_ZAMAN_ASIMI_S, varsayılan 6 saat): açılışta bir kez,
+    # sonra periyodik iş zinciri.
+    try:
+        with Session(bind=conn, join_transaction_mode="create_savepoint") as session:
+            n = service.timeout_stale_runs(session)
+            session.commit()
+        if n:
+            logging.getLogger(__name__).info("%d koşu zaman aşımıyla kapatıldı", n)
+        service.plan_timeout_sweep(conn)
+    except Exception:
+        logging.getLogger(__name__).exception("koşu zaman aşımı taraması başarısız")
     # Kendi savepoint'inde: hata açılışın diğer işlerini (tarama, gece planı) geri almaz.
     try:
         with Session(bind=conn, join_transaction_mode="create_savepoint") as session:

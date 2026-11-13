@@ -491,6 +491,46 @@ def test_worker_acilisi_takili_kosulari_kapatir(engine: Engine) -> None:
     assert _run(engine, suren).sonuc == "queued"  # işi kuyrukta: dokunulmaz
 
 
+def test_zaman_asimi_sirada_kalan_kosuyu_kapatir(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Canlı: koşu 13 Kas'tan beri "Sırada" (işi kuyrukta kalmış). Sınırı (varsayılan 6 saat,
+    `TP_CI_KOSU_ZAMAN_ASIMI_S`) geçen sırada/sürüyor koşu `error` + `zaman_asimi` olur; yeni
+    koşuya ve kural kapalıyken dokunulmaz; tarama tek zincir planlanır."""
+    from datetime import timedelta
+
+    from tp_core.features.ci import jobs as ci_jobs
+
+    eski = _enqueue(engine, pr=41)
+    yeni = _enqueue(engine, pr=42)
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE run SET olusturma = :t WHERE id = :r"),
+            {"t": datetime.now(UTC) - timedelta(hours=7), "r": eski},
+        )
+    monkeypatch.setenv(service.ZAMAN_ASIMI_ORTAM, "0")
+    with Session(engine) as s, s.begin():
+        assert service.timeout_stale_runs(s) == 0
+    monkeypatch.delenv(service.ZAMAN_ASIMI_ORTAM)
+    assert service.kosu_zaman_asimi_s() == 6 * 3600
+    with engine.begin() as conn:
+        ci_jobs.on_worker_start(conn)
+    r = _run(engine, eski)
+    assert r.sonuc == "error" and r.artefaktlar["zaman_asimi"] is True
+    assert "Zaman aşımı: koşu 7 saattir sırada" in r.artefaktlar["hata"]
+    assert _run(engine, yeni).sonuc == "queued"
+    with Session(engine) as s:
+        d = service.run_detail(s, eski, artefakt=True)
+        assert d is not None and d["zaman_asimi"] is True
+        taramalar = s.scalars(select(Job).where(Job.tur == service.JOB_ZAMAN_ASIMI)).all()
+    assert len(taramalar) == 1
+    with engine.begin() as conn:
+        assert service.plan_timeout_sweep(conn) is None  # bekleyen tarama varken yenisi yok
+    # Sonradan biten iş, kapatılmış koşuyu yeniden açmaz.
+    run_jobs(engine)
+    assert _run(engine, eski).sonuc == "error"
+
+
 def test_acik_defect_adayinin_kirmizi_kosusu_listeden_dusmez(
     engine: Engine, make_requirement_case
 ) -> None:

@@ -1186,6 +1186,98 @@ def sweep_stuck_runs(session: Session) -> int:
     return n
 
 
+# ------------------------------------------------------------------------------ zaman aşımı
+
+JOB_ZAMAN_ASIMI = "ci.zaman_asimi"
+# Sırada / sürüyor kalan koşunun kapatılma sınırı (canlı: bir koşu 13 Kas'tan beri "Sırada" kaldı).
+ZAMAN_ASIMI_VARSAYILAN_S = 6 * 3600
+ZAMAN_ASIMI_EN_AZ_S = 600
+ZAMAN_ASIMI_TARAMA_S = 900
+ZAMAN_ASIMI_ORTAM = "TP_CI_KOSU_ZAMAN_ASIMI_S"
+
+
+def kosu_zaman_asimi_s() -> int | None:
+    """`TP_CI_KOSU_ZAMAN_ASIMI_S` (sn; varsayılan 6 saat, en az 10 dk); `0`/`kapali` → kural kapalı.
+    Geçersiz değer varsayılana düşer."""
+    ham = (os.environ.get(ZAMAN_ASIMI_ORTAM) or "").strip().lower()
+    if not ham:
+        return ZAMAN_ASIMI_VARSAYILAN_S
+    if ham in ("0", "kapali", "off"):
+        return None
+    try:
+        return max(ZAMAN_ASIMI_EN_AZ_S, int(ham))
+    except ValueError:
+        log.warning("%s geçersiz (%r); varsayılan kullanılıyor", ZAMAN_ASIMI_ORTAM, ham)
+        return ZAMAN_ASIMI_VARSAYILAN_S
+
+
+def _saat_metni(saniye: float) -> str:
+    saat = int(saniye // 3600)
+    return f"{saat} saattir" if saat >= 1 else f"{max(1, int(saniye // 60))} dakikadır"
+
+
+def timeout_stale_runs(session: Session, simdi: datetime | None = None) -> int:
+    """`queued/running`'de zaman aşımı sınırını geçen koşuları `error` yapar (`artefaktlar.
+    zaman_asimi = true`; portal "Zaman aşımı" gösterir). Sonradan biten iş koşuyu yeniden açmaz
+    (`run_job` / yoklama bitmiş koşuya dokunmaz)."""
+    esik = kosu_zaman_asimi_s()
+    if esik is None:
+        return 0
+    simdi = simdi or services.now()
+    sinir = simdi - timedelta(seconds=esik)
+    n = 0
+    for run in session.scalars(
+        select(Run).where(Run.sonuc.in_(AKTIF), Run.olusturma < sinir).order_by(Run.olusturma)
+    ).all():
+        if _zaman_capasi(run) >= sinir:
+            continue
+        kilitli = _kilitle(session, run.id)
+        if kilitli is None or kilitli.sonuc not in AKTIF:
+            continue
+        durum = "sırada" if kilitli.sonuc == "queued" else "sürüyor"
+        gecen = (simdi - _zaman_capasi(kilitli)).total_seconds()
+        _bitir(
+            session,
+            kilitli,
+            "error",
+            hata=(
+                f"Zaman aşımı: koşu {_saat_metni(gecen)} {durum}; "
+                f"{esik // 3600 if esik >= 3600 else esik // 60} "
+                f"{'saat' if esik >= 3600 else 'dakika'} sınırı aşıldı ve kapatıldı"
+            ),
+        )
+        kilitli.artefaktlar = {**(kilitli.artefaktlar or {}), "zaman_asimi": True}
+        n += 1
+    return n
+
+
+def plan_timeout_sweep(conn: Connection, simdi: datetime | None = None) -> uuid.UUID | None:
+    """Sonraki zaman aşımı taramasını planlar; kuyrukta bekleyen tarama varsa yenisini eklemez
+    (worker yeniden başlasa da tek zincir)."""
+    if kosu_zaman_asimi_s() is None:
+        return None
+    bekleyen = conn.execute(
+        select(Job.id).where(Job.tur == JOB_ZAMAN_ASIMI, Job.durum.in_(("queued", "retry")))
+    ).first()
+    if bekleyen is not None:
+        return None
+    zaman = (simdi or services.now()) + timedelta(seconds=ZAMAN_ASIMI_TARAMA_S)
+    dilim = int(zaman.timestamp()) // ZAMAN_ASIMI_TARAMA_S
+    return jobq.enqueue(
+        conn,
+        JOB_ZAMAN_ASIMI,
+        {},
+        idempotency_key=f"{JOB_ZAMAN_ASIMI}:{dilim}",
+        run_after=zaman,
+    )
+
+
+def timeout_sweep_job(engine: Engine) -> dict[str, Any]:
+    with Session(engine, expire_on_commit=False) as session, session.begin():
+        n = timeout_stale_runs(session)
+    return {"kapatilan": n}
+
+
 # ------------------------------------------------------------------------------ GitHub
 
 
@@ -2191,6 +2283,8 @@ def serialize_runs(
                 else None,
                 "github_run_id": r.github_run_id,
                 "hata": a.get("hata") or a.get("runner_hata"),
+                # Sırada/sürüyor kalıp zaman aşımıyla kapatıldı (`timeout_stale_runs`).
+                "zaman_asimi": bool(a.get("zaman_asimi")),
                 "ozet": a.get("ozet"),
                 "isteyen": o.get("isteyen"),
                 # Koşu dizini saklama nedeniyle silindi (test-runner `prune_runs`): bağlantı yok.

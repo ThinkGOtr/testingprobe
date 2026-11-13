@@ -5,6 +5,7 @@ import {
   kirmaUyarla,
   kontrolKulesiUyarla,
   kosuDetayUyarla,
+  kosuUyarla,
   prUyarla,
   scriptUyarla,
   yerelKontrolUyarla,
@@ -192,5 +193,11 @@ describe("core codegen views.detail şekli", () => {
     });
     expect(s.adimlar[0]).toMatchObject({ aciklama: "Parola yazıldı", ham_cikti: "fill('***')" });
     expect(s.eslemeler[0].dogrulama_notu).toMatch(/ajan bayisi bayi3/);
+  });
+
+  it("koşu: core zaman aşımıyla kapattığı koşu (sonuc=error, zaman_asimi=true) 'zaman_asimi' olur", () => {
+    expect(kosuUyarla({ id: "r1", tetik: "nightly", sonuc: "error", zaman_asimi: true }).durum).toBe("zaman_asimi");
+    expect(kosuUyarla({ id: "r2", tetik: "nightly", sonuc: "error", zaman_asimi: false }).durum).toBe("error");
+    expect(kosuUyarla({ id: "r3", tetik: "nightly", sonuc: "queued" }).durum).toBe("queued");
   });
 });
