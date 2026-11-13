@@ -13,6 +13,7 @@ import { Ikon, type IkonAdi } from "./Ikon";
 import { KabukDurumuSaglayici, useKabukDurumu } from "./KabukDurumu";
 import { AiprobeDegistirici, useCikis } from "./AiprobeDegistirici";
 import { useBildirim } from "./Bildirim";
+import { RolSecici } from "./RolSecici";
 import { useKimlikKipi, useKimlikServisiErisilemez } from "../lib/kimlikKipi";
 import { formlariGeriYukle } from "../lib/formYedegi";
 
@@ -330,7 +331,7 @@ function KabukIcerik() {
                   </span>
                 )}
               </span>
-              <span className="kullanici-rol">{rolEtiketi(kullanici.rol)}</span>
+              <RolSecici />
             </div>
           )}
           <button

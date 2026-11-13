@@ -47,6 +47,10 @@ def tp_uuid(tur: str, anahtar: str) -> uuid.UUID:
 
 
 def seed() -> int:
+    # AI Probe kipinde (TP_AUTH_MODE=aiprobe) hazır demo kullanıcı yoktur: herkes kendi AI Probe
+    # hesabıyla girer, roller AI Probe'da atanır ve rol hesapları girişte JIT açılır.
+    if get_settings().auth_mode == "aiprobe":
+        return 0
     parola = get_settings().seed_user_password
     if parola is None or not parola.get_secret_value():
         raise SystemExit("seed: SEED_USER_PASSWORD tanımlı değil")

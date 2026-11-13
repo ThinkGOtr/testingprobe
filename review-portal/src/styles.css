@@ -566,6 +566,66 @@ button.atla {
   font-size: 0.75rem;
   color: var(--muted);
 }
+/* Sağ üst rol seçici (çok rollü AI Probe oturumu): etkin rol + atanmış roller arasında geçiş. */
+.rol-secici {
+  position: relative;
+  display: inline-flex;
+}
+.rol-secici-dugme {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  padding: 2px 8px;
+  cursor: pointer;
+  color: var(--text);
+}
+.rol-secici-dugme:hover,
+.rol-secici-dugme[aria-expanded="true"] {
+  border-color: var(--accent);
+}
+.rol-secici-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 50;
+  min-width: 200px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.rol-secici-baslik {
+  margin: 2px 6px 6px;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.rol-secici-oge {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.rol-secici-oge:hover:not(:disabled),
+.rol-secici-oge:focus-visible {
+  background: var(--surface-2, rgb(127 127 127 / 0.12));
+}
+.rol-secici-oge.aktif {
+  font-weight: 600;
+}
+.rol-secici-isaret {
+  font-size: 0.75rem;
+  color: var(--accent);
+}
 .kullanici-ad-kaynak {
   font-weight: 400;
   font-size: 0.75rem;
