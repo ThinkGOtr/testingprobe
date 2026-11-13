@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useIzin, useOturum } from "../auth";
 import { izinRolleri, ROL_ETIKETLERI, type Izin } from "../lib/yetki";
-import { BosDurum, Kart } from "./ui";
+import { BosDurum, Kart, SayfaBasligi } from "./ui";
 
 /** Gereken izinlerden birini taşıyan rollerin etiketleri ("Testçi / Analist"). */
 export function gerekenRoller(izinler: readonly Izin[]): string {
@@ -17,10 +17,14 @@ export function IzinGerekli({ izin, children }: { izin: Izin | readonly Izin[]; 
   const { kullanici } = useOturum();
   const izinli = useIzin(...istenen);
   if (!kullanici || !izinli) {
+    // Rota koruması sayfanın yerine çizilir: sayfa başlığı (h1) da burada (erişilebilirlik; sayfanın h1'i yok).
     return (
-      <Kart>
-        <BosDurum baslik="Bu ekran için yetkiniz yok.">Gereken rol: {gerekenRoller(istenen)}</BosDurum>
-      </Kart>
+      <>
+        <SayfaBasligi baslik="Erişim yok" />
+        <Kart>
+          <BosDurum baslik="Bu ekran için yetkiniz yok.">Gereken rol: {gerekenRoller(istenen)}</BosDurum>
+        </Kart>
+      </>
     );
   }
   return <>{children}</>;
