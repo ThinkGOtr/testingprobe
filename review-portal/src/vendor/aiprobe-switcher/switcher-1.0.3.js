@@ -1,7 +1,7 @@
 /*! @aiprobe/switcher — <aiprobe-switcher> ürün değiştirici. Bağımlılık yok, derleme gerekmez.
  *
  * Kullanım:
- *   <script type="module" src="/vendor/switcher-1.0.2.js" integrity="sha384-…"></script>
+ *   <script type="module" src="/vendor/switcher-1.0.3.js" integrity="sha384-…"></script>
  *   <aiprobe-switcher product="testing-probe" home-origin="https://home.aiprobe.antreklabs.com" lang="tr">
  *     <div slot="product-menu"><button>Rol değiştir</button></div>
  *   </aiprobe-switcher>
@@ -12,6 +12,8 @@
  *               admin-url (verilirse "Yönetim" bağlantısı gösterilir)
  * Gizli (status=hidden) ürünler yalnız kullanıcının o üründe rolü varsa listelenir.
  *
+ * 1.0.3: ürün bağlantısı app_url + launch_path (ör. Agent Probe /app); launch_path yalnız "/" ile
+ *        başlayan göreli yol ise eklenir.
  * 1.0.2: erişim = me.products'ta kodun VARLIĞI (sözleşme v1.6: ürün oturumlarında yalnız çağıran ürünün
  *        rolleri gelir, diğer erişilebilir ürünler boş liste `[]`). Eski home yanıtlarıyla da aynı sonuç.
  * 1.0.1: çıkış POST (CSRF) formu; gizli ürünler rol varsa görünür; "Keşfet" satırları soluk değil
@@ -25,7 +27,7 @@
  * home sayfası (kullanıcı onayıyla) yapar.
  */
 
-export const VERSION = '1.0.2';
+export const VERSION = '1.0.3';
 const DEFAULT_HOME = 'https://home.aiprobe.antreklabs.com';
 const STATUS_TTL_MS = 30_000;
 
@@ -145,6 +147,14 @@ function safeUrl(url, base) {
     if (u.protocol === 'https:' || (u.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(u.hostname))) return u.href;
   } catch { /* geçersiz */ }
   return null;
+}
+
+// app_url + launch_path; launch_path yalnız "/x" biçimindeyse (şema: ^/[A-Za-z0-9/_.-]*$) eklenir.
+function launchUrl(p) {
+  const base = typeof p.app_url === 'string' ? p.app_url.replace(/\/+$/, '') : '';
+  const lp = p.launch_path;
+  if (!base) return p.app_url;
+  return typeof lp === 'string' && /^\/(?!\/)[A-Za-z0-9/_.-]*$/.test(lp) ? base + lp : base;
 }
 
 const ICON = '<svg viewBox="0 0 20 20" aria-hidden="true" focusable="false" fill="currentColor">' +
@@ -325,7 +335,7 @@ export class AiprobeSwitcher extends HTMLElement {
     const t = (k) => this.t(k);
     const home = this.homeOrigin;
     const st = (this._status || {})[p.id];
-    const appUrl = safeUrl(p.app_url, home);
+    const appUrl = safeUrl(launchUrl(p), home);
     const logo = logoUrl(p.logo_url, home);
     const badge = ['beta', 'preview', 'deprecated'].includes(p.status) ? h('span', { class: `badge ${p.status}`, text: t(p.status) }) : null;
     const tagline = (p.tagline && (p.tagline[this.lang] || p.tagline.tr)) || '';

@@ -16,7 +16,7 @@ import { Kabuk } from "./Kabuk";
 const baglanirkenMe: unknown[] = [];
 
 vi.mock("../lib/degistirici", () => ({
-  DEGISTIRICI_SURUMU: "1.0.2",
+  DEGISTIRICI_SURUMU: "1.0.3",
   degistiriciyiYukle: async () => {
     if (customElements.get("aiprobe-switcher")) return;
     customElements.define(
