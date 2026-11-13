@@ -241,7 +241,7 @@ function sayisalEk(govde: object): Record<string, number> | undefined {
   return Object.keys(ek).length ? ek : undefined;
 }
 
-export async function detayOku(res: Response): Promise<{ detail: string | null; json: boolean; kod?: string; ek?: Record<string, number>; govde?: unknown; hatalar?: string[] }> {
+export async function detayOku(res: Response): Promise<{ detail: string | null; json: boolean; kod?: string; ek?: Record<string, number>; govde?: unknown; hatalar?: string[]; yolGecersiz?: boolean }> {
   const metin = await res.text().catch(() => "");
   if (!metin) return { detail: null, json: false };
   try {
@@ -273,7 +273,7 @@ export async function detayOku(res: Response): Promise<{ detail: string | null; 
           // Yol parametresi ayrıştırılamadı (ör. `/requirements/olmayan-id` → "req_id: Input should be a
           // valid UUID"): kayıt yoktur. Ham İngilizce Pydantic metni yerine "bulunamadı" (bkz. GECERSIZ_KIMLIK).
           if (d.length > 0 && d.every((x) => x && typeof x === "object" && Array.isArray((x as { loc?: unknown }).loc) && (x as { loc: unknown[] }).loc[0] === "path")) {
-            return { detail: VARSAYILAN_HATA[404], json: true, kod: GECERSIZ_KIMLIK };
+            return { detail: VARSAYILAN_HATA[404], json: true, kod, yolGecersiz: true };
           }
           const mesajlar = d
             .map((x) => (x && typeof x === "object" && "msg" in x ? String((x as { msg: unknown }).msg) : ""))
@@ -426,7 +426,7 @@ async function istekGonder<T>(
     }
   }
 
-  const { detail, json, kod, ek, govde, hatalar } = await detayOku(res);
+  const { detail, json, kod, ek, govde, hatalar, yolGecersiz } = await detayOku(res);
   if (res.status === 404 && ayarlar.mockOtomatik && (detail === "Not Found" || !json)) {
     // Kaynağı çekirdekten gelen bir işlem örnek veriye düşmez (bkz. IstekSecenegi.kaynak).
     if (secenek.kaynak && !mockUclar.has(ucuNormallestir(...secenek.kaynak))) throw new ApiError(501, UC_YOK);
@@ -435,7 +435,8 @@ async function istekGonder<T>(
   // Canlı derlemede genel 404 (FastAPI'de rota yok) "bu fazda yok" demektir; ham "Not Found" gösterilmez.
   if (res.status === 404 && !ayarlar.mockOtomatik && (detail === "Not Found" || !json)) throw new ApiError(501, BU_FAZDA_YOK);
   if (res.status === 401 && !path.startsWith("/auth/")) yetkisizDinleyici?.();
-  if (res.status === 422 && kod === GECERSIZ_KIMLIK) throw new ApiError(404, VARSAYILAN_HATA[404], { kod });
+  // Gövde kendi kodunu taşıyorsa korunur (asistan son hata bağlamı); yoksa `gecersiz_kimlik`.
+  if (res.status === 422 && yolGecersiz) throw new ApiError(404, VARSAYILAN_HATA[404], { kod: kod ?? GECERSIZ_KIMLIK });
   // Demo kipi kapalı (core 403 `demo_kapali`): genel "yetkiniz yok" yerine nedeni söylenir.
   if (kod === "demo_kapali") throw new ApiError(res.status, detail && detail !== VARSAYILAN_HATA[403] ? detail : DEMO_KAPALI, { kod, ek, govde, hatalar });
   throw new ApiError(res.status, detail ?? VARSAYILAN_HATA[res.status] ?? `Beklenmeyen hata (HTTP ${res.status}).`, { kod, ek, govde, hatalar });
