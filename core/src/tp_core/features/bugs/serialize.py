@@ -17,8 +17,8 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from tp_core.features.bugs.service import _requirement_id, mod_label_of
-from tp_core.features.testveri.atif import maskele_obje
-from tp_core.features.testveri.service import gizli_degerler
+from tp_core.features.testveri.atif import gizle_obje, maskele_obje
+from tp_core.features.testveri.service import gizli_degerler, gizli_eslemi
 from tp_core.models import AppUser, BugDraft, Review
 from tp_core.models.bugs_feature import BugDraftEk
 
@@ -81,25 +81,34 @@ def sonuc_metni(b: BugDraft, ek: BugDraftEk | None) -> str:
     return "Bug taslağı testçi kararı bekliyor"
 
 
-def bug_draft_view(s: Session, b: BugDraft) -> dict[str, Any]:
+def bug_draft_view(
+    s: Session,
+    b: BugDraft,
+    *,
+    gizli: list[str] | None = None,
+    eslem: dict[str, str] | None = None,
+) -> dict[str, Any]:
     onaylayan = s.get(AppUser, b.onaylayan_id).kullanici_adi if b.onaylayan_id else None
     ek = s.get(BugDraftEk, b.id)
     son = _son_karar(s, b)
     mod_metni, _ = mod_label_of(s, b)
     rid = _requirement_id(s, b)
     jira_silindi = bool(((ek.yayin if ek else None) or {}).get("jira_silindi"))
-    gizli = gizli_degerler(s) if ek else []
+    gizli = gizli_degerler(s) if gizli is None else gizli
+    eslem = gizli_eslemi(s) if eslem is None else eslem
     adaylar = []
     for a in b.mukerrer_adaylari or []:
         if isinstance(a, dict):
-            adaylar.append({**a, "url": jira_url(a.get("key"))})
+            adaylar.append({**maskele_obje(a, gizli), "url": jira_url(a.get("key"))})
     return {
         "id": str(b.id),
         "kaynak": "consistency" if b.finding_id else "triage",
         "failure_id": str(b.failure_id) if b.failure_id else None,
         "finding_id": str(b.finding_id) if b.finding_id else None,
         "requirement_id": str(rid) if rid else None,
-        "icerik": b.icerik,
+        # Eski kayıtlar dahil: gizli test verisi değeri (ör. demo parolası) okumada atfa
+        # (`{veri:ortak.demo_parola}`) ya da `•••`'e döner; saklanan içerik ve hash değişmez.
+        "icerik": gizle_obje(b.icerik, eslem, gizli),
         "mukerrer_adaylari": adaylar,
         "karar": b.karar,
         "durum": b.durum,
@@ -157,7 +166,8 @@ def bug_draft_list(
             BugDraftEk.ilgili_failure_ids.contains([str(failure_id)])
         )
         q = q.where(or_(BugDraft.failure_id == failure_id, BugDraft.id.in_(ekli)))
-    out = [bug_draft_view(s, b) for b in s.scalars(q)]
+    gizli, eslem = gizli_degerler(s), gizli_eslemi(s)
+    out = [bug_draft_view(s, b, gizli=gizli, eslem=eslem) for b in s.scalars(q)]
     if requirement_id is not None:
         out = [o for o in out if o["requirement_id"] == str(requirement_id)]
     return out

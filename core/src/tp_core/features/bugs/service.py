@@ -1084,7 +1084,11 @@ def publish_bug(
                 ref.durum = "intent"
                 ref.hata = None
                 ref.guncelleme = datetime.now(UTC)
-        icerik = dict(draft.icerik)
+        # 013 K19: eski (maskesiz üretilmiş) kayıtta da Jira'ya giden metinde sır kalmaz: gizli
+        # test verisi değeri `{veri:<anahtar>}` atfı ya da `•••` olur (hash saklanan içeriğin).
+        from tp_core.features.testveri.service import gizle
+
+        icerik = dict(gizle(s, draft.icerik or {}))
         icerik_hash = draft.icerik_hash
         link_key = draft.link_key
         onaylayan = (

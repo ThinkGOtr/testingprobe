@@ -319,6 +319,32 @@ def maskele_obje(obj: Any, gizliler: Iterable[str]) -> Any:
     return _m(obj)
 
 
+def gizle_obje(obj: Any, eslem: Mapping[str, str], gizliler: Iterable[str]) -> Any:
+    """Case dışı içerik (bug taslağı; Jira'ya giden metin) için: bilinen gizli değer önce
+    `{veri:<anahtar>}` atfına (kelime sınırında, tekil değer; `gizli_eslem`), atfa dönemeyen kalan
+    geçişler (bitişik / belirsiz) `•••`. Sır ortamda tanımlı olmasa da gizli işaretli kaydın
+    bilinen değeri (ör. sabit demo parolası takması) yakalanır. Yapısal alanlar (`yapisal_mi`)
+    olduğu gibi kalır; mevcut atıflara dokunulmaz."""
+    desen = _maske_deseni(gizliler)
+    if not eslem and desen is None:
+        return obj
+
+    def _s(x: str) -> str:
+        x = _esle_tekil(x, eslem) if eslem else x
+        return _maskele_desenle(x, desen) if desen is not None else x
+
+    def _m(x: Any) -> Any:
+        if isinstance(x, str):
+            return _s(x)
+        if isinstance(x, Mapping):
+            return {k: (v if yapisal_mi(k) else _m(v)) for k, v in x.items()}
+        if isinstance(x, list | tuple):
+            return [_m(v) for v in x]
+        return x
+
+    return _m(obj)
+
+
 # ------------------------------------------------------------------ K22: case görünümü / düzeltme
 
 # Case içeriğinde gizli eşlemenin / maskenin dokunmadığı yapısal alanlar (enum, AC ref, adım no).

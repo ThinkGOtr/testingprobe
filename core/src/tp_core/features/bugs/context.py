@@ -130,6 +130,9 @@ class BugContext:
     # 013 K19: bilinen gizli test verisi değerleri. Model girdisi çözülmüş kalır (REPLAY); taslak
     # içeriği (kullanıcıya görünen, Jira'ya giden) `content` içinde bunlarla maskelenir.
     gizli_degerler: list[str] = field(default_factory=list)
+    # Gizli değer → `{veri:<anahtar>}` atfı (`testveri.service.gizli_eslemi`); taslak içeriğinde
+    # gizli değer önce atfa çevrilir, atfa dönemeyen kalan geçiş `•••` olur.
+    gizli_eslem: dict[str, str] = field(default_factory=dict)
 
     # ------------------------------------------------------------------ türetilenler
     @property
@@ -325,13 +328,22 @@ def _check_row(s: Session, run: Run, test_adi: str | None) -> dict[str, Any] | N
     return dict(satirlar[0]) if satirlar else None
 
 
+def _fill_gizli(s: Session, ctx: BugContext) -> None:
+    """013 K19: bilinen gizli test verisi değerleri ve atıf eşlemi (sır tanımsız olsa da gizli
+    işaretli kaydın bilinen değeri, ör. sabit demo parolası, dahil)."""
+    from tp_core.features.testveri.service import gizli_degerler, gizli_eslemi
+
+    ctx.gizli_degerler = gizli_degerler(s)
+    ctx.gizli_eslem = gizli_eslemi(s)
+
+
 def _fill_case(s: Session, ctx: BugContext, tc: TestCase) -> None:
     ctx.test_case_id = tc.id
     # 013 §3.3: model girdisi bugünküyle aynı kalsın diye test verisi atıfları çözülür.
-    from tp_core.features.testveri.service import case_coz_gevsek, gizli_degerler
+    from tp_core.features.testveri.service import case_coz_gevsek
 
     icerik = case_coz_gevsek(s, tc.icerik or {})
-    ctx.gizli_degerler = gizli_degerler(s)
+    _fill_gizli(s, ctx)
     ctx.case_icerik = icerik
     ctx.case_baslik = temiz(icerik.get("title"), 200)
     ctx.case_adimlar = [a for a in icerik.get("steps") or [] if isinstance(a, Mapping)]
@@ -454,9 +466,7 @@ def failure_context(s: Session, failure_id: uuid.UUID) -> BugContext:
         if tc is not None:
             _fill_case(s, ctx, tc)
     if not ctx.gizli_degerler:  # case'siz başarısızlıkta da hata metni parolayı taşıyabilir
-        from tp_core.features.testveri.service import gizli_degerler
-
-        ctx.gizli_degerler = gizli_degerler(s)
+        _fill_gizli(s, ctx)
     ctx.ham_failure = _ham_failure(ctx, kanit, mesaj)
     ctx.beklenen = temiz(ctx.ham_failure.get("expected"), 200)
     ctx.gerceklesen = temiz(ctx.ham_failure.get("received"), 200)
@@ -495,4 +505,7 @@ def finding_context(
         elif ev.get("query"):
             ctx.kanitlar.append({"kind": "data", "ref": " ".join(str(ev["query"]).split())[:300]})
     _fill_requirement(s, ctx, s.get(Requirement, f.requirement_id))
+    # Bulgu metni / belge alıntısı da demo kimlik bilgisini taşıyabilir (canlı: "bayi1 / Demo123!
+    # ile giriş yap" adımı Jira'ya düz gidecekti).
+    _fill_gizli(s, ctx)
     return ctx

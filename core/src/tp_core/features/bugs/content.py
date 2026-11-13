@@ -129,10 +129,13 @@ def _environment(ctx: BugContext) -> str:
 
 def maskele(obj: Any, ctx: BugContext) -> Any:
     """013 K19: taslak içeriğinde (kullanıcıya görünen, Jira'ya giden) bilinen gizli test verisi
-    değerleri `•••`. Model girdisi (`ctx.sources()`) çözülmüş kalır."""
-    from tp_core.features.testveri.atif import maskele_obje
+    değerleri `{veri:<anahtar>}` atfı, atfa dönemeyen kalan geçiş `•••`. Model girdisi
+    (`ctx.sources()`) çözülmüş kalır."""
+    from tp_core.features.testveri.atif import gizle_obje
 
-    return maskele_obje(obj, ctx.gizli_degerler) if ctx.gizli_degerler else obj
+    if not (ctx.gizli_degerler or ctx.gizli_eslem):
+        return obj
+    return gizle_obje(obj, ctx.gizli_eslem, ctx.gizli_degerler)
 
 
 def template_draft(ctx: BugContext) -> dict[str, Any]:
@@ -320,6 +323,9 @@ def check_human_edit(yeni: Mapping[str, Any], mevcut: Mapping[str, Any], ctx: Bu
         for e in mevcut.get("evidence") or []
         if isinstance(e, Mapping)
     }
+    # Okuma görünümü gizli değeri atfa / maskeye çevirir (serialize); geri gelen kanıt ref'i o
+    # biçimde olabilir.
+    izinli |= {(k, maskele(r, ctx)) for k, r in izinli if isinstance(r, str)}
     yabanci = [
         str(e.get("ref"))
         for e in yeni.get("evidence") or []

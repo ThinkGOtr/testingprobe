@@ -415,13 +415,15 @@ def one_finding(s: Session, f: ConsistencyFinding) -> dict[str, Any]:
 
 def bug_draft_out(s: Session, b: BugDraft) -> dict[str, Any]:
     """Portal `BugTaslagi` biçimi (salt okuma; karar/yayın Faz 4 özelliğinde)."""
+    from tp_core.features.testveri.service import gizle
+
     onaylayan = s.get(AppUser, b.onaylayan_id).kullanici_adi if b.onaylayan_id else None
     return {
         "id": str(b.id),
         "kaynak": "consistency" if b.finding_id else "triage",
         "failure_id": str(b.failure_id) if b.failure_id else None,
         "finding_id": str(b.finding_id) if b.finding_id else None,
-        "icerik": b.icerik,
+        "icerik": gizle(s, b.icerik),
         "mukerrer_adaylari": b.mukerrer_adaylari or [],
         "karar": b.karar,
         "durum": b.durum,

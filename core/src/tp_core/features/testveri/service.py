@@ -256,6 +256,12 @@ def maskele(session: Session, obj: Any, gizliler: Iterable[str] | None = None) -
     return atif.maskele_obje(obj, gizli_degerler(session) if gizliler is None else gizliler)
 
 
+def gizle(session: Session, obj: Any) -> Any:
+    """Case dışı içerik (bug taslağı): gizli değer `{veri:<anahtar>}` atfı, kalan geçiş `•••`
+    (`atif.gizle_obje`)."""
+    return atif.gizle_obje(obj, gizli_eslemi(session), gizli_degerler(session))
+
+
 OZET_ANAHTARLI = "h1:"
 OZET_ANAHTARSIZ = "h0:"
 _OZET_ALANI = b"tp-testveri-deger-ozeti:"
