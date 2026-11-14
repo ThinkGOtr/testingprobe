@@ -863,6 +863,15 @@ def test_subtotal_grounded_in_cart_context_may_repeat_in_the_same_case(kaynak: s
     assert source_problems(kotu, kaynak, sepetler=sepet)
     kotu = [("C1", "sepet toplamı 125,00 TL"), ("C1", "kalan bakiye 125,00 TL")]
     assert source_problems(kotu, kaynak, sepetler=sepet)
+    # Ardından gelen karşılaştırma nesnesi tutarı nitelemez (canlı platform-common tpd-1-web-api
+    # C8, 2026-11-14: "500,01 TL sipariş için 'Kredi limiti aşıldı'"); önceki niteleme yakalanır.
+    temiz = [
+        ("C1", "Sepet tutarı 125,00 TL"),
+        ("C1", "125,00 TL sipariş için 'Kredi limiti aşıldı' gösterilir"),
+    ]
+    assert source_problems(temiz, kaynak, sepetler=sepet) == []
+    kotu = [("C1", "Sepet tutarı 125,00 TL"), ("C1", "Kredi limiti 125,00 TL olur")]
+    assert source_problems(kotu, kaynak, sepetler=sepet)
 
 
 def test_remaining_total_after_removing_a_line_is_cart_context(kaynak: str) -> None:

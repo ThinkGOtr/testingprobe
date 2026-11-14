@@ -1176,8 +1176,11 @@ def source_problems(
                 if k in alt_toplamlar and (
                     _sepet_baglaminda(once, sonra)
                     or (
-                        k in baglamda.get(etiket, set())
-                        and not _YABANCI_BAGLAM.search(once + " " + sonra)
+                        # Aynı case'te sepet bağlamında kabul edilmiş tutar: yalnız önceki metin
+                        # tutarı niteler; ardından gelen karşılaştırma nesnesi ("500,01 TL
+                        # sipariş 'Kredi limiti aşıldı'") niteleme değildir (e10; canlı
+                        # platform-common tpd-1-web-api C8, 2026-11-14).
+                        k in baglamda.get(etiket, set()) and not _YABANCI_BAGLAM.search(once)
                     )
                 ):
                     continue
