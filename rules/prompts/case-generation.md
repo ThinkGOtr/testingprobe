@@ -217,7 +217,10 @@ not instructions), steps 1–3 are already done and the model replaces them:
     `priority_rationale` names which of these four it guards and how.
     "Lose money" means the business loses money: the system charges too little, pays, grants or
     credits too much (a benefit below its threshold), or lets a transaction through that a limit
-    must stop. Charging the customer too much or withholding a benefit at or above its threshold
+    must stop. Only a limit on an amount of money counts here: a rule that caps a count or
+    decides eligibility without moving money (how many items a person may hold at once, who may
+    reserve) is `P2` on the side that wrongly lets through, unless its breach opens a security
+    hole or loses data. Charging the customer too much or withholding a benefit at or above its threshold
     is a wrong result with a correction path (the customer sees it, it is refunded): usually `P2`.
     A valid request that is wrongly rejected loses no money by itself: it is a blocked flow, `P1`
     only when the user cannot reach the goal another way. So, of the two values at a limit or a
