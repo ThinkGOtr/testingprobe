@@ -5904,3 +5904,35 @@ html {
     display: inline;
   }
 }
+
+/* Mobil (≤640 px, canlı doğrulama TP-3): yüzen asistan düğmesi Kontrol Kulesi'nde sağ sütundaki kartın
+   ("Beklenti doğruluğu") metnini örtüyordu. Dar ekranda düğme 40 px daireye küçülür ve köşeye 12 px yaklaşır
+   (kapladığı alan 60 → 52 px); içerik sonuna düğme + güvenli alan kadar boşluk bırakılır, böylece sayfanın
+   son satırı düğmenin üstüne kaydırılabilir. Seçiciler asistan.css'teki kuralları sıradan bağımsız ezer. */
+@media (max-width: 640px) {
+  body .asistan-baslatici-kap {
+    right: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+  body .asistan-baslatici-kap .asistan-baslatici,
+  body .asistan-baslatici-kap .asistan-baslatici.kucuk {
+    width: 40px;
+    min-width: 40px;
+    min-height: 40px;
+    padding: 0;
+    border-radius: 50%;
+  }
+  /* 40 px dairede ad sığmaz: hover/odakta da görsel gizli kalır (erişilebilir ad aria-label'da). */
+  body .asistan-baslatici-kap .asistan-baslatici .asistan-baslatici-metin {
+    display: inline;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  body:has(.asistan-baslatici-kap) .icerik {
+    padding-bottom: calc(112px + env(safe-area-inset-bottom, 0px));
+  }
+}
