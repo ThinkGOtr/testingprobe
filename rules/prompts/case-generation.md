@@ -82,8 +82,15 @@ are returned.
      multiples of one product, and lies on the correct side of the boundary: for example, for
      1.200,01 TL with hypothetical unit prices 150,00 / 40,00 / 7,00 TL the nearest value above
      the limit is 1.201,00 TL (6 × 150,00 + 7 × 40,00 + 3 × 7,00), not 1.350,00 TL
-     (9 × 150,00). For a boundary of a `P1` money rule prefer the exact value with a test data
-     preparation precondition over a nearby value.
+     (9 × 150,00). When the cart needs a certain product so that another rule stays out of the
+     way (for example an item that exempts the cart from a different rule), keep that product
+     in the cart and fill the rest with any mix of the other products; do not fall back to
+     multiples of that one product.
+     Before you write a nearest value, check that no mix reaches a value closer to the boundary;
+     a nearest value claim that a closer mix contradicts is a wrong expected input.
+     For a boundary of a `P1` money rule use the exact value with a test data preparation
+     precondition (for example a synthetic product priced 0,01 TL added to a cart whose total
+     equals the boundary) rather than a nearby value.
    - When a number in parentheses in an acceptance criterion and another wording of the same rule
      disagree (for example `(en fazla 8 kişi)` beside `8 kişiden az gruplar`),
      do not choose one reading: write both readings into the item definition and record an open
@@ -104,7 +111,11 @@ are returned.
    - [ISTQB] State transition: a state's duration, timeout, retry count or automatic exit (for
      example how long a seat reservation is held, whether a paused subscription resumes by
      itself) that the source does not state is an open question; do not pick a value and do not
-     leave it unmentioned when a case or a transition depends on it.
+     leave it unmentioned when a case or a transition depends on it. A source that names one way
+     out of a state (a person's action: an operator reopens it, a manager releases it) does not
+     say whether the state also ends by itself after some time; unless the source says the state
+     lasts until that action, record that as an open question and anchor it on the item of that
+     exit transition or of the case that checks the state is still in force.
 4. **Decide negative coverage.** For every item with `valid: false`, add one `negative_coverage`
    entry (`item` is a coverage item id such as `EP-I1` or `BV-2`; never a question or assumption
    id): `tested` (a `ready` or `assumption_dependent` case exists for it), `covered_by` (a case
