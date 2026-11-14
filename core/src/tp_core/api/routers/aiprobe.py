@@ -435,7 +435,7 @@ def rol_sec(body: HesapSec, request: Request, session: DbSession, codec: Codec) 
             503, "kimlik_servisi_yok", "AI Probe kimlik servisine ulaşılamıyor"
         ) from exc
     if not sonuc.valid:
-        aiprobe.iptal_et(secim["x"], None, sonuc.reason or "gecersiz")
+        aiprobe.iptal_et(secim["x"], None, sonuc.reason or "gecersiz", kimlik=kimlik)
         return _hata(401, "yetkisiz", "Oturumunuz sonlandırıldı; yeniden giriş yapın", SECIM_COOKIE)
     if hedef.rol not in aiprobe.tp_rolleri(sonuc.roles, kimlik.acr):
         raise KodluHata(403, "yasak", "Bu rol AI Probe hesabınızda tanımlı değil")
@@ -474,9 +474,16 @@ def rol_degistir(
         # Bu isteğin işlemi oturum satırını kilitlemiş olabilir: iptal aynı işlemde yazılır ve
         # yanıt istisna değil (commit edilir).
         ids = [h.id for h in aiprobe.bagli_hesaplar(session, uid)]
-        aiprobe.epoch_artir(session, ids)
-        audit_on_commit(session, aiprobe.AKTOR, "auth.aiprobe_revoked", f"kimlik:{uid}",
-                        {"neden": sonuc.reason or "gecersiz"})  # fmt: skip
+        neden = sonuc.reason or "gecersiz"
+        ozet: dict[str, Any] = {"neden": neden}
+        if aiprobe.kapsamli_iptal_mi(neden, None, kimlik):
+            # `revoked` bu oturuma özgü: başka cihazda sonradan açılmış oturum kapanmaz.
+            assert kimlik.session_epoch_ms is not None
+            ozet["kapsam"] = "bu_ve_onceki_oturumlar"
+            ozet["oturum"] = aiprobe.eski_oturumlari_iptal_et(session, ids, kimlik.session_epoch_ms)
+        else:
+            aiprobe.epoch_artir(session, ids)
+        audit_on_commit(session, aiprobe.AKTOR, "auth.aiprobe_revoked", f"kimlik:{uid}", ozet)
         aiprobe.ONBELLEK.unut(uid)
         yanit = _hata(401, "yetkisiz", "Oturumunuz sonlandırıldı; yeniden giriş yapın")
         yanit.delete_cookie(cookie_name(), path="/", httponly=True, samesite="lax", secure=True)

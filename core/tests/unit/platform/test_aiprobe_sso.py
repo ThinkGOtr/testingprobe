@@ -504,7 +504,8 @@ def test_oturum_iptali_401_ve_tpt_token_reddi(
     home.kisiler[UID] = {"valid": False, "reason": "revoked"}
     _kontrol_zamanini_eskit(engine)
     assert client.get("/auth/me").status_code == 401
-    assert _epoch(engine, me["id"]) == 1
+    # `revoked` oturuma özgü: epoch artmaz, bu (ve daha eski) oturum ile token'ları düşer.
+    assert _epoch(engine, me["id"]) == 0
     assert "auth.aiprobe_revoked" in _eylemler(engine)
     session.expire_all()
     assert verify_bearer(session, raw, "publish") is None
@@ -513,6 +514,34 @@ def test_oturum_iptali_401_ve_tpt_token_reddi(
     aiprobe.ONBELLEK.temizle()
     assert client.get("/auth/me").status_code == 401
     assert verify_bearer(session, raw, "publish") is None
+
+
+def test_revoked_eski_oturumu_dusurur_sonra_acilan_baska_cihaz_oturumu_kalir(
+    client: TestClient, home: SahteHome, engine: Engine
+) -> None:
+    """Canlı (paralel ajanlar, aynı kişi): bir tarayıcıdaki eski oturumun `revoked` cevabı,
+    home çıkışından SONRA başka tarayıcıda açılmış oturumu (epoch artırımıyla) kapatıyordu."""
+    assert _giris(client, home, ["analyst"]).status_code == 302  # A: E = EPOCH_MS
+    with TestClient(main.create_app(), base_url="https://testserver") as b:
+        yeni_epoch = EPOCH_MS + 10_000
+        assert _giris(b, home, ["analyst"], session_epoch_ms=yeni_epoch).status_code == 302
+        # Home çıkışı A'dan sonra, B'den önce oldu (R: A < R < B).
+        iptal_ms = EPOCH_MS + 5_000
+        home.kisiler[UID] = {
+            "roles": ["analyst"],
+            "revoked_at_ms": iptal_ms,
+            "valid_after": iptal_ms // 1000,
+        }
+        _kontrol_zamanini_eskit(engine)
+        assert client.get("/auth/me").status_code == 401
+        assert b.get("/auth/me").status_code == 200
+        me = b.get("/auth/me").json()
+        assert _epoch(engine, me["id"]) == 0
+    with engine.connect() as c:
+        ozet = c.execute(
+            text("SELECT ozet FROM audit_event WHERE eylem = 'auth.aiprobe_revoked'")
+        ).scalar_one()
+    assert ozet["kapsam"] == "bu_ve_onceki_oturumlar" and ozet["oturum"] == 1
 
 
 def test_tpt_token_kendi_kontroluyle_duser(
@@ -1274,6 +1303,13 @@ def test_rol_sec_taze_kontrol(
     r = client.post("/auth/aiprobe/rol-sec", json={"app_user_id": str(analist.id)})
     assert r.status_code == 401
     assert client.get("/auth/me").status_code == 401
+    assert _epoch(engine, analist.id) == 0  # `revoked` oturuma özgü (epoch artmaz)
+    # Kişiye özgü neden (disabled) tüm hesaplarda epoch'u artırır.
+    assert _giris(client, home, ["analyst", "po"]).status_code == 302
+    home.kisiler[UID] = {"valid": False, "reason": "disabled"}
+    aiprobe.ONBELLEK.temizle()
+    r = client.post("/auth/aiprobe/rol-sec", json={"app_user_id": str(analist.id)})
+    assert r.status_code == 401
     assert _epoch(engine, analist.id) == 1
 
 

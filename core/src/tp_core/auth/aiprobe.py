@@ -32,7 +32,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
 import httpx
-from sqlalchemy import select, text, update
+from sqlalchemy import or_, select, text, update
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import set_committed_value
@@ -620,7 +620,7 @@ def oturum_kontrol(session: Session, o: Oturum, user: AppUser) -> Kontrol:
         _degraded_kabul("oturum", o.external_uid, o.degraded_baslangic)
         return Kontrol.ULASILAMADI
     if not sonuc.valid:
-        iptal_et(o.external_uid, None, sonuc.reason or "gecersiz")
+        iptal_et(o.external_uid, None, sonuc.reason or "gecersiz", kimlik=OturumKimligi.of(o))
         return Kontrol.GECERSIZ
     roller = tp_rolleri(sonuc.roles, o.acr)
     if user.rol not in roller:
@@ -653,12 +653,63 @@ def sure_uzat(session: Session, o: Oturum) -> None:
         session.execute(update(Oturum).where(Oturum.id == o.id).values(son_kullanma=hedef))
 
 
-def iptal_et(external_uid: str, kalan_roller: Iterable[str] | None, neden: str) -> int:
+# home `revoked` kararı oturuma özgüdür (CONTRACT v1.4: R ≥ E ya da V > v0; E = bu oturumun devir
+# anı): bir tarayıcıdaki eski oturumun iptali, home çıkışından SONRA başka bir cihazda açılmış
+# oturumu geçersiz kılmaz. `disabled|expired|no_access|not_found` kişiye özgüdür.
+OTURUMA_OZGU_NEDENLER = frozenset({"revoked"})
+
+
+def kapsamli_iptal_mi(neden: str, kalan_roller: Iterable[str] | None, kimlik: Any) -> bool:
+    """Yalnız bu ve daha eski oturumlar mı düşmeli (True) yoksa kişinin tüm oturumları mı?"""
+    return (
+        kalan_roller is None
+        and neden in OTURUMA_OZGU_NEDENLER
+        and kimlik is not None
+        and bool(getattr(kimlik, "session_epoch_ms", None))
+    )
+
+
+def eski_oturumlari_iptal_et(s: Session, ids: list[uuid.UUID], epoch_ms: int) -> int:
+    """`revoked`: devir anı (session_epoch_ms) iptal edilen oturumunkinden sonra OLMAYAN oturumlar
+    düşer; sonra açılmış oturumlar (başka cihaz, yeniden giriş) kendi kontrollerinde karar
+    alır. `auth_epoch` artırılmaz (artırmak her çerezi geçersiz kılardı)."""
+    sonuc = s.execute(
+        update(Oturum)
+        .where(
+            Oturum.user_id.in_(ids),
+            Oturum.iptal_zamani.is_(None),
+            or_(Oturum.session_epoch_ms.is_(None), Oturum.session_epoch_ms <= epoch_ms),
+        )
+        .values(iptal_zamani=simdi())
+    )
+    # Bu ve daha eski oturumlardan üretilmiş token'lar da kalıcı olarak düşer.
+    s.execute(
+        update(ApiToken)
+        .where(
+            ApiToken.user_id.in_(ids),
+            ApiToken.iptal.is_(False),
+            or_(ApiToken.session_epoch_ms.is_(None), ApiToken.session_epoch_ms <= epoch_ms),
+        )
+        .values(iptal=True)
+    )
+    return int(sonuc.rowcount or 0)
+
+
+def iptal_et(
+    external_uid: str,
+    kalan_roller: Iterable[str] | None,
+    neden: str,
+    *,
+    kimlik: OturumKimligi | None = None,
+) -> int:
     """Kişinin bağlı hesaplarında `auth_epoch`'u artırır ve oturumlarını iptal eder.
 
     `kalan_roller` verilirse yalnız rolü artık listede olmayan hesaplar düşer (rol kaldırma).
+    `kimlik` verilir ve neden oturuma özgüyse (`revoked`) yalnız bu ve daha eski oturumlar düşer
+    (`eski_oturumlari_iptal_et`): paralel / başka cihazdaki yeni oturum kapanmaz.
     Ayrı işlemde commit edilir: istek 401 ile geri alınsa da iptal kalıcıdır.
     """
+    kapsamli = kapsamli_iptal_mi(neden, kalan_roller, kimlik)
     with session_scope() as s:
         q = (
             select(AppUser.id, AppUser.kullanici_adi)
@@ -670,14 +721,17 @@ def iptal_et(external_uid: str, kalan_roller: Iterable[str] | None, neden: str) 
         hesaplar = s.execute(q).all()
         ids = [h.id for h in hesaplar]
         if ids:
-            epoch_artir(s, ids)
-            audit_on_commit(
-                s,
-                AKTOR,
-                "auth.aiprobe_revoked",
-                f"kimlik:{external_uid}",
-                {"neden": neden, "hesaplar": sorted(h.kullanici_adi for h in hesaplar)},
-            )
+            ozet: dict[str, Any] = {
+                "neden": neden,
+                "hesaplar": sorted(h.kullanici_adi for h in hesaplar),
+            }
+            if kapsamli:
+                assert kimlik is not None and kimlik.session_epoch_ms is not None
+                ozet["kapsam"] = "bu_ve_onceki_oturumlar"
+                ozet["oturum"] = eski_oturumlari_iptal_et(s, ids, kimlik.session_epoch_ms)
+            else:
+                epoch_artir(s, ids)
+            audit_on_commit(s, AKTOR, "auth.aiprobe_revoked", f"kimlik:{external_uid}", ozet)
     ONBELLEK.unut(external_uid)
     log.info("AI Probe iptali uygulandı (%s): %d hesap", neden, len(ids))
     return len(ids)
@@ -729,7 +783,7 @@ def token_kontrol(
         _degraded_kabul("token", uid, baslangic)
         return True
     if not sonuc.valid:
-        iptal_et(uid, None, sonuc.reason or "gecersiz")
+        iptal_et(uid, None, sonuc.reason or "gecersiz", kimlik=kimlik)
         return False
     roller = tp_rolleri(sonuc.roles, kimlik.acr)
     if user.rol not in roller:
