@@ -71,16 +71,10 @@ bundles:
       calls: evaluation/results/design-model-v1-2026-11-13.calls.jsonl
       icerik_hash: sha256:9a33853603d4cd2464398e891b14079cd41e3f719667652c7cc197af61d3b839
   case-review:
-    version: 1
-    status: evaluated
-    note: 'Canlı değerlendirme 2026-11-12, claude-sonnet-5-5 (anthropic), 5/5 vaka geçti: evaluation/results/case-review-v1-2026-11-12.json'
-    evaluation:
-      date: '2026-11-12'
-      model: claude-sonnet-5-5
-      provider: anthropic
-      results: evaluation/results/case-review-v1-2026-11-12.json
-      guardrails_version: 1
-      calls: evaluation/results/case-review-v1-2026-11-12.calls.jsonl
+    version: 2
+    status: pending
+    note: 'v2: score = UYGUN madde sayısı kuralı açık yazıldı (skor kodda da sayılır, review.normalize_output).
+      Canlı değerlendirme bekliyor.'
   case-audit:
     version: 1
     status: evaluated

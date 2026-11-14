@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import uuid
@@ -48,6 +49,8 @@ from tp_core.models import AiCall, CaseSetReview, Job, Requirement, TestCase, se
 from tp_core.ports import ModelGateway, ModelMessage
 from tp_core.workflow.jobs import JobContext, PermanentJobError, enqueue
 from tp_core.workflow.service import Principal, WorkflowError
+
+log = logging.getLogger(__name__)
 
 REVIEW_JOB = "cases.review"
 PURPOSE = "case_review"
@@ -495,6 +498,21 @@ def score_of(cikti: Mapping[str, Any]) -> int:
     )
 
 
+def normalize_output(cikti: Mapping[str, Any]) -> dict[str, Any]:
+    """Kullanıcının gördüğü review çıktısı: `score` kodda sayılır (UYGUN madde sayısı); modelin
+    yazdığı skor `model_skoru`'nda kalır, farklıysa uyarı loglanır. Üretim (`_review_yaz`) ve
+    değerlendirme (`eval_agents.review_set_problems`) aynı adımı kullanır."""
+    skor = score_of(cikti)
+    model_skoru = cikti.get("score")
+    if model_skoru != skor:
+        log.warning(
+            "case review: model skoru %r, UYGUN madde sayısı %d (kod sayısı esas)",
+            model_skoru,
+            skor,
+        )
+    return {**cikti, "score": skor, "model_skoru": model_skoru}
+
+
 def output_problems(cikti: Mapping[str, Any], case_sayisi: int) -> list[str]:
     """Şema ötesi deterministik denetim: 12 madde 1..12 sırasıyla, set dışı case atfı yok."""
     sorunlar = []
@@ -600,7 +618,8 @@ def _review_yaz(
 ) -> dict[str, Any]:
     cikti = dict(sonuc.output or {})
     sorunlar = output_problems(cikti, case_sayisi)
-    skor = score_of(cikti)
+    islenmis = normalize_output(cikti)
+    skor = islenmis["score"]
     with session_scope() as s:
         satir = s.get(CaseSetReview, rid_, with_for_update=True)
         if satir is None or satir.durum != "bekliyor":
@@ -609,9 +628,7 @@ def _review_yaz(
         satir.skor = skor
         satir.ai_call_id = sonuc.call_id
         satir.icerik = {
-            **cikti,
-            "score": skor,
-            "model_skoru": cikti.get("score"),
+            **islenmis,
             "case_haritasi": harita,
             "denetim_sorunlari": sorunlar,
             "mode": sonuc.mode,

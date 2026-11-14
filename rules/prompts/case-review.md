@@ -1,6 +1,6 @@
 ---
 id: case-review
-version: 1
+version: 2
 purpose: case_review
 ---
 # Role
@@ -85,7 +85,10 @@ For each entry:
 - `UYGUN`: `missing_case` and `question` null, `owner` "".
 
 # Other fields
-- `score`: the number of `UYGUN` entries (0–12). It must equal that count.
+- `score` = the number of `UYGUN` entries in `items` (0–12), nothing else. Write `items` first,
+  then count the entries whose `verdict` is exactly `UYGUN` and write that number. `UYGUN_DEGIL`
+  and `ACIK_BILGI_GEREKLI` entries never count. Do not estimate or adjust the score for overall
+  quality; if your count and your sense of the set differ, the count wins.
 - `missing_cases`: concrete cases to add (at most 10), each with the AC it belongs to (or null),
   the checklist item number it comes from (or null) and the technique (`EP`, `BVA`, `DT`, `ST`,
   `PW`, `UC`, `EG`, `CL`). Only cases whose expected result the source supports; otherwise ask a question.

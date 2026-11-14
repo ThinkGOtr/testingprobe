@@ -1939,6 +1939,10 @@ DENETIM_KARARLARI = ("KABUL", "DÜZELTME_GEREKLİ", "ENGELLE")
 def review_set_problems(output: Any, expect: Mapping[str, Any]) -> list[str]:
     """case_review beklentisi (011 F2). Her zaman: 12 madde 1..12 sırasıyla, `score` = UYGUN sayısı.
 
+    Denetim, kullanıcının gördüğü çıktıya yapılır: ham model çıktısı üretimdeki işleme adımından
+    (`review.normalize_output`; skor kodda UYGUN madde sayısından) geçirilir. Modelin yazdığı
+    farklı skor ürün davranışı değildir (`model_skoru`'nda kalır, uyarı loglanır).
+
     Beklenti anahtarları:
     - `item_verdicts`: {"<no>": [izinli kararlar]} — maddenin kararı listede olmalı;
     - `merge_includes`: [[a, b], …] — bir `remove_or_merge` kaydı bu set numaralarının hepsini anar;
@@ -1947,7 +1951,9 @@ def review_set_problems(output: Any, expect: Mapping[str, Any]) -> list[str]:
     - `min_score` / `max_score`;
     - `no_merge`: true — `remove_or_merge` boş (tekrar olmayan sette uydurma birleştirme yok).
     """
-    out = output if isinstance(output, Mapping) else {}
+    from tp_core.features.cases.review import normalize_output
+
+    out = normalize_output(output) if isinstance(output, Mapping) else {}
     items = _kayitlar(out.get("items"))
     failures: list[str] = []
     nolar = [m.get("no") for m in items]

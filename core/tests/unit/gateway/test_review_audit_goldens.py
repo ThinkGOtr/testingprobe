@@ -166,3 +166,24 @@ def test_review_girdisi_test_verisi_blogunu_tasir(strict_gateway: Gateway) -> No
     assert res.mode == "replay"
     row = strict_gateway.recorder.ai_calls[-1]  # type: ignore[attr-defined]
     assert row["ek"]["replay_kokeni"] == MATCHED
+
+
+def _review_cikti(uygun: int, score: Any) -> dict[str, Any]:
+    items = [{"no": i, "verdict": "UYGUN" if i <= uygun else "UYGUN_DEGIL"} for i in range(1, 13)]
+    return {"items": items, "score": score, "missing_cases": [], "remove_or_merge": []}
+
+
+def test_skor_kodda_sayilir_model_skoru_saklanir(caplog: pytest.LogCaptureFixture) -> None:
+    islenmis = review.normalize_output(_review_cikti(10, 9))
+    assert islenmis["score"] == 10
+    assert islenmis["model_skoru"] == 9
+    assert "model skoru 9" in caplog.text
+
+
+def test_degerlendirme_kullanicinin_gordugu_skoru_olcer() -> None:
+    from tp_core.gateway.eval_agents import review_set_problems
+
+    # Modelin yazdığı skor farklı; kullanıcı kodun saydığı 8'i görür: tutarlılık hatası değildir.
+    assert review_set_problems(_review_cikti(8, 7), {}) == []
+    # Aralık denetimi işlenmiş (kodda sayılmış) skora yapılır.
+    assert review_set_problems(_review_cikti(8, 12), {"min_score": 9}) == ["skor 8, en az 9"]
