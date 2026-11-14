@@ -307,6 +307,7 @@ def finding_out(
     karar_veren: str | None,
     bug_draft_id: uuid.UUID | None,
     onceki: dict[str, Any] | None = None,
+    bug_draft_durum: str | None = None,
 ) -> dict[str, Any]:
     ozet = " — ".join(p for p in ((ek.iddia if ek else ""), (ek.gozlem if ek else "")) if p)
     out = {
@@ -335,6 +336,8 @@ def finding_out(
         "kontrol_turu": f.kontrol_turu,
         "durum": f.durum,
         "bug_draft_id": str(bug_draft_id) if bug_draft_id else None,
+        # Portal bağlantıyı role göre gösterir (Developer yalnız yayınlanmış taslağı açabilir).
+        "bug_draft_durum": bug_draft_durum,
         "icerik_hash": content_hash_of(f),
         "mode": f.uretim_modu or None,
         # Aynı fark önceki turda insan kararıyla kapandıysa: o karar (yeniden karar istenmez).
@@ -410,7 +413,14 @@ def one_finding(s: Session, f: ConsistencyFinding) -> dict[str, Any]:
                 "karar_veren": _veren(s, o),
                 "karar_zamani": _iso(o.karar_zamani),
             }
-    return finding_out(f, ek, _veren(s, f), bug.id if bug is not None else None, onceki)
+    return finding_out(
+        f,
+        ek,
+        _veren(s, f),
+        bug.id if bug is not None else None,
+        onceki,
+        bug_draft_durum=bug.durum if bug is not None else None,
+    )
 
 
 def bug_draft_out(s: Session, b: BugDraft) -> dict[str, Any]:

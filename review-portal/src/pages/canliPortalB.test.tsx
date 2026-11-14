@@ -389,3 +389,11 @@ describe("metinler: durum kodu ve tutar", () => {
     expect(tutarlariBicimle("adet = 3.50")).toBe("adet = 3.50");
   });
 });
+
+describe("bulgu uyarlayıcısı: bug taslağı durumu", () => {
+  it("core'un bug_draft_durum alanı taşınır (Developer yayınlanmış taslağın bağlantısını görebilsin)", async () => {
+    const { bulguUyarla } = await import("../api/uyum");
+    expect(bulguUyarla({ id: "f1", requirement_id: "r1", bug_draft_id: "b1", bug_draft_durum: "published" }).bug_draft_durum).toBe("published");
+    expect("bug_draft_durum" in bulguUyarla({ id: "f2", requirement_id: "r1" })).toBe(false);
+  });
+});

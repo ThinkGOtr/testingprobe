@@ -377,6 +377,8 @@ export function bulguUyarla(b: Ham): Bulgu {
     kontrol_turu: sayi(b.kontrol_turu, 1),
     durum: metin(b.durum, "unverified") as BulguDurumu,
     bug_draft_id: metinYaDaNull(b.bug_draft_id),
+    // Core taslağın durumunu verir: Developer yalnız yayınlanmış taslağın bağlantısını görür.
+    ...(b.bug_draft_durum !== undefined ? { bug_draft_durum: metinYaDaNull(b.bug_draft_durum) } : {}),
     icerik_hash: metin(b.icerik_hash),
     mode: modUyarla(ilk(b, "mode", "uretim_modu")),
     onceki_karar: oncekiKararUyarla(b.onceki_karar),

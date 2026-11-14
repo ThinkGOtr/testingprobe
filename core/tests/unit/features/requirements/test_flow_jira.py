@@ -177,6 +177,7 @@ def test_tam_akis_tpd1(
     assert r.status_code == 200 and r.json()["durum"] == "resolved"
     bug_id = r.json()["bug_draft_id"]
     assert bug_id
+    assert r.json()["bug_draft_durum"] == "draft"  # portal bağlantıyı role göre gösterir
 
     with new_session() as s:
         bug = s.get(BugDraft, bug_id)
