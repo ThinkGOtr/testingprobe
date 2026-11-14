@@ -72,9 +72,16 @@ bundles:
       icerik_hash: sha256:9a33853603d4cd2464398e891b14079cd41e3f719667652c7cc197af61d3b839
   case-review:
     version: 2
-    status: pending
-    note: 'v2: score = UYGUN madde sayısı kuralı açık yazıldı (skor kodda da sayılır, review.normalize_output).
-      Canlı değerlendirme bekliyor.'
+    status: evaluated
+    note: 'Canlı değerlendirme 2026-11-14, claude-sonnet-5-5 (anthropic), 5/5 vaka geçti: evaluation/results/case-review-v2-2026-11-14.json'
+    evaluation:
+      date: '2026-11-14'
+      model: claude-sonnet-5-5
+      provider: anthropic
+      results: evaluation/results/case-review-v2-2026-11-14.json
+      guardrails_version: 1
+      calls: evaluation/results/case-review-v2-2026-11-14.calls.jsonl
+      icerik_hash: sha256:2d0ae60f891c254e448f7c2eeac1c615f3e70c77123ca06b00b69241368d9d1a
   case-audit:
     version: 1
     status: evaluated
