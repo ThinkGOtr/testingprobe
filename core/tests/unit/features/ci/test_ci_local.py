@@ -360,6 +360,26 @@ def test_gece_planı_idempotent_ve_cift_tetik_yok(
         assert "ci.nightly:2026-11-02" in keys
 
 
+def test_gec_kalan_gece_isi_kosu_acmaz_ama_zinciri_surdurur(
+    engine: Engine, toolchain: FakeToolchain, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regresyon (canlı 13 Kas): worker kapalıyken kaçan günün işi saatler sonra koşunca koşu
+    açılmaz — ertesi gecenin koşusuyla aynı GitHub cron koşusunu beklemesin."""
+    monkeypatch.delenv("TP_CI_NIGHTLY_SAAT", raising=False)
+    monkeypatch.delenv("TP_CI_NIGHTLY_GEC_S", raising=False)
+    # 2026-11-01 02:00 TR = 2026-10-31 23:00 UTC; 3 saatten geç → atlanır.
+    with services.override(now=lambda: datetime(2026, 11, 1, 19, 54, tzinfo=UTC)):
+        r = service.nightly_job(engine, "2026-11-01")
+    assert r == {"run_id": None, "yeni": False, "atlandi": "gec_kaldi"}
+    with Session(engine) as s:
+        assert s.scalars(select(Run).where(Run.tetik == "nightly")).all() == []
+        keys = set(s.scalars(select(Job.idempotency_key).where(Job.tur == service.JOB_NIGHTLY)))
+    assert "ci.nightly:2026-11-02" in keys
+    # Sınır içinde (2 saat geç) koşu açılır.
+    with services.override(now=lambda: datetime(2026, 11, 1, 1, 0, tzinfo=UTC)):
+        assert service.nightly_job(engine, "2026-11-01")["yeni"] is True
+
+
 def test_gece_kapatilabilir(engine: Engine, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TP_CI_NIGHTLY_SAAT", "kapali")
     with engine.begin() as conn:

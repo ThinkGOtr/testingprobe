@@ -2113,11 +2113,34 @@ def plan_nightly(conn: Connection, simdi: datetime | None = None) -> uuid.UUID |
     )
 
 
+def nightly_gecikme_siniri() -> timedelta:
+    """Gece işi planlanan saatten bu kadar geç koşarsa koşu açılmaz (`TP_CI_NIGHTLY_GEC_S`)."""
+    return timedelta(seconds=_int_env("TP_CI_NIGHTLY_GEC_S", 3 * 3600))
+
+
+def _gece_plan_zamani(tarih: str) -> datetime | None:
+    saat = nightly_saati()
+    try:
+        gun = datetime.strptime(tarih, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+    if saat is None:
+        return None
+    return datetime.combine(gun, saat, tzinfo=_istanbul()).astimezone(UTC)
+
+
 def nightly_job(engine: Engine, tarih: str) -> dict[str, Any]:
     # Zincir önce ve AYRI işlemde planlanır: koşu açılamasa (DB/CiError, tüm denemeler) da ertesi
     # günün işi kalıcıdır (idempotent anahtar `ci.nightly:<tarih>`; tekrar planlama çift açmaz).
     with engine.begin() as conn:
         plan_nightly(conn, services.now() + timedelta(minutes=1))
+    # Worker uzun süre kapalı kaldıysa kaçırılmış günün işi saatler sonra koşar (canlı: 13 Kas işi
+    # 22:54'te). O koşu ertesi gecenin koşusuyla aynı GitHub cron koşusunu bekler; biri onu alır,
+    # öteki "Sırada" kalıp süre sınırında `error` olur. Geç kalan gün atlanır (ertesi gün planlı).
+    plan = _gece_plan_zamani(tarih)
+    if plan is not None and services.now() - plan > nightly_gecikme_siniri():
+        log.warning("gece koşusu atlandı: %s işi planlanan saatten çok geç koştu", tarih)
+        return {"run_id": None, "yeni": False, "atlandi": "gec_kaldi"}
     with Session(engine, expire_on_commit=False) as session, session.begin():
         sonuc = _enqueue(
             session, None, "nightly", isteyen="system:gece", anahtar=f"nightly:{tarih}"

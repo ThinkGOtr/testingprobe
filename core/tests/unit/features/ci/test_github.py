@@ -332,10 +332,12 @@ def test_elle_gece_workflow_dispatch(engine: Engine, gh: FakeGitHub) -> None:
 
 
 def test_cron_bekleyen_gece_kosusu_elle_tetiklenince_dispatch_edilir(
-    engine: Engine, gh: FakeGitHub
+    engine: Engine, gh: FakeGitHub, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Sistem gece koşusu GitHub cron'unu bekliyor (dispatch yok); sunucu elle tetikleyince aynı
     # kayıt tetiklemeye yükseltilir ve workflow_dispatch gider (yeni koşu açılmaz).
+    # Sabit tarihli iş gerçek saatte koşar: geç kalma süzgeci bu testin konusu değil.
+    monkeypatch.setenv("TP_CI_NIGHTLY_GEC_S", str(100 * 365 * 86400))
     rid = uuid.UUID(service.nightly_job(engine, "2026-11-02")["run_id"])
     run_jobs(engine)
     assert gh.dispatchler == []
