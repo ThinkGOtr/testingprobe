@@ -56,12 +56,14 @@ describe("ci.yml ↔ yerel koşu ile aynı artefakt düzeni (ci-runs alımı)", 
 describe("ci.yml tetikler ve çekirdek bağlantısı", () => {
   const on = ci.slice(ci.indexOf("\non:\n"), ci.indexOf("\npermissions:\n"));
 
-  it("pull_request, push, schedule, repository_dispatch[deploy], workflow_dispatch", () => {
-    for (const t of ["pull_request:", "push:", "schedule:", "repository_dispatch:", "workflow_dispatch:"]) {
+  it("pull_request, push, repository_dispatch[deploy], workflow_dispatch; schedule yok (gece çekirdekten)", () => {
+    for (const t of ["pull_request:", "push:", "repository_dispatch:", "workflow_dispatch:"]) {
       assert.ok(on.includes(`\n  ${t}`), t);
     }
     assert.match(on, /repository_dispatch:\n {4}types: \[deploy\]/);
-    assert.match(on, /- cron: "0 2 \* \* \*"/);
+    // Gece koşusunu çekirdek workflow_dispatch(tetik=nightly) ile başlatır: cron çift koşu açardı.
+    assert.ok(!on.includes("\n  schedule:"), "ci.yml schedule içermemeli");
+    assert.ok(!/- cron:/.test(on), "ci.yml cron içermemeli");
     assert.match(on, /tetik:[\s\S]*options: \[manual, nightly, deploy\]/);
     assert.match(on, /istek_id:/);
   });

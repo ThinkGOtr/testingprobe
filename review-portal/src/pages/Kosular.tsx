@@ -33,15 +33,13 @@ function DurumCipi({ d }: { d: string }) {
   return <Cip ton={x.ton}>{x.etiket}</Cip>;
 }
 
-/** Takılmış koşu uyarısı eşikleri: bu süreden uzun "Sırada" / "Koşuyor" kalan koşu uyarı alır. */
-export const TAKILMA_ESIGI_MS = { queued: 60 * 60 * 1000, running: 6 * 60 * 60 * 1000 } as const;
-
 /**
- * GitHub'daki gece koşusu GitHub'ın kendi cron'unu (02:00 UTC) bekler; GitHub zamanlanmış koşuları
- * saatlerce geciktirebilir (canlıda gece koşuları ~12:00 TR'de başladı). Core bu bekleyişe 12 saat
- * süre tanır (`TP_CI_GITHUB_TIMEOUT_S`, gece ≥ 12 sa); uyarı da ondan önce "takılmış" demez.
+ * Takılmış koşu uyarısı eşikleri: bu süreden uzun "Sırada" / "Koşuyor" kalan koşu uyarı alır.
+ * GitHub gece koşusu da artık core'dan `workflow_dispatch` ile hemen başlatılır (GitHub cron'u
+ * beklenmez): 1 saatte başlamayan gece koşusu da uyarı alır; core 1 saatte GitHub'da bulamazsa
+ * koşuyu `error` ile kapatır (`TP_CI_GITHUB_BULMA_S`).
  */
-export const GECE_GITHUB_SIRA_ESIGI_MS = 12 * 60 * 60 * 1000;
+export const TAKILMA_ESIGI_MS = { queued: 60 * 60 * 1000, running: 6 * 60 * 60 * 1000 } as const;
 
 /** "3 saattir sırada — takılmış olabilir"; eşik altında ya da bitmiş koşuda null. */
 export function takilmaUyarisi(k: Pick<Kosu, "durum" | "baslangic"> & Partial<Pick<Kosu, "tetik" | "kaynak">>, simdi = Date.now()): string | null {
@@ -49,7 +47,7 @@ export function takilmaUyarisi(k: Pick<Kosu, "durum" | "baslangic"> & Partial<Pi
   const t = Date.parse(k.baslangic);
   if (Number.isNaN(t)) return null;
   const gecen = simdi - t;
-  const esik = k.durum === "queued" && k.tetik === "nightly" && k.kaynak === "github" ? GECE_GITHUB_SIRA_ESIGI_MS : TAKILMA_ESIGI_MS[k.durum];
+  const esik = TAKILMA_ESIGI_MS[k.durum];
   if (gecen < esik) return null;
   const saat = Math.floor(gecen / 3_600_000);
   const sure = saat >= 48 ? `${Math.floor(saat / 24)} gündür` : `${saat} saattir`;

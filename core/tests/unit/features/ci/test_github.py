@@ -306,10 +306,9 @@ def test_deploy_repository_dispatch_bir_kez(engine: Engine, gh: FakeGitHub) -> N
             {"event_type": "deploy", "client_payload": {"tetik": "deploy", "tp_run_id": str(rid)}},
         )
     ]
-    # Önceden oluşmuş (eski) deploy koşusu seçilmez; yenisi seçilir.
-    eski = (datetime.now(UTC) - timedelta(hours=2)).isoformat()
-    gh.wr(200, "repository_dispatch", conclusion="success", created_at=eski)
-    gh.wr(201, "repository_dispatch", conclusion="success")
+    # İşaretsiz (eski / elle) deploy koşusu seçilmez; `[<run_id>]` taşıyan seçilir.
+    gh.wr(200, "repository_dispatch", conclusion="success", name="ci deploy [elle]")
+    gh.wr(201, "repository_dispatch", conclusion="success", name=f"ci deploy [{rid}]")
     assert service.github_poll(engine, rid, 1)["durum"] == "passed"
     assert len(gh.dispatchler) == 1  # yeniden yoklama dispatch'i tekrarlamaz
     assert _run(engine, rid).github_run_id == "201"
@@ -327,18 +326,19 @@ def test_elle_gece_workflow_dispatch(engine: Engine, gh: FakeGitHub) -> None:
     ]
     gh.wr(300, "schedule", conclusion="success")  # zamanlanmış koşu elle tetiğe eşlenmez
     assert service.github_poll(engine, rid, 1)["durum"] == "bekleniyor"
-    gh.wr(301, "workflow_dispatch", conclusion="success")
+    gh.wr(301, "workflow_dispatch", conclusion="success", name=f"ci nightly [{rid}]")
     assert service.github_poll(engine, rid, 2)["durum"] == "passed"
 
 
 def test_cron_bekleyen_gece_kosusu_elle_tetiklenince_dispatch_edilir(
-    engine: Engine, gh: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+    engine: Engine, gh: FakeGitHub
 ) -> None:
-    # Sistem gece koşusu GitHub cron'unu bekliyor (dispatch yok); sunucu elle tetikleyince aynı
-    # kayıt tetiklemeye yükseltilir ve workflow_dispatch gider (yeni koşu açılmaz).
-    # Sabit tarihli iş gerçek saatte koşar: geç kalma süzgeci bu testin konusu değil.
-    monkeypatch.setenv("TP_CI_NIGHTLY_GEC_S", str(100 * 365 * 86400))
-    rid = uuid.UUID(service.nightly_job(engine, "2026-11-02")["run_id"])
+    # Eski sürümden kalma gece koşusu GitHub cron'unu bekliyor (dispatch yok); sunucu elle
+    # tetikleyince aynı kayıt tetiklemeye yükseltilir, workflow_dispatch gider (yeni koşu açılmaz).
+    with Session(engine) as s, s.begin():
+        rid = service._enqueue(
+            s, None, "nightly", isteyen="system:gece", anahtar="nightly:2026-11-02"
+        )["run_id"]
     run_jobs(engine)
     assert gh.dispatchler == []
     with Session(engine) as s, s.begin():
@@ -357,7 +357,7 @@ def test_cron_bekleyen_gece_kosusu_elle_tetiklenince_dispatch_edilir(
             text("UPDATE run SET olusturma = olusturma - interval '3 hours' WHERE id = :i"),
             {"i": rid},
         )
-    gh.wr(301, "workflow_dispatch", conclusion="success")
+    gh.wr(301, "workflow_dispatch", conclusion="success", name=f"ci nightly [{rid}]")
     assert service.github_poll(engine, rid, 1)["durum"] == "passed"
     assert _run(engine, rid).github_run_id == "301"
 
@@ -459,7 +459,7 @@ def test_dispatch_yaniti_belirsizse_kor_tekrar_yok(
     assert service.github_poll(engine, rid, 0)["durum"] == "bekleniyor"
     assert len(gh.dispatchler) == 1
     # Koşu göründü → dispatch "created" olarak kurtarılır, yine tekrar yok.
-    gh.wr(501, "repository_dispatch", conclusion="success")
+    gh.wr(501, "repository_dispatch", conclusion="success", name=f"ci deploy [{rid}]")
     assert service.github_poll(engine, rid, 1)["durum"] == "passed"
     assert len(gh.dispatchler) == 1
     with Session(engine) as s:

@@ -22,10 +22,8 @@ on:
     types: [opened, synchronize, reopened, labeled, unlabeled]
   push:
     branches: [main]
-  schedule:
-    # Gece koşusu: 02:15 UTC = 05:15 TR (ci.yml'den çeyrek saat sonra; her koşu kendi runner'ında
-    # kendi SQLite veritabanıyla çalışır).
-    - cron: "15 2 * * *"
+  # `schedule:` YOK: gece Java kardeş koşusunu çekirdek `workflow_dispatch` `tetik=nightly`,
+  # `istek_id=<run_id>` ile başlatır (ci.yml ile aynı; çift koşu olmasın).
   workflow_dispatch:
     inputs:
       tetik:

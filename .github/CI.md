@@ -126,14 +126,17 @@ Sonuçlar `scripts/github-ci-results.sh` ile toplanır (aşağıda "Artefakt sö
   ref?}}` (`GitHubForge.dispatch_deploy` / `repository_dispatch`). `ref` verilirse o dal/sha checkout
   edilir (test-local, sauce, golden-drift). Koşu adı `ci deploy [<kimlik>]` olur.
 - **Gece / elle:** `POST /actions/workflows/ci.yml/dispatches` `{ref, inputs: {tetik: nightly|manual|deploy,
-  istek_id?}}` (`GitHubForge.workflow_dispatch`); koşu adı `ci <tetik> [<istek_id>]`. Zamanlanmış gece
-  koşusunun olayı `schedule`'dır.
+  istek_id?}}` (`GitHubForge.workflow_dispatch`); koşu adı `ci <tetik> [<istek_id>]`. Gece koşusu
+  da bu yoldan gelir: çekirdek `TP_CI_NIGHTLY_SAAT`'te (02:00 TR) `tetik=nightly`,
+  `istek_id=<run_id>` gönderir. `ci.yml` ve `web-java.yml`'de `schedule:` yoktur (GitHub cron'u
+  saatlerce gecikiyordu; çift koşu olmasın). Uygulama iş akışları (`mobil-*`, `masaustu-windows`)
+  `schedule:`'ı korur: çekirdek onlar için gece koşusu açmaz/dispatch etmez.
 - **Koşuyu bulma:** `GitHubForge.find_dispatched_run(kimlik)` koşu adının sonundaki `[<kimlik>]`'i eşler
   (GitHub dispatch yanıtında koşu kimliği dönmez). PR/push koşuları `list_workflow_runs(head_sha=…)`.
   Kimlik biçimi `[A-Za-z0-9._-]{1,64}` (`changes` job'u doğrular; geçersizse koşu kırmızı).
 - **Eşzamanlılık:** yalnızca `pull_request` koşuları iptal edilir; dispatch koşuları kimlikle ayrı
   gruptadır, çekirdeğin beklediği koşu iptal edilmez.
-- **Commit:** `repository_dispatch`/`schedule` koşusunun `head_sha`'sı varsayılan dalın ucudur; test
+- **Commit:** `repository_dispatch`/`workflow_dispatch`/`schedule` koşusunun `head_sha`'sı varsayılan dalın ucudur; test
   edilen commit `ci-meta.json` → `sha`'dır (checkout HEAD).
 - **Kontroller:** `GitHubForge.check_runs(sha)` (`details_url` → `workflow_run_id`, `job_id`); merge
   kapısı `checks(sha)` ile aynıdır.

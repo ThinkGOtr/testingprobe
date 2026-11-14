@@ -1079,7 +1079,9 @@ kilitlediğini, yayının Jira PO etiketini yayın anında denetlemediğini ve p
 - **Portal:** publish için nginx `location = /api/publish` 75 sn (`BEKLEME_S`+15); diğer `/api/` 30 sn.
 - **Faz 3:** core-worker `TP_AGENT_DEALER` (bayi3), `TP_AGENT_DEALER_PASSWORD` (Demo123!),
   `TP_DEMO_WEB_URL` (http://demo-app-web:8080), `TP_CI_NIGHTLY_SAAT` (02:00 Europe/Istanbul;
-  `kapali` kapatır), `TP_CI_GITHUB_POLL_S` (30), `TP_CI_GITHUB_TIMEOUT_S` (5400); core ortak
+  `kapali` kapatır; GitHub kipinde bu saatte `workflow_dispatch` `tetik=nightly` gönderilir),
+  `TP_CI_GITHUB_POLL_S` (30), `TP_CI_GITHUB_TIMEOUT_S` (5400), `TP_CI_GITHUB_BULMA_S` (3600:
+  dispatch edilen koşu GitHub'da bu sürede görünmezse `error`); core ortak
   `TP_CODEGEN_ARTIFACTS_PATH` (/codegen-artifacts; boşsa `TP_ARTIFACTS_PATH`), `TP_CT_SON_KOSU`
   (20), `TP_CT_FLAKY_GUN` (30), `TP_CT_TREND_GUN` (14); test-runner `TP_RUNS_KEEP` (50, compose'da
   verilmez = varsayılan).

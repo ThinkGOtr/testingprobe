@@ -24,9 +24,9 @@ on:
     types: [opened, synchronize, reopened, labeled, unlabeled]
   push:
     branches: [main]
-  schedule:
-    # Gece koşusu: 02:00 UTC = 05:00 TR
-    - cron: "0 2 * * *"
+  # `schedule:` YOK: gece koşusunu çekirdek kendi saatinde (`TP_CI_NIGHTLY_SAAT`, 02:00 TR)
+  # `workflow_dispatch` `tetik=nightly`, `istek_id=<run_id>` ile başlatır. GitHub cron'u saatlerce
+  # gecikiyordu ve çekirdeğin dispatch'iyle birlikte çift koşu açardı.
   # client_payload: {ref?: test edilecek dal/sha (yoksa varsayılan dal), istek_id? | tp_run_id?:
   # çekirdeğin istek/koşu kimliği (ikisi eşdeğer; koşu adına ve ci-meta.json'a girer), tetik?}
   repository_dispatch:

@@ -299,9 +299,9 @@ describe("koşular: takılmış koşu ve zaman aşımı", () => {
     expect(takilmaUyarisi({ durum: "running", baslangic: once(7) }, simdi)).toBe("7 saattir çalışıyor — takılmış olabilir");
     expect(takilmaUyarisi({ durum: "queued", baslangic: once(72) }, simdi)).toBe("3 gündür sırada — takılmış olabilir");
     expect(takilmaUyarisi({ durum: "failed", baslangic: once(72) }, simdi)).toBeNull();
-    // GitHub gece koşusu GitHub cron'unu bekler: core'un 12 saatlik süresinden önce uyarı yok.
-    expect(takilmaUyarisi({ durum: "queued", baslangic: once(4), tetik: "nightly", kaynak: "github" }, simdi)).toBeNull();
-    expect(takilmaUyarisi({ durum: "queued", baslangic: once(13), tetik: "nightly", kaynak: "github" }, simdi)).toBe("13 saattir sırada — takılmış olabilir");
+    // GitHub gece koşusu core'dan dispatch edilir (cron beklenmez): 1 saat eşiği onda da geçerli.
+    expect(takilmaUyarisi({ durum: "queued", baslangic: once(0.5), tetik: "nightly", kaynak: "github" }, simdi)).toBeNull();
+    expect(takilmaUyarisi({ durum: "queued", baslangic: once(1.5), tetik: "nightly", kaynak: "github" }, simdi)).toBe("1 saattir sırada — takılmış olabilir");
     expect(takilmaUyarisi({ durum: "queued", baslangic: once(4), tetik: "nightly", kaynak: "local" }, simdi)).toBe("4 saattir sırada — takılmış olabilir");
   });
 

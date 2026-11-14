@@ -272,11 +272,13 @@ services:
       TP_DEMO_WEB_URL: http://demo-app-web:8080
       # Jira'ya yazılan kanıt bağlantılarının kökü (portal nginx /api/artifacts sunar; Faz 4).
       TP_PUBLIC_BASE_URL: ${TP_PUBLIC_BASE_URL:-http://127.0.0.1:${TP_PORTAL_PORT:-8080}}
-      # Yerel CI (Faz 3): gece koşusu saati (Europe/Istanbul; "kapali" kapatır), GitHub yoklama aralığı
-      # ve zaman aşımı.
+      # Yerel CI (Faz 3): gece koşusu saati (Europe/Istanbul; "kapali" kapatır; GitHub kipinde bu
+      # saatte workflow_dispatch gönderilir), GitHub yoklama aralığı, zaman aşımı ve dispatch edilen
+      # koşunun GitHub'da görünmesi için azami süre.
       TP_CI_NIGHTLY_SAAT: ${TP_CI_NIGHTLY_SAAT:-02:00}
       TP_CI_GITHUB_POLL_S: ${TP_CI_GITHUB_POLL_S:-30}
       TP_CI_GITHUB_TIMEOUT_S: ${TP_CI_GITHUB_TIMEOUT_S:-5400}
+      TP_CI_GITHUB_BULMA_S: ${TP_CI_GITHUB_BULMA_S:-3600}
       # Portal asistanı (yalnız core-worker; core-api kipi bilmez, durumu asistan_durum'dan okur).
       # Model kipi pipeline'dan bağımsız: live | off (kod varsayılanı off). Anahtar yukarıdaki
       # ANTHROPIC_API_KEY'dir.

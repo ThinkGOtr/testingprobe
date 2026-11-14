@@ -13,14 +13,18 @@ Akış:
      okuduğu `local-ci` kontrolü) kendisi yazar; çekirdek bu dosyayı yazmaz, yalnızca okuyup
      koşu kaydına tutarlılığını işler (core-worker artefakt volume'ünü salt okur).
      JUnit XML + JSON rapor `test_result` (+ `test_result_ek`) satırlarına yazılır.
-   - **github**: dispatch gerekiyorsa (deploy → `repository_dispatch` `deploy`; elle gece →
-     `workflow_dispatch` `tetik=nightly`) idempotent gönderilir (`external_ref`), sonra
-     `ci.github_poll` işi workflow koşusunu bulana ve bitene kadar kendini yeniden planlar;
+   - **github**: dispatch gerekiyorsa (deploy → `repository_dispatch` `deploy`; gece (zamanlanmış
+     ya da elle) → `workflow_dispatch` `tetik=nightly`) idempotent gönderilir (`external_ref`),
+     sonra `ci.github_poll` işi workflow koşusunu bulana ve bitene kadar kendini yeniden planlar;
      `test-local-results` artefaktındaki junit.xml/results.json aynı ayrıştırıcıdan geçer,
      `sauce-results` içindeki Sauce job linkleri koşuya yazılır.
 3. Gece: `ci.nightly` işi (idempotency `ci.nightly:<tarih>`) `TP_CI_NIGHTLY_SAAT`'te
-   (varsayılan 02:00 Europe/Istanbul) koşar, `enqueue_ci(..., anahtar="nightly:<tarih>")` çağırır ve
-   ertesi günü planlar. Worker açılışında plan yoksa eklenir.
+   (varsayılan 02:00 Europe/Istanbul) koşar, `_enqueue(..., anahtar="nightly:<tarih>")` çağırır ve
+   ertesi günü planlar. Worker açılışında plan yoksa eklenir. GitHub kipinde gece koşusunu çekirdek
+   kendisi `workflow_dispatch` (`tetik=nightly`, `istek_id=<run_id>`) ile başlatır; GitHub'ın
+   `schedule` cron'u beklenmez (saatlerce gecikiyordu) ve web iş akışlarında (`ci.yml`,
+   `web-java.yml`) `schedule:` yoktur (çift koşu olmasın). Koşu GitHub koşusuna yalnız koşu adındaki
+   `[<istek_id>]` ile bağlanır (`_aday_sec`).
 """
 
 from __future__ import annotations
@@ -102,7 +106,8 @@ SHA_RE = re.compile(r"^[0-9a-f]{40}([0-9a-f]{24})?$")
 REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$")
 SAUCE_URL_RE = re.compile(r"^https://[A-Za-z0-9.-]*saucelabs\.com/[^\s\"'<>]{1,300}$")
 
-# Tetik → GitHub olay(lar)ı (ci.yml `on:`; elle gece workflow_dispatch ile gider).
+# Tetik → GitHub olay(lar)ı (ci.yml `on:`). Gece koşusunu çekirdek `workflow_dispatch` ile başlatır;
+# `schedule` yalnız bu sürümden önce açılmış, dispatch'siz eski gece kayıtları içindir (`_olaylar`).
 GITHUB_OLAY = {
     "pr": ("pull_request",),
     "push": ("push",),
@@ -295,8 +300,8 @@ def _enqueue(
         and kaynak == "github"
         and not (aktif.ortam or {}).get("dispatch")
     ):
-        # GitHub cron'unu (02:00 UTC) bekleyen sistem gece koşusu varken sunucu elle tetikledi:
-        # aynı kayıt tetiklemeye yükseltilir (yeni koşu açılmaz, istek GitHub'a gider).
+        # Dispatch'siz (eski sürümden kalma, GitHub cron'unu bekleyen) gece koşusu varken elle
+        # tetik geldi: aynı kayıt tetiklemeye yükseltilir (yeni koşu açılmaz, istek GitHub'a gider).
         aktif.ortam = {**(aktif.ortam or {}), "dispatch": trigger, "isteyen": isteyen}
         session.flush()
         # Yoklama işi her turda `_dispatch` çağırır: hemen bir tur kuyruğa alınır.
@@ -1422,7 +1427,8 @@ def _dispatch_olayi(tetik: str, is_akisi: bool = False) -> str:
 
 def _olaylar(run: Run) -> tuple[str, ...]:
     if run.tetik == "nightly":
-        # Elle gece → workflow_dispatch; zamanlanmış gece → GitHub'ın kendi cron'u (schedule).
+        # Çekirdeğin dispatch ettiği gece (zamanlanmış ya da elle) → workflow_dispatch; dispatch'siz
+        # eski kayıt (GitHub'ın kendi cron'unu bekleyen) → schedule.
         return ("workflow_dispatch",) if (run.ortam or {}).get("dispatch") else ("schedule",)
     if run.tetik == "deploy" and (run.ortam or {}).get("dispatch") and gh_is_akisi(run):
         return ("workflow_dispatch",)  # kendi iş akışına elle deploy (bkz. `_dispatch`)
@@ -1449,9 +1455,12 @@ def _aday_sec(
 
     Çekirdeğin dispatch ettiği koşular adında `[<run_id>]` taşır (workflow_dispatch `istek_id`,
     repository_dispatch `tp_run_id`): işaretli aday yalnız kendi koşusuna eşlenir, işaret
-    eşleşirse olay/zaman süzgeci aranmaz. İşaretsiz adaylar (eski workflow, elle tetik) için
-    olay + zaman eşlemesi geriye dönük olarak kalır.
+    eşleşirse olay/zaman süzgeci aranmaz. Çekirdeğin dispatch ettiği koşu (`ortam.dispatch`) YALNIZ
+    kendi işaretiyle eşlenir: işaretsiz ya da `[elle]` aday (GitHub arayüzünden elle tetik, eski
+    cron koşusu) zamana göre ona bağlanmaz. İşaretsiz adaylar için olay + zaman eşlemesi yalnız
+    dispatch'siz koşularda (PR, push, eski kayıtlar) kalır.
     """
+    dispatchli = bool((run.ortam or {}).get("dispatch"))
     kullanilan = set(
         session.scalars(
             select(Run.github_run_id).where(Run.github_run_id.is_not(None), Run.id != run.id)
@@ -1469,6 +1478,8 @@ def _aday_sec(
             if isaret == str(run.id):
                 return dict(a)
             continue  # başka bir istek / koşunun dispatch'i
+        if dispatchli:
+            continue  # kesin bağ: dispatch edilen koşu zamana göre eşlenmez
         olusma = parse_gh_time(a.get("created_at"))
         if run.tetik in ELLE_TETIKLER and (olusma is None or olusma < alt_sinir):
             continue
@@ -1945,16 +1956,27 @@ def _bekle(
         run.sonuc = "running"
         run.baslama = parse_gh_time(wr.get("run_started_at")) or services.now()
         _etkinlik(session.connection(), run, github_run_id=run.github_run_id)
-    # Gece koşusu GitHub'ın kendi cron'unu (02:00 UTC) bekleyebilir: daha uzun süre sınırı.
+    # Gece koşusu da dispatch edilir (GitHub cron'u beklenmez): tüm tetiklerde aynı süre sınırı.
+    # Dispatch'ten sonra koşu GitHub'da `TP_CI_GITHUB_BULMA_S` (varsayılan 1 saat) içinde
+    # görünmezse beklemek anlamsızdır (iş akışı yok / dispatch kayboldu): koşu erken kapanır.
     sinir = _int_env("TP_CI_GITHUB_TIMEOUT_S", 5400)
-    if run.tetik == "nightly" and not (run.ortam or {}).get("dispatch"):
-        sinir = max(sinir, 12 * 3600)
-    if services.now() - _zaman_capasi(run) > timedelta(seconds=sinir):
+    bulma = _int_env("TP_CI_GITHUB_BULMA_S", 3600)
+    gecen = services.now() - _zaman_capasi(run)
+    if wr is None and (run.ortam or {}).get("dispatch") and gecen > timedelta(seconds=bulma):
+        _bitir(
+            session,
+            run,
+            "error",
+            hata=(
+                f"GitHub koşusu dispatch'ten sonra {bulma} sn içinde bulunamadı "
+                f"(istek_id={run.id}); iş akışını ve GitHub Actions kuyruğunu kontrol edin."
+            ),
+        )
+        return {"durum": "error"}
+    if gecen > timedelta(seconds=sinir):
         neden = "GitHub koşusu bitmedi" if wr is not None else "GitHub koşusu bulunamadı"
         _bitir(session, run, "error", hata=f"{neden} ({sinir} sn süre sınırı aşıldı).")
         return {"durum": "error"}
-    if wr is None and run.tetik == "nightly" and not (run.ortam or {}).get("dispatch"):
-        aralik = max(aralik, 300)  # GitHub cron'u saatler sonra: seyrek yokla
     jobq.enqueue(
         session.connection(),
         JOB_GITHUB_POLL,
@@ -2135,15 +2157,21 @@ def nightly_job(engine: Engine, tarih: str) -> dict[str, Any]:
     with engine.begin() as conn:
         plan_nightly(conn, services.now() + timedelta(minutes=1))
     # Worker uzun süre kapalı kaldıysa kaçırılmış günün işi saatler sonra koşar (canlı: 13 Kas işi
-    # 22:54'te). O koşu ertesi gecenin koşusuyla aynı GitHub cron koşusunu bekler; biri onu alır,
-    # öteki "Sırada" kalıp süre sınırında `error` olur. Geç kalan gün atlanır (ertesi gün planlı).
+    # 22:54'te). Gecenin koşusu gündüz başlamasın: geç kalan gün atlanır (ertesi gün planlı).
     plan = _gece_plan_zamani(tarih)
     if plan is not None and services.now() - plan > nightly_gecikme_siniri():
         log.warning("gece koşusu atlandı: %s işi planlanan saatten çok geç koştu", tarih)
         return {"run_id": None, "yeni": False, "atlandi": "gec_kaldi"}
     with Session(engine, expire_on_commit=False) as session, session.begin():
+        # GitHub kipinde koşu `workflow_dispatch` (`tetik=nightly`, `istek_id=<run_id>`) ile
+        # başlatılır (`_dispatch`, ilk yoklama turunda); local kipte `dispatch` yok sayılır.
         sonuc = _enqueue(
-            session, None, "nightly", isteyen="system:gece", anahtar=f"nightly:{tarih}"
+            session,
+            None,
+            "nightly",
+            isteyen="system:gece",
+            anahtar=f"nightly:{tarih}",
+            dispatch=True,
         )
         return {"run_id": str(sonuc["run_id"]) if sonuc["run_id"] else None, "yeni": sonuc["yeni"]}
 

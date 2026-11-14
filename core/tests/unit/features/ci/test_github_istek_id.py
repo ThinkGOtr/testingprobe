@@ -51,12 +51,31 @@ def test_elle_ve_gece_ayni_anda_karismaz(engine, gh: FakeGitHub) -> None:  # noq
     assert _run(engine, elle).github_run_id == "402"
 
 
-def test_isaretsiz_aday_eski_eslemeyle_secilir(engine, gh: FakeGitHub) -> None:  # noqa: F811
+def test_dispatchli_kosu_isaretsiz_adaya_baglanmaz(engine, gh: FakeGitHub) -> None:  # noqa: F811
+    """Kesin bağ: dispatch edilen koşu yalnız `[<run_id>]` işaretli GitHub koşusuna eşlenir;
+    başka isteğin, `[elle]` ya da işaretsiz (eski cron) koşusu zamana göre bağlanmaz."""
     with Session(engine) as s, s.begin():
         rid = service.trigger_manual(s, "manual", "gelistirici")["run_id"]
     run_jobs(engine)
-    # Başka bir isteğin işaretli koşusu seçilmez; işaretsiz (eski workflow) aday seçilir.
     gh.wr(500, "workflow_dispatch", conclusion="failure", name="ci manual [baska-istek]")
     gh.wr(501, "workflow_dispatch", conclusion="success", name="ci manual [elle]")
+    gh.wr(502, "workflow_dispatch", conclusion="success", name="ci")
+    assert service.github_poll(engine, rid, 1)["durum"] == "bekleniyor"
+    assert _run(engine, rid).github_run_id is None
+    gh.wr(503, "workflow_dispatch", conclusion="success", name=f"ci manual [{rid}]")
+    assert service.github_poll(engine, rid, 2)["durum"] == "passed"
+    assert _run(engine, rid).github_run_id == "503"
+
+
+def test_dispatchsiz_kosuda_isaretsiz_aday_eski_eslemeyle_secilir(
+    engine,
+    gh: FakeGitHub,  # noqa: F811
+) -> None:
+    """Geriye dönük: dispatch'siz eski gece kaydı (cron'u bekleyen) olay + zamanla eşlenir."""
+    with Session(engine) as s, s.begin():
+        rid = service._enqueue(s, None, "nightly", anahtar="nightly:eski")["run_id"]
+    run_jobs(engine)
+    assert gh.dispatchler == []
+    gh.wr(600, "schedule", conclusion="success", name="ci")
     assert service.github_poll(engine, rid, 1)["durum"] == "passed"
-    assert _run(engine, rid).github_run_id == "501"
+    assert _run(engine, rid).github_run_id == "600"
