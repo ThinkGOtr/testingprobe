@@ -51,6 +51,8 @@ export function caseKalitesiUyarla(ham: unknown): CaseKalitesi {
       hazir_gereksinim: sayiYaDaNull(kapsam.hazir_gereksinim),
       hazir_oge: sayiYaDaNull(kapsam.hazir_oge),
       n_gereksinim: sayi(kapsam.n_gereksinim),
+      ...(kapsam.n_gereksinim_case !== undefined ? { n_gereksinim_case: sayi(kapsam.n_gereksinim_case) } : {}),
+      ...(kapsam.n_gereksinim_eski !== undefined ? { n_gereksinim_eski: sayi(kapsam.n_gereksinim_eski) } : {}),
       kapsam_yontemi: metin(kapsam.kapsam_yontemi, "toplam"),
     },
     review: {

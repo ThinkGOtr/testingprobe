@@ -155,3 +155,15 @@ describe("Case kalitesi bölümü", () => {
     expect(k.hedefler).toEqual([]);
   });
 });
+
+describe("proje geneli metni (canlı: '0 gereksinim' derken 4 gereksinimde case vardı)", () => {
+  it("yalnız eski biçimli case'i olan gereksinimleri ayrıca söyler", async () => {
+    const { projeGeneliMetni } = await import("./CaseKalitesi");
+    expect(projeGeneliMetni({ n_gereksinim: 0, n_gereksinim_case: 4, n_gereksinim_eski: 4 })).toBe(
+      "Proje geneli · case'i olan 4 gereksinim var ama ölçülemedi (4 gereksinimde yalnız eski biçimli case var; kapsam ölçüsüne girmez)",
+    );
+    expect(projeGeneliMetni({ n_gereksinim: 2, n_gereksinim_case: 4, n_gereksinim_eski: 2 })).toContain("2 / 4 gereksinim ölçüldü");
+    expect(projeGeneliMetni({ n_gereksinim: 3, n_gereksinim_case: 3, n_gereksinim_eski: 0 })).toBe("Proje geneli · 3 gereksinim");
+    expect(projeGeneliMetni({ n_gereksinim: 0 })).toContain("henüz güncel case'i olan gereksinim yok");
+  });
+});

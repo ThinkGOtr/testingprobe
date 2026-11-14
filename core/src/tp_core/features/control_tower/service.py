@@ -70,6 +70,10 @@ BAZ_YOK = (
     "Manuel baz değer ölçülmedi (hiçbir story'de ölçüm yok; TP_MANUAL_BASELINE_S varsayılanı ölçüm "
     "sayılmaz): kazanç oranı gösterilmez."
 )
+BAZ_HAZIRLIKSIZ = (
+    "Manuel baz değer {n} story'de ölçüldü ({anahtarlar}) ama bu story'lerde AI ile üretilmiş case "
+    "ve hazırlık süresi yok: kazanç oranı hesaplanamadı."
+)
 KAZANC_REPLAY = (
     "REPLAY: hazırlık süresi yalnız review süresidir (AI süresi ölçülmez); {n} story toplam "
     "kazanca girmedi — sunumdaki yüzde verimlilik iddiası değildir."
@@ -769,7 +773,13 @@ def ai_katkisi(session: Session) -> tuple[dict[str, Any], list[dict[str, Any]], 
         )
     }
     kapsam = _baz_kapsami(hazirlik)
-    if kapsam["baz_deger_olculmedi"]:
+    # Canlı: "hiçbir story'de ölçüm yok" denirken TPD-1'de manuel baz ölçümü vardı — hazırlık
+    # listesi yalnız AI case'i olan story'leri kapsar. Hazırlık dışındaki ölçümler ayrıca sayılır.
+    disarida = _hazirlik_disi_olcumler(session, {h["requirement_id"] for h in hazirlik})
+    kapsam["hazirlik_disi_olcum"] = disarida
+    if kapsam["baz_deger_olculmedi"] and disarida:
+        uyarilar.append(BAZ_HAZIRLIKSIZ.format(n=len(disarida), anahtarlar=", ".join(disarida[:5])))
+    elif kapsam["baz_deger_olculmedi"]:
         uyarilar.append(BAZ_YOK)
     elif kapsam["olculmedi"]:
         uyarilar.append(
@@ -828,7 +838,8 @@ def ai_katkisi(session: Session) -> tuple[dict[str, Any], list[dict[str, Any]], 
         "manuel_baz_varsayilan_ms": varsayilan_ms,
         "baz_deger_olculmedi": kapsam["baz_deger_olculmedi"],
         "baz_kapsami": {
-            k: kapsam[k] for k in ("story", "olcum", "varsayilan", "olculmedi", "metin")
+            k: kapsam[k]
+            for k in ("story", "olcum", "varsayilan", "olculmedi", "metin", "hazirlik_disi_olcum")
         },
         # 1 − Σ(AI + review) / Σ(ölçülmüş manuel baz): yalnızca ai_arti_review story'ler.
         "kazanc_orani": kapsam["kazanc_orani"],
@@ -848,6 +859,32 @@ def ai_katkisi(session: Session) -> tuple[dict[str, Any], list[dict[str, Any]], 
         "amac_gruplari": asistan.maliyet_gruplari(session, gun_basi),
     }
     return katki, hazirlik, uyarilar
+
+
+def _hazirlik_disi_olcumler(session: Session, hazirlikta: set[str]) -> list[str]:
+    """Hazırlık listesinde (AI case'i olan story'ler) olmayan, manuel baz değeri ÖLÇÜLMÜŞ
+    story'lerin anahtarları (yoksa gereksinim kimliği)."""
+    from tp_core.features.requirements import baseline
+    from tp_core.models import Requirement
+    from tp_core.models.baseline_feature import RequirementBazDeger
+
+    ids = [
+        rid
+        for rid in session.scalars(select(RequirementBazDeger.requirement_id).distinct()).all()
+        if str(rid) not in hazirlikta
+    ]
+    if not ids:
+        return []
+    bazlar = baseline.baselines_for(session, ids)
+    olculen = [rid for rid in ids if bazlar[rid]["kaynak"] == baseline.KAYNAK_OLCUM]
+    if not olculen:
+        return []
+    anahtar = dict(
+        session.execute(
+            select(Requirement.id, Requirement.jira_key).where(Requirement.id.in_(olculen))
+        ).all()
+    )
+    return sorted(str(anahtar.get(rid) or rid) for rid in olculen)
 
 
 def _baz_kapsami(hazirlik: list[dict[str, Any]]) -> dict[str, Any]:

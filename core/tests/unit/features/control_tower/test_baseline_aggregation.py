@@ -90,6 +90,7 @@ def test_olcum_varsayilan_olculmedi_ve_kazanc(
         "varsayilan": 0,
         "olculmedi": 2,
         "metin": "4 story'den 2'sinde ölçüm var, 2'sinde ölçülmedi",
+        "hazirlik_disi_olcum": [],
     }
     # 1 − (600 + 1200) / (3600 + 2400)
     assert (ai["kazanc_orani"], ai["kazanc_story_sayisi"]) == (0.7, 2)
@@ -143,6 +144,27 @@ def test_hicbir_story_olculmediyse_sayi_yok(
     assert ai["baz_kapsami"]["olculmedi"] == 4
     assert ct.BAZ_YOK in k["uyarilar"]
     assert all(x["kazanc_orani"] is None and x["manuel_baz_ms"] is None for x in k["hazirlik"])
+
+
+def test_hazirlik_disi_story_olcumu_baz_yok_demez(
+    api: TestClient,
+    engine: Engine,
+    make_user,
+    make_requirement_case,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Canlı: TPD-1'de manuel baz ölçümü varken "hiçbir story'de ölçüm yok" deniyordu (hesap
+    yalnız AI case'i olan story'leri sayıyor). Ölçüm varsa ama hazırlık yoksa ayrı metin."""
+    monkeypatch.delenv("TP_MANUAL_BASELINE_S", raising=False)
+    make_requirement_case(jira_key="TPD-1", title="elle case", ai=False)
+    rid = make_requirement_case.reqs["TPD-1"]
+    login(api, make_user("po"))
+    r = api.put(f"/requirements/{rid}/baseline", json={"deger_s": 3600, "not": "F0 ölçümü"})
+    assert r.status_code == 200, r.text
+    k = _kule(engine)
+    assert ct.BAZ_YOK not in k["uyarilar"]
+    assert any("1 story'de ölçüldü (TPD-1)" in u for u in k["uyarilar"]), k["uyarilar"]
+    assert k["ai_katkisi"]["baz_kapsami"]["hazirlik_disi_olcum"] == ["TPD-1"]
 
 
 def test_replay_hazirlik_suresi_yalniz_review(

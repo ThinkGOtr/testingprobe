@@ -294,6 +294,11 @@ def case_kalitesi(session: Session, requirement_id: uuid.UUID | None = None) -> 
             kapsam[alan].ekle(deger)
     kapsam_cikti: dict[str, Any] = {alan: t.sonuc() for alan, t in kapsam.items()}
     kapsam_cikti["n_gereksinim"] = n_gereksinim
+    # Canlı: "Proje geneli · 0 gereksinim" (4 gereksinimde case var): kapsam ölçüleri yalnız v3
+    # case'i olan gereksinimleri sayar; case'i olan tüm gereksinimler ve yalnız eski (v2) biçimli
+    # olanlar ayrıca verilir.
+    kapsam_cikti["n_gereksinim_case"] = len(reqs)
+    kapsam_cikti["n_gereksinim_eski"] = len(reqs) - n_gereksinim
     kapsam_cikti["kapsam_yontemi"] = (
         "gereksinim_ortalamasi" if any(t.payda_yok for t in kapsam.values()) else "toplam"
     )
@@ -302,6 +307,11 @@ def case_kalitesi(session: Session, requirement_id: uuid.UUID | None = None) -> 
         uyarilar.append(
             f"{soru['yetim']} açık soru hiçbir case'e ya da karara bağlı değil (yetim); PO yanıtı "
             "case'e dönmez, hazır kapsam olduğundan iyi görünebilir."
+        )
+    if requirement_id is None and len(reqs) > n_gereksinim:
+        uyarilar.append(
+            f"Case'i olan {len(reqs)} gereksinimin {len(reqs) - n_gereksinim}'inde yalnız eski "
+            "biçimli (v2) case var: kapsam ve hazırlık ölçüleri bunları saymaz."
         )
     if n_gereksinim and not hazir_veri:
         uyarilar.append(

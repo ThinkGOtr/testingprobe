@@ -225,6 +225,8 @@ def test_bos_db_sifir_ve_null(engine: Engine) -> None:
         "hazir_gereksinim": None,
         "hazir_oge": None,
         "n_gereksinim": 0,
+        "n_gereksinim_case": 0,
+        "n_gereksinim_eski": 0,
         "kapsam_yontemi": "toplam",
     }
     assert k["review"]["n"] == 0 and k["review"]["ortalama"] is None

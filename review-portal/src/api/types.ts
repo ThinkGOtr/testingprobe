@@ -2211,6 +2211,9 @@ export interface CaseKalitesi {
     hazir_gereksinim: number | null;
     hazir_oge: number | null;
     n_gereksinim: number;
+    /** Case'i olan tüm gereksinimler (v2 dahil) ve yalnız eski (v2) biçimli case'i olanlar; eski core'da yok. */
+    n_gereksinim_case?: number;
+    n_gereksinim_eski?: number;
     kapsam_yontemi: "toplam" | "gereksinim_ortalamasi" | string;
   };
   /** P8 case seti review: yüzde = skor / 12 × 100. */

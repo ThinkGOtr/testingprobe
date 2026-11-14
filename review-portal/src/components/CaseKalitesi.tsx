@@ -152,6 +152,19 @@ export function CaseKalitesiBolumu({ requirementId }: { requirementId?: string }
   return <CaseKalitesiIcerik k={k} baslikId={baslikId} />;
 }
 
+/** Canlı: "Proje geneli · 0 gereksinim" (4 gereksinimde case var) — ölçüler yalnız v3 case'i olanı sayar. */
+export function projeGeneliMetni(kapsam: Pick<Veri["kapsam"], "n_gereksinim" | "n_gereksinim_case" | "n_gereksinim_eski">): string {
+  const n = kapsam.n_gereksinim;
+  const eski = kapsam.n_gereksinim_eski ?? 0;
+  const tum = kapsam.n_gereksinim_case ?? n;
+  if (n > 0 && eski === 0) return `Proje geneli · ${n} gereksinim`;
+  if (eski > 0) {
+    const bas = n > 0 ? `Proje geneli · ${n} / ${tum} gereksinim ölçüldü` : `Proje geneli · case'i olan ${tum} gereksinim var ama ölçülemedi`;
+    return `${bas} (${eski} gereksinimde yalnız eski biçimli case var; kapsam ölçüsüne girmez)`;
+  }
+  return "Proje geneli · henüz güncel case'i olan gereksinim yok (veri boş; yetki kısıtı değil)";
+}
+
 export function CaseKalitesiIcerik({ k, baslikId }: { k: Veri; baslikId: string }) {
   const ky = k.kaynaklar;
   const hazirVar = k.kapsam.hazir_gereksinim !== null || k.kapsam.hazir_oge !== null;
@@ -166,11 +179,7 @@ export function CaseKalitesiIcerik({ k, baslikId }: { k: Veri; baslikId: string 
         <h2 id={baslikId}>Case kalitesi</h2>
       </div>
       <p className="soluk kucuk">
-        {k.requirement_id
-          ? "Seçili gereksinim"
-          : k.kapsam.n_gereksinim > 0
-            ? `Proje geneli · ${k.kapsam.n_gereksinim} gereksinim`
-            : "Proje geneli · henüz güncel case'i olan gereksinim yok (veri boş; yetki kısıtı değil)"}
+        {k.requirement_id ? "Seçili gereksinim" : projeGeneliMetni(k.kapsam)}
         . Sayılar kayıtlardan hesaplanır; ölçülmemiş değer
         “ölçülmedi” yazılır.
       </p>
