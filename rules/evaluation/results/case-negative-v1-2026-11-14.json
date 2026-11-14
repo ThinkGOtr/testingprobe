@@ -1,0 +1,451 @@
+{
+  "bundle": "case-negative",
+  "version": 1,
+  "date": "2026-11-14",
+  "model": "claude-sonnet-5-5",
+  "provider": "anthropic",
+  "mode": "live",
+  "passed": 2,
+  "total": 2,
+  "runs": 1,
+  "cases": [
+    {
+      "id": "tpd-1-negatif",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "open_questions": [
+          {
+            "id": "Q2",
+            "question": "Adet alanına 0, negatif sayı, harf, boş değer veya çok büyük bir sayı girilirse ve \"Sepete ekle\"ye basılırsa ne olur (ürün eklenir mi, hata gösterilir mi, mesaj metni nedir, sayaç değişir mi)?",
+            "owner": "PO"
+          },
+          {
+            "id": "Q3",
+            "question": "\"Siparişi onayla\" butonuna çift tıklanırsa ya da onay sonrası Geri tuşuyla onay isteği tekrarlanırsa ikinci bir sipariş oluşur mu, aynı sipariş numarası mı gösterilir, yoksa hata mı verilir?",
+            "owner": "PO"
+          },
+          {
+            "id": "Q4",
+            "question": "Giriş yapmamış veya oturumu sona ermiş bir kullanıcı sepet ve sipariş geçmişi sayfalarına doğrudan gitmeye çalışırsa beklenen davranış nedir (giriş sayfasına yönlendirme, hata sayfası vb.)?",
+            "owner": "PO"
+          }
+        ],
+        "assumptions": [],
+        "coverage_items": [
+          {
+            "id": "EP-I3",
+            "ac_ref": "AC4",
+            "definition": "Kampanyalı sipariş (indirim sonrası toplam 625,00 TL) bayinin kredi limitini (500,00 TL) aşıyor: \"Kredi limiti aşıldı\" uyarısı, sipariş onaylanamaz",
+            "valid": false
+          },
+          {
+            "id": "EP-I4",
+            "ac_ref": "AC1",
+            "definition": "Adet alanına geçersiz değer girilir (0, negatif, harf, boş, çok büyük) ve \"Sepete ekle\"ye basılır; sonuç kaynakta tanımlı değil",
+            "valid": false
+          },
+          {
+            "id": "ST-X1",
+            "ac_ref": "AC5",
+            "definition": "Onaylanmış siparişte \"Siparişi onayla\" isteğinin tekrarı (çift tıklama, Geri tuşu); sonuç kaynakta tanımlı değil",
+            "valid": false
+          },
+          {
+            "id": "UC-EF1",
+            "ac_ref": "AC5",
+            "definition": "Oturumsuz veya oturumu sona ermiş kullanıcı sepet/sipariş geçmişi sayfalarına erişmeye çalışır; sonuç kaynakta tanımlı değil",
+            "valid": false
+          }
+        ],
+        "negative_coverage": [
+          {
+            "item": "EP-I3",
+            "decision": "tested",
+            "rationale": "Kampanyalı sepette de kredi limiti kuralı para etkili; brüt (750,00 TL) ve indirimli (625,00 TL) toplam limiti aştığı için yoruma açık değil."
+          },
+          {
+            "item": "EP-I4",
+            "decision": "out_of_scope",
+            "rationale": "Geçersiz adet için kaynakta sonuç yok; beklenen sonuç uydurulmadı, case yazılmadı. Açık soru Q2."
+          },
+          {
+            "item": "ST-X1",
+            "decision": "out_of_scope",
+            "rationale": "Tekrarlanan onayın sonucu kaynakta yok; case yazılmadı. Açık soru Q3."
+          },
+          {
+            "item": "UC-EF1",
+            "decision": "out_of_scope",
+            "rationale": "Oturumsuz erişimde beklenen red davranışı kaynakta yok; case yazılmadı. Açık soru Q4."
+          }
+        ],
+        "not_covered": [
+          {
+            "item": "N4",
+            "reason": "Hikâyede serbest metin girişi yok; yalnız adet alanı var. Özel karakter davranışı Q2 kapsamında açık.",
+            "question_ref": null
+          },
+          {
+            "item": "N5",
+            "reason": "Serbest metin girişi ve kaynakta güvenlik gereksinimi yok; enjeksiyon case'i için bağlanacak gereksinim yok.",
+            "question_ref": null
+          },
+          {
+            "item": "N9",
+            "reason": "Ağ/servis hatası davranışı kaynakta tanımlı değil; beklenen sonuç uydurulmadı.",
+            "question_ref": null
+          }
+        ],
+        "observations": [],
+        "automation_open_points": [],
+        "config_matrix": {
+          "parameters": [],
+          "constraints": []
+        },
+        "testability_gaps": [],
+        "cases": [
+          {
+            "title": "Kampanyalı siparişte tutar kredi limitini aşınca uyarı gösterilir ve sipariş onaylanamaz",
+            "type": "negative",
+            "technique": [
+              "EP"
+            ],
+            "covers": [
+              "EP-I3"
+            ],
+            "priority": "P1",
+            "priority_rationale": "Kredi limiti aşımı para riski taşır; kampanyalı indirim hesabı limit kontrolünü atlatırsa limit dışı sipariş onaylanır.",
+            "acceptance_criteria_refs": [
+              "AC4",
+              "AC6"
+            ],
+            "platform": null,
+            "test_level": "SYSTEM",
+            "verification_point": "UI",
+            "requires_real_device": false,
+            "standard_refs": [],
+            "readiness": "ready",
+            "assumption_refs": [],
+            "open_question_refs": [],
+            "preconditions": [
+              "bayi2 (\"Sahil Bayi\", kredi limiti 500,00 TL) sepeti boş",
+              "\"6 al 1 bedava\" kampanyası P-001 için aktif"
+            ],
+            "test_data": [
+              {
+                "name": "bayi kullanıcısı (kredi limiti 500,00 TL)",
+                "value": "bayi2 / Demo123!",
+                "class": null,
+                "synthetic": true,
+                "is_attack_payload": false
+              },
+              {
+                "name": "kampanyalı ürün ve adet",
+                "value": "P-001 × 30 (ara toplam 750,00 TL, 5 bedava, indirim 125,00 TL, toplam 625,00 TL)",
+                "class": "EP-I3",
+                "synthetic": true,
+                "is_attack_payload": false
+              }
+            ],
+            "steps": [
+              {
+                "id": "S1",
+                "action": "Giriş sayfasını aç",
+                "data": null,
+                "expected": "Giriş formu görüntülenir"
+              },
+              {
+                "id": "S2",
+                "action": "Bayi kullanıcısıyla giriş yap",
+                "data": "bayi2 / Demo123!",
+                "expected": "Katalog sayfası \"Sahil Bayi\" oturumuyla görüntülenir"
+              },
+              {
+                "id": "S3",
+                "action": "\"Siparişlerim\" sayfasını aç ve listelenen sipariş sayısını not et, sonra kataloğa dön",
+                "data": null,
+                "expected": "Mevcut sipariş sayısı not edilir"
+              },
+              {
+                "id": "S4",
+                "action": "\"Portakal Gazozu 1L\" (P-001) kartında adedi 30 yapıp \"Sepete ekle\" butonuna bas",
+                "data": "P-001 × 30",
+                "expected": "Sepet sayacı 30 olur"
+              },
+              {
+                "id": "S5",
+                "action": "Üst menüden sepete git",
+                "data": null,
+                "expected": "P-001 satırında adet 30, bedava adet 5; ara toplam 750,00 TL, indirim 125,00 TL, toplam 625,00 TL; \"Kredi limiti aşıldı\" uyarısı görünür, \"Siparişi onayla\" butonu pasiftir; minimum sipariş uyarısı görünmez"
+              },
+              {
+                "id": "S6",
+                "action": "\"Siparişlerim\" sayfasını aç",
+                "data": null,
+                "expected": "Sipariş sayısı S3'te not edilen sayıyla aynıdır; yeni sipariş listelenmez"
+              }
+            ],
+            "expected_result": "Kampanyalı sepetin toplamı (625,00 TL) kredi limitini (500,00 TL) aşar; \"Kredi limiti aşıldı\" uyarısı gösterilir, sipariş onaylanamaz ve sipariş geçmişinde yeni sipariş oluşmaz.",
+            "teardown": [
+              "Sepeti boşalt",
+              "Oturumu kapat (\"Çıkış yap\")"
+            ],
+            "tags": [
+              "AI-generated",
+              "N7",
+              "regression"
+            ]
+          }
+        ]
+      },
+      "mode": "live",
+      "error": null,
+      "cost_usd": 0.100882,
+      "sure_ms": 35211
+    },
+    {
+      "id": "tpd-4-negatif",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "open_questions": [
+          {
+            "id": "Q2",
+            "question": "Boş kullanıcı adı veya boş parola ile giriş denenirse ne olmalı: AC2'deki mesaj mı, alan bazlı bir doğrulama mesajı mı, yoksa istek hiç gönderilmez mi? Ayrıca ardışık hatalı denemelerde hesap kilitleme/gecikme kuralı var mı?",
+            "owner": "PO"
+          }
+        ],
+        "assumptions": [
+          {
+            "id": "A1",
+            "statement": "Hatalı parola ile giriş reddedilir ve oturum açılmaz; AC2'deki mesaj aynı şekilde gösterilir. Parola alanındaki özel karakterli metin de hatalı parola sayılır ve AC2 mesajı gösterilir.",
+            "owner": "PO"
+          }
+        ],
+        "coverage_items": [
+          {
+            "id": "EP-I1",
+            "ac_ref": "AC2",
+            "definition": "Kayıtlı kullanıcı adı ve hatalı parola: \"Kullanıcı adı veya parola hatalı\" mesajı, giriş yapılmaz",
+            "valid": false
+          },
+          {
+            "id": "EP-I2",
+            "ac_ref": "AC2",
+            "definition": "Kayıtlı olmayan kullanıcı adı (beklenen sonuç kaynakta tanımsız, Q1)",
+            "valid": false
+          },
+          {
+            "id": "EP-I3",
+            "ac_ref": "AC2",
+            "definition": "Boş kullanıcı adı veya boş parola ile giriş denemesi (beklenen sonuç kaynakta tanımsız, Q2)",
+            "valid": false
+          },
+          {
+            "id": "EG-1",
+            "ac_ref": "AC2",
+            "definition": "Parola alanına SQL injection metni girilmesi: giriş yapılmaz, hata mesajı sızıntı içermez",
+            "valid": false
+          },
+          {
+            "id": "CL-1",
+            "ac_ref": "AC1",
+            "definition": "Giriş yapmadan korumalı katalog sayfasına doğrudan erişim (N6): giriş olmadan katalog açılmaz (sonuç ekranı kaynakta yok, Q2 kapsamı dışı)",
+            "valid": false
+          },
+          {
+            "id": "EG-2",
+            "ac_ref": "AC2",
+            "definition": "Ardışık hatalı parola denemeleri (brute force): kilitleme kuralı kaynakta tanımsız, Q2",
+            "valid": false
+          }
+        ],
+        "negative_coverage": [
+          {
+            "item": "EP-I1",
+            "decision": "covered_by",
+            "rationale": "Mevcut U1-2 hatalı parolayı AC2 mesajıyla sınıyor."
+          },
+          {
+            "item": "EP-I2",
+            "decision": "out_of_scope",
+            "rationale": "Kayıtlı olmayan kullanıcı adında sonuç kaynakta yok; Q1 açık, case yazılmadı."
+          },
+          {
+            "item": "EP-I3",
+            "decision": "out_of_scope",
+            "rationale": "Boş alanlarda gösterilecek sonuç kaynakta yok; Q2 açık, case yazılmadı."
+          },
+          {
+            "item": "EG-1",
+            "decision": "tested",
+            "rationale": "Güvenlik riski; giriş reddi ve mesajın A1 varsayımına dayalı olarak sınanması."
+          },
+          {
+            "item": "CL-1",
+            "decision": "out_of_scope",
+            "rationale": "Oturumsuz erişimde gösterilecek sonuç (yönlendirme/hata) kaynakta yok; Q2'de ilgili kural netleşince ele alınır."
+          },
+          {
+            "item": "EG-2",
+            "decision": "out_of_scope",
+            "rationale": "Kilitleme/gecikme kuralı kaynakta yok; Q2 açık, case yazılmadı."
+          }
+        ],
+        "not_covered": [
+          {
+            "item": "N6",
+            "reason": "Oturumsuz doğrudan katalog erişiminin beklenen sonucu kaynakta yok; case yazılmadı.",
+            "question_ref": "Q2"
+          },
+          {
+            "item": "N8",
+            "reason": "Çift tıklama ve eşzamanlı giriş davranışı kaynakta tanımlı değil; ayrı kural yok.",
+            "question_ref": null
+          }
+        ],
+        "observations": [],
+        "automation_open_points": [],
+        "config_matrix": {
+          "parameters": [],
+          "constraints": []
+        },
+        "testability_gaps": [],
+        "cases": [
+          {
+            "title": "Parola alanına SQL injection metni girilince giriş reddedilir",
+            "type": "negative",
+            "technique": [
+              "EG"
+            ],
+            "covers": [
+              "EG-1"
+            ],
+            "priority": "P1",
+            "priority_rationale": "Kimlik doğrulama atlatma riski güvenlik açığına yol açar.",
+            "acceptance_criteria_refs": [
+              "AC2"
+            ],
+            "platform": null,
+            "test_level": "SYSTEM",
+            "verification_point": "UI",
+            "requires_real_device": false,
+            "standard_refs": [
+              "WSTG-INPV-05"
+            ],
+            "readiness": "assumption_dependent",
+            "assumption_refs": [
+              "A1"
+            ],
+            "open_question_refs": [],
+            "preconditions": [
+              "Yalnızca izinli test ortamı kullanılır",
+              "bayi1 kullanıcısı tanımlıdır"
+            ],
+            "test_data": [
+              {
+                "name": "enjeksiyon parolası",
+                "value": "' OR '1'='1",
+                "class": "EG-1",
+                "synthetic": true,
+                "is_attack_payload": true
+              },
+              {
+                "name": "kayıtlı kullanıcı adı",
+                "value": "bayi1",
+                "class": null,
+                "synthetic": true,
+                "is_attack_payload": false
+              }
+            ],
+            "steps": [
+              {
+                "id": "S1",
+                "action": "Giriş sayfasını aç",
+                "data": null,
+                "expected": "Giriş formu görüntülenir"
+              },
+              {
+                "id": "S2",
+                "action": "Kullanıcı adına kayıtlı kullanıcı adını, parolaya enjeksiyon parolası verisini gir ve \"Giriş yap\" butonuna bas",
+                "data": "kayıtlı kullanıcı adı / enjeksiyon parolası",
+                "expected": "\"Kullanıcı adı veya parola hatalı\" mesajı gösterilir, giriş sayfasında kalınır"
+              },
+              {
+                "id": "S3",
+                "action": "Ekranda SQL, yığın izi veya sistem bilgisi içeren bir metin olup olmadığını kontrol et",
+                "data": null,
+                "expected": "Mesajda ve sayfada teknik detay veya sistem bilgisi görünmez"
+              }
+            ],
+            "expected_result": "Giriş yapılmaz, katalog açılmaz; \"Kullanıcı adı veya parola hatalı\" mesajı gösterilir ve hata mesajında teknik bilgi sızmaz.",
+            "teardown": [],
+            "tags": [
+              "AI-generated",
+              "N5",
+              "security"
+            ]
+          }
+        ]
+      },
+      "mode": "live",
+      "error": null,
+      "cost_usd": 0.029402,
+      "sure_ms": 13457
+    }
+  ],
+  "tamamlandi": true,
+  "set_vaka_sayisi": 2,
+  "kosu_sayisi": 2,
+  "maliyet_usd": 0.130284,
+  "butce_usd": 20.0,
+  "calisma_alani_basligi": true,
+  "guardrails_version": 1,
+  "kayit_adaylari": null,
+  "cagri_kaydi": "case-negative-v1-2026-11-14.calls.jsonl",
+  "cagri_sayisi": 2,
+  "cagri_defteri": "ledger-diger.jsonl",
+  "amac": "case_deepening",
+  "via_flow": false,
+  "output_check": true,
+  "icerik_hash": "sha256:8ad014f835d5e5d065d516e843a0171edfe0f9455116313444bc6088c63a4abc",
+  "olcumler": {
+    "amac": "case_deepening",
+    "output_check": true,
+    "vaka": 2,
+    "ilk_deneme_gecis": 2,
+    "ilk_deneme_gecis_orani": 1.0,
+    "kural_yeniden_isteme_orani": 0.0,
+    "sema_yeniden_isteme_orani": 0.0,
+    "duzelme_orani": null,
+    "kalan_kural_ihlali": 0,
+    "ek_maliyet_usd": 0.0,
+    "ek_maliyet_orani": 0.0,
+    "ek_sure_ms": {
+      "p50": null,
+      "p95": null
+    },
+    "kural_turu_histogrami": {},
+    "ilk_deneme_maskeli_puanlama": 0,
+    "esikler": [
+      {
+        "ad": "ham_gecis_alt_siniri (bilgi)",
+        "deger": 1.0,
+        "esik": 0.7,
+        "gecti": true,
+        "bagliyici": false
+      }
+    ]
+  },
+  "dagilim": {
+    "maliyet_usd": {
+      "medyan": 0.029402,
+      "p90": 0.100882
+    },
+    "sure_ms": {
+      "medyan": 13457,
+      "p90": 35211
+    }
+  }
+}

@@ -193,15 +193,15 @@ bundles:
   platform-common:
     version: 1
     status: evaluated
-    note: 'Canlı değerlendirme 2026-11-12, claude-sonnet-5-5 (anthropic), 2/2 vaka geçti: evaluation/results/platform-common-v1-2026-11-12.json'
+    note: 'Canlı değerlendirme 2026-11-14, claude-sonnet-5-5 (anthropic), 2/2 vaka geçti: evaluation/results/platform-common-v1-2026-11-14.json'
     evaluation:
-      date: '2026-11-12'
+      date: '2026-11-14'
       model: claude-sonnet-5-5
       provider: anthropic
-      results: evaluation/results/platform-common-v1-2026-11-12.json
+      results: evaluation/results/platform-common-v1-2026-11-14.json
       guardrails_version: 1
-      calls: evaluation/results/platform-common-v1-2026-11-12.calls.jsonl
-      icerik_hash: sha256:29147a46a27dfb834042bd9e2f5fd82292ccf1107d3348fae992f5b0b7ee1cfb
+      calls: evaluation/results/platform-common-v1-2026-11-14.calls.jsonl
+      icerik_hash: sha256:f0bf4bf101ea7d4090c2ef6931a5504ac37c91510d4a8f9c35565a0ad62c1296
   platform-web:
     version: 1
     status: evaluated
@@ -229,15 +229,15 @@ bundles:
   platform-desktop:
     version: 1
     status: evaluated
-    note: 'Canlı değerlendirme 2026-11-12, claude-sonnet-5-5 (anthropic), 1/1 vaka geçti: evaluation/results/platform-desktop-v1-2026-11-12.json'
+    note: 'Canlı değerlendirme 2026-11-14, claude-sonnet-5-5 (anthropic), 1/1 vaka geçti: evaluation/results/platform-desktop-v1-2026-11-14.json'
     evaluation:
-      date: '2026-11-12'
+      date: '2026-11-14'
       model: claude-sonnet-5-5
       provider: anthropic
-      results: evaluation/results/platform-desktop-v1-2026-11-12.json
+      results: evaluation/results/platform-desktop-v1-2026-11-14.json
       guardrails_version: 1
-      calls: evaluation/results/platform-desktop-v1-2026-11-12.calls.jsonl
-      icerik_hash: sha256:1040b3beddc59d7783a2f08b10ccce119c7c3e8f62311f2a52e3ee95edb3a745
+      calls: evaluation/results/platform-desktop-v1-2026-11-14.calls.jsonl
+      icerik_hash: sha256:23ec23f8925d52c44be1a12d13890837dba81e24f2a0f6f744537234befd2197
   platform-api:
     version: 1
     status: evaluated
@@ -265,15 +265,15 @@ bundles:
   case-negative:
     version: 1
     status: evaluated
-    note: 'Canlı değerlendirme 2026-11-12, claude-sonnet-5-5 (anthropic), 2/2 vaka geçti: evaluation/results/case-negative-v1-2026-11-12.json'
+    note: 'Canlı değerlendirme 2026-11-14, claude-sonnet-5-5 (anthropic), 2/2 vaka geçti: evaluation/results/case-negative-v1-2026-11-14.json'
     evaluation:
-      date: '2026-11-12'
+      date: '2026-11-14'
       model: claude-sonnet-5-5
       provider: anthropic
-      results: evaluation/results/case-negative-v1-2026-11-12.json
+      results: evaluation/results/case-negative-v1-2026-11-14.json
       guardrails_version: 1
-      calls: evaluation/results/case-negative-v1-2026-11-12.calls.jsonl
-      icerik_hash: sha256:ffb40cd03c1ad95811dd22405da819f4ed0288f67d7fa9fe96f193ed0f7619b2
+      calls: evaluation/results/case-negative-v1-2026-11-14.calls.jsonl
+      icerik_hash: sha256:8ad014f835d5e5d065d516e843a0171edfe0f9455116313444bc6088c63a4abc
   case-technique:
     version: 1
     status: evaluated
@@ -301,15 +301,15 @@ bundles:
   decision-table-draft:
     version: 2
     status: pending
-    note: '012 Ş1: karar tablosu ve metamorfik ilişki taslağı paketi v1. REPLAY golden''ı
-      (decision_table_draft/golden/TPD-1, demo ana yolu f2-kod-hatasi metni) elle hazırlandı; çıktı
-      ifade diliyle (karar_tablosu/ifade.py) deterministik doğrulanır. Değerlendirme seti:
-      rules/evaluation/decision-table-draft.json. Bu model değerlendirmesi değildir. Canlı
-      değerlendirme yapılmadı; onaylı istisna yok.'
+    note: '012 Ş1: karar tablosu ve metamorfik ilişki taslağı paketi v1. REPLAY golden''ı (decision_table_draft/golden/TPD-1,
+      demo ana yolu f2-kod-hatasi metni) elle hazırlandı; çıktı ifade diliyle (karar_tablosu/ifade.py)
+      deterministik doğrulanır. Değerlendirme seti: rules/evaluation/decision-table-draft.json. Bu model
+      değerlendirmesi değildir. Canlı değerlendirme yapılmadı; onaylı istisna yok.'
   case-facts:
     version: 2
     status: pending
     note: '012 Ş2: case değer çıkarma paketi v2 (karar tablosu kontrolü; review 1: her geçiş ayrı olgu,
       kolonsuz sayılar ignored, model tablo adı/açıklaması görmez). REPLAY golden''ları (case_facts/golden/TPD-1-C*,
-      rehber-duzeltme/, ai-sinir-hatasi/) elle hazırlandı; alıntılar deterministik doğrulamadan geçer. Değerlendirme
-      seti: rules/evaluation/case-facts.json. Canlı değerlendirme yapılmadı; onaylı istisna yok.'
+      rehber-duzeltme/, ai-sinir-hatasi/) elle hazırlandı; alıntılar deterministik doğrulamadan geçer.
+      Değerlendirme seti: rules/evaluation/case-facts.json. Canlı değerlendirme yapılmadı; onaylı istisna
+      yok.'
