@@ -394,7 +394,8 @@ public class ExtentRaporuBirimTesti {
 
   @Test(groups = "birim")
   public void tekDosyaYalnizRaporDizinindekiKaynaklariGomer() throws Exception {
-    Path kok = Files.createTempDirectory("extent-birim-");
+    // Çalışma dizini altında: Windows'ta geçici dizin başka sürücüde olabilir (relativize "different root").
+    Path kok = Files.createTempDirectory(Files.createDirectories(Path.of("target")).toAbsolutePath(), "extent-birim-");
     Path rapor = kok.resolve("extent-report");
     Files.createDirectories(rapor.resolve("spark"));
     Files.writeString(kok.resolve("disari.css"), "body{color:red}");

@@ -70,7 +70,11 @@ if [[ "${SKIP_GUARD:-0}" != "1" ]]; then
   fi
   mkdir -p target
   dosyalar=()
-  while IFS= read -r f; do dosyalar+=("$f"); done < <(find src/test/java/com/antreklabs/bayi/uretilen -maxdepth 1 -name '*.java' -type f | sort)
+  uretilen=src/test/java/com/antreklabs/bayi/uretilen
+  # Henüz üretilen test yoksa dizin olmayabilir (demo deposu): guard boş listeyle koşar.
+  if [[ -d "$uretilen" ]]; then
+    while IFS= read -r f; do dosyalar+=("$f"); done < <(find "$uretilen" -maxdepth 1 -name '*.java' -type f | sort)
+  fi
   java -jar "$jar" guard --root . --kimlikler --quiet --out target/guard.json -- "${dosyalar[@]}"
 fi
 

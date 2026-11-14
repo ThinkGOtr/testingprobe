@@ -150,7 +150,10 @@ jobs:
             echo "::error file=$APP_ROOT/e2e/package.json::@playwright/test ($have) != .playwright-version ($want)"
             exit 1
           fi
-          n="$(find "$JAVA_ROOT/src/test/java/com/antreklabs/bayi/uretilen" -name '*Test.java' | wc -l | tr -d ' ')"
+          # Demo deposunda henüz üretilen test yoksa dizin hiç olmayabilir: 0 sayılır.
+          uretilen="$JAVA_ROOT/src/test/java/com/antreklabs/bayi/uretilen"
+          n=0
+          if [ -d "$uretilen" ]; then n="$(find "$uretilen" -name '*Test.java' | wc -l | tr -d ' ')"; fi
           echo "Üretilen Java web testi: $n"
 
       - name: Java kurulumu
@@ -275,7 +278,7 @@ jobs:
             '{schema_version: 1, job: $job, platform: $platform, dil: $dil, sha: $sha, tetik: $tetik,
               istek_id: (if $istek == "" then null else $istek end), durum: $durum,
               adim_sonucu: $sonuc}' > "$out/ci-meta.json"
-          n="$(find "$out/surefire-reports" -name 'TEST-*.xml' 2>/dev/null | wc -l | tr -d ' ')"
+          n="$({ find "$out/surefire-reports" -name 'TEST-*.xml' 2>/dev/null || true; } | wc -l | tr -d ' ')"
           {
             echo "### web-java (tetik: \`$TP_TRIGGER\`)"
             echo "Durum: **$durum** · JUnit XML: $n dosya · commit \`${SHA:0:12}\`"
