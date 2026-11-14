@@ -840,3 +840,20 @@ def test_changed_threshold_in_preparation_is_still_caught(
     assert _uydurma(coverage_problems(out, tpd1_vaka["expect"], kaynak=kaynak)) == [
         "C12: kaynakta olmayan tutar '499,99 TL' (case sepetiyle kurulamıyor)"
     ]
+
+
+def test_subtotal_grounded_in_cart_context_may_repeat_in_the_same_case(kaynak: str) -> None:
+    """TEMİZ (canlı tpd-1-son-hal#k3 C7, 2026-11-14): P-001 × 6 (bedava 1) ödenen alt toplam
+    125,00 TL bir adımda sepet bağlamında kabul edildi; aynı case'in başka metninde bağlamsız
+    yinelenmesi uydurma değildir (metin sırası fark etmez). KÖTÜ: başka case'te ya da yabancı
+    kavram bağlamında ("kalan bakiye") yineleme yine yakalanır."""
+    sepet = {"C1": [(2500, 6)], "C2": [(2500, 6)]}
+    temiz = [
+        ("C1", "125,00 TL 750,00 TL altında olsa da uyarı yoktur"),
+        ("C1", "1 adet bedava; sepet toplamı 125,00 TL'dir"),
+    ]
+    assert source_problems(temiz, kaynak, sepetler=sepet) == []
+    kotu = [("C1", "1 adet bedava; sepet toplamı 125,00 TL'dir"), ("C2", "125,00 TL görünür")]
+    assert source_problems(kotu, kaynak, sepetler=sepet)
+    kotu = [("C1", "sepet toplamı 125,00 TL"), ("C1", "kalan bakiye 125,00 TL")]
+    assert source_problems(kotu, kaynak, sepetler=sepet)

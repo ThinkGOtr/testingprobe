@@ -1105,6 +1105,32 @@ def source_problems(
     kaynak_sade = _bosluk(kaynak)
     kaynak_tutar = _tutarlar(kaynak)
     fiyatlar = set(birim_fiyatlar(kaynak).values())
+
+    def sepet_of(etiket: str) -> CaseSepeti:
+        ham = (sepetler or {}).get(etiket)
+        if isinstance(ham, CaseSepeti):
+            return ham
+        return CaseSepeti(
+            satirlar=tuple(ham or ()),
+            toplamlar=frozenset({sum(f * n for f, n in ham or ())} | {f * n for f, n in ham or ()}),
+        )
+
+    # Case'in bir metninde sepet/toplam bağlamında kabul edilen alt toplam (ödenen, indirim…)
+    # aynı case'in başka metninde bağlamsız yinelenebilir ("Sepet toplamı 125,00 TL" → "125,00 TL
+    # 750,00 TL altında olsa da"; canlı tpd-1-son-hal#k3 C7, 2026-11-14). Sıra bağımsızdır.
+    baglamda: dict[str, set[int]] = {}
+    for etiket, metin in metinler:
+        sepet = sepet_of(etiket)
+        if not sepet.satirlar:
+            continue
+        alt = sepet_alt_toplamlari(sepet.satirlar)
+        onceki = 0
+        for m in TUTAR.finditer(metin):
+            k = _kurus(m.group(1))
+            once, sonra = _baglam_parcalari(metin, m.start(), m.end(), onceki)
+            onceki = m.end()
+            if k in alt and _sepet_baglaminda(once, sonra):
+                baglamda.setdefault(etiket, set()).add(k)
     out: list[str] = []
     for etiket, metin in metinler:
         ek_fiyat = _hazirlik_fiyatlari((ek_kaynaklar or {}).get(etiket, ""))
@@ -1116,17 +1142,7 @@ def source_problems(
                 out.append(f"{etiket}: kaynakta olmayan alıntı {alinti!r}")
         esikler = {_kurus(t) for t in _ESIK_BAGLAMI.findall(metin)}
         esikler |= {_kurus(t) for t in _ESIK_BAGLAMI_TERS.findall(metin)}
-        ham = (sepetler or {}).get(etiket)
-        sepet = (
-            ham
-            if isinstance(ham, CaseSepeti)
-            else CaseSepeti(
-                satirlar=tuple(ham or ()),
-                toplamlar=frozenset(
-                    {sum(f * n for f, n in ham or ())} | {f * n for f, n in ham or ()}
-                ),
-            )
-        )
+        sepet = sepet_of(etiket)
         alt_toplamlar = sepet_alt_toplamlari(sepet.satirlar) if sepet.satirlar else None
         dayanakli = kaynak_tutar | ek_fiyat | set(sepet.toplamlar)
         onceki = 0
@@ -1154,7 +1170,13 @@ def source_problems(
             elif alt_toplamlar is not None:
                 if k in sepet.toplamlar:
                     continue
-                if k in alt_toplamlar and _sepet_baglaminda(once, sonra):
+                if k in alt_toplamlar and (
+                    _sepet_baglaminda(once, sonra)
+                    or (
+                        k in baglamda.get(etiket, set())
+                        and not _YABANCI_BAGLAM.search(once + " " + sonra)
+                    )
+                ):
                     continue
                 if (
                     ek_fiyat

@@ -566,6 +566,8 @@ ST_EXPECT: dict[str, Any] = {
                 # Sıra sayısı yazımı (canlı eval 2026-11-13: "2. art arda hatalı deneme").
                 "2. art arda",
                 "2. ardışık",
+                # Sayaç yazımı (canlı eval 2026-11-14: "hatalı deneme sayısı 2").
+                "deneme sayısı 2",
             ],
         },
         {
@@ -579,6 +581,7 @@ ST_EXPECT: dict[str, Any] = {
                 "3 ardışık",
                 "3. art arda",
                 "3. ardışık",
+                "deneme sayısı 3",
             ],
         },
         {"topic": "kilitli durumda giriş denemesi", "keywords": ["kilitli"]},
