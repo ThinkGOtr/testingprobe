@@ -201,27 +201,27 @@ bundles:
   platform-web:
     version: 1
     status: evaluated
-    note: 'Canlı değerlendirme 2026-11-13, claude-sonnet-5-5 (anthropic), 1/1 vaka geçti: evaluation/results/platform-web-v1-2026-11-13.json'
+    note: 'Canlı değerlendirme 2026-11-14, claude-sonnet-5-5 (anthropic), 1/1 vaka geçti: evaluation/results/platform-web-v1-2026-11-14.json'
     evaluation:
-      date: '2026-11-13'
+      date: '2026-11-14'
       model: claude-sonnet-5-5
       provider: anthropic
-      results: evaluation/results/platform-web-v1-2026-11-13.json
+      results: evaluation/results/platform-web-v1-2026-11-14.json
       guardrails_version: 1
-      calls: evaluation/results/platform-web-v1-2026-11-13.calls.jsonl
-      icerik_hash: sha256:99acc10a66dda451d14bfc4cfb9417c29175704909b71724f2862f29112c6c92
+      calls: evaluation/results/platform-web-v1-2026-11-14.calls.jsonl
+      icerik_hash: sha256:4cf8402e9dc0e6b308ec8f9eccb3d14fea7a13e1e63c3e62ccaa3658d5156d37
   platform-mobile:
     version: 1
     status: evaluated
-    note: 'Canlı değerlendirme 2026-11-13, claude-sonnet-5-5 (anthropic), 1/1 vaka geçti: evaluation/results/platform-mobile-v1-2026-11-13.json'
+    note: 'Canlı değerlendirme 2026-11-14, claude-sonnet-5-5 (anthropic), 1/1 vaka geçti: evaluation/results/platform-mobile-v1-2026-11-14.json'
     evaluation:
-      date: '2026-11-13'
+      date: '2026-11-14'
       model: claude-sonnet-5-5
       provider: anthropic
-      results: evaluation/results/platform-mobile-v1-2026-11-13.json
+      results: evaluation/results/platform-mobile-v1-2026-11-14.json
       guardrails_version: 1
-      calls: evaluation/results/platform-mobile-v1-2026-11-13.calls.jsonl
-      icerik_hash: sha256:0d0c96eebada65b346eb6c3295a3c9dc498bdabbe50926c6b87d9932556f1aa5
+      calls: evaluation/results/platform-mobile-v1-2026-11-14.calls.jsonl
+      icerik_hash: sha256:1411437204197540d81af431c4b6e50181fbfe94e9257a6c19c0a94d47c29f9a
   platform-desktop:
     version: 1
     status: evaluated
@@ -233,31 +233,31 @@ bundles:
       results: evaluation/results/platform-desktop-v1-2026-11-14.json
       guardrails_version: 1
       calls: evaluation/results/platform-desktop-v1-2026-11-14.calls.jsonl
-      icerik_hash: sha256:23ec23f8925d52c44be1a12d13890837dba81e24f2a0f6f744537234befd2197
+      icerik_hash: sha256:cedcd1fb16bc122ca2f6c1aac5e4c2ef2854c969041d9748b9dd123be7718420
   platform-api:
     version: 1
     status: evaluated
-    note: 'Canlı değerlendirme 2026-11-13, claude-sonnet-5-5 (anthropic), 1/1 vaka geçti: evaluation/results/platform-api-v1-2026-11-13.json'
+    note: 'Canlı değerlendirme 2026-11-14, claude-sonnet-5-5 (anthropic), 1/1 vaka geçti: evaluation/results/platform-api-v1-2026-11-14.json'
     evaluation:
-      date: '2026-11-13'
+      date: '2026-11-14'
       model: claude-sonnet-5-5
       provider: anthropic
-      results: evaluation/results/platform-api-v1-2026-11-13.json
+      results: evaluation/results/platform-api-v1-2026-11-14.json
       guardrails_version: 1
-      calls: evaluation/results/platform-api-v1-2026-11-13.calls.jsonl
-      icerik_hash: sha256:817df094d5ed8daaba8b3ac0857ca19920edfc2bf2046fed2f7dc077b54e825d
+      calls: evaluation/results/platform-api-v1-2026-11-14.calls.jsonl
+      icerik_hash: sha256:02e93edb9e659e24e98cc93f571e8d7dddbd04ffafd6b5a2dcd93dd633b47afc
   platform-data:
     version: 1
     status: evaluated
-    note: 'Canlı değerlendirme 2026-11-13, claude-sonnet-5-5 (anthropic), 1/1 vaka geçti: evaluation/results/platform-data-v1-2026-11-13.json'
+    note: 'Canlı değerlendirme 2026-11-14, claude-sonnet-5-5 (anthropic), 1/1 vaka geçti: evaluation/results/platform-data-v1-2026-11-14.json'
     evaluation:
-      date: '2026-11-13'
+      date: '2026-11-14'
       model: claude-sonnet-5-5
       provider: anthropic
-      results: evaluation/results/platform-data-v1-2026-11-13.json
+      results: evaluation/results/platform-data-v1-2026-11-14.json
       guardrails_version: 1
-      calls: evaluation/results/platform-data-v1-2026-11-13.calls.jsonl
-      icerik_hash: sha256:40a09edf20a8bb8f0bb3f836bafbd377635dc25fda2df938725a5b4304332e42
+      calls: evaluation/results/platform-data-v1-2026-11-14.calls.jsonl
+      icerik_hash: sha256:e590023797e34bb4424bea375035e1a998da650585ce18aabac751907e490676
   case-negative:
     version: 1
     status: evaluated

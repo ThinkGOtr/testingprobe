@@ -17,17 +17,17 @@
         "open_questions": [
           {
             "id": "Q1",
-            "question": "Sepette hem kampanyalı ürün (P-001) hem kampanyasız ürün varsa (karma sepet) minimum sipariş tutarı (750,00 TL) şartı aranır mı? AC3 ve AC6 bu durumu tanımlamıyor.",
+            "question": "Kampanyalı ürün (P-001) sepette var ama 6 adetten az (ör. 5 adet, bedava yok) ve kampanyasız ürün yok. Sipariş 'kampanyalı sipariş' sayılıp minimum 750,00 TL şartı aranmaz mı, yoksa 'kampanyasız sipariş' gibi mi değerlendirilir?",
             "owner": "PO"
           },
           {
             "id": "Q2",
-            "question": "Kampanyalı ürün sepette ama bedava hakkı kazanılmamışsa (örn. P-001 × 5) sipariş 'kampanyalı sipariş' sayılır mı, yani minimum sipariş tutarı şartı aranır mı?",
+            "question": "Kampanyasız bir siparişte tutar hem 750,00 TL minimumun altında hem de bayinin kredi limitinin üstündeyse (ör. Sahil Bayi, 500,00 TL limit) hangi uyarı veya uyarılar gösterilir?",
             "owner": "PO"
           },
           {
             "id": "Q3",
-            "question": "Ürünün desteklediği ekran ölçeği (DPI) değerleri ve kullanıcı yetki düzeyleri (standart kullanıcı / yönetici) nedir? Yalnızca Windows 11 24H2 ve WPF verilmiş.",
+            "question": "Masaüstü uygulaması için desteklenen ekran ölçekleme (DPI) değerleri ve kullanıcı yetki düzeyleri (yönetici / standart kullanıcı) nedir? Konfigürasyon matrisi için gerekli.",
             "owner": "PO"
           }
         ],
@@ -36,134 +36,146 @@
           {
             "id": "EP-V1",
             "ac_ref": "AC1",
-            "definition": "Katalogdaki bir ürün için 'Sepete ekle' ile ürün sepete eklenir ve sepet sayacı artar.",
+            "definition": "Geçerli: katalogda bir ürün için 'Sepete ekle' basılır; ürün sepete eklenir ve sepet sayacı artar.",
             "valid": true
           },
           {
             "id": "EP-V2",
-            "ac_ref": "AC3",
-            "definition": "Kampanyasız sipariş tutarı 750,00 TL veya üzeri: minimum tutar uyarısı yok, onay butonu aktif.",
+            "ac_ref": "AC2",
+            "definition": "Geçerli: kampanyalı ürün (P-001) 6 adetten az; bedava adet yok, tüm adetler ödenir.",
+            "valid": true
+          },
+          {
+            "id": "EP-V3",
+            "ac_ref": "AC2",
+            "definition": "Geçerli: kampanyalı ürün (P-001) 6'nın katı adet; her 6 adette 1 bedava (12 adette 2).",
             "valid": true
           },
           {
             "id": "EP-I1",
             "ac_ref": "AC3",
-            "definition": "Kampanyasız sipariş tutarı 750,00 TL'nin altında: 'Minimum sipariş tutarı 750,00 TL' uyarısı, onay butonu pasif.",
+            "definition": "Geçersiz: kampanyasız sipariş tutarı 750,00 TL'nin altında.",
             "valid": false
-          },
-          {
-            "id": "EP-V3",
-            "ac_ref": "AC4",
-            "definition": "Sipariş tutarı bayinin kredi limitini aşmıyor: kredi uyarısı yok.",
-            "valid": true
           },
           {
             "id": "EP-I2",
             "ac_ref": "AC4",
-            "definition": "Sipariş tutarı kredi limitini aşıyor: 'Kredi limiti aşıldı' uyarısı, sipariş onaylanamaz.",
+            "definition": "Geçersiz: sipariş tutarı bayinin kredi limitini aşıyor.",
             "valid": false
-          },
-          {
-            "id": "EP-V4",
-            "ac_ref": "AC6",
-            "definition": "Kampanyalı sipariş (6 × P-001 gibi bedava hakkı kazanılmış) 750,00 TL altında olsa da minimum tutar şartı aranmaz. Bedava hakkı kazanılmamış ve karma sepet durumları Q2/Q1 kapsamındadır.",
-            "valid": true
-          },
-          {
-            "id": "EP-V5",
-            "ac_ref": "AC2",
-            "definition": "Kampanyalı üründe 12 adette 2 adet bedava: bayi 10 adet öder.",
-            "valid": true
           },
           {
             "id": "BV-1",
             "ac_ref": "AC2",
-            "definition": "Kampanya eşiğinin hemen altı: 5 adet P-001, bedava yok, 5 adet ödenir (125,00 TL).",
+            "definition": "Kampanyalı ürün 5 adet: bedava başlamadan önceki en büyük adet; 5 adet ödenir, bedava yok.",
             "valid": true
           },
           {
             "id": "BV-2",
             "ac_ref": "AC2",
-            "definition": "Kampanya eşiği: 6 adet P-001, 1 adet bedava, 5 adet ödenir (125,00 TL).",
+            "definition": "Kampanyalı ürün 6 adet: bedava başlangıç sınırı; 5 adet ödenir, 1 adet bedava.",
             "valid": true
           },
           {
             "id": "BV-3",
             "ac_ref": "AC3",
-            "definition": "Kampanyasız sipariş 749,99 TL (750,00 TL'nin altındaki en yakın değer); test verisiyle kurulabilen en yakın değer 749,00 TL.",
+            "definition": "Kampanyasız sipariş 749,99 TL: minimumun 0,01 TL altı; reddedilir (test verisi hazırlığıyla kurulur).",
             "valid": false
           },
           {
             "id": "BV-4",
             "ac_ref": "AC3",
-            "definition": "Kampanyasız sipariş tam 750,00 TL (AC 'altında' uyarı der; 750,00 TL altı değildir): kabul edilir.",
+            "definition": "Kampanyasız sipariş 750,00 TL: minimumun kendisi; 'altında' ifadesi gereği kabul edilir.",
             "valid": true
           },
           {
             "id": "BV-5",
             "ac_ref": "AC4",
-            "definition": "Sipariş tutarı tam kredi limiti: bayi2 limiti 500,00 TL, tutar 500,00 TL (AC 'aşarsa' der): uyarı yok.",
+            "definition": "Sipariş 2.000,00 TL (bayi1 limiti): limitin kendisi; 'aşarsa' ifadesi gereği aşım sayılmaz, kabul edilir.",
             "valid": true
           },
           {
             "id": "BV-6",
             "ac_ref": "AC4",
-            "definition": "Sipariş tutarı limitin hemen üstü: 500,01 TL; test verisiyle kurulabilen en yakın değer 501,00 TL (karma sepet; Q1 min. tutar etkisi bu case'te doğrulanmaz).",
+            "definition": "Sipariş 2.000,01 TL: limitin 0,01 TL üstü; reddedilir (test verisi hazırlığıyla kurulur).",
             "valid": false
+          },
+          {
+            "id": "DT-R1",
+            "ac_ref": "AC3",
+            "definition": "Kampanyasız sipariş ve tutar < 750,00 TL: minimum tutar uyarısı gösterilir, onay butonu pasif olur.",
+            "valid": false
+          },
+          {
+            "id": "DT-R2",
+            "ac_ref": "AC3",
+            "definition": "Kampanyasız sipariş ve tutar ≥ 750,00 TL (kredi limiti içinde): minimum tutar uyarısı yok, onay yapılabilir.",
+            "valid": true
+          },
+          {
+            "id": "DT-R3",
+            "ac_ref": "AC6",
+            "definition": "Kampanyalı sipariş (bedava adet uygulanmış): tutar ne olursa olsun minimum tutar şartı aranmaz.",
+            "valid": true
           },
           {
             "id": "UC-MF",
             "ac_ref": "AC5",
-            "definition": "Ana akış: kampanyalı sepetle sipariş onayı, sipariş numarası gösterilir, sipariş 'Siparişlerim'de listelenir.",
+            "definition": "Ana akış: giriş, katalogdan ürün ekleme, sepet, sipariş onayı, sipariş numarası ve sipariş geçmişinde listelenme.",
+            "valid": true
+          },
+          {
+            "id": "CL-1",
+            "ac_ref": "AC4",
+            "definition": "Desktop:Yerelleştirme — tr-TR tutar biçimi (binlik nokta, ondalık virgül, iki ondalık: 2.000,00 TL).",
             "valid": true
           }
         ],
         "negative_coverage": [
           {
             "item": "EP-I1",
-            "decision": "covered_by",
-            "rationale": "BV-3 case'i (749,00 TL kampanyasız sepet) bu bölümü çalıştırır."
+            "decision": "tested",
+            "rationale": "749,99 TL sınır case'i (para sınırı) kampanyasız minimum altı bölümü çalıştırır."
+          },
+          {
+            "item": "EP-I2",
+            "decision": "tested",
+            "rationale": "2.000,01 TL case'i kredi limiti aşımı bölümünü çalıştırır."
           },
           {
             "item": "BV-3",
             "decision": "tested",
-            "rationale": "Limitin altında siparişin geçmesi min. tutar kuralını delerdi; kendi case'i var."
-          },
-          {
-            "item": "EP-I2",
-            "decision": "covered_by",
-            "rationale": "BV-6 case'i (limit aşımı) bu bölümü çalıştırır."
+            "rationale": "P1 para sınırı; minimumun altındaki siparişin geçmesi para riski, test verisi hazırlığıyla tam değer kurulur."
           },
           {
             "item": "BV-6",
             "decision": "tested",
-            "rationale": "Limit aşımının geçmesi para kaybına yol açar; kendi case'i var."
+            "rationale": "P1 para sınırı; kredi limitini aşan siparişin geçmesi para riski, tam değer hazırlıkla kurulur."
+          },
+          {
+            "item": "DT-R1",
+            "decision": "tested",
+            "rationale": "749,99 TL case'i uyarı ve pasif onay butonunu doğrular."
           }
         ],
         "not_covered": [
           {
-            "item": "AC3",
-            "reason": "Karma sepette (kampanyalı + kampanyasız ürün) minimum tutar şartının uygulanıp uygulanmadığı kaynakta yok.",
+            "item": "AC6",
+            "reason": "Kampanyalı ürün var ama bedava adet oluşmamışsa (ör. 5 adet) siparişin kampanyalı sayılıp sayılmadığı kaynakta yok; bu kombinasyon için case yazılmadı.",
             "question_ref": "Q1"
           },
           {
-            "item": "AC6",
-            "reason": "Bedava hakkı kazanılmamış kampanyalı ürünle (örn. P-001 × 5) minimum tutar sonucu kaynakta yok.",
+            "item": "AC4",
+            "reason": "Aynı anda hem minimum tutar altı hem kredi limiti üstü durumunda hangi uyarının gösterileceği kaynakta yok; case yazılmadı.",
             "question_ref": "Q2"
           },
           {
-            "item": "Desktop:Yapılandırma matrisi",
-            "reason": "DPI ve yetki düzeyi değerleri girdide yok; pairwise için yalnızca tek OS değeri var.",
-            "question_ref": "Q3"
-          },
-          {
             "item": "Desktop:Kurulum/kaldırma",
-            "reason": "Story'de kurulum/kaldırma gereksinimi yok; dağıtım türü de verilmedi.",
+            "reason": "Story'de kurulum veya kaldırma gereksinimi yok.",
             "question_ref": null
           },
           {
             "item": "Desktop:Dosya sistemi",
-            "reason": "Story dosya işlemi içermiyor.",
+            "reason": "Story'de dosya işlemi yok.",
             "question_ref": null
           },
           {
@@ -173,67 +185,69 @@
           },
           {
             "item": "Desktop:Klavye ve girdi",
-            "reason": "Story'de erişilebilirlik/klavye gereksinimi yok; benimsenen standart yok.",
+            "reason": "Story'de klavye veya kısayol gereksinimi yok.",
             "question_ref": null
           },
           {
             "item": "Desktop:OS entegrasyonu",
-            "reason": "Story'de OS entegrasyonu gereksinimi yok.",
+            "reason": "Story'de tepsi, bildirim, pano veya yazdırma yok.",
             "question_ref": null
           },
           {
             "item": "Desktop:Dayanıklılık",
-            "reason": "Story'de uzun süre açık kalma veya kurtarma gereksinimi yok.",
+            "reason": "Story'de uzun süre açık kalma, uyku modu veya çökme sonrası kurtarma gereksinimi yok.",
             "question_ref": null
           },
           {
             "item": "Desktop:Yetki ve güvenlik",
-            "reason": "Roller ve yetkiler belirtilmedi; story'de yetki kuralı yok.",
+            "reason": "Roller ve yetkiler belirtilmedi; story'de yetki yükseltme gereksinimi yok.",
             "question_ref": null
           },
           {
             "item": "Desktop:Ağ/çevrimdışı",
-            "reason": "Story'de ağ/çevrimdışı gereksinimi yok.",
+            "reason": "Story'de proxy, çevrimdışı veya güncelleme gereksinimi yok.",
             "question_ref": null
           },
           {
-            "item": "Desktop:Yerelleştirme",
-            "reason": "Ayrı case yok; tutar biçimi (1.250,00 TL) tüm tutar doğrulamalarında kullanılır.",
-            "question_ref": null
+            "item": "Desktop:Konfigürasyon matrisi",
+            "reason": "Yalnız tek işletim sistemi (Windows 11 24H2) verildi; DPI ve yetki düzeyi değerleri yok, pairwise modeli kurulamadı.",
+            "question_ref": "Q3"
           }
         ],
         "observations": [],
         "automation_open_points": [
-          "Otomasyon aracı belirtilmedi; WPF kontrollerinin UI Automation ağacında erişilebilirliği, AutomationId ve erişilebilir adları bilinmiyor.",
-          "Sepetteki ürün adedini girme/değiştirme kontrolü ve sepet boşaltma yolu girdide verilmedi; adımlar amaçla yazıldı.",
-          "Sepet sayacı, sepet toplamı ve uyarı alanlarının konumu/seçicisi bilinmiyor."
+          "Otomasyon aracı bilinmiyor; kontrollerin UI Automation ağacından, AutomationId ve erişilebilir adlarla ulaşılabilir olup olmadığı belirsiz.",
+          "Sepette ürün adedini belirleme yolu (adet alanı, tekrar 'Sepete ekle' vb.) girdide yok; case'ler hedef adedi önkoşul/adım amacıyla tarif eder.",
+          "Bedava adedin ve ödenecek tutarın Sepetim ekranında hangi kontrolde gösterildiği girdide yok.",
+          "Uyarı metinlerinin ve sipariş numarasının gösterildiği kontrol ile sipariş numarası biçimi girdide yok.",
+          "Sentetik ürünlerin (SYN-001, SYN-002) test ortamında nasıl oluşturulacağı belirtilmemiş.",
+          "Sipariş geçmişini ve sepeti sıfırlama yöntemi (oluşan sipariş silinemiyor) belirtilmemiş; temiz test ortamı gerekir."
         ],
         "config_matrix": {
-          "parameters": [
-            {
-              "name": "İşletim sistemi",
-              "values": [
-                "Windows 11 24H2"
-              ]
-            }
-          ],
+          "parameters": [],
           "constraints": []
         },
         "testability_gaps": [],
         "cases": [
           {
-            "title": "Katalogdan 'Sepete ekle' ile ürün sepete eklenir ve sepet sayacı artar",
+            "title": "Bayi ürünü sepete ekleyip 900,00 TL siparişi onaylar; sipariş numarası görünür ve geçmişte listelenir",
             "type": "positive",
             "technique": [
-              "EP"
+              "UC",
+              "EP",
+              "DT"
             ],
             "covers": [
-              "EP-V1"
+              "UC-MF",
+              "EP-V1",
+              "DT-R2"
             ],
-            "priority": "P2",
-            "priority_rationale": "Ana akış case'i bu adımı da çalıştırır; tek başına arızası ana akış case'inde de görünür, olasılık düşük.",
+            "priority": "P1",
+            "priority_rationale": "Ana akış (sepetten onaya sipariş verme) bozulursa bayi siparişini hiçbir yoldan tamamlayamaz; olasılık orta, iş kritikliği çok yüksek.",
             "acceptance_criteria_refs": [
-              "AC1"
+              "AC1",
+              "AC3",
+              "AC5"
             ],
             "platform": "Desktop-Win",
             "test_level": "SYSTEM",
@@ -244,21 +258,21 @@
             "assumption_refs": [],
             "open_question_refs": [],
             "preconditions": [
-              "bayi1 sepeti boş",
-              "Uygulama Windows 11 24H2 üzerinde açık"
+              "bayi1 hesabı mevcut; sepet boş.",
+              "Sipariş geçmişi başlangıç durumu not edilir."
             ],
             "test_data": [
               {
-                "name": "kullanıcı",
+                "name": "kullanici",
                 "value": "bayi1 / Demo123!",
                 "class": null,
                 "synthetic": true,
                 "is_attack_payload": false
               },
               {
-                "name": "ürün",
-                "value": "P-002 × 1",
-                "class": "EP-V1",
+                "name": "sepet",
+                "value": "P-004 × 30 (900,00 TL; kampanyasız, 2.000,00 TL limit içinde)",
+                "class": "DT-R2",
                 "synthetic": true,
                 "is_attack_payload": false
               }
@@ -266,49 +280,230 @@
             "steps": [
               {
                 "id": "S1",
-                "action": "'Giriş yap' ile oturum aç",
+                "action": "'Giriş yap' ile bayi1 kullanıcısıyla oturum aç",
                 "data": "bayi1 / Demo123!",
-                "expected": "Oturum açılır"
+                "expected": "Oturum açılır."
               },
               {
                 "id": "S2",
-                "action": "'Katalog' ekranını aç ve sepet sayacının değerini not et",
+                "action": "'Katalog' ekranını aç",
                 "data": null,
-                "expected": "Katalog listelenir"
+                "expected": "Katalog ürünleri listelenir."
               },
               {
                 "id": "S3",
-                "action": "P-002 'Limonata 330ml' için 'Sepete ekle' butonuna bas",
-                "data": "P-002 × 1",
-                "expected": "Sepet sayacı önceki değerden büyük olur"
+                "action": "P-004 ürünü için 'Sepete ekle' butonuna bas",
+                "data": "P-004",
+                "expected": "Ürün sepete eklenir; sepet sayacı ekleme öncesi değerinden büyük olur."
               },
               {
                 "id": "S4",
-                "action": "'Sepetim' ekranını aç",
+                "action": "'Sepetim' ekranını aç ve P-004 adedini 30 yap",
+                "data": "P-004 × 30",
+                "expected": "Sepet toplamı 900,00 TL; 'Minimum sipariş tutarı 750,00 TL' uyarısı yok; 'Siparişi onayla' aktif."
+              },
+              {
+                "id": "S5",
+                "action": "'Siparişi onayla' butonuna bas",
                 "data": null,
-                "expected": "P-002 Limonata 330ml sepette listelenir"
+                "expected": "Sipariş onaylanır ve sipariş numarası gösterilir."
+              },
+              {
+                "id": "S6",
+                "action": "'Siparişlerime git' ile 'Siparişlerim' ekranını aç",
+                "data": null,
+                "expected": "Siparişlerim ekranı açılır."
+              },
+              {
+                "id": "S7",
+                "action": "Gösterilen sipariş numarasını listede ara",
+                "data": null,
+                "expected": "Sipariş, sipariş numarasıyla Siparişlerim listesinde yer alır."
               }
             ],
-            "expected_result": "Ürün sepete eklenir ve sepet sayacı artar.",
+            "expected_result": "Ürün sepete eklenir ve sayaç artar; 900,00 TL kampanyasız sipariş minimum uyarısı olmadan onaylanır, sipariş numarası gösterilir ve sipariş Siparişlerim'de listelenir.",
             "teardown": [
-              "Sepet boşaltılır",
-              "'Çıkış yap' ile oturum kapatılır"
+              "Oluşan sipariş kullanıcı tarafından silinemez; sonraki case için temiz test ortamı veya hesap kullanılır.",
+              "'Çıkış yap' ile oturumu kapat."
+            ],
+            "tags": [
+              "AI-generated",
+              "smoke"
+            ]
+          },
+          {
+            "title": "Kampanyasız sipariş tam 750,00 TL iken uyarı çıkmaz ve sipariş onaylanır",
+            "type": "boundary",
+            "technique": [
+              "BVA"
+            ],
+            "covers": [
+              "BV-4"
+            ],
+            "priority": "P2",
+            "priority_rationale": "Tam sınırdaki geçerli siparişin yanlış reddi yalnız tam 750,00 TL'lik bayileri etkiler, başka yoldan çözülebilir; para kaybı doğrudan yok.",
+            "acceptance_criteria_refs": [
+              "AC3",
+              "AC5"
+            ],
+            "platform": "Desktop-Win",
+            "test_level": "SYSTEM",
+            "verification_point": "UI",
+            "requires_real_device": false,
+            "standard_refs": [],
+            "readiness": "ready",
+            "assumption_refs": [],
+            "open_question_refs": [],
+            "preconditions": [
+              "bayi1 oturum açmış; sepet boş.",
+              "Sepette kampanyalı ürün (P-001) yok."
+            ],
+            "test_data": [
+              {
+                "name": "kullanici",
+                "value": "bayi1 / Demo123!",
+                "class": null,
+                "synthetic": true,
+                "is_attack_payload": false
+              },
+              {
+                "name": "sepet_750",
+                "value": "P-004 × 25 (750,00 TL)",
+                "class": "BV-4",
+                "synthetic": true,
+                "is_attack_payload": false
+              }
+            ],
+            "steps": [
+              {
+                "id": "S1",
+                "action": "Sepeti P-004 ürününden 25 adet olacak şekilde hazırla",
+                "data": "P-004 × 25",
+                "expected": "Sepete 25 adet P-004 eklenmiştir."
+              },
+              {
+                "id": "S2",
+                "action": "'Sepetim' ekranını aç",
+                "data": null,
+                "expected": "Sepet toplamı 750,00 TL; 'Minimum sipariş tutarı 750,00 TL' uyarısı gösterilmez."
+              },
+              {
+                "id": "S3",
+                "action": "'Siparişi onayla' butonunun durumuna bak",
+                "data": null,
+                "expected": "Buton aktiftir."
+              },
+              {
+                "id": "S4",
+                "action": "'Siparişi onayla' butonuna bas",
+                "data": null,
+                "expected": "Sipariş onaylanır ve sipariş numarası gösterilir."
+              }
+            ],
+            "expected_result": "750,00 TL kampanyasız sipariş minimum şartını sağlar: uyarı yok, onay butonu aktif, sipariş onaylanır ve numarası gösterilir.",
+            "teardown": [
+              "Oluşan sipariş kullanıcı tarafından silinemez; temiz test ortamı veya hesap kullanılır.",
+              "'Çıkış yap' ile oturumu kapat."
             ],
             "tags": [
               "AI-generated"
             ]
           },
           {
-            "title": "Kampanyalı üründe 5 adette bedava yok, sepet toplamı 125,00 TL",
+            "title": "Kampanyasız sipariş 749,99 TL iken minimum tutar uyarısı çıkar ve onay butonu pasif olur",
             "type": "boundary",
             "technique": [
-              "BVA"
+              "BVA",
+              "EP",
+              "DT"
             ],
             "covers": [
-              "BV-1"
+              "BV-3",
+              "EP-I1",
+              "DT-R1"
             ],
             "priority": "P1",
-            "priority_rationale": "Eşik altında yanlışlıkla bedava verilirse yanlış tutar hesaplanır (para kaybı); kampanya hesabı sık değişen kritik kural.",
+            "priority_rationale": "Minimum tutarın altındaki siparişin geçmesi, tutar limitinin delinmesi demektir (iş zararı); sınırın hemen altı en olası hata noktasıdır.",
+            "acceptance_criteria_refs": [
+              "AC3"
+            ],
+            "platform": "Desktop-Win",
+            "test_level": "SYSTEM",
+            "verification_point": "UI",
+            "requires_real_device": false,
+            "standard_refs": [],
+            "readiness": "ready",
+            "assumption_refs": [],
+            "open_question_refs": [],
+            "preconditions": [
+              "Test verisi hazırlığı: fiyatı 29,99 TL olan sentetik ürün SYN-001 hazırlanır (min_siparis_tutari ayarı değiştirilmez).",
+              "bayi1 oturum açmış; sepet boş.",
+              "Sepette kampanyalı ürün (P-001) yok."
+            ],
+            "test_data": [
+              {
+                "name": "kullanici",
+                "value": "bayi1 / Demo123!",
+                "class": null,
+                "synthetic": true,
+                "is_attack_payload": false
+              },
+              {
+                "name": "sepet_749_99",
+                "value": "P-004 × 24 (720,00 TL); SYN-001 × 1 (29,99 TL); toplam 749,99 TL",
+                "class": "BV-3",
+                "synthetic": true,
+                "is_attack_payload": false
+              }
+            ],
+            "steps": [
+              {
+                "id": "S1",
+                "action": "Sepeti P-004 ürününden 24 adet olacak şekilde hazırla",
+                "data": "P-004 × 24",
+                "expected": "Sepette 24 adet P-004 vardır."
+              },
+              {
+                "id": "S2",
+                "action": "Sepete SYN-001 ürününden 1 adet ekle",
+                "data": "SYN-001 × 1",
+                "expected": "Sepet toplamı 749,99 TL olur."
+              },
+              {
+                "id": "S3",
+                "action": "'Sepetim' ekranını aç",
+                "data": null,
+                "expected": "'Minimum sipariş tutarı 750,00 TL' uyarısı gösterilir."
+              },
+              {
+                "id": "S4",
+                "action": "'Siparişi onayla' butonunun durumuna bak",
+                "data": null,
+                "expected": "Buton pasiftir; sipariş onaylanamaz."
+              }
+            ],
+            "expected_result": "749,99 TL kampanyasız sipariş için 'Minimum sipariş tutarı 750,00 TL' uyarısı gösterilir ve 'Siparişi onayla' butonu pasif olur.",
+            "teardown": [
+              "Sepeti boşalt.",
+              "'Çıkış yap' ile oturumu kapat."
+            ],
+            "tags": [
+              "AI-generated"
+            ]
+          },
+          {
+            "title": "Kampanyalı ürün 5 adetken bedava adet verilmez, ödenecek tutar 125,00 TL olur",
+            "type": "boundary",
+            "technique": [
+              "BVA",
+              "EP"
+            ],
+            "covers": [
+              "BV-1",
+              "EP-V2"
+            ],
+            "priority": "P1",
+            "priority_rationale": "Eşiğin altında bedava verilmesi işletmenin ürünü ücretsiz vermesi (para kaybı) demektir; sınırın altı en olası hata noktasıdır.",
             "acceptance_criteria_refs": [
               "AC2"
             ],
@@ -321,20 +516,20 @@
             "assumption_refs": [],
             "open_question_refs": [],
             "preconditions": [
-              "bayi1 sepeti boş",
-              "Kampanya 6AL1BEDAVA aktif"
+              "bayi1 oturum açmış; sepet boş.",
+              "Kampanya '6 al 1 bedava' (6AL1BEDAVA) P-001 için aktif."
             ],
             "test_data": [
               {
-                "name": "kullanıcı",
+                "name": "kullanici",
                 "value": "bayi1 / Demo123!",
                 "class": null,
                 "synthetic": true,
                 "is_attack_payload": false
               },
               {
-                "name": "sepet",
-                "value": "P-001 × 5",
+                "name": "sepet_5",
+                "value": "P-001 × 5 (5 × 25,00 = 125,00 TL)",
                 "class": "BV-1",
                 "synthetic": true,
                 "is_attack_payload": false
@@ -343,45 +538,48 @@
             "steps": [
               {
                 "id": "S1",
-                "action": "'Giriş yap' ile oturum aç",
-                "data": "bayi1 / Demo123!",
-                "expected": "Oturum açılır"
+                "action": "Katalogda P-001 'Portakal Gazozu 1L' için sepeti 5 adet olacak şekilde hazırla",
+                "data": "P-001 × 5",
+                "expected": "Sepete 5 adet P-001 eklenir."
               },
               {
                 "id": "S2",
-                "action": "'Katalog'da P-001 'Portakal Gazozu 1L' ürününden 5 adet sepete ekle ('Sepete ekle')",
-                "data": "P-001 × 5",
-                "expected": "Ürün 5 adet sepete eklenir"
+                "action": "'Sepetim' ekranını aç",
+                "data": null,
+                "expected": "Sepette 5 adet P-001 görünür."
               },
               {
                 "id": "S3",
-                "action": "'Sepetim' ekranını aç",
+                "action": "Bedava adet ve ödenecek tutarı kontrol et",
                 "data": null,
-                "expected": "Bedava adet yok; sepet toplamı 125,00 TL (5 × 25,00 TL)"
+                "expected": "Bedava adet 0; ödenecek tutar 125,00 TL."
               }
             ],
-            "expected_result": "5 adette bedava verilmez; ödenecek tutar 125,00 TL.",
+            "expected_result": "5 adet P-001 için bedava adet verilmez; ödenecek tutar 125,00 TL'dir.",
             "teardown": [
-              "Sepet boşaltılır",
-              "'Çıkış yap' ile oturum kapatılır"
+              "Sepeti boşalt.",
+              "'Çıkış yap' ile oturumu kapat."
             ],
             "tags": [
               "AI-generated"
             ]
           },
           {
-            "title": "Kampanyalı üründe 6 adette 1 bedava, sepet toplamı 125,00 TL",
+            "title": "Kampanyalı ürün 6 adetken 1 bedava verilir; 125,00 TL'lik sipariş minimum şartı olmadan onaylanır",
             "type": "boundary",
             "technique": [
-              "BVA"
+              "BVA",
+              "DT"
             ],
             "covers": [
-              "BV-2"
+              "BV-2",
+              "DT-R3"
             ],
-            "priority": "P1",
-            "priority_rationale": "Bedava hakkı verilmezse veya yanlış verilirse müşteri yanlış tutar öder (para kaybı); kampanya ana iş kuralı.",
+            "priority": "P2",
+            "priority_rationale": "Bedavanın verilmemesi veya kampanyalı siparişin yanlış reddi müşteriye görünür, düzeltme yolu var; bedavanın eksik verilmesi para kaybı değildir.",
             "acceptance_criteria_refs": [
-              "AC2"
+              "AC2",
+              "AC6"
             ],
             "platform": "Desktop-Win",
             "test_level": "SYSTEM",
@@ -392,20 +590,20 @@
             "assumption_refs": [],
             "open_question_refs": [],
             "preconditions": [
-              "bayi1 sepeti boş",
-              "Kampanya 6AL1BEDAVA aktif"
+              "bayi1 oturum açmış; sepet boş.",
+              "Kampanya '6 al 1 bedava' (6AL1BEDAVA) P-001 için aktif."
             ],
             "test_data": [
               {
-                "name": "kullanıcı",
+                "name": "kullanici",
                 "value": "bayi1 / Demo123!",
                 "class": null,
                 "synthetic": true,
                 "is_attack_payload": false
               },
               {
-                "name": "sepet",
-                "value": "P-001 × 6",
+                "name": "sepet_6",
+                "value": "P-001 × 6 (5 × 25,00 = 125,00 TL ödenir, 1 bedava)",
                 "class": "BV-2",
                 "synthetic": true,
                 "is_attack_payload": false
@@ -414,302 +612,50 @@
             "steps": [
               {
                 "id": "S1",
-                "action": "'Giriş yap' ile oturum aç",
-                "data": "bayi1 / Demo123!",
-                "expected": "Oturum açılır"
+                "action": "Katalogda P-001 'Portakal Gazozu 1L' için sepeti 6 adet olacak şekilde hazırla",
+                "data": "P-001 × 6",
+                "expected": "Sepete 6 adet P-001 eklenir."
               },
               {
                 "id": "S2",
-                "action": "'Katalog'da P-001 'Portakal Gazozu 1L' ürününden 6 adet sepete ekle ('Sepete ekle')",
-                "data": "P-001 × 6",
-                "expected": "Ürün 6 adet sepete eklenir"
+                "action": "'Sepetim' ekranını aç ve bedava adet ile ödenecek tutarı kontrol et",
+                "data": null,
+                "expected": "Bedava adet 1; ödenecek tutar 125,00 TL."
               },
               {
                 "id": "S3",
-                "action": "'Sepetim' ekranını aç",
+                "action": "Minimum tutar uyarısı ve onay butonunun durumuna bak",
                 "data": null,
-                "expected": "1 adet bedava; sepet toplamı 125,00 TL (5 × 25,00 TL)"
+                "expected": "'Minimum sipariş tutarı 750,00 TL' uyarısı gösterilmez; 'Siparişi onayla' aktif."
+              },
+              {
+                "id": "S4",
+                "action": "'Siparişi onayla' butonuna bas",
+                "data": null,
+                "expected": "Sipariş onaylanır ve sipariş numarası gösterilir."
               }
             ],
-            "expected_result": "6 adette 1 adet bedava verilir; bayi 5 adet öder, toplam 125,00 TL.",
+            "expected_result": "6 adet P-001 için 1 adet bedava verilir, ödenecek tutar 125,00 TL olur; 750,00 TL'nin altında olmasına rağmen minimum şart aranmaz ve sipariş onaylanır.",
             "teardown": [
-              "Sepet boşaltılır",
-              "'Çıkış yap' ile oturum kapatılır"
+              "Oluşan sipariş kullanıcı tarafından silinemez; temiz test ortamı veya hesap kullanılır.",
+              "'Çıkış yap' ile oturumu kapat."
             ],
             "tags": [
               "AI-generated"
             ]
           },
           {
-            "title": "Kampanyalı üründe 12 adette 2 bedava, sepet toplamı 250,00 TL",
+            "title": "Kampanyalı ürün 12 adetken 2 bedava verilir, ödenecek tutar 250,00 TL olur",
             "type": "positive",
             "technique": [
               "EP"
             ],
             "covers": [
-              "EP-V5"
-            ],
-            "priority": "P2",
-            "priority_rationale": "Aynı kural 6 adet case'iyle de sınanıyor; çoklu grup hatası olasılığı düşük ama yanlış tutar etkisi var.",
-            "acceptance_criteria_refs": [
-              "AC2"
-            ],
-            "platform": "Desktop-Win",
-            "test_level": "SYSTEM",
-            "verification_point": "UI",
-            "requires_real_device": false,
-            "standard_refs": [],
-            "readiness": "ready",
-            "assumption_refs": [],
-            "open_question_refs": [],
-            "preconditions": [
-              "bayi1 sepeti boş",
-              "Kampanya 6AL1BEDAVA aktif"
-            ],
-            "test_data": [
-              {
-                "name": "kullanıcı",
-                "value": "bayi1 / Demo123!",
-                "class": null,
-                "synthetic": true,
-                "is_attack_payload": false
-              },
-              {
-                "name": "sepet",
-                "value": "P-001 × 12",
-                "class": "EP-V5",
-                "synthetic": true,
-                "is_attack_payload": false
-              }
-            ],
-            "steps": [
-              {
-                "id": "S1",
-                "action": "'Giriş yap' ile oturum aç",
-                "data": "bayi1 / Demo123!",
-                "expected": "Oturum açılır"
-              },
-              {
-                "id": "S2",
-                "action": "'Katalog'da P-001 ürününden 12 adet sepete ekle ('Sepete ekle')",
-                "data": "P-001 × 12",
-                "expected": "Ürün 12 adet sepete eklenir"
-              },
-              {
-                "id": "S3",
-                "action": "'Sepetim' ekranını aç",
-                "data": null,
-                "expected": "2 adet bedava; sepet toplamı 250,00 TL (10 × 25,00 TL)"
-              }
-            ],
-            "expected_result": "12 adette 2 adet bedava verilir; bayi 10 adet öder, toplam 250,00 TL.",
-            "teardown": [
-              "Sepet boşaltılır",
-              "'Çıkış yap' ile oturum kapatılır"
-            ],
-            "tags": [
-              "AI-generated"
-            ]
-          },
-          {
-            "title": "Kampanyasız 749,00 TL sepette minimum tutar uyarısı çıkar, onay pasif",
-            "type": "boundary",
-            "technique": [
-              "BVA",
-              "EP"
-            ],
-            "covers": [
-              "BV-3",
-              "EP-I1"
-            ],
-            "priority": "P1",
-            "priority_rationale": "Minimum tutarın altındaki siparişin geçmesi limitin delinmesi demektir (para/iş kuralı kaybı); sık değişen kritik kural.",
-            "acceptance_criteria_refs": [
-              "AC3"
-            ],
-            "platform": "Desktop-Win",
-            "test_level": "SYSTEM",
-            "verification_point": "UI",
-            "requires_real_device": false,
-            "standard_refs": [],
-            "readiness": "ready",
-            "assumption_refs": [],
-            "open_question_refs": [],
-            "preconditions": [
-              "bayi1 sepeti boş",
-              "Sepette kampanyalı ürün (P-001) yok"
-            ],
-            "test_data": [
-              {
-                "name": "kullanıcı",
-                "value": "bayi1 / Demo123!",
-                "class": null,
-                "synthetic": true,
-                "is_attack_payload": false
-              },
-              {
-                "name": "sepet",
-                "value": "P-004 × 21; P-002 × 1; P-003 × 13",
-                "class": "BV-3",
-                "synthetic": true,
-                "is_attack_payload": false
-              },
-              {
-                "name": "toplam",
-                "value": "749,00 TL (630,00 + 15,00 + 104,00)",
-                "class": "BV-3",
-                "synthetic": true,
-                "is_attack_payload": false
-              }
-            ],
-            "steps": [
-              {
-                "id": "S1",
-                "action": "'Giriş yap' ile oturum aç",
-                "data": "bayi1 / Demo123!",
-                "expected": "Oturum açılır"
-              },
-              {
-                "id": "S2",
-                "action": "'Katalog'da P-004 'Şeftalili Soğuk Çay 1L' ürününden 21 adet ekle ('Sepete ekle')",
-                "data": "P-004 × 21",
-                "expected": "Ürün sepete eklenir"
-              },
-              {
-                "id": "S3",
-                "action": "P-002 'Limonata 330ml' ürününden 1 adet ekle",
-                "data": "P-002 × 1",
-                "expected": "Ürün sepete eklenir"
-              },
-              {
-                "id": "S4",
-                "action": "P-003 'Maden Suyu 200ml' ürününden 13 adet ekle",
-                "data": "P-003 × 13",
-                "expected": "Ürün sepete eklenir"
-              },
-              {
-                "id": "S5",
-                "action": "'Sepetim' ekranını aç",
-                "data": null,
-                "expected": "Sepet toplamı 749,00 TL; 'Minimum sipariş tutarı 750,00 TL' uyarısı gösterilir"
-              },
-              {
-                "id": "S6",
-                "action": "'Siparişi onayla' butonunun durumunu kontrol et",
-                "data": null,
-                "expected": "Buton pasiftir"
-              }
-            ],
-            "expected_result": "Kampanyasız 749,00 TL sepette 'Minimum sipariş tutarı 750,00 TL' uyarısı gösterilir ve onay butonu pasif olur.",
-            "teardown": [
-              "Sepet boşaltılır",
-              "'Çıkış yap' ile oturum kapatılır"
-            ],
-            "tags": [
-              "AI-generated"
-            ]
-          },
-          {
-            "title": "Kampanyasız tam 750,00 TL sepette uyarı yok, onay butonu aktif",
-            "type": "boundary",
-            "technique": [
-              "BVA",
-              "EP"
-            ],
-            "covers": [
-              "BV-4",
-              "EP-V2"
-            ],
-            "priority": "P2",
-            "priority_rationale": "Geçerli sınırın yanlışlıkla reddi para kaybettirmez, kullanıcı adet artırarak devam eder; etki orta.",
-            "acceptance_criteria_refs": [
-              "AC3"
-            ],
-            "platform": "Desktop-Win",
-            "test_level": "SYSTEM",
-            "verification_point": "UI",
-            "requires_real_device": false,
-            "standard_refs": [],
-            "readiness": "ready",
-            "assumption_refs": [],
-            "open_question_refs": [],
-            "preconditions": [
-              "bayi1 sepeti boş",
-              "Sepette kampanyalı ürün (P-001) yok"
-            ],
-            "test_data": [
-              {
-                "name": "kullanıcı",
-                "value": "bayi1 / Demo123!",
-                "class": null,
-                "synthetic": true,
-                "is_attack_payload": false
-              },
-              {
-                "name": "sepet",
-                "value": "P-004 × 25",
-                "class": "BV-4",
-                "synthetic": true,
-                "is_attack_payload": false
-              },
-              {
-                "name": "toplam",
-                "value": "750,00 TL",
-                "class": "BV-4",
-                "synthetic": true,
-                "is_attack_payload": false
-              }
-            ],
-            "steps": [
-              {
-                "id": "S1",
-                "action": "'Giriş yap' ile oturum aç",
-                "data": "bayi1 / Demo123!",
-                "expected": "Oturum açılır"
-              },
-              {
-                "id": "S2",
-                "action": "'Katalog'da P-004 ürününden 25 adet ekle ('Sepete ekle')",
-                "data": "P-004 × 25",
-                "expected": "Ürün sepete eklenir"
-              },
-              {
-                "id": "S3",
-                "action": "'Sepetim' ekranını aç",
-                "data": null,
-                "expected": "Sepet toplamı 750,00 TL; 'Minimum sipariş tutarı 750,00 TL' uyarısı gösterilmez"
-              },
-              {
-                "id": "S4",
-                "action": "'Siparişi onayla' butonunun durumunu kontrol et (butona basma)",
-                "data": null,
-                "expected": "Buton aktiftir"
-              }
-            ],
-            "expected_result": "750,00 TL kampanyasız sepette minimum tutar uyarısı gösterilmez ve 'Siparişi onayla' butonu aktiftir.",
-            "teardown": [
-              "Sepet boşaltılır",
-              "'Çıkış yap' ile oturum kapatılır"
-            ],
-            "tags": [
-              "AI-generated"
-            ]
-          },
-          {
-            "title": "Tutar tam kredi limitinde (500,00 TL) kredi uyarısı yok, onay aktif",
-            "type": "boundary",
-            "technique": [
-              "BVA",
-              "EP"
-            ],
-            "covers": [
-              "BV-5",
               "EP-V3"
             ],
             "priority": "P2",
-            "priority_rationale": "Limit üzerindeki tutar yerine geçerli sınırın reddi para kaybettirmez; geçici çözüm var, etki orta.",
+            "priority_rationale": "Katlı bedava hesabı hatalıysa fiyat yanlış olur ancak müşteri sepette görür ve düzeltir; sınır case'leri ana riski taşır.",
             "acceptance_criteria_refs": [
-              "AC4",
               "AC2"
             ],
             "platform": "Desktop-Win",
@@ -721,29 +667,94 @@
             "assumption_refs": [],
             "open_question_refs": [],
             "preconditions": [
-              "bayi2 sepeti boş",
-              "bayi2 kredi limiti 500,00 TL",
-              "Taze test ortamı: bayi2'nin önceki siparişi yok",
-              "Kampanya 6AL1BEDAVA aktif"
+              "bayi1 oturum açmış; sepet boş.",
+              "Kampanya '6 al 1 bedava' (6AL1BEDAVA) P-001 için aktif."
             ],
             "test_data": [
               {
-                "name": "kullanıcı",
-                "value": "bayi2 / Demo123!",
+                "name": "kullanici",
+                "value": "bayi1 / Demo123!",
                 "class": null,
                 "synthetic": true,
                 "is_attack_payload": false
               },
               {
-                "name": "sepet",
-                "value": "P-001 × 24",
-                "class": "BV-5",
+                "name": "sepet_12",
+                "value": "P-001 × 12 (10 × 25,00 = 250,00 TL ödenir, 2 bedava)",
+                "class": "EP-V3",
+                "synthetic": true,
+                "is_attack_payload": false
+              }
+            ],
+            "steps": [
+              {
+                "id": "S1",
+                "action": "Katalogda P-001 'Portakal Gazozu 1L' için sepeti 12 adet olacak şekilde hazırla",
+                "data": "P-001 × 12",
+                "expected": "Sepete 12 adet P-001 eklenir."
+              },
+              {
+                "id": "S2",
+                "action": "'Sepetim' ekranını aç",
+                "data": null,
+                "expected": "Sepette 12 adet P-001 görünür."
+              },
+              {
+                "id": "S3",
+                "action": "Bedava adet ve ödenecek tutarı kontrol et",
+                "data": null,
+                "expected": "Bedava adet 2; ödenecek tutar 250,00 TL."
+              }
+            ],
+            "expected_result": "12 adet P-001 için 2 adet bedava verilir; ödenecek tutar 250,00 TL'dir.",
+            "teardown": [
+              "Sepeti boşalt.",
+              "'Çıkış yap' ile oturumu kapat."
+            ],
+            "tags": [
+              "AI-generated"
+            ]
+          },
+          {
+            "title": "Sipariş tam 2.000,00 TL iken kredi limiti aşılmış sayılmaz ve sipariş onaylanır",
+            "type": "boundary",
+            "technique": [
+              "BVA",
+              "CL"
+            ],
+            "covers": [
+              "BV-5",
+              "CL-1"
+            ],
+            "priority": "P2",
+            "priority_rationale": "Tam limitteki geçerli siparişin yanlış reddi yalnız tam limitteki bayileri etkiler ve başka yoldan çözülebilir; tutar biçimi hatası görünür bir sonuçtur.",
+            "acceptance_criteria_refs": [
+              "AC4",
+              "AC5"
+            ],
+            "platform": "Desktop-Win",
+            "test_level": "SYSTEM",
+            "verification_point": "UI",
+            "requires_real_device": false,
+            "standard_refs": [],
+            "readiness": "ready",
+            "assumption_refs": [],
+            "open_question_refs": [],
+            "preconditions": [
+              "bayi1 (kredi limiti 2.000,00 TL) oturum açmış; sepet boş.",
+              "Sepette kampanyalı ürün (P-001) yok."
+            ],
+            "test_data": [
+              {
+                "name": "kullanici",
+                "value": "bayi1 / Demo123!",
+                "class": null,
                 "synthetic": true,
                 "is_attack_payload": false
               },
               {
-                "name": "toplam",
-                "value": "500,00 TL (20 × 25,00 TL; 4 adet bedava)",
+                "name": "sepet_2000",
+                "value": "P-004 × 60 (1.800,00 TL); P-003 × 25 (200,00 TL); toplam 2.000,00 TL",
                 "class": "BV-5",
                 "synthetic": true,
                 "is_attack_payload": false
@@ -752,40 +763,40 @@
             "steps": [
               {
                 "id": "S1",
-                "action": "'Giriş yap' ile oturum aç",
-                "data": "bayi2 / Demo123!",
-                "expected": "Oturum açılır"
+                "action": "Sepeti P-004 ürününden 60 adet olacak şekilde hazırla",
+                "data": "P-004 × 60",
+                "expected": "Sepette 60 adet P-004 vardır."
               },
               {
                 "id": "S2",
-                "action": "'Katalog'da P-001 ürününden 24 adet ekle ('Sepete ekle')",
-                "data": "P-001 × 24",
-                "expected": "Ürün sepete eklenir"
+                "action": "Sepete P-003 'Maden Suyu 200ml' ürününden 25 adet ekle",
+                "data": "P-003 × 25",
+                "expected": "Sepet toplamı 2.000,00 TL olur."
               },
               {
                 "id": "S3",
-                "action": "'Sepetim' ekranını aç",
+                "action": "'Sepetim' ekranını aç ve toplamın biçimine bak",
                 "data": null,
-                "expected": "Sepet toplamı 500,00 TL; 'Kredi limiti aşıldı' uyarısı gösterilmez"
+                "expected": "Toplam '2.000,00 TL' biçiminde gösterilir; 'Kredi limiti aşıldı' uyarısı gösterilmez."
               },
               {
                 "id": "S4",
-                "action": "'Siparişi onayla' butonunun durumunu kontrol et (butona basma)",
+                "action": "'Siparişi onayla' butonuna bas",
                 "data": null,
-                "expected": "Buton aktiftir"
+                "expected": "Sipariş onaylanır ve sipariş numarası gösterilir."
               }
             ],
-            "expected_result": "500,00 TL tutar 500,00 TL limiti aşmadığı için 'Kredi limiti aşıldı' uyarısı yoktur ve onay butonu aktiftir.",
+            "expected_result": "2.000,00 TL sipariş limiti aşmaz: uyarı yok, sipariş onaylanır ve numarası gösterilir; tutar tr-TR biçiminde (2.000,00 TL) görünür.",
             "teardown": [
-              "Sepet boşaltılır",
-              "'Çıkış yap' ile oturum kapatılır"
+              "Oluşan sipariş kullanıcı tarafından silinemez; temiz test ortamı veya hesap kullanılır.",
+              "'Çıkış yap' ile oturumu kapat."
             ],
             "tags": [
               "AI-generated"
             ]
           },
           {
-            "title": "Tutar kredi limitini aşınca (501,00 TL) 'Kredi limiti aşıldı' gösterilir",
+            "title": "Sipariş 2.000,01 TL iken 'Kredi limiti aşıldı' uyarısı çıkar ve sipariş onaylanmaz",
             "type": "boundary",
             "technique": [
               "BVA",
@@ -796,7 +807,7 @@
               "EP-I2"
             ],
             "priority": "P1",
-            "priority_rationale": "Limiti aşan siparişin geçmesi bayiye limit dışı kredi verir (para kaybı); ana sipariş akışında sık sınanan kritik kural.",
+            "priority_rationale": "Kredi limitini aşan siparişin onaylanması limit kontrolünün delinmesi, yani doğrudan mali risk demektir; sınırın hemen üstü en olası hata noktasıdır.",
             "acceptance_criteria_refs": [
               "AC4"
             ],
@@ -809,130 +820,23 @@
             "assumption_refs": [],
             "open_question_refs": [],
             "preconditions": [
-              "bayi2 sepeti boş",
-              "bayi2 kredi limiti 500,00 TL",
-              "Taze test ortamı: bayi2'nin önceki siparişi yok",
-              "Kampanya 6AL1BEDAVA aktif"
+              "Test verisi hazırlığı: fiyatı 0,01 TL olan sentetik ürün SYN-002 hazırlanır (bayinin kredi limiti değiştirilmez).",
+              "bayi1 (kredi limiti 2.000,00 TL) oturum açmış; sepet boş.",
+              "Sepette kampanyalı ürün (P-001) yok.",
+              "Sipariş geçmişi başlangıç durumu not edilir."
             ],
             "test_data": [
               {
-                "name": "kullanıcı",
-                "value": "bayi2 / Demo123!",
-                "class": null,
-                "synthetic": true,
-                "is_attack_payload": false
-              },
-              {
-                "name": "sepet",
-                "value": "P-001 × 18; P-004 × 1; P-003 × 12",
-                "class": "BV-6",
-                "synthetic": true,
-                "is_attack_payload": false
-              },
-              {
-                "name": "toplam",
-                "value": "501,00 TL (15 × 25,00 + 30,00 + 96,00)",
-                "class": "BV-6",
-                "synthetic": true,
-                "is_attack_payload": false
-              }
-            ],
-            "steps": [
-              {
-                "id": "S1",
-                "action": "'Giriş yap' ile oturum aç",
-                "data": "bayi2 / Demo123!",
-                "expected": "Oturum açılır"
-              },
-              {
-                "id": "S2",
-                "action": "'Katalog'da P-001 ürününden 18 adet ekle ('Sepete ekle')",
-                "data": "P-001 × 18",
-                "expected": "Ürün sepete eklenir"
-              },
-              {
-                "id": "S3",
-                "action": "P-004 ürününden 1 adet ekle",
-                "data": "P-004 × 1",
-                "expected": "Ürün sepete eklenir"
-              },
-              {
-                "id": "S4",
-                "action": "P-003 ürününden 12 adet ekle",
-                "data": "P-003 × 12",
-                "expected": "Ürün sepete eklenir"
-              },
-              {
-                "id": "S5",
-                "action": "'Sepetim' ekranını aç",
-                "data": null,
-                "expected": "Sepet toplamı 501,00 TL; 'Kredi limiti aşıldı' uyarısı gösterilir"
-              },
-              {
-                "id": "S6",
-                "action": "'Siparişi onayla' ile siparişi onaylamayı dene",
-                "data": null,
-                "expected": "Sipariş onaylanmaz; sipariş numarası gösterilmez"
-              }
-            ],
-            "expected_result": "501,00 TL tutar 500,00 TL limiti aştığı için 'Kredi limiti aşıldı' uyarısı gösterilir ve sipariş onaylanamaz.",
-            "teardown": [
-              "Sepet boşaltılır",
-              "'Çıkış yap' ile oturum kapatılır"
-            ],
-            "tags": [
-              "AI-generated"
-            ]
-          },
-          {
-            "title": "Kampanyalı 125,00 TL siparişte min. tutar aranmaz; onay sonrası numara ve geçmiş",
-            "type": "positive",
-            "technique": [
-              "UC",
-              "EP"
-            ],
-            "covers": [
-              "UC-MF",
-              "EP-V4"
-            ],
-            "priority": "P1",
-            "priority_rationale": "Sipariş onayı ana akıştır; kırılırsa bayi sipariş veremez ve başka yolu yoktur; kampanyalı tutar da doğrulanır.",
-            "acceptance_criteria_refs": [
-              "AC5",
-              "AC6"
-            ],
-            "platform": "Desktop-Win",
-            "test_level": "SYSTEM",
-            "verification_point": "UI",
-            "requires_real_device": false,
-            "standard_refs": [],
-            "readiness": "ready",
-            "assumption_refs": [],
-            "open_question_refs": [],
-            "preconditions": [
-              "bayi1 sepeti boş",
-              "bayi1 kredi limiti 2.000,00 TL",
-              "Kampanya 6AL1BEDAVA aktif"
-            ],
-            "test_data": [
-              {
-                "name": "kullanıcı",
+                "name": "kullanici",
                 "value": "bayi1 / Demo123!",
                 "class": null,
                 "synthetic": true,
                 "is_attack_payload": false
               },
               {
-                "name": "sepet",
-                "value": "P-001 × 6",
-                "class": "EP-V4",
-                "synthetic": true,
-                "is_attack_payload": false
-              },
-              {
-                "name": "toplam",
-                "value": "125,00 TL",
-                "class": "EP-V4",
+                "name": "sepet_2000_01",
+                "value": "P-004 × 60 (1.800,00 TL); P-003 × 25 (200,00 TL); SYN-002 × 1 (0,01 TL); toplam 2.000,01 TL",
+                "class": "BV-6",
                 "synthetic": true,
                 "is_attack_payload": false
               }
@@ -940,80 +844,67 @@
             "steps": [
               {
                 "id": "S1",
-                "action": "'Giriş yap' ile oturum aç",
-                "data": "bayi1 / Demo123!",
-                "expected": "Oturum açılır"
+                "action": "Sepeti P-004 ürününden 60 adet olacak şekilde hazırla",
+                "data": "P-004 × 60",
+                "expected": "Sepette 60 adet P-004 vardır."
               },
               {
                 "id": "S2",
-                "action": "'Katalog' ekranını aç",
-                "data": null,
-                "expected": "Katalog listelenir"
+                "action": "Sepete P-003 ürününden 25 adet ekle",
+                "data": "P-003 × 25",
+                "expected": "Sepet toplamı 2.000,00 TL olur."
               },
               {
                 "id": "S3",
-                "action": "P-001 'Portakal Gazozu 1L' ürününden 6 adet sepete ekle ('Sepete ekle')",
-                "data": "P-001 × 6",
-                "expected": "Ürün sepete eklenir"
+                "action": "Sepete SYN-002 ürününden 1 adet ekle",
+                "data": "SYN-002 × 1",
+                "expected": "Sepet toplamı 2.000,01 TL olur."
               },
               {
                 "id": "S4",
-                "action": "'Sepetim' ekranını aç",
+                "action": "'Sepetim' ekranını aç ve 'Siparişi onayla' butonuna basmayı dene",
                 "data": null,
-                "expected": "Toplam 125,00 TL; 'Minimum sipariş tutarı 750,00 TL' uyarısı gösterilmez; 'Siparişi onayla' aktif"
+                "expected": "'Kredi limiti aşıldı' uyarısı gösterilir; sipariş onaylanmaz ve sipariş numarası gösterilmez."
               },
               {
                 "id": "S5",
-                "action": "'Siparişi onayla' butonuna bas",
+                "action": "'Siparişlerim' ekranını aç",
                 "data": null,
-                "expected": "Sipariş numarası gösterilir"
-              },
-              {
-                "id": "S6",
-                "action": "'Siparişlerime git' ile 'Siparişlerim' ekranını aç",
-                "data": null,
-                "expected": "Sipariş geçmişi ekranı açılır"
-              },
-              {
-                "id": "S7",
-                "action": "Listede az önce onaylanan siparişi ara",
-                "data": null,
-                "expected": "Gösterilen sipariş numarasıyla sipariş listelenir"
+                "expected": "Sipariş listesi başlangıç durumuyla aynıdır; yeni sipariş yoktur."
               }
             ],
-            "expected_result": "Kampanyalı sipariş 750,00 TL altında olsa da onaylanır; sipariş numarası gösterilir ve sipariş 'Siparişlerim'de listelenir.",
+            "expected_result": "2.000,01 TL sipariş için 'Kredi limiti aşıldı' uyarısı gösterilir, sipariş onaylanmaz ve Siparişlerim'e yeni kayıt eklenmez.",
             "teardown": [
-              "Oluşan sipariş kullanıcı tarafından silinemez: taze test ortamı/hesabı kullan",
-              "'Çıkış yap' ile oturum kapatılır"
+              "Sepeti boşalt.",
+              "'Çıkış yap' ile oturumu kapat."
             ],
             "tags": [
-              "AI-generated",
-              "smoke"
+              "AI-generated"
             ]
           }
         ]
       },
       "mode": "live",
       "error": null,
-      "cost_usd": 0.226119,
-      "sure_ms": 148071
+      "cost_usd": 0.228161,
+      "sure_ms": 139291
     }
   ],
   "tamamlandi": true,
   "set_vaka_sayisi": 1,
   "kosu_sayisi": 1,
-  "maliyet_usd": 0.226119,
-  "butce_usd": 20.0,
+  "maliyet_usd": 0.228161,
+  "butce_usd": 12.0,
   "calisma_alani_basligi": true,
   "guardrails_version": 1,
   "kayit_adaylari": null,
   "cagri_kaydi": "platform-desktop-v1-2026-11-14.calls.jsonl",
   "cagri_sayisi": 1,
-  "cagri_defteri": "ledger-diger.jsonl",
+  "cagri_defteri": "core/exports/eval-live/ledger-platform.jsonl",
   "amac": "case_generation",
   "via_flow": false,
   "output_check": true,
-  "icerik_hash": "sha256:23ec23f8925d52c44be1a12d13890837dba81e24f2a0f6f744537234befd2197",
+  "icerik_hash": "sha256:cedcd1fb16bc122ca2f6c1aac5e4c2ef2854c969041d9748b9dd123be7718420",
   "olcumler": {
     "amac": "case_generation",
     "output_check": true,
@@ -1046,50 +937,54 @@
     "toplam": {
       "kosu": 1,
       "readiness": {
-        "ready": 9
+        "ready": 8
       },
       "technique": {
         "BVA": 6,
-        "EP": 7,
+        "CL": 1,
+        "DT": 3,
+        "EP": 5,
         "UC": 1
       },
       "priority": {
-        "P1": 5,
+        "P1": 4,
         "P2": 4
       },
-      "case": 9,
-      "coverage_items": 14,
-      "covered_items": 14,
-      "not_covered": 12,
+      "case": 8,
+      "coverage_items": 16,
+      "covered_items": 16,
+      "not_covered": 11,
       "open_questions": 3,
       "yetim_soru": 0,
       "tekrar": 0,
       "tekrar_orani": 0.0,
-      "p1_orani": 0.5556,
+      "p1_orani": 0.5,
       "sepet_okunamadi": 0
     },
     "kosular": {
       "tpd-1-desktop": {
-        "case": 9,
+        "case": 8,
         "tekrar": 0,
         "tekrar_ciftleri": [],
         "readiness": {
-          "ready": 9
+          "ready": 8
         },
         "technique": {
           "BVA": 6,
-          "EP": 7,
+          "CL": 1,
+          "DT": 3,
+          "EP": 5,
           "UC": 1
         },
         "priority": {
-          "P1": 5,
+          "P1": 4,
           "P2": 4
         },
-        "p1_orani": 0.5556,
-        "coverage_items": 14,
-        "covered_items": 14,
-        "invalid_items": 4,
-        "not_covered": 12,
+        "p1_orani": 0.5,
+        "coverage_items": 16,
+        "covered_items": 16,
+        "invalid_items": 5,
+        "not_covered": 11,
         "open_questions": 3,
         "yetim_soru": 0,
         "assumptions": 0,
