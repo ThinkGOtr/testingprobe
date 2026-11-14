@@ -6,14 +6,14 @@
 // sunulur, CDN yok: nginx CSP'si `script-src 'self'` (default-src) korunur. Yalnız AI Probe kipinde
 // (`aiprobe`/`both`) dinamik `import()` ile yüklenir; `local` kipte parça hiç istenmez.
 
-import type { AiprobeSwitcher } from "../vendor/aiprobe-switcher/switcher-1.0.3.js";
+import type { AiprobeSwitcher } from "../vendor/aiprobe-switcher/switcher-1.0.4.js";
 
-export const DEGISTIRICI_SURUMU = "1.0.3";
+export const DEGISTIRICI_SURUMU = "1.0.4";
 
 let soz: Promise<void> | null = null;
 
 export function degistiriciyiYukle(): Promise<void> {
-  soz ??= import("../vendor/aiprobe-switcher/switcher-1.0.3.js")
+  soz ??= import("../vendor/aiprobe-switcher/switcher-1.0.4.js")
     .then(() => customElements.whenDefined("aiprobe-switcher"))
     .then(() => undefined)
     .catch((e: unknown) => {

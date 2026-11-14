@@ -1,7 +1,7 @@
 /*! @aiprobe/switcher — <aiprobe-switcher> ürün değiştirici. Bağımlılık yok, derleme gerekmez.
  *
  * Kullanım:
- *   <script type="module" src="/vendor/switcher-1.0.3.js" integrity="sha384-…"></script>
+ *   <script type="module" src="/vendor/switcher-1.0.4.js" integrity="sha384-…"></script>
  *   <aiprobe-switcher product="testing-probe" home-origin="https://home.aiprobe.antreklabs.com" lang="tr">
  *     <div slot="product-menu"><button>Rol değiştir</button></div>
  *   </aiprobe-switcher>
@@ -12,6 +12,10 @@
  *               admin-url (verilirse "Yönetim" bağlantısı gösterilir)
  * Gizli (status=hidden) ürünler yalnız kullanıcının o üründe rolü varsa listelenir.
  *
+ * 1.0.4: products.json sürüm sorgusuyla (?v=<VERSION>) istenir — her sürüm yeni önbellek anahtarı; ağ/CORS
+ *        hatasında bir kez önbelleği atlayarak (cache: 'reload') yeniden denenir (ACAO'suz önbelleğe alınmış
+ *        kopya 304'le yeniden kullanılıp CORS hatası veriyordu). Dil düğmesinin erişilebilir adı görünür
+ *        metniyle aynı ("Dil TR EN"), eylem title/açıklamada (WCAG 2.5.3).
  * 1.0.3: ürün bağlantısı app_url + launch_path (ör. Agent Probe /app); launch_path yalnız "/" ile
  *        başlayan göreli yol ise eklenir.
  * 1.0.2: erişim = me.products'ta kodun VARLIĞI (sözleşme v1.6: ürün oturumlarında yalnız çağıran ürünün
@@ -27,7 +31,7 @@
  * home sayfası (kullanıcı onayıyla) yapar.
  */
 
-export const VERSION = '1.0.3';
+export const VERSION = '1.0.4';
 const DEFAULT_HOME = 'https://home.aiprobe.antreklabs.com';
 const STATUS_TTL_MS = 30_000;
 
@@ -35,14 +39,14 @@ const I18N = {
   tr: {
     open: 'AI Probe ürünleri', title: 'AI Probe', yours: 'Ürünleriniz', discover: 'Keşfet',
     request: 'Erişim iste', current: 'Buradasınız', stopped: 'Kapalı · Başlat', starting: 'Başlatılıyor…',
-    home: 'Başlangıç', account: 'Hesap', admin: 'Yönetim', language: 'Dil', logout: 'Çıkış', beta: 'beta',
+    home: 'Başlangıç', account: 'Hesap', admin: 'Yönetim', language: 'Dil', switchLang: 'İngilizceye geç', logout: 'Çıkış', beta: 'beta',
     preview: 'önizleme', deprecated: 'kullanımdan kalkıyor', loadError: 'Ürün listesi yüklenemedi.',
     retry: 'Tekrar dene', loading: 'Yükleniyor…', productMenu: 'Bu ürün', other: 'Diğer ürünler',
   },
   en: {
     open: 'AI Probe products', title: 'AI Probe', yours: 'Your products', discover: 'Discover',
     request: 'Request access', current: 'You are here', stopped: 'Stopped · Start', starting: 'Starting…',
-    home: 'Home', account: 'Account', admin: 'Admin', language: 'Language', logout: 'Sign out', beta: 'beta',
+    home: 'Home', account: 'Account', admin: 'Admin', language: 'Language', switchLang: 'Switch to Turkish', logout: 'Sign out', beta: 'beta',
     preview: 'preview', deprecated: 'deprecated', loadError: 'Could not load products.',
     retry: 'Retry', loading: 'Loading…', productMenu: 'This product', other: 'Other products',
   },
@@ -219,7 +223,10 @@ export class AiprobeSwitcher extends HTMLElement {
   async _load() {
     const jobs = [];
     if (!this._catalog) {
-      jobs.push(fetch(`${this.homeOrigin}/sdk/products.json`, { credentials: 'omit' })
+      const url = `${this.homeOrigin}/sdk/products.json?v=${VERSION}`;
+      // Ağ/CORS hatası (TypeError) eski başlıklı önbellek kopyasından olabilir: önbelleği atlayıp bir kez daha dene.
+      jobs.push(fetch(url, { credentials: 'omit' })
+        .catch(() => fetch(url, { credentials: 'omit', cache: 'reload' }))
         .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
         .then((d) => { this._catalog = Array.isArray(d) ? d : []; this._catalogError = false; })
         .catch(() => { this._catalogError = true; }));
@@ -413,11 +420,12 @@ export class AiprobeSwitcher extends HTMLElement {
       h('a', { href: `${home}/`, 'data-nav': 'home', 'data-key': 'home', text: t('home') }),
       h('a', { href: accountUrl, 'data-nav': 'account', 'data-key': 'account', text: t('account') }),
       adminUrl ? h('a', { href: adminUrl, 'data-nav': 'admin', 'data-key': 'admin', text: t('admin') }) : null,
+      // Erişilebilir ad = görünür metin ("Dil TR EN"); eylem açıklamada (title) — WCAG 2.5.3 Label in Name.
       h('button', { type: 'button', 'data-lang-toggle': true, 'data-key': 'lang',
-        'aria-label': `${t('language')}: ${this.lang.toUpperCase()} → ${other.toUpperCase()}`, onclick: () => this._setLang(other) },
-      h('span', { text: t('language') }),
-      h('span', { class: 'lang', 'aria-hidden': 'true' },
-        h('span', { 'aria-current': String(this.lang === 'tr'), text: 'TR' }),
+        title: t('switchLang'), onclick: () => this._setLang(other) },
+      h('span', { text: t('language') }), ' ',
+      h('span', { class: 'lang' },
+        h('span', { 'aria-current': String(this.lang === 'tr'), text: 'TR' }), ' ',
         h('span', { 'aria-current': String(this.lang === 'en'), text: 'EN' }))),
       logout));
 
