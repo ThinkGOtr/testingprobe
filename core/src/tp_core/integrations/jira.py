@@ -401,6 +401,10 @@ def test_single_account() -> bool:
     return on
 
 
+# JIRA_PO_ACCOUNT_IDS'te bu değer: Jira'da etiketi koyabilen/yorum yazabilen herkes PO sayılır.
+PO_HERKES = "*"
+
+
 def authorized_po_approvals(
     changes: Iterable[LabelChange],
     po_accounts: Iterable[str],
@@ -410,14 +414,17 @@ def authorized_po_approvals(
 
     Yazar boşsa, PO izin listesinde değilse ya da ürünün kendi (bot/yazma) hesabıysa sayılmaz.
     Karşılaştırma büyük/küçük harf duyarsızdır (e-posta). İzin listesi boşsa hiçbir onay geçmez.
+    Listede `*` varsa (JIRA_PO_ACCOUNT_IDS=*) Jira'da etiketi koyabilen herkes PO sayılır
+    (bot hesabı yine hariç).
     """
     allowed = {a.strip().lower() for a in po_accounts if a and a.strip()}
+    herkes = PO_HERKES in allowed
     denied = {b.strip().lower() for b in bot_accounts if b and b.strip()}
     out = []
     for ch in changes:
         # Yazarın herhangi bir kimliği (e-posta ya da accountId) izinliyse ve hiçbiri bot değilse.
         who = {i.strip().lower() for i in (ch.author, *ch.author_ids) if i and i.strip()}
-        if who & allowed and not who & denied:
+        if who and (herkes or who & allowed) and not who & denied:
             out.append(ch)
     return out
 
@@ -772,6 +779,15 @@ class RestJira:
         ``authorized_po_approvals`` için: bot'un koyduğu onay etiketi PO onayı sayılmaz.
         """
         if self._write_auth is None or test_single_account():
+            return frozenset()
+        me = self.myself(write=True)
+        ids = {str(me.get("emailAddress") or ""), str(me.get("accountId") or "")}
+        return frozenset(i for i in ids if i)
+
+    def write_identities(self) -> frozenset[str]:
+        """Ürünün yazma hesabının kimlikleri (test modundan bağımsız): ürünün kendi yorumları
+        PO cevabı sayılmasın (JIRA_PO_ACCOUNT_IDS=* iken)."""
+        if self._write_auth is None:
             return frozenset()
         me = self.myself(write=True)
         ids = {str(me.get("emailAddress") or ""), str(me.get("accountId") or "")}

@@ -2575,12 +2575,23 @@ def sweep_stuck(engine: Engine) -> list[str]:
 
 
 def _po_cevaplari(jira: Any, key: str, hesaplar: frozenset[str], sonra: datetime | None) -> list:
+    from tp_core.integrations.jira import PO_HERKES
+
+    herkes = PO_HERKES in hesaplar
+    urun: frozenset[str] = frozenset()
+    if herkes and hasattr(jira, "write_identities"):
+        urun = frozenset(services.normalize_identity(i) for i in jira.write_identities())
     out = []
     for c in jira.get_comments(key):
         # Yetki kimlikleri (e-posta/accountId); görünen ad değil. Kimlik listesi olmayan
         # (eski/sahte) kayıtta yazar alanı kullanılır.
         kimlikler = {services.normalize_identity(i) for i in (c.author_ids or [c.author or ""])}
-        if not kimlikler & hesaplar:
+        kimlikler.discard("")
+        if herkes:
+            # Herkes PO (JIRA_PO_ACCOUNT_IDS=*): ürünün kendi yorumları (sorular) hariç.
+            if not kimlikler or kimlikler & urun:
+                continue
+        elif not kimlikler & hesaplar:
             continue
         if sonra is not None and c.created is not None and c.created < sonra:
             continue
