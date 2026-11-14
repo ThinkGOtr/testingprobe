@@ -770,6 +770,12 @@ def _sentetik_sepet(hazirlik: str, sepet: str, beklenen: str) -> dict[str, Any]:
             "SENT-749 hazırlanır",
             "SENT-749 × 1; P-003 × 1",
         ),
+        # Kod parantez içinde (canlı tpd-1-f2-kod-hatasi#k1 C6, 2026-11-14).
+        (
+            "Test verisi hazırlığı: fiyatı 749,99 TL olan sentetik ürün (SENT-749) kataloğa "
+            "eklenir",
+            "SENT-749 × 1; P-003 × 1",
+        ),
         # Kod biçimi dışı ad / kodsuz sentetik ürün (canlı serbest-son-hal#k2 C4, #k3 C6).
         (
             "Test verisi hazırlığı: fiyatı 749,99 TL olan sentetik ürün (SENTETIK-1) hazırlanır",
@@ -857,3 +863,36 @@ def test_subtotal_grounded_in_cart_context_may_repeat_in_the_same_case(kaynak: s
     assert source_problems(kotu, kaynak, sepetler=sepet)
     kotu = [("C1", "sepet toplamı 125,00 TL"), ("C1", "kalan bakiye 125,00 TL")]
     assert source_problems(kotu, kaynak, sepetler=sepet)
+
+
+def test_remaining_total_after_removing_a_line_is_cart_context(kaynak: str) -> None:
+    """TEMİZ (canlı serbest-son-hal#k1 C1, 2026-11-14): P-002 + P-003 + P-004 sepetinden P-003
+    kaldırılınca "kalan toplam 45,00 TL" sepetin gerçek alt toplamıdır. KÖTÜ: "kalan bakiye" /
+    "kalan kredi" yabancı kavramdır; sepetle kurulamayan "kalan toplam" yine yakalanır."""
+    sepet = {"C1": [(1500, 1), (800, 1), (3000, 1)]}
+    temiz = [
+        ("C1", "P-003 satırı çıkar, sepet sayacı 3'ten 2'ye düşer, kalan toplam 45,00 TL olur")
+    ]
+    assert source_problems(temiz, kaynak, sepetler=sepet) == []
+    for kotu in (
+        "kalan bakiye 45,00 TL olur",
+        "kalan kredi 45,00 TL olur",
+        "kalan toplam 46,00 TL",
+    ):
+        assert source_problems([("C1", kotu)], kaynak, sepetler=sepet), kotu
+
+
+def test_synthetic_product_code_in_parentheses_makes_a_real_cart_total(
+    tpd1_vaka: dict[str, Any], kaynak: str
+) -> None:
+    """TEMİZ (canlı tpd-1-f2-kod-hatasi#k1 C6, 2026-11-14): "(SYN-0001)" kodlu 0,01 TL sentetik
+    ürünle 2.000,01 TL sepetin gerçek toplamıdır; limit sözcüğünün yanında da kabul edilir. KÖTÜ:
+    aynı sepetle kurulamayan 2.000,02 TL yakalanır."""
+    hazirlik = (
+        "Test verisi hazırlığı: fiyatı 0,01 TL olan sentetik ürün (SYN-0001) kataloğa eklenir"
+    )
+    sepet = "P-004 × 60; P-003 × 25; SYN-0001 × 1"
+    temiz = _sentetik_sepet(hazirlik, sepet, "2.000,01 TL sepette 'Kredi limiti aşıldı' gösterilir")
+    assert _uydurma(coverage_problems(temiz, tpd1_vaka["expect"], kaynak=kaynak)) == []
+    kotu = _sentetik_sepet(hazirlik, sepet, "2.000,02 TL sepette 'Kredi limiti aşıldı' gösterilir")
+    assert _uydurma(coverage_problems(kotu, tpd1_vaka["expect"], kaynak=kaynak))

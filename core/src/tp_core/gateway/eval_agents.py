@@ -758,14 +758,15 @@ _HAZIRLIK_URUNU = re.compile(
 # Ters sıra (e10): fiyat önce, kod sonra — "fiyatı 749,99 TL olan sentetik ürün SENT-749",
 # "749,99 TL fiyatlı ürün SENT-749". Kod "ürün" sözcüğünün hemen ardından gelmelidir. "olan"dan
 # sonra virgülle ayrılmış niteleyici gelebilir ("fiyatı 0,01 TL olan, kampanyası olmayan
-# sentetik ürün SENT-001"; canlı tpd-1-f2-kod-hatasi#k2 C10, 2026-11-14).
+# sentetik ürün SENT-001"; canlı tpd-1-f2-kod-hatasi#k2 C10, 2026-11-14). Kod parantez içinde
+# olabilir ("fiyatı 0,01 TL olan sentetik ürün (SYN-0001)"; canlı tpd-1-f2-kod-hatasi#k1 C6).
 _HAZIRLIK_URUNU_TERS = re.compile(
     r"fiyat\w*\s*(?::|=|olarak|olan)?\s*" + _TUTAR_TL + r"(?:['’](?:lik|lık))?\s+"
-    r"(?:olan\s*,?\s+(?:[\w-]+\s+){0,2}?|fiyatlı\s+)?(?:[\w-]+\s+){0,2}?ürün\w*\s+("
+    r"(?:olan\s*,?\s+(?:[\w-]+\s+){0,2}?|fiyatlı\s+)?(?:[\w-]+\s+){0,2}?ürün\w*\s+\(?("
     + _KOD
     + r")\b|"
     + _TUTAR_TL
-    + r"\s+fiyatlı\s+(?:[\w-]+\s+){0,2}?ürün\w*\s+("
+    + r"\s+fiyatlı\s+(?:[\w-]+\s+){0,2}?ürün\w*\s+\(?("
     + _KOD
     + r")\b",
     re.IGNORECASE,
@@ -778,9 +779,11 @@ _SEPET_BAGLAMI = re.compile(
     r"düş|hesap|sipariş|ürün|kampanya",
     re.IGNORECASE,
 )
+# "kalan toplam" / "kalan sepet" (satır kaldırıldıktan sonraki sepet toplamı) sepet bağlamıdır;
+# tutar yine sepetin gerçek bir alt toplamı olmalıdır (canlı serbest-son-hal#k1 C1, 2026-11-14).
 _YABANCI_BAGLAM = re.compile(
-    r"bakiye|kalan|iade|puan|bonus|komisyon|kargo|vergi|kdv|borç|alacak|kredi|limit|"
-    r"harcanabilir|kullanılabilir",
+    r"bakiye|kalan(?!\s+(?:toplam|sepet|ürün|satır))|iade|puan|bonus|komisyon|kargo|vergi|kdv|"
+    r"borç|alacak|kredi|limit|harcanabilir|kullanılabilir",
     re.IGNORECASE,
 )
 # Case'te tutar var ama sepeti okunamıyor: uydurma DEĞİL, ayrı kategori (3. tur #3). Mesaj
