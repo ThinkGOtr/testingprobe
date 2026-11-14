@@ -45,6 +45,8 @@ import contextlib
 import logging
 import os
 import re
+import threading
+import time
 import uuid
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
@@ -127,6 +129,7 @@ def set_factories(
 
 def reset_factories() -> None:
     _factories.clear()
+    durum_onbellegini_temizle()
 
 
 def _forge() -> ForgePort:
@@ -274,6 +277,7 @@ def request_break(session: Session, user: Principal, *, zorla: bool = False) -> 
         session.commit()
         raise DemoRejected(f"Kırılma yapılmadı: kırılmadan önce yeşil koşu yok. {ON_KOSUL_YONERGE}")
     out = _is_iste(session, BREAK_JOB, user, "break")
+    durum_onbellegini_temizle()
     return {
         **out,
         "mesaj": "Demo locator kırılması kuyruğa alındı (demo-admin bypass'ı"
@@ -285,6 +289,7 @@ def request_break(session: Session, user: Principal, *, zorla: bool = False) -> 
 
 def request_reset(session: Session, user: Principal) -> dict[str, Any]:
     out = _is_iste(session, RESET_JOB, user, "reset")
+    durum_onbellegini_temizle()
     return {**out, "mesaj": "Demo sıfırlaması kuyruğa alındı."}
 
 
@@ -783,31 +788,30 @@ def degerlendirme_durumu() -> list[dict[str, Any]] | dict[str, Any]:
     ]
 
 
-def durum(forge: Any | None = None, session: Session | None = None) -> dict[str, Any]:
-    out: dict[str, Any] = {"forge": {}, "uygulama": {}, "web_yenileme_istegi": None}
-    if forge is None:
-        try:
-            forge = _forge()
-        except ForgeError as exc:
-            # GitHub kipinde core-api yalnız salt okuma token'ıyla (GITHUB_READ_TOKEN) okur;
-            # tanımlı değilse durum ucu 500 vermez, forge bilgisi hata olarak döner.
-            forge = _ForgeYok(str(exc))
-    out["degerlendirme"] = degerlendirme_durumu()
-    yerel = _yerel_forge_mu(forge)
-    out["locator_demo"] = (
-        {"destekleniyor": True, "neden": None}
-        if yerel
-        else {"destekleniyor": True, "neden": None, "kip": "github", "not": GITHUB_LOCATOR_NOTU}
-    )
-    if session is not None:
-        try:
-            out["model"] = model_durumu_oku(session)
-        except Exception:  # durum ucu yine yanıt verir; model bilinmiyor
-            out["model"] = None
-        try:
-            out["onarim_on_kosulu"] = onarim_on_kosulu(session)
-        except Exception as exc:  # durum ucu yine yanıt verir
-            out["onarim_on_kosulu"] = {"hazir": None, "hata": str(exc)[:200]}
+# Canlı: `/demo/status` her sayfada 3-8 sn sürüyordu (GitHub kipinde forge okumaları: main/tag
+# head'i, testid durumu, uygulama karşılaştırması — her biri GitHub API çağrısı). Forge bölümü
+# süreç içinde kısa süre önbelleğe alınır; süresi dolunca bayat değer hemen döner ve arka planda
+# yenilenir (yanıt beklemez). Demo eylemi (kır/sıfırla) önbelleği siler. Süre:
+# `TP_DEMO_DURUM_ONBELLEK_S` (varsayılan 30; 0 → önbellek yok).
+_FORGE_ONBELLEK: dict[str, Any] = {"zaman": None, "deger": None, "yenileniyor": False}
+_FORGE_KILIT = threading.Lock()
+
+
+def durum_onbellek_s() -> int:
+    try:
+        return max(0, int((os.environ.get("TP_DEMO_DURUM_ONBELLEK_S") or "").strip() or 30))
+    except ValueError:
+        return 30
+
+
+def durum_onbellegini_temizle() -> None:
+    with _FORGE_KILIT:
+        _FORGE_ONBELLEK.update(zaman=None, deger=None)
+
+
+def _forge_bolumu(forge: Any) -> dict[str, Any]:
+    """Forge'a bağlı alanlar: `forge`, `locator_durumu`, `uygulama` (eşleşme dahil)."""
+    out: dict[str, Any] = {}
     try:
         main = forge.head_sha("main")
         web_testid = forge_demo.testid_state(forge, "main")
@@ -831,6 +835,73 @@ def durum(forge: Any | None = None, session: Session | None = None) -> dict[str,
         out["uygulama"].update(main_ile_eslesiyor=eslesiyor, neden=neden)
         if not eslesiyor:
             out["uygulama"]["yonerge"] = web.YONERGE
+    return out
+
+
+def _forge_bolumu_onbellekli(forge: Any) -> dict[str, Any]:
+    ttl = durum_onbellek_s()
+    if ttl <= 0:
+        return _forge_bolumu(forge)
+    simdi = time.monotonic()
+    with _FORGE_KILIT:
+        zaman, deger = _FORGE_ONBELLEK["zaman"], _FORGE_ONBELLEK["deger"]
+        taze = deger is not None and zaman is not None and simdi - zaman < ttl
+        arka_plan = deger is not None and not taze and not _FORGE_ONBELLEK["yenileniyor"]
+        if arka_plan:
+            _FORGE_ONBELLEK["yenileniyor"] = True
+    if taze:
+        return dict(deger)
+    if deger is not None:
+        if arka_plan:
+            threading.Thread(target=_arka_planda_yenile, args=(forge,), daemon=True).start()
+        return dict(deger)
+    yeni = _forge_bolumu(forge)
+    with _FORGE_KILIT:
+        _FORGE_ONBELLEK.update(zaman=time.monotonic(), deger=yeni)
+    return dict(yeni)
+
+
+def _arka_planda_yenile(forge: Any) -> None:
+    try:
+        yeni = _forge_bolumu(forge)
+        with _FORGE_KILIT:
+            _FORGE_ONBELLEK.update(zaman=time.monotonic(), deger=yeni)
+    except Exception:
+        log.exception("demo durumu arka planda yenilenemedi")
+    finally:
+        with _FORGE_KILIT:
+            _FORGE_ONBELLEK["yenileniyor"] = False
+
+
+def durum(forge: Any | None = None, session: Session | None = None) -> dict[str, Any]:
+    out: dict[str, Any] = {"forge": {}, "uygulama": {}, "web_yenileme_istegi": None}
+    # Önbellek yalnız varsayılan forge'da (API ucu); verilen forge (test, iş) her zaman taze okur.
+    onbellekli = forge is None and _factories.get("forge") is None
+    if forge is None:
+        try:
+            forge = _forge()
+        except ForgeError as exc:
+            # GitHub kipinde core-api yalnız salt okuma token'ıyla (GITHUB_READ_TOKEN) okur;
+            # tanımlı değilse durum ucu 500 vermez, forge bilgisi hata olarak döner.
+            forge = _ForgeYok(str(exc))
+            onbellekli = False
+    out["degerlendirme"] = degerlendirme_durumu()
+    yerel = _yerel_forge_mu(forge)
+    out["locator_demo"] = (
+        {"destekleniyor": True, "neden": None}
+        if yerel
+        else {"destekleniyor": True, "neden": None, "kip": "github", "not": GITHUB_LOCATOR_NOTU}
+    )
+    if session is not None:
+        try:
+            out["model"] = model_durumu_oku(session)
+        except Exception:  # durum ucu yine yanıt verir; model bilinmiyor
+            out["model"] = None
+        try:
+            out["onarim_on_kosulu"] = onarim_on_kosulu(session)
+        except Exception as exc:  # durum ucu yine yanıt verir
+            out["onarim_on_kosulu"] = {"hazir": None, "hata": str(exc)[:200]}
+    out.update(_forge_bolumu_onbellekli(forge) if onbellekli else _forge_bolumu(forge))
     out["web_yenileme_istegi"] = web.bekleyen_istek()
     return out
 

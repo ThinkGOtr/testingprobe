@@ -758,3 +758,43 @@ def test_durum_forge_kurulamazsa_500_degil_hata_doner() -> None:
     finally:
         service.reset_factories()
     assert "GitHub kimliği yok" in out["forge"]["hata"]
+
+
+def test_durum_forge_bolumu_onbellekte_bayatken_arka_planda_yenilenir(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Canlı: /demo/status her sayfada 3-8 sn (GitHub okumaları). Forge bölümü kısa süre
+    önbellekte; bayat değer hemen döner, arka planda yenilenir; demo eylemi önbelleği siler."""
+    import threading
+
+    cagri: list[int] = []
+    yenilendi = threading.Event()
+
+    def bolum(forge: object) -> dict:
+        cagri.append(1)
+        if len(cagri) > 1:
+            yenilendi.set()
+        return {"forge": {"main": f"sha{len(cagri)}"}}
+
+    monkeypatch.setattr(service, "_forge_bolumu", bolum)
+    monkeypatch.setenv("TP_DEMO_DURUM_ONBELLEK_S", "30")
+    service.durum_onbellegini_temizle()
+    try:
+        assert service._forge_bolumu_onbellekli(object())["forge"]["main"] == "sha1"
+        assert service._forge_bolumu_onbellekli(object())["forge"]["main"] == "sha1"
+        assert len(cagri) == 1  # taze: forge'a gidilmez
+        service._FORGE_ONBELLEK["zaman"] -= 60  # süresi doldu
+        assert service._forge_bolumu_onbellekli(object())["forge"]["main"] == "sha1"  # bayat, hemen
+        assert yenilendi.wait(5)
+        for _ in range(100):
+            if not service._FORGE_ONBELLEK["yenileniyor"]:
+                break
+            threading.Event().wait(0.01)
+        assert service._forge_bolumu_onbellekli(object())["forge"]["main"] == "sha2"
+        service.durum_onbellegini_temizle()
+        assert service._forge_bolumu_onbellekli(object())["forge"]["main"] == "sha3"
+        monkeypatch.setenv("TP_DEMO_DURUM_ONBELLEK_S", "0")  # kapalı: her çağrı taze
+        service._forge_bolumu_onbellekli(object())
+        assert len(cagri) == 4
+    finally:
+        service.durum_onbellegini_temizle()
