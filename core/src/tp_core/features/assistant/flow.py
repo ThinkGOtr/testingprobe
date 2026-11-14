@@ -658,6 +658,31 @@ def belirsizlik_ifadesi(cevap: Mapping[str, Any]) -> bool:
 # saldırısı reddedilir; Sonnet sınıfı modele yeniden göndermek yalnız maliyet ve ikinci deneme
 # yüzeyidir (013).
 YUKSELTMEYEN_SINYALLER: Final = frozenset({"prompt_saldirisi"})
+# Ekran bağlamındaki (güvenilmeyen veri: seçili eleman adı, son hata detayı…) istem saldırısı da
+# yükseltmeyi durdurur: veriye gömülü talimat injection denemesidir; asistan onu yok sayar, derin
+# modele ikinci kez göndermek gereksizdir. `onay_talebi` burada sayılmaz: "Onayla" düğmesi meşru
+# bir ekran elemanıdır.
+YUKSELTMEYEN_EKRAN_SINYALLERI: Final = frozenset({"prompt_saldirisi"})
+
+
+def ekran_sinyalleri(m: Mesaj, *, rules_dir: Path | None = None) -> list[Any]:
+    """Ekran bağlamının (`m.baglam`) serbest metinlerindeki girdi sinyalleri. Yalnız otomatik
+    yükseltme kararında kullanılır (modele sinyal satırı olarak gitmez); bozuk desen dosyası →
+    sinyalsiz."""
+    from tp_core.features.assistant import guvenlik
+
+    metinler = [v for v in guvenlik._dizgeler(m.baglam) if v.strip()] if m.baglam else []
+    if not metinler:
+        return []
+    try:
+        bulunan: dict[str, Any] = {}
+        for v in metinler:
+            for s in guvenlik.girdi_sinyalleri(v, rules_dir=rules_dir):
+                bulunan.setdefault(s.id, s)
+        return list(bulunan.values())
+    except guvenlik.SinyalHatasi as exc:
+        log.warning("asistan: ekran sinyalleri yüklenemedi (%s)", type(exc).__name__)
+        return []
 
 
 def otomatik_tetik(
@@ -676,6 +701,8 @@ def otomatik_tetik(
         # aynı kararı versin diye sinyal verilmezse oradan okunur.
         sinyaller = cevap.get("sinyaller") or ()
     if any(getattr(s, "id", s) in YUKSELTMEYEN_SINYALLER for s in sinyaller):
+        return False
+    if any(s.id in YUKSELTMEYEN_EKRAN_SINYALLERI for s in ekran_sinyalleri(m)):
         return False
     gosterim = cevap.get("guven_gosterimi")
     urune_ozgu = bool(cevap.get("urune_ozgu"))
@@ -1285,7 +1312,9 @@ def cevapla(
         if denetim_acik:
             cevap, d.kesildi = asistan_denetim.tavana_kes(cevap)
             gosterilen = asistan_denetim.gosterilen_metin(cevap)
-            on_cevap = asistan_denetim.cevap_kural_puani(gosterilen, m.id)
+            on_cevap = asistan_denetim.cevap_kural_puani(
+                gosterilen, m.id, asistan_denetim.test_verisi_izinleri(session_factory)
+            )
             if on_cevap.karar == "engelle":
                 d.cevap = on_cevap
                 asistan_denetim.kaydet(session_factory, m.id, m.kullanici_adi, on_cevap)

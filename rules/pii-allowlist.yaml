@@ -5,3 +5,9 @@ values:
   - reader@sim.local
   - writer@sim.local
   - po@sim.local
+# Asistan cevabının kişisel veri ön denetiminde (`sim.kisisel_veri_turleri`) e-posta için sentetik
+# sayılan ek alan adları (alt alan adları dahil). Ayrılmış adlar (example.com/.net/.org, .example,
+# .test, .invalid, .localhost, .local) kodda zaten istisnadır. Maskelemeyi etkilemez.
+domains:
+  - ornek.com
+  - ornek.com.tr

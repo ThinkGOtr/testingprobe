@@ -469,3 +469,21 @@ def test_tavana_kes_kontrol_edilmeyen_kuyrugu_atar() -> None:
     d = denetim.Denetim(kesildi=True)
     isaretli = denetim.isaretle({"notlar": []}, d)
     assert denetim.KESILDI_NOTU in isaretli["notlar"] and isaretli["denetim"]["kesildi"] is True
+
+
+def test_kisisel_veri_soru_engeli_sentetik_veriye_yonlendirir() -> None:
+    from tp_core.ports import MessageScore
+
+    def p(kat: list[str]) -> denetim.Puan:
+        skor = MessageScore(
+            puan=30, kategoriler=kat, karar="engelle", gerekce="g", talep_no="t", kaynak="sim"
+        )
+        return denetim.Puan("soru", skor, 1)
+
+    d = denetim.Denetim()
+    d.soru.append(p(["kisisel_veri"]))
+    metin = denetim.engel_cevabi(d, "soru")["denetim"]["aciklama"]
+    assert metin.endswith(denetim.SORU_KISISEL_VERI_IPUCU) and "sentetik" in metin
+    d2 = denetim.Denetim()
+    d2.soru.append(p(["zararli_icerik"]))
+    assert "sentetik" not in denetim.engel_cevabi(d2, "soru")["denetim"]["aciklama"]

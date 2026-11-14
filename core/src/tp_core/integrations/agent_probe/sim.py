@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -477,18 +477,55 @@ def _izin_listesi() -> frozenset[str]:
         return frozenset()
 
 
-def kisisel_veri_turleri(metin: str) -> list[str]:
+# Gerçek bir posta kutusuna ait olamayan ayrılmış alan adları (RFC 2606 / RFC 6761): `example.*`
+# ikinci düzey adları ve `.example`, `.test`, `.invalid`, `.localhost`, `.local` üst düzeyleri.
+# Cevaptaki bu adlı e-posta örnek/sentetik değerdir; kişisel veri sayılmaz. Ek (kurum içi)
+# sentetik alan adları `rules/pii-allowlist.yaml` → `domains` listesindedir.
+_AYRILMIS_ALAN_ADLARI: Final = frozenset({"example.com", "example.net", "example.org"})
+_AYRILMIS_UST_DUZEY: Final = frozenset({"example", "test", "invalid", "localhost", "local"})
+
+
+def _sentetik_alan_adlari() -> frozenset[str]:
+    from tp_core.gateway.config import find_rules_dir
+
+    try:
+        yol = find_rules_dir(None) / "pii-allowlist.yaml"
+        veri = yaml.safe_load(yol.read_text(encoding="utf-8")) or {}
+        return frozenset(str(d).strip().lower().lstrip("@.") for d in veri.get("domains") or [])
+    except Exception:
+        return frozenset()
+
+
+def sentetik_eposta_mi(deger: str, ek_alan_adlari: Iterable[str] = ()) -> bool:
+    """E-postanın alan adı ayrılmış (RFC 2606/6761) ya da izinli sentetik alan adı mı (alt alan
+    adları dahil: `mail.example.com`)."""
+    _, _, alan = deger.rpartition("@")
+    alan = alan.lower().rstrip(".")
+    if not alan:
+        return False
+    if alan.rsplit(".", 1)[-1] in _AYRILMIS_UST_DUZEY:
+        return True
+    izinli = _AYRILMIS_ALAN_ADLARI | frozenset(ek_alan_adlari)
+    return any(alan == a or alan.endswith("." + a) for a in izinli)
+
+
+def kisisel_veri_turleri(metin: str, ek_izin: Iterable[str] = ()) -> list[str]:
     """Metindeki kişisel veri türleri (modelsiz). Tanıyıcılar geçit maskelemesinin aynısıdır
     (TCKN sağlama, IBAN mod-97, telefon, e-posta) + Luhn doğrulamalı kart numarası; maskeleme izin
-    listesindeki (`rules/pii-allowlist.yaml`, demo sentetik değerleri) değerler sayılmaz."""
+    listesindeki (`rules/pii-allowlist.yaml`, demo sentetik değerleri) ve `ek_izin`'deki (ör. test
+    verisi kataloğunun değerleri) değerler sayılmaz. Ayrılmış/sentetik alan adlı e-posta
+    (`sentetik_eposta_mi`) kişisel veri değildir; diğer türlerde istisna yalnız birebir değerdir."""
     from tp_core.gateway.masking import RECOGNIZERS
 
-    izin = _izin_listesi()
+    izin = _izin_listesi() | frozenset(str(v).lower() for v in ek_izin if v)
+    alan_adlari = _sentetik_alan_adlari()
     turler: list[str] = []
     for rec in RECOGNIZERS:
         for m in rec.pattern.finditer(metin or ""):
             deger = m.group(0)
             if deger.lower() in izin:
+                continue
+            if rec.kind == "EMAIL" and sentetik_eposta_mi(deger, alan_adlari):
                 continue
             if rec.validate is not None and not rec.validate(deger):
                 continue
@@ -509,7 +546,7 @@ def cevap_on_puani(metin: str, baglam: Mapping[str, Any]) -> MessageScore:
     test senaryosu) cevapta kullanılmaz: test aracının cevapları bunları meşru olarak anar; o
     kategoriler model puanına bırakılır. Eşleşme yoksa 95 / temiz (karar `gec`).
     """
-    turler = kisisel_veri_turleri(metin)
+    turler = kisisel_veri_turleri(metin, baglam.get("izin") or ())
     s = sade(metin)
     nefret = any(desen.search(s) for k, desen, _ps, _pc in KURALLAR if k == "nefret_irkcilik")
     kategoriler: list[str] = []

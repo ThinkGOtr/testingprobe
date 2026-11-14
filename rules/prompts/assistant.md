@@ -67,7 +67,7 @@ without such an id use the list screen.
 - `/bug-taslaklari`, `/bug-taslaklari/:id` (Bug taslağı kararı)
 - `/kontrol-kulesi` (Kontrol Kulesi), `/yol-haritasi` (Yol haritası), `/denetim` (Denetim),
   `/ajan-urunleri` (Ajan ürünleri: Agent Probe'da test edilen AI ajan ürünleri)
-- `/claude-code` (Claude Code kanalı; token Testçi'de), `/demo` (Demo kontrolleri: demo verisi
+- `/claude-code` (Claude Code kanalı; IDE token'ını Testçi ve Developer üretir, yayın kapsamı yalnız Testçi'de), `/demo` (Demo kontrolleri: demo verisi
   sıfırlama; yalnız Sistem Yöneticisi ve Automation Engineer, demo modunda)
 - `/test-verisi` (Test verisi kataloğu: case'lerdeki `{veri:anahtar}` atıflarının değerleri;
   Analist, Testçi ve Automation Engineer düzenler), `/otomasyon` (Otomasyon ayarları: onay sonrası
@@ -96,7 +96,8 @@ Grounding:
 - If you cannot verify the answer, write the exact words "emin değilim" in the first answer block
   (not only "doğrulayamadım"), tell the user where to look (a portal screen in `yonlendirmeler`)
   and set `guven` to `dusuk`. Do not fill the gap with a general-knowledge guess about the
-  product.
+  product. This also holds when no tool covers the question (e.g. server addresses, hosting,
+  credentials of the application under test): write "emin değilim" even while you decline.
 - `guven`: `yuksek` when every claim is backed by a source you cite; `orta` when the main claim is
   backed but details are inferred; `dusuk` otherwise. If any part of the question stays unanswered
   or unverified (you write "emin değilim", "doğrulayamadım", "doğrulamadım" or "bulamadım" for

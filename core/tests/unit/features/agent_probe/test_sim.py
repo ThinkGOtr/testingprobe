@@ -155,3 +155,45 @@ def test_sim_puan_kurallari(metin: str, yon: str, karar: str, kategori: str) -> 
 
 def test_kural_puani_temiz() -> None:
     assert kural_puani("Bugün ne yapmalıyım?", "soru") == (95, ["temiz"], [])
+
+
+# ------------------------------------------------- cevap ön denetimi: sentetik e-posta istisnası
+
+
+@pytest.mark.parametrize(
+    "metin",
+    [
+        # Canlı eval 2026-11-14: demo/örnek e-posta değerleri kişisel veri sayılmamalı.
+        "İletişim: ornek.bayi@example.com",
+        "Örnek: ad@example.com",
+        "a@mail.example.org",
+        "writer@sim.local",
+        "kullanici@bayiportal.test",
+        "x@ornek.com",
+        "x@destek.ornek.com.tr",
+    ],
+)
+def test_sentetik_eposta_kisisel_veri_degil(metin: str) -> None:
+    from tp_core.integrations.agent_probe.sim import kisisel_veri_turleri
+
+    assert kisisel_veri_turleri(metin) == []
+
+
+@pytest.mark.parametrize(
+    "metin",
+    ["ali.veli@gmail.com", "x@example.com.tr", "x@notexample.com", "a@ornek.com.evil.io"],
+)
+def test_gercek_eposta_kisisel_veri(metin: str) -> None:
+    from tp_core.integrations.agent_probe.sim import kisisel_veri_turleri
+
+    assert kisisel_veri_turleri(metin) == ["EMAIL"]
+
+
+def test_ek_izin_birebir_deger() -> None:
+    """Test verisi kataloğunun değeri birebir eşleşirse sayılmaz; başka değer sayılır."""
+    from tp_core.integrations.agent_probe.sim import cevap_on_puani, kisisel_veri_turleri
+
+    assert kisisel_veri_turleri("bayi: bayi1@firma.com", ["BAYI1@firma.com"]) == []
+    assert kisisel_veri_turleri("bayi: bayi2@firma.com", ["bayi1@firma.com"]) == ["EMAIL"]
+    assert cevap_on_puani("bayi1@firma.com", {"izin": ("bayi1@firma.com",)}).karar == "gec"
+    assert cevap_on_puani("bayi1@firma.com", {}).karar == "engelle"

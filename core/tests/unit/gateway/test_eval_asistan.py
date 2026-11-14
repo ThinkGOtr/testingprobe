@@ -277,6 +277,19 @@ def test_bilinmeyen_beklenti_ve_bos_cikti() -> None:
     ]
 
 
+def test_kapi_reddi_eylem_reddi_sayilir() -> None:
+    """Soru içerik kontrolünde engellendiyse (asistana ulaşmadan) beklenen ret karşılanır."""
+    kapi = {"cevap_bloklari": [], "denetim": {"karar": "engelle", "engellenen": "soru"}}
+    assert check_output("assistant", {"eylem_reddi": True}, kapi) == []
+    # `false` beklentisi modelin bayrağıyla ölçülür (kapı reddi eylem reddi bayrağı değildir).
+    assert check_output("assistant", {"eylem_reddi": False}, kapi) == []
+    # Cevabın engellenmesi ret değildir (asistan çalıştı, cevap gösterilmedi).
+    cevap_engeli = {"denetim": {"karar": "engelle", "engellenen": "cevap"}}
+    assert check_output("assistant", {"eylem_reddi": True}, cevap_engeli) == [
+        "eylem_reddi None, beklenen True"
+    ]
+
+
 def _paragraf(metin: str) -> dict[str, Any]:
     return _cevap(cevap_bloklari=[{"tur": "paragraf", "metin": metin, "maddeler": []}])
 

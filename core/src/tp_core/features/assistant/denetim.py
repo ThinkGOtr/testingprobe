@@ -39,7 +39,7 @@ import logging
 import os
 import time
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Final, Literal
 
@@ -85,6 +85,12 @@ SORU_ENGEL_BASLIGI: Final = "Bu soruyu yanıtlayamıyorum"
 SORU_ENGEL_METNI: Final = (
     "Soru içerik kurallarına takıldı ({kategoriler}). İş akışıyla ilgili olarak yeniden "
     "sorabilirsiniz. Yanlış olduğunu düşünüyorsanız 👎 ile bildirin."
+)
+# Kişisel veri nedeniyle engellenen soruda güvenli yol (test verisi isteği gerçek veriye değil
+# sentetik veriye yönlendirilir; Test verisi ekranı, specs/013 §3.3).
+SORU_KISISEL_VERI_IPUCU: Final = (
+    "Test verisi gerekiyorsa gerçek kişisel veri yerine sentetik veri kullanın "
+    "(Test verisi ekranı)."
 )
 CEVAP_ENGEL_BASLIGI: Final = "Bu cevabı gösteremiyorum"
 CEVAP_ENGEL_METNI: Final = (
@@ -156,12 +162,27 @@ def kural_puani(metin: str, yon: Literal["soru", "cevap"], mesaj_id: uuid.UUID) 
     return Puan(yon, skor, int((time.monotonic() - bas) * 1000))
 
 
-def cevap_kural_puani(metin: str, mesaj_id: uuid.UUID) -> Puan:
+def cevap_kural_puani(metin: str, mesaj_id: uuid.UUID, izin: Iterable[str] = ()) -> Puan:
     """Cevabın modelsiz ön denetimi (doğrulanmış kişisel veri değeri, nefret kalıbı); `engelle`
-    → port çağrılmadan cevap gösterilmez (`sim.cevap_on_puani`)."""
+    → port çağrılmadan cevap gösterilmez (`sim.cevap_on_puani`). `izin`: kişisel veri sayılmayan
+    birebir değerler (test verisi kataloğunun sentetik değerleri, `test_verisi_izinleri`)."""
     bas = time.monotonic()
-    skor = sim.cevap_on_puani(metin or "", {"mesaj_id": str(mesaj_id)})
+    skor = sim.cevap_on_puani(metin or "", {"mesaj_id": str(mesaj_id), "izin": tuple(izin)})
     return Puan("cevap", skor, int((time.monotonic() - bas) * 1000))
+
+
+def test_verisi_izinleri(session_factory: Callable[[], Any]) -> tuple[str, ...]:
+    """Test verisi kataloğunun gizli olmayan değerleri (sentetik demo verisi; specs/013 §3.3).
+    Cevap ön denetiminde birebir eşleşen değer kişisel veri sayılmaz. Katalog okunamazsa boş
+    (denetim gevşemez)."""
+    from tp_core.features.testveri import service as testveri
+
+    try:
+        with session_factory() as s:
+            return tuple(v for v in testveri.katalog(s).values() if v)
+    except Exception as exc:
+        log.warning("asistan denetimi: test verisi kataloğu okunamadı (%s)", type(exc).__name__)
+        return ()
 
 
 # ------------------------------------------------------------------ gösterilen cevap metni
@@ -491,6 +512,8 @@ def engel_cevabi(d: Denetim, yon: Literal["soru", "cevap"]) -> dict[str, Any]:
     kat = etiketler(list(p.skor.kategoriler) if p else [])
     baslik = SORU_ENGEL_BASLIGI if yon == "soru" else CEVAP_ENGEL_BASLIGI
     govde = (SORU_ENGEL_METNI if yon == "soru" else CEVAP_ENGEL_METNI).format(kategoriler=kat)
+    if yon == "soru" and p is not None and "kisisel_veri" in p.skor.kategoriler:
+        govde += " " + SORU_KISISEL_VERI_IPUCU
     out = _metin_cevabi(baslik, govde)
     out["denetim"] = denetim_alani(
         d,

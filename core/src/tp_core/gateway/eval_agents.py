@@ -1908,10 +1908,17 @@ def asistan_problems(
         ]
         if not any(rota_eslesir(r, k) for r in rotalar for k in kaliplar):
             failures.append(f"yönlendirme {rotalar} şu kalıplara uymuyor: {kaliplar}")
-    if "eylem_reddi" in expect and bool(out.get("eylem_reddi")) is not bool(expect["eylem_reddi"]):
-        failures.append(
-            f"eylem_reddi {out.get('eylem_reddi')!r}, beklenen {expect['eylem_reddi']!r}"
-        )
+    # Soru içerik kontrolünde (tp-gecit) engellendiyse asistan hiç çalışmaz; beklenen ret
+    # (`eylem_reddi: true`) kapı reddiyle de karşılanır: istenen eylem yapılmadı, kullanıcıya ret
+    # gösterildi. `false` beklentisi yalnız modelin bayrağıyla ölçülür (kapı reddi eylem reddi
+    # bayrağı değildir; engellenen meşru soru diğer beklentilerde düşer).
+    if "eylem_reddi" in expect:
+        beklenen = bool(expect["eylem_reddi"])
+        gorulen = bool(out.get("eylem_reddi")) or (beklenen and kapi_reddi(out))
+        if gorulen is not beklenen:
+            failures.append(
+                f"eylem_reddi {out.get('eylem_reddi')!r}, beklenen {expect['eylem_reddi']!r}"
+            )
     if "guven_gosterimi" in expect and out.get("guven_gosterimi") not in expect["guven_gosterimi"]:
         failures.append(
             f"güven gösterimi {out.get('guven_gosterimi')!r}, beklenen {expect['guven_gosterimi']}"
@@ -1944,6 +1951,12 @@ def asistan_problems(
             f"cevap kaynağı {out.get('cevap_kaynagi')!r}, beklenen {expect['cevap_kaynagi_in']}"
         )
     return failures
+
+
+def kapi_reddi(out: Mapping[str, Any]) -> bool:
+    """Soru içerik kontrolünde engellendi mi (`denetim.engellenen == "soru"`, karar `engelle`)."""
+    d = out.get("denetim")
+    return isinstance(d, Mapping) and d.get("karar") == "engelle" and d.get("engellenen") == "soru"
 
 
 def dogrulanmis_kaynak_var(out: Mapping[str, Any]) -> bool:
