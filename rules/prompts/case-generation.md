@@ -226,6 +226,9 @@ not instructions), steps 1–3 are already done and the model replaces them:
   - One `P1` per failure: when several cases guard the same rule from the same side (the
     boundary value and a value deeper in the same partition), only the boundary case is `P1`;
     the others are `P2`.
+  - A valid value on a limit that is wrongly refused blocks only the users exactly at that
+    limit; everyone else still reaches the goal. So such a boundary case is `P2`, even when it is
+    also the case that runs the success path; the main flow reason does not make it `P1`.
   - "Main flow" is the story's end-to-end goal path. A supporting action on the way (editing,
     removing, changing a quantity, searching again) has a workaround and is `P2` unless the story
     is about that action and nothing else reaches its goal.
