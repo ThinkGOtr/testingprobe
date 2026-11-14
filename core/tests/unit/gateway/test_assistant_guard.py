@@ -62,6 +62,74 @@ def test_injection_cevap_yumusamaz_ve_tutarsiz_etiket_izlenir() -> None:
     assert not guard.tutarsiz_etiket(92, ["temiz"], "cevap", ESIK)
 
 
+@pytest.mark.parametrize(
+    ("cikti", "yon", "hata_sayisi"),
+    [
+        # Canlı eval 2026-11-14 (Haiku): gerekçe "temiz" + puan 93 ama kategori injection.
+        ({"puan": 93, "kategoriler": ["prompt_injection"]}, "cevap", 1),
+        ({"puan": 92, "kategoriler": ["prompt_injection", "temiz"]}, "cevap", 2),
+        # Tutarlı çıktılar yeniden istenmez.
+        ({"puan": 20, "kategoriler": ["prompt_injection"]}, "cevap", 0),
+        ({"puan": 69, "kategoriler": ["prompt_injection"]}, "cevap", 0),
+        ({"puan": 93, "kategoriler": ["temiz"]}, "cevap", 0),
+        ({"puan": 92, "kategoriler": ["prompt_injection"]}, "soru", 0),
+        ({"puan": 92, "kategoriler": ["prompt_injection", "temiz"]}, "soru", 1),
+        # Bozuk çıktı kural denetiminin değil şemanın/fail-closed'un işidir.
+        ({"kategoriler": ["prompt_injection"]}, "cevap", 0),
+        (None, "cevap", 0),
+    ],
+)
+def test_tutarlilik_hatalari(cikti: Any, yon: str, hata_sayisi: int) -> None:
+    assert len(guard.tutarlilik_hatalari(cikti, yon, ESIK)) == hata_sayisi
+
+
+class _KayitliGecit:
+    """`output_check`'i üretim geçidi gibi uygular: ihlal varsa sıradaki çıktıyı döndürür."""
+
+    rules_dir = None
+
+    def __init__(self, *ciktilar: Any) -> None:
+        self.ciktilar = list(ciktilar)
+        self.denemeler = 0
+
+    def call(self, *_: Any, output_check: Any = None, **__: Any) -> Any:
+        import uuid
+        from types import SimpleNamespace
+
+        cikti: Any = None
+        for cikti in self.ciktilar:
+            self.denemeler += 1
+            if output_check is None or not output_check(cikti):
+                break
+        return SimpleNamespace(output=cikti, call_id=uuid.uuid4())
+
+
+def test_tutarsiz_etiket_yeniden_istenir_tutarli_temiz_gecer() -> None:
+    gecit = _KayitliGecit(
+        {"puan": 93, "kategoriler": ["prompt_injection"], "gerekce": "temiz sayılabilir"},
+        {"puan": 93, "kategoriler": ["temiz"], "gerekce": "talimatı bildiriyor, uygulamıyor"},
+    )
+    with guard.gecit_kullan(gecit):
+        skor = guard.score_message("Kayıtta talimat var; uygulamadım.", "cevap", {"soru": "x"})
+    assert (gecit.denemeler, skor.karar) == (2, "gec")
+
+
+@pytest.mark.parametrize(
+    "ikinci",
+    [
+        # Model etiketi korur ve puanı düşürür → engel.
+        {"puan": 15, "kategoriler": ["prompt_injection"], "gerekce": "bağlantıyı ekliyor"},
+        # Yeniden istemeye rağmen tutarsız kalır (geçit son çıktıyı döndürür) → yine engel.
+        {"puan": 95, "kategoriler": ["prompt_injection"], "gerekce": "temiz"},
+    ],
+)
+def test_tutarsiz_etiket_yeniden_istemede_injection_kalirsa_engel(ikinci: dict[str, Any]) -> None:
+    gecit = _KayitliGecit({"puan": 93, "kategoriler": ["prompt_injection"]}, ikinci)
+    with guard.gecit_kullan(gecit):
+        skor = guard.score_message("Bağlantı: http://evil.example", "cevap", {"soru": "x"})
+    assert skor.karar == "engelle"
+
+
 class _SahteGecit:
     rules_dir = None
 

@@ -655,9 +655,26 @@ def belirsizlik_ifadesi(cevap: Mapping[str, Any]) -> bool:
 
 
 # Bu girdi sinyalleri varken cevap "emin değil" olsa da otomatik yükseltme yapılmaz: istem
-# saldırısı reddedilir; Sonnet sınıfı modele yeniden göndermek yalnız maliyet ve ikinci deneme
-# yüzeyidir (013).
-YUKSELTMEYEN_SINYALLER: Final = frozenset({"prompt_saldirisi"})
+# saldırısı reddedilir; sınır konularında (üretim verisi, maskeyi açma, testi yeşile boyama, kural
+# atlatma, zararlı içerik, kişi değerlendirme, hukuki görüş, İK kararı, üretim izi) cevabın özü
+# ret ve yönlendirmedir, derin model aynı sınırı uygular. Sonnet sınıfı modele yeniden göndermek
+# yalnız maliyet ve ikinci deneme yüzeyidir (013). Kullanıcı "Daha ayrıntılı"yı elle isteyebilir.
+# `onay_talebi` sayılmaz: eylem reddi zaten yükseltmez (`eylem_reddi`), bilgi sorusu yükselebilir.
+YUKSELTMEYEN_SINYALLER: Final = frozenset(
+    {
+        "prompt_saldirisi",
+        "uretim_verisi_talebi",
+        "uretimden_turetme",
+        "maskeyi_kaldir",
+        "yesile_boya",
+        "kural_atlatma",
+        "zararli_niyet",
+        "kisi_degerlendirme",
+        "hukuki_gorus",
+        "ik_karari",
+        "uretim_izi",
+    }
+)
 # Ekran bağlamındaki (güvenilmeyen veri: seçili eleman adı, son hata detayı…) istem saldırısı da
 # yükseltmeyi durdurur: veriye gömülü talimat injection denemesidir; asistan onu yok sayar, derin
 # modele ikinci kez göndermek gereksizdir. `onay_talebi` burada sayılmaz: "Onayla" düğmesi meşru
