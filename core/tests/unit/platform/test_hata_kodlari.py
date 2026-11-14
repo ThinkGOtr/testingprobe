@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import uuid
 from decimal import Decimal
 
 import pytest
@@ -104,6 +105,18 @@ def _uygulama() -> FastAPI:
     @app.post("/dogrula")
     def dogrula(govde: _Govde) -> int:
         return govde.sayi
+
+    @app.get("/kayit/{kayit_id}")
+    def kayit(kayit_id: uuid.UUID) -> str:
+        return str(kayit_id)
+
+    @app.post("/kayit/{kayit_id}/not")
+    def kayit_not(kayit_id: uuid.UUID, govde: _Govde) -> int:
+        return govde.sayi
+
+    @app.get("/sayfa/{no}")
+    def sayfa(no: int) -> int:
+        return no
 
     @app.post("/yaz")
     def yaz() -> dict[str, bool]:
@@ -225,6 +238,24 @@ def test_dogrulama_hatasi_kodlu(client: TestClient) -> None:
     assert r.status_code == 422
     assert r.json()["kod"] == "gecersiz_istek"
     assert r.json()["detail"].startswith("Geçersiz istek")
+
+
+@pytest.mark.parametrize("yol", ["/kayit/1", "/kayit/0abc", "/sayfa/bir"])
+def test_gecersiz_bicimli_path_kimligi_404(client: TestClient, yol: str) -> None:
+    r = client.get(yol)
+    assert r.status_code == 404
+    assert r.json() == {"detail": "Kayıt bulunamadı", "kod": "bulunamadi"}
+
+
+def test_path_gecersizse_govde_hatasi_olsa_da_404(client: TestClient) -> None:
+    r = client.post("/kayit/1/not", json={"sayi": "bir"})
+    assert r.status_code == 404 and r.json()["kod"] == "bulunamadi"
+
+
+def test_path_gecerli_govde_gecersiz_422(client: TestClient) -> None:
+    r = client.post(f"/kayit/{uuid.uuid4()}/not", json={"sayi": "bir"})
+    assert r.status_code == 422 and r.json()["kod"] == "gecersiz_istek"
+    assert client.get(f"/kayit/{uuid.uuid4()}").status_code == 200
 
 
 def test_beklenmeyen_istisna_ic_hata_ve_metin_sizmaz(client: TestClient) -> None:

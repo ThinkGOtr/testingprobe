@@ -782,3 +782,24 @@ def test_yetki_ada_degil_role_bakar(client: TestClient, make_user: MakeUser) -> 
     u = make_user("analyst", ad="po")
     _giris(client, u)
     assert client.get("/auth/me").json()["rol"] == "analyst"
+
+
+@pytest.mark.parametrize(
+    "yol",
+    [
+        "/requirements/1",
+        "/scripts/1",
+        "/runs/1",
+        "/failures/1",
+        "/bug-drafts/1",
+        "/bug-drafts/0abc/detail",
+    ],
+)
+def test_gecersiz_bicimli_kimlik_404_bulunamadi(
+    client: TestClient, make_user: MakeUser, yol: str
+) -> None:
+    """UUID beklenen path parametresine geçersiz biçim: 422 değil, portalın beklediği 404."""
+    _giris(client, make_user("admin"))
+    r = client.get(yol)
+    assert r.status_code == 404, r.text
+    assert r.json() == {"detail": "Kayıt bulunamadı", "kod": "bulunamadi"}

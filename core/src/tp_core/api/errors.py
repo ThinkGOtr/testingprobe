@@ -10,6 +10,8 @@ alanını korur (HIZMET_DURUMU_KODLARI).
 - `HTTPException` / Starlette hataları (404 rota, 405 yöntem dahil) → durum kodundan genel kod;
   `KodluHata` ise kendi kodunu taşır. Başlıklar (ör. 401 `WWW-Authenticate`) korunur.
 - `WorkflowError` ailesi → sınıfın `kod` alanı; tanımsızsa durum kodundan genel kod.
+- Path parametresi doğrulama hatası (ör. UUID beklenen `/failures/{id}`'ye `1`) → 404
+  `bulunamadi`: biçimi geçersiz kimlikle kayıt zaten olamaz; gövde/sorgu doğrulaması 422 kalır.
 - Beklenmeyen istisna → 500 `{"detail": "Sunucu hatası", "kod": "ic_hata"}`; metni yazılmaz.
 - CSRF reddi ara katmanda üretilir; kodunu `api/csrf.py` kendisi yazar (`kaynak_reddi`).
 """
@@ -105,9 +107,19 @@ def _dogrulama_metni(exc: RequestValidationError) -> str:
     return "Geçersiz istek — " + "; ".join(parcalar)
 
 
+BULUNAMADI_METNI = "Kayıt bulunamadı"
+
+
+def _path_hatasi_mi(exc: RequestValidationError) -> bool:
+    """Hatalardan biri path parametresindeyse (geçersiz biçimli kimlik) kayıt bulunamaz."""
+    return any((hata.get("loc") or ("",))[0] == "path" for hata in exc.errors())
+
+
 def install(app: FastAPI) -> None:
     @app.exception_handler(RequestValidationError)
     async def _dogrulama(_r: Request, exc: RequestValidationError) -> JSONResponse:
+        if _path_hatasi_mi(exc):
+            return JSONResponse({"detail": BULUNAMADI_METNI, "kod": "bulunamadi"}, status_code=404)
         return JSONResponse(
             {"detail": _dogrulama_metni(exc), "kod": "gecersiz_istek"}, status_code=422
         )
