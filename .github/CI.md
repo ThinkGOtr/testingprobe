@@ -84,7 +84,8 @@ Sonuçlar `scripts/github-ci-results.sh` ile toplanır (aşağıda "Artefakt sö
   `repair` (yalnızca `pages/**/locators.ts` içindeki `testId` değerleri değişebilir), aksi halde `pr`
   (değişen `locators.ts` dosyaları saf veri kalmalı; değişen `testId`'ler özette listelenir):
   1. PR dalı `REPAIR_BRANCH_PREFIX` (`tp/repair-`) ile başlar;
-  2. PR'da `tp-repair` etiketi vardır;
+  2. PR'da `tp-repair` etiketi vardır (iş akışı `labeled` olayında koşmaz; sonradan eklenen etiket
+     bir sonraki push/reopen'da devreye girer — bot PR'ları zaten 1 ve 3 ile repair modundadır);
   3. PR'ı **bot** açmıştır ve dal `CASE_BRANCH_PREFIX` (`tp/case-`) ile başlamaz. Bot =
      `pull_request.user.type == "Bot"` (GitHub App PR'ları) veya giriş adı repo değişkeni
      `TP_BOT_LOGINS`'te (virgülle; `tp-bot` yazılırsa `tp-bot[bot]` de eşleşir). Böylece farklı

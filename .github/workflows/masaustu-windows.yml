@@ -25,7 +25,9 @@ run-name: >-
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    # labeled/unlabeled YOK: bot etiketleri (AI-generated, tp-codegen, TPD-x) yeni koşu açıp
+    # concurrency ile başarılı koşuyu iptal ediyordu; zorunlu check'ler eksik/iptal görünüyordu.
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
   schedule:
