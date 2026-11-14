@@ -222,12 +222,14 @@ def test_yalniz_rota_kalibina_uyan_ic_rota_baglanti_olur() -> None:
 @pytest.mark.parametrize(
     ("rol", "beklenen"),
     [
-        # /demo yalnız admin/engineer, /claude-code `claude_code.read`; /kosular, /denetim süzülmez
-        ("po", ["/kosular", "/denetim"]),
-        ("analyst", ["/claude-code", "/kosular", "/denetim"]),
+        # /demo `demo.read`, /claude-code `claude_code.read` (2026-11-14); /kosular, /denetim açık
+        ("po", ["/demo", "/kosular", "/denetim"]),
+        ("analyst", ["/demo", "/claude-code", "/kosular", "/denetim"]),
         ("admin", ["/demo", "/claude-code", "/kosular", "/denetim"]),
-        ("tester", ["/claude-code", "/kosular", "/denetim"]),
+        ("tester", ["/demo", "/claude-code", "/kosular", "/denetim"]),
         ("engineer", ["/demo", "/claude-code", "/kosular", "/denetim"]),
+        ("developer", ["/claude-code", "/kosular", "/denetim"]),
+        ("viewer", ["/kosular", "/denetim"]),
         (None, ["/demo", "/claude-code", "/kosular", "/denetim"]),  # rol bilinmiyor → süzgeç yok
     ],
 )
@@ -800,9 +802,11 @@ def test_modelin_bug_taslagi_her_ekranda_bilgiye_duser(
 @pytest.mark.parametrize(
     ("rol", "rota", "beklenen"),
     [
-        ("tester", "/demo", "bilgi"),  # yalnız admin/engineer
+        ("developer", "/demo", "bilgi"),  # `demo.read`: admin, analyst, po, tester, engineer
+        ("tester", "/demo", "rota"),  # 2026-11-14: ekran salt-okur açılır
         ("admin", "/demo", "rota"),
-        ("po", "/claude-code", "bilgi"),  # `claude_code.read`: admin, analyst, tester, engineer
+        ("po", "/claude-code", "bilgi"),  # `claude_code.read`: PO'da yok
+        ("developer", "/claude-code", "rota"),
         ("viewer", "/yol-haritasi", "bilgi"),  # `demo.read`
         ("tester", "/claude-code", "rota"),
         ("tester", "/kod/0f3c-1", "rota"),  # roller null → herkes
@@ -1038,8 +1042,8 @@ def _probe_havuzu(arac: str, metin: str) -> KanitHavuzu:
         ("Yeni bir gece koşusu başlat.", None, "admin", ["/kosular"]),
         # Bulunulan ekran ve ifade aynı (eval eylem-demo-sifirla).
         ("Demo verisini sıfırla.", {"rota_kalibi": "/demo"}, "admin", ["/demo"]),
-        # Rolün açamadığı ekran bağlantı olmaz (`/demo` yalnız Sunucu).
-        ("Demo verisini sıfırla.", {"rota_kalibi": "/demo"}, "tester", []),
+        # Rolün açamadığı ekran bağlantı olmaz (`/demo` `demo.read`: Developer'da yok).
+        ("Demo verisini sıfırla.", {"rota_kalibi": "/demo"}, "developer", []),
         # `:id` bağlamdaki varlıktan; ifade eşleşmezse bulunulan ekran.
         (
             "Bu case'i onayla",

@@ -1,5 +1,9 @@
-"""POST /tokens (`token.issue`, Testçi) · GET /tokens · DELETE /tokens/{id} (`token.read`, yalnız
-kendi token'ları) — MCP kanalı token'ları (specs/012-rol-yetki/ANALIZ.md §4).
+"""POST /tokens (`token.issue`: Testçi, Developer) · GET /tokens · DELETE /tokens/{id}
+(`token.read`, yalnız kendi token'ları) — MCP kanalı token'ları (specs/012-rol-yetki/ANALIZ.md §4).
+
+`publish` kapsamlı token yalnız `case.publish` iznine sahip role (Testçi) üretilir; Developer
+`submit` kapsamıyla `get_requirement` aracını kullanır (2026-11-14 kararı). Hiçbir rol başkasının
+token'ını listeleyemez ya da iptal edemez.
 
 `POST /tokens` yalnızca uygulamada `/mcp` ucu bağlıyken token üretir; değilse 501 döner (portal
 olmayan bir sunucu için çalışan kimlik bilgisi ve `.mcp.json` parçası dağıtılmaz).
@@ -18,7 +22,7 @@ from sqlalchemy import select
 
 from tp_core.auth.deps import DbSession
 from tp_core.auth.tokens import issue_token, revoke_token
-from tp_core.auth.yetki import izin
+from tp_core.auth.yetki import izin, izinli, reddet
 from tp_core.config import get_settings
 from tp_core.models import ApiToken
 from tp_core.workflow.service import Principal
@@ -72,6 +76,8 @@ def mcp_mounted(request: Request) -> bool:
 
 @router.post("", response_model=TokenCreated, status_code=201)
 def create(body: TokenIn, request: Request, session: DbSession, user: Uretici) -> TokenCreated:
+    if body.kapsam == "publish" and not izinli(user.rol, "case.publish"):
+        raise reddet(session, user, "case.publish", "rol", request.url.path)
     if not mcp_mounted(request):
         raise HTTPException(501, "IDE (MCP) kanalı henüz etkin değil; token üretilemez")
     # AI Probe oturumundan üretilen token oturumun `auth_time`/`acr`/`session_epoch_ms`'ini taşır

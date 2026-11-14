@@ -48,7 +48,8 @@ export const IZINLER = {
   "case.decide": ["tester"],
   "case.approve": ["analyst"],
   "case.publish": ["tester"],
-  "token.issue": ["tester"],
+  // 2026-11-14: Developer da kendi IDE token'ını üretir (yalnız `submit`; `publish` `case.publish` ister).
+  "token.issue": ["tester", "developer"],
   "code.generate": ["engineer"],
   "code.break_verify": ["engineer"],
   "code.review": ["engineer"],
@@ -93,7 +94,7 @@ export const IZINLER = {
   "assistant.use": HEPSI,
   "token.read": HEPSI,
   "publish.preview": ["admin", "analyst", "po", "tester", "engineer"],
-  "claude_code.read": ["admin", "analyst", "tester", "engineer"],
+  "claude_code.read": ["admin", "analyst", "tester", "engineer", "developer"],
   "demo.read": ["admin", "analyst", "po", "tester", "engineer"],
   // 012 test kalite doğrulama: tablolar gereksinim düzeyi (developer görür); case kontrol sonucu
   // ve istisna gerekçesi karar geçmişidir (developer, auditor, viewer görmez).
@@ -173,14 +174,14 @@ export const ROTA_IZINLERI: Record<string, readonly Izin[]> = {
   "/bug-taslaklari/:id": ["bug.read"],
   "/kontrol-kulesi": ["dashboard.read"],
   "/yol-haritasi": ["demo.read"],
-  // 012 §4.2: Demo kontrolleri ekranı `demo.manage` (Sistem Yöneticisi, Automation Engineer);
-  // `demo.read` demo yol haritası ve demo durumu okumasıdır (core asistan testleri aynı eşlemeyi
-  // denetler: /yol-haritasi → demo.read, /demo → demo.manage).
-  "/demo": ["demo.manage"],
+  // 2026-11-14 kararı: Demo kontrolleri ekranı `demo.read` ile salt-okur açılır; ekrandaki eylemler
+  // (buton kimliğini değiştir, sıfırla, Jira durumu) `demo.manage` (Sistem Yöneticisi, Automation
+  // Engineer) ister ve diğer rollerde pasiftir. core asistan rota/izin eşlemesi aynıdır.
+  "/demo": ["demo.read"],
   "/denetim": ["audit.read_all", "audit.read_own"],
   // `token.read` (kendi token'larını listele/iptal et) API düzeyinde tüm rollerdedir; ekran ise token
-  // üretme kanalını anlatır ve ANALIZ 012 §4.2'de `claude_code.read` ile sınırlıdır (Developer,
-  // PO, Denetçi, Görüntüleyici token üretemez). Developer'a açılacaksa core `claude_code.read`'e eklenir.
+  // üretme kanalını anlatır ve ANALIZ 012 §4.2'de `claude_code.read` ile sınırlıdır (PO, Denetçi,
+  // Görüntüleyici token üretemez; Developer 2026-11-14'ten beri görür ve kendi token'ını üretir).
   "/claude-code": ["claude_code.read"],
   "/test-verisi": ["case.read"],
   "/otomasyon": ["requirement.read"],

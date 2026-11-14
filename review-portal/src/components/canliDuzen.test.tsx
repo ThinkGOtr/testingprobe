@@ -148,7 +148,7 @@ describe("Canlı olaylar göstergesi", () => {
 
 describe("yetkisiz ekran", () => {
   it("sayfa başlığı (h1) var", async () => {
-    await oturumAc("gelistirici");
+    await oturumAc("po");
     uygulama("/claude-code");
     expect(await screen.findByText("Bu ekran için yetkiniz yok.")).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1, name: "Erişim yok" })).toBeInTheDocument();

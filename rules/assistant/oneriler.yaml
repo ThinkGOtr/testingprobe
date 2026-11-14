@@ -676,5 +676,5 @@ bos_ekranlar:
   - {ekran: /yol-haritasi, roller: [admin, analyst, po, tester, engineer]}
   - {ekran: /denetim, roller: [admin, auditor, analyst, po, tester, engineer, developer, viewer]}
   - {ekran: /ajan-urunleri, roller: [admin, analyst, po, tester, engineer, developer]}
-  - {ekran: /claude-code, roller: [admin, analyst, tester, engineer]}
-  - {ekran: /demo, roller: [admin, engineer]}
+  - {ekran: /claude-code, roller: [admin, analyst, tester, engineer, developer]}
+  - {ekran: /demo, roller: [admin, analyst, po, tester, engineer]}

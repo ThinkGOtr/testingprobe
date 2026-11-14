@@ -529,6 +529,30 @@ def test_get_requirement_po_onaysiz_ve_publish_kapsami_reddedilir(
     assert sonuc.is_error is True and "kapsam" in sonuc.structured_content["hata"]
 
 
+def test_developer_tokeni_yalniz_get_requirement(
+    api: TestClient, make_user, make_requirement
+) -> None:
+    """2026-11-14: Developer IDE token'ıyla PO onaylı story'yi okur (`requirement.read`); taslak
+    gönderimi Testçinindir (`case.generate`)."""
+    make_requirement()
+    u = make_user("developer")
+    token = _token(u, "submit")
+    sonuc = _cagir(api, token, "get_requirement", {"requirement_key": "TPD-4"})
+    assert sonuc.is_error is False, sonuc
+    sonuc = _cagir(
+        api,
+        token,
+        "submit_draft_cases",
+        {"requirement_key": "TPD-4", "onaylanan_hash": _hash(), "cases": [case_icerik()]},
+    )
+    assert sonuc.is_error is True and "rolü" in sonuc.structured_content["hata"]
+    assert _redler(u.kullanici_adi) == [
+        ("mcp:submit_draft_cases", "case.generate", "rol", "developer")
+    ]
+    with session_scope() as s:
+        assert s.scalar(select(TestCase.id)) is None
+
+
 def test_submit_hashsiz_ya_da_bayat_hashle_reddedilir(
     api: TestClient, make_user, make_requirement
 ) -> None:

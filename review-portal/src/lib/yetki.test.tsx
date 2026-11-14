@@ -57,7 +57,7 @@ describe("katalog: portal kopyası core ile aynı", () => {
     expect(sahip("case.decide")).toEqual(["tester"]);
     expect(sahip("case.approve")).toEqual(["analyst"]);
     expect(sahip("case.publish")).toEqual(["tester"]);
-    expect(sahip("token.issue")).toEqual(["tester"]);
+    expect(sahip("token.issue")).toEqual(["developer", "tester"]);
     expect(sahip("run.trigger_manual")).toEqual(["developer", "engineer"]);
     expect(sahip("demo.manage")).toEqual(["admin", "engineer"]);
     expect(sahip("baseline.manage")).toEqual(["po"]);
@@ -107,7 +107,7 @@ describe("useIzin / IzinGerekli", () => {
       </IzinGerekli>,
     );
     expect(await screen.findByText("Bu ekran için yetkiniz yok.")).toBeInTheDocument();
-    expect(screen.getByText("Gereken rol: Testçi")).toBeInTheDocument();
+    expect(screen.getByText("Gereken rol: Testçi / Developer")).toBeInTheDocument();
     expect(screen.queryByText("gizli")).toBeNull();
   });
 

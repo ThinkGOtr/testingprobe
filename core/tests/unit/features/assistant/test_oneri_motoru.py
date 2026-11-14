@@ -255,8 +255,8 @@ def test_varlik_yoksa_ve_ekran_kapaliysa_hata(
         with pytest.raises(oneri.VarlikBulunamadi):  # var olan ama başka türde kimlik
             sid = tohum.script()
             oneri.oneriler(s, kisi, f"/gereksinimler/{sid}", None, None, jira=SIM)
-        with pytest.raises(oneri.EkranBulunamadi):
-            oneri.oneriler(s, kisi, "/demo", None, None, jira=SIM)
+        with pytest.raises(oneri.EkranBulunamadi):  # `demo.read` Developer'da yok
+            oneri.oneriler(s, make_user("developer"), "/demo", None, None, jira=SIM)
         with pytest.raises(oneri.VarlikBulunamadi):
             oneri.olgular(s, Principal(uuid.uuid4(), "x", "bilinmeyen"), None, None)
 

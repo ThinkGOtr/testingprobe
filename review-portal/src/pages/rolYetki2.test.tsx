@@ -289,17 +289,17 @@ describe("maskeli koşu (run.artifacts yok)", () => {
 describe("yeni okuma izinleri ve demo kipi", () => {
   it("katalog: publish.preview, claude_code.read, demo.read, requirement.po_reject_free_text", () => {
     expect([...IZINLER["publish.preview"]].sort()).toEqual(["admin", "analyst", "engineer", "po", "tester"]);
-    expect([...IZINLER["claude_code.read"]].sort()).toEqual(["admin", "analyst", "engineer", "tester"]);
+    expect([...IZINLER["claude_code.read"]].sort()).toEqual(["admin", "analyst", "developer", "engineer", "tester"]);
     expect([...IZINLER["demo.read"]].sort()).toEqual(["admin", "analyst", "engineer", "po", "tester"]);
     expect([...IZINLER["requirement.po_reject_free_text"]]).toEqual(["po"]);
   });
 
-  it("Analist Demo yol haritasını görür (demo.read); Demo kontrolleri menüde yok", async () => {
+  it("Analist Demo yol haritasını ve Demo kontrollerini görür (demo.read)", async () => {
     await oturumAc("analist");
     uygulama("/yol-haritasi");
     const menu = await screen.findByRole("navigation", { name: "Ana menü" });
     await waitFor(() => expect(within(menu).getByText("Demo yol haritası")).toBeInTheDocument());
-    expect(within(menu).queryByText("Demo kontrolleri")).toBeNull();
+    expect(within(menu).getByText("Demo kontrolleri")).toBeInTheDocument();
     expect(screen.queryByText("Bu ekran için yetkiniz yok.")).toBeNull();
   });
 

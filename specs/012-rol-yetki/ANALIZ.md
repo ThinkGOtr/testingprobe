@@ -34,8 +34,9 @@ Hedef:
 | K4 | Proje kapsamı | Tek proje. Proje/tenant filtresi ve proje bazlı rol bu fazda yok |
 | K5 | Rol ataması | AI Probe platformunda. Paketteki "Kullanıcı ve rol yönetimi" sayfası ve `access.assign` TP'ye yazılmaz; Erişim Yöneticisi rolü TP'de yoktur |
 | K6 | PO onayı | Dokümandaki gibi Jira: etiketi koyan aktör PO listesinde, içerik hash'i eşleşir. Jira kaynaklı gereksinimde portal PO onay ucu 410 döner, düğmesi kalkar. İstisna (2026-11-11 ek karar): serbest metin gereksinimde (`kaynak == free_text`, Jira'da story yok) portal PO onayı kalır (`requirement.po_approve_free_text`, hash kontrolü bugünkü gibi) |
-| K7 | Paketin kapsamadığı özellikler | Sahibi PO (baz değer). Doküman düzeltmesini Jira'ya uygulama ve "Son hal olarak onayla" Analist'te kalır (2026-11-11 ek karar; `requirement.review`). İstisna: locator onarımı → Automation Engineer, Claude Code yayın token'ı → Testçi |
+| K7 | Paketin kapsamadığı özellikler | Sahibi PO (baz değer). Doküman düzeltmesini Jira'ya uygulama ve "Son hal olarak onayla" Analist'te kalır (2026-11-11 ek karar; `requirement.review`). İstisna: locator onarımı → Automation Engineer, Claude Code yayın token'ı → Testçi (IDE `submit` token'ı Developer'da da, K9) |
 | K8 | Yayınlanmış case'te değişiklik | Paketteki T09 "yayınlanmış case'ten yeni sürüm" uygulanmaz: yayınlanmış sürüm değişmez, değişiklik gereksinimden yeniden üretimle gelir (2026-11-12) |
+| K9 | Demo ve Claude Code ekranları (2026-11-14) | (1) `/demo` "Demo kontrolleri" ekranı `demo.read` ile açılır (admin, analyst, po, tester, engineer); ekran salt-okurdur, eylemler (buton kimliğini değiştir/kır, demo'yu sıfırla, Jira durumu taşı) `demo.manage`'de kalır ve diğer rollerde pasif + "gereken rol" notuyla görünür. (2) Developer `/claude-code` ekranını görür (`claude_code.read`) ve kendi IDE token'ını üretir (`token.issue`); yalnız `submit` kapsamı (`publish` kapsamı `case.publish` = Testçi ister, aksi 403). Developer token'ıyla MCP'de yalnız `get_requirement` (`requirement.read`) çalışır; `submit_draft_cases` `case.generate`, `publish_test_cases` `case.publish` ister. Hiçbir rol başkasının token'ını listeleyemez/iptal edemez (`token.read`, kullanıcıya süzülü) |
 
 Uygulama sırasında verilen teknik kararlar (ürün kararı değil; gerekçesiyle):
 
@@ -91,7 +92,7 @@ oturumu ve Jira PO kanalını kabul eder).
 | `case.decide` | tester | `POST /cases/{id}/decision` karar ∈ `accept`, `edit`, `reject`, `reopen`; `POST /cases/bulk-decision` karar = `accept` (013 toplu kabul); `POST /cases/{id}/viewed` | ret nedeni zorunlu (mevcut) |
 | `case.approve` | analyst | `POST /cases/{id}/decision` karar ∈ `approve`, `send_back`; `POST /cases/bulk-decision` karar = `approve` (013 toplu son onay); `POST /requirements/{id}/review-complete` | yalnız `ready` case; `send_back` gerekçe ister |
 | `case.publish` | tester | `POST /publish` | onaylı + hash değişmemiş (mevcut kapı) |
-| `token.issue` | tester | `POST /tokens` | yayın / IDE gönderim kanalı |
+| `token.issue` | tester, developer | `POST /tokens` | yayın / IDE gönderim kanalı. K9 (2026-11-14): Developer yalnız `submit` kapsamı üretir; `publish` kapsamı ayrıca `case.publish` ister (403 + `authz.denied`). MCP araç izni: `get_requirement` `requirement.read`, `submit_draft_cases` `case.generate`, `publish_test_cases` `case.publish` |
 | `code.generate` | engineer | `POST /code/generate`, `GET /code/languages` | onaylı case (mevcut). `GET /code/languages` (011 üretim dili, K-T8) her çağrıda forge'u okur; yalnız üretimi başlatan role açık, portal 403'ü "dil seçici yok" sayar |
 | `code.break_verify` | engineer | `POST /scripts/{id}/break-verify` | |
 | `code.review` | engineer | `POST /prs/{n}/review`, `POST /prs/{n}/update-branch` | |
@@ -122,10 +123,10 @@ oturumu ve Jira PO kanalını kabul eder).
 | `audit.read_own` | analyst, po, tester, engineer, developer | yalnız kendi olayları (`aktor` = kullanıcı adı) |
 | `events.read` | admin, analyst, po, tester, engineer, developer | `GET /events` (SSE) |
 | `assistant.use` | hepsi | asistan ve öneriler |
-| `token.read` | hepsi | kendi token'ları (`GET/DELETE /tokens`) |
+| `token.read` | hepsi | kendi token'ları (`GET/DELETE /tokens`); başkasının token'ı listelenmez, iptali 404 |
 | `publish.preview` | admin, analyst, po, tester, engineer | `GET /publish/preview` (dry-run gövde; yayın `case.publish`) |
-| `claude_code.read` | admin, analyst, tester, engineer | Claude Code sayfası (portal; çekirdek ucu yok, token'lar `token.read` ile yalnız kendi) |
-| `demo.read` | admin, analyst, po, tester, engineer | Demo yol haritası sayfası (portal; çekirdek ucu yok) |
+| `claude_code.read` | admin, analyst, tester, engineer, developer | Claude Code sayfası (portal; çekirdek ucu yok, token'lar `token.read` ile yalnız kendi). Developer K9 (2026-11-14) ile eklendi |
+| `demo.read` | admin, analyst, po, tester, engineer | Demo yol haritası ve Demo kontrolleri sayfaları (portal; çekirdek ucu yok, durum `GET /demo/status` `dashboard.read`). K9 (2026-11-14): `/demo` salt-okur açılır, eylem düğmeleri `demo.manage` |
 
 Not (011 test üretimi v3 birleştirmesi, 2026-11-13): 011 uçları kataloğa şöyle bağlandı. Yeni
 izinler: `design_model.decide` (tester; `POST /design-models/{id}/decision`), `case.ask_po`

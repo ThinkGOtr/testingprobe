@@ -462,7 +462,7 @@ export const MOCK_KURALLAR: MockKural[] = [
 ];
 
 /** `rotalar.json`'da rolü kısıtlı ekranlar (diğerleri herkese açık); izinler `lib/yetki.ts` ile aynı. */
-const EKRAN_ROLLERI: Record<string, readonly Rol[]> = { "/claude-code": IZINLER["token.issue"], "/demo": IZINLER["demo.manage"] };
+const EKRAN_ROLLERI: Record<string, readonly Rol[]> = { "/claude-code": IZINLER["claude_code.read"], "/demo": IZINLER["demo.read"] };
 
 /** Ekranın varlık türü (rotalar.json `varlik`). */
 const EKRAN_VARLIGI: Record<string, string> = {

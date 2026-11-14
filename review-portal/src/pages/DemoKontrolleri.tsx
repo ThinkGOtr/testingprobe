@@ -1,4 +1,5 @@
-// Sistem Yöneticisi ve Automation Engineer için demo kontrolleri (`demo.manage`, yalnız TP_DEMO_MODE=1): locator kırılması (TEKNIK-TASARIM §2 ikinci kırılma
+// Demo kontrolleri: ekran `demo.read` ile salt-okur açılır (2026-11-14 kararı); eylemler Sistem Yöneticisi ve
+// Automation Engineer'ındır (`demo.manage`, yalnız TP_DEMO_MODE=1): locator kırılması (TEKNIK-TASARIM §2 ikinci kırılma
 // senaryosu, `make break` eşi) ve demo sıfırlama. Her ikisi de onay ister; ilerleme core olaylarından
 // (`demo.progress`) ve koşu listesinden izlenir — olay gelmese de koşu ve triage görünür.
 import { useCallback, useEffect, useId, useRef, useState } from "react";
@@ -7,10 +8,12 @@ import { api } from "../api/client";
 import { useOlay } from "../api/events";
 import { hataMesaji } from "../api/http";
 import type { DemoDurumu, Gereksinim, HataAnalizi, HataSinifi, IsYaniti, Kosu, KosuHatasi, PortalOlayi } from "../api/types";
+import { useIzin } from "../auth";
 import { useBildirim } from "../components/Bildirim";
 import { Cip, IslemDugmesi, Kart, SayfaBasligi, Uyari } from "../components/ui";
 import { gereksinimDurumu, HATA_SINIFI, KOSU_DURUMU, TETIK } from "../lib/etiketler";
 import { saat } from "../lib/format";
+import { izinNedeni } from "../lib/yetki";
 import { kisaKosuAdi, kosuHatalari } from "./Kosular";
 
 const YOKLAMA_MS = 2000;
@@ -843,6 +846,7 @@ export function tetikIpucu(
  */
 export function JiraDurumKarti() {
   const id = useId();
+  const yonetebilir = useIzin("demo.manage");
   const bildir = useBildirim();
   const [gereksinimler, setGereksinimler] = useState<Gereksinim[]>([]);
   const [anahtar, setAnahtar] = useState("");
@@ -914,6 +918,7 @@ export function JiraDurumKarti() {
           list={`${id}-oneriler`}
           autoComplete="off"
           aria-describedby={`${id}-ipucu`}
+          disabled={!yonetebilir}
           onChange={(e) => setAnahtar(e.target.value)}
         />
         <datalist id={`${id}-oneriler`}>
@@ -1035,6 +1040,7 @@ function DurumKarti({ d }: { d: DemoDurumu | null }) {
 
 export function DemoKontrolleri() {
   const durum = useDemoDurumu();
+  const yonetebilir = useIzin("demo.manage");
   return (
     <>
       <SayfaBasligi
@@ -1059,6 +1065,12 @@ export function DemoKontrolleri() {
         </Uyari>
       ) : (
         <>
+          {!yonetebilir && (
+            // demo.read: ekran salt-okur; düğmeler pasif ve her biri gereken rolü söyler.
+            <Uyari ton="bilgi" baslik="Salt okunur görünüm">
+              Demo durumunu izleyebilirsiniz; locator kırılması, demo sıfırlama ve Jira durum taşıma pasiftir. {izinNedeni("demo.manage")}.
+            </Uyari>
+          )}
           <div className="iki-sutun">
             <LocatorKirmaKarti durum={durum} />
             <SifirlamaKarti />

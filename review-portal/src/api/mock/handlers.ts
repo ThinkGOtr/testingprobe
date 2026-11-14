@@ -2387,6 +2387,8 @@ function tokenOlustur(govde: unknown): McpToken {
   izinGerekli("token.issue");
   const kapsam = ((govde ?? {}) as { kapsam?: string }).kapsam;
   if (kapsam !== "submit" && kapsam !== "publish") throw new ApiError(422, "Kapsam submit veya publish olmalı.");
+  // core ile aynı: `publish` kapsamı `case.publish` ister (Developer yalnız `submit` üretir).
+  if (kapsam === "publish") izinGerekli("case.publish");
   const rastgele = new Uint8Array(24);
   crypto.getRandomValues(rastgele);
   const token = `tpk_mock_${Array.from(rastgele, (b) => b.toString(16).padStart(2, "0")).join("")}`;

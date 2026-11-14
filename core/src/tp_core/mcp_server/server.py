@@ -44,6 +44,14 @@ TOOL_NAMES = (READ, SUBMIT, PUBLISH)
 KAPSAM = {READ: "submit", SUBMIT: "submit", PUBLISH: "publish"}
 # Token kapsamının gerektirdiği izin (auth/yetki.py; ANALIZ §4.1, K7: yayın token'ı Testçinin).
 KAPSAM_IZNI = {"submit": "case.generate", "publish": "case.publish"}
+# Aracın rol izni. Okuma aracı (PO onaylı story metni) `requirement.read` ister: 2026-11-14
+# kararıyla Developer da IDE token'ı üretir ve story'yi okuyabilir; taslak gönderme ve yayın
+# yine Testçinindir.
+ARAC_IZNI = {
+    READ: "requirement.read",
+    SUBMIT: KAPSAM_IZNI["submit"],
+    PUBLISH: KAPSAM_IZNI["publish"],
+}
 OZET_SINIRI = 4000
 
 INSTRUCTIONS = (
@@ -252,12 +260,13 @@ def _check_scope(caller: Principal, name: str) -> None:
             izin_adi=KAPSAM_IZNI[gerekli],
             neden="kapsam",
         )
-    # 012: IDE kanalı Testçinindir (taslak gönderimi `case.generate`, yayın `case.publish`).
-    if not izinli(caller.rol, KAPSAM_IZNI[gerekli]):
+    # 012: taslak `case.generate`, yayın `case.publish` (Testçi); okuma `requirement.read`.
+    arac_izni = ARAC_IZNI[name]
+    if not izinli(caller.rol, arac_izni):
         from tp_core.auth.yetki import ROL_ETIKETLERI, normalize_rol
 
         etiket = ROL_ETIKETLERI.get(normalize_rol(caller.rol), caller.rol)
-        raise ToolRefused(f"{etiket} rolü {name} aracını kullanamaz", izin_adi=KAPSAM_IZNI[gerekli])
+        raise ToolRefused(f"{etiket} rolü {name} aracını kullanamaz", izin_adi=arac_izni)
 
 
 def _read(args: Mapping[str, Any]) -> dict[str, Any]:

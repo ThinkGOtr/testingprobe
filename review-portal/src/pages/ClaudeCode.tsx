@@ -6,6 +6,8 @@ import { useBildirim } from "../components/Bildirim";
 import { BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { useIslem, useVeri } from "../hooks";
 import { tarih } from "../lib/format";
+import { useIzin } from "../auth";
+import { type Izin, izinNedeni } from "../lib/yetki";
 
 /** `.mcp.json` sunucu adı (Claude Code araçları `mcp__testing-probe__*` olarak görür). */
 export const MCP_SUNUCU_ADI = "testing-probe";
@@ -37,13 +39,20 @@ export function claudeMcpKomutu(t: Pick<McpToken, "mcp_url">): string {
   return `claude mcp add --transport http --scope project ${MCP_SUNUCU_ADI} ${t.mcp_url} --header "Authorization: Bearer \${${MCP_TOKEN_DEGISKENI}}"`;
 }
 
-const KAPSAM: Record<TokenKapsami, { ad: string; aciklama: string }> = {
-  submit: { ad: "submit", aciklama: "submit_draft_cases: Claude Code'un ürettiği taslak case'ler portala 'karar bekliyor' olarak düşer. Jira'ya yazmaz." },
-  publish: { ad: "publish", aciklama: "publish_test_cases: yalnızca portalda onaylanmış case kimliklerini yayınlar." },
+const KAPSAM: Record<TokenKapsami, { ad: string; aciklama: string; izin: Izin }> = {
+  submit: {
+    ad: "submit",
+    aciklama:
+      "get_requirement ile PO onaylı story'yi okur; submit_draft_cases: Claude Code'un ürettiği taslak case'ler portala 'karar bekliyor' olarak düşer (Testçi). Jira'ya yazmaz.",
+    izin: "token.issue",
+  },
+  publish: { ad: "publish", aciklama: "publish_test_cases: yalnızca portalda onaylanmış case kimliklerini yayınlar.", izin: "case.publish" },
 };
 
 export function ClaudeCode() {
   const [kapsam, setKapsam] = useState<TokenKapsami>("submit");
+  // 2026-11-14: Developer yalnız `submit` kapsamlı token üretir; `publish` `case.publish` (Testçi) ister.
+  const yayinIzni = useIzin("case.publish");
   const [token, setToken] = useState<McpToken | null>(null);
   const [kanalKapali, setKanalKapali] = useState<string | null>(null);
   const tokenlar = useVeri(() => api.tokenlar(), []);
@@ -83,8 +92,15 @@ export function ClaudeCode() {
         <fieldset>
           <legend>Kapsam</legend>
           {(Object.keys(KAPSAM) as TokenKapsami[]).map((k) => (
-            <label key={k} className="secenek-satir">
-              <input type="radio" name="kapsam" value={k} checked={kapsam === k} onChange={() => setKapsam(k)} />
+            <label key={k} className="secenek-satir" title={k === "publish" && !yayinIzni ? izinNedeni(KAPSAM[k].izin) : undefined}>
+              <input
+                type="radio"
+                name="kapsam"
+                value={k}
+                checked={kapsam === k}
+                disabled={k === "publish" && !yayinIzni}
+                onChange={() => setKapsam(k)}
+              />
               <span>
                 <span className="mono">{KAPSAM[k].ad}</span> — {KAPSAM[k].aciklama}
               </span>

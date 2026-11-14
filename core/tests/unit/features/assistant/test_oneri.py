@@ -461,7 +461,7 @@ def test_sayfa_rolleri_izin_katalogundan() -> None:
     for kalip, izin_adi in (
         ("/claude-code", "claude_code.read"),
         ("/yol-haritasi", "demo.read"),
-        ("/demo", "demo.manage"),
+        ("/demo", "demo.read"),  # 2026-11-14: ekran salt-okur açılır; eylemler `demo.manage`
     ):
         acan = {rol for rol in ROLLER if rotalar[kalip].acabilir(rol)}
         assert acan == set(roller_icin(izin_adi)), kalip

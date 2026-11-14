@@ -21,8 +21,8 @@
     {"kalip": "/yol-haritasi", "ekran": "Yol haritası", "varlik": null, "roller": ["admin", "analyst", "engineer", "po", "tester"]},
     {"kalip": "/denetim", "ekran": "Denetim", "varlik": null, "roller": null},
     {"kalip": "/ajan-urunleri", "ekran": "Ajan ürünleri", "varlik": null, "roller": ["admin", "analyst", "developer", "engineer", "po", "tester"]},
-    {"kalip": "/claude-code", "ekran": "Claude Code kanalı", "varlik": null, "roller": ["admin", "analyst", "engineer", "tester"]},
-    {"kalip": "/demo", "ekran": "Demo kontrolleri", "varlik": null, "roller": ["admin", "engineer"]},
+    {"kalip": "/claude-code", "ekran": "Claude Code kanalı", "varlik": null, "roller": ["admin", "analyst", "developer", "engineer", "tester"]},
+    {"kalip": "/demo", "ekran": "Demo kontrolleri", "varlik": null, "roller": ["admin", "analyst", "engineer", "po", "tester"]},
     {"kalip": "/test-verisi", "ekran": "Test verisi", "varlik": null, "roller": ["admin", "analyst", "developer", "engineer", "po", "tester"]},
     {"kalip": "/otomasyon", "ekran": "Otomasyon", "varlik": null, "roller": ["admin", "analyst", "developer", "engineer", "po", "tester"]}
   ]

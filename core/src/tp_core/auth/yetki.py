@@ -80,7 +80,10 @@ IZINLER: Final[dict[str, frozenset[str]]] = {
     "case.decide": _r(TESTER),
     "case.approve": _r(ANALYST),
     "case.publish": _r(TESTER),
-    "token.issue": _r(TESTER),
+    # 2026-11-14 kullanıcı kararı: Developer da kendi IDE (MCP) token'ını üretir (kod yazan rol).
+    # Token yalnız sahibinindir (liste/iptal `token.read` + user_id süzgeci); MCP araçları rol
+    # iznini ayrıca denetler (Developer: yalnız `get_requirement`, `requirement.read`).
+    "token.issue": _r(TESTER, DEVELOPER),
     "code.generate": _r(ENGINEER),
     "code.break_verify": _r(ENGINEER),
     "code.review": _r(ENGINEER),
@@ -132,7 +135,9 @@ IZINLER: Final[dict[str, frozenset[str]]] = {
     "token.read": _HEPSI,
     "publish.preview": _r(ADMIN, ANALYST, PO, TESTER, ENGINEER),
     # Sayfa izinleri (çekirdek ucu yok; portal menü/rota koruması için).
-    "claude_code.read": _r(ADMIN, ANALYST, TESTER, ENGINEER),
+    # 2026-11-14: Developer Claude Code kanalını görür. `demo.read` yol haritası ve Demo
+    # kontrolleri ekranını salt-okur açar; ekrandaki eylemler `demo.manage` ister.
+    "claude_code.read": _r(ADMIN, ANALYST, TESTER, ENGINEER, DEVELOPER),
     "demo.read": _r(ADMIN, ANALYST, PO, TESTER, ENGINEER),
     # 012 test kalite doğrulama: tablolar gereksinim düzeyi tanımdır (developer görür); case'in
     # kontrol sonucu ve istisna gerekçesi karar geçmişidir (developer, auditor, viewer görmez).

@@ -498,7 +498,8 @@ def test_suresi_dolan_token_gecersiz(
 def test_token_yalnizca_testci(
     client: TestClient, make_user: MakeUser, engine: Engine, rol: str
 ) -> None:
-    """012: yayın / IDE token'ı Testçinindir (`token.issue`); red `authz.denied` yazar."""
+    """012: IDE token'ı Testçi ve Developer'ındır (`token.issue`, 2026-11-14); red `authz.denied`
+    yazar."""
     _giris(client, make_user(rol))
     r = client.post("/tokens", json={"kapsam": "submit"})
     assert r.status_code == 403 and r.json() == {
@@ -510,6 +511,35 @@ def test_token_yalnizca_testci(
             text("SELECT ozet FROM audit_event WHERE eylem = 'authz.denied'")
         ).scalar_one()
     assert ozet["izin"] == "token.issue" and ozet["rol"] == rol
+
+
+def test_developer_kendi_submit_tokenini_uretir_publish_uretemez(
+    mcp_client: TestClient, make_user: MakeUser, engine: Engine
+) -> None:
+    """2026-11-14: Developer IDE kanalını kullanır (`token.issue`); `publish` kapsamı
+    `case.publish` ister (Testçi). Başkasının token'ını göremez ve iptal edemez."""
+    client = mcp_client
+    testci = make_user("tester")
+    _giris(client, testci)
+    testci_tok = client.post("/tokens", json={"kapsam": "submit"}).json()
+    client.post("/auth/logout")
+    client.cookies.clear()
+
+    _giris(client, make_user("developer"))
+    r = client.post("/tokens", json={"kapsam": "submit"})
+    assert r.status_code == 201 and r.json()["kapsam"] == "submit"
+    r = client.post("/tokens", json={"kapsam": "publish"})
+    assert r.status_code == 403 and r.json()["kod"] == "yetki_yok"
+    with engine.connect() as c:
+        ozet = c.execute(
+            text("SELECT ozet FROM audit_event WHERE eylem = 'authz.denied'")
+        ).scalar_one()
+    assert ozet["izin"] == "case.publish" and ozet["rol"] == "developer"
+    assert [t["kapsam"] for t in client.get("/tokens").json()] == ["submit"]
+    assert client.delete(f"/tokens/{testci_tok['id']}").status_code == 404
+    with Session(engine) as s:
+        assert verify_bearer(s, testci_tok["token"], "submit") is not None
+        s.commit()
 
 
 def test_gecersiz_kapsam(client: TestClient, make_user: MakeUser) -> None:

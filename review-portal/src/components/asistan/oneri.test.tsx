@@ -546,11 +546,14 @@ describe("vurgu ve mock sözleşmesi", () => {
     await expect(oneriApi.geriBildirim("yok-boyle", { deger: -1 })).rejects.toMatchObject({ status: 422 });
     await expect(oneriApi.geriBildirim("gereksinim-bulgu-karari", { deger: 2, varlik_id: "req-ft-1", jira_anahtari: "tpd" })).rejects.toMatchObject({ status: 422 });
     await expect(oneriApi.geriBildirim("bug-taslagi-karari", { deger: -1, varlik_id: "bug-1" })).rejects.toMatchObject({ status: 404 });
-    await expect(oneriApi.liste({ rota: "/claude-code" })).rejects.toMatchObject({ status: 404 });
-    await oturumAc("testci");
+    // Rol kısıtlı ekran rotalar.json ile aynı: /claude-code `claude_code.read`, /demo `demo.read`.
     await expect(oneriApi.liste({ rota: "/claude-code" })).resolves.toMatchObject({ ekranda_kural_var: false });
-    await oturumAc("muhendis");
+    await oturumAc("po");
     await expect(oneriApi.liste({ rota: "/claude-code" })).rejects.toMatchObject({ status: 404 });
+    await expect(oneriApi.liste({ rota: "/demo" })).resolves.toMatchObject({ ekranda_kural_var: false });
+    await oturumAc("gelistirici");
+    await expect(oneriApi.liste({ rota: "/claude-code" })).resolves.toMatchObject({ ekranda_kural_var: false });
+    await expect(oneriApi.liste({ rota: "/demo" })).rejects.toMatchObject({ status: 404 });
   });
 });
 
