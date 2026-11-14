@@ -309,4 +309,5 @@ def test_uretim_promptlari_icerik_hashiyle_kapilanir(paket: str) -> None:
     st = evaluation_status(RULES, paket)
     kayitli = (st.detail or {}).get("icerik_hash")
     if kayitli != icerik_hash(RULES, paket):
-        assert st.status == "icerik_degisti" and not st.mergeable
+        # Sürüm yükseltilip kayıt `pending` yazıldıysa da kapı kapalıdır (case-generation v4).
+        assert st.status in ("icerik_degisti", "pending") and not st.mergeable

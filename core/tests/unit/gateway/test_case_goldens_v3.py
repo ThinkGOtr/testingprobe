@@ -486,7 +486,7 @@ def test_deterministic_rules_always_apply_to_the_eval_output() -> None:
 def test_set_expectations_name_the_known_silent_points() -> None:
     """Set: uydurma belirteçleri her story'de; sessiz nokta beklentisi TPD-3 ve TPD-4'te."""
     data = json.loads((RULES / "evaluation" / "case-generation.json").read_text(encoding="utf-8"))
-    assert data["version"] == 3 and data["runs"] == 3
+    assert data["version"] == 4 and data["runs"] == 3
     by_id = {c["id"]: c for c in data["cases"]}
     for case in data["cases"]:
         expect = case["expect"]

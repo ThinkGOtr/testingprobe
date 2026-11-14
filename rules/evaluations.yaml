@@ -48,16 +48,12 @@ bundles:
       seti: rules/evaluation/consistency-check.json (ajan; araç ortamı `consistency`, kanıt yeniden doğrulanır).
       Canlı değerlendirme yapılmadı; onaylı istisna yok.'
   case-generation:
-    version: 3
-    status: evaluated
-    note: 'Canlı değerlendirme 2026-11-12, claude-sonnet-5-5 (anthropic), 18/18 vaka geçti: evaluation/results/case-generation-v3-2026-11-12.json'
-    evaluation:
-      date: '2026-11-12'
-      model: claude-sonnet-5-5
-      provider: anthropic
-      results: evaluation/results/case-generation-v3-2026-11-12.json
-      guardrails_version: 1
-      calls: evaluation/results/case-generation-v3-2026-11-12.calls.jsonl
+    version: 4
+    status: pending
+    note: 'v4: P1 seçiciliği (işletme para kaybı yönü, hata başına tek P1, destek eylemi ana akış değil),
+      kaynağın sonucunu verdiği AC için kurulum/tetik eksikliği hazır olmayı bozmaz, kendi girdisi
+      tırnaklanmaz, çift okumalı sınırda iki okumanın BV öğeleri. v3 son canlı koşu 2026-11-14:
+      21/30 (evaluation/results/case-generation-v3-2026-11-14.json). Canlı değerlendirme bekliyor.'
   design-model:
     version: 1
     status: evaluated

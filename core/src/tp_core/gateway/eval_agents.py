@@ -756,10 +756,12 @@ _HAZIRLIK_URUNU = re.compile(
     re.IGNORECASE,
 )
 # Ters sıra (e10): fiyat önce, kod sonra — "fiyatı 749,99 TL olan sentetik ürün SENT-749",
-# "749,99 TL fiyatlı ürün SENT-749". Kod "ürün" sözcüğünün hemen ardından gelmelidir.
+# "749,99 TL fiyatlı ürün SENT-749". Kod "ürün" sözcüğünün hemen ardından gelmelidir. "olan"dan
+# sonra virgülle ayrılmış niteleyici gelebilir ("fiyatı 0,01 TL olan, kampanyası olmayan
+# sentetik ürün SENT-001"; canlı tpd-1-f2-kod-hatasi#k2 C10, 2026-11-14).
 _HAZIRLIK_URUNU_TERS = re.compile(
     r"fiyat\w*\s*(?::|=|olarak|olan)?\s*" + _TUTAR_TL + r"(?:['’](?:lik|lık))?\s+"
-    r"(?:olan\s+|fiyatlı\s+)?(?:[\w-]+\s+){0,2}?ürün\w*\s+("
+    r"(?:olan\s*,?\s+(?:[\w-]+\s+){0,2}?|fiyatlı\s+)?(?:[\w-]+\s+){0,2}?ürün\w*\s+("
     + _KOD
     + r")\b|"
     + _TUTAR_TL

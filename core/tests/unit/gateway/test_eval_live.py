@@ -193,7 +193,7 @@ def test_dry_run_never_builds_a_provider(capsys: pytest.CaptureFixture[str]) -> 
         "bug-draft@v2",
         "dup-rank@v2",
         "requirement-review@v3",
-        "case-generation@v3",
+        "case-generation@v4",
         "consistency-check@v4",
         "verify-and-map@v3",
     ):
@@ -201,7 +201,7 @@ def test_dry_run_never_builds_a_provider(capsys: pytest.CaptureFixture[str]) -> 
     assert "değerlendirme seti yok" not in out
     assert "guardrails@v1: ATLANIR — ayrı set yok; kapsam geçişli" in out
     # 6 ayar vakası + 4 bekletme (holdout) vakası (3. tur #2).
-    assert "case-generation@v3: 10 vaka × 3 koşu" in out
+    assert "case-generation@v4: 10 vaka × 3 koşu" in out
     assert "verify-and-map@v3: 3 vaka, ajan (araç ortamı 'browser'" in out
     # Varsayılan 5 USD tavanı tüm setin en kötü durumunu karşılamaz: dürüstçe söylenir.
     assert "tavanı aşabilir" in out and "--budget-usd" in out

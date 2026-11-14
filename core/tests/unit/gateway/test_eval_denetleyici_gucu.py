@@ -764,6 +764,12 @@ def _sentetik_sepet(hazirlik: str, sepet: str, beklenen: str) -> dict[str, Any]:
             "Test verisi hazırlığı: fiyatı 749,99 TL olan sentetik ürün SENT-749 hazırlanır",
             "SENT-749 × 1; P-003 × 1",
         ),
+        # "olan"dan sonra virgüllü niteleyici (canlı tpd-1-f2-kod-hatasi#k2 C10, 2026-11-14).
+        (
+            "Test verisi hazırlığı: fiyatı 749,99 TL olan, kampanyası olmayan sentetik ürün "
+            "SENT-749 hazırlanır",
+            "SENT-749 × 1; P-003 × 1",
+        ),
         # Kod biçimi dışı ad / kodsuz sentetik ürün (canlı serbest-son-hal#k2 C4, #k3 C6).
         (
             "Test verisi hazırlığı: fiyatı 749,99 TL olan sentetik ürün (SENTETIK-1) hazırlanır",

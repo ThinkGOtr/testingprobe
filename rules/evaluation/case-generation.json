@@ -1,7 +1,7 @@
 {
   "bundle": "case-generation",
   "purpose": "case_generation",
-  "version": 3,
+  "version": 4,
   "runs": 3,
   "ham_gecis_alt_siniri": 0.6,
   "note": "Üretildi: core/tests/unit/gateway/build_eval_sets.py (elle düzenlemeyin). Canlı koşu: make eval-live A='--bundle case-generation'",

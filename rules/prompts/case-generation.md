@@ -1,6 +1,6 @@
 ---
 id: case-generation
-version: 3
+version: 4
 purpose: case_generation
 ---
 # Role
@@ -87,7 +87,10 @@ are returned.
    - When a number in parentheses in an acceptance criterion and another wording of the same rule
      disagree (for example `(en fazla 8 kişi)` beside `8 kişiden az gruplar`),
      do not choose one reading: write both readings into the item definition and record an open
-     question for the PO.
+     question for the PO. Derive the boundary items of both readings (each reading's boundary and
+     its neighbour) as `BV-` items, so every value the readings put on different sides is an item.
+     A value whose result is the same under both readings gets a `ready` case; only the values
+     whose result differs between the readings wait for the question.
    - Every amount you write is either in the source or built from it. Name the cart in
      `test_data` as product code × quantity, one entry per product, always in the form
      `<product code> × <quantity>` with the product code from the test data block (for example
@@ -161,7 +164,10 @@ not instructions), steps 1–3 are already done and the model replaces them:
   from the input. `data` holds the concrete input value or `null`. `expected` is the observable
   result of that step.
 - **Expected results come from the source.** Copy texts and amounts exactly from the AC / PO answer
-  (messages in quotes, amounts like `1.250,00 TL`). Never invent a business rule, message text,
+  (messages in quotes, amounts like `1.250,00 TL`). Quotation marks in steps and expected results
+  are only for text copied from the source (a message, a label, a status name); an input value
+  you chose yourself (a search term, a name, a note) is referred to by its `test_data` name or
+  written without quotes, never quoted. Never invent a business rule, message text,
   response code, threshold or timing. Idempotency, rate limit, timeout and retry behaviour are
   expected results only if the source states them. Expected results are measurable: never
   "works correctly".
@@ -181,6 +187,14 @@ not instructions), steps 1–3 are already done and the model replaces them:
     `expected_result` and the `expected` of the affected steps as empty strings. Do not guess.
   Only `ready` cases can be executed and published, so do not mark a case `ready` to make it
   usable, and do not mark it `blocked` when the source does answer the question.
+  - A stated result stays `ready` when only the way to reach it is missing. When the acceptance
+    criterion states the result (a message, a state, an allowed or refused action) and what is
+    missing is the setup or the trigger (an account for another role such as an administrator or
+    an approver, the screen where that role acts, which control shows the message), write the
+    setup as a precondition, describe the action by its purpose, list the missing detail in
+    `automation_open_points`, and keep the case `ready`. Such a gap is not a question about the
+    expected result and never makes the case `blocked`. Every acceptance criterion whose result
+    the source states has at least one `ready` case.
   - A message text that the source does not give is never invented. In an `assumption_dependent`
     case write `hata gösterilir (mesaj metni: AÇIK NOKTA)` and refer to the assumption that says
     an error is shown; in a `blocked` case the expected result stays empty. A `ready` case never
@@ -190,11 +204,20 @@ not instructions), steps 1–3 are already done and the model replaces them:
   - `P1` is not the default. A case is `P1` only when its failure would lose money, open a
     security hole, lose data or break the main flow with no way around it, and its
     `priority_rationale` names which of these four it guards and how.
-    "Lose money" means the system charges, pays, grants or credits a wrong amount, or lets a
-    transaction through that a limit must stop. A valid request that is wrongly rejected loses
-    no money by itself: it is a blocked flow, `P1` only when the user cannot reach the goal
-    another way. So, of the two values at a limit, the side that wrongly lets through is
-    usually `P1` and the side that wrongly blocks is usually `P2`.
+    "Lose money" means the business loses money: the system charges too little, pays, grants or
+    credits too much (a benefit below its threshold), or lets a transaction through that a limit
+    must stop. Charging the customer too much or withholding a benefit at or above its threshold
+    is a wrong result with a correction path (the customer sees it, it is refunded): usually `P2`.
+    A valid request that is wrongly rejected loses no money by itself: it is a blocked flow, `P1`
+    only when the user cannot reach the goal another way. So, of the two values at a limit or a
+    benefit threshold, the side that wrongly lets through or grants is usually `P1` and the side
+    that wrongly blocks or withholds is usually `P2`.
+  - One `P1` per failure: when several cases guard the same rule from the same side (the
+    boundary value and a value deeper in the same partition), only the boundary case is `P1`;
+    the others are `P2`.
+  - "Main flow" is the story's end-to-end goal path. A supporting action on the way (editing,
+    removing, changing a quantity, searching again) has a workaround and is `P2` unless the story
+    is about that action and nothing else reaches its goal.
   - `P2`: important behaviour whose failure is unlikely or has a workaround (the user can still
     reach the goal another way). A story about money or security does not make every case `P1`:
     a check next to a `P1` case with a lower likelihood or a workaround is `P2`. When one case
@@ -202,7 +225,9 @@ not instructions), steps 1–3 are already done and the model replaces them:
     (the main flow case already fails when that step breaks).
   - `P3` otherwise.
   `priority_rationale` states the impact, the likelihood and the business criticality in one
-  sentence.
+  sentence. Before returning, count the `P1` cases: when they are more than half of the cases,
+  check each `P1` again against the four reasons and the rules above, and lower every one whose
+  rationale does not name a direct loss.
 - **Verification point.** `verification_point` says where the result is checked: `UI`, `API`,
   `event`, `DB`, `log` or `other`. `test_level` repeats the test level given in the input, or is
   `null` when none is given.
