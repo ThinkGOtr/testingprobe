@@ -289,7 +289,7 @@ export function TestSonuclari({ k }: { k: KosuDetay }) {
   if (k.sonuclar.length === 0) {
     return (
       <Kart baslik="Test sonuçları">
-        <BosDurum baslik={k.durum === "queued" || k.durum === "running" ? "Koşu sürüyor…" : "Sonuç yok."} />
+        <BosDurum baslik={k.durum === "queued" ? "Koşu sırada bekliyor…" : k.durum === "running" ? "Koşu sürüyor…" : "Sonuç yok."} />
       </Kart>
     );
   }
@@ -355,7 +355,7 @@ export function TestSonuclari({ k }: { k: KosuDetay }) {
         <BosDurum baslik="Süzgece uyan test yok." />
       ) : (
         <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Test sonuçları tablosu">
-          <table className="tablo test-sonuclari">
+          <table className="tablo tablo-yigin test-sonuclari">
             <thead>
               <tr>
                 <th scope="col">Test</th>
@@ -374,7 +374,7 @@ export function TestSonuclari({ k }: { k: KosuDetay }) {
                 return (
                   <Fragment key={s.id}>
                     <tr>
-                      <td>
+                      <td className="yigin-baslik">
                         <button type="button" className="dugme-metin" aria-expanded={ac} aria-controls={ac ? panel : undefined} onClick={() => degistir(s.id)}>
                           <span aria-hidden="true">{ac ? "▾" : "▸"} </span>
                           {s.test_adi}
@@ -390,12 +390,12 @@ export function TestSonuclari({ k }: { k: KosuDetay }) {
                           </div>
                         )}
                       </td>
-                      <td>
+                      <td data-etiket="Durum">
                         <DurumCipi d={s.durum} />
                       </td>
-                      <td className="sayi">{s.retry}</td>
-                      <td className="tek-satir">{sure(s.sure_ms)}</td>
-                      <td>
+                      <td className="sayi" data-etiket="Retry">{s.retry}</td>
+                      <td className="tek-satir" data-etiket="Süre">{sure(s.sure_ms)}</td>
+                      <td data-etiket="Triage">
                         {s.failure_id ? (
                           <span className="satir-ogeler">
                             <SinifCipi s={s} />
@@ -410,7 +410,7 @@ export function TestSonuclari({ k }: { k: KosuDetay }) {
                     </tr>
                     {ac && (
                       <tr id={panel} className="test-ayrinti-satiri">
-                        <td colSpan={5}>
+                        <td colSpan={5} className="yigin-baslik">
                           <TestAyrintisi s={s} />
                         </td>
                       </tr>
@@ -527,7 +527,11 @@ export function CiAdimlari({ k }: { k: KosuDetay }) {
           {meta.map(([a, v]) => (
             <Fragment key={a}>
               <dt>{META_ETIKETI[a]}</dt>
-              <dd className={a === "hata" ? "hata-metin" : "mono"}>{v}</dd>
+              {a === "durum" ? (
+                <dd>{KOSU_DURUMU[String(v)]?.etiket ?? GH_SONUC_ETIKETI[String(v)] ?? v}</dd>
+              ) : (
+                <dd className={a === "hata" ? "hata-metin" : "mono"}>{v}</dd>
+              )}
             </Fragment>
           ))}
         </dl>

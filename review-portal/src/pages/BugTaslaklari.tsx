@@ -7,7 +7,7 @@ import { useBugKisitli, useIzin } from "../auth";
 import { BUG_KISITLI_METNI, izinRolleriMetni } from "../lib/yetki";
 import type { BugTaslagi, BugTaslakIcerik, MukerrerAday, MukerrerArama } from "../api/types";
 import { useBildirim } from "../components/Bildirim";
-import { AlanHatasi, BosDurum, Cip, Baglanti, HataKutusu, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor, IzinliLink } from "../components/ui";
+import { AlanHatasi, BosDurum, Cip, Baglanti, HataKutusu, KayitHatasi, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor, IzinliLink } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { KisiAdi } from "../components/KisiAdi";
 import { BUG_DURUMU, SEVERITY, type Ton } from "../lib/etiketler";
@@ -409,10 +409,9 @@ export function BugTaslakDetay() {
   if (v.yukleniyor && !v.veri) return <Yukleniyor />;
   if (v.hata && !v.veri) {
     return (
-      <>
-        <HataKutusu hata={v.hata} kaynak={v.hataNesnesi} yenile={() => void v.yenile()} />
+      <KayitHatasi ad="Bug taslağı" ust={<Link to="/bug-taslaklari">← Bug taslakları</Link>} hata={v.hata} kaynak={v.hataNesnesi} yenile={() => void v.yenile()}>
         {bugKisitli && bulunamadi(v.hataNesnesi) && <p className="soluk" data-testid="bug-taslagi-kisitli">{BUG_KISITLI_METNI}</p>}
-      </>
+      </KayitHatasi>
     );
   }
   const b = v.veri;

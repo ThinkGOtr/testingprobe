@@ -299,6 +299,10 @@ describe("koşular: takılmış koşu ve zaman aşımı", () => {
     expect(takilmaUyarisi({ durum: "running", baslangic: once(7) }, simdi)).toBe("7 saattir çalışıyor — takılmış olabilir");
     expect(takilmaUyarisi({ durum: "queued", baslangic: once(72) }, simdi)).toBe("3 gündür sırada — takılmış olabilir");
     expect(takilmaUyarisi({ durum: "failed", baslangic: once(72) }, simdi)).toBeNull();
+    // GitHub gece koşusu GitHub cron'unu bekler: core'un 12 saatlik süresinden önce uyarı yok.
+    expect(takilmaUyarisi({ durum: "queued", baslangic: once(4), tetik: "nightly", kaynak: "github" }, simdi)).toBeNull();
+    expect(takilmaUyarisi({ durum: "queued", baslangic: once(13), tetik: "nightly", kaynak: "github" }, simdi)).toBe("13 saattir sırada — takılmış olabilir");
+    expect(takilmaUyarisi({ durum: "queued", baslangic: once(4), tetik: "nightly", kaynak: "local" }, simdi)).toBe("4 saattir sırada — takılmış olabilir");
   });
 
   it("zaman_asimi durumu 'Zaman aşımı' (başarısız tonunda) ve uyarlayıcı korur", async () => {
@@ -387,6 +391,14 @@ describe("metinler: durum kodu ve tutar", () => {
     expect(tutarlariBicimle("Minimum sipariş tutarı 500,00 TL")).toBe("Minimum sipariş tutarı 500,00 TL");
     expect(tutarlariBicimle("tutar: 1250 TL")).toBe("tutar: 1250 TL");
     expect(tutarlariBicimle("adet = 3.50")).toBe("adet = 3.50");
+  });
+
+  it("test verisi değeri: tutar anahtarında sayısal değer TL, diğerleri olduğu gibi", async () => {
+    const { veriDegeriGoster } = await import("../lib/format");
+    expect(veriDegeriGoster("ayar.min_siparis_tutari", "750.00")).toBe("750,00 TL");
+    expect(veriDegeriGoster("ayar.min_siparis_tutari", "1250")).toBe("1.250,00 TL");
+    expect(veriDegeriGoster("ayar.min_siparis_tutari", "yok")).toBe("yok");
+    expect(veriDegeriGoster("ayar.max_adet", "750.00")).toBe("750.00");
   });
 });
 

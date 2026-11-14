@@ -5,6 +5,12 @@ import { kontrolKulesiUyarla, kosuUyarla } from "./uyumDemoB";
 import { hataKataloguUyarla, hataKosusuDetayUyarla, hataKosusuKimligi, hataKosusuUyarla, kaynakBilgisiVar, kaynakOrani, kiranTestlerUyarla, yakalamaOrani } from "./uyumKule";
 
 describe("kontrolKulesiUyarla: kalite anahtarları (§4.7)", () => {
+  it("hazırlık dışı baz ölçümleri (core baz_kapsami) okunur; yoksa boş", () => {
+    const k = kontrolKulesiUyarla({ ai_katkisi: { baz_kapsami: { hazirlik_disi_olcum: ["TPD-1"] } } });
+    expect(k.ai_katkisi.hazirlik_disi_olcum).toEqual(["TPD-1"]);
+    expect(kontrolKulesiUyarla({ ai_katkisi: {} }).ai_katkisi.hazirlik_disi_olcum).toEqual([]);
+  });
+
   it("anahtarlar yoksa (eski core) alan da yok; sıfır uydurulmaz", () => {
     const k = kontrolKulesiUyarla({ gecme_orani: 0.8, ai_katkisi: {} });
     expect("beklenti_dogrulugu" in k).toBe(false);

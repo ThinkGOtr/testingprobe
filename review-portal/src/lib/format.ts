@@ -43,6 +43,17 @@ export function tutarlariBicimle(metin: string): string {
   });
 }
 
+/**
+ * Test verisi değerinin gösterimi: adı "tutar" içeren anahtarın sayısal değeri TL biçiminde
+ * ("min_siparis_tutari", "750.00" → "750,00 TL"); diğerleri ve sayısal olmayanlar olduğu gibi.
+ * Yalnız gösterim içindir: düzenleme formu ham değeri taşır.
+ */
+export function veriDegeriGoster(anahtar: string, deger: string): string {
+  if (!/tutar/iu.test(anahtar) || !/^\d+(?:[.,]\d{1,2})?$/.test(deger.trim())) return deger;
+  const n = Number(deger.trim().replace(",", "."));
+  return Number.isFinite(n) ? tl(n) : deger;
+}
+
 export function dolar(tutar: number): string {
   return usd.format(tutar);
 }

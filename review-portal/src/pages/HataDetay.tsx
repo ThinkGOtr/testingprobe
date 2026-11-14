@@ -6,7 +6,7 @@ import { useBugKisitli } from "../auth";
 import { BUG_KISITLI_METNI } from "../lib/yetki";
 import type { BugTaslagi, HataAnalizi, LocatorOnarimi, LocatorProbeSonucu, SaglikSonucu, SaglikUcu, TriageKaniti } from "../api/types";
 import { useBildirim } from "../components/Bildirim";
-import { Baglanti, BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
+import { Baglanti, BosDurum, Cip, HataKutusu, KayitHatasi, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { altTurEtiketi, HATA_SINIFI, sinyalBasligi, TRIAGE_ALT_TUR, type Ton } from "../lib/etiketler";
 import { tarih } from "../lib/format";
@@ -679,7 +679,7 @@ export function HataDetay() {
   useOlay(sessiz, ["failure.classified", "failure.updated", "ci.status", "pr.opened", "pr.merged"], id);
 
   if (v.yukleniyor && !v.veri) return <Yukleniyor />;
-  if (v.hata && !v.veri) return <HataKutusu hata={v.hata} kaynak={v.hataNesnesi} yenile={() => void v.yenile()} />;
+  if (v.hata && !v.veri) return <KayitHatasi ad="Hata kaydı" hata={v.hata} kaynak={v.hataNesnesi} yenile={() => void v.yenile()} />;
   const h = v.veri;
   if (!h) return null;
   const s = HATA_SINIFI[h.sinif] ?? { etiket: h.sinif, ton: "notr" as const };

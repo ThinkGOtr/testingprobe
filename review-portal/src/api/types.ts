@@ -1799,6 +1799,11 @@ export interface KontrolKulesi {
     gunluk_butce_usd: number | null;
     cagri_sayisi: number | null;
     replay_cagri: number | null;
+    /**
+     * Manuel baz değeri ölçülmüş ama hazırlık listesinde (AI case'i) olmayan story anahtarları (core
+     * `ai_katkisi.baz_kapsami.hazirlik_disi_olcum`). Üstteki uyarıyla kazanç kartı aynı tanımı kullanır.
+     */
+    hazirlik_disi_olcum?: string[];
   };
   /**
    * Story bazında hazırlık süresi ve baz değer (core `hazirlik`). Kazanç yalnızca baz değeri

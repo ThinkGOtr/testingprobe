@@ -119,6 +119,14 @@ export function KontrolKulesi() {
   const toplamSure = ai.ort_ai_sure_ms !== null && ai.ort_review_sure_ms !== null ? ai.ort_ai_sure_ms + ai.ort_review_sure_ms : null;
   // Kazanç yalnızca baz değeri story için ölçülmüş satırlardan (varsayılan baz değer kazanca girmez).
   const kazanc = kazancOzeti(k.hazirlik);
+  // Üstteki core uyarısıyla aynı tanım: hazırlık listesi dışındaki story'lerde de ölçülmüş baz sayılır
+  // ("Manuel baz değer n story'de ölçüldü … kazanç oranı hesaplanamadı" iken kart "baz yok" demez).
+  const hazirlikDisiOlcum = ai.hazirlik_disi_olcum ?? [];
+  const bazOlculdu = kazanc.olculmus_baz > 0 || hazirlikDisiOlcum.length > 0;
+  const kazancKapsami =
+    kazanc.oran === null && hazirlikDisiOlcum.length > 0
+      ? `${kazanc.kapsam} Manuel baz değer ${hazirlikDisiOlcum.length} story'de ölçüldü (${hazirlikDisiOlcum.slice(0, 5).join(", ")}) ama bu story'lerde AI ile üretilmiş case ve hazırlık süresi yok.`
+      : kazanc.kapsam;
   const defectAdayi = k.karne.reduce((a, s) => a + s.acik_defect_adayi, 0);
   const sonKosular = platformaGoreSuz(k.son_kosular, secim, (x) => x.platform);
   const platformsuzKosu = secim === "tumu" ? 0 : k.son_kosular.filter((x) => !x.platform).length;
@@ -192,8 +200,8 @@ export function KontrolKulesi() {
         />
         <Metrik
           etiket={<KpiBaslik ad="Hazırlık kazancı" k={k} anahtar="kazanc_orani" />}
-          deger={<span data-testid="hazirlik-kazanci">{kazanc.oran === null ? <Olculmedi metin={kazanc.replay_haric > 0 ? "REPLAY: hesaplanmaz" : "ölçülmüş baz yok"} /> : yuzde(kazanc.oran)}</span>}
-          alt={<span data-testid="kazanc-kapsam">{kazanc.kapsam}</span>}
+          deger={<span data-testid="hazirlik-kazanci">{kazanc.oran === null ? <Olculmedi metin={kazanc.replay_haric > 0 ? "REPLAY: hesaplanmaz" : bazOlculdu ? "hazırlık süresi yok" : "ölçülmüş baz yok"} /> : yuzde(kazanc.oran)}</span>}
+          alt={<span data-testid="kazanc-kapsam">{kazancKapsami}</span>}
         />
         {/* 012 §4.7: kalite KPI'ları (components/kule). Değer yoksa "ölçülmedi"; sıfır uydurulmaz. */}
         <BeklentiDogruluguKarosu k={k} />

@@ -945,6 +945,7 @@ export function kontrolKulesiUyarla(govde: unknown): KontrolKulesi & AsistanliKu
       gunluk_butce_usd: sayiYaDaNull(ai.gunluk_butce_usd),
       cagri_sayisi: sayiYaDaNull(ai.cagri_sayisi),
       replay_cagri: sayiYaDaNull(ai.replay_cagri),
+      hazirlik_disi_olcum: dizgeler(nesne(ai.baz_kapsami).hazirlik_disi_olcum),
     },
     hazirlik: hazirlikUyarla(g.hazirlik),
     a11y:

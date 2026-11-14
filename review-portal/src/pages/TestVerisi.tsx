@@ -15,7 +15,7 @@ import { AlanHatasi, BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, SayfaBasligi
 import { GIZLI_DEGER } from "../components/VeriAtfi";
 import { useVeri } from "../hooks";
 import { CASE_DURUMU } from "../lib/etiketler";
-import { tarih } from "../lib/format";
+import { tarih, veriDegeriGoster } from "../lib/format";
 
 /** Kataloğu düzenleme izni (K11; 012: `testdata.manage`). */
 export const TESTVERI_IZNI = "testdata.manage" satisfies Izin;
@@ -317,7 +317,7 @@ function GecmisCekmecesi({ kayit, kapat }: { kayit: TestVerisi; kapat: () => voi
                 ) : s.islem === "sil" ? (
                   "—"
                 ) : (
-                  <span className="mono">{s.deger ?? "—"}</span>
+                  <span className="mono">{s.deger != null ? veriDegeriGoster(kayit.anahtar, s.deger) : "—"}</span>
                 )}
               </div>
             </li>
@@ -576,7 +576,7 @@ export function TestVerisiSayfasi() {
                               {k.sir_adi && <span className="mono soluk kucuk">{k.sir_adi}</span>}
                             </span>
                           ) : (
-                            <span className="mono">{k.deger ?? "—"}</span>
+                            <span className="mono" title={k.deger ?? undefined}>{k.deger != null ? veriDegeriGoster(k.anahtar, k.deger) : "—"}</span>
                           )}
                         </td>
                         <td data-etiket="Açıklama">{k.aciklama ?? <span className="soluk">—</span>}</td>

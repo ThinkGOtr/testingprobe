@@ -182,6 +182,34 @@ export function HataKutusu({
   );
 }
 
+/**
+ * Detay ekranı yüklenemedi (bulunamadı ya da hata): sayfanın kendi başlığı veri olmadan çizilmez,
+ * h1 burada çizilir ("Erişim yok" kalıbı, erişilebilirlik). `ad`: kayıt adı ("Koşu" → "Koşu bulunamadı").
+ */
+export function KayitHatasi({
+  ad,
+  ust,
+  hata,
+  kaynak,
+  yenile,
+  children,
+}: {
+  ad: string;
+  ust?: ReactNode;
+  hata: string;
+  kaynak?: unknown;
+  yenile?: () => void;
+  children?: ReactNode;
+}) {
+  return (
+    <>
+      <SayfaBasligi ust={ust} baslik={bulunamadi(kaynak) ? `${ad} bulunamadı` : `${ad} yüklenemedi`} />
+      <HataKutusu hata={hata} kaynak={kaynak} yenile={yenile} />
+      {children}
+    </>
+  );
+}
+
 /** `isaretli`: başlık kendi işaretiyle başlıyor (ör. "✓ Zincir doğrulandı"); maske ikonu çizilmez, işaret iki kez görünmez. */
 export function Uyari({
   ton = "uyari",

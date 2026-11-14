@@ -10,7 +10,7 @@ import type { TestSonucu } from "../api/types";
 import { kosuDetayUyarla } from "../api/uyumDemoB";
 import { OturumProvider } from "../auth";
 import { BildirimProvider } from "../components/Bildirim";
-import { adimHatali, CiAdimlari, ekTuru, githubYedekNotu, sonucFiltresiOku, sonuclariSuz, sonucSayaclari, TestAyrintisi } from "./KosuSonuclari";
+import { adimHatali, CiAdimlari, ekTuru, githubYedekNotu, sonucFiltresiOku, sonuclariSuz, sonucSayaclari, TestAyrintisi, TestSonuclari } from "./KosuSonuclari";
 
 const RID = "9106b437-0770-4afb-9f58-c9d437cf659d";
 const OPENAPI = {
@@ -375,5 +375,59 @@ describe("koşu detayı (canlı core şekli)", () => {
     const s = kosuDetayUyarla({ ...KOSU, sonuclar: [{ id: "x", test_adi: "a", durum: "failed", hata_mesaji: "junit hatası" }] }).sonuclar[0];
     render(<TestAyrintisi s={s} />);
     expect(screen.getByText("junit hatası")).toBeInTheDocument();
+  });
+
+  it("ci-meta koşu durumu Türkçe etiketle (ham 'failed' değil)", () => {
+    render(<CiAdimlari k={kosuDetayUyarla(KOSU)} />);
+    const meta = screen.getByLabelText("ci-meta.json özeti");
+    expect(within(meta).getByText("Koşu durumu").nextElementSibling).toHaveTextContent("Başarısız");
+    expect(within(meta).queryByText("failed")).not.toBeInTheDocument();
+  });
+
+  it("sonuçsuz koşu: sıradaysa 'sırada bekliyor', koşuyorsa 'sürüyor'", () => {
+    const { unmount } = render(
+      <MemoryRouter>
+        <TestSonuclari k={kosuDetayUyarla({ ...KOSU, durum: "queued", sonuclar: [] })} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText("Koşu sırada bekliyor…")).toBeInTheDocument();
+    unmount();
+    render(
+      <MemoryRouter>
+        <TestSonuclari k={kosuDetayUyarla({ ...KOSU, durum: "running", sonuclar: [] })} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText("Koşu sürüyor…")).toBeInTheDocument();
+  });
+
+  it("test sonuçları tablosu mobilde kart görünümüne geçer (tablo-yigin + hücre etiketleri)", () => {
+    render(
+      <MemoryRouter>
+        <TestSonuclari k={kosuDetayUyarla(KOSU)} />
+      </MemoryRouter>,
+    );
+    const tablo = screen.getByRole("table");
+    expect(tablo).toHaveClass("tablo-yigin");
+    const satir = within(tablo).getAllByRole("row")[1];
+    expect([...satir.querySelectorAll("td[data-etiket]")].map((td) => td.getAttribute("data-etiket"))).toEqual(["Durum", "Retry", "Süre", "Triage"]);
+  });
+
+  it("bulunamayan koşu: 'Koşu bulunamadı' h1 ve geri bağlantı", async () => {
+    yapilandir({ mockZorunlu: false, mockOtomatik: false, yetenekKesfi: true });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((url: string) => {
+        const j = (status: number, govde: unknown) =>
+          Promise.resolve(new Response(JSON.stringify(govde), { status, headers: { "Content-Type": "application/json" } }));
+        if (url === "/api/openapi.json") return j(200, OPENAPI);
+        if (url === "/api/auth/me") return j(200, { id: "u1", kullanici_adi: "analyst", rol: "analyst" });
+        if (url.startsWith("/api/runs/")) return j(404, { detail: "Kayıt bulunamadı", kod: "bulunamadi" });
+        return j(404, { detail: "Not Found" });
+      }),
+    );
+    uygulama("/kosular/0000");
+    expect(await screen.findByRole("heading", { level: 1, name: "Koşu bulunamadı" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "← Koşular" })).toHaveAttribute("href", "/kosular");
+    expect(screen.queryByRole("button", { name: "Tekrar dene" })).not.toBeInTheDocument();
   });
 });

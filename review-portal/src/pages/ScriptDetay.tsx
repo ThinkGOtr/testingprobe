@@ -7,7 +7,7 @@ import { ajanAdimiUyarla, kontrolAdimiGecti } from "../api/uyumDemoB";
 import { useBildirim } from "../components/Bildirim";
 import { KodGorunumu } from "../components/KodGorunumu";
 import { DilCakismasiKutusu, dilCakismasiMi, uretimBildirimi } from "../components/UretimSonuclari";
-import { BosDurum, Cip, Baglanti, HataKutusu, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
+import { BosDurum, Cip, Baglanti, HataKutusu, KayitHatasi, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { useIzin } from "../auth";
 import { SCRIPT_DURUMU, scriptIsareti, scriptUretiliyor } from "../lib/etiketler";
@@ -716,7 +716,7 @@ export function ScriptDetay() {
   useCapayaKaydir(Boolean(v.veri));
 
   if (v.yukleniyor && !v.veri) return <Yukleniyor />;
-  if (v.hata && !v.veri) return <HataKutusu hata={v.hata} kaynak={v.hataNesnesi} yenile={() => void v.yenile()} />;
+  if (v.hata && !v.veri) return <KayitHatasi ad="Test kodu" ust={<Link to="/kod">← Kod üretimi</Link>} hata={v.hata} kaynak={v.hataNesnesi} yenile={() => void v.yenile()} />;
   const s: Detay | undefined = v.veri;
   if (!s) return null;
   const d = SCRIPT_DURUMU[s.durum] ?? { etiket: s.durum, ton: "notr" as const };

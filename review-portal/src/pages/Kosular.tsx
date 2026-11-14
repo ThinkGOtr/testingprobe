@@ -6,7 +6,7 @@ import type { HataSinifi, Kosu, KosuDetay as KosuDetayTuru, KosuHatasi, KosuKayn
 import { useIzin, useOturum } from "../auth";
 import { normalizeRol } from "../lib/yetki";
 import { useBildirim } from "../components/Bildirim";
-import { BosDurum, Cip, Baglanti, HataKutusu, IslemDugmesi, Kart, Metrik, SayfaBasligi, Uyari, Yukleniyor, IzinliLink } from "../components/ui";
+import { BosDurum, Cip, Baglanti, HataKutusu, KayitHatasi, IslemDugmesi, Kart, Metrik, SayfaBasligi, Uyari, Yukleniyor, IzinliLink } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { altTurEtiketi, HATA_SINIFI, KAYNAK, KOSU_DURUMU, TETIK } from "../lib/etiketler";
 import { sure, tarih } from "../lib/format";
@@ -36,13 +36,21 @@ function DurumCipi({ d }: { d: string }) {
 /** Takılmış koşu uyarısı eşikleri: bu süreden uzun "Sırada" / "Koşuyor" kalan koşu uyarı alır. */
 export const TAKILMA_ESIGI_MS = { queued: 60 * 60 * 1000, running: 6 * 60 * 60 * 1000 } as const;
 
+/**
+ * GitHub'daki gece koşusu GitHub'ın kendi cron'unu (02:00 UTC) bekler; GitHub zamanlanmış koşuları
+ * saatlerce geciktirebilir (canlıda gece koşuları ~12:00 TR'de başladı). Core bu bekleyişe 12 saat
+ * süre tanır (`TP_CI_GITHUB_TIMEOUT_S`, gece ≥ 12 sa); uyarı da ondan önce "takılmış" demez.
+ */
+export const GECE_GITHUB_SIRA_ESIGI_MS = 12 * 60 * 60 * 1000;
+
 /** "3 saattir sırada — takılmış olabilir"; eşik altında ya da bitmiş koşuda null. */
-export function takilmaUyarisi(k: Pick<Kosu, "durum" | "baslangic">, simdi = Date.now()): string | null {
+export function takilmaUyarisi(k: Pick<Kosu, "durum" | "baslangic"> & Partial<Pick<Kosu, "tetik" | "kaynak">>, simdi = Date.now()): string | null {
   if (k.durum !== "queued" && k.durum !== "running") return null;
   const t = Date.parse(k.baslangic);
   if (Number.isNaN(t)) return null;
   const gecen = simdi - t;
-  if (gecen < TAKILMA_ESIGI_MS[k.durum]) return null;
+  const esik = k.durum === "queued" && k.tetik === "nightly" && k.kaynak === "github" ? GECE_GITHUB_SIRA_ESIGI_MS : TAKILMA_ESIGI_MS[k.durum];
+  if (gecen < esik) return null;
   const saat = Math.floor(gecen / 3_600_000);
   const sure = saat >= 48 ? `${Math.floor(saat / 24)} gündür` : `${saat} saattir`;
   return `${sure} ${k.durum === "queued" ? "sırada" : "çalışıyor"} — takılmış olabilir`;
@@ -515,7 +523,7 @@ export function KosuDetay() {
   useOlay(sessiz, ["ci.status", "failure.classified"], id);
 
   if (v.yukleniyor && !v.veri) return <Yukleniyor />;
-  if (v.hata && !v.veri) return <HataKutusu hata={v.hata} kaynak={v.hataNesnesi} yenile={() => void v.yenile()} />;
+  if (v.hata && !v.veri) return <KayitHatasi ad="Koşu" ust={<Link to="/kosular">← Koşular</Link>} hata={v.hata} kaynak={v.hataNesnesi} yenile={() => void v.yenile()} />;
   const k = v.veri;
   if (!k) return null;
   const ghYedek = githubYedekNotu(k);

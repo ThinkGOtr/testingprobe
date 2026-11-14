@@ -1559,8 +1559,12 @@ td .cip:has(+ .cip) {
   .tablo-yigin td.sayi {
     text-align: left;
   }
-  .tablo.tablo-yigin tbody td:not(.adim-no) {
+  .tablo.tablo-yigin tbody td:not(.adim-no):not(.yigin-baslik) {
     padding: 4px 0 4px 36%;
+  }
+  /* Kartın başlık hücresi (ör. test adı) ve tam genişlik ayrıntı hücresi: etiketsiz, sol boşluksuz. */
+  .tablo.tablo-yigin tbody td.yigin-baslik {
+    padding: 4px 0;
   }
   .tablo-yigin td.mono,
   .tablo-yigin td .mono {
@@ -1806,11 +1810,13 @@ fieldset:disabled select {
   padding: 16px;
   background: var(--bg);
 }
-/* 60 px ızgara ve iki statik radyal ışıma (animasyonsuz). Yalnız dekor: tıklamayı yakalamaz. */
+/* 60 px ızgara ve iki statik radyal ışıma (animasyonsuz). Yalnız dekor: tıklamayı yakalamaz.
+   `absolute` (fixed değil): katman sayfanın tüm yüksekliğini kaplar; uzun içerikte (/rol-sec) ve
+   tam sayfa görüntüde ilk ekran yüksekliğinden sonra düz zemin kalmaz. */
 .giris-sayfa::before,
 .giris-sayfa::after {
   content: "";
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: -1;
   pointer-events: none;
@@ -3889,13 +3895,6 @@ td .olculmedi {
     margin-top: 8px;
   }
 }
-/* Koşu detayı Test sonuçları ≤640 px: tablo yatay kayar (sağ solma işareti), Test sütunu 71 px'e sıkışıp
-   ad sözcük sözcük, hata kutusu harf harf kırılmasın. */
-@media (max-width: 640px) {
-  .tablo.test-sonuclari > tbody > tr > td:first-child {
-    min-width: 14rem;
-  }
-}
 .kod-blok.gunluk {
   max-height: 28em;
   overflow: auto;
@@ -4832,18 +4831,10 @@ td > .satir-baglanti + .cip,
   align-content: start;
 }
 
-/* Koşu detayı açık test ayrıntısı ≤640 px (review 3): Test sütunu alt genişliği tabloyu kaydırma kabından
-   geniş yapıyor, colSpan ayrıntı paneli de tablo genişliğini alıp sağdan kesiliyordu. Kaydırma kabı
-   container olur; panel kabın görünür genişliğine sabitlenir ve yatay kaydırmada solda yapışık kalır
-   (hücre iç boşluğu 10 px). */
+/* Koşu detayı Test sonuçları ≤640 px: diğer mobil tablolar gibi kart görünümü (`tablo-yigin`); test adı
+   kartın başlığı, açık ayrıntı satırı kendi tam genişlik kartıdır (yatay kaydırma yok). */
 @media (max-width: 640px) {
-  .tablo-sarici:has(> .tablo.test-sonuclari) {
-    container-type: inline-size;
-  }
   .tablo.test-sonuclari .test-ayrinti-satiri .test-ayrinti {
-    position: sticky;
-    left: 10px;
-    width: calc(100cqi - 20px);
     max-width: none;
   }
 }
