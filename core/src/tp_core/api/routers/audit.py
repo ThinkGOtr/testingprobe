@@ -71,6 +71,27 @@ class AuditOut(BaseModel):
     verify: ChainOut | None = None
 
 
+# Oturum kimliği (`sid`) çerezle birlikte oturumu temsil eder; denetim görünümünde tam değer
+# gerekmez (canlı: Denetçi auth.login / auth.role_switch özetlerinde tam UUID görüyordu). Yalnız
+# gösterim: kayıt ve hash zinciri değişmez.
+SID_ALANLARI = frozenset({"sid", "onceki_sid", "session_id"})
+
+
+def sid_kisalt(ozet: Any) -> Any:
+    def _k(x: Any) -> Any:
+        if isinstance(x, dict):
+            return {k: _sid(v) if k in SID_ALANLARI else _k(v) for k, v in x.items()}
+        if isinstance(x, list):
+            return [_k(v) for v in x]
+        return x
+
+    return _k(ozet)
+
+
+def _sid(v: Any) -> Any:
+    return f"{v[:8]}…" if isinstance(v, str) and len(v) > 8 else v
+
+
 @router.get("/audit", response_model=AuditOut)
 def audit(
     request: Request,
@@ -97,6 +118,8 @@ def audit(
         {"before": before_id, "limit": limit, "nesne": nesne, "aktor": user.kullanici_adi},
     ).all()
     events = [AuditEventOut.model_validate(r._asdict()) for r in rows]
+    for e in events:
+        e.ozet = sid_kisalt(e.ozet)
     if yetki.normalize_rol(user.rol) == yetki.AUDITOR:
         from tp_core.features.assistant.maskeleme import maskeleyici
 

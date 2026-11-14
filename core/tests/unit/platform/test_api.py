@@ -591,6 +591,23 @@ def test_audit_dogrulama_ve_sayfalama(
     assert client.get("/audit", params={"limit": 0}).status_code == 422
 
 
+def test_audit_ozetinde_sid_kisaltilir_zincir_gecerli_kalir(
+    client: TestClient, make_user: MakeUser, engine: Engine
+) -> None:
+    """Canlı: Denetçi auth.login / auth.role_switch özetinde tam oturum kimliğini görüyordu."""
+    sid = str(uuid.uuid4())
+    with engine.begin() as c:
+        append_audit(c, "system", "auth.role_switch", "app_user:x", {"sid": sid, "onceki": "a"})
+    _giris(client, make_user("auditor"))
+    body = client.get("/audit", params={"verify": "true"}).json()
+    ozetler = [
+        e["ozet"] for e in body["events"] if e["eylem"] in ("auth.role_switch", "auth.login")
+    ]
+    assert ozetler and all(sid not in str(o) for o in ozetler)
+    assert any(o.get("sid") == f"{sid[:8]}…" for o in ozetler)
+    assert body["verify"]["ok"] is True  # yalnız gösterim: kayıt değişmedi
+
+
 def test_audit_kurcalama_api_da_gorunur(client: TestClient, make_user: MakeUser, db: Db) -> None:
     _giris(client, make_user("auditor"))
     with db.srv.super_conn(db.name) as c:
