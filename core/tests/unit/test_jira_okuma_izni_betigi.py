@@ -104,3 +104,31 @@ def test_main_cikti_tek_satir_ve_cikis_kodu(betik, monkeypatch, capsys):
     monkeypatch.setattr(betik, "denetle", lambda: ("TAMAM", ""))
     assert betik.main() == 0
     assert capsys.readouterr().out == "TAMAM\n"
+
+
+def test_oauth_kipinde_atlanir_ve_istek_atilmaz(betik):
+    """Config R1: Jira OAuth kipinde ayrı okuma hesabı yok → "ATLA oauth" (FAIL değil)."""
+    istekler: list = []
+    assert betik.denetle(_ayar(), _transport(istekler=istekler), kip="oauth") == ("ATLA", "oauth")
+    assert betik.denetle(_ayar(), _transport(), kip="bilinmiyor") == (
+        "HATA",
+        "baglanti_kipi_bilinmiyor",
+    )
+    assert istekler == []
+
+
+def test_kip_core_worker_lkgsinden_okunur(betik, tmp_path, monkeypatch):
+    import json
+
+    from tests.unit.home_config.sahte_home import ornek_yanit
+    from tp_core.home_config import yukleyici
+
+    monkeypatch.delenv("CONFIG_SOURCE", raising=False)
+    assert betik.jira_kipi() == "token"  # env kipi: bugünkü davranış
+    lkg = tmp_path / "lkg.json"
+    monkeypatch.setenv("CONFIG_SOURCE", "home")
+    monkeypatch.setenv("TP_CONFIG_LKG_PATH", str(lkg))
+    assert betik.jira_kipi() == "bilinmiyor"  # LKG yok
+    yanit = ornek_yanit(connections={"jira": {"mode": "oauth", "public": {}}})
+    lkg.write_text(json.dumps({"surum": yukleyici.LKG_SURUM, "etag": "v1", "yanit": yanit}))
+    assert betik.jira_kipi() == "oauth"

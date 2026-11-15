@@ -5,8 +5,10 @@ core-worker içinde çalışır (``compose exec -T core-worker python - < script
 durumda izni *herhangi bir projede* taşıyıp taşımadığını döndürür (en sıkı yorum; okuma hesabı
 yalnız bu ürüne ayrılmış olmalı, docs/GERCEK-SISTEMLER.md §2.2).
 
-Simülatörde atlanır (jira-sim'in izin modeli yok). Kimlik, adres ya da yanıt gövdesi asla
-yazdırılmaz; çıktı tek satırdır:
+Simülatörde atlanır (jira-sim'in izin modeli yok). Jira bağlantısı Atlassian OAuth (3LO)
+kipindeyse (Config R1, Home etkin config'i) da atlanır: ayrı bir okuma hesabı yoktur, okuma ve
+yazma bağlantıyı yetkilendiren kişinin kimliğidir; denetlenecek okuma kimliği kalmaz (`ATLA oauth`).
+Kimlik, adres ya da yanıt gövdesi asla yazdırılmaz; çıktı tek satırdır:
 
     ATLA <neden> | TAMAM | YAZMA <izin,...> | HATA <sınıf>
 
@@ -26,12 +28,31 @@ YAZMA_IZINLERI = ("ADD_COMMENTS", "CREATE_ISSUES", "EDIT_ISSUES")
 MYPERMISSIONS_YOLU = "/rest/api/3/mypermissions"
 
 
+def jira_kipi() -> str:
+    """Jira bağlantı kipi: `token` | `oauth` | `bilinmiyor`. Ayrı süreçte çalışıldığı için Home'a
+    çağrı yapılmaz; core-worker'ın son bilinen iyi config'i (LKG) okunur."""
+    from tp_core.home_config import durum, yukleyici
+
+    if yukleyici.kaynak() != "home":
+        return "token"
+    cfg = yukleyici.lkg_oku(durum._lkg_yolu("core-worker"))
+    if cfg is None:
+        return "bilinmiyor"
+    return cfg.baglanti_kipi("jira")
+
+
 def denetle(
     settings: JiraSettings | None = None,
     transport: httpx.BaseTransport | None = None,
     timeout_s: float = 10.0,
+    kip: str | None = None,
 ) -> tuple[str, str]:
     """(durum, ayrıntı) döndürür; ayrıntı yalnız sınıf/izin adıdır, değer içermez."""
+    kip = kip or jira_kipi()
+    if kip == "oauth":
+        return "ATLA", "oauth"
+    if kip == "bilinmiyor":
+        return "HATA", "baglanti_kipi_bilinmiyor"
     s = settings or JiraSettings()
     if s.is_simulator:
         return "ATLA", "simulator"

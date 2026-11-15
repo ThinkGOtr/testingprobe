@@ -332,7 +332,7 @@ function KabukIcerik() {
               <span className="baglanti-metin">{b.etiket}</span>
             </span>
           )}
-          {/* Merkezi yapılandırma kipinde oturumun organizasyonu ve projesi ("CCI · Bayi Portalı"); yoksa hiç çizilmez. */}
+          {/* Merkezi yapılandırma kipinde oturumun organizasyonu ve projesi ("Örnek Org · Örnek Proje"); yoksa hiç çizilmez. */}
           {projeBaglami && (
             <span className="proje-baglami" role="group" aria-label="Organizasyon ve proje" data-testid="proje-baglami" title={projeMetni(projeBaglami)}>
               {projeMetni(projeBaglami)}

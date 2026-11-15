@@ -137,11 +137,11 @@ describe("ai_agent: Agent Probe bölümleri", { timeout: 60000 }, () => {
 });
 
 describe("üst çubuk: organizasyon · proje", { timeout: 60000 }, () => {
-  it("alanlar varsa 'CCI · Bayi Portalı' gösterilir", async () => {
-    await oturum("muhendis", { organizasyon: { id: "o1", ad: "CCI" }, proje: { id: "p1", ad: "Bayi Portalı", kod: "BP" } });
+  it("alanlar varsa 'Örnek Org · Örnek Proje' gösterilir", async () => {
+    await oturum("muhendis", { organizasyon: { id: "o1", ad: "Örnek Org" }, proje: { id: "p1", ad: "Örnek Proje", kod: "OP" } });
     uygulama("/kosular");
     const b = await screen.findByRole("group", { name: "Organizasyon ve proje" }, T);
-    expect(b).toHaveTextContent(/^CCI · Bayi Portalı$/);
+    expect(b).toHaveTextContent(/^Örnek Org · Örnek Proje$/);
   });
 
   it("alanlar yoksa hiçbir şey çizilmez", async () => {

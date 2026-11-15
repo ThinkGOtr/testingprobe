@@ -17,7 +17,8 @@
 #   8. Yazma yetkili dış sistem kimlikleri (Jira/Xray/GitHub) yalnızca core-worker'da;
 #      DEMOAPP_TEST_TOKEN yalnızca demo-app-api ve test-runner'da; gerçek Jira kipinde okuma hesabı
 #      (JIRA_READ_*) ADD_COMMENTS/CREATE_ISSUES/EDIT_ISSUES iznini taşımaz (mypermissions;
-#      AI-ASISTAN-PLANI §5.6, R14 — scripts/jira-okuma-izni.py; simülatörde atlanır)
+#      AI-ASISTAN-PLANI §5.6, R14 — scripts/jira-okuma-izni.py; simülatörde ve Jira OAuth
+#      kipinde (Config R1; ayrı okuma hesabı yok) "atlandı" raporlanır)
 #   9. Merge kapısı (checks/<sha>.json) ayrı tp_checks volume'ünde: yalnızca toolchain-worker yazar,
 #      test-runner bağlamaz ve yazdığı kanarya kapıda görünmez; toolchain-worker belirteç ister,
 #      test-runner'da belirteç yok (toolchain/security/checks-isolation.sh)
@@ -413,6 +414,7 @@ check_write_creds() {
   izin="$(compose exec -T core-worker python - < "$TP_REPO_ROOT/scripts/jira-okuma-izni.py" 2>/dev/null | tail -n 1 || true)"
   case "$izin" in
     "ATLA simulator") info "Jira okuma hesabı izni: simülatör, atlandı" ;;
+    "ATLA oauth") info "Jira okuma hesabı izni: OAuth kipi (ayrı okuma hesabı yok; okuma = yazma = bağlantı kimliği), atlandı" ;;
     TAMAM) info "Jira okuma hesabı: ADD_COMMENTS/CREATE_ISSUES/EDIT_ISSUES yok (beklenen)" ;;
     "YAZMA "*) ok=0; info "Jira okuma hesabı yazma izni taşıyor: ${izin#YAZMA } — olmamalı" ;;
     "HATA "*) ok=0; info "Jira okuma hesabı izni doğrulanamadı: ${izin#HATA }" ;;

@@ -360,3 +360,43 @@ def test_0030_test_verisi_gecmisi_silinemez_ve_engel_turu(db: Db) -> None:
             "WHERE conname = 'script_codegen_engel_ck'"
         ).fetchone()[0]
     assert "'test_verisi'" in tanim and "'unsourced_value'" in tanim
+
+
+def test_0043_oturum_org_proje_downgrade_veriyi_korur(pg: PgServer) -> None:
+    """Config R1 geri dönüşü: 0043 (oturum.org_id / project_id) dolu satırla geri alınır, oturum
+    satırları kalır (yalnız iki sütun düşer) ve yeniden yükseltmede sütunlar NULL gelir."""
+    ad = pg.create_empty_db()
+    owner = pg.url("tp_owner", ad)
+    dsn = owner.replace("+psycopg", "")
+
+    def kolonlar(c: psycopg.Connection) -> set[str]:
+        return {
+            r[0]
+            for r in c.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = 'oturum'"
+            )
+        }
+
+    try:
+        run_alembic(owner, "0043")
+        with psycopg.connect(dsn, autocommit=True) as c:
+            assert {"org_id", "project_id"} <= kolonlar(c)
+            uid = c.execute(
+                "INSERT INTO app_user (id, kullanici_adi, rol, parola_hash) "
+                "VALUES (gen_random_uuid(), 'r1-geri', 'admin', 'x') RETURNING id"
+            ).fetchone()[0]
+            c.execute(
+                "INSERT INTO oturum (id, user_id, son_kullanma, org_id, project_id) "
+                "VALUES (gen_random_uuid(), %s, now() + interval '1 hour', 'o1', 'p1')",
+                (uid,),
+            )
+        run_alembic(owner, "0042", "downgrade")
+        with psycopg.connect(dsn, autocommit=True) as c:
+            assert not {"org_id", "project_id"} & kolonlar(c)
+            assert c.execute("SELECT count(*) FROM oturum").fetchone() == (1,)
+        run_alembic(owner, "head")  # yeniden yükseltilebilir
+        with psycopg.connect(dsn, autocommit=True) as c:
+            assert c.execute("SELECT org_id, project_id FROM oturum").fetchone() == (None, None)
+    finally:
+        with pg.super_conn() as c:
+            c.execute(f'DROP DATABASE IF EXISTS "{ad}" WITH (FORCE)')
