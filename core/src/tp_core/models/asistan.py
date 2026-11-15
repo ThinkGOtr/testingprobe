@@ -13,8 +13,9 @@
   - `asistan_mesaj_tetik_ck`: otomatik mesaj yalnız bir üst mesajın derin çocuğu olabilir.
   `durum` workflow.MACHINES'te değildir (asistan iş akışı onay kapısı taşımaz). `job_id` ve
   `ai_call_id` yabancı anahtar değildir: iş kuyruğu temizlenir, `ai_call` append-only'dir.
-- `asistan_durum`: worker'ın yazdığı tekil satır (`id = 1`): mod, model/maskeleme hazırlığı,
-  bilgi paketi sürümü, kalp atışı. API kalp atışı eskiyse asistanı kapalı gösterir.
+- `asistan_durum`: proje başına tek satır (0045; önce tekil `id = 1`; worker kalp atışı
+  `'_kurulum'` satırında): mod, model/maskeleme hazırlığı, bilgi paketi
+  sürümü, kalp atışı. API kalp atışı eskiyse asistanı kapalı gösterir.
 - `asistan_oneri_geri_bildirim`: öneri "Gizle / Faydalı / Yaptım" (-1 / 1 / 2) kayıtları;
   `varlik_durum` sunucuda hesaplanır, gizlenen öneri varlık aynı durumdayken gösterilmez.
 - `asistan_hiz`: sabit pencere hız sayacı (`INSERT … ON CONFLICT DO UPDATE SET sayi = sayi + 1`).
@@ -39,6 +40,7 @@ from sqlalchemy import (
     Index,
     Integer,
     SmallInteger,
+    String,
     UniqueConstraint,
     false,
     text,
@@ -47,7 +49,15 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from tp_core.models import enums
-from tp_core.models.base import Base, guncelleme_col, in_check, olusturma_col, uuid_pk
+from tp_core.models.base import (
+    Base,
+    ProjeKapsamli,
+    guncelleme_col,
+    in_check,
+    olusturma_col,
+    uuid_pk,
+)
+from tp_core.proje.baglam import mevcut_pid
 
 # Kısıt adları sözleşmedir: API `IntegrityError`'ı kısıt adına göre 409'a eşler (§9).
 MESAJ_SIRA_UQ = "asistan_mesaj_sira_uq"
@@ -66,11 +76,14 @@ def _sayi_check(
     return CheckConstraint(kosul, name=ad)
 
 
-class AsistanSohbet(Base):
+class AsistanSohbet(ProjeKapsamli, Base):
     """Bir kullanıcının asistan sohbeti."""
 
     __tablename__ = "asistan_sohbet"
-    __table_args__ = (Index("asistan_sohbet_kullanici_ix", "kullanici_id", "guncelleme"),)
+    __table_args__ = (
+        Index("asistan_sohbet_kullanici_ix", "kullanici_id", "guncelleme"),
+        Index("asistan_sohbet_proje_olusturma_ix", "project_id", "olusturma"),
+    )
 
     id: Mapped[uuid.UUID] = uuid_pk()
     kullanici_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("app_user.id", ondelete="CASCADE"))
@@ -82,7 +95,7 @@ class AsistanSohbet(Base):
     guncelleme: Mapped[datetime] = guncelleme_col()
 
 
-class AsistanMesaj(Base):
+class AsistanMesaj(ProjeKapsamli, Base):
     """Sohbetteki bir mesaj (kullanıcı sorusu veya asistan cevabı)."""
 
     __tablename__ = "asistan_mesaj"
@@ -156,17 +169,16 @@ class AsistanMesaj(Base):
     tamamlanma: Mapped[datetime | None]
 
 
-class AsistanDurum(Base):
-    """Worker'ın yazdığı tekil durum satırı (`id = 1`)."""
+class AsistanDurum(ProjeKapsamli, Base):
+    """Asistan durum satırı: proje başına bir (0045); worker kalp atışı `_kurulum` satırında."""
 
     __tablename__ = "asistan_durum"
-    __table_args__ = (
-        CheckConstraint("id = 1", name="asistan_durum_tekil_ck"),
-        in_check("mod", enums.ASISTAN_MOD, "asistan_durum_mod_ck"),
-    )
+    __table_args__ = (in_check("mod", enums.ASISTAN_MOD, "asistan_durum_mod_ck"),)
 
-    id: Mapped[int] = mapped_column(
-        SmallInteger, primary_key=True, server_default=text("1"), default=1
+    # 0045: proje başına tek satır (eski tekil `id = 1` satırı); kurulum geneli (worker kalp
+    # atışı) `'_kurulum'` satırında.
+    project_id: Mapped[str] = mapped_column(
+        String(64), primary_key=True, default=lambda: mevcut_pid()
     )
     mod: Mapped[str] = mapped_column(server_default="off", default="off")
     model_hazir: Mapped[bool] = mapped_column(Boolean, server_default=false(), default=False)
@@ -177,7 +189,7 @@ class AsistanDurum(Base):
     kalp_atisi: Mapped[datetime | None]
 
 
-class AsistanOneriGeriBildirim(Base):
+class AsistanOneriGeriBildirim(ProjeKapsamli, Base):
     """Öneri geri bildirimi: -1 gizle, 1 faydalı, 2 yaptım (§17)."""
 
     __tablename__ = "asistan_oneri_geri_bildirim"
@@ -206,6 +218,7 @@ class AsistanHiz(Base):
     __tablename__ = "asistan_hiz"
     __table_args__ = (
         UniqueConstraint(
+            "project_id",
             "kullanici_id",
             "kova",
             "pencere_baslangic",
@@ -216,6 +229,9 @@ class AsistanHiz(Base):
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
+    # 0045 (§1.1 C): kullanıcı kovaları kurulum geneli `'_kurulum'` (varsayılan; maliyet koruması
+    # proje sayısıyla katlanmasın), kullanıcısız kovalar (`jira_global`) proje başına açıkça.
+    project_id: Mapped[str] = mapped_column(String(64), server_default=text("'_kurulum'"))
     kullanici_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("app_user.id", ondelete="CASCADE")
     )
@@ -224,7 +240,7 @@ class AsistanHiz(Base):
     sayi: Mapped[int] = mapped_column(Integer, server_default=text("1"), default=1)
 
 
-class AsistanGuvenlikOlay(Base):
+class AsistanGuvenlikOlay(ProjeKapsamli, Base):
     """Asistan güvenlik olayı (0021, specs/013 §6.1). `ayrinti` yalnız kimlik/sayı taşır."""
 
     __tablename__ = "asistan_guvenlik_olay"

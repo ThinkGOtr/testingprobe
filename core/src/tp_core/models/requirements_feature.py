@@ -29,11 +29,18 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from tp_core.models import baseline_feature as baseline_feature  # Faz 5 tablosu (kayıt)
 from tp_core.models import enums
-from tp_core.models.base import Base, guncelleme_col, in_check, olusturma_col, uuid_pk
+from tp_core.models.base import (
+    Base,
+    ProjeKapsamli,
+    guncelleme_col,
+    in_check,
+    olusturma_col,
+    uuid_pk,
+)
 from tp_core.models.requirements import EMPTY_LIST
 
 
-class RequirementKontrol(Base):
+class RequirementKontrol(ProjeKapsamli, Base):
     """Bir tutarlılık denetimi koşusu (§8.2b adım 2–4, 7)."""
 
     __tablename__ = "requirement_kontrol"
@@ -62,7 +69,7 @@ class RequirementKontrol(Base):
     olusturma: Mapped[datetime] = olusturma_col()
 
 
-class ConsistencyFindingEk(Base):
+class ConsistencyFindingEk(ProjeKapsamli, Base):
     """Bulgunun model çıktısı ayrıntısı ve kanıt doğrulama sonucu."""
 
     __tablename__ = "consistency_finding_ek"
@@ -90,7 +97,7 @@ class ConsistencyFindingEk(Base):
     olusturma: Mapped[datetime] = olusturma_col()
 
 
-class RequirementAkis(Base):
+class RequirementAkis(ProjeKapsamli, Base):
     """Gereksinim akışının özellik durumu: belgenin son hali (doc_final) hash'i."""
 
     __tablename__ = "requirement_akis"
@@ -104,7 +111,7 @@ class RequirementAkis(Base):
     guncelleme: Mapped[datetime] = guncelleme_col()
 
 
-class RequirementReviewEk(Base):
+class RequirementReviewEk(ProjeKapsamli, Base):
     """Ön incelemenin model özeti ve incelenen belgenin anlık görüntüsü (§8.2a, §5)."""
 
     __tablename__ = "requirement_review_ek"

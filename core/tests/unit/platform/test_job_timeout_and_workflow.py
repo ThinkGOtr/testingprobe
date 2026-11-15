@@ -20,6 +20,7 @@ from sqlalchemy import Engine, text
 
 from tp_core import worker
 from tp_core.audit import verify_chain
+from tp_core.proje import pid_param
 from tp_core.worker import healthcheck
 from tp_core.workflow import jobs
 from tp_core.workflow.jobs import (
@@ -34,6 +35,12 @@ from tp_core.workflow.jobs import (
     release_orphans,
     start_workflow,
 )
+
+
+@pytest.fixture(autouse=True)
+def _proje_baglami(proje: object) -> None:
+    """İş akışı ve kuyruk proje kapsamlıdır: testler `test-a` bağlamında koşar
+    (TP-COK-PROJE-PLANI §2.1, §5.1)."""
 
 
 @pytest.fixture(autouse=True)
@@ -58,20 +65,21 @@ def _job(engine: Engine, job_id: uuid.UUID):
 def _akis(engine: Engine, wf_id: uuid.UUID):
     with engine.connect() as c:
         return c.execute(
-            text("SELECT durum FROM workflow_instance WHERE id = :i"), {"i": wf_id}
+            text("SELECT durum FROM workflow_instance WHERE project_id = :pid AND id = :i"),
+            pid_param(i=wf_id),
         ).scalar_one()
 
 
 def _akis_denetimi(engine: Engine, wf_id: uuid.UUID) -> list[dict]:
     with engine.connect() as c:
-        assert verify_chain(c).ok
+        assert verify_chain(c).ok  # bağlamdaki (iş akışının) projesinin zinciri
         return list(
             c.execute(
                 text(
-                    "SELECT ozet FROM audit_event WHERE nesne = :n "
+                    "SELECT ozet FROM audit_event WHERE project_id = :pid AND nesne = :n "
                     "AND eylem = 'workflow_instance.transition' ORDER BY id"
                 ),
-                {"n": f"workflow_instance:{wf_id}"},
+                pid_param(n=f"workflow_instance:{wf_id}"),
             ).scalars()
         )
 

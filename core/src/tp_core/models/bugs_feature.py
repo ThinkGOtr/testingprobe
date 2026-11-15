@@ -28,7 +28,7 @@ from sqlalchemy import ForeignKey, Integer
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from tp_core.models.base import Base, guncelleme_col, in_check, olusturma_col
+from tp_core.models.base import Base, ProjeKapsamli, guncelleme_col, in_check, olusturma_col
 from tp_core.models.requirements import EMPTY_LIST, EMPTY_OBJ
 
 BUG_KAYNAK = frozenset({"failure", "finding"})
@@ -36,7 +36,7 @@ HAZIRLIK_DURUM = frozenset({"kuyrukta", "hazirlaniyor", "hazir", "basarisiz"})
 URETIM = frozenset({"ai", "sablon"})
 
 
-class BugDraftEk(Base):
+class BugDraftEk(ProjeKapsamli, Base):
     """Bug taslağının içerik dışı hazırlık/yayın ayrıntıları (bug_draft ile 1:1)."""
 
     __tablename__ = "bug_draft_ek"

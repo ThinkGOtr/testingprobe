@@ -41,6 +41,14 @@ Kullanım (özellik şeritleri)::
   (bunlar dışında) süzgeçlerini alır.
 - `idempotency_key` verilirse aynı anahtarla ikinci ekleme yeni iş açmaz, mevcut işi döndürür.
   Karar işlem kapsamlı bir advisory lock altında verilir (eşzamanlı çağrılar yarışmaz).
+- Proje (TP-COK-PROJE-PLANI §5.1, K1): tüm projelerin işleri tek kuyrukta, tek sırada. İş satırı
+  `project_id` taşır: `enqueue(..., project_id=BAGLAM)` bağlamdaki projeyi yazar; bağlam yoksa ve
+  tür `job_handler(..., kurulum=True)` ile kaydolmamışsa `ProjeBaglamiYok`. Kurulum işleri (ve
+  açık `project_id=None`) NULL projelidir. Idempotency tekilliği ve kilidi proje başınadır
+  (`(project_id, idempotency_key)`; kilit anahtarı `"<pid>:<key>"`). Yürütücü işleyiciyi
+  `proje_icinde(job.project_id, kaynak="is")` içinde çağırır (NULL ise bağlamsız): kullanıcı
+  proje değiştirse de iş kendi projesinde sürer. `claim`, `reap_stale`, `release_orphans` proje
+  geneldir (tek sıra); iş akışını `failed` yapmak o akışın projesinde yapılır.
 """
 
 from __future__ import annotations
@@ -59,7 +67,7 @@ import uuid
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import Any, Final
 
 from sqlalchemy import Connection, Engine, text
 
@@ -67,6 +75,7 @@ from tp_core.audit.canonical import normalize
 from tp_core.audit.chain import append_audit
 from tp_core.gateway.errors import BudgetExceeded
 from tp_core.gateway.is_suresi import is_suresi
+from tp_core.proje.baglam import ProjeBaglamiYok, baglamla, mevcut_pid, proje_icinde, varsa
 
 log = logging.getLogger("tp_core.worker")
 
@@ -104,6 +113,7 @@ class JobContext:
     deneme: int
     max_deneme: int
     workflow_id: uuid.UUID | None = None
+    project_id: str | None = None  # işin projesi (NULL = kurulum işi); bağlam zaten kurulu
 
     @property
     def son_deneme(self) -> bool:
@@ -122,6 +132,7 @@ class HandlerSpec:
     max_backoff_s: float = 300.0
     zaman_asimi_s: int = DEFAULT_ZAMAN_ASIMI_S
     serit: str = GENEL_SERIT
+    kurulum: bool = False  # kurulum geneli iş: NULL projeli, bağlamsız koşar
 
     def backoff(self, deneme: int) -> float:
         return min(self.backoff_s * (2 ** max(deneme - 1, 0)), self.max_backoff_s)
@@ -139,7 +150,10 @@ def job_handler(
     zaman_asimi_s: int = DEFAULT_ZAMAN_ASIMI_S,
     registry: dict[str, HandlerSpec] | None = None,
     serit: str = GENEL_SERIT,
+    kurulum: bool = False,
 ) -> Callable[[Handler], Handler]:
+    """İşleyici kaydı. `kurulum=True`: proje geneli olmayan bakım işi (`job.project_id` NULL,
+    işleyici bağlamsız koşar; ör. artefakt temizliği, asistan paket yenileme)."""
     if serit not in SERITLER:
         raise ValueError(f"bilinmeyen şerit: {serit}")
     if max_deneme < 1:
@@ -153,7 +167,7 @@ def job_handler(
         if mevcut is not None and mevcut.fn is not fn:
             raise ValueError(f"iş türü iki kez kaydedildi: {tur}")
         hedef[tur] = HandlerSpec(
-            tur, fn, max_deneme, backoff_s, max_backoff_s, zaman_asimi_s, serit
+            tur, fn, max_deneme, backoff_s, max_backoff_s, zaman_asimi_s, serit, kurulum
         )
         return fn
 
@@ -189,6 +203,39 @@ def discover(package: str = "tp_core.features") -> list[str]:
 # ------------------------------------------------------------------------ kuyruk işlemleri
 
 
+class _Baglam:
+    """`project_id` için "bağlamdaki proje" işareti (açık `None` = kurulum işi)."""
+
+    def __repr__(self) -> str:
+        return "BAGLAM"
+
+
+BAGLAM: Final = _Baglam()
+
+
+def _is_projesi(project_id: str | _Baglam | None, spec: HandlerSpec | None, tur: str) -> str | None:
+    if not isinstance(project_id, _Baglam):
+        if project_id is not None and (not project_id or len(project_id) > 64):
+            raise ValueError(f"geçersiz proje kimliği: {project_id!r}")
+        return project_id
+    if spec is not None and spec.kurulum:
+        return None
+    b = varsa()
+    if b is None:
+        raise ProjeBaglamiYok(
+            f"{tur!r} işi bağlamsız kuyruğa eklenemez: proje_icinde(pid) içinde çağırın, "
+            "kurulum işiyse job_handler(..., kurulum=True) ya da project_id=None verin"
+        )
+    return b.pid
+
+
+def _kilit_projesi(project_id: str | _Baglam | None) -> str:
+    if isinstance(project_id, _Baglam):
+        b = varsa()
+        return b.pid if b is not None else ""
+    return project_id or ""
+
+
 def enqueue(
     conn: Connection,
     tur: str,
@@ -200,23 +247,28 @@ def enqueue(
     workflow_id: uuid.UUID | None = None,
     zaman_asimi_s: int | None = None,
     registry: Mapping[str, HandlerSpec] | None = None,
+    project_id: str | _Baglam | None = BAGLAM,
 ) -> uuid.UUID:
-    """İşi kuyruğa ekler (çağıranın işleminde); idempotency anahtarı varsa mevcut işi döndürür.
+    """İşi kuyruğa ekler (çağıranın işleminde); idempotency anahtarı varsa aynı projedeki mevcut
+    işi döndürür.
 
     `max_deneme`/`zaman_asimi_s` verilmezse ve işleyici bu süreçte kayıtlıysa kayıttaki politika
-    satıra yazılır (satır etkin politikayı taşır).
+    satıra yazılır (satır etkin politikayı taşır). `project_id`: `BAGLAM` (varsayılan) bağlamdaki
+    proje (kurulum türünde NULL; bağlam yoksa `ProjeBaglamiYok`), `None` kurulum işi, dize o proje.
     """
     if max_deneme is not None and max_deneme < 1:
         raise ValueError("max_deneme en az 1 olmalı")
     if zaman_asimi_s is not None and zaman_asimi_s < 1:
         raise ValueError("zaman_asimi_s en az 1 olmalı")
     spec = (REGISTRY if registry is None else registry).get(tur)
+    pid = _is_projesi(project_id, spec, tur)
     if spec is not None:
         max_deneme = max_deneme if max_deneme is not None else spec.max_deneme
         zaman_asimi_s = zaman_asimi_s if zaman_asimi_s is not None else spec.zaman_asimi_s
     if idempotency_key is not None:
-        idempotency_lock(conn, idempotency_key)
+        idempotency_lock(conn, idempotency_key, project_id=pid)
     params = {
+        "pid": pid,
         "tur": tur,
         "yuk": None if yuk is None else json.dumps(normalize(dict(yuk)), ensure_ascii=False),
         "key": idempotency_key,
@@ -227,27 +279,36 @@ def enqueue(
     }
     yeni = conn.execute(
         text(
-            "INSERT INTO job (tur, yuk, idempotency_key, run_after, max_deneme, workflow_id, "
-            "zaman_asimi_s) VALUES (:tur, CAST(:yuk AS jsonb), :key, COALESCE(:ra, now()), :md, "
-            ":wf, :za) "
-            "ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING "
-            "RETURNING id"
+            "INSERT INTO job (project_id, tur, yuk, idempotency_key, run_after, max_deneme, "
+            "workflow_id, zaman_asimi_s) VALUES (:pid, :tur, CAST(:yuk AS jsonb), :key, "
+            "COALESCE(:ra, now()), :md, :wf, :za) "
+            "ON CONFLICT (project_id, idempotency_key) WHERE idempotency_key IS NOT NULL "
+            "DO NOTHING RETURNING id"
         ),
         params,
     ).scalar_one_or_none()
     if yeni is None:
         return conn.execute(
-            text("SELECT id FROM job WHERE idempotency_key = :key"), {"key": idempotency_key}
+            text(
+                "SELECT id FROM job WHERE project_id IS NOT DISTINCT FROM :pid "
+                "AND idempotency_key = :key"
+            ),
+            {"pid": pid, "key": idempotency_key},
         ).scalar_one()
     conn.execute(text("SELECT pg_notify(:c, :t)"), {"c": NOTIFY_CHANNEL, "t": tur})
     return yeni
 
 
-def idempotency_lock(conn: Connection, key: str) -> None:
-    """Aynı idempotency anahtarı için işlem sonuna kadar süren kilit (yeniden girilebilir)."""
+def idempotency_lock(
+    conn: Connection, key: str, *, project_id: str | _Baglam | None = BAGLAM
+) -> None:
+    """Aynı projede aynı anahtar için işlem sonuna kadar süren kilit (yeniden girilebilir).
+
+    Anahtar `"<pid>:<key>"` (`BAGLAM`: bağlamdaki proje, bağlam yoksa / `None`: kurulum, `":key"`).
+    Projeler birbirinin aynı adlı kilidini beklemez."""
     conn.execute(
         text("SELECT pg_advisory_xact_lock(:ns, hashtext(:k))"),
-        {"ns": IDEMPOTENCY_LOCK_NS, "k": key},
+        {"ns": IDEMPOTENCY_LOCK_NS, "k": f"{_kilit_projesi(project_id)}:{key}"},
     )
 
 
@@ -273,6 +334,7 @@ class ClaimedJob:
     max_deneme: int | None
     workflow_id: uuid.UUID | None
     zaman_asimi_s: int | None = None
+    project_id: str | None = None
 
 
 # Süreç başına açılış kimliği: konteynerler aynı hostname'i (compose `hostname: core-worker`) ve
@@ -323,14 +385,21 @@ def claim(
             "WHERE id = (SELECT id FROM job WHERE durum IN ('queued', 'retry') "
             f"AND run_after <= now() {filtre} ORDER BY run_after, olusturma LIMIT 1 "
             "FOR UPDATE SKIP LOCKED) "
-            "RETURNING id, tur, yuk, deneme, max_deneme, workflow_id, zaman_asimi_s"
+            "RETURNING id, tur, yuk, deneme, max_deneme, workflow_id, zaman_asimi_s, project_id"
         ),
         {"w": worker, "turler": turler, "haric": list(haric or [])},
     ).first()
     if row is None:
         return None
     return ClaimedJob(
-        row.id, row.tur, row.yuk, row.deneme, row.max_deneme, row.workflow_id, row.zaman_asimi_s
+        row.id,
+        row.tur,
+        row.yuk,
+        row.deneme,
+        row.max_deneme,
+        row.workflow_id,
+        row.zaman_asimi_s,
+        row.project_id,
     )
 
 
@@ -418,7 +487,9 @@ def fail_workflows(conn: Connection, basarisizlar: Mapping[uuid.UUID, str]) -> i
 
     `basarisizlar`: workflow_id → sebep (işin son hatası). Zaten `running` olmayan (duraklamış,
     insan bekleyen, bitmiş) akışlara dokunmaz. Durum yalnızca `transition()` ile değişir; ORM
-    oturumu verilen bağlantının işlemine katılır, commit dış işlemi bitirmez.
+    oturumu verilen bağlantının işlemine katılır, commit dış işlemi bitirmez. Kuyruk proje geneli
+    olduğundan her akış kendi projesinin bağlamında (`kaynak="is"`) geçirilir: denetim kaydı ve
+    olay o projeye gider.
     """
     if not basarisizlar:
         return 0
@@ -428,14 +499,22 @@ def fail_workflows(conn: Connection, basarisizlar: Mapping[uuid.UUID, str]) -> i
     from tp_core.workflow.service import SYSTEM, transition
 
     n = 0
-    with Session(bind=conn, join_transaction_mode="rollback_only") as session:
-        for wf_id in sorted(basarisizlar, key=str):  # sabit kilit sırası
+    for wf_id in sorted(basarisizlar, key=str):  # sabit kilit sırası
+        pid = conn.execute(
+            text("SELECT project_id FROM workflow_instance WHERE id = :id"), {"id": wf_id}
+        ).scalar_one_or_none()
+        if pid is None:
+            continue
+        with (
+            proje_icinde(pid, kaynak="is"),
+            Session(bind=conn, join_transaction_mode="rollback_only") as session,
+        ):
             wf = session.get(WorkflowInstance, wf_id, with_for_update=True)
             if wf is None or wf.durum != "running":
                 continue
             transition(session, wf, "failed", SYSTEM, "running", sebep=basarisizlar[wf_id][:500])
+            session.commit()
             n += 1
-        session.commit()
     return n
 
 
@@ -454,7 +533,7 @@ def reap_stale(
     kayit = REGISTRY if registry is None else registry
     rows = conn.execute(
         text(
-            "SELECT id, tur, deneme, max_deneme, zaman_asimi_s, workflow_id, "
+            "SELECT id, tur, deneme, max_deneme, zaman_asimi_s, workflow_id, project_id, "
             "EXTRACT(EPOCH FROM now() - baslama) AS gecen, "
             "EXTRACT(EPOCH FROM now() - guncelleme) AS sessiz "
             "FROM job WHERE durum = 'running' FOR UPDATE SKIP LOCKED"
@@ -485,15 +564,16 @@ def _birakma_logu(conn: Connection, row: Any, sonuc: str, hata: str) -> None:
     nesne = None
     if row.workflow_id:
         nesne = conn.execute(
-            text("SELECT nesne_turu, nesne_id FROM workflow_instance WHERE id = :w"),
+            text("SELECT project_id, nesne_turu, nesne_id FROM workflow_instance WHERE id = :w"),
             {"w": row.workflow_id},
         ).first()
     log.warning(
-        "iş bırakıldı: job=%s tur=%s deneme=%s sonuc=%s workflow=%s nesne=%s:%s neden=%s",
+        "iş bırakıldı: job=%s tur=%s deneme=%s sonuc=%s proje=%s workflow=%s nesne=%s:%s neden=%s",
         row.id,
         row.tur,
         row.deneme,
         sonuc,
+        row.project_id,
         row.workflow_id,
         nesne.nesne_turu if nesne else None,
         nesne.nesne_id if nesne else None,
@@ -529,7 +609,7 @@ def release_orphans(
         kosul += " AND (kilitleyen = :onceki OR guncelleme < now() - make_interval(secs => :taze))"
     rows = conn.execute(
         text(
-            "SELECT id, tur, deneme, max_deneme, zaman_asimi_s, workflow_id FROM job "
+            "SELECT id, tur, deneme, max_deneme, zaman_asimi_s, workflow_id, project_id FROM job "
             f"WHERE {kosul} FOR UPDATE SKIP LOCKED"
         ),
         {
@@ -563,18 +643,22 @@ def start_workflow(
     baglam: Mapping[str, Any] | None = None,
     idempotency_key: str | None = None,
 ) -> tuple[uuid.UUID, uuid.UUID]:
-    """`workflow_instance` (running) açar ve ilk işini kuyruğa ekler: (workflow_id, job_id).
+    """Bağlamdaki projede `workflow_instance` (running) açar ve ilk işini aynı projede kuyruğa
+    ekler: (workflow_id, job_id). Bağlam yoksa `ProjeBaglamiYok`.
 
     İşin yüküne `workflow_id` eklenir; bütçe ve `ai_call.workflow_id` bu kimliğe bağlanır.
-    Aynı `idempotency_key` ile tekrar çağrı mevcut iş akışını döndürür.
+    Aynı `idempotency_key` ile tekrar çağrı (aynı projede) mevcut iş akışını döndürür.
     """
+    pid = mevcut_pid()
     if idempotency_key is not None:
         # Kilit işlem sonuna kadar tutulur: eşzamanlı ikinci çağrı birincinin commit'ini bekler,
         # sonra mevcut işi görür (iki workflow_instance açılmaz).
-        idempotency_lock(conn, idempotency_key)
+        idempotency_lock(conn, idempotency_key, project_id=pid)
         mevcut = conn.execute(
-            text("SELECT workflow_id, id FROM job WHERE idempotency_key = :k"),
-            {"k": idempotency_key},
+            text(
+                "SELECT workflow_id, id FROM job WHERE project_id = :pid AND idempotency_key = :k"
+            ),
+            {"pid": pid, "k": idempotency_key},
         ).first()
         if mevcut is not None:
             if mevcut.workflow_id is None:
@@ -586,11 +670,12 @@ def start_workflow(
     wf_id = uuid.uuid4()
     conn.execute(
         text(
-            "INSERT INTO workflow_instance (id, tur, baslatan, nesne_turu, nesne_id, baglam) "
-            "VALUES (:id, :tur, :b, :nt, :ni, CAST(:bg AS jsonb))"
+            "INSERT INTO workflow_instance (id, project_id, tur, baslatan, nesne_turu, nesne_id, "
+            "baglam) VALUES (:id, :pid, :tur, :b, :nt, :ni, CAST(:bg AS jsonb))"
         ),
         {
             "id": wf_id,
+            "pid": pid,
             "tur": tur,
             "b": baslatan,
             "nt": nesne_turu,
@@ -600,13 +685,19 @@ def start_workflow(
     )
     job_yuk = {**dict(yuk or {}), "workflow_id": str(wf_id)}
     job_id = enqueue(
-        conn, job_tur or tur, job_yuk, idempotency_key=idempotency_key, workflow_id=wf_id
+        conn,
+        job_tur or tur,
+        job_yuk,
+        idempotency_key=idempotency_key,
+        workflow_id=wf_id,
+        project_id=pid,
     )
     sahip = conn.execute(text("SELECT workflow_id FROM job WHERE id = :j"), {"j": job_id})
     if sahip.scalar_one() != wf_id:  # kilit altında olamaz; savunma amaçlı
         raise RuntimeError("iş akışı işi başka bir iş akışına bağlandı")
     conn.execute(
-        text("UPDATE workflow_instance SET job_id = :j WHERE id = :id"), {"j": job_id, "id": wf_id}
+        text("UPDATE workflow_instance SET job_id = :j WHERE project_id = :pid AND id = :id"),
+        {"j": job_id, "pid": pid, "id": wf_id},
     )
     append_audit(
         conn,
@@ -636,16 +727,26 @@ class Sonuc:
     asili: threading.Thread | None = field(default=None, compare=False, repr=False)
 
 
+def _isleyici_cagir(spec: HandlerSpec, ctx: JobContext) -> Any:
+    """İşleyiciyi işin projesinde (`kaynak="is"`) çağırır; NULL projeli iş bağlamsız koşar."""
+    if ctx.project_id is None:
+        return spec.fn(ctx)
+    with proje_icinde(ctx.project_id, kaynak="is"):
+        return spec.fn(ctx)
+
+
 def execute(job: ClaimedJob, registry: Mapping[str, HandlerSpec] | None = None) -> Sonuc:
-    """Sahiplenilmiş işi yürütür; sonucu döndürür (DB'ye dokunmaz)."""
+    """Sahiplenilmiş işi kendi projesinin bağlamında yürütür; sonucu döndürür (DB'ye dokunmaz)."""
     kayit = REGISTRY if registry is None else registry
     spec = kayit.get(job.tur)
     if spec is None:
         return Sonuc("failed", 1, f"bilinmeyen iş türü: {job.tur}")
     max_deneme = job.max_deneme or spec.max_deneme
-    ctx = JobContext(job.id, job.tur, job.yuk, job.deneme, max_deneme, job.workflow_id)
+    ctx = JobContext(
+        job.id, job.tur, job.yuk, job.deneme, max_deneme, job.workflow_id, job.project_id
+    )
     try:
-        deger = spec.fn(ctx)
+        deger = _isleyici_cagir(spec, ctx)
     except PermanentJobError as exc:
         return Sonuc("failed", 1, _hata_metni(exc))
     except BudgetExceeded as exc:
@@ -675,12 +776,15 @@ def _nabiz_dongusu(engine: Engine, job_id: uuid.UUID, worker: str, dur: threadin
             log.warning("iş %s nabzı yazılamadı: %s", job_id, str(exc).splitlines()[0][:200])
 
 
-def _akisi_duraklat(engine: Engine, wf_id: uuid.UUID, neden: str) -> None:
+def _akisi_duraklat(engine: Engine, wf_id: uuid.UUID, neden: str, pid: str | None) -> None:
     from sqlalchemy.orm import Session
 
     from tp_core.workflow.budget import pause_for_budget
 
-    with Session(engine) as session, session.begin():
+    if pid is None:  # iş akışlı iş her zaman projelidir (start_workflow); savunma
+        log.warning("iş akışı %s projesiz işten duraklatılamadı", wf_id)
+        return
+    with proje_icinde(pid, kaynak="is"), Session(engine) as session, session.begin():
         if pause_for_budget(session, wf_id, neden):
             log.warning("iş akışı %s bütçe aşımıyla duraklatıldı: %s", wf_id, neden)
 
@@ -764,8 +868,12 @@ def process_one(
     if job is None:
         return None
     dur = threading.Event()
+    # Nabız yalnız `job` satırına yazar (proje geneli); `baglamla` çağıranın (boş) bağlamını taşır.
     nabiz = threading.Thread(
-        target=_nabiz_dongusu, args=(engine, job.id, w, dur), name=f"nabiz-{job.id}", daemon=True
+        target=baglamla(_nabiz_dongusu),
+        args=(engine, job.id, w, dur),
+        name=f"nabiz-{job.id}",
+        daemon=True,
     )
     nabiz.start()
     try:
@@ -782,7 +890,7 @@ def process_one(
             if yazilan == "failed" and job.workflow_id is not None and not sonuc.butce_asildi:
                 fail_workflows(conn, {job.workflow_id: sonuc.hata or "iş başarısız"})
     if yazildi and sonuc.butce_asildi and job.workflow_id is not None:
-        _akisi_duraklat(engine, job.workflow_id, sonuc.hata or "bütçe aşıldı")
+        _akisi_duraklat(engine, job.workflow_id, sonuc.hata or "bütçe aşıldı", job.project_id)
     if not yazildi:
         log.warning("iş %s sonucu yazılamadı (zaman aşımıyla geri alınmış olabilir)", job.id)
     elif sonuc.hata:
