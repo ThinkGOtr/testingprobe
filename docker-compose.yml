@@ -206,6 +206,9 @@ services:
     command: ["alembic", "upgrade", "head"]
     environment:
       TP_DATABASE_URL: postgresql+psycopg://tp_owner:${TP_OWNER_PASSWORD}@postgres:5432/tp
+      # Çok proje göçleri (0044/0045) mevcut satırları bu projeye bağlar; boşsa yer tutucu kullanılırdı.
+      CONFIG_SOURCE: ${CONFIG_SOURCE:-env}
+      TP_HOME_PROJECT: ${TP_HOME_PROJECT:-}
     networks: [core-net]
     depends_on:
       postgres: { condition: service_healthy }
