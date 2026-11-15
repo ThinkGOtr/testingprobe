@@ -148,7 +148,10 @@ def test_tam_akis_analist_duzenler_po_onaylar(rol: Roller, make_requirement) -> 
         eylemler = [
             e
             for (e,) in s.execute(
-                text("SELECT eylem FROM audit_event WHERE nesne = :n ORDER BY id"),
+                text(
+                    "SELECT eylem FROM audit_event WHERE audit_event.project_id = 'test-a' AND "
+                    "nesne = :n ORDER BY id"
+                ),
                 {"n": f"karar_tablosu:{t['id']}"},
             ).all()
         ]
@@ -275,7 +278,12 @@ def test_yasak_gecisler_409(rol: Roller, make_requirement) -> None:
     assert rol("analyst").post(f"/decision-tables/{tid}/reopen").status_code == 409
     # Başarısız onay denemesi review kaydı bırakmaz (işlem geri alınır).
     with session_scope() as s:
-        n = s.scalar(text("SELECT count(*) FROM review WHERE nesne_id = :i"), {"i": tid})
+        n = s.scalar(
+            text(
+                "SELECT count(*) FROM review WHERE review.project_id = 'test-a' AND nesne_id = :i"
+            ),
+            {"i": tid},
+        )
     assert n == 0
     # pending_po: içerik değişmez, yeniden gönderilmez, yeniden açılmaz
     rol("analyst").post(f"/decision-tables/{tid}/submit")

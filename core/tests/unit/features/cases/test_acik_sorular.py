@@ -374,7 +374,11 @@ def test_jira_cagrisi_gereksinim_kilidi_altinda_yapilmaz(
     def yaz(*a: Any, **kw: Any) -> Any:
         with engine.connect() as c:
             c.execute(
-                text("SELECT id FROM requirement WHERE id = :i FOR UPDATE NOWAIT"), {"i": ortam}
+                text(
+                    "SELECT id FROM requirement WHERE requirement.project_id = 'test-a' AND id = "
+                    ":i FOR UPDATE NOWAIT"
+                ),
+                {"i": ortam},
             )
             kilitlenebildi.append(True)
             c.rollback()
@@ -567,7 +571,12 @@ def test_yanit_okuma_gereksinim_basina_commit_eder(
 
     def oku(*a: Any, **kw: Any) -> Any:
         with engine.connect() as c:  # okuyucu hiçbir açık soru satırını kilitli tutmuyor
-            c.execute(text("SELECT id FROM acik_soru FOR UPDATE NOWAIT")).all()
+            c.execute(
+                text(
+                    "SELECT id FROM acik_soru WHERE acik_soru.project_id = 'test-a' FOR UPDATE "
+                    "NOWAIT"
+                )
+            ).all()
             kilitsiz.append(True)
             c.rollback()
         return asil(*a, **kw)

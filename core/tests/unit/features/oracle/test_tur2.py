@@ -366,7 +366,10 @@ def test_turetilen_case_riski_iki_adimda_dusmez(api: TestClient, engine: Engine,
     kaynak, turev = cases[0], cases[1]
     with session_scope() as s:
         s.execute(
-            text("UPDATE test_case SET ai_generated = false WHERE id = :i"), {"i": turev["id"]}
+            text(
+                "UPDATE test_case SET ai_generated = false WHERE project_id = 'test-a' AND id = :i"
+            ),
+            {"i": turev["id"]},
         )
         iliski = MetamorfikIliski(
             requirement_id=k["rid"], sira_no=1, icerik={}, icerik_hash=content_hash({})
@@ -487,7 +490,10 @@ def test_g2_y6_kullanici_basina_sinir(api: TestClient, engine: Engine, kur) -> N
             cid = uuid.UUID(cases[n % 4]["id"])
             with allow_state_write():
                 s.execute(
-                    text("INSERT INTO job (tur, yuk) VALUES (:t, CAST(:y AS jsonb))"),
+                    text(
+                        "INSERT INTO job (project_id, tur, yuk) VALUES ('test-a', :t, CAST(:y AS "
+                        "jsonb))"
+                    ),
                     {
                         "t": service.CHECK_CASE_JOB,
                         "y": f'{{"case_id": "{uuid.uuid4()}", "requirement_id": "{uuid.uuid4()}", '
@@ -704,7 +710,11 @@ def test_t2_n5_kapi_taslak_tabloyu_kilitlemez(
     with engine.connect() as kilitleyen:
         tx = kilitleyen.begin()
         kilitleyen.execute(
-            text("SELECT id FROM karar_tablosu WHERE id = :i FOR UPDATE"), {"i": tid}
+            text(
+                "SELECT id FROM karar_tablosu WHERE karar_tablosu.project_id = 'test-a' AND id = "
+                ":i FOR UPDATE"
+            ),
+            {"i": tid},
         )
         with session_scope() as s:
             s.execute(text("SET LOCAL lock_timeout = '2s'"))
@@ -737,7 +747,10 @@ def test_t2_n11_gecerli_tablolar_islem_basina_bir_kez(
     run_jobs(engine)
     c = latest_cases(api, k["rid"])[0]
     with session_scope() as s:
-        s.execute(text("UPDATE test_case SET durum = 'approved' WHERE id = :i"), {"i": c["id"]})
+        s.execute(
+            text("UPDATE test_case SET durum = 'approved' WHERE project_id = 'test-a' AND id = :i"),
+            {"i": c["id"]},
+        )
     sayac = {"n": 0}
     asil = service.gecerli_tablolar
 
@@ -761,8 +774,9 @@ def test_mimari_17_onayli_tablo_hashsiz_olamaz(engine: Engine, kur, api: TestCli
         with engine.connect() as c, pytest.raises(IntegrityError, match="onay_hash_ck"):
             c.execute(
                 text(
-                    f"INSERT INTO {tablo} (requirement_id, sira_no, icerik, icerik_hash, durum, "
-                    "onaylanan_hash) VALUES (:r, 77, '{}'::jsonb, 'h', 'approved', 'h')"
+                    f"INSERT INTO {tablo} (project_id, requirement_id, sira_no, icerik, "
+                    "icerik_hash, durum, onaylanan_hash) "
+                    "VALUES ('test-a', :r, 77, '{}'::jsonb, 'h', 'approved', 'h')"
                 ),
                 {"r": k["rid"]},
             )
@@ -780,7 +794,10 @@ def test_u2_n1_yeniden_acilan_tablonun_uyumsuz_kaydi_sayilmaz(
     run_jobs(engine)
     c = latest_cases(api, k["rid"])[0]
     with session_scope() as s:
-        s.execute(text("UPDATE test_case SET durum = 'approved' WHERE id = :i"), {"i": c["id"]})
+        s.execute(
+            text("UPDATE test_case SET durum = 'approved' WHERE project_id = 'test-a' AND id = :i"),
+            {"i": c["id"]},
+        )
     m = api.get(f"/requirements/{k['rid']}/case-metrics").json()["beklenti_dogrulugu"]
     assert m["uyumsuz"] == 1
     assert [x["case_id"] for x in api.get("/control-tower").json()["onayli_uyumsuz"]] == [c["id"]]

@@ -55,16 +55,18 @@ def _onayli_icerik(engine: Engine, cid: str, **alanlar: Any) -> None:
         c.execute(
             text(
                 "UPDATE test_case SET icerik = CAST(:i AS jsonb), icerik_hash = :h, "
-                "onaylanan_hash = :h WHERE id = :id"
+                "onaylanan_hash = :h WHERE id = :id AND project_id = 'test-a'"
             ),
             {"i": json.dumps(icerik), "h": h, "id": cid},
         )
         c.execute(
             text(
                 # review yalnız eklenir (güncellenemez): son onay kararı yeni hash'le yinelenir.
-                "INSERT INTO review (nesne_turu, nesne_id, user_id, kanal, karar, onaylanan_hash) "
-                "SELECT nesne_turu, nesne_id, user_id, kanal, karar, :h FROM review "
-                "WHERE nesne_turu = 'test_case' AND nesne_id = :id ORDER BY sira DESC LIMIT 1"
+                "INSERT INTO review (project_id, nesne_turu, nesne_id, user_id, kanal, karar, "
+                "onaylanan_hash) "
+                "SELECT 'test-a', nesne_turu, nesne_id, user_id, kanal, karar, :h FROM review "
+                "WHERE review.project_id = 'test-a' AND nesne_turu = 'test_case' AND nesne_id = "
+                ":id ORDER BY sira DESC LIMIT 1"
             ),
             {"h": h, "id": cid},
         )

@@ -113,7 +113,10 @@ def test_atifli_case_cozulmus_gider_replay_eslesir_veri_izi(
     assert DEMO_PAROLA not in detay.text and "•••" in detay.text
     with engine.connect() as c:
         adimlar = c.execute(
-            text("SELECT arguman::text, ozet, ham FROM script_adim WHERE script_id = :s"),
+            text(
+                "SELECT arguman::text, ozet, ham FROM script_adim WHERE script_adim.project_id = "
+                "'test-a' AND script_id = :s"
+            ),
             {"s": sid},
         ).all()
     assert adimlar and DEMO_PAROLA not in str(adimlar)

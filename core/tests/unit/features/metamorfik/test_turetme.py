@@ -153,7 +153,9 @@ def _turet(k: Kurulum, case_ids: list[uuid.UUID] | None = None, **kw: Any) -> di
 def _case_sayisi(engine: Engine, rid: uuid.UUID) -> int:
     with engine.connect() as c:
         return c.execute(
-            select(func.count()).select_from(TestCase).where(TestCase.requirement_id == rid)
+            select(func.count())
+            .select_from(TestCase)
+            .where(TestCase.requirement_id == rid, TestCase.project_id == "test-a")
         ).scalar_one()
 
 
@@ -230,7 +232,10 @@ def test_olay_denetim_ve_oracle_isi(
             text("SELECT yuk, idempotency_key FROM job WHERE tur = 'oracle.check_requirement'")
         ).all()
         denetim = c.execute(
-            text("SELECT aktor, nesne, ozet FROM audit_event WHERE eylem = 'metamorfik.derived'")
+            text(
+                "SELECT aktor, nesne, ozet FROM audit_event WHERE audit_event.project_id = "
+                "'test-a' AND eylem = 'metamorfik.derived'"
+            )
         ).all()
     assert len(isler) == 1
     # Oracle birleştirmesi: gereksinim başına tek bekleyen iş (anahtarsız).
@@ -264,7 +269,10 @@ def test_on_kosul_saglanmazsa_case_yazilmaz(
         # Denetim kaydı denemeyi yine tutar.
         assert (
             c.execute(
-                text("SELECT count(*) FROM audit_event WHERE eylem = 'metamorfik.derived'")
+                text(
+                    "SELECT count(*) FROM audit_event WHERE audit_event.project_id = 'test-a' AND "
+                    "eylem = 'metamorfik.derived'"
+                )
             ).scalar_one()
             == 1
         )

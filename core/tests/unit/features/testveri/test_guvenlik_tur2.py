@@ -139,7 +139,10 @@ def test_gizliyle_ayni_deger_genel_metin_ve_denetim(
     with engine.connect() as c:
         ozetler = list(
             c.execute(
-                text("SELECT ozet FROM audit_event WHERE eylem = 'testveri.gizli_cakisma_reddi'")
+                text(
+                    "SELECT ozet FROM audit_event WHERE audit_event.project_id = 'test-a' AND "
+                    "eylem = 'testveri.gizli_cakisma_reddi'"
+                )
             ).scalars()
         )
     assert ozetler == [{"anahtar": "ortak.deneme"}]

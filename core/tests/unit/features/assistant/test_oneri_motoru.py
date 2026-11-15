@@ -373,7 +373,9 @@ def test_varliksiz_kuralda_yaptim_ertesi_gun_duser(
     # "Bugün" harcama satırının DB saatinden alınır: Python saati UTC gece yarısını geçmiş olsa
     # da gün anahtarı ve günlük harcama aynı güne düşer (sınırda kırılmasın).
     with engine.connect() as c:
-        bugun = c.execute(text("SELECT max(olusturma) FROM ai_call")).scalar_one()
+        bugun = c.execute(
+            text("SELECT max(olusturma) FROM ai_call WHERE ai_call.project_id = 'test-a'")
+        ).scalar_one()
     with Session(engine) as s, s.begin():
         k = oneri.geri_bildirim_yaz(s, sunucu, "butce-uyarisi", 2, simdi=bugun)
     assert (
@@ -494,7 +496,10 @@ def _tablo_ozeti(db: Db) -> dict[str, tuple[int, str]]:
             ).scalars()
             out = {}
             for t in list(tablolar):
-                sayi, ozet = c.execute(text(_OZET.format(f'"{t}"'))).one()
+                sayi, ozet = c.execute(
+                    # tüm projelerin anlık görüntüsü (hiçbir tablo değişmemeli)
+                    text(_OZET.format(f'"{t}"')).execution_options(tum_projeler=True)
+                ).one()
                 out[t] = (int(sayi), str(ozet))
             return out
     finally:

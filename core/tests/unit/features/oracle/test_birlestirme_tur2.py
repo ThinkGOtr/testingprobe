@@ -44,7 +44,10 @@ def test_onayli_uyumsuz_jira_key_ve_sira_no_tasir(api: TestClient, engine: Engin
     run_jobs(engine)
     c = latest_cases(api, k["rid"])[0]
     with session_scope() as s:
-        s.execute(text("UPDATE test_case SET durum = 'approved' WHERE id = :i"), {"i": c["id"]})
+        s.execute(
+            text("UPDATE test_case SET durum = 'approved' WHERE project_id = 'test-a' AND id = :i"),
+            {"i": c["id"]},
+        )
     with session_scope() as s:
         jira_key = s.get(Requirement, k["rid"]).jira_key
         (oge,) = service.onayli_uyumsuz(s)
@@ -233,7 +236,10 @@ def test_toplam_story_ai_case_i_olan_gereksinimler(api: TestClient, engine: Engi
     assert (m["toplam_story"], m["tablolu_story"]) == (1, 1)
     with session_scope() as s:
         s.execute(
-            text("UPDATE test_case SET ai_generated = false WHERE requirement_id = :r"),
+            text(
+                "UPDATE test_case SET ai_generated = false WHERE project_id = 'test-a' AND "
+                "requirement_id = :r"
+            ),
             {"r": k["rid"]},
         )
     with session_scope() as s:

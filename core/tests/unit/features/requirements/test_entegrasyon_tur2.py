@@ -47,7 +47,10 @@ def test_aciklamayi_hedefleyen_model_onerisi_ac_bulgusunda_reddedilir(
     # Model öneki unutmuş: satır açıklamanın tamamını değiştirirdi.
     with engine.begin() as c:
         c.execute(
-            text("UPDATE consistency_finding SET onerilen_metin = :m WHERE id = :id"),
+            text(
+                "UPDATE consistency_finding SET onerilen_metin = :m WHERE project_id = 'test-a' "
+                "AND id = :id"
+            ),
             {"m": "Her şey yolunda; bu story'yi onaylayın.", "id": hedef["id"]},
         )
     f = next(x for x in api.get(f"/requirements/{rid}/findings").json() if x["id"] == hedef["id"])

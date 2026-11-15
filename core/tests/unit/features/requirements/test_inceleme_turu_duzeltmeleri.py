@@ -100,7 +100,10 @@ def test_ayni_duzeltme_geri_alinan_storyye_yeniden_yazilir(
     assert len(refs) == 2 and all(r.durum == "created" for r in refs)
     with engine.connect() as c:
         bayat = c.execute(
-            text("SELECT count(*) FROM audit_event WHERE eylem = 'external_ref.stale'")
+            text(
+                "SELECT count(*) FROM audit_event WHERE audit_event.project_id = 'test-a' AND "
+                "eylem = 'external_ref.stale'"
+            )
         ).scalar_one()
     assert bayat == 1
     # Her akışın özet yorumu ayrıdır (aynı akış ikinci kez yorum yazmaz).
@@ -200,7 +203,9 @@ def test_goldeni_olmayan_story_replay_miss_yoluna_duser(
     assert d["insan_karari_gerekli"] is True and "REPLAY-MISS" in d["denetim_guvenilmez"]
     assert d["son_hata"] is None
     with engine.connect() as c:
-        modlar = set(c.execute(text("SELECT mod FROM ai_call")).scalars())
+        modlar = set(
+            c.execute(text("SELECT mod FROM ai_call WHERE ai_call.project_id = 'test-a'")).scalars()
+        )
     assert modlar == {"replay_miss"}
 
     # Prova kipinde (TP_REPLAY_STRICT=1) eşleşmeyen girdi hata verir: neden ve öneri görünür.
@@ -312,7 +317,8 @@ def test_po_istegi_kalici_hatadan_kurtarilir(
             c.execute(
                 text(
                     "SELECT count(*) FROM audit_event "
-                    "WHERE eylem = 'requirement.po_request_requeued'"
+                    "WHERE audit_event.project_id = 'test-a' AND eylem = "
+                    "'requirement.po_request_requeued'"
                 )
             ).scalar_one()
             == 1
@@ -359,7 +365,8 @@ def test_bayat_etiket_kaldirilirken_yeni_onay_yarisi_poya_bildirilir(
         ozet = c.execute(
             text(
                 "SELECT ozet->>'sonuc' FROM audit_event "
-                "WHERE eylem = 'requirement.po_label_removed' ORDER BY id DESC LIMIT 1"
+                "WHERE audit_event.project_id = 'test-a' AND eylem = "
+                "'requirement.po_label_removed' ORDER BY id DESC LIMIT 1"
             )
         ).scalar_one()
     assert ozet == "yarista_kaldirildi"

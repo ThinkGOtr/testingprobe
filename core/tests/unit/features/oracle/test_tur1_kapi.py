@@ -212,7 +212,12 @@ def test_gereksinim_isi_birlestirilir_ve_yayinli_case_kontrol_edilir(
     k = kur([basit_case(toplam="30,00", risk="low")], olgu_sayisi=10)
     c = latest_cases(api, k["rid"])[0]
     with session_scope() as s:
-        s.execute(text("UPDATE test_case SET durum = 'published' WHERE id = :i"), {"i": c["id"]})
+        s.execute(
+            text(
+                "UPDATE test_case SET durum = 'published' WHERE project_id = 'test-a' AND id = :i"
+            ),
+            {"i": c["id"]},
+        )
     with session_scope() as s:
         a = service.gereksinim_kontrolu_kuyruga_al(s, k["rid"], "tablo_onaylandi")
         b = service.gereksinim_kontrolu_kuyruga_al(s, k["rid"], "tablo_degisti")

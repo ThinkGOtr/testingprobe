@@ -89,7 +89,13 @@ def _is_durumu(engine: Engine, job_id: uuid.UUID) -> str:
 def _mesaj(engine: Engine, mesaj_id: uuid.UUID) -> dict:
     with engine.connect() as c:
         return dict(
-            c.execute(text("SELECT * FROM asistan_mesaj WHERE id = :i"), {"i": mesaj_id})
+            c.execute(
+                text(
+                    "SELECT * FROM asistan_mesaj WHERE asistan_mesaj.project_id = 'test-a' AND id "
+                    "= :i"
+                ),
+                {"i": mesaj_id},
+            )
             .mappings()
             .one()
         )
@@ -106,13 +112,18 @@ def _mesaj_ekle(
     sohbet_id, mesaj_id = uuid.uuid4(), uuid.uuid4()
     with engine.begin() as c:
         c.execute(
-            text("INSERT INTO asistan_sohbet (id, kullanici_id) VALUES (:s, :k)"),
+            text(
+                "INSERT INTO asistan_sohbet (project_id, id, kullanici_id) VALUES ('test-a', :s, "
+                ":k)"
+            ),
             {"s": sohbet_id, "k": kullanici_id},
         )
         c.execute(
             text(
-                "INSERT INTO asistan_mesaj (id, sohbet_id, kullanici_id, sira, rol, icerik, "
-                "durum, job_id, olusturma) VALUES (:m, :s, :k, 2, 'assistant', NULL, :d, :j, "
+                "INSERT INTO asistan_mesaj (project_id, id, sohbet_id, kullanici_id, sira, rol, "
+                "icerik, "
+                "durum, job_id, olusturma) VALUES ('test-a', :m, :s, :k, 2, 'assistant', NULL, :d, "
+                ":j, "
                 "now() - make_interval(secs => :yas))"
             ),
             {"m": mesaj_id, "s": sohbet_id, "k": kullanici_id, "d": durum_, "j": job_id,
@@ -136,7 +147,11 @@ def _is_ve_mesaj(engine: Engine, kullanici_id: uuid.UUID, tur: str) -> tuple[uui
 
 def _durum_satiri(engine: Engine) -> dict | None:
     with engine.connect() as c:
-        row = c.execute(text("SELECT * FROM asistan_durum WHERE id = 1")).mappings().first()
+        row = (
+            c.execute(text("SELECT * FROM asistan_durum WHERE asistan_durum.project_id = 'test-a'"))
+            .mappings()
+            .first()
+        )
     return dict(row) if row else None
 
 
@@ -233,7 +248,12 @@ def test_durum_yaz_ve_kalp_atisi(engine: Engine, monkeypatch: pytest.MonkeyPatch
     assert ikinci["kalp_atisi"] > ilk["kalp_atisi"]
     with engine.connect() as c:
         assert durum.model_hazir_oku(c) is True
-        assert c.execute(text("SELECT count(*) FROM asistan_durum")).scalar_one() == 1
+        assert (
+            c.execute(
+                text("SELECT count(*) FROM asistan_durum WHERE asistan_durum.project_id = 'test-a'")
+            ).scalar_one()
+            == 1
+        )
 
 
 def test_on_worker_start_bayraga_uyar(engine: Engine, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -262,7 +282,12 @@ def test_yaris_korumalari(engine: Engine, make_user) -> None:
     assert durum.durdurma_kontrolu(engine, mid)() is False
     # iptal (API) → geç biten iş sonucu ezmez ama harcamayı yazar
     with engine.begin() as c:
-        c.execute(text("UPDATE asistan_mesaj SET durum = 'iptal' WHERE id = :i"), {"i": mid})
+        c.execute(
+            text(
+                "UPDATE asistan_mesaj SET durum = 'iptal' WHERE project_id = 'test-a' AND id = :i"
+            ),
+            {"i": mid},
+        )
     assert durum.durdurma_kontrolu(engine, mid)() is True
     with engine.begin() as c:
         assert durum.sonuc_yaz(c, mid, durum="done", cevap={"metin": "x"}, kaynak="model") is False
@@ -326,7 +351,8 @@ def test_uzlastirma(engine: Engine, make_user) -> None:
         # eski işsiz mesaj kapanır
         with engine.begin() as c:
             c.execute(text("UPDATE asistan_mesaj SET olusturma = now() - interval '2 minutes' "
-                           "WHERE id = :i"), {"i": issiz_taze})  # fmt: skip
+                           "WHERE id = :i AND project_id = 'test-a'"),
+                      {"i": issiz_taze})  # fmt: skip
             assert durum.uzlastir(c) == [issiz_taze]
             assert durum.uzlastir(c) == []  # idempotent
     finally:
@@ -520,7 +546,13 @@ def test_asistan_zaman_asimi_sureci_kapatmaz_ve_mesaj_uzlastirilir(
     try:
         jid, mid = _is_ve_mesaj(engine, u.id, a_tur)
         with engine.begin() as c:
-            c.execute(text("UPDATE asistan_mesaj SET durum = 'running' WHERE id = :i"), {"i": mid})
+            c.execute(
+                text(
+                    "UPDATE asistan_mesaj SET durum = 'running' WHERE project_id = 'test-a' AND id "
+                    "= :i"
+                ),
+                {"i": mid},
+            )
         t, sonuc = _calistir(dur)
         assert _bekle(lambda: _is_durumu(engine, jid) == "failed")
         assert _bekle(lambda: _mesaj(engine, mid)["durum"] == "error")

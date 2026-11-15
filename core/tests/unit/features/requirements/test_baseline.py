@@ -82,8 +82,8 @@ def test_tp_app_gecmisi_degistiremez(db: Db) -> None:
     rid = _req()
     with psycopg.connect(db.app_url.replace("+psycopg", ""), autocommit=True) as c:
         c.execute(
-            f"INSERT INTO {TABLO} (requirement_id, sira, islem, deger_s, giren, giren_rol) "
-            "VALUES (%s, 1, 'set', 3600, 'a', 'analyst')",
+            f"INSERT INTO {TABLO} (project_id, requirement_id, sira, islem, deger_s, giren, "
+            "giren_rol) VALUES ('test-a', %s, 1, 'set', 3600, 'a', 'analyst')",
             (rid,),
         )
         for sql in (f"UPDATE {TABLO} SET deger_s = 1", f"DELETE FROM {TABLO}"):
@@ -93,15 +93,18 @@ def test_tp_app_gecmisi_degistiremez(db: Db) -> None:
         for islem, deger in (("set", 0), ("set", BAZ_UST_SINIR_S + 1), ("clear", 5), ("set", None)):
             with pytest.raises(psycopg.errors.CheckViolation):
                 c.execute(
-                    f"INSERT INTO {TABLO} (requirement_id, sira, islem, deger_s, giren, giren_rol)"
-                    " VALUES (%s, 9, %s, %s, 'a', 'analyst')",
+                    f"INSERT INTO {TABLO} (project_id, requirement_id, sira, islem, deger_s, "
+                    "giren, giren_rol) VALUES ('test-a', %s, 9, %s, %s, 'a', 'analyst')",
                     (rid, islem, deger),
                 )
         # Gereksinim silinirse geçmiş de gider (cascade, tp_app gereksinimi silebilir).
-        c.execute("DELETE FROM requirement WHERE id = %s", (rid,))
+        c.execute(
+            "DELETE FROM requirement WHERE requirement.project_id = 'test-a' AND id = %s", (rid,)
+        )
         assert c.execute(f"SELECT count(*) FROM {TABLO}").fetchone() == (0,)
 
 
+@pytest.mark.sql_denetimi_yok  # göç SQL'i uygulama kodu değil
 def test_downgrade_upgrade(db: Db) -> None:
     run_alembic(db.owner_url, "0012", "downgrade")
     with psycopg.connect(db.owner_url.replace("+psycopg", ""), autocommit=True) as c:

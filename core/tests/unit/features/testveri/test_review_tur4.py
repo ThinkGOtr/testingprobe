@@ -127,7 +127,10 @@ def _duzeltme_olaylari() -> list[dict[str, Any]]:
         return [
             dict(o)
             for (o,) in s.execute(
-                text("SELECT ozet FROM audit_event WHERE eylem = 'testveri.gizli_duzeltme'")
+                text(
+                    "SELECT ozet FROM audit_event WHERE audit_event.project_id = 'test-a' AND "
+                    "eylem = 'testveri.gizli_duzeltme'"
+                )
             )
         ]
 

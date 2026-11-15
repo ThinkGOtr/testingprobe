@@ -97,7 +97,10 @@ def test_story_degisince_yayinli_eski_caseler_tekrar_ve_kapsam_sayilmaz(
 
         for c in yeni:
             s.execute(
-                text("UPDATE test_case SET durum = 'superseded' WHERE id = :i"),
+                text(
+                    "UPDATE test_case SET durum = 'superseded' WHERE project_id = 'test-a' AND id "
+                    "= :i"
+                ),
                 {"i": uuid.UUID(c["id"])},
             )
         assert coverage_gaps(s, s.get(Requirement, rid)) == ["AC1", "AC2"]
@@ -211,8 +214,8 @@ def test_ortusen_goruntulemelerde_review_suresi_sisirilmez(
         for k in kartlar:
             c.execute(
                 text(
-                    "INSERT INTO case_goruntuleme (id, test_case_id, user_id, zaman) "
-                    "VALUES (:id, :c, :u, now() - interval '60 seconds')"
+                    "INSERT INTO case_goruntuleme (project_id, id, test_case_id, user_id, zaman) "
+                    "VALUES ('test-a', :id, :c, :u, now() - interval '60 seconds')"
                 ),
                 {"id": uuid.uuid4(), "c": uuid.UUID(k["id"]), "u": testci.id},
             )

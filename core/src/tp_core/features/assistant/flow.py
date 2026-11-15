@@ -747,8 +747,9 @@ def _cocuk_ekle(conn: Connection, m: Mesaj) -> uuid.UUID | None:
         text(
             "INSERT INTO asistan_mesaj (project_id, id, sohbet_id, kullanici_id, sira, rol, "
             "ust_mesaj_id, icerik, baglam, durum, amac, kip, tetik) "
-            "SELECT :pid, :id, :s, :k, COALESCE(MAX(sira), 0) + 1, 'assistant', :u, :icerik, "
-            "CAST(:baglam AS jsonb), 'pending', :amac, 'soru', 'otomatik' "
+            "SELECT CAST(:pid AS varchar), :id, :s, :k, COALESCE(MAX(sira), 0) + 1, "
+            "'assistant', :u, :icerik, CAST(:baglam AS jsonb), 'pending', :amac, 'soru', "
+            "'otomatik' "
             "FROM asistan_mesaj WHERE sohbet_id = :s AND project_id = :pid "
             # Silinmiş sohbete çocuk eklenmez (silme commit'lendikten sonra gelen ekleme).
             # HAVING: toplamlı SELECT boş kümede de bir satır döndürür, WHERE yetmez.

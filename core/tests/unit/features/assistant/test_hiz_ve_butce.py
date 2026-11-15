@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from tp_core.features.assistant import budget, hiz
 from tp_core.gateway.errors import BudgetExceeded
+from tp_core.proje import baglamla
 
 # ------------------------------------------------------------------ yardımcılar
 
@@ -23,7 +24,10 @@ def _sohbet(engine: Engine, kullanici_id: uuid.UUID) -> uuid.UUID:
     sid = uuid.uuid4()
     with engine.begin() as c:
         c.execute(
-            text("INSERT INTO asistan_sohbet (id, kullanici_id) VALUES (:i, :k)"),
+            text(
+                "INSERT INTO asistan_sohbet (project_id, id, kullanici_id) VALUES ('test-a', :i, "
+                ":k)"
+            ),
             {"i": sid, "k": kullanici_id},
         )
     return sid
@@ -45,8 +49,10 @@ def _mesaj(
     with engine.begin() as c:
         c.execute(
             text(
-                "INSERT INTO asistan_mesaj (id, sohbet_id, kullanici_id, sira, rol, ust_mesaj_id, "
-                "amac, tetik, durum, ai_call_id) VALUES (:i, :s, :k, :n, 'assistant', :u, :a, "
+                "INSERT INTO asistan_mesaj (project_id, id, sohbet_id, kullanici_id, sira, rol, "
+                "ust_mesaj_id, "
+                "amac, tetik, durum, ai_call_id) VALUES ('test-a', :i, :s, :k, :n, 'assistant', "
+                ":u, :a, "
                 ":t, :d, :c)"
             ),
             {
@@ -78,8 +84,9 @@ def _ai_call(
     with engine.begin() as c:
         c.execute(
             text(
-                "INSERT INTO ai_call (id, parent_call_id, amac, saglayici, model, mod, maliyet, "
-                "ek, olusturma) VALUES (:id, :p, :a, 'anthropic', 'm', 'live', :m, "
+                "INSERT INTO ai_call (project_id, id, parent_call_id, amac, saglayici, model, mod, "
+                "maliyet, "
+                "ek, olusturma) VALUES ('test-a', :id, :p, :a, 'anthropic', 'm', 'live', :m, "
                 "CAST(:ek AS jsonb), now() - make_interval(days => :g))"
             ),
             {
@@ -98,7 +105,8 @@ def _is(engine: Engine, kullanici_id: uuid.UUID, *, tetik: str, durum: str = "qu
     with engine.begin() as c:
         return c.execute(
             text(
-                "INSERT INTO job (tur, yuk, durum) VALUES ('assistant.answer', CAST(:y AS jsonb), "
+                "INSERT INTO job (project_id, tur, yuk, durum) VALUES ('test-a', "
+                "'assistant.answer', CAST(:y AS jsonb), "
                 ":d) RETURNING id"
             ),
             {
@@ -173,7 +181,7 @@ def test_hiz_cok_surecte_atomik(engine: Engine) -> None:
             with kilit:
                 kabul.append(ok)
 
-    tlar = [threading.Thread(target=kos) for _ in range(8)]
+    tlar = [threading.Thread(target=baglamla(kos)) for _ in range(8)]
     for t in tlar:
         t.start()
     for t in tlar:
@@ -302,7 +310,8 @@ def test_sayaclar_mesaj_eslemesi_uuid_ve_bozuk_kimlik(engine: Engine, make_user)
         for mid in (str(bitmis), str(iptal).upper(), "", "bozuk"):
             c.execute(
                 text(
-                    "INSERT INTO job (tur, yuk, durum) VALUES ('assistant.answer', "
+                    "INSERT INTO job (project_id, tur, yuk, durum) VALUES ('test-a', "
+                    "'assistant.answer', "
                     "CAST(:y AS jsonb), 'running')"
                 ),
                 {
@@ -327,7 +336,7 @@ def test_global_kilit_ikinci_transactioni_bekletir(engine: Engine) -> None:
             budget.global_kilit(c)
             sira.append("ikinci")
 
-    t = threading.Thread(target=ikinci)
+    t = threading.Thread(target=baglamla(ikinci))
     t.start()
     with engine.begin() as c:
         budget.global_kilit(c)
@@ -377,7 +386,10 @@ def test_otomatik_kok_soru_kalani_az(engine: Engine, kok) -> None:
     cid = _ai_call(engine, "0.31", kullanici_id=u.id)
     with engine.begin() as c:
         c.execute(
-            text("UPDATE asistan_mesaj SET ai_call_id = :c WHERE id = :m"), {"c": cid, "m": kok_id}
+            text(
+                "UPDATE asistan_mesaj SET ai_call_id = :c WHERE project_id = 'test-a' AND id = :m"
+            ),
+            {"c": cid, "m": kok_id},
         )
     assert _karar(engine, u, kok_id).neden == "soru_kalani"
 
@@ -408,7 +420,10 @@ def test_asistan_budget_check(engine: Engine, kok) -> None:
     cid = _ai_call(engine, "0.45", kullanici_id=u.id)
     with engine.begin() as c:
         c.execute(
-            text("UPDATE asistan_mesaj SET ai_call_id = :c WHERE id = :m"), {"c": cid, "m": kok_id}
+            text(
+                "UPDATE asistan_mesaj SET ai_call_id = :c WHERE project_id = 'test-a' AND id = :m"
+            ),
+            {"c": cid, "m": kok_id},
         )
     b.check(None, 0.04)
     with pytest.raises(BudgetExceeded) as hata:

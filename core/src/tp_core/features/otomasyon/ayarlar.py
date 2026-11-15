@@ -31,7 +31,7 @@ from sqlalchemy.orm import Session
 
 from tp_core.audit.session import audit_on_commit
 from tp_core.models.otomasyon_feature import OtomasyonAyari
-from tp_core.proje import KURULUM, mevcut_pid
+from tp_core.proje import KURULUM, mevcut_pid, pid_param
 from tp_core.workflow.service import Principal
 
 # Otomatik işlerin (onay sonrası kod, Jira tetiği, otomatik case) tek sistem aktörü.
@@ -251,13 +251,14 @@ def model_kipi(session: Session) -> str | None:
     Kaynak core-worker'ın son açılış bildirimi (`worker.model_mode` denetim kaydı, `mod`).
     Kayıt yoksa yalnız açıkça yapılandırılmış kip (`TP_MODEL_MODE` ≠ `auto`) kullanılır.
     """
-    # Worker açılış bildirimi kurulum geneli olaydır: `_kurulum` zinciri (TP-COK-PROJE-PLANI §1.3).
+    # Worker açılış bildirimi: kurulum geneli (`_kurulum` zinciri, TP-COK-PROJE-PLANI §1.3) ya da
+    # açılış kancası proje başına koştuysa bu projenin zinciri; en yenisi geçerli.
     son = session.execute(
         text(
-            "SELECT ozet->>'mod' FROM audit_event "
-            f"WHERE project_id = :k AND eylem = '{_MODEL_KIPI_EYLEMI}' ORDER BY id DESC LIMIT 1"
+            "SELECT ozet->>'mod' FROM audit_event WHERE project_id IN (:pid, :k) "
+            f"AND eylem = '{_MODEL_KIPI_EYLEMI}' ORDER BY id DESC LIMIT 1"
         ),
-        {"k": KURULUM},
+        pid_param(k=KURULUM),
     ).scalar_one_or_none()
     if son in ("live", "replay", "record"):
         return son

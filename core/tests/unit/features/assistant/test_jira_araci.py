@@ -104,24 +104,24 @@ def bilinen(engine: Engine) -> list[str]:
     with engine.begin() as c:
         c.execute(
             text(
-                "INSERT INTO requirement (id, kaynak, jira_key, baslik, kaynak_hash) "
-                "VALUES (:id, 'jira', 'TPD-3', 'Sepet', 'h')"
+                "INSERT INTO requirement (project_id, id, kaynak, jira_key, baslik, kaynak_hash) "
+                "VALUES ('test-a', :id, 'jira', 'TPD-3', 'Sepet', 'h')"
             ),
             {"id": uuid.uuid4()},
         )
         c.execute(
             text(
-                "INSERT INTO bug_draft (id, icerik, icerik_hash, jira_key) "
-                "VALUES (:id, '{}'::jsonb, 'h', 'TPD-9')"
+                "INSERT INTO bug_draft (project_id, id, icerik, icerik_hash, jira_key) "
+                "VALUES ('test-a', :id, '{}'::jsonb, 'h', 'TPD-9')"
             ),
             {"id": uuid.uuid4()},
         )
         for anahtar, durum in (("TPD-21", "created"), ("TPD-22", "intent")):
             c.execute(
                 text(
-                    "INSERT INTO external_ref (id, entity_turu, entity_id, sistem, "
+                    "INSERT INTO external_ref (project_id, id, entity_turu, entity_id, sistem, "
                     "idempotency_key, external_key, durum) "
-                    "VALUES (:id, 'test_case', :e, 'jira', :k, :a, :d)"
+                    "VALUES ('test-a', :id, 'test_case', :e, 'jira', :k, :a, :d)"
                 ),
                 {
                     "id": uuid.uuid4(),
@@ -341,8 +341,8 @@ def _jira_kova_ayarla(engine: Engine, sayi: int) -> None:
         c.execute(text("DELETE FROM asistan_hiz WHERE kova = 'jira_global'"))
         c.execute(
             text(
-                "INSERT INTO asistan_hiz (id, kullanici_id, kova, pencere_baslangic, sayi) "
-                "VALUES (:id, NULL, 'jira_global', "
+                "INSERT INTO asistan_hiz (id, project_id, kullanici_id, kova, pencere_baslangic, "
+                "sayi) VALUES (:id, 'test-a', NULL, 'jira_global', "
                 "to_timestamp(floor(extract(epoch FROM now()) / :p) * :p), :n)"
             ),
             {"id": uuid.uuid4(), "n": sayi, "p": _jira_penceresi()},

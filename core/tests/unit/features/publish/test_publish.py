@@ -140,7 +140,10 @@ def test_onizleme_ve_yayin_testci_ister(api: TestClient, make_user, engine: Engi
         assert api.post("/publish", json={"case_ids": [a["id"]]}).status_code == 403, rol
     with engine.connect() as c:
         izinler = c.execute(
-            text("SELECT ozet->>'izin' FROM audit_event WHERE eylem = 'authz.denied'")
+            text(
+                "SELECT ozet->>'izin' FROM audit_event WHERE audit_event.project_id = 'test-a' AND "
+                "eylem = 'authz.denied'"
+            )
         ).scalars()
         assert set(izinler) == {"case.publish", "publish.preview"}
 
@@ -275,7 +278,7 @@ def test_onaydan_sonra_degisen_icerik_yayinlanmaz(
         c.execute(
             text(
                 "UPDATE test_case SET icerik = jsonb_set(icerik, '{title}', '\"Değişti\"'), "
-                "icerik_hash = 'baska' WHERE id = :id"
+                "icerik_hash = 'baska' WHERE id = :id AND project_id = 'test-a'"
             ),
             {"id": a["id"]},
         )
@@ -314,8 +317,9 @@ def test_intent_sonrasi_cokme_yeniden_denemede_mukerrer_acmaz(
     with engine.begin() as c:
         sahip = c.execute(
             text(
-                "INSERT INTO job (tur, yuk, durum, kilitleyen, deneme, baslama) VALUES "
-                "(:t, CAST(:y AS jsonb), 'running', 'baska-host:1', 1, now()) RETURNING id"
+                "INSERT INTO job (project_id, tur, yuk, durum, kilitleyen, deneme, baslama) "
+                "VALUES ('test-a', :t, CAST(:y AS jsonb), 'running', 'baska-host:1', 1, now()) "
+                "RETURNING id"
             ),
             {"t": publish.PUBLISH_JOB, "y": json.dumps({"case_ids": [a["id"]]})},
         ).scalar_one()
