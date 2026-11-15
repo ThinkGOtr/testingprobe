@@ -316,6 +316,7 @@ def reset() -> None:
     _YAPI = _Yapi()
     ONBELLEK.temizle()
     PROJE_ROLLERI.temizle()
+    kurulu_temizle()
     DEGRADED_KABUL.temizle()
     INVALID_CALLER.temizle()
 
@@ -615,11 +616,17 @@ def _degraded_asildi(baslangic: datetime | None, an: datetime) -> bool:
 
 
 # ------------------------------------------------------------------ proje rolleri (Config R1, A3)
+# Çok proje (TP-COK-PROJE-PLANI §6.1): kişinin `/v1/projects?uid=` listesi uid başına önbelleklenir;
+# roller seçili projeden (`proje_rolleri(uid, pid)`), oturum/token geçerliliği (iptal kararı) ise
+# kişinin bu kurulumdaki TÜM projelerindeki rollerinin birleşiminden verilir: başka projede rolü
+# süren kişi, seçili projede rolü olmasa da düşürülmez (403 `proje_rolu_yok`, iptal değil).
 
-# `TP_HOME_PROJECT` (Deployment; Home yazamaz): ayarlıysa TP rolleri bu projedeki üyelikten gelir.
+# `TP_HOME_PROJECT` (Deployment; Home yazamaz): ayarlıysa TP rolleri proje üyeliğinden gelir.
 HOME_PROJE_ENV = "TP_HOME_PROJECT"
-# Home erişilemezken son bilinen proje rollerinin en çok kullanılacağı süre; sonra erişim kapalı.
+# Home erişilemezken son bilinen proje listesinin en çok kullanılacağı süre; sonra erişim kapalı.
 PROJE_ROL_LKG_S = 300.0
+# Kurulu proje kümesinin (`tp_proje` aktif) süreç içi önbellek ömrü.
+KURULU_TTL_S = 5.0
 
 
 def home_projesi() -> str | None:
@@ -627,24 +634,46 @@ def home_projesi() -> str | None:
     return deger or None
 
 
+def proje_kipi() -> bool:
+    """Çok proje kipi: AI Probe kimliği açık ve kurulum bir Home projesine bağlı."""
+    return get_settings().auth_mode != "local" and home_projesi() is not None
+
+
+@dataclass(frozen=True)
+class ProjeOzeti:
+    """Kişinin bu kurulumdaki bir projesi (`/v1/projects` ∩ `tp_proje` aktif)."""
+
+    pid: str
+    kod: str | None
+    ad: str | None
+    oid: str | None
+    org_ad: str | None
+    roller: tuple[str, ...]  # TP'nin tanıdığı roller (normalize; `acr` süzgeci uygulanmamış)
+    ozellikler: dict[str, bool] = field(default_factory=dict)
+
+
 class _ProjeRolOnbellegi:
-    """`uid → (son başarılı çekim [monotonic], o projedeki TP rolleri)`."""
+    """`uid → (son başarılı çekim [monotonic], Home proje listesi)`."""
 
     MAX = 10_000
 
     def __init__(self) -> None:
-        self._k: dict[tuple[str, str], tuple[float, frozenset[str]]] = {}
+        self._k: dict[str, tuple[float, tuple[Mapping[str, Any], ...]]] = {}
         self._kilit = threading.Lock()
 
-    def al(self, anahtar: tuple[str, str]) -> tuple[float, frozenset[str]] | None:
+    def al(self, anahtar: str) -> tuple[float, tuple[Mapping[str, Any], ...]] | None:
         with self._kilit:
             return self._k.get(anahtar)
 
-    def koy(self, anahtar: tuple[str, str], roller: frozenset[str]) -> None:
+    def koy(self, anahtar: str, liste: Iterable[Mapping[str, Any]]) -> None:
         with self._kilit:
             if len(self._k) >= self.MAX:
                 self._k.clear()
-            self._k[anahtar] = (time.monotonic(), roller)
+            self._k[anahtar] = (time.monotonic(), tuple(liste))
+
+    def unut(self, anahtar: str) -> None:
+        with self._kilit:
+            self._k.pop(anahtar, None)
 
     def temizle(self) -> None:
         with self._kilit:
@@ -652,19 +681,40 @@ class _ProjeRolOnbellegi:
 
 
 PROJE_ROLLERI = _ProjeRolOnbellegi()
+_KURULU: list[tuple[float, frozenset[str]]] = []
+_KURULU_KILIDI = threading.Lock()
 
 
-def proje_rolleri(uid: str, *, taze: bool = False) -> frozenset[str] | None:
-    """`TP_HOME_PROJECT` ayarlıysa kişinin o projedeki TP rolleri (`/v1/projects?uid=`); değilse
-    `None` (bugünkü davranış: claim'deki roller). Projede üyelik yoksa boş küme.
+def kurulu_temizle() -> None:
+    with _KURULU_KILIDI:
+        _KURULU.clear()
 
-    Önbellek ömrü `AIPROBE_SESSION_CHECK_S`; Home erişilemezse son bilinen değer en çok
-    `PROJE_ROL_LKG_S` kullanılır, sonra `ProjeRolleriYok` (erişim kapalı)."""
-    proje = home_projesi()
-    if proje is None:
-        return None
-    anahtar = (uid, proje)
-    kayit = PROJE_ROLLERI.al(anahtar)
+
+def kurulu_pidler() -> frozenset[str]:
+    """Bu kurulumun projeleri: `tp_proje` aktif ∪ varsayılan proje (`TP_HOME_PROJECT` her zaman).
+    Veritabanı okunamazsa yalnız varsayılan proje (fail-closed)."""
+    with _KURULU_KILIDI:
+        if _KURULU and time.monotonic() - _KURULU[0][0] < KURULU_TTL_S:
+            return _KURULU[0][1]
+    from tp_core.proje import kurulu_projeler, varsayilan_pid
+
+    kume = {varsayilan_pid()}
+    try:
+        with session_scope() as s:
+            kume |= set(kurulu_projeler(s.connection()))
+    except Exception:
+        log.warning("kurulu projeler okunamadı; yalnız varsayılan proje", exc_info=True)
+    sonuc = frozenset(kume)
+    with _KURULU_KILIDI:
+        _KURULU[:] = [(time.monotonic(), sonuc)]
+    return sonuc
+
+
+def home_projeleri(uid: str, *, taze: bool = False) -> tuple[Mapping[str, Any], ...]:
+    """Kişinin Home proje listesi (`/v1/projects?uid=`), önbellekli (`AIPROBE_SESSION_CHECK_S`).
+    Home erişilemezse son bilinen liste en çok `PROJE_ROL_LKG_S`, sonra `ProjeRolleriYok`.
+    Home kişiyi reddederse (kalıcı 4xx) boş liste."""
+    kayit = PROJE_ROLLERI.al(uid)
     ttl = float(get_settings().aiprobe_session_check_s)
     if not taze and kayit is not None and time.monotonic() - kayit[0] < ttl:
         return kayit[1]
@@ -676,25 +726,100 @@ def proje_rolleri(uid: str, *, taze: bool = False) -> frozenset[str] | None:
             return kayit[1]
         log.error("aiprobe-home proje rolleri alınamadı ve son bilinen değer yok/eski: kapalı")
         raise ProjeRolleriYok("proje rolleri alınamadı") from exc
-    roller: frozenset[str] = frozenset()
-    for p in liste or []:
-        if p.get("pid") == proje and isinstance(p.get("roles"), list):
-            roller = frozenset(str(r) for r in p["roles"])
-            break
-    PROJE_ROLLERI.koy(anahtar, roller)
-    return roller
+    PROJE_ROLLERI.koy(uid, liste or [])
+    kayit = PROJE_ROLLERI.al(uid)
+    assert kayit is not None
+    return kayit[1]
+
+
+def _metin(deger: Any) -> str | None:
+    return str(deger) if isinstance(deger, str | int) and str(deger).strip() else None
+
+
+def _roller(p: Mapping[str, Any]) -> tuple[str, ...]:
+    ham = p.get("roles")
+    return tp_rolleri(ham, "2") if isinstance(ham, list) else ()
+
+
+def kullanici_projeleri(uid: str, *, taze: bool = False) -> list[ProjeOzeti]:
+    """`/v1/projects?uid=` ∩ kurulu projeler (Home sırası). Kurulumda kayıtlı olmayan pid için
+    `CONFIG_SOURCE=home` iken keşif denenir (`home_config.durum.kesfet`, §5.2 b). Home erişilemez
+    ve son bilinen liste eskiyse `ProjeRolleriYok` (çağıran fail-closed)."""
+    kurulu = kurulu_pidler()
+    out: list[ProjeOzeti] = []
+    gorulen: set[str] = set()
+    for p in home_projeleri(uid, taze=taze):
+        pid = _kimlik_alani(p.get("pid"))
+        if pid is None or pid in gorulen:
+            continue
+        if pid not in kurulu:
+            from tp_core.home_config import durum as home_durum
+
+            if not home_durum.kesfet(pid):
+                continue
+            kurulu_temizle()
+        gorulen.add(pid)
+        ozellik = p.get("features")
+        out.append(
+            ProjeOzeti(
+                pid=pid,
+                kod=_metin(p.get("code")),
+                ad=_metin(p.get("name")),
+                oid=_metin(p.get("oid")),
+                org_ad=_metin(p.get("org_name")),
+                roller=_roller(p),
+                ozellikler=(
+                    {str(k): v is True for k, v in ozellik.items()}
+                    if isinstance(ozellik, Mapping)
+                    else {}
+                ),
+            )
+        )
+    return out
+
+
+def proje_rolleri(uid: str, pid: str | None = None, *, taze: bool = False) -> frozenset[str] | None:
+    """Kişinin `pid` projesindeki ham TP rolleri (Home sırası korunmaz; küme). `pid` yoksa
+    `TP_HOME_PROJECT`. Proje kipi kapalıysa (`TP_HOME_PROJECT` yok) `None` (claim rolleri geçerli).
+    Projede üyelik yoksa ya da proje bu kurulumda etkin değilse boş küme."""
+    varsayilan = home_projesi()
+    if varsayilan is None:
+        return None
+    hedef = pid or varsayilan
+    if hedef != varsayilan and hedef not in kurulu_pidler():
+        return frozenset()
+    for p in home_projeleri(uid, taze=taze):
+        if p.get("pid") == hedef and isinstance(p.get("roles"), list):
+            return frozenset(str(r) for r in p["roles"])
+    return frozenset()
+
+
+def tum_proje_rolleri(uid: str, *, taze: bool = False) -> frozenset[str] | None:
+    """Kişinin bu kurulumdaki tüm projelerindeki ham TP rollerinin birleşimi (iptal kararı);
+    proje kipi kapalıysa `None`."""
+    if home_projesi() is None:
+        return None
+    kurulu = kurulu_pidler()
+    roller: set[str] = set()
+    for p in home_projeleri(uid, taze=taze):
+        if p.get("pid") in kurulu and isinstance(p.get("roles"), list):
+            roller |= {str(r) for r in p["roles"]}
+    return frozenset(roller)
 
 
 def _proje_icinde(rol: str, proje: frozenset[str]) -> bool:
     return yetki.normalize_rol(rol) in {yetki.normalize_rol(p) for p in proje}
 
 
-def projeye_suz(uid: str, sonuc: KontrolSonucu, *, taze: bool = False) -> KontrolSonucu:
-    """Geçerli kontrol sonucunun TP rollerini `TP_HOME_PROJECT` projesindeki rollerle keser (claim
-    birleşimi yok sayılır; Home'un `acr` süzmesi korunur). Ürün haritasındaki `tp` de süzülür."""
+def projeye_suz(
+    uid: str, sonuc: KontrolSonucu, *, taze: bool = False, pid: str | None = None
+) -> KontrolSonucu:
+    """Geçerli kontrol sonucunun TP rollerini proje üyeliğiyle keser (claim birleşimi yok sayılır;
+    Home'un `acr` süzmesi korunur). `pid` verilirse o projenin, verilmezse kişinin kurulumdaki tüm
+    projelerinin rolleri. Ürün haritasındaki `tp` de süzülür."""
     if not sonuc.valid:
         return sonuc
-    proje = proje_rolleri(uid, taze=taze)
+    proje = proje_rolleri(uid, pid, taze=taze) if pid else tum_proje_rolleri(uid, taze=taze)
     if proje is None:
         return sonuc
     urunler = sonuc.products
@@ -706,11 +831,17 @@ def projeye_suz(uid: str, sonuc: KontrolSonucu, *, taze: bool = False) -> Kontro
     return KontrolSonucu(True, roller, sonuc.reason, urunler)
 
 
-def devri_projeye_suz(devir: DevirYaniti) -> DevirYaniti:
-    """Girişte: devrin rollerini `TP_HOME_PROJECT` projesindeki rollerle keser (taze çekim)."""
-    proje = proje_rolleri(devir.uid, taze=True)
+def devri_projeye_suz(devir: DevirYaniti, pid: str | None = None) -> DevirYaniti:
+    """Girişte: devrin rollerini `pid` projesindeki (yoksa `TP_HOME_PROJECT`) rollerle keser."""
+    proje = proje_rolleri(devir.uid, pid, taze=True)
     if proje is None:
         return devir
+    return devri_rollerle_suz(devir, proje)
+
+
+def devri_rollerle_suz(devir: DevirYaniti, proje: Iterable[str]) -> DevirYaniti:
+    """Devrin rollerini (ve ürün haritasındaki `tp`'yi) verilen proje rolleriyle keser."""
+    proje = frozenset(proje)
     urunler = devir.products
     if urunler is not None and URUN_KODU in urunler:
         urunler = dict(urunler) | {
@@ -720,10 +851,40 @@ def devri_projeye_suz(devir: DevirYaniti) -> DevirYaniti:
     return replace(devir, roles=roller, products=urunler)
 
 
-def kontrol_et(uid: str, kimlik: OturumKimligi, *, taze: bool = False) -> KontrolSonucu:
-    """Önbellekli `/v1/session/check` (+ `TP_HOME_PROJECT` ayarlıysa proje rolleri süzmesi);
+def giris_projesi(
+    session: Session, devir: DevirYaniti, projeler: list[ProjeOzeti]
+) -> tuple[str, tuple[str, ...]] | None:
+    """Giriş (redeem) projesi (§6.1): devirdeki `project_id` kişinin projelerindeyse o; değilse
+    bağlı hesaplarından birinin kayıtlı seçimi (`app_user.secili_proje`); değilse listedeki ilk
+    proje. Yalnız `acr`'ye göre kullanılabilir TP rolü olan projeler sayılır. (pid, roller) ya da
+    `None` (hiçbir projede rol yok)."""
+    kullanilabilir = {
+        p.pid: roller for p in projeler if (roller := tp_rolleri(p.roller, devir.acr))
+    }
+    if not kullanilabilir:
+        return None
+    secimler = [
+        s
+        for s in session.scalars(
+            select(AppUser.secili_proje)
+            .join(KimlikBagi, KimlikBagi.app_user_id == AppUser.id)
+            .where(KimlikBagi.external_uid == devir.uid, AppUser.secili_proje.is_not(None))
+        )
+        if s
+    ]
+    for aday in [devir.project_id, *secimler, *kullanilabilir]:
+        if aday and aday in kullanilabilir:
+            return aday, kullanilabilir[aday]
+    return None
+
+
+def kontrol_et(
+    uid: str, kimlik: OturumKimligi, *, taze: bool = False, pid: str | None = None
+) -> KontrolSonucu:
+    """Önbellekli `/v1/session/check` (+ `TP_HOME_PROJECT` ayarlıysa proje rolleri süzmesi:
+    `pid` verilirse o projenin, verilmezse kişinin kurulumdaki tüm projelerinin rolleri);
     erişilemezse `HomeUlasilamaz`, proje rolleri alınamazsa `ProjeRolleriYok`."""
-    return projeye_suz(uid, _kontrol_et(uid, kimlik, taze=taze), taze=taze)
+    return projeye_suz(uid, _kontrol_et(uid, kimlik, taze=taze), taze=taze, pid=pid)
 
 
 def _kontrol_et(uid: str, kimlik: OturumKimligi, *, taze: bool = False) -> KontrolSonucu:
@@ -845,15 +1006,17 @@ def eski_oturumlari_iptal_et(s: Session, ids: list[uuid.UUID], epoch_ms: int) ->
         )
         .values(iptal_zamani=simdi())
     )
-    # Bu ve daha eski oturumlardan üretilmiş token'lar da kalıcı olarak düşer.
+    # Bu ve daha eski oturumlardan üretilmiş token'lar da kalıcı olarak düşer — kişinin TÜM
+    # projelerindeki token'ları (iptal kişiye özgüdür, proje kapsamı yok; ORM süzgeci isteğin
+    # projesine daraltırdı). Bilinçli kurulum geneli SQL: project_id süzgeci YOK.
     s.execute(
-        update(ApiToken)
-        .where(
-            ApiToken.user_id.in_(ids),
-            ApiToken.iptal.is_(False),
-            or_(ApiToken.session_epoch_ms.is_(None), ApiToken.session_epoch_ms <= epoch_ms),
-        )
-        .values(iptal=True)
+        text(
+            "UPDATE api_token SET iptal = true "
+            "WHERE user_id = ANY(:ids) AND iptal = false "
+            "AND (session_epoch_ms IS NULL OR session_epoch_ms <= :e) "
+            "/* tum projeler: project_id kosulu bilincli olarak yok (kisi geneli iptal) */"
+        ),
+        {"ids": list(ids), "e": epoch_ms},
     )
     return int(sonuc.rowcount or 0)
 
@@ -1045,24 +1208,25 @@ def jit_hesaplar(session: Session, devir: DevirYaniti, roller: Iterable[str]) ->
     for rol in roller:
         if rol in mevcut:
             continue
-        u = AppUser(
-            kullanici_adi=_jit_ad(session, devir.email, rol),
-            rol=rol,
-            parola_hash=KULLANILAMAZ_PAROLA,
-            ad_soyad=devir.name[:120] or None,
-            # Ad, kişinin AI Probe hesabından gelir (TP doğrulamaz): portal bunu belirtir.
-            ad_kaynak=AD_KAYNAGI if devir.name else None,
-        )
-        session.add(u)
-        session.flush()
-        session.add(KimlikBagi(external_uid=devir.uid, app_user_id=u.id))
-        session.flush()
-        audit_on_commit(
-            session,
-            u.kullanici_adi,
-            "auth.jit_user",
-            f"app_user:{u.id}",
-            {"rol": rol, "kimlik": devir.uid},
-        )
-        yeni.append(u)
+        yeni.append(jit_hesap(session, devir.uid, devir.email, devir.name, rol))
     return yeni
+
+
+def jit_hesap(session: Session, uid: str, email: str, ad: str, rol: str) -> AppUser:
+    """Kişiye `rol` için yeni bağlı hesap (JIT). Çağıran kişi kilidini (`tp-jit:<uid>`) tutar."""
+    u = AppUser(
+        kullanici_adi=_jit_ad(session, email, rol),
+        rol=rol,
+        parola_hash=KULLANILAMAZ_PAROLA,
+        ad_soyad=ad[:120] or None,
+        # Ad, kişinin AI Probe hesabından gelir (TP doğrulamaz): portal bunu belirtir.
+        ad_kaynak=AD_KAYNAGI if ad else None,
+    )
+    session.add(u)
+    session.flush()
+    session.add(KimlikBagi(external_uid=uid, app_user_id=u.id))
+    session.flush()
+    audit_on_commit(
+        session, u.kullanici_adi, "auth.jit_user", f"app_user:{u.id}", {"rol": rol, "kimlik": uid}
+    )
+    return u

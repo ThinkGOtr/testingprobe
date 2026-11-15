@@ -95,6 +95,40 @@ class KodluHata(StarletteHTTPException):
         self.ek = {k: v for k, v in (ek or {}).items() if k not in ("detail", "kod")}
 
 
+# ------------------------------------------------------------- çok proje (TP-COK-PROJE-PLANI §6)
+
+PROJE_DEGISTI = "proje_degisti"
+PROJE_ROLU_YOK = "proje_rolu_yok"
+PROJE_AYARI_EKSIK = "proje_ayari_eksik"
+PROJE_YOK = "proje_yok"
+
+
+def proje_degisti() -> KodluHata:
+    """409: isteğin `X-TP-Proje` başlığı oturumun seçili projesinden farklı (başka sekmede proje
+    değişti). GET dahil; portal `/auth/me`'yi yeniden okuyup sayfayı yeni projede yükler."""
+    return KodluHata(
+        409, PROJE_DEGISTI, "Proje başka bir sekmede değiştirildi; sayfayı yeniden yükleyin"
+    )
+
+
+def proje_rolu_yok() -> KodluHata:
+    """403: seçili projede (ya da istenen projede) kişinin TP rolü yok."""
+    return KodluHata(403, PROJE_ROLU_YOK, "Seçili projede rolünüz yok; başka bir proje seçin")
+
+
+def proje_yok() -> KodluHata:
+    """404: proje kullanıcının projeleri arasında değil (ya da bu kurulumda etkin değil)."""
+    return KodluHata(404, PROJE_YOK, "Proje bulunamadı")
+
+
+class ProjeAyariEksik(WorkflowError):
+    """409: projenin bu işlem için gereken ayarı tanımlı değil (ör. RO veritabanı, kod üretimi
+    paket adları; TP-COK-PROJE-PLANI §4.5). Özellik servisleri `raise ProjeAyariEksik(...)`."""
+
+    status_code = 409
+    kod = PROJE_AYARI_EKSIK
+
+
 def _hizmet_durumu_mu(exc: KodluHata) -> bool:
     return exc.status_code == 503 and exc.kod in HIZMET_DURUMU_KODLARI
 

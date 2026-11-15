@@ -282,6 +282,13 @@ def reddet(
     return KodluHata(403, "yetki_yok", "Bu işlem için yetkiniz yok")
 
 
+def projede(p: Principal) -> bool:
+    """Çok proje (TP-COK-PROJE-PLANI §6.1): etkin rol isteğin projesindeki rollerden mi? Rol kümesi
+    boşsa (proje kipi dışı, sistem kimliği) yalnız rol izni geçerlidir. `current_user` bunu 403
+    `proje_rolu_yok` ile zaten denetler; burası derinlemesine savunmadır."""
+    return not p.roller or normalize_rol(p.rol) in p.roller
+
+
 def izin(izin_adi: str) -> Callable[..., Principal]:
     """FastAPI bağımlılığı: oturumdaki rol `izin_adi`'na sahip değilse 403 + `authz.denied`."""
     roller_icin(izin_adi)  # tanımsız izin modül yüklenirken yakalanır
@@ -289,6 +296,8 @@ def izin(izin_adi: str) -> Callable[..., Principal]:
     def kontrol(request: Request, session: DbSession, user: CurrentUser) -> Principal:
         if not izinli(user.rol, izin_adi):
             raise reddet(session, user, izin_adi, "rol", request.url.path)
+        if not projede(user):
+            raise reddet(session, user, izin_adi, "proje", request.url.path)
         return user
 
     kontrol.__name__ = f"izin_{izin_adi.replace('.', '_')}"
@@ -311,6 +320,8 @@ def izinlerden_biri(*izin_adlari: str) -> Callable[..., Principal]:
     def kontrol(request: Request, session: DbSession, user: CurrentUser) -> Principal:
         if not any(izinli(user.rol, ad) for ad in izin_adlari):
             raise reddet(session, user, birlesik, "rol", request.url.path)
+        if not projede(user):
+            raise reddet(session, user, birlesik, "proje", request.url.path)
         return user
 
     kontrol.__name__ = "izin_" + "_veya_".join(ad.replace(".", "_") for ad in izin_adlari)

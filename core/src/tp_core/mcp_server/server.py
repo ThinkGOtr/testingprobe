@@ -4,6 +4,10 @@ Durumsuz (stateless) streamable HTTP kullanılır: her HTTP isteği kendi taşı
 grubunu açar. Böylece core-api'nin yaşam döngüsüne (lifespan) dokunmadan bir rota olarak bağlanır
 (`tp_core.features.publish.api` → `router.add_route("/mcp", ...)`) ve her istekte token yeniden
 doğrulanır (iptal/parola değişimi anında etkili).
+
+Çok proje (TP-COK-PROJE-PLANI §6.1): token bir projeye bağlıdır; doğrulanan isteğin tamamı
+(araçlar thread havuzunda, `anyio.to_thread` bağlamı kopyalar) o projenin bağlamında
+(`proje_icinde(pid, kaynak="token")`) koşar ve yetki o projedeki rollerle sınırlıdır.
 """
 
 from __future__ import annotations
@@ -32,6 +36,7 @@ from tp_core.features.cases.schema import case_schema, summary_schema
 from tp_core.features.cases.service import requirement_for_ide, submit_drafts
 from tp_core.features.publish import service as publish
 from tp_core.models import TestCase, session_scope
+from tp_core.proje import proje_icinde
 from tp_core.workflow.service import Principal, WorkflowError
 
 MCP_PATH = "/mcp"
@@ -441,7 +446,13 @@ def _token_durumu(raw: str | None) -> dict[str, Any]:
 
     if not raw or not raw.startswith(PREFIX):
         return {"token_bilinen": False}
+    from tp_core.auth.tokens import token_projesi
+
     with session_scope() as s:
+        pid = token_projesi(s, raw)
+    if pid is None:
+        return {"token_bilinen": False}
+    with proje_icinde(pid, kaynak="token"), session_scope() as s:
         row = s.execute(
             select(ApiToken, AppUser)
             .join(AppUser, AppUser.id == ApiToken.user_id)
@@ -578,11 +589,13 @@ class McpEndpoint:
             return
         jeton = _caller.set(caller)
         try:
-            manager = StreamableHTTPSessionManager(
-                app=self.server, json_response=True, stateless=True, security_settings=SECURITY
-            )
-            async with manager.run():
-                await manager.handle_request(scope, receive, send)
+            assert caller.project_id is not None
+            with proje_icinde(caller.project_id, kaynak="token"):
+                manager = StreamableHTTPSessionManager(
+                    app=self.server, json_response=True, stateless=True, security_settings=SECURITY
+                )
+                async with manager.run():
+                    await manager.handle_request(scope, receive, send)
         finally:
             _caller.reset(jeton)
 

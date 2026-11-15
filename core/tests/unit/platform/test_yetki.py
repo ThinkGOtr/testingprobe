@@ -38,6 +38,10 @@ ISTISNA: frozenset[tuple[str, str]] = frozenset(
         ("POST", "/auth/login"),
         ("POST", "/auth/logout"),
         ("GET", "/auth/me"),
+        # Çok proje (TP-COK-PROJE-PLANI §6.2): kişinin kendi proje listesi/seçimi (üyelik ve rol
+        # Home'dan denetlenir; proje kapsamlı veri yok).
+        ("GET", "/projeler"),
+        ("PUT", "/proje"),
         ("GET", "/auth/aiprobe/login"),
         ("GET", "/auth/aiprobe/callback"),
         ("GET", "/auth/aiprobe/hesaplar"),
