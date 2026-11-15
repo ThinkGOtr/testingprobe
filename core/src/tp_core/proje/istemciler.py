@@ -1,8 +1,8 @@
 """Proje başına entegrasyon istemcileri (TP-COK-PROJE-PLANI §4.1).
 
-Şerit 0: ince kabuk — bugünkü fabrikalara (`get_jira`, `get_xray_client`, `get_forge`, `GitHubCi`)
-yönlendirir; önbellek anahtarı `(pid, ayar.surum(pid))` (config etag'i değişince yeniden kurulur).
-Şerit 3 içleri proje config'iyle doldurur; imzalar donuk.
+Fabrikalar (`get_jira`, `get_xray_client`, `get_forge`, `GitHubCi`) bağlamdaki projenin config'iyle
+kurulur (`JiraSettings.proje_icin`, `integrations.proje_ortami.ProjeOrtami`); önbellek anahtarı
+`(pid, ayar.surum(pid))` (config etag'i değişince yeniden kurulur). İmzalar donuk (Şerit 0).
 """
 
 from __future__ import annotations
@@ -39,9 +39,12 @@ def _onbellekli[T](tur: str, kur: Callable[[], T]) -> T:
 
 
 def jira() -> RestJira:
-    """Bağlamdaki projenin Jira istemcisi."""
+    """Bağlamdaki projenin Jira istemcisi (projenin Jira ayarları ve bağlantı kipi; OAuth'ta
+    projenin Home erişim token'ı)."""
     from tp_core.integrations.jira import get_jira
 
+    # Fabrikalar argümansız bağlamdaki projeyi kullanır (`get_jira_settings()`, `ProjeOrtami()`);
+    # kurulum `_onbellekli` içinde aynı bağlamda koşar.
     return _onbellekli("jira", get_jira)
 
 
@@ -55,7 +58,8 @@ def xray() -> XrayClient | None:
 
 
 def forge() -> ForgePort:
-    """`TP_FORGE`'a göre LocalForge | GitHubForge (demo sarmalayıcıları çağıranda kalır)."""
+    """`TP_FORGE`'a göre LocalForge | GitHubForge (demo sarmalayıcıları çağıranda kalır): proje
+    ayarları + proje forge yolları (`forge_yollari`) + projenin GitHub bağlantısı."""
     from tp_core.integrations.forge import get_forge
 
     return _onbellekli("forge", get_forge)
@@ -71,9 +75,12 @@ def ci() -> GitHubCi | None:
 
 
 def toolchain_proje_blogu() -> dict[str, Any]:
-    """Toolchain isteklerinin `proje` bloğu (§4.4). Şerit 0: yalnız `pid` — toolchain eksik
-    alanlarda bugünkü env değerlerini kullanır (geriye uyum). Şerit 3 alanları doldurur."""
-    return {"pid": _ayar._pid(None)}
+    """Toolchain isteklerinin `proje` bloğu (§4.4; `integrations.toolchain_blogu`). Varsayılan
+    projede yalnız `pid` (+ Home config'inin env'den farklı verdiği alanlar); diğer projelerde
+    depo/ayna yolu, uzak depo ve uygulama bloğu her zaman."""
+    from tp_core.integrations.toolchain_blogu import proje_blogu
+
+    return proje_blogu()
 
 
 def sifirla(pid: str | None = None) -> None:

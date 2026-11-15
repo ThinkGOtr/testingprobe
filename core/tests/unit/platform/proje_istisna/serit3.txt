@@ -1,13 +1,2 @@
 # Şerit 3 proje kapsamı geçiş tabanı (TP-COK-PROJE-PLANI §2.4). Biçim: yol:kural:imza  # gerekçe
 # Yalnız küçülür: düzelttiğiniz ihlalin satırını silin. Yeni satır = gerekçeli kalıcı istisna (review).
-tp_core/features/ci/clients.py:env:GITHUB_API_URL:env.get  # gecis tabani
-tp_core/features/ci/clients.py:env:GITHUB_READ_TOKEN:env.get  # gecis tabani
-tp_core/features/ci/clients.py:env:GITHUB_REPO:env.get  # gecis tabani
-tp_core/integrations/agent_probe/sim.py:sql:SELECT urun_kodu, requirement_id, olusturma FROM ajan_testi_talebi WHE  # gecis tabani
-tp_core/integrations/forge.py:env:TP_FORGE:env.get  # gecis tabani
-tp_core/integrations/forge_github.py:env:GH_APP_INSTALLATION_ID:env.get  # gecis tabani
-tp_core/integrations/forge_github.py:env:GITHUB_API_URL:env.get  # gecis tabani
-tp_core/integrations/forge_github.py:env:GITHUB_MERGE_TOKEN:env.get  # gecis tabani
-tp_core/integrations/forge_github.py:env:GITHUB_READ_TOKEN:env.get  # gecis tabani
-tp_core/integrations/forge_github.py:env:GITHUB_REPO:env.get  # gecis tabani
-tp_core/integrations/forge_github.py:env:GITHUB_TOKEN:env.get  # gecis tabani

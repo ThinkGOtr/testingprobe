@@ -48,6 +48,7 @@ from toolchain_common import (
 from toolchain_common.api import install_error_handlers
 from toolchain_common.artifacts import release_keep
 from toolchain_common.auth import check_auth, require_token
+from toolchain_common.proje import ProjeBlogu
 from toolchain_common.settings import Settings, kok_uyarilari, settings
 from toolchain_common.validation import (
     TESTID_RE,
@@ -132,6 +133,8 @@ _SYMBOL_CACHE_MAX = 32
 
 class SymbolsBody(LangMixin):
     model_config = ConfigDict(extra="forbid")
+    # Çok proje (§4.4): projeye özgü forge/uygulama değerleri; yok = ortam.
+    proje: ProjeBlogu | None = None
     sha: Ref
 
 
@@ -191,7 +194,7 @@ def extract_symbols(
 
 @app.post("/symbols", dependencies=AUTH)
 def symbols(body: SymbolsBody) -> dict[str, Any]:
-    cfg = settings()
+    cfg = settings(body.proje)
     loc = _resolve(cfg, body.sha)
     try:
         return {
@@ -207,6 +210,8 @@ def symbols(body: SymbolsBody) -> dict[str, Any]:
 
 class AstGuardBody(LangMixin):
     model_config = ConfigDict(extra="forbid")
+    # Çok proje (§4.4): projeye özgü forge/uygulama değerleri; yok = ortam.
+    proje: ProjeBlogu | None = None
     base_sha: Ref
     head_sha: Ref
     # Varsayılan en sıkı mod: locator onarımı (TEKNIK-TASARIM §8.7).
@@ -215,7 +220,7 @@ class AstGuardBody(LangMixin):
 
 @app.post("/ast-guard", dependencies=AUTH)
 def ast_guard(body: AstGuardBody) -> dict[str, Any]:
-    cfg = settings()
+    cfg = settings(body.proje)
     head_loc = _resolve(cfg, body.head_sha)
     base_loc = _resolve(cfg, body.base_sha, prefer=head_loc.repo)
     head, base = head_loc.sha, base_loc.sha
@@ -249,6 +254,8 @@ def ast_guard(body: AstGuardBody) -> dict[str, Any]:
 
 class CheckBody(LangMixin):
     model_config = ConfigDict(extra="forbid")
+    # Çok proje (§4.4): projeye özgü forge/uygulama değerleri; yok = ortam.
+    proje: ProjeBlogu | None = None
 
     sha: Ref
     # `lang`/`platform` (LangMixin) alanları test_files'tan önce doğrulanır: Java'da test dosyası
@@ -343,7 +350,7 @@ class CheckBody(LangMixin):
 
 @app.post("/check", dependencies=AUTH)
 def check(body: CheckBody) -> dict[str, Any]:
-    cfg = settings()
+    cfg = settings(body.proje)
     req = checks.CheckRequest(
         sha=body.sha,
         test_files=body.test_files,
@@ -379,6 +386,8 @@ def check(body: CheckBody) -> dict[str, Any]:
 
 class LocatorProbeBody(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    # Çok proje (§4.4): projeye özgü forge/uygulama değerleri; yok = ortam.
+    proje: ProjeBlogu | None = None
 
     sha: Ref
     role: Annotated[str, AfterValidator(validate_role)]
@@ -446,7 +455,7 @@ def locator_probe(body: LocatorProbeBody) -> dict[str, Any]:
     üretilmez (`oneri_uretilebilir=false`), bilinmiyorsa `dogrulanamadi` + `uyari` döner.
     Faz 4 onarım kaydı bu alanları olduğu gibi saklamalıdır.
     """
-    cfg = settings()
+    cfg = settings(body.proje)
     loc = _resolve(cfg, body.sha)
     full = loc.sha
     uyum = appsha.match(cfg, loc)
@@ -605,6 +614,8 @@ def trace_summary(body: TraceSummaryBody) -> dict[str, Any]:
 
 class AffectedBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    # Çok proje (§4.4): projeye özgü forge/uygulama değerleri; yok = ortam.
+    proje: ProjeBlogu | None = None
 
     sha: Ref
     changed: Annotated[list[str], Field(max_length=50)] = Field(default_factory=list)
@@ -628,7 +639,7 @@ def affected_tests(body: AffectedBody) -> dict[str, Any]:
 
     `/check {affected_by}` aynı hesabı koşudan hemen önce, aynı commit'te yeniden yapar.
     """
-    cfg = settings()
+    cfg = settings(body.proje)
     head = _resolve(cfg, body.sha)
     changed = list(body.changed)
     try:

@@ -178,20 +178,24 @@ class LocalForge:
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> LocalForge:
-        env = os.environ if env is None else env
+        """`env` verilmezse bağlamdaki projenin görünümü (`ProjeOrtami`): depo ve PR kaydı
+        `forge_yollari`'ndan (varsayılan projede eski yollar, diğerlerinde `/forge/<pid>/`)."""
+        from tp_core.integrations.proje_ortami import ProjeOrtami
+
+        cfg = ProjeOrtami() if env is None else env
         return cls(
-            env.get("TP_FORGE_PATH") or DEFAULT_FORGE_PATH,
-            env.get("TP_ARTIFACTS_PATH") or DEFAULT_ARTIFACTS_PATH,
-            env.get("TP_FORGE_PRS_PATH") or None,
+            cfg.get("TP_FORGE_PATH") or DEFAULT_FORGE_PATH,
+            cfg.get("TP_ARTIFACTS_PATH") or DEFAULT_ARTIFACTS_PATH,
+            cfg.get("TP_FORGE_PRS_PATH") or None,
             # MIMARI-SOZLESME: `TP_REQUIRED_CHECKS` boş = `local-ci`; yalnız HER PR'da zorunlu
             # kontroller içindir (ör. `local-ci,local-ci-android`). PR'a göre gereken kontroller
             # (`local-ci-web-java`, `local-ci-<platform>`, K-T11 dilleri) kapıda otomatik eklenir
             # (`forge.local_required_checks`); listeye yazılmaz.
             required_checks=parse_required_checks(
-                env.get(REQUIRED_CHECKS_ENV), LOCAL_REQUIRED_CHECKS
+                cfg.get(REQUIRED_CHECKS_ENV), LOCAL_REQUIRED_CHECKS
             ),
-            require_up_to_date=_env_flag(env.get(REQUIRE_UP_TO_DATE_ENV), default=True),
-            checks_path=env.get("TP_CHECKS_PATH") or None,
+            require_up_to_date=_env_flag(cfg.get(REQUIRE_UP_TO_DATE_ENV), default=True),
+            checks_path=cfg.get("TP_CHECKS_PATH") or None,
         )
 
     # ------------------------------------------------------------------ git çekirdeği

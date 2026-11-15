@@ -110,11 +110,18 @@ class ToolchainClient:
         self._headers = {"Authorization": f"Bearer {token}"} if token else None
 
     def check(self, body: Mapping[str, Any]) -> dict[str, Any]:
+        """`/check`. Gövdede `proje` yoksa bağlamdaki projenin bloğu eklenir (§4.4): toolchain
+        o projenin deposunda ve uygulama ayarlarıyla koşar (ortak koşu kilidi, K1)."""
+        govde = dict(body)
+        if "proje" not in govde:
+            from tp_core.proje.istemciler import toolchain_proje_blogu
+
+            govde["proje"] = toolchain_proje_blogu()
         try:
             with httpx.Client(
                 transport=self._transport, timeout=self._timeout, headers=self._headers
             ) as c:
-                resp = c.post(f"{self.base_url}/check", json=dict(body))
+                resp = c.post(f"{self.base_url}/check", json=govde)
         except httpx.HTTPError as exc:
             raise ToolchainError(
                 f"toolchain-worker'a ulaşılamadı: {type(exc).__name__}", gecici=True
@@ -386,16 +393,19 @@ class GitHubCiOkuyucu:
         *,
         transport: httpx.BaseTransport | None = None,
     ) -> GitHubCiOkuyucu:
-        env = os.environ if env is None else env
+        from tp_core.integrations.proje_ortami import ProjeOrtami
+
+        # `env` verilmezse bağlamdaki projenin görünümü (depo ve token'lar projenin).
+        cfg = ProjeOrtami() if env is None else env
         # En az yetki: ayrı actions:read token'ı, yoksa okuma token'ı; ikisi de yoksa forge kimliği.
-        token = (env.get(ACTIONS_READ_TOKEN_ENV) or env.get("GITHUB_READ_TOKEN") or "").strip()
+        token = (cfg.get(ACTIONS_READ_TOKEN_ENV) or cfg.get("GITHUB_READ_TOKEN") or "").strip()
         if token:
             from tp_core.integrations.forge_github import DEFAULT_API_URL, GitHubForge, TokenAuth
 
             forge = GitHubForge(
-                (env.get("GITHUB_REPO") or "").strip(),
+                (cfg.get("GITHUB_REPO") or "").strip(),
                 TokenAuth(token),
-                api_url=env.get("GITHUB_API_URL") or DEFAULT_API_URL,
+                api_url=cfg.get("GITHUB_API_URL") or DEFAULT_API_URL,
                 transport=transport,
             )
             return cls(forge)
