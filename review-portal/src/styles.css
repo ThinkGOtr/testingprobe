@@ -1996,6 +1996,8 @@ aiprobe-switcher {
   --aip-tint-12: var(--accent-soft);
   --aip-warn: var(--warn);
   --aip-warn-bg: var(--warn-bg);
+  --aip-ok: var(--ok); /* 1.2.0: ürün durumu "Açık" */
+  --aip-ok-bg: var(--ok-bg);
   --aip-ai: var(--vurgu);
   --aip-ai-bg: var(--vurgu-bg);
   --aip-shadow-lg: var(--shadow);

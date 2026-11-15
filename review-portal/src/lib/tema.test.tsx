@@ -7,7 +7,7 @@ import { OturumProvider } from "../auth";
 import { BildirimProvider } from "../components/Bildirim";
 import { oturumAc } from "../test/yardimci";
 import temaOnKaynagi from "../tema-on.js?raw";
-import { sonrakiTema, temaKaydet, temaOku, temaUygula, useTema } from "./tema";
+import { cerezTemaOku, ortakCerezMetni, sonrakiTema, temaKaydet, temaOku, temaUygula, useTema } from "./tema";
 
 const kok = () => document.documentElement;
 
@@ -16,8 +16,13 @@ function temaYazmalari(casus: { mock: { calls: unknown[][] } }) {
   return casus.mock.calls.filter(([anahtar]) => anahtar === "tp-tema" || anahtar === "tp-tema-v");
 }
 
+const cerezSil = () => {
+  document.cookie = "aiprobe_tema=; Path=/; Max-Age=0";
+};
+
 afterEach(() => {
   kok().removeAttribute("data-theme");
+  cerezSil();
 });
 
 describe("temaOku (göç dahil)", () => {
@@ -186,11 +191,17 @@ describe("tema-on.js (ilk boyama betiği) temaOku + temaUygula ile aynı sonucu 
     ["işaretli tanınmayan", { "tp-tema-v": "2", "tp-tema": "mor" }],
     ["işaretsiz eski açık (göç: koyu)", { "tp-tema": "acik" }],
     ["işaretsiz eski sistem (göç: koyu)", { "tp-tema": "sistem" }],
+    ["ortak çerez light, tp-tema koyu → açık", { cerez: "light", "tp-tema-v": "2", "tp-tema": "koyu" }],
+    ["ortak çerez system, tp-tema açık → sistem", { cerez: "system", "tp-tema-v": "2", "tp-tema": "acik" }],
+    ["ortak çerez dark, tp-tema açık → koyu", { cerez: "dark", "tp-tema-v": "2", "tp-tema": "acik" }],
+    ["tanınmayan ortak çerez yok sayılır", { cerez: "mor", "tp-tema-v": "2", "tp-tema": "acik" }],
   ];
   it.each(durumlar)("%s", (_ad, kayit) => {
     const yukle = () => {
+      cerezSil();
+      if (kayit.cerez) document.cookie = `aiprobe_tema=${kayit.cerez}; Path=/`;
       localStorage.clear();
-      for (const [k, v] of Object.entries(kayit)) localStorage.setItem(k, v);
+      for (const [k, v] of Object.entries(kayit)) if (k !== "cerez") localStorage.setItem(k, v);
       kok().setAttribute("data-theme", "dark"); // index.html varsayılanı
     };
     yukle();
@@ -212,5 +223,56 @@ describe("tema-on.js (ilk boyama betiği) temaOku + temaUygula ile aynı sonucu 
     calistir();
     oku.mockRestore();
     expect(kok()).toHaveAttribute("data-theme", "dark");
+  });
+});
+
+describe("ortak tema çerezi aiprobe_tema (TEMA-SOZLESMESI §6)", () => {
+  it("çerez light + tp-tema=koyu → açık (çerez kazanır)", () => {
+    localStorage.setItem("tp-tema-v", "2");
+    localStorage.setItem("tp-tema", "koyu");
+    document.cookie = "aiprobe_tema=light; Path=/";
+    expect(temaOku()).toBe("acik");
+  });
+
+  it("çerez yok → eski davranış (tp-tema)", () => {
+    localStorage.setItem("tp-tema-v", "2");
+    localStorage.setItem("tp-tema", "sistem");
+    expect(temaOku()).toBe("sistem");
+  });
+
+  it("tanınmayan çerez değeri yok sayılır", () => {
+    localStorage.setItem("tp-tema-v", "2");
+    localStorage.setItem("tp-tema", "acik");
+    document.cookie = "aiprobe_tema=mor; Path=/";
+    expect(temaOku()).toBe("acik");
+    expect(cerezTemaOku("aiprobe_tema=DARK")).toBeNull();
+    expect(cerezTemaOku("x_aiprobe_tema=dark")).toBeNull();
+    expect(cerezTemaOku("a=1; aiprobe_tema=system; b=2")).toBe("sistem");
+  });
+
+  it("temaKaydet çereze de yazar (yerelde alan adsız host çerezi)", () => {
+    temaKaydet("acik");
+    expect(document.cookie).toMatch(/(?:^|; )aiprobe_tema=light(?:;|$)/);
+    expect(localStorage.getItem("tp-tema")).toBe("acik");
+    temaKaydet("sistem");
+    expect(cerezTemaOku()).toBe("sistem");
+  });
+
+  it("çerez metni: Domain yalnız *.aiprobe.antreklabs.com altında, Secure yalnız https'te", () => {
+    expect(ortakCerezMetni("koyu", "testing.aiprobe.antreklabs.com", "https:")).toBe(
+      "aiprobe_tema=dark; Path=/; Max-Age=34560000; SameSite=Lax; Domain=.aiprobe.antreklabs.com; Secure",
+    );
+    expect(ortakCerezMetni("acik", "localhost", "http:")).toBe("aiprobe_tema=light; Path=/; Max-Age=34560000; SameSite=Lax");
+    expect(ortakCerezMetni("sistem", "127.0.0.1", "http:")).not.toMatch(/Domain|Secure/);
+    expect(ortakCerezMetni("koyu", "evilaiprobe.antreklabs.com.example", "https:")).not.toMatch(/Domain/);
+    expect(ortakCerezMetni("koyu", "notaiprobe.antreklabs.com", "https:")).not.toMatch(/Domain/);
+  });
+
+  it("useTema değiştir: çerez de güncellenir; açılışta çerez yazılmaz", () => {
+    const { result } = renderHook(() => useTema());
+    expect(cerezTemaOku()).toBeNull();
+    act(() => result.current[1]());
+    expect(cerezTemaOku()).toBe("acik");
+    expect(kok()).toHaveAttribute("data-theme", "light");
   });
 });

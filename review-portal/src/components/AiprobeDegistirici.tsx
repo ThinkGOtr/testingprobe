@@ -72,6 +72,9 @@ export function AiprobeDegistirici() {
         sw.setAttribute("product", kip.urun);
         if (kip.home) sw.setAttribute("home-origin", kip.home);
         sw.setAttribute("lang", "tr");
+        // 1.2.0: panel bağlantıları. Portal yalnız Türkçe: değiştiricinin dil düğmesi gösterilmez
+        // (seçim portalda uygulanamazdı); Home'a dönüş panelin en üstünde, Profilim ve Çıkış altta.
+        sw.setAttribute("links", "home account logout");
         sw.setAttribute("me-url", "/api/auth/me");
         sw.setAttribute("logout-url", "/giris");
         // 1.0.x varsayılanı `post` + `me.csrf_token` formu; TP CSRF'i Origin denetimidir (token

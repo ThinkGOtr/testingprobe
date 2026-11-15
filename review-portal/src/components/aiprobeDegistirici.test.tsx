@@ -78,6 +78,7 @@ describe("AiprobeDegistirici", () => {
     expect(sw.getAttribute("product")).toBe("testing-probe");
     expect(sw.getAttribute("home-origin")).toBe("https://home.test");
     expect(sw.getAttribute("lang")).toBe("tr");
+    expect(sw.getAttribute("links")).toBe("home account logout");
     expect(sw.getAttribute("logout-method")).toBe("get");
     expect(baglanirkenMe[0]).toMatchObject({ product: "testing-probe", roles: ["analyst", "po"], products: { ap: ["user"] } });
   });

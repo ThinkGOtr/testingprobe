@@ -1,4 +1,4 @@
-// Vendor'lanmış `@aiprobe/switcher` 1.0.4 için tip bildirimi (yalnızca portalın kullandığı yüzey).
+// Vendor'lanmış `@aiprobe/switcher` 1.2.0 için tip bildirimi (yalnızca portalın kullandığı yüzey).
 export const VERSION: string;
 export class AiprobeSwitcher extends HTMLElement {
   me: unknown;
@@ -6,4 +6,6 @@ export class AiprobeSwitcher extends HTMLElement {
   open(): void;
   close(restoreFocus?: boolean): void;
   toggle(): void;
+  setProjects(data: unknown): void;
+  setOrgs(data: unknown): void;
 }

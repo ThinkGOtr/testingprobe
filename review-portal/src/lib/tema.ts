@@ -13,6 +13,11 @@ import { useCallback, useEffect, useState } from "react";
  * - **Göç:** eski sürüm her açılışta `tp-tema=sistem` yazıyordu; o kayıt koyu varsayılanı gizlerdi.
  *   `tp-tema-v=2` işareti yoksa eski değer **silinir** (yalnız yok saymak ikinci açılışta `sistem`'i
  *   geri getirirdi) ve işaret yazılır.
+ * - **Ürünler arası ortak tercih** (aiprobe-platform docs/tasarim/TEMA-SOZLESMESI.md §2–§6): çerez
+ *   `aiprobe_tema=dark|light|system` **önce** okunur ve kazanır (`tp-tema` yok sayılır); tanınmayan değer yok
+ *   sayılır. Kullanıcı temayı değiştirince `tp-tema`'ya ek olarak çerez de yazılır: `Domain=.aiprobe.antreklabs.com`
+ *   yalnız o alan adının altındayken (Home ve diğer ürünler okur), yerelde (`localhost`) host çerezi; `Secure`
+ *   yalnız `https:`'te.
  */
 export type Tema = "sistem" | "acik" | "koyu";
 
@@ -26,6 +31,33 @@ const SONRAKI: Record<Tema, Tema> = { koyu: "acik", acik: "sistem", sistem: "koy
 
 export const TEMA_ETIKETI: Record<Tema, string> = { sistem: "Tema: sistem", acik: "Tema: açık", koyu: "Tema: koyu" };
 
+/** Ortak tema çerezi (AI Probe ürünleri arası; TEMA-SOZLESMESI §2). */
+export const ORTAK_TEMA_CEREZI = "aiprobe_tema";
+export const ORTAK_ALAN = ".aiprobe.antreklabs.com";
+const CEREZ_OMRU_SN = 34_560_000; // ~400 gün (tarayıcı üst sınırı)
+
+/** Sözleşme değeri ↔ TP değeri. */
+const CEREZDEN: Record<string, Tema> = { dark: "koyu", light: "acik", system: "sistem" };
+const CEREZE: Record<Tema, string> = { koyu: "dark", acik: "light", sistem: "system" };
+
+/** `aiprobe_tema` çerezini okur; yoksa ya da değer tanınmıyorsa null. */
+export function cerezTemaOku(cerez?: string): Tema | null {
+  try {
+    const m = (cerez ?? document.cookie).match(/(?:^|;\s*)aiprobe_tema=(dark|light|system)(?:;|$)/);
+    return m ? CEREZDEN[m[1]] : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Yazılacak çerez metni. `Domain` yalnız `*.aiprobe.antreklabs.com` altında; `Secure` yalnız https'te. */
+export function ortakCerezMetni(tema: Tema, host: string, protokol: string): string {
+  const parcalar = [`${ORTAK_TEMA_CEREZI}=${CEREZE[tema]}`, "Path=/", `Max-Age=${CEREZ_OMRU_SN}`, "SameSite=Lax"];
+  if (host === ORTAK_ALAN.slice(1) || host.endsWith(ORTAK_ALAN)) parcalar.push(`Domain=${ORTAK_ALAN}`);
+  if (protokol === "https:") parcalar.push("Secure");
+  return parcalar.join("; ");
+}
+
 function taninan(t: string | null): t is Tema {
   return t === "sistem" || t === "acik" || t === "koyu";
 }
@@ -37,8 +69,13 @@ function gocEt(depo: Storage): void {
   depo.setItem(TEMA_SURUM_ANAHTARI, TEMA_SURUMU);
 }
 
-/** Kayıtlı tercihi okur (gerekirse göç eder). Depolama yoksa/hata verirse ya da değer tanınmazsa koyu. */
+/**
+ * Kayıtlı tercihi okur: önce ortak çerez `aiprobe_tema` (kazanır), sonra `tp-tema` (gerekirse göç eder).
+ * Depolama yoksa/hata verirse ya da değer tanınmazsa koyu.
+ */
 export function temaOku(): Tema {
+  const ortak = cerezTemaOku();
+  if (ortak) return ortak;
   try {
     const depo = window.localStorage;
     gocEt(depo);
@@ -50,7 +87,7 @@ export function temaOku(): Tema {
   return VARSAYILAN_TEMA;
 }
 
-/** Tercihi kalıcı yazar; yalnız kullanıcı temayı değiştirdiğinde çağrılır. */
+/** Tercihi kalıcı yazar (`tp-tema` + ortak çerez); yalnız kullanıcı temayı değiştirdiğinde çağrılır. */
 export function temaKaydet(tema: Tema): void {
   try {
     const depo = window.localStorage;
@@ -58,6 +95,11 @@ export function temaKaydet(tema: Tema): void {
     depo.setItem(TEMA_ANAHTARI, tema);
   } catch {
     /* yoksay: tercih yalnız bu oturumda geçerli olur */
+  }
+  try {
+    document.cookie = ortakCerezMetni(tema, location.hostname, location.protocol);
+  } catch {
+    /* çerez kapalı: yalnız bu üründe geçerli */
   }
 }
 
