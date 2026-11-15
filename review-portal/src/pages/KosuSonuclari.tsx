@@ -1,6 +1,7 @@
 import { Fragment, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { KosuDetay, PwAdimi, TestDenemesi, TestSonucu } from "../api/types";
+import { projeBasliklari } from "../api/http";
 import { Baglanti, BosDurum, Cip, DisBaglanti, Kart, IzinliLink } from "../components/ui";
 import { altTurEtiketi, HATA_SINIFI, KOSU_DURUMU } from "../lib/etiketler";
 import { sure } from "../lib/format";
@@ -550,7 +551,7 @@ function GunlukGorunumu({ url }: { url: string }) {
     if (durum.metin !== undefined || durum.yukleniyor) return;
     setDurum({ yukleniyor: true });
     try {
-      const r = await fetch(url, { credentials: "same-origin" });
+      const r = await fetch(url, { credentials: "same-origin", headers: projeBasliklari() });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const t = await r.text();
       setDurum({ metin: t.length > GUNLUK_SINIRI ? `… (ilk ${t.length - GUNLUK_SINIRI} karakter gösterilmiyor)\n${t.slice(-GUNLUK_SINIRI)}` : t });

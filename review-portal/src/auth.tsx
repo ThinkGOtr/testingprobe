@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api } from "./api/client";
-import { ApiError, mockOturumuAyarla, yetkisizOlunca } from "./api/http";
+import { ApiError, mockOturumuAyarla, projeBasliginiAyarla, yetkisizOlunca } from "./api/http";
 import type { Kullanici, ProjeOzelligi, Rol } from "./api/types";
 import { PLATFORMLAR, type Platform } from "./lib/platform";
 import { oturumVerileriniTemizle } from "./lib/oturumTemizligi";
@@ -36,6 +36,8 @@ export function OturumProvider({ children }: { children: ReactNode }) {
     if (oncekiId.current !== null && oncekiId.current !== yeniId) oturumVerileriniTemizle();
     oncekiId.current = yeniId;
     mockOturumuAyarla(k);
+    // Çok proje (§2.2): sekmenin projesi her API isteğinde `X-TP-Proje` ile gider.
+    projeBasliginiAyarla(oturumProjesi(k));
     setKullanici(k);
   }, []);
 
@@ -219,6 +221,20 @@ export function useOzellik(ozellik: ProjeOzelligi): boolean {
 export function usePlatformlar(): readonly Platform[] {
   const oz = useContext(Baglam)?.kullanici?.ozellikler;
   return useMemo(() => acikPlatformlar({ ozellikler: oz }), [oz]);
+}
+
+/** Oturumun seçili projesinin kimliği (`/auth/me` → `proje.pid`; eski biçimde `proje.id`). */
+export function oturumProjesi(k: Pick<Kullanici, "proje"> | null | undefined): string | null {
+  return k?.proje?.pid?.trim() || k?.proje?.id?.trim() || null;
+}
+
+/**
+ * Seçili projedeki roller (`/auth/me` → `roller`); alan yoksa (tek proje / eski core) `roles` ya da
+ * etkin rol. "Rol değiştir" yalnız bu rolleri sunar.
+ */
+export function projeRolleri(k: Pick<Kullanici, "roller" | "roles" | "rol"> | null | undefined): Rol[] {
+  if (!k) return [];
+  return k.roller ?? k.roles ?? [k.rol];
 }
 
 /** Üst çubuktaki "Organizasyon · Proje" (yalnız merkezi yapılandırma kipinde; yoksa null). */

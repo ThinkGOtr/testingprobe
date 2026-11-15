@@ -47,7 +47,34 @@ export interface Kullanici {
   /** Oturumun organizasyonu (yalnız merkezi yapılandırma kipinde; üst çubukta gösterilir). */
   organizasyon?: { id: string; ad: string } | null;
   /** Oturumun projesi (yalnız merkezi yapılandırma kipinde; üst çubukta gösterilir). */
-  proje?: { id: string; ad: string; kod?: string | null } | null;
+  proje?: { id?: string; pid?: string; ad: string; kod?: string | null } | null;
+  /**
+   * Çok proje (TP-COK-PROJE-PLANI §6.2): seçili projedeki TP rolleri. Menü/izinler yine `izinler`
+   * (sunucu seçili projenin rollerinden hesaplar); "Rol değiştir" yalnız bu rolleri listeler.
+   */
+  roller?: Rol[];
+  /** Kullanıcının erişebildiği proje sayısı (1 ise seçici yalnız ad gösterir, liste istenmez). */
+  projeler_sayisi?: number;
+}
+
+/**
+ * `GET /api/projeler` projesi (portalın iç biçimi; `lib/proje.ts` sunucu yanıtını buna çevirir).
+ * Sunucu biçimi: `{enabled, projects: [{pid, name, org_name, roles}], active: {pid}, role_labels}`.
+ */
+export interface ProjeOzeti {
+  pid: string;
+  ad: string;
+  kod?: string | null;
+  org_ad?: string | null;
+  roller: string[];
+}
+
+export interface ProjeListesi {
+  projeler: ProjeOzeti[];
+  /** Oturumun seçili projesi (listede yoksa null). */
+  secili: string | null;
+  /** Rol kodu → görünen ad (sunucu verirse; yoksa portal kataloğu). */
+  rolEtiketleri?: Record<string, string | { tr?: string; en?: string }>;
 }
 
 /** `/auth/me` → `ozellikler` anahtarları: dört platform ve Agent Probe (`ai_agent`). */

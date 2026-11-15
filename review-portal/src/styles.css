@@ -641,6 +641,114 @@ button.atla {
   color: var(--muted);
 }
 
+/* Çok proje: "Organizasyon · Proje" seçicisi (ProjeSecici.tsx; rol seçicinin yanında, aynı görsel dil). */
+.proje-secici {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+}
+.proje-secici-dugme {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 260px;
+  min-height: 28px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+.proje-secici-dugme:hover,
+.proje-secici-dugme[aria-expanded="true"] {
+  border-color: var(--accent);
+}
+.proje-secici-dugme:disabled {
+  cursor: progress;
+  opacity: 0.75;
+}
+.proje-secici-org {
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 110px;
+}
+.proje-secici-ayrac {
+  color: var(--muted);
+}
+.proje-secici-ad {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.proje-secici-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 50;
+  min-width: 240px;
+  max-width: min(340px, calc(100vw - 24px));
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
+}
+.proje-secici-panel ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: min(60vh, 360px);
+  overflow-y: auto;
+}
+.proje-secici-panel ul:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.proje-secici-oge {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.proje-secici-oge.etkin {
+  background: var(--surface-2, rgb(127 127 127 / 0.12));
+  outline: 1px solid var(--accent);
+}
+.proje-secici-oge.aktif .proje-secici-oge-ad {
+  font-weight: 600;
+}
+.proje-secici-oge-alt {
+  grid-column: 1;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.proje-secici-oge .rol-secici-isaret {
+  grid-column: 2;
+  grid-row: 1;
+}
+.proje-rol-yok {
+  max-width: 560px;
+}
+.proje-rol-yok h2:focus {
+  outline: none;
+}
+.proje-rol-yok-liste {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+
 .baglanti {
   display: inline-flex;
   align-items: center;
@@ -870,8 +978,17 @@ button.atla {
   .marka-alt,
   .kullanici,
   .proje-baglami,
+  .proje-secici:not(.proje-secici-menu),
   .baglanti-metin {
     display: none;
+  }
+  /* Ortak değiştiricinin proje düğmesi dar üst çubukta yalnız proje adını gösterir. */
+  aiprobe-switcher::part(project-org),
+  aiprobe-switcher::part(project-sep) {
+    display: none;
+  }
+  aiprobe-switcher::part(project-trigger) {
+    max-width: 38vw;
   }
   .ust-cubuk {
     gap: 8px;
@@ -5777,6 +5894,26 @@ input[type="checkbox"][role="switch"] {
     position: static;
     min-width: 0;
     box-shadow: none;
+  }
+  .menu-kullanici .proje-secici {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    width: 100%;
+  }
+  .menu-kullanici .proje-secici-dugme {
+    min-height: 44px;
+    max-width: 100%;
+    font-size: 0.875rem;
+  }
+  .menu-kullanici .proje-secici-panel {
+    position: static;
+    min-width: 0;
+    max-width: 100%;
+    box-shadow: none;
+  }
+  .menu-kullanici .proje-secici-oge {
+    min-height: 44px;
   }
 }
 
