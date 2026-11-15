@@ -3,6 +3,7 @@
 # Kullanım: deploy/aiprobe/paketle.sh [çıktı.tar.gz]  ;  yükleme:
 #   gcloud storage cp current.tar.gz gs://aiprobe-platform-tp-deploy/current.tar.gz
 set -euo pipefail
+umask 022   # paket dosyaları konteynerlerde root olmayan kullanıcıya okunur olmalı
 cd "$(git rev-parse --show-toplevel)"
 out="${1:-current.tar.gz}"
 work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT
