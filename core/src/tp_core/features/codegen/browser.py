@@ -56,6 +56,8 @@ from tp_core.features.codegen import platform as platformlar
 from tp_core.gateway import ALLOWED_AGENT_TOOLS, FORBIDDEN_TOOLS, wrap_tool_result
 from tp_core.gateway.snapshot_refs import SNAPSHOT_REF, is_inline_snapshot, snapshot_lines
 from tp_core.ports import ToolSpec
+from tp_core.proje import baglamla
+from tp_core.proje.ayar import ayar
 
 log = logging.getLogger(__name__)
 
@@ -151,7 +153,7 @@ class McpBrowserSession:
         self._queue: asyncio.Queue[Any] | None = None
         self._ready = concurrent.futures.Future[None]()
         self._done = concurrent.futures.Future[None]()
-        self._thread = threading.Thread(target=self._run, name="mcp-browser", daemon=True)
+        self._thread = threading.Thread(target=baglamla(self._run), name="mcp-browser", daemon=True)
         self._thread.start()
         try:
             self._ready.result(timeout=connect_timeout_s)
@@ -235,11 +237,12 @@ class AgentConfig:
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> AgentConfig:
-        env = os.environ if env is None else env
+        """Bağlamdaki projenin ayarlarından (`ayar()`); `env` verilirse o eşlemden (test)."""
+        oku: Callable[[str], str | None] = ayar if env is None else env.get
         return cls(
-            demo_web_url=(env.get("TP_DEMO_WEB_URL") or DEFAULT_DEMO_WEB_URL).rstrip("/"),
-            agent_dealer=env.get("TP_AGENT_DEALER") or DEFAULT_AGENT_DEALER,
-            agent_password=env.get("TP_AGENT_DEALER_PASSWORD") or DEFAULT_AGENT_PASSWORD,
+            demo_web_url=(oku("TP_DEMO_WEB_URL") or DEFAULT_DEMO_WEB_URL).rstrip("/"),
+            agent_dealer=oku("TP_AGENT_DEALER") or DEFAULT_AGENT_DEALER,
+            agent_password=oku("TP_AGENT_DEALER_PASSWORD") or DEFAULT_AGENT_PASSWORD,
         )
 
 

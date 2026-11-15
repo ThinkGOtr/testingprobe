@@ -131,6 +131,8 @@ from tp_core.models import (
 )
 from tp_core.models.codegen_feature import TETIK, ScriptAdim, ScriptCodegen, ScriptKontrol
 from tp_core.ports import AgentResult, AgentStep, ForgePort, ModelGateway, ModelMessage
+from tp_core.proje import pid_param, varsa, varsayilan_pid
+from tp_core.proje.ayar import ayar
 from tp_core.workflow.jobs import JobContext, PermanentJobError, enqueue, start_workflow
 from tp_core.workflow.service import (
     SYSTEM,
@@ -198,9 +200,7 @@ def app_root() -> str:
     monorepodur ve uygulama `demo-app/` altındadır (.github/workflows/ci.yml `APP_ROOT`,
     CODEOWNERS `/demo-app/e2e/...`): varsayılan 'demo-app'.
     """
-    import os
-
-    deger = os.environ.get(APP_ROOT_ENV)
+    deger = ayar(APP_ROOT_ENV)
     if deger is None:
         deger = "" if get_settings().forge == "local" else "demo-app"
     return deger.strip().strip("/")
@@ -299,10 +299,8 @@ def toolchain_hedefi(platform: str | None, dil: str | None) -> dict[str, str]:
 
 
 def adim5_butce_s() -> int:
-    import os
-
     try:
-        return max(10, int(os.environ.get(ADIM5_BUTCE_ENV) or 120))
+        return max(10, int(ayar(ADIM5_BUTCE_ENV) or 120))
     except ValueError:
         return 120
 
@@ -491,10 +489,10 @@ def _onaylayan(session: Session, case_id: uuid.UUID) -> str | None:
     row = session.execute(
         text(
             "SELECT u.kullanici_adi FROM review r JOIN app_user u ON u.id = r.user_id "
-            "WHERE r.nesne_turu = 'test_case' AND r.nesne_id = :c "
+            "WHERE r.project_id = :pid AND r.nesne_turu = 'test_case' AND r.nesne_id = :c "
             "AND r.karar IN ('approve', 'edit') ORDER BY r.sira DESC LIMIT 1"
         ),
-        {"c": case_id},
+        pid_param(c=case_id),
     ).first()
     return row[0] if row else None
 
@@ -622,7 +620,6 @@ def _github_dil_engeli(platform: str, dil: str) -> str | None:
         or not platformlar.java_mi(dil)
     ):
         return None
-    import os
 
     from tp_core.integrations.forge import (
         WEB_DILLERI_ENV,
@@ -631,7 +628,7 @@ def _github_dil_engeli(platform: str, dil: str) -> str | None:
     )
 
     try:
-        etkin = etkin_web_dilleri(os.environ)
+        etkin = etkin_web_dilleri({WEB_DILLERI_ENV: ayar(WEB_DILLERI_ENV) or ""})
     except ForgeValidationError as exc:
         return f"Yapılandırma hatası: {exc}"
     if platformlar.JAVA in etkin:
@@ -768,8 +765,14 @@ def _yeniden_bekleyene_al(session: Session, sc: Script, cg: ScriptCodegen, user:
     (başka dilde ya da aynı dilde). Önceki üretimin kaynağı, eşlemesi ve ajan adımları silinir;
     denetim zinciri ve `ai_call` kayıtları kalır."""
     transition(session, sc, "pending", user, "unverified", sebep="yeniden üretim istendi")
-    session.execute(text("DELETE FROM script_adim WHERE script_id = :s"), {"s": sc.id})
-    session.execute(text("DELETE FROM step_mapping WHERE script_id = :s"), {"s": sc.id})
+    session.execute(
+        text("DELETE FROM script_adim WHERE project_id = :pid AND script_id = :s"),
+        pid_param(s=sc.id),
+    )
+    session.execute(
+        text("DELETE FROM step_mapping WHERE project_id = :pid AND script_id = :s"),
+        pid_param(s=sc.id),
+    )
     sc.icerik = sc.icerik_hash = sc.head_sha = None
     sc.pass_at_1 = sc.onarim_sonrasi_sonuc = None
     cg.kaynak_kod = cg.eslesme = cg.ilk_eslesme = cg.yerel_kontrol = None
@@ -1876,8 +1879,8 @@ def _store_mapping(
     """`step_mapping` satırları (eylemler + beklenenler) — script başına güncel eşleme."""
     with session_scope() as s:
         s.execute(
-            text("DELETE FROM step_mapping WHERE script_id = :s"),
-            {"s": sid},
+            text("DELETE FROM step_mapping WHERE project_id = :pid AND script_id = :s"),
+            pid_param(s=sid),
         )
         ekranlar = {
             r.sira: r.ekran_goruntusu
@@ -4261,8 +4264,9 @@ def pr_sync_aralik_s() -> int:
 
 
 def plan_pr_sync(conn: Any, *, simdi: datetime | None = None) -> uuid.UUID | None:
-    """GitHub kipinde bir sonraki PR senkronunu planlar (idempotent: zaman dilimi anahtarı)."""
-    if get_settings().forge == "local":
+    """GitHub kipinde bir sonraki PR senkronunu planlar (idempotent: zaman dilimi anahtarı;
+    proje başına — iş bağlamın projesinde koşar, kipi o projenin `TP_FORGE`'u)."""
+    if (ayar("TP_FORGE") or "local").strip().lower() != "github":
         return None
     aralik = pr_sync_aralik_s()
     an = simdi or datetime.now(UTC)
@@ -4480,12 +4484,31 @@ def run_pr_sync(ctx: JobContext, engine: Engine) -> dict[str, Any]:
 
 
 def ekran_saklama_gun() -> int:
-    import os
-
+    """`TP_CODEGEN_SCREENSHOT_DAYS` (org ayarı): bağlamdaki proje, bağlam yoksa varsayılan."""
+    deger = ayar("TP_CODEGEN_SCREENSHOT_DAYS", pid=None if varsa() else varsayilan_pid())
     try:
-        return max(1, int(os.environ.get("TP_CODEGEN_SCREENSHOT_DAYS") or 14))
+        return max(1, int(deger or 14))
     except ValueError:
         return 14
+
+
+def _tum_script_durumlari(session: Session) -> dict[str, str]:
+    """Ekran görüntüsü kökü (`codegen/<script_id>/`) kurulum diskinde ortaktır: saklama kararı
+    için kayıtlı TÜM projelerin script durumu gerekir (yalnız bağlamdaki projeye bakılırsa başka
+    projenin açık script'inin dizini "kaydı yok" sanılıp silinirdi). Açık pid listesiyle."""
+    pidler = set(session.execute(text("SELECT pid FROM tp_proje")).scalars())
+    b = varsa()
+    if b is not None:
+        pidler.add(b.pid)
+    if not pidler:
+        return {}
+    return {
+        str(i): d
+        for i, d in session.execute(
+            text("SELECT id, durum FROM script WHERE project_id = ANY(:pidler)"),
+            {"pidler": sorted(pidler)},
+        ).all()
+    }
 
 
 def prune_screenshots(session: Session, root: Path | None = None, *, gun: int | None = None) -> int:
@@ -4498,7 +4521,7 @@ def prune_screenshots(session: Session, root: Path | None = None, *, gun: int | 
     if not kok.is_dir():
         return 0
     esik = datetime.now(UTC) - timedelta(days=gun or ekran_saklama_gun())
-    durumlar = {str(i): d for i, d in session.execute(select(Script.id, Script.durum)).all()}
+    durumlar = _tum_script_durumlari(session)
     silinen = 0
     for d in kok.iterdir():
         if not d.is_dir() or not re.fullmatch(r"[0-9a-f-]{36}", d.name):

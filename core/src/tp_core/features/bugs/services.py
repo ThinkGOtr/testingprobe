@@ -14,20 +14,18 @@ from typing import Any
 
 from sqlalchemy import Engine
 
+from tp_core.proje import istemciler
+from tp_core.proje.ayar import ayar
+
 _overrides: dict[str, Callable[..., Any]] = {}
-_jira_cache: list[Any] = []
 
 
 def jira() -> Any:
-    """`RestJira` (JiraPort + `link_type_names`/`issue_url`)."""
+    """Bağlamdaki projenin `RestJira`'sı (JiraPort + `link_type_names`/`issue_url`)."""
     f = _overrides.get("jira")
     if f is not None:
         return f()
-    if not _jira_cache:
-        from tp_core.integrations.jira import get_jira
-
-        _jira_cache.append(get_jira())
-    return _jira_cache[0]
+    return istemciler.jira()
 
 
 def gateway(engine: Engine) -> Any:
@@ -91,12 +89,12 @@ def code_url(path: str, line: Any, sha: str | None) -> str | None:
     f = _overrides.get("code_url")
     if f is not None:
         return f(path, line, sha)
-    if not sha or (os.environ.get("TP_FORGE") or "local").strip() != "github":
+    if not sha or (ayar("TP_FORGE") or "local").strip() != "github":
         return None
-    repo = (os.environ.get("GITHUB_REPO") or "").strip().strip("/")
+    repo = (ayar("GITHUB_REPO") or "").strip().strip("/")
     if not repo:
         return None
-    web = (os.environ.get("TP_FORGE_WEB_URL") or "https://github.com").rstrip("/")
+    web = (ayar("TP_FORGE_WEB_URL") or "https://github.com").rstrip("/")
     satir = f"#L{line}" if str(line or "").isdigit() else ""
     return f"{web}/{repo}/blob/{sha}/{path.lstrip('/')}{satir}"
 

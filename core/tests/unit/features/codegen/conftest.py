@@ -326,3 +326,10 @@ def arka_plan_worker(engine: Engine) -> Iterator[None]:
     finally:
         dur.set()
         t.join(timeout=10)
+
+
+@pytest.fixture(autouse=True)
+def _proje_baglami(proje: Any) -> Any:
+    """Şeridin testleri varsayılan proje (`test-a`, `TP_HOME_PROJECT`) bağlamında koşar
+    (TP-COK-PROJE-PLANI §2.1, §7 Şerit 5)."""
+    return proje

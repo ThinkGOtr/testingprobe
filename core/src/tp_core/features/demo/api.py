@@ -17,6 +17,9 @@ locator onarımı "son yeşil" kanıt ister. GitHub kipinde (TP_FORGE=github) k�
 kimliğiyle (`GITHUB_MERGE_TOKEN`, demo-admin bypass) PR olarak yapılır; token yoksa iş başarısız
 olur ve 409 Türkçe neden döner (`/demo/status` → `locator_demo.kip`).
 
+Demo uçları yalnız varsayılan projede (`TP_HOME_PROJECT`; demo-app) vardır; başka projede 404
+(TP-COK-PROJE-PLANI §4.3).
+
 Forge yazımı yalnızca core-worker'dadır: uçlar işi kuyruğa alır ve en çok `BEKLEME_S` bekler
 (bitti → 200 sonuç, sürüyor → 202 `{job_id}`, başarısız → 409 Türkçe neden).
 """  # noqa: E501
@@ -37,12 +40,31 @@ from tp_core.config import get_settings
 from tp_core.db import get_engine
 from tp_core.features.demo import service
 from tp_core.models import session_scope
+from tp_core.proje import varsa, varsayilan_pid
 from tp_core.workflow.service import Principal
 
 router = APIRouter(tags=["demo"])
 
-Okur = Annotated[Principal, Depends(izin("dashboard.read"))]
 DEMO_KAPALI = service.DEMO_KAPALI
+
+
+def varsayilan_projede(user: Principal) -> None:
+    """Demo (demo-app forge'u, kırma/sıfırlama) yalnız varsayılan projeye aittir: başka projede
+    uç yokmuş gibi 404."""
+    pid = getattr(user, "project_id", None)
+    if pid is None:
+        b = varsa()
+        pid = b.pid if b is not None else None
+    if pid is not None and pid != varsayilan_pid():
+        raise HTTPException(404, "Not Found")
+
+
+def demo_okuru(user: Annotated[Principal, Depends(izin("dashboard.read"))]) -> Principal:
+    varsayilan_projede(user)
+    return user
+
+
+Okur = Annotated[Principal, Depends(demo_okuru)]
 
 
 def demo_yoneticisi(
@@ -50,7 +72,9 @@ def demo_yoneticisi(
     session: DbSession,
     user: Annotated[Principal, Depends(izin("demo.manage"))],
 ) -> Principal:
-    """`demo.manage` + demo kipi (`TP_DEMO_MODE=1`); kapalıysa 403 ve `authz.denied`."""
+    """`demo.manage` + demo kipi (`TP_DEMO_MODE=1`); kapalıysa 403 ve `authz.denied`.
+    Varsayılan proje dışında 404."""
+    varsayilan_projede(user)
     if not get_settings().demo_mode:
         denetle_red(session, user, "demo.manage", "demo_kapali", request.url.path)
         raise KodluHata(403, "demo_kapali", DEMO_KAPALI)

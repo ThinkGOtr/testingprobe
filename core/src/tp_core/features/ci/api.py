@@ -29,6 +29,7 @@ from tp_core.auth.deps import DbSession
 from tp_core.auth.yetki import izin, izinlerden_biri
 from tp_core.config import get_settings
 from tp_core.features.ci import artifacts, service
+from tp_core.proje import proje_icinde
 from tp_core.workflow.service import Principal
 
 router = APIRouter(tags=["ci"])
@@ -127,7 +128,12 @@ def get_artifact_signed(
         raise HTTPException(
             403, "Rapor bağlantısının süresi dolmuş ya da geçersiz; koşuyu yenileyin"
         )
-    return _sun(session, run_id, yol, imzali=True)
+    # Oturum yok: imza koşuyu yetkilendirir, proje bağlamı koşunun projesidir.
+    pid = service.kosu_projesi(session, run_id)
+    if pid is None:
+        raise HTTPException(404, "Bu koşunun yerel artefaktı yok")
+    with proje_icinde(pid, kaynak="token"):
+        return _sun(session, run_id, yol, imzali=True)
 
 
 @router.get("/artifacts/runs/{run_id}/{yol:path}", response_model=None)

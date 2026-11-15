@@ -18,6 +18,7 @@ from sqlalchemy import Connection
 from sqlalchemy.orm import Session
 
 from tp_core.db import get_engine
+from tp_core.features.ci.projeler import her_projede
 from tp_core.features.repair import service
 from tp_core.workflow.jobs import JobContext, job_handler
 
@@ -41,7 +42,7 @@ def merge(ctx: JobContext) -> dict[str, Any]:
     return service.run_merge(ctx, get_engine())
 
 
-def on_worker_start(conn: Connection) -> None:
+def _acilis(conn: Connection) -> None:
     with Session(bind=conn, join_transaction_mode="rollback_only") as session:
         n = service.sweep_stuck(session)
         session.commit()
@@ -54,3 +55,8 @@ def on_worker_start(conn: Connection) -> None:
         m = 0
     if m:
         log.warning("forge'da merge edilmiş %d onarım uzlaştırıldı", m)
+
+
+def on_worker_start(conn: Connection) -> None:
+    """Açılış işleri her aktif projede ayrı bağlamda (TP-COK-PROJE-PLANI §5.2)."""
+    her_projede(conn, _acilis)

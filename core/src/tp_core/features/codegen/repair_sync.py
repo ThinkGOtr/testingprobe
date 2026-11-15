@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from tp_core.audit import audit_on_commit
 from tp_core.events.bus import publish_tx
 from tp_core.models import Failure, PullRequest, Script, session_scope
+from tp_core.proje import pid_param
 from tp_core.workflow.jobs import PermanentJobError
 from tp_core.workflow.service import SYSTEM, approved_hash_matches, transition
 
@@ -44,10 +45,10 @@ def _oneri_durumu_yaz(s: Session, fid: uuid.UUID | None, durum: str) -> int:
         return 1
     res = s.execute(
         text(
-            "UPDATE failure SET oneri_durumu = :d WHERE id = ANY(:ids) "
+            "UPDATE failure SET oneri_durumu = :d WHERE project_id = :pid AND id = ANY(:ids) "
             "AND oneri_durumu IN ('proposed', 'pr_open', 'none')"
         ),
-        {"d": durum, "ids": ids},
+        pid_param(d=durum, ids=ids),
     )
     return 1 + int(res.rowcount or 0)
 

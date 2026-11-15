@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from tp_core.db import get_engine
 from tp_core.features.ci import service
 from tp_core.features.ci.clients import check_timeout_s
+from tp_core.features.ci.projeler import her_projede
 from tp_core.workflow.jobs import JobContext, PermanentJobError, job_handler
 
 
@@ -86,7 +87,7 @@ def ci_zaman_asimi(ctx: JobContext) -> dict[str, Any]:
             service.plan_timeout_sweep(conn)
 
 
-def on_worker_start(conn: Connection) -> None:
+def _acilis(conn: Connection) -> None:
     """Worker açılışı: işi bitmiş ama `queued/running`'de kalmış koşular `error` olur; sonraki
     gece koşusu planlı değilse planlanır (idempotent anahtar: `ci.nightly:<tarih>`)."""
     with Session(bind=conn, join_transaction_mode="rollback_only") as session:
@@ -116,3 +117,8 @@ def on_worker_start(conn: Connection) -> None:
         n = 0
     if n:
         logging.getLogger(__name__).info("%d koşunun artefakt dizini silinmiş: işaretlendi", n)
+
+
+def on_worker_start(conn: Connection) -> None:
+    """Açılış işleri her aktif projede ayrı bağlamda (TP-COK-PROJE-PLANI §5.2)."""
+    her_projede(conn, _acilis)

@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 from tp_core.features.repair import service as _svc
 from tp_core.features.repair.service import TUR, repair_script_for_pr
 from tp_core.models import AuditEvent, Failure, PullRequest, Script
+from tp_core.proje.ayar import ayar
 
 KAYIT_EYLEMLERI = (
     "repair.pr_opened",
@@ -93,16 +94,14 @@ def pr_web_url(number: int) -> str | None:
     Onarım PR'ı açılırken forge'un döndürdüğü adres saklanmaz; adres depo + numaradan
     deterministiktir (GitHub Enterprise'da web kökü `GITHUB_API_URL`'den türetilir).
     """
-    import os
-
-    from tp_core.config import get_settings
-
-    ayar = get_settings()
-    if ayar.forge != "github" or not ayar.github_repo:
+    if (ayar("TP_FORGE") or "local").strip().lower() != "github":
         return None
-    api = (os.environ.get("GITHUB_API_URL") or "https://api.github.com").rstrip("/")
+    repo = (ayar("GITHUB_REPO") or "").strip().strip("/")
+    if not repo:
+        return None
+    api = (ayar("GITHUB_API_URL") or "https://api.github.com").rstrip("/")
     web = "https://github.com" if api == "https://api.github.com" else api.removesuffix("/api/v3")
-    return f"{web}/{ayar.github_repo}/pull/{number}"
+    return f"{web}/{repo}/pull/{number}"
 
 
 def pr_response(session: Session, number: int) -> dict[str, Any] | None:

@@ -17,6 +17,7 @@ from typing import Any
 from sqlalchemy.engine import Connection
 
 from tp_core.db import get_engine
+from tp_core.features.ci.projeler import her_projede
 from tp_core.features.triage import service, services
 from tp_core.workflow.jobs import JobContext, PermanentJobError, job_handler
 
@@ -48,6 +49,11 @@ def triage_sweep(_ctx: JobContext) -> dict[str, Any]:
             service.ensure_sweep(conn, gecikme_s=services.sweep_s())
 
 
-def on_worker_start(conn: Connection) -> None:
+def _acilis(conn: Connection) -> None:
     """Worker açılışı: süpürme işi kuyrukta yoksa eklenir (hemen koşar: kaçan koşular)."""
     service.ensure_sweep(conn)
+
+
+def on_worker_start(conn: Connection) -> None:
+    """Açılış işleri her aktif projede ayrı bağlamda (TP-COK-PROJE-PLANI §5.2)."""
+    her_projede(conn, _acilis)

@@ -18,7 +18,6 @@ trende girmez.
 
 from __future__ import annotations
 
-import os
 import uuid
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -52,6 +51,7 @@ from tp_core.models import (
 from tp_core.models.bugs_feature import BugDraftEk
 from tp_core.models.ci_feature import TestResultEk
 from tp_core.models.codegen_feature import ScriptCodegen, ScriptKontrol
+from tp_core.proje.ayar import ayar
 
 CI_TETIKLER = ("pr", "push", "nightly", "deploy", "manual")
 # main üzerinde koşan tetikler: story karnesinin "son sonuç"u yalnızca bunlardan gelir (PR
@@ -86,7 +86,7 @@ KUCUK_ORNEKLEM = 5
 
 def _n(ad: str, varsayilan: int) -> int:
     try:
-        return max(int((os.environ.get(ad) or "").strip() or varsayilan), 1)
+        return max(int((ayar(ad) or "").strip() or varsayilan), 1)
     except ValueError:
         return varsayilan
 
@@ -510,7 +510,7 @@ def _acik_bug(session: Session, req_id: uuid.UUID) -> dict[str, int]:
 def _review_tabani_ms() -> int:
     """Bunun altındaki review süresi insan review'u sayılmaz (betik/API onayı): ölçülmedi."""
     try:
-        return max(int((os.environ.get("TP_CT_REVIEW_MIN_S") or "").strip() or 5), 0) * 1000
+        return max(int((ayar("TP_CT_REVIEW_MIN_S") or "").strip() or 5), 0) * 1000
     except ValueError:
         return 5000
 

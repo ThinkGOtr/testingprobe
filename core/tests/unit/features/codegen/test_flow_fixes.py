@@ -390,6 +390,30 @@ def test_ekran_goruntusu_saklama(engine: Engine, tmp_path: Any) -> None:
     assert dizinler["acik"].exists() and dizinler["yeni_yetim"].exists()
 
 
+def test_ekran_goruntusu_saklama_baska_projenin_acik_scripti_kalir(
+    engine: Engine, tmp_path: Any, iki_proje: tuple[str, str]
+) -> None:
+    """Ekran görüntüsü kökü kurulum diskinde ortak: B projesinin açık script'inin dizini A
+    bağlamındaki temizlikte "kaydı yok" sanılıp silinmez (TP-COK-PROJE-PLANI §2.3)."""
+    with session_scope() as s:
+        b_acik = Script(tur="test", dosya_yolu="e2e/tests/generated/b.spec.ts")
+        s.add(b_acik)
+        s.flush()
+        s.execute(
+            text("UPDATE script SET durum = 'pr_open', project_id = :b WHERE id = :i"),
+            {"b": iki_proje[1], "i": b_acik.id},
+        )
+        sid = b_acik.id
+    d = tmp_path / "codegen" / str(sid)
+    d.mkdir(parents=True)
+    (d / "step-1.png").write_bytes(b"\x89PNG")
+    eski = time.time() - 30 * 86400
+    os.utime(d, (eski, eski))
+    with session_scope() as s:
+        assert service.prune_screenshots(s, tmp_path, gun=14) == 0
+    assert d.exists()
+
+
 # ---------------------------------------------- ajan adımları: insan özeti, gizli
 
 
