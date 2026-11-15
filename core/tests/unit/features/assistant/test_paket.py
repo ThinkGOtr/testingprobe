@@ -267,3 +267,12 @@ def test_kaynak_yoksa_cikis_1(tmp_path: Path, capsys: pytest.CaptureFixture[str]
     assert "HATA" in capsys.readouterr().err
     (tmp_path / "bos").mkdir()
     assert main(["--kaynak", str(tmp_path / "bos"), "--cikti", str(tmp_path / "out")]) == 1
+
+
+def test_secrets_project_degeri_sir_sayilmaz():
+    """Config R1: Home'dan gelen SECRETS_PROJECT (GCP proje kimliği) sır değildir; kaynakta geçmesi
+    paket üretimini durdurmamalı."""
+    from tp_core.features.assistant import paket as p
+
+    assert not p._taranacak_deger("SECRETS_PROJECT", "aiprobe-platform")
+    assert p._taranacak_deger("JIRA_WRITE_TOKEN", "aiprobe-platform")

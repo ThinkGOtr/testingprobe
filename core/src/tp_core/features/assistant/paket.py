@@ -86,6 +86,9 @@ _ANLAMSIZ_DEGERLER = frozenset({"true", "false", "yes", "no", "on", "off", "none
 _SIR_ADI_RE = re.compile(r"PASSWORD|SECRET|TOKEN|KEY|PRIVATE|CREDENTIAL|PAROLA|SIFRE|AUTH", re.I)
 # Adı sır gibi görünmeyen değişkenlerde yalnız rastgele görünümlü değerler aranır (URL, yol, model
 # adı gibi belgelerde doğal olarak geçen değerler yanlış alarm üretmesin).
+# Adı sır kalıbına uyan ama değeri sır olmayan yapılandırma adları (ör. Secret Manager'ın GCP proje
+# kimliği): değerleri belgelerde/kaynakta doğal olarak geçer; tarama yanlış alarm verip açılışı durdurmasın.
+_SIR_OLMAYAN_ADLAR = frozenset({"SECRETS_PROJECT", "SECRETS_LOCATION", "AIPROBE_SECRETS_PROJECT"})
 _RASTGELE_RE = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[A-Za-z0-9+/=_.-]{16,}$")
 # Belgelerdeki örnek değerler (`${TP_APP_PASSWORD}`, `<token>`, `tpt_…`) bulgu sayılmaz.
 _YER_TUTUCU_RE = re.compile(
@@ -187,7 +190,7 @@ def _taranacak_deger(ad: str, deger: str) -> bool:
         return False
     if deger.lower() in _ANLAMSIZ_DEGERLER or re.fullmatch(r"[\d.:,_ -]+", deger):
         return False
-    if _SIR_ADI_RE.search(ad):
+    if _SIR_ADI_RE.search(ad) and ad.upper() not in _SIR_OLMAYAN_ADLAR:
         return True
     return bool(_RASTGELE_RE.match(deger))
 
