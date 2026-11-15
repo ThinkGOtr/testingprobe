@@ -87,7 +87,7 @@ _SIR_ADI_RE = re.compile(r"PASSWORD|SECRET|TOKEN|KEY|PRIVATE|CREDENTIAL|PAROLA|S
 # Adı sır gibi görünmeyen değişkenlerde yalnız rastgele görünümlü değerler aranır (URL, yol, model
 # adı gibi belgelerde doğal olarak geçen değerler yanlış alarm üretmesin).
 # Adı sır kalıbına uyan ama değeri sır olmayan yapılandırma adları (ör. Secret Manager'ın GCP proje
-# kimliği): değerleri belgelerde/kaynakta doğal olarak geçer; tarama yanlış alarm verip açılışı durdurmasın.
+# kimliği): değerleri kaynakta doğal olarak geçer; yanlış alarm açılışı durdurmasın.
 _SIR_OLMAYAN_ADLAR = frozenset({"SECRETS_PROJECT", "SECRETS_LOCATION", "AIPROBE_SECRETS_PROJECT"})
 _RASTGELE_RE = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[A-Za-z0-9+/=_.-]{16,}$")
 # Belgelerdeki örnek değerler (`${TP_APP_PASSWORD}`, `<token>`, `tpt_…`) bulgu sayılmaz.
