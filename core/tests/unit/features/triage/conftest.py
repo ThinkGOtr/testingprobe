@@ -376,3 +376,10 @@ def run_jobs(engine: Any, limit: int = 20) -> list[Any]:
             break
         out.append(r)
     return out
+
+
+@pytest.fixture(autouse=True)
+def _proje_baglami(proje: Any) -> Any:
+    """Şeridin testleri varsayılan proje (`test-a`, `TP_HOME_PROJECT`) bağlamında koşar
+    (TP-COK-PROJE-PLANI §2.1, §7 Şerit 5)."""
+    return proje

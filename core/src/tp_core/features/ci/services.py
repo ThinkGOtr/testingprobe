@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -10,6 +9,8 @@ from pathlib import Path
 from typing import Any
 
 from tp_core.config import get_settings
+from tp_core.proje import istemciler
+from tp_core.proje.ayar import ayar
 
 _overrides: dict[str, Callable[..., Any]] = {}
 
@@ -19,16 +20,14 @@ def mode() -> str:
     f = _overrides.get("mode")
     if f is not None:
         return str(f())
-    return (os.environ.get("TP_FORGE") or "local").strip().lower() or "local"
+    return (ayar("TP_FORGE") or "local").strip().lower() or "local"
 
 
 def forge() -> Any:
     f = _overrides.get("forge")
     if f is not None:
         return f()
-    from tp_core.integrations.forge import get_forge
-
-    return get_forge()
+    return istemciler.forge()
 
 
 def toolchain() -> Any:
@@ -44,6 +43,10 @@ def github() -> Any:
     f = _overrides.get("github")
     if f is not None:
         return f()
+    if "forge" not in _overrides:
+        istemci = istemciler.ci()
+        if istemci is not None:
+            return istemci
     from tp_core.features.ci.clients import GitHubCi
 
     return GitHubCi(forge())

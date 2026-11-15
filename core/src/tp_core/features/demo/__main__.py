@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from collections.abc import Sequence
 
@@ -31,13 +30,14 @@ def kirilma_on_denetimi(isteyen: str, *, zorla: bool = False) -> tuple[int, dict
     from tp_core.config import get_settings
     from tp_core.features.demo import service
     from tp_core.models import session_scope
+    from tp_core.proje.ayar import sir
 
     with session_scope() as s:
         if not get_settings().demo_mode:
             audit_on_commit(s, isteyen, "demo.break_refused", "forge:main",
                             {"neden": "demo_kapali", "yol": "make break"})  # fmt: skip
             return RED_KODU, {"hazir": False, "neden": service.DEMO_KAPALI}
-        if not service._yerel_forge_kipi() and not (os.environ.get("GITHUB_MERGE_TOKEN") or ""):
+        if not service._yerel_forge_kipi() and not sir("GITHUB_MERGE_TOKEN"):
             neden = service.GITHUB_INSAN_KIMLIGI_YOK
             audit_on_commit(s, isteyen, "demo.break_refused", "forge:main",
                             {"neden": "GitHub kipi: insan kimliği (GITHUB_MERGE_TOKEN) yok",
@@ -78,6 +78,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     w.add_argument("--eylem", default="sync", choices=("sync", "break", "baseline"))
     w.add_argument("--isteyen", default="demo-web-sync")
     a = p.parse_args(argv)
+    from tp_core.proje import proje_icinde, varsayilan_pid
+
+    # Demo (demo-app forge'u) yalnız varsayılan projeye aittir (TP-COK-PROJE-PLANI §4.3).
+    with proje_icinde(varsayilan_pid(), kaynak="cli"):
+        return _calistir(a)
+
+
+def _calistir(a: argparse.Namespace) -> int:
     if a.komut == "web-istek":
         from tp_core.config import get_settings
 

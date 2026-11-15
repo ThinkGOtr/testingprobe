@@ -44,6 +44,7 @@ from typing import Any, Protocol
 import httpx
 
 from tp_core.ports import ForgePort
+from tp_core.proje.ayar import ayar
 
 REFRESH_ENV = "TP_DEMO_WEB_REFRESH"
 SHA_FILE_ENV = "TP_DEMO_WEB_SHA_FILE"
@@ -71,7 +72,8 @@ def istek_dosyasi() -> Path:
 
 
 def web_url() -> str:
-    return _ortam("TP_DEMO_WEB_URL", "http://demo-app-web:8080").rstrip("/")
+    """Demo uygulamasının adresi (proje ayarı `TP_DEMO_WEB_URL`)."""
+    return ((ayar("TP_DEMO_WEB_URL") or "").strip() or "http://demo-app-web:8080").rstrip("/")
 
 
 def _sha_mi(deger: Any) -> bool:

@@ -42,6 +42,8 @@ from tp_core.features.ci.clients import (
     dosya_sec,
 )
 from tp_core.features.ci.parse import temiz
+from tp_core.proje import varsa, varsayilan_pid
+from tp_core.proje.ayar import ayar
 
 log = logging.getLogger(__name__)
 
@@ -261,9 +263,15 @@ def hazirla(
     }
 
 
+def _disk_ayari(ad: str) -> str:
+    """Paylaşımlı yerel kopya dizininin (kurulum diski) org ayarı: bağlamdaki proje, bağlam
+    yoksa (kurulum işi) varsayılan proje."""
+    return (ayar(ad, pid=None if varsa() else varsayilan_pid()) or "").strip()
+
+
 def saklama_sayisi() -> int:
     try:
-        return max(1, int(float((os.environ.get("TP_GITHUB_ARTIFACTS_KEEP") or "").strip() or 30)))
+        return max(1, int(float(_disk_ayari("TP_GITHUB_ARTIFACTS_KEEP") or 30)))
     except ValueError:
         return 30
 
@@ -273,7 +281,7 @@ def disk_butcesi() -> int:
     import math
 
     try:
-        gb = float((os.environ.get("TP_GITHUB_ARTIFACTS_MAX_GB") or "").strip() or 5)
+        gb = float(_disk_ayari("TP_GITHUB_ARTIFACTS_MAX_GB") or 5)
     except ValueError:
         gb = 5.0
     if not math.isfinite(gb) or gb <= 0:

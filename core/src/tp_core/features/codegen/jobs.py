@@ -18,6 +18,7 @@ from sqlalchemy import Connection
 from sqlalchemy.orm import Session
 
 from tp_core.db import get_engine
+from tp_core.features.ci.projeler import her_projede
 from tp_core.features.codegen import service
 from tp_core.features.codegen.toolchain import varsayilan_check_timeout_s
 from tp_core.features.otomasyon import otokod
@@ -67,21 +68,28 @@ def pr_sync(ctx: JobContext) -> dict[str, Any]:
     return service.run_pr_sync(ctx, get_engine())
 
 
-def on_worker_start(conn: Connection) -> None:
-    """Worker açılışı: takılı script'ler / kırarak doğrulamalar temizlenir, eski ekran görüntüleri
-    silinir (kapalı/başarısız script'ler, `TP_CODEGEN_SCREENSHOT_DAYS`), GitHub kipinde PR senkronu
-    planlanır."""
+def _acilis(conn: Connection) -> None:
     log = logging.getLogger(__name__)
     with Session(bind=conn, join_transaction_mode="rollback_only") as session:
         n = service.sweep_stuck(session)
         session.commit()
+    if n:
+        log.info("takılı %d kod üretimi kaydı temizlendi", n)
+    service.plan_pr_sync(conn)
+
+
+def on_worker_start(conn: Connection) -> None:
+    """Worker açılışı: takılı script'ler / kırarak doğrulamalar temizlenir ve GitHub kipinde PR
+    senkronu planlanır (her aktif projede ayrı bağlamda, TP-COK-PROJE-PLANI §5.2); eski ekran
+    görüntüleri bir kez silinir (kapalı/başarısız script'ler, `TP_CODEGEN_SCREENSHOT_DAYS`; dizin
+    kurulum diskinde ortak, karar tüm projelerin script durumuyla)."""
+    log = logging.getLogger(__name__)
+    her_projede(conn, _acilis)
+    with Session(bind=conn, join_transaction_mode="rollback_only") as session:
         try:
             silinen = service.prune_screenshots(session)
         except Exception:  # saklama temizliği açılışı durdurmaz
             log.warning("ekran görüntüsü temizliği yapılamadı", exc_info=True)
             silinen = 0
-    if n:
-        log.info("takılı %d kod üretimi kaydı temizlendi", n)
     if silinen:
         log.info("%d script'in ekran görüntüleri silindi (saklama süresi doldu)", silinen)
-    service.plan_pr_sync(conn)

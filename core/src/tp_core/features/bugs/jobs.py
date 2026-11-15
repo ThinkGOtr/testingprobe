@@ -16,6 +16,8 @@ from sqlalchemy import Connection, text
 
 from tp_core.db import get_engine
 from tp_core.features.bugs import service
+from tp_core.features.ci.projeler import her_projede
+from tp_core.proje import pid_param
 from tp_core.workflow.jobs import JobContext, enqueue, idempotency_lock, job_handler
 
 
@@ -34,12 +36,20 @@ def adopt_sweep(_ctx: JobContext) -> dict[str, Any]:
     return {"alinan": service.adopt_pending(get_engine())}
 
 
-def on_worker_start(conn: Connection) -> None:
+def _acilis(conn: Connection) -> None:
     """Açılışta tek süpürme işi (kuyrukta bekleyen varsa yenisi eklenmez)."""
     idempotency_lock(conn, service.SWEEP_JOB)
     bekleyen = conn.execute(
-        text("SELECT 1 FROM job WHERE tur = :t AND durum IN ('queued', 'retry') LIMIT 1"),
-        {"t": service.SWEEP_JOB},
+        text(
+            "SELECT 1 FROM job WHERE project_id = :pid AND tur = :t "
+            "AND durum IN ('queued', 'retry') LIMIT 1"
+        ),
+        pid_param(t=service.SWEEP_JOB),
     ).first()
     if bekleyen is None:
         enqueue(conn, service.SWEEP_JOB, {})
+
+
+def on_worker_start(conn: Connection) -> None:
+    """Açılış işleri her aktif projede ayrı bağlamda (TP-COK-PROJE-PLANI §5.2)."""
+    her_projede(conn, _acilis)
