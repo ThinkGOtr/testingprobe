@@ -556,6 +556,10 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     # Üretimde demo kipi açıksa başlamaz (specs/012-rol-yetki §2); demo işleri worker'da koşar.
     baslangic_denetimi()
+    # Config R1: CONFIG_SOURCE=home ise Home etkin config'i (60 sn'de bir yenilenir); env'de no-op.
+    from tp_core.home_config import durum as home_durum
+
+    home_durum.baslat("core-worker")
     yuklenen = discover()
     if yuklenen:
         log.info("özellik işleyici modülleri: %s", ", ".join(yuklenen))

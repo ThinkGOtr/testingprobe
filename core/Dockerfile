@@ -25,8 +25,8 @@ COPY alembic ./alembic
 COPY src ./src
 RUN uv sync --frozen --no-dev --no-editable \
  && useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin tp \
- && mkdir -p /codegen-artifacts /github-artifacts \
- && chown 10001 /codegen-artifacts /github-artifacts
+ && mkdir -p /codegen-artifacts /github-artifacts /var/lib/tp-config \
+ && chown 10001 /codegen-artifacts /github-artifacts /var/lib/tp-config
 # /codegen-artifacts: `tp_codegen` volume'ünün bağlama noktası (kod üretimi ajan ekran görüntüleri;
 # core-worker rw, core-api ro). Boş adlandırılmış volume ilk bağlamada bu sahipliği devralır.
 # /github-artifacts: `tp_gh_artifacts` (GitHub koşu artefaktlarının yerel kopyası; core-worker rw,

@@ -14,6 +14,7 @@ from tp_core.api.csrf import OriginGuard, parse_origins
 from tp_core.api.kimlik_kipi import KimlikKipiBasligi
 from tp_core.api.routers import admin_kimlik, aiprobe, audit, auth, events, tokens
 from tp_core.config import Settings, baslangic_denetimi, get_settings
+from tp_core.home_config import durum as home_durum
 
 SERVICE = "core-api"
 
@@ -43,7 +44,10 @@ def _kisa_hata(exc: BaseException) -> str:
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Üretimde demo kipi açıksa başlamaz (specs/012-rol-yetki §2).
     baslangic_denetimi()
+    # Config R1: CONFIG_SOURCE=home ise Home etkin config'i (60 sn'de bir yenilenir); env'de no-op.
+    home_durum.baslat(SERVICE)
     yield
+    home_durum.durdur()
     b = getattr(app.state, "broadcaster", None)
     if b is not None:
         await b.stop()

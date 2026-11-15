@@ -39,6 +39,12 @@ x-core-image: &core-image
 # model anahtarı yalnızca core-worker'da (make security-check 6 ve 8).
 x-core-env: &core-env
   TP_SESSION_SECRET: ${TP_SESSION_SECRET:?}
+  # Config R1: `home` iken etkin config aiprobe-home'dan (TP_HOME_PROJECT), 60 sn'de bir yenilenir;
+  # `env` (varsayılan) bugünkü davranış. LKG: tp_home_config volume'ü (/var/lib/tp-config).
+  CONFIG_SOURCE: ${CONFIG_SOURCE:-env}
+  TP_HOME_PROJECT: ${TP_HOME_PROJECT:-}
+  HOME_CONFIG_URL: ${HOME_CONFIG_URL:-}
+  SECRETS_PROJECT: ${SECRETS_PROJECT:-}
   # Durum değiştiren isteklerde izinli Origin'ler (CSRF); portal başka adresten sunulursa eklenir.
   TP_ALLOWED_ORIGINS: ${TP_ALLOWED_ORIGINS:-http://127.0.0.1:${TP_PORTAL_PORT:-8080},http://localhost:${TP_PORTAL_PORT:-8080}}
   # Giriş kısıtlaması gerçek istemci adresini yalnızca bu vekilden gelen XFF'den okur.
@@ -207,6 +213,7 @@ services:
       TP_GORUNEN_ADLAR: ${TP_GORUNEN_ADLAR:-}
       <<: *core-env
     volumes:
+      - tp_home_config:/var/lib/tp-config
       - tp_forge:/forge:ro
       - tp_artifacts:/artifacts:ro
       - tp_checks:/checks:ro
@@ -297,8 +304,11 @@ services:
       TP_ASISTAN_DENETIM_UYARI: ${TP_ASISTAN_DENETIM_UYARI:-70}
       # ci_log için yalnız actions:read token (sır; boş = mevcut okuma kimliği).
       GITHUB_ACTIONS_READ_TOKEN: ${GITHUB_ACTIONS_READ_TOKEN:-}
+      # Config R1: Jira OAuth / GitHub App erişim token'ını (Home) yalnız core-worker alır.
+      TP_BAGLANTI_TOKENI: "1"
       <<: *core-env
     volumes:
+      - tp_home_config:/var/lib/tp-config
       - tp_forge:/forge
       # Paylaşılan artefaktlar salt okunur: checks/<sha>.json (merge kapısı) yalnızca toolchain-worker
       # /check yazar. Ajan ekran görüntüleri ayrı volume'e (core-api ro).
@@ -681,6 +691,7 @@ networks:
 
 volumes:
   tp_pgdata: {}
+  tp_home_config: {}
   tp_forge: {}
   tp_artifacts: {}
   tp_codegen: {}
