@@ -6,10 +6,13 @@ davranış). Kapalı platform isteği 409 `ozellik_kapali`; kapalı `ai_agent` u
 
 from __future__ import annotations
 
-from fastapi import HTTPException
+from typing import Annotated
 
+from fastapi import Depends, HTTPException
+
+from tp_core.auth.deps import kullanici_baglami
 from tp_core.home_config import durum
-from tp_core.workflow.service import WorkflowError
+from tp_core.workflow.service import Principal, WorkflowError
 
 OZELLIK_ADI = {
     "web": "Web",
@@ -37,7 +40,13 @@ def platform_gerekli(platform: str | None) -> None:
     ozellik_gerekli((platform or "web").strip().lower())
 
 
-def ai_agent_gerekli() -> None:
-    """Router bağımlılığı: `ai_agent` kapalıyken Agent Probe uçları yokmuş gibi (404)."""
+def ai_agent_gerekli(
+    _kullanici: Annotated[Principal | None, Depends(kullanici_baglami)] = None,
+) -> None:
+    """Router bağımlılığı: `ai_agent` kapalıyken Agent Probe uçları yokmuş gibi (404).
+
+    Oturumun seçili projesine göre karar verilir: bağımlılık oturumu (ve proje bağlamını) önce
+    çözer; router bağımlılıkları uç bağımlılıklarından önce koştuğundan yoksa varsayılan projeye
+    bakılırdı."""
     if not durum.ozellik_acik("ai_agent"):
         raise HTTPException(404, "Bulunamadı")

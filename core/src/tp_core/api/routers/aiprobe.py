@@ -23,16 +23,17 @@ import html
 import logging
 import secrets
 import uuid
+from dataclasses import replace
 from typing import Annotated, Any
 from urllib.parse import quote, unquote, urlencode
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from tp_core.api.errors import KodluHata
+from tp_core.api.errors import KodluHata, proje_rolu_yok
 from tp_core.api.routers.auth import me_of, set_session_cookie
 from tp_core.audit import audit_on_commit
 from tp_core.auth import aiprobe
@@ -290,12 +291,22 @@ def callback(
             session, aiprobe.AKTOR, "auth.aiprobe_rejected", f"kimlik:{devir.uid}", {"neden": "org"}
         )
         return hata(403, "org_reddi", "Bu kuruluşun Testing Probe erişimi yok")
-    try:
-        # Config R1 (A3): TP_HOME_PROJECT ayarlıysa roller o projedeki üyelikten (claim yok
-        # sayılır).
-        devir = aiprobe.devri_projeye_suz(devir)
-    except aiprobe.HomeUlasilamaz:
-        return hata(503, "kimlik_servisi_yok", "AI Probe kimlik servisine ulaşılamıyor")
+    # Oturumun projesi: proje kipinde seçilen giriş projesi (§6.1), değilse devirdeki proje
+    # (yalnız başlık bağlamı).
+    proje_id = devir.project_id
+    if aiprobe.proje_kipi():
+        # Çok proje: roller seçilen giriş projesindeki üyelikten (claim birleşimi yok sayılır).
+        try:
+            projeler = aiprobe.kullanici_projeleri(devir.uid, taze=True)
+        except aiprobe.HomeUlasilamaz:
+            return hata(503, "kimlik_servisi_yok", "AI Probe kimlik servisine ulaşılamıyor")
+        secim_ = aiprobe.giris_projesi(session, devir, projeler)
+        if secim_ is not None:
+            proje_id = secim_[0]
+            ozet_ = next(p for p in projeler if p.pid == proje_id)
+            devir = aiprobe.devri_rollerle_suz(devir, ozet_.roller)
+        else:
+            devir = replace(devir, roles=())
     roller = aiprobe.tp_rolleri(devir.roles, devir.acr)
     if not roller:
         audit_on_commit(
@@ -311,7 +322,8 @@ def callback(
         yanit: Response = RedirectResponse(devam, status_code=302)
         _oturum_ac(session, codec, adaylar[0], devir.uid, kimlik, devir.products, yanit,
                    ozet={"acr": devir.acr}, org_id=devir.org_id,
-                   project_id=devir.project_id)  # fmt: skip
+                   project_id=proje_id)  # fmt: skip
+        _secimi_kaydet(session, devir.uid, proje_id)
         _cerez_sil(yanit, state_adi)
         return yanit
     secim = {
@@ -324,7 +336,7 @@ def callback(
         "e": devir.session_epoch_ms,
         "p": devir.products,
         "o": devir.org_id,
-        "j": devir.project_id,
+        "j": proje_id,
     }
     yanit = RedirectResponse(f"{ROL_SEC_SAYFASI}?continue={quote(devam, safe='')}", 302)
     _cerez(yanit, SECIM_COOKIE, codec.dumps_signed(SECIM_SALT, secim), SECIM_MAX_AGE_S)
@@ -406,14 +418,16 @@ def hesaplar(request: Request, session: DbSession, codec: Codec) -> JSONResponse
     o = _oturum_satiri(request, session, codec)
     if o is None or o.external_uid is None:
         raise KodluHata(403, "yasak", "Yalnız AI Probe oturumunda kullanılabilir")
+    # Proje kipinde yalnız seçili projedeki roller (sunucuda süzülür; §6.3).
     try:
         roller: frozenset[str] | None = aiprobe.kontrol_et(
-            o.external_uid, aiprobe.OturumKimligi.of(o)
-        ).roles
+            o.external_uid, aiprobe.OturumKimligi.of(o), pid=p.project_id if
+            aiprobe.proje_kipi() else None,
+        ).roles  # fmt: skip
     except aiprobe.ProjeRolleriYok:
         roller = frozenset()
     except aiprobe.HomeUlasilamaz:
-        roller = None
+        roller = None if not aiprobe.proje_kipi() else p.roller
     liste = [
         _hesap(h)
         for h in aiprobe.bagli_hesaplar(session, o.external_uid)
@@ -454,6 +468,9 @@ def rol_sec(body: HesapSec, request: Request, session: DbSession, codec: Codec) 
         return _hata(401, "yetkisiz", "Oturumunuz sonlandırıldı; yeniden giriş yapın", SECIM_COOKIE)
     if hedef.rol not in aiprobe.tp_rolleri(sonuc.roles, kimlik.acr):
         raise KodluHata(403, "yasak", "Bu rol AI Probe hesabınızda tanımlı değil")
+    proje_id = secim.get("j")
+    if aiprobe.proje_kipi() and proje_id:
+        _proje_rolu_gerekli(secim["x"], str(proje_id), kimlik, hedef.rol)
     _onceki_oturumu_kapat(request, session, codec)
     yanit = JSONResponse(
         me_of(session, hedef.id, hedef.kullanici_adi, hedef.rol).model_dump(mode="json")
@@ -461,7 +478,8 @@ def rol_sec(body: HesapSec, request: Request, session: DbSession, codec: Codec) 
     )
     _oturum_ac(session, codec, hedef, secim["x"], kimlik, sonuc.products or secim.get("p"), yanit,
                ozet={"acr": kimlik.acr, "secim": True}, org_id=secim.get("o"),
-               project_id=secim.get("j"))  # fmt: skip
+               project_id=proje_id)  # fmt: skip
+    _secimi_kaydet(session, secim["x"], proje_id)
     _cerez_sil(yanit, SECIM_COOKIE)
     return yanit
 
@@ -506,6 +524,9 @@ def rol_degistir(
         return yanit
     if hedef.rol not in aiprobe.tp_rolleri(sonuc.roles, kimlik.acr):
         raise KodluHata(403, "yasak", "Bu rol AI Probe hesabınızda tanımlı değil")
+    if aiprobe.proje_kipi() and user.project_id:
+        # Rol değişimi projeyi değiştirmez: hedef rol seçili projede olmalı.
+        _proje_rolu_gerekli(uid, user.project_id, kimlik, hedef.rol)
     veri = codec.loads(request.cookies.get(cookie_name(), ""))
     if veri is not None:
         revoke_session(session, veri)
@@ -514,5 +535,27 @@ def rol_degistir(
     )
     _oturum_ac(session, codec, hedef, uid, kimlik, sonuc.products or o.urunler, yanit,
                eylem="auth.role_switch", ozet={"onceki": user.kullanici_adi},
-               org_id=o.org_id, project_id=o.project_id)  # fmt: skip
+               org_id=o.org_id,
+               project_id=user.project_id if aiprobe.proje_kipi() else o.project_id)  # fmt: skip
     return yanit
+
+
+def _proje_rolu_gerekli(uid: str, pid: str, kimlik: aiprobe.OturumKimligi, rol: str) -> None:
+    """Hedef rol hesabının rolü projede (taze) yoksa 403 `proje_rolu_yok`."""
+    try:
+        ham = aiprobe.proje_rolleri(uid, pid, taze=True)
+    except aiprobe.HomeUlasilamaz as exc:
+        raise KodluHata(
+            503, "kimlik_servisi_yok", "AI Probe kimlik servisine ulaşılamıyor"
+        ) from exc
+    if ham is not None and rol not in aiprobe.tp_rolleri(ham, kimlik.acr):
+        raise proje_rolu_yok()
+
+
+def _secimi_kaydet(session: Session, uid: str, pid: Any) -> None:
+    """Proje kipinde giriş projesi kişinin tüm bağlı hesaplarına seçim olarak yazılır (§6.1)."""
+    if not aiprobe.proje_kipi() or not isinstance(pid, str) or not pid:
+        return
+    ids = [h.id for h in aiprobe.bagli_hesaplar(session, uid)]
+    if ids:
+        session.execute(update(AppUser).where(AppUser.id.in_(ids)).values(secili_proje=pid))

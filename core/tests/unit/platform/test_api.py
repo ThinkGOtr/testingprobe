@@ -584,13 +584,13 @@ def test_audit_dogrulama_ai_call_kurcalamasini_gosterir(
         {"amac": "generate_cases", "saglayici": "anthropic", "model": "m", "mod": "live",
          "maliyet": 0.0123, "cikti": {"b": 1, "a": [1.5]}}
     )  # fmt: skip
-    body = client.get("/audit", params={"verify": "true"}).json()["verify"]
+    body = client.get("/audit", params={"verify": "true", "kapsam": "kurulum"}).json()["verify"]
     assert body["ok"] is True
     assert body["anchors"] == {"ok": True, "checked": 1, "eski": 0, "sabitsiz": 0, "broken": []}
     with db.srv.super_conn(db.name) as c:
         c.execute("SET session_replication_role = replica")
         c.execute("UPDATE ai_call SET maliyet = 0 WHERE id = %s", (cid,))
-    body = client.get("/audit", params={"verify": "true"}).json()["verify"]
+    body = client.get("/audit", params={"verify": "true", "kapsam": "kurulum"}).json()["verify"]
     assert body["ok"] is False and "çapa" in body["reason"]
     assert body["anchors"]["broken"] == [
         {"nesne": f"ai_call:{cid}", "reason": "satır içeriği çapayla uyuşmuyor (değiştirilmiş)"}
@@ -606,17 +606,19 @@ def test_audit_dogrulama_ve_sayfalama(
     with engine.begin() as c:
         for i in range(5):
             append_audit(c, "system", "x.y", f"n:{i % 2}", {"i": i})
-    r = client.get("/audit", params={"verify": "true", "limit": 3})
+    r = client.get("/audit", params={"verify": "true", "limit": 3, "kapsam": "kurulum"})
     assert r.status_code == 200
     body = r.json()
     assert body["verify"]["ok"] is True and body["verify"]["count"] == 6
     assert body["tip_hash"] == body["events"][0]["hash"] == body["verify"]["tip_hash"]
     assert [e["eylem"] for e in body["events"]] == ["x.y", "x.y", "x.y"]
-    sonraki = client.get("/audit", params={"limit": 3, "before_id": body["next_before_id"]}).json()
+    sonraki = client.get(
+        "/audit", params={"limit": 3, "before_id": body["next_before_id"], "kapsam": "kurulum"}
+    ).json()
     assert sonraki["verify"] is None
     assert [e["eylem"] for e in sonraki["events"]] == ["x.y", "x.y", "auth.login"]
     assert sonraki["next_before_id"] is not None
-    filtre = client.get("/audit", params={"nesne": "n:1"}).json()["events"]
+    filtre = client.get("/audit", params={"nesne": "n:1", "kapsam": "kurulum"}).json()["events"]
     assert [e["ozet"]["i"] for e in filtre] == [3, 1]
     assert client.get("/audit", params={"limit": 0}).status_code == 422
 
@@ -629,7 +631,7 @@ def test_audit_ozetinde_sid_kisaltilir_zincir_gecerli_kalir(
     with engine.begin() as c:
         append_audit(c, "system", "auth.role_switch", "app_user:x", {"sid": sid, "onceki": "a"})
     _giris(client, make_user("auditor"))
-    body = client.get("/audit", params={"verify": "true"}).json()
+    body = client.get("/audit", params={"verify": "true", "kapsam": "kurulum"}).json()
     ozetler = [
         e["ozet"] for e in body["events"] if e["eylem"] in ("auth.role_switch", "auth.login")
     ]
@@ -643,7 +645,7 @@ def test_audit_kurcalama_api_da_gorunur(client: TestClient, make_user: MakeUser,
     with db.srv.super_conn(db.name) as c:
         c.execute("SET session_replication_role = replica")
         c.execute("UPDATE audit_event SET ozet = '{\"x\": 1}'")
-    v = client.get("/audit", params={"verify": "true"}).json()["verify"]
+    v = client.get("/audit", params={"verify": "true", "kapsam": "kurulum"}).json()["verify"]
     assert v["ok"] is False and v["broken_at"] is not None
 
 

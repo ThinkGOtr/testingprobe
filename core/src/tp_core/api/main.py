@@ -12,7 +12,7 @@ from tp_core import __version__, db
 from tp_core.api import errors, registry
 from tp_core.api.csrf import OriginGuard, parse_origins
 from tp_core.api.kimlik_kipi import KimlikKipiBasligi
-from tp_core.api.routers import admin_kimlik, aiprobe, audit, auth, events, tokens
+from tp_core.api.routers import admin_kimlik, aiprobe, audit, auth, events, proje, tokens
 from tp_core.config import Settings, baslangic_denetimi, get_settings
 from tp_core.home_config import durum as home_durum
 
@@ -64,6 +64,7 @@ def _izinli_kaynaklar() -> frozenset[str]:
 PLATFORM_ROUTERS = [
     auth.router,
     aiprobe.router,
+    proje.router,
     admin_kimlik.router,
     audit.router,
     events.router,

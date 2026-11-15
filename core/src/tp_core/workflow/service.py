@@ -47,13 +47,20 @@ from tp_core.workflow.states import (
 
 @dataclass(frozen=True)
 class Principal:
-    """İşlemi yapan kimlik. `kanal`: portal (oturum), ide (MCP token), system (worker)."""
+    """İşlemi yapan kimlik. `kanal`: portal (oturum), ide (MCP token), system (worker).
+
+    Çok proje (TP-COK-PROJE-PLANI §6.1): `project_id` isteğin (oturumun/token'ın) seçili projesi,
+    `roller` kişinin o projedeki TP rolleri; `rol` etkin rol hesabıdır (görevler ayrılığı role
+    göre). Proje kipi kapalıyken `project_id` varsayılan proje, `roller` boş olabilir.
+    """
 
     id: uuid.UUID | None
     kullanici_adi: str
     rol: str
     kanal: str = "portal"
     kapsam: str | None = None
+    project_id: str | None = None
+    roller: frozenset[str] = frozenset()
 
     def as_dict(self) -> dict[str, Any]:
         return {

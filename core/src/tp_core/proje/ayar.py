@@ -244,15 +244,13 @@ def sir(ad: str, *, pid: str | None = None) -> str | None:
 
 
 def ozellik_acik(ad: str, *, pid: str | None = None) -> bool:
-    """Proje özelliği (`web`/`android`/`ios`/`windows`/`ai_agent`).
-
-    Şerit 0: süreç geneli `home_config.durum.ozellik_acik` (Home config yoksa her özellik açık);
-    Şerit 2 proje başına durumu bağlar.
-    """
-    _pid(pid)
+    """Proje özelliği (`web`/`android`/`ios`/`windows`/`ai_agent`): projenin Home etkin config'i
+    (`home_config.durum.ozellik_acik`; Home config yoksa her özellik açık, reddedilen ya da
+    yüklenemeyen ek projede kapalı)."""
+    p = _pid(pid)
     from tp_core.home_config import durum
 
-    return durum.ozellik_acik(ad)
+    return durum.ozellik_acik(ad, pid=p)
 
 
 def surum(pid: str | None = None) -> str:

@@ -51,6 +51,10 @@ class SahteHome:
     erisim_durum: int = 200
     erisim_hata: str = "use_secret"  # erisim_durum != 200 iken gövdedeki `error`
     istekler: list[tuple[str, str, dict[str, str], bytes | None]] = field(default_factory=list)
+    # Çok proje: pid → yanıt / durum (yoksa `yanit` / `durum`).
+    projeler: dict[str, dict[str, Any]] = field(default_factory=dict)
+    proje_durum: dict[str, int] = field(default_factory=dict)
+    erisim_projeleri: list[str] = field(default_factory=list)
 
     def __call__(
         self, yontem: str, url: str, basliklar: Mapping[str, str], govde: bytes | None, _t: float
@@ -73,14 +77,21 @@ class SahteHome:
         if self.kapali:
             raise y.Ulasilamaz("bağlantı reddedildi")
         if u.path == "/v1/config/effective":
-            etag = str(self.yanit.get("etag"))
+            pid = parse_qs(u.query).get("project", [""])[0]
+            yanit = self.projeler.get(pid, self.yanit)
+            durum = self.proje_durum.get(pid, self.durum)
+            etag = str(yanit.get("etag"))
+            if pid in self.proje_durum and durum != 200:  # erişim reddi ETag'den önce
+                return y.HttpYanit(durum, {}, b"{}")
             if basliklar.get("If-None-Match") == etag:
                 return y.HttpYanit(304, {}, b"")
-            if self.durum != 200:
-                return y.HttpYanit(self.durum, {}, b"{}")
-            return y.HttpYanit(200, {"etag": etag}, json.dumps(self.yanit).encode())
+            if durum != 200:
+                return y.HttpYanit(durum, {}, b"{}")
+            return y.HttpYanit(200, {"etag": etag}, json.dumps(yanit).encode())
         if u.path == "/v1/connections/access-token":
-            tur = json.loads(govde or b"{}")["type"]
+            istek = json.loads(govde or b"{}")
+            tur = istek["type"]
+            self.erisim_projeleri.append(str(istek.get("project")))
             if self.erisim_durum != 200:
                 return y.HttpYanit(
                     self.erisim_durum, {}, json.dumps({"error": self.erisim_hata}).encode()
