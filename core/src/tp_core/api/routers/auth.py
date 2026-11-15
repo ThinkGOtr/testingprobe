@@ -279,6 +279,8 @@ def me(user: CurrentUser, request: Request, session: DbSession) -> MeYaniti:
         else:
             try:
                 verilen = set(aiprobe.kontrol_et(uid, aiprobe.OturumKimligi.of(durum)).roles)
+            except aiprobe.ProjeRolleriYok:
+                verilen = set()
             except aiprobe.HomeUlasilamaz:
                 verilen = {user.rol}
         bagli = {h.rol for h in aiprobe.bagli_hesaplar(session, uid)}

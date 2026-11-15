@@ -50,6 +50,10 @@ class SahteHome:
     kisiler: dict[str, dict[str, Any]] = field(default_factory=dict)
     kapali: bool = False
     cagrilar: list[tuple[str, dict[str, Any], str]] = field(default_factory=list)
+    # Config R1 (A3): `GET /v1/projects?uid=` → uid → [{pid, roles, …}]; `projeler_kapali` yalnız
+    # bu ucu 503 yapar.
+    projeler: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    projeler_kapali: bool = False
 
     def handler(self, req: httpx.Request) -> httpx.Response:
         if self.kapali:
@@ -60,6 +64,12 @@ class SahteHome:
         self.cagrilar.append((req.url.path, govde, req.headers.get("authorization", "")))
         if req.headers.get("authorization") != f"Bearer {TP_SA_TOKEN}":
             return httpx.Response(401, json={"error": "invalid_caller"})
+        if req.url.path == "/v1/projects":
+            if self.projeler_kapali:
+                return httpx.Response(503)
+            uid = req.url.params.get("uid", "")
+            self.cagrilar[-1] = (req.url.path, {"uid": uid}, self.cagrilar[-1][2])
+            return httpx.Response(200, json={"projects": self.projeler.get(uid, [])})
         if req.url.path == "/v1/handoff/redeem":
             kayit = self.kodlar.pop(govde.get("code", ""), None)  # tek kullanımlık
             if kayit is None:
@@ -1680,3 +1690,98 @@ def test_redeem_bicimsiz_org_proje_yok_sayilir(
     with engine.connect() as c:
         satir = c.execute(text("SELECT org_id, project_id FROM oturum")).one()
     assert tuple(satir) == (None, None)
+
+
+# ------------------------------------------------------------------ Config R1 A3: roller projeden
+
+PROJE = "aaaabbbbcccc"
+
+
+def _proje(roller: list[str], pid: str = PROJE) -> dict[str, Any]:
+    return {"oid": "0123456789ab", "org_name": "Örnek Org", "pid": pid, "code": "op",
+            "name": "Örnek Proje", "features": {}, "roles": roller}  # fmt: skip
+
+
+def _proje_onbellegini_eskit(saniye: float) -> None:
+    k = aiprobe.PROJE_ROLLERI._k
+    for a, (t, r) in list(k.items()):
+        k[a] = (t - saniye, r)
+
+
+@pytest.fixture
+def proje_kipi(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TP_HOME_PROJECT", PROJE)
+
+
+def test_home_projesi_yoksa_projeler_cagrilmaz(
+    client: TestClient, home: SahteHome, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("TP_HOME_PROJECT", raising=False)
+    assert _giris(client, home, ["tester", "analyst"]).status_code == 302
+    assert home.sayi("/v1/projects") == 0
+
+
+def test_giriste_roller_projeden_claim_birlesimi_yok_sayilir(
+    proje_kipi: None, client: TestClient, home: SahteHome, engine: Engine
+) -> None:
+    # Claim: tester + analyst (tüm projelerin birleşimi); TP_HOME_PROJECT'te yalnız tester.
+    home.projeler[UID] = [_proje(["tester"]), _proje(["analyst"], pid="ddddeeeeffff")]
+    r = _giris(client, home, ["tester", "analyst"])
+    assert r.status_code == 302 and r.headers["location"] == "/x"  # tek rol: seçici yok
+    assert home.sayi("/v1/projects") == 1
+    with engine.connect() as c:
+        assert list(c.execute(text("SELECT rol FROM app_user")).scalars()) == ["tester"]
+    me = client.get("/auth/me").json()
+    assert me["roles"] == ["tester"] and me["products"]["tp"] == ["tester"]
+
+
+def test_projede_rol_yoksa_giris_yok(proje_kipi: None, client: TestClient, home: SahteHome) -> None:
+    home.projeler[UID] = [_proje(["tester"], pid="ddddeeeeffff")]
+    r = _giris(client, home, ["tester"])
+    assert r.status_code == 403 and r.json()["kod"] == "rol_yok"
+
+
+def test_projeler_erisilemezse_giris_503(
+    proje_kipi: None, client: TestClient, home: SahteHome
+) -> None:
+    home.projeler_kapali = True
+    r = _giris(client, home, ["tester"])
+    assert r.status_code == 503 and r.json()["kod"] == "kimlik_servisi_yok"
+
+
+def test_oturum_kontrolunde_projeden_cikarilan_rol_duser(
+    proje_kipi: None, client: TestClient, home: SahteHome, engine: Engine
+) -> None:
+    home.projeler[UID] = [_proje(["tester"])]
+    _giris(client, home, ["tester"])
+    assert client.get("/auth/me").status_code == 200
+    home.projeler[UID] = []  # projeden çıkarıldı (claim'de rol hâlâ var)
+    _kontrol_zamanini_eskit(engine)
+    _proje_onbellegini_eskit(120)
+    assert client.get("/auth/me").status_code == 401
+    assert "auth.aiprobe_revoked" in _eylemler(engine)
+
+
+def test_projeler_erisilemezse_son_bilinen_5_dk_sonra_kapali_iptal_yok(
+    proje_kipi: None, client: TestClient, home: SahteHome, engine: Engine
+) -> None:
+    home.projeler[UID] = [_proje(["tester"])]
+    _giris(client, home, ["tester"])
+    with engine.connect() as c:
+        uid_ = c.execute(text("SELECT id FROM app_user")).scalar_one()
+    epoch = _epoch(engine, uid_)
+    home.projeler_kapali = True
+    # ≤ 5 dk: son bilinen proje rolleri kullanılır.
+    _kontrol_zamanini_eskit(engine)
+    _proje_onbellegini_eskit(120)
+    assert client.get("/auth/me").status_code == 200
+    # > 5 dk: erişim kapalı (401) ama iptal yok (epoch aynı, iptal kaydı yok).
+    _kontrol_zamanini_eskit(engine)
+    _proje_onbellegini_eskit(aiprobe.PROJE_ROL_LKG_S)
+    assert client.get("/auth/me").status_code == 401
+    assert _epoch(engine, uid_) == epoch
+    assert "auth.aiprobe_revoked" not in _eylemler(engine)
+    # Home dönünce oturum kendiliğinden yeniden geçer.
+    home.projeler_kapali = False
+    _kontrol_zamanini_eskit(engine)
+    assert client.get("/auth/me").status_code == 200

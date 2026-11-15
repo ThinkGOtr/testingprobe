@@ -290,6 +290,12 @@ def callback(
             session, aiprobe.AKTOR, "auth.aiprobe_rejected", f"kimlik:{devir.uid}", {"neden": "org"}
         )
         return hata(403, "org_reddi", "Bu kuruluşun Testing Probe erişimi yok")
+    try:
+        # Config R1 (A3): TP_HOME_PROJECT ayarlıysa roller o projedeki üyelikten (claim yok
+        # sayılır).
+        devir = aiprobe.devri_projeye_suz(devir)
+    except aiprobe.HomeUlasilamaz:
+        return hata(503, "kimlik_servisi_yok", "AI Probe kimlik servisine ulaşılamıyor")
     roller = aiprobe.tp_rolleri(devir.roles, devir.acr)
     if not roller:
         audit_on_commit(
@@ -404,6 +410,8 @@ def hesaplar(request: Request, session: DbSession, codec: Codec) -> JSONResponse
         roller: frozenset[str] | None = aiprobe.kontrol_et(
             o.external_uid, aiprobe.OturumKimligi.of(o)
         ).roles
+    except aiprobe.ProjeRolleriYok:
+        roller = frozenset()
     except aiprobe.HomeUlasilamaz:
         roller = None
     liste = [

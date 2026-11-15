@@ -21,13 +21,14 @@ from __future__ import annotations
 
 import enum
 import logging
+import os
 import re
 import secrets
 import threading
 import time
 import uuid
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
@@ -64,6 +65,12 @@ class Kontrol(enum.Enum):
 class HomeUlasilamaz(Exception):
     """aiprobe-home erişilemedi (ağ hatası / zaman aşımı), 5xx, 408 ya da 429 döndü ya da yanıtı
     anlaşılmadı. Yalnız bu durum "degraded"dır; diğer 4xx yanıtları fail-closed işlenir."""
+
+
+class ProjeRolleriYok(HomeUlasilamaz):
+    """Config R1 (A3): `TP_HOME_PROJECT` ayarlı, Home'un `/v1/projects` yanıtı alınamadı ve son
+    bilinen proje rolleri `PROJE_ROL_LKG_S`'den eski. Erişim kapalıdır (fail-closed), ama bu bir
+    iptal değildir: oturum/token düşürülmez, Home dönünce kendiliğinden düzelir."""
 
 
 # Geçici sayılan 4xx'ler (platform kitaplığı `_TRANSIENT_4XX` ile aynı).
@@ -308,6 +315,7 @@ def reset() -> None:
     global _YAPI
     _YAPI = _Yapi()
     ONBELLEK.temizle()
+    PROJE_ROLLERI.temizle()
     DEGRADED_KABUL.temizle()
     INVALID_CALLER.temizle()
 
@@ -396,6 +404,33 @@ class HomeIstemcisi:
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise HomeUlasilamaz("redeem yanıtı sözleşmeye uymuyor") from exc
+
+    def projeler(self, uid: str) -> list[Mapping[str, Any]] | None:
+        """`GET /v1/projects?uid=` (Config R1): kişinin TP rolü olan projeleri. Kalıcı 4xx → `None`
+        (Home kişiyi tanımıyor / reddetti; çağıran erişimi kapatır)."""
+        token = self._saglayici(self.base_url)
+        try:
+            with httpx.Client(transport=self._transport, timeout=self._timeout) as c:
+                r = c.get(
+                    self.base_url + "/v1/projects",
+                    params={"uid": uid},
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+        except httpx.HTTPError as exc:
+            raise HomeUlasilamaz("/v1/projects: ağ hatası") from exc
+        if r.status_code >= 500 or r.status_code in GECICI_4XX:
+            raise HomeUlasilamaz(f"/v1/projects: {r.status_code}")
+        if r.status_code != 200:
+            log.error("aiprobe-home proje listesini reddetti: %s", r.status_code)
+            return None
+        try:
+            v = r.json()
+            liste = v["projects"] if isinstance(v, Mapping) else v
+            if not isinstance(liste, list):
+                raise TypeError("projects liste değil")
+            return [p for p in liste if isinstance(p, Mapping)]
+        except (KeyError, TypeError, ValueError) as exc:
+            raise HomeUlasilamaz("projects yanıtı sözleşmeye uymuyor") from exc
 
     def check(self, uid: str, kimlik: OturumKimligi) -> KontrolSonucu:
         govde: dict[str, Any] = {"uid": uid, "auth_time": kimlik.auth_time, "acr": kimlik.acr}
@@ -579,8 +614,119 @@ def _degraded_asildi(baslangic: datetime | None, an: datetime) -> bool:
     return baslangic is not None and an - baslangic >= timedelta(seconds=DEGRADED_MAX_S)
 
 
+# ------------------------------------------------------------------ proje rolleri (Config R1, A3)
+
+# `TP_HOME_PROJECT` (Deployment; Home yazamaz): ayarlıysa TP rolleri bu projedeki üyelikten gelir.
+HOME_PROJE_ENV = "TP_HOME_PROJECT"
+# Home erişilemezken son bilinen proje rollerinin en çok kullanılacağı süre; sonra erişim kapalı.
+PROJE_ROL_LKG_S = 300.0
+
+
+def home_projesi() -> str | None:
+    deger = (os.environ.get(HOME_PROJE_ENV) or "").strip()
+    return deger or None
+
+
+class _ProjeRolOnbellegi:
+    """`uid → (son başarılı çekim [monotonic], o projedeki TP rolleri)`."""
+
+    MAX = 10_000
+
+    def __init__(self) -> None:
+        self._k: dict[tuple[str, str], tuple[float, frozenset[str]]] = {}
+        self._kilit = threading.Lock()
+
+    def al(self, anahtar: tuple[str, str]) -> tuple[float, frozenset[str]] | None:
+        with self._kilit:
+            return self._k.get(anahtar)
+
+    def koy(self, anahtar: tuple[str, str], roller: frozenset[str]) -> None:
+        with self._kilit:
+            if len(self._k) >= self.MAX:
+                self._k.clear()
+            self._k[anahtar] = (time.monotonic(), roller)
+
+    def temizle(self) -> None:
+        with self._kilit:
+            self._k.clear()
+
+
+PROJE_ROLLERI = _ProjeRolOnbellegi()
+
+
+def proje_rolleri(uid: str, *, taze: bool = False) -> frozenset[str] | None:
+    """`TP_HOME_PROJECT` ayarlıysa kişinin o projedeki TP rolleri (`/v1/projects?uid=`); değilse
+    `None` (bugünkü davranış: claim'deki roller). Projede üyelik yoksa boş küme.
+
+    Önbellek ömrü `AIPROBE_SESSION_CHECK_S`; Home erişilemezse son bilinen değer en çok
+    `PROJE_ROL_LKG_S` kullanılır, sonra `ProjeRolleriYok` (erişim kapalı)."""
+    proje = home_projesi()
+    if proje is None:
+        return None
+    anahtar = (uid, proje)
+    kayit = PROJE_ROLLERI.al(anahtar)
+    ttl = float(get_settings().aiprobe_session_check_s)
+    if not taze and kayit is not None and time.monotonic() - kayit[0] < ttl:
+        return kayit[1]
+    try:
+        liste = home().projeler(uid)
+    except HomeUlasilamaz as exc:
+        if kayit is not None and time.monotonic() - kayit[0] <= PROJE_ROL_LKG_S:
+            log.warning("aiprobe-home proje rolleri alınamadı; son bilinen roller kullanılıyor")
+            return kayit[1]
+        log.error("aiprobe-home proje rolleri alınamadı ve son bilinen değer yok/eski: kapalı")
+        raise ProjeRolleriYok("proje rolleri alınamadı") from exc
+    roller: frozenset[str] = frozenset()
+    for p in liste or []:
+        if p.get("pid") == proje and isinstance(p.get("roles"), list):
+            roller = frozenset(str(r) for r in p["roles"])
+            break
+    PROJE_ROLLERI.koy(anahtar, roller)
+    return roller
+
+
+def _proje_icinde(rol: str, proje: frozenset[str]) -> bool:
+    return yetki.normalize_rol(rol) in {yetki.normalize_rol(p) for p in proje}
+
+
+def projeye_suz(uid: str, sonuc: KontrolSonucu, *, taze: bool = False) -> KontrolSonucu:
+    """Geçerli kontrol sonucunun TP rollerini `TP_HOME_PROJECT` projesindeki rollerle keser (claim
+    birleşimi yok sayılır; Home'un `acr` süzmesi korunur). Ürün haritasındaki `tp` de süzülür."""
+    if not sonuc.valid:
+        return sonuc
+    proje = proje_rolleri(uid, taze=taze)
+    if proje is None:
+        return sonuc
+    urunler = sonuc.products
+    if urunler is not None and URUN_KODU in urunler:
+        urunler = dict(urunler) | {
+            URUN_KODU: [r for r in urunler[URUN_KODU] if _proje_icinde(r, proje)]
+        }
+    roller = frozenset(r for r in sonuc.roles if _proje_icinde(r, proje))
+    return KontrolSonucu(True, roller, sonuc.reason, urunler)
+
+
+def devri_projeye_suz(devir: DevirYaniti) -> DevirYaniti:
+    """Girişte: devrin rollerini `TP_HOME_PROJECT` projesindeki rollerle keser (taze çekim)."""
+    proje = proje_rolleri(devir.uid, taze=True)
+    if proje is None:
+        return devir
+    urunler = devir.products
+    if urunler is not None and URUN_KODU in urunler:
+        urunler = dict(urunler) | {
+            URUN_KODU: [r for r in urunler[URUN_KODU] if _proje_icinde(r, proje)]
+        }
+    roller = tuple(r for r in devir.roles if _proje_icinde(r, proje))
+    return replace(devir, roles=roller, products=urunler)
+
+
 def kontrol_et(uid: str, kimlik: OturumKimligi, *, taze: bool = False) -> KontrolSonucu:
-    """Önbellekli `/v1/session/check`; erişilemezse `HomeUlasilamaz`."""
+    """Önbellekli `/v1/session/check` (+ `TP_HOME_PROJECT` ayarlıysa proje rolleri süzmesi);
+    erişilemezse `HomeUlasilamaz`, proje rolleri alınamazsa `ProjeRolleriYok`."""
+    return projeye_suz(uid, _kontrol_et(uid, kimlik, taze=taze), taze=taze)
+
+
+def _kontrol_et(uid: str, kimlik: OturumKimligi, *, taze: bool = False) -> KontrolSonucu:
     ttl = float(get_settings().aiprobe_session_check_s)
     anahtar = (uid, kimlik)
     if not taze:
@@ -611,6 +757,8 @@ def oturum_kontrol(session: Session, o: Oturum, user: AppUser) -> Kontrol:
         return Kontrol.GECERLI
     try:
         sonuc = kontrol_et(o.external_uid, OturumKimligi.of(o))
+    except ProjeRolleriYok:
+        return Kontrol.GECERSIZ  # iptal değil: Home dönünce oturum yeniden geçer
     except HomeUlasilamaz:
         # Degraded: oturum en çok DEGRADED_MAX_S korunur (başlangıç ilk erişilemeyen kontrolde
         # yazılır); aşılınca yalnız bu oturum iptal edilir (home'un iptal kararı değil).
@@ -783,6 +931,8 @@ def token_kontrol(
     an = simdi()
     try:
         sonuc = kontrol_et(uid, kimlik)
+    except ProjeRolleriYok:
+        return False  # iptal değil
     except HomeUlasilamaz:
         baslangic = an if tok is None else tok.degraded_baslangic
         if tok is not None and baslangic is None:
