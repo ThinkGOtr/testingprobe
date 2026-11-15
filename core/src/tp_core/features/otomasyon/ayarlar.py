@@ -31,6 +31,7 @@ from sqlalchemy.orm import Session
 
 from tp_core.audit.session import audit_on_commit
 from tp_core.models.otomasyon_feature import OtomasyonAyari
+from tp_core.proje import KURULUM, mevcut_pid
 from tp_core.workflow.service import Principal
 
 # Otomatik işlerin (onay sonrası kod, Jira tetiği, otomatik case) tek sistem aktörü.
@@ -151,10 +152,17 @@ def _parse(anahtar: str, ham: Any) -> Any:
     )
 
 
+def _satir(session: Session, anahtar: str) -> OtomasyonAyari | None:
+    """Bağlamdaki projenin ayar satırı (PK `(project_id, anahtar)`; ORM proje filtresi)."""
+    return session.scalars(
+        select(OtomasyonAyari).where(OtomasyonAyari.anahtar == anahtar)
+    ).one_or_none()
+
+
 def oku(session: Session, anahtar: str) -> Any:
     if anahtar not in VARSAYILAN:
         raise KeyError(anahtar)
-    satir = session.get(OtomasyonAyari, anahtar)
+    satir = _satir(session, anahtar)
     return varsayilan(anahtar) if satir is None else _parse(anahtar, satir.deger)
 
 
@@ -170,7 +178,7 @@ def hepsi(session: Session) -> dict[str, dict[str, Any]]:
     """API/portal görünümü: {anahtar: {...değerler, guncelleyen, guncelleme}}."""
     out: dict[str, dict[str, Any]] = {}
     for anahtar in VARSAYILAN:
-        satir = session.get(OtomasyonAyari, anahtar)
+        satir = _satir(session, anahtar)
         out[anahtar] = {
             **asdict(oku(session, anahtar)),
             "guncelleyen": satir.guncelleyen if satir else None,
@@ -195,8 +203,8 @@ def yaz(session: Session, anahtar: str, deger: Any, aktor: str) -> Any:
     session.flush()
     session.execute(
         pg_insert(OtomasyonAyari)
-        .values(anahtar=anahtar, deger={}, guncelleyen=aktor)
-        .on_conflict_do_nothing(index_elements=["anahtar"])
+        .values(project_id=mevcut_pid(), anahtar=anahtar, deger={}, guncelleyen=aktor)
+        .on_conflict_do_nothing(index_elements=["project_id", "anahtar"])
     )
     satir = session.scalars(
         select(OtomasyonAyari)
@@ -243,11 +251,13 @@ def model_kipi(session: Session) -> str | None:
     Kaynak core-worker'ın son açılış bildirimi (`worker.model_mode` denetim kaydı, `mod`).
     Kayıt yoksa yalnız açıkça yapılandırılmış kip (`TP_MODEL_MODE` ≠ `auto`) kullanılır.
     """
+    # Worker açılış bildirimi kurulum geneli olaydır: `_kurulum` zinciri (TP-COK-PROJE-PLANI §1.3).
     son = session.execute(
         text(
             "SELECT ozet->>'mod' FROM audit_event "
-            f"WHERE eylem = '{_MODEL_KIPI_EYLEMI}' ORDER BY id DESC LIMIT 1"
-        )
+            f"WHERE project_id = :k AND eylem = '{_MODEL_KIPI_EYLEMI}' ORDER BY id DESC LIMIT 1"
+        ),
+        {"k": KURULUM},
     ).scalar_one_or_none()
     if son in ("live", "replay", "record"):
         return son
@@ -291,7 +301,7 @@ def demo_ayarlarini_yaz(session: Session, aktor: str, *, yalniz_yoksa: bool = Fa
         return dict.fromkeys(DEMO_DEGERLERI, "gercek_ortam")
     out: dict[str, str] = {}
     for anahtar, deger in DEMO_DEGERLERI.items():
-        satir = session.get(OtomasyonAyari, anahtar)
+        satir = _satir(session, anahtar)
         if satir is not None and yalniz_yoksa:
             out[anahtar] = "korundu"
             continue
@@ -309,7 +319,7 @@ def demo_ayarlarini_yaz(session: Session, aktor: str, *, yalniz_yoksa: bool = Fa
 
 def tetik_tabani(session: Session) -> dict[str, Any] | None:
     """Tetiğin başlangıç işareti (`{durum, zaman}`) ya da None (taban kurulmamış)."""
-    satir = session.get(OtomasyonAyari, TETIK_TABANI)
+    satir = _satir(session, TETIK_TABANI)
     return satir.deger if satir is not None and isinstance(satir.deger, dict) else None
 
 
@@ -326,8 +336,10 @@ def tetik_tabani_yaz(
         deger["bekleyen_isaret"] = sorted(set(bekleyen_isaret))
     session.execute(
         pg_insert(OtomasyonAyari)
-        .values(anahtar=TETIK_TABANI, deger=deger, guncelleyen="jira-tetik")
-        .on_conflict_do_update(index_elements=["anahtar"], set_={"deger": deger})
+        .values(
+            project_id=mevcut_pid(), anahtar=TETIK_TABANI, deger=deger, guncelleyen="jira-tetik"
+        )
+        .on_conflict_do_update(index_elements=["project_id", "anahtar"], set_={"deger": deger})
     )
 
 

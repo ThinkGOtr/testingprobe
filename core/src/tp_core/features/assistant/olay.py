@@ -40,6 +40,7 @@ from sqlalchemy import Connection, text
 from tp_core.audit.chain import append_audit
 from tp_core.features.assistant.budget import DONDURMA_ESIK, DONDURMA_SURE_S
 from tp_core.models import enums
+from tp_core.proje import mevcut_pid, pid_param
 
 TUR_SIR: Final = "sir_icerik"
 TUR_KISISEL: Final = "kisisel_veri"
@@ -102,10 +103,12 @@ def olay_yaz(
     olay_id = uuid.uuid4()
     conn.execute(
         text(
-            "INSERT INTO asistan_guvenlik_olay (id, kullanici_id, mesaj_id, tur, ciddi, ayrinti) "
-            "VALUES (:i, :k, :m, :t, :c, CAST(:a AS jsonb))"
+            "INSERT INTO asistan_guvenlik_olay "
+            "(project_id, id, kullanici_id, mesaj_id, tur, ciddi, ayrinti) "
+            "VALUES (:pid, :i, :k, :m, :t, :c, CAST(:a AS jsonb))"
         ),
         {
+            "pid": mevcut_pid(),
             "i": olay_id,
             "k": kullanici_id,
             "m": mesaj_id,
@@ -126,10 +129,11 @@ _ARDISIK = text(
         + count(DISTINCT o.mesaj_id) FILTER (WHERE o.tur = 'istem_sizintisi'),
       max(o.zaman)
     FROM asistan_guvenlik_olay o
-    WHERE o.kullanici_id = :k AND o.ciddi
+    WHERE o.project_id = :pid AND o.kullanici_id = :k AND o.ciddi
       AND o.zaman > COALESCE(
             (SELECT max(m.olusturma) FROM asistan_mesaj m
-             WHERE m.kullanici_id = :k AND m.rol = 'user' AND m.tetik = 'kullanici'
+             WHERE m.project_id = :pid AND m.kullanici_id = :k AND m.rol = 'user'
+               AND m.tetik = 'kullanici'
                -- K11: yalnız TEMİZ kabul edilen soru sıfırlar. Temizlik sorunun İLK cevabına
                -- bakar: kanarya / istem sızıntısı olayı (kök soruya bağlı: `soru_kimligi`) ilk
                -- cevaptaysa soru sıfırlama noktası değildir (yoksa her sızıntıyı izleyen soru
@@ -138,10 +142,11 @@ _ARDISIK = text(
                -- inceleme turu 2, BE2-1). Kısmi indeks: asistan_guvenlik_olay_mesaj_ix.
                AND NOT EXISTS (
                  SELECT 1 FROM asistan_guvenlik_olay so
-                 WHERE so.mesaj_id = m.id AND so.kullanici_id = :k AND so.ciddi
+                 WHERE so.project_id = :pid AND so.mesaj_id = m.id AND so.kullanici_id = :k
+                   AND so.ciddi
                    AND NOT EXISTS (
                      SELECT 1 FROM asistan_mesaj d
-                     WHERE d.kullanici_id = :k AND d.rol = 'assistant'
+                     WHERE d.project_id = :pid AND d.kullanici_id = :k AND d.rol = 'assistant'
                        AND d.ust_mesaj_id IS NOT NULL
                        AND d.id::text = so.ayrinti->>'cevap'))),
             '-infinity'::timestamptz)
@@ -152,14 +157,16 @@ _SORU = text(
     """
     WITH RECURSIVE yukari AS (
       SELECT id, ust_mesaj_id, sohbet_id, sira, rol, 0 AS derinlik
-      FROM asistan_mesaj WHERE id = :m
+      FROM asistan_mesaj WHERE id = :m AND project_id = :pid
       UNION ALL
       SELECT a.id, a.ust_mesaj_id, a.sohbet_id, a.sira, a.rol, y.derinlik + 1
-      FROM asistan_mesaj a JOIN yukari y ON a.id = y.ust_mesaj_id WHERE y.derinlik < 10),
+      FROM asistan_mesaj a JOIN yukari y ON a.id = y.ust_mesaj_id
+      WHERE y.derinlik < 10 AND a.project_id = :pid),
     kok AS (SELECT * FROM yukari ORDER BY derinlik DESC LIMIT 1)
     SELECT CASE WHEN kok.rol = 'user' THEN kok.id ELSE (
       SELECT q.id FROM asistan_mesaj q
-      WHERE q.sohbet_id = kok.sohbet_id AND q.rol = 'user' AND q.sira < kok.sira
+      WHERE q.project_id = :pid AND q.sohbet_id = kok.sohbet_id AND q.rol = 'user'
+        AND q.sira < kok.sira
       ORDER BY q.sira DESC LIMIT 1) END
     FROM kok
     """
@@ -170,12 +177,12 @@ def soru_kimligi(conn: Connection, mesaj_id: uuid.UUID) -> uuid.UUID | None:
     """Mesajın kullanıcı sorusu: `ust_mesaj_id` zincirinin kök cevabından önceki son kullanıcı
     mesajı (API soruyu ve cevabını aynı anda, ardışık sırayla ekler). Mesaj kullanıcı mesajıysa
     kendisi; bulunamazsa None."""
-    return conn.execute(_SORU, {"m": mesaj_id}).scalar_one_or_none()
+    return conn.execute(_SORU, pid_param(m=mesaj_id)).scalar_one_or_none()
 
 
 def ardisik_ciddi(conn: Connection, kullanici_id: uuid.UUID) -> tuple[int, datetime | None]:
     """Son kabul edilen sorudan sonraki ciddi olay sayısı ve en yeni olayın zamanı."""
-    sayi, son = conn.execute(_ARDISIK, {"k": kullanici_id}).one()
+    sayi, son = conn.execute(_ARDISIK, pid_param(k=kullanici_id)).one()
     return int(sayi or 0), son
 
 
@@ -202,17 +209,17 @@ def dondurma_baslat(conn: Connection, kullanici_id: uuid.UUID) -> bool:
     Denetim aktörü ve nesnesi kullanıcının takma adıdır (`app_user:<uuid>`)."""
     conn.execute(
         text("SELECT pg_advisory_xact_lock(:ns, hashtext(:k))"),
-        {"ns": KILIT_NS, "k": str(kullanici_id)},
+        {"ns": KILIT_NS, "k": f"{mevcut_pid()}:{kullanici_id}"},
     )
     sayi, son = ardisik_ciddi(conn, kullanici_id)
     if sayi < DONDURMA_ESIK or son is None:
         return False
     var = conn.execute(
         text(
-            "SELECT 1 FROM asistan_guvenlik_olay WHERE kullanici_id = :k AND tur = :t "
-            "AND zaman >= :s LIMIT 1"
+            "SELECT 1 FROM asistan_guvenlik_olay WHERE project_id = :pid AND kullanici_id = :k "
+            "AND tur = :t AND zaman >= :s LIMIT 1"
         ),
-        {"k": kullanici_id, "t": TUR_DONDURULDU, "s": son},
+        pid_param(k=kullanici_id, t=TUR_DONDURULDU, s=son),
     ).first()
     if var is not None:
         return False

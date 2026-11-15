@@ -25,7 +25,6 @@ Akış:
 from __future__ import annotations
 
 import fnmatch
-import os
 import re
 import uuid
 from collections.abc import Iterable, Mapping, Sequence
@@ -45,6 +44,7 @@ from tp_core.events.bus import publish_tx
 from tp_core.features.cases import review as review_mod
 from tp_core.models import CaseSetAudit, Requirement, TestCase, session_scope
 from tp_core.ports import CaseSetAuditRequest, CaseSetAuditResult
+from tp_core.proje.ayar import ayar
 from tp_core.workflow.jobs import JobContext, PermanentJobError, enqueue
 from tp_core.workflow.service import Principal, WorkflowError
 
@@ -827,7 +827,7 @@ def _denetim_yaz(
 
 
 def gate_enabled() -> bool:
-    return (os.environ.get(KAPI_ORTAMI) or "on").strip().lower() not in (
+    return (ayar(KAPI_ORTAMI) or "on").strip().lower() not in (
         "off",
         "0",
         "false",

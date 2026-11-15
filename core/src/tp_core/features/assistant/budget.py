@@ -21,6 +21,11 @@ kod sabitidir (contracts/env.md): asistan günlük $10, kullanıcı günlük $1,
   60 dk, iptal/hata dahil; `assistant_deep` 2 sayılır, otomatik çocuklar sayılmaz.
 
 `AsistanBudget` (geçide verilen bütçe; Şerit D2) aynı sorguları kullanır.
+
+Çok proje (TP-COK-PROJE-PLANI §1.1 C, §8.2): kullanıcı günlük, asistan günlük ve saatlik soru
+hakkı **kurulum geneli** (maliyet koruması proje sayısıyla katlanmaz); soru başı harcama ve
+bekleyen/kapanan iş sayaçları bağlamdaki projenin satırlarıdır. Global iş sınırı ortak asistan
+şeridinindir (K1).
 """
 
 from __future__ import annotations
@@ -33,10 +38,11 @@ from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Final
 
-from sqlalchemy import Connection, Engine, text
+from sqlalchemy import Connection, Engine, TextClause, text
 
 from tp_core.gateway.budget import Budget, InMemorySpendLedger
 from tp_core.gateway.errors import BudgetExceeded
+from tp_core.proje import pid_param
 from tp_core.workflow.budget import daily_spend_usd
 
 ASISTAN_GUNLUK_USD: Final = Decimal("10")
@@ -90,13 +96,15 @@ def kok_mesaj_id(conn: Connection, mesaj_id: uuid.UUID) -> uuid.UUID | None:
     return conn.execute(
         text(
             "WITH RECURSIVE yukari AS ("
-            " SELECT id, ust_mesaj_id, 0 AS derinlik FROM asistan_mesaj WHERE id = :m"
+            " SELECT id, ust_mesaj_id, 0 AS derinlik FROM asistan_mesaj"
+            " WHERE id = :m AND project_id = :pid"
             " UNION ALL"
             " SELECT a.id, a.ust_mesaj_id, y.derinlik + 1 FROM asistan_mesaj a"
-            " JOIN yukari y ON a.id = y.ust_mesaj_id WHERE y.derinlik < 10) "
+            " JOIN yukari y ON a.id = y.ust_mesaj_id"
+            " WHERE y.derinlik < 10 AND a.project_id = :pid) "
             "SELECT id FROM yukari ORDER BY derinlik DESC LIMIT 1"
         ),
-        {"m": mesaj_id},
+        pid_param(m=mesaj_id),
     ).scalar_one_or_none()
 
 
@@ -106,20 +114,33 @@ def soru_harcamasi_usd(conn: Connection, kok_id: uuid.UUID) -> Decimal:
         conn.execute(
             text(
                 "WITH RECURSIVE agac AS ("
-                " SELECT id, ai_call_id, 0 AS derinlik FROM asistan_mesaj WHERE id = :k"
+                " SELECT id, ai_call_id, 0 AS derinlik FROM asistan_mesaj"
+                " WHERE id = :k AND project_id = :pid"
                 " UNION ALL"
                 " SELECT a.id, a.ai_call_id, g.derinlik + 1 FROM asistan_mesaj a"
-                " JOIN agac g ON a.ust_mesaj_id = g.id WHERE g.derinlik < 10), "
+                " JOIN agac g ON a.ust_mesaj_id = g.id"
+                " WHERE g.derinlik < 10 AND a.project_id = :pid), "
                 "kokler AS (SELECT ai_call_id FROM agac WHERE ai_call_id IS NOT NULL "
                 " UNION SELECT d.ai_call_id FROM asistan_denetim d"
-                " WHERE d.ai_call_id IS NOT NULL AND d.mesaj_id IN (SELECT id FROM agac)) "
+                " WHERE d.ai_call_id IS NOT NULL AND d.project_id = :pid"
+                " AND d.mesaj_id IN (SELECT id FROM agac)) "
                 "SELECT COALESCE(SUM(maliyet), 0) FROM ai_call "
-                "WHERE id IN (SELECT ai_call_id FROM kokler) "
-                "   OR parent_call_id IN (SELECT ai_call_id FROM kokler)"
+                "WHERE project_id = :pid AND (id IN (SELECT ai_call_id FROM kokler) "
+                "   OR parent_call_id IN (SELECT ai_call_id FROM kokler))"
             ),
-            {"k": kok_id},
+            pid_param(k=kok_id),
         ).scalar_one()
     )
+
+
+def _kurulum_geneli(sql: str) -> TextClause:
+    """Kurulum geneli (tüm projeler) maliyet/hak sorgusu (TP-COK-PROJE-PLANI §1.1 C, §8.2).
+
+    Kullanıcı ve asistan günlük tavanları, saatlik soru hakkı maliyet korumasıdır: proje sayısıyla
+    katlanmamalı (hız kovalarının `_kurulum` kuralıyla aynı). ORM filtresi ham SQL'e uygulanmaz;
+    kaçış bayrağı yalnız dinamik denetime "bilerek tüm projeler" der.
+    """
+    return text(sql).execution_options(tum_projeler=True)
 
 
 def kullanici_gunluk_usd(
@@ -128,7 +149,7 @@ def kullanici_gunluk_usd(
     bas, bit = _gun_araligi(gun)
     return _dec(
         conn.execute(
-            text(
+            _kurulum_geneli(
                 "SELECT COALESCE(SUM(maliyet), 0) FROM ai_call "
                 "WHERE olusturma >= :bas AND olusturma < :bit AND ek->>'kullanici_id' = :k"
             ),
@@ -141,7 +162,7 @@ def asistan_gunluk_usd(conn: Connection, gun: date | None = None) -> Decimal:
     bas, bit = _gun_araligi(gun)
     return _dec(
         conn.execute(
-            text(
+            _kurulum_geneli(
                 "SELECT COALESCE(SUM(maliyet), 0) FROM ai_call "
                 "WHERE olusturma >= :bas AND olusturma < :bit "
                 "AND amac IN ('assistant', 'assistant_deep', 'assistant_guard')"
@@ -256,13 +277,14 @@ def kullanici_bekleyen(conn: Connection, kullanici_id: uuid.UUID) -> int:
     return int(
         conn.execute(
             text(
-                "SELECT count(*) FROM job j WHERE j.tur = :t "
+                "SELECT count(*) FROM job j WHERE j.tur = :t AND j.project_id = :pid "
                 "AND j.durum IN ('queued','running','retry') "
                 "AND j.yuk->>'kullanici_id' = :k AND j.yuk->>'tetik' = 'kullanici' "
                 "AND NOT EXISTS (SELECT 1 FROM asistan_mesaj m "
-                "WHERE m.id = " + _YUK_MESAJ + " AND m.durum IN ('done','error'))"
+                "WHERE m.id = " + _YUK_MESAJ + " AND m.project_id = :pid "
+                "AND m.durum IN ('done','error'))"
             ),
-            {"t": ASISTAN_IS_TURU, "k": str(kullanici_id)},
+            pid_param(t=ASISTAN_IS_TURU, k=str(kullanici_id)),
         ).scalar_one()
     )
 
@@ -275,13 +297,15 @@ def kullanici_kapanan(conn: Connection, kullanici_id: uuid.UUID) -> int:
     return int(
         conn.execute(
             text(
-                "SELECT count(*) FROM job j JOIN asistan_mesaj m "
-                "ON m.id = " + _YUK_MESAJ + " "
-                "WHERE j.tur = :t AND j.durum IN ('queued','running','retry') "
+                "SELECT count(*) FROM job j JOIN asistan_mesaj m ON m.project_id = :pid AND m.id = "
+                + _YUK_MESAJ
+                + " "
+                "WHERE j.tur = :t AND j.project_id = :pid "
+                "AND j.durum IN ('queued','running','retry') "
                 "AND j.yuk->>'kullanici_id' = :k AND j.yuk->>'tetik' = 'kullanici' "
                 "AND m.durum = 'iptal'"
             ),
-            {"t": ASISTAN_IS_TURU, "k": str(kullanici_id)},
+            pid_param(t=ASISTAN_IS_TURU, k=str(kullanici_id)),
         ).scalar_one()
     )
 
@@ -290,7 +314,7 @@ def saatlik_soru(conn: Connection, kullanici_id: uuid.UUID) -> int:
     """Son 60 dk'daki soru hakkı kullanımı (iptal/hata dahil; derin 2; otomatik hariç)."""
     return int(
         conn.execute(
-            text(
+            _kurulum_geneli(
                 "SELECT COALESCE(SUM(CASE WHEN amac = 'assistant_deep' THEN :d ELSE 1 END), 0) "
                 "FROM asistan_mesaj WHERE kullanici_id = :k AND rol = 'assistant' "
                 "AND tetik = 'kullanici' AND olusturma > now() - interval '1 hour'"

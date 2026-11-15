@@ -70,3 +70,11 @@ def katalog(engine: Any, parola_sirri: str) -> int:
     """Demo DB satırlarından tohumlanmış katalog (parola sırrı ortamda tanımlı)."""
     with session_scope() as s:
         return service.tohumla(s, seed_sorgu)
+
+
+@pytest.fixture(autouse=True)
+def _proje_baglami(proje: object) -> object:
+    """Çok proje (TP-COK-PROJE-PLANI §2.4): bu dizinin testleri `test-a` projesinin bağlamında
+    koşar; DB'li testlerde `sql_denetimi` proje kapsamlı ham SQL'i denetler. Bağlamsız davranışı
+    sınayan test kodu `contextvars.Context().run(...)` ile koşturur."""
+    return proje

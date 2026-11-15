@@ -36,7 +36,6 @@ tavanına, `asistan_denetim.ai_call_id` soru başı tavanına girer; mesajın `m
 from __future__ import annotations
 
 import logging
-import os
 import time
 import uuid
 from collections.abc import Callable, Iterable, Mapping
@@ -50,6 +49,8 @@ from tp_core.audit import audit_on_commit
 from tp_core.integrations.agent_probe import asistan as guard
 from tp_core.integrations.agent_probe import sim
 from tp_core.ports import MessageScore
+from tp_core.proje import mevcut_pid, pid_param
+from tp_core.proje.ayar import ayar
 
 log = logging.getLogger(__name__)
 
@@ -106,7 +107,7 @@ CALISMIYOR_METNI: Final = (
 
 
 def acik() -> bool:
-    return (os.environ.get(ORTAM) or "on").strip().lower() not in ("0", "off", "false", "kapali")
+    return (ayar(ORTAM) or "on").strip().lower() not in ("0", "off", "false", "kapali")
 
 
 class DenetimCalismiyor(RuntimeError):
@@ -351,14 +352,17 @@ def onceki_soru_puani(session_factory: Callable[[], Session], ust_id: uuid.UUID)
             s.execute(
                 text(
                     "WITH RECURSIVE yukari AS (SELECT id, ust_mesaj_id, 0 AS d FROM asistan_mesaj "
-                    "WHERE id = :u UNION ALL SELECT a.id, a.ust_mesaj_id, y.d + 1 FROM "
-                    "asistan_mesaj a JOIN yukari y ON a.id = y.ust_mesaj_id WHERE y.d < 10) "
+                    "WHERE id = :u AND project_id = :pid UNION ALL "
+                    "SELECT a.id, a.ust_mesaj_id, y.d + 1 FROM asistan_mesaj a "
+                    "JOIN yukari y ON a.id = y.ust_mesaj_id "
+                    "WHERE y.d < 10 AND a.project_id = :pid) "
                     "SELECT d.puan, d.kategoriler, d.karar, d.gerekce, d.kaynak, d.talep_no "
                     "FROM asistan_denetim d JOIN yukari y ON y.id = d.mesaj_id "
-                    "WHERE d.yon = 'soru' AND d.kaynak IN ('tp-gecit', 'agent-probe') "
+                    "WHERE d.project_id = :pid AND d.yon = 'soru' "
+                    "AND d.kaynak IN ('tp-gecit', 'agent-probe') "
                     "ORDER BY y.d, d.olusturma DESC LIMIT 1"
                 ),
-                {"u": ust_id},
+                pid_param(u=ust_id),
             )
             .mappings()
             .first()
@@ -394,11 +398,13 @@ def kaydet(
             for p in puanlar:
                 s.execute(
                     text(
-                        "INSERT INTO asistan_denetim (mesaj_id, yon, puan, kategoriler, karar, "
-                        "gerekce, kaynak, talep_no, ai_call_id, sure_ms) VALUES (:m, :y, :p, "
-                        "CAST(:k AS jsonb), :karar, :g, :kaynak, :t, :c, :sure)"
+                        "INSERT INTO asistan_denetim (project_id, mesaj_id, yon, puan, "
+                        "kategoriler, karar, gerekce, kaynak, talep_no, ai_call_id, sure_ms) "
+                        "VALUES (:pid, :m, :y, :p, CAST(:k AS jsonb), :karar, :g, :kaynak, :t, "
+                        ":c, :sure)"
                     ),
                     {
+                        "pid": mevcut_pid(),
                         "m": mesaj_id,
                         "y": p.yon,
                         "p": p.skor.puan,

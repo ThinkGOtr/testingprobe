@@ -14,11 +14,11 @@ Eşleme planı (uygulanacak):
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from tp_core.gateway.errors import ProviderNotConfigured
 from tp_core.gateway.providers.base import ProviderRequest, ProviderResponse, ToolCall
+from tp_core.proje.ayar import ayar, sir
 
 _ENV = ("AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_API_KEY", "AZURE_OPENAI_DEPLOYMENT")
 
@@ -32,9 +32,11 @@ class AzureOpenAIProvider:
         api_key: str | None = None,
         deployment: str | None = None,
     ) -> None:
-        self.endpoint = endpoint or os.environ.get("AZURE_OPENAI_ENDPOINT")
-        self.api_key = api_key or os.environ.get("AZURE_OPENAI_API_KEY")
-        self.deployment = deployment or os.environ.get("AZURE_OPENAI_DEPLOYMENT")
+        # Organizasyon ayarları (A sınıfı; TP-COK-PROJE-PLANI §3.3): bağlamdaki projenin etkin
+        # config'inden; anahtar sır olarak çözülür.
+        self.endpoint = endpoint or ayar("AZURE_OPENAI_ENDPOINT")
+        self.api_key = api_key or sir("AZURE_OPENAI_API_KEY")
+        self.deployment = deployment or ayar("AZURE_OPENAI_DEPLOYMENT")
         values = (self.endpoint, self.api_key, self.deployment)
         missing = [name for name, value in zip(_ENV, values, strict=True) if not value]
         if missing:

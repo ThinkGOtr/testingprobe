@@ -47,3 +47,11 @@ def fake_gateway(engine: Engine, monkeypatch: pytest.MonkeyPatch):
 
     yield _kur
     service.set_gateway_factory(None)
+
+
+@pytest.fixture(autouse=True)
+def _proje_baglami(proje: object) -> object:
+    """Çok proje (TP-COK-PROJE-PLANI §2.4): bu dizinin testleri `test-a` projesinin bağlamında
+    koşar; DB'li testlerde `sql_denetimi` proje kapsamlı ham SQL'i denetler. Bağlamsız davranışı
+    sınayan test kodu `contextvars.Context().run(...)` ile koşturur."""
+    return proje

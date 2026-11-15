@@ -19,7 +19,6 @@ Her giriş/temizleme hash zincirli denetim olayı yazar (`requirement.baseline_s
 
 from __future__ import annotations
 
-import os
 import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -32,6 +31,7 @@ from sqlalchemy.orm import Session
 from tp_core.audit.session import audit_on_commit
 from tp_core.models import Requirement
 from tp_core.models.baseline_feature import BAZ_UST_SINIR_S, RequirementBazDeger
+from tp_core.proje.ayar import ayar
 from tp_core.workflow.service import Principal
 
 ORTAM_DEGISKENI = "TP_MANUAL_BASELINE_S"
@@ -68,7 +68,7 @@ class Giren:
 
 def varsayilan_s() -> int | None:
     """`TP_MANUAL_BASELINE_S` (saniye); boş/geçersiz/≤0 → None (ölçülmedi)."""
-    ham = (os.environ.get(ORTAM_DEGISKENI) or "").strip()
+    ham = (ayar(ORTAM_DEGISKENI) or "").strip()
     try:
         deger = int(float(ham)) if ham else 0
     except ValueError:

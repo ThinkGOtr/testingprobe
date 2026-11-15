@@ -7,7 +7,7 @@ import uuid
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import false, func, select
+from sqlalchemy import func, literal, select
 from sqlalchemy.orm import Session
 
 from tp_core.features.requirements import baseline, services
@@ -194,7 +194,9 @@ def _dongu_kosulu(s: Session, req_id: uuid.UUID) -> Any:
     """
     bas = cycle_start(s, req_id)
     if bas is None:
-        return false()
+        # `false()` değil: SQLAlchemy `x AND false` ifadesini `false`'a indirger ve ORM proje
+        # ölçütü (`project_id = …`) metinden düşer; bağlı parametre indirgenmez (sonuç aynı: boş).
+        return literal(False)
     return ConsistencyFinding.olusturma >= bas
 
 

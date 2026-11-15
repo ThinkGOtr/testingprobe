@@ -27,6 +27,11 @@ Saklama süresi `TP_ASISTAN_SAKLAMA_GUN` (varsayılan 90; geçersiz değer varsa
   (yük kullanıcı ve mesaj kimliği taşır; sayaç sorguları büyüyen tabloyu taramasın).
   `asistan_mesaj.job_id` yabancı anahtar değildir.
 
+Çok proje (TP-COK-PROJE-PLANI §5.2, §5.3): temizlik **proje başına** bir iştir; `planla` bağlamsız
+çağrıldığında (worker açılışı) her aktif projeye (`kurulu_projeler`) ayrı iş planlar, iş kendi
+projesinin bağlamında koşar ve yalnız o projenin satırlarını siler. Süre ve aralık o projenin
+ayarıdır (`ayar()`). Hız sayacı kurulum genelidir (her koşuda aynı temizlik, zararsız).
+
 Silinen satır sayıları iş sonucuna yazılır; içerik (soru/cevap metni) hiçbir yere yazılmaz.
 Temizlik işinin kendi bitmiş kayıtları 1 günden sonra `job` tablosundan silinir.
 """
@@ -34,7 +39,6 @@ Temizlik işinin kendi bitmiş kayıtları 1 günden sonra `job` tablosundan sil
 from __future__ import annotations
 
 import logging
-import os
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final
@@ -46,6 +50,9 @@ from sqlalchemy.orm import Session
 from tp_core.db import get_engine
 from tp_core.features.assistant import hiz
 from tp_core.features.assistant.budget import ASISTAN_IS_TURU
+from tp_core.features.otomasyon.proje_dongusu import projelerde
+from tp_core.proje import pid_param
+from tp_core.proje.ayar import ayar
 from tp_core.workflow import jobs as jobq
 from tp_core.workflow.jobs import JobContext, job_handler
 
@@ -58,9 +65,13 @@ VARSAYILAN_ARALIK_S: Final = 6 * 3600
 IS_KAYDI_SAKLAMA: Final = timedelta(days=1)
 
 
+def _oku(ad: str, ortam: Mapping[str, str] | None) -> str | None:
+    return ortam.get(ad) if ortam is not None else ayar(ad)
+
+
 def saklama_gun(ortam: Mapping[str, str] | None = None) -> int:
     """`TP_ASISTAN_SAKLAMA_GUN` (varsayılan 90; geçersiz → varsayılan; en az 1)."""
-    ham = ((ortam if ortam is not None else os.environ).get("TP_ASISTAN_SAKLAMA_GUN") or "").strip()
+    ham = (_oku("TP_ASISTAN_SAKLAMA_GUN", ortam) or "").strip()
     if not ham:
         return VARSAYILAN_SAKLAMA_GUN
     try:
@@ -71,7 +82,7 @@ def saklama_gun(ortam: Mapping[str, str] | None = None) -> int:
 
 def aralik_s(ortam: Mapping[str, str] | None = None) -> float:
     """`TP_ASISTAN_TEMIZLIK_S` (varsayılan 6 saat; 0 = periyodik temizlik kapalı)."""
-    ham = ((ortam if ortam is not None else os.environ).get("TP_ASISTAN_TEMIZLIK_S") or "").strip()
+    ham = (_oku("TP_ASISTAN_TEMIZLIK_S", ortam) or "").strip()
     if not ham:
         return float(VARSAYILAN_ARALIK_S)
     try:
@@ -84,14 +95,17 @@ _SOHBET_SIL = text(
     """
     DELETE FROM asistan_sohbet s
     -- GREATEST NULL'ları yok sayar: silinmemiş ya da mesajsız sohbette `guncelleme` belirler.
-    WHERE GREATEST(
+    WHERE s.project_id = :pid
+      AND GREATEST(
             s.guncelleme,
             s.silinme,
-            (SELECT max(m.olusturma) FROM asistan_mesaj m WHERE m.sohbet_id = s.id)
+            (SELECT max(m.olusturma) FROM asistan_mesaj m
+             WHERE m.sohbet_id = s.id AND m.project_id = :pid)
           ) < now() - make_interval(days => :g)
       AND NOT EXISTS (
             SELECT 1 FROM asistan_mesaj m
-            WHERE m.sohbet_id = s.id AND m.durum IN ('pending', 'running')
+            WHERE m.sohbet_id = s.id AND m.project_id = :pid
+              AND m.durum IN ('pending', 'running')
           )
     """
 )
@@ -105,22 +119,24 @@ _MESAJ_SIL = text(
     """
     WITH RECURSIVE korunan (id, derinlik) AS (
         SELECT c.ust_mesaj_id, 1 FROM asistan_mesaj c
-        WHERE c.ust_mesaj_id IS NOT NULL
+        WHERE c.project_id = :pid AND c.ust_mesaj_id IS NOT NULL
           AND (c.olusturma >= now() - make_interval(days => :g)
                OR c.durum NOT IN ('done', 'error', 'iptal'))
         UNION
         SELECT a.ust_mesaj_id, k.derinlik + 1 FROM asistan_mesaj a
         JOIN korunan k ON a.id = k.id
-        WHERE a.ust_mesaj_id IS NOT NULL AND k.derinlik < 10
+        WHERE a.project_id = :pid AND a.ust_mesaj_id IS NOT NULL AND k.derinlik < 10
     ),
     korunan_soru (id) AS (
         SELECT q.id FROM korunan k
-        JOIN asistan_mesaj a ON a.id = k.id AND a.rol = 'assistant'
+        JOIN asistan_mesaj a ON a.id = k.id AND a.project_id = :pid AND a.rol = 'assistant'
         JOIN asistan_mesaj q
-          ON q.sohbet_id = a.sohbet_id AND q.sira = a.sira - 1 AND q.rol = 'user'
+          ON q.project_id = :pid AND q.sohbet_id = a.sohbet_id AND q.sira = a.sira - 1
+         AND q.rol = 'user'
     )
     DELETE FROM asistan_mesaj m
-    WHERE m.olusturma < now() - make_interval(days => :g)
+    WHERE m.project_id = :pid
+      AND m.olusturma < now() - make_interval(days => :g)
       AND m.durum IN ('done', 'error', 'iptal')
       AND NOT EXISTS (SELECT 1 FROM korunan k WHERE k.id = m.id)
       AND NOT EXISTS (SELECT 1 FROM korunan_soru q WHERE q.id = m.id)
@@ -128,32 +144,36 @@ _MESAJ_SIL = text(
 )
 
 _CEVAP_ISI_SIL = text(
-    "DELETE FROM job WHERE tur = :t AND durum IN ('done', 'failed', 'cancelled') "
+    "DELETE FROM job WHERE tur = :t AND project_id = :pid "
+    "AND durum IN ('done', 'failed', 'cancelled') "
     "AND COALESCE(bitis, guncelleme) < now() - make_interval(days => :g)"
 )
 
 _GERI_BILDIRIM_SIL = text(
-    "DELETE FROM asistan_oneri_geri_bildirim WHERE olusturma < now() - make_interval(days => :g)"
+    "DELETE FROM asistan_oneri_geri_bildirim "
+    "WHERE project_id = :pid AND olusturma < now() - make_interval(days => :g)"
 )
 
 
 _GUVENLIK_OLAY_SIL = text(
-    "DELETE FROM asistan_guvenlik_olay WHERE zaman < now() - make_interval(days => :g)"
+    "DELETE FROM asistan_guvenlik_olay "
+    "WHERE project_id = :pid AND zaman < now() - make_interval(days => :g)"
 )
 
 
 def temizle(session: Session, *, gun: int | None = None) -> dict[str, int]:
-    """Saklama süresini aşan asistan verisini çağıranın işleminde siler; tablo başına sayılar.
+    """Bağlamdaki projenin saklama süresini aşan asistan verisini çağıranın işleminde siler;
+    tablo başına sayılar.
 
     Silinen sohbetlerin mesajları (CASCADE) `sohbet`'in içindedir; `mesaj` kalan sohbetlerden
     tek tek silinenlerdir.
     """
     g = saklama_gun() if gun is None else max(int(gun), 1)
-    sohbet = session.execute(_SOHBET_SIL, {"g": g}).rowcount or 0
-    mesaj = session.execute(_MESAJ_SIL, {"g": g}).rowcount or 0
-    cevap_isi = session.execute(_CEVAP_ISI_SIL, {"t": ASISTAN_IS_TURU, "g": g}).rowcount or 0
-    geri_bildirim = session.execute(_GERI_BILDIRIM_SIL, {"g": g}).rowcount or 0
-    guvenlik_olay = session.execute(_GUVENLIK_OLAY_SIL, {"g": g}).rowcount or 0
+    sohbet = session.execute(_SOHBET_SIL, pid_param(g=g)).rowcount or 0
+    mesaj = session.execute(_MESAJ_SIL, pid_param(g=g)).rowcount or 0
+    cevap_isi = session.execute(_CEVAP_ISI_SIL, pid_param(t=ASISTAN_IS_TURU, g=g)).rowcount or 0
+    geri_bildirim = session.execute(_GERI_BILDIRIM_SIL, pid_param(g=g)).rowcount or 0
+    guvenlik_olay = session.execute(_GUVENLIK_OLAY_SIL, pid_param(g=g)).rowcount or 0
     hiz_sayisi = hiz.hiz_temizle(session)
     return {
         "saklama_gun": g,
@@ -167,13 +187,23 @@ def temizle(session: Session, *, gun: int | None = None) -> dict[str, int]:
 
 
 def planla(conn: Connection, *, gecikme_s: float = 0.0) -> Any:
-    """Temizlik işi kuyrukta bekleyen yoksa ekler (tek bekleyen iş); kapalıysa None."""
+    """Temizlik işi kuyrukta bekleyen yoksa ekler (proje başına tek bekleyen iş); kapalıysa None.
+
+    Bağlam varsa bağlamdaki proje için; yoksa her aktif proje için (son planlanan iş döner)."""
+    planlanan = [j for j in projelerde(conn, lambda: _planla(conn, gecikme_s)) if j is not None]
+    return planlanan[-1] if planlanan else None
+
+
+def _planla(conn: Connection, gecikme_s: float) -> Any:
     if aralik_s() <= 0:
         return None
     jobq.idempotency_lock(conn, TEMIZLIK_IS_TURU)
     bekleyen = conn.execute(
-        text("SELECT id FROM job WHERE tur = :t AND durum IN ('queued', 'retry') LIMIT 1"),
-        {"t": TEMIZLIK_IS_TURU},
+        text(
+            "SELECT id FROM job WHERE tur = :t AND project_id = :pid "
+            "AND durum IN ('queued', 'retry') LIMIT 1"
+        ),
+        pid_param(t=TEMIZLIK_IS_TURU),
     ).scalar_one_or_none()
     if bekleyen is not None:
         return None

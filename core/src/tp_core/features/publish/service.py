@@ -66,6 +66,7 @@ from tp_core.models import (
     session_scope,
 )
 from tp_core.ports import JiraPort, TestManagementPort
+from tp_core.proje import pid_param
 from tp_core.workflow.jobs import JobContext, PermanentJobError, enqueue
 from tp_core.workflow.service import (
     APPROVING,
@@ -783,9 +784,10 @@ def _unanchored(session: Session, case_ids: Sequence[str]) -> set[str]:
             text(
                 "SELECT DISTINCT x FROM audit_event, "
                 "jsonb_array_elements_text(COALESCE(ozet -> 'case_ids', '[]'::jsonb)) AS x "
-                "WHERE eylem = 'publish.anchored' AND (ozet -> 'case_ids') ?| CAST(:ids AS text[])"
+                "WHERE project_id = :pid AND eylem = 'publish.anchored' "
+                "AND (ozet -> 'case_ids') ?| CAST(:ids AS text[])"
             ),
-            {"ids": list(case_ids)},
+            pid_param(ids=list(case_ids)),
         ).scalars()
     )
     return {c for c in case_ids if c not in sabit}
