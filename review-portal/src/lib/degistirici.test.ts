@@ -6,8 +6,8 @@ import { describe, expect, it } from "vitest";
 import { DEGISTIRICI_SURUMU } from "./degistirici";
 
 const VENDOR = resolve(__dirname, `../vendor/aiprobe-switcher/switcher-${DEGISTIRICI_SURUMU}.js`);
-// aiprobe-platform/packages/switcher/dist/switcher-1.0.4.js.sri (= web/home/sdk/switcher-1.0.4.js) (sürüm yükseltme = bu değer + dosya).
-const SRI = "sha384-fypubMZCdEZ1iRJsQhDHNvmNZbKTHUbn8JlavueeXSe1MFpQT91E3W8W2dH2hyNv";
+// aiprobe-platform/packages/switcher/dist/switcher-1.1.0.js.sri (= web/home/sdk/switcher-1.1.0.js) (sürüm yükseltme = bu değer + dosya).
+const SRI = "sha384-0CKxKd0EGaabTb29FRs9hU2OBHtH5m8Ttwml2dX+XbI3tLmvFWJd96LJ0FGh1bi9";
 const PLATFORM = resolve(__dirname, "../../../../aiprobe-platform");
 const PLATFORM_DIST = resolve(PLATFORM, `web/home/sdk/switcher-${DEGISTIRICI_SURUMU}.js`);
 
