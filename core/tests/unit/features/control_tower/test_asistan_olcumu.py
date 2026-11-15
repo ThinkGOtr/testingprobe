@@ -25,8 +25,10 @@ def _ai_call(engine: Engine, amac: str, maliyet: str, *, gun_once: int = 0) -> N
     with engine.begin() as c:
         c.execute(
             text(
-                "INSERT INTO ai_call (id, amac, saglayici, model, mod, maliyet, olusturma) VALUES "
-                "(:id, :a, 'anthropic', 'm', 'live', :m, now() - make_interval(days => :g))"
+                "INSERT INTO ai_call "
+                "(project_id, id, amac, saglayici, model, mod, maliyet, olusturma) "
+                "VALUES ('test-a', :id, :a, 'anthropic', 'm', 'live', :m, "
+                "now() - make_interval(days => :g))"
             ),
             {"id": uuid.uuid4(), "a": amac, "m": Decimal(maliyet), "g": gun_once},
         )
@@ -36,7 +38,10 @@ def _sohbet(engine: Engine, kullanici_id: uuid.UUID) -> uuid.UUID:
     sid = uuid.uuid4()
     with engine.begin() as c:
         c.execute(
-            text("INSERT INTO asistan_sohbet (id, kullanici_id) VALUES (:i, :k)"),
+            text(
+                "INSERT INTO asistan_sohbet "
+                "(project_id, id, kullanici_id) VALUES ('test-a', :i, :k)"
+            ),
             {"i": sid, "k": kullanici_id},
         )
     return sid
@@ -54,8 +59,9 @@ def _mesaj(
     with engine.begin() as c:
         c.execute(
             text(
-                "INSERT INTO asistan_mesaj (id, sohbet_id, kullanici_id, sira, rol, baglam, durum) "
-                "VALUES (:i, :s, :k, :n, :r, CAST(:b AS jsonb), 'done')"
+                "INSERT INTO asistan_mesaj "
+                "(project_id, id, sohbet_id, kullanici_id, sira, rol, baglam, durum) "
+                "VALUES ('test-a', :i, :s, :k, :n, :r, CAST(:b AS jsonb), 'done')"
             ),
             {
                 "i": uuid.uuid4(),
@@ -72,8 +78,9 @@ def _geri_bildirim(engine: Engine, kullanici_id: uuid.UUID, kural_id: str, deger
     with engine.begin() as c:
         c.execute(
             text(
-                "INSERT INTO asistan_oneri_geri_bildirim (id, kullanici_id, kural_id, deger) "
-                "VALUES (:i, :k, :r, :d)"
+                "INSERT INTO asistan_oneri_geri_bildirim "
+                "(project_id, id, kullanici_id, kural_id, deger) "
+                "VALUES ('test-a', :i, :k, :r, :d)"
             ),
             {"i": uuid.uuid4(), "k": kullanici_id, "r": kural_id, "d": deger},
         )

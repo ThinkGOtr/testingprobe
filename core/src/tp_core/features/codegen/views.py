@@ -129,7 +129,7 @@ def script_pr_kaydi(sc: Script) -> PullRequest | None:
     if sc.pr_no is None:
         return None
     s = object_session(sc)
-    return s.get(PullRequest, sc.pr_no) if s is not None else None
+    return s.get(PullRequest, PullRequest.anahtar(sc.pr_no)) if s is not None else None
 
 
 def _check_durumu(c: dict[str, Any]) -> str:
@@ -280,7 +280,7 @@ def pr_checks(
 def _pr(session: Session, sc: Script, cg: ScriptCodegen) -> dict[str, Any] | None:
     if sc.pr_no is None:
         return None
-    kayit = session.get(PullRequest, sc.pr_no)
+    kayit = session.get(PullRequest, PullRequest.anahtar(sc.pr_no))
     checks, ci, _ = pr_checks(
         sc.head_sha, kayit, degisen=pr_degisen_yollari(sc), platform=sc.platform, dil=sc.dil
     )

@@ -108,7 +108,7 @@ def pr_response(session: Session, number: int) -> dict[str, Any] | None:
     sc = repair_script_for_pr(session, number)
     if sc is None:
         return None
-    satir = session.get(PullRequest, number)
+    satir = session.get(PullRequest, PullRequest.anahtar(number))
     return {
         "number": number,
         "url": pr_web_url(number),

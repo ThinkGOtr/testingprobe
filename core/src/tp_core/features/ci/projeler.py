@@ -35,7 +35,25 @@ def her_projede(conn: Connection, fn: Callable[[Connection], None]) -> None:
             fn(conn)
 
 
-def toolchain_projesi(body: dict[str, Any]) -> dict[str, Any]:
+# Uygulamaya karşı koşan uçlar: varsayılan dışı projede ortam ayarı (BASE_URL, DEMO_API_URL)
+# eksikse 409 `proje_ayari_eksik` (toolchain env'e — varsayılan projenin uygulamasına — düşerdi).
+KOSU_UCLARI: frozenset[str] = frozenset({"/check", "/locator-probe"})
+
+# toolchain-worker'ın `proje` bloğu kabul eden uçları (`toolchain/worker/app.py` `proje:
+# ProjeBlogu | None`): depo, sembol önbelleği ve uygulama ayarları projeye göre seçilir.
+PROJE_BLOKLU_UCLAR: frozenset[str] = frozenset(
+    {"/symbols", "/ast-guard", "/check", "/locator-probe", "/affected-tests"}
+)
+
+
+def toolchain_govdesi(yol: str, body: dict[str, Any]) -> dict[str, Any]:
+    """`yol` proje bloğu kabul ediyorsa gövdenin kopyasına bloğu ekler (`toolchain_projesi`)."""
+    if yol not in PROJE_BLOKLU_UCLAR or "proje" in body:
+        return body
+    return toolchain_projesi(dict(body), kosu=yol in KOSU_UCLARI)
+
+
+def toolchain_projesi(body: dict[str, Any], *, kosu: bool = True) -> dict[str, Any]:
     """Toolchain istek gövdesine `proje` bloğunu ekler (TP-COK-PROJE-PLANI §4.4) ve gövdeyi döner.
 
     Varsayılan projede (ve bağlamsız çağrıda) blok eklenmez: toolchain süreç ortamı varsayılan
@@ -45,5 +63,10 @@ def toolchain_projesi(body: dict[str, Any]) -> dict[str, Any]:
     if b is not None and b.pid != varsayilan_pid():
         from tp_core.proje import istemciler
 
-        body["proje"] = istemciler.toolchain_proje_blogu()
+        blok = istemciler.toolchain_proje_blogu()
+        if kosu:
+            from tp_core.integrations.toolchain_blogu import ortam_denetle
+
+            ortam_denetle(blok)
+        body["proje"] = blok
     return body

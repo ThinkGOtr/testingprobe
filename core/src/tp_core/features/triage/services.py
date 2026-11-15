@@ -17,6 +17,7 @@ import httpx
 from sqlalchemy import Engine
 
 from tp_core.config import get_settings
+from tp_core.features.ci.projeler import toolchain_govdesi
 from tp_core.proje.ayar import ayar
 
 _overrides: dict[str, Callable[..., Any]] = {}
@@ -42,6 +43,7 @@ class TriageToolchain:
         self._transport = transport
 
     def _post(self, yol: str, govde: dict[str, Any], timeout: float) -> dict[str, Any]:
+        govde = toolchain_govdesi(yol, govde)
         try:
             with httpx.Client(
                 transport=self._transport, timeout=timeout, headers=self._headers

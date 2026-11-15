@@ -13,16 +13,14 @@ haritanın proje başına sürümüdür; fabrikalar `env` verilmezse `os.environ
 
 Bağlantı kipi ve Home erişim token'ı da proje başınadır (§4.2; Config R1 `home_config.baglanti`):
 `baglanti_kipi(tur, pid)`, `token_al(tur, pid)`, `gecersiz_kil(tur, pid)` ve istemci kimlik
-sarmalayıcıları `ProjeJiraAuth` / `ProjeGitHubAuth`. Şerit 2 `baglanti.token_al(tur, pid)` ve
-`durum.etkin(pid)`'i sağlayana dek varsayılan dışı proje token kipine düşer (sır `ayar()`'dan).
+sarmalayıcıları `ProjeJiraAuth` / `ProjeGitHubAuth` (`baglanti.token_al(tur, pid)`,
+`durum.etkin(pid)`).
 """
 
 from __future__ import annotations
 
-import inspect
 import os
 from collections.abc import Callable, Generator, Iterator, Mapping
-from functools import cache
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -127,21 +125,11 @@ class ProjeOrtami(Mapping[str, str]):
 # ------------------------------------------------------------ bağlantı kipi ve Home token'ı
 
 
-@cache
-def _pid_destekler(fn: Callable[..., Any]) -> bool:
-    try:
-        return "pid" in inspect.signature(fn).parameters
-    except (TypeError, ValueError):
-        return False
-
-
 def _cfg(pid: str) -> Any:
     """Projenin Home etkin config'i (yoksa None)."""
     from tp_core.home_config import durum
 
-    if _pid_destekler(durum.etkin):
-        return durum.etkin(pid=pid)
-    return durum.etkin() if pid == varsayilan_pid() else None
+    return durum.etkin(pid=pid)
 
 
 def baglanti_kipi(tur: str, pid: str | None = None) -> str:
@@ -157,20 +145,11 @@ def baglanti_public(tur: str, pid: str | None = None) -> Mapping[str, Any]:
 
 def token_al(tur: str, pid: str | None = None) -> ErisimTokeni:
     """Home'dan projenin bağlantı token'ı (`POST /v1/connections/access-token {project: pid}`)."""
-    p = pid_coz(pid)
-    if _pid_destekler(baglanti.token_al):
-        return baglanti.token_al(tur, pid=p)
-    if p != varsayilan_pid():
-        raise baglanti.BaglantiHatasi(f"{tur}: proje başına bağlantı token'ı desteklenmiyor ({p})")
-    return baglanti.token_al(tur)
+    return baglanti.token_al(tur, pid=pid_coz(pid))
 
 
 def gecersiz_kil(tur: str, pid: str | None = None) -> None:
-    p = pid_coz(pid)
-    if _pid_destekler(baglanti.gecersiz_kil):
-        baglanti.gecersiz_kil(tur, pid=p)
-    elif p == varsayilan_pid():
-        baglanti.gecersiz_kil(tur)
+    baglanti.gecersiz_kil(tur, pid=pid_coz(pid))
 
 
 class ProjeJiraAuth(baglanti.HomeJiraAuth):

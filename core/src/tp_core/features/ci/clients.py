@@ -114,9 +114,10 @@ class ToolchainClient:
         o projenin deposunda ve uygulama ayarlarıyla koşar (ortak koşu kilidi, K1)."""
         govde = dict(body)
         if "proje" not in govde:
+            from tp_core.integrations.toolchain_blogu import ortam_denetle
             from tp_core.proje.istemciler import toolchain_proje_blogu
 
-            govde["proje"] = toolchain_proje_blogu()
+            govde["proje"] = ortam_denetle(toolchain_proje_blogu())
         try:
             with httpx.Client(
                 transport=self._transport, timeout=self._timeout, headers=self._headers

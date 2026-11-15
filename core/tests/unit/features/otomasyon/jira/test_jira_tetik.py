@@ -826,16 +826,18 @@ def test_demo_jira_status(
     assert jira_tetik.tur(engine)["tetiklenenler"] == ["TPD-2"]
 
     # Sim host adı ama uç kendini jira-sim olarak tanıtmıyor (tünel/proxy): 409.
-    monkeypatch.setattr(jira, "simulator_mu", lambda: False)
-    r = api.post("/demo/jira-status", json={"jira_key": "TPD-1", "durum": QA})
-    assert r.status_code == 409 and "jira-sim" in r.json()["detail"]
-    monkeypatch.undo()
+    # Yerel yamalar: `monkeypatch.undo()` fikstürlerin env'ini (TP_DATABASE_URL) de geri alırdı.
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(jira, "simulator_mu", lambda: False)
+        r = api.post("/demo/jira-status", json={"jira_key": "TPD-1", "durum": QA})
+        assert r.status_code == 409 and "jira-sim" in r.json()["detail"]
     assert jira.simulator_mu() is True
 
     # Gerçek Jira: istek gönderilmeden 409.
-    monkeypatch.setattr(demo_service, "_jira_sim_mi", lambda: False)
-    r = api.post("/demo/jira-status", json={"jira_key": "TPD-1", "durum": QA})
-    assert r.status_code == 409 and "jira-sim" in r.json()["detail"]
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(demo_service, "_jira_sim_mi", lambda: False)
+        r = api.post("/demo/jira-status", json={"jira_key": "TPD-1", "durum": QA})
+        assert r.status_code == 409 and "jira-sim" in r.json()["detail"]
     assert jira.get_issue("TPD-1").status == "To Do"
 
 

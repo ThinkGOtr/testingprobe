@@ -99,7 +99,7 @@ def merged_isaretle(
             sebep="forge'da insan onarım PR'ını merge etti",
             ozet={"pr": number, "kaynak": "forge"},
         )
-        kayit = s.get(PullRequest, number)
+        kayit = s.get(PullRequest, PullRequest.anahtar(number))
         if kayit is not None:
             kayit.durum = "merged"
             kayit.merge_sha = merge_sha
@@ -132,7 +132,7 @@ def closed_isaretle(sid: uuid.UUID, number: int) -> dict[str, Any]:
             return {"durum": sc.durum, "pr": number, "zaten": True}
         fid = sc.failure_id
         transition(s, sc, "closed", SYSTEM, "pr_open", sebep="onarım PR'ı forge'da kapatıldı")
-        kayit = s.get(PullRequest, number)
+        kayit = s.get(PullRequest, PullRequest.anahtar(number))
         if kayit is not None:
             kayit.durum = "closed"
         _oneri_durumu_yaz(s, fid, "rejected")

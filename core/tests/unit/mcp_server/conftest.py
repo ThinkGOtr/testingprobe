@@ -23,6 +23,13 @@ from tests.unit.features.cases.helpers import (  # noqa: E402, F401  (pytest fik
 
 
 @pytest.fixture(autouse=True)
+def _proje_baglami(proje):
+    """Test kurulum yardımcıları (gereksinim/case tohumu) varsayılan proje (`test-a`) bağlamında
+    koşar (TP-COK-PROJE-PLANI §2.1); MCP istekleri token'ın projesinde (`require_token`)."""
+    return proje
+
+
+@pytest.fixture(autouse=True)
 def _red_hiz_siniri_sifirla():
     """MCP kimlik reddi denetim kaydının hız sınırı süreç içi durumdur; her test temiz başlar."""
     from tp_core.mcp_server import server

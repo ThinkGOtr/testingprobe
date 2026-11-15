@@ -144,10 +144,17 @@ class McpBrowserSession:
     """
 
     def __init__(
-        self, target: Any, *, timeout_s: float = 60.0, connect_timeout_s: float = 30.0
+        self,
+        target: Any,
+        *,
+        timeout_s: float = 60.0,
+        connect_timeout_s: float = 30.0,
+        headers: Mapping[str, str] | None = None,
     ) -> None:
         self.url = target if isinstance(target, str) else type(target).__name__
         self._target = target
+        # Yalnız URL hedefinde: oturum başlıkları (app-mcp `X-TP-App`, proje uygulama bloğu).
+        self._headers = dict(headers or {})
         self.timeout_s = timeout_s
         self._loop = asyncio.new_event_loop()
         self._queue: asyncio.Queue[Any] | None = None
@@ -173,10 +180,26 @@ class McpBrowserSession:
                 self._done.set_result(None)
 
     async def _main(self) -> None:
+        from contextlib import AsyncExitStack
+
         from mcp import Client
 
         self._queue = asyncio.Queue()
-        async with Client(self._target, read_timeout_seconds=self.timeout_s) as client:
+        async with AsyncExitStack() as yigin:
+            hedef: Any = self._target
+            if self._headers and isinstance(hedef, str):
+                from mcp.client.streamable_http import (
+                    create_mcp_http_client,
+                    streamable_http_client,
+                )
+
+                http = await yigin.enter_async_context(
+                    create_mcp_http_client(headers=self._headers)
+                )
+                hedef = streamable_http_client(hedef, http_client=http)
+            client = await yigin.enter_async_context(
+                Client(hedef, read_timeout_seconds=self.timeout_s)
+            )
             self._ready.set_result(None)
             while True:
                 item = await self._queue.get()

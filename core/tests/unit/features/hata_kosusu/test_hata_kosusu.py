@@ -30,6 +30,7 @@ from tp_core.features.hata_kosusu.hatalar import HataKosusuSuruyor
 from tp_core.features.triage import jobs as _triage_jobs  # noqa: F401  (iş kaydı)
 from tp_core.models import BugDraft, Failure, HataKosusu, HataKosusuAdim, Run, TestResult
 from tp_core.models.triage_feature import TriageKosu
+from tp_core.proje import baglamla
 from tp_core.workflow import jobs as jobq
 from tp_core.workflow.service import Principal, WorkflowError
 
@@ -599,7 +600,7 @@ def test_eszamanli_iki_baslatma_biri_202_biri_409(engine: Engine, muhendis: Prin
             except HataKosusuSuruyor as exc:
                 sonuc["b_hata"] = exc
 
-    t = threading.Thread(target=ikinci)
+    t = threading.Thread(target=baglamla(ikinci))  # proje bağlamı thread'e taşınır
     t.start()
     time.sleep(0.5)
     assert t.is_alive()  # advisory lock'ta bekliyor

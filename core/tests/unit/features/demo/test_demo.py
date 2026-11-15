@@ -45,6 +45,7 @@ from tp_core.models import (  # noqa: E402
     Script,
     session_scope,
 )
+from tp_core.proje import baglamla  # noqa: E402
 from tp_core.workflow.jobs import REGISTRY, process_one  # noqa: E402
 
 GIT_ENV = {
@@ -328,7 +329,7 @@ def test_sifirlama(engine: Engine, ortam: Ortam, make_user: Any) -> None:
     assert ortam.forge.get_pr(pr.number).state == "closed"
     with session_scope() as s:
         assert s.get(Script, sid).durum == "closed"  # type: ignore[union-attr]
-        assert s.get(PullRequest, pr.number).durum == "closed"  # type: ignore[union-attr]
+        assert s.get(PullRequest, PullRequest.anahtar(pr.number)).durum == "closed"  # type: ignore[union-attr]
     assert ortam.jira == [1]
     istek = json.loads(ortam.istek_dosyasi.read_text())
     assert (istek["eylem"], istek["sha"]) == ("baseline", base)
@@ -452,7 +453,7 @@ def test_esszamanli_demo_istekleri_tek_is(engine: Engine, ortam: Ortam, make_use
             except service.DemoRejected as exc:
                 sonuc["b"] = str(exc)
 
-        t = threading.Thread(target=ikinci)
+        t = threading.Thread(target=baglamla(ikinci))  # proje bağlamı thread'e taşınır
         t.start()
         t.join(1.0)
         assert t.is_alive(), "ikinci istek kilitte beklemeliydi"

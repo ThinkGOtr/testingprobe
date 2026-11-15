@@ -72,7 +72,7 @@ from tp_core.models.ci_feature import TestResultEk
 from tp_core.models.codegen_feature import ScriptCodegen, ScriptKontrol
 from tp_core.models.kalite_feature import CaseOracleKontrol, KararTablosu, OracleIstisna
 from tp_core.models.triage_feature import FailureEk, TriageKosu
-from tp_core.proje import pid_param
+from tp_core.proje import mevcut_pid, pid_param
 from tp_core.workflow import jobs as jobq
 
 log = logging.getLogger(__name__)
@@ -2482,8 +2482,16 @@ def triage_sifirla(session: Session, run_id: uuid.UUID, isteyen: str) -> dict[st
             raise YenidenTriageReddi(
                 "koşunun failure kayıtları bug taslağına / onarım script'ine bağlı; sıfırlanmadı"
             )
-        session.execute(Failure.__table__.delete().where(Failure.run_id == run_id))
-    session.execute(TriageKosu.__table__.delete().where(TriageKosu.run_id == run_id))
+        session.execute(
+            Failure.__table__.delete().where(
+                Failure.project_id == mevcut_pid(), Failure.run_id == run_id
+            )
+        )
+    session.execute(
+        TriageKosu.__table__.delete().where(
+            TriageKosu.project_id == mevcut_pid(), TriageKosu.run_id == run_id
+        )
+    )
     audit_on_commit(
         session, isteyen, "triage.reset", f"run:{run_id}", {"silinen_failure": len(ids)}
     )

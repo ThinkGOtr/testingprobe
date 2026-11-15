@@ -207,8 +207,10 @@ def test_case_varken_baglanamaz(
     with session_scope() as s:
         s.execute(
             text(
-                "INSERT INTO test_case (id, requirement_id, sira_no, icerik, icerik_hash) "
-                "VALUES (gen_random_uuid(), :r, 1, '{}'::jsonb, 'h')"
+                "INSERT INTO test_case "
+                "(project_id, id, requirement_id, sira_no, icerik, icerik_hash) "
+                "VALUES ((SELECT project_id FROM requirement WHERE id = :r), gen_random_uuid(), "
+                ":r, 1, '{}'::jsonb, 'h')"
             ),
             {"r": rid},
         )

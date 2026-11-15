@@ -289,7 +289,7 @@ def test_yeniden_uretim_yeni_dal_ve_eski_yerel_pr_kapanir(
     with session_scope() as s:
         _, ycg = s.get(Script, yeni.id), service._yukle(s, yeni.id)[1]
         assert ycg.symbols_sha == main
-        assert s.get(PullRequest, sc.pr_no).durum == "closed"
+        assert s.get(PullRequest, PullRequest.anahtar(sc.pr_no)).durum == "closed"
     assert codegen.forge.get_pr(sc.pr_no).state == "closed"
     assert codegen.forge.get_pr(yeni.pr_no).state == "open"
 
@@ -325,8 +325,8 @@ def test_github_arayuzu_merge_ve_kapatma_cekirdege_islenir(
     assert sc2.durum == "closed"
     assert codegen.ci[once:] == [{"sha": None, "trigger": "push", "pr_number": None}]
     with session_scope() as s:
-        assert s.get(PullRequest, sc1.pr_no).durum == "merged"
-        assert s.get(PullRequest, sc2.pr_no).durum == "closed"
+        assert s.get(PullRequest, PullRequest.anahtar(sc1.pr_no)).durum == "merged"
+        assert s.get(PullRequest, PullRequest.anahtar(sc2.pr_no)).durum == "closed"
         # GitHub'daki insan merge'i dış onay olarak kayıtlı (portal kullanıcısı değil).
         rv = s.scalars(select(Review).where(Review.nesne_id == sc1.id)).one()
         assert rv.karar == "merge" and rv.user_id is None and rv.harici_onaylayan == "github"

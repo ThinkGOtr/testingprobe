@@ -370,9 +370,11 @@ def _default_browser() -> BrowserSession:
 
 def _default_app() -> BrowserSession:
     from tp_core.features.codegen.browser import reset_agent_cart
+    from tp_core.integrations.toolchain_blogu import app_mcp_basligi
 
     reset_agent_cart(AgentConfig.from_env())
-    return McpBrowserSession(get_settings().app_mcp_url)
+    # Projenin uygulama bloğu (X-TP-App): varsayılan dışı projede Bayi Portalı uygulaması koşmaz.
+    return McpBrowserSession(get_settings().app_mcp_url, headers=app_mcp_basligi())
 
 
 def _default_toolchain() -> ToolchainClient:
@@ -2309,7 +2311,7 @@ def _eski_prlari_kapat(
                 )
             continue
         with session_scope() as s:
-            kayit = s.get(PullRequest, no)
+            kayit = s.get(PullRequest, PullRequest.anahtar(no))
             if kayit is not None and kapat is not None:
                 kayit.durum = "closed"
             audit_on_commit(
@@ -3082,7 +3084,7 @@ def _open_pr(
         sc.pr_no = pr.number
         cg.pr_url = pr.url
         cg.denetim_hash = audit_head
-        kayit = s.get(PullRequest, pr.number)
+        kayit = s.get(PullRequest, PullRequest.anahtar(pr.number))
         if kayit is None:
             kayit = PullRequest(
                 number=pr.number,
@@ -3583,7 +3585,7 @@ def _merged_isaretle(
             sebep="insan onaylı merge" if kaynak == "core" else "forge'da insan merge etti",
             ozet={"pr": number, "kaynak": kaynak},
         )
-        kayit = s.get(PullRequest, number)
+        kayit = s.get(PullRequest, PullRequest.anahtar(number))
         if kayit is not None:
             kayit.durum = "merged"
             kayit.merge_sha = merge_sha
@@ -3701,7 +3703,7 @@ def run_merge(ctx: JobContext, engine: Engine) -> dict[str, Any]:
     with session_scope() as s:
         sc, cg = _yukle(s, sid, lock=True)
         if sc.durum == "merged" and sc.head_sha == head and sc.pr_no == number:
-            kayit = s.get(PullRequest, number)
+            kayit = s.get(PullRequest, PullRequest.anahtar(number))
             return {"durum": "merged", "pr": number, "zaten": True,
                     "merge_sha": kayit.merge_sha if kayit else None}  # fmt: skip
         if sc.durum != "pr_open" or sc.head_sha != head or sc.pr_no != number:
@@ -4071,7 +4073,7 @@ def run_update_branch(ctx: JobContext, engine: Engine) -> dict[str, Any]:
             sc.head_sha = yeni
             s.flush()
             sc.icerik_hash = content_hash_of(sc)
-            kayit = s.get(PullRequest, number)
+            kayit = s.get(PullRequest, PullRequest.anahtar(number))
             if kayit is not None:
                 kayit.head_sha = yeni
             cg.break_durum = "not_started"
@@ -4238,7 +4240,7 @@ def run_pr_close(ctx: JobContext, engine: Engine) -> dict[str, Any]:
                          {"pr": number, "hata": str(exc)[:300]})  # fmt: skip
         raise
     with session_scope() as s:
-        kayit = s.get(PullRequest, number)
+        kayit = s.get(PullRequest, PullRequest.anahtar(number))
         if kayit is not None and callable(kapat) and kayit.durum == "open":
             kayit.durum = "closed"
         audit_on_commit(
@@ -4359,7 +4361,7 @@ def _pr_checklerini_kaydet(
         list(forge.zorunlu_checkler(head, base)) if isinstance(forge, ZorunluCheckKaynagi) else None
     )
     with session_scope() as s:
-        kayit = s.get(PullRequest, no, with_for_update=True)
+        kayit = s.get(PullRequest, PullRequest.anahtar(no), with_for_update=True)
         if kayit is None or (
             kayit.checks_sha == head and kayit.checks == liste and kayit.zorunlu_checkler == zorunlu
         ):
@@ -4385,7 +4387,7 @@ def _test_pr_senkronu(
         sc, _ = _yukle(s, sid, lock=True)
         if sc.durum == "pr_open":
             transition(s, sc, "closed", SYSTEM, "pr_open", sebep="PR forge'da kapatıldı")
-            kayit = s.get(PullRequest, no)
+            kayit = s.get(PullRequest, PullRequest.anahtar(no))
             if kayit is not None:
                 kayit.durum = "closed"
             audit_on_commit(s, "system", "codegen.pr_closed_external", f"script:{sid}", {"pr": no})
@@ -4448,7 +4450,7 @@ def _eski_pr_senkronu(engine: Engine, forge: ForgePort) -> dict[str, int]:
             continue
         merge_sha, kim = _merge_ayrintisi(forge, int(no)) if pr.state == "merged" else (None, None)
         with session_scope() as s:
-            kayit = s.get(PullRequest, int(no))
+            kayit = s.get(PullRequest, PullRequest.anahtar(no))
             if kayit is None or kayit.durum != "open":
                 continue
             kayit.durum = pr.state

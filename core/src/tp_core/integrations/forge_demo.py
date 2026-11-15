@@ -747,7 +747,21 @@ def main(
     sub.add_parser("web-state", help="çalışan demo-app-web main'i yansıtıyor mu (JSON)")
     sub.add_parser("web-path", help="forge kipi ve web dizininin depo içi yolu (JSON; API yok)")
     args = parser.parse_args(argv)
+    from tp_core.proje import proje_icinde, varsayilan_pid
 
+    # Demo (demo-app forge'u) yalnız varsayılan projeye aittir (TP-COK-PROJE-PLANI §4.3): denetim
+    # kaydı ve `demo.await_web` işi o projenin bağlamında yazılır.
+    with proje_icinde(varsayilan_pid(), kaynak="cli"):
+        return _calistir(args, env=env, audit=audit, ci=ci)
+
+
+def _calistir(
+    args: argparse.Namespace,
+    *,
+    env: Mapping[str, str] | None,
+    audit: AuditLog | None,
+    ci: CiTrigger | None,
+) -> int:
     forge = get_forge(env)
     try:
         if args.cmd == "web-path":

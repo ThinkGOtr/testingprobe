@@ -160,22 +160,8 @@ def test_github_forge_proje_ayari_ve_app_kimligi(
 # ------------------------------------------------------------ bağlantı token'ı proje başına
 
 
-def test_token_al_proje_gecirir_ya_da_varsayilana_kilitli(
-    proje: Any, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_token_al_projeyi_gecirir(proje: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     tok = baglanti.ErisimTokeni("app", "ghs_a", 9e9, None)
-    cagrilar: list[str] = []
-
-    def eski(tur: str) -> baglanti.ErisimTokeni:  # Şerit 2 öncesi imza (pid yok)
-        cagrilar.append(tur)
-        return tok
-
-    monkeypatch.setattr(baglanti, "token_al", eski)
-    assert proje_ortami.token_al("github").access_token == "ghs_a"
-    with pytest.raises(baglanti.BaglantiHatasi, match="proje başına"):
-        proje_ortami.token_al("github", B)
-    assert cagrilar == ["github"]
-
     gorulen: list[tuple[str, str | None]] = []
 
     def yeni(tur: str, pid: str | None = None) -> baglanti.ErisimTokeni:
@@ -183,8 +169,9 @@ def test_token_al_proje_gecirir_ya_da_varsayilana_kilitli(
         return tok
 
     monkeypatch.setattr(baglanti, "token_al", yeni)
+    assert proje_ortami.token_al("github").access_token == "ghs_a"
     proje_ortami.token_al("jira", B)
-    assert gorulen == [("jira", B)]
+    assert gorulen == [("github", proje.pid), ("jira", B)]
 
 
 def test_jira_oauth_proje_jetonuyla(proje: Any, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -303,7 +290,8 @@ def test_toolchain_blogu_github_app_ayna_tokeni(
     assert "remote_token" not in istemciler.toolchain_proje_blogu()
 
 
-def test_toolchain_client_check_blok_ekler(proje: Any, forge_kok: Path) -> None:
+def test_toolchain_client_check_blok_ekler(proje: Any, forge_kok: Path, proje_ayar: Any) -> None:
+    from tp_core.api.errors import ProjeAyariEksik
     from tp_core.features.ci.clients import ToolchainClient
 
     govdeler: list[dict[str, Any]] = []
@@ -313,6 +301,11 @@ def test_toolchain_client_check_blok_ekler(proje: Any, forge_kok: Path) -> None:
         return httpx.Response(200, json={"ok": True})
 
     c = ToolchainClient("http://tc", transport=httpx.MockTransport(h), timeout=5)
+    # Varsayılan dışı projede ortam ayarı yoksa koşu başlamaz (toolchain env'e düşerdi).
+    with proje_icinde(B), pytest.raises(ProjeAyariEksik):
+        c.check({"sha": "a" * 40})
+    assert govdeler == []
+    proje_ayar(pid=B, BASE_URL="http://b.test", DEMO_API_URL="http://b-api.test")
     with proje_icinde(B):
         c.check({"sha": "a" * 40})
     c.check({"sha": "a" * 40, "proje": {"pid": "verilen"}})

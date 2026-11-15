@@ -337,7 +337,13 @@ def worker(engine: Engine) -> Iterator[None]:
 
 def otomatik_kod_ayari(acik: bool) -> None:
     """013 §3.2: onay sonrası otomatik kod üretimi ayarı (denetim kaydı yazmadan; test kurulumu)."""
-    with session_scope() as s:
+    from contextlib import nullcontext
+
+    from tp_core.proje import proje_icinde, varsa, varsayilan_pid
+
+    # Bağlamsız fikstür zincirlerinde (mcp_server, integrations) varsayılan projenin ayarı.
+    baglam = nullcontext() if varsa() is not None else proje_icinde(varsayilan_pid(), kaynak="test")
+    with baglam, session_scope() as s:
         satir = s.get(OtomasyonAyari, (mevcut_pid(), OTOMATIK_KOD))
         if satir is None:
             s.add(OtomasyonAyari(anahtar=OTOMATIK_KOD, deger={"acik": acik}, guncelleyen="test"))

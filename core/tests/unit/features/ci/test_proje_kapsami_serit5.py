@@ -119,11 +119,20 @@ def test_her_projede_kayit_yoksa_varsayilan(monkeypatch: pytest.MonkeyPatch) -> 
 # ------------------------------------------------------------------ toolchain `proje` bloğu
 
 
-def test_toolchain_blogu_yalniz_varsayilan_disi_projede() -> None:
+def test_toolchain_blogu_yalniz_varsayilan_disi_projede(proje_ayar: Any) -> None:
+    from tp_core.api.errors import ProjeAyariEksik
+
     assert projeler.toolchain_projesi({"sha": "x"}) == {"sha": "x"}  # varsayılan: bayt aynı
+    # Varsayılan dışı projede ortam ayarı yoksa koşu 409 (toolchain env'e düşmez).
+    with proje_icinde(B, kaynak="test"), pytest.raises(ProjeAyariEksik):
+        projeler.toolchain_projesi({"sha": "x"})
+    with proje_icinde(B, kaynak="test"):  # sembol/AST uçları ortam gerektirmez
+        assert projeler.toolchain_govdesi("/symbols", {"sha": "x"})["proje"]["pid"] == B
+    proje_ayar(pid=B, BASE_URL="http://b.test", DEMO_API_URL="http://b-api.test")
     with proje_icinde(B, kaynak="test"):
         govde = projeler.toolchain_projesi({"sha": "x"})
     assert govde["proje"]["pid"] == B
+    assert govde["proje"]["base_url"] == "http://b.test"
 
 
 # ------------------------------------------------------------------ demo yalnız varsayılan

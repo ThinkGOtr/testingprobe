@@ -29,6 +29,7 @@ from tp_core.auth.deps import DbSession
 from tp_core.auth.yetki import izin, izinlerden_biri
 from tp_core.config import get_settings
 from tp_core.features.ci import artifacts, service
+from tp_core.integrations.toolchain_blogu import ortam_gerekli
 from tp_core.proje import proje_icinde
 from tp_core.workflow.service import Principal
 
@@ -72,6 +73,7 @@ def ci_trigger(
         raise yetki.reddet(session, user, izin_adi, "rol", request.url.path)
     if yetki.normalize_rol(user.rol) == yetki.DEVELOPER and get_settings().ortam == "prod":
         raise yetki.reddet(session, user, izin_adi, "prod_ortam", request.url.path)
+    ortam_gerekli()
     try:
         return service.trigger_manual(session, body.tetik, user.kullanici_adi)
     except service.CiError as exc:

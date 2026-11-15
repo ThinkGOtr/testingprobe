@@ -349,7 +349,8 @@ def test_kaynak_bagli_cozum_sirasi_ve_katilik(
     with proje_icinde("p1"):
         assert ayar("JIRA_PROJECT") == "HOME1"  # proje config env'in önünde
         assert ayar("TP_FORGE") == "local"  # varsayılan projede env'e düşer
-        assert surum() == "etag-p1"
+        # `+N` eki: test fikstürü (`proje_ayar`) sayacı; önceki testlere bağlı, etag tabandır.
+        assert surum().split("+")[0] == "etag-p1"
     with proje_icinde("p2"):
         assert ayar("JIRA_PROJECT") == "HOME2"
         assert ayar("TP_FORGE") is None  # başka projeye env sızmaz

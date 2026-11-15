@@ -28,6 +28,7 @@ from tp_core.auth.deps import DbSession
 from tp_core.auth.yetki import izin
 from tp_core.features.hata_kosusu import katalog as kat
 from tp_core.features.hata_kosusu import service
+from tp_core.integrations.toolchain_blogu import ortam_gerekli
 from tp_core.models import Requirement
 from tp_core.workflow.service import Principal
 
@@ -49,6 +50,7 @@ class KosuGirdisi(BaseModel):
 
 @router.post("/fault-runs", status_code=202)
 def baslat(body: KosuGirdisi, session: DbSession, user: Baslatan) -> dict[str, Any]:
+    ortam_gerekli()
     try:
         return service.baslat(session, body.platformlar, body.hatalar, user)
     except service.GecersizIstek as exc:

@@ -18,6 +18,7 @@ import secrets
 import shutil
 import socket
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -312,22 +313,32 @@ def _projeleri_kaydet(request: pytest.FixtureRequest, pidler: tuple[str, ...]) -
 
 
 @pytest.fixture
-def proje(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> Iterator[Any]:
+def _proje_ortami() -> Iterator[None]:
+    """`TP_HOME_PROJECT=test-a` — testin kendi `monkeypatch.undo()` çağrısı geri almasın diye ayrı
+    bir MonkeyPatch ile (aksi halde varsayılan proje test ortasında değişir, uçlar 404 döner)."""
+    mp = pytest.MonkeyPatch()
+    mp.setenv("TP_HOME_PROJECT", PROJE_A)
+    try:
+        yield
+    finally:
+        mp.undo()
+
+
+@pytest.fixture
+def proje(request: pytest.FixtureRequest, _proje_ortami: None) -> Iterator[Any]:
     """`test-a` projesinin bağlamı (kaynak `test`); `TP_HOME_PROJECT=test-a` olduğundan
     `ayar()` env'e düşer. DB'li testte proje `tp_proje`'ye de kaydedilir."""
     from tp_core.proje import proje_icinde
 
-    monkeypatch.setenv("TP_HOME_PROJECT", PROJE_A)
     _projeleri_kaydet(request, (PROJE_A,))
     with proje_icinde(PROJE_A, kaynak="test") as b:
         yield b
 
 
 @pytest.fixture
-def iki_proje(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> tuple[str, str]:
+def iki_proje(request: pytest.FixtureRequest, _proje_ortami: None) -> tuple[str, str]:
     """`("test-a", "test-b")`; varsayılan proje A. Bağlam kurmaz: test her proje için
     `proje_icinde(pid, kaynak="test")` ile aynı tohumu yazar ve okur."""
-    monkeypatch.setenv("TP_HOME_PROJECT", PROJE_A)
     _projeleri_kaydet(request, (PROJE_A, PROJE_B))
     return (PROJE_A, PROJE_B)
 
@@ -351,6 +362,29 @@ def proje_ayar() -> Iterator[Any]:
 _FLUSH_SURUYOR: contextvars.ContextVar[bool] = contextvars.ContextVar(
     "tp_test_flush_suruyor", default=False
 )
+
+
+_KAYNAK_KOKU = str(Path(__file__).resolve().parents[2] / "src") + os.sep
+
+
+# ORM PK yüklemesi: `SELECT <sütunlar> FROM <t> WHERE <t>.id = %(pk_1)s` (tek tablo, tek PK koşulu).
+_PK_YUKLEME = re.compile(
+    r"^SELECT .+? FROM (\w+) WHERE \1\.id = %\(pk_1\)s(?:::UUID)?(?: FOR UPDATE)?$"
+)
+
+
+def _test_kodundan() -> bool:
+    """SQL'i doğrudan test kodu mu çalıştırdı? Denetim üretim kodunun (`src/`) SQL'i içindir; testin
+    kendi doğrulama sorguları (`SELECT … FROM run WHERE id = :i`) kapsam dışıdır. Çağrı yığınında
+    SQLAlchemy/sürücü dışındaki ilk çerçeve `src/` altında değilse test kodudur."""
+    f = sys._getframe(2)
+    while f is not None:
+        dosya = f.f_code.co_filename
+        if f"{os.sep}sqlalchemy{os.sep}" in dosya or f"{os.sep}psycopg{os.sep}" in dosya:
+            f = f.f_back
+            continue
+        return not dosya.startswith(_KAYNAK_KOKU)
+    return False
 
 
 @pytest.fixture(autouse=True)
@@ -377,6 +411,13 @@ def sql_denetimi(request: pytest.FixtureRequest) -> Iterator[list[str]]:
 
     def _sql(conn: Any, cursor: Any, statement: str, params: Any, ctx: Any, many: bool) -> None:
         if varsa() is None or _FLUSH_SURUYOR.get():
+            return
+        if _test_kodundan():
+            return
+        if _PK_YUKLEME.match(" ".join(statement.split())):
+            # ORM'in PK ile tek satır yüklemesi (`session.get`, süresi dolmuş/`onupdate` sütununun
+            # flush sonrası yenilenmesi): ORM süzgeci bunu bilerek atlar (`is_column_load`); satır
+            # zaten yüklüdür ve `load` koruyucusu başka projenin satırını `ProjeIhlali` ile düşürür.
             return
         if ctx is not None and ctx.execution_options.get(TUM_PROJELER):
             return

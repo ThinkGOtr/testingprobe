@@ -1008,15 +1008,16 @@ def eski_oturumlari_iptal_et(s: Session, ids: list[uuid.UUID], epoch_ms: int) ->
     )
     # Bu ve daha eski oturumlardan üretilmiş token'lar da kalıcı olarak düşer — kişinin TÜM
     # projelerindeki token'ları (iptal kişiye özgüdür, proje kapsamı yok; ORM süzgeci isteğin
-    # projesine daraltırdı). Bilinçli kurulum geneli SQL: project_id süzgeci YOK.
+    # projesine daraltırdı). Bilinçli kurulum geneli güncelleme: `tum_projeler` kaçışı.
     s.execute(
-        text(
-            "UPDATE api_token SET iptal = true "
-            "WHERE user_id = ANY(:ids) AND iptal = false "
-            "AND (session_epoch_ms IS NULL OR session_epoch_ms <= :e) "
-            "/* tum projeler: project_id kosulu bilincli olarak yok (kisi geneli iptal) */"
-        ),
-        {"ids": list(ids), "e": epoch_ms},
+        update(ApiToken)
+        .where(
+            ApiToken.user_id.in_(ids),
+            ApiToken.iptal.is_(False),
+            or_(ApiToken.session_epoch_ms.is_(None), ApiToken.session_epoch_ms <= epoch_ms),
+        )
+        .values(iptal=True)
+        .execution_options(tum_projeler=True, synchronize_session=False)
     )
     return int(sonuc.rowcount or 0)
 

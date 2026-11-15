@@ -126,6 +126,33 @@ def eksik_alanlar(blok: dict[str, Any]) -> list[str]:
     return [METIN_ALANLARI[a] for a in ORTAM_ALANLARI if not blok.get(a)]
 
 
+def ortam_denetle(blok: dict[str, Any]) -> dict[str, Any]:
+    """Koşu isteklerinde (`/check`, `/locator-probe`) eksik ortam ayarı → 409 `proje_ayari_eksik`.
+
+    Blokta olmayan alan toolchain'de env değerine (varsayılan projenin uygulamasına) düşeceği
+    için varsayılan dışı projede koşu başlatılmaz. Bloğu aynen döner."""
+    if eksik := eksik_alanlar(blok):
+        from tp_core.api.errors import ProjeAyariEksik
+
+        raise ProjeAyariEksik(
+            f"Projenin test ortamı ayarı eksik ({', '.join(eksik)}); Home'da proje ayarlarından "
+            "tanımlayın"
+        )
+    return blok
+
+
+def ortam_gerekli(pid: str | None = None) -> None:
+    """API girişinde erken denetim (iş kuyruğa girmeden): koşu başlatan uçlar varsayılan dışı
+    projede ortam ayarı eksikse 409 `proje_ayari_eksik` verir (`ortam_denetle`)."""
+    p = pid_coz(pid)
+    if p == varsayilan_pid():
+        return
+    blok: dict[str, Any] = {"pid": p}
+    for alan in ORTAM_ALANLARI:
+        blok[alan] = (_ayar.ayar(METIN_ALANLARI[alan], pid=p) or "").strip()
+    ortam_denetle(blok)
+
+
 def app_mcp_basligi(pid: str | None = None) -> dict[str, str]:
     """app-mcp `initialize` isteğinin oturum başlığı (`X-TP-App`: base64url JSON `app` bloğu).
 

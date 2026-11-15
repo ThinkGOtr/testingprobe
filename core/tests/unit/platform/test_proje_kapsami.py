@@ -26,8 +26,13 @@ from pathlib import Path
 
 import pytest
 
-from tp_core.proje.ayar import PROJE_ANAHTARLARI
+from tp_core.integrations.proje_ortami import EK_PROJE_ANAHTARLARI
+from tp_core.proje.ayar import PROJE_ANAHTARLARI as _AYAR_ANAHTARLARI
 from tp_core.proje.orm import kapsamli_tablolar
+
+# §3.3 T/A/P adları + Şerit 3'ün proje ortamı adları (demo/e2e kökü, test kullanıcısı,
+# TP_APP_*_<P>).
+PROJE_ANAHTARLARI: frozenset[str] = _AYAR_ANAHTARLARI | EK_PROJE_ANAHTARLARI
 
 SRC = Path(__file__).resolve().parents[3] / "src"
 ISTISNA_DIZINI = Path(__file__).resolve().parent / "proje_istisna"
@@ -96,7 +101,13 @@ PLAN_KAPSAMLI: frozenset[str] = frozenset(
     ]
 )
 
-TUM_PROJELER_IZINLI = ("tp_core/proje/", "tp_core/workflow/jobs.py", "tp_core/worker/")
+TUM_PROJELER_IZINLI = (
+    "tp_core/proje/",
+    "tp_core/workflow/jobs.py",
+    "tp_core/worker/",
+    # Kişi geneli token iptali (eski_oturumlari_iptal_et): iptal kişiye özgüdür, projeye değil.
+    "tp_core/auth/aiprobe.py",
+)
 ENV_IZINLI = ("tp_core/home_config/", "tp_core/proje/ayar.py")
 THREAD_BAGLAM = ("baglamla", "proje_icinde", "copy_context")
 _ENV_CAGRI = re.compile(r"(environ|getenv|(^|[._])_*(env|ortam)[a-z_]*(\.get)?$)", re.IGNORECASE)

@@ -38,24 +38,26 @@ def test_ci_modelleri_ve_migrasyon_ayni(db: Db) -> None:
 def test_tp_app_ci_tablolarina_yazabilir(db: Db) -> None:
     with psycopg.connect(db.app_url.replace("+psycopg", ""), autocommit=True) as c:
         c.execute(
-            "INSERT INTO ci_tetik (anahtar, tetik, kaynak, isteyen) VALUES ('x', 'deploy', 'local', 't')"  # noqa: E501
+            "INSERT INTO ci_tetik (project_id, anahtar, tetik, kaynak, isteyen) "
+            "VALUES ('test-a', 'x', 'deploy', 'local', 't')"
         )
         c.execute("UPDATE ci_tetik SET isteyen = 'u' WHERE anahtar = 'x'")
         c.execute("DELETE FROM ci_tetik WHERE anahtar = 'x'")
         c.execute("SELECT count(*) FROM test_result_ek")
         rid = c.execute(
-            "INSERT INTO run (tetik, kaynak, sonuc) "
-            "VALUES ('push', 'github', 'passed') RETURNING id"
+            "INSERT INTO run (project_id, tetik, kaynak, sonuc) "
+            "VALUES ('test-a', 'push', 'github', 'passed') RETURNING id"
         ).fetchone()[0]
         c.execute(
-            "INSERT INTO run_aria (run_id, yol, ad, icerik, boyut, kaynak) "
-            "VALUES (%s, 'a/k.aria.yml', 'k.aria.yml', '- main', 6, 'github_artefakt')",
+            "INSERT INTO run_aria (project_id, run_id, yol, ad, icerik, boyut, kaynak) "
+            "VALUES ('test-a', %s, 'a/k.aria.yml', 'k.aria.yml', '- main', 6, 'github_artefakt')",
             (rid,),
         )
         with pytest.raises(psycopg.errors.UniqueViolation):
             c.execute(
-                "INSERT INTO run_aria (run_id, yol, ad, icerik, boyut, kaynak) "
-                "VALUES (%s, 'a/k.aria.yml', 'k.aria.yml', '- main', 6, 'github_artefakt')",
+                "INSERT INTO run_aria (project_id, run_id, yol, ad, icerik, boyut, kaynak) "
+                "VALUES ('test-a', %s, 'a/k.aria.yml', 'k.aria.yml', '- main', 6, "
+                "'github_artefakt')",
                 (rid,),
             )
         c.execute("DELETE FROM run WHERE id = %s", (rid,))

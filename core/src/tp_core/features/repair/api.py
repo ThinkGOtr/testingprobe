@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from tp_core.auth.deps import DbSession
 from tp_core.auth.yetki import izin
 from tp_core.features.repair import service, views
+from tp_core.integrations.toolchain_blogu import ortam_gerekli
 from tp_core.workflow.service import Principal
 
 router = APIRouter(tags=["repair"])
@@ -30,6 +31,7 @@ KodOkur = Annotated[Principal, Depends(izin("code.read"))]
 
 @router.post("/failures/{failure_id}/fix", status_code=202)
 def fix(failure_id: uuid.UUID, session: DbSession, user: Onarir) -> dict[str, Any]:
+    ortam_gerekli()
     return service.request_fix(session, failure_id, user)
 
 

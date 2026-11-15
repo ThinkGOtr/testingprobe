@@ -1831,7 +1831,7 @@ def _pr_ac(
         sc = s.get(Script, sid, with_for_update=True)
         assert sc is not None
         sc.pr_no = pr.number
-        satir = s.get(PullRequest, pr.number)
+        satir = s.get(PullRequest, PullRequest.anahtar(pr.number))
         if satir is None:
             s.add(
                 PullRequest(
@@ -1979,7 +1979,7 @@ def run_merge(ctx: JobContext, engine: Engine) -> dict[str, Any]:
         if sc is None:
             raise PermanentJobError("onarım script'i bulunamadı")
         if sc.durum == "merged" and sc.head_sha == head:
-            satir = s.get(PullRequest, number)
+            satir = s.get(PullRequest, PullRequest.anahtar(number))
             return {"durum": "merged", "pr": number, "zaten": True,
                     "merge_sha": satir.merge_sha if satir else None}  # fmt: skip
         if sc.durum != "pr_open" or sc.head_sha != head or sc.pr_no != number:
@@ -2052,7 +2052,7 @@ def _merge_kaydet(
                    sebep="insan onaylı onarım merge'ü"
                    + (" (forge'da merge edilmişti; uzlaştırıldı)" if uzlastirma else ""),
                    ozet={"pr": number})  # fmt: skip
-        satir = s.get(PullRequest, number)
+        satir = s.get(PullRequest, PullRequest.anahtar(number))
         if satir is not None:
             satir.durum = "merged"
             satir.merge_sha = merge_sha

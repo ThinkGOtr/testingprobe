@@ -150,6 +150,12 @@ class PullRequest(ProjeKapsamli, Base):
     olusturma: Mapped[datetime] = olusturma_col()
     guncelleme: Mapped[datetime] = guncelleme_col()
 
+    @staticmethod
+    def anahtar(number: int) -> tuple[str, int]:
+        """Bileşik PK (`project_id`, `number`): bağlamdaki projede PR numarası —
+        `session.get(PullRequest, PullRequest.anahtar(no))`."""
+        return (mevcut_pid(), int(number))
+
 
 class Run(ProjeKapsamli, Base):
     """Test koşusu (yerel kontrol, CI, Sauce)."""

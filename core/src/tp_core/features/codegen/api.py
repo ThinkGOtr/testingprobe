@@ -40,6 +40,7 @@ from tp_core.auth.deps import DbSession
 from tp_core.auth.yetki import izin
 from tp_core.db import get_engine
 from tp_core.features.codegen import service, views
+from tp_core.integrations.toolchain_blogu import ortam_gerekli
 from tp_core.models import session_scope
 from tp_core.workflow.service import Principal
 
@@ -78,6 +79,8 @@ class ReviewGirdisi(BaseModel):
 
 @router.post("/code/generate", status_code=202)
 def generate(body: KodUretGirdisi, session: DbSession, user: Uretir) -> dict[str, Any]:
+    if body.platform == "web":  # web doğrulama ajanı projenin BASE_URL'ine karşı koşar
+        ortam_gerekli()
     return service.start_generation(session, body.case_ids, user, body.platform, body.dil)
 
 

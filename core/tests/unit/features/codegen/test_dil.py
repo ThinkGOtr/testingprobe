@@ -520,17 +520,32 @@ def test_dil_kolonlari_model_ile_ayni(engine: Engine) -> None:
     assert ilgili == []
     with engine.begin() as conn:
         satir = conn.execute(
-            text("INSERT INTO script (dosya_yolu) VALUES ('x') RETURNING dil, dil_kaynagi")
+            text(
+                "INSERT INTO script "
+                "(project_id, dosya_yolu) VALUES ('test-a', 'x') RETURNING dil, dil_kaynagi"
+            )
         ).one()
         assert tuple(satir) == ("ts", "varsayilan")
-        conn.execute(text("INSERT INTO script (dosya_yolu, durum) VALUES ('y', 'unverified')"))
+        conn.execute(
+            text(
+                "INSERT INTO script "
+                "(project_id, dosya_yolu, durum) VALUES ('test-a', 'y', 'unverified')"
+            )
+        )
     for sql, kisit in [
-        ("INSERT INTO script (dosya_yolu, dil) VALUES ('x', 'go')", "script_dil_ck"),
         (
-            "INSERT INTO script (dosya_yolu, dil_kaynagi) VALUES ('x', 'tahmin')",
+            "INSERT INTO script (project_id, dosya_yolu, dil) VALUES ('test-a', 'x', 'go')",
+            "script_dil_ck",
+        ),
+        (
+            "INSERT INTO script "
+            "(project_id, dosya_yolu, dil_kaynagi) VALUES ('test-a', 'x', 'tahmin')",
             "script_dil_kaynagi_ck",
         ),
-        ("INSERT INTO script (dosya_yolu, durum) VALUES ('x', 'yok')", "script_durum_ck"),
+        (
+            "INSERT INTO script (project_id, dosya_yolu, durum) VALUES ('test-a', 'x', 'yok')",
+            "script_durum_ck",
+        ),
     ]:
         with pytest.raises(Exception, match=kisit), engine.begin() as conn:
             conn.execute(text(sql))
