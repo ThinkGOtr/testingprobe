@@ -43,6 +43,8 @@ x-core-env: &core-env
   # `env` (varsayılan) bugünkü davranış. LKG: tp_home_config volume'ü (/var/lib/tp-config).
   CONFIG_SOURCE: ${CONFIG_SOURCE:-env}
   TP_HOME_PROJECT: ${TP_HOME_PROJECT:-}
+  # TP çok proje: kurulumun ek projeleri (virgüllü pid listesi; Home product_installs/tp.allowed_pids ile aynı)
+  TP_HOME_PROJECTS: ${TP_HOME_PROJECTS:-}
   HOME_CONFIG_URL: ${HOME_CONFIG_URL:-}
   SECRETS_PROJECT: ${SECRETS_PROJECT:-}
   # Durum değiştiren isteklerde izinli Origin'ler (CSRF); portal başka adresten sunulursa eklenir.

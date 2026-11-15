@@ -53,6 +53,7 @@ KORUNAN: frozenset[str] = frozenset(
     {
         KAYNAK_ENV,
         PROJE_ENV,
+        "TP_HOME_PROJECTS",
         URL_ENV,
         SIR_PROJESI_ENV,
         LKG_ENV,
