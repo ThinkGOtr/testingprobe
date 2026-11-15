@@ -9,8 +9,13 @@
       "AC2: Hatalı parola girildiğinde \"Kullanıcı adı veya parola hatalı\" mesajı gösterilir ve giriş yapılmaz."
     ],
     "contains": [
-      "Bayi, kullanıcı adı ve parolasıyla portala giriş yapabilmelidir.",
-      "Set özeti (set_hash): c156bf48bc7f16269fc1499afd3ec4570a86c2c0c3e063424d0ac6f369cdad11"
+      "Bayi, kullanıcı adı ve parolasıyla portala giriş yapabilmelidir."
+    ],
+    "contains_any": [
+      [
+        "Set özeti (set_hash): c156bf48bc7f16269fc1499afd3ec4570a86c2c0c3e063424d0ac6f369cdad11",
+        "Set özeti (set_hash): 14a257988a7439a7bd744cc2f5a20689d785ef3b54f21e839edce5de687c1fd7"
+      ]
     ]
   },
   "output": {

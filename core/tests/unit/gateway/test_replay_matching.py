@@ -415,3 +415,16 @@ def test_golden_without_declaration_stays_replay_miss(rules_dir) -> None:
     assert record["_mismatch"] == ["golden girdi beyanı (input_match) içermiyor"]
     with pytest.raises(ReplayMiss):
         ReplayStore(rules_dir / "replay", strict=True).lookup("triage", "0" * 64, "beyansiz", [])
+
+
+def test_contains_any_gruptan_biri_yeter() -> None:
+    from tp_core.gateway.matching import input_mismatches as im
+
+    msg = [{"role": "user", "content": "Set özeti (set_hash): bbb"}]
+    assert (
+        im({"contains_any": [["Set özeti (set_hash): aaa", "Set özeti (set_hash): bbb"]]}, msg)
+        == []
+    )
+    assert im({"contains_any": [["Set özeti (set_hash): aaa"]]}, msg) != []
+    with pytest.raises(ValueError):
+        im({"contains_any": ["düz metin"]}, msg)

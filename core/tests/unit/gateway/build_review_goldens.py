@@ -7,6 +7,11 @@ yazıldığında `features.cases.review.set_hash`'in vereceği değerdir: case i
 ile, sonra `review.hash_of`. Analist bir case'i düzeltir ya da reddederse set değişir ve geçit
 dürüstçe REPLAY-MISS der (`on_miss.json` → raise: review "çalışmadı", denetim kararı yok).
 
+Test verisi kataloğu (013 §3.3, K18/K22): katalog tohumluyken üretilen case'ler kaydedilirken
+değerleri `{veri:<anahtar>}` atfına çevrilir (`cases.service`, `testveri.atif.case_esle`) ve set
+hash'i eşlenmiş içerikten hesaplanır. Bu yüzden beyan iki meşru kimliği `contains_any` ile kabul
+eder: ham set (katalog boş) ve demo-app seed'inden tohumlanmış katalogla eşlenmiş set (canlı demo).
+
 Çıktılar ELLE hazırlanmıştır (model çıktısı değildir; `ai_call.model = golden-elle`) ve bu
 modüldedir. Yeniden üretmek:
 
@@ -22,9 +27,11 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from tests.unit.gateway.demo_sources import RULES, load_golden
+from tests.unit.gateway.demo_sources import RULES, demo_query, load_golden
 from tp_core.audit import content_hash
 from tp_core.features.cases.review import SET_HASH_SATIRI, hash_of
+from tp_core.features.testveri import atif
+from tp_core.features.testveri import service as testveri
 
 # (golden adı, case_generation golden'ı) — senaryo golden'ı aynı göreli yolda.
 GOLDENLER = ("TPD-1", "f2-kod-hatasi/TPD-1", "TPD-3", "TPD-4", "SERBEST")
@@ -56,6 +63,30 @@ def set_hash_of(cases: list[Mapping[str, Any]]) -> str:
     h = hash_of([content_hash(dict(c)) for c in cases])
     assert h is not None
     return h
+
+
+def seed_catalog() -> tuple[dict[str, str], dict[str, str], set[str]]:
+    """demo-app seed'inden tohumlanan katalogun eşleme girdileri (`testveri.tohumla` ile aynı
+    satırlar): (eşleme kataloğu, takma değerler, gizli anahtarlar). Parola sırrı tanımlı olsun
+    olmasın sabit demo parolası `takma` ile `ortak.demo_parola` atfına döner."""
+    satirlar = testveri.tohum_kayitlari(demo_query)
+    esleme = {s["anahtar"]: s["deger"] for s in satirlar if s.get("deger") is not None}
+    gizli = {s["anahtar"] for s in satirlar if s.get("gizli")}
+    takma = {testveri._sabit_demo_parolasi(): testveri.DEMO_PAROLA_ANAHTARI}
+    return esleme, takma, gizli
+
+
+def mapped_cases(cases: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Case'ler, tohumlu katalogla kaydedildiğinde depolanan biçimleriyle (`cases.service`)."""
+    esleme, takma, gizli = seed_catalog()
+    return [atif.case_esle(c, esleme, takma, gizli) for c in cases]
+
+
+def set_hash_lines(cases: list[Mapping[str, Any]]) -> list[str]:
+    """Setin kabul edilen kimlik satırları: ham ve katalog-eşlenmiş (aynıysa tek)."""
+    return list(
+        dict.fromkeys(SET_HASH_SATIRI + set_hash_of(c) for c in (cases, mapped_cases(cases)))
+    )
 
 
 def _madde(no: int, baslik: str, karar: str, bulgu: str, **ek: Any) -> dict[str, Any]:
@@ -479,10 +510,8 @@ def build() -> dict[tuple[str, str], dict[str, Any]]:
             )
             spec: dict[str, Any] = {
                 "acceptance_criteria": list(im["acceptance_criteria"]),
-                "contains": [
-                    *im.get("contains", []),
-                    SET_HASH_SATIRI + set_hash_of(cases),
-                ],
+                "contains": list(im.get("contains", [])),
+                "contains_any": [set_hash_lines(cases)],
             }
             out[(amac, ad)] = {
                 "kind": "call",

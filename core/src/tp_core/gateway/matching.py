@@ -14,6 +14,7 @@ beyanla karşılaştırır. Eşleşirse mod `replay` (köken `golden_matched`, `
   "sources": ["jira:TPD-1"],            // isteğe bağlı: yalnızca bu kaynaklı <untrusted> blokları
   "acceptance_criteria": ["AC1: …", …], // isteğe bağlı: bloklardaki ACn satırları TAM bu küme
   "contains": ["…"],                    // isteğe bağlı: her metin girdide geçmeli
+  "contains_any": [["…", "…"]],         // isteğe bağlı: her gruptan EN AZ BİR metin geçmeli
   "case_text": "Başlık: …\nAdımlar: …",  // isteğe bağlı (`sources` zorunlu): onaylı case TAM bu
   "candidates": {                         // isteğe bağlı (dup_rank): Jira aramasının aday kümesi
     "required": ["TPD-5"], "optional": ["TPD-6"],
@@ -28,6 +29,10 @@ beyanla karşılaştırır. Eşleşirse mod `replay` (köken `golden_matched`, `
 - `acceptance_criteria`: bloklardaki `ACn: metin` satırları (madde imli `- AC1: …` ve JSON
   gövdeli bloklardaki dizgeler dahil) beyan edilen kümeye eşit olmalı: AC eklenmesi, silinmesi
   veya tek kelime değişmesi REPLAY-MISS'tir. `[]` = hiç AC yok (ör. TPD-2).
+- `contains_any`: alternatif gruplar; her grubun en az bir öğesi girdide geçmelidir. Aynı girdinin
+  ortama göre iki meşru biçimi olduğunda kullanılır (case_review / case_audit: setin kimliği test
+  verisi kataloğu boşken ham case'lerden, katalog tohumluyken `{veri:…}` atfına eşlenmiş
+  case'lerden hesaplanır; ikisi de aynı setin kimliğidir, başka set yine REPLAY-MISS'tir).
 - `case_text`: kod üretimi (verify_and_map) golden'ları için onaylı case'in kanonik metni
   (`inputs.approved_case_text`). `sources` bloklarının HER biri — gövde JSON case ise kanonik
   metne çevrilerek — bu metne eşit olmalıdır: case'e tek kelime eklenmesi bile REPLAY-MISS'tir
@@ -232,6 +237,11 @@ def input_mismatches(spec: Mapping[str, Any], messages: Sequence[Any]) -> list[s
     for needle in spec.get("contains") or []:
         if norm(needle) not in haystack:
             reasons.append(f"girdide yok: {needle[:60]}")
+    for grup in spec.get("contains_any") or []:
+        if isinstance(grup, str) or not grup:
+            raise ValueError(f"input_match.contains_any geçersiz: {grup!r}")
+        if not any(norm(n) in haystack for n in grup):
+            reasons.append(f"girdide yok (seçeneklerin hiçbiri): {grup[0][:60]}")
     cand_spec = spec.get("candidates")
     if cand_spec is not None:
         found = search_candidates(texts)

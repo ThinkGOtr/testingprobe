@@ -547,7 +547,16 @@ def test_demo_a_goldens_declare_their_input() -> None:
 @pytest.mark.parametrize(("purpose", "path", "golden"), DECLARED, ids=_ids(DECLARED))
 def test_input_match_declarations_are_well_formed(purpose: str, path: Path, golden: dict) -> None:
     spec = golden["input_match"]
-    assert set(spec) <= {"sources", "acceptance_criteria", "contains", "case_text", "candidates"}
+    assert set(spec) <= {
+        "sources",
+        "acceptance_criteria",
+        "contains",
+        "contains_any",
+        "case_text",
+        "candidates",
+    }
+    # `contains_any` yalnız setin iki meşru kimliği içindir (ham / katalog-eşlenmiş).
+    assert "contains_any" not in spec or purpose in ("case_review", "case_audit"), spec
     # Aday kümesi beyanı yalnızca mükerrer sıralamasında (arama sonucu bloğuyla birlikte).
     assert "candidates" not in spec or (
         purpose == "dup_rank" and "jira-arama:*" in spec["sources"]
@@ -567,7 +576,9 @@ def test_input_match_declarations_are_well_formed(purpose: str, path: Path, gold
         # 011 D: beyan tüm mesaja bakar (`sources` yok): AC'ler + açıklama + setin kimliği; set
         # kimliği güvenilir satırdadır, kaynaklı blokta değil (build_review_goldens).
         assert "sources" not in spec
-        assert any(c.startswith("Set özeti (set_hash): ") for c in spec["contains"]), spec
+        (kimlikler,) = spec["contains_any"]
+        assert kimlikler and all(c.startswith("Set özeti (set_hash): ") for c in kimlikler), spec
+        assert not any(c.startswith("Set özeti") for c in spec["contains"]), spec
     elif path.stem.startswith("TPD-") and purpose not in (
         "verify_and_map",
         "verify_and_map_app",

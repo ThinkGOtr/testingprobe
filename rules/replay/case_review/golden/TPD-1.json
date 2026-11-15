@@ -13,8 +13,13 @@
       "AC6: Kampanyalı siparişlerde minimum sipariş tutarı şartı aranmaz."
     ],
     "contains": [
-      "Bayi, katalogdan ürünleri sepete ekleyip kampanya indirimiyle siparişini onaylayabilmelidir.",
-      "Set özeti (set_hash): d1ccad3b4a800ab64fb3f59281d4c194bdc42d2b54fc1b7cab3e7186c24f0ae5"
+      "Bayi, katalogdan ürünleri sepete ekleyip kampanya indirimiyle siparişini onaylayabilmelidir."
+    ],
+    "contains_any": [
+      [
+        "Set özeti (set_hash): d1ccad3b4a800ab64fb3f59281d4c194bdc42d2b54fc1b7cab3e7186c24f0ae5",
+        "Set özeti (set_hash): 59ba245b65dab7fe06ec1540b8b66813bb718acf2c7c39810e574c629731f7e1"
+      ]
     ]
   },
   "output": {

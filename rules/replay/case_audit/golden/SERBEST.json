@@ -10,8 +10,13 @@
       "AC3: Sepette kampanyalı ürün yoksa ve sepet tutarı 750,00 TL altına düşerse \"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir ve onay butonu pasif olur."
     ],
     "contains": [
-      "Bayi sepetteki bir ürün satırını kaldırabilmeli; toplamlar ve kampanya indirimi yeniden hesaplanmalıdır.",
-      "Set özeti (set_hash): 8908a0b8dab77092023adc8d8d3017c53e70a6893b936fa017205c118b8ed132"
+      "Bayi sepetteki bir ürün satırını kaldırabilmeli; toplamlar ve kampanya indirimi yeniden hesaplanmalıdır."
+    ],
+    "contains_any": [
+      [
+        "Set özeti (set_hash): 8908a0b8dab77092023adc8d8d3017c53e70a6893b936fa017205c118b8ed132",
+        "Set özeti (set_hash): c66e0ddb7b461439aec3eb884b23c14cc0029a3da1a87e61d6594f80c79a70d3"
+      ]
     ]
   },
   "output": {
