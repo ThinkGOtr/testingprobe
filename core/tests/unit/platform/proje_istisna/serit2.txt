@@ -1,0 +1,4 @@
+# Şerit 2 proje kapsamı geçiş tabanı (TP-COK-PROJE-PLANI §2.4). Biçim: yol:kural:imza  # gerekçe
+# Yalnız küçülür: düzelttiğiniz ihlalin satırını silin. Yeni satır = gerekçeli kalıcı istisna (review).
+tp_core/api/routers/audit.py:sql:SELECT id, zaman, aktor, eylem, nesne, ozet, prev_hash, hash FROM audi  # gecis tabani
+tp_core/home_config/durum.py:thread:baslat:Thread  # gecis tabani

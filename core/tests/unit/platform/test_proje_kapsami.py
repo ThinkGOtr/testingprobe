@@ -1,0 +1,382 @@
+"""Proje kapsamı statik (AST) denetimi (TP-COK-PROJE-PLANI §2.4) — cırcır (ratchet).
+
+Kurallar (`core/src/tp_core/**.py`):
+
+- `sql`: SQL metninde (`"... FROM requirement ..."`, f-string dahil) kapsamlı tablo geçiyor ama
+  `project_id` geçmiyor.
+- `tum_projeler`: `execution_options(tum_projeler=True)` / `TUM_PROJELER` izinli modül dışında.
+- `thread`: `threading.Thread(` / `ThreadPoolExecutor(` çağıran fonksiyon `baglamla`,
+  `proje_icinde` ya da `copy_context` kullanmıyor (iş parçacığı bağlamı miras almaz).
+- `env`: `PROJE_ANAHTARLARI`'ndaki bir ad `os.environ`/`os.getenv` (ya da `_env`/`_ortam*`
+  yardımcıları) ile okunuyor (`home_config/` ve `proje/ayar.py` izinli; `ayar()` kullanın).
+
+Geçişte kalan ihlaller şerit başına taban dosyalarındadır: `proje_istisna/serit{1..5}.txt`, satır
+biçimi `yol:kural:imza  # gerekçe`. Her şerit yalnız kendi dosyasını küçültür; giderilen ihlalin
+satırı silinmezse test düşer, tabanda olmayan yeni ihlal de düşer. Dosyaya yeni satır eklemek
+review'da reddedilir (yalnız gerekçeli kalıcı istisna).
+"""
+
+from __future__ import annotations
+
+import ast
+import re
+from collections import Counter
+from collections.abc import Iterator
+from pathlib import Path
+
+import pytest
+
+from tp_core.proje.ayar import PROJE_ANAHTARLARI
+from tp_core.proje.orm import kapsamli_tablolar
+
+SRC = Path(__file__).resolve().parents[3] / "src"
+ISTISNA_DIZINI = Path(__file__).resolve().parent / "proje_istisna"
+SERITLER = (1, 2, 3, 4, 5)
+
+# §1.1 A — planlanan kapsamlı tablolar (mixin uygulanınca `kapsamli_tablolar()` ile birleşir).
+PLAN_KAPSAMLI: frozenset[str] = frozenset(
+    [
+        "requirement",
+        "requirement_review",
+        "requirement_review_ek",
+        "requirement_kontrol",
+        "requirement_akis",
+        "requirement_baz_deger",
+        "consistency_finding",
+        "consistency_finding_ek",
+        "acik_soru",
+        "test_case",
+        "review",
+        "case_goruntuleme",
+        "case_uretim",
+        "tasarim_modeli",
+        "case_set_review",
+        "case_set_audit",
+        "case_oracle_kontrol",
+        "oracle_istisna",
+        "karar_tablosu",
+        "metamorfik_iliski",
+        "metamorfik_turetme",
+        "script",
+        "script_test_case",
+        "script_codegen",
+        "script_adim",
+        "script_kontrol",
+        "step_mapping",
+        "pull_request",
+        "run",
+        "run_aria",
+        "test_result",
+        "test_result_ek",
+        "failure",
+        "failure_ek",
+        "triage_kosu",
+        "bug_draft",
+        "bug_draft_ek",
+        "external_ref",
+        "ci_tetik",
+        "hata_kosusu",
+        "hata_kosusu_adim",
+        "otomasyon_ayari",
+        "test_verisi",
+        "test_verisi_surum",
+        "ajan_urunu_baglantisi",
+        "ajan_testi_talebi",
+        "asistan_denetim",
+        "asistan_sohbet",
+        "asistan_mesaj",
+        "asistan_oneri_geri_bildirim",
+        "asistan_guvenlik_olay",
+        "asistan_durum",
+        "workflow_instance",
+        "ai_call",
+        "tool_call",
+        "audit_event",
+        "api_token",
+    ]
+)
+
+TUM_PROJELER_IZINLI = ("tp_core/proje/", "tp_core/workflow/jobs.py", "tp_core/worker/")
+ENV_IZINLI = ("tp_core/home_config/", "tp_core/proje/ayar.py")
+THREAD_BAGLAM = ("baglamla", "proje_icinde", "copy_context")
+_ENV_CAGRI = re.compile(r"(environ|getenv|(^|[._])_*(env|ortam)[a-z_]*(\.get)?$)", re.IGNORECASE)
+
+# Şerit sahipliği (§7): yol öneki → şerit. En uzun önek kazanır.
+SAHIPLIK: dict[str, int] = {
+    "tp_core/models/": 1,
+    "tp_core/audit/": 1,
+    "tp_core/workflow/": 1,
+    "tp_core/worker/": 1,
+    "tp_core/events/": 1,
+    "tp_core/db/": 1,
+    "tp_core/home_config/": 2,
+    "tp_core/config.py": 2,
+    "tp_core/gateway/config.py": 2,
+    "tp_core/auth/": 2,
+    "tp_core/api/": 2,
+    "tp_core/mcp_server/": 2,
+    "tp_core/integrations/": 3,
+    "tp_core/features/ci/clients.py": 3,
+    "tp_core/gateway/": 4,
+    "tp_core/seed.py": 4,
+    **{
+        f"tp_core/features/{d}/": 4
+        for d in [
+            "requirements",
+            "cases",
+            "tasarim_modeli",
+            "karar_tablosu",
+            "metamorfik",
+            "oracle",
+            "testveri",
+            "otomasyon",
+            "assistant",
+            "publish",
+        ]
+    },
+    **{
+        f"tp_core/features/{d}/": 5
+        for d in [
+            "codegen",
+            "ci",
+            "triage",
+            "repair",
+            "bugs",
+            "hata_kosusu",
+            "control_tower",
+            "demo",
+            "agent_probe",
+        ]
+    },
+}
+
+
+def serit(yol: str) -> int | None:
+    adaylar = [o for o in SAHIPLIK if yol == o or (o.endswith("/") and yol.startswith(o))]
+    return SAHIPLIK[max(adaylar, key=len)] if adaylar else None
+
+
+def _tablo_re(tablolar: frozenset[str]) -> re.Pattern[str]:
+    adlar = "|".join(sorted(map(re.escape, tablolar), key=len, reverse=True))
+    return re.compile(rf"\b(?:FROM|JOIN|INTO|UPDATE|TABLE)\s+\"?(?:{adlar})\b(?![.(])")
+
+
+def _imza(metin: str, n: int = 70) -> str:
+    return " ".join(metin.split())[:n].rstrip().replace("#", "_")
+
+
+def _ad(dugum: ast.AST) -> str:
+    if isinstance(dugum, ast.Name):
+        return dugum.id
+    if isinstance(dugum, ast.Attribute):
+        return f"{_ad(dugum.value)}.{dugum.attr}"
+    if isinstance(dugum, ast.Call):
+        return _ad(dugum.func)
+    return ""
+
+
+def _docstring_mu(dugum: ast.AST, ebeveyn: dict[ast.AST, ast.AST]) -> bool:
+    return isinstance(ebeveyn.get(dugum), ast.Expr)
+
+
+def _metinler(agac: ast.AST, ebeveyn: dict[ast.AST, ast.AST]) -> Iterator[str]:
+    """Kod içindeki dize ifadeleri (f-string parçaları `{}` ile); ifade-deyimi dizeleri atlanır."""
+    for d in ast.walk(agac):
+        if isinstance(d, ast.JoinedStr):
+            if not _docstring_mu(d, ebeveyn):
+                yield "".join(v.value if isinstance(v, ast.Constant) else "{}" for v in d.values)
+        elif isinstance(d, ast.Constant) and isinstance(d.value, str):
+            if isinstance(ebeveyn.get(d), ast.JoinedStr) or _docstring_mu(d, ebeveyn):
+                continue
+            yield d.value
+
+
+def _kapsayan_fonksiyon(
+    d: ast.AST, ebeveyn: dict[ast.AST, ast.AST]
+) -> ast.FunctionDef | ast.AsyncFunctionDef | None:
+    while d in ebeveyn:
+        d = ebeveyn[d]
+        if isinstance(d, ast.FunctionDef | ast.AsyncFunctionDef):
+            return d
+    return None
+
+
+def ihlaller() -> list[str]:
+    """Bugünkü tüm ihlal anahtarları (`yol:kural:imza`), kaynak sırasıyla."""
+    tablo_re = _tablo_re(PLAN_KAPSAMLI | kapsamli_tablolar())
+    sonuc: list[str] = []
+    for dosya in sorted(SRC.rglob("*.py")):
+        yol = dosya.relative_to(SRC).as_posix()
+        kaynak = dosya.read_text(encoding="utf-8")
+        agac = ast.parse(kaynak)
+        ebeveyn = {c: p for p in ast.walk(agac) for c in ast.iter_child_nodes(p)}
+
+        for metin in _metinler(agac, ebeveyn):
+            if tablo_re.search(metin) and "project_id" not in metin:
+                sonuc.append(f"{yol}:sql:{_imza(metin)}")
+
+        for d in ast.walk(agac):
+            if isinstance(d, ast.Call):
+                ad = _ad(d.func)
+                # tum_projeler
+                if not yol.startswith(TUM_PROJELER_IZINLI) and any(
+                    k.arg == "tum_projeler" for k in d.keywords
+                ):
+                    f = _kapsayan_fonksiyon(d, ebeveyn)
+                    sonuc.append(f"{yol}:tum_projeler:{f.name if f else '<modul>'}")
+                # thread
+                if ad.split(".")[-1] in ("Thread", "ThreadPoolExecutor"):
+                    f = _kapsayan_fonksiyon(d, ebeveyn)
+                    govde = ast.get_source_segment(kaynak, f) if f else kaynak
+                    if not any(t in (govde or "") for t in THREAD_BAGLAM):
+                        sonuc.append(
+                            f"{yol}:thread:{f.name if f else '<modul>'}:{ad.split('.')[-1]}"
+                        )
+                # env (çağrı)
+                if (
+                    not yol.startswith(ENV_IZINLI)
+                    and d.args
+                    and isinstance(d.args[0], ast.Constant)
+                    and d.args[0].value in PROJE_ANAHTARLARI
+                    and _ENV_CAGRI.search(ad)
+                ):
+                    sonuc.append(f"{yol}:env:{d.args[0].value}:{ad}")
+            elif isinstance(d, ast.Name | ast.Attribute) and not yol.startswith(
+                TUM_PROJELER_IZINLI
+            ):
+                if (d.id if isinstance(d, ast.Name) else d.attr) == "TUM_PROJELER":
+                    f = _kapsayan_fonksiyon(d, ebeveyn)
+                    sonuc.append(f"{yol}:tum_projeler:{f.name if f else '<modul>'}")
+            elif isinstance(d, ast.Subscript) and not yol.startswith(ENV_IZINLI):
+                # os.environ["X"]
+                if (
+                    _ad(d.value).endswith("environ")
+                    and isinstance(d.slice, ast.Constant)
+                    and d.slice.value in PROJE_ANAHTARLARI
+                    and not isinstance(ebeveyn.get(d), ast.Assign | ast.Delete)
+                ):
+                    sonuc.append(f"{yol}:env:{d.slice.value}:{_ad(d.value)}[]")
+            elif isinstance(d, ast.Compare) and not yol.startswith(ENV_IZINLI):
+                # "X" in os.environ
+                if (
+                    isinstance(d.left, ast.Constant)
+                    and d.left.value in PROJE_ANAHTARLARI
+                    and any(_ad(c).endswith("environ") for c in d.comparators)
+                ):
+                    sonuc.append(f"{yol}:env:{d.left.value}:in")
+    return sonuc
+
+
+def _taban(n: int) -> Counter[str]:
+    dosya = ISTISNA_DIZINI / f"serit{n}.txt"
+    sayac: Counter[str] = Counter()
+    for satir in dosya.read_text(encoding="utf-8").splitlines():
+        anahtar = satir.split("  # ", 1)[0].rstrip()
+        if anahtar and not anahtar.startswith("#"):
+            sayac[anahtar] += 1
+    return sayac
+
+
+@pytest.fixture(scope="module")
+def guncel() -> Counter[str]:
+    return Counter(ihlaller())
+
+
+def test_sahipsiz_ihlal_yok(guncel: Counter[str]) -> None:
+    sahipsiz = sorted(k for k in guncel if serit(k.split(":", 1)[0]) is None)
+    assert sahipsiz == [], "şerit sahibi olmayan dosyada ihlal (SAHIPLIK'e bakın)"
+
+
+@pytest.mark.parametrize("n", SERITLER)
+def test_serit_tabani(n: int, guncel: Counter[str]) -> None:
+    taban = _taban(n)
+    yanlis_serit = sorted(k for k in taban if serit(k.split(":", 1)[0]) != n)
+    assert yanlis_serit == [], f"serit{n}.txt başka şeridin dosyasını içeriyor"
+    benim = Counter({k: v for k, v in guncel.items() if serit(k.split(":", 1)[0]) == n})
+    yeni = sorted((benim - taban).elements())
+    giderilen = sorted((taban - benim).elements())
+    assert yeni == [], f"yeni proje kapsamı ihlali (serit{n}): düzeltin, tabana eklemeyin"
+    assert giderilen == [], f"giderilmiş ihlal: proje_istisna/serit{n}.txt'den silin"
+
+
+# ------------------------------------------------------------- denetleyicinin kendi testleri
+
+
+def _tara(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, yol: str, kod: str) -> list[str]:
+    dosya = tmp_path / yol
+    dosya.parent.mkdir(parents=True, exist_ok=True)
+    dosya.write_text(kod, encoding="utf-8")
+    monkeypatch.setattr(f"{__name__}.SRC", tmp_path)
+    return ihlaller()
+
+
+def test_denetleyici_sql(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    kod = (
+        "from sqlalchemy import text\n"
+        "def f(t):\n"
+        '    """FROM requirement açıklaması (docstring sayılmaz)."""\n'
+        '    a = text("SELECT id FROM requirement WHERE id = :id")\n'
+        '    b = text("SELECT id FROM requirement WHERE project_id = :pid")\n'
+        '    c = f"UPDATE run SET durum = :d WHERE id = {t}"\n'
+        '    d = text("SELECT 1 FROM app_user")\n'
+        '    e = "UPDATE requirement_review_ek SET x = 1"\n'
+    )
+    sonuc = _tara(tmp_path, monkeypatch, "tp_core/features/demo/x.py", kod)
+    assert sorted(sonuc) == sorted(
+        [
+            "tp_core/features/demo/x.py:sql:SELECT id FROM requirement WHERE id = :id",
+            "tp_core/features/demo/x.py:sql:UPDATE run SET durum = :d WHERE id = {}",
+            "tp_core/features/demo/x.py:sql:UPDATE requirement_review_ek SET x = 1",
+        ]
+    )
+
+
+def test_denetleyici_thread_env_tum_projeler(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    kod = (
+        "import os, threading\n"
+        "from tp_core.proje import baglamla\n"
+        "def kotu():\n"
+        "    threading.Thread(target=print).start()\n"
+        "def iyi():\n"
+        "    threading.Thread(target=baglamla(print)).start()\n"
+        "def env():\n"
+        '    os.environ.get("JIRA_PROJECT")\n'
+        '    os.getenv("TP_DATABASE_URL")\n'
+        '    os.environ["TP_FORGE"]\n'
+        '    _ortam_float("TP_CI_GITHUB_TIMEOUT_S", 1.0)\n'
+        '    "GITHUB_REPO" in os.environ\n'
+        "def kacis(s):\n"
+        "    s.execute(1, execution_options={}).execution_options(tum_projeler=True)\n"
+    )
+    yol = "tp_core/features/demo/y.py"
+    assert sorted(_tara(tmp_path, monkeypatch, yol, kod)) == sorted(
+        [
+            f"{yol}:thread:kotu:Thread",
+            f"{yol}:env:JIRA_PROJECT:os.environ.get",
+            f"{yol}:env:TP_FORGE:os.environ[]",
+            f"{yol}:env:TP_CI_GITHUB_TIMEOUT_S:_ortam_float",
+            f"{yol}:env:GITHUB_REPO:in",
+            f"{yol}:tum_projeler:kacis",
+        ]
+    )
+
+
+def test_denetleyici_izinli_moduller(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    kod = (
+        "import os\n"
+        "def f(s):\n"
+        '    os.environ.get("JIRA_PROJECT")\n'
+        "    s.execution_options(tum_projeler=True)\n"
+    )
+    assert _tara(tmp_path, monkeypatch, "tp_core/proje/ayar.py", kod) == []
+
+
+def test_sahiplik() -> None:
+    assert serit("tp_core/features/ci/clients.py") == 3
+    assert serit("tp_core/features/ci/service.py") == 5
+    assert serit("tp_core/gateway/config.py") == 2
+    assert serit("tp_core/gateway/gateway.py") == 4
+    assert serit("tp_core/models/delivery.py") == 1
+    assert serit("tp_core/ports.py") is None

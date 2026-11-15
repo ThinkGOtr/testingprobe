@@ -1,0 +1,45 @@
+# Şerit 5 proje kapsamı geçiş tabanı (TP-COK-PROJE-PLANI §2.4). Biçim: yol:kural:imza  # gerekçe
+# Yalnız küçülür: düzelttiğiniz ihlalin satırını silin. Yeni satır = gerekçeli kalıcı istisna (review).
+tp_core/features/agent_probe/service.py:sql:SELECT 1 FROM test_case WHERE requirement_id = :r AND durum NOT IN ('s  # gecis tabani
+tp_core/features/bugs/service.py:sql:UPDATE failure SET oneri_durumu = :d, guncelleme = now() WHERE id = AN  # gecis tabani
+tp_core/features/bugs/services.py:env:GITHUB_REPO:os.environ.get  # gecis tabani
+tp_core/features/bugs/services.py:env:TP_FORGE:os.environ.get  # gecis tabani
+tp_core/features/bugs/services.py:env:TP_FORGE_WEB_URL:os.environ.get  # gecis tabani
+tp_core/features/ci/github_artifacts.py:env:TP_GITHUB_ARTIFACTS_KEEP:os.environ.get  # gecis tabani
+tp_core/features/ci/github_artifacts.py:env:TP_GITHUB_ARTIFACTS_MAX_GB:os.environ.get  # gecis tabani
+tp_core/features/ci/service.py:env:TP_CI_GITHUB_TIMEOUT_S:_int_env  # gecis tabani
+tp_core/features/ci/service.py:env:TP_CI_NIGHTLY_GEC_S:_int_env  # gecis tabani
+tp_core/features/ci/service.py:env:TP_CI_NIGHTLY_SAAT:os.environ.get  # gecis tabani
+tp_core/features/ci/service.py:sql:UPDATE run SET artefaktlar = artefaktlar || jsonb_build_object('dizin'  # gecis tabani
+tp_core/features/ci/service.py:sql:UPDATE run SET artefaktlar = jsonb_set(artefaktlar, '{github_yerel,dur  # gecis tabani
+tp_core/features/ci/services.py:env:TP_FORGE:os.environ.get  # gecis tabani
+tp_core/features/codegen/browser.py:env:TP_AGENT_DEALER:env.get  # gecis tabani
+tp_core/features/codegen/browser.py:env:TP_AGENT_DEALER_PASSWORD:env.get  # gecis tabani
+tp_core/features/codegen/browser.py:env:TP_DEMO_WEB_URL:env.get  # gecis tabani
+tp_core/features/codegen/browser.py:thread:__init__:Thread  # gecis tabani
+tp_core/features/codegen/repair_sync.py:sql:UPDATE failure SET oneri_durumu = :d WHERE id = ANY(:ids) AND oneri_du  # gecis tabani
+tp_core/features/codegen/service.py:env:TP_CODEGEN_SCREENSHOT_DAYS:os.environ.get  # gecis tabani
+tp_core/features/codegen/service.py:sql:DELETE FROM script_adim WHERE script_id = :s  # gecis tabani
+tp_core/features/codegen/service.py:sql:DELETE FROM step_mapping WHERE script_id = :s  # gecis tabani
+tp_core/features/codegen/service.py:sql:DELETE FROM step_mapping WHERE script_id = :s  # gecis tabani
+tp_core/features/codegen/service.py:sql:SELECT u.kullanici_adi FROM review r JOIN app_user u ON u.id = r.user_  # gecis tabani
+tp_core/features/control_tower/case_kalitesi.py:sql:SELECT (SELECT count(*) FROM test_case), (SELECT max(guncelleme) FROM  # gecis tabani
+tp_core/features/control_tower/case_kalitesi.py:sql:SELECT karar, yon, count(*) FROM asistan_denetim GROUP BY karar, yon  # gecis tabani
+tp_core/features/control_tower/service.py:env:TP_CT_REVIEW_MIN_S:os.environ.get  # gecis tabani
+tp_core/features/demo/__main__.py:env:GITHUB_MERGE_TOKEN:os.environ.get  # gecis tabani
+tp_core/features/demo/service.py:sql:SELECT id, commit, tetik, olusturma FROM run WHERE sonuc = 'passed' AN  # gecis tabani
+tp_core/features/demo/service.py:sql:SELECT ozet FROM audit_event WHERE eylem = :e ORDER BY id DESC LIMIT 1  # gecis tabani
+tp_core/features/demo/service.py:sql:SELECT ozet, zaman FROM audit_event WHERE eylem = :e ORDER BY id DESC  # gecis tabani
+tp_core/features/demo/service.py:sql:SELECT r.id FROM run r WHERE r.commit = :sha AND r.tetik = 'push' AND  # gecis tabani
+tp_core/features/demo/service.py:thread:_forge_bolumu_onbellekli:Thread  # gecis tabani
+tp_core/features/demo/web.py:env:TP_DEMO_WEB_URL:_ortam  # gecis tabani
+tp_core/features/repair/service.py:sql:SELECT a.script_id, a.sira, a.ham, a.zaman FROM script_adim a JOIN scr  # gecis tabani
+tp_core/features/repair/service.py:sql:SELECT fl.id FROM failure fl JOIN failure_ek fe ON fe.failure_id = fl.  # gecis tabani
+tp_core/features/repair/service.py:sql:SELECT oneri, kanit, oneri_yok_nedeni, kural FROM failure_ek WHERE fai  # gecis tabani
+tp_core/features/repair/service.py:sql:UPDATE failure SET oneri_durumu = :d WHERE id = ANY(:ids) AND oneri_du  # gecis tabani
+tp_core/features/repair/service.py:sql:UPDATE failure fl SET oneri_durumu = 'merged' FROM run r WHERE fl.id =  # gecis tabani
+tp_core/features/repair/views.py:env:GITHUB_API_URL:os.environ.get  # gecis tabani
+tp_core/features/triage/service.py:sql:SELECT 1 FROM bug_draft_ek WHERE ilgili_failure_ids ?| CAST(:ids AS te  # gecis tabani
+tp_core/features/triage/service.py:sql:SELECT bug_draft_id FROM bug_draft_ek WHERE ilgili_failure_ids @> CAST  # gecis tabani
+tp_core/features/triage/services.py:env:TP_TRIAGE_KIRMA:os.environ.get  # gecis tabani
+tp_core/features/triage/services.py:env:TP_TRIAGE_KIRMA_TASLAK:os.environ.get  # gecis tabani

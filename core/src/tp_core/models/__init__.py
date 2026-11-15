@@ -22,7 +22,7 @@ from tp_core.models import kalite_feature as kalite_feature
 from tp_core.models import otomasyon_feature as otomasyon_feature
 from tp_core.models import requirements_feature as requirements_feature
 from tp_core.models import triage_feature as triage_feature
-from tp_core.models.base import Base
+from tp_core.models.base import Base, ProjeKapsamli
 from tp_core.models.case_kalite import CaseSetAudit as CaseSetAudit
 from tp_core.models.case_kalite import CaseSetReview as CaseSetReview
 from tp_core.models.cases_feature import CaseGoruntuleme as CaseGoruntuleme
@@ -59,6 +59,12 @@ from tp_core.models.requirements import (
     case_id,
 )
 from tp_core.models.system import AiCall, AuditEvent, Job, ToolCall, WorkflowInstance
+from tp_core.models.tp_proje import ProjeSayac, TpProje
+from tp_core.proje import orm as _proje_orm
+
+# Merkezî proje filtresi `Session` sınıfına bağlanır: `new_session()` ve doğrudan
+# `Session(engine)` ile kurulan her oturum kapsanır (idempotent).
+_proje_orm.kur(Session)
 
 # durum makinesi olan tablo adı → model sınıfı
 STATEFUL: dict[str, type[Base]] = {
@@ -78,6 +84,7 @@ def new_session() -> Session:
     """Varsayılan motora bağlı yeni oturum (commit çağırana aittir)."""
     from tp_core.db import get_engine
 
+    _proje_orm.kur(Session)
     return Session(get_engine(), expire_on_commit=False)
 
 
@@ -120,6 +127,8 @@ __all__ = [
     "MetamorfikTuretme",
     "OracleIstisna",
     "Oturum",
+    "ProjeKapsamli",
+    "ProjeSayac",
     "PullRequest",
     "Requirement",
     "RequirementReview",
@@ -132,6 +141,7 @@ __all__ = [
     "TestCase",
     "TestResult",
     "ToolCall",
+    "TpProje",
     "WorkflowInstance",
     "case_id",
     "db_session",

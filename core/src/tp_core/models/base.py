@@ -8,9 +8,11 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import CheckConstraint, DateTime, MetaData, Numeric, Text, func, text
+from sqlalchemy import CheckConstraint, DateTime, MetaData, Numeric, String, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+from tp_core.proje.baglam import mevcut_pid
 
 NOW = text("now()")
 
@@ -25,6 +27,18 @@ class Base(DeclarativeBase):
         dict[str, Any]: JSONB,
         list[Any]: JSONB,
     }
+
+
+class ProjeKapsamli:
+    """Mixin: proje kapsamlı tablo (TP-COK-PROJE-PLANI §1.1 A, §2.3).
+
+    Sütun NOT NULL; INSERT'te bağlamdan dolar (`before_flush` ve Python varsayılanı). ORM
+    sorgularına `tp_core.proje.orm` otomatik `project_id` ölçütü ekler.
+    """
+
+    project_id: Mapped[str] = mapped_column(
+        String(64), nullable=False, default=lambda: mevcut_pid()
+    )
 
 
 def uuid_pk() -> Mapped[uuid.UUID]:

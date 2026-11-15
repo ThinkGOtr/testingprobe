@@ -31,6 +31,8 @@ class AppUser(Base):
     # 0020: adın kaynağı; "aiprobe" = JIT'te AI Probe devrindeki `name` (TP doğrulamaz, portal
     # "AI Probe" diye belirtir). Boş = yerel/yapılandırılmış.
     ad_kaynak: Mapped[str | None]
+    # 0044: son seçili proje (Home pid); giriş bunu tercih eder (TP-COK-PROJE-PLANI §6.1).
+    secili_proje: Mapped[str | None] = mapped_column(String(64))
 
 
 class ApiToken(Base):
