@@ -32,6 +32,16 @@ class GecersizProjeKimligi(ValueError):
 def _dogrula(pid: str) -> str:
     if not _PID_RE.fullmatch(pid or "") or ".." in pid:
         raise GecersizProjeKimligi(f"proje kimliği yol bileşeni olamaz: {pid!r}")
+    # Varsayılan projenin depo/ayna adlarıyla çakışma ve `.git` soneki yasak: türetilen yol başka
+    # projenin deposuna ya da aynasına denk gelmesin (güvenlik review: pid/yol çakışması).
+    ayrilmis = {
+        _ortam("TP_FORGE_PATH", VARSAYILAN_DEPO).name,
+        _ortam("TP_FORGE_PATH", VARSAYILAN_DEPO).stem,
+        _ortam("TP_FORGE_MIRROR_PATH", VARSAYILAN_AYNA).name,
+        _ortam("TP_FORGE_MIRROR_PATH", VARSAYILAN_AYNA).stem,
+    }
+    if pid.lower().endswith(".git") or pid in ayrilmis:
+        raise GecersizProjeKimligi(f"proje kimliği ayrılmış bir yol adıyla çakışıyor: {pid!r}")
     return pid
 
 

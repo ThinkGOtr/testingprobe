@@ -312,3 +312,16 @@ def test_toolchain_client_check_blok_ekler(proje: Any, forge_kok: Path, proje_ay
     assert govdeler[0]["proje"]["pid"] == B
     assert govdeler[0]["proje"]["forge_path"].endswith(f"{B}/repo.git")
     assert govdeler[1]["proje"] == {"pid": "verilen"}  # çağıranın bloğu korunur
+
+
+def test_forge_yolu_varsayilan_adla_cakisan_pid_reddedilir(monkeypatch):
+    import pytest
+
+    from tp_core.integrations import forge_yollari as fy
+
+    monkeypatch.setenv("TP_FORGE_PATH", "/forge/demo-app.git")
+    monkeypatch.setenv("TP_FORGE_MIRROR_PATH", "/forge-mirror/demo-app.git")
+    for kotu in ("demo-app", "demo-app.git", "x.git"):
+        with pytest.raises(fy.GecersizProjeKimligi):
+            fy._dogrula(kotu)
+    assert fy._dogrula("ea7383844744") == "ea7383844744"
