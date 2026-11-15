@@ -42,6 +42,12 @@ Asistan şeridinde zaman aşımı süreci kapatmaz: iş `failed`, mesaj uzlaşt�
 Asılı iş parçacığı durana dek şeritte bir yuva sayılır: koşan + asılı iş parçacığı sayısı
 `asistan_paralel()`'e ulaştıysa şerit yeni iş almaz (gerçek eşzamanlı model çağrısı ≤ PARALEL).
 
+Çok proje (TP-COK-PROJE-PLANI §5): tüm projelerin işleri tek kuyrukta, tek sırada (K1); her iş
+kendi projesinin bağlamında koşar (`jobs.execute`). Şerit/kalp atışı iş parçacıkları bağlamsızdır
+(`baglamla` ile başlatılır). Açılış kancaları her aktif proje (`tp_proje`) için o projenin
+bağlamında ayrı işlemde koşar; `on_worker_start.kurulum = True` işaretli kanca bir kez,
+bağlamsız koşar. Kalp atışı kurulum geneli `asistan_durum` `'_kurulum'` satırındadır.
+
 Canlılık: ana döngü (ve iş beklerken yürütücü) `TP_WORKER_LIVENESS_FILE` dosyasının zamanını
 tazeler; `tp_core.worker.healthcheck` dosya `CANLILIK_ESIGI_S`'den eskiyse sağlıksız der.
 
@@ -67,6 +73,7 @@ import psycopg
 from sqlalchemy.exc import InterfaceError, OperationalError
 
 from tp_core.db import get_engine
+from tp_core.proje.baglam import KURULUM, baglamla, kurulu_projeler, proje_icinde
 from tp_core.workflow import jobs
 from tp_core.workflow.jobs import (
     ASISTAN_SERIT,
@@ -309,10 +316,10 @@ def kapali_serit_temizle(turler: Collection[str]) -> int:
     with get_engine().begin() as conn:
         taze = conn.execute(
             text(
-                "SELECT 1 FROM asistan_durum WHERE id = 1 AND kalp_atisi IS NOT NULL "
-                "AND kalp_atisi >= now() - make_interval(secs => :esik)"
+                "SELECT 1 FROM asistan_durum WHERE project_id = :kurulum "
+                "AND kalp_atisi IS NOT NULL AND kalp_atisi >= now() - make_interval(secs => :esik)"
             ),
-            {"esik": KALP_ATISI_AZAMI_S},
+            {"kurulum": KURULUM, "esik": KALP_ATISI_AZAMI_S},
         ).first()
         if taze is not None:
             return 0
@@ -428,7 +435,7 @@ def run(dur: threading.Event, aralik: float = 1.0, *, uzun: Collection[str] | No
                 kodlar.append(kod)
             dur.set()  # uzun şerit zaman aşımıyla çıktıysa ana döngü de durur
 
-        iplikler.append(threading.Thread(target=serit, name="serit-uzun", daemon=True))
+        iplikler.append(threading.Thread(target=baglamla(serit), name="serit-uzun", daemon=True))
 
     if asistan:
         n = asistan_paralel()
@@ -436,7 +443,7 @@ def run(dur: threading.Event, aralik: float = 1.0, *, uzun: Collection[str] | No
         for i in range(1, n + 1):
             iplikler.append(
                 threading.Thread(
-                    target=_dongu,
+                    target=baglamla(_dongu),
                     args=(dur, aralik, lambda: asistan_tur(asistan), f"asistan-{i}"),
                     name=f"serit-asistan-{i}",
                     daemon=True,
@@ -444,7 +451,10 @@ def run(dur: threading.Event, aralik: float = 1.0, *, uzun: Collection[str] | No
             )
         iplikler.append(
             threading.Thread(
-                target=_kalp_atisi_dongusu, args=(dur,), name="asistan-kalp-atisi", daemon=True
+                target=baglamla(_kalp_atisi_dongusu),
+                args=(dur,),
+                name="asistan-kalp-atisi",
+                daemon=True,
             )
         )
 
@@ -500,27 +510,57 @@ def _kanca(ad: str) -> Callable[..., Any] | None:
     return kanca if callable(kanca) else None
 
 
+def _kancayi_kos(ad: str, kanca: Callable[..., Any], pid: str | None) -> bool:
+    """Kancayı kendi işleminde koşar (`pid` verilirse o projenin bağlamında); başarılıysa True."""
+    try:
+        if pid is None:
+            with get_engine().begin() as conn:
+                kanca(conn)
+        else:
+            with proje_icinde(pid, kaynak="sistem"), get_engine().begin() as conn:
+                kanca(conn)
+        return True
+    except DB_HATALARI as exc:
+        log.warning(
+            "%s.on_worker_start (%s): DB erişilemiyor: %s", ad, pid or KURULUM, _kisa_hata(exc)
+        )
+    except Exception:
+        log.exception("%s.on_worker_start (%s) başarısız", ad, pid or KURULUM)
+    return False
+
+
 def acilis_kancalari(moduller: list[str]) -> list[str]:
     """Özellik `jobs` modüllerindeki `on_worker_start(conn)` kancalarını çağırır; başarıyla
     koşan modülleri döndürür.
 
     Ör. kendini yeniden planlayan periyodik işler (PO etiket sorgusu) kuyruk silinse de worker
-    açılışında yeniden başlar. Kanca hatası worker'ı düşürmez (loglanır; DB erişilemiyorsa tek
-    satır uyarı); her kanca kendi işleminde koşar.
+    açılışında yeniden başlar. Kanca her aktif proje (`kurulu_projeler`) için o projenin
+    bağlamında (`kaynak="sistem"`) ayrı işlemde koşar; `kanca.kurulum = True` ise bir kez,
+    bağlamsız. Modül, tüm projelerde başarılıysa başarılı sayılır (başarısızsa sonraki turda
+    hepsi yeniden denenir; kancalar idempotenttir). Kanca hatası worker'ı düşürmez (loglanır;
+    DB erişilemiyorsa tek satır uyarı).
     """
     calisan: list[str] = []
+    projeler: list[str] | None = None
     for ad in moduller:
         kanca = _kanca(ad)
         if kanca is None:
             continue
-        try:
-            with get_engine().begin() as conn:
-                kanca(conn)
+        if getattr(kanca, "kurulum", False):
+            if _kancayi_kos(ad, kanca, None):
+                calisan.append(ad)
+            continue
+        if projeler is None:
+            try:
+                with get_engine().connect() as conn:
+                    projeler = kurulu_projeler(conn)
+            except DB_HATALARI as exc:
+                log.warning("açılış kancaları: proje listesi okunamadı: %s", _kisa_hata(exc))
+                return calisan
+        # Tüm projeler denenir (bir projenin hatası diğerlerini durdurmaz).
+        sonuclar = [_kancayi_kos(ad, kanca, pid) for pid in projeler]
+        if all(sonuclar):
             calisan.append(ad)
-        except DB_HATALARI as exc:
-            log.warning("%s.on_worker_start: DB erişilemiyor: %s", ad, _kisa_hata(exc))
-        except Exception:
-            log.exception("%s.on_worker_start başarısız", ad)
     return calisan
 
 

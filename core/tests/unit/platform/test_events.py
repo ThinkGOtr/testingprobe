@@ -16,7 +16,8 @@ from tp_core.api import main
 from tp_core.api.routers import events as events_router
 from tp_core.auth.passwords import hash_password
 from tp_core.auth.sessions import SessionData
-from tp_core.events import Broadcaster, PgEventBus, build_payload, libpq_dsn
+from tp_core.events import Broadcaster, PgEventBus, build_payload, libpq_dsn, publish_tx
+from tp_core.proje import proje_icinde
 from tp_core.workflow.service import Principal
 
 from .conftest import PAROLA, Db
@@ -227,3 +228,53 @@ def test_oturum_kontrolu_hata_verirse_gecersiz_sayar(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(events_router, "_oturum_gecerli_mi", patla)
     veri = SessionData(uuid.uuid4(), "pv", uuid.uuid4())
     assert asyncio.run(events_router.oturum_kontrolu(veri)()) is False
+
+
+# --------------------------------------------- olay yükünde proje (TP-COK-PROJE-PLANI §5.1, Ş1)
+
+
+def test_olay_yuku_projeyi_tasir_kirpmada_da() -> None:
+    assert json.loads(build_payload("x.y", {"i": 1}))["project_id"] is None  # bağlamsız: kurulum
+    with proje_icinde("a", kaynak="test"):
+        assert json.loads(build_payload("x.y", {"i": 1}))["project_id"] == "a"
+        assert json.loads(build_payload("x.y", {}, project_id="b"))["project_id"] == "b"
+        kirpik = json.loads(build_payload("x.y", {"id": "k", "buyuk": "x" * 9000}))
+    assert kirpik["data"] == {"id": "k", "truncated": True} and kirpik["project_id"] == "a"
+
+
+def test_abone_yalniz_kendi_projesinin_ve_kurulum_olaylarini_alir() -> None:
+    async def senaryo() -> tuple[list[str], list[str], list[str]]:
+        b = Broadcaster("postgresql://yok")
+        qa, qb, hepsi = b.subscribe("a"), b.subscribe("b"), b.subscribe()
+        b.fanout(build_payload("x.a", {}, project_id="a"))
+        b.fanout(build_payload("x.b", {}, project_id="b"))
+        b.fanout(build_payload("x.kurulum", {}))
+        return tuple(  # type: ignore[return-value]
+            [q.get_nowait()["event"] for _ in range(q.qsize())] for q in (qa, qb, hepsi)
+        )
+
+    qa, qb, hepsi = asyncio.run(senaryo())
+    assert qa == ["x.a", "x.kurulum"]
+    assert qb == ["x.b", "x.kurulum"]
+    assert hepsi == ["x.a", "x.b", "x.kurulum"]
+
+
+def test_publish_tx_baglamdaki_projeyi_yazar(db: Db, engine: Engine) -> None:
+    async def senaryo() -> dict:
+        b = Broadcaster(libpq_dsn(db.app_url))
+        await b.ensure_started()
+        q = b.subscribe("p1")
+
+        def yayinla() -> None:
+            with proje_icinde("p2", kaynak="test"), engine.begin() as c:
+                publish_tx(c, "x.diger", {})
+            with proje_icinde("p1", kaynak="test"), engine.begin() as c:
+                publish_tx(c, "x.benim", {"id": "1"})
+
+        await asyncio.to_thread(yayinla)
+        olay = await asyncio.wait_for(q.get(), timeout=5)
+        await b.stop()
+        return olay
+
+    olay = asyncio.run(senaryo())
+    assert (olay["event"], olay["project_id"]) == ("x.benim", "p1")

@@ -12,6 +12,7 @@ from sqlalchemy import (
     Index,
     Integer,
     PrimaryKeyConstraint,
+    String,
     UniqueConstraint,
     false,
 )
@@ -19,8 +20,16 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from tp_core.models import enums
-from tp_core.models.base import Base, guncelleme_col, in_check, olusturma_col, uuid_pk
+from tp_core.models.base import (
+    Base,
+    ProjeKapsamli,
+    guncelleme_col,
+    in_check,
+    olusturma_col,
+    uuid_pk,
+)
 from tp_core.models.requirements import EMPTY_LIST, EMPTY_OBJ, _durum
+from tp_core.proje.baglam import mevcut_pid
 
 
 def _varsayilan_dil(context: Any) -> str:
@@ -30,7 +39,7 @@ def _varsayilan_dil(context: Any) -> str:
     return varsayilan_dil(context.get_current_parameters().get("platform"))
 
 
-class Script(Base):
+class Script(ProjeKapsamli, Base):
     """Üretilen Playwright testi veya locator onarımı (§8.4, §8.7)."""
 
     __tablename__ = "script"
@@ -41,6 +50,7 @@ class Script(Base):
         in_check("platform", enums.PLATFORM, "script_platform_ck"),
         in_check("dil", enums.DIL, "script_dil_ck"),
         in_check("dil_kaynagi", enums.DIL_KAYNAGI, "script_dil_kaynagi_ck"),
+        Index("script_proje_olusturma_ix", "project_id", "olusturma"),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
@@ -74,7 +84,7 @@ class Script(Base):
     guncelleme: Mapped[datetime] = guncelleme_col()
 
 
-class ScriptTestCase(Base):
+class ScriptTestCase(ProjeKapsamli, Base):
     __tablename__ = "script_test_case"
     __table_args__ = (PrimaryKeyConstraint("script_id", "test_case_id"),)
 
@@ -82,7 +92,7 @@ class ScriptTestCase(Base):
     test_case_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("test_case.id", ondelete="CASCADE"))
 
 
-class StepMapping(Base):
+class StepMapping(ProjeKapsamli, Base):
     """Adım → page object metodu eşlemesi; uygulamada doğrulanmış (§8.4)."""
 
     __tablename__ = "step_mapping"
@@ -105,13 +115,17 @@ class StepMapping(Base):
     olusturma: Mapped[datetime] = olusturma_col()
 
 
-class PullRequest(Base):
+class PullRequest(ProjeKapsamli, Base):
     """Çekirdeğin açtığı PR kaydı (LocalForge'da tek kaynak; GitHub'da forge kopyası)."""
 
     __tablename__ = "pull_request"
     __table_args__ = (in_check("durum", enums.PR_DURUM, "pull_request_durum_ck"),)
 
-    number: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # PR numarası proje başına (§1.2): LocalForge `proje_sayac('pr')`, GitHub kipinde GitHub'ın.
+    project_id: Mapped[str] = mapped_column(
+        String(64), primary_key=True, default=lambda: mevcut_pid()
+    )
+    number: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
     branch: Mapped[str]
     base: Mapped[str] = mapped_column(server_default="main", default="main")
     baslik: Mapped[str]
@@ -137,7 +151,7 @@ class PullRequest(Base):
     guncelleme: Mapped[datetime] = guncelleme_col()
 
 
-class Run(Base):
+class Run(ProjeKapsamli, Base):
     """Test koşusu (yerel kontrol, CI, Sauce)."""
 
     __tablename__ = "run"
@@ -146,6 +160,7 @@ class Run(Base):
         in_check("tetik", enums.RUN_TETIK, "run_tetik_ck"),
         in_check("sonuc", enums.RUN_SONUC, "run_sonuc_ck"),
         Index("run_olusturma_ix", "olusturma"),
+        Index("run_proje_olusturma_ix", "project_id", "olusturma"),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
@@ -166,7 +181,7 @@ class Run(Base):
     olusturma: Mapped[datetime] = olusturma_col()
 
 
-class TestResult(Base):
+class TestResult(ProjeKapsamli, Base):
     """JUnit XML'den ayrıştırılan test sonucu (§8.11). §7'deki `durum` burada `sonuc`."""
 
     __tablename__ = "test_result"
@@ -177,6 +192,7 @@ class TestResult(Base):
         in_check("tetik", enums.RUN_TETIK, "test_result_tetik_ck"),
         Index("test_result_run_ix", "run_id"),
         Index("test_result_ad_ix", "test_adi"),
+        Index("test_result_proje_olusturma_ix", "project_id", "olusturma"),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
@@ -194,7 +210,7 @@ class TestResult(Base):
     olusturma: Mapped[datetime] = olusturma_col()
 
 
-class Failure(Base):
+class Failure(ProjeKapsamli, Base):
     """Triage sonucu (§8.6): önce kural, sonra gerekirse LLM."""
 
     __tablename__ = "failure"
@@ -205,6 +221,7 @@ class Failure(Base):
         in_check("oneri_durumu", enums.ONERI_DURUMU, "failure_oneri_durumu_ck"),
         in_check("uretim_modu", enums.URETIM_MODU, "failure_mod_ck", True),
         Index("failure_run_ix", "run_id"),
+        Index("failure_proje_olusturma_ix", "project_id", "olusturma"),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
@@ -227,7 +244,7 @@ class Failure(Base):
     guncelleme: Mapped[datetime] = guncelleme_col()
 
 
-class BugDraft(Base):
+class BugDraft(ProjeKapsamli, Base):
     """Bug taslağı (§8.12): yalnızca testçi onayı ve onaylanan hash ile yayınlanır."""
 
     __tablename__ = "bug_draft"
@@ -235,6 +252,7 @@ class BugDraft(Base):
         in_check("karar", enums.BUG_KARAR, "bug_draft_karar_ck", True),
         in_check("durum", enums.durumlar("bug_draft"), "bug_draft_durum_ck"),
         in_check("uretim_modu", enums.URETIM_MODU, "bug_draft_mod_ck", True),
+        Index("bug_draft_proje_olusturma_ix", "project_id", "olusturma"),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
@@ -257,7 +275,7 @@ class BugDraft(Base):
     guncelleme: Mapped[datetime] = guncelleme_col()
 
 
-class ExternalRef(Base):
+class ExternalRef(ProjeKapsamli, Base):
     """Dış etkili eylemlerin idempotency kaydı: önce `intent`, sonra `created` (§8.3)."""
 
     __tablename__ = "external_ref"
@@ -265,13 +283,14 @@ class ExternalRef(Base):
         in_check("sistem", enums.EXTERNAL_SISTEM, "external_ref_sistem_ck"),
         in_check("durum", enums.EXTERNAL_DURUM, "external_ref_durum_ck"),
         Index("external_ref_entity_ix", "entity_id"),
+        UniqueConstraint("project_id", "idempotency_key", name="external_ref_proje_idempotency_uq"),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
     entity_turu: Mapped[str]
     entity_id: Mapped[uuid.UUID]
     sistem: Mapped[str]
-    idempotency_key: Mapped[str] = mapped_column(unique=True)
+    idempotency_key: Mapped[str]
     external_key: Mapped[str | None]
     url: Mapped[str | None]
     durum: Mapped[str] = mapped_column(server_default="intent", default="intent")

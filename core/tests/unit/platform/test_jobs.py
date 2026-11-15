@@ -3,6 +3,7 @@ worker döngüsü, özellik keşfi ve bütçe."""
 
 from __future__ import annotations
 
+import contextvars
 import sys
 import textwrap
 import threading
@@ -15,8 +16,17 @@ from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session
 
 from tp_core import worker
-from tp_core.audit import PgCallRecorder
+from tp_core.audit import PgCallRecorder, verify_chain
 from tp_core.models import WorkflowInstance
+from tp_core.proje import (
+    ProjeBaglamiYok,
+    baglamla,
+    kurulu_projeler,
+    mevcut_pid,
+    pid_param,
+    proje_icinde,
+    varsa,
+)
 from tp_core.workflow import jobs
 from tp_core.workflow.budget import (
     BudgetExceeded,
@@ -36,6 +46,12 @@ from tp_core.workflow.jobs import (
     reap_stale,
     start_workflow,
 )
+
+
+@pytest.fixture(autouse=True)
+def _proje_baglami(proje: object) -> None:
+    """İşler projeli kuyruğa eklenir (`enqueue` bağlam ister); işleyiciler işin projesinde koşar
+    (TP-COK-PROJE-PLANI §5.1). Proje olmadan davranış ayrı testlerde açıkça sınanır."""
 
 
 def _job(engine: Engine, job_id: uuid.UUID):
@@ -411,7 +427,7 @@ def test_db_hazir_degilken_acilis_kancalari_sonra_kosar(
     def kanca(_conn) -> None:
         if not durum["db"]:
             raise OperationalError("SELECT 1", {}, Exception("could not translate host name"))
-        cagri.append("koştu")
+        cagri.append(mevcut_pid())  # her aktif proje için o projenin bağlamında
 
     ad = _sahte_kanca_modulu(monkeypatch, kanca)
     monkeypatch.setattr(worker, "KANCA_TEKRAR_S", 0.0)
@@ -434,9 +450,12 @@ def test_db_hazir_degilken_acilis_kancalari_sonra_kosar(
 
     durum["db"] = True
     worker.tek_tur()
-    assert cagri == ["koştu"] and worker._bekleyen_kancalar == []
+    with engine.connect() as c:
+        projeler = kurulu_projeler(c)
+    assert len(projeler) >= 2  # 0044 varsayılan proje + `proje` fikstürünün test-a'sı
+    assert cagri == projeler and worker._bekleyen_kancalar == []
     worker.tek_tur()
-    assert cagri == ["koştu"]  # başarılı kanca bir daha koşmaz
+    assert cagri == projeler  # başarılı kanca bir daha koşmaz
 
 
 def test_main_kancalari_dogrudan_cagirmaz(engine: Engine, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -497,7 +516,10 @@ def test_start_workflow(engine: Engine) -> None:
     row = _job(engine, jid)
     assert row.workflow_id == wf and row.yuk == {"jira_key": "TPD-1", "workflow_id": str(wf)}
     with engine.connect() as c:
-        w = c.execute(text("SELECT * FROM workflow_instance WHERE id = :i"), {"i": wf}).one()
+        w = c.execute(
+            text("SELECT * FROM workflow_instance WHERE project_id = :pid AND id = :i"),
+            pid_param(i=wf),
+        ).one()
         assert (w.durum, w.job_id, w.baslatan) == ("running", jid, "analist")
 
 
@@ -518,7 +540,7 @@ def test_start_workflow_eszamanli_ayni_anahtar_tek_akis(engine: Engine) -> None:
         except BaseException as exc:
             hatalar.append(exc)
 
-    iplikler = [threading.Thread(target=baslat) for _ in range(2)]
+    iplikler = [threading.Thread(target=baglamla(baslat)) for _ in range(2)]
     for t in iplikler:
         t.start()
     for t in iplikler:
@@ -526,10 +548,19 @@ def test_start_workflow_eszamanli_ayni_anahtar_tek_akis(engine: Engine) -> None:
     assert hatalar == []
     assert len(sonuclar) == 2 and sonuclar[0] == sonuclar[1]
     with engine.connect() as c:
-        assert c.execute(text("SELECT count(*) FROM workflow_instance")).scalar_one() == 1
+        assert (
+            c.execute(
+                text("SELECT count(*) FROM workflow_instance WHERE project_id = :pid"), pid_param()
+            ).scalar_one()
+            == 1
+        )
         assert c.execute(text("SELECT count(*) FROM job")).scalar_one() == 1
         n = c.execute(
-            text("SELECT count(*) FROM audit_event WHERE eylem = 'workflow.started'")
+            text(
+                "SELECT count(*) FROM audit_event "
+                "WHERE project_id = :pid AND eylem = 'workflow.started'"
+            ),
+            pid_param(),
         ).scalar_one()
         assert n == 1
 
@@ -540,7 +571,12 @@ def test_start_workflow_akissiz_isin_anahtariyla_yetim_akis_acmaz(engine: Engine
     with engine.begin() as c, pytest.raises(ValueError, match="bağlı olmayan"):
         start_workflow(c, "demo", "u", idempotency_key="k-duz")
     with engine.connect() as c:
-        assert c.execute(text("SELECT count(*) FROM workflow_instance")).scalar_one() == 0
+        assert (
+            c.execute(
+                text("SELECT count(*) FROM workflow_instance WHERE project_id = :pid"), pid_param()
+            ).scalar_one()
+            == 0
+        )
 
 
 def test_cift_kayit_reddedilir() -> None:
@@ -743,11 +779,16 @@ def test_gecit_butce_asimi_isi_yeniden_denemez_ve_akisi_duraklatir(engine: Engin
     assert cagri == [1]
     with engine.connect() as c:
         durum = c.execute(
-            text("SELECT durum FROM workflow_instance WHERE id = :i"), {"i": wf}
+            text("SELECT durum FROM workflow_instance WHERE project_id = :pid AND id = :i"),
+            pid_param(i=wf),
         ).scalar_one()
+        # Duraklatma denetimi iş akışının projesinin zincirine yazılır (worker bağlamsız).
         olay = c.execute(
-            text("SELECT count(*) FROM audit_event WHERE nesne = :n AND ozet->>'to' = 'paused'"),
-            {"n": f"workflow_instance:{wf}"},
+            text(
+                "SELECT count(*) FROM audit_event WHERE project_id = :pid AND nesne = :n "
+                "AND ozet->>'to' = 'paused'"
+            ),
+            pid_param(n=f"workflow_instance:{wf}"),
         ).scalar_one()
     assert durum == "paused"
     assert olay == 1
@@ -771,3 +812,119 @@ def test_platform_testlerinde_asistan_seridi_kapali() -> None:
     import tp_core.features.assistant  # noqa: F401 — handler kaydı
 
     assert worker.asistan_serit_turleri() == frozenset()
+
+
+# ------------------------------------------------ çok proje kuyruğu (TP-COK-PROJE-PLANI §5.1)
+
+
+def _baglamsiz(fn, *args, **kwargs):
+    """Proje bağlamı olmadan çağırır (worker döngüsü / bağlamsız kod gibi)."""
+    return contextvars.Context().run(fn, *args, **kwargs)
+
+
+def test_baglamsiz_proje_isi_eklenemez_kurulum_isi_null_projeli(engine: Engine) -> None:
+    reg = _kayit(proje_isi=(lambda _c: None, {}), bakim=(lambda _c: None, {"kurulum": True}))
+    with engine.begin() as c:
+        with pytest.raises(ProjeBaglamiYok):
+            _baglamsiz(enqueue, c, "proje_isi", registry=reg)
+        with pytest.raises(ProjeBaglamiYok):  # bu süreçte kayıtsız tür de bağlam ister
+            _baglamsiz(enqueue, c, "kayitsiz_tur")
+        k1 = _baglamsiz(enqueue, c, "bakim", registry=reg)
+        k2 = enqueue(c, "bakim", registry=reg)  # bağlam olsa da kurulum işi NULL projeli
+        acik = _baglamsiz(enqueue, c, "proje_isi", registry=reg, project_id=None)
+        p = enqueue(c, "proje_isi", registry=reg)
+        b = enqueue(c, "proje_isi", registry=reg, project_id="test-b")
+    assert [_job(engine, j).project_id for j in (k1, k2, acik, p, b)] == [
+        None, None, None, mevcut_pid(), "test-b",
+    ]  # fmt: skip
+
+
+def test_is_kendi_projesinin_baglaminda_kosar(engine: Engine) -> None:
+    gorulen: list[tuple[str | None, str | None, str | None]] = []
+
+    def kaydet(ctx: JobContext) -> None:
+        b = varsa()
+        gorulen.append((ctx.project_id, b.pid if b else None, b.kaynak if b else None))
+
+    reg = _kayit(kaydet=(kaydet, {}), bakim=(kaydet, {"kurulum": True}))
+    with engine.begin() as c:
+        enqueue(c, "kaydet", registry=reg, project_id="test-b")
+        enqueue(c, "bakim", registry=reg)
+    # worker bağlamsızdır; kullanıcı başka projede olsa da iş kendi projesinde koşar
+    with proje_icinde("baska", kaynak="test"):
+        assert process_one(engine, "w1", reg).durum == "done"
+    assert _baglamsiz(process_one, engine, "w1", reg).durum == "done"
+    assert gorulen == [("test-b", "test-b", "is"), (None, None, None)]
+
+
+def test_idempotency_proje_basina(engine: Engine) -> None:
+    with engine.begin() as c:
+        a1 = enqueue(c, "noop", idempotency_key="gece:2026-11-15")
+        a2 = enqueue(c, "noop", idempotency_key="gece:2026-11-15")
+        b1 = enqueue(c, "noop", idempotency_key="gece:2026-11-15", project_id="test-b")
+        k1 = enqueue(c, "noop", idempotency_key="gece:2026-11-15", project_id=None)
+        k2 = enqueue(c, "noop", idempotency_key="gece:2026-11-15", project_id=None)
+    assert a1 == a2 and k1 == k2 and len({a1, b1, k1}) == 3
+    with proje_icinde("test-b", kaynak="test"), engine.begin() as c:
+        wf, jid = start_workflow(c, "demo", "u", idempotency_key="r2c:TPD-1")
+    with engine.begin() as c:  # aynı anahtar test-a'da yeni akış açar
+        wf2, jid2 = start_workflow(c, "demo", "u", idempotency_key="r2c:TPD-1")
+    assert wf != wf2 and jid != jid2
+    assert (_job(engine, jid).project_id, _job(engine, jid2).project_id) == ("test-b", "test-a")
+
+
+def test_idempotency_kilidi_proje_basina(engine: Engine) -> None:
+    with engine.connect() as c1:
+        tx = c1.begin()
+        jobs.idempotency_lock(c1, "k")  # test-a:k
+        with engine.connect() as c2:
+            c2.execute(text("SET lock_timeout = '1s'"))
+            c2.commit()
+            with c2.begin():
+                jobs.idempotency_lock(c2, "k", project_id="test-b")  # beklemez
+            with pytest.raises(Exception, match="lock timeout"), c2.begin():
+                jobs.idempotency_lock(c2, "k")
+        tx.rollback()
+
+
+def test_basarisiz_akis_kendi_projesinin_zincirine_yazilir(engine: Engine) -> None:
+    def patla(_ctx: JobContext) -> None:
+        raise PermanentJobError("kalıcı")
+
+    reg = _kayit(patla=(patla, {}))
+    with proje_icinde("test-b", kaynak="test"), engine.begin() as c:
+        wf, _ = start_workflow(c, "demo", "u", job_tur="patla")
+    assert _baglamsiz(process_one, engine, "w1", reg).durum == "failed"
+    with engine.connect() as c:
+        satir = c.execute(
+            text("SELECT project_id FROM audit_event WHERE nesne = :n AND ozet->>'to' = 'failed'"),
+            {"n": f"workflow_instance:{wf}"},
+        ).all()
+        assert [r.project_id for r in satir] == ["test-b"]
+        assert verify_chain(c, "test-b").ok
+        durum = c.execute(
+            text("SELECT durum FROM workflow_instance WHERE project_id = 'test-b' AND id = :i"),
+            {"i": wf},
+        ).scalar_one()
+    assert durum == "failed"
+
+
+def test_kurulum_kancasi_bir_kez_baglamsiz_proje_kancasi_her_projede(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cagri: list[tuple[str, str | None]] = []
+
+    def proje_kancasi(_conn) -> None:
+        cagri.append(("proje", mevcut_pid()))
+
+    def kurulum_kancasi(_conn) -> None:
+        b = varsa()
+        cagri.append(("kurulum", b.pid if b else None))
+
+    kurulum_kancasi.kurulum = True  # type: ignore[attr-defined]
+    p_ad = _sahte_kanca_modulu(monkeypatch, proje_kancasi)
+    k_ad = _sahte_kanca_modulu(monkeypatch, kurulum_kancasi)
+    with engine.connect() as c:
+        projeler = kurulu_projeler(c)
+    assert _baglamsiz(worker.acilis_kancalari, [p_ad, k_ad]) == [p_ad, k_ad]
+    assert cagri == [("proje", p) for p in projeler] + [("kurulum", None)]

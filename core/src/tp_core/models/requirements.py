@@ -26,7 +26,15 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, Session, UOWTransaction, mapped_column
 
 from tp_core.models import enums
-from tp_core.models.base import NOW, Base, guncelleme_col, in_check, olusturma_col, uuid_pk
+from tp_core.models.base import (
+    NOW,
+    Base,
+    ProjeKapsamli,
+    guncelleme_col,
+    in_check,
+    olusturma_col,
+    uuid_pk,
+)
 from tp_core.workflow.states import CONTENT_FIELDS, MACHINES
 
 EMPTY_LIST = text("'[]'::jsonb")
@@ -38,7 +46,7 @@ def _durum(entity: str) -> Mapped[str]:
     return mapped_column(default=m.initial, server_default=m.initial)
 
 
-class Requirement(Base):
+class Requirement(ProjeKapsamli, Base):
     """Jira story'si veya serbest metin gereksinim (TEKNIK-TASARIM §7, §8.2, §8.2a)."""
 
     __tablename__ = "requirement"
@@ -47,11 +55,13 @@ class Requirement(Base):
         in_check("durum", enums.durumlar("requirement"), "requirement_durum_ck"),
         in_check("po_onay_kaynagi", enums.PO_ONAY_KAYNAGI, "requirement_po_kaynak_ck", True),
         CheckConstraint("kaynak <> 'jira' OR jira_key IS NOT NULL", name="requirement_jira_key_ck"),
+        UniqueConstraint("project_id", "jira_key", name="requirement_proje_jira_key_uq"),
+        Index("requirement_proje_olusturma_ix", "project_id", "olusturma"),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
     kaynak: Mapped[str]
-    jira_key: Mapped[str | None] = mapped_column(unique=True)
+    jira_key: Mapped[str | None]
     baslik: Mapped[str]
     aciklama: Mapped[str] = mapped_column(server_default="", default="")
     kabul_kriterleri: Mapped[list[Any]] = mapped_column(
@@ -120,7 +130,7 @@ def case_id(requirement: Requirement, sira_no: int, uretim_no: int) -> uuid.UUID
     return uuid.uuid5(NAMESPACE_TEST_CASE, f"{kaynak}:{sira_no}:{uretim_no}")
 
 
-class RequirementReview(Base):
+class RequirementReview(ProjeKapsamli, Base):
     """AI ön incelemesi: PO'ya sorular (§8.2a)."""
 
     __tablename__ = "requirement_review"
@@ -147,7 +157,7 @@ class RequirementReview(Base):
     guncelleme: Mapped[datetime] = guncelleme_col()
 
 
-class ConsistencyFinding(Base):
+class ConsistencyFinding(ProjeKapsamli, Base):
     """Doküman ↔ kod/veri tutarlılık bulgusu (§8.2b); kanıt doğrulanmadan gösterilmez."""
 
     __tablename__ = "consistency_finding"
@@ -182,7 +192,7 @@ class ConsistencyFinding(Base):
     guncelleme: Mapped[datetime] = guncelleme_col()
 
 
-class TestCase(Base):
+class TestCase(ProjeKapsamli, Base):
     """Şemalı test case (§7). `icerik` case şemasındaki JSON'dur; hash bunun üstündendir."""
 
     __tablename__ = "test_case"
@@ -193,6 +203,7 @@ class TestCase(Base):
         in_check("uretim_modu", enums.URETIM_MODU, "test_case_mod_ck", True),
         Index("test_case_req_ix", "requirement_id"),
         UniqueConstraint("requirement_id", "sira_no", "uretim_no", name="test_case_sira_uq"),
+        Index("test_case_proje_olusturma_ix", "project_id", "olusturma"),
     )
 
     # Rastgele varsayılan YOK: kimlik `case_id(requirement, sira_no, uretim_no)` ile verilir.
@@ -215,7 +226,7 @@ class TestCase(Base):
     guncelleme: Mapped[datetime] = guncelleme_col()
 
 
-class Review(Base):
+class Review(ProjeKapsamli, Base):
     """İnsan kararı / onay kaydı: onayın doğruluk kaynağı (Constitution I).
 
     §7'deki `review` tablosunun genelleştirilmiş hali: `nesne_turu` + `nesne_id` ile test_case,

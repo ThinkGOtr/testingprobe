@@ -19,11 +19,18 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Index, Integer, text
+from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Index, Integer, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from tp_core.models.base import Base, guncelleme_col, in_check, olusturma_col, uuid_pk
+from tp_core.models.base import (
+    Base,
+    ProjeKapsamli,
+    guncelleme_col,
+    in_check,
+    olusturma_col,
+    uuid_pk,
+)
 
 AJAN_TESTI_DURUM = frozenset({"queued", "running", "passed", "failed", "error"})
 AJAN_TESTI_SUREC = frozenset({"tamamlandi", "bulgu", "onay_gecersiz", "hata", "simule"})
@@ -32,7 +39,7 @@ DENETIM_KARAR = frozenset({"gec", "uyar", "engelle"})
 DENETIM_KAYNAK = frozenset({"tp-gecit", "agent-probe", "sim"})
 
 
-class AjanUrunuBaglantisi(Base):
+class AjanUrunuBaglantisi(ProjeKapsamli, Base):
     __tablename__ = "ajan_urunu_baglantisi"
 
     requirement_id: Mapped[uuid.UUID] = mapped_column(
@@ -44,12 +51,13 @@ class AjanUrunuBaglantisi(Base):
     guncelleme: Mapped[datetime] = guncelleme_col()
 
 
-class AjanTestiTalebi(Base):
+class AjanTestiTalebi(ProjeKapsamli, Base):
     __tablename__ = "ajan_testi_talebi"
     __table_args__ = (
         in_check("durum", AJAN_TESTI_DURUM, "ajan_testi_talebi_durum_ck"),
         in_check("surec", AJAN_TESTI_SUREC, "ajan_testi_talebi_surec_ck", nullable=True),
         Index("ajan_testi_talebi_req_ix", "requirement_id", "olusturma"),
+        UniqueConstraint("project_id", "talep_no", name="ajan_testi_talebi_proje_talep_no_uq"),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
@@ -57,7 +65,7 @@ class AjanTestiTalebi(Base):
         ForeignKey("requirement.id", ondelete="CASCADE")
     )
     urun_kodu: Mapped[str]
-    talep_no: Mapped[str] = mapped_column(unique=True)
+    talep_no: Mapped[str]
     durum: Mapped[str] = mapped_column(server_default="queued", default="queued")
     ozet: Mapped[str] = mapped_column(server_default="", default="")
     sonuc: Mapped[dict[str, Any]] = mapped_column(
@@ -75,7 +83,7 @@ class AjanTestiTalebi(Base):
     guncelleme: Mapped[datetime] = guncelleme_col()
 
 
-class AsistanDenetim(Base):
+class AsistanDenetim(ProjeKapsamli, Base):
     __tablename__ = "asistan_denetim"
     __table_args__ = (
         in_check("yon", DENETIM_YON, "asistan_denetim_yon_ck"),

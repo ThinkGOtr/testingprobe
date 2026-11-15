@@ -26,6 +26,7 @@ from tp_core.models import (
     WorkflowInstance,
     case_id,
 )
+from tp_core.proje import baglamla, pid_param
 from tp_core.workflow.service import (
     SYSTEM,
     ApprovalNotAllowed,
@@ -44,6 +45,12 @@ from tp_core.workflow.service import record_approval as _record_approval
 from .conftest import Db
 
 MakeUser = Callable[..., Principal]
+
+
+@pytest.fixture(autouse=True)
+def _proje_baglami(proje: object) -> None:
+    """İş akışı ve kuyruk proje kapsamlıdır: testler `test-a` bağlamında koşar
+    (TP-COK-PROJE-PLANI §2.1, §5.1)."""
 
 
 def record_approval(session: Session, entity: object, user: object, karar: str, **kw: object):
@@ -129,8 +136,8 @@ def test_case_onay_ve_yayin_mutlu_yol(session: Session, make_user: MakeUser) -> 
     session.commit()
     conn = session.connection()
     eylemler = conn.execute(
-        text("SELECT eylem FROM audit_event WHERE nesne = :n ORDER BY id"),
-        {"n": f"test_case:{c.id}"},
+        text("SELECT eylem FROM audit_event WHERE project_id = :pid AND nesne = :n ORDER BY id"),
+        pid_param(n=f"test_case:{c.id}"),
     ).scalars()
     assert list(eylemler) == [
         "review.accept",
@@ -235,9 +242,10 @@ def test_rol_reddi_etiketli_mesaj_ve_authz_denied(
     with engine.connect() as conn:
         redler = conn.execute(
             text(
-                "SELECT aktor, nesne, ozet FROM audit_event WHERE eylem = 'authz.denied' "
-                "ORDER BY id"
-            )
+                "SELECT aktor, nesne, ozet FROM audit_event WHERE project_id = :pid "
+                "AND eylem = 'authz.denied' ORDER BY id"
+            ),
+            pid_param(),
         ).all()
     assert [(a, n, o["izin"], o["neden"]) for a, n, o in redler] == [
         (testci.kullanici_adi, f"test_case:{c.id}:approve", "case.approve", "rol"),
@@ -294,7 +302,10 @@ def test_duzeltip_onay_yeni_hash(session: Session, make_user: MakeUser) -> None:
     session.commit()
     ozet = (
         session.connection()
-        .execute(text("SELECT ozet FROM audit_event WHERE eylem = 'review.edit'"))
+        .execute(
+            text("SELECT ozet FROM audit_event WHERE project_id = :pid AND eylem = 'review.edit'"),
+            pid_param(),
+        )
         .scalar_one()
     )
     assert (ozet["gorulen_hash"], ozet["hash"]) == (gorulen, content_hash(yeni))
@@ -417,7 +428,7 @@ def test_iki_oturum_ayni_gecisi_yaparsa_biri_kaybeder(engine: Engine) -> None:
                 s.rollback()
                 sonuclar.append("cakisma")
 
-    iplikler = [threading.Thread(target=dene) for _ in range(2)]
+    iplikler = [threading.Thread(target=baglamla(dene)) for _ in range(2)]
     for t in iplikler:
         t.start()
     for t in iplikler:
@@ -769,7 +780,7 @@ def test_onay_ve_gecis_eszamanli_kilitlenmez(engine: Engine, make_user: MakeUser
             except Exception as exc:  # sqlalchemy sarmalayıcısı
                 sonuc["b"] = "deadlock" if "deadlock" in str(exc) else repr(exc)
 
-    iplikler = [threading.Thread(target=a), threading.Thread(target=b)]
+    iplikler = [threading.Thread(target=baglamla(a)), threading.Thread(target=baglamla(b))]
     for t in iplikler:
         t.start()
     for t in iplikler:
@@ -787,7 +798,9 @@ def test_geri_alinan_islemin_denetim_kaydi_yazilmaz(engine: Engine) -> None:
         s.rollback()
         assert pending_audit(s) == []
     with engine.connect() as c:
-        assert c.execute(text("SELECT count(*) FROM audit_event")).scalar_one() == 0
+        # hiçbir projenin zincirine yazılmadı
+        tum = text("SELECT count(*) FROM audit_event /* project_id süzülmez */")
+        assert c.execute(tum).scalar_one() == 0
 
 
 # ------------------------------------------- PO onayı içeriğe bağlı (case üretimi, Jira)

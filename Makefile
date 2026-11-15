@@ -74,7 +74,7 @@ locator-break-verify: ## Çevrimdışı ön kontrol: kırılma → yalnızca add
 demo-baseline: ## Forge main → demo-baseline + demo-app-web yeniden derlenir (PR kaydı korunur)
 	@scripts/forge-init.sh baseline
 
-export-audit: ## Denetim kaydını exports/audit-*.jsonl + .sha256 olarak dışa aktarır
+export-audit: ## Denetim kaydını proje başına exports/audit-<pid>-*.jsonl + .sha256 olarak dışa aktarır
 	@scripts/export-audit.sh
 
 security-check: ## 10 güvenlik kontrolü (port, izolasyon, denetim rolü, sır, demoapp_ro, model anahtarı, MCP ağı, yazma kimlikleri, merge kapısı, CI imajında ajan yok)

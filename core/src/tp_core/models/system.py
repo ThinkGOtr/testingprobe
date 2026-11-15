@@ -7,12 +7,20 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import BigInteger, Boolean, Index, Integer, Numeric, text
+from sqlalchemy import BigInteger, Boolean, Index, Integer, Numeric, String, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from tp_core.models import enums
-from tp_core.models.base import NOW, Base, guncelleme_col, in_check, olusturma_col, uuid_pk
+from tp_core.models.base import (
+    NOW,
+    Base,
+    ProjeKapsamli,
+    guncelleme_col,
+    in_check,
+    olusturma_col,
+    uuid_pk,
+)
 from tp_core.models.requirements import EMPTY_OBJ, _durum
 
 
@@ -28,12 +36,16 @@ class Job(Base):
             "olusturma",
             postgresql_where=text("durum IN ('queued', 'retry')"),
         ),
+        # 0045: tekillik proje başına; NULL proje (kurulum işi) kendi içinde tekil.
         Index(
             "job_idempotency_uq",
+            "project_id",
             "idempotency_key",
             unique=True,
+            postgresql_nulls_not_distinct=True,
             postgresql_where=text("idempotency_key IS NOT NULL"),
         ),
+        Index("job_proje_olusturma_ix", "project_id", "olusturma"),
         # 012 oracle hız sınırı ve gereksinim işi birleştirme (migrasyon 0034; review 2 t2 N10).
         Index(
             "job_oracle_case_ix",
@@ -63,6 +75,8 @@ class Job(Base):
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
+    # NULL = kurulum geneli bakım işi (`job_handler(kurulum=True)`); otomatik filtreye girmez.
+    project_id: Mapped[str | None] = mapped_column(String(64))
     tur: Mapped[str]
     durum: Mapped[str] = mapped_column(server_default="queued", default="queued")
     yuk: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
@@ -82,7 +96,7 @@ class Job(Base):
     guncelleme: Mapped[datetime] = guncelleme_col()
 
 
-class WorkflowInstance(Base):
+class WorkflowInstance(ProjeKapsamli, Base):
     """İş akışı örneği (demo: Temporal yerine Postgres; `temporal_id` yerine `job_id`)."""
 
     __tablename__ = "workflow_instance"
@@ -103,7 +117,7 @@ class WorkflowInstance(Base):
     guncelleme: Mapped[datetime] = guncelleme_col()
 
 
-class AiCall(Base):
+class AiCall(ProjeKapsamli, Base):
     """Her model çağrısı (append-only; uygulama rolü yalnızca INSERT/SELECT)."""
 
     __tablename__ = "ai_call"
@@ -112,6 +126,7 @@ class AiCall(Base):
         Index("ai_call_workflow_ix", "workflow_id"),
         Index("ai_call_olusturma_ix", "olusturma"),
         Index("ai_call_parent_ix", "parent_call_id"),  # 0017: asistan soru başı harcama
+        Index("ai_call_proje_olusturma_ix", "project_id", "olusturma"),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
@@ -139,7 +154,7 @@ class AiCall(Base):
     olusturma: Mapped[datetime] = olusturma_col()
 
 
-class ToolCall(Base):
+class ToolCall(ProjeKapsamli, Base):
     """Her araç çağrısı (ajan veya IDE kanalı); append-only."""
 
     __tablename__ = "tool_call"
@@ -160,7 +175,7 @@ class ToolCall(Base):
     zaman: Mapped[datetime] = olusturma_col()
 
 
-class AuditEvent(Base):
+class AuditEvent(ProjeKapsamli, Base):
     """Hash zincirli denetim kaydı; yazım yalnızca `audit_on_commit` / `append_audit` ile."""
 
     __tablename__ = "audit_event"
@@ -182,6 +197,8 @@ class AuditEvent(Base):
             "id",
             postgresql_where=text("eylem = 'worker.model_mode'"),
         ),
+        UniqueConstraint("project_id", "prev_hash", name="audit_event_proje_prev_hash_uq"),
+        Index("audit_event_proje_id_ix", "project_id", "id"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -190,5 +207,5 @@ class AuditEvent(Base):
     eylem: Mapped[str]
     nesne: Mapped[str | None]
     ozet: Mapped[Any | None] = mapped_column(JSONB)
-    prev_hash: Mapped[str] = mapped_column(unique=True)
+    prev_hash: Mapped[str]
     hash: Mapped[str] = mapped_column(unique=True)
