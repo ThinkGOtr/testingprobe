@@ -5,7 +5,7 @@ import { api } from "../api/client";
 import { ApiError } from "../api/http";
 import { useOlay } from "../api/events";
 import type { Bulgu, GereksinimDetay as Detay } from "../api/types";
-import { useIzin, useIzinler } from "../auth";
+import { useIzin, useIzinler, useOzellik } from "../auth";
 import { AjanUrunuPaneli, useAjanTesti } from "../components/AjanUrunuPaneli";
 import { AkisAdimlari } from "../components/AkisAdimlari";
 import { BazDegerKarti } from "../components/BazDegerKarti";
@@ -54,7 +54,9 @@ export function GereksinimDetay() {
   const detay = useVeri(() => api.gereksinim(id), [id]);
   const bulgular = useVeri(() => api.bulgular(id), [id]);
   // 011 F6: ajan ürününe bağlı gereksinimde test Agent Probe'da koşar (case akışı kapalı).
-  const ajan = useAjanTesti(id);
+  // Projede Agent Probe kapalıysa (`ozellikler.ai_agent`) ajan ucu okunmaz; bölüm ve gezgin girdisi çizilmez.
+  const ajanAcik = useOzellik("ai_agent");
+  const ajan = useAjanTesti(id, ajanAcik);
   // Gereksinim makinesi `done` ile biter; kod → bug adımları (5–14) yol haritasıyla aynı kanıtlardan.
   const tamamMi = detay.veri?.durum === "done";
   const izinler = useIzinler();
@@ -173,7 +175,7 @@ export function GereksinimDetay() {
   const uretimBasladiMetni = kip === "iki_tur" ? "Tasarım modeli üretimi başlatıldı (iki tur)." : "Case üretimi başlatıldı.";
   const uretimiBaslat = () =>
     eylem(uretim, () => api.caseUret(g.id, kip).catch(caseUretHatasi), uretimBasladiMetni).then(() => setYenidenOnay(false));
-  const ajanGorunur = !!ajan.veri;
+  const ajanGorunur = ajanAcik && !!ajan.veri;
   const bolumler = BOLUMLER.filter((b) => (b.id === BOLUM_ID.model ? modelGorunur : b.id === BOLUM_ID.ajan ? ajanGorunur : true));
   const gherkin = caseVar && !ajanBagli && caseler.veri && (
     <GherkinIndir requirementId={g.id} anahtar={g.jira_key ?? g.id} caseler={caseler.veri} />
@@ -369,7 +371,7 @@ export function GereksinimDetay() {
             <PoKarti g={g} yenile={tumunuYenile} />
           </div>
 
-          <AjanUrunuPaneli id={g.id} bolumId={BOLUM_ID.ajan} ajan={ajan} caseVar={caseVar} degisti={tumunuYenile} />
+          {ajanAcik && <AjanUrunuPaneli id={g.id} bolumId={BOLUM_ID.ajan} ajan={ajan} caseVar={caseVar} degisti={tumunuYenile} />}
 
           <BazDegerKarti
             id={BOLUM_ID.baz}

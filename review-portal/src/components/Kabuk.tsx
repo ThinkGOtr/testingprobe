@@ -2,8 +2,8 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { canliDerleme, cekirdekYetenekleri, mockDegisikligineAbone, mockUclari, mockZorunlu, ucVar, type Yetenekler } from "../api/http";
 import { useBaglantiDurumu, type BaglantiDurumu } from "../api/events";
-import type { Rol } from "../api/types";
-import { DEMO_ROTALARI, useDemoModu, useIzin, useIzinler, useOturum } from "../auth";
+import type { ProjeOzelligi, Rol } from "../api/types";
+import { DEMO_ROTALARI, useDemoModu, useIzin, useIzinler, useOturum, useOzellikler, useProjeBaglami } from "../auth";
 import { izinVar, normalizeRol, rolEtiketi, ROTA_IZINLERI } from "../lib/yetki";
 import { useCapayaKaydir } from "../lib/capa";
 import { TEMA_ETIKETI, useTema } from "../lib/tema";
@@ -26,6 +26,8 @@ interface NavOgesi {
   odak?: Rol[];
   /** Ekranın core'daki veri ucu. Canlı derlemede core bu ucu sunmuyorsa öğe pasiftir ("bu fazda yok"). */
   uc: readonly [string, string];
+  /** Öğe bu proje özelliğine bağlı (`/auth/me` → `ozellikler`); özellik kapalıysa çizilmez. */
+  ozellik?: ProjeOzelligi;
 }
 
 /** Menü öğeleri; görünürlük `ROTA_IZINLERI`'nden (ANALIZ 012 §4.2): izni olmayan öğe çizilmez. */
@@ -50,7 +52,7 @@ const NAV: { grup: string; ogeler: NavOgesi[] }[] = [
       { yol: "/yol-haritasi", ad: "Demo yol haritası", ikon: "harita", odak: ["admin"], uc: ["GET", "/requirements"] },
       { yol: "/kontrol-kulesi", ad: "Kontrol Kulesi", ikon: "kule", odak: ["admin", "viewer"], uc: ["GET", "/control-tower"] },
       { yol: "/demo", ad: "Demo kontrolleri", ikon: "demo", odak: ["admin"], uc: ["POST", "/demo/break-locator"] },
-      { yol: "/ajan-urunleri", ad: "Ajan ürünleri", ikon: "asistan", odak: ["tester"], uc: ["GET", "/agent-probe/products"] },
+      { yol: "/ajan-urunleri", ad: "Ajan ürünleri", ikon: "asistan", odak: ["tester"], uc: ["GET", "/agent-probe/products"], ozellik: "ai_agent" },
       { yol: "/denetim", ad: "Denetim kaydı", ikon: "denetim", odak: ["auditor"], uc: ["GET", "/audit"] },
       { yol: "/claude-code", ad: "Claude Code kanalı", ikon: "terminal", uc: ["GET", "/tokens"] },
     ],
@@ -87,6 +89,11 @@ export function useCanliYetenekler(): Yetenekler | null {
     };
   }, []);
   return y;
+}
+
+/** Üst çubuktaki proje bağlamı metni: "Organizasyon · Proje" (biri yoksa yalnız diğeri). */
+export function projeMetni(b: { organizasyon: string | null; proje: string | null }): string {
+  return [b.organizasyon, b.proje].filter(Boolean).join(" · ");
 }
 
 /** Avatar için baş harfler (en çok iki): "Cengizhan Gunaydin" → "CG", "sunucu" → "S". */
@@ -153,6 +160,8 @@ function KabukIcerik() {
   // Demo menü öğeleri (Demo yol haritası, Demo kontrolleri) demo kipi kapalıyken gizlenir.
   const demoModu = useDemoModu(izinVar(izinler, "demo.read", "demo.manage"));
   const olaylarAcik = useIzin("events.read");
+  const ozellikler = useOzellikler();
+  const projeBaglami = useProjeBaglami();
   const cikis = useCikis();
   const kip = useKimlikKipi();
   const kimlikServisiYok = useKimlikServisiErisilemez();
@@ -323,6 +332,12 @@ function KabukIcerik() {
               <span className="baglanti-metin">{b.etiket}</span>
             </span>
           )}
+          {/* Merkezi yapılandırma kipinde oturumun organizasyonu ve projesi ("CCI · Bayi Portalı"); yoksa hiç çizilmez. */}
+          {projeBaglami && (
+            <span className="proje-baglami" role="group" aria-label="Organizasyon ve proje" data-testid="proje-baglami" title={projeMetni(projeBaglami)}>
+              {projeMetni(projeBaglami)}
+            </span>
+          )}
           {kip.kip !== "local" && <AiprobeDegistirici />}
           <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={temaDegistir} aria-label={`${TEMA_ETIKETI[tema]} (değiştir)`}>
             <Ikon ad={tema === "koyu" ? "ay" : tema === "acik" ? "gunes" : "sistem"} />
@@ -363,11 +378,19 @@ function KabukIcerik() {
               <span className="menu-kullanici-rol">
                 Rol: <RolSecici />
               </span>
+              {projeBaglami && (
+                <span className="menu-kullanici-rol" role="group" aria-label="Organizasyon ve proje">
+                  {projeMetni(projeBaglami)}
+                </span>
+              )}
             </div>
           )}
           {NAV.map((g) => {
             const ogeler = g.ogeler.filter(
-              (o) => izinVar(izinler, ...(ROTA_IZINLERI[o.yol] ?? [])) && !(demoModu === false && DEMO_ROTALARI.includes(o.yol)),
+              (o) =>
+                izinVar(izinler, ...(ROTA_IZINLERI[o.yol] ?? [])) &&
+                !(demoModu === false && DEMO_ROTALARI.includes(o.yol)) &&
+                (!o.ozellik || ozellikler.acik(o.ozellik)),
             );
             if (ogeler.length === 0) return null;
             return (

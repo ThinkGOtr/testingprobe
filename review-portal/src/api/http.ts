@@ -439,8 +439,13 @@ async function istekGonder<T>(
   if (res.status === 422 && yolGecersiz) throw new ApiError(404, VARSAYILAN_HATA[404], { kod: kod ?? GECERSIZ_KIMLIK });
   // Demo kipi kapalı (core 403 `demo_kapali`): genel "yetkiniz yok" yerine nedeni söylenir.
   if (kod === "demo_kapali") throw new ApiError(res.status, detail && detail !== VARSAYILAN_HATA[403] ? detail : DEMO_KAPALI, { kod, ek, govde, hatalar });
+  // Projede kapalı özellik (core 409 `ozellik_kapali`; ör. kapalı platform): yapılandırma ayrıntısı yerine sabit Türkçe metin.
+  if (kod === "ozellik_kapali") throw new ApiError(res.status, OZELLIK_KAPALI, { kod, ek, govde, hatalar });
   throw new ApiError(res.status, detail ?? VARSAYILAN_HATA[res.status] ?? `Beklenmeyen hata (HTTP ${res.status}).`, { kod, ek, govde, hatalar });
 }
+
+/** core 409 `ozellik_kapali` iletisi: istenen platform/özellik bu projede kapalı (merkezi yapılandırma). */
+export const OZELLIK_KAPALI = "Bu özellik bu projede kapalı; açılması için proje yöneticinize başvurun.";
 
 /** core 403 `demo_kapali` iletisi (TP_DEMO_MODE=0). */
 export const DEMO_KAPALI = "Demo kipi kapalı (TP_DEMO_MODE=0)";

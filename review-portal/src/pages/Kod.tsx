@@ -5,7 +5,7 @@ import { useOlay } from "../api/events";
 import { useBildirim } from "../components/Bildirim";
 import { BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
-import { useIzin } from "../auth";
+import { useIzin, usePlatformlar } from "../auth";
 import { SCRIPT_DURUMU, scriptIsareti } from "../lib/etiketler";
 import { YEREL_SINIF } from "../lib/kapi";
 import { tarih } from "../lib/format";
@@ -22,6 +22,8 @@ export const DOGRULANMAMIS_UYARISI = "Kod derlenmez ve koşulmaz; PR açılmaz."
 export const OTOMATIK_TETIK_ACIKLAMA = "Bu test, case onaylanınca otomatik kod üretimiyle başlatıldı (Otomasyon ayarı).";
 export const OTOMATIK_TETIK_ROZETI = "Onay sonrası otomatik";
 export const VERI_DEGISTI_METNI = "Test verisi değişti; yeniden üretin";
+/** Projede (`/auth/me` → `ozellikler`) hiçbir platform açık değilken üretim formunun yerindeki bilgi. */
+export const ACIK_PLATFORM_YOK = "Bu projede kod üretimi için açık platform yok.";
 
 const SUREN_DURUMLAR = new Set(["pending", "verifying", "checking"]);
 const scriptPlatformu = (s: Pick<Script, "platform">) => (s.platform === undefined ? "web" : s.platform);
@@ -70,13 +72,18 @@ export function Kod() {
   const [secili, setSecili] = useState<Set<string>>(new Set());
   const [kapatilanlar, setKapatilanlar] = useState(false);
   // 009: üretimin hedef platformu (varsayılan Web). Aynı case her platformda ayrı script/PR alır.
-  const [platform, setPlatform] = useState<Platform>("web");
+  const [seciliPlatform, setPlatform] = useState<Platform>("web");
+  // Projede kapalı platform sunulmaz (`/auth/me` → `ozellikler`; alan yoksa dördü açık). Seçili platform
+  // kapandıysa ilk açık platforma düşülür; hiç açık platform yoksa form yerine bilgi çizilir, üretim pasif.
+  const acikPlatformlar = usePlatformlar();
+  const platformYok = acikPlatformlar.length === 0;
+  const platform: Platform = acikPlatformlar.includes(seciliPlatform) ? seciliPlatform : (acikPlatformlar[0] ?? seciliPlatform);
   // 011: üretim dili ayrı boyuttur. Seçenekler ve repodan algılanan dil core'dan (`GET /code/languages`);
   // uç yoksa (011 öncesi core) `null` döner: seçici çizilmez, üretim bugünkü gibi sürer.
   // `GET /code/languages` `code.generate` ister: yalnız üretebilen rol (Automation Engineer) okur;
   // diğer rollerde istek atılmaz (konsolda 403 ve denetimde sahte `authz.denied` olmasın).
   const uretebilir = useIzin("code.generate");
-  const diller = useVeri(() => (uretebilir ? api.kodDilleri(platform) : Promise.resolve(null)), [platform, uretebilir]);
+  const diller = useVeri(() => (uretebilir && !platformYok ? api.kodDilleri(platform) : Promise.resolve(null)), [platform, uretebilir && !platformYok]);
   // Kullanıcının elle seçtiği dil (yalnız algılanandan farklıysa); platform değişince sıfırlanır.
   const [elleDil, setElleDil] = useState<Dil | null>(null);
   const dilVerisi = diller.veri ?? null;
@@ -143,9 +150,9 @@ export function Kod() {
         eylemler={
           <IslemDugmesi
             izin="code.generate"
-            disabled={seciliAdaylar.length === 0 || !!dilEngeli}
+            disabled={platformYok || seciliAdaylar.length === 0 || !!dilEngeli}
             calisiyor={islem.calisiyor}
-            title={dilEngeli ?? undefined}
+            title={platformYok ? ACIK_PLATFORM_YOK : (dilEngeli ?? undefined)}
             aria-describedby={dogrulanmamis ? "dogrulanmamis-dil-uyarisi" : undefined}
             onClick={async () => {
               // `dil` yalnız elle seçimde gönderilir (core `dil_kaynagi="secildi"`); aksi halde core algılar.
@@ -168,84 +175,93 @@ export function Kod() {
           </IslemDugmesi>
         }
       >
-        <PlatformSecici
-          etiket="Hedef platform"
-          deger={platform}
-          degistir={(p) => {
-            // Bir platform için seçilen case başka platforma taşınmaz: seçim temizlenir.
-            setPlatform(p);
-            setSecili(new Set());
-            // Dil seçenekleri platforma bağlıdır: elle seçim taşınmaz, yeni platformun algılananı gelir.
-            setElleDil(null);
-          }}
-          disabled={islem.calisiyor}
-          aciklamali
-          dilAyri={!!dilVerisi}
-          ipucu="Aynı onaylı case her platform için ayrı test ve ayrı PR olur; listede yalnızca bu platformda kodu üretilmemiş case'ler görünür."
-        />
-        {dilVerisi && seciliDil ? (
-          <DilSecici
-            diller={dilVerisi}
-            deger={seciliDil}
-            degistir={(d) => setElleDil(d === dilVerisi.algilanan ? null : d)}
-            elle={elleGecerli}
-            algilananaDon={() => setElleDil(null)}
-            disabled={islem.calisiyor}
-          />
-        ) : diller.yukleniyor ? (
-          <p className="kucuk soluk dil-yukleniyor" role="status">
-            Dil seçenekleri yükleniyor…
-          </p>
-        ) : (
-          diller.hata && (
-            <Uyari ton="bilgi" baslik="Dil seçenekleri yüklenemedi">
-              {diller.hata} Üretim, repodan algılanan dille sürer.{" "}
-              <button type="button" className="dugme-metin" onClick={() => void diller.yenile()}>
-                Yeniden dene
-              </button>
-            </Uyari>
-          )
-        )}
-        {dogrulanmamis && seciliDil && (
-          <div data-testid="dogrulanmamis-dil-uyarisi">
-            <Uyari ton="uyari" baslik={`Doğrulanmamış dil: ${DIL_ETIKETI[seciliDil]}`} id="dogrulanmamis-dil-uyarisi">
-              {DOGRULANMAMIS_UYARISI} Adımlar tarayıcıda yine doğrulanır; kod "Doğrulanmamış" etiketiyle çıkar, script detayından indirilir. Derleme,
-              koşu ve PR için TypeScript ya da Java seçin.
-            </Uyari>
+        {platformYok ? (
+          <div data-testid="acik-platform-yok">
+            <Uyari ton="bilgi">{ACIK_PLATFORM_YOK}</Uyari>
           </div>
-        )}
-        {islem.hata &&
-          (dilCakismasiMi(islem.hataNesnesi) ? <DilCakismasiKutusu hata={islem.hataNesnesi} /> : <HataKutusu hata={islem.hata} kaynak={islem.hataNesnesi} />)}
-        <UretimAtlananlar sonuclar={atlananlar} caseAdi={caseAdi} kapat={() => setAtlananlar([])} />
-        {caseler.yukleniyor && !caseler.veri ? (
-          <Yukleniyor />
-        ) : caseler.hata && !caseler.veri ? (
-          <HataKutusu hata={caseler.hata} kaynak={caseler.hataNesnesi} yenile={() => void caseler.yenile()} />
-        ) : adaylar.length === 0 ? (
-          <BosDurum baslik={platform === "web" ? "Kodu üretilmemiş onaylı case yok." : `${PLATFORM_ETIKETI[platform]} için kodu üretilmemiş onaylı case yok.`} />
         ) : (
-          <ul className="secim-liste">
-            {adaylar.map((c) => (
-              <li key={c.id}>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={secili.has(c.id)}
-                    onChange={() =>
-                      setSecili((s) => {
-                        const y = new Set(s);
-                        if (y.has(c.id)) y.delete(c.id);
-                        else y.add(c.id);
-                        return y;
-                      })
-                    }
-                  />
-                  <span className="mono">{c.jira_test_key ?? `${c.jira_key ?? "FT"} #${c.sira_no}`}</span> {c.icerik.title}
-                </label>
-                <div className="kucuk soluk secim-alt">Beklenen: {c.icerik.expected_result}</div>
-              </li>
-            ))}
-          </ul>
+          <>
+            <PlatformSecici
+              etiket="Hedef platform"
+              platformlar={acikPlatformlar}
+              deger={platform}
+              degistir={(p) => {
+                // Bir platform için seçilen case başka platforma taşınmaz: seçim temizlenir.
+                setPlatform(p);
+                setSecili(new Set());
+                // Dil seçenekleri platforma bağlıdır: elle seçim taşınmaz, yeni platformun algılananı gelir.
+                setElleDil(null);
+              }}
+              disabled={islem.calisiyor}
+              aciklamali
+              dilAyri={!!dilVerisi}
+              ipucu="Aynı onaylı case her platform için ayrı test ve ayrı PR olur; listede yalnızca bu platformda kodu üretilmemiş case'ler görünür."
+            />
+            {dilVerisi && seciliDil ? (
+              <DilSecici
+                diller={dilVerisi}
+                deger={seciliDil}
+                degistir={(d) => setElleDil(d === dilVerisi.algilanan ? null : d)}
+                elle={elleGecerli}
+                algilananaDon={() => setElleDil(null)}
+                disabled={islem.calisiyor}
+              />
+            ) : diller.yukleniyor ? (
+              <p className="kucuk soluk dil-yukleniyor" role="status">
+                Dil seçenekleri yükleniyor…
+              </p>
+            ) : (
+              diller.hata && (
+                <Uyari ton="bilgi" baslik="Dil seçenekleri yüklenemedi">
+                  {diller.hata} Üretim, repodan algılanan dille sürer.{" "}
+                  <button type="button" className="dugme-metin" onClick={() => void diller.yenile()}>
+                    Yeniden dene
+                  </button>
+                </Uyari>
+              )
+            )}
+            {dogrulanmamis && seciliDil && (
+              <div data-testid="dogrulanmamis-dil-uyarisi">
+                <Uyari ton="uyari" baslik={`Doğrulanmamış dil: ${DIL_ETIKETI[seciliDil]}`} id="dogrulanmamis-dil-uyarisi">
+                  {DOGRULANMAMIS_UYARISI} Adımlar tarayıcıda yine doğrulanır; kod "Doğrulanmamış" etiketiyle çıkar, script detayından indirilir. Derleme,
+                  koşu ve PR için TypeScript ya da Java seçin.
+                </Uyari>
+              </div>
+            )}
+            {islem.hata &&
+              (dilCakismasiMi(islem.hataNesnesi) ? <DilCakismasiKutusu hata={islem.hataNesnesi} /> : <HataKutusu hata={islem.hata} kaynak={islem.hataNesnesi} />)}
+            <UretimAtlananlar sonuclar={atlananlar} caseAdi={caseAdi} kapat={() => setAtlananlar([])} />
+            {caseler.yukleniyor && !caseler.veri ? (
+              <Yukleniyor />
+            ) : caseler.hata && !caseler.veri ? (
+              <HataKutusu hata={caseler.hata} kaynak={caseler.hataNesnesi} yenile={() => void caseler.yenile()} />
+            ) : adaylar.length === 0 ? (
+              <BosDurum baslik={platform === "web" ? "Kodu üretilmemiş onaylı case yok." : `${PLATFORM_ETIKETI[platform]} için kodu üretilmemiş onaylı case yok.`} />
+            ) : (
+              <ul className="secim-liste">
+                {adaylar.map((c) => (
+                  <li key={c.id}>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={secili.has(c.id)}
+                        onChange={() =>
+                          setSecili((s) => {
+                            const y = new Set(s);
+                            if (y.has(c.id)) y.delete(c.id);
+                            else y.add(c.id);
+                            return y;
+                          })
+                        }
+                      />
+                      <span className="mono">{c.jira_test_key ?? `${c.jira_key ?? "FT"} #${c.sira_no}`}</span> {c.icerik.title}
+                    </label>
+                    <div className="kucuk soluk secim-alt">Beklenen: {c.icerik.expected_result}</div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
         )}
       </Kart>
 
@@ -292,6 +308,8 @@ export function Kod() {
                     (s.durum === "blocked" || s.durum === "failed" || veriDegistiGecerli(s, tumScriptler)) &&
                     s.case_ids.length > 0 &&
                     s.platform !== null &&
+                    // Projede kapanan platformun kaydı yeniden üretilmez (core 409 `ozellik_kapali`).
+                    acikPlatformlar.includes(scriptPlatformu(s) as Platform) &&
                     !(s.yerel_sinif === "defect_adayi" || s.engel?.tur === "defect_candidate");
                   return (
                     <tr key={s.id}>

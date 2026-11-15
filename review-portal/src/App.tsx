@@ -27,7 +27,7 @@ import { TestVerisiSayfasi } from "./pages/TestVerisi";
 import { Yayin } from "./pages/Yayin";
 import { YolHaritasi } from "./pages/YolHaritasi";
 import { ROTA_IZINLERI } from "./lib/yetki";
-import { IzinGerekli } from "./components/IzinGerekli";
+import { IzinGerekli, OzellikGerekli } from "./components/IzinGerekli";
 import { useKimlikKipi } from "./lib/kimlikKipi";
 import { AiprobeGirisineYonlendir } from "./pages/AiprobeGiris";
 import { RolSec } from "./pages/RolSec";
@@ -119,7 +119,8 @@ export function Rotalar() {
         <Route path="kontrol-kulesi" element={<Korumali yol="/kontrol-kulesi"><KontrolKulesi /></Korumali>} />
         <Route path="yol-haritasi" element={<Korumali yol="/yol-haritasi"><YolHaritasi /></Korumali>} />
         <Route path="denetim" element={<Korumali yol="/denetim"><Denetim /></Korumali>} />
-        <Route path="ajan-urunleri" element={<Korumali yol="/ajan-urunleri"><AjanUrunleri /></Korumali>} />
+        {/* Agent Probe (ürün AI ajanı) projede kapalıysa (`ozellikler.ai_agent`) ekran yerine "erişim yok". */}
+        <Route path="ajan-urunleri" element={<Korumali yol="/ajan-urunleri"><OzellikGerekli ozellik="ai_agent"><AjanUrunleri /></OzellikGerekli></Korumali>} />
         <Route path="test-verisi" element={<Korumali yol="/test-verisi"><TestVerisiSayfasi /></Korumali>} />
         <Route path="otomasyon" element={<Korumali yol="/otomasyon"><Otomasyon /></Korumali>} />
         <Route path="claude-code" element={<Korumali yol="/claude-code"><ClaudeCode /></Korumali>} />

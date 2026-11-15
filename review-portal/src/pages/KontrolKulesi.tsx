@@ -6,7 +6,7 @@ import type { KontrolKulesi as Kule, KpiAnahtari } from "../api/types";
 import { HedefOlcer, OranSutunlari } from "../components/Grafikler";
 import { BosDurum, Cip, HataKutusu, Ilerleme, Kart, Metrik, Olculmedi, SayfaBasligi, Uyari, Yukleniyor, IzinliLink } from "../components/ui";
 import { useGeciktirilmis, useVeri } from "../hooks";
-import { useIzin } from "../auth";
+import { useIzin, usePlatformlar } from "../auth";
 import { kazancOzeti, type KazancOzeti } from "../api/uyumFaz5";
 import { BAZ_KAYNAGI } from "../components/BazDegerKarti";
 import { dolar, sure, tarih, yuzde } from "../lib/format";
@@ -35,9 +35,10 @@ export function platformDagilimi(scriptler: Script[]): { platform: Platform; top
   });
 }
 
-function PlatformDagilimiKarti({ scriptler, secim }: { scriptler: Script[] | null; secim: PlatformSecimi }) {
+function PlatformDagilimiKarti({ scriptler, secim, acik }: { scriptler: Script[] | null; secim: PlatformSecimi; acik: readonly Platform[] }) {
   if (!scriptler) return null;
-  const satirlar = platformDagilimi(scriptler).filter((r) => secim === "tumu" || r.platform === secim);
+  // Projede kapalı platformun satırı yalnız kayıtlı testi varsa çizilir (mevcut veri gizlenmez).
+  const satirlar = platformDagilimi(scriptler).filter((r) => (secim === "tumu" || r.platform === secim) && (acik.includes(r.platform) || r.toplam > 0));
   return (
     <Kart baslik="Üretilen testler (platform bazında)">
       <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Platform dağılımı tablosu">
@@ -96,7 +97,10 @@ export function KontrolKulesi() {
   const gereksinimOkur = useIzin("requirement.read");
   const scriptler = useVeri(() => (kodOkur ? api.scriptler().catch(() => null) : Promise.resolve(null)), [kodOkur]);
   const [sorgu, setSorgu] = useSearchParams();
-  const secim = platformSecimiOku(sorgu.get("platform"));
+  // Süzgeç projede açık platformları sunar (`/auth/me` → `ozellikler`); adresteki kapalı platform "Tümü" sayılır.
+  const acikPlatformlar = usePlatformlar();
+  const adrestekiSecim = platformSecimiOku(sorgu.get("platform"));
+  const secim: PlatformSecimi = adrestekiSecim === "tumu" || acikPlatformlar.includes(adrestekiSecim) ? adrestekiSecim : "tumu";
   const secimDegistir = (p: PlatformSecimi) => {
     const y = new URLSearchParams(sorgu);
     if (p === "tumu") y.delete("platform");
@@ -440,7 +444,7 @@ export function KontrolKulesi() {
 
       <OnerilerOlcumKarti kule={k} />
 
-      <PlatformDagilimiKarti scriptler={scriptler.veri ?? null} secim={secim} />
+      <PlatformDagilimiKarti scriptler={scriptler.veri ?? null} secim={secim} acik={acikPlatformlar} />
 
       <Kart baslik="Son koşular" eylemler={<KaynakIpucu kaynak={k.kaynaklar.son_kosular} />}>
         {k.son_kosular.length === 0 ? (

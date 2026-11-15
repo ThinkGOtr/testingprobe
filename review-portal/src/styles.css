@@ -631,6 +631,15 @@ button.atla {
   font-size: 0.75rem;
   color: var(--muted);
 }
+/* Merkezi yapılandırma kipinde oturumun "Organizasyon · Proje" bağlamı (Kabuk.tsx): göze batmayan, tek satır. */
+.proje-baglami {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
 
 .baglanti {
   display: inline-flex;
@@ -860,6 +869,7 @@ button.atla {
   }
   .marka-alt,
   .kullanici,
+  .proje-baglami,
   .baglanti-metin {
     display: none;
   }

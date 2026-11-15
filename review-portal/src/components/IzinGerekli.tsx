@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { useIzin, useOturum } from "../auth";
+import { useIzin, useOturum, useOzellik } from "../auth";
+import type { ProjeOzelligi } from "../api/types";
 import { izinRolleri, ROL_ETIKETLERI, type Izin } from "../lib/yetki";
 import { BosDurum, Kart, SayfaBasligi } from "./ui";
 
@@ -23,6 +24,29 @@ export function IzinGerekli({ izin, children }: { izin: Izin | readonly Izin[]; 
         <SayfaBasligi baslik="Erişim yok" />
         <Kart>
           <BosDurum baslik="Bu ekran için yetkiniz yok.">Gereken rol: {gerekenRoller(istenen)}</BosDurum>
+        </Kart>
+      </>
+    );
+  }
+  return <>{children}</>;
+}
+
+/** Projede kapalı özelliğin (`/auth/me` → `ozellikler`) ekranında gösterilen metin. */
+export const OZELLIK_KAPALI_EKRANI = "Bu ekran bu projede kapalı.";
+
+/**
+ * Özellik koruması: projede kapalı özelliğin ekranı (ör. `ai_agent` → Ajan ürünleri) yerine "erişim yok"
+ * kartı, `IzinGerekli` ile aynı biçimde. Alan yoksa (varsayılan kip) her şey açıktır. Kontrol core'dadır
+ * (kapalı Agent Probe uçları 404); bu yalnızca boş/hatalı ekranı önler.
+ */
+export function OzellikGerekli({ ozellik, children }: { ozellik: ProjeOzelligi; children: ReactNode }) {
+  const acik = useOzellik(ozellik);
+  if (!acik) {
+    return (
+      <>
+        <SayfaBasligi baslik="Erişim yok" />
+        <Kart>
+          <BosDurum baslik={OZELLIK_KAPALI_EKRANI}>Açılması için proje yöneticinize başvurun.</BosDurum>
         </Kart>
       </>
     );

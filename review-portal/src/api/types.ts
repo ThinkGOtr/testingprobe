@@ -38,7 +38,20 @@ export interface Kullanici {
   roles?: Rol[];
   /** Yalnız AI Probe oturumunda: kişinin tüm ürünlerdeki rolleri (`{tp: [...], ap: [...]}`; değiştirici). */
   products?: Record<string, string[]>;
+  /**
+   * Projenin açık özellikleri (merkezi yapılandırma servisi). Yoksa (varsayılan/eski kip) her şey
+   * açıktır; varsa eksik anahtar kapalı sayılır (fail-closed). `web/android/ios/windows` platformlar
+   * (`lib/platform.ts`), `ai_agent` Agent Probe (ürün AI ajanı testi) bölümleridir.
+   */
+  ozellikler?: Partial<Record<ProjeOzelligi, boolean>> | null;
+  /** Oturumun organizasyonu (yalnız merkezi yapılandırma kipinde; üst çubukta gösterilir). */
+  organizasyon?: { id: string; ad: string } | null;
+  /** Oturumun projesi (yalnız merkezi yapılandırma kipinde; üst çubukta gösterilir). */
+  proje?: { id: string; ad: string; kod?: string | null } | null;
 }
+
+/** `/auth/me` → `ozellikler` anahtarları: dört platform ve Agent Probe (`ai_agent`). */
+export type ProjeOzelligi = "web" | "android" | "ios" | "windows" | "ai_agent";
 
 /** `POST /auth/logout`: AI Probe oturumunda `redirect` (tüm ürünlerden çıkış sayfası). */
 export interface CikisYaniti {

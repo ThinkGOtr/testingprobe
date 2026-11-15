@@ -21,14 +21,20 @@ export const AJAN_SORGU_MS = 3000;
  * panel hiç çizilmez; diğer hatalar panelde gösterilir. Talep sürerken sonuç D4'ün
  * `POST …/agent-test/refresh` ucuyla işletilip okunur (uç yoksa istemci eski GET'e düşer).
  */
-export function useAjanTesti(id: string): VeriDurumu<AjanTestiGorunumu | null> {
+/**
+ * `etkin` false: projede Agent Probe kapalı (`/auth/me` → `ozellikler.ai_agent`); istek atılmaz, veri null
+ * (bölüm çizilmez, gereksinim ajan ürününe bağlı sayılmaz).
+ */
+export function useAjanTesti(id: string, etkin = true): VeriDurumu<AjanTestiGorunumu | null> {
   const v = useVeri(
     () =>
-      api.ajanTesti(id).catch((e: unknown) => {
-        if (e instanceof ApiError && (e.status === 404 || e.status === 501)) return null;
-        throw e;
-      }),
-    [id],
+      etkin
+        ? api.ajanTesti(id).catch((e: unknown) => {
+            if (e instanceof ApiError && (e.status === 404 || e.status === 501)) return null;
+            throw e;
+          })
+        : Promise.resolve(null),
+    [id, etkin],
   );
   // 012: ajan testini başlatan/işleten Testçi (`agent_test.run`).
   const isletir = useIzin("agent_test.run");

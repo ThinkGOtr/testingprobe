@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api } from "./api/client";
 import { ApiError, mockOturumuAyarla, yetkisizOlunca } from "./api/http";
-import type { Kullanici, Rol } from "./api/types";
+import type { Kullanici, ProjeOzelligi, Rol } from "./api/types";
+import { PLATFORMLAR, type Platform } from "./lib/platform";
 import { oturumVerileriniTemizle } from "./lib/oturumTemizligi";
 import { formlariSakla } from "./lib/formYedegi";
 import { izinVar, KISITLI_BUG_ROLLERI, KISITLI_CASE_ROLLERI, normalizeRol, oturumIzinleri, rotaIzinleri, ROTA_IZINLERI, type Izin } from "./lib/yetki";
@@ -177,6 +178,55 @@ export function useCaseKisitli(): boolean {
 export function useBugKisitli(): boolean {
   const rol = normalizeRol(useContext(Baglam)?.kullanici?.rol);
   return !!rol && KISITLI_BUG_ROLLERI.includes(rol);
+}
+
+/**
+ * Proje özelliği açık mı (`/auth/me` → `ozellikler`). Alan yoksa (varsayılan/eski kip) her şey açıktır;
+ * varsa yalnız açıkça `true` olan özellik açıktır (eksik anahtar kapalı: fail-closed). Yetki core'dadır
+ * (kapalı platform 409 `ozellik_kapali`, kapalı Agent Probe 404); portal yalnız seçeneği göstermez.
+ */
+export function ozellikAcik(kullanici: Pick<Kullanici, "ozellikler"> | null | undefined, ozellik: ProjeOzelligi): boolean {
+  const oz = kullanici?.ozellikler;
+  if (!oz || typeof oz !== "object") return true;
+  return oz[ozellik] === true;
+}
+
+/** Açık platformlar `PLATFORMLAR` sırasıyla (alan yoksa dördü de). */
+export function acikPlatformlar(kullanici: Pick<Kullanici, "ozellikler"> | null | undefined): readonly Platform[] {
+  const oz = kullanici?.ozellikler;
+  if (!oz || typeof oz !== "object") return PLATFORMLAR;
+  return PLATFORMLAR.filter((p) => ozellikAcik(kullanici, p));
+}
+
+export interface Ozellikler {
+  /** Oturum `ozellikler` taşıyor mu (false: varsayılan kip, hepsi açık). */
+  tanimli: boolean;
+  acik: (ozellik: ProjeOzelligi) => boolean;
+}
+
+/** Oturumun proje özellikleri. Sağlayıcı ya da oturum yoksa (bileşen testleri) hepsi açıktır. */
+export function useOzellikler(): Ozellikler {
+  const oz = useContext(Baglam)?.kullanici?.ozellikler;
+  return useMemo(() => ({ tanimli: !!oz && typeof oz === "object", acik: (o: ProjeOzelligi) => ozellikAcik({ ozellikler: oz }, o) }), [oz]);
+}
+
+/** Tek bir özellik açık mı (`useOzellik("ai_agent")`). */
+export function useOzellik(ozellik: ProjeOzelligi): boolean {
+  return useOzellikler().acik(ozellik);
+}
+
+/** Seçicilerde sunulacak açık platformlar (`PLATFORMLAR` sırasıyla; alan yoksa dördü de). */
+export function usePlatformlar(): readonly Platform[] {
+  const oz = useContext(Baglam)?.kullanici?.ozellikler;
+  return useMemo(() => acikPlatformlar({ ozellikler: oz }), [oz]);
+}
+
+/** Üst çubuktaki "Organizasyon · Proje" (yalnız merkezi yapılandırma kipinde; yoksa null). */
+export function useProjeBaglami(): { organizasyon: string | null; proje: string | null } | null {
+  const k = useContext(Baglam)?.kullanici;
+  const org = k?.organizasyon?.ad?.trim() || null;
+  const proje = k?.proje?.ad?.trim() || null;
+  return useMemo(() => (org || proje ? { organizasyon: org, proje } : null), [org, proje]);
 }
 
 /** Demo menü öğeleri ve demo açılış ekranı yalnız demo kipinde (`/demo/status` → `demo_modu`). */

@@ -10,7 +10,7 @@ import { useOlay } from "../../api/events";
 import { ApiError, hataMesaji } from "../../api/http";
 import type { HataKatalogOgesi, HataKosusu, HataKosusuAdimi, HataKosusuDetay, HataKosusuKapsami, HataTuru, KiranTest, MetamorfikIliski, TestCase } from "../../api/types";
 import { hataKosusuSuruyorMu, kaynakBilgisiVar, kaynakOrani, yakalamaOrani } from "../../api/uyumKule";
-import { useIzin } from "../../auth";
+import { useIzin, usePlatformlar } from "../../auth";
 import { useGeciktirilmis, useVeri } from "../../hooks";
 import { ekilmisHataAdi, HATA_ADIM_SONUCU, HATA_KOSUSU_DURUMU, HATA_TURU } from "../../lib/etiketler";
 import { sure, tarih, yuzde } from "../../lib/format";
@@ -155,7 +155,11 @@ export function HataKosusuKarti({ olcuDegisti, olculenKosuId = null }: { olcuDeg
   const katalogHaritasi = useMemo(() => new Map((katalog.veri ?? []).map((h) => [h.kod, h])), [katalog.veri]);
 
   // ---- form
-  const [platformlar, setPlatformlar] = useState<Platform[]>(["web"]); // V5: yalnız web işaretli
+  // Projede açık platformlar (`/auth/me` → `ozellikler`; alan yoksa dördü). Kapalı platform sunulmaz ve gönderilmez.
+  const acikPlatformlar = usePlatformlar();
+  // V5: yalnız web işaretli (web projede kapalıysa ilk açık platform).
+  const [isaretliPlatformlar, setPlatformlar] = useState<Platform[]>(() => (acikPlatformlar.includes("web") ? ["web"] : acikPlatformlar.slice(0, 1)));
+  const platformlar = isaretliPlatformlar.filter((p) => acikPlatformlar.includes(p));
   // null: kullanıcı seçime dokunmadı → kataloğun tamamı (varsayılan hepsi seçili).
   const [hataSecimi, setHataSecimi] = useState<string[] | null>(null);
   const tumHatalar = (katalog.veri ?? []).map((h) => h.kod);
@@ -244,7 +248,7 @@ export function HataKosusuKarti({ olcuDegisti, olculenKosuId = null }: { olcuDeg
         <fieldset className="hk-grup" disabled={formKapali}>
           <legend>Platformlar</legend>
           <div className="hk-secenekler">
-            {PLATFORMLAR.map((p) => (
+            {acikPlatformlar.map((p) => (
               <label key={p} className="hk-secenek">
                 <input
                   type="checkbox"

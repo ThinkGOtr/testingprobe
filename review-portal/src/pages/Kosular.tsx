@@ -3,7 +3,7 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
 import type { HataSinifi, Kosu, KosuDetay as KosuDetayTuru, KosuHatasi, KosuKaynagi, Tetik } from "../api/types";
-import { useIzin, useOturum } from "../auth";
+import { useIzin, useOturum, usePlatformlar } from "../auth";
 import { normalizeRol } from "../lib/yetki";
 import { useBildirim } from "../components/Bildirim";
 import { BosDurum, Cip, Baglanti, HataKutusu, KayitHatasi, IslemDugmesi, Kart, Metrik, SayfaBasligi, Uyari, Yukleniyor, IzinliLink } from "../components/ui";
@@ -211,6 +211,7 @@ export function Kosular() {
   const sessiz = useGeciktirilmis(() => void v.yenile(true));
   useOlay(sessiz, ["ci.status", "failure.classified"]);
   const [sorgu, setSorgu] = useSearchParams();
+  const acikPlatformlar = usePlatformlar();
   const [sonTetik, setSonTetik] = useState<string | null>(null);
   const filtre: Filtre = {
     tetik: (sorgu.get("tetik") ?? "") as Filtre["tetik"],
@@ -373,7 +374,8 @@ export function Kosular() {
                   Platform
                   <select value={filtre.platform} onChange={(e) => ayarla("platform", e.target.value)}>
                     <option value="">Tümü</option>
-                    {PLATFORMLAR.map((p) => (
+                    {/* Projede açık platformlar; adresteki seçim kapalı bir platformsa o da listede kalır (seçim görünür). */}
+                    {PLATFORMLAR.filter((p) => acikPlatformlar.includes(p) || p === filtre.platform).map((p) => (
                       <option key={p} value={p}>
                         {PLATFORM_ETIKETI[p]}
                       </option>

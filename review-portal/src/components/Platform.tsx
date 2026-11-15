@@ -6,8 +6,8 @@
 // ayrılır (renk tek gösterge değil).
 import { useId } from "react";
 import type { ReactNode } from "react";
+import { usePlatformlar } from "../auth";
 import {
-  PLATFORMLAR,
   PLATFORM_ACIKLAMASI,
   PLATFORM_ETIKETI,
   PLATFORM_ORTAMI,
@@ -125,18 +125,21 @@ export function SegmentGrubu<T extends string>({
  * Kod üretiminin hedef platformu (varsayılan Web). `dilAyri`: dil ayrı seçiliyor (011) — seçenek
  * açıklaması yalnız ortam/araçtır ("Tarayıcı · Playwright"), dil adı taşımaz.
  */
-export function PlatformSecici({ dilAyri, ...p }: SeciciOzellikleri<Platform> & { dilAyri?: boolean }) {
+export function PlatformSecici({ dilAyri, platformlar, ...p }: SeciciOzellikleri<Platform> & { dilAyri?: boolean; platformlar?: readonly Platform[] }) {
   const aciklama = dilAyri ? PLATFORM_ORTAMI : PLATFORM_ACIKLAMASI;
-  return <SegmentGrubu {...p} secenekler={PLATFORMLAR.map((x) => ({ deger: x, ad: PLATFORM_ETIKETI[x], aciklama: aciklama[x] }))} />;
+  // Projede kapalı platform (`/auth/me` → `ozellikler`) sunulmaz; verilmezse oturumun açık platformları.
+  const acik = usePlatformlar();
+  return <SegmentGrubu {...p} secenekler={(platformlar ?? acik).map((x) => ({ deger: x, ad: PLATFORM_ETIKETI[x], aciklama: aciklama[x] }))} />;
 }
 
-/** Liste/ölçü süzgeci: "Tümü" + dört platform. */
-export function PlatformSuzgeci(p: SeciciOzellikleri<PlatformSecimi>) {
+/** Liste/ölçü süzgeci: "Tümü" + projede açık platformlar (alan yoksa dördü). */
+export function PlatformSuzgeci({ platformlar, ...p }: SeciciOzellikleri<PlatformSecimi> & { platformlar?: readonly Platform[] }) {
+  const acik = usePlatformlar();
   return (
     <SegmentGrubu
       {...p}
       className={`platform-suzgeci${p.className ? ` ${p.className}` : ""}`}
-      secenekler={[{ deger: "tumu" as PlatformSecimi, ad: "Tümü" }, ...PLATFORMLAR.map((x) => ({ deger: x as PlatformSecimi, ad: PLATFORM_ETIKETI[x] }))]}
+      secenekler={[{ deger: "tumu" as PlatformSecimi, ad: "Tümü" }, ...(platformlar ?? acik).map((x) => ({ deger: x as PlatformSecimi, ad: PLATFORM_ETIKETI[x] }))]}
     />
   );
 }
