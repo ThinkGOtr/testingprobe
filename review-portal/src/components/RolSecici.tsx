@@ -10,7 +10,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { hataMesaji } from "../api/http";
 import type { AiprobeHesabi, Kullanici } from "../api/types";
-import { useOturum } from "../auth";
+import { projeRolleri, useOturum } from "../auth";
 import { useKimlikKipi } from "../lib/kimlikKipi";
 import { rolEtiketi } from "../lib/yetki";
 import { useBildirim } from "./Bildirim";
@@ -34,6 +34,11 @@ export function rolDegisimOturumu(k: Kullanici, onceki: Kullanici | null): Kulla
     kisiler: k.kisiler ?? onceki.kisiler,
     ad_soyad: k.ad_soyad ?? onceki.ad_soyad,
     ad_kaynak: k.ad_kaynak ?? onceki.ad_kaynak,
+    // Rol değişimi projeyi değiştirmez: seçili proje ve o projedeki roller korunur.
+    proje: k.proje ?? onceki.proje,
+    organizasyon: k.organizasyon ?? onceki.organizasyon,
+    roller: k.roller ?? onceki.roller,
+    projeler_sayisi: k.projeler_sayisi ?? onceki.projeler_sayisi,
   };
 }
 
@@ -45,6 +50,16 @@ async function tamOturum(): Promise<Kullanici | null> {
     await new Promise((r) => setTimeout(r, ME_YENIDEN_DENEME_MS));
     return api.me().catch(() => null);
   }
+}
+
+/**
+ * Rol hesaplarından seçili projede geçerli olanlar (`roller` yoksa hepsi; etkin hesap her zaman kalır).
+ * Sunucu da süzer; bu, eski yanıtta başka projenin rolünün listelenmemesi içindir.
+ */
+export function projedekiHesaplar(hesaplar: AiprobeHesabi[], k: Kullanici | null): AiprobeHesabi[] {
+  if (!k?.roller) return hesaplar;
+  const izinli = new Set<string>(k.roller);
+  return hesaplar.filter((h) => h.id === k.id || izinli.has(h.rol));
 }
 
 export function RolSecici() {
@@ -59,7 +74,8 @@ export function RolSecici() {
   const [hata, setHata] = useState<string | null>(null);
   const [gonderilen, setGonderilen] = useState<string | null>(null);
 
-  const cokRollu = kip.kip !== "local" && !!kullanici?.product && (kullanici.roles?.length ?? 0) > 1;
+  // Çok proje: yalnız seçili projedeki roller (`/auth/me` → `roller`) sunulur.
+  const cokRollu = kip.kip !== "local" && !!kullanici?.product && projeRolleri(kullanici).length > 1;
 
   useEffect(() => {
     if (!acik) return;
@@ -67,7 +83,7 @@ export function RolSecici() {
     setHata(null);
     api
       .aiprobeHesaplar()
-      .then((v) => !iptal && setHesaplar(v.hesaplar))
+      .then((v) => !iptal && setHesaplar(projedekiHesaplar(v.hesaplar, kullanici)))
       .catch((e: unknown) => !iptal && setHata(hataMesaji(e)));
     const disTik = (e: MouseEvent) => {
       if (kap.current && !kap.current.contains(e.target as Node)) setAcik(false);

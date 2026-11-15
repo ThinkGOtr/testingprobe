@@ -18,6 +18,8 @@ import { nesneMi } from "./uyum";
 import { dahaFazlaBasligiOku, kodDilleriUyarla, kodUretYanitiUyarla, kontrolKulesiUyarla, kosuDetayUyarla, kosuUyarla, scriptDetayUyarla, scriptListesiUyarla, scriptUyarla } from "./uyumDemoB";
 import { bazYanitiUyarla, demoDurumuUyarla, gereksinimBazi } from "./uyumFaz5";
 import { caseKalitesiUyarla } from "./uyumCaseKalitesi";
+import { projeListesiUyarla } from "./uyumProje";
+import type { ProjeListesi } from "./types";
 import type { CaseKalitesi } from "./types";
 import {
   jiraTetikDurumuUyarla,
@@ -167,6 +169,10 @@ export const api = {
     istek<Kullanici & { continue?: string }>("POST", "/auth/aiprobe/rol-sec", { govde: { app_user_id } }),
   aiprobeRolDegistir: (app_user_id: string) =>
     istek<Kullanici>("POST", "/auth/aiprobe/rol-degistir", { govde: { app_user_id } }),
+  /** Çok proje (§6.2): kullanıcının projeleri ve seçili proje; `enabled:false` → null. */
+  projeler: async (): Promise<ProjeListesi | null> => projeListesiUyarla(await istek<unknown>("GET", "/projeler")),
+  /** Seçili projeyi değiştirir (oturum + kullanıcı kaydı); yanıt yeni `/auth/me`. */
+  projeDegistir: (pid: string) => istek<Kullanici>("PUT", "/proje", { govde: { pid } }),
 
   // Gereksinimler
   gereksinimler: async (): Promise<Gereksinim[]> => listeUyarla(await istek<unknown>("GET", "/requirements"), gereksinimUyarla),

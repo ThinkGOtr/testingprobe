@@ -14,6 +14,7 @@ import { KabukDurumuSaglayici, useKabukDurumu } from "./KabukDurumu";
 import { AiprobeDegistirici, useCikis } from "./AiprobeDegistirici";
 import { useBildirim } from "./Bildirim";
 import { RolSecici } from "./RolSecici";
+import { ProjeRolYok, ProjeSaglayici, ProjeSecici, useProjeDurumu } from "./ProjeSecici";
 import { useKimlikKipi, useKimlikServisiErisilemez } from "../lib/kimlikKipi";
 import { formlariGeriYukle } from "../lib/formYedegi";
 
@@ -146,10 +147,18 @@ function AsistanaAtla() {
 /** Kabuk; App düzeyinde `KabukDurumuSaglayici` yoksa kendi sağlayıcısını kurar. */
 export function Kabuk() {
   const durum = useKabukDurumu();
-  if (durum) return <KabukIcerik />;
+  // Proje seçici durumu (liste, ortak değiştirici, 409/403 proje olayları) Kabuk boyunca tek kaynaktır.
+  if (durum)
+    return (
+      <ProjeSaglayici>
+        <KabukIcerik />
+      </ProjeSaglayici>
+    );
   return (
     <KabukDurumuSaglayici>
-      <KabukIcerik />
+      <ProjeSaglayici>
+        <KabukIcerik />
+      </ProjeSaglayici>
     </KabukDurumuSaglayici>
   );
 }
@@ -162,6 +171,9 @@ function KabukIcerik() {
   const olaylarAcik = useIzin("events.read");
   const ozellikler = useOzellikler();
   const projeBaglami = useProjeBaglami();
+  const projeDurumu = useProjeDurumu();
+  // Seçili proje biliniyorsa "Organizasyon · Proje" satırı seçiciyle birleşir (ortak değiştirici varsa onun menüsünde).
+  const projeSecici = !!projeDurumu?.liste;
   const cikis = useCikis();
   const kip = useKimlikKipi();
   const kimlikServisiYok = useKimlikServisiErisilemez();
@@ -333,10 +345,14 @@ function KabukIcerik() {
             </span>
           )}
           {/* Merkezi yapılandırma kipinde oturumun organizasyonu ve projesi ("Örnek Org · Örnek Proje"); yoksa hiç çizilmez. */}
-          {projeBaglami && (
-            <span className="proje-baglami" role="group" aria-label="Organizasyon ve proje" data-testid="proje-baglami" title={projeMetni(projeBaglami)}>
-              {projeMetni(projeBaglami)}
-            </span>
+          {projeSecici ? (
+            <ProjeSecici />
+          ) : (
+            projeBaglami && (
+              <span className="proje-baglami" role="group" aria-label="Organizasyon ve proje" data-testid="proje-baglami" title={projeMetni(projeBaglami)}>
+                {projeMetni(projeBaglami)}
+              </span>
+            )
           )}
           {kip.kip !== "local" && <AiprobeDegistirici />}
           <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={temaDegistir} aria-label={`${TEMA_ETIKETI[tema]} (değiştir)`}>
@@ -378,10 +394,14 @@ function KabukIcerik() {
               <span className="menu-kullanici-rol">
                 Rol: <RolSecici />
               </span>
-              {projeBaglami && (
-                <span className="menu-kullanici-rol" role="group" aria-label="Organizasyon ve proje">
-                  {projeMetni(projeBaglami)}
-                </span>
+              {projeSecici ? (
+                <ProjeSecici yer="menu" />
+              ) : (
+                projeBaglami && (
+                  <span className="menu-kullanici-rol" role="group" aria-label="Organizasyon ve proje">
+                    {projeMetni(projeBaglami)}
+                  </span>
+                )
               )}
             </div>
           )}
@@ -454,7 +474,7 @@ function KabukIcerik() {
                 : "Bu ekrandaki verinin bir kısmı core'da henüz olmadığı için örnek veriden geliyor; sayılar ve oranlar ölçüm değildir."}
             </div>
           )}
-          <Outlet />
+          {projeDurumu?.rolYok ? <ProjeRolYok /> : <Outlet />}
         </main>
       </div>
     </div>

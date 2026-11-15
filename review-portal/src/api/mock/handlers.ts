@@ -86,6 +86,7 @@ import { oneriKuleOlcumu, oneriMockSifirla, oneriRotalari } from "./oneri";
 import { kuleKaliteKaynaklariMock, kuleKaliteOlcumu, kuleMockSifirla, kuleRotalari } from "./kule";
 import { KULE_KALITE_KAYNAKLARI } from "./kuleVerisi";
 import { kaliteKapisi, kaliteRotalari } from "./kalite";
+import { mockProjeSifirla, projeBaglamiDenetle, projeDegistir, projeListesi, projeliKullanici } from "./projeler";
 import type { AsistanliKule } from "../../components/asistan/OnerilerOlcumKarti";
 import { kirmaTaslagiMi } from "../../lib/yolHaritasi";
 import { BAZ_NOT_EN_AZ, BAZ_NOT_EN_COK, BAZ_UST_SINIR_S, kazancOzeti } from "../uyumFaz5";
@@ -141,7 +142,9 @@ export type MockSenaryosu =
    * story'lerin kapatılmış kayıtlarıdır (örnek veri listenin dışında kalır). Liste dışındaki eski merge
    * edilmiş kayıtlar üretimde çakışır: TPD-13 web testi Java ile, TPD-10 web testi TypeScript ile merge edilmiş.
    */
-  | "uzun-gecmis";
+  | "uzun-gecmis"
+  /** Çok proje (TP-COK-PROJE-PLANI §6): `/projeler`, `PUT /proje`, `/auth/me` proje alanları (api/mock/projeler.ts). */
+  | "cok-proje";
 
 export function mockSenaryosu(ad: MockSenaryosu): boolean {
   if (ayar.senaryolar.has(ad)) return true;
@@ -205,6 +208,7 @@ export function mockSifirla(): void {
   oneriMockSifirla();
   kuleMockSifirla();
   otomasyonMockSifirla();
+  mockProjeSifirla();
   goruntulemeKayitlari.clear();
   onayVeriIzleri.clear();
   kodIsleri.clear();
@@ -2606,9 +2610,11 @@ const ROTALAR: Rota[] = [
   }),
   ["POST", /^\/cases\/bulk-decision$/, (_m, _q, g) => topluKarar(g)],
   ["GET", /^\/automation\/codegen-jobs\/([^/]+)$/, (m) => kodUretimIsi(decodeURIComponent(m[1]))],
-  ["POST", /^\/auth\/login$/, (_m, _q, g) => login(g)],
+  ["POST", /^\/auth\/login$/, (_m, _q, g) => cokProjeyle(login(g))],
   ["POST", /^\/auth\/logout$/, () => logout()],
-  ["GET", /^\/auth\/me$/, () => girisGerekli()],
+  ["GET", /^\/auth\/me$/, () => cokProjeyle(girisGerekli())],
+  ["GET", /^\/projeler$/, () => cokProjeGerekli(() => projeListesi(girisGerekli()))],
+  ["PUT", /^\/proje$/, (_m, _q, g) => cokProjeGerekli(() => projeDegistir(girisGerekli(), g))],
   [
     "GET",
     /^\/requirements$/,
@@ -2873,8 +2879,19 @@ const ROTALAR: Rota[] = [
   ],
 ];
 
+/** `cok-proje` senaryosunda `/auth/me` ve giriş yanıtı proje alanlarını taşır (api/mock/projeler.ts). */
+function cokProjeyle(k: Kullanici): Kullanici {
+  return mockSenaryosu("cok-proje") ? projeliKullanici(k) : k;
+}
+
+function cokProjeGerekli<T>(fn: () => T): T {
+  if (!mockSenaryosu("cok-proje")) throw new ApiError(404, "Not Found");
+  return fn();
+}
+
 export async function mockIstek(method: string, path: string, query: URLSearchParams, body: unknown): Promise<unknown> {
   if (GECIKME_MS) await bekle(GECIKME_MS);
+  if (mockSenaryosu("cok-proje")) projeBaglamiDenetle(path);
   // Arka plan işleri içeriği değiştirmiş olabilir: her istek güncel içerik hash'iyle başlar.
   hashleriTazele(veri);
   for (const [m, re, fn] of ROTALAR) {

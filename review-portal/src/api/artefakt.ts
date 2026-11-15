@@ -5,6 +5,8 @@
 // veridir: çağıran yalnızca düz metin olarak (React kaçışıyla) gösterir, HTML/XML olarak yorumlamaz.
 // Boyut sınırlıdır: en çok `sinir` bayt okunur, fazlası kesilir.
 
+import { projeBasliklari } from "./http";
+
 export const SAYFA_KAYNAGI_SINIRI = 256 * 1024;
 
 export interface ArtefaktMetni {
@@ -59,7 +61,7 @@ export async function artefaktMetniOku(
   if (url.startsWith("data:")) return dataCoz(url, sinir);
   let res: Response;
   try {
-    res = await fetch(url, { credentials: "same-origin", signal, headers: { Accept: "application/xml, text/plain, */*" } });
+    res = await fetch(url, { credentials: "same-origin", signal, headers: { Accept: "application/xml, text/plain, */*", ...projeBasliklari() } });
   } catch (e) {
     if (e instanceof DOMException && e.name === "AbortError") throw e;
     throw new Error("Kanıt dosyasına ulaşılamadı (ağ hatası).");

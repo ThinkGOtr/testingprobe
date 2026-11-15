@@ -1,7 +1,7 @@
 /*! @aiprobe/switcher — <aiprobe-switcher> ürün değiştirici. Bağımlılık yok, derleme gerekmez.
  *
  * Kullanım:
- *   <script type="module" src="/vendor/switcher-1.0.4.js" integrity="sha384-…"></script>
+ *   <script type="module" src="/vendor/switcher-1.1.0.js" integrity="sha384-…"></script>
  *   <aiprobe-switcher product="testing-probe" home-origin="https://home.aiprobe.antreklabs.com" lang="tr">
  *     <div slot="product-menu"><button>Rol değiştir</button></div>
  *   </aiprobe-switcher>
@@ -12,6 +12,18 @@
  *               admin-url (verilirse "Yönetim" bağlantısı gösterilir)
  * Gizli (status=hidden) ürünler yalnız kullanıcının o üründe rolü varsa listelenir.
  *
+ * Proje seçici (1.1.0): ürün projelerini verirse ızgara düğmesinin solunda "Organizasyon · Proje" düğmesi
+ * ve açılır liste (role=listbox) gösterilir. Veri iki yoldan gelir:
+ *   (a) data-projects-endpoint="/api/projects" → GET (same-origin) ile okunur;
+ *   (b) ürün el.setProjects(data) ya da window.AIProbeSwitcher.setProjects(data) çağırır.
+ *   data: {enabled?, projects:[{id|pid, name, org|org_name, roles:[…]}], activeId|active_id|active:{id|pid},
+ *          roleLabels?:{kod: ad}}. enabled:false ya da null → seçici gizli. Boş liste → "Atanmış proje yok".
+ * Seçimde cancelable `aiprobe:project-change` {pid} yayınlanır. preventDefault edilmezse ve
+ * data-project-switch-endpoint verilmişse oraya PUT {pid} (JSON; me.csrf_token varsa X-CSRF-Token) gönderilir,
+ * başarıda sayfa yenilenir. Uç yoksa seçimi ürün olaydan uygular (ve sayfayı kendisi yeniler).
+ *
+ * 1.1.0: proje seçici (yukarıda), refresh() proje ucunu da yeniden okur; açılır paneller görünür alana
+ *        sığdırılır. Stil kancaları: ::part(project-trigger | project-org | project-sep | project-name | project-panel).
  * 1.0.4: products.json sürüm sorgusuyla (?v=<VERSION>) istenir — her sürüm yeni önbellek anahtarı; ağ/CORS
  *        hatasında bir kez önbelleği atlayarak (cache: 'reload') yeniden denenir (ACAO'suz önbelleğe alınmış
  *        kopya 304'le yeniden kullanılıp CORS hatası veriyordu). Dil düğmesinin erişilebilir adı görünür
@@ -22,16 +34,17 @@
  *        rolleri gelir, diğer erişilebilir ürünler boş liste `[]`). Eski home yanıtlarıyla da aynı sonuç.
  * 1.0.1: çıkış POST (CSRF) formu; gizli ürünler rol varsa görünür; "Keşfet" satırları soluk değil
  *        (AA kontrast, yalnız logo gri); admin-url; logo adresi home-origin'e göre çözülür.
- * Özellikler:   .me (nesne verilirse me-url çağrılmaz), .refresh()
+ * Özellikler:   .me (nesne verilirse me-url çağrılmaz), .refresh(), .setProjects(data), .projects
  * Olaylar:      aiprobe:navigate  {productId, url, kind}  — cancelable; preventDefault gezinmeyi durdurur
  *               aiprobe:lang      {lang}                  — kullanıcı dil değiştirdi (ürün kaydeder)
+ *               aiprobe:project-change {pid}              — cancelable; kullanıcı proje seçti
  *
  * "Başlat" (on_demand ürün kapalı): POST /api/v1/products/{id}/start Firebase ID token ister; ürün
  * sayfalarında bu token yoktur. Bu yüzden değiştirici {home}/?start=<id> adresine bağlanır; başlatmayı
  * home sayfası (kullanıcı onayıyla) yapar.
  */
 
-export const VERSION = '1.0.4';
+export const VERSION = '1.1.0';
 const DEFAULT_HOME = 'https://home.aiprobe.antreklabs.com';
 const STATUS_TTL_MS = 30_000;
 
@@ -42,6 +55,8 @@ const I18N = {
     home: 'Başlangıç', account: 'Hesap', admin: 'Yönetim', language: 'Dil', switchLang: 'İngilizceye geç', logout: 'Çıkış', beta: 'beta',
     preview: 'önizleme', deprecated: 'kullanımdan kalkıyor', loadError: 'Ürün listesi yüklenemedi.',
     retry: 'Tekrar dene', loading: 'Yükleniyor…', productMenu: 'Bu ürün', other: 'Diğer ürünler',
+    project: 'Proje', projects: 'Projeleriniz', chooseProject: 'Proje seçin', noProject: 'Atanmış proje yok',
+    switching: 'Geçiliyor…', switchFail: 'Proje değiştirilemedi. Tekrar deneyin.', role: 'Rol', roles: 'Roller',
   },
   en: {
     open: 'AI Probe products', title: 'AI Probe', yours: 'Your products', discover: 'Discover',
@@ -49,11 +64,13 @@ const I18N = {
     home: 'Home', account: 'Account', admin: 'Admin', language: 'Language', switchLang: 'Switch to Turkish', logout: 'Sign out', beta: 'beta',
     preview: 'preview', deprecated: 'deprecated', loadError: 'Could not load products.',
     retry: 'Retry', loading: 'Loading…', productMenu: 'This product', other: 'Other products',
+    project: 'Project', projects: 'Your projects', chooseProject: 'Select a project', noProject: 'No assigned project',
+    switching: 'Switching…', switchFail: 'Could not switch project. Try again.', role: 'Role', roles: 'Roles',
   },
 };
 
 const CSS = `
-:host { position: relative; display: inline-block; font-family: var(--aip-font, system-ui, sans-serif);
+:host { position: relative; display: inline-flex; align-items: center; gap: 6px; vertical-align: middle; font-family: var(--aip-font, system-ui, sans-serif);
   --_bg: var(--aip-surface, #fff); --_bg2: var(--aip-surface-2, #eef0f8); --_bd: var(--aip-border, #d9dbea);
   --_tx: var(--aip-text, #0b0b14); --_tx2: var(--aip-text-2, #3b4252); --_mut: var(--aip-muted, #555d6e);
   --_acc: var(--aip-accent, #4338ca); --_focus: var(--aip-focus, #4f46e5); --_tint: var(--aip-tint-12, rgb(79 70 229 / .1));
@@ -109,6 +126,31 @@ a.state:hover { text-decoration: underline; }
 .lang span { padding: 0 6px; border-radius: 6px; font-size: 12px; }
 .lang span[aria-current="true"] { background: var(--_tint); font-weight: 700; }
 .msg { padding: 12px 10px; color: var(--_mut); }
+.proj { display: inline-flex; align-items: center; gap: 6px; height: 36px; max-width: 320px; min-width: 0; padding: 0 10px;
+  border-radius: 10px; border: 1px solid var(--_bd); background: transparent; color: var(--_tx); font: inherit; font-size: 13px;
+  cursor: pointer; white-space: nowrap; }
+.proj[hidden] { display: none; }
+.proj:hover, .proj[aria-expanded="true"] { background: var(--_tint); }
+.proj .porg { color: var(--_mut); overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
+.proj .pdot { color: var(--_mut); }
+.proj .pname { font-weight: 600; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.proj svg { width: 12px; height: 12px; flex: none; color: var(--_mut); }
+.proj.warn { color: var(--_warn); background: var(--_warnbg); border-color: transparent; cursor: default; }
+.proj[aria-busy="true"] { opacity: .7; cursor: progress; }
+.plist { right: 48px; width: min(320px, calc(100vw - 24px)); }
+.plist [role="listbox"] { outline: none; }
+.plist [role="listbox"]:focus-visible { outline: 2px solid var(--_focus); outline-offset: 2px; border-radius: 10px; }
+.opt { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; cursor: pointer; }
+.opt:hover, .opt.active { background: var(--_tint); }
+.opt.active { box-shadow: inset 0 0 0 1px var(--_focus); }
+.opt .chk { width: 16px; flex: none; color: var(--_acc); font-weight: 700; text-align: center; }
+.perr { margin: 6px 10px; color: var(--_warn); font-size: 12px; }
+.perr[hidden] { display: none; }
+@media (max-width: 480px) {
+  .proj { max-width: 150px; padding: 0 8px; }
+  .proj .porg, .proj .pdot { display: none; }
+  .plist { right: 0; }
+}
 .msg button { margin-left: 6px; font: inherit; color: var(--_acc); background: none; border: 0; cursor: pointer; text-decoration: underline; }
 `;
 
@@ -161,13 +203,32 @@ function launchUrl(p) {
   return typeof lp === 'string' && /^\/(?!\/)[A-Za-z0-9/_.-]*$/.test(lp) ? base + lp : base;
 }
 
+/** Ürünün proje verisini ortak biçime çevirir. enabled:false / geçersiz → null (seçici gizli). */
+export function normalizeProjects(d) {
+  if (!d || typeof d !== 'object' || d.enabled === false) return null;
+  const str = (v) => (v == null ? '' : String(v));
+  const projects = (Array.isArray(d.projects) ? d.projects : [])
+    .filter((p) => p && typeof p === 'object')
+    .map((p) => ({
+      id: str(p.id ?? p.pid), name: str(p.name || p.code || p.id || p.pid), org: str(p.org ?? p.org_name),
+      roles: Array.isArray(p.roles) ? p.roles.filter((r) => typeof r === 'string') : [],
+    }))
+    .filter((p) => p.id);
+  const a = d.activeId ?? d.active_id ?? (d.active && typeof d.active === 'object' ? (d.active.id ?? d.active.pid) : d.active);
+  const labels = d.roleLabels || d.role_labels;
+  return { projects, activeId: projects.some((p) => p.id === str(a)) ? str(a) : null,
+    roleLabels: labels && typeof labels === 'object' ? labels : {} };
+}
+
+const CHEVRON = '<svg viewBox="0 0 12 12" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 4.5 6 7.5 9 4.5"/></svg>';
+
 const ICON = '<svg viewBox="0 0 20 20" aria-hidden="true" focusable="false" fill="currentColor">' +
   [3, 10, 17].flatMap((y) => [3, 10, 17].map((x) => `<circle cx="${x}" cy="${y}" r="1.9"/>`)).join('') + '</svg>';
 
 let uid = 0;
 
 export class AiprobeSwitcher extends HTMLElement {
-  static get observedAttributes() { return ['lang', 'product', 'home-origin']; }
+  static get observedAttributes() { return ['lang', 'product', 'home-origin', 'data-projects-endpoint']; }
 
   constructor() {
     super();
@@ -185,9 +246,30 @@ export class AiprobeSwitcher extends HTMLElement {
     this._btn.innerHTML = ICON;
     this._panel = h('div', { class: 'panel', part: 'panel', id: `${this._id}-panel`, role: 'dialog',
       'aria-labelledby': `${this._id}-title`, tabindex: '-1', hidden: true, onkeydown: (e) => this._onKey(e), onclick: (e) => this._onClick(e) });
-    root.append(this._btn, this._panel);
-    this._onDocPointer = (e) => { if (this._open && !e.composedPath().includes(this)) this.close(false); };
-    this._onDocKey = (e) => { if (this._open && e.key === 'Escape' && !e.defaultPrevented) { e.preventDefault(); this.close(); } };
+    // Proje seçici: düğme + açılır liste (role=listbox, aria-activedescendant ile klavye).
+    this._projects = null;
+    this._pOpen = false;
+    this._pActive = -1;
+    this._pBusy = false;
+    this._pbtn = h('button', { class: 'proj', type: 'button', part: 'project-trigger', hidden: true, 'aria-haspopup': 'listbox',
+      'aria-expanded': 'false', 'aria-controls': `${this._id}-plist`, onclick: () => this.toggleProjects(),
+      onkeydown: (e) => { if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); this.openProjects(); } } });
+    this._plb = h('ul', { role: 'listbox', id: `${this._id}-plb`, tabindex: '0', 'aria-labelledby': `${this._id}-ptitle`,
+      onkeydown: (e) => this._onListKey(e), onclick: (e) => this._onListClick(e) });
+    this._perr = h('p', { class: 'perr', role: 'alert', hidden: true });
+    this._plist = h('div', { class: 'panel plist', part: 'project-panel', id: `${this._id}-plist`, hidden: true },
+      h('h3', { id: `${this._id}-ptitle` }), this._plb, this._perr);
+    root.append(this._pbtn, this._plist, this._btn, this._panel);
+    this._onDocPointer = (e) => {
+      if (e.composedPath().includes(this)) return;
+      if (this._open) this.close(false);
+      if (this._pOpen) this.closeProjects(false);
+    };
+    this._onDocKey = (e) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      if (this._open) { e.preventDefault(); this.close(); }
+      if (this._pOpen) { e.preventDefault(); this.closeProjects(); }
+    };
   }
 
   get homeOrigin() { return (this.getAttribute('home-origin') || DEFAULT_HOME).replace(/\/+$/, ''); }
@@ -203,6 +285,10 @@ export class AiprobeSwitcher extends HTMLElement {
     document.addEventListener('pointerdown', this._onDocPointer, true);
     document.addEventListener('keydown', this._onDocKey);
     this._load();
+    const pending = globalThis.AIProbeSwitcher && globalThis.AIProbeSwitcher.projects;
+    if (!this._projectsProvided && pending !== undefined) this.setProjects(pending);
+    else if (!this._projectsProvided) this._loadProjects();
+    this._renderProjects();
   }
 
   disconnectedCallback() {
@@ -213,12 +299,183 @@ export class AiprobeSwitcher extends HTMLElement {
   attributeChangedCallback(name, oldV, newV) {
     if (oldV === newV || !this.isConnected) return;
     if (name === 'home-origin') { this._catalog = null; this._status = null; this._load(); }
+    if (name === 'data-projects-endpoint') { this._loadProjects(); return; }
+    this._renderProjects();
     this._btn.setAttribute('aria-label', this.t('open'));
     this._btn.title = this.t('open');
     this._render();
   }
 
-  async refresh() { this._catalog = null; this._status = null; this._statusAt = 0; if (!this._meProvided) this._me = undefined; await this._load(); }
+  async refresh() {
+    this._catalog = null; this._status = null; this._statusAt = 0; if (!this._meProvided) this._me = undefined;
+    await Promise.all([this._load(), this._projectsProvided ? null : this._loadProjects()]);
+  }
+
+  // ─── Proje seçici ─── //
+
+  get projects() { return this._projects; }
+
+  /** Ürün projeleri verir (bkz. normalizeProjects). Uç (data-projects-endpoint) okuması bundan sonra yapılmaz. */
+  setProjects(data) {
+    this._projectsProvided = true;
+    this._projects = normalizeProjects(data);
+    this._pBusy = false;
+    this._renderProjects();
+  }
+
+  async _loadProjects() {
+    const url = this.getAttribute('data-projects-endpoint');
+    if (!url) return;
+    const seq = (this._pSeq = (this._pSeq || 0) + 1);
+    let data = null;
+    try {
+      const r = await fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+      data = r.ok ? await r.json() : null;
+    } catch { data = null; }
+    if (seq !== this._pSeq || this._projectsProvided) return;
+    this._projects = normalizeProjects(data);
+    this._renderProjects();
+  }
+
+  _roleText(p) {
+    const labels = (this._projects && this._projects.roleLabels) || {};
+    return p.roles.map((r) => {
+      const l = labels[r];
+      return (l && typeof l === 'object' ? (l[this.lang] || l.tr) : l) || r;
+    }).join(', ');
+  }
+
+  /** Açılır paneli görünür alana sığdırır (değiştirici üst çubukta sağ kenarda değilse taşmasın). */
+  _fit(el) {
+    el.style.transform = '';
+    const r = el.getBoundingClientRect();
+    const vw = document.documentElement.clientWidth || window.innerWidth;
+    let dx = 0;
+    if (r.right > vw - 8) dx = vw - 8 - r.right;
+    if (r.left + dx < 8) dx = 8 - r.left;
+    if (dx) el.style.transform = `translateX(${Math.round(dx)}px)`;
+  }
+
+  toggleProjects() { this._pOpen ? this.closeProjects() : this.openProjects(); }
+
+  openProjects() {
+    const d = this._projects;
+    if (this._pOpen || this._pBusy || !d || !d.projects.length) return;
+    if (this._open) this.close(false);
+    this._pOpen = true;
+    this._perr.hidden = true;
+    this._pActive = Math.max(0, d.projects.findIndex((p) => p.id === d.activeId));
+    this._plist.hidden = false;
+    this._pbtn.setAttribute('aria-expanded', 'true');
+    this._renderProjects();
+    this._fit(this._plist);
+    this._plb.focus();
+  }
+
+  closeProjects(restoreFocus = true) {
+    if (!this._pOpen) return;
+    this._pOpen = false;
+    this._plist.hidden = true;
+    this._pbtn.setAttribute('aria-expanded', 'false');
+    if (restoreFocus) this._pbtn.focus();
+  }
+
+  _onListKey(e) {
+    const list = (this._projects && this._projects.projects) || [];
+    if (!list.length) return;
+    let i = this._pActive;
+    if (e.key === 'ArrowDown') i = Math.min(list.length - 1, i + 1);
+    else if (e.key === 'ArrowUp') i = Math.max(0, i - 1);
+    else if (e.key === 'Home') i = 0;
+    else if (e.key === 'End') i = list.length - 1;
+    else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (list[i]) this._selectProject(list[i].id); return; }
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); this.closeProjects(); return; }
+    else if (e.key === 'Tab') { this.closeProjects(false); return; }
+    else if (e.key.length === 1 && /\S/.test(e.key)) {
+      // Yazarak atla: sonraki, adı bu harfle başlayan proje.
+      const k = e.key.toLocaleLowerCase(this.lang);
+      for (let n = 1; n <= list.length; n++) {
+        const j = (i + n) % list.length;
+        if (list[j].name.toLocaleLowerCase(this.lang).startsWith(k)) { i = j; break; }
+      }
+    } else return;
+    e.preventDefault();
+    this._pActive = i;
+    this._renderProjects();
+  }
+
+  _onListClick(e) {
+    const li = e.composedPath().find((n) => n instanceof HTMLElement && n.getAttribute && n.getAttribute('role') === 'option');
+    if (li) this._selectProject(li.dataset.id);
+  }
+
+  async _selectProject(pid) {
+    const d = this._projects;
+    if (!d || !pid || this._pBusy) return;
+    if (pid === d.activeId) { this.closeProjects(); return; }
+    const ev = new CustomEvent('aiprobe:project-change', { bubbles: true, composed: true, cancelable: true, detail: { pid } });
+    if (!this.dispatchEvent(ev)) { this.closeProjects(); return; }
+    const url = this.getAttribute('data-project-switch-endpoint');
+    if (!url) { d.activeId = pid; this.closeProjects(); this._renderProjects(); return; }
+    this._pBusy = true;
+    this.closeProjects();
+    this._renderProjects();
+    const headers = { 'Content-Type': 'application/json', Accept: 'application/json' };
+    const csrf = this._me && typeof this._me.csrf_token === 'string' ? this._me.csrf_token : '';
+    if (csrf) headers['X-CSRF-Token'] = csrf;
+    let ok = false;
+    try {
+      const r = await fetch(url, { method: 'PUT', credentials: 'same-origin', headers, body: JSON.stringify({ pid }) });
+      ok = r.ok;
+    } catch { ok = false; }
+    if (ok) { location.reload(); return; }
+    this._pBusy = false;
+    this._renderProjects();
+    this.openProjects();
+    this._perr.textContent = this.t('switchFail');
+    this._perr.hidden = false;
+  }
+
+  _renderProjects() {
+    const d = this._projects;
+    const b = this._pbtn;
+    if (!d) { b.hidden = true; this.closeProjects(false); return; }
+    b.hidden = false;
+    const t = (k) => this.t(k);
+    const act = d.projects.find((p) => p.id === d.activeId);
+    b.classList.toggle('warn', !d.projects.length);
+    b.setAttribute('aria-busy', String(this._pBusy));
+    if (!d.projects.length) {
+      b.replaceChildren(h('span', { class: 'pname', text: t('noProject') }));
+      b.setAttribute('aria-disabled', 'true');
+      b.setAttribute('aria-label', t('noProject'));
+      b.removeAttribute('title');
+      return;
+    }
+    b.removeAttribute('aria-disabled');
+    const label = this._pBusy ? t('switching') : act ? act.name : t('chooseProject');
+    b.replaceChildren(...(act && act.org && !this._pBusy ? [h('span', { class: 'porg', part: 'project-org', text: act.org }), h('span', { class: 'pdot', part: 'project-sep', text: '·', 'aria-hidden': 'true' })] : []),
+      h('span', { class: 'pname', part: 'project-name', text: label }));
+    b.insertAdjacentHTML('beforeend', CHEVRON);
+    const full = act ? `${t('project')}: ${act.org ? `${act.org} · ` : ''}${act.name}` : t('chooseProject');
+    b.setAttribute('aria-label', this._pBusy ? t('switching') : full);
+    b.title = full + (act && act.roles.length ? ` (${this._roleText(act)})` : '');
+    this._plist.querySelector('h3').textContent = t('projects');
+    this._plb.setAttribute('aria-label', t('projects'));
+    if (!this._pOpen) return;
+    const ai = Math.min(Math.max(this._pActive, 0), d.projects.length - 1);
+    this._plb.replaceChildren(...d.projects.map((p, i) => {
+      const sel = p.id === d.activeId;
+      const roles = this._roleText(p);
+      const sub = [p.org, roles ? `${t(p.roles.length > 1 ? 'roles' : 'role')}: ${roles}` : ''].filter(Boolean).join(' · ');
+      return h('li', { role: 'option', id: `${this._id}-po-${i}`, class: `opt${i === ai ? ' active' : ''}`, 'aria-selected': String(sel), 'data-id': p.id },
+        h('span', { class: 'chk', 'aria-hidden': 'true', text: sel ? '✓' : '' }),
+        h('span', { class: 'meta' }, h('span', { class: 'name', text: p.name }), sub ? h('span', { class: 'sub', text: sub, title: sub }) : null));
+    }));
+    this._plb.setAttribute('aria-activedescendant', `${this._id}-po-${ai}`);
+    const cur = this._plb.children[ai];
+    if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: 'nearest' });
+  }
 
   async _load() {
     const jobs = [];
@@ -256,12 +513,14 @@ export class AiprobeSwitcher extends HTMLElement {
 
   open() {
     if (this._open) return;
+    if (this._pOpen) this.closeProjects(false);
     this._open = true;
     this._panel.hidden = false;
     this._btn.setAttribute('aria-expanded', 'true');
     if (!this._catalog) this._load();
     this._loadStatus();
     this._render();
+    this._fit(this._panel);
     // Katalog henüz yoksa paneli odakla; veri gelince ilk ürüne geçilir (_render).
     requestAnimationFrame(() => ((this._catalog && this._focusables()[0]) || this._panel).focus());
   }
@@ -444,3 +703,14 @@ function isFocusable(el) {
 }
 
 if (!customElements.get('aiprobe-switcher')) customElements.define('aiprobe-switcher', AiprobeSwitcher);
+
+// Genel API: window.AIProbeSwitcher.setProjects(data) sayfadaki tüm değiştiricilere uygular; sonradan bağlanan
+// değiştiriciler de bu veriyi alır. Ürün betiği modül yüklenmeden çalışabilir: önceden
+// `window.AIProbeSwitcher = {projects: data}` atanmışsa da kullanılır.
+const api = (globalThis.AIProbeSwitcher && typeof globalThis.AIProbeSwitcher === 'object') ? globalThis.AIProbeSwitcher : {};
+api.VERSION = VERSION;
+api.setProjects = (data) => {
+  api.projects = data;
+  document.querySelectorAll('aiprobe-switcher').forEach((el) => { if (typeof el.setProjects === 'function') el.setProjects(data); });
+};
+globalThis.AIProbeSwitcher = api;
