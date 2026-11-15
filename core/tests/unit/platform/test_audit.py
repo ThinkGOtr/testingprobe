@@ -21,7 +21,8 @@ from tp_core.audit import (
     verify_call_anchors,
     verify_chain,
 )
-from tp_core.audit.recorder import AI_CALL_COLUMNS
+from tp_core.audit.recorder import AI_CALL_COLUMNS, record_tool_call
+from tp_core.proje import KURULUM, proje_icinde
 
 from .conftest import Db
 
@@ -301,7 +302,10 @@ def test_kurcalanan_tool_call_ve_capasiz_satir_tespit_edilir(db: Db, engine: Eng
     with _sahip(db) as c:
         c.execute("UPDATE tool_call SET izin_verildi = false WHERE id = %s", (tid,))
         # Kaydediciyi atlayan (zincire çapalanmamış) satır.
-        c.execute("INSERT INTO tool_call (kanal, arac) VALUES ('agent', 'browser_evaluate')")
+        c.execute(
+            "INSERT INTO tool_call (project_id, kanal, arac) "
+            "VALUES ('_kurulum', 'agent', 'browser_evaluate')"
+        )
     with engine.connect() as c:
         sonuc = verify_call_anchors(c)
     assert not sonuc.ok and sonuc.sabitsiz == 1
@@ -377,3 +381,104 @@ def test_seed_idempotent_ve_zincirli(engine: Engine) -> None:
         assert list(ozetler) == [{"yeni": 8}, {"yeni": 0}]
         sonuc = verify_chain(c)
     assert sonuc.ok and sonuc.count == 2
+
+
+# ------------------------------------------- proje başına zincir (TP-COK-PROJE-PLANI §1.3, Ş1)
+
+
+def test_zincir_proje_basina_genesisten_baslar_ve_bagimsiz_dogrulanir(
+    engine: Engine, iki_proje: tuple[str, str]
+) -> None:
+    a, b = iki_proje
+    with proje_icinde(a, kaynak="test"):
+        PgAuditLog(engine).append("x", "a.bir", None, {})
+        PgAuditLog(engine).append("x", "a.iki", None, {})
+    with proje_icinde(b, kaynak="test"):
+        PgAuditLog(engine).append("x", "b.bir", None, {})
+    PgAuditLog(engine).append("x", "kurulum.bir", None, {})  # bağlamsız → '_kurulum'
+    with engine.connect() as c:
+        satirlar = c.execute(
+            text("SELECT project_id, eylem, prev_hash, hash FROM audit_event ORDER BY id")
+        ).all()
+        assert [(r.project_id, r.eylem) for r in satirlar] == [
+            (a, "a.bir"), (a, "a.iki"), (b, "b.bir"), (KURULUM, "kurulum.bir"),
+        ]  # fmt: skip
+        # her zincir kendi GENESIS'iyle başlar (tekillik (project_id, prev_hash))
+        assert [r.prev_hash for r in satirlar].count(GENESIS_HASH) == 3
+        assert satirlar[1].prev_hash == satirlar[0].hash
+        for pid, n, uc in ((a, 2, satirlar[1].hash), (b, 1, satirlar[2].hash),
+                           (KURULUM, 1, satirlar[3].hash)):  # fmt: skip
+            sonuc = verify_chain(c, pid)
+            assert (sonuc.ok, sonuc.count, sonuc.tip_hash) == (True, n, uc)
+            assert chain_tip(c, pid) == uc
+        with proje_icinde(a, kaynak="test"):
+            assert chain_tip(c) == satirlar[1].hash  # varsayılan: bağlamdaki proje
+            assert verify_chain(c).count == 2
+        assert chain_tip(c, "bos-proje") == GENESIS_HASH
+
+
+def test_baska_projenin_zinciri_kilidi_beklemez(db: Db, engine: Engine) -> None:
+    """Kilit `(AUDIT_LOCK_KEY, hashtext(pid))`: A'nın açık işlemi B'yi bekletmez, A'yı bekletir."""
+    with engine.connect() as c1:
+        tx = c1.begin()
+        append_audit(c1, "x", "a.bir", project_id="a")
+        with engine.connect() as c2:
+            c2.execute(text("SET lock_timeout = '1s'"))
+            c2.commit()
+            with c2.begin():
+                append_audit(c2, "x", "b.bir", project_id="b")
+            with pytest.raises(Exception, match="lock timeout"), c2.begin():
+                append_audit(c2, "x", "a.iki", project_id="a")
+        tx.commit()
+    with engine.connect() as c:
+        assert verify_chain(c, "a").count == 1 and verify_chain(c, "b").count == 1
+
+
+def test_audit_on_commit_cagri_anindaki_projeye_yazar(engine: Engine) -> None:
+    from sqlalchemy.orm import Session
+
+    from tp_core.audit import audit_on_commit, pending_audit
+
+    with Session(engine) as s:
+        with proje_icinde("a", kaynak="test"):
+            audit_on_commit(s, "x", "a.olay", "n:1", {"k": 1})
+        audit_on_commit(s, "x", "acik.olay", project_id="b")
+        assert pending_audit(s) == [
+            ("x", "a.olay", "n:1", {"k": 1}),
+            ("x", "acik.olay", None, None),
+        ]
+        with proje_icinde("c", kaynak="test"):  # commit anındaki bağlam kaydı taşımaz
+            s.commit()
+    with engine.connect() as c:
+        assert c.execute(text("SELECT project_id, eylem FROM audit_event ORDER BY id")).all() == [
+            ("a", "a.olay"),
+            ("b", "acik.olay"),
+        ]
+
+
+def test_cagri_kaydi_ve_capasi_ayni_projede_dogrulanir(db: Db, engine: Engine) -> None:
+    rec = PgCallRecorder(engine)
+    with proje_icinde("a", kaynak="test"):
+        aid = rec.record_ai_call(
+            {"amac": "t", "saglayici": "replay", "model": "m", "mod": "replay"}
+        )
+        rec.record_tool_call({"kanal": "agent", "arac": "browser_click"})
+    with engine.begin() as c:
+        record_tool_call(c, {"kanal": "ide", "arac": "x"}, project_id="b")
+    with engine.connect() as c:
+        assert (
+            c.execute(text("SELECT project_id FROM ai_call WHERE id = :i"), {"i": aid}).scalar_one()
+            == "a"
+        )
+        sa_, sb = verify_call_anchors(c, "a"), verify_call_anchors(c, "b")
+        assert (sa_.ok, sa_.checked, sa_.sabitsiz) == (True, 2, 0)
+        assert (sb.ok, sb.checked) == (True, 1)
+        assert verify_chain(c, "a").count == 2 and verify_chain(c, "b").count == 1
+    # Başka projeye "taşınmış" satır (çapası A zincirinde, satırı B'de): A'da silinmiş, B'de
+    # çapasız görünür.
+    with _sahip(db) as c:
+        c.execute("UPDATE tool_call SET project_id = 'b' WHERE project_id = 'a'")
+    with engine.connect() as c:
+        sa_, sb = verify_call_anchors(c, "a"), verify_call_anchors(c, "b")
+        assert not sa_.ok and "silinmiş" in sa_.broken[0]["reason"]
+        assert not sb.ok and sb.sabitsiz == 1

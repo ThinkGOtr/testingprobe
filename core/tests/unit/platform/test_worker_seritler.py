@@ -7,9 +7,11 @@ bitince alındı ve Demo-A e2e'nin 90 sn'lik "Case üret" beklemesi zaman aşım
 
 from __future__ import annotations
 
+import contextvars
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -17,6 +19,7 @@ from sqlalchemy import Engine, text
 
 from tp_core import worker
 from tp_core.config import get_settings
+from tp_core.proje import KURULUM, pid_param
 from tp_core.workflow import jobs
 from tp_core.workflow.jobs import (
     ASISTAN_SERIT,
@@ -28,6 +31,12 @@ from tp_core.workflow.jobs import (
     process_one,
     uzun_turler,
 )
+
+
+@pytest.fixture(autouse=True)
+def _proje_baglami(proje: object) -> None:
+    """İşler projeli kuyruğa eklenir (`enqueue` bağlam ister); işleyiciler işin projesinde koşar
+    (TP-COK-PROJE-PLANI §5.1). Proje olmadan davranış ayrı testlerde açıkça sınanır."""
 
 
 @pytest.fixture(autouse=True)
@@ -227,18 +236,18 @@ def test_asili_asistan_is_parcacigi_yuva_tutar(
     try:
         with engine.begin() as c:
             ilk = enqueue(c, tur)
-        assert worker.asistan_tur({tur}) is True
+        assert _baglamsiz(worker.asistan_tur, {tur}) is True
         assert _durum(engine, ilk) == "failed"
         assert len(worker._asistan_asili) == 1 and worker._asistan_asili[0].is_alive()
         with engine.begin() as c:
             ikinci = enqueue(c, tur)
         # asılı iş parçacığı yuvayı tutuyor: yeni iş alınmaz
-        assert worker.asistan_tur({tur}) is False
+        assert _baglamsiz(worker.asistan_tur, {tur}) is False
         assert _durum(engine, ikinci) == "queued"
         assert worker._asistan_aktif == 0
         serbest.set()
         assert _bekle(lambda: not worker._asistan_asili[0].is_alive())
-        assert worker.asistan_tur({tur}) is True
+        assert _baglamsiz(worker.asistan_tur, {tur}) is True
         assert _durum(engine, ikinci) == "done"
         assert worker._asistan_asili == []
     finally:
@@ -247,17 +256,23 @@ def test_asili_asistan_is_parcacigi_yuva_tutar(
 
 
 def _kalp_atisi(engine: Engine, yas_s: int | None) -> None:
+    """Worker kalp atışı kurulum geneli `'_kurulum'` satırındadır (0045)."""
     with engine.begin() as c:
-        c.execute(text("DELETE FROM asistan_durum"))
+        c.execute(text("DELETE FROM asistan_durum WHERE project_id = :k"), {"k": KURULUM})
         if yas_s is not None:
             c.execute(
                 text(
-                    "INSERT INTO asistan_durum (id, mod, model_hazir, maskeleme, musteri_verisi, "
-                    "kalp_atisi) VALUES (1, 'off', false, true, false, "
+                    "INSERT INTO asistan_durum (project_id, mod, model_hazir, maskeleme, "
+                    "musteri_verisi, kalp_atisi) VALUES (:k, 'off', false, true, false, "
                     "now() - make_interval(secs => :y))"
                 ),
-                {"y": yas_s},
+                {"k": KURULUM, "y": yas_s},
             )
+
+
+def _baglamsiz[T](fn: Callable[..., T], *args: object) -> T:
+    """Worker döngüsü gibi proje bağlamı olmadan çağırır (boş `contextvars.Context`)."""
+    return contextvars.Context().run(fn, *args)
 
 
 def _soru(engine: Engine, kullanici_id: uuid.UUID, tur: str) -> tuple[uuid.UUID, uuid.UUID]:
@@ -265,15 +280,15 @@ def _soru(engine: Engine, kullanici_id: uuid.UUID, tur: str) -> tuple[uuid.UUID,
     with engine.begin() as c:
         jid = enqueue(c, tur, {"mesaj_id": str(mesaj_id)})
         c.execute(
-            text("INSERT INTO asistan_sohbet (id, kullanici_id) VALUES (:s, :k)"),
-            {"s": sohbet_id, "k": kullanici_id},
+            text("INSERT INTO asistan_sohbet (id, project_id, kullanici_id) VALUES (:s, :pid, :k)"),
+            pid_param(s=sohbet_id, k=kullanici_id),
         )
         c.execute(
             text(
-                "INSERT INTO asistan_mesaj (id, sohbet_id, kullanici_id, sira, rol, durum, "
-                "job_id) VALUES (:m, :s, :k, 2, 'assistant', 'pending', :j)"
+                "INSERT INTO asistan_mesaj (id, project_id, sohbet_id, kullanici_id, sira, rol, "
+                "durum, job_id) VALUES (:m, :pid, :s, :k, 2, 'assistant', 'pending', :j)"
             ),
-            {"m": mesaj_id, "s": sohbet_id, "k": kullanici_id, "j": jid},
+            pid_param(m=mesaj_id, s=sohbet_id, k=kullanici_id, j=jid),
         )
     return jid, mesaj_id
 
@@ -289,7 +304,8 @@ def _yaslandir(engine: Engine, jid: uuid.UUID) -> None:
 def _mesaj_durumu(engine: Engine, mesaj_id: uuid.UUID) -> tuple[str, str | None]:
     with engine.connect() as c:
         r = c.execute(
-            text("SELECT durum, hata_kodu FROM asistan_mesaj WHERE id = :i"), {"i": mesaj_id}
+            text("SELECT durum, hata_kodu FROM asistan_mesaj WHERE project_id = :pid AND id = :i"),
+            pid_param(i=mesaj_id),
         ).one()
     return r.durum, r.hata_kodu
 
@@ -311,30 +327,30 @@ def test_asistan_serit_kapaliyken_bekleyen_soru_kalp_atisi_bayatlayinca_kapanir(
             gid = enqueue(c, genel_tur)
 
         _kalp_atisi(engine, 10)  # taze: başka worker şeridi açık olabilir
-        assert worker.kapali_serit_temizle({a_tur}) == 0
+        assert _baglamsiz(worker.kapali_serit_temizle, {a_tur}) == 0
         assert _durum(engine, jid) == "queued"
         assert _mesaj_durumu(engine, mid) == ("pending", None)
 
         _kalp_atisi(engine, 10_000)  # bayat: API artık soru kabul etmiyor
         # ...ama iş yeni: şeridi açık worker yeniden başlıyor olabilir; dokunulmaz.
-        assert worker.kapali_serit_temizle({a_tur}) == 0
+        assert _baglamsiz(worker.kapali_serit_temizle, {a_tur}) == 0
         assert _durum(engine, jid) == "queued"
         assert _mesaj_durumu(engine, mid) == ("pending", None)
 
         _yaslandir(engine, jid)  # iş de eşikten eski: şerit gerçekten kapalı
-        assert worker.kapali_serit_temizle({a_tur}) == 1
+        assert _baglamsiz(worker.kapali_serit_temizle, {a_tur}) == 1
         assert _durum(engine, jid) == "cancelled"
         assert _mesaj_durumu(engine, mid) == ("error", "zaman_asimi")
         assert _durum(engine, gid) == "queued"
-        assert worker.kapali_serit_temizle({a_tur}) == 0  # idempotent
+        assert _baglamsiz(worker.kapali_serit_temizle, {a_tur}) == 0  # idempotent
 
         _kalp_atisi(engine, None)  # hiç kalp atışı yok
         jid2, mid2 = _soru(engine, kullanici.id, a_tur)
-        assert worker.kapali_serit_temizle({a_tur}) == 0  # yeni iş korunur
+        assert _baglamsiz(worker.kapali_serit_temizle, {a_tur}) == 0  # yeni iş korunur
         _yaslandir(engine, jid2)
-        assert worker.kapali_serit_temizle({a_tur}) == 1
+        assert _baglamsiz(worker.kapali_serit_temizle, {a_tur}) == 1
         assert _durum(engine, jid2) == "cancelled"
         assert _mesaj_durumu(engine, mid2)[0] == "error"
-        assert worker.kapali_serit_temizle(set()) == 0
+        assert _baglamsiz(worker.kapali_serit_temizle, set()) == 0
     finally:
         jobs.REGISTRY.pop(a_tur, None)

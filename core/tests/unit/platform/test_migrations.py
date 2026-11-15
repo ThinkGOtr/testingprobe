@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import uuid
 
@@ -9,9 +10,10 @@ import psycopg
 import pytest
 from alembic.autogenerate import compare_metadata
 from alembic.runtime.migration import MigrationContext
-from sqlalchemy import create_engine, text
+from sqlalchemy import Connection, create_engine, text
 
-from tp_core.audit import append_audit, verify_chain
+from tp_core.audit import GENESIS_HASH, append_audit, chain_hash, chain_tip, verify_chain
+from tp_core.audit.canonical import iso_utc
 from tp_core.models import Base
 from tp_core.workflow.states import MACHINES
 
@@ -61,6 +63,14 @@ def test_durum_check_kisiti_makineyle_ayni(db: Db, entity: str) -> None:
     assert set(re.findall(r"'([a-z_]+)'", tanim)) == set(MACHINES[entity].states)
 
 
+def _ev_pid(conn: Connection) -> str:
+    """0045'in mevcut veriyi damgaladığı proje (`tp_proje` env kaydı; şablon `TP_HOME_PROJECT`'e
+    göre `'varsayilan'` ya da geliştiricinin değeri)."""
+    return conn.execute(
+        text("SELECT pid FROM tp_proje WHERE kaynak = 'env' ORDER BY olusturma LIMIT 1")
+    ).scalar_one()
+
+
 def _app(db: Db) -> psycopg.Connection:
     return psycopg.connect(db.app_url.replace("+psycopg", ""), autocommit=True)
 
@@ -80,10 +90,13 @@ def test_sahip_bile_append_only_tablolari_degistiremez(db: Db, tablo: str) -> No
     eng.dispose()
     with psycopg.connect(db.owner_url.replace("+psycopg", ""), autocommit=True) as c:
         c.execute(
-            "INSERT INTO ai_call (amac, saglayici, model, mod) "
-            "VALUES ('t', 'replay', 'm', 'replay')"
+            "INSERT INTO ai_call (project_id, amac, saglayici, model, mod) "
+            "VALUES ('p', 't', 'replay', 'm', 'replay')"
         )
-        c.execute("INSERT INTO tool_call (kanal, arac) VALUES ('agent', 'browser_snapshot')")
+        c.execute(
+            "INSERT INTO tool_call (project_id, kanal, arac) "
+            "VALUES ('p', 'agent', 'browser_snapshot')"
+        )
         with pytest.raises(psycopg.errors.InsufficientPrivilege, match="append-only"):
             c.execute(f"DELETE FROM {tablo}")
         with pytest.raises(psycopg.errors.InsufficientPrivilege, match="append-only"):
@@ -94,23 +107,28 @@ def test_tp_app_diger_tablolarda_tam_dml(db: Db) -> None:
     rid = uuid.uuid4()
     with _app(db) as c:
         c.execute(
-            "INSERT INTO requirement (id, kaynak, baslik, kaynak_hash) "
-            "VALUES (%s, 'free_text', 'b', 'h')",
+            "INSERT INTO requirement (id, project_id, kaynak, baslik, kaynak_hash) "
+            "VALUES (%s, 'p', 'free_text', 'b', 'h')",
             (rid,),
         )
         c.execute("UPDATE requirement SET baslik = 'c' WHERE id = %s", (rid,))
         c.execute(
-            "INSERT INTO pull_request (branch, baslik, head_sha, acan) VALUES ('b','t','s','bot')"
+            "INSERT INTO pull_request (project_id, number, branch, baslik, head_sha, acan) "
+            "VALUES ('p', 1, 'b','t','s','bot')"
         )
-        c.execute("INSERT INTO review (nesne_turu, nesne_id, harici_onaylayan, kanal, karar, "
-                  "onaylanan_hash) VALUES ('requirement', %s, 'po@sim', 'jira', 'po_approve', 'h')",
-                  (rid,))  # fmt: skip
+        c.execute("INSERT INTO review (project_id, nesne_turu, nesne_id, harici_onaylayan, kanal, "
+                  "karar, onaylanan_hash) VALUES ('p', 'requirement', %s, 'po@sim', 'jira', "
+                  "'po_approve', 'h')", (rid,))  # fmt: skip
         c.execute("DELETE FROM requirement WHERE id = %s", (rid,))
 
 
-_REVIEW_INSERT = (
+# 0045 öncesi şema (proje sütunu yok) ve head (proje kapsamlı) için.
+_REVIEW_INSERT_ESKI = (
     "INSERT INTO review (nesne_turu, nesne_id, harici_onaylayan, kanal, karar, onaylanan_hash) "
     "VALUES ('requirement', gen_random_uuid(), 'po@firma', 'jira', 'reject', 'h')"
+)
+_REVIEW_INSERT = _REVIEW_INSERT_ESKI.replace("INTO review (", "INTO review (project_id, ").replace(
+    "VALUES (", "VALUES ('p', "
 )
 
 
@@ -139,9 +157,15 @@ def test_review_insan_karari_degistirilemez_ve_silinemez(db: Db) -> None:
 def test_manual_tetigi_kabul_edilir(db: Db) -> None:
     """CI'nin workflow_dispatch tetiği (`manual`) run ve test_result'a yazılabilir."""
     with _app(db) as c:
-        c.execute("INSERT INTO run (kaynak, tetik, sonuc) VALUES ('github', 'manual', 'passed')")
+        c.execute(
+            "INSERT INTO run (project_id, kaynak, tetik, sonuc) "
+            "VALUES ('p', 'github', 'manual', 'passed')"
+        )
         with pytest.raises(psycopg.errors.CheckViolation):
-            c.execute("INSERT INTO run (kaynak, tetik, sonuc) VALUES ('github', 'elle', 'passed')")
+            c.execute(
+                "INSERT INTO run (project_id, kaynak, tetik, sonuc) "
+                "VALUES ('p', 'github', 'elle', 'passed')"
+            )
 
 
 def test_job_zaman_asimi_bos_birakilabilir(db: Db) -> None:
@@ -154,24 +178,25 @@ def test_check_kisitlari_gecersiz_degeri_reddeder(db: Db) -> None:
     with _app(db) as c:
         with pytest.raises(psycopg.errors.CheckViolation):
             c.execute(
-                "INSERT INTO requirement (kaynak, baslik, kaynak_hash, durum) "
-                "VALUES ('free_text', 'b', 'h', 'uydurma')"
+                "INSERT INTO requirement (project_id, kaynak, baslik, kaynak_hash, durum) "
+                "VALUES ('p', 'free_text', 'b', 'h', 'uydurma')"
             )
         with pytest.raises(psycopg.errors.CheckViolation):
             c.execute(
-                "INSERT INTO requirement (kaynak, baslik, kaynak_hash) VALUES ('jira', 'b', 'h')"
+                "INSERT INTO requirement (project_id, kaynak, baslik, kaynak_hash) "
+                "VALUES ('p', 'jira', 'b', 'h')"
             )
         with pytest.raises(psycopg.errors.CheckViolation):
             c.execute(
-                "INSERT INTO review (nesne_turu, nesne_id, harici_onaylayan, karar, "
-                "onaylanan_hash) VALUES ('test_case', gen_random_uuid(), 'x', 'reject', 'h')"
+                "INSERT INTO review (project_id, nesne_turu, nesne_id, harici_onaylayan, karar, "
+                "onaylanan_hash) VALUES ('p', 'test_case', gen_random_uuid(), 'x', 'reject', 'h')"
             )
 
 
 def test_audit_hash_zorunlu(db: Db) -> None:
     # Zinciri atlayan ham INSERT reddedilir: tüm yazıcılar append_audit'ten geçmek zorunda.
     with _app(db) as c, pytest.raises(psycopg.errors.NotNullViolation):
-        c.execute("INSERT INTO audit_event (aktor, eylem) VALUES ('x', 'y')")
+        c.execute("INSERT INTO audit_event (project_id, aktor, eylem) VALUES ('p', 'x', 'y')")
 
 
 def test_0001_verisi_zincire_baglanir_ve_downgrade_calisir(pg: PgServer) -> None:
@@ -189,7 +214,8 @@ def test_0001_verisi_zincire_baglanir_ve_downgrade_calisir(pg: PgServer) -> None
         run_alembic(owner, "head")
         eng = create_engine(owner)
         with eng.connect() as conn:
-            sonuc = verify_chain(conn)
+            # 0045: eski tek zincir varsayılan projenin zinciri olarak aynen geçerli.
+            sonuc = verify_chain(conn, _ev_pid(conn))
             assert sonuc.ok, sonuc
             assert sonuc.count == 3
             assert conn.execute(text("SELECT run_after IS NOT NULL FROM job")).scalar_one()
@@ -237,17 +263,18 @@ def test_0004_mevcut_veriyle_yukselir_ve_geri_alinir(pg: PgServer) -> None:
                 "SELECT icerik_degisim, onaylanan_hash FROM requirement WHERE id = %s", (rid,)
             ).fetchone()
             assert degisim.isoformat().startswith("2026-01-02T03:04:05") and onay is None
-            with pytest.raises(psycopg.errors.NotNullViolation):
+            pid = c.execute("SELECT project_id FROM requirement WHERE id = %s", (rid,)).fetchone()
+            with pytest.raises(psycopg.errors.NotNullViolation, match='"id"'):
                 c.execute(
-                    "INSERT INTO test_case (requirement_id, sira_no, icerik, icerik_hash) "
-                    "VALUES (%s, 2, '{}', 'x')",
-                    (rid,),
+                    "INSERT INTO test_case (project_id, requirement_id, sira_no, icerik, "
+                    "icerik_hash) VALUES (%s, %s, 2, '{}', 'x')",
+                    (pid[0], rid),
                 )
             with pytest.raises(psycopg.errors.UniqueViolation, match="test_case_sira_uq"):
                 c.execute(
-                    "INSERT INTO test_case (id, requirement_id, sira_no, icerik, icerik_hash) "
-                    "VALUES (gen_random_uuid(), %s, 1, '{}', 'x')",
-                    (rid,),
+                    "INSERT INTO test_case (id, project_id, requirement_id, sira_no, icerik, "
+                    "icerik_hash) VALUES (gen_random_uuid(), %s, %s, 1, '{}', 'x')",
+                    (pid[0], rid),
                 )
         run_alembic(owner, "0003", "downgrade")
         with psycopg.connect(dsn, autocommit=True) as c:
@@ -284,7 +311,7 @@ def test_0008_downgrade_reopen_kararini_silmez(pg: PgServer) -> None:
     try:
         run_alembic(owner, "0008")
         with psycopg.connect(dsn, autocommit=True) as c:
-            c.execute(_REVIEW_INSERT.replace("'requirement'", "'test_case'").replace(
+            c.execute(_REVIEW_INSERT_ESKI.replace("'requirement'", "'test_case'").replace(
                 "'reject'", "'reopen'"))  # fmt: skip
         run_alembic(owner, "0007", "downgrade")
         with psycopg.connect(dsn, autocommit=True) as c:
@@ -292,10 +319,11 @@ def test_0008_downgrade_reopen_kararini_silmez(pg: PgServer) -> None:
                 1,
             )
             with pytest.raises(psycopg.errors.CheckViolation):
-                c.execute(_REVIEW_INSERT.replace("'reject'", "'reopen'"))
+                c.execute(_REVIEW_INSERT_ESKI.replace("'reject'", "'reopen'"))
         run_alembic(owner, "head")  # yeniden yükseltilebilir
         with psycopg.connect(dsn, autocommit=True) as c:
-            c.execute(_REVIEW_INSERT.replace("'reject'", "'reopen'"))
+            pid = c.execute("SELECT DISTINCT project_id FROM review").fetchone()[0]
+            c.execute(_REVIEW_INSERT.replace("'reject'", "'reopen'").replace("'p'", f"'{pid}'"))
     finally:
         with pg.super_conn() as c:
             c.execute(f'DROP DATABASE IF EXISTS "{ad}" WITH (FORCE)')
@@ -316,13 +344,13 @@ def test_0040_tamamlanan_denetim_kararsiz_yazilamaz(db: Db) -> None:
     rid = uuid.uuid4()
     with _app(db) as c:
         c.execute(
-            "INSERT INTO requirement (id, kaynak, baslik, kaynak_hash) "
-            "VALUES (%s, 'free_text', 'b', 'h')",
+            "INSERT INTO requirement (id, project_id, kaynak, baslik, kaynak_hash) "
+            "VALUES (%s, 'p', 'free_text', 'b', 'h')",
             (rid,),
         )
         ekle = (
-            "INSERT INTO case_set_audit (requirement_id, set_hash, durum, karar) "
-            "VALUES (%s, 'h', %s, %s)"
+            "INSERT INTO case_set_audit (project_id, requirement_id, set_hash, durum, karar) "
+            "VALUES ('p', %s, 'h', %s, %s)"
         )
         with pytest.raises(psycopg.errors.CheckViolation):
             c.execute(ekle, (rid, "tamamlandi", None))
@@ -340,13 +368,13 @@ def test_0030_test_verisi_gecmisi_silinemez_ve_engel_turu(db: Db) -> None:
     kid = uuid.uuid4()
     with _app(db) as c:
         c.execute(
-            "INSERT INTO test_verisi (id, anahtar, deger, guncelleyen) "
-            "VALUES (%s, 'a.b', 'x', 't')",
+            "INSERT INTO test_verisi (id, project_id, anahtar, deger, guncelleyen) "
+            "VALUES (%s, 'p', 'a.b', 'x', 't')",
             (kid,),
         )
         c.execute(
-            "INSERT INTO test_verisi_surum (test_verisi_id, surum, islem, deger, gizli, "
-            "degistiren) VALUES (%s, 1, 'olustur', 'x', false, 't')",
+            "INSERT INTO test_verisi_surum (project_id, test_verisi_id, surum, islem, deger, "
+            "gizli, degistiren) VALUES ('p', %s, 1, 'olustur', 'x', false, 't')",
             (kid,),
         )
         c.execute("UPDATE test_verisi SET silindi = true WHERE id = %s", (kid,))
@@ -400,3 +428,239 @@ def test_0043_oturum_org_proje_downgrade_veriyi_korur(pg: PgServer) -> None:
     finally:
         with pg.super_conn() as c:
             c.execute(f'DROP DATABASE IF EXISTS "{ad}" WITH (FORCE)')
+
+
+# ------------------------------------------------- 0045 proje kapsamı (TP-COK-PROJE-PLANI §1.4)
+
+EV = "bayi-pid"
+
+
+def _eski_zincir(c: psycopg.Connection, n: int) -> str:
+    """0045 öncesi şemada (proje sütunu yok) geçerli bir zincir yazar; uç hash'i döndürür."""
+    prev = GENESIS_HASH
+    for i in range(n):
+        id_, zaman = c.execute(
+            "SELECT nextval(pg_get_serial_sequence('audit_event', 'id')), now()"
+        ).fetchone()
+        ozet = {"i": i, "ad": "ş"}
+        h = chain_hash(
+            prev,
+            {"id": id_, "zaman": iso_utc(zaman), "aktor": "a", "eylem": "e.x", "nesne": None,
+             "ozet": ozet},
+        )  # fmt: skip
+        c.execute(
+            "INSERT INTO audit_event (id, zaman, aktor, eylem, nesne, ozet, prev_hash, hash) "
+            "VALUES (%s, %s, 'a', 'e.x', NULL, %s::jsonb, %s, %s)",
+            (id_, zaman, json.dumps(ozet), prev, h),
+        )
+        prev = h
+    return prev
+
+
+def _yeni_bos_db(pg: PgServer, hedef: str) -> tuple[str, str, str]:
+    ad = pg.create_empty_db()
+    owner = pg.url("tp_owner", ad)
+    run_alembic(owner, hedef)
+    return ad, owner, owner.replace("+psycopg", "")
+
+
+def _sil(pg: PgServer, ad: str) -> None:
+    with pg.super_conn() as c:
+        c.execute(f'DROP DATABASE IF EXISTS "{ad}" WITH (FORCE)')
+
+
+def test_0045_mevcut_veri_ev_projesine_damgalanir_zincir_ve_satirlar_bozulmaz(
+    pg: PgServer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """K4: tüm satırlar TP_HOME_PROJECT ile damgalanır; hızlı varsayılan satırı yeniden yazmaz
+    (xmin/ctid aynı → append-only tetikleyicisi çalışmadı), zincir ve uç hash aynen geçerli;
+    sayaç tohumları; sütun varsayılanı kalmaz; tekillikler proje başına."""
+    monkeypatch.setenv("TP_HOME_PROJECT", EV)
+    ad, owner, dsn = _yeni_bos_db(pg, "0044")
+    try:
+        with psycopg.connect(dsn, autocommit=True) as c:
+            uc = _eski_zincir(c, 3)
+            rid = c.execute(
+                "INSERT INTO requirement (kaynak, jira_key, baslik, kaynak_hash) "
+                "VALUES ('jira', 'TPD-1', 'b', 'h') RETURNING id"
+            ).fetchone()[0]
+            c.execute(_REVIEW_INSERT_ESKI.replace("'reject'", "'po_approve'"))
+            c.execute(
+                "INSERT INTO ai_call (amac, saglayici, model, mod) "
+                "VALUES ('t', 'replay', 'm', 'replay')"
+            )
+            c.execute(
+                "INSERT INTO pull_request (branch, baslik, head_sha, acan) VALUES "
+                "('b1','t','s','bot'), ('b2','t','s','bot')"
+            )
+            for _ in range(3):
+                c.execute("SELECT nextval('ajan_testi_talebi_no_seq')")
+            c.execute("INSERT INTO asistan_durum (id, mod) VALUES (1, 'off')")
+            c.execute(
+                "INSERT INTO otomasyon_ayari (anahtar, deger, guncelleyen) VALUES ('k', '1', 'x')"
+            )
+            c.execute(
+                "INSERT INTO job (tur, durum, idempotency_key) VALUES "
+                "('noop', 'done', 'gece:2026-11-14'), ('noop', 'queued', NULL)"
+            )
+            once = {
+                t: c.execute(
+                    f"SELECT array_agg(xmin::text || ctid::text ORDER BY id) FROM {t}"
+                ).fetchone()[0]
+                for t in ("audit_event", "review", "ai_call")
+            }
+        run_alembic(owner, "head")
+        with psycopg.connect(dsn, autocommit=True) as c:
+            for t, deger in once.items():
+                sonra = c.execute(
+                    f"SELECT array_agg(xmin::text || ctid::text ORDER BY id) FROM {t}"
+                ).fetchone()[0]
+                assert sonra == deger, f"{t} satırları yeniden yazıldı"
+            for t in ("audit_event", "review", "ai_call", "requirement", "pull_request",
+                      "asistan_durum", "otomasyon_ayari", "job"):  # fmt: skip
+                assert c.execute(f"SELECT array_agg(DISTINCT project_id) FROM {t}").fetchone() == (
+                    [EV],
+                ), t
+            varsayilanli = c.execute(
+                "SELECT table_name FROM information_schema.columns WHERE column_name = "
+                "'project_id' AND column_default IS NOT NULL AND table_name <> 'asistan_hiz'"
+            ).fetchall()
+            assert varsayilanli == []
+            tetik = c.execute(
+                "SELECT count(*) FROM pg_trigger WHERE tgname LIKE '%append_only' "
+                "AND tgenabled = 'O'"
+            ).fetchone()
+            assert tetik == (4,)
+            assert dict(
+                c.execute("SELECT ad, deger FROM proje_sayac WHERE project_id = %s", (EV,))
+            ) == {"pr": 2, "talep": 3}
+            assert c.execute("SELECT project_id, mod FROM asistan_durum").fetchall() == [
+                (EV, "off")
+            ]
+            # tekillik proje başına
+            c.execute(
+                "INSERT INTO requirement (project_id, kaynak, jira_key, baslik, kaynak_hash) "
+                "VALUES ('diger', 'jira', 'TPD-1', 'b', 'h')"
+            )
+            with pytest.raises(psycopg.errors.UniqueViolation):
+                c.execute(
+                    "INSERT INTO requirement (project_id, kaynak, jira_key, baslik, kaynak_hash)"
+                    " VALUES (%s, 'jira', 'TPD-1', 'b', 'h')",
+                    (EV,),
+                )
+            c.execute(
+                "INSERT INTO pull_request (project_id, number, branch, baslik, head_sha, acan) "
+                "VALUES ('diger', 1, 'b','t','s','bot')"
+            )
+            with pytest.raises(psycopg.errors.NotNullViolation):  # dizi varsayılanı kalktı
+                c.execute(
+                    "INSERT INTO pull_request (project_id, branch, baslik, head_sha, acan) "
+                    "VALUES ('diger', 'b','t','s','bot')"
+                )
+            c.execute("UPDATE requirement SET baslik = 'x' WHERE id = %s", (rid,))
+        eng = create_engine(owner)
+        with eng.begin() as conn:
+            sonuc = verify_chain(conn, EV)
+            assert sonuc.ok and sonuc.count == 3 and sonuc.tip_hash == uc, sonuc
+            assert chain_tip(conn, EV) == uc
+            # yeni proje zinciri GENESIS'ten başlar; iki zincir bağımsız sürer
+            append_audit(conn, "a", "e.y", project_id="diger")
+            append_audit(conn, "a", "e.y", project_id=EV)
+        with eng.connect() as conn:
+            assert verify_chain(conn, EV).count == 4
+            yeni = verify_chain(conn, "diger")
+            assert yeni.ok and yeni.count == 1
+        eng.dispose()
+    finally:
+        _sil(pg, ad)
+
+
+def test_0045_downgrade_tek_projede_calisir_ve_yeniden_yukselir(
+    pg: PgServer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TP_HOME_PROJECT", EV)
+    ad, owner, dsn = _yeni_bos_db(pg, "head")
+    try:
+        eng = create_engine(owner)
+        with eng.begin() as conn:
+            append_audit(conn, "a", "e.x", project_id=EV)
+            append_audit(conn, "a", "e.x", project_id=EV)
+        eng.dispose()
+        with psycopg.connect(dsn, autocommit=True) as c:
+            c.execute(
+                "INSERT INTO pull_request (project_id, number, branch, baslik, head_sha, acan) "
+                "VALUES (%s, 5, 'b','t','s','bot')",
+                (EV,),
+            )
+            c.execute("INSERT INTO asistan_durum (project_id, mod) VALUES (%s, 'off')", (EV,))
+            c.execute(
+                "INSERT INTO job (project_id, tur) VALUES (NULL, 'noop'), (%s, 'noop')", (EV,)
+            )
+        run_alembic(owner, "0044", "downgrade")
+        with psycopg.connect(dsn, autocommit=True) as c:
+            assert c.execute(
+                "SELECT count(*) FROM information_schema.columns "
+                "WHERE column_name = 'project_id' "
+                "AND table_name NOT IN ('oturum', 'proje_sayac')"
+            ).fetchone() == (0,)
+            assert c.execute("SELECT count(*) FROM audit_event").fetchone() == (2,)
+            # dizi geri geldi ve mevcut numaradan devam eder
+            assert c.execute(
+                "INSERT INTO pull_request (branch, baslik, head_sha, acan) "
+                "VALUES ('b','t','s','bot') RETURNING number"
+            ).fetchone() == (6,)
+            assert c.execute("SELECT id, mod FROM asistan_durum").fetchall() == [(1, "off")]
+        run_alembic(owner, "head")
+        eng = create_engine(owner)
+        with eng.connect() as conn:
+            sonuc = verify_chain(conn, EV)
+            assert sonuc.ok and sonuc.count == 2, sonuc
+            assert (
+                conn.execute(
+                    text("SELECT deger FROM proje_sayac WHERE project_id = :p AND ad = 'pr'"),
+                    {"p": EV},
+                ).scalar_one()
+                == 6
+            )
+        eng.dispose()
+    finally:
+        _sil(pg, ad)
+
+
+def test_0045_downgrade_cok_projede_reddedilir(db: Db) -> None:
+    with _app(db) as c:
+        for pid in ("p1", "p2"):
+            c.execute(
+                "INSERT INTO requirement (project_id, kaynak, baslik, kaynak_hash) "
+                "VALUES (%s, 'free_text', 'b', 'h')",
+                (pid,),
+            )
+    with pytest.raises(RuntimeError, match="birden çok projenin"):
+        run_alembic(db.owner_url, "0044", "downgrade")
+
+
+def test_0045_home_kipinde_proje_yoksa_durur(pg: PgServer, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("TP_HOME_PROJECT", raising=False)
+    monkeypatch.setenv("CONFIG_SOURCE", "home")
+    ad, owner, dsn = _yeni_bos_db(pg, "0044")
+    try:
+        with pytest.raises(RuntimeError, match="TP_HOME_PROJECT boş"):
+            run_alembic(owner, "head")
+        with psycopg.connect(dsn, autocommit=True) as c:
+            assert c.execute("SELECT version_num FROM alembic_version").fetchone() == ("0044",)
+    finally:
+        _sil(pg, ad)
+
+
+def test_0045_job_idempotency_proje_basina_ve_kurulum_ici_tekil(db: Db) -> None:
+    with _app(db) as c:
+        ekle = (
+            "INSERT INTO job (project_id, tur, idempotency_key) VALUES (%s, 'noop', 'k') "
+            "ON CONFLICT (project_id, idempotency_key) WHERE idempotency_key IS NOT NULL "
+            "DO NOTHING RETURNING id"
+        )
+        assert c.execute(ekle, ("a",)).fetchone() is not None
+        assert c.execute(ekle, ("b",)).fetchone() is not None
+        assert c.execute(ekle, ("a",)).fetchone() is None
+        assert c.execute(ekle, (None,)).fetchone() is not None
+        assert c.execute(ekle, (None,)).fetchone() is None  # NULLS NOT DISTINCT

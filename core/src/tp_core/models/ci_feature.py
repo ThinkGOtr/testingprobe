@@ -24,7 +24,7 @@ from sqlalchemy import ForeignKey, Index, Integer, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from tp_core.models.base import Base, in_check, olusturma_col, uuid_pk
+from tp_core.models.base import Base, ProjeKapsamli, in_check, olusturma_col, uuid_pk
 from tp_core.models.delivery import TestResult
 from tp_core.models.requirements import EMPTY_LIST, EMPTY_OBJ
 
@@ -33,7 +33,7 @@ CI_TETIK = frozenset({"pr", "push", "nightly", "deploy", "manual"})
 CI_KAYNAK = frozenset({"local", "github"})
 
 
-class CiTetik(Base):
+class CiTetik(ProjeKapsamli, Base):
     """Bir CI tetiği (çift tetiklemeye karşı benzersiz anahtar)."""
 
     __tablename__ = "ci_tetik"
@@ -41,10 +41,11 @@ class CiTetik(Base):
         in_check("tetik", CI_TETIK, "ci_tetik_tetik_ck"),
         in_check("kaynak", CI_KAYNAK, "ci_tetik_kaynak_ck"),
         Index("ci_tetik_run_ix", "run_id"),
+        UniqueConstraint("project_id", "anahtar", name="ci_tetik_proje_anahtar_uq"),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
-    anahtar: Mapped[str] = mapped_column(unique=True)
+    anahtar: Mapped[str]
     tetik: Mapped[str]
     kaynak: Mapped[str]
     run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("run.id", ondelete="SET NULL"))
@@ -56,7 +57,7 @@ class CiTetik(Base):
     olusturma: Mapped[datetime] = olusturma_col()
 
 
-class TestResultEk(Base):
+class TestResultEk(ProjeKapsamli, Base):
     """Test sonucunun JSON raporundan gelen ekleri (a11y, ek dosyalar, denemeler)."""
 
     __tablename__ = "test_result_ek"
@@ -86,7 +87,7 @@ class TestResultEk(Base):
 TEST_RESULT_COMMIT_IX = Index("test_result_commit_ix_ci", TestResult.commit, TestResult.test_adi)
 
 
-class RunAria(Base):
+class RunAria(ProjeKapsamli, Base):
     """GitHub koşusunun artefaktındaki aria snapshot dosyasının kopyası (0016).
 
     Yeşil koşuda `locators.spec.ts` sayfa başına `<sayfa>.aria.yml` yazar; GitHub kipinde bu
