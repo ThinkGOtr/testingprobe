@@ -11,7 +11,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from tp_core.models import enums
-from tp_core.models.base import Base, in_check, olusturma_col, uuid_pk
+from tp_core.models.base import Base, ProjeKapsamli, in_check, olusturma_col, uuid_pk
 
 
 class AppUser(Base):
@@ -35,7 +35,7 @@ class AppUser(Base):
     secili_proje: Mapped[str | None] = mapped_column(String(64))
 
 
-class ApiToken(Base):
+class ApiToken(ProjeKapsamli, Base):
     """8 saatlik kapsamlı bearer token; yalnızca sha256 özeti saklanır (§8.3)."""
 
     __tablename__ = "api_token"

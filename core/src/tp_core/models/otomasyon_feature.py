@@ -14,29 +14,49 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Integer, UniqueConstraint, false
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+    false,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from tp_core.models.base import Base, guncelleme_col, in_check, olusturma_col, uuid_pk
+from tp_core.models.base import (
+    Base,
+    ProjeKapsamli,
+    guncelleme_col,
+    in_check,
+    olusturma_col,
+    uuid_pk,
+)
+from tp_core.proje.baglam import mevcut_pid
 
 TEST_VERISI_ISLEM = frozenset({"olustur", "guncelle", "sil"})
 
 
-class OtomasyonAyari(Base):
+class OtomasyonAyari(ProjeKapsamli, Base):
     __tablename__ = "otomasyon_ayari"
 
+    # Ayar proje başına (§1.2): PK (project_id, anahtar).
+    project_id: Mapped[str] = mapped_column(
+        String(64), primary_key=True, default=lambda: mevcut_pid()
+    )
     anahtar: Mapped[str] = mapped_column(primary_key=True)
     deger: Mapped[Any] = mapped_column(JSONB)
     guncelleyen: Mapped[str]
     guncelleme: Mapped[datetime] = guncelleme_col()
 
 
-class TestVerisi(Base):
+class TestVerisi(ProjeKapsamli, Base):
     __tablename__ = "test_verisi"
     __test__ = False  # pytest bu sınıfı test sınıfı sanmasın
     __table_args__ = (
-        UniqueConstraint("anahtar", name="test_verisi_anahtar_uq"),
+        UniqueConstraint("project_id", "anahtar", name="test_verisi_anahtar_uq"),
         CheckConstraint(
             "anahtar ~ '^[a-z0-9_]+(\\.[a-z0-9_]+){0,5}$'", name="test_verisi_anahtar_ck"
         ),
@@ -61,7 +81,7 @@ class TestVerisi(Base):
     guncelleme: Mapped[datetime] = guncelleme_col()
 
 
-class TestVerisiSurum(Base):
+class TestVerisiSurum(ProjeKapsamli, Base):
     __tablename__ = "test_verisi_surum"
     __test__ = False
     __table_args__ = (

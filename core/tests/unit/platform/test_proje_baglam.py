@@ -282,8 +282,10 @@ def test_proje_degistirilemez(sq: Engine) -> None:
 
 
 def test_kapsamli_tablolar_yalniz_tp_modelleri() -> None:
-    # Şerit 0'da henüz hiçbir tp_core modeli mixin almadı; test modelleri sayılmaz.
-    assert orm.kapsamli_tablolar() == frozenset()
+    # Şerit 1 mixin'i §1.1 A tablolarına uyguladı; test modelleri sayılmaz.
+    from tests.unit.platform.test_proje_kapsami import PLAN_KAPSAMLI
+
+    assert orm.kapsamli_tablolar() == PLAN_KAPSAMLI
     assert orm.TUM_PROJELER == "tum_projeler"
 
 

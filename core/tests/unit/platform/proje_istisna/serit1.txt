@@ -1,17 +1,2 @@
 # Şerit 1 proje kapsamı geçiş tabanı (TP-COK-PROJE-PLANI §2.4). Biçim: yol:kural:imza  # gerekçe
 # Yalnız küçülür: düzelttiğiniz ihlalin satırını silin. Yeni satır = gerekçeli kalıcı istisna (review).
-tp_core/audit/chain.py:sql:INSERT INTO audit_event (id, zaman, aktor, eylem, nesne, ozet, prev_ha  # gecis tabani
-tp_core/audit/chain.py:sql:SELECT hash FROM audit_event ORDER BY id DESC LIMIT 1  # gecis tabani
-tp_core/audit/chain.py:sql:SELECT hash FROM audit_event ORDER BY id DESC LIMIT 1  # gecis tabani
-tp_core/audit/chain.py:sql:SELECT id, zaman, aktor, eylem, nesne, ozet, prev_hash, hash FROM audi  # gecis tabani
-tp_core/audit/recorder.py:sql:SELECT DISTINCT ON (nesne) nesne, ozet FROM audit_event WHERE eylem =  # gecis tabani
-tp_core/worker/__init__.py:sql:SELECT 1 FROM asistan_durum WHERE id = 1 AND kalp_atisi IS NOT NULL AN  # gecis tabani
-tp_core/worker/__init__.py:thread:run:Thread  # gecis tabani
-tp_core/worker/__init__.py:thread:run:Thread  # gecis tabani
-tp_core/worker/__init__.py:thread:run:Thread  # gecis tabani
-tp_core/workflow/budget.py:sql:SELECT COALESCE(SUM(maliyet), 0) FROM ai_call WHERE olusturma >= :bas  # gecis tabani
-tp_core/workflow/budget.py:sql:SELECT COALESCE(SUM(maliyet), 0) FROM ai_call WHERE workflow_id = :w  # gecis tabani
-tp_core/workflow/jobs.py:sql:INSERT INTO workflow_instance (id, tur, baslatan, nesne_turu, nesne_id  # gecis tabani
-tp_core/workflow/jobs.py:sql:SELECT nesne_turu, nesne_id FROM workflow_instance WHERE id = :w  # gecis tabani
-tp_core/workflow/jobs.py:sql:UPDATE workflow_instance SET job_id = :j WHERE id = :id  # gecis tabani
-tp_core/workflow/jobs.py:thread:process_one:Thread  # gecis tabani

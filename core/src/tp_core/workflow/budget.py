@@ -6,6 +6,10 @@ işi yeniden denemeden `failed` yazar ve iş akışını `pause_for_budget()` il
 `assert_budget()` / `enforce_budget()` API tarafının (ör. iş başlatmadan önce) kontrolüdür; buradaki
 `BudgetExceeded` geçidinkinin alt sınıfıdır, iki yol da tek `except` ile yakalanır.
 Gün sınırı UTC'dir. REPLAY çağrılarının maliyeti 0 yazılır, bütçeyi tüketmez.
+
+Çok proje (TP-COK-PROJE-PLANI §3.3 A, §8.2): günlük tavan **kurulum geneli** toplamdır (tüm
+projelerin `ai_call`'ı bilerek toplanır); iş akışı harcaması bağlamdaki projenin satırlarıdır
+(`ai_call` kaydıyla aynı kural: bağlam yoksa `'_kurulum'`).
 """
 
 from __future__ import annotations
@@ -19,6 +23,7 @@ from typing import Any
 from sqlalchemy import Connection, text
 from sqlalchemy.orm import Session
 
+from tp_core.audit.chain import zincir_projesi
 from tp_core.config import get_settings
 from tp_core.gateway.errors import BudgetExceeded as GatewayBudgetExceeded
 
@@ -66,7 +71,8 @@ def daily_spend_usd(conn: Connection, gun: date | None = None) -> Decimal:
         conn.execute(
             text(
                 "SELECT COALESCE(SUM(maliyet), 0) FROM ai_call "
-                "WHERE olusturma >= :bas AND olusturma < :bit"
+                "WHERE olusturma >= :bas AND olusturma < :bit "
+                "/* project_id süzülmez: kurulum geneli günlük bütçe (§8.2) */"
             ),
             {"bas": bas, "bit": bas + timedelta(days=1)},
         ).scalar_one()
@@ -76,8 +82,11 @@ def daily_spend_usd(conn: Connection, gun: date | None = None) -> Decimal:
 def workflow_spend_usd(conn: Connection, workflow_id: uuid.UUID) -> Decimal:
     return Decimal(
         conn.execute(
-            text("SELECT COALESCE(SUM(maliyet), 0) FROM ai_call WHERE workflow_id = :w"),
-            {"w": workflow_id},
+            text(
+                "SELECT COALESCE(SUM(maliyet), 0) FROM ai_call "
+                "WHERE project_id = :pid AND workflow_id = :w"
+            ),
+            {"pid": zincir_projesi(), "w": workflow_id},
         ).scalar_one()
     )
 

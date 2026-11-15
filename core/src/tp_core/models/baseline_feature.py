@@ -20,7 +20,7 @@ from datetime import datetime
 from sqlalchemy import CheckConstraint, ForeignKey, Integer, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from tp_core.models.base import Base, in_check, olusturma_col, uuid_pk
+from tp_core.models.base import Base, ProjeKapsamli, in_check, olusturma_col, uuid_pk
 
 # Saniye; 40 saat = 5 iş günü. Tek bir story için manuel test tasarımı bundan uzunsa değer
 # büyük olasılıkla dakika/saniye karışıklığıdır (ör. 3600 yerine 360000).
@@ -28,7 +28,7 @@ BAZ_UST_SINIR_S = 40 * 3600
 BAZ_ISLEM = ("set", "clear")
 
 
-class RequirementBazDeger(Base):
+class RequirementBazDeger(ProjeKapsamli, Base):
     """Story başına manuel baz değer girişi (append-only geçmiş; güncel = en büyük `sira`)."""
 
     __tablename__ = "requirement_baz_deger"

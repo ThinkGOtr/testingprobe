@@ -28,12 +28,19 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from tp_core.models import enums
-from tp_core.models.base import Base, guncelleme_col, in_check, olusturma_col, uuid_pk
+from tp_core.models.base import (
+    Base,
+    ProjeKapsamli,
+    guncelleme_col,
+    in_check,
+    olusturma_col,
+    uuid_pk,
+)
 
 URETIM_TUR = frozenset({"uretim", "negatif", "teknik"})
 
 
-class CaseGoruntuleme(Base):
+class CaseGoruntuleme(ProjeKapsamli, Base):
     """Bir kullanıcının bir case'i görüntülediği an (review süresi ölçümü)."""
 
     __tablename__ = "case_goruntuleme"
@@ -45,7 +52,7 @@ class CaseGoruntuleme(Base):
     zaman: Mapped[datetime] = olusturma_col()
 
 
-class CaseUretim(Base):
+class CaseUretim(ProjeKapsamli, Base):
     """Bir case üretiminin üst düzey listeleri (`ozet`); gereksinim + üretim no başına tek satır."""
 
     __tablename__ = "case_uretim"
@@ -67,7 +74,7 @@ class CaseUretim(Base):
     olusturma: Mapped[datetime] = olusturma_col()
 
 
-class TasarimModeli(Base):
+class TasarimModeli(ProjeKapsamli, Base):
     """Test tasarım modeli (iki tur — tur 1); gereksinim başına sürümlü, son sürüm geçerlidir."""
 
     __tablename__ = "tasarim_modeli"
