@@ -24,7 +24,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import os
 import re
 import uuid
 from collections.abc import Callable, Mapping, Sequence
@@ -47,6 +46,7 @@ from tp_core.features.cases.schema import (
 )
 from tp_core.models import AiCall, CaseSetReview, Job, Requirement, TestCase, session_scope
 from tp_core.ports import ModelGateway, ModelMessage
+from tp_core.proje.ayar import ayar
 from tp_core.workflow.jobs import JobContext, PermanentJobError, enqueue
 from tp_core.workflow.service import Principal, WorkflowError
 
@@ -392,9 +392,9 @@ def close_stuck_reviews(session: Session, requirement_id: uuid.UUID | None = Non
 
 
 def daily_limit(ortam: str, varsayilan: int) -> int:
-    """Gereksinim başına 24 saatlik sınır (ortam; geçersiz/boş → varsayılan, 0 → sınırsız)."""
+    """Gereksinim başına 24 saatlik sınır (proje ayarı; geçersiz/boş → varsayılan, 0 → sınırsız)."""
     try:
-        return max(int(os.environ.get(ortam) or varsayilan), 0)
+        return max(int(ayar(ortam) or varsayilan), 0)
     except ValueError:
         return varsayilan
 

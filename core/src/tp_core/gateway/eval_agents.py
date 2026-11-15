@@ -44,6 +44,7 @@ from pathlib import Path
 from typing import Any
 
 from tp_core.ports import ToolExecutor, ToolSpec
+from tp_core.proje import pid_param, proje_icinde, varsa, varsayilan_pid
 
 
 class ToolEnvUnavailable(RuntimeError):
@@ -193,7 +194,8 @@ _TOHUM_TABLOLARI: dict[str, tuple[str, frozenset[str], str]] = {
     "failure": (
         "failure",
         frozenset({"sinif", "alt_tur", "oneri_turu"}),
-        "(SELECT r.baslama FROM run r WHERE r.id = failure.run_id) DESC NULLS LAST",
+        "(SELECT r.baslama FROM run r WHERE r.id = failure.run_id "
+        "AND r.project_id = failure.project_id) DESC NULLS LAST",
     ),
 }
 
@@ -231,10 +233,10 @@ def tohum_coz(conn: Any, baglam: Any, secim: Mapping[str, Any] | None = None) ->
     bilinmeyen = sorted(set(kosul) - izinli)
     if bilinmeyen:
         raise TohumYok(f"tohum_secim izinli olmayan sütun: {bilinmeyen}")
-    where = " AND ".join(f"{k} = :{k}" for k in sorted(kosul)) or "TRUE"
+    where = " AND ".join(["project_id = :pid", *(f"{k} = :{k}" for k in sorted(kosul))])
     kimlik = conn.execute(
         text(f"SELECT id FROM {tablo} WHERE {where} ORDER BY {sira} LIMIT 1"),
-        kosul,
+        pid_param(**kosul),
     ).scalar()
     if kimlik is None:
         raise TohumYok(f"tohum çözülemedi: {tur} {kosul}")
@@ -263,6 +265,8 @@ class AsistanAkisi:
     masker: Any = None
     rules_dir: Path | None = None
     saat: Callable[[], float] = time.monotonic
+    # Vakaların koşacağı proje (None → bağlamdaki ya da varsayılan proje; tohumlu DB'nin projesi).
+    pid: str | None = None
 
     # -------------------------------------------------------------- asistan_durum
 
@@ -273,17 +277,22 @@ class AsistanAkisi:
 
         satir = (
             conn.execute(
-                text(f"SELECT {', '.join(_DURUM_SUTUNLARI)} FROM asistan_durum WHERE id = 1")
+                text(
+                    f"SELECT {', '.join(_DURUM_SUTUNLARI)} FROM asistan_durum "
+                    "WHERE project_id = :pid"
+                ),
+                pid_param(),
             )
             .mappings()
             .first()
         )
         conn.execute(
             text(
-                "INSERT INTO asistan_durum (id, mod, model_hazir, kalp_atisi) "
-                "VALUES (1, 'live', true, now()) ON CONFLICT (id) DO UPDATE SET mod = 'live', "
-                "model_hazir = true, kalp_atisi = now()"
-            )
+                "INSERT INTO asistan_durum (project_id, mod, model_hazir, kalp_atisi) "
+                "VALUES (:pid, 'live', true, now()) ON CONFLICT (project_id) DO UPDATE "
+                "SET mod = 'live', model_hazir = true, kalp_atisi = now()"
+            ),
+            pid_param(),
         )
         return dict(satir) if satir else None
 
@@ -293,10 +302,13 @@ class AsistanAkisi:
         from sqlalchemy import text
 
         if onceki is None:
-            conn.execute(text("DELETE FROM asistan_durum WHERE id = 1"))
+            conn.execute(text("DELETE FROM asistan_durum WHERE project_id = :pid"), pid_param())
             return
         atama = ", ".join(f"{k} = :{k}" for k in _DURUM_SUTUNLARI)
-        conn.execute(text(f"UPDATE asistan_durum SET {atama} WHERE id = 1"), onceki)
+        conn.execute(
+            text(f"UPDATE asistan_durum SET {atama} WHERE project_id = :pid"),
+            pid_param(**onceki),
+        )
 
     # -------------------------------------------------------------- vaka
 
@@ -311,22 +323,25 @@ class AsistanAkisi:
             conn = s.connection()
             baglam = tohum_coz(conn, case.get("baglam"), case.get("tohum_secim"))
             conn.execute(
-                text("INSERT INTO asistan_sohbet (id, kullanici_id, baslik) VALUES (:s, :k, :b)"),
-                {"s": sohbet, "k": self.kullanici_id, "b": f"eval: {case['id']}"[:120]},
+                text(
+                    "INSERT INTO asistan_sohbet (project_id, id, kullanici_id, baslik) "
+                    "VALUES (:pid, :s, :k, :b)"
+                ),
+                pid_param(s=sohbet, k=self.kullanici_id, b=f"eval: {case['id']}"[:120]),
             )
-            ortak = {"s": sohbet, "k": self.kullanici_id, "icerik": case.get("soru"), "kip": kip}
+            ortak = pid_param(s=sohbet, k=self.kullanici_id, icerik=case.get("soru"), kip=kip)
             conn.execute(
                 text(
-                    "INSERT INTO asistan_mesaj (sohbet_id, kullanici_id, sira, rol, icerik, kip, "
-                    "durum) VALUES (:s, :k, 1, 'user', :icerik, :kip, 'done')"
+                    "INSERT INTO asistan_mesaj (project_id, sohbet_id, kullanici_id, sira, rol, "
+                    "icerik, kip, durum) VALUES (:pid, :s, :k, 1, 'user', :icerik, :kip, 'done')"
                 ),
                 ortak,
             )
             conn.execute(
                 text(
-                    "INSERT INTO asistan_mesaj (id, sohbet_id, kullanici_id, sira, rol, icerik, "
-                    "baglam, kip, durum, amac) VALUES (:m, :s, :k, 2, 'assistant', :icerik, "
-                    "CAST(:baglam AS jsonb), :kip, 'pending', :amac)"
+                    "INSERT INTO asistan_mesaj (project_id, id, sohbet_id, kullanici_id, sira, "
+                    "rol, icerik, baglam, kip, durum, amac) VALUES (:pid, :m, :s, :k, 2, "
+                    "'assistant', :icerik, CAST(:baglam AS jsonb), :kip, 'pending', :amac)"
                 ),
                 {
                     **ortak,
@@ -349,18 +364,30 @@ class AsistanAkisi:
             conn.execute(
                 text(
                     "UPDATE asistan_mesaj SET durum = 'iptal', tamamlanma = now() "
-                    "WHERE id = :m AND durum IN ('pending', 'running')"
+                    "WHERE id = :m AND project_id = :pid AND durum IN ('pending', 'running')"
                 ),
-                {"m": mesaj},
+                pid_param(m=mesaj),
             )
             conn.execute(
-                text("UPDATE asistan_sohbet SET silindi = true, silinme = now() WHERE id = :s"),
-                {"s": sohbet},
+                text(
+                    "UPDATE asistan_sohbet SET silindi = true, silinme = now() "
+                    "WHERE id = :s AND project_id = :pid"
+                ),
+                pid_param(s=sohbet),
             )
             self._durumu_geri_yaz(conn, onceki)
             s.commit()
 
     def sor(
+        self, case: Mapping[str, Any], amac: str, gateway_factory: Callable[..., Any]
+    ) -> AkisSonucu:
+        """Vakayı `pid` projesinde (verilmezse bağlamdaki, o da yoksa varsayılan proje) koşturur."""
+        b = varsa()
+        pid = self.pid or (b.pid if b is not None else varsayilan_pid())
+        with proje_icinde(pid, kaynak=b.kaynak if b is not None else "cli"):
+            return self._sor(case, amac, gateway_factory)
+
+    def _sor(
         self, case: Mapping[str, Any], amac: str, gateway_factory: Callable[..., Any]
     ) -> AkisSonucu:
         """Vakayı bir asistan mesajı olarak yazar, `flow.cevapla` ile cevaplatır, sonucu okur.
@@ -398,9 +425,9 @@ class AsistanAkisi:
                     conn.execute(
                         text(
                             "SELECT cevap, kaynak, durum, hata_kodu, maliyet_usd, sure_ms "
-                            "FROM asistan_mesaj WHERE id = :m"
+                            "FROM asistan_mesaj WHERE id = :m AND project_id = :pid"
                         ),
-                        {"m": mesaj},
+                        pid_param(m=mesaj),
                     )
                     .mappings()
                     .one()

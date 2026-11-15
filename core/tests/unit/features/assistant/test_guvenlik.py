@@ -801,7 +801,12 @@ def test_kartli_soru_ve_baglam_422_kisisel_veri(
     assert "5105105105105100" not in re.sub(r"\D", "", r.text)
     r = sor(client, s, soru="bu ne?", baglam={"secili_eleman": {"ad": "kart 5105105105105100"}})
     assert r.status_code == 422 and r.json()["kod"] == "kisisel_veri"
-    assert _api.tek(engine, "SELECT count(*) FROM asistan_mesaj") == 0
+    assert (
+        _api.tek(
+            engine, "SELECT count(*) FROM asistan_mesaj WHERE asistan_mesaj.project_id = 'test-a'"
+        )
+        == 0
+    )
 
 
 def test_test_karti_ve_tckn_iceren_soru_kabul_edilir(

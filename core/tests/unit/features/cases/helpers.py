@@ -34,6 +34,7 @@ from tp_core.integrations.jira import RestJira
 from tp_core.integrations.testmgmt import JiraTestManagement
 from tp_core.models import Requirement, session_scope
 from tp_core.models.otomasyon_feature import OtomasyonAyari
+from tp_core.proje import mevcut_pid
 from tp_core.workflow.jobs import process_one
 from tp_core.workflow.service import (
     SYSTEM,
@@ -337,7 +338,7 @@ def worker(engine: Engine) -> Iterator[None]:
 def otomatik_kod_ayari(acik: bool) -> None:
     """013 §3.2: onay sonrası otomatik kod üretimi ayarı (denetim kaydı yazmadan; test kurulumu)."""
     with session_scope() as s:
-        satir = s.get(OtomasyonAyari, OTOMATIK_KOD)
+        satir = s.get(OtomasyonAyari, (mevcut_pid(), OTOMATIK_KOD))
         if satir is None:
             s.add(OtomasyonAyari(anahtar=OTOMATIK_KOD, deger={"acik": acik}, guncelleyen="test"))
         else:
@@ -382,7 +383,7 @@ def goruntule(client: TestClient, db: Any, *case_ids: str, once_s: int = 5) -> N
             conn.execute(
                 sql_text(
                     "UPDATE case_goruntuleme SET zaman = zaman - make_interval(secs => :s) "
-                    "WHERE test_case_id = ANY(CAST(:ids AS uuid[]))"
+                    "WHERE project_id = 'test-a' AND test_case_id = ANY(CAST(:ids AS uuid[]))"
                 ),
                 {"s": once_s, "ids": list(case_ids)},
             )

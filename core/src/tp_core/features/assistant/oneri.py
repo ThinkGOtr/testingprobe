@@ -32,7 +32,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import threading
 import time
@@ -50,6 +49,8 @@ from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import Session
 
 from tp_core.auth import yetki as _yetki
+from tp_core.proje import pid_param, varsa, varsayilan_pid
+from tp_core.proje.ayar import ayar, surum
 from tp_core.workflow.service import Principal
 
 log = logging.getLogger(__name__)
@@ -124,7 +125,7 @@ class GecersizGeriBildirim(ValueError):
 
 def oneri_etkin() -> bool:
     """`TP_ASISTAN_ONERI` (varsayılan 1): 0 → öneri uçları ve düğme kapalı (§9 geri alma)."""
-    deger = os.environ.get("TP_ASISTAN_ONERI", "1").strip().lower()
+    deger = (ayar("TP_ASISTAN_ONERI", "1") or "").strip().lower()
     return deger not in ("0", "false", "hayir", "hayır", "off", "no")
 
 
@@ -582,10 +583,10 @@ def _po_bekleme_baslangici(session: Session, req: Any) -> datetime | None:
     """`pending_po`'ya son giriş: denetim izindeki geçiş; yoksa son PO incelemesinin zamanı."""
     zaman = session.execute(
         text(
-            "SELECT max(zaman) FROM audit_event WHERE eylem = 'requirement.transition' "
-            "AND nesne = :nesne AND ozet->>'to' = 'pending_po'"
+            "SELECT max(zaman) FROM audit_event WHERE project_id = :pid "
+            "AND eylem = 'requirement.transition' AND nesne = :nesne AND ozet->>'to' = 'pending_po'"
         ),
-        {"nesne": f"requirement:{req.id}"},
+        pid_param(nesne=f"requirement:{req.id}"),
     ).scalar_one_or_none()
     if zaman is not None:
         return zaman
@@ -988,9 +989,16 @@ def create_url_dogrula(deger: str | None, gezinme_koku: str | None, simulator: b
     return deger
 
 
-@lru_cache(maxsize=1)
 def jira_baglantisi() -> JiraBaglantisi:
-    """Açılışta bir kez kurulur (ayar değişikliği yeniden başlatma ister)."""
+    """Bağlamdaki projenin Jira bağlantısı; `(pid, config sürümü)` başına bir kez kurulur
+    (proje config'i değişince yeniden kurulur)."""
+    sur = surum()  # bağlamsız + Home kaynağı bağlıysa ProjeBaglamiYok (ayar() ile aynı kural)
+    b = varsa()
+    return _jira_baglantisi(b.pid if b is not None else varsayilan_pid(), sur)
+
+
+@lru_cache(maxsize=32)
+def _jira_baglantisi(_pid: str, _surum: str) -> JiraBaglantisi:
     from tp_core.integrations.jira import get_jira_settings
 
     s = get_jira_settings()
@@ -1006,9 +1014,7 @@ def jira_baglantisi() -> JiraBaglantisi:
     return JiraBaglantisi(
         proje=s.jira_project,
         gezinme_koku=gezinme,
-        olusturma_adresi=create_url_dogrula(
-            os.environ.get("JIRA_CREATE_URL"), gezinme, s.is_simulator
-        ),
+        olusturma_adresi=create_url_dogrula(ayar("JIRA_CREATE_URL"), gezinme, s.is_simulator),
         simulator=s.is_simulator,
     )
 

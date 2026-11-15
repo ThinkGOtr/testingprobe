@@ -2,7 +2,9 @@
 
 İki parça:
 
-1. **Servis durumu (`asistan_durum`, kalp atışı).** Tekil satırı (`id = 1`) YALNIZ worker yazar;
+1. **Servis durumu (`asistan_durum`, kalp atışı).** Proje başına tek satırı (PK `project_id`;
+   TP-COK-PROJE-PLANI §1.2) YALNIZ worker yazar; bağlamsız çağrıda (worker zamanlayıcısı) her
+   aktif projenin (`kurulu_projeler`) satırı o projenin bağlamında hesaplanıp yazılır;
    core-api okur ve kalp atışı 2 dakikadan eskiyse asistanı `etkin=false, neden=worker_yok`
    gösterir (core-api model anahtarını ve kipini bilmez, İlke II). Worker açılış kancası
    (`jobs.on_worker_start`) ve ayrı bir zamanlayıcı iş parçacığı (`worker.run`, 30 sn) yazar:
@@ -44,8 +46,10 @@ from typing import Any, Final
 from sqlalchemy import Connection, Engine, and_, case, func, literal, or_, select, text, update
 
 from tp_core.events import publish_tx
+from tp_core.features.otomasyon.proje_dongusu import projelerde
 from tp_core.models import enums
 from tp_core.models.asistan import AsistanMesaj, AsistanSohbet
+from tp_core.proje import KURULUM, mevcut_pid, pid_param, proje_icinde, varsa
 
 log = logging.getLogger("tp_core.worker")
 
@@ -153,20 +157,37 @@ def durum_hesapla(ortam: Mapping[str, str] | None = None) -> AsistanDurumu:
     )
 
 
-def durum_yaz(conn: Connection, durum: AsistanDurumu | None = None) -> AsistanDurumu:
-    """`asistan_durum` tekil satırını yazar (yoksa ekler) ve kalp atışını DB saatine tazeler."""
+def durum_yaz(conn: Connection, durum: AsistanDurumu | None = None) -> AsistanDurumu | None:
+    """`asistan_durum` satırını yazar (yoksa ekler) ve kalp atışını DB saatine tazeler.
+
+    Bağlam varsa yalnız bağlamdaki projenin satırı; yoksa (worker kalp atışı) her aktif projenin
+    satırı, o projenin bağlamında (proje ayarları) hesaplanarak, ve kurulum geneli `'_kurulum'`
+    satırı (worker canlılığı; `worker.kapali_serit_temizle` okur). Son yazılan proje durumunu
+    döndürür (proje yoksa None).
+    """
+    yazilan = projelerde(conn, lambda: _durum_yaz(conn, durum))
+    if varsa() is None:
+        kurulum = yazilan[-1] if yazilan else durum or AsistanDurumu("off", False, False, False)
+        _durum_yaz(conn, kurulum, pid=KURULUM)
+    return yazilan[-1] if yazilan else None
+
+
+def _durum_yaz(
+    conn: Connection, durum: AsistanDurumu | None, *, pid: str | None = None
+) -> AsistanDurumu:
     d = durum or durum_hesapla()
     conn.execute(
         text(
-            "INSERT INTO asistan_durum (id, mod, model_hazir, maskeleme, musteri_verisi, "
+            "INSERT INTO asistan_durum (project_id, mod, model_hazir, maskeleme, musteri_verisi, "
             "paket_commit, paket_uretim, kalp_atisi) "
-            "VALUES (1, :mod, :hazir, :maske, :musteri, :commit, :uretim, now()) "
-            "ON CONFLICT (id) DO UPDATE SET mod = EXCLUDED.mod, "
+            "VALUES (:pid, :mod, :hazir, :maske, :musteri, :commit, :uretim, now()) "
+            "ON CONFLICT (project_id) DO UPDATE SET mod = EXCLUDED.mod, "
             "model_hazir = EXCLUDED.model_hazir, maskeleme = EXCLUDED.maskeleme, "
             "musteri_verisi = EXCLUDED.musteri_verisi, paket_commit = EXCLUDED.paket_commit, "
             "paket_uretim = EXCLUDED.paket_uretim, kalp_atisi = EXCLUDED.kalp_atisi"
         ),
         {
+            "pid": pid or mevcut_pid(),
             "mod": d.mod,
             "hazir": d.model_hazir,
             "maske": d.maskeleme,
@@ -178,7 +199,7 @@ def durum_yaz(conn: Connection, durum: AsistanDurumu | None = None) -> AsistanDu
     return d
 
 
-def kalp_atisi_yaz(engine: Engine) -> AsistanDurumu:
+def kalp_atisi_yaz(engine: Engine) -> AsistanDurumu | None:
     """Zamanlayıcı iş parçacığının çağırdığı tek adım (kendi transaction'ı)."""
     with engine.begin() as conn:
         return durum_yaz(conn)
@@ -186,7 +207,9 @@ def kalp_atisi_yaz(engine: Engine) -> AsistanDurumu:
 
 def model_hazir_oku(conn: Connection) -> bool:
     """İşleyicinin "canlı dala girilebilir mi" sorusu: satırdaki `model_hazir` (yoksa False)."""
-    deger = conn.execute(text("SELECT model_hazir FROM asistan_durum WHERE id = 1")).scalar()
+    deger = conn.execute(
+        text("SELECT model_hazir FROM asistan_durum WHERE project_id = :pid"), pid_param()
+    ).scalar()
     return bool(deger)
 
 
@@ -200,6 +223,11 @@ SONUC_ALANLARI: Final = frozenset(
 )
 HARCAMA_ALANLARI: Final = frozenset({"maliyet_usd", "token_girdi", "token_cikti", "sure_ms"})
 _SON_DURUMLAR: Final = frozenset({"done", "error", "iptal"})
+
+
+def _proje() -> Any:
+    """Core ifadelerinde bağlamdaki proje koşulu (ORM filtresi Core'a uygulanmaz)."""
+    return _MESAJ.c.project_id == mevcut_pid()
 
 
 def _olay(conn: Connection, mesaj_id: uuid.UUID, kullanici_id: uuid.UUID, durum: str) -> None:
@@ -220,12 +248,16 @@ def baslat(conn: Connection, mesaj_id: uuid.UUID) -> bool:
     silindi = (
         select(literal(1))
         .select_from(_SOHBET)
-        .where(_SOHBET.c.id == _MESAJ.c.sohbet_id, _SOHBET.c.silindi.is_(True))
+        .where(
+            _SOHBET.c.id == _MESAJ.c.sohbet_id,
+            _SOHBET.c.project_id == _MESAJ.c.project_id,
+            _SOHBET.c.silindi.is_(True),
+        )
         .exists()
     )
     sonuc = conn.execute(
         update(_MESAJ)
-        .where(_MESAJ.c.id == mesaj_id, _MESAJ.c.durum == "pending")
+        .where(_MESAJ.c.id == mesaj_id, _proje(), _MESAJ.c.durum == "pending")
         .values(
             durum=case((silindi, "iptal"), else_="running"),
             tamamlanma=case((silindi, func.now()), else_=_MESAJ.c.tamamlanma),
@@ -255,7 +287,7 @@ def sonuc_yaz(conn: Connection, mesaj_id: uuid.UUID, **alanlar: Any) -> bool:
         return False
     sonuc = conn.execute(
         update(_MESAJ)
-        .where(_MESAJ.c.id == mesaj_id, _MESAJ.c.durum == "running")
+        .where(_MESAJ.c.id == mesaj_id, _proje(), _MESAJ.c.durum == "running")
         .values(**degerler)
     )
     return sonuc.rowcount == 1
@@ -289,6 +321,7 @@ def harcama_yaz(
         update(_MESAJ)
         .where(
             _MESAJ.c.id == mesaj_id,
+            _proje(),
             or_(
                 _MESAJ.c.durum.in_(("running", "iptal")),
                 and_(_MESAJ.c.durum == "error", _MESAJ.c.hata_kodu == HATA_ZAMAN_ASIMI),
@@ -303,7 +336,7 @@ def hata_yaz(conn: Connection, mesaj_id: uuid.UUID, hata_kodu: str) -> bool:
     """Bekleyen/koşan mesajı `error` yapar (yalnız sınıf kodu; ayrıntı yazılmaz) ve olayı yayar."""
     satir = conn.execute(
         update(_MESAJ)
-        .where(_MESAJ.c.id == mesaj_id, _MESAJ.c.durum.in_(("pending", "running")))
+        .where(_MESAJ.c.id == mesaj_id, _proje(), _MESAJ.c.durum.in_(("pending", "running")))
         .values(durum="error", hata_kodu=hata_kodu, tamamlanma=func.now())
         .returning(_MESAJ.c.kullanici_id)
     ).first()
@@ -313,20 +346,23 @@ def hata_yaz(conn: Connection, mesaj_id: uuid.UUID, hata_kodu: str) -> bool:
     return True
 
 
-def durdurulmali(conn: Connection, mesaj_id: uuid.UUID) -> bool:
+def durdurulmali(conn: Connection, mesaj_id: uuid.UUID, *, pid: str | None = None) -> bool:
     """`should_stop`: mesaj artık `running` değil (iptal, uzlaştırma, silinmiş satır)."""
     durum = conn.execute(
-        text("SELECT durum FROM asistan_mesaj WHERE id = :i"), {"i": mesaj_id}
+        text("SELECT durum FROM asistan_mesaj WHERE id = :i AND project_id = :pid"),
+        {"i": mesaj_id, "pid": pid or mevcut_pid()},
     ).scalar()
     return durum != "running"
 
 
 def durdurma_kontrolu(engine: Engine, mesaj_id: uuid.UUID) -> Callable[[], bool]:
-    """Geçide verilecek `should_stop` (her çağrı kısa bir okuma; kendi bağlantısı)."""
+    """Geçide verilecek `should_stop` (her çağrı kısa bir okuma; kendi bağlantısı). Proje
+    kurulurken yakalanır: geçit kontrolü başka iş parçacığından çağırsa da doğru projeye bakar."""
+    pid = mevcut_pid()
 
     def kontrol() -> bool:
         with engine.connect() as conn:
-            return durdurulmali(conn, mesaj_id)
+            return durdurulmali(conn, mesaj_id, pid=pid)
 
     return kontrol
 
@@ -334,6 +370,9 @@ def durdurma_kontrolu(engine: Engine, mesaj_id: uuid.UUID) -> Callable[[], bool]
 def uzlastir(conn: Connection) -> list[uuid.UUID]:
     """İşi bitmiş ya da hiç olmayan `pending`/`running` asistan mesajlarını `error/zaman_asimi`
     yapar; kapanan mesaj kimliklerini döndürür.
+
+    Kurulum geneli bakım (worker, bağlamsız): tüm projelerin mesajları taranır; her kapanan
+    mesajın olayı kendi projesinin bağlamında yayınlanır (`RETURNING m.project_id`).
 
     `UPDATE` satır kilidiyle yarışır: aynı anda `sonuc_yaz` ile `done` olan mesaj yeniden
     değerlendirilir ve atlanır (READ COMMITTED). Bitmemiş (`queued`/`running`/`retry`) işi olan
@@ -347,12 +386,13 @@ def uzlastir(conn: Connection) -> list[uuid.UUID]:
             " OR (m.job_id IS NOT NULL AND NOT EXISTS ("
             "   SELECT 1 FROM job j WHERE j.id = m.job_id"
             "   AND j.durum IN ('queued', 'running', 'retry')))"
-            ") RETURNING m.id, m.kullanici_id"
+            ") RETURNING m.id, m.kullanici_id, m.project_id"
         ),
         {"kod": HATA_ZAMAN_ASIMI, "esik": ISSIZ_MESAJ_ESIGI_S},
     ).all()
     for satir in satirlar:
-        _olay(conn, satir.id, satir.kullanici_id, "error")
+        with proje_icinde(satir.project_id, kaynak="sistem"):
+            _olay(conn, satir.id, satir.kullanici_id, "error")
     if satirlar:
         log.warning("asistan: %d mesaj işi bittiği hâlde açıktı → error/zaman_asimi", len(satirlar))
     return [s.id for s in satirlar]

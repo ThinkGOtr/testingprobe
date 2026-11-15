@@ -62,8 +62,9 @@ def _kosu(engine: Engine, **alan: Any) -> str:
     with engine.begin() as c:
         c.execute(
             text(
-                "INSERT INTO run (id, kaynak, tetik, sonuc, github_run_id, artefaktlar) "
-                "VALUES (:id, :kaynak, :tetik, :sonuc, :github_run_id, "
+                "INSERT INTO run (project_id, id, kaynak, tetik, sonuc, github_run_id, "
+                "artefaktlar) "
+                "VALUES ('test-a', :id, :kaynak, :tetik, :sonuc, :github_run_id, "
                 "CAST(:artefaktlar AS jsonb))"
             ),
             deger,

@@ -31,3 +31,11 @@ def _denetim_kapisi_kapali(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("TP_DENETIM_KAPISI", "off")
     yield
     denetim_akisi.bind_gate()
+
+
+@pytest.fixture(autouse=True)
+def _proje_baglami(proje: object) -> object:
+    """Çok proje (TP-COK-PROJE-PLANI §2.4): bu dizinin testleri `test-a` projesinin bağlamında
+    koşar; DB'li testlerde `sql_denetimi` proje kapsamlı ham SQL'i denetler. Bağlamsız davranışı
+    sınayan test kodu `contextvars.Context().run(...)` ile koşturur."""
+    return proje

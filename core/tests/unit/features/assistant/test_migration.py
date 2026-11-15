@@ -36,12 +36,13 @@ _HIZ_EKLE = (
     "INSERT INTO asistan_hiz (kullanici_id, kova, pencere_baslangic) VALUES (%s, 'x', now())"
 )
 _ONERI_EKLE = (
-    "INSERT INTO asistan_oneri_geri_bildirim (kullanici_id, kural_id, deger) VALUES (%s, 'k', 1)"
+    "INSERT INTO asistan_oneri_geri_bildirim (project_id, kullanici_id, kural_id, deger) "
+    "VALUES ('test-a', %s, 'k', 1)"
 )
 
 _OLAY_EKLE = (
-    "INSERT INTO asistan_guvenlik_olay (kullanici_id, mesaj_id, tur, ciddi) "
-    "VALUES (%s, %s, 'sir_icerik', true)"
+    "INSERT INTO asistan_guvenlik_olay (project_id, kullanici_id, mesaj_id, tur, ciddi) "
+    "VALUES ('test-a', %s, %s, 'sir_icerik', true)"
 )
 
 
@@ -67,7 +68,8 @@ def _kullanici(c: psycopg.Connection) -> uuid.UUID:
 
 def _sohbet(c: psycopg.Connection, uid: uuid.UUID) -> uuid.UUID:
     return c.execute(
-        "INSERT INTO asistan_sohbet (kullanici_id) VALUES (%s) RETURNING id", (uid,)
+        "INSERT INTO asistan_sohbet (project_id, kullanici_id) VALUES ('test-a', %s) RETURNING id",
+        (uid,),
     ).fetchone()[0]
 
 
@@ -78,7 +80,7 @@ def _mesaj(
     adlar = ", ".join(kolonlar)
     yer = ", ".join(["%s"] * len(kolonlar))
     return c.execute(
-        f"INSERT INTO asistan_mesaj ({adlar}) VALUES ({yer}) RETURNING id",
+        f"INSERT INTO asistan_mesaj (project_id, {adlar}) VALUES ('test-a', {yer}) RETURNING id",
         tuple(kolonlar.values()),
     ).fetchone()[0]
 
@@ -147,14 +149,23 @@ def test_tool_kanal_enum_asistan_icerir() -> None:
 def test_tp_app_asistan_tablolarinda_tam_dml(c: psycopg.Connection) -> None:
     uid = _kullanici(c)
     sid = _sohbet(c, uid)
-    c.execute("UPDATE asistan_sohbet SET silindi = true, silinme = now() WHERE id = %s", (sid,))
+    c.execute(
+        "UPDATE asistan_sohbet SET silindi = true, silinme = now() WHERE project_id = 'test-a' AND "
+        "id = %s",
+        (sid,),
+    )
     mid = _mesaj(c, sid, uid, 1, rol="user", durum="done", icerik="soru")
-    c.execute("UPDATE asistan_mesaj SET geri_bildirim = 1 WHERE id = %s", (mid,))
-    c.execute("INSERT INTO asistan_durum (mod, kalp_atisi) VALUES ('live', now())")
+    c.execute(
+        "UPDATE asistan_mesaj SET geri_bildirim = 1 WHERE project_id = 'test-a' AND id = %s", (mid,)
+    )
+    c.execute(
+        "INSERT INTO asistan_durum (project_id, mod, kalp_atisi) VALUES ('test-a', 'live', now())"
+    )
     c.execute("UPDATE asistan_durum SET model_hazir = true")
     c.execute(
-        "INSERT INTO asistan_oneri_geri_bildirim (kullanici_id, kural_id, deger, jira_anahtari) "
-        "VALUES (%s, 'k', 2, 'TPD-1')",
+        "INSERT INTO asistan_oneri_geri_bildirim (project_id, kullanici_id, kural_id, deger, "
+        "jira_anahtari) "
+        "VALUES ('test-a', %s, 'k', 2, 'TPD-1')",
         (uid,),
     )
     c.execute(_HIZ_EKLE, (uid,))
@@ -196,11 +207,14 @@ def test_kullanici_basina_tek_bekleyen_soru(c: psycopg.Connection) -> None:
         c, sid, uid, 3, durum="pending", tetik="otomatik", amac="assistant_deep", ust_mesaj_id=ilk
     )
     # İlk mesaj bitince yeni soru açılabilir.
-    c.execute("UPDATE asistan_mesaj SET durum = 'done' WHERE id = %s", (ilk,))
+    c.execute(
+        "UPDATE asistan_mesaj SET durum = 'done' WHERE project_id = 'test-a' AND id = %s", (ilk,)
+    )
     _mesaj(c, sid, uid, 4, durum="pending")
     for i, son in enumerate(("done", "error", "iptal"), start=10):
         c.execute(
-            "UPDATE asistan_mesaj SET durum = %s WHERE kullanici_id = %s AND rol = 'assistant' "
+            "UPDATE asistan_mesaj SET durum = %s WHERE project_id = 'test-a' AND kullanici_id = %s "
+            "AND rol = 'assistant' "
             "AND tetik = 'kullanici' AND durum = 'pending'",
             (son, uid),
         )
@@ -224,7 +238,7 @@ def test_hiz_sayaci_global_kovada_tekil_ve_atomik(c: psycopg.Connection) -> None
     sql = (
         "INSERT INTO asistan_hiz (kullanici_id, kova, pencere_baslangic) "
         "VALUES (%s, %s, '2026-11-03T10:00:00+00') "
-        "ON CONFLICT (kullanici_id, kova, pencere_baslangic) "
+        "ON CONFLICT (project_id, kullanici_id, kova, pencere_baslangic) "
         "DO UPDATE SET sayi = asistan_hiz.sayi + 1 RETURNING sayi"
     )
     assert [c.execute(sql, (None, "jira_global")).fetchone()[0] for _ in range(3)] == [1, 2, 3]
@@ -274,19 +288,23 @@ def test_mesaj_check_gecerli_degerleri_kabul_eder(c: psycopg.Connection) -> None
     for i, k in enumerate(sorted(enums.ASISTAN_KAYNAK), start=3):
         _mesaj(c, sid, uid, i, durum="error", kaynak=k, geri_bildirim=-1)
     varsayilan = c.execute(
-        "SELECT kip, tetik FROM asistan_mesaj WHERE id = %s",
+        "SELECT kip, tetik FROM asistan_mesaj WHERE asistan_mesaj.project_id = 'test-a' AND id = "
+        "%s",
         (_mesaj(c, sid, uid, 99, rol="user", durum="done"),),
     ).fetchone()
     assert varsayilan == ("soru", "kullanici")
 
 
 def test_durum_tekil_satir_ve_mod(c: psycopg.Connection) -> None:
-    c.execute("INSERT INTO asistan_durum DEFAULT VALUES")
-    assert c.execute("SELECT id, mod, maskeleme FROM asistan_durum").fetchone() == (1, "off", False)
+    # 0045: proje başına tek satır (PK `project_id`; eski `id = 1` tekil satırı kalktı).
+    c.execute("INSERT INTO asistan_durum (project_id) VALUES ('test-a')")
+    assert c.execute(
+        "SELECT project_id, mod, maskeleme FROM asistan_durum "
+        "WHERE asistan_durum.project_id = 'test-a'"
+    ).fetchone() == ("test-a", "off", False)
     with pytest.raises(psycopg.errors.UniqueViolation):
-        c.execute("INSERT INTO asistan_durum DEFAULT VALUES")
-    with pytest.raises(psycopg.errors.CheckViolation):
-        c.execute("INSERT INTO asistan_durum (id) VALUES (2)")
+        c.execute("INSERT INTO asistan_durum (project_id) VALUES ('test-a')")
+    c.execute("INSERT INTO asistan_durum (project_id) VALUES ('test-b')")
     with pytest.raises(psycopg.errors.CheckViolation):
         c.execute("UPDATE asistan_durum SET mod = 'replay'")
 
@@ -295,15 +313,17 @@ def test_oneri_geri_bildirim_deger_check(c: psycopg.Connection) -> None:
     uid = _kullanici(c)
     for d in (-1, 1, 2):
         c.execute(
-            "INSERT INTO asistan_oneri_geri_bildirim (kullanici_id, kural_id, deger, varlik_id, "
-            "varlik_durum) VALUES (%s, 'k', %s, gen_random_uuid(), 'draft')",
+            "INSERT INTO asistan_oneri_geri_bildirim (project_id, kullanici_id, kural_id, deger, "
+            "varlik_id, "
+            "varlik_durum) VALUES ('test-a', %s, 'k', %s, gen_random_uuid(), 'draft')",
             (uid, d),
         )
     for d in (0, 3, -2):
         with pytest.raises(psycopg.errors.CheckViolation):
             c.execute(
-                "INSERT INTO asistan_oneri_geri_bildirim (kullanici_id, kural_id, deger) "
-                "VALUES (%s, 'k', %s)",
+                "INSERT INTO asistan_oneri_geri_bildirim (project_id, kullanici_id, kural_id, "
+                "deger) "
+                "VALUES ('test-a', %s, 'k', %s)",
                 (uid, d),
             )
 
@@ -338,7 +358,8 @@ def test_guvenlik_olay_tur_ve_ciddi_kisitlari(c: psycopg.Connection, tur: str, c
     uid = _kullanici(c)
     with pytest.raises(psycopg.errors.CheckViolation):
         c.execute(
-            "INSERT INTO asistan_guvenlik_olay (kullanici_id, tur, ciddi) VALUES (%s, %s, %s)",
+            "INSERT INTO asistan_guvenlik_olay (project_id, kullanici_id, tur, ciddi) VALUES "
+            "('test-a', %s, %s, %s)",
             (uid, tur, ciddi),
         )
 
@@ -347,11 +368,13 @@ def test_guvenlik_olay_gecerli_turler_ve_varsayilanlar(c: psycopg.Connection) ->
     uid = _kullanici(c)
     for tur in sorted(enums.ASISTAN_OLAY_TUR):
         c.execute(
-            "INSERT INTO asistan_guvenlik_olay (kullanici_id, tur, ciddi) VALUES (%s, %s, %s)",
+            "INSERT INTO asistan_guvenlik_olay (project_id, kullanici_id, tur, ciddi) VALUES "
+            "('test-a', %s, %s, %s)",
             (uid, tur, tur in enums.ASISTAN_CIDDI_OLAY),
         )
     satir = c.execute(
-        "SELECT ayrinti, zaman IS NOT NULL FROM asistan_guvenlik_olay LIMIT 1"
+        "SELECT ayrinti, zaman IS NOT NULL FROM asistan_guvenlik_olay WHERE "
+        "asistan_guvenlik_olay.project_id = 'test-a' LIMIT 1"
     ).fetchone()
     assert satir == ({}, True)
 
@@ -360,8 +383,13 @@ def test_guvenlik_olay_indeksi_ve_mesaj_silinince_kalir(c: psycopg.Connection) -
     uid = _kullanici(c)
     mid = _mesaj(c, _sohbet(c, uid), uid, 1, durum="done")
     c.execute(_OLAY_EKLE, (uid, mid))
-    c.execute("DELETE FROM asistan_mesaj WHERE id = %s", (mid,))
-    assert c.execute("SELECT mesaj_id FROM asistan_guvenlik_olay").fetchone() == (None,)
+    c.execute(
+        "DELETE FROM asistan_mesaj WHERE asistan_mesaj.project_id = 'test-a' AND id = %s", (mid,)
+    )
+    assert c.execute(
+        "SELECT mesaj_id FROM asistan_guvenlik_olay WHERE asistan_guvenlik_olay.project_id = "
+        "'test-a'"
+    ).fetchone() == (None,)
     tanim = c.execute(
         "SELECT indexdef FROM pg_indexes WHERE indexname = 'asistan_guvenlik_olay_kullanici_ix'"
     ).fetchone()
@@ -378,12 +406,21 @@ def test_guvenlik_olay_indeksi_ve_mesaj_silinince_kalir(c: psycopg.Connection) -
 
 def test_tool_call_asistan_kanalini_kabul_eder(c: psycopg.Connection) -> None:
     for kanal in ("agent", "ide", "asistan"):
-        c.execute("INSERT INTO tool_call (kanal, arac) VALUES (%s, 'probe_requirement')", (kanal,))
+        c.execute(
+            "INSERT INTO tool_call (project_id, kanal, arac) VALUES ('test-a', %s, "
+            "'probe_requirement')",
+            (kanal,),
+        )
     with pytest.raises(psycopg.errors.CheckViolation):
-        c.execute("INSERT INTO tool_call (kanal, arac) VALUES ('portal', 'probe_requirement')")
+        c.execute(
+            "INSERT INTO tool_call (project_id, kanal, arac) VALUES ('test-a', 'portal', "
+            "'probe_requirement')"
+        )
     # append-only korunur
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
-        c.execute("DELETE FROM tool_call WHERE kanal = 'asistan'")
+        c.execute(
+            "DELETE FROM tool_call WHERE tool_call.project_id = 'test-a' AND kanal = 'asistan'"
+        )
 
 
 def test_0017_downgrade_ve_yeniden_yukseltme(pg: PgServer) -> None:
@@ -402,7 +439,12 @@ def test_0017_downgrade_ve_yeniden_yukseltme(pg: PgServer) -> None:
                 o.execute("INSERT INTO tool_call (kanal, arac) VALUES ('asistan', 'x')")
         run_alembic(owner, "head")
         with psycopg.connect(dsn, autocommit=True) as o:
-            o.execute("INSERT INTO tool_call (kanal, arac) VALUES ('asistan', 'x')")
+            # Tek proje (migrasyonun varsayılan projesi): 0045 geri alması proje sayısından
+            # değil, asistan kanalı kısıtından düşmeli.
+            o.execute(
+                "INSERT INTO tool_call (project_id, kanal, arac) "
+                "SELECT pid, 'asistan', 'x' FROM tp_proje ORDER BY pid LIMIT 1"
+            )
         with pytest.raises(Exception, match="tool_call_kanal_ck"):
             run_alembic(owner, "0016", "downgrade")
         with psycopg.connect(dsn, autocommit=True) as o:

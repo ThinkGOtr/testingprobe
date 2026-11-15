@@ -66,7 +66,11 @@ def _giris(client: TestClient, kisi: Principal) -> None:
 
 def _sayi(engine: Engine, tablo: str) -> int:
     with engine.connect() as c:
-        return int(c.execute(text(f"SELECT count(*) FROM {tablo}")).scalar_one())
+        return int(
+            c.execute(
+                text(f"SELECT count(*) FROM {tablo} WHERE project_id = 'test-a'")
+            ).scalar_one()
+        )
 
 
 @pytest.mark.parametrize("rol", ROLLER)
@@ -191,7 +195,12 @@ def test_geri_bildirim_gizle_ve_yaptim(
     assert r.json()["varlik_durum"] == "draft"  # istemcinin değeri yok sayıldı
     with engine.connect() as c:
         assert (
-            c.execute(text("SELECT varlik_durum FROM asistan_oneri_geri_bildirim")).scalar_one()
+            c.execute(
+                text(
+                    "SELECT varlik_durum FROM asistan_oneri_geri_bildirim WHERE "
+                    "asistan_oneri_geri_bildirim.project_id = 'test-a'"
+                )
+            ).scalar_one()
             == "draft"
         )
     # Önbellek geri bildirimde temizlenir: gizleme hemen görünür.

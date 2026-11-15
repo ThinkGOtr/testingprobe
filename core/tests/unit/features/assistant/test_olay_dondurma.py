@@ -47,7 +47,8 @@ def _olaylar(engine: Engine, kullanici_id: uuid.UUID) -> list[dict]:
             for r in c.execute(
                 text(
                     "SELECT tur, ciddi, ayrinti, mesaj_id FROM asistan_guvenlik_olay "
-                    "WHERE kullanici_id = :k ORDER BY zaman, tur"
+                    "WHERE asistan_guvenlik_olay.project_id = 'test-a' AND kullanici_id = :k ORDER "
+                    "BY zaman, tur"
                 ),
                 {"k": kullanici_id},
             ).mappings()
@@ -55,7 +56,11 @@ def _olaylar(engine: Engine, kullanici_id: uuid.UUID) -> list[dict]:
 
 
 def _supheli(engine: Engine) -> int:
-    return tek(engine, "SELECT count(*) FROM audit_event WHERE eylem = 'asistan.supheli'")
+    return tek(
+        engine,
+        "SELECT count(*) FROM audit_event WHERE audit_event.project_id = 'test-a' AND eylem = "
+        "'asistan.supheli'",
+    )
 
 
 # ------------------------------------------------------------------ API
@@ -87,14 +92,20 @@ def test_uc_ardisik_sir_dondurur_ve_kalan_s_doner(
         "Art arda engellenen istekler nedeniyle asistan geçici olarak durduruldu. "
         f"Yaklaşık {dk} dk sonra yeniden sorabilirsiniz; sorunuz kutuda duruyor."
     )
-    assert tek(engine, "SELECT count(*) FROM asistan_mesaj") == 0
+    assert (
+        tek(engine, "SELECT count(*) FROM asistan_mesaj WHERE asistan_mesaj.project_id = 'test-a'")
+        == 0
+    )
 
     # Dondurma başlangıcında bir kez `donduruldu` olayı + denetim satırı (ayrıntıda yalnız sayı).
     assert [o["tur"] for o in _olaylar(engine, u.id)][-1] == "donduruldu"
     assert _supheli(engine) == 1
     with engine.connect() as c:
         aktor, nesne, ozet = c.execute(
-            text("SELECT aktor, nesne, ozet FROM audit_event WHERE eylem = 'asistan.supheli'")
+            text(
+                "SELECT aktor, nesne, ozet FROM audit_event WHERE audit_event.project_id = "
+                "'test-a' AND eylem = 'asistan.supheli'"
+            )
         ).one()
         assert verify_chain(c).ok
     # Denetim aktörü takma ad (kullanıcı adı değil; PRV5).
@@ -187,11 +198,13 @@ def _derin_cocuk(engine: Engine, ust: str) -> str:
     with engine.begin() as c:
         c.execute(
             text(
-                "INSERT INTO asistan_mesaj (id, sohbet_id, kullanici_id, sira, rol, ust_mesaj_id, "
-                "icerik, durum, amac, kip, tetik) SELECT :id, sohbet_id, kullanici_id, "
-                "(SELECT max(sira) + 1 FROM asistan_mesaj x WHERE x.sohbet_id = a.sohbet_id), "
+                "INSERT INTO asistan_mesaj (project_id, id, sohbet_id, kullanici_id, sira, rol, "
+                "ust_mesaj_id, "
+                "icerik, durum, amac, kip, tetik) SELECT 'test-a', :id, sohbet_id, kullanici_id, "
+                "(SELECT max(sira) + 1 FROM asistan_mesaj x WHERE x.project_id = 'test-a' AND "
+                "x.sohbet_id = a.sohbet_id), "
                 "'assistant', a.id, a.icerik, 'done', 'assistant_deep', 'soru', 'kullanici' "
-                "FROM asistan_mesaj a WHERE a.id = :u"
+                "FROM asistan_mesaj a WHERE a.project_id = 'test-a' AND a.id = :u"
             ),
             {"id": cocuk, "u": ust},
         )
@@ -383,7 +396,7 @@ def test_on_dakikadan_eski_ucuncu_olay_dondurmaz(
         c.execute(
             text(
                 "UPDATE asistan_guvenlik_olay SET zaman = zaman - make_interval(secs => :s) "
-                "WHERE kullanici_id = :k"
+                "WHERE kullanici_id = :k AND project_id = 'test-a'"
             ),
             {"s": budget.DONDURMA_SURE_S + 60, "k": u.id},
         )

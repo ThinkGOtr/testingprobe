@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from functools import lru_cache
 from typing import Any
 from urllib.parse import quote
 
@@ -17,23 +16,18 @@ from sqlalchemy import Engine
 
 from tp_core.features.requirements.datatools import DemoDb
 from tp_core.features.requirements.settings import get_requirements_settings
+from tp_core.proje import istemciler
 
 _overrides: dict[str, Callable[..., Any]] = {}
 
 
 def jira() -> Any:
-    """`RestJira` (JiraPort + `po_approvals`/`issue_url`); süreç başına tek istemci."""
+    """`RestJira` (JiraPort + `po_approvals`/`issue_url`); bağlamdaki projenin istemcisi
+    (`proje.istemciler`, proje + config sürümü başına tek)."""
     f = _overrides.get("jira")
     if f is not None:
         return f()
-    return _default_jira()
-
-
-@lru_cache(maxsize=1)
-def _default_jira() -> Any:
-    from tp_core.integrations.jira import get_jira
-
-    return get_jira()
+    return istemciler.jira()
 
 
 def forge() -> Any:
@@ -41,9 +35,8 @@ def forge() -> Any:
     if f is not None:
         return f()
     from tp_core.features.requirements.approot import app_root_view
-    from tp_core.integrations.forge import get_forge
 
-    return app_root_view(get_forge())
+    return app_root_view(istemciler.forge())
 
 
 def gateway(engine: Engine) -> Any:

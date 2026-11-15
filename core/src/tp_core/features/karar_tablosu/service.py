@@ -61,6 +61,7 @@ from tp_core.models import (
     session_scope,
 )
 from tp_core.ports import CallResult, ModelGateway, ModelMessage
+from tp_core.proje import pid_param
 from tp_core.workflow.jobs import JobContext, PermanentJobError, start_workflow
 from tp_core.workflow.service import (
     SYSTEM,
@@ -991,9 +992,10 @@ def son_taslak(session: Session, requirement_id: uuid.UUID) -> dict[str, Any] | 
         text(
             "SELECT w.id AS wf, j.id AS job, j.durum, j.sonuc, j.son_hata, w.olusturma "
             "FROM workflow_instance w LEFT JOIN job j ON j.id = w.job_id "
-            "WHERE w.tur = :t AND w.nesne_id = :r ORDER BY w.olusturma DESC LIMIT 1"
+            "WHERE w.tur = :t AND w.nesne_id = :r AND w.project_id = :pid "
+            "ORDER BY w.olusturma DESC LIMIT 1"
         ),
-        {"t": WORKFLOW_TUR, "r": requirement_id},
+        pid_param(t=WORKFLOW_TUR, r=requirement_id),
     ).first()
     if row is None:
         return None
@@ -1034,10 +1036,10 @@ def taslak_baslat(session: Session, requirement_id: uuid.UUID, user: Principal) 
     suren = session.execute(
         text(
             "SELECT w.id AS wf, j.id AS job FROM workflow_instance w JOIN job j ON j.id = w.job_id "
-            "WHERE w.tur = :t AND w.nesne_id = :r AND w.durum = 'running' "
+            "WHERE w.tur = :t AND w.nesne_id = :r AND w.project_id = :pid AND w.durum = 'running' "
             "AND j.durum IN ('queued', 'retry', 'running') ORDER BY w.olusturma DESC LIMIT 1"
         ),
-        {"t": WORKFLOW_TUR, "r": req.id},
+        pid_param(t=WORKFLOW_TUR, r=req.id),
     ).first()
     if suren is not None:
         return {"job_id": suren.job, "workflow_id": suren.wf, "yeni": False}

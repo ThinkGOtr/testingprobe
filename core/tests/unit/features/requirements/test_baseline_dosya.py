@@ -57,7 +57,7 @@ def _baz_olaylari(engine: Engine) -> list[AuditEvent]:
 def _sifirla(engine: Engine) -> None:
     """`make reset` benzeri: gereksinimler (ve cascade ile baz girişleri) gider."""
     with engine.begin() as c:
-        c.execute(text("DELETE FROM requirement"))
+        c.execute(text("DELETE FROM requirement WHERE requirement.project_id = 'test-a'"))
 
 
 # ------------------------------------------------------------------------- dosya ayrıştırma

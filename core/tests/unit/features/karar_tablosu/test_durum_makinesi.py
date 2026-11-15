@@ -166,7 +166,11 @@ def test_mutlu_yol_gonder_onayla(session: Session, make_user: MakeUser, tur: str
     assert approved_hash_matches(session, n)
     session.commit()
     eylemler = session.execute(
-        text("SELECT eylem FROM audit_event WHERE nesne = :n ORDER BY id"), {"n": f"{tur}:{n.id}"}
+        text(
+            "SELECT eylem FROM audit_event WHERE audit_event.project_id = 'test-a' AND nesne = :n "
+            "ORDER BY id"
+        ),
+        {"n": f"{tur}:{n.id}"},
     ).scalars()
     assert list(eylemler) == [f"{tur}.transition", "review.approve", f"{tur}.transition"]
 
@@ -371,49 +375,52 @@ def _app(db: Db) -> psycopg.Connection:
 def test_tp_app_yazar_ama_silemez(db: Db) -> None:
     with _app(db) as c:
         rid = c.execute(
-            "INSERT INTO requirement (kaynak, baslik, kaynak_hash) "
-            "VALUES ('free_text', 'b', 'h') RETURNING id"
+            "INSERT INTO requirement (project_id, kaynak, baslik, kaynak_hash) "
+            "VALUES ('test-a', 'free_text', 'b', 'h') RETURNING id"
         ).fetchone()[0]
         cid = uuid.uuid4()
         c.execute(
-            "INSERT INTO test_case (id, requirement_id, sira_no, icerik, icerik_hash) "
-            "VALUES (%s, %s, 1, '{}', 'x')",
+            "INSERT INTO test_case (project_id, id, requirement_id, sira_no, icerik, icerik_hash) "
+            "VALUES ('test-a', %s, %s, 1, '{}', 'x')",
             (cid, rid),
         )
         tid = c.execute(
-            "INSERT INTO karar_tablosu (requirement_id, sira_no, icerik, icerik_hash) "
-            "VALUES (%s, 1, '{}', 'h') RETURNING id",
+            "INSERT INTO karar_tablosu (project_id, requirement_id, sira_no, icerik, icerik_hash) "
+            "VALUES ('test-a', %s, 1, '{}', 'h') RETURNING id",
             (rid,),
         ).fetchone()[0]
         iid = c.execute(
-            "INSERT INTO metamorfik_iliski (requirement_id, karar_tablosu_id, sira_no, icerik, "
-            "icerik_hash) VALUES (%s, %s, 1, '{}', 'h') RETURNING id",
+            "INSERT INTO metamorfik_iliski (project_id, requirement_id, karar_tablosu_id, sira_no, "
+            "icerik, "
+            "icerik_hash) VALUES ('test-a', %s, %s, 1, '{}', 'h') RETURNING id",
             (rid, tid),
         ).fetchone()[0]
         c.execute(
-            "INSERT INTO case_oracle_kontrol (test_case_id, icerik_hash, sonuc) "
-            "VALUES (%s, 'x', 'uyumlu')",
+            "INSERT INTO case_oracle_kontrol (project_id, test_case_id, icerik_hash, sonuc) "
+            "VALUES ('test-a', %s, 'x', 'uyumlu')",
             (cid,),
         )
         c.execute(
-            "INSERT INTO metamorfik_turetme (iliski_id, kaynak_case_id, sonuc) "
-            "VALUES (%s, %s, 'olgu_yok')",
+            "INSERT INTO metamorfik_turetme (project_id, iliski_id, kaynak_case_id, sonuc) "
+            "VALUES ('test-a', %s, %s, 'olgu_yok')",
             (iid, cid),
         )
-        kid = c.execute("INSERT INTO hata_kosusu DEFAULT VALUES RETURNING id").fetchone()[0]
+        kid = c.execute(
+            "INSERT INTO hata_kosusu (project_id) VALUES ('test-a') RETURNING id"
+        ).fetchone()[0]
         c.execute(
-            "INSERT INTO hata_kosusu_adim (kosu_id, platform, asama, sira) "
-            "VALUES (%s, 'web', 'temel', 0)",
+            "INSERT INTO hata_kosusu_adim (project_id, kosu_id, platform, asama, sira) "
+            "VALUES ('test-a', %s, 'web', 'temel', 0)",
             (kid,),
         )
         c.execute(
-            "INSERT INTO hata_kosusu_adim (kosu_id, platform, asama, hata_kodu, sira) "
-            "VALUES (%s, 'web', 'hata', 'kampanya_esik_7', 1)",
+            "INSERT INTO hata_kosusu_adim (project_id, kosu_id, platform, asama, hata_kodu, sira) "
+            "VALUES ('test-a', %s, 'web', 'hata', 'kampanya_esik_7', 1)",
             (kid,),
         )
         varsayilan = c.execute(
             "SELECT k.durum, a.sonuc FROM hata_kosusu k JOIN hata_kosusu_adim a "
-            "ON a.kosu_id = k.id WHERE a.sira = 0"
+            "ON a.project_id = 'test-a' AND a.kosu_id = k.id WHERE a.sira = 0"
         ).fetchone()
         assert varsayilan == ("queued", "bekliyor")
         for tablo in YENI_TABLOLAR:
@@ -427,36 +434,37 @@ def test_tp_app_yazar_ama_silemez(db: Db) -> None:
             psycopg.errors.UniqueViolation, match="case_oracle_kontrol_case_hash_uq"
         ):
             c.execute(
-                "INSERT INTO case_oracle_kontrol (test_case_id, icerik_hash, sonuc) "
-                "VALUES (%s, 'x', 'uyumsuz')",
+                "INSERT INTO case_oracle_kontrol (project_id, test_case_id, icerik_hash, sonuc) "
+                "VALUES ('test-a', %s, 'x', 'uyumsuz')",
                 (cid,),
             )
         with pytest.raises(psycopg.errors.UniqueViolation, match="metamorfik_turetme_cift_uq"):
             c.execute(
-                "INSERT INTO metamorfik_turetme (iliski_id, kaynak_case_id, sonuc) "
-                "VALUES (%s, %s, 'turetildi')",
+                "INSERT INTO metamorfik_turetme (project_id, iliski_id, kaynak_case_id, sonuc) "
+                "VALUES ('test-a', %s, %s, 'turetildi')",
                 (iid, cid),
             )
         for sql in (
-            "INSERT INTO case_oracle_kontrol (test_case_id, icerik_hash, sonuc) "
-            f"VALUES ('{cid}', 'y', 'belki')",
-            f"UPDATE karar_tablosu SET durum = 'published' WHERE id = '{tid}'",
-            f"UPDATE hata_kosusu SET durum = 'bitti' WHERE id = '{kid}'",
+            "INSERT INTO case_oracle_kontrol (project_id, test_case_id, icerik_hash, sonuc) "
+            f"VALUES ('test-a', '{cid}', 'y', 'belki')",
+            f"UPDATE karar_tablosu SET durum = 'published' WHERE project_id = 'test-a' AND id = "
+            f"'{tid}'",
+            f"UPDATE hata_kosusu SET durum = 'bitti' WHERE project_id = 'test-a' AND id = '{kid}'",
             # temel / kapanış adımında hata kodu olmaz; hata adımında zorunludur
-            "INSERT INTO hata_kosusu_adim (kosu_id, platform, asama, hata_kodu, sira) "
-            f"VALUES ('{kid}', 'web', 'kapanis', 'x', 2)",
-            "INSERT INTO hata_kosusu_adim (kosu_id, platform, asama, sira) "
-            f"VALUES ('{kid}', 'web', 'hata', 3)",
-            "INSERT INTO hata_kosusu_adim (kosu_id, platform, asama, sira) "
-            f"VALUES ('{kid}', 'linux', 'temel', 4)",
+            "INSERT INTO hata_kosusu_adim (project_id, kosu_id, platform, asama, hata_kodu, sira) "
+            f"VALUES ('test-a', '{kid}', 'web', 'kapanis', 'x', 2)",
+            "INSERT INTO hata_kosusu_adim (project_id, kosu_id, platform, asama, sira) "
+            f"VALUES ('test-a', '{kid}', 'web', 'hata', 3)",
+            "INSERT INTO hata_kosusu_adim (project_id, kosu_id, platform, asama, sira) "
+            f"VALUES ('test-a', '{kid}', 'linux', 'temel', 4)",
         ):
             with pytest.raises(psycopg.errors.CheckViolation):
                 c.execute(sql)
         # PO kararı review'a yazılabilir (nesne türü CHECK genişledi)
         for tur in TURLER:
             c.execute(
-                "INSERT INTO review (nesne_turu, nesne_id, harici_onaylayan, karar, "
-                "onaylanan_hash) VALUES (%s, gen_random_uuid(), 'po', 'approve', 'h')",
+                "INSERT INTO review (project_id, nesne_turu, nesne_id, harici_onaylayan, karar, "
+                "onaylanan_hash) VALUES ('test-a', %s, gen_random_uuid(), 'po', 'approve', 'h')",
                 (tur,),
             )
 
@@ -469,11 +477,18 @@ def _nesne_turu_kisiti(c: psycopg.Connection) -> str:
     return str(satir[0])
 
 
+@pytest.mark.sql_denetimi_yok  # göç SQL'i uygulama kodu değil
 def test_0034_geri_alinir_ve_yeniden_yukselir(db: Db) -> None:
     """0034 (dev birleşmesi; önceden 0022) yalnız kendi değişikliklerini geri alır: 0033'e inince
     `review_nesne_turu_ck` 0002 kümesine döner (dev zincirinde kısıta başka dokunan yok)."""
     dsn = db.owner_url.replace("+psycopg", "")
     ekle = (
+        "INSERT INTO review (project_id, nesne_turu, nesne_id, harici_onaylayan, karar, "
+        "onaylanan_hash) "
+        "VALUES ('test-a', 'karar_tablosu', gen_random_uuid(), 'po', 'approve', 'h')"
+    )
+    # 0033 şemasında (0045 öncesi) `project_id` sütunu yok.
+    eski_ekle = (
         "INSERT INTO review (nesne_turu, nesne_id, harici_onaylayan, karar, onaylanan_hash) "
         "VALUES ('karar_tablosu', gen_random_uuid(), 'po', 'approve', 'h')"
     )
@@ -493,8 +508,10 @@ def test_0034_geri_alinir_ve_yeniden_yukselir(db: Db) -> None:
         # İnsan kararı silinmez (review append-only); eski alan yalnız yeni satırlara uygulanır.
         assert c.execute("SELECT count(*) FROM review").fetchone() == (1,)
         with pytest.raises(psycopg.errors.CheckViolation):
-            c.execute(ekle)
+            c.execute(eski_ekle)
     run_alembic(db.owner_url, "head")
     with psycopg.connect(dsn, autocommit=True) as c:
         c.execute(ekle)
-        assert c.execute("SELECT count(*) FROM karar_tablosu").fetchone() == (0,)
+        assert c.execute(
+            "SELECT count(*) FROM karar_tablosu WHERE karar_tablosu.project_id = 'test-a'"
+        ).fetchone() == (0,)

@@ -28,6 +28,7 @@ from sqlalchemy import Connection, text
 from sqlalchemy.orm import Session
 
 from tp_core.models.asistan import HIZ_UQ
+from tp_core.proje import KURULUM, mevcut_pid
 
 KOVA_ONERI_LISTE: Final = "oneri_liste"
 KOVA_ONERI_GERI_BILDIRIM: Final = "oneri_geri_bildirim"
@@ -46,9 +47,9 @@ SAKLAMA_SAAT: Final = 24
 
 _ARTIR = text(
     f"""
-    INSERT INTO asistan_hiz (id, kullanici_id, kova, pencere_baslangic, sayi)
+    INSERT INTO asistan_hiz (id, project_id, kullanici_id, kova, pencere_baslangic, sayi)
     VALUES (
-        :id, :kullanici_id, :kova,
+        :id, :pid, :kullanici_id, :kova,
         to_timestamp(floor(extract(epoch FROM now()) / :pencere_s) * :pencere_s),
         1
     )
@@ -78,6 +79,9 @@ def hiz_kontrol(
         _ARTIR,
         {
             "id": uuid.uuid4(),
+            # TP-COK-PROJE-PLANI §1.1 C: kullanıcı kovaları kurulum geneli (maliyet koruması proje
+            # sayısıyla katlanmaz); kullanıcısız kovalar (`jira_global`) bağlamdaki projenin.
+            "pid": KURULUM if kullanici_id is not None else mevcut_pid(),
             "kullanici_id": kullanici_id,
             "kova": kova,
             "pencere_s": int(pencere_s),

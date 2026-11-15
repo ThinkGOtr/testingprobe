@@ -102,7 +102,11 @@ def test_serbest_metin_senaryosu_replay(
         onay = s.scalars(select(Review).where(Review.nesne_turu == "requirement")).one()
         assert onay.user_id == p.id and onay.onaylanan_hash == d["icerik_hash"]
     with engine.connect() as c:
-        modlar = set(c.execute(text("SELECT DISTINCT mod FROM ai_call")).scalars())
+        modlar = set(
+            c.execute(
+                text("SELECT DISTINCT mod FROM ai_call WHERE ai_call.project_id = 'test-a'")
+            ).scalars()
+        )
     assert modlar == {"replay"}
 
 
@@ -288,7 +292,8 @@ def test_bilincli_fark_ve_tur_siniri(
             c.execute(
                 text(
                     "SELECT count(*) FROM audit_event "
-                    "WHERE eylem = 'requirement.decision_conflict_confirmed'"
+                    "WHERE audit_event.project_id = 'test-a' AND eylem = "
+                    "'requirement.decision_conflict_confirmed'"
                 )
             ).scalar_one()
             == 1
@@ -361,11 +366,16 @@ def test_replay_yoksa_gereksinim_failed(
     with engine.connect() as c:
         sebep = c.execute(
             text(
-                "SELECT ozet->>'sebep' FROM audit_event WHERE eylem = 'requirement.transition' "
+                "SELECT ozet->>'sebep' FROM audit_event WHERE audit_event.project_id = 'test-a' "
+                "AND eylem = 'requirement.transition' "
                 "ORDER BY id DESC LIMIT 1"
             )
         ).scalar_one()
-        wf = c.execute(text("SELECT durum FROM workflow_instance")).scalar_one()
+        wf = c.execute(
+            text(
+                "SELECT durum FROM workflow_instance WHERE workflow_instance.project_id = 'test-a'"
+            )
+        ).scalar_one()
     assert "REPLAY" in sebep
     assert wf == "failed"
     # Başarısız gereksinim yeniden incelemeye alınabilir.
@@ -424,13 +434,15 @@ def test_tum_bulgular_elenirse_belge_otomatik_son_hal_olmaz(
     with engine.connect() as c:
         sebep = c.execute(
             text(
-                "SELECT ozet->>'sebep' FROM audit_event WHERE eylem = 'requirement.doc_final' "
+                "SELECT ozet->>'sebep' FROM audit_event WHERE audit_event.project_id = 'test-a' "
+                "AND eylem = 'requirement.doc_final' "
                 "ORDER BY id DESC LIMIT 1"
             )
         ).scalar_one()
         aktor = c.execute(
             text(
-                "SELECT aktor FROM audit_event WHERE eylem = 'requirement.doc_final' "
+                "SELECT aktor FROM audit_event WHERE audit_event.project_id = 'test-a' AND eylem = "
+                "'requirement.doc_final' "
                 "ORDER BY id DESC LIMIT 1"
             )
         ).scalar_one()

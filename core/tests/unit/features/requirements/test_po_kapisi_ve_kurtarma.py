@@ -160,7 +160,8 @@ def test_case_uretiminden_sonra_geri_cekilen_onay_kapiyi_kapatir(
     with engine.connect() as c:
         ozet = c.execute(
             text(
-                "SELECT ozet FROM audit_event WHERE eylem = 'requirement.po_withdrawn' "
+                "SELECT ozet FROM audit_event WHERE audit_event.project_id = 'test-a' AND eylem = "
+                "'requirement.po_withdrawn' "
                 "ORDER BY id DESC LIMIT 1"
             )
         ).scalar_one()
@@ -214,7 +215,10 @@ def test_sahipsiz_tutarlilik_isi_gereksinimi_kilitlemez(
     with engine.connect() as c:
         eylemler = list(
             c.execute(
-                text("SELECT eylem FROM audit_event WHERE nesne = :n ORDER BY id"),
+                text(
+                    "SELECT eylem FROM audit_event WHERE audit_event.project_id = 'test-a' AND "
+                    "nesne = :n ORDER BY id"
+                ),
                 {"n": f"requirement:{rid}"},
             ).scalars()
         )
@@ -343,16 +347,16 @@ def test_po_sorgu_isleri_birikmez(api: TestClient, analist: Any, engine: Engine)
         for _ in range(5):
             c.execute(
                 text(
-                    "INSERT INTO job (tur, yuk, durum, deneme, bitis, guncelleme) "
-                    "VALUES (:t, '{}'::jsonb, 'done', 1, now() - interval '2 hours', "
+                    "INSERT INTO job (project_id, tur, yuk, durum, deneme, bitis, guncelleme) "
+                    "VALUES ('test-a', :t, '{}'::jsonb, 'done', 1, now() - interval '2 hours', "
                     "now() - interval '2 hours')"
                 ),
                 {"t": flow.JOB_PO_POLL},
             )
         c.execute(
             text(
-                "INSERT INTO job (tur, yuk, durum, deneme, bitis) "
-                "VALUES (:t, '{}'::jsonb, 'done', 1, now())"
+                "INSERT INTO job (project_id, tur, yuk, durum, deneme, bitis) "
+                "VALUES ('test-a', :t, '{}'::jsonb, 'done', 1, now())"
             ),
             {"t": flow.JOB_PO_POLL},
         )

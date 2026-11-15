@@ -154,7 +154,10 @@ def test_gonderim_denetimi_sinir_uyarilarini_yazar(
     assert rol("analyst").post(f"/decision-tables/{tablo['id']}/submit").status_code == 200
     with engine.connect() as c:
         ozet = c.execute(
-            text("SELECT ozet FROM audit_event WHERE eylem = 'karar_tablosu.submitted'")
+            text(
+                "SELECT ozet FROM audit_event WHERE audit_event.project_id = 'test-a' AND eylem = "
+                "'karar_tablosu.submitted'"
+            )
         ).scalar_one()
     assert "golgede" in ozet["sinir_uyarilari"]
 
@@ -212,7 +215,8 @@ def _onay_ozeti(engine: Engine, nid: uuid.UUID) -> dict[str, Any]:
     with engine.connect() as c:
         return c.execute(
             text(
-                "SELECT ozet FROM audit_event WHERE eylem = 'karar_tablosu.approved' "
+                "SELECT ozet FROM audit_event WHERE audit_event.project_id = 'test-a' AND eylem = "
+                "'karar_tablosu.approved' "
                 "AND nesne = :n ORDER BY id DESC LIMIT 1"
             ),
             {"n": f"karar_tablosu:{nid}"},
@@ -323,7 +327,8 @@ def test_is_hatasi_denetime_ham_kullaniciya_sinifli(
         kayitlar = (
             c.execute(
                 text(
-                    "SELECT ozet FROM audit_event WHERE eylem = 'karar_tablosu.draft_failed' "
+                    "SELECT ozet FROM audit_event WHERE audit_event.project_id = 'test-a' AND "
+                    "eylem = 'karar_tablosu.draft_failed' "
                     "ORDER BY id"
                 )
             )
@@ -339,8 +344,8 @@ def test_son_taslak_ham_hatayi_gostermez(rol: Roller, make_requirement, make_use
     with session_scope() as s:
         s.execute(
             text(
-                "INSERT INTO job (id, tur, yuk, durum, son_hata) "
-                "VALUES (:j, :t, '{}', 'failed', :h)"
+                "INSERT INTO job (project_id, id, tur, yuk, durum, son_hata) "
+                "VALUES ('test-a', :j, :t, '{}', 'failed', :h)"
             ),
             {"j": uuid.uuid4(), "t": service.DRAFT_JOB, "h": "Traceback: /srv/gizli"},
         )
@@ -349,8 +354,9 @@ def test_son_taslak_ham_hatayi_gostermez(rol: Roller, make_requirement, make_use
         jid = s.scalar(text("SELECT id FROM job WHERE tur = :t"), {"t": service.DRAFT_JOB})
         s.execute(
             text(
-                "INSERT INTO workflow_instance (id, tur, durum, baslatan, nesne_turu, nesne_id, "
-                "job_id) VALUES (:w, :t, 'failed', 'test', 'requirement', :r, :j)"
+                "INSERT INTO workflow_instance (project_id, id, tur, durum, baslatan, nesne_turu, "
+                "nesne_id, "
+                "job_id) VALUES ('test-a', :w, :t, 'failed', 'test', 'requirement', :r, :j)"
             ),
             {"w": wid, "t": service.WORKFLOW_TUR, "r": rid, "j": jid},
         )

@@ -61,6 +61,7 @@ from tp_core.models.asistan import (
     AsistanMesaj,
     AsistanSohbet,
 )
+from tp_core.proje import mevcut_pid, pid_param
 from tp_core.workflow import jobs
 from tp_core.workflow.service import Principal
 
@@ -223,7 +224,7 @@ def _degerlendirme() -> dict[str, Any] | None:
 
 @router.get("/assistant/status")
 def durum(session: DbSession, user: AsistanKullanicisi) -> dict[str, Any]:
-    satir = session.get(AsistanDurum, 1)
+    satir = session.get(AsistanDurum, mevcut_pid())
     simdi = _db_simdi(session)
     neden = hizmet_nedeni(satir, simdi)
     return {
@@ -444,8 +445,11 @@ def _sonraki_sira(session: Session, sohbet_id: uuid.UUID) -> int:
     return (
         int(
             session.execute(
-                text("SELECT COALESCE(MAX(sira), 0) FROM asistan_mesaj WHERE sohbet_id = :s"),
-                {"s": sohbet_id},
+                text(
+                    "SELECT COALESCE(MAX(sira), 0) FROM asistan_mesaj "
+                    "WHERE sohbet_id = :s AND project_id = :pid"
+                ),
+                pid_param(s=sohbet_id),
             ).scalar_one()
         )
         + 1
@@ -533,7 +537,8 @@ def _derin_ust(
     ):
         raise KodluHata(422, "gecersiz_istek", "Bu cevap ayrıntılı incelenemez.")
     var = session.execute(
-        text("SELECT 1 FROM asistan_mesaj WHERE ust_mesaj_id = :u"), {"u": ust.id}
+        text("SELECT 1 FROM asistan_mesaj WHERE ust_mesaj_id = :u AND project_id = :pid"),
+        pid_param(u=ust.id),
     ).first()
     if var is not None:
         raise KodluHata(409, "zaten_derin", "Bu cevap zaten ayrıntılı inceleniyor.")
@@ -541,7 +546,7 @@ def _derin_ust(
 
 
 def _hizmet_kontrol(session: Session) -> None:
-    neden = hizmet_nedeni(session.get(AsistanDurum, 1), _db_simdi(session))
+    neden = hizmet_nedeni(session.get(AsistanDurum, mevcut_pid()), _db_simdi(session))
     if neden is not None:
         raise KodluHata(503, "asistan_kapali", KAPALI_METINLERI[neden], neden=neden)
 

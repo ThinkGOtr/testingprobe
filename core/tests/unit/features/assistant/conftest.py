@@ -47,3 +47,11 @@ def _denetim_varsayilan_kapali(monkeypatch: pytest.MonkeyPatch) -> None:
     soru/cevap denetim çağrıları betiğin ilk yanıtlarını alırdı. Denetimin kendisi
     `test_denetim.py`'de (açık) sınanır; diğer testler bugünkü davranışı (kapalı) sınar."""
     monkeypatch.setenv("TP_ASISTAN_DENETIM", "off")
+
+
+@pytest.fixture(autouse=True)
+def _proje_baglami(proje: object) -> object:
+    """Çok proje (TP-COK-PROJE-PLANI §2.4): bu dizinin testleri `test-a` projesinin bağlamında
+    koşar; DB'li testlerde `sql_denetimi` proje kapsamlı ham SQL'i denetler. Bağlamsız davranışı
+    sınayan test kodu `contextvars.Context().run(...)` ile koşturur."""
+    return proje

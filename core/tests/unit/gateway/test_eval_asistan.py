@@ -653,15 +653,37 @@ def test_via_flow_tam_kosu_rapor_ve_icerik_hashli_durum(
     assert "assistant=claude-haiku-5-5" in st.detail["model"]
     # Yan etkiler: çocuk mesaj/iş yok, bekleyen mesaj yok, sohbetler yumuşak silindi, asistan_durum
     # değerlendirme öncesine (satır yoktu) döndü.
-    assert _tek(engine, "SELECT count(*) FROM asistan_mesaj WHERE ust_mesaj_id IS NOT NULL") == 0
+    assert (
+        _tek(
+            engine,
+            "SELECT count(*) FROM asistan_mesaj WHERE asistan_mesaj.project_id = 'test-a' AND "
+            "ust_mesaj_id IS NOT NULL",
+        )
+        == 0
+    )
     assert _tek(engine, "SELECT count(*) FROM job WHERE tur LIKE 'assistant%'") == 0
     assert (
-        _tek(engine, "SELECT count(*) FROM asistan_mesaj WHERE durum IN ('pending','running')") == 0
+        _tek(
+            engine,
+            "SELECT count(*) FROM asistan_mesaj WHERE asistan_mesaj.project_id = 'test-a' AND "
+            "durum IN ('pending','running')",
+        )
+        == 0
     )
-    assert _tek(engine, "SELECT bool_and(silindi) FROM asistan_sohbet") is True
-    assert _tek(engine, "SELECT count(*) FROM asistan_durum") == 0
+    assert (
+        _tek(
+            engine,
+            "SELECT bool_and(silindi) FROM asistan_sohbet WHERE asistan_sohbet.project_id = "
+            "'test-a'",
+        )
+        is True
+    )
+    assert (
+        _tek(engine, "SELECT count(*) FROM asistan_durum WHERE asistan_durum.project_id = 'test-a'")
+        == 0
+    )
     # Model çağrıları Postgres'e değil eval kayıtçısına/deftere yazıldı.
-    assert _tek(engine, "SELECT count(*) FROM ai_call") == 0
+    assert _tek(engine, "SELECT count(*) FROM ai_call WHERE ai_call.project_id = 'test-a'") == 0
     assert len((mini.parent / "defter.jsonl").read_text(encoding="utf-8").splitlines()) == 8
     # Değerlendirilen içerik değişince kapı kapanır (prompt sürümü aynı kalsa da).
     sema = mini / "schemas" / "assistant.schema.json"
@@ -689,7 +711,10 @@ def test_tek_amac_kosusu_durumu_yazmaz_ve_onceki_durum_geri_yazilir(
     assert evaluation_status(mini, "assistant").status == "pending"
     with engine.connect() as c:
         mod, hazir, maske = c.execute(
-            text("SELECT mod, model_hazir, maskeleme FROM asistan_durum WHERE id = 1")
+            text(
+                "SELECT mod, model_hazir, maskeleme FROM asistan_durum WHERE "
+                "asistan_durum.project_id = 'test-a'"
+            )
         ).one()
     assert (mod, hazir, maske) == ("off", False, True)
 

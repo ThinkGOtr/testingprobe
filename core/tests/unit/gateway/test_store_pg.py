@@ -106,7 +106,11 @@ def test_call_id_dedups_across_instances(engine: Engine, rules_dir) -> None:
     assert second.cost_usd == pytest.approx(first.cost_usd)
     with engine.connect() as conn:
         n = conn.execute(
-            text("SELECT count(*) FROM ai_call WHERE id = :c OR parent_call_id = :c"), {"c": cid}
+            text(
+                "SELECT count(*) FROM ai_call WHERE ai_call.project_id = 'test-a' AND (id = :c OR "
+                "parent_call_id = :c)"
+            ),
+            {"c": cid},
         ).scalar_one()
     assert n == 1
     assert PgSpendLedger(engine).spent_workflow(wf) == spent
@@ -125,7 +129,8 @@ def test_build_gateway_with_engine_uses_pg(engine: Engine, rules_dir) -> None:
     # build_gateway varsayılanı record_extras=True: ayrıntılar ai_call.ek'e (0005) yazılır.
     with engine.connect() as conn:
         mod, ek = conn.execute(
-            text("SELECT mod, ek FROM ai_call WHERE id = :c"), {"c": result.call_id}
+            text("SELECT mod, ek FROM ai_call WHERE ai_call.project_id = 'test-a' AND id = :c"),
+            {"c": result.call_id},
         ).one()
     assert mod == "replay_miss" and isinstance(ek, dict)
 

@@ -19,11 +19,12 @@ from uuid import UUID
 
 from sqlalchemy import Engine, text
 
+from tp_core.proje import pid_param
 from tp_core.workflow.budget import daily_spend_usd, workflow_spend_usd
 
 _FAMILY_SQL = text(
     "SELECT id, parent_call_id, amac, mod, cikti, sema_gecerli, hata, girdi_token, cikti_token, "
-    "maliyet FROM ai_call WHERE id = :root OR parent_call_id = :root "
+    "maliyet FROM ai_call WHERE project_id = :pid AND (id = :root OR parent_call_id = :root) "
     "ORDER BY olusturma, deneme NULLS FIRST, id"
 )
 
@@ -51,4 +52,4 @@ class PgCallLookup:
 
     def find_ai_calls(self, root_id: UUID) -> list[Mapping[str, Any]]:
         with self._engine.connect() as conn:
-            return [dict(r._mapping) for r in conn.execute(_FAMILY_SQL, {"root": root_id})]
+            return [dict(r._mapping) for r in conn.execute(_FAMILY_SQL, pid_param(root=root_id))]

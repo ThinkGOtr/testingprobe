@@ -47,6 +47,7 @@ from tp_core.features.cases.schema import (
 )
 from tp_core.models import CaseUretim, Requirement, TestCase, WorkflowInstance, session_scope
 from tp_core.ports import CallResult, ModelGateway, ModelMessage
+from tp_core.proje import pid_param
 from tp_core.workflow.jobs import JobContext, PermanentJobError, start_workflow
 from tp_core.workflow.service import SYSTEM, Principal, WorkflowError, content_hash_of, transition
 
@@ -288,10 +289,10 @@ def _calisan(session: Session, requirement_id: uuid.UUID) -> bool:
     row = session.execute(
         text(
             "SELECT 1 FROM workflow_instance w LEFT JOIN job j ON j.id = w.job_id "
-            "WHERE w.tur = :t AND w.nesne_id = :r AND w.durum = 'running' "
+            "WHERE w.tur = :t AND w.nesne_id = :r AND w.project_id = :pid AND w.durum = 'running' "
             "AND (j.durum IS NULL OR j.durum IN ('queued', 'retry', 'running')) LIMIT 1"
         ),
-        {"t": WORKFLOW_TUR, "r": requirement_id},
+        pid_param(t=WORKFLOW_TUR, r=requirement_id),
     ).first()
     return row is not None
 
@@ -334,8 +335,11 @@ def start_deepening(
     uretim_no = service.next_uretim_no(session, req.id)
     sira = int(
         session.scalar(
-            text("SELECT count(*) FROM workflow_instance WHERE tur = :t AND nesne_id = :r"),
-            {"t": WORKFLOW_TUR, "r": req.id},
+            text(
+                "SELECT count(*) FROM workflow_instance "
+                "WHERE tur = :t AND nesne_id = :r AND project_id = :pid"
+            ),
+            pid_param(t=WORKFLOW_TUR, r=req.id),
         )
         or 0
     )
@@ -632,9 +636,10 @@ def deepening_status(session: Session, requirement_id: uuid.UUID) -> dict[str, A
         text(
             "SELECT w.durum AS wf, w.baglam, j.durum AS job, j.sonuc, j.son_hata "
             "FROM workflow_instance w LEFT JOIN job j ON j.id = w.job_id "
-            "WHERE w.tur = :t AND w.nesne_id = :r ORDER BY w.olusturma DESC LIMIT 1"
+            "WHERE w.tur = :t AND w.nesne_id = :r AND w.project_id = :pid "
+            "ORDER BY w.olusturma DESC LIMIT 1"
         ),
-        {"t": WORKFLOW_TUR, "r": requirement_id},
+        pid_param(t=WORKFLOW_TUR, r=requirement_id),
     ).first()
     bos = {
         "durum": "yok",

@@ -70,8 +70,10 @@ from sqlalchemy.orm import Session
 
 from tp_core.audit.session import audit_on_commit
 from tp_core.features.otomasyon import ayarlar
+from tp_core.features.otomasyon.proje_dongusu import projelerde
 from tp_core.features.requirements import flow, services
 from tp_core.models import Requirement, TestCase, session_scope
+from tp_core.proje import pid_param
 from tp_core.workflow.jobs import enqueue, idempotency_lock
 from tp_core.workflow.service import GateClosed, WorkflowError
 
@@ -245,10 +247,11 @@ def _hata_denetle(key: str, durum: str) -> None:
     with session_scope() as s:
         son = s.execute(
             text(
-                "SELECT ozet->>'sonuc' FROM audit_event WHERE eylem = 'requirements.jira_tetik' "
-                "AND ozet->>'jira_key' = :k ORDER BY id DESC LIMIT 1"
+                "SELECT ozet->>'sonuc' FROM audit_event WHERE project_id = :pid "
+                "AND eylem = 'requirements.jira_tetik' AND ozet->>'jira_key' = :k "
+                "ORDER BY id DESC LIMIT 1"
             ),
-            {"k": key},
+            pid_param(k=key),
         ).scalar_one_or_none()
         if son == "hata":
             return
@@ -346,10 +349,10 @@ def _durumdan_cikanlar(s: Session, kalan: list[str]) -> int:
     """Tam listeli turda listede olmayan story'lerin `jira_durumu`'nu temizler (yalnız değişen)."""
     return s.execute(
         text(
-            "UPDATE requirement SET jira_durumu = NULL WHERE kaynak = 'jira' "
+            "UPDATE requirement SET jira_durumu = NULL WHERE project_id = :pid AND kaynak = 'jira' "
             "AND jira_durumu IS NOT NULL AND NOT (jira_key = ANY(:k))"
         ),
-        {"k": kalan},
+        pid_param(k=kalan),
     ).rowcount
 
 
@@ -491,11 +494,20 @@ def tur(engine: Engine | None = None, jira: Any = None) -> dict[str, Any]:
 
 
 def ensure(conn: Connection, *, gecikme_s: float = 0.0) -> uuid.UUID | None:
-    """Tetik işini (kuyrukta bekleyen yoksa) ekler; tek bekleyen iş kuralı advisory lock ile."""
+    """Tetik işini (kuyrukta bekleyen yoksa) ekler; proje başına tek bekleyen iş kuralı advisory
+    lock ile. Bağlamsız çağrıda (worker açılışı) her aktif proje için (§5.2); son eklenen döner."""
+    eklenen = [j for j in projelerde(conn, lambda: _ensure(conn, gecikme_s)) if j is not None]
+    return eklenen[-1] if eklenen else None
+
+
+def _ensure(conn: Connection, gecikme_s: float) -> uuid.UUID | None:
     idempotency_lock(conn, JOB_JIRA_TETIK)
     bekleyen = conn.execute(
-        text("SELECT id FROM job WHERE tur = :t AND durum IN ('queued', 'retry') LIMIT 1"),
-        {"t": JOB_JIRA_TETIK},
+        text(
+            "SELECT id FROM job WHERE tur = :t AND project_id = :pid "
+            "AND durum IN ('queued', 'retry') LIMIT 1"
+        ),
+        pid_param(t=JOB_JIRA_TETIK),
     ).scalar_one_or_none()
     if bekleyen is not None:
         return None
@@ -514,9 +526,9 @@ def ayar_degisti(conn: Connection, *, hemen: bool, aralik_s: int) -> None:
     n = conn.execute(
         text(
             "UPDATE job SET run_after = LEAST(run_after, :h) "
-            "WHERE tur = :t AND durum IN ('queued', 'retry')"
+            "WHERE tur = :t AND project_id = :pid AND durum IN ('queued', 'retry')"
         ),
-        {"h": hedef, "t": JOB_JIRA_TETIK},
+        pid_param(h=hedef, t=JOB_JIRA_TETIK),
     ).rowcount
     if not n:
         enqueue(conn, JOB_JIRA_TETIK, {}, run_after=hedef)
@@ -535,14 +547,16 @@ def eski_turlari_sil(engine: Engine, saklama: timedelta = TUR_SAKLAMA) -> int:
     with engine.begin() as conn:
         return conn.execute(
             text(
-                "DELETE FROM job WHERE tur = :t AND durum IN ('done', 'failed', 'cancelled') "
+                "DELETE FROM job WHERE tur = :t AND project_id = :pid "
+                "AND durum IN ('done', 'failed', 'cancelled') "
                 "AND COALESCE(bitis, guncelleme) < now() - make_interval(secs => :sn) "
-                "AND id <> COALESCE((SELECT id FROM job WHERE tur = :t AND durum = 'done' "
+                "AND id <> COALESCE((SELECT id FROM job WHERE tur = :t AND project_id = :pid "
+                "AND durum = 'done' "
                 "AND sonuc ? 'bulunan' AND (sonuc->>'acik')::boolean "
                 "ORDER BY bitis DESC NULLS LAST LIMIT 1), "
                 "'00000000-0000-0000-0000-000000000000'::uuid)"
             ),
-            {"t": JOB_JIRA_TETIK, "sn": saklama.total_seconds()},
+            pid_param(t=JOB_JIRA_TETIK, sn=saklama.total_seconds()),
         ).rowcount
 
 
@@ -753,10 +767,11 @@ def durum_ozeti(s: Session) -> dict[str, Any]:
     taban = ayarlar.tetik_tabani(s)
     son = s.execute(
         text(
-            "SELECT sonuc FROM job WHERE tur = :t AND durum = 'done' AND sonuc ? 'bulunan' "
-            "AND (sonuc->>'acik')::boolean ORDER BY bitis DESC NULLS LAST LIMIT 1"
+            "SELECT sonuc FROM job WHERE tur = :t AND project_id = :pid AND durum = 'done' "
+            "AND sonuc ? 'bulunan' AND (sonuc->>'acik')::boolean "
+            "ORDER BY bitis DESC NULLS LAST LIMIT 1"
         ),
-        {"t": JOB_JIRA_TETIK},
+        pid_param(t=JOB_JIRA_TETIK),
     ).scalar_one_or_none()
     son_tur = None
     if isinstance(son, dict):
@@ -778,9 +793,10 @@ def durum_ozeti(s: Session) -> dict[str, Any]:
         text(
             "SELECT ozet->>'jira_key' AS jira_key, ozet->>'sonuc' AS sonuc, "
             "ozet->>'neden' AS neden, zaman FROM audit_event "
-            "WHERE eylem = 'requirements.jira_tetik' ORDER BY id DESC LIMIT :n"
+            "WHERE project_id = :pid AND eylem = 'requirements.jira_tetik' "
+            "ORDER BY id DESC LIMIT :n"
         ),
-        {"n": SON_TETIK_TARAMA},
+        pid_param(n=SON_TETIK_TARAMA),
     ):
         if r.jira_key in gorulen:
             continue

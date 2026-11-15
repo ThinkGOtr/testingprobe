@@ -302,7 +302,8 @@ def _olaylar(engine: Engine, *, sinyal: bool = False) -> list[dict[str, Any]]:
             for r in c.execute(
                 text(
                     "SELECT kullanici_id, mesaj_id, tur, ciddi, ayrinti FROM asistan_guvenlik_olay "
-                    "WHERE tur <> 'sinyal' OR :s ORDER BY zaman"
+                    "WHERE asistan_guvenlik_olay.project_id = 'test-a' AND (tur <> 'sinyal' OR :s) "
+                    "ORDER BY zaman"
                 ),
                 {"s": sinyal},
             ).mappings()
@@ -314,7 +315,8 @@ def _soru_id(engine: Engine, cevap_id: str) -> uuid.UUID:
         return c.execute(
             text(
                 "SELECT q.id FROM asistan_mesaj q JOIN asistan_mesaj a "
-                "ON a.sohbet_id = q.sohbet_id AND q.sira = a.sira - 1 AND q.rol = 'user' "
+                "ON a.project_id = 'test-a' AND a.sohbet_id = q.sohbet_id AND q.sira = a.sira - 1 "
+                "AND q.rol = 'user' "
                 "WHERE a.id = :a"
             ),
             {"a": cevap_id},
