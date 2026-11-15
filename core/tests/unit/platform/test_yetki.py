@@ -325,11 +325,14 @@ def test_denetim_kapsami_kendi_olaylari(
     client: TestClient, make_user: MakeUser, engine: Engine
 ) -> None:
     from tp_core.audit import append_audit
+    from tp_core.proje import varsayilan_pid
 
+    # Proje zinciri (oturumun projesi = varsayılan proje).
+    pid = varsayilan_pid()
     analist, denetci = make_user("analyst"), make_user("auditor")
     with engine.begin() as c:
-        append_audit(c, analist.kullanici_adi, "deneme.kendi", None, {})
-        append_audit(c, "baskasi", "deneme.baska", None, {})
+        append_audit(c, analist.kullanici_adi, "deneme.kendi", None, {}, project_id=pid)
+        append_audit(c, "baskasi", "deneme.baska", None, {}, project_id=pid)
     _giris(client, analist)
     aktorler = {e["aktor"] for e in client.get("/audit").json()["events"]}
     assert aktorler == {analist.kullanici_adi}
@@ -343,9 +346,13 @@ def test_denetci_gorunumunde_ozet_maskelidir(
     client: TestClient, make_user: MakeUser, engine: Engine
 ) -> None:
     from tp_core.audit import append_audit
+    from tp_core.proje import varsayilan_pid
 
     with engine.begin() as c:
-        append_audit(c, "biri", "deneme.pii", None, {"not": "iletisim ayse.yilmaz@ornek.com"})
+        append_audit(
+            c, "biri", "deneme.pii", None, {"not": "iletisim ayse.yilmaz@ornek.com"},
+            project_id=varsayilan_pid(),
+        )  # fmt: skip
     _giris(client, make_user("auditor"))
     ozet = next(e for e in client.get("/audit").json()["events"] if e["eylem"] == "deneme.pii")
     assert "ayse.yilmaz@ornek.com" not in str(ozet) and "<<PII_EMAIL_1>>" in ozet["ozet"]["not"]
@@ -359,8 +366,8 @@ def _kosu(engine: Engine) -> str:
         return str(
             c.execute(
                 text(
-                    "INSERT INTO run (kaynak, tetik, sonuc, artefaktlar) VALUES "
-                    "('local', 'deploy', 'passed', CAST(:a AS jsonb)) RETURNING id"
+                    "INSERT INTO run (project_id, kaynak, tetik, sonuc, artefaktlar) VALUES "
+                    "('varsayilan', 'local', 'deploy', 'passed', CAST(:a AS jsonb)) RETURNING id"
                 ),
                 {"a": '{"dizin": "runs/r1", "html": "html", "junit": "junit.xml", "log": "x.log"}'},
             ).scalar_one()
@@ -423,22 +430,22 @@ def _zengin_kosu(engine: Engine) -> str:
     with engine.begin() as c:
         rid = c.execute(
             text(
-                "INSERT INTO run (kaynak, tetik, sonuc, artefaktlar) VALUES "
-                "('github', 'deploy', 'failed', CAST(:a AS jsonb)) RETURNING id"
+                "INSERT INTO run (project_id, kaynak, tetik, sonuc, artefaktlar) VALUES "
+                "('varsayilan', 'github', 'deploy', 'failed', CAST(:a AS jsonb)) RETURNING id"
             ),
             {"a": json.dumps(a)},
         ).scalar_one()
         tr = c.execute(
             text(
-                "INSERT INTO test_result (run_id, tetik, test_adi, dosya, sonuc) "
-                "VALUES (:r, 'deploy', 't', 'a.spec.ts', 'failed') RETURNING id"
+                "INSERT INTO test_result (project_id, run_id, tetik, test_adi, dosya, sonuc) "
+                "VALUES ('varsayilan', :r, 'deploy', 't', 'a.spec.ts', 'failed') RETURNING id"
             ),
             {"r": rid},
         ).scalar_one()
         c.execute(
             text(
-                "INSERT INTO test_result_ek (test_result_id, ekler, denemeler) VALUES "
-                "(:t, CAST(:e AS jsonb), CAST(:d AS jsonb))"
+                "INSERT INTO test_result_ek (project_id, test_result_id, ekler, denemeler) VALUES "
+                "('varsayilan', :t, CAST(:e AS jsonb), CAST(:d AS jsonb))"
             ),
             {
                 "t": tr,
@@ -516,8 +523,8 @@ def _bug(engine: Engine, durum: str) -> str:
         return str(
             c.execute(
                 text(
-                    "INSERT INTO bug_draft (icerik, icerik_hash, durum) "
-                    "VALUES (CAST(:i AS jsonb), 'h', :d) RETURNING id"
+                    "INSERT INTO bug_draft (project_id, icerik, icerik_hash, durum) "
+                    "VALUES ('varsayilan', CAST(:i AS jsonb), 'h', :d) RETURNING id"
                 ),
                 {"i": '{"ozet": "x"}', "d": durum},
             ).scalar_one()
@@ -542,20 +549,21 @@ def test_developer_hata_detayinda_yayinlanmamis_bug_gormez(
 ) -> None:
     with engine.begin() as c:
         rid = c.execute(
-            text("INSERT INTO run (kaynak, tetik, sonuc) VALUES ('local','deploy','failed') "
-                 "RETURNING id")
+            text("INSERT INTO run (project_id, kaynak, tetik, sonuc) "
+                 "VALUES ('varsayilan', 'local','deploy','failed') RETURNING id")
         ).scalar_one()  # fmt: skip
         fid = c.execute(
             text(
-                "INSERT INTO failure (run_id, test_adi, hata_imzasi, sinif, oneri_turu) "
-                "VALUES (:r, 't', 'imza', 'product_defect', 'bug_draft') RETURNING id"
+                "INSERT INTO failure "
+                "(project_id, run_id, test_adi, hata_imzasi, sinif, oneri_turu) "
+                "VALUES ('varsayilan', :r, 't', 'imza', 'product_defect', 'bug_draft') RETURNING id"
             ),
             {"r": rid},
         ).scalar_one()
         bid = c.execute(
             text(
-                "INSERT INTO bug_draft (icerik, icerik_hash, durum, failure_id) "
-                "VALUES (CAST(:i AS jsonb), 'h', 'draft', :f) RETURNING id"
+                "INSERT INTO bug_draft (project_id, icerik, icerik_hash, durum, failure_id) "
+                "VALUES ('varsayilan', CAST(:i AS jsonb), 'h', 'draft', :f) RETURNING id"
             ),
             {"i": '{"ozet": "x"}', "f": fid},
         ).scalar_one()
@@ -579,8 +587,9 @@ def _gereksinim(engine: Engine, kaynak: str) -> str:
         return str(
             c.execute(
                 text(
-                    "INSERT INTO requirement (kaynak, jira_key, baslik, kaynak_hash, durum) "
-                    "VALUES (:k, :j, 'b', 'h', 'pending_po') RETURNING id"
+                    "INSERT INTO requirement "
+                    "(project_id, kaynak, jira_key, baslik, kaynak_hash, durum) "
+                    "VALUES ('varsayilan', :k, :j, 'b', 'h', 'pending_po') RETURNING id"
                 ),
                 {"k": kaynak, "j": "TPD-99" if kaynak == "jira" else None},
             ).scalar_one()

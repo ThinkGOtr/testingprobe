@@ -34,7 +34,7 @@ from tp_core.auth.proje_secimi import ROL_ETIKETLERI_EN
 from tp_core.auth.sessions import OturumDurumu, cookie_name, open_session, revoke_session
 from tp_core.models import AppUser, Oturum
 from tp_core.models.tp_proje import TpProje
-from tp_core.proje import KURULUM, proje_icinde, varsayilan_pid
+from tp_core.proje import KURULUM, varsayilan_pid
 from tp_core.workflow.service import Principal
 
 router = APIRouter(tags=["auth"])
@@ -181,15 +181,17 @@ def proje_sec(
         sid = o.id
         session.execute(update(Oturum).where(Oturum.id == o.id).values(project_id=body.pid))
     # Kurulum geneli olay: `_kurulum` zinciri (seçim kişiye aittir, projeye değil).
-    with proje_icinde(KURULUM, kaynak="sistem"):
-        append_audit(
-            session.connection(),
-            hesap.kullanici_adi,
-            "auth.proje_degisti",
-            f"app_user:{hesap.id}",
-            {"onceki": onceki, "yeni": body.pid, "sid": str(sid),
-             "hesap_degisti": hesap_degisti, "onceki_hesap": user.kullanici_adi},
-        )  # fmt: skip
+    ozet = {
+        "onceki": onceki,
+        "yeni": body.pid,
+        "sid": str(sid),
+        "hesap_degisti": hesap_degisti,
+        "onceki_hesap": user.kullanici_adi,
+    }
+    append_audit(
+        session.connection(), hesap.kullanici_adi, "auth.proje_degisti",
+        f"app_user:{hesap.id}", ozet, project_id=KURULUM,
+    )  # fmt: skip
     if yanit_durumu is not None:
         yanit_durumu.project_id = body.pid
     yeni = Principal(

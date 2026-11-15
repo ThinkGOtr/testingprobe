@@ -197,7 +197,7 @@ async def events(
         await b.ensure_started()
     except TimeoutError as exc:
         raise HTTPException(503, "Olay akışı şu anda kullanılamıyor") from exc
-    q = b.subscribe()
+    q = b.subscribe(user.project_id)  # yalnız oturum projesi + kurulum geneli olaylar
     return EventSourceResponse(
         _akis(
             request,

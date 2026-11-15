@@ -53,7 +53,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from tp_core.home_config import yukleyici as y
-from tp_core.proje.baglam import KURULUM, baglamla, proje_icinde, varsa
+from tp_core.proje.baglam import KURULUM, baglamla, varsa
 
 log = logging.getLogger("tp_core.home_config")
 
@@ -582,8 +582,10 @@ def _denetle(eylem: str, ozet: dict[str, Any]) -> None:
         from tp_core.audit import append_audit
         from tp_core.db import get_engine
 
-        with proje_icinde(KURULUM, kaynak="sistem"), get_engine().begin() as c:
-            append_audit(c, "home-config", eylem, f"proje:{ozet.get('pid')}", ozet)
+        with get_engine().begin() as c:
+            append_audit(
+                c, "home-config", eylem, f"proje:{ozet.get('pid')}", ozet, project_id=KURULUM
+            )
     except Exception:
         log.warning("home config: denetim kaydı yazılamadı (%s)", eylem, exc_info=True)
 
