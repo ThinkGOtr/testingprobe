@@ -403,7 +403,7 @@ def test_izinsiz_ortam_engelle_ve_semasiz_host() -> None:
         "Tutar 1.250.000,00 TL",
         "1.250.000.000/ay kota",
         "Sürüm 10.0.0.5 yüklü",
-        "com.cci.bayi uygulamasını aç",
+        "com.ornek.bayi uygulamasını aç",
         "bayi1@mail.sim.local yaz",
         "api.demo.local açılır",
     ):
