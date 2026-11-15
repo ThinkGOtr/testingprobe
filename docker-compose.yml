@@ -138,6 +138,12 @@ x-core-env: &core-env
   TP_CT_SON_KOSU: ${TP_CT_SON_KOSU:-20}
   TP_CT_FLAKY_GUN: ${TP_CT_FLAKY_GUN:-30}
   TP_CT_TREND_GUN: ${TP_CT_TREND_GUN:-14}
+  # Config R1 (registry anahtarları; env kipinde bugünkü varsayılanlar): Kontrol Kulesi gözden
+  # geçirme süresi alt sınırı (sn), ekilmiş hata koşusunun geçerlilik eşiği (0–1), PR/hata
+  # bağlantılarının web kökü (boş = https://github.com).
+  TP_CT_REVIEW_MIN_S: ${TP_CT_REVIEW_MIN_S:-5}
+  TP_HATA_KOSUSU_GECERLI_ESIK: ${TP_HATA_KOSUSU_GECERLI_ESIK:-0.5}
+  TP_FORGE_WEB_URL: ${TP_FORGE_WEB_URL:-}
   # Portal asistanı ve Öneri (specs/008-ai-asistan/contracts/env.md). Gizli değildir; model kipi ve
   # anahtar burada YOK (yalnız core-worker). 0 = öneri uçları ve düğmesi kapalı (geri alma).
   TP_ASISTAN_ONERI: ${TP_ASISTAN_ONERI:-1}
@@ -247,6 +253,10 @@ services:
       # Çalışma alanına bağlı anahtar için `anthropic-workspace-id` başlığı (sır; yalnızca core-worker).
       ANTHROPIC_WORKSPACE_ID: ${ANTHROPIC_WORKSPACE_ID:-}
       TP_MODEL_PROVIDER: ${TP_MODEL_PROVIDER:-anthropic}
+      # Azure OpenAI sağlayıcısı (TP_MODEL_PROVIDER=azure_openai; sır yalnız core-worker'da).
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT:-}
       TP_PII_MASKING: ${TP_PII_MASKING:-0}
       TP_REPLAY_STRICT: ${TP_REPLAY_STRICT:-0}
       PLAYWRIGHT_MCP_URL: http://playwright-mcp:8931/mcp
@@ -286,6 +296,9 @@ services:
       TP_CI_GITHUB_POLL_S: ${TP_CI_GITHUB_POLL_S:-30}
       TP_CI_GITHUB_TIMEOUT_S: ${TP_CI_GITHUB_TIMEOUT_S:-5400}
       TP_CI_GITHUB_BULMA_S: ${TP_CI_GITHUB_BULMA_S:-3600}
+      # Takılı koşu zaman aşımı (sn; 0/kapali = kapalı) ve kod üretimi 5. adım bütçesi (sn).
+      TP_CI_KOSU_ZAMAN_ASIMI_S: ${TP_CI_KOSU_ZAMAN_ASIMI_S:-21600}
+      TP_CODEGEN_STEP5_BUDGET_S: ${TP_CODEGEN_STEP5_BUDGET_S:-120}
       # Portal asistanı (yalnız core-worker; core-api kipi bilmez, durumu asistan_durum'dan okur).
       # Model kipi pipeline'dan bağımsız: live | off (kod varsayılanı off). Anahtar yukarıdaki
       # ANTHROPIC_API_KEY'dir.
@@ -347,6 +360,10 @@ services:
       # Asıl kaynak forge-init/break/sync-web'in yazdığı /forge/demo-app-web.sha dosyasıdır
       # (TP_APP_BUILD_SHA_FILE); bu değişken yalnızca dosya yokken kullanılır.
       DEMO_APP_BUILD_SHA: ${DEMO_APP_BUILD_SHA:-}
+      # /locator-probe yoklamasının hedefi ve sentetik demo kullanıcısı (DEMO-VERISI.md).
+      DEMO_WEB_URL: ${DEMO_WEB_URL:-http://demo-app-web:8080}
+      TP_PROBE_USER: ${TP_PROBE_USER:-bayi1}
+      TP_PROBE_PASSWORD: ${TP_PROBE_PASSWORD:-Demo123!}
       TP_ARTIFACTS_PATH: /artifacts
       # Merge kapısı ayrı volume'de; bağlama noktası değilse /check kapı dosyasını yazmaz (503).
       TP_CHECKS_PATH: /checks
@@ -402,6 +419,11 @@ services:
       BASE_URL: http://demo-app-web:8080
       DEMO_API_URL: http://demo-app-api:8000
       DEMOAPP_TEST_TOKEN: ${DEMOAPP_TEST_TOKEN:?make env çalıştırın}
+      # Koşu bayileri ve koşu dizini temizliği (en yeni N koşu; kanıt koşuları gün / adet sınırı).
+      TP_RUN_DEALERS: ${TP_RUN_DEALERS:-bayi1,bayi2}
+      TP_RUNS_KEEP: ${TP_RUNS_KEEP:-50}
+      TP_RUNS_KEEP_EVIDENCE_DAYS: ${TP_RUNS_KEEP_EVIDENCE_DAYS:-30}
+      TP_RUNS_KEEP_EVIDENCE_MAX: ${TP_RUNS_KEEP_EVIDENCE_MAX:-200}
       TP_FORGE_MIRROR_PATH: /forge-mirror/demo-app.git
       TP_E2E_ROOT: ${TP_E2E_ROOT:-e2e}
       # 013 K19: üretilen testler gizli test verisini ortamdan okur (`process.env.TP_TESTVERI_*`,

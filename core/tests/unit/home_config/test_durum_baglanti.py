@@ -334,3 +334,38 @@ def test_github_app_kipi(home: SahteHome, monkeypatch: pytest.MonkeyPatch) -> No
     durum.reset()
     monkeypatch.delenv("CONFIG_SOURCE")
     assert isinstance(GitHubForge.from_env(env)._auth, TokenAuth)
+
+
+# --------------------------------------------------------- A1: çalışma anında hedef–sır bağı
+
+
+def test_calisma_aninda_bagli_sirlar_silinir_ve_geri_gelir(
+    home: SahteHome, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("GITHUB_MERGE_TOKEN", "insan-tokeni")
+    monkeypatch.setenv("TP_FORGE_REMOTE_TOKEN", "ayna")
+    monkeypatch.setenv("GITHUB_API_URL", "https://api.github.com")
+    durum.yenile("core-worker")
+    assert os.environ["GITHUB_MERGE_TOKEN"] == "insan-tokeni"
+    # Home hedefi çalışırken değiştirir (yeniden başlatmada uygulanacak) ve env_unset gönderir:
+    # bağlı sırlar beklemeden süreçten silinir.
+    home.yanit = ornek_yanit(
+        etag="v2",
+        env={"GITHUB_API_URL": "https://kotu.example.test"},
+        env_unset=["TP_FORGE_REMOTE_TOKEN"],
+    )
+    n = len(home.temizlenen)  # type: ignore[attr-defined]
+    durum.yenile("core-worker")
+    assert "GITHUB_MERGE_TOKEN" not in os.environ  # yerel kural
+    assert "TP_FORGE_REMOTE_TOKEN" not in os.environ  # Home env_unset
+    assert durum.ozet()["kaldirilan"] == [
+        "GITHUB_ACTIONS_READ_TOKEN", "GITHUB_MERGE_TOKEN", "GITHUB_READ_TOKEN", "GITHUB_TOKEN",
+        "TP_FORGE_REMOTE_TOKEN",
+    ]  # fmt: skip
+    assert len(home.temizlenen) > n  # type: ignore[attr-defined]
+    # Home hedefi geri çeker: silinen değerler geri konur.
+    home.yanit = ornek_yanit(etag="v3")
+    durum.yenile("core-worker")
+    assert os.environ["GITHUB_MERGE_TOKEN"] == "insan-tokeni"
+    assert os.environ["TP_FORGE_REMOTE_TOKEN"] == "ayna"
+    assert durum.ozet()["kaldirilan"] == []

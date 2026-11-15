@@ -34,9 +34,9 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Optional
 
 log = logging.getLogger("tp_core.home_config")
 
@@ -95,6 +95,29 @@ KORUNAN_ONEKLER: tuple[str, ...] = (
 )
 KORUNAN_SONEKLER: tuple[str, ...] = ("_PORT",)
 
+# Hedef adres → o adrese gönderilen sırlar (Config R1 A1; registry `binds_secrets`in TP karşılığı,
+# Home'un `env_unset`ine ek yerel derinlemesine savunma). Hedef Home'dan geliyorsa (varsayılan ya da
+# Deployment'ın kendi değeri değilse) ve bağlı sır Home'dan gelmiyorsa sır KULLANILMAZ: ele
+# geçirilmiş bir organizasyon yöneticisi hedefi değiştirip Deployment sırlarını (ör. korunan
+# GITHUB_MERGE_TOKEN) kendi sunucusuna çektiremez. (varsayılan hedef, bağlı sırlar)
+BAGLI_SIRLAR: dict[str, tuple[str | None, frozenset[str]]] = {
+    "GITHUB_API_URL": (
+        "https://api.github.com",
+        frozenset(
+            {"GITHUB_TOKEN", "GITHUB_READ_TOKEN", "GITHUB_ACTIONS_READ_TOKEN", "GITHUB_MERGE_TOKEN"}
+        ),
+    ),
+    "TP_FORGE_REMOTE_URL": (None, frozenset({"TP_FORGE_REMOTE_TOKEN"})),
+    "JIRA_BASE_URL": (None, frozenset({"JIRA_READ_TOKEN", "JIRA_WRITE_TOKEN"})),
+    "XRAY_BASE_URL": (None, frozenset({"XRAY_CLIENT_ID", "XRAY_CLIENT_SECRET"})),
+    "AZURE_OPENAI_ENDPOINT": (None, frozenset({"AZURE_OPENAI_API_KEY"})),
+    "TP_DEMO_WEB_URL": (None, frozenset({"TP_PROBE_PASSWORD", "TP_AGENT_DEALER_PASSWORD"})),
+    "DEMO_WEB_URL": (None, frozenset({"TP_PROBE_PASSWORD", "TP_AGENT_DEALER_PASSWORD"})),
+    "BASE_URL": (None, frozenset({"TP_PROBE_PASSWORD", "TP_AGENT_DEALER_PASSWORD"})),
+    "DEMO_API_URL": (None, frozenset({"TP_PROBE_PASSWORD", "TP_AGENT_DEALER_PASSWORD"})),
+}
+BAGLI_SIR_ADLARI: frozenset[str] = frozenset().union(*(s for _, s in BAGLI_SIRLAR.values()))
+
 _ANAHTAR = re.compile(r"^[A-Z][A-Z0-9_]{0,127}$")
 _SIR_REF = re.compile(
     r"^projects/(?P<proje>[a-z0-9][a-z0-9-]{0,62})/secrets/(?P<ad>aiprobe-o[a-z0-9-]{1,240})"
@@ -121,6 +144,38 @@ def korunan_mi(anahtar: str) -> bool:
 
 def gecerli_anahtar(anahtar: Any) -> bool:
     return isinstance(anahtar, str) and bool(_ANAHTAR.match(anahtar)) and not korunan_mi(anahtar)
+
+
+def kaldirilabilir_mi(anahtar: Any) -> bool:
+    """`env_unset` adı: geçerli (korunmayan) anahtar ya da hedefe bağlı bir sır (korunan olsa
+    bile — ör. GITHUB_MERGE_TOKEN). Korunan başka bir ad (veritabanı, oturum sırrı …) silinemez."""
+    return (
+        isinstance(anahtar, str)
+        and bool(_ANAHTAR.match(anahtar))
+        and (anahtar in BAGLI_SIR_ADLARI or not korunan_mi(anahtar))
+    )
+
+
+def _url_norm(deger: Any) -> str:
+    return str(deger or "").strip().rstrip("/").lower()
+
+
+def bagli_sir_kaldirma(
+    home_env: Mapping[str, str], home_sirlari: set[str] | frozenset[str], taban: Mapping[str, str]
+) -> set[str]:
+    """Yerel A1 kuralı: hedefi Home'dan gelen (varsayılan ya da tabandaki Deployment değeri
+    olmayan) ve kendisi Home'dan gelmeyen bağlı sırların adları."""
+    out: set[str] = set()
+    for hedef, (varsayilan, sirlar) in BAGLI_SIRLAR.items():
+        if hedef not in home_env:
+            continue
+        deger = _url_norm(home_env[hedef])
+        if varsayilan is not None and deger == _url_norm(varsayilan):
+            continue
+        if hedef in taban and deger == _url_norm(taban[hedef]):
+            continue
+        out |= {s for s in sirlar if s not in home_sirlari}
+    return out
 
 
 def deger_metni(deger: Any) -> str | None:
@@ -188,7 +243,8 @@ class HttpYanit:
             raise SozlesmeHatasi("JSON olmayan yanıt") from exc
 
 
-Http = Callable[[str, str, Mapping[str, str], bytes | None, float], HttpYanit]
+# `Optional`: bu satır çalışma anında değerlendirilir; host python3 3.9'da `X | None` TypeError.
+Http = Callable[[str, str, Mapping[str, str], Optional[bytes], float], HttpYanit]  # noqa: UP045
 GECICI = frozenset({408, 429})
 
 
@@ -321,6 +377,8 @@ class EtkinConfig:
         for alan in ("env", "env_secrets", "connections", "values", "secrets"):
             if ham.get(alan) is not None and not isinstance(ham.get(alan), Mapping):
                 raise SozlesmeHatasi(f"{alan} nesne değil")
+        if ham.get("env_unset") is not None and not isinstance(ham.get("env_unset"), list):
+            raise SozlesmeHatasi("env_unset liste değil")
         proje = ham.get("project")
         if not isinstance(proje, Mapping) or not isinstance(proje.get("pid"), str):
             raise SozlesmeHatasi("project.pid yok")
@@ -335,6 +393,12 @@ class EtkinConfig:
     @property
     def env_secrets(self) -> Mapping[str, Any]:
         return self.ham.get("env_secrets") or {}
+
+    @property
+    def env_unset(self) -> list[Any]:
+        """Config R1 A1: Home'un "bu adları env görünümünden sil" listesi (hedefi Home'dan gelen,
+        sırrı Home'dan gelmeyen bağlı sırlar)."""
+        return list(self.ham.get("env_unset") or [])
 
     @property
     def proje(self) -> Mapping[str, Any]:
@@ -501,6 +565,8 @@ class EnvGorunumu:
     # Reddedilen (korunan/geçersiz ad, geçersiz değer/ref) ve çözülemeyen sır anahtarları (adlar).
     reddedilen: list[str] = field(default_factory=list)
     cozulemeyen: list[str] = field(default_factory=list)
+    # Env görünümünden SİLİNECEK adlar (A1: Home `env_unset` ∪ yerel bağlı sır kuralı).
+    kaldirilan: list[str] = field(default_factory=list)
 
 
 def env_gorunumu(
@@ -508,9 +574,13 @@ def env_gorunumu(
     cozucu: Callable[[str], str] | None = None,
     *,
     sir_projesi: str | None = None,
+    taban: Mapping[str, str] | None = None,
 ) -> EnvGorunumu:
     """`env` + (çözücü verilmişse) `env_secrets` → `{LEGACY: metin}`. Çözücü yoksa sırlar atlanır
-    (çalışan süreç sırları yalnız açılışta alır)."""
+    (çalışan süreç sırları yalnız açılışta alır).
+
+    `kaldirilan` = Home `env_unset` ∪ `bagli_sir_kaldirma` (taban = Home uygulanmadan önceki env).
+    Bir ad hem gelen değerlerde hem silinecekler listesindeyse silme kazanır (fail-closed)."""
     out = EnvGorunumu()
     for k, v in sorted(cfg.env.items()):
         if not gecerli_anahtar(k):
@@ -524,6 +594,7 @@ def env_gorunumu(
         if metin is not None:
             out.degerler[k] = metin
     if cozucu is None:
+        _kaldirilanlari_hesapla(out, cfg, False, taban or {})
         return out
     for k, ref in sorted(cfg.env_secrets.items()):
         if not gecerli_anahtar(k) or not sir_ref_gecerli(ref, sir_projesi):
@@ -538,6 +609,7 @@ def env_gorunumu(
             out.reddedilen.append(k)
             continue
         out.degerler[k] = metin
+    _kaldirilanlari_hesapla(out, cfg, cozucu is not None, taban or {})
     if out.reddedilen:
         log.warning("home config: reddedilen anahtarlar: %s", ", ".join(sorted(out.reddedilen)))
     if out.cozulemeyen:
@@ -546,6 +618,32 @@ def env_gorunumu(
             ", ".join(sorted(out.cozulemeyen)),
         )
     return out
+
+
+def _kaldirilanlari_hesapla(
+    out: EnvGorunumu, cfg: EtkinConfig, sirlar_cozuldu: bool, taban: Mapping[str, str]
+) -> None:
+    kaldir: set[str] = set()
+    for ad in cfg.env_unset:
+        if kaldirilabilir_mi(ad):
+            kaldir.add(ad)
+        else:
+            out.reddedilen.append(str(ad))
+    # Sır Home'dan "geliyor" sayılır: açılışta yalnız gerçekten çözülenler (çözülemeyen sırda taban
+    # değeri kalırdı — o da Home hedefine gitmesin); çalışma anında referansı geçerli olanlar.
+    if sirlar_cozuldu:
+        home_sirlari = {k for k in cfg.env_secrets if k in out.degerler}
+    else:
+        home_sirlari = {k for k, r in cfg.env_secrets.items() if gecerli_anahtar(k) and r}
+    kaldir |= bagli_sir_kaldirma(out.degerler, home_sirlari, taban)
+    for ad in kaldir:
+        out.degerler.pop(ad, None)
+    out.kaldirilan = sorted(kaldir)
+    if kaldir:
+        log.warning(
+            "home config: hedefe bağlı sırlar kullanılmayacak (env_unset): %s",
+            ", ".join(out.kaldirilan),
+        )
 
 
 # ------------------------------------------------------------------ env dosyası
@@ -585,15 +683,18 @@ def env_satiri(anahtar: str, deger: str) -> str:
     return f'{anahtar}="{deger}"'
 
 
-def env_dosyasi_birlestir(taban: str, yeni: Mapping[str, str]) -> tuple[str, list[str]]:
-    """Taban .env'den Home'un ezdiği anahtarların satırlarını ve eski Home bloğunu çıkarır, sonuna
-    yeni bloğu ekler. (metin, yazılamayan anahtarlar)."""
+def env_dosyasi_birlestir(
+    taban: str, yeni: Mapping[str, str], kaldir: Iterable[str] = ()
+) -> tuple[str, list[str]]:
+    """Taban .env'den Home'un ezdiği anahtarların ve `kaldir` (A1 `env_unset`) adlarının
+    satırlarını ve eski Home bloğunu çıkarır, sonuna yeni bloğu ekler. (metin, yazılamayan)."""
+    sil = set(kaldir)
     satirlar: list[str] = []
     for satir in taban.splitlines():
         if satir.strip() == BLOK_BASI:
             break  # önceki Home bloğu (dosya kendi üzerine yeniden üretildiyse)
         m = _SATIR.match(satir)
-        if m and m.group(1) in yeni:
+        if m and (m.group(1) in yeni or m.group(1) in sil):
             continue
         satirlar.append(satir)
     while satirlar and not satirlar[-1].strip():
@@ -601,6 +702,8 @@ def env_dosyasi_birlestir(taban: str, yeni: Mapping[str, str]) -> tuple[str, lis
     blok: list[str] = []
     yazilamayan: list[str] = []
     for k in sorted(yeni):
+        if k in sil:
+            continue
         try:
             blok.append(env_satiri(k, yeni[k]))
         except ValueError:

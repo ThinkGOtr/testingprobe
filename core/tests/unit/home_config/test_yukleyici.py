@@ -223,11 +223,104 @@ def test_cli_home_kipinde_env_dosyasini_uretir(
     assert "kaynak=lkg" in capsys.readouterr().out
 
 
-def test_cli_home_ve_lkg_yok_env_kalir(tmp_path: Path) -> None:
+def test_cli_home_ve_lkg_yok_acilis_durur(tmp_path: Path) -> None:
+    """SRE m2: `home` kipinde Home da LKG de yoksa çıkış ≠ 0 (up.sh açılışı durdurur); dosya
+    değişmez. env kipinde aynı durum 0 (bkz. test_cli_env_kipinde_dosyaya_dokunmaz)."""
     env = _home_env(tmp_path)
     once = env.read_text()
     home = SahteHome(kapali=True)
     rc = cli.calistir(
         str(env), str(tmp_path / "yok.json"), http=home, kimlik=y.MetadataKimligi(home)
     )
-    assert rc == 0 and env.read_text() == once
+    assert rc == cli.CIKIS_HOME_YOK and env.read_text() == once
+
+
+def test_cli_home_kipinde_proje_eksikse_acilis_durur(tmp_path: Path) -> None:
+    env = tmp_path / ".env"
+    env.write_text(f"CONFIG_SOURCE=home\nAIPROBE_HOME_RUN_URL={HOME}\n")
+    home = SahteHome()
+    assert cli.calistir(str(env), None, http=home) == cli.CIKIS_HOME_YOK
+    assert home.istekler == []
+
+
+# ------------------------------------------------------------------ A1: hedef–sır bağı
+
+
+def _gorunum(home: SahteHome, taban: dict[str, str] | None = None) -> y.EnvGorunumu:
+    cfg = _istemci(home).cek()
+    assert cfg is not None
+    return y.env_gorunumu(
+        cfg, y.SecretManagerCozucu(lambda: "at", home), sir_projesi=SM_PROJESI, taban=taban or {}
+    )
+
+
+def test_env_unset_uygulanir_ve_korunanlar_silinemez() -> None:
+    home = SahteHome()
+    home.yanit["env_unset"] = ["TP_FORGE_REMOTE_TOKEN", "GITHUB_MERGE_TOKEN", "TP_DATABASE_URL",
+                               "JIRA_READ_TOKEN", "kotu ad"]  # fmt: skip
+    g = _gorunum(home)
+    # Bağlı sır (korunan GITHUB_MERGE_TOKEN dahil) silinir; Home'un verdiği sır da silinir
+    # (silme kazanır); korunan başka bir ad ve geçersiz ad reddedilir.
+    assert g.kaldirilan == ["GITHUB_MERGE_TOKEN", "JIRA_READ_TOKEN", "TP_FORGE_REMOTE_TOKEN"]
+    assert "JIRA_READ_TOKEN" not in g.degerler
+    assert {"TP_DATABASE_URL", "kotu ad"} <= set(g.reddedilen)
+
+
+def test_env_unset_liste_degilse_sozlesme_hatasi() -> None:
+    with pytest.raises(y.SozlesmeHatasi):
+        y.EtkinConfig.coz(ornek_yanit(env_unset="GITHUB_TOKEN"))
+
+
+def test_yerel_kural_hedef_homedan_gelirse_deployment_sirri_kullanilmaz() -> None:
+    """Home `env_unset` göndermese bile: hedef Home'dan (varsayılan / Deployment değeri değil) ve
+    sır Home'dan gelmiyorsa sır silinir — korunan GITHUB_MERGE_TOKEN ve TP_FORGE_REMOTE_TOKEN."""
+    home = SahteHome()
+    home.yanit["env"].update(
+        {"GITHUB_API_URL": "https://kotu.example.test/api/v3",
+         "TP_FORGE_REMOTE_URL": "https://kotu.example.test/r.git"}
+    )  # fmt: skip
+    g = _gorunum(home)
+    assert {"GITHUB_MERGE_TOKEN", "GITHUB_TOKEN", "TP_FORGE_REMOTE_TOKEN"} <= set(g.kaldirilan)
+    assert "JIRA_READ_TOKEN" in g.degerler  # Jira hedefi Home'dan değil
+
+
+def test_yerel_kural_varsayilan_ya_da_ayni_hedefte_sir_kalir() -> None:
+    home = SahteHome()
+    home.yanit["env"].update(
+        {"GITHUB_API_URL": "https://api.github.com/", "JIRA_BASE_URL": "https://ornek.example.test"}
+    )
+    # Hedef varsayılan (api.github.com) ve Jira hedefi Deployment'ın kendi değeriyle aynı.
+    g = _gorunum(home, taban={"JIRA_BASE_URL": "https://ornek.example.test/"})
+    assert g.kaldirilan == []
+    # Jira hedefi farklı ama sır Home'dan çözüldü: kalır; çözülemeseydi taban değeri o hedefe
+    # gitmesin diye silinirdi.
+    home.yanit["env"]["JIRA_BASE_URL"] = "https://baska.example.test"
+    assert "JIRA_READ_TOKEN" not in _gorunum(home).kaldirilan
+    home.sirlar = {}
+    g = _gorunum(home)
+    assert "JIRA_READ_TOKEN" in g.kaldirilan and "JIRA_WRITE_TOKEN" in g.kaldirilan
+
+
+def test_cli_kaldirilan_satirlari_env_dosyasindan_siler(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    env = _home_env(tmp_path)
+    env.write_text(
+        env.read_text()
+        + "GITHUB_MERGE_TOKEN=insan-tokeni\nexport TP_FORGE_REMOTE_TOKEN='ayna'\nKALAN=1\n"
+    )
+    home = SahteHome()
+    home.yanit["env"]["GITHUB_API_URL"] = "https://kotu.example.test"
+    home.yanit["env_unset"] = ["TP_FORGE_REMOTE_TOKEN"]
+    assert cli.calistir(str(env), str(tmp_path / "l.json"), http=home,
+                        kimlik=y.MetadataKimligi(home)) == 0  # fmt: skip
+    metin = env.read_text()
+    sonuc = y.env_metni_coz(metin)
+    assert "GITHUB_MERGE_TOKEN" not in sonuc and "TP_FORGE_REMOTE_TOKEN" not in sonuc
+    assert "insan-tokeni" not in metin and sonuc["KALAN"] == "1"
+    assert "kaldirilan=" in capsys.readouterr().out
+
+
+def test_env_dosyasi_birlestir_kaldir() -> None:
+    metin, _ = y.env_dosyasi_birlestir("A=1\nB=2\n", {"B": "3", "C": "4"}, ["A", "C"])
+    assert y.env_metni_coz(metin) == {"B": "3"}

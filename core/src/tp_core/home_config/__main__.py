@@ -2,9 +2,11 @@
 
     PYTHONPATH=core/src python3 -m tp_core.home_config --env-dosyasi .env --lkg <yol>
 
-Dosyadaki `CONFIG_SOURCE` `home` değilse hiçbir şey yapmaz. Home erişilemezse LKG, o da yoksa
-dosya olduğu gibi kalır (fail-open: TP eski env ile açılır, uyarı yazılır). Çıkış kodu yalnız
-kullanım hatasında ≠ 0; değer hiçbir zaman yazdırılmaz.
+Dosyadaki `CONFIG_SOURCE` `home` değilse hiçbir şey yapmaz (çıkış 0). `home` iken Home erişilemezse
+LKG kullanılır; o da yoksa (ya da TP_HOME_PROJECT / Home adresi eksikse) çıkış kodu
+`CIKIS_HOME_YOK` (3): açılış betiği DURUR — `home` kipinde env'e sessizce düşmek, Home'da
+kapatılmış özellikleri / değiştirilmiş hedefleri yok sayardı. Geri dönüş: `CONFIG_SOURCE=env`.
+Kullanım hatası 2. Değer hiçbir zaman yazdırılmaz.
 """
 
 from __future__ import annotations
@@ -15,6 +17,8 @@ import os
 import sys
 
 from tp_core.home_config import yukleyici as y
+
+CIKIS_HOME_YOK = 3
 
 
 def calistir(
@@ -38,33 +42,35 @@ def calistir(
     url, audience = y.home_adresi(env)
     if not proje or not url:
         print(
-            "home-config: UYARI CONFIG_SOURCE=home ama TP_HOME_PROJECT / AIPROBE_HOME_RUN_URL "
-            "eksik — env ile açılıyor",
+            "home-config: HATA CONFIG_SOURCE=home ama TP_HOME_PROJECT / AIPROBE_HOME_RUN_URL "
+            "eksik — açılış durduruldu (geri dönüş: CONFIG_SOURCE=env)",
             file=sys.stderr,
         )
-        return 0
+        return CIKIS_HOME_YOK
     kimlik = kimlik or y.MetadataKimligi(http)
     lkg = lkg or y.ayar(env, y.LKG_ENV) or None
     istemci = y.HomeConfigIstemcisi(url, proje, kimlik.id_token, audience=audience, http=http)
     sonuc = y.Yukleyici(istemci, lkg).yukle()
     if sonuc.cfg is None:
         print(
-            f"home-config: UYARI Home erişilemedi ve LKG yok ({sonuc.hata}) — env ile açılıyor",
+            f"home-config: HATA Home erişilemedi ve LKG yok ({sonuc.hata}) — açılış durduruldu "
+            "(geri dönüş: CONFIG_SOURCE=env)",
             file=sys.stderr,
         )
-        return 0
+        return CIKIS_HOME_YOK
     sir_projesi = y.ayar(env, y.SIR_PROJESI_ENV) or None
     cozucu = y.SecretManagerCozucu(kimlik.erisim_tokeni, http, sir_projesi)
-    gorunum = y.env_gorunumu(sonuc.cfg, cozucu, sir_projesi=sir_projesi)
-    metin, yazilamayan = y.env_dosyasi_birlestir(taban, gorunum.degerler)
+    gorunum = y.env_gorunumu(sonuc.cfg, cozucu, sir_projesi=sir_projesi, taban=env)
+    metin, yazilamayan = y.env_dosyasi_birlestir(taban, gorunum.degerler, gorunum.kaldirilan)
     y.atomik_yaz(env_dosyasi, metin, 0o600)
     print(
         f"home-config: kaynak={sonuc.kaynak} proje={proje} anahtar={len(gorunum.degerler)} "
         f"reddedilen={len(gorunum.reddedilen)} cozulemeyen={len(gorunum.cozulemeyen)} "
-        f"yazilamayan={len(yazilamayan)}"
+        f"yazilamayan={len(yazilamayan)} kaldirilan={len(gorunum.kaldirilan)}"
     )
     for ad, liste in (
         ("reddedilen", gorunum.reddedilen),
+        ("kaldırılan (hedefe bağlı sır)", gorunum.kaldirilan),
         ("çözülemeyen sır (env değeri kaldı)", gorunum.cozulemeyen),
         ("yazılamayan", yazilamayan),
     ):

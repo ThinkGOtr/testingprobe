@@ -19,6 +19,10 @@ Uygulama kuralı — iki sınıf anahtar:
   çalışırken değişirse yalnız adı `bekleyen` listesine yazılır (durum + log).
 
 Proje özellikleri, bağlantı kipleri ve organizasyon/proje adları çalışma anında etkir.
+
+Hedef–sır bağı (A1): Home `env_unset` listesi ve yerel kural (`yukleyici.BAGLI_SIRLAR`: hedefi
+Home'dan gelen, kendisi Home'dan gelmeyen sır) adları os.environ'dan HEMEN silinir; liste
+daralınca geri konur.
 """
 
 from __future__ import annotations
@@ -106,6 +110,7 @@ class Durum:
     uygulanan: list[str] = field(default_factory=list)
     bekleyen: list[str] = field(default_factory=list)
     reddedilen: list[str] = field(default_factory=list)
+    kaldirilan: list[str] = field(default_factory=list)
 
 
 _YAPI = _Yapi()
@@ -116,6 +121,8 @@ _BASLANGIC_ENV: dict[str, str] = {}
 _ILK_SIR_REFLERI: dict[str, str] | None = None
 # Bizim yazdığımız çalışma anı anahtarlarının açılıştaki değeri (None = yoktu).
 _ORIJINAL: dict[str, str | None] = {}
+# A1: `env_unset` / bağlı sır kuralıyla os.environ'dan sildiğimiz adların önceki değeri.
+_SILINEN: dict[str, str] = {}
 _DUR = threading.Event()
 _IPLIK: threading.Thread | None = None
 
@@ -142,6 +149,9 @@ def reset() -> None:
             else:
                 os.environ[k] = v
         _ORIJINAL.clear()
+        for k, v in _SILINEN.items():
+            os.environ[k] = v
+        _SILINEN.clear()
         _BASLANGIC_ENV.clear()
         _YAPI = _Yapi()
         _DURUM = Durum()
@@ -218,9 +228,10 @@ def yenile(servis: str = "core") -> Durum:
 
 
 def _uygula(cfg: y.EtkinConfig) -> None:
-    gorunum = y.env_gorunumu(cfg)  # yalnız sır olmayan `env`
+    # Yalnız sır olmayan `env`; taban = süreç açılışındaki env (açılış betiğinin ürettiği .env).
+    gorunum = y.env_gorunumu(cfg, taban=_BASLANGIC_ENV)
     _DURUM.reddedilen = sorted(gorunum.reddedilen)
-    degisen: list[str] = []
+    degisen: list[str] = _sirlari_kaldir(gorunum.kaldirilan)
     for k in sorted(CALISMA_ANINDA):
         hedef = gorunum.degerler.get(k)
         if hedef is None:
@@ -256,6 +267,25 @@ def _uygula(cfg: y.EtkinConfig) -> None:
             "home config: yeniden başlatmada uygulanacak değişiklikler: %s",
             ", ".join(sorted(bekleyen)),
         )
+
+
+def _sirlari_kaldir(kaldirilan: list[str]) -> list[str]:
+    """A1 çalışma anı: hedefi Home'dan gelen, kendisi Home'dan gelmeyen bağlı sırlar (Home
+    `env_unset` ∪ yerel kural) os.environ'dan HEMEN silinir (yeniden başlatma beklenmez; güvenli
+    yön). Liste daralırsa silinen değer geri konur (Home artık o sırrın kullanımına izin
+    veriyor)."""
+    degisen: list[str] = []
+    hedef = set(kaldirilan)
+    for k in sorted(hedef):
+        if k in os.environ:
+            _SILINEN.setdefault(k, os.environ[k])
+            os.environ.pop(k, None)
+            degisen.append(k)
+    for k in sorted(set(_SILINEN) - hedef):
+        os.environ[k] = _SILINEN.pop(k)
+        degisen.append(k)
+    _DURUM.kaldirilan = sorted(hedef)
+    return degisen
 
 
 def _dongu(servis: str, aralik: float) -> None:
@@ -344,4 +374,5 @@ def ozet() -> dict[str, Any]:
         "uygulanan": list(d.uygulanan),
         "bekleyen": list(d.bekleyen),
         "reddedilen": list(d.reddedilen),
+        "kaldirilan": list(d.kaldirilan),
     }
