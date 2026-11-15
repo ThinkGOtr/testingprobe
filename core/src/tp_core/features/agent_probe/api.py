@@ -24,9 +24,11 @@ from pydantic import BaseModel, Field
 from tp_core.auth.deps import DbSession
 from tp_core.auth.yetki import izin
 from tp_core.features.agent_probe import service
+from tp_core.home_config import kapi
 from tp_core.workflow.service import Principal
 
-router = APIRouter(tags=["agent-probe"])
+# Config R1: proje özelliği `ai_agent` kapalıyken uçlar yokmuş gibi (404; `home_config.kapi`).
+router = APIRouter(tags=["agent-probe"], dependencies=[Depends(kapi.ai_agent_gerekli)])
 
 # 012 rol modeli (dev birleştirmesi): ürün bağlama gereksinim kapsamı kararıdır (Analist,
 # `requirement.review`); ajan testini başlatma/sorgulama Testçinin (`agent_test.run`).

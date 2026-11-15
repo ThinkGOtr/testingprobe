@@ -983,8 +983,8 @@ def test_alembic_tek_bas() -> None:
     # 011: 0021 (script dili) → 0022 (PR zorunlu check'ler); 013: 0023 (asistan güvenlik olayı)
     # → 0030 (sprint otomasyonu); 012: 0031 (roller, S1) → 0032 (case ready, S2) → 0033 (eski
     # onay işareti, PO reddi); 012 kalite doğrulama: 0034 (ANALIZ §14.1); 011 test üretimi v3:
-    # 0035 (case_uretim) → … → 0042 (açık soru).
-    assert bas == ["0042"], f"birden çok Alembic başı: {bas} — 0019'u yeniden ebeveynleyin (T051)"
+    # 0035 (case_uretim) → … → 0042 (açık soru); Config R1: 0043 (oturum org/proje).
+    assert bas == ["0043"], f"birden çok Alembic başı: {bas} — 0019'u yeniden ebeveynleyin (T051)"
     assert script.get_revision("0019").down_revision == "0018"
     assert script.get_revision("0020").down_revision == "0019"
     assert script.get_revision("0021").down_revision == "0020"  # 011 script dili
@@ -1633,3 +1633,50 @@ def test_check_401_invalid_caller_ayri_olay(
     olaylar = [r for r in caplog.records if "aiprobe_check_invalid_caller" in r.getMessage()]
     assert len(olaylar) == 1 and olaylar[0].levelname == "ERROR"  # dakikada bir
     assert aiprobe.INVALID_CALLER.toplam == 3
+
+
+# ---------------------------------------------------------- Config R1: org/proje + özellikler
+
+
+def test_redeem_org_proje_oturumda_ve_me(
+    client: TestClient, home: SahteHome, engine: Engine, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Any,
+) -> None:  # fmt: skip
+    from tests.unit.home_config.sahte_home import SahteHome as SahteConfigHome
+    from tp_core.home_config import durum as home_durum
+
+    r = _giris(client, home, ["tester"], org_id="0123456789ab", project_id="aaaabbbbcccc")
+    assert r.status_code == 302
+    with engine.connect() as c:
+        satir = c.execute(text("SELECT org_id, project_id FROM oturum")).one()
+    assert tuple(satir) == ("0123456789ab", "aaaabbbbcccc")
+    # CONFIG_SOURCE=env: /auth/me bugünkü gibi (yeni alan yok).
+    me = client.get("/auth/me").json()
+    assert not {"ozellikler", "organizasyon", "proje"} & set(me)
+    # CONFIG_SOURCE=home: özellikler + başlık bağlamı.
+    monkeypatch.setenv("CONFIG_SOURCE", "home")
+    monkeypatch.setenv("TP_HOME_PROJECT", "aaaabbbbcccc")
+    monkeypatch.setenv("TP_CONFIG_LKG_PATH", str(tmp_path / "lkg.json"))
+    home_durum.reset()
+    home_durum.configure(http=SahteConfigHome(), id_token=lambda a: "x", temizle=lambda: None)
+    try:
+        home_durum.yenile("core-api")
+        me = client.get("/auth/me").json()
+        assert me["ozellikler"]["android"] is True and me["ozellikler"]["ios"] is False
+        assert me["ozellikler"]["ai_agent"] is False
+        assert me["organizasyon"] == {"id": "0123456789ab", "ad": "Örnek Org"}
+        assert me["proje"] == {"id": "aaaabbbbcccc", "ad": "Bayi Portalı", "kod": "bayi"}
+        # ai_agent kapalı: Agent Probe uçları yok.
+        assert client.get("/agent-probe/products").status_code == 404
+    finally:
+        home_durum.reset()
+
+
+def test_redeem_bicimsiz_org_proje_yok_sayilir(
+    client: TestClient, home: SahteHome, engine: Engine
+) -> None:
+    r = _giris(client, home, ["tester"], org_id="../kotu id", project_id=12)
+    assert r.status_code == 302
+    with engine.connect() as c:
+        satir = c.execute(text("SELECT org_id, project_id FROM oturum")).one()
+    assert tuple(satir) == (None, None)

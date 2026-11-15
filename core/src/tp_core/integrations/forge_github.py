@@ -613,7 +613,18 @@ class GitHubForge:
         app_id = (env.get("GH_APP_ID") or "").strip()
         key = env.get("GH_APP_PRIVATE_KEY") or ""
         key_path = env.get("GH_APP_PRIVATE_KEY_PATH") or ""
-        if app_id and (key or key_path):
+        from tp_core.home_config import baglanti
+
+        if baglanti.github_app_mi():
+            # Config R1: GitHub App bağlantısı Home'da (özel anahtar Home'da); kurulum token'ı
+            # `POST /v1/connections/access-token` ile, yalnız core-worker'da alınır.
+            if not baglanti.yetkili_surec():
+                raise ForgeValidationError(
+                    "GitHub App bağlantısı yalnız core-worker'da kullanılabilir "
+                    "(TP_BAGLANTI_TOKENI)"
+                )
+            auth = baglanti.HomeGitHubAuth()
+        elif app_id and (key or key_path):
             pem = key.replace("\\n", "\n") if key else Path(key_path).read_text(encoding="utf-8")
             auth = AppAuth(app_id, pem, repo, env.get("GH_APP_INSTALLATION_ID") or None)
         elif env.get("GITHUB_TOKEN"):

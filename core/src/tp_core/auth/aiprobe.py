@@ -96,6 +96,9 @@ class DevirYaniti:
     session_epoch_ms: int | None = None
     # Tüm ürünlerdeki roller (`{"tp": [...], "ap": [...]}`; değiştirici için).
     products: dict[str, list[str]] | None = None
+    # Config R1 (CONTRACT, handoff): devrin organizasyon / proje kimliği (isteğe bağlı).
+    org_id: str | None = None
+    project_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -135,6 +138,16 @@ def _urun_haritasi(deger: Any) -> dict[str, list[str]] | None:
         for k, v in deger.items()
         if isinstance(k, str) and isinstance(v, list)
     }
+
+
+_KIMLIK = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def _kimlik_alani(deger: Any) -> str | None:
+    """`org_id` / `project_id`: yoksa ya da biçimsizse `None` (giriş bu yüzden reddedilmez)."""
+    if isinstance(deger, str) and _KIMLIK.match(deger):
+        return deger
+    return None
 
 
 # ------------------------------------------------------------------ servis kimliği (enjekte)
@@ -378,6 +391,8 @@ class HomeIstemcisi:
                 locale=v.get("locale"),
                 session_epoch_ms=int(v["session_epoch_ms"]) if v.get("session_epoch_ms") else None,
                 products=_urun_haritasi(v.get("products")),
+                org_id=_kimlik_alani(v.get("org_id")),
+                project_id=_kimlik_alani(v.get("project_id")),
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise HomeUlasilamaz("redeem yanıtı sözleşmeye uymuyor") from exc

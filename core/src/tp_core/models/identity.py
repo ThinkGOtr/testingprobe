@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import BigInteger, Boolean, ForeignKey, Index, Integer, false, text
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Index, Integer, String, false, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -87,6 +87,10 @@ class Oturum(Base):
     session_epoch_ms: Mapped[int | None] = mapped_column(BigInteger)
     son_kontrol: Mapped[datetime | None]
     urunler: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    # 0043 (Config R1): devirdeki AI Probe organizasyon / proje kimliği (`redeem` `org_id`,
+    # `project_id`; isteğe bağlı). Yalnız bağlam: yetki yine `app_user.rol` ile.
+    org_id: Mapped[str | None] = mapped_column(String(64))
+    project_id: Mapped[str | None] = mapped_column(String(64))
     # 0020: home'a ulaşılamayan ilk kontrol anı; `aiprobe.DEGRADED_MAX_S` aşılınca oturum düşer.
     degraded_baslangic: Mapped[datetime | None]
 

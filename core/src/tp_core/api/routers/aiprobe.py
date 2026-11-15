@@ -228,6 +228,8 @@ def _oturum_ac(
     *,
     eylem: str = "auth.login",
     ozet: dict[str, Any] | None = None,
+    org_id: str | None = None,
+    project_id: str | None = None,
 ) -> None:
     sid = open_session(
         session,
@@ -238,6 +240,8 @@ def _oturum_ac(
         acr=kimlik.acr,
         session_epoch_ms=kimlik.session_epoch_ms,
         urunler=urunler,
+        org_id=org_id,
+        project_id=project_id,
     )
     audit_on_commit(
         session,
@@ -300,7 +304,8 @@ def callback(
     if len(adaylar) == 1:
         yanit: Response = RedirectResponse(devam, status_code=302)
         _oturum_ac(session, codec, adaylar[0], devir.uid, kimlik, devir.products, yanit,
-                   ozet={"acr": devir.acr})  # fmt: skip
+                   ozet={"acr": devir.acr}, org_id=devir.org_id,
+                   project_id=devir.project_id)  # fmt: skip
         _cerez_sil(yanit, state_adi)
         return yanit
     secim = {
@@ -312,6 +317,8 @@ def callback(
         "a": devir.acr,
         "e": devir.session_epoch_ms,
         "p": devir.products,
+        "o": devir.org_id,
+        "j": devir.project_id,
     }
     yanit = RedirectResponse(f"{ROL_SEC_SAYFASI}?continue={quote(devam, safe='')}", 302)
     _cerez(yanit, SECIM_COOKIE, codec.dumps_signed(SECIM_SALT, secim), SECIM_MAX_AGE_S)
@@ -445,7 +452,8 @@ def rol_sec(body: HesapSec, request: Request, session: DbSession, codec: Codec) 
         | {"continue": aiprobe.guvenli_continue(secim["c"])}
     )
     _oturum_ac(session, codec, hedef, secim["x"], kimlik, sonuc.products or secim.get("p"), yanit,
-               ozet={"acr": kimlik.acr, "secim": True})  # fmt: skip
+               ozet={"acr": kimlik.acr, "secim": True}, org_id=secim.get("o"),
+               project_id=secim.get("j"))  # fmt: skip
     _cerez_sil(yanit, SECIM_COOKIE)
     return yanit
 
@@ -497,5 +505,6 @@ def rol_degistir(
         me_of(session, hedef.id, hedef.kullanici_adi, hedef.rol).model_dump(mode="json")
     )
     _oturum_ac(session, codec, hedef, uid, kimlik, sonuc.products or o.urunler, yanit,
-               eylem="auth.role_switch", ozet={"onceki": user.kullanici_adi})  # fmt: skip
+               eylem="auth.role_switch", ozet={"onceki": user.kullanici_adi},
+               org_id=o.org_id, project_id=o.project_id)  # fmt: skip
     return yanit

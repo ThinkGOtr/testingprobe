@@ -231,6 +231,31 @@ class MeYaniti(Me):
     # Kişinin tüm AI Probe ürünlerindeki rolleri (`{"tp": [...], "ap": [...]}`; devir/kontrol
     # yanıtından, oturumda saklanır). Değiştirici diğer ürünlere erişimi buradan bilir.
     products: dict[str, list[str]] | None = None
+    # Config R1 (yalnız Home etkin config'i yüklüyken; `CONFIG_SOURCE=env`de alan yok): kurulumun
+    # aktif projesinin özellikleri (portal kapalı ekranları gizler) ve başlıkta gösterilen
+    # organizasyon / proje.
+    ozellikler: dict[str, bool] | None = None
+    organizasyon: dict[str, str] | None = None
+    proje: dict[str, str | None] | None = None
+
+
+def _proje_baglami(yanit: MeYaniti, durum: object) -> None:
+    from tp_core.home_config import durum as home_durum
+
+    op = home_durum.org_proje()
+    ozellikler = home_durum.ozellikler()
+    if op is None or ozellikler is None:
+        return
+    org, proje = op
+    yanit.ozellikler = ozellikler
+    oid = str(org.get("oid") or getattr(durum, "org_id", None) or "")
+    if oid or org.get("name"):
+        yanit.organizasyon = {"id": oid, "ad": str(org.get("name") or "")}
+    yanit.proje = {
+        "id": str(proje.get("pid") or ""),
+        "ad": str(proje.get("name") or ""),
+        "kod": str(proje["code"]) if proje.get("code") else None,
+    }
 
 
 @router.get("/me", response_model=MeYaniti, response_model_exclude_unset=True)
@@ -258,4 +283,5 @@ def me(user: CurrentUser, request: Request, session: DbSession) -> MeYaniti:
                 verilen = {user.rol}
         bagli = {h.rol for h in aiprobe.bagli_hesaplar(session, uid)}
         yanit.roles = sorted(bagli & verilen)
+    _proje_baglami(yanit, getattr(request.state, "oturum_durumu", None))
     return yanit

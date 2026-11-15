@@ -229,6 +229,14 @@ kayitlar:
     neden: Repoda aynı case iki ayrı dilde test olarak bulunmasın diye tam hat dilinde (TypeScript, Java) dil değiştirme engellenir. Mevcut testi kaldırmak ürün akışının parçası değildir.
     cozum: Mevcut test dosyasını silen bir PR'ı merge edin, sonra kod üretimini seçtiğiniz dilde yeniden başlatın. C# ya da Python ile doğrulanmamış üretim bu engele takılmaz.
     rota: /kod
+  - id: ozellik-kapali
+    kodlar: [ozellik_kapali]
+    metinler: []
+    baslik: Özellik bu projede kapalı
+    anlam: İstenen platform ya da ekran bu kurulumun aktif projesinde açık değil.
+    neden: Proje özellikleri (web, Android, iOS, Windows, AI agent testi) AI Probe'daki proje ayarlarından gelir; kapalı özelliğin işi başlatılmaz.
+    cozum: Proje yöneticisinden AI Probe'da projenin özelliklerinde ilgili özelliği açmasını isteyin; açıldıktan en geç bir dakika sonra kullanılabilir.
+    rota: null
   - id: cakisma
     kodlar: [cakisma]
     metinler: []

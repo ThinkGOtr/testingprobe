@@ -209,6 +209,10 @@ def platformlari_dogrula(platformlar: Iterable[str]) -> list[str]:
         raise GecersizIstek(
             f"Bilinmeyen platform: {', '.join(map(str, bilinmeyen))} (web, android, ios, windows)."
         )
+    from tp_core.home_config import kapi
+
+    for p in secilen:
+        kapi.platform_gerekli(p)  # Config R1: kapalı platform → 409 ozellik_kapali
     return [p for p in PLATFORM_SIRASI if p in secilen]
 
 

@@ -315,6 +315,21 @@ class CodegenRejected(WorkflowError):
     """İstek kabul edilmedi (case onaysız, hash eşleşmiyor …)."""
 
 
+class PlatformKapali(CodegenRejected):
+    """Platform bu projede kapalı (Config R1 proje özellikleri; `home_config.kapi`)."""
+
+    kod = "ozellik_kapali"
+
+
+def _platform_acik_mi(platform: str) -> None:
+    from tp_core.home_config import kapi
+
+    try:
+        kapi.platform_gerekli(platform)
+    except kapi.OzellikKapali as exc:
+        raise PlatformKapali(str(exc)) from exc
+
+
 class GecersizDil(CodegenRejected):
     """Bilinmeyen dil, geçersiz (platform, dil) çifti ya da repoda projesi olmayan dil (422)."""
 
@@ -697,6 +712,7 @@ def dil_secenekleri(platform: str | None) -> dict[str, Any]:
         p = platformlar.gecerli(platform)
     except ValueError as exc:
         raise GecersizDil(str(exc)) from exc
+    _platform_acik_mi(p)
     alg = _algila(p)
     algilanan, kaynak = alg.dil, alg.kaynak
     if kaynak == "algilandi" and _proje_engeli(alg, p, algilanan) is not None:
@@ -808,6 +824,7 @@ def start_generation(
         platform = platformlar.gecerli(platform)
     except ValueError as exc:
         raise CodegenRejected(str(exc)) from exc
+    _platform_acik_mi(platform)
     dil, dil_kaynagi = dil_coz(platform, dil)
     ids = list(dict.fromkeys(case_ids))
     if not ids:

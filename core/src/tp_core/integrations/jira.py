@@ -131,6 +131,9 @@ class JiraSettings(BaseSettings):
             ids.add(self.jira_write_email.strip().lower())
         if self.is_simulator:
             ids.add(SIM_WRITE[0])
+        sahip = oauth_sahibi()
+        if sahip:
+            ids.add(sahip.lower())
         return frozenset(ids)
 
     @property
@@ -138,6 +141,15 @@ class JiraSettings(BaseSettings):
         ids = {a.strip() for a in self.jira_po_account_ids.split(",") if a.strip()}
         if not ids and self.is_simulator:
             ids = set(SIM_PO_ACCOUNTS)
+        sahip = oauth_sahibi()
+        if sahip and sahip.lower() in {i.lower() for i in ids}:
+            # OAuth kipinde ürünün yazma kimliği bağlantıyı yetkilendiren kişidir: PO olamaz
+            # (görev ayrılığı). Liste düzeltilene dek o kişinin onayı sayılmaz.
+            log.error(
+                "Jira OAuth bağlantı sahibi JIRA_PO_ACCOUNT_IDS listesinde: PO onayı olarak "
+                "sayılmayacak (bağlantıyı ayrı bir entegrasyon hesabıyla yetkilendirin)"
+            )
+            ids = {i for i in ids if i.lower() != sahip.lower()}
         return frozenset(ids)
 
     @field_validator("jira_base_url", mode="before")
@@ -167,6 +179,24 @@ class JiraSettings(BaseSettings):
     def is_simulator(self) -> bool:
         host = urlparse(self.jira_base_url).hostname or ""
         return host in ("jira-sim", "localhost", "127.0.0.1")
+
+
+def oauth_kipi() -> bool:
+    """Jira bağlantısı Atlassian OAuth (3LO) kipinde mi (Home etkin config, Config R1)?"""
+    from tp_core.home_config import baglanti
+
+    return baglanti.jira_oauth_mu()
+
+
+def oauth_sahibi() -> str:
+    """OAuth kipinde bağlantıyı yetkilendiren kişinin accountId'si (Home bağlantı kartının
+    `public.account_id`'si; yoksa ""). Ürünün Jira'daki yazma kimliği budur → bot sayılır."""
+    if not oauth_kipi():
+        return ""
+    from tp_core.home_config import durum
+
+    deger = str(durum.baglanti_public("jira").get("account_id") or "").strip()
+    return deger if valid_account_id(deger) else ""
 
 
 @lru_cache
@@ -454,8 +484,8 @@ class RestJira:
     def __init__(
         self,
         base_url: str,
-        read_auth: tuple[str, str],
-        write_auth: tuple[str, str] | None = None,
+        read_auth: tuple[str, str] | httpx.Auth,
+        write_auth: tuple[str, str] | httpx.Auth | None = None,
         *,
         http: httpx.Client | None = None,
         timeout_s: float = 10.0,
@@ -464,12 +494,16 @@ class RestJira:
         sleep: Sleep = time.sleep,
         browse_url: str | None = None,
         content_fields: Iterable[str] = (),
+        oauth: bool = False,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self._content_fields = CONTENT_FIELDS | {f.strip().lower() for f in content_fields if f}
         self.browse_url = (browse_url or base_url).rstrip("/")
-        self._read_auth = httpx.BasicAuth(*read_auth)
-        self._write_auth = httpx.BasicAuth(*write_auth) if write_auth else None
+        self._read_auth = _auth(read_auth)
+        self._write_auth = _auth(write_auth) if write_auth else None
+        # OAuth (3LO): okuma = yazma = bağlantıyı yetkilendiren kişi. Görev ayrılığı için bu kimlik
+        # daima bot sayılır; TP_TEST_TEK_HESAP bu kipte bot dışlamasını KAPATAMAZ.
+        self.oauth = oauth
         self._http = http or httpx.Client(headers={"Accept": "application/json"})
         self._timeout = httpx.Timeout(timeout_s, connect=min(timeout_s, 5.0))
         self._max_retries = max_retries
@@ -778,7 +812,7 @@ class RestJira:
 
         ``authorized_po_approvals`` için: bot'un koyduğu onay etiketi PO onayı sayılmaz.
         """
-        if self._write_auth is None or test_single_account():
+        if self._write_auth is None or (test_single_account() and not self.oauth):
             return frozenset()
         me = self.myself(write=True)
         ids = {str(me.get("emailAddress") or ""), str(me.get("accountId") or "")}
@@ -872,6 +906,24 @@ class RestJira:
 # ---------------------------------------------------------------------- fabrika
 
 
+def _auth(a: tuple[str, str] | httpx.Auth) -> httpx.Auth:
+    return a if isinstance(a, httpx.Auth) else httpx.BasicAuth(*a)
+
+
+def _oauth_istemci(s: JiraSettings) -> tuple[str, httpx.Auth, str | None]:
+    """OAuth kipinde (taban URL, Bearer kimliği, gezinme adresi). Token yalnız core-worker'da
+    alınabilir (`home_config.baglanti`); alınamazsa `JiraConfigError`."""
+    from tp_core.home_config import baglanti, durum
+
+    try:
+        tok = baglanti.token_al("jira")
+    except baglanti.BaglantiHatasi as exc:
+        raise JiraConfigError(f"Jira OAuth bağlantısı kullanılamıyor: {exc}") from exc
+    assert tok.base_url is not None  # istemci doğruladı
+    site = str(durum.baglanti_public("jira").get("site_url") or "").strip() or None
+    return tok.base_url, baglanti.HomeJiraAuth(), s.jira_browse_url or site
+
+
 def _creds(
     email_: str | None, token: SecretStr | None, sim_default: tuple[str, str], sim: bool, role: str
 ) -> tuple[str, str] | None:
@@ -887,6 +939,12 @@ def _creds(
 def get_jira(settings: JiraSettings | None = None, *, http: httpx.Client | None = None) -> RestJira:
     """Ayarlardan ``RestJira`` kurar. Simülatör adresinde kimlik verilmemişse sim kullanıcıları."""
     s = settings or get_jira_settings()
+    if oauth_kipi():
+        taban, kimlik, gezinme = _oauth_istemci(s)
+        return RestJira(
+            taban, kimlik, kimlik, http=http, timeout_s=s.jira_timeout_s, browse_url=gezinme,
+            oauth=True,
+        )  # fmt: skip
     read = _creds(s.jira_read_email, s.jira_read_token, SIM_READ, s.is_simulator, "read")
     write = _creds(s.jira_write_email, s.jira_write_token, SIM_WRITE, s.is_simulator, "write")
     assert read is not None
@@ -1064,7 +1122,7 @@ class JiraOkuyucu:
     def __init__(
         self,
         base_url: str,
-        read_auth: tuple[str, str],
+        read_auth: tuple[str, str] | httpx.Auth,
         *,
         timeout_s: float,
         toplam_sure_s: float,
@@ -1089,7 +1147,7 @@ class JiraOkuyucu:
         self._bot = {b.strip().lower() for b in bot_kimlikleri if b and b.strip()}
         self._http = httpx.Client(
             transport=YalnizGetTransport(transport or httpx.HTTPTransport()),
-            auth=httpx.BasicAuth(*read_auth),
+            auth=_auth(read_auth),
             headers={"Accept": "application/json"},
             follow_redirects=False,
         )
@@ -1214,15 +1272,22 @@ def get_jira_okuma(
     Araç çağrısı başına kurulur; ``max_retries=1``. Yazma kimliği hiç okunmaz.
     """
     s = settings or get_jira_settings()
-    read = _creds(s.jira_read_email, s.jira_read_token, SIM_READ, s.is_simulator, "read")
+    taban, browse = s.jira_base_url, s.jira_browse_url
+    read: tuple[str, str] | httpx.Auth | None
+    if oauth_kipi():
+        # OAuth'ta ayrı okuma hesabı yoktur: en az yetki sınıf (yazma yöntemi yok) ve taşıyıcı
+        # (yalnız GET) katmanlarıyla korunur; "okuma hesabının yazma izni yok" katmanı kalkar.
+        taban, read, browse = _oauth_istemci(s)
+    else:
+        read = _creds(s.jira_read_email, s.jira_read_token, SIM_READ, s.is_simulator, "read")
     assert read is not None
     return JiraOkuyucu(
-        s.jira_base_url,
+        taban,
         read,
         timeout_s=timeout_s,
         toplam_sure_s=toplam_sure_s,
         transport=transport,
-        browse_url=s.jira_browse_url,
+        browse_url=browse,
         etiketleyici=KisiEtiketleyici.ayarlardan(s, takma_adlar),
         bot_kimlikleri=s.bot_kimlikleri,
         sleep=sleep,

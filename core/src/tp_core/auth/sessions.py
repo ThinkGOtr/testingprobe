@@ -134,6 +134,8 @@ def open_session(
     acr: str | None = None,
     session_epoch_ms: int | None = None,
     urunler: dict[str, Any] | None = None,
+    org_id: str | None = None,
+    project_id: str | None = None,
 ) -> uuid.UUID:
     """Yeni `oturum` satırı açar; kullanıcının süresi dolmuş/iptal edilmiş satırlarını siler.
 
@@ -160,6 +162,8 @@ def open_session(
             acr=acr,
             session_epoch_ms=session_epoch_ms,
             urunler=urunler,
+            org_id=org_id,
+            project_id=project_id,
             son_kontrol=simdi,
         )
     session.add(o)
@@ -194,6 +198,9 @@ class OturumDurumu:
     acr: str | None = None
     session_epoch_ms: int | None = None
     urunler: dict[str, Any] | None = None
+    # Config R1: devirdeki AI Probe organizasyon / proje kimliği (`/auth/me` başlığı).
+    org_id: str | None = None
+    project_id: str | None = None
 
 
 def session_valid(
@@ -245,6 +252,8 @@ def session_valid(
             durum.acr = o.acr
             durum.session_epoch_ms = o.session_epoch_ms
             durum.urunler = o.urunler
+            durum.org_id = o.org_id
+            durum.project_id = o.project_id
             durum.degraded = sonuc is aiprobe.Kontrol.ULASILAMADI
         if uzat:
             aiprobe.sure_uzat(session, o)
