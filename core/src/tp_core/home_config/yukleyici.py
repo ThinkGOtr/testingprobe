@@ -246,6 +246,9 @@ class HttpYanit:
 # `Optional`: bu satır çalışma anında değerlendirilir; host python3 3.9'da `X | None` TypeError.
 Http = Callable[[str, str, Mapping[str, str], Optional[bytes], float], HttpYanit]  # noqa: UP045
 GECICI = frozenset({408, 429})
+# Home "bu proje / ürün size kapalı" dedi (proje silindi, ürün projeden çıkarıldı, erişim geri
+# alındı): LKG'ye DÜŞÜLMEZ (Config R1 N4). Diğer 4xx (ör. 401 kimlik) LKG davranışını korur.
+REDDEDILDI_DURUMLARI = frozenset({403, 404})
 
 
 class _YonlendirmeYok(urllib.request.HTTPRedirectHandler):
@@ -507,6 +510,17 @@ def atomik_yaz(yol: str, metin: str, kip: int = 0o600) -> None:
         raise
 
 
+def lkg_sil(yol: str | None) -> None:
+    if not yol:
+        return
+    try:
+        os.unlink(yol)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        log.warning("home config LKG silinemedi (%s)", os.path.dirname(yol), exc_info=True)
+
+
 def lkg_yaz(yol: str | None, cfg: EtkinConfig, saat: Callable[[], float] = time.time) -> None:
     if not yol:
         return
@@ -520,14 +534,22 @@ def lkg_yaz(yol: str | None, cfg: EtkinConfig, saat: Callable[[], float] = time.
 @dataclass
 class YuklemeSonucu:
     cfg: EtkinConfig | None
-    # `home` (taze ya da 304), `lkg` (Home yok, diskteki son iyi değer), `env` (ikisi de yok).
+    # `home` (taze ya da 304), `lkg` (Home yok, diskteki son iyi değer), `env` (ikisi de yok),
+    # `reddedildi` (Home 403/404: proje/ürün erişimi yok — LKG kullanılmaz, silinir).
     kaynak: str
     degisti: bool = False
     hata: str | None = None
+    # `reddedildi`de: geri çekilen son config (bellekteki ya da LKG) — çalışan süreç bunun
+    # anahtarlarını env görünümünden kaldırır. Yalnız ad kümesi için kullanılır.
+    geri_cekilen: EtkinConfig | None = None
 
 
 class Yukleyici:
-    """Home → (304 ise bellekteki/LKG) → LKG → env sırası. Yalnız başarılı 200 LKG'ye yazılır."""
+    """Home → (304 ise bellekteki/LKG) → LKG → env sırası. Yalnız başarılı 200 LKG'ye yazılır.
+
+    Home 403/404 (`REDDEDILDI_DURUMLARI`) → `reddedildi`: LKG kullanılmaz ve silinir (erişimi
+    geri alınmış bir projenin değerleri/sırları bir sonraki ağ kesintisinde geri gelmesin).
+    Ağ hatası / 5xx / diğer 4xx → LKG (varsa)."""
 
     def __init__(self, istemci: HomeConfigIstemcisi, lkg_yolu: str | None) -> None:
         self.istemci = istemci
@@ -540,6 +562,11 @@ class Yukleyici:
             yeni = self.istemci.cek(onceki.etag if onceki else None)
         except (Ulasilamaz, Reddedildi, SozlesmeHatasi) as exc:
             hata = f"{type(exc).__name__}: {exc}"
+            if isinstance(exc, Reddedildi) and exc.durum in REDDEDILDI_DURUMLARI:
+                log.error("aiprobe-home config reddetti (%s): LKG kullanılmıyor", hata)
+                self.son = None
+                lkg_sil(self.lkg_yolu)
+                return YuklemeSonucu(None, "reddedildi", hata=hata, geri_cekilen=onceki)
             log.warning("aiprobe-home config alınamadı (%s)", hata)
             if onceki is not None:
                 self.son = onceki

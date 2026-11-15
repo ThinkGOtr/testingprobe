@@ -1675,7 +1675,7 @@ def test_redeem_org_proje_oturumda_ve_me(
         assert me["ozellikler"]["android"] is True and me["ozellikler"]["ios"] is False
         assert me["ozellikler"]["ai_agent"] is False
         assert me["organizasyon"] == {"id": "0123456789ab", "ad": "Örnek Org"}
-        assert me["proje"] == {"id": "aaaabbbbcccc", "ad": "Bayi Portalı", "kod": "bayi"}
+        assert me["proje"] == {"id": "aaaabbbbcccc", "ad": "Örnek Proje", "kod": "ornek"}
         # ai_agent kapalı: Agent Probe uçları yok.
         assert client.get("/agent-probe/products").status_code == 404
     finally:

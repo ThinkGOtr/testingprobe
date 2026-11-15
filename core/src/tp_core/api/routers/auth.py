@@ -244,10 +244,11 @@ def _proje_baglami(yanit: MeYaniti, durum: object) -> None:
 
     op = home_durum.org_proje()
     ozellikler = home_durum.ozellikler()
+    if ozellikler is not None:
+        yanit.ozellikler = ozellikler  # Home reddettiyse (N4) proje yok, özellikler kapalı
     if op is None or ozellikler is None:
         return
     org, proje = op
-    yanit.ozellikler = ozellikler
     oid = str(org.get("oid") or getattr(durum, "org_id", None) or "")
     if oid or org.get("name"):
         yanit.organizasyon = {"id": oid, "ad": str(org.get("name") or "")}

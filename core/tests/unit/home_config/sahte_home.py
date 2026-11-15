@@ -24,8 +24,8 @@ def ornek_yanit(**ek: Any) -> dict[str, Any]:
         "org": {"oid": "0123456789ab", "name": "Örnek Org"},
         "project": {
             "pid": "aaaabbbbcccc",
-            "code": "bayi",
-            "name": "Bayi Portalı",
+            "code": "ornek",
+            "name": "Örnek Proje",
             "features": {"web": True, "android": True, "ios": False, "windows": True},
             "products": ["ap", "tp"],
         },
@@ -49,6 +49,7 @@ class SahteHome:
     sirlar: dict[str, str] = field(default_factory=lambda: {REF: "gizli-deger"})
     erisim: dict[str, Any] = field(default_factory=dict)  # tur → yanıt gövdesi
     erisim_durum: int = 200
+    erisim_hata: str = "use_secret"  # erisim_durum != 200 iken gövdedeki `error`
     istekler: list[tuple[str, str, dict[str, str], bytes | None]] = field(default_factory=list)
 
     def __call__(
@@ -81,7 +82,9 @@ class SahteHome:
         if u.path == "/v1/connections/access-token":
             tur = json.loads(govde or b"{}")["type"]
             if self.erisim_durum != 200:
-                return y.HttpYanit(self.erisim_durum, {}, b'{"error":"use_secret"}')
+                return y.HttpYanit(
+                    self.erisim_durum, {}, json.dumps({"error": self.erisim_hata}).encode()
+                )
             return y.HttpYanit(200, {}, json.dumps(self.erisim[tur]).encode())
         return y.HttpYanit(404, {}, b"{}")
 

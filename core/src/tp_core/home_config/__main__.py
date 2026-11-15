@@ -4,8 +4,10 @@
 
 Dosyadaki `CONFIG_SOURCE` `home` değilse hiçbir şey yapmaz (çıkış 0). `home` iken Home erişilemezse
 LKG kullanılır; o da yoksa (ya da TP_HOME_PROJECT / Home adresi eksikse) çıkış kodu
-`CIKIS_HOME_YOK` (3): açılış betiği DURUR — `home` kipinde env'e sessizce düşmek, Home'da
-kapatılmış özellikleri / değiştirilmiş hedefleri yok sayardı. Geri dönüş: `CONFIG_SOURCE=env`.
+`CIKIS_HOME_YOK` (3). Home 403/404 ile REDDEDERSE (proje/ürün erişimi yok) LKG kullanılmaz,
+yine `CIKIS_HOME_YOK`. Her iki durumda açılış betiği DURUR — `home` kipinde env'e sessizce
+düşmek, Home'da kapatılmış özellikleri / değiştirilmiş hedefleri yok sayardı. Geri dönüş:
+`CONFIG_SOURCE=env`.
 Kullanım hatası 2. Değer hiçbir zaman yazdırılmaz.
 """
 
@@ -51,6 +53,14 @@ def calistir(
     lkg = lkg or y.ayar(env, y.LKG_ENV) or None
     istemci = y.HomeConfigIstemcisi(url, proje, kimlik.id_token, audience=audience, http=http)
     sonuc = y.Yukleyici(istemci, lkg).yukle()
+    if sonuc.kaynak == "reddedildi":
+        print(
+            f"home-config: HATA Home bu projeye erişimi reddetti ({sonuc.hata}) — LKG "
+            "kullanılmadı, açılış durduruldu (proje/ürün atamasını AI Probe'da kontrol edin; "
+            "geri dönüş: CONFIG_SOURCE=env)",
+            file=sys.stderr,
+        )
+        return CIKIS_HOME_YOK
     if sonuc.cfg is None:
         print(
             f"home-config: HATA Home erişilemedi ve LKG yok ({sonuc.hata}) — açılış durduruldu "

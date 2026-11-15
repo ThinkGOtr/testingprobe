@@ -69,7 +69,7 @@ def test_degisiklik_yeni_etag(tmp_path: Path) -> None:
     assert json.loads((tmp_path / "lkg.json").read_text())["etag"] == "v2"
 
 
-@pytest.mark.parametrize("ariza", ["kapali", 503, 429, 403])
+@pytest.mark.parametrize("ariza", ["kapali", 503, 429, 401])
 def test_home_kapali_lkg_ile_acilir(tmp_path: Path, ariza: object) -> None:
     lkg = str(tmp_path / "lkg.json")
     y.Yukleyici(_istemci(SahteHome()), lkg).yukle()
@@ -81,6 +81,24 @@ def test_home_kapali_lkg_ile_acilir(tmp_path: Path, ariza: object) -> None:
         home.yanit = ornek_yanit(etag="v9")  # ETag eşleşmesin
     s = y.Yukleyici(_istemci(home), lkg).yukle()
     assert s.kaynak == "lkg" and s.cfg is not None and s.cfg.etag == "v1" and s.hata
+
+
+@pytest.mark.parametrize("kod", [403, 404])
+def test_home_reddederse_lkg_kullanilmaz_ve_silinir(tmp_path: Path, kod: int) -> None:
+    """N4: Home 403/404 (proje/ürün erişimi yok) → `reddedildi`; LKG'ye düşülmez, LKG silinir
+    (sonraki bir ağ kesintisinde geri çekilmiş değerler geri gelmesin)."""
+    lkg = tmp_path / "lkg.json"
+    y.Yukleyici(_istemci(SahteHome()), str(lkg)).yukle()
+    assert lkg.exists()
+    home = SahteHome(durum=kod, yanit=ornek_yanit(etag="v9"))
+    yk = y.Yukleyici(_istemci(home), str(lkg))
+    s = yk.yukle()
+    assert (s.kaynak, s.cfg) == ("reddedildi", None) and s.hata and str(kod) in s.hata
+    assert s.geri_cekilen is not None and s.geri_cekilen.etag == "v1"
+    assert not lkg.exists() and yk.son is None
+    # Ardından ağ kesintisi: LKG yok → env (geri çekilen değerler dönmez).
+    s2 = y.Yukleyici(_istemci(SahteHome(kapali=True)), str(lkg)).yukle()
+    assert (s2.kaynak, s2.cfg) == ("env", None)
 
 
 def test_home_kapali_lkg_yok_env(tmp_path: Path) -> None:
@@ -233,6 +251,23 @@ def test_cli_home_ve_lkg_yok_acilis_durur(tmp_path: Path) -> None:
         str(env), str(tmp_path / "yok.json"), http=home, kimlik=y.MetadataKimligi(home)
     )
     assert rc == cli.CIKIS_HOME_YOK and env.read_text() == once
+
+
+def test_cli_home_reddederse_lkg_ile_acilmaz(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """N4: açılışta Home 403 → LKG olsa da açılış durur; env dosyası değişmez."""
+    lkg = tmp_path / "lkg.json"
+    env = _home_env(tmp_path)
+    home = SahteHome()
+    assert cli.calistir(str(env), str(lkg), http=home, kimlik=y.MetadataKimligi(home)) == 0
+    env2 = _home_env(tmp_path)
+    once = env2.read_text()
+    home2 = SahteHome(durum=403, yanit=ornek_yanit(etag="v9"))
+    rc = cli.calistir(str(env2), str(lkg), http=home2, kimlik=y.MetadataKimligi(home2))
+    assert rc == cli.CIKIS_HOME_YOK and env2.read_text() == once
+    assert "reddetti" in capsys.readouterr().err
+    assert not lkg.exists()
 
 
 def test_cli_home_kipinde_proje_eksikse_acilis_durur(tmp_path: Path) -> None:

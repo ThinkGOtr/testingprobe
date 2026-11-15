@@ -23,6 +23,12 @@ Proje özellikleri, bağlantı kipleri ve organizasyon/proje adları çalışma 
 Hedef–sır bağı (A1): Home `env_unset` listesi ve yerel kural (`yukleyici.BAGLI_SIRLAR`: hedefi
 Home'dan gelen, kendisi Home'dan gelmeyen sır) adları os.environ'dan HEMEN silinir; liste
 daralınca geri konur.
+
+Reddedilme (Config R1 N4): Home 403/404 dönerse (proje silindi, ürün projeden çıkarıldı, erişim
+geri alındı) LKG'ye düşülmez. Home'dan gelen değer ve sır adları (`env` ∪ `env_secrets`, son
+bilinen config'ten) os.environ'dan kaldırılır, çalışma anında yazdıklarımız açılış değerine döner,
+proje özellikleri KAPALI sayılır (fail-closed) ve durum `kaynak=reddedildi` olarak raporlanır.
+Kaldırılan adlar Home yeniden kabul etse bile ancak yeniden başlatmada geri gelir (`bekleyen`).
 """
 
 from __future__ import annotations
@@ -102,7 +108,7 @@ class _Yapi:
 
 @dataclass
 class Durum:
-    kaynak: str = "env"  # env | home | lkg
+    kaynak: str = "env"  # env | home | lkg | reddedildi
     cfg: y.EtkinConfig | None = None
     son_deneme: float | None = None
     son_basari: float | None = None
@@ -111,6 +117,7 @@ class Durum:
     bekleyen: list[str] = field(default_factory=list)
     reddedilen: list[str] = field(default_factory=list)
     kaldirilan: list[str] = field(default_factory=list)
+    geri_cekilen: list[str] = field(default_factory=list)
 
 
 _YAPI = _Yapi()
@@ -123,6 +130,8 @@ _ILK_SIR_REFLERI: dict[str, str] | None = None
 _ORIJINAL: dict[str, str | None] = {}
 # A1: `env_unset` / bağlı sır kuralıyla os.environ'dan sildiğimiz adların önceki değeri.
 _SILINEN: dict[str, str] = {}
+# N4: Home reddedince os.environ'dan kaldırdığımız Home kaynaklı adlar (değer tutulmaz).
+_GERI_CEKILEN: set[str] = set()
 _DUR = threading.Event()
 _IPLIK: threading.Thread | None = None
 
@@ -152,6 +161,7 @@ def reset() -> None:
         for k, v in _SILINEN.items():
             os.environ[k] = v
         _SILINEN.clear()
+        _GERI_CEKILEN.clear()
         _BASLANGIC_ENV.clear()
         _YAPI = _Yapi()
         _DURUM = Durum()
@@ -213,6 +223,9 @@ def yenile(servis: str = "core") -> Durum:
         sonuc = yk.yukle()
         _DURUM.hata = sonuc.hata
         _DURUM.kaynak = sonuc.kaynak
+        if sonuc.kaynak == "reddedildi":
+            _reddedildi(sonuc.geri_cekilen)
+            return _DURUM
         if sonuc.cfg is None:
             return _DURUM
         if sonuc.kaynak == "home":
@@ -254,6 +267,12 @@ def _uygula(cfg: y.EtkinConfig) -> None:
     for k, ref in cfg.env_secrets.items():
         if (_ILK_SIR_REFLERI or {}).get(str(k)) != str(ref):
             bekleyen.add(str(k))
+    # Reddedilmede kaldırılan adlar ancak yeniden başlatmada geri gelir.
+    bekleyen |= {
+        k
+        for k in _GERI_CEKILEN
+        if k not in CALISMA_ANINDA and (k in cfg.env or k in cfg.env_secrets)
+    }
     _DURUM.uygulanan = sorted(set(_DURUM.uygulanan) | set(degisen))
     _DURUM.bekleyen = sorted(bekleyen)
     if degisen:
@@ -267,6 +286,51 @@ def _uygula(cfg: y.EtkinConfig) -> None:
             "home config: yeniden başlatmada uygulanacak değişiklikler: %s",
             ", ".join(sorted(bekleyen)),
         )
+
+
+def _reddedildi(geri_cekilen: y.EtkinConfig | None) -> None:
+    """N4: Home 403/404. Home'dan gelen değer ve sırların adları os.environ'dan kaldırılır,
+    çalışma anında yazdıklarımız açılış değerine döner, config bırakılır (özellikler kapalı).
+    Korunan (Deployment) adlara dokunulmaz; A1 ile silinmiş bağlı sırlar silinmiş kalır."""
+    adlar: set[str] = set(_ILK_SIR_REFLERI or {})
+    for cfg in (_DURUM.cfg, geri_cekilen):
+        if cfg is not None:
+            adlar |= {str(k) for k in cfg.env} | {str(k) for k in cfg.env_secrets}
+    adlar = {k for k in adlar if y.gecerli_anahtar(k)}
+    degisen: list[str] = []
+    for k, v in sorted(_ORIJINAL.items()):
+        if os.environ.get(k) != v:
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+            degisen.append(k)
+    _ORIJINAL.clear()
+    for k in sorted(adlar):
+        if k in os.environ:
+            os.environ.pop(k, None)
+            degisen.append(k)
+    _GERI_CEKILEN.update(adlar)
+    _DURUM.cfg = None
+    _DURUM.uygulanan = []
+    _DURUM.bekleyen = []
+    _DURUM.geri_cekilen = sorted(_GERI_CEKILEN)
+    if degisen:
+        try:
+            _YAPI.temizle()
+        except Exception:
+            log.warning("ayar önbellekleri temizlenemedi", exc_info=True)
+    log.error(
+        "home config: Home erişimi reddetti (%s); Home kaynaklı %d ad kaldırıldı, proje "
+        "özellikleri kapalı: %s",
+        _DURUM.hata,
+        len(adlar),
+        ", ".join(sorted(adlar)),
+    )
+
+
+def _reddedildi_mi() -> bool:
+    return y.kaynak() == "home" and _DURUM.kaynak == "reddedildi"
 
 
 def _sirlari_kaldir(kaldirilan: list[str]) -> list[str]:
@@ -335,7 +399,10 @@ def etkin() -> y.EtkinConfig | None:
 
 
 def ozellikler() -> dict[str, bool] | None:
-    """Proje özellikleri; `None` = Home config yok → bugünkü davranış (hepsi açık)."""
+    """Proje özellikleri; `None` = Home config yok → bugünkü davranış (hepsi açık). Home
+    reddettiyse (N4) hepsi kapalı."""
+    if _reddedildi_mi():
+        return {o: False for o in y.OZELLIKLER}
     cfg = etkin()
     return None if cfg is None else cfg.ozellikler
 
@@ -375,4 +442,5 @@ def ozet() -> dict[str, Any]:
         "bekleyen": list(d.bekleyen),
         "reddedilen": list(d.reddedilen),
         "kaldirilan": list(d.kaldirilan),
+        "geri_cekilen": list(d.geri_cekilen),
     }

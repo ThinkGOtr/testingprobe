@@ -2,7 +2,9 @@
 
 Bağlantı kipi (`connections.<tur>.mode`, etkin config) `oauth` (Jira, Atlassian 3LO) ya da `app`
 (GitHub App) iken Jira ve GitHub istemcileri sır yerine Home'un ürettiği kısa ömürlü token'ı
-kullanır. `token` kipinde bu modül kullanılmaz (Home 409 `use_secret` döner).
+kullanır. `token` kipinde bu modül kullanılmaz (Home 409 `use_secret` döner → `TokenKipinde`).
+GitHub App kipinde projede depo tanımlı değilse Home 409 `repo_required` döner →
+`DepoTanimliDegil` ("Projede depo tanımlı değil").
 
 **Yalnız yazma kimliği taşıyan süreç** (`TP_BAGLANTI_TOKENI=1`, compose'da yalnız core-worker)
 token alabilir: OAuth/App token'ı okuma ile yazmayı ayırmaz; core-api'nin yazma kimliği taşımaması
@@ -40,6 +42,19 @@ class BaglantiHatasi(Exception):
 
 class TokenKipinde(BaglantiHatasi):
     """Home 409 `use_secret`: bağlantı `token` kipinde (sır env'den okunur)."""
+
+
+class DepoTanimliDegil(BaglantiHatasi):
+    """Home 409 `repo_required`: GitHub App kipinde projede depo tanımlı değil (kurulumun tüm
+    depolarına token basılmaz)."""
+
+
+def _hata_kodu(r: y.HttpYanit) -> str:
+    try:
+        v = r.json()
+    except y.SozlesmeHatasi:
+        return ""
+    return str(v.get("error") or "") if isinstance(v, dict) else ""
 
 
 @dataclass(frozen=True)
@@ -105,7 +120,12 @@ class BaglantiTokenIstemcisi:
         except y.Ulasilamaz as exc:
             raise BaglantiHatasi(f"{tur}: Home erişilemedi") from exc
         if r.durum == 409:
-            raise TokenKipinde(f"{tur}: bağlantı token kipinde (use_secret)")
+            kod = _hata_kodu(r)
+            if kod == "use_secret":
+                raise TokenKipinde(f"{tur}: bağlantı token kipinde (use_secret)")
+            if kod == "repo_required":
+                raise DepoTanimliDegil(f"{tur}: Projede depo tanımlı değil (repo_required)")
+            raise BaglantiHatasi(f"{tur}: access-token 409 ({kod or 'kod yok'})")
         if r.durum != 200:
             raise BaglantiHatasi(f"{tur}: access-token {r.durum}")
         try:

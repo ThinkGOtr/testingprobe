@@ -157,6 +157,54 @@ def test_agent_probe_router_kapisi() -> None:
     assert any(d.dependency is kapi.ai_agent_gerekli for d in api.router.dependencies)
 
 
+def test_home_reddederse_calisma_aninda_degerler_kaldirilir(
+    home: SahteHome, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """N4: çalışma anında Home 403 → LKG'ye düşülmez; Home kaynaklı değer ve sırlar
+    os.environ'dan kalkar, çalışma anı anahtarları açılış değerine döner, özellikler kapalı,
+    durum `reddedildi`. Korunan (Deployment) adlara dokunulmaz."""
+    monkeypatch.setenv("TP_DENETIM_KAPISI", "acilis")
+    monkeypatch.setenv("JIRA_READ_TOKEN", "home-sirri")  # açılışta Home'dan env dosyasına gelmişti
+    monkeypatch.setenv("TP_DATABASE_URL", "postgresql://deployment")
+    d = durum.yenile()
+    assert d.kaynak == "home" and os.environ["TP_DENETIM_KAPISI"] == "on"
+    home.durum = 403
+    home.yanit = ornek_yanit(etag="v9")
+    d = durum.yenile()
+    assert d.kaynak == "reddedildi" and d.cfg is None and "403" in (d.hata or "")
+    assert "JIRA_READ_TOKEN" not in os.environ and "JIRA_PROJECT" not in os.environ
+    assert "TP_CT_SON_KOSU" not in os.environ  # Home'un çalışma anında yazdığı
+    assert "TP_DENETIM_KAPISI" not in os.environ  # Home anahtarı: açılış değeri de Home'dandı
+    assert os.environ["TP_DATABASE_URL"] == "postgresql://deployment"
+    assert set(durum.ozet()["geri_cekilen"]) >= {"JIRA_READ_TOKEN", "JIRA_PROJECT"}
+    assert durum.ozet()["kaynak"] == "reddedildi"
+    assert durum.ozellikler() == dict.fromkeys(
+        ("web", "android", "ios", "windows", "ai_agent"), False
+    )
+    assert durum.org_proje() is None and durum.baglanti_kipi("jira") == "token"
+    with pytest.raises(kapi.OzellikKapali):
+        kapi.platform_gerekli("web")
+    assert not (tmp_path / "lkg.json").exists()
+    # Home yeniden kabul eder: çalışma anı anahtarları gelir; kaldırılan sır yeniden başlatmada.
+    home.durum = 200
+    d = durum.yenile()
+    assert d.kaynak == "home" and os.environ["TP_DENETIM_KAPISI"] == "on"
+    assert "JIRA_READ_TOKEN" not in os.environ and "JIRA_READ_TOKEN" in d.bekleyen
+    assert durum.ozellik_acik("web")
+
+
+def test_home_reddi_acilista_lkg_kullanilmaz(home: SahteHome) -> None:
+    durum.yenile()
+    durum.reset()
+    durum.configure(
+        http=SahteHome(durum=404, yanit=ornek_yanit(etag="v9")),
+        id_token=lambda a: "x",
+        temizle=lambda: None,
+    )
+    d = durum.yenile()
+    assert d.kaynak == "reddedildi" and not durum.ozellik_acik("web")
+
+
 # ------------------------------------------------------------------ bağlantı erişim token'ı
 
 
@@ -209,6 +257,21 @@ def test_token_kipinde_409(home: SahteHome, monkeypatch: pytest.MonkeyPatch) -> 
     durum.yenile()
     with pytest.raises(baglanti.TokenKipinde):
         baglanti.token_al("github")
+
+
+def test_repo_required_409_ayri_hata(home: SahteHome, monkeypatch: pytest.MonkeyPatch) -> None:
+    """N6: 409 `repo_required` token kipi sayılmaz; "Projede depo tanımlı değil"."""
+    monkeypatch.setenv("TP_BAGLANTI_TOKENI", "1")
+    home.erisim_durum = 409
+    home.erisim_hata = "repo_required"
+    durum.yenile()
+    with pytest.raises(baglanti.DepoTanimliDegil, match="Projede depo tanımlı değil") as e:
+        baglanti.token_al("github")
+    assert not isinstance(e.value, baglanti.TokenKipinde)
+    home.erisim_hata = "bilinmeyen"
+    with pytest.raises(baglanti.BaglantiHatasi, match="409") as e2:
+        baglanti.token_al("github")
+    assert not isinstance(e2.value, (baglanti.TokenKipinde, baglanti.DepoTanimliDegil))
 
 
 def test_jira_base_url_disari_token_gitmez(
