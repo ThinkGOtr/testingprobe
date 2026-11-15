@@ -61,7 +61,6 @@ from __future__ import annotations
 import argparse
 import functools
 import json
-import os
 import re
 import sys
 from collections.abc import Callable, Mapping, Sequence
@@ -149,8 +148,10 @@ def _trigger_push_ci(ci: CiTrigger | None, sha: str, actor: str) -> dict[str, An
 def app_root_for(forge: Any, env: Mapping[str, str] | None = None) -> str:
     """Uygulamanın forge deposundaki kökü: `TP_FORGE_APP_ROOT`, yoksa forge'un varsayılanı
     (LocalForge '' — depo demo-app'in kendisi; GitHubForge 'demo-app')."""
-    env = os.environ if env is None else env
-    deger = env.get(APP_ROOT_ENV)
+    from tp_core.integrations.proje_ortami import ProjeOrtami
+
+    cfg = ProjeOrtami() if env is None else env
+    deger = cfg.get(APP_ROOT_ENV)
     if deger is None:
         deger = getattr(forge, "default_app_root", "") or ""
     return str(deger).strip().strip("/")

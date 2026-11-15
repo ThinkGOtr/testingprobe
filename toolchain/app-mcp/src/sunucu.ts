@@ -12,7 +12,7 @@ import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { sunucuKur } from './araclar.js';
 import { AppOturumu, CihazKilidi } from './oturum.js';
 import type { SurucuFabrikasi } from './surucu.js';
-import type { Ayarlar } from './yapilandirma.js';
+import { oturumAyari, type Ayarlar } from './yapilandirma.js';
 
 const MAKS_GOVDE = 1024 * 1024;
 const MAKS_OTURUM = 8;
@@ -114,11 +114,20 @@ export function sunucuOlustur(ayar: Ayarlar, fabrika: SurucuFabrikasi, log: (m: 
           rpcHata(res, 503, 'Çok fazla açık MCP oturumu');
           return;
         }
+        // Çok proje (§4.4): oturumun uygulaması core'un `x-tp-app` başlığından (yoksa ortam).
+        let oturumAyar: Ayarlar;
+        try {
+          const baslik = req.headers['x-tp-app'];
+          oturumAyar = oturumAyari(ayar, Array.isArray(baslik) ? baslik.join(',') : baslik);
+        } catch (e) {
+          rpcHata(res, 400, (e as Error).message);
+          return;
+        }
         let oturum: AppOturumu | undefined;
         const tasima: StreamableHTTPServerTransport = new StreamableHTTPServerTransport({
           sessionIdGenerator: () => randomUUID(),
           onsessioninitialized: (yeni) => {
-            oturum = new AppOturumu(yeni, ayar, fabrika, kilit);
+            oturum = new AppOturumu(yeni, oturumAyar, fabrika, kilit);
             oturumlar.set(yeni, { tasima, oturum });
             log(`oturum açıldı ${yeni.slice(0, 8)}`);
           },

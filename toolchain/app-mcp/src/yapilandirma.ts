@@ -12,6 +12,12 @@
  *   APP_MCP_HOST (127.0.0.1), APP_MCP_PORT (8932), APP_MCP_ALLOWED_HOSTS (virgüllü Host listesi)
  *   APP_MCP_IDLE_S (300), APP_MCP_WAIT_MAX_S (10), APP_MCP_SNAPSHOT_MAX_SATIR (400),
  *   APP_MCP_SNAPSHOT_MAX_KARAKTER (40000), APP_MCP_OTURUM_ACMA_S (300)
+ *
+ * Çok proje (TP-COK-PROJE-PLANI §4.4, K2): cihaz havuzu (Appium adresi, udid, cihaz adı) ortamdan
+ * gelir ve paylaşılır; uygulama kimliği MCP oturumu başına core'un `initialize` isteğine koyduğu
+ * `x-tp-app` başlığıyla (base64url JSON, `oturumAyari`) değişebilir. Başlığı yalnız MCP istemcisi
+ * (core) koyar; ajan araç çağrılarıyla HTTP başlığı belirleyemez → "ajan uygulamayı seçemez"
+ * kuralı korunur. Başlık yoksa ortamdaki uygulama kullanılır.
  */
 import type { Platform } from './agac.js';
 
@@ -166,4 +172,90 @@ export function ayarlariOku(ortam: Ortam = process.env): Ayarlar {
     oturumAcmaSn: tamsayi(ortam, 'APP_MCP_OTURUM_ACMA_S', 300, 10, 1800),
     platformlar,
   };
+}
+
+/** `x-tp-app` başlığındaki platform başına uygulama ayarı (toolchain `proje.app` ile aynı adlar). */
+export interface AppBlogu {
+  app_id?: string;
+  path?: string;
+  activity?: string;
+  args?: string;
+  workdir?: string;
+}
+
+const APP_ALANLARI = new Set(['app_id', 'path', 'activity', 'args', 'workdir']);
+const APP_PLATFORMLARI = new Set<Platform>(['android', 'ios', 'windows']);
+
+function blokCoz(baslik: string): Partial<Record<Platform, AppBlogu>> {
+  let ham: unknown;
+  try {
+    ham = JSON.parse(Buffer.from(baslik, 'base64url').toString('utf8'));
+  } catch {
+    throw new Error('x-tp-app base64url JSON olmalı');
+  }
+  if (!ham || typeof ham !== 'object' || Array.isArray(ham)) throw new Error('x-tp-app nesne olmalı');
+  const out: Partial<Record<Platform, AppBlogu>> = {};
+  for (const [platform, deger] of Object.entries(ham as Record<string, unknown>)) {
+    if (!APP_PLATFORMLARI.has(platform as Platform)) throw new Error(`x-tp-app: bilinmeyen platform ${platform}`);
+    if (!deger || typeof deger !== 'object' || Array.isArray(deger)) throw new Error(`x-tp-app.${platform} nesne olmalı`);
+    const blok: AppBlogu = {};
+    for (const [ad, v] of Object.entries(deger as Record<string, unknown>)) {
+      if (!APP_ALANLARI.has(ad)) throw new Error(`x-tp-app.${platform}: bilinmeyen alan ${ad}`);
+      if (v === null || v === undefined) continue;
+      if (typeof v !== 'string') throw new Error(`x-tp-app.${platform}.${ad} dize olmalı`);
+      if (/[\x00-\x1f\x7f]/.test(v)) throw new Error(`x-tp-app.${platform}.${ad} denetim karakteri içeremez`);
+      if (v.trim()) (blok as Record<string, string>)[ad] = v.trim();
+    }
+    out[platform as Platform] = blok;
+  }
+  return out;
+}
+
+function zorunluBlok(deger: string | undefined, ad: string): string {
+  if (!deger) throw new Error(`x-tp-app.${ad} gerekli`);
+  return deger;
+}
+
+/**
+ * MCP oturumunun ayarları: `x-tp-app` başlığı (yoksa `ayar` aynen). Başlıktaki platformların
+ * uygulama kimliği ve uygulama yetenekleri değişir; Appium adresi ve cihaz yetenekleri ortamdan
+ * kalır. Ortamda kapalı (Appium adresi olmayan) platform başlıkla açılmaz. Geçersiz başlık hata.
+ */
+export function oturumAyari(ayar: Ayarlar, baslik: string | undefined): Ayarlar {
+  if (baslik === undefined || !baslik.trim()) return ayar;
+  const bloklar = blokCoz(baslik.trim());
+  const platformlar: Partial<Record<Platform, PlatformAyari>> = { ...ayar.platformlar };
+  for (const [platform, blok] of Object.entries(bloklar) as [Platform, AppBlogu][]) {
+    const taban = ayar.platformlar[platform];
+    if (!taban) continue;
+    if (Object.keys(blok).length === 0) {
+      // Projede bu platformun uygulaması tanımsız: oturumda platform kapalı (ortamın — başka
+      // projenin — uygulaması açılmaz).
+      delete platformlar[platform];
+      continue;
+    }
+    const y: Record<string, unknown> = { ...taban.yetenekler };
+    let kimlik: string;
+    if (platform === 'android') {
+      for (const k of ['appium:appPackage', 'appium:appActivity', 'appium:app', 'appium:enforceAppInstall']) delete y[k];
+      kimlik = zorunluBlok(blok.app_id, 'android.app_id');
+      y['appium:appPackage'] = kimlik;
+      ekle(y, 'appium:appActivity', blok.activity);
+      ekle(y, 'appium:app', blok.path);
+      if (y['appium:app']) y['appium:enforceAppInstall'] = true;
+    } else if (platform === 'ios') {
+      for (const k of ['appium:bundleId', 'appium:app']) delete y[k];
+      kimlik = zorunluBlok(blok.app_id, 'ios.app_id');
+      y['appium:bundleId'] = kimlik;
+      ekle(y, 'appium:app', blok.path);
+    } else {
+      for (const k of ['appium:app', 'appium:appArguments', 'appium:appWorkingDir']) delete y[k];
+      kimlik = powershellGuvenli('x-tp-app.windows.path', zorunluBlok(blok.path ?? blok.app_id, 'windows.path'))!;
+      y['appium:app'] = kimlik;
+      ekle(y, 'appium:appArguments', powershellGuvenli('x-tp-app.windows.args', blok.args));
+      ekle(y, 'appium:appWorkingDir', powershellGuvenli('x-tp-app.windows.workdir', blok.workdir));
+    }
+    platformlar[platform] = { ...taban, uygulamaKimligi: kimlik, yetenekler: y };
+  }
+  return { ...ayar, platformlar };
 }

@@ -30,6 +30,7 @@ from toolchain_common import (
     gitforge,
 )
 from toolchain_common.api import install_error_handlers
+from toolchain_common.proje import ProjeBlogu
 from toolchain_common.settings import settings
 from toolchain_common.validation import (
     resolve_fault,
@@ -78,6 +79,16 @@ class RunBody(BaseModel):
     workers: int | None = Field(None, ge=1, le=2)
     # Kanıt olarak saklanacak koşu (kırarak doğrulama, triage): temizlikte silinmez (`.keep`).
     keep: bool = False
+    # Çok proje (§4.4): projeye özgü forge/uygulama değerleri (toolchain-worker /check iletir).
+    proje: ProjeBlogu | None = None
+
+    @field_validator("proje")
+    @classmethod
+    def _proje(cls, v: ProjeBlogu | None) -> ProjeBlogu | None:
+        # test-runner test kodu koşturur: uzak depo kimliği buraya hiç gelmez.
+        if v is not None and v.remote_token:
+            raise ValueError("test-runner proje bloğunda remote_token kabul etmez")
+        return v
 
     @field_validator("test_files")
     @classmethod
@@ -137,7 +148,7 @@ class RunBody(BaseModel):
 @app.post("/run")
 def run_tests(body: RunBody) -> dict[str, Any]:
     try:
-        return runner.execute(settings(), body.to_request())
+        return runner.execute(settings(body.proje), body.to_request())
     except gitforge.CommitNotFound as exc:
         raise HTTPException(404, f"Commit forge'da bulunamadı: {body.sha}") from exc
     except runner.RunConflict as exc:

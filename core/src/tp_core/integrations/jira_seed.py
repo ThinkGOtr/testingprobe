@@ -52,6 +52,7 @@ from tp_core.integrations.jira_adf import (
     adf_to_text,
     text_to_adf,
 )
+from tp_core.proje import proje_icinde, varsayilan_pid
 
 DEMO_LABEL = "tp-demo"
 AI_LABEL = "AI-generated"
@@ -527,7 +528,14 @@ def main(argv: Sequence[str] | None = None, *, jira: RestJira | None = None) -> 
         "--sil", action="store_true", help="koşu kayıtlarını kapatmak yerine sil (geri alınamaz)"
     )
     args = parser.parse_args(argv)
-    settings = JiraSettings()
+    # Demo verisi (TPD-1..TPD-7) Bayi Portalı'na özgü: komut yalnız varsayılan projede çalışır
+    # (TP-COK-PROJE-PLANI §4.2); başka projenin Jira'sına tohum yazılmaz.
+    with proje_icinde(varsayilan_pid(), kaynak="cli"):
+        return _calistir(args, jira)
+
+
+def _calistir(args: argparse.Namespace, jira: RestJira | None) -> int:
+    settings = JiraSettings.proje_icin(varsayilan_pid())
     client = jira or get_jira(settings)
     project = settings.jira_project
     target = "jira-sim" if settings.is_simulator else settings.jira_base_url
