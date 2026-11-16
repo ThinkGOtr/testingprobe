@@ -3398,11 +3398,11 @@ def _merge_isi(session: Session, sid: uuid.UUID, head: str) -> tuple[uuid.UUID, 
     """Aynı script + head için süren ya da başarıyla bitmiş son `codegen.merge` işi."""
     row = session.execute(
         text(
-            "SELECT id, durum FROM job WHERE tur = :t AND yuk->>'script_id' = :s "
-            "AND yuk->>'head_sha' = :h AND durum IN ('queued', 'retry', 'running', 'done') "
-            "ORDER BY olusturma DESC LIMIT 1"
+            "SELECT id, durum FROM job WHERE tur = :t AND project_id = :pid "
+            "AND yuk->>'script_id' = :s AND yuk->>'head_sha' = :h "
+            "AND durum IN ('queued', 'retry', 'running', 'done') ORDER BY olusturma DESC LIMIT 1"
         ),
-        {"t": MERGE_JOB, "s": str(sid), "h": head},
+        pid_param(t=MERGE_JOB, s=str(sid), h=head),
     ).first()
     return (row.id, row.durum) if row else None
 
@@ -3801,10 +3801,10 @@ def _dal_guncellenebilir() -> bool:
 def _guncelleme_isi(session: Session, sid: uuid.UUID) -> uuid.UUID | None:
     row = session.execute(
         text(
-            "SELECT id FROM job WHERE tur = :t AND yuk->>'script_id' = :s "
+            "SELECT id FROM job WHERE tur = :t AND project_id = :pid AND yuk->>'script_id' = :s "
             "AND durum IN ('queued', 'retry', 'running') ORDER BY olusturma DESC LIMIT 1"
         ),
-        {"t": UPDATE_JOB, "s": str(sid)},
+        pid_param(t=UPDATE_JOB, s=str(sid)),
     ).first()
     return row.id if row else None
 

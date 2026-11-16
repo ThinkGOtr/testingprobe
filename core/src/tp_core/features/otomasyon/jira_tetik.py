@@ -706,10 +706,11 @@ def otomatik_akis_hepsi(s: Session, reqs: list[Requirement]) -> dict[uuid.UUID, 
             text(
                 "SELECT DISTINCT ON (yuk->>'requirement_id') yuk->>'requirement_id' AS rid, "
                 "durum, sonuc, olusturma, yuk->>'tetik_zamani' AS tetik_zamani FROM job "
-                f"WHERE tur = '{JOB_OTOMATIK_CASE}' AND (yuk->>'requirement_id') = ANY(:ids) "
+                f"WHERE tur = '{JOB_OTOMATIK_CASE}' AND project_id = :pid "
+                "AND (yuk->>'requirement_id') = ANY(:ids) "
                 "ORDER BY yuk->>'requirement_id', olusturma DESC"
             ),
-            {"ids": onayli},
+            pid_param(ids=onayli),
         ):
             isler[row.rid] = row
     out: dict[uuid.UUID, Any] = {}

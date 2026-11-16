@@ -449,10 +449,10 @@ def _fix_isi(session: Session, sid: uuid.UUID) -> Any:
     """Script'in en son `repair.fix` işi (id, durum, son_hata) ya da None."""
     return session.execute(
         text(
-            "SELECT id, durum, son_hata FROM job WHERE tur = :t AND yuk->>'script_id' = :s "
-            "ORDER BY olusturma DESC LIMIT 1"
+            "SELECT id, durum, son_hata FROM job WHERE tur = :t AND project_id = :pid "
+            "AND yuk->>'script_id' = :s ORDER BY olusturma DESC LIMIT 1"
         ),
-        {"t": FIX_JOB, "s": str(sid)},
+        pid_param(t=FIX_JOB, s=str(sid)),
     ).first()
 
 
@@ -588,8 +588,11 @@ def request_fix(session: Session, failure_id: uuid.UUID, user: Principal) -> dic
         deneme = (
             int(
                 session.execute(
-                    text("SELECT count(*) FROM job WHERE tur = :t AND yuk->>'script_id' = :s"),
-                    {"t": FIX_JOB, "s": str(sc.id)},
+                    text(
+                        "SELECT count(*) FROM job WHERE tur = :t AND project_id = :pid "
+                        "AND yuk->>'script_id' = :s"
+                    ),
+                    pid_param(t=FIX_JOB, s=str(sc.id)),
                 ).scalar()
                 or 0
             )
@@ -1905,11 +1908,11 @@ def repair_script_for_pr(session: Session, number: int, *, lock: bool = False) -
 def _merge_isi(session: Session, sid: uuid.UUID, head: str) -> tuple[uuid.UUID, str] | None:
     row = session.execute(
         text(
-            "SELECT id, durum FROM job WHERE tur = :t AND yuk->>'script_id' = :s "
-            "AND yuk->>'head_sha' = :h AND durum IN ('queued', 'retry', 'running', 'done') "
-            "ORDER BY olusturma DESC LIMIT 1"
+            "SELECT id, durum FROM job WHERE tur = :t AND project_id = :pid "
+            "AND yuk->>'script_id' = :s AND yuk->>'head_sha' = :h "
+            "AND durum IN ('queued', 'retry', 'running', 'done') ORDER BY olusturma DESC LIMIT 1"
         ),
-        {"t": MERGE_JOB, "s": str(sid), "h": head},
+        pid_param(t=MERGE_JOB, s=str(sid), h=head),
     ).first()
     return (row.id, row.durum) if row else None
 
@@ -2123,8 +2126,8 @@ def _son_merge_onaylayan(sid: uuid.UUID) -> str | None:
     with session_scope() as s:
         return s.execute(
             text(
-                "SELECT yuk->>'actor' FROM job WHERE tur = :t AND yuk->>'script_id' = :s "
-                "ORDER BY olusturma DESC LIMIT 1"
+                "SELECT yuk->>'actor' FROM job WHERE tur = :t AND project_id = :pid "
+                "AND yuk->>'script_id' = :s ORDER BY olusturma DESC LIMIT 1"
             ),
-            {"t": MERGE_JOB, "s": str(sid)},
+            pid_param(t=MERGE_JOB, s=str(sid)),
         ).scalar()

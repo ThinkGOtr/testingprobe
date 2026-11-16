@@ -1318,10 +1318,11 @@ def po_request_status(s: Session, req: Requirement) -> dict[str, Any] | None:
         return {"durum": "yazildi", "jira_comment_id": ref.external_key, "hata": None}
     son_is = s.execute(
         text(
-            "SELECT durum, son_hata FROM job WHERE tur = :t AND yuk->>'requirement_id' = :id "
-            "AND yuk->>'son_hal_hash' = :h ORDER BY olusturma DESC LIMIT 1"
+            "SELECT durum, son_hata FROM job WHERE tur = :t AND project_id = :pid "
+            "AND yuk->>'requirement_id' = :id AND yuk->>'son_hal_hash' = :h "
+            "ORDER BY olusturma DESC LIMIT 1"
         ),
-        {"t": JOB_PO_REQUEST, "id": str(req.id), "h": kayit.son_hal_hash},
+        pid_param(t=JOB_PO_REQUEST, id=str(req.id), h=kayit.son_hal_hash),
     ).first()
     if son_is is not None and son_is[0] in ("failed", "cancelled"):
         hata = son_is[1] or (ref.hata if ref is not None else None) or "iş tamamlanamadı"
@@ -1345,16 +1346,19 @@ def ensure_po_request(engine: Engine, req_id: uuid.UUID) -> str | None:
         idempotency_lock(conn, f"{JOB_PO_REQUEST}:{req_id}")
         etkin = conn.execute(
             text(
-                "SELECT count(*) FROM job WHERE tur = :t AND yuk->>'requirement_id' = :id "
-                "AND durum IN ('queued', 'retry', 'running')"
+                "SELECT count(*) FROM job WHERE tur = :t AND project_id = :pid "
+                "AND yuk->>'requirement_id' = :id AND durum IN ('queued', 'retry', 'running')"
             ),
-            {"t": JOB_PO_REQUEST, "id": str(req_id)},
+            pid_param(t=JOB_PO_REQUEST, id=str(req_id)),
         ).scalar_one()
         if etkin:
             return "kuyrukta"
         onceki = conn.execute(
-            text("SELECT count(*) FROM job WHERE tur = :t AND yuk->>'requirement_id' = :id"),
-            {"t": JOB_PO_REQUEST, "id": str(req_id)},
+            text(
+                "SELECT count(*) FROM job WHERE tur = :t AND project_id = :pid "
+                "AND yuk->>'requirement_id' = :id"
+            ),
+            pid_param(t=JOB_PO_REQUEST, id=str(req_id)),
         ).scalar_one()
         enqueue(
             conn,

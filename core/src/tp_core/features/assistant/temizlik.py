@@ -217,10 +217,11 @@ def is_kayitlarini_sil(engine: Engine, saklama: timedelta = IS_KAYDI_SAKLAMA) ->
         return int(
             conn.execute(
                 text(
-                    "DELETE FROM job WHERE tur = :t AND durum IN ('done', 'failed', 'cancelled') "
+                    "DELETE FROM job WHERE tur = :t AND project_id = :pid "
+                    "AND durum IN ('done', 'failed', 'cancelled') "
                     "AND COALESCE(bitis, guncelleme) < now() - make_interval(secs => :sn)"
                 ),
-                {"t": TEMIZLIK_IS_TURU, "sn": saklama.total_seconds()},
+                pid_param(t=TEMIZLIK_IS_TURU, sn=saklama.total_seconds()),
             ).rowcount
             or 0
         )

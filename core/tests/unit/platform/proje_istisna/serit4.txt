@@ -4,3 +4,4 @@ tp_core/features/assistant/budget.py:sql:SELECT COALESCE(SUM(CASE WHEN amac = 'a
 tp_core/features/assistant/budget.py:sql:SELECT COALESCE(SUM(maliyet), 0) FROM ai_call WHERE olusturma >= :bas  # kalıcı: kullanıcı günlük asistan tavanı kurulum geneli (§1.1 C, §8.2)
 tp_core/features/assistant/budget.py:sql:SELECT COALESCE(SUM(maliyet), 0) FROM ai_call WHERE olusturma >= :bas  # kalıcı: asistan günlük tavanı kurulum geneli (§8.2; TP_DAILY_BUDGET_USD ile aynı kapsam)
 tp_core/features/assistant/budget.py:tum_projeler:_kurulum_geneli  # kalıcı: yukarıdaki üç kurulum geneli maliyet/hak sorgusunun dinamik denetim kaçışı (yalnız bu yardımcı)
+tp_core/features/assistant/budget.py:job:SELECT count(*) FROM job WHERE tur = :t AND durum IN ('queued','runnin  # kalıcı: worker paralellik tavanı (global_sinir = 2 x paralel) kurulum geneli; işçi havuzu projeler arasında ortak

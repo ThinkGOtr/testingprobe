@@ -4,6 +4,9 @@ Kurallar (`core/src/tp_core/**.py`):
 
 - `sql`: SQL metninde (`"... FROM requirement ..."`, f-string dahil) kapsamlı tablo geçiyor ama
   `project_id` geçmiyor.
+- `job`: `job` tablosu (`project_id` NULL olabilir: kurulum işi) `tur`/`yuk`/`idempotency_key` ile
+  süzülüyor ama `project_id` geçmiyor (hız sınırı / tekil iş denetimi projeler arası sayardı).
+  Yalnız id ile tek satır okuma serbesttir; `workflow/jobs.py` ve `worker/` (kuyruk) izinli.
 - `tum_projeler`: `execution_options(tum_projeler=True)` / `TUM_PROJELER` izinli modül dışında.
 - `thread`: `threading.Thread(` / `ThreadPoolExecutor(` çağıran fonksiyon `baglamla`,
   `proje_icinde` ya da `copy_context` kullanmıyor (iş parçacığı bağlamı miras almaz).
@@ -105,9 +108,17 @@ TUM_PROJELER_IZINLI = (
     "tp_core/proje/",
     "tp_core/workflow/jobs.py",
     "tp_core/worker/",
-    # Kişi geneli token iptali (eski_oturumlari_iptal_et): iptal kişiye özgüdür, projeye değil.
-    "tp_core/auth/aiprobe.py",
 )
+# Fonksiyon düzeyi muafiyet: (yol, fonksiyon adı). Dosyanın geri kalanı denetlenir.
+TUM_PROJELER_IZINLI_FONKSIYON: frozenset[tuple[str, str]] = frozenset(
+    [
+        # Kişi geneli token iptali: iptal kişiye özgüdür, projeye değil.
+        ("tp_core/auth/aiprobe.py", "eski_oturumlari_iptal_et"),
+    ]
+)
+JOB_IZINLI = ("tp_core/workflow/jobs.py", "tp_core/worker/")
+_JOB_RE = re.compile(r"\b(?:FROM|JOIN|INTO|UPDATE)\s+job\b(?![.(])")
+_JOB_SUZGEC = re.compile(r"\b(?:tur|yuk|idempotency_key)\b")
 ENV_IZINLI = ("tp_core/home_config/", "tp_core/proje/ayar.py")
 THREAD_BAGLAM = ("baglamla", "proje_icinde", "copy_context")
 _ENV_CAGRI = re.compile(r"(environ|getenv|(^|[._])_*(env|ortam)[a-z_]*(\.get)?$)", re.IGNORECASE)
@@ -212,6 +223,12 @@ def _kapsayan_fonksiyon(
     return None
 
 
+def _tum_projeler_izinli(yol: str, f: ast.FunctionDef | ast.AsyncFunctionDef | None) -> bool:
+    if yol.startswith(TUM_PROJELER_IZINLI):
+        return True
+    return f is not None and (yol, f.name) in TUM_PROJELER_IZINLI_FONKSIYON
+
+
 def ihlaller() -> list[str]:
     """Bugünkü tüm ihlal anahtarları (`yol:kural:imza`), kaynak sırasıyla."""
     tablo_re = _tablo_re(PLAN_KAPSAMLI | kapsamli_tablolar())
@@ -225,16 +242,22 @@ def ihlaller() -> list[str]:
         for metin in _metinler(agac, ebeveyn):
             if tablo_re.search(metin) and "project_id" not in metin:
                 sonuc.append(f"{yol}:sql:{_imza(metin)}")
+            if (
+                not yol.startswith(JOB_IZINLI)
+                and _JOB_RE.search(metin)
+                and _JOB_SUZGEC.search(metin.partition("WHERE")[2])
+                and "project_id" not in metin
+            ):
+                sonuc.append(f"{yol}:job:{_imza(metin)}")
 
         for d in ast.walk(agac):
             if isinstance(d, ast.Call):
                 ad = _ad(d.func)
                 # tum_projeler
-                if not yol.startswith(TUM_PROJELER_IZINLI) and any(
-                    k.arg == "tum_projeler" for k in d.keywords
-                ):
+                if any(k.arg == "tum_projeler" for k in d.keywords):
                     f = _kapsayan_fonksiyon(d, ebeveyn)
-                    sonuc.append(f"{yol}:tum_projeler:{f.name if f else '<modul>'}")
+                    if not _tum_projeler_izinli(yol, f):
+                        sonuc.append(f"{yol}:tum_projeler:{f.name if f else '<modul>'}")
                 # thread
                 if ad.split(".")[-1] in ("Thread", "ThreadPoolExecutor"):
                     f = _kapsayan_fonksiyon(d, ebeveyn)
@@ -252,12 +275,11 @@ def ihlaller() -> list[str]:
                     and _ENV_CAGRI.search(ad)
                 ):
                     sonuc.append(f"{yol}:env:{d.args[0].value}:{ad}")
-            elif isinstance(d, ast.Name | ast.Attribute) and not yol.startswith(
-                TUM_PROJELER_IZINLI
-            ):
+            elif isinstance(d, ast.Name | ast.Attribute):
                 if (d.id if isinstance(d, ast.Name) else d.attr) == "TUM_PROJELER":
                     f = _kapsayan_fonksiyon(d, ebeveyn)
-                    sonuc.append(f"{yol}:tum_projeler:{f.name if f else '<modul>'}")
+                    if not _tum_projeler_izinli(yol, f):
+                        sonuc.append(f"{yol}:tum_projeler:{f.name if f else '<modul>'}")
             elif isinstance(d, ast.Subscript) and not yol.startswith(ENV_IZINLI):
                 # os.environ["X"]
                 if (
@@ -382,6 +404,38 @@ def test_denetleyici_izinli_moduller(tmp_path: Path, monkeypatch: pytest.MonkeyP
         "    s.execution_options(tum_projeler=True)\n"
     )
     assert _tara(tmp_path, monkeypatch, "tp_core/proje/ayar.py", kod) == []
+
+
+def test_denetleyici_job(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    kod = (
+        "from sqlalchemy import text\n"
+        "def f():\n"
+        '    a = text("SELECT durum FROM job WHERE id = :j")\n'
+        "    b = text(\"SELECT count(*) FROM job WHERE tur = :t AND yuk->>'x' = :d\")\n"
+        '    c = text("SELECT 1 FROM job WHERE tur = :t AND project_id = :pid")\n'
+        '    d = text("SELECT 1 FROM job WHERE idempotency_key = :k")\n'
+        '    e = text("UPDATE job SET yuk = :y WHERE id = :i")\n'
+    )
+    yol = "tp_core/features/demo/j.py"
+    assert sorted(_tara(tmp_path, monkeypatch, yol, kod)) == sorted(
+        [
+            f"{yol}:job:SELECT count(*) FROM job WHERE tur = :t AND yuk->>'x' = :d",
+            f"{yol}:job:SELECT 1 FROM job WHERE idempotency_key = :k",
+        ]
+    )
+    (tmp_path / yol).unlink()
+    assert _tara(tmp_path, monkeypatch, "tp_core/workflow/jobs.py", kod) == []
+
+
+def test_denetleyici_fonksiyon_muafiyeti(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    kod = (
+        "def eski_oturumlari_iptal_et(s):\n"
+        "    s.execution_options(tum_projeler=True)\n"
+        "def baska(s):\n"
+        "    s.execution_options(tum_projeler=True)\n"
+    )
+    yol = "tp_core/auth/aiprobe.py"
+    assert _tara(tmp_path, monkeypatch, yol, kod) == [f"{yol}:tum_projeler:baska"]
 
 
 def test_sahiplik() -> None:

@@ -535,10 +535,10 @@ def _sahibi_calisiyor(session: Session, cid: uuid.UUID, job_id: uuid.UUID | None
     return bool(
         session.execute(
             text(
-                "SELECT 1 FROM job WHERE tur = :t AND durum = 'running' "
+                "SELECT 1 FROM job WHERE tur = :t AND project_id = :pid AND durum = 'running' "
                 "AND id IS DISTINCT FROM :j AND (yuk -> 'case_ids') @> CAST(:c AS jsonb) LIMIT 1"
             ),
-            {"t": PUBLISH_JOB, "j": job_id, "c": json.dumps([str(cid)])},
+            pid_param(t=PUBLISH_JOB, j=job_id, c=json.dumps([str(cid)])),
         ).first()
     )
 

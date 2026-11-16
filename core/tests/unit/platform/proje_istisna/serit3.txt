@@ -1,2 +1,3 @@
 # Şerit 3 proje kapsamı geçiş tabanı (TP-COK-PROJE-PLANI §2.4). Biçim: yol:kural:imza  # gerekçe
 # Yalnız küçülür: düzelttiğiniz ihlalin satırını silin. Yeni satır = gerekçeli kalıcı istisna (review).
+tp_core/integrations/forge_demo.py:job:SELECT id, tur FROM job WHERE tur IN (:a, :b) AND durum = 'running' OR  # kalıcı: tek demo web uygulamasını meşgul eden işler (hangi projeden olursa olsun) görünür olmalı

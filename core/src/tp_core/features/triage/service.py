@@ -2168,10 +2168,11 @@ def purge_sweep_jobs(engine: Engine, saklama: timedelta = timedelta(hours=1)) ->
         return (
             conn.execute(
                 text(
-                    "DELETE FROM job WHERE tur = :t AND durum IN ('done', 'failed', 'cancelled') "
+                    "DELETE FROM job WHERE tur = :t AND project_id = :pid "
+                    "AND durum IN ('done', 'failed', 'cancelled') "
                     "AND COALESCE(bitis, guncelleme) < now() - make_interval(secs => :sn)"
                 ),
-                {"t": JOB_SWEEP, "sn": saklama.total_seconds()},
+                pid_param(t=JOB_SWEEP, sn=saklama.total_seconds()),
             ).rowcount
             or 0
         )

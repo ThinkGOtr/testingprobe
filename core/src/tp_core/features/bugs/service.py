@@ -860,10 +860,10 @@ def _yayin_isi_bekliyor(s: Session, draft_id: uuid.UUID) -> bool:
     return bool(
         s.execute(
             text(
-                "SELECT 1 FROM job WHERE tur = :t AND durum IN ('queued', 'running', 'retry') "
-                "AND yuk ->> 'draft_id' = :d LIMIT 1"
+                "SELECT 1 FROM job WHERE tur = :t AND project_id = :pid "
+                "AND durum IN ('queued', 'running', 'retry') AND yuk ->> 'draft_id' = :d LIMIT 1"
             ),
-            {"t": PUBLISH_JOB, "d": str(draft_id)},
+            pid_param(t=PUBLISH_JOB, d=str(draft_id)),
         ).first()
     )
 
@@ -1316,10 +1316,10 @@ def _baska_is_calisiyor(s: Session, draft_id: uuid.UUID, job_id: uuid.UUID | Non
     return bool(
         s.execute(
             text(
-                "SELECT 1 FROM job WHERE tur = :t AND durum = 'running' "
+                "SELECT 1 FROM job WHERE tur = :t AND project_id = :pid AND durum = 'running' "
                 "AND id IS DISTINCT FROM :j AND yuk ->> 'draft_id' = :d LIMIT 1"
             ),
-            {"t": PUBLISH_JOB, "d": str(draft_id), "j": job_id},
+            pid_param(t=PUBLISH_JOB, d=str(draft_id), j=job_id),
         ).first()
     )
 

@@ -293,10 +293,10 @@ def _isler(session: Session, kosu_id: uuid.UUID) -> list[Any]:
     return list(
         session.execute(
             text(
-                "SELECT id, durum, son_hata FROM job WHERE idempotency_key = ANY(:k) "
-                "ORDER BY olusturma, id"
+                "SELECT id, durum, son_hata FROM job WHERE project_id = :pid "
+                "AND idempotency_key = ANY(:k) ORDER BY olusturma, id"
             ),
-            {"k": is_anahtarlari(session, kosu_id)},
+            pid_param(k=is_anahtarlari(session, kosu_id)),
         ).all()
     )
 
@@ -344,10 +344,11 @@ def tarama_temizle(conn: Connection, saklama: timedelta = timedelta(hours=1)) ->
     return (
         conn.execute(
             text(
-                "DELETE FROM job WHERE tur = :t AND durum IN ('done', 'failed', 'cancelled') "
+                "DELETE FROM job WHERE tur = :t AND project_id = :pid "
+                "AND durum IN ('done', 'failed', 'cancelled') "
                 "AND COALESCE(bitis, guncelleme) < now() - make_interval(secs => :sn)"
             ),
-            {"t": JOB_TARAMA, "sn": saklama.total_seconds()},
+            pid_param(t=JOB_TARAMA, sn=saklama.total_seconds()),
         ).rowcount
         or 0
     )
