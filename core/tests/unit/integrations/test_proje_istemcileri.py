@@ -263,7 +263,7 @@ def test_toolchain_blogu_diger_proje(
 
 
 def test_toolchain_blogu_github_app_ayna_tokeni(
-    proje: Any, forge_kok: Path, monkeypatch: pytest.MonkeyPatch
+    proje: Any, proje_ayar: Any, forge_kok: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """GitHub App kipinde core-worker projenin kurulum token'ını blokta gönderir (ayna okuması);
     core-api'de (yetkisiz süreç) ve token kipinde gönderilmez."""
@@ -277,6 +277,7 @@ def test_toolchain_blogu_github_app_ayna_tokeni(
     assert "remote_token" not in istemciler.toolchain_proje_blogu()  # core-api
     monkeypatch.setenv("TP_BAGLANTI_TOKENI", "1")
     assert istemciler.toolchain_proje_blogu()["remote_token"] == "ghs_test-a"
+    proje_ayar(pid=B, TP_FORGE_REMOTE_URL="https://github.com/org/b.git")
     with proje_icinde(B):
         assert istemciler.toolchain_proje_blogu()["remote_token"] == f"ghs_{B}"
 
@@ -325,3 +326,49 @@ def test_forge_yolu_varsayilan_adla_cakisan_pid_reddedilir(monkeypatch):
         with pytest.raises(fy.GecersizProjeKimligi):
             fy._dogrula(kotu)
     assert fy._dogrula("ea7383844744") == "ea7383844744"
+
+
+def test_toolchain_blogu_ayna_tokeni_yalniz_github_hostuna(
+    proje: Any, proje_ayar: Any, forge_kok: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Projenin ayna adresi GitHub host'unda değilse (`TP_GITHUB_HOSTS`, varsayılan github.com)
+    kurulum token'ı blokta gönderilmez."""
+    monkeypatch.setattr(proje_ortami, "baglanti_kipi", lambda tur, pid=None: "app")
+    monkeypatch.setattr(
+        proje_ortami,
+        "token_al",
+        lambda tur, pid=None: baglanti.ErisimTokeni("app", f"ghs_{pid}", 9e9, None),
+    )
+    monkeypatch.setenv("TP_BAGLANTI_TOKENI", "1")
+    with proje_icinde(B):
+        assert "remote_token" not in istemciler.toolchain_proje_blogu()  # adres yok: çekme yok
+        proje_ayar(pid=B, TP_FORGE_REMOTE_URL="https://kotu.example.invalid/org/b.git")
+        assert "remote_token" not in istemciler.toolchain_proje_blogu()
+        proje_ayar(pid=B, TP_FORGE_REMOTE_URL="http://github.com/org/b.git")
+        assert "remote_token" not in istemciler.toolchain_proje_blogu()
+        proje_ayar(pid=B, TP_FORGE_REMOTE_URL="https://github.com/org/b.git")
+        assert istemciler.toolchain_proje_blogu()["remote_token"] == f"ghs_{B}"
+        monkeypatch.setenv("TP_GITHUB_HOSTS", "ghe.example.invalid")
+        assert "remote_token" not in istemciler.toolchain_proje_blogu()
+        proje_ayar(pid=B, TP_FORGE_REMOTE_URL="https://ghe.example.invalid/org/b.git")
+        assert istemciler.toolchain_proje_blogu()["remote_token"] == f"ghs_{B}"
+
+
+def test_ortam_alanlari_yalniz_web_projesinde_zorunlu(
+    proje: Any, forge_kok: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Yalnız mobil / AI agent projesinde (`web` kapalı) eksik BASE_URL/DEMO_API_URL 409 vermez."""
+    from tp_core.api.errors import ProjeAyariEksik
+    from tp_core.home_config import durum
+
+    acik = {"web": True}
+    monkeypatch.setattr(durum, "ozellik_acik", lambda ad, pid=None: acik.get(ad, True))
+    with proje_icinde(B):
+        blok = istemciler.toolchain_proje_blogu()
+        assert toolchain_blogu.eksik_alanlar(blok) == ["BASE_URL", "DEMO_API_URL"]
+        with pytest.raises(ProjeAyariEksik):
+            toolchain_blogu.ortam_gerekli()
+        acik["web"] = False
+        assert toolchain_blogu.eksik_alanlar(blok) == []
+        assert toolchain_blogu.ortam_denetle(blok) is blok
+        toolchain_blogu.ortam_gerekli()

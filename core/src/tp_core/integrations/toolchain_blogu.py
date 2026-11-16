@@ -23,7 +23,10 @@ kurulum token'ını `POST /v1/connections/access-token {project: pid, type: gith
 blokta gönderir (toolchain ayna çekmesinde env token'ının yerine kullanır, test-runner'a iletmez).
 Token yalnız bağlantı token'ı alma yetkisi olan süreçte (`TP_BAGLANTI_TOKENI=1`, core-worker)
 basılır; core-api'de ya da Home erişilemezse alan gönderilmez (uyarı loglanır). Token kipinde alan
-yoktur (bugünkü davranış: toolchain env'i).
+yoktur (bugünkü davranış: toolchain env'i). Blokta `remote_url` varsa token yalnız o adres https
+ve GitHub host'undaysa gönderilir: izinli host'lar `TP_GITHUB_HOSTS` (D, virgüllü; varsayılan
+`github.com`). Proje config'i aynayı başka host'a çevirirse token oraya gitmez; toolchain de aynı
+kuralı (env adresi ve env token'ı dahil) uygular (`toolchain_common/proje.py:token_gonderilir_mi`).
 
 Proje config adları toolchain'in env adlarıdır (`BASE_URL`, `DEMO_API_URL`, `TP_PROBE_USER`,
 `TP_PROBE_PASSWORD`, `TP_RUN_DEALERS`, `TP_E2E_ROOT`, `TP_FORGE_REMOTE_URL`,
@@ -37,6 +40,7 @@ import json
 import logging
 import os
 from typing import Any
+from urllib.parse import urlsplit
 
 from tp_core.integrations import forge_yollari, proje_ortami
 from tp_core.integrations.proje_ortami import APP_ALANLARI, PLATFORMLAR, pid_coz
@@ -46,6 +50,8 @@ from tp_core.proje.baglam import varsayilan_pid
 log = logging.getLogger(__name__)
 
 APP_MCP_BASLIGI = "X-TP-App"
+GITHUB_HOSTS_ENV = "TP_GITHUB_HOSTS"  # D: ayna token'ının gönderilebileceği host'lar (virgüllü)
+VARSAYILAN_GITHUB_HOSTS = ("github.com",)
 
 # blok alanı → proje config adı (metin alanları)
 METIN_ALANLARI: dict[str, str] = {
@@ -102,8 +108,40 @@ def proje_blogu(pid: str | None = None) -> dict[str, Any]:
     if app := _app(p, varsayilan):
         blok["app"] = app
     if token := _uzak_token(p):
-        blok["remote_token"] = token
+        # Blokta adres yoksa (varsayılan proje, env'le aynı) toolchain kendi env adresini kullanır
+        # ve aynı host kuralını orada uygular.
+        if "remote_url" not in blok or github_adresi_mi(blok["remote_url"]):
+            blok["remote_token"] = token
+        else:
+            log.warning(
+                "ayna token'ı gönderilmedi (%s): ayna adresi izinli GitHub host'unda değil", p
+            )
     return blok
+
+
+def github_hostlari() -> frozenset[str]:
+    """Ayna token'ının gönderilebileceği host'lar (`TP_GITHUB_HOSTS`, yoksa `github.com`)."""
+    ham = os.environ.get(GITHUB_HOSTS_ENV) or ""
+    hostlar = {h.strip().lower().rstrip(".") for h in ham.split(",") if h.strip()}
+    return frozenset(hostlar or VARSAYILAN_GITHUB_HOSTS)
+
+
+def github_adresi_mi(adres: str | None) -> bool:
+    """`adres` https ve host'u izinli GitHub host'u mu (kullanıcı bilgisi / port olmadan)?"""
+    if not adres:
+        return False
+    try:
+        parca = urlsplit(adres.strip())
+        port = parca.port
+    except ValueError:
+        return False
+    host = (parca.hostname or "").lower().rstrip(".")
+    return (
+        parca.scheme == "https"
+        and not parca.username
+        and port in (None, 443)
+        and host in github_hostlari()
+    )
 
 
 def _uzak_token(pid: str) -> str | None:
@@ -120,8 +158,17 @@ def _uzak_token(pid: str) -> str | None:
 
 
 def eksik_alanlar(blok: dict[str, Any]) -> list[str]:
-    """Varsayılan dışı projede koşu için tanımsız ortam alanları (§4.5: 409 `proje_ayari_eksik`)."""
-    if blok.get("pid") == varsayilan_pid():
+    """Varsayılan dışı projede koşu için tanımsız ortam alanları (§4.5: 409 `proje_ayari_eksik`).
+
+    `BASE_URL`/`DEMO_API_URL` web uygulamasının adresleridir: yalnız `web` özelliği açık projede
+    zorunludur (yalnız mobil / AI agent projesinin koşusu 409 almaz; web koşusu o projede zaten
+    `platform_gerekli("web")` ile kapalıdır)."""
+    pid = blok.get("pid")
+    if pid == varsayilan_pid():
+        return []
+    from tp_core.home_config import durum
+
+    if not durum.ozellik_acik("web", pid=pid):
         return []
     return [METIN_ALANLARI[a] for a in ORTAM_ALANLARI if not blok.get(a)]
 

@@ -249,3 +249,32 @@ def test_remote_token_ayna_cekmesinde_kullanilir(
     cfg = settings({**TAM_BLOK, "remote_token": "ghs_kurulum"})
     repos._fetch(cfg, "a" * 40)
     assert gorulen == ["ghs_kurulum"]
+
+
+def test_remote_token_yalniz_github_hostuna_gider(
+    kokler: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from toolchain_common.proje import token_gonderilir_mi
+
+    monkeypatch.setenv("TP_FORGE_REMOTE_TOKEN", "ortam-pat")
+    for adres in (
+        "https://baska.example.invalid/ornek/b.git",
+        "http://github.com/ornek/b.git",  # https değil
+        "https://github.com.example.invalid/ornek/b.git",
+        "https://x@github.com/ornek/b.git",  # kullanıcı bilgisi
+        "https://github.com:8443/ornek/b.git",
+    ):
+        assert not token_gonderilir_mi(adres), adres
+        blok = {**TAM_BLOK, "remote_url": adres}
+        # ne bloktaki token ne de ortamınki projenin seçtiği host'a gider
+        assert settings({**blok, "remote_token": "ghs_kurulum"}).forge_remote_token == ""
+        assert settings(blok).forge_remote_token == ""
+    assert token_gonderilir_mi("https://GitHub.com/ornek/b.git")
+    # TP_GITHUB_HOSTS (D) GitHub Enterprise host'unu ekler (listede yoksa github.com da düşer).
+    monkeypatch.setenv("TP_GITHUB_HOSTS", "ghe.example.invalid")
+    blok = {**TAM_BLOK, "remote_url": "https://ghe.example.invalid/ornek/b.git"}
+    assert settings({**blok, "remote_token": "ghs_kurulum"}).forge_remote_token == "ghs_kurulum"
+    assert settings(TAM_BLOK).forge_remote_token == ""
+    # Blok adres/token taşımıyorsa ortam çifti (kurulum ayarı) olduğu gibi kalır.
+    monkeypatch.setenv("TP_FORGE_REMOTE_URL", "https://forge.example.invalid/x.git")
+    assert settings({"pid": "p"}).forge_remote_token == "ortam-pat"

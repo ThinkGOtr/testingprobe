@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import dataclasses
+import logging
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from toolchain_common.proje import ProjeBlogu
+from toolchain_common.proje import ProjeBlogu, token_gonderilir_mi
+
+log = logging.getLogger(__name__)
 
 
 def _float(name: str, default: float) -> float:
@@ -159,6 +162,17 @@ def settings(proje: ProjeBlogu | Mapping[str, Any] | None = None) -> Settings:
         degisen["forge_remote_url"] = blok.remote_url
     if blok.remote_token:
         degisen["forge_remote_token"] = blok.remote_token
+    if blok.remote_url is not None or blok.remote_token:
+        # Proje bloğundan gelen adres/token: token yalnız GitHub host'una gider (env token'ı da
+        # projenin seçtiği başka bir host'a sızmasın).
+        adres = degisen.get("forge_remote_url", cfg.forge_remote_url)
+        if degisen.get("forge_remote_token", cfg.forge_remote_token) and not token_gonderilir_mi(
+            adres
+        ):
+            log.warning(
+                "ayna token'ı kullanılmadı (%s): adres izinli GitHub host'unda değil", blok.pid
+            )
+            degisen["forge_remote_token"] = ""
     if blok.base_url is not None:
         # Uygulama kökü hem koşu (BASE_URL) hem yoklama (DEMO_WEB_URL) için aynıdır.
         degisen["base_url"] = blok.base_url

@@ -16,6 +16,9 @@ toolchain ayrı dağıtılabilir).
   {type: github}`) basar ve burada iletir; ortamdaki `TP_FORGE_REMOTE_TOKEN`'ın yerine geçer.
   **test-runner'a iletilmez** (`TEST_RUNNER_HARIC`): test kodu koşan konteyner depo kimliği
   görmez.
+- Token (bloktaki ya da ortamdaki) yalnız ayna adresi https ve GitHub host'undaysa kullanılır
+  (`token_gonderilir_mi`; izinli host'lar `TP_GITHUB_HOSTS`, D, virgüllü; varsayılan `github.com`).
+  Proje bloğu aynayı başka host'a çevirirse token oraya gönderilmez.
 """
 
 from __future__ import annotations
@@ -24,6 +27,7 @@ import os
 import re
 from pathlib import PurePosixPath
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
@@ -33,6 +37,9 @@ _PS_RE = re.compile(r"['‘’‚‛\x00-\x1f\x7f]")
 
 # toolchain-worker'da kalan, test-runner'a iletilmeyen alanlar.
 TEST_RUNNER_HARIC = frozenset({"remote_token"})
+
+GITHUB_HOSTS_ENV = "TP_GITHUB_HOSTS"
+VARSAYILAN_GITHUB_HOSTS = ("github.com",)
 
 DEFAULT_FORGE_PATH = "/forge/demo-app.git"
 DEFAULT_MIRROR_PATH = "/forge-mirror/demo-app.git"
@@ -187,3 +194,28 @@ class ProjeBlogu(BaseModel):
         if self.app is None:
             return None
         return {p: a.ortam() for p, a in self.app.items()}
+
+
+def github_hostlari() -> frozenset[str]:
+    """Ayna token'ının gönderilebileceği host'lar (`TP_GITHUB_HOSTS`, yoksa `github.com`)."""
+    ham = os.environ.get(GITHUB_HOSTS_ENV) or ""
+    hostlar = {h.strip().lower().rstrip(".") for h in ham.split(",") if h.strip()}
+    return frozenset(hostlar or VARSAYILAN_GITHUB_HOSTS)
+
+
+def token_gonderilir_mi(adres: str | None) -> bool:
+    """Ayna adresi https ve izinli GitHub host'unda mı (kullanıcı bilgisi / özel port olmadan)?"""
+    if not adres:
+        return False
+    try:
+        parca = urlsplit(adres.strip())
+        port = parca.port
+    except ValueError:
+        return False
+    host = (parca.hostname or "").lower().rstrip(".")
+    return (
+        parca.scheme == "https"
+        and not parca.username
+        and port in (None, 443)
+        and host in github_hostlari()
+    )
