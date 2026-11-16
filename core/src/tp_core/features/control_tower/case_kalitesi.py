@@ -54,6 +54,7 @@ from tp_core.models import (
     Requirement,
     TestCase,
 )
+from tp_core.proje import mevcut_pid, pid_param
 
 REVIEW_MADDE: Final = 12
 DAGILIM: Final = (("0–49", 0, 50), ("50–69", 50, 70), ("70–84", 70, 85), ("85–100", 85, 101))
@@ -475,7 +476,11 @@ def case_kalitesi(session: Session, requirement_id: uuid.UUID | None = None) -> 
     icerik = dict.fromkeys(ICERIK_KARARLARI, 0)
     yon: dict[str, int] = defaultdict(int)
     for karar, y, n in session.execute(
-        text("SELECT karar, yon, count(*) FROM asistan_denetim GROUP BY karar, yon")
+        text(
+            "SELECT karar, yon, count(*) FROM asistan_denetim WHERE project_id = :pid "
+            "GROUP BY karar, yon"
+        ),
+        pid_param(),
     ).all():
         if karar in icerik:
             icerik[karar] += int(n)
@@ -550,40 +555,48 @@ def case_kalitesi(session: Session, requirement_id: uuid.UUID | None = None) -> 
 ONBELLEK_TTL_S: Final = 30.0
 _PARMAK_IZI_SQL: Final = text(
     "SELECT"
-    " (SELECT count(*) FROM test_case), (SELECT max(guncelleme) FROM test_case),"
-    " (SELECT count(*) FROM case_uretim), (SELECT max(olusturma) FROM case_uretim),"
-    " (SELECT count(*) FROM case_set_review), (SELECT max(guncelleme) FROM case_set_review),"
-    " (SELECT count(*) FROM case_set_audit), (SELECT max(guncelleme) FROM case_set_audit),"
-    " (SELECT count(*) FROM requirement), (SELECT max(guncelleme) FROM requirement),"
-    " (SELECT count(*) FROM asistan_denetim)"
+    " (SELECT count(*) FROM test_case WHERE project_id = :pid),"
+    " (SELECT max(guncelleme) FROM test_case WHERE project_id = :pid),"
+    " (SELECT count(*) FROM case_uretim WHERE project_id = :pid),"
+    " (SELECT max(olusturma) FROM case_uretim WHERE project_id = :pid),"
+    " (SELECT count(*) FROM case_set_review WHERE project_id = :pid),"
+    " (SELECT max(guncelleme) FROM case_set_review WHERE project_id = :pid),"
+    " (SELECT count(*) FROM case_set_audit WHERE project_id = :pid),"
+    " (SELECT max(guncelleme) FROM case_set_audit WHERE project_id = :pid),"
+    " (SELECT count(*) FROM requirement WHERE project_id = :pid),"
+    " (SELECT max(guncelleme) FROM requirement WHERE project_id = :pid),"
+    " (SELECT count(*) FROM asistan_denetim WHERE project_id = :pid)"
 )
-_onbellek: dict[uuid.UUID | None, tuple[float, tuple[Any, ...], dict[str, Any]]] = {}
-_kilitler: dict[uuid.UUID | None, threading.Lock] = defaultdict(threading.Lock)
+# Anahtar (proje, gereksinim filtresi): bir projenin sonucu başka projeye dönmesin.
+_Anahtar = tuple[str, uuid.UUID | None]
+_onbellek: dict[_Anahtar, tuple[float, tuple[Any, ...], dict[str, Any]]] = {}
+_kilitler: dict[_Anahtar, threading.Lock] = defaultdict(threading.Lock)
 _kilitler_kilidi = threading.Lock()
 
 
 def _parmak_izi(session: Session) -> tuple[Any, ...]:
-    return tuple(session.execute(_PARMAK_IZI_SQL).one())
+    return tuple(session.execute(_PARMAK_IZI_SQL, pid_param()).one())
 
 
 def case_kalitesi_onbellekli(
     session: Session, requirement_id: uuid.UUID | None = None
 ) -> dict[str, Any]:
     """`case_kalitesi` + kısa süreli önbellek (API ucu; sonuç kopyalanmaz, salt okunur)."""
+    anahtar: _Anahtar = (mevcut_pid(), requirement_id)
     with _kilitler_kilidi:
-        if requirement_id not in _kilitler and len(_kilitler) > 1024:
+        if anahtar not in _kilitler and len(_kilitler) > 1024:
             _kilitler.clear()
-        kilit = _kilitler[requirement_id]
+        kilit = _kilitler[anahtar]
     with kilit:
         iz = _parmak_izi(session)
-        kayit = _onbellek.get(requirement_id)
+        kayit = _onbellek.get(anahtar)
         simdi = time.monotonic()
         if kayit is not None and simdi - kayit[0] < ONBELLEK_TTL_S and kayit[1] == iz:
             return kayit[2]
         sonuc = case_kalitesi(session, requirement_id)
         if len(_onbellek) > 256:  # gereksinim filtresi başına bir kayıt; sınırsız büyümesin
             _onbellek.clear()
-        _onbellek[requirement_id] = (simdi, iz, sonuc)
+        _onbellek[anahtar] = (simdi, iz, sonuc)
         return sonuc
 
 

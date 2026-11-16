@@ -66,6 +66,7 @@ from tp_core.models import (
     session_scope,
 )
 from tp_core.ports import JiraPort, TestManagementPort
+from tp_core.proje import pid_param
 from tp_core.workflow.jobs import JobContext, PermanentJobError, enqueue
 from tp_core.workflow.service import (
     APPROVING,
@@ -534,10 +535,10 @@ def _sahibi_calisiyor(session: Session, cid: uuid.UUID, job_id: uuid.UUID | None
     return bool(
         session.execute(
             text(
-                "SELECT 1 FROM job WHERE tur = :t AND durum = 'running' "
+                "SELECT 1 FROM job WHERE tur = :t AND project_id = :pid AND durum = 'running' "
                 "AND id IS DISTINCT FROM :j AND (yuk -> 'case_ids') @> CAST(:c AS jsonb) LIMIT 1"
             ),
-            {"t": PUBLISH_JOB, "j": job_id, "c": json.dumps([str(cid)])},
+            pid_param(t=PUBLISH_JOB, j=job_id, c=json.dumps([str(cid)])),
         ).first()
     )
 
@@ -783,9 +784,10 @@ def _unanchored(session: Session, case_ids: Sequence[str]) -> set[str]:
             text(
                 "SELECT DISTINCT x FROM audit_event, "
                 "jsonb_array_elements_text(COALESCE(ozet -> 'case_ids', '[]'::jsonb)) AS x "
-                "WHERE eylem = 'publish.anchored' AND (ozet -> 'case_ids') ?| CAST(:ids AS text[])"
+                "WHERE project_id = :pid AND eylem = 'publish.anchored' "
+                "AND (ozet -> 'case_ids') ?| CAST(:ids AS text[])"
             ),
-            {"ids": list(case_ids)},
+            pid_param(ids=list(case_ids)),
         ).scalars()
     )
     return {c for c in case_ids if c not in sabit}

@@ -11,6 +11,8 @@ from typing import Any
 
 import httpx
 
+from tp_core.features.ci.projeler import toolchain_govdesi, toolchain_projesi
+
 SYMBOLS_TIMEOUT_S = 120.0
 PROBE_TIMEOUT_S = 90.0
 AST_TIMEOUT_S = 120.0
@@ -51,6 +53,7 @@ class RepairToolchain:
         self.close()
 
     def _post(self, yol: str, govde: dict[str, Any], timeout: float) -> dict[str, Any]:
+        govde = toolchain_govdesi(yol, govde)
         try:
             resp = self._http.post(yol, json=govde, timeout=timeout)
         except httpx.HTTPError as exc:
@@ -146,7 +149,7 @@ class RepairToolchain:
             "keep": True,
         }
         govde.update(_dil_alanlari(platform, lang))
-        return self._post("/check", govde, self.check_timeout_s)
+        return self._post("/check", toolchain_projesi(govde), self.check_timeout_s)
 
 
 def _dil_alanlari(platform: str | None, lang: str | None) -> dict[str, str]:

@@ -20,30 +20,31 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, ForeignKey, Index, false
+from sqlalchemy import Boolean, ForeignKey, Index, UniqueConstraint, false
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from tp_core.models.base import Base, in_check, olusturma_col
+from tp_core.models.base import Base, ProjeKapsamli, in_check, olusturma_col
 from tp_core.models.requirements import EMPTY_LIST, EMPTY_OBJ
 
 TRIAGE_KAYNAK = frozenset({"ci", "codegen", "kirma"})
 TRIAGE_KOSU_DURUM = frozenset({"done", "skipped"})
 
 
-class FailureEk(Base):
+class FailureEk(ProjeKapsamli, Base):
     """Triage sonucunun ek kaydı (failure ile 1:1)."""
 
     __tablename__ = "failure_ek"
     __table_args__ = (
         in_check("kaynak", TRIAGE_KAYNAK, "failure_ek_kaynak_ck"),
         Index("failure_ek_script_ix", "script_id"),
+        UniqueConstraint("project_id", "anahtar", name="failure_ek_proje_anahtar_uq"),
     )
 
     failure_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("failure.id", ondelete="CASCADE"), primary_key=True
     )
-    anahtar: Mapped[str] = mapped_column(unique=True)
+    anahtar: Mapped[str]
     kaynak: Mapped[str] = mapped_column(server_default="ci", default="ci")
     kirma: Mapped[bool] = mapped_column(Boolean, server_default=false(), default=False)
     script_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -67,7 +68,7 @@ class FailureEk(Base):
     olusturma: Mapped[datetime] = olusturma_col()
 
 
-class TriageKosu(Base):
+class TriageKosu(ProjeKapsamli, Base):
     """Koşu başına triage kaydı (süpürme ve idempotens)."""
 
     __tablename__ = "triage_kosu"

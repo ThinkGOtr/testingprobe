@@ -277,7 +277,7 @@ def test_jira_baglantisi_ayarlardan(monkeypatch: pytest.MonkeyPatch) -> None:
         for ad, v in env.items():
             monkeypatch.setenv(ad, v)
         get_jira_settings.cache_clear()
-        oneri.jira_baglantisi.cache_clear()
+        oneri._jira_baglantisi.cache_clear()
         return oneri.jira_baglantisi()
 
     try:
@@ -322,7 +322,7 @@ def test_jira_baglantisi_ayarlardan(monkeypatch: pytest.MonkeyPatch) -> None:
     finally:
         monkeypatch.undo()
         get_jira_settings.cache_clear()
-        oneri.jira_baglantisi.cache_clear()
+        oneri._jira_baglantisi.cache_clear()
 
 
 def _kural_ks(kid: str) -> oneri.Kural:

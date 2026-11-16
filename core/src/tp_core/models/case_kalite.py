@@ -20,14 +20,21 @@ from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from tp_core.models.base import Base, guncelleme_col, in_check, olusturma_col, uuid_pk
+from tp_core.models.base import (
+    Base,
+    ProjeKapsamli,
+    guncelleme_col,
+    in_check,
+    olusturma_col,
+    uuid_pk,
+)
 
 KALITE_DURUM = frozenset({"bekliyor", "tamamlandi", "hata"})
 DENETIM_KARARLARI = frozenset({"KABUL", "DÜZELTME_GEREKLİ", "ENGELLE"})
 DENETIM_KAYNAK = frozenset({"tp-gecit", "agent-probe", "sim"})
 
 
-class CaseSetReview(Base):
+class CaseSetReview(ProjeKapsamli, Base):
     """P8 review sonucu (gereksinim + set hash'i başına, en yenisi geçerli)."""
 
     __tablename__ = "case_set_review"
@@ -53,7 +60,7 @@ class CaseSetReview(Base):
     guncelleme: Mapped[datetime] = guncelleme_col()
 
 
-class CaseSetAudit(Base):
+class CaseSetAudit(ProjeKapsamli, Base):
     """P9 denetim kararı (gereksinim + set hash'i başına, en yenisi geçerli)."""
 
     __tablename__ = "case_set_audit"

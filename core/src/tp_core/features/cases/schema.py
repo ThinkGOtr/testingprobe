@@ -752,9 +752,9 @@ def rule_reask_enabled() -> bool:
     """Kural ihlalinde modelden düzeltme isteme (`Gateway.call(output_check=…)`) açık mı?
     `TP_KURAL_YENIDEN_ISTEME=off` ile kapatılır (birim testleri bilerek tutarsız sahte çıktı
     kullanır); varsayılan açık."""
-    import os
+    from tp_core.proje.ayar import ayar
 
-    return os.environ.get("TP_KURAL_YENIDEN_ISTEME", "on").strip().lower() != "off"
+    return (ayar("TP_KURAL_YENIDEN_ISTEME", "on") or "").strip().lower() != "off"
 
 
 def generation_output_problems(

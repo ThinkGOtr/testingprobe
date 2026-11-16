@@ -302,6 +302,7 @@ def test_cli_break_push_ci_kosusu_postgresde(
     from sqlalchemy.orm import Session
 
     from tp_core.models import Job, Run
+    from tp_core.proje import proje_icinde, varsayilan_pid
 
     env = {
         "TP_FORGE": "local",
@@ -311,7 +312,7 @@ def test_cli_break_push_ci_kosusu_postgresde(
     assert forge_demo.main(["break"], env=env, audit=FakeAudit()) == 0
     out = json.loads(capfdbinary.readouterr().out)
     assert out["ci_error"] is None and out["ci_run_id"].startswith("await-web:")
-    with Session(engine) as s:
+    with Session(engine) as s, proje_icinde(varsayilan_pid(), kaynak="test"):
         # CI hemen kuyruğa girmez: demo-app-web yeniden derlenmeden koşu `environment` olurdu.
         assert s.scalars(select(Run)).all() == []
         jobs = s.scalars(select(Job).where(Job.tur == "demo.await_web")).all()

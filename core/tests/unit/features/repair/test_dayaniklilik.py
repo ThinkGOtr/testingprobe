@@ -29,6 +29,7 @@ from tests.unit.features.repair.conftest import (
 from tp_core.features.repair import jobs as repair_jobs
 from tp_core.features.repair import service
 from tp_core.models import AuditEvent, Failure, Script, session_scope
+from tp_core.proje import baglamla
 from tp_core.workflow.jobs import REGISTRY, claim
 from tp_core.workflow.service import GateClosed
 
@@ -313,7 +314,7 @@ def test_kardeslere_eszamanli_istek_tek_onarim(
             with session_scope() as s2:
                 sonuc["b"] = service.request_fix(s2, b, muhendis)
 
-        t = threading.Thread(target=ikinci)
+        t = threading.Thread(target=baglamla(ikinci))  # proje bağlamı thread'e taşınır
         t.start()
         t.join(1.0)
         assert t.is_alive(), "ikinci istek kilitte beklemeliydi"

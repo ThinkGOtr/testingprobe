@@ -18,6 +18,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session
 
 from tp_core.db import get_engine
+from tp_core.features.ci.projeler import her_projede
 from tp_core.features.hata_kosusu import service
 from tp_core.workflow.jobs import UZUN_SERIT, JobContext, job_handler
 
@@ -48,7 +49,7 @@ def tarama(_ctx: JobContext) -> dict[str, Any]:
                 service.tarama_planla(conn)
 
 
-def on_worker_start(conn: Connection) -> None:
+def _acilis(conn: Connection) -> None:
     with Session(bind=conn, join_transaction_mode="rollback_only") as session:
         n = service.kurtar_hepsi(session)
         devam = service.suren_var(session)
@@ -57,3 +58,8 @@ def on_worker_start(conn: Connection) -> None:
         service.tarama_planla(conn, gecikme_s=0)
     if n:
         log.info("yarıda kalan %d ekilmiş hata koşusu kapatıldı", n)
+
+
+def on_worker_start(conn: Connection) -> None:
+    """Açılış işleri her aktif projede ayrı bağlamda (TP-COK-PROJE-PLANI §5.2)."""
+    her_projede(conn, _acilis)

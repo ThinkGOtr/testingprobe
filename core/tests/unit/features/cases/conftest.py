@@ -4,6 +4,8 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
+
 # Oracle gereksinim kontrolü birleştirme gecikmesi (run_after): testlerde işler hemen koşar.
 os.environ.setdefault("TP_ORACLE_BIRLESTIRME_S", "0")
 
@@ -22,3 +24,11 @@ from tests.unit.features.cases.helpers import (  # noqa: E402, F401  (pytest fik
     targets,
     worker,
 )
+
+
+@pytest.fixture(autouse=True)
+def _proje_baglami(proje: object) -> object:
+    """Çok proje (TP-COK-PROJE-PLANI §2.4): bu dizinin testleri `test-a` projesinin bağlamında
+    koşar; DB'li testlerde `sql_denetimi` proje kapsamlı ham SQL'i denetler. Bağlamsız davranışı
+    sınayan test kodu `contextvars.Context().run(...)` ile koşturur."""
+    return proje

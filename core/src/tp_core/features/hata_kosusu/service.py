@@ -74,7 +74,6 @@ from __future__ import annotations
 
 import copy
 import logging
-import os
 import time
 import uuid
 from collections.abc import Iterable, Mapping, Sequence
@@ -92,6 +91,7 @@ from tp_core.audit import audit_on_commit
 from tp_core.events.bus import publish_tx
 from tp_core.features.ci import services as ci_services
 from tp_core.features.ci.clients import ToolchainError, check_timeout_s
+from tp_core.features.ci.projeler import toolchain_projesi
 from tp_core.features.codegen.classify import classify, java_raporu_mu, test_error_kind
 from tp_core.features.hata_kosusu import katalog as kat
 from tp_core.features.hata_kosusu.hatalar import HataKosusuSuruyor
@@ -106,6 +106,8 @@ from tp_core.models import (
     session_scope,
 )
 from tp_core.models.codegen_feature import ScriptCodegen
+from tp_core.proje import pid_param
+from tp_core.proje.ayar import ayar
 from tp_core.workflow import jobs as jobq
 from tp_core.workflow.jobs import JobContext, PermanentJobError
 from tp_core.workflow.service import Principal, WorkflowError
@@ -172,7 +174,7 @@ def _oran(pay: int, payda: int) -> float | None:
 def gecerli_esik() -> float:
     """Kule ölçüsü için platform başına geçerli hata adımı alt oranı (varsayılan 0,5)."""
     try:
-        v = float(os.environ.get(GECERLI_ESIK_ENV) or GECERLI_ESIK)
+        v = float(ayar(GECERLI_ESIK_ENV) or GECERLI_ESIK)
     except ValueError:
         return GECERLI_ESIK
     return min(max(v, 0.0), 1.0)
@@ -291,10 +293,10 @@ def _isler(session: Session, kosu_id: uuid.UUID) -> list[Any]:
     return list(
         session.execute(
             text(
-                "SELECT id, durum, son_hata FROM job WHERE idempotency_key = ANY(:k) "
-                "ORDER BY olusturma, id"
+                "SELECT id, durum, son_hata FROM job WHERE project_id = :pid "
+                "AND idempotency_key = ANY(:k) ORDER BY olusturma, id"
             ),
-            {"k": is_anahtarlari(session, kosu_id)},
+            pid_param(k=is_anahtarlari(session, kosu_id)),
         ).all()
     )
 
@@ -326,8 +328,11 @@ def tarama_planla(conn: Connection, *, gecikme_s: float = TARAMA_S) -> uuid.UUID
     """Tarama işi kuyrukta yoksa ekler (tek bekleyen iş; `triage.sweep` gibi)."""
     jobq.idempotency_lock(conn, JOB_TARAMA)
     bekleyen = conn.execute(
-        text("SELECT id FROM job WHERE tur = :t AND durum IN ('queued', 'retry') LIMIT 1"),
-        {"t": JOB_TARAMA},
+        text(
+            "SELECT id FROM job WHERE project_id = :pid AND tur = :t "
+            "AND durum IN ('queued', 'retry') LIMIT 1"
+        ),
+        pid_param(t=JOB_TARAMA),
     ).scalar_one_or_none()
     if bekleyen is not None:
         return None
@@ -339,10 +344,11 @@ def tarama_temizle(conn: Connection, saklama: timedelta = timedelta(hours=1)) ->
     return (
         conn.execute(
             text(
-                "DELETE FROM job WHERE tur = :t AND durum IN ('done', 'failed', 'cancelled') "
+                "DELETE FROM job WHERE tur = :t AND project_id = :pid "
+                "AND durum IN ('done', 'failed', 'cancelled') "
                 "AND COALESCE(bitis, guncelleme) < now() - make_interval(secs => :sn)"
             ),
-            {"t": JOB_TARAMA, "sn": saklama.total_seconds()},
+            pid_param(t=JOB_TARAMA, sn=saklama.total_seconds()),
         ).rowcount
         or 0
     )
@@ -1438,7 +1444,7 @@ def _adim_kos(kosu_id: uuid.UUID, plan: _Plan) -> tuple[AdimSonucu, uuid.UUID | 
     report: Mapping[str, Any] | None = None
     hata: str | None = None
     try:
-        report = ci_services.toolchain().check(body)
+        report = ci_services.toolchain().check(toolchain_projesi(body))
     except ToolchainError as exc:
         hata = str(exc)
     sure_ms = int((time.monotonic() - t0) * 1000)

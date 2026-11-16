@@ -87,6 +87,10 @@ APP_ENV = {
     "TP_DEVICE_UDID": "DEVICE_UDID",
     "TP_PLATFORM_VERSION": "PLATFORM_VERSION",
 }
+# Projeye özgü (blokla değişen) uygulama kaynakları; geri kalanı cihaz havuzu (K2).
+APP_KAYNAKLARI = frozenset(
+    {"TP_APP_ID", "TP_APP_PATH", "TP_APP_ACTIVITY", "TP_APP_ARGS", "TP_APP_WORKDIR"}
+)
 PASS_ENV = ("PATH", "HOME", "LANG", "LC_ALL", "TZ", "TMPDIR", "JAVA_HOME")
 SUREFIRE_DIR = "surefire-reports"
 # OPS-O6: test-runner kapsayıcısı 3 GB sınırlıdır (Maven JVM + Surefire çatalı + Node sürücüsü +
@@ -104,16 +108,23 @@ def appium_url(platform: str) -> str:
     return os.environ.get(f"APPIUM_URL_{platform.upper()}", "").strip().rstrip("/")
 
 
-def app_settings(platform: str) -> dict[str, str]:
-    """Platformun uygulama/cihaz ayarları (e2e-app ortam adlarıyla)."""
+def app_settings(platform: str, cfg: Settings | None = None) -> dict[str, str]:
+    """Platformun uygulama/cihaz ayarları (e2e-app ortam adlarıyla).
+
+    Çok proje (§4.4, K2): istekteki `proje.app.<platform>` verildiyse uygulama ayarları
+    (APP_ID/PATH/ACTIVITY/ARGS/WORKDIR) YALNIZ bloktan gelir; cihaz ayarları her zaman ortamdan."""
     p = platform.upper()
+    blok = (getattr(cfg, "app_ayarlari", None) or {}).get(platform)
     out: dict[str, str] = {}
     for src, dst in APP_ENV.items():
-        val = os.environ.get(f"{src}_{p}", "").strip()
-        if not val and src == "TP_APP_ID":
-            val = DEFAULT_APP_ID.get(platform, "")
-        if not val and src == "TP_APP_ACTIVITY" and not os.environ.get(f"TP_APP_PATH_{p}"):
-            val = DEFAULT_APP_ACTIVITY.get(platform, "")
+        if blok is not None and src in APP_KAYNAKLARI:
+            val = (blok.get(dst) or "").strip()
+        else:
+            val = os.environ.get(f"{src}_{p}", "").strip()
+            if not val and src == "TP_APP_ID":
+                val = DEFAULT_APP_ID.get(platform, "")
+            if not val and src == "TP_APP_ACTIVITY" and not os.environ.get(f"TP_APP_PATH_{p}"):
+                val = DEFAULT_APP_ACTIVITY.get(platform, "")
         if val:
             out[dst] = val
     return out
@@ -250,7 +261,7 @@ def maven_env(
             }
         )
         return env
-    env.update(app_settings(platform))
+    env.update(app_settings(platform, cfg))
     env.update(
         {
             "MAVEN_SKIP_RC": "1",

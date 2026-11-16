@@ -2,6 +2,12 @@
 
 Bağlantı koparsa üstel geri çekilmeyle (≤ 10 sn) yeniden bağlanır. Her abone sınırlı bir kuyruğa
 sahiptir; yavaş abonede en eski olay düşürülür (diğer aboneler etkilenmez).
+
+Proje süzgeci (TP-COK-PROJE-PLANI §5.1): `subscribe(project_id)` ile açılan abone yalnız o
+projenin olaylarını ve açıkça kurulum geneli işaretli (`project_id == KURULUM`) olayları alır;
+başka projenin olayı da, projesi olmayan (`null`, işaretsiz) olay da kuyruğuna hiç girmez.
+`subscribe()` (proje yok) tüm olayları alır — yalnız proje bağlamı olmayan iç tüketiciler içindir;
+SSE akışı oturumun projesini vermelidir.
 """
 
 from __future__ import annotations
@@ -15,6 +21,7 @@ import psycopg
 from sqlalchemy.engine import make_url
 
 from tp_core.events.bus import CHANNEL, parse_payload
+from tp_core.proje.baglam import KURULUM
 
 log = logging.getLogger("tp_core.events")
 
@@ -30,7 +37,8 @@ class Broadcaster:
         self._dsn = dsn
         self._channel = channel
         self._queue_size = queue_size
-        self._subs: set[asyncio.Queue[dict[str, Any]]] = set()
+        # abone kuyruğu → süzgeç projesi (None = tüm olaylar)
+        self._subs: dict[asyncio.Queue[dict[str, Any]], str | None] = {}
         self._task: asyncio.Task[None] | None = None
         self._ready = asyncio.Event()
 
@@ -52,13 +60,13 @@ class Broadcaster:
             self._task = None
         self._ready.clear()
 
-    def subscribe(self) -> asyncio.Queue[dict[str, Any]]:
+    def subscribe(self, project_id: str | None = None) -> asyncio.Queue[dict[str, Any]]:
         q: asyncio.Queue[dict[str, Any]] = asyncio.Queue(self._queue_size)
-        self._subs.add(q)
+        self._subs[q] = project_id
         return q
 
     def unsubscribe(self, q: asyncio.Queue[dict[str, Any]]) -> None:
-        self._subs.discard(q)
+        self._subs.pop(q, None)
 
     def fanout(self, payload: str) -> None:
         try:
@@ -66,7 +74,12 @@ class Broadcaster:
         except ValueError:
             log.warning("geçersiz olay yükü atlandı")
             return
-        for q in list(self._subs):
+        olay_projesi = olay.get("project_id")
+        if olay_projesi is None:
+            log.warning("projesiz olay proje abonelerine iletilmedi: %s", olay.get("event"))
+        for q, proje in list(self._subs.items()):
+            if proje is not None and olay_projesi not in (proje, KURULUM):
+                continue
             if q.full():
                 with contextlib.suppress(asyncio.QueueEmpty):
                     q.get_nowait()

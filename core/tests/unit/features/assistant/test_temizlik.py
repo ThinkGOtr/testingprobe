@@ -31,8 +31,10 @@ def _sohbet(
     with engine.begin() as c:
         c.execute(
             text(
-                "INSERT INTO asistan_sohbet (id, kullanici_id, silindi, silinme, olusturma, "
-                "guncelleme) VALUES (:i, :k, :sil, CASE WHEN CAST(:sg AS int) IS NULL THEN NULL "
+                "INSERT INTO asistan_sohbet (project_id, id, kullanici_id, silindi, silinme, "
+                "olusturma, "
+                "guncelleme) VALUES ('test-a', :i, :k, :sil, CASE WHEN CAST(:sg AS int) IS NULL "
+                "THEN NULL "
                 "ELSE now() - make_interval(days => CAST(:sg AS int)) END, "
                 "now() - make_interval(days => :g), now() - make_interval(days => :g))"
             ),
@@ -56,8 +58,9 @@ def _mesaj(
     with engine.begin() as c:
         c.execute(
             text(
-                "INSERT INTO asistan_mesaj (id, sohbet_id, kullanici_id, sira, rol, durum, "
-                "ust_mesaj_id, amac, olusturma) VALUES (:i, :s, :k, :n, :r, :d, :u, :a, "
+                "INSERT INTO asistan_mesaj (project_id, id, sohbet_id, kullanici_id, sira, rol, "
+                "durum, "
+                "ust_mesaj_id, amac, olusturma) VALUES ('test-a', :i, :s, :k, :n, :r, :d, :u, :a, "
                 "now() - make_interval(days => :g))"
             ),
             {
@@ -78,7 +81,10 @@ def _mesaj(
 def _var(engine: Engine, tablo: str, kimlik: uuid.UUID) -> bool:
     with engine.connect() as c:
         return bool(
-            c.execute(text(f"SELECT count(*) FROM {tablo} WHERE id = :i"), {"i": kimlik}).scalar()
+            c.execute(
+                text(f"SELECT count(*) FROM {tablo} WHERE id = :i AND project_id = 'test-a'"),
+                {"i": kimlik},
+            ).scalar()
         )
 
 
@@ -153,8 +159,10 @@ def test_saklama_suresi_ve_kapsam(engine: Engine, make_user) -> None:
         for gun in (120, 10):
             c.execute(
                 text(
-                    "INSERT INTO asistan_oneri_geri_bildirim (id, kullanici_id, kural_id, deger, "
-                    "olusturma) VALUES (:i, :k, 'r', -1, now() - make_interval(days => :g))"
+                    "INSERT INTO asistan_oneri_geri_bildirim (project_id, id, kullanici_id, "
+                    "kural_id, deger, "
+                    "olusturma) VALUES ('test-a', :i, :k, 'r', -1, now() - make_interval(days => "
+                    ":g))"
                 ),
                 {"i": uuid.uuid4(), "k": u.id, "g": gun},
             )
@@ -176,8 +184,8 @@ def test_saklama_suresi_ve_kapsam(engine: Engine, make_user) -> None:
         ):
             isler[ad] = c.execute(
                 text(
-                    "INSERT INTO job (tur, yuk, durum, bitis, guncelleme) VALUES "
-                    "('assistant.answer', CAST(:y AS jsonb), :d, "
+                    "INSERT INTO job (project_id, tur, yuk, durum, bitis, guncelleme) VALUES "
+                    "('test-a', 'assistant.answer', CAST(:y AS jsonb), :d, "
                     "CASE WHEN :d = 'running' THEN NULL "
                     "ELSE now() - make_interval(days => :g) END, "
                     "now() - make_interval(days => :g)) RETURNING id"
@@ -188,8 +196,10 @@ def test_saklama_suresi_ve_kapsam(engine: Engine, make_user) -> None:
         for gun in (120, 10):
             c.execute(
                 text(
-                    "INSERT INTO asistan_guvenlik_olay (kullanici_id, tur, ciddi, zaman) "
-                    "VALUES (:k, 'sir_icerik', true, now() - make_interval(days => :g))"
+                    "INSERT INTO asistan_guvenlik_olay (project_id, kullanici_id, tur, ciddi, "
+                    "zaman) "
+                    "VALUES ('test-a', :k, 'sir_icerik', true, now() - "
+                    "make_interval(days => :g))"
                 ),
                 {"k": u.id, "g": gun},
             )
@@ -197,14 +207,15 @@ def test_saklama_suresi_ve_kapsam(engine: Engine, make_user) -> None:
         cid = uuid.uuid4()
         c.execute(
             text(
-                "INSERT INTO ai_call (id, amac, saglayici, model, mod, maliyet, olusturma) "
-                "VALUES (:i, 'assistant', 'anthropic', 'm', 'live', :m, "
+                "INSERT INTO ai_call (project_id, id, amac, saglayici, model, mod, maliyet, "
+                "olusturma) "
+                "VALUES ('test-a', :i, 'assistant', 'anthropic', 'm', 'live', :m, "
                 "now() - make_interval(days => 200))"
             ),
             {"i": cid, "m": Decimal("0.01")},
         )
-    ai_once = _say(engine, "SELECT count(*) FROM ai_call")
-    tool_once = _say(engine, "SELECT count(*) FROM tool_call")
+    ai_once = _say(engine, "SELECT count(*) FROM ai_call WHERE ai_call.project_id = 'test-a'")
+    tool_once = _say(engine, "SELECT count(*) FROM tool_call WHERE tool_call.project_id = 'test-a'")
 
     with Session(engine) as s, s.begin():
         sonuc = temizlik.temizle(s)
@@ -235,12 +246,31 @@ def test_saklama_suresi_ve_kapsam(engine: Engine, make_user) -> None:
     }
     assert _var(engine, "asistan_sohbet", bekleyen) and _var(engine, "asistan_mesaj", bekleyen_m)
     assert _var(engine, "asistan_sohbet", mesaji_yeni)
-    assert _say(engine, "SELECT count(*) FROM asistan_oneri_geri_bildirim") == 1
+    assert (
+        _say(
+            engine,
+            "SELECT count(*) FROM asistan_oneri_geri_bildirim WHERE "
+            "asistan_oneri_geri_bildirim.project_id = 'test-a'",
+        )
+        == 1
+    )
     assert _say(engine, "SELECT count(*) FROM asistan_hiz") == 1
-    assert _say(engine, "SELECT count(*) FROM asistan_guvenlik_olay") == 1
-    assert _say(engine, "SELECT count(*) FROM ai_call") == ai_once
+    assert (
+        _say(
+            engine,
+            "SELECT count(*) FROM asistan_guvenlik_olay WHERE asistan_guvenlik_olay.project_id = "
+            "'test-a'",
+        )
+        == 1
+    )
+    assert (
+        _say(engine, "SELECT count(*) FROM ai_call WHERE ai_call.project_id = 'test-a'") == ai_once
+    )
     assert _var(engine, "ai_call", cid)
-    assert _say(engine, "SELECT count(*) FROM tool_call") == tool_once
+    assert (
+        _say(engine, "SELECT count(*) FROM tool_call WHERE tool_call.project_id = 'test-a'")
+        == tool_once
+    )
 
 
 def test_iki_kademeli_zincirde_taze_torun_korunur(engine: Engine, make_user) -> None:
@@ -348,7 +378,8 @@ def test_is_kosar_ve_kendini_yeniden_planlar(engine: Engine, make_user) -> None:
         # Önceki koşudan kalmış, 2 gün önce bitmiş kayıt silinir.
         c.execute(
             text(
-                "INSERT INTO job (tur, yuk, durum, bitis) VALUES (:t, '{}'::jsonb, 'done', "
+                "INSERT INTO job (project_id, tur, yuk, durum, bitis) VALUES ('test-a', :t, "
+                "'{}'::jsonb, 'done', "
                 "now() - interval '2 days')"
             ),
             {"t": temizlik.TEMIZLIK_IS_TURU},

@@ -73,6 +73,7 @@ from tp_core.features.ci.parse import (
     surefire_ayristir,
     temiz,
 )
+from tp_core.features.ci.projeler import toolchain_projesi
 from tp_core.features.codegen import platform as platformlar
 from tp_core.models import (
     ExternalRef,
@@ -85,6 +86,8 @@ from tp_core.models import (
     TestResult,
 )
 from tp_core.models.ci_feature import CI_TETIK, CiTetik, RunAria, TestResultEk
+from tp_core.proje import kurulu_projeler, mevcut_pid, pid_param
+from tp_core.proje.ayar import ayar
 from tp_core.workflow import jobs as jobq
 
 log = logging.getLogger(__name__)
@@ -144,8 +147,17 @@ def _istanbul() -> Any:
 
 
 def _int_env(ad: str, varsayilan: int) -> int:
+    """Kurulum (D) zaman aşımları: süreç ortamı."""
     try:
         return int(float((os.environ.get(ad) or "").strip() or varsayilan))
+    except ValueError:
+        return varsayilan
+
+
+def _int_ayar(ad: str, varsayilan: int) -> int:
+    """Proje/ürün (T/P) sayısal ayarı: bağlamdaki projenin config'i (`ayar()`)."""
+    try:
+        return int(float((ayar(ad) or "").strip() or varsayilan))
     except ValueError:
         return varsayilan
 
@@ -990,7 +1002,7 @@ def _run_job(engine: Engine, run_id: uuid.UUID, *, deneme: int, son_deneme: bool
         **check_body_platformu(platform, dil),
     }
     try:
-        report = services.toolchain().check(body)
+        report = services.toolchain().check(toolchain_projesi(body))
     except ToolchainError as exc:
         if exc.gecici and not son_deneme:
             raise
@@ -1204,7 +1216,7 @@ ZAMAN_ASIMI_ORTAM = "TP_CI_KOSU_ZAMAN_ASIMI_S"
 def kosu_zaman_asimi_s() -> int | None:
     """`TP_CI_KOSU_ZAMAN_ASIMI_S` (sn; varsayılan 6 saat, en az 10 dk); `0`/`kapali` → kural kapalı.
     Geçersiz değer varsayılana düşer."""
-    ham = (os.environ.get(ZAMAN_ASIMI_ORTAM) or "").strip().lower()
+    ham = (ayar(ZAMAN_ASIMI_ORTAM) or "").strip().lower()
     if not ham:
         return ZAMAN_ASIMI_VARSAYILAN_S
     if ham in ("0", "kapali", "off"):
@@ -1261,8 +1273,13 @@ def plan_timeout_sweep(conn: Connection, simdi: datetime | None = None) -> uuid.
     (worker yeniden başlasa da tek zincir)."""
     if kosu_zaman_asimi_s() is None:
         return None
+    # Tarama proje başınadır (iş bağlamın projesinde koşar): bekleyen iş de o projede aranır.
     bekleyen = conn.execute(
-        select(Job.id).where(Job.tur == JOB_ZAMAN_ASIMI, Job.durum.in_(("queued", "retry")))
+        text(
+            "SELECT id FROM job WHERE project_id = :pid AND tur = :t "
+            "AND durum IN ('queued', 'retry') LIMIT 1"
+        ),
+        pid_param(t=JOB_ZAMAN_ASIMI),
     ).first()
     if bekleyen is not None:
         return None
@@ -1729,12 +1746,16 @@ def _github_yerel(
             log.exception("GitHub artefakt kopyaları budanamadı")
             silinen = []
         if silinen:
+            # Yerel kopya dizini kurulum diskinde ortaktır: budama her projenin koşusunu
+            # etkileyebilir → işaretleme kurulu tüm projelerde (açık pid listesiyle).
+            pidler = sorted({mevcut_pid(), *kurulu_projeler(session.connection())})
             session.execute(
                 text(
                     "UPDATE run SET artefaktlar = jsonb_set(artefaktlar, '{github_yerel,durum}', "
-                    "'\"budandi\"') WHERE artefaktlar->'github_yerel'->>'dizin' = ANY(:d)"
+                    "'\"budandi\"') WHERE project_id = ANY(:pidler) "
+                    "AND artefaktlar->'github_yerel'->>'dizin' = ANY(:d)"
                 ),
-                {"d": silinen},
+                {"d": silinen, "pidler": pidler},
             )
     return {k: v for k, v in sonuc.items() if k != "indirilen"}
 
@@ -1959,7 +1980,7 @@ def _bekle(
     # Gece koşusu da dispatch edilir (GitHub cron'u beklenmez): tüm tetiklerde aynı süre sınırı.
     # Dispatch'ten sonra koşu GitHub'da `TP_CI_GITHUB_BULMA_S` (varsayılan 1 saat) içinde
     # görünmezse beklemek anlamsızdır (iş akışı yok / dispatch kayboldu): koşu erken kapanır.
-    sinir = _int_env("TP_CI_GITHUB_TIMEOUT_S", 5400)
+    sinir = _int_ayar("TP_CI_GITHUB_TIMEOUT_S", 5400)
     bulma = _int_env("TP_CI_GITHUB_BULMA_S", 3600)
     gecen = services.now() - _zaman_capasi(run)
     if wr is None and (run.ortam or {}).get("dispatch") and gecen > timedelta(seconds=bulma):
@@ -2100,7 +2121,7 @@ def post_pr_comment(engine: Engine, run_id: uuid.UUID) -> str:
 
 
 def nightly_saati() -> time | None:
-    ham = (os.environ.get("TP_CI_NIGHTLY_SAAT") or "02:00").strip().lower()
+    ham = (ayar("TP_CI_NIGHTLY_SAAT") or "02:00").strip().lower()
     if ham in ("", "0", "kapali", "off", "none"):
         return None
     m = re.match(r"^(\d{1,2}):(\d{2})$", ham)
@@ -2137,7 +2158,7 @@ def plan_nightly(conn: Connection, simdi: datetime | None = None) -> uuid.UUID |
 
 def nightly_gecikme_siniri() -> timedelta:
     """Gece işi planlanan saatten bu kadar geç koşarsa koşu açılmaz (`TP_CI_NIGHTLY_GEC_S`)."""
-    return timedelta(seconds=_int_env("TP_CI_NIGHTLY_GEC_S", 3 * 3600))
+    return timedelta(seconds=_int_ayar("TP_CI_NIGHTLY_GEC_S", 3 * 3600))
 
 
 def _gece_plan_zamani(tarih: str) -> datetime | None:
@@ -2540,6 +2561,15 @@ def _github_gorunumu(a: Mapping[str, Any]) -> dict[str, Any] | None:
     return {**gh, "isler": isler}
 
 
+def kosu_projesi(session: Session, run_id: uuid.UUID) -> str | None:
+    """Koşunun projesi (oturumsuz imzalı artefakt bağlantısı için: imza tek koşuyu yetkilendirir,
+    bağlam koşunun projesinden kurulur). Koşu yoksa None."""
+    deger = session.execute(
+        text("SELECT project_id FROM run WHERE id = :id"), {"id": run_id}
+    ).scalar()
+    return str(deger) if deger is not None else None
+
+
 def artifact_dir(session: Session, run_id: uuid.UUID) -> Path | None:
     run = session.get(Run, run_id)
     if run is None:
@@ -2594,9 +2624,9 @@ def mark_pruned_runs(session: Session, *, en_cok: int = 500) -> int:
                     "UPDATE run SET artefaktlar = artefaktlar || jsonb_build_object("
                     "'dizin', NULL, 'budanan_dizin', CAST(:d AS text), "
                     "'artefakt_budandi', CAST(:z AS text)) "
-                    "WHERE id = :id AND artefaktlar->>'dizin' = :d"
+                    "WHERE project_id = :pid AND id = :id AND artefaktlar->>'dizin' = :d"
                 ),
-                {"id": run_id, "d": dizin, "z": zaman},
+                pid_param(id=run_id, d=dizin, z=zaman),
             ).rowcount
             or 0
         )

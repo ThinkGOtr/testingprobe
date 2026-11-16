@@ -33,11 +33,12 @@ def test_tp_app_triage_tablolarina_yazabilir(db: Db) -> None:
         c.execute("SELECT count(*) FROM failure_ek")
         c.execute("SELECT count(*) FROM triage_kosu")
         c.execute(
-            "INSERT INTO run (id, tetik) VALUES ('00000000-0000-0000-0000-000000000001', 'push')"
+            "INSERT INTO run (project_id, id, tetik) "
+            "VALUES ('test-a', '00000000-0000-0000-0000-000000000001', 'push')"
         )
         c.execute(
-            "INSERT INTO triage_kosu (run_id, durum) "
-            "VALUES ('00000000-0000-0000-0000-000000000001', 'done')"
+            "INSERT INTO triage_kosu (project_id, run_id, durum) "
+            "VALUES ('test-a', '00000000-0000-0000-0000-000000000001', 'done')"
         )
         c.execute("UPDATE triage_kosu SET neden = 'x'")
         c.execute("DELETE FROM triage_kosu")

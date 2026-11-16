@@ -2,11 +2,19 @@
 
 `DbSession` işlemi **yanıt gönderilmeden önce** commit eder (scope="function"): onay gibi kayıtlar
 commit edilemezse istemci başarı yanıtı almaz.
+
+Çok proje (TP-COK-PROJE-PLANI §2.1, §6.1): `current_user` oturumun seçili projesini ve o projedeki
+rolleri çözer (`Principal.project_id`, `Principal.roller`; `auth.proje_secimi`), `X-TP-Proje`
+tutarlılığını (409 `proje_degisti`) ve seçili projede rolü (403 `proje_rolu_yok`) denetler.
+`CurrentUser` (ve onu kullanan `yetki.izin(...)`) `kullanici_baglami` üzerinden isteğin geri
+kalanını `proje_icinde(pid, kaynak="oturum")` içinde koşturur: senkron bağımlılıklar thread
+havuzunda çözüldüğünden bağlam eşzamansız bir `yield` bağımlılığında kurulur (uç ve
+`DbSession`'ın commit'i — scope="function", bağlamdan önce kapanır — aynı bağlamı görür).
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, Response
@@ -21,6 +29,7 @@ from tp_core.auth.sessions import (
 from tp_core.auth.tokens import verify_bearer
 from tp_core.config import get_settings
 from tp_core.models import db_session
+from tp_core.proje import proje_icinde
 from tp_core.workflow.service import Principal
 
 DbSession = Annotated[Session, Depends(db_session, scope="function")]
@@ -58,12 +67,30 @@ def current_user(
         response.headers[DEGRADED_HEADER] = "1"
     request.state.oturum_external_uid = durum.external_uid
     request.state.oturum_durumu = durum
-    p = Principal(user.id, user.kullanici_adi, user.rol)
+    from tp_core.auth import proje_secimi  # döngü: proje_secimi → aiprobe → yetki → deps
+
+    pid = proje_secimi.oturum_projesi(user, durum.project_id, durum.external_uid is not None)
+    roller = proje_secimi.proje_rolleri(durum.external_uid, pid, durum.acr, user.rol)
+    p = Principal(user.id, user.kullanici_adi, user.rol, project_id=pid, roller=roller)
     request.state.principal = p
+    yol = request.url.path
+    proje_secimi.denetle(
+        yol, proje_secimi.istek_projesi(yol, request.headers, request.query_params), pid,
+        user.rol, roller,
+    )  # fmt: skip
     return p
 
 
-CurrentUser = Annotated[Principal, Depends(current_user)]
+async def kullanici_baglami(
+    user: Annotated[Principal, Depends(current_user)],
+) -> AsyncIterator[Principal]:
+    """Oturum kullanıcısı + isteğin geri kalanı için proje bağlamı (`kaynak="oturum"`)."""
+    assert user.project_id is not None
+    with proje_icinde(user.project_id, kaynak="oturum"):
+        yield user
+
+
+CurrentUser = Annotated[Principal, Depends(kullanici_baglami)]
 
 
 def require_role(*roller: str) -> Callable[[Principal], Principal]:
@@ -85,10 +112,11 @@ def require_role(*roller: str) -> Callable[[Principal], Principal]:
     return kontrol
 
 
-def require_token(kapsam: str) -> Callable[[Request, Session], Principal]:
-    """MCP kanalı: `Authorization: Bearer tpt_...` başlığındaki kapsamlı token'ı doğrular."""
+def require_token(kapsam: str) -> Callable[..., AsyncIterator[Principal]]:
+    """MCP kanalı: `Authorization: Bearer tpt_...` başlığındaki kapsamlı token'ı doğrular; istek
+    token'ın bağlı olduğu projenin bağlamında (`kaynak="token"`) sürer."""
 
-    def kontrol(request: Request, session: DbSession) -> Principal:
+    def dogrula(request: Request, session: DbSession) -> Principal:
         baslik = request.headers.get("authorization", "")
         tur, _, deger = baslik.partition(" ")
         p = verify_bearer(session, deger.strip() if tur.lower() == "bearer" else None, kapsam)
@@ -98,6 +126,15 @@ def require_token(kapsam: str) -> Callable[[Request, Session], Principal]:
             )
         request.state.principal = p
         return p
+
+    dogrula.__name__ = f"require_token_{kapsam}_dogrula"
+
+    # Varsayılan değerle (Annotated değil): `from __future__ import annotations` altında yerel
+    # `dogrula` adı dize ek açıklamadan çözülemez.
+    async def kontrol(p: Principal = Depends(dogrula)) -> AsyncIterator[Principal]:  # noqa: B008
+        assert p.project_id is not None
+        with proje_icinde(p.project_id, kaynak="token"):
+            yield p
 
     kontrol.__name__ = f"require_token_{kapsam}"
     return kontrol

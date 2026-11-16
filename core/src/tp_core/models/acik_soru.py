@@ -24,13 +24,20 @@ from datetime import datetime
 from sqlalchemy import ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from tp_core.models.base import Base, guncelleme_col, in_check, olusturma_col, uuid_pk
+from tp_core.models.base import (
+    Base,
+    ProjeKapsamli,
+    guncelleme_col,
+    in_check,
+    olusturma_col,
+    uuid_pk,
+)
 
 ACIK_SORU_TUR = frozenset({"soru", "varsayim"})
 ACIK_SORU_DURUM = frozenset({"bekliyor", "gonderildi", "yanitlandi"})
 
 
-class AcikSoru(Base):
+class AcikSoru(ProjeKapsamli, Base):
     __tablename__ = "acik_soru"
     __table_args__ = (
         in_check("tur", ACIK_SORU_TUR, "acik_soru_tur_ck"),

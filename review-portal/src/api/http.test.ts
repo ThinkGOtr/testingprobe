@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api } from "./client";
-import { ApiError, BU_FAZDA_YOK, buFazdaYok, bulunamadi, GECERSIZ_KIMLIK, canliDerleme, detayOku, UC_YOK, cakismaMesaji, ICERIK_DEGISTI, kararCakismasi, istek, mockOturumuAyarla, mockUclari, ucuNormallestir, ucVar, yapilandir, yetenekleriAyristir, yetkisizOlunca } from "./http";
+import { ApiError, BU_FAZDA_YOK, buFazdaYok, bulunamadi, GECERSIZ_KIMLIK, canliDerleme, detayOku, UC_YOK, cakismaMesaji, ICERIK_DEGISTI, kararCakismasi, istek, mockOturumuAyarla, mockUclari, ucuNormallestir, ucVar, yapilandir, yetenekleriAyristir, yetkisizOlunca, PROJE_BASLIGI, PROJE_DEGISTI, PROJE_ROLU_YOK, projeBasliginiAyarla, projeBasliklari, projeHatasi, projeOlayinaAbone } from "./http";
+import { projeListesiUyarla } from "./uyumProje";
 
 function yanit(status: number, govde: unknown, json = true): Response {
   return new Response(json ? JSON.stringify(govde) : String(govde), {
@@ -370,5 +371,103 @@ describe("D5: kullanıcı metninde ortam değişkeni adı yok", () => {
     const e = new ApiError(429, "Bu gereksinim için son 24 saatte en çok 5 denetim yapılabilir. Sınır TP_DENETIM_GUNLUK ile ayarlanır.", { kod: "hiz_siniri" });
     expect(hataMesaji(e)).toBe("Bu gereksinim için son 24 saatte en çok 5 denetim yapılabilir.");
     expect(hataMesaji(new ApiError(429, "TP_X=3", { kod: "hiz_siniri" }))).toMatch(/çok fazla istek/);
+  });
+});
+
+describe("çok proje: X-TP-Proje başlığı ve proje hataları (TP-COK-PROJE-PLANI §2.2, §6.3)", () => {
+  afterEach(() => {
+    projeBasliginiAyarla(null);
+    vi.unstubAllGlobals();
+  });
+
+  function basliklar(f: ReturnType<typeof vi.fn>, i = 0): Record<string, string> {
+    return ((f.mock.calls[i] as [string, RequestInit])[1].headers ?? {}) as Record<string, string>;
+  }
+
+  it("seçili proje varken proje kapsamlı her isteğe başlığı ekler", async () => {
+    yapilandir({ mockZorunlu: false });
+    projeBasliginiAyarla("prj-web");
+    const f = vi.fn().mockImplementation(() => Promise.resolve(yanit(200, [])));
+    vi.stubGlobal("fetch", f);
+    await api.caseler();
+    await api.caseUret("r1").catch(() => undefined);
+    expect(basliklar(f, 0)[PROJE_BASLIGI]).toBe("prj-web");
+    expect(basliklar(f, 1)[PROJE_BASLIGI]).toBe("prj-web");
+  });
+
+  it("oturum ve proje seçim uçlarında (/auth/*, /projeler, /proje) başlık yok; proje yokken hiç yok", async () => {
+    yapilandir({ mockZorunlu: false });
+    projeBasliginiAyarla("prj-web");
+    const f = vi.fn().mockImplementation(() => Promise.resolve(yanit(200, { id: "u1", kullanici_adi: "a", rol: "analyst" })));
+    vi.stubGlobal("fetch", f);
+    await api.me();
+    await api.projeler();
+    await api.projeDegistir("prj-mobil");
+    projeBasliginiAyarla(null);
+    await api.caseler().catch(() => undefined);
+    for (let i = 0; i < 4; i++) expect(basliklar(f, i)[PROJE_BASLIGI]).toBeUndefined();
+    const [url, init] = f.mock.calls[2] as [string, RequestInit];
+    expect(url).toBe("/api/proje");
+    expect(init.method).toBe("PUT");
+    expect(JSON.parse(String(init.body))).toEqual({ pid: "prj-mobil" });
+    expect(projeBasliklari()).toEqual({});
+  });
+
+  it("409 proje_degisti: sabit ileti, dinleyiciye bildirilir, son hata deposuna yazılmaz", async () => {
+    yapilandir({ mockZorunlu: false });
+    projeBasliginiAyarla("prj-web");
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(() => Promise.resolve(yanit(409, { detail: "Proje değişti", kod: "proje_degisti" }))));
+    const olaylar: string[] = [];
+    const birak = projeOlayinaAbone((o) => olaylar.push(o));
+    const e = await api.caseUret("r1").catch((x: unknown) => x);
+    birak();
+    expect(e).toMatchObject({ status: 409, kod: "proje_degisti", detail: PROJE_DEGISTI });
+    expect(projeHatasi(e)).toBe("proje_degisti");
+    expect(olaylar).toEqual(["proje_degisti"]);
+  });
+
+  it("403 proje_rolu_yok bildirilir; PUT /proje hatası bağlam olayı değildir (seçicide gösterilir)", async () => {
+    yapilandir({ mockZorunlu: false });
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(() => Promise.resolve(yanit(403, { detail: "rol yok", kod: "proje_rolu_yok" }))));
+    const olaylar: string[] = [];
+    const birak = projeOlayinaAbone((o) => olaylar.push(o));
+    await expect(api.caseler()).rejects.toMatchObject({ status: 403, detail: PROJE_ROLU_YOK });
+    await expect(api.projeDegistir("prj-x")).rejects.toMatchObject({ status: 403, kod: "proje_rolu_yok" });
+    birak();
+    expect(olaylar).toEqual(["proje_rolu_yok"]);
+  });
+
+  it("GET /projeler yanıtı (sözleşme biçimi) portal biçimine çevrilir; enabled:false → null", async () => {
+    yapilandir({ mockZorunlu: false });
+    const govde = {
+      enabled: true,
+      projects: [
+        { pid: "p1", name: "Web", org_name: "Org", roles: ["analyst"] },
+        { pid: "p2", name: "Mobil", org_name: "Org", roles: ["analyst", "viewer"] },
+        { name: "kimliksiz" },
+      ],
+      active: { pid: "p2" },
+      role_labels: { viewer: { tr: "Görüntüleyici", en: "Viewer" } },
+    };
+    vi.stubGlobal("fetch", vi.fn().mockImplementationOnce(() => Promise.resolve(yanit(200, govde))).mockImplementationOnce(() => Promise.resolve(yanit(200, { enabled: false }))));
+    const l = await api.projeler();
+    expect(l).toEqual({
+      projeler: [
+        { pid: "p1", ad: "Web", kod: null, org_ad: "Org", roller: ["analyst"] },
+        { pid: "p2", ad: "Mobil", kod: null, org_ad: "Org", roller: ["analyst", "viewer"] },
+      ],
+      secili: "p2",
+      rolEtiketleri: { viewer: { tr: "Görüntüleyici", en: "Viewer" } },
+    });
+    expect(await api.projeler()).toBeNull();
+  });
+
+  it("plan biçimi ({projeler:[{pid,ad,org_ad,roller}], secili}) de kabul edilir; listede olmayan seçili null", () => {
+    expect(projeListesiUyarla({ projeler: [{ pid: "a", ad: "A", org_ad: "O", roller: ["po"], kod: "AA" }], secili: "a" })).toEqual({
+      projeler: [{ pid: "a", ad: "A", kod: "AA", org_ad: "O", roller: ["po"] }],
+      secili: "a",
+    });
+    expect(projeListesiUyarla([{ id: "b", name: "B", roles: [] }])?.secili).toBeNull();
+    expect(projeListesiUyarla("x")).toBeNull();
   });
 });

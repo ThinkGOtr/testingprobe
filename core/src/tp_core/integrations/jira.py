@@ -23,16 +23,16 @@ from __future__ import annotations
 import email.utils
 import logging
 import os
+import threading
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from functools import lru_cache
 from typing import Any
 from urllib.parse import quote, urlparse
 
 import httpx
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, PrivateAttr, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from tp_core.integrations.jira_adf import (
@@ -116,6 +116,34 @@ class JiraSettings(BaseSettings):
     # Ürünün bot accountId'leri (virgülle). Gerçek Jira yorum yazarının e-postasını çoğunlukla
     # gizler; asistan okuyucusu bot yorumunu bu kimliklerle tanır.
     jira_bot_account_ids: str = Field(default="", validation_alias="TP_JIRA_BOT_ACCOUNT_IDS")
+    # Ayarların ait olduğu proje (TP-COK-PROJE-PLANI §4.2): bağlantı kipi (OAuth) ve Home erişim
+    # token'ı bu projeninkidir. None = bağlamdaki proje (doğrudan `JiraSettings()` kuran testler).
+    _pid: str | None = PrivateAttr(default=None)
+
+    @classmethod
+    def proje_icin(cls, pid: str | None = None) -> JiraSettings:
+        """Projenin etkin config'inden ayarlar (`ProjeOrtami`): varsayılan projede env'e düşer,
+        diğer projelerde tanımsız proje ayarı alan varsayılanıdır (Bayi değeri sızmaz)."""
+        from tp_core.integrations.proje_ortami import ProjeOrtami
+
+        cfg = ProjeOrtami(pid)
+        degerler: dict[str, Any] = {}
+        for ad, alan in cls.model_fields.items():
+            takma = alan.validation_alias
+            if not isinstance(takma, str):
+                continue
+            deger = cfg.get(takma)
+            # Alan açıkça verilir (yoksa varsayılanı): BaseSettings süreç ortamına bakmaz.
+            degerler[ad] = deger if deger is not None else alan.default
+        s = cls.model_validate(degerler)
+        s._pid = cfg.pid
+        return s
+
+    @property
+    def pid(self) -> str:
+        from tp_core.integrations.proje_ortami import pid_coz
+
+        return pid_coz(self._pid)
 
     def role_account(self, rol: str) -> str:
         """``analist`` | ``po`` | ``muhendis`` | ``testci`` → accountId (geçersiz/boş → "")."""
@@ -131,7 +159,7 @@ class JiraSettings(BaseSettings):
             ids.add(self.jira_write_email.strip().lower())
         if self.is_simulator:
             ids.add(SIM_WRITE[0])
-        sahip = oauth_sahibi()
+        sahip = oauth_sahibi(self._pid)
         if sahip:
             ids.add(sahip.lower())
         return frozenset(ids)
@@ -141,7 +169,7 @@ class JiraSettings(BaseSettings):
         ids = {a.strip() for a in self.jira_po_account_ids.split(",") if a.strip()}
         if not ids and self.is_simulator:
             ids = set(SIM_PO_ACCOUNTS)
-        sahip = oauth_sahibi()
+        sahip = oauth_sahibi(self._pid)
         if sahip and sahip.lower() in {i.lower() for i in ids}:
             # OAuth kipinde ürünün yazma kimliği bağlantıyı yetkilendiren kişidir: PO olamaz
             # (görev ayrılığı). Liste düzeltilene dek o kişinin onayı sayılmaz.
@@ -181,27 +209,54 @@ class JiraSettings(BaseSettings):
         return host in ("jira-sim", "localhost", "127.0.0.1")
 
 
-def oauth_kipi() -> bool:
-    """Jira bağlantısı Atlassian OAuth (3LO) kipinde mi (Home etkin config, Config R1)?"""
-    from tp_core.home_config import baglanti
+def oauth_kipi(pid: str | None = None) -> bool:
+    """Projenin Jira bağlantısı Atlassian OAuth (3LO) kipinde mi (Home etkin config, Config R1)?"""
+    from tp_core.integrations import proje_ortami
 
-    return baglanti.jira_oauth_mu()
+    return proje_ortami.baglanti_kipi("jira", pid) == "oauth"
 
 
-def oauth_sahibi() -> str:
+def oauth_sahibi(pid: str | None = None) -> str:
     """OAuth kipinde bağlantıyı yetkilendiren kişinin accountId'si (Home bağlantı kartının
     `public.account_id`'si; yoksa ""). Ürünün Jira'daki yazma kimliği budur → bot sayılır."""
-    if not oauth_kipi():
+    if not oauth_kipi(pid):
         return ""
-    from tp_core.home_config import durum
+    from tp_core.integrations import proje_ortami
 
-    deger = str(durum.baglanti_public("jira").get("account_id") or "").strip()
+    deger = str(proje_ortami.baglanti_public("jira", pid).get("account_id") or "").strip()
     return deger if valid_account_id(deger) else ""
 
 
-@lru_cache
-def get_jira_settings() -> JiraSettings:
-    return JiraSettings()
+class _ProjeAyarOnbellegi:
+    """`get_jira_settings` önbelleği: anahtar `(pid, ayar.surum(pid))` — config etag'i değişince
+    yeniden kurulur. `cache_clear()` R1 `durum._onbellekleri_temizle` ve testler içindir."""
+
+    def __init__(self) -> None:
+        self._kilit = threading.Lock()
+        self._kayit: dict[str, tuple[str, JiraSettings]] = {}
+
+    def __call__(self, pid: str | None = None) -> JiraSettings:
+        from tp_core.integrations.proje_ortami import pid_coz
+        from tp_core.proje import ayar
+
+        p = pid_coz(pid)
+        surum = ayar.surum(p)
+        with self._kilit:
+            kayit = self._kayit.get(p)
+            if kayit is not None and kayit[0] == surum:
+                return kayit[1]
+        s = JiraSettings.proje_icin(p)
+        with self._kilit:
+            self._kayit[p] = (surum, s)
+        return s
+
+    def cache_clear(self) -> None:
+        with self._kilit:
+            self._kayit.clear()
+
+
+get_jira_settings = _ProjeAyarOnbellegi()
+"""Bağlamdaki (ya da verilen) projenin Jira ayarları."""
 
 
 # ------------------------------------------------------------------------- hatalar
@@ -911,17 +966,20 @@ def _auth(a: tuple[str, str] | httpx.Auth) -> httpx.Auth:
 
 
 def _oauth_istemci(s: JiraSettings) -> tuple[str, httpx.Auth, str | None]:
-    """OAuth kipinde (taban URL, Bearer kimliği, gezinme adresi). Token yalnız core-worker'da
-    alınabilir (`home_config.baglanti`); alınamazsa `JiraConfigError`."""
-    from tp_core.home_config import baglanti, durum
+    """OAuth kipinde (taban URL, Bearer kimliği, gezinme adresi) — ayarların projesinin
+    bağlantısı. Token yalnız core-worker'da alınabilir (`home_config.baglanti`); alınamazsa
+    `JiraConfigError`."""
+    from tp_core.home_config import baglanti
+    from tp_core.integrations import proje_ortami
 
+    pid = s.pid
     try:
-        tok = baglanti.token_al("jira")
+        tok = proje_ortami.token_al("jira", pid)
     except baglanti.BaglantiHatasi as exc:
         raise JiraConfigError(f"Jira OAuth bağlantısı kullanılamıyor: {exc}") from exc
     assert tok.base_url is not None  # istemci doğruladı
-    site = str(durum.baglanti_public("jira").get("site_url") or "").strip() or None
-    return tok.base_url, baglanti.HomeJiraAuth(), s.jira_browse_url or site
+    site = str(proje_ortami.baglanti_public("jira", pid).get("site_url") or "").strip() or None
+    return tok.base_url, proje_ortami.ProjeJiraAuth(pid), s.jira_browse_url or site
 
 
 def _creds(
@@ -939,7 +997,7 @@ def _creds(
 def get_jira(settings: JiraSettings | None = None, *, http: httpx.Client | None = None) -> RestJira:
     """Ayarlardan ``RestJira`` kurar. Simülatör adresinde kimlik verilmemişse sim kullanıcıları."""
     s = settings or get_jira_settings()
-    if oauth_kipi():
+    if oauth_kipi(s.pid):
         taban, kimlik, gezinme = _oauth_istemci(s)
         return RestJira(
             taban, kimlik, kimlik, http=http, timeout_s=s.jira_timeout_s, browse_url=gezinme,
@@ -1274,7 +1332,7 @@ def get_jira_okuma(
     s = settings or get_jira_settings()
     taban, browse = s.jira_base_url, s.jira_browse_url
     read: tuple[str, str] | httpx.Auth | None
-    if oauth_kipi():
+    if oauth_kipi(s.pid):
         # OAuth'ta ayrı okuma hesabı yoktur: en az yetki sınıf (yazma yöntemi yok) ve taşıyıcı
         # (yalnız GET) katmanlarıyla korunur; "okuma hesabının yazma izni yok" katmanı kalkar.
         taban, read, browse = _oauth_istemci(s)

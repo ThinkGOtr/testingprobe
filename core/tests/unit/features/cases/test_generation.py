@@ -99,7 +99,16 @@ def test_replay_ile_uctan_uca_uretim(
         ai = s.scalars(select(AiCall).where(AiCall.amac == "case_generation")).all()
         assert {a.mod for a in s.scalars(select(AiCall))} == {"replay"} and len(ai) == 1
         assert s.scalar(select(Review.id).where(Review.nesne_turu == "test_case")) is None
-        wf = s.execute(text("SELECT durum FROM workflow_instance")).scalars().all()
+        wf = (
+            s.execute(
+                text(
+                    "SELECT durum FROM workflow_instance WHERE workflow_instance.project_id = "
+                    "'test-a'"
+                )
+            )
+            .scalars()
+            .all()
+        )
         assert wf == ["done"]
         girdi = json.dumps(ai[0].maskeli_girdi, ensure_ascii=False)
         assert '<untrusted kind=\\"jira\\" source=\\"jira:TPD-4\\"' in girdi

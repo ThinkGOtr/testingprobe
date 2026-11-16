@@ -2,6 +2,9 @@
 
 import sys
 from pathlib import Path
+from typing import Any
+
+import pytest
 
 CORE = Path(__file__).resolve().parents[4]
 if str(CORE) not in sys.path:
@@ -19,3 +22,10 @@ from tests.unit.features.cases.helpers import (  # noqa: E402, F401  (pytest fik
     sim_transport,
     worker,
 )
+
+
+@pytest.fixture(autouse=True)
+def _proje_baglami(proje: Any) -> Any:
+    """Şeridin testleri varsayılan proje (`test-a`, `TP_HOME_PROJECT`) bağlamında koşar
+    (TP-COK-PROJE-PLANI §2.1, §7 Şerit 5)."""
+    return proje

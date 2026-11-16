@@ -62,6 +62,7 @@ from tp_core.models import (
     session_scope,
 )
 from tp_core.ports import ModelGateway
+from tp_core.proje import pid_param
 from tp_core.workflow.jobs import JobContext, PermanentJobError, enqueue, idempotency_lock
 
 CHECK_CASE_JOB = "oracle.check_case"
@@ -394,7 +395,10 @@ def _bos_anahtar(conn: Any, anahtar: str) -> tuple[str, uuid.UUID | None]:
     while True:
         idempotency_lock(conn, aday)
         satir = conn.execute(
-            text("SELECT id, durum, sonuc FROM job WHERE idempotency_key = :k"), {"k": aday}
+            text(
+                "SELECT id, durum, sonuc FROM job WHERE project_id = :pid AND idempotency_key = :k"
+            ),
+            pid_param(k=aday),
         ).first()
         if satir is None:
             return aday, None
@@ -409,9 +413,10 @@ def canli_is_var(session: Session, anahtar: str) -> bool:
     işlemden okunur; kapı varsa ikinci bağlantı açmaz — review 2 t2 N14 / mimari 19)."""
     for durum, sonuc in session.execute(
         text(
-            "SELECT durum, sonuc FROM job WHERE idempotency_key = :k OR idempotency_key LIKE :onek"
+            "SELECT durum, sonuc FROM job WHERE project_id = :pid "
+            "AND (idempotency_key = :k OR idempotency_key LIKE :onek)"
         ),
-        {"k": anahtar, "onek": anahtar.replace("%", r"\%").replace("_", r"\_") + ":yeniden%"},
+        pid_param(k=anahtar, onek=anahtar.replace("%", r"\%").replace("_", r"\_") + ":yeniden%"),
     ).all():
         if not _anahtar_kullanilabilir_mi(durum, sonuc):
             return True
@@ -436,10 +441,10 @@ def _hiz_siniri(
     for alan, deger, sinir, ozne in sorgular:
         son = conn.execute(
             text(
-                f"SELECT count(*) FROM job WHERE tur = :t AND (yuk->>'{alan}') = :d "
-                "AND olusturma > now() - interval '1 minute'"
+                f"SELECT count(*) FROM job WHERE tur = :t AND project_id = :pid "
+                f"AND (yuk->>'{alan}') = :d AND olusturma > now() - interval '1 minute'"
             ),
-            {"t": CHECK_CASE_JOB, "d": deger},
+            pid_param(t=CHECK_CASE_JOB, d=deger),
         ).scalar_one()
         if son >= sinir:
             return (
@@ -521,10 +526,10 @@ def gereksinim_kontrolu_kuyruga_al(
     idempotency_lock(conn, f"{CHECK_REQUIREMENT_JOB}:birlestir:{requirement_id}")
     mevcut = conn.execute(
         text(
-            "SELECT id, yuk FROM job WHERE tur = :t AND durum = 'queued' "
+            "SELECT id, yuk FROM job WHERE tur = :t AND project_id = :pid AND durum = 'queued' "
             "AND yuk->>'requirement_id' = :r ORDER BY olusturma LIMIT 1 FOR UPDATE"
         ),
-        {"t": CHECK_REQUIREMENT_JOB, "r": str(requirement_id)},
+        pid_param(t=CHECK_REQUIREMENT_JOB, r=str(requirement_id)),
     ).first()
     if mevcut is not None:
         yuk = dict(mevcut.yuk or {})

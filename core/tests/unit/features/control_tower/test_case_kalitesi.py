@@ -127,21 +127,26 @@ def _asistan_denetim(engine: Engine, kullanici_id: uuid.UUID, kararlar: list[tup
     sohbet, mesaj = uuid.uuid4(), uuid.uuid4()
     with engine.begin() as c:
         c.execute(
-            text("INSERT INTO asistan_sohbet (id, kullanici_id) VALUES (:i, :k)"),
+            text(
+                "INSERT INTO asistan_sohbet "
+                "(project_id, id, kullanici_id) VALUES ('test-a', :i, :k)"
+            ),
             {"i": sohbet, "k": kullanici_id},
         )
         c.execute(
             text(
-                "INSERT INTO asistan_mesaj (id, sohbet_id, kullanici_id, sira, rol, durum) "
-                "VALUES (:i, :s, :k, 1, 'user', 'done')"
+                "INSERT INTO asistan_mesaj "
+                "(project_id, id, sohbet_id, kullanici_id, sira, rol, durum) "
+                "VALUES ('test-a', :i, :s, :k, 1, 'user', 'done')"
             ),
             {"i": mesaj, "s": sohbet, "k": kullanici_id},
         )
         for karar, yon in kararlar:
             c.execute(
                 text(
-                    "INSERT INTO asistan_denetim (mesaj_id, yon, puan, karar, kaynak) "
-                    "VALUES (:m, :y, 10, :k, 'sim')"
+                    "INSERT INTO asistan_denetim "
+                    "(project_id, mesaj_id, yon, puan, karar, kaynak) "
+                    "VALUES ('test-a', :m, :y, 10, :k, 'sim')"
                 ),
                 {"m": mesaj, "y": yon, "k": karar},
             )

@@ -190,7 +190,7 @@ def test_iki_pr_birinci_merge_ikincinin_dali_guncellenir_ve_yeni_onayla_merge(
     assert codegen.forge.get_pr(b.pr_no).head_sha == b.head_sha
     assert codegen.ci[-1] == {"sha": b.head_sha, "trigger": "pr", "pr_number": b.pr_no}
     with session_scope() as s:
-        assert s.get(PullRequest, b.pr_no).head_sha == b.head_sha
+        assert s.get(PullRequest, PullRequest.anahtar(b.pr_no)).head_sha == b.head_sha
     # Eski head'e verilen onay geçmez; yeni head'de CI yeşil olunca yeni onayla merge edilir.
     eski = api.post(
         f"/prs/{b.pr_no}/merge",
@@ -289,7 +289,7 @@ def test_review_reddet_sabit_taksonomi_ve_pr_kapanir(
     run_jobs(engine)
     assert codegen.forge.get_pr(a.pr_no).state == "closed"
     with session_scope() as s:
-        assert s.get(PullRequest, a.pr_no).durum == "closed"
+        assert s.get(PullRequest, PullRequest.anahtar(a.pr_no)).durum == "closed"
     # Kapanan PR'a merge/review yapılamaz; case için yeniden üretim açılabilir.
     r = api.post(f"/prs/{a.pr_no}/review", json={**govde, "ret_nedeni": "wrong_element"})
     assert r.status_code == 409

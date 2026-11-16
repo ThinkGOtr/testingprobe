@@ -11,17 +11,21 @@ Docker yoksa testler atlanır; `TP_TEST_REQUIRE_DB=1` ise atlamak yerine hata ve
 from __future__ import annotations
 
 import contextlib
+import contextvars
 import os
+import re
 import secrets
 import shutil
 import socket
 import subprocess
+import sys
 import threading
 import time
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import psycopg
 import pytest
@@ -282,3 +286,163 @@ def _jira_sim_onbellegi_temiz() -> None:
     from tp_core.features.otomasyon.ayarlar import sim_onbellegini_temizle
 
     sim_onbellegini_temizle()
+
+
+# ------------------------------------------------- çok proje (TP-COK-PROJE-PLANI §2.4, §7 Ş0)
+
+PROJE_A = "test-a"
+PROJE_B = "test-b"
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line(
+        "markers", "sql_denetimi_yok: proje kapsamı SQL yakalama denetimini bu testte kapat"
+    )
+
+
+def _projeleri_kaydet(request: pytest.FixtureRequest, pidler: tuple[str, ...]) -> None:
+    """DB'li testte projeleri `tp_proje`'ye kaydeder (DB'siz testte etkisiz)."""
+    if "db" not in request.fixturenames:
+        return
+    from tp_core.proje import proje_kaydet
+
+    eng: Engine = request.getfixturevalue("engine")
+    with eng.begin() as c:
+        for pid in pidler:
+            proje_kaydet(c, pid, kod=pid.upper(), ad=f"Test {pid}", kaynak="env")
+
+
+@pytest.fixture
+def _proje_ortami() -> Iterator[None]:
+    """`TP_HOME_PROJECT=test-a` — testin kendi `monkeypatch.undo()` çağrısı geri almasın diye ayrı
+    bir MonkeyPatch ile (aksi halde varsayılan proje test ortasında değişir, uçlar 404 döner)."""
+    mp = pytest.MonkeyPatch()
+    mp.setenv("TP_HOME_PROJECT", PROJE_A)
+    try:
+        yield
+    finally:
+        mp.undo()
+
+
+@pytest.fixture
+def proje(request: pytest.FixtureRequest, _proje_ortami: None) -> Iterator[Any]:
+    """`test-a` projesinin bağlamı (kaynak `test`); `TP_HOME_PROJECT=test-a` olduğundan
+    `ayar()` env'e düşer. DB'li testte proje `tp_proje`'ye de kaydedilir."""
+    from tp_core.proje import proje_icinde
+
+    _projeleri_kaydet(request, (PROJE_A,))
+    with proje_icinde(PROJE_A, kaynak="test") as b:
+        yield b
+
+
+@pytest.fixture
+def iki_proje(request: pytest.FixtureRequest, _proje_ortami: None) -> tuple[str, str]:
+    """`("test-a", "test-b")`; varsayılan proje A. Bağlam kurmaz: test her proje için
+    `proje_icinde(pid, kaynak="test")` ile aynı tohumu yazar ve okur."""
+    _projeleri_kaydet(request, (PROJE_A, PROJE_B))
+    return (PROJE_A, PROJE_B)
+
+
+@pytest.fixture
+def proje_ayar() -> Iterator[Any]:
+    """`proje_ayar(JIRA_PROJECT="X")` bağlamdaki (yoksa varsayılan) projeye ayar enjekte eder;
+    `proje_ayar(pid="test-b", ...)` başka projeye. `None` değer ayarı kaldırır. Test sonunda
+    temizlenir; istemci önbelleği sıfırlanır."""
+    from tp_core.proje import ayar, istemciler
+
+    def _ayarla(pid: str | None = None, **degerler: str | None) -> None:
+        ayar._ust_ayarla(pid if pid is not None else ayar._pid(None), degerler)
+        istemciler.sifirla()
+
+    yield _ayarla
+    ayar._ust_temizle()
+    istemciler.sifirla()
+
+
+_FLUSH_SURUYOR: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "tp_test_flush_suruyor", default=False
+)
+
+
+_KAYNAK_KOKU = str(Path(__file__).resolve().parents[2] / "src") + os.sep
+
+
+# ORM PK yüklemesi: `SELECT <sütunlar> FROM <t> WHERE <t>.id = %(pk_1)s` (tek tablo, tek PK koşulu).
+_PK_YUKLEME = re.compile(
+    r"^SELECT .+? FROM (\w+) WHERE \1\.id = %\(pk_1\)s(?:::UUID)?(?: FOR UPDATE)?$"
+)
+
+
+def _test_kodundan() -> bool:
+    """SQL'i doğrudan test kodu mu çalıştırdı? Denetim üretim kodunun (`src/`) SQL'i içindir; testin
+    kendi doğrulama sorguları (`SELECT … FROM run WHERE id = :i`) kapsam dışıdır. Çağrı yığınında
+    SQLAlchemy/sürücü dışındaki ilk çerçeve `src/` altında değilse test kodudur."""
+    f = sys._getframe(2)
+    while f is not None:
+        dosya = f.f_code.co_filename
+        if f"{os.sep}sqlalchemy{os.sep}" in dosya or f"{os.sep}psycopg{os.sep}" in dosya:
+            f = f.f_back
+            continue
+        return not dosya.startswith(_KAYNAK_KOKU)
+    return False
+
+
+@pytest.fixture(autouse=True)
+def sql_denetimi(request: pytest.FixtureRequest) -> Iterator[list[str]]:
+    """DB'li testlerde: proje bağlamı varken kapsamlı tabloya dokunan ve `project_id` içermeyen
+    her SQL testi düşürür. ORM flush DML'i (yüklenmiş nesnenin PK ile UPDATE/DELETE'i; yükleme
+    zaten korumalı) ve `tum_projeler=True` kaçışı muaf. `@pytest.mark.sql_denetimi_yok` kapatır."""
+    ihlaller: list[str] = []
+    if "db" not in request.fixturenames or request.node.get_closest_marker("sql_denetimi_yok"):
+        yield ihlaller
+        return
+    from sqlalchemy import event
+    from sqlalchemy.orm import Session as _Session
+
+    from tp_core.proje import varsa
+    from tp_core.proje.orm import TUM_PROJELER, kapsamli_tablolar
+
+    tablolar = kapsamli_tablolar()
+    if not tablolar:
+        yield ihlaller
+        return
+    adlar = "|".join(sorted(map(re.escape, tablolar), key=len, reverse=True))
+    desen = re.compile(rf"\b(?:FROM|JOIN|INTO|UPDATE)\s+\"?(?:{adlar})\b", re.IGNORECASE)
+
+    def _sql(conn: Any, cursor: Any, statement: str, params: Any, ctx: Any, many: bool) -> None:
+        if varsa() is None or _FLUSH_SURUYOR.get():
+            return
+        if _test_kodundan():
+            return
+        if _PK_YUKLEME.match(" ".join(statement.split())):
+            # ORM'in PK ile tek satır yüklemesi (`session.get`, süresi dolmuş/`onupdate` sütununun
+            # flush sonrası yenilenmesi): ORM süzgeci bunu bilerek atlar (`is_column_load`); satır
+            # zaten yüklüdür ve `load` koruyucusu başka projenin satırını `ProjeIhlali` ile düşürür.
+            return
+        if ctx is not None and ctx.execution_options.get(TUM_PROJELER):
+            return
+        if desen.search(statement) and "project_id" not in statement:
+            ihlaller.append(" ".join(statement.split())[:200])
+
+    def _flush_bas(*_a: Any) -> None:
+        _FLUSH_SURUYOR.set(True)
+
+    def _flush_bitti(*_a: Any) -> None:
+        _FLUSH_SURUYOR.set(False)
+
+    dinleyiciler = [
+        (Engine, "before_cursor_execute", _sql),
+        (_Session, "before_flush", _flush_bas),
+        (_Session, "after_flush_postexec", _flush_bitti),
+        (_Session, "after_rollback", _flush_bitti),
+    ]
+    for hedef, ad, fn in dinleyiciler:
+        event.listen(hedef, ad, fn)
+    try:
+        yield ihlaller
+    finally:
+        for hedef, ad, fn in dinleyiciler:
+            event.remove(hedef, ad, fn)
+        _FLUSH_SURUYOR.set(False)
+    if ihlaller:
+        pytest.fail("project_id içermeyen proje kapsamlı SQL:\n" + "\n".join(ihlaller))

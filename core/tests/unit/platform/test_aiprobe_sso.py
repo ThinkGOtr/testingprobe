@@ -993,8 +993,11 @@ def test_alembic_tek_bas() -> None:
     # 011: 0021 (script dili) → 0022 (PR zorunlu check'ler); 013: 0023 (asistan güvenlik olayı)
     # → 0030 (sprint otomasyonu); 012: 0031 (roller, S1) → 0032 (case ready, S2) → 0033 (eski
     # onay işareti, PO reddi); 012 kalite doğrulama: 0034 (ANALIZ §14.1); 011 test üretimi v3:
-    # 0035 (case_uretim) → … → 0042 (açık soru); Config R1: 0043 (oturum org/proje).
-    assert bas == ["0043"], f"birden çok Alembic başı: {bas} — 0019'u yeniden ebeveynleyin (T051)"
+    # 0035 (case_uretim) → … → 0042 (açık soru); Config R1: 0043 (oturum org/proje); çok proje:
+    # 0044 (proje kaydı) → 0045 (proje kapsamı). Baş numarası şeritlerle ilerler: tek baş yeter.
+    assert len(bas) == 1 and bas[0] >= "0044", (
+        f"birden çok Alembic başı: {bas} — 0019'u yeniden ebeveynleyin (T051)"
+    )
     assert script.get_revision("0019").down_revision == "0018"
     assert script.get_revision("0020").down_revision == "0019"
     assert script.get_revision("0021").down_revision == "0020"  # 011 script dili
@@ -1675,7 +1678,16 @@ def test_redeem_org_proje_oturumda_ve_me(
         assert me["ozellikler"]["android"] is True and me["ozellikler"]["ios"] is False
         assert me["ozellikler"]["ai_agent"] is False
         assert me["organizasyon"] == {"id": "0123456789ab", "ad": "Örnek Org"}
-        assert me["proje"] == {"id": "aaaabbbbcccc", "ad": "Örnek Proje", "kod": "ornek"}
+        # Çok proje biçimi `{pid, kod, ad}` (+ geriye uyum `id`).
+        assert me["proje"] == {
+            "pid": "aaaabbbbcccc", "id": "aaaabbbbcccc", "ad": "Örnek Proje", "kod": "ornek"
+        }  # fmt: skip
+        # Proje kipi (TP_HOME_PROJECT + aiprobe): seçili projedeki roller ve proje sayısı.
+        assert me["roller"] == [] and me["projeler_sayisi"] == 0 and me["izinler"] == []
+        home.projeler[UID] = [_proje(["tester"])]
+        aiprobe.PROJE_ROLLERI.temizle()
+        me = client.get("/auth/me").json()
+        assert me["roller"] == ["tester"] and me["projeler_sayisi"] == 1 and me["izinler"]
         # ai_agent kapalı: Agent Probe uçları yok.
         assert client.get("/agent-probe/products").status_code == 404
     finally:

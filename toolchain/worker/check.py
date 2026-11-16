@@ -61,6 +61,7 @@ import httpx
 
 from toolchain_common import appsha, gitforge, repos
 from toolchain_common.artifacts import atomic_write_json, checks_file
+from toolchain_common.proje import TEST_RUNNER_HARIC
 from toolchain_common.settings import Settings
 from worker import affected, static
 from worker import java as javayol
@@ -290,6 +291,13 @@ def _call_runner(
     cfg: Settings, body: dict[str, Any], client: httpx.Client | None
 ) -> dict[str, Any]:
     timeout = cfg.run_timeout_s + cfg.run_queue_wait_s + 60
+    if cfg.proje_blogu is not None:
+        # Çok proje (§4.4): test-runner aynı projenin forge/uygulama değerleriyle koşar.
+        # Uzak depo token'ı (`remote_token`) test-runner'a gitmez (test kodu kimlik görmez).
+        body = {
+            **body,
+            "proje": {k: v for k, v in cfg.proje_blogu.items() if k not in TEST_RUNNER_HARIC},
+        }
     http = client or httpx.Client(timeout=timeout)
     try:
         resp = http.post(f"{cfg.test_runner_url}/run", json=body, timeout=timeout)

@@ -69,6 +69,18 @@ is killed with its whole process group on expiry. Errors are `{"detail": "<Türk
 is 422, unknown commit 404, busy 409, forge unreadable 503. `sha` accepts a full/short hex sha or a
 safe ref name (`main`, `tp/case-…`); responses always carry the resolved full sha.
 
+**Multi-project `proje` block** (TP-COK-PROJE-PLANI §4.4; `toolchain_common/proje.py`):
+`/check`, `/symbols`, `/ast-guard`, `/locator-probe`, `/affected-tests` and test-runner `/run` accept
+an optional `proje: {pid, forge_path?, mirror_path?, remote_url?, base_url?, demo_api_url?,
+probe_user?, probe_password?, run_dealers?:[…], e2e_root?, app?: {android|ios|windows: {app_id?,
+path?, activity?, args?, workdir?}}}`. Given fields override the process environment for that
+request; absent fields (or no block) keep today's env values. `forge_path`/`mirror_path` must lie
+under the env forge/mirror root (`dirname TP_FORGE_PATH`, `dirname TP_FORGE_MIRROR_PATH`).
+`app.<platform>` replaces that platform's `TP_APP_*` entirely; devices (`APPIUM_URL_*`,
+`TP_DEVICE_*`) stay a shared env pool. `/check` forwards the block to `/run`. The run lock and
+`runs/<run_id>/` are unchanged (one queue for all projects). app-mcp takes the per-session app from
+the `x-tp-app` header (base64url JSON of the same `app` object) on `initialize`.
+
 ### toolchain-worker (:8100)
 
 **Auth:** every endpoint except `/health` requires `Authorization: Bearer $TP_TOOLCHAIN_TOKEN`

@@ -11,7 +11,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useNavigate } from "react-router-dom";
 import type { Kullanici } from "../api/types";
-import { useOturum } from "../auth";
+import { projeRolleri, useOturum } from "../auth";
 import { degistiriciyiYukle, type AiprobeSwitcher } from "../lib/degistirici";
 import { gezinti, useKimlikKipi } from "../lib/kimlikKipi";
 
@@ -37,7 +37,8 @@ export function degistiriciMe(k: Kullanici | null): Record<string, unknown> | nu
   return {
     ...(k.product ? { product: k.product } : {}),
     ...(k.products && Object.keys(k.products).length ? { products: k.products } : {}),
-    roles: k.roles ?? [k.rol],
+    // Çok proje: değiştiricideki roller seçili projenin rolleridir.
+    roles: projeRolleri(k),
     ...(k.ad_soyad ? { name: k.ad_soyad } : {}),
   };
 }
@@ -57,7 +58,7 @@ export function AiprobeDegistirici() {
     d.slot = "product-menu";
     return d;
   });
-  const rolDegistirVar = !!kullanici?.product && (kullanici.roles?.length ?? 0) > 1;
+  const rolDegistirVar = !!kullanici?.product && projeRolleri(kullanici).length > 1;
 
   const oturumVar = !!kullanici;
   useEffect(() => {

@@ -348,9 +348,17 @@ def kirik_hata(
             if var:
                 s.execute(
                     text(
-                        "INSERT INTO failure_ek (failure_id, anahtar, oneri) "
-                        "VALUES (:f, :a, CAST(:o AS jsonb))"
+                        "INSERT INTO failure_ek (project_id, failure_id, anahtar, oneri) "
+                        "VALUES ((SELECT project_id FROM failure WHERE id = :f), :f, :a, "
+                        "CAST(:o AS jsonb))"
                     ),
                     {"f": fid, "a": f"{rid}:{fid}", "o": json.dumps(oneri)},
                 )
     return fid
+
+
+@pytest.fixture(autouse=True)
+def _proje_baglami(proje: Any) -> Any:
+    """Şeridin testleri varsayılan proje (`test-a`, `TP_HOME_PROJECT`) bağlamında koşar
+    (TP-COK-PROJE-PLANI §2.1, §7 Şerit 5)."""
+    return proje

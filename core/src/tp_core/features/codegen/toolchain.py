@@ -28,6 +28,7 @@ from typing import Any
 
 import httpx
 
+from tp_core.features.ci.projeler import toolchain_govdesi, toolchain_projesi
 from tp_core.features.codegen import platform as platformlar
 
 
@@ -109,6 +110,7 @@ class ToolchainClient:
         self._http.close()
 
     def _post(self, path: str, body: dict[str, Any], timeout: float) -> dict[str, Any]:
+        body = toolchain_govdesi(path, body)
         try:
             resp = self._http.post(path, json=body, timeout=timeout)
         except httpx.HTTPError as exc:
@@ -194,4 +196,4 @@ class ToolchainClient:
             # Java yolu açıkça (`lang`) + sürücü/ortam (`platform`: Appium platformu ya da `web`).
             body["lang"] = "java"
             body["platform"] = yol.platform
-        return self._post("/check", body, self.check_timeout_s)
+        return self._post("/check", toolchain_projesi(body), self.check_timeout_s)

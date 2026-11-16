@@ -5,6 +5,13 @@ Her satır için ``hash = sha256(prev_hash + kanonik JSON({id, zaman, aktor, eyl
 altında yapılır; böylece eşzamanlı yazıcılar zinciri çatallandıramaz (`prev_hash` ayrıca UNIQUE).
 Kimlik `nextval` ile kilit altında alınır: zincir sırası = `id` sırası.
 
+Zincir **proje başına**dır (TP-COK-PROJE-PLANI §1.3): her projenin zinciri kendi GENESIS'iyle
+başlar, `prev` o projenin son `hash`'idir, kilit `pg_advisory_xact_lock(AUDIT_LOCK_KEY,
+hashtext(pid))` (projeler birbirini beklemez), tekillik `(project_id, prev_hash)`. Hash formülü
+`project_id` içermez: 0045 öncesi tek zincir varsayılan projenin zinciri olarak aynen geçerlidir.
+Proje: açık `project_id`, yoksa bağlamdaki proje, bağlam yoksa kurulum geneli `'_kurulum'`
+zinciri (giriş, config yenileme, proje değiştirme, worker model kipi).
+
 `append_audit(conn, ...)` çağıranın işlemine katılır (durum geçişi + denetim aynı işlemde);
 `PgAuditLog` ise kendi işlemini açan `AuditLog` Protocol uygulamasıdır.
 """
@@ -20,9 +27,22 @@ from typing import Any
 from sqlalchemy import Connection, Engine, text
 
 from tp_core.audit.canonical import GENESIS_HASH, canonical_json, chain_hash, iso_utc
+from tp_core.proje.baglam import KURULUM, varsa
 
-# pg_advisory_xact_lock anahtarı (rastgele seçilmiş sabit; yalnızca denetim zinciri için).
+# pg_advisory_xact_lock(ad alanı, hashtext(pid)) ad alanı (rastgele seçilmiş sabit; yalnızca
+# denetim zinciri için; iş kuyruğunun idempotency ad alanından farklı).
 AUDIT_LOCK_KEY = 7_310_001
+
+
+def zincir_projesi(project_id: str | None = None) -> str:
+    """Yazılacak/okunacak zincir: açık `project_id`, yoksa bağlamdaki proje, yoksa `_kurulum`."""
+    if project_id is not None:
+        if not project_id or len(project_id) > 64:
+            raise ValueError(f"geçersiz proje kimliği: {project_id!r}")
+        return project_id
+    b = varsa()
+    return b.pid if b is not None else KURULUM
+
 
 MAX_AKTOR = 200
 MAX_EYLEM = 200
@@ -55,16 +75,23 @@ def append_audit(
     eylem: str,
     nesne: str | None = None,
     ozet: Mapping[str, Any] | None = None,
+    *,
+    project_id: str | None = None,
 ) -> int:
-    """Zincire bir satır ekler ve `id` döndürür. Çağıranın işleminde çalışır; commit çağırana."""
+    """Projenin zincirine bir satır ekler ve `id` döndürür (proje: `zincir_projesi`). Çağıranın
+    işleminde çalışır; commit çağırana."""
     if not aktor or len(aktor) > MAX_AKTOR:
         raise ValueError("aktor boş olamaz ve 200 karakteri aşamaz")
     if not eylem or len(eylem) > MAX_EYLEM:
         raise ValueError("eylem boş olamaz ve 200 karakteri aşamaz")
-    conn.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": AUDIT_LOCK_KEY})
+    pid = zincir_projesi(project_id)
+    conn.execute(
+        text("SELECT pg_advisory_xact_lock(:k, hashtext(:pid))"), {"k": AUDIT_LOCK_KEY, "pid": pid}
+    )
     ozet_n = _jsonb_normalize(conn, ozet)
     prev = conn.execute(
-        text("SELECT hash FROM audit_event ORDER BY id DESC LIMIT 1")
+        text("SELECT hash FROM audit_event WHERE project_id = :pid ORDER BY id DESC LIMIT 1"),
+        {"pid": pid},
     ).scalar_one_or_none()
     prev_hash = prev or GENESIS_HASH
     id_ = conn.execute(
@@ -74,11 +101,13 @@ def append_audit(
     h = chain_hash(prev_hash, _satir(id_, zaman, aktor, eylem, nesne, ozet_n))
     conn.execute(
         text(
-            "INSERT INTO audit_event (id, zaman, aktor, eylem, nesne, ozet, prev_hash, hash) "
-            "VALUES (:id, :zaman, :aktor, :eylem, :nesne, CAST(:ozet AS jsonb), :prev, :hash)"
+            "INSERT INTO audit_event (id, project_id, zaman, aktor, eylem, nesne, ozet, "
+            "prev_hash, hash) VALUES (:id, :pid, :zaman, :aktor, :eylem, :nesne, "
+            "CAST(:ozet AS jsonb), :prev, :hash)"
         ),
         {
             "id": id_,
+            "pid": pid,
             "zaman": zaman,
             "aktor": aktor,
             "eylem": eylem,
@@ -99,7 +128,7 @@ class PgAuditLog:
 
     def append(self, aktor: str, eylem: str, nesne: str | None, ozet: Mapping[str, Any]) -> int:
         with self._engine.begin() as conn:
-            return append_audit(conn, aktor, eylem, nesne, ozet)
+            return append_audit(conn, aktor, eylem, nesne, ozet)  # bağlamdaki projenin zinciri
 
 
 @dataclass(frozen=True)
@@ -120,8 +149,12 @@ class ChainVerification:
         }
 
 
-def verify_chain(conn: Connection, batch: int = 1000) -> ChainVerification:
-    """Tüm zinciri `id` sırasıyla yeniden hesaplar. İlk tutarsızlıkta durur."""
+def verify_chain(
+    conn: Connection, project_id: str | None = None, batch: int = 1000
+) -> ChainVerification:
+    """Projenin zincirini (`zincir_projesi`) `id` sırasıyla yeniden hesaplar. İlk tutarsızlıkta
+    durur."""
+    pid = zincir_projesi(project_id)
     expected_prev = GENESIS_HASH
     count = 0
     son_id = 0
@@ -129,9 +162,9 @@ def verify_chain(conn: Connection, batch: int = 1000) -> ChainVerification:
         rows = conn.execute(
             text(
                 "SELECT id, zaman, aktor, eylem, nesne, ozet, prev_hash, hash FROM audit_event "
-                "WHERE id > :son ORDER BY id LIMIT :n"
+                "WHERE project_id = :pid AND id > :son ORDER BY id LIMIT :n"
             ),
-            {"son": son_id, "n": batch},
+            {"pid": pid, "son": son_id, "n": batch},
         ).all()
         if not rows:
             break
@@ -155,9 +188,10 @@ def verify_chain(conn: Connection, batch: int = 1000) -> ChainVerification:
     return ChainVerification(True, count, expected_prev)
 
 
-def chain_tip(conn: Connection) -> str:
-    """Zincirin son hash'i (Jira yorumlarına ve PR açıklamalarına sabitlenir)."""
+def chain_tip(conn: Connection, project_id: str | None = None) -> str:
+    """Projenin zincirinin son hash'i (Jira yorumlarına ve PR açıklamalarına sabitlenir)."""
     tip = conn.execute(
-        text("SELECT hash FROM audit_event ORDER BY id DESC LIMIT 1")
+        text("SELECT hash FROM audit_event WHERE project_id = :pid ORDER BY id DESC LIMIT 1"),
+        {"pid": zincir_projesi(project_id)},
     ).scalar_one_or_none()
     return tip or GENESIS_HASH

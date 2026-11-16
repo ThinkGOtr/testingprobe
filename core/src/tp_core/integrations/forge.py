@@ -7,7 +7,6 @@ Her iki adaptör de `tp_core.ports.ForgePort`'u uygular; iş akışları yalnız
 
 from __future__ import annotations
 
-import os
 import re
 from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
@@ -15,6 +14,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 from pydantic import BaseModel, Field
 
 from tp_core.features.codegen import platform as platformlar
+from tp_core.integrations.proje_ortami import ProjeOrtami
 from tp_core.ports import CheckRun
 
 if TYPE_CHECKING:
@@ -407,9 +407,9 @@ ZORUNLU_YAPILABILIR_PLATFORMLAR: tuple[str, ...] = ("android", "windows")
 def etkin_platformlar(env: Mapping[str, str] | None = None) -> tuple[str, ...]:
     """`TP_PLATFORMS="android,windows"` → ("android", "windows"); boş → (). `web` yok sayılır
     (her zaman etkin); bilinmeyen ad yanlış yapılandırmadır (`ForgeValidationError`)."""
-    env = os.environ if env is None else env
+    cfg = ProjeOrtami() if env is None else env
     out: list[str] = []
-    for parca in (env.get(PLATFORMS_ENV) or "").split(","):
+    for parca in (cfg.get(PLATFORMS_ENV) or "").split(","):
         ad = parca.strip().lower()
         if not ad or ad == "web":
             continue
@@ -433,9 +433,9 @@ def etkin_web_dilleri(env: Mapping[str, str] | None = None) -> tuple[str, ...]:
     """`TP_WEB_DILLERI="ts,java"` → ("ts", "java"); boş → ("ts",) (bugünkü davranış). `ts` her
     zaman etkindir. Yalnızca tam hat dilleri (`ts` | `java`) yazılabilir: doğrulanmamış diller
     (csharp | python) PR'a ve CI'a girmez (011 K3) → `ForgeValidationError`."""
-    env = os.environ if env is None else env
+    cfg = ProjeOrtami() if env is None else env
     out = ["ts"]
-    for parca in (env.get(WEB_DILLERI_ENV) or "").split(","):
+    for parca in (cfg.get(WEB_DILLERI_ENV) or "").split(","):
         ad = parca.strip().lower()
         if not ad:
             continue
@@ -479,15 +479,16 @@ class ZorunluCheckKaynagi(Protocol):
 
 
 def get_forge(env: Mapping[str, str] | None = None) -> ForgePort:
-    """`TP_FORGE`'a göre adaptör kurar (varsayılan: local)."""
-    env = os.environ if env is None else env
-    kind = (env.get("TP_FORGE") or "local").strip().lower()
+    """`TP_FORGE`'a göre adaptör kurar (varsayılan: local). `env` verilmezse bağlamdaki projenin
+    config görünümü (`ProjeOrtami`: proje ayarları + proje forge yolları + kurulum env'i)."""
+    cfg = ProjeOrtami() if env is None else env
+    kind = (cfg.get("TP_FORGE") or "local").strip().lower()
     if kind == "local":
         from tp_core.integrations.forge_local import LocalForge
 
-        return LocalForge.from_env(env)
+        return LocalForge.from_env(cfg)
     if kind == "github":
         from tp_core.integrations.forge_github import GitHubForge
 
-        return GitHubForge.from_env(env)
+        return GitHubForge.from_env(cfg)
     raise ForgeValidationError(f"bilinmeyen TP_FORGE: {kind!r} (local | github)")

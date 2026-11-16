@@ -183,6 +183,12 @@ class DurumluGitHub:
         return yok
 
 
+@pytest.fixture(autouse=True)
+def _proje_baglami(proje: Any) -> Any:
+    """Kod üretimi yardımcıları varsayılan proje (`test-a`) bağlamında koşar (§2.1)."""
+    return proje
+
+
 @pytest.fixture
 def muhendis(api: TestClient, make_user: Any) -> Principal:  # noqa: F811
     u = make_user("engineer")
@@ -265,7 +271,7 @@ def test_github_merge_sonrasi_diger_pr_guncellenir_ve_yabanci_head_sayilmaz(
     assert bcg.dal["onceki_head"] == b_eski and bcg.break_durum == "not_started"
     assert codegen.ci[-1] == {"sha": b.head_sha, "trigger": "pr", "pr_number": b.pr_no}
     with session_scope() as s:
-        assert s.get(PullRequest, b.pr_no).head_sha == b.head_sha
+        assert s.get(PullRequest, PullRequest.anahtar(b.pr_no)).head_sha == b.head_sha
 
     # B GitHub'da (güncellenmiş head'iyle) merge edilir → yabancı head değil, ilk review başarısı.
     gh.merge_github_arayuzunde(b.pr_no)
@@ -318,7 +324,7 @@ def test_github_insan_reddi_pr_kapatir(
     assert ("PATCH", f"{R}/pulls/{a.pr_no}", {"state": "closed"}) in gh.istekler
     assert gh.prs[a.pr_no].state == "closed"
     with session_scope() as s:
-        assert s.get(PullRequest, a.pr_no).durum == "closed"
+        assert s.get(PullRequest, PullRequest.anahtar(a.pr_no)).durum == "closed"
         hata = s.execute(
             text("SELECT count(*) FROM audit_event WHERE eylem = 'codegen.pr_close_failed'")
         ).scalar_one()

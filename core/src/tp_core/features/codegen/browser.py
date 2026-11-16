@@ -56,6 +56,8 @@ from tp_core.features.codegen import platform as platformlar
 from tp_core.gateway import ALLOWED_AGENT_TOOLS, FORBIDDEN_TOOLS, wrap_tool_result
 from tp_core.gateway.snapshot_refs import SNAPSHOT_REF, is_inline_snapshot, snapshot_lines
 from tp_core.ports import ToolSpec
+from tp_core.proje import baglamla
+from tp_core.proje.ayar import ayar
 
 log = logging.getLogger(__name__)
 
@@ -142,16 +144,23 @@ class McpBrowserSession:
     """
 
     def __init__(
-        self, target: Any, *, timeout_s: float = 60.0, connect_timeout_s: float = 30.0
+        self,
+        target: Any,
+        *,
+        timeout_s: float = 60.0,
+        connect_timeout_s: float = 30.0,
+        headers: Mapping[str, str] | None = None,
     ) -> None:
         self.url = target if isinstance(target, str) else type(target).__name__
         self._target = target
+        # Yalnız URL hedefinde: oturum başlıkları (app-mcp `X-TP-App`, proje uygulama bloğu).
+        self._headers = dict(headers or {})
         self.timeout_s = timeout_s
         self._loop = asyncio.new_event_loop()
         self._queue: asyncio.Queue[Any] | None = None
         self._ready = concurrent.futures.Future[None]()
         self._done = concurrent.futures.Future[None]()
-        self._thread = threading.Thread(target=self._run, name="mcp-browser", daemon=True)
+        self._thread = threading.Thread(target=baglamla(self._run), name="mcp-browser", daemon=True)
         self._thread.start()
         try:
             self._ready.result(timeout=connect_timeout_s)
@@ -171,10 +180,26 @@ class McpBrowserSession:
                 self._done.set_result(None)
 
     async def _main(self) -> None:
+        from contextlib import AsyncExitStack
+
         from mcp import Client
 
         self._queue = asyncio.Queue()
-        async with Client(self._target, read_timeout_seconds=self.timeout_s) as client:
+        async with AsyncExitStack() as yigin:
+            hedef: Any = self._target
+            if self._headers and isinstance(hedef, str):
+                from mcp.client.streamable_http import (
+                    create_mcp_http_client,
+                    streamable_http_client,
+                )
+
+                http = await yigin.enter_async_context(
+                    create_mcp_http_client(headers=self._headers)
+                )
+                hedef = streamable_http_client(hedef, http_client=http)
+            client = await yigin.enter_async_context(
+                Client(hedef, read_timeout_seconds=self.timeout_s)
+            )
             self._ready.set_result(None)
             while True:
                 item = await self._queue.get()
@@ -235,11 +260,12 @@ class AgentConfig:
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> AgentConfig:
-        env = os.environ if env is None else env
+        """Bağlamdaki projenin ayarlarından (`ayar()`); `env` verilirse o eşlemden (test)."""
+        oku: Callable[[str], str | None] = ayar if env is None else env.get
         return cls(
-            demo_web_url=(env.get("TP_DEMO_WEB_URL") or DEFAULT_DEMO_WEB_URL).rstrip("/"),
-            agent_dealer=env.get("TP_AGENT_DEALER") or DEFAULT_AGENT_DEALER,
-            agent_password=env.get("TP_AGENT_DEALER_PASSWORD") or DEFAULT_AGENT_PASSWORD,
+            demo_web_url=(oku("TP_DEMO_WEB_URL") or DEFAULT_DEMO_WEB_URL).rstrip("/"),
+            agent_dealer=oku("TP_AGENT_DEALER") or DEFAULT_AGENT_DEALER,
+            agent_password=oku("TP_AGENT_DEALER_PASSWORD") or DEFAULT_AGENT_PASSWORD,
         )
 
 

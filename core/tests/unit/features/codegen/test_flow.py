@@ -139,7 +139,7 @@ def test_demo_b_case_den_pr_a(
         assert [m.beklenen for m in maps] == [False] * 4 + [True] * 5
         assert all(m.dogrulandi for m in maps)
         assert maps[5].po_metodu == "expectFreeQuantity" and maps[5].kanit_ref
-        kayit = s.get(PullRequest, sc.pr_no)
+        kayit = s.get(PullRequest, PullRequest.anahtar(sc.pr_no))
         assert kayit is not None and kayit.durum == "open" and kayit.acan == "tp-bot"
         # Ajan adımları ve model dışı ekran görüntüleri.
         adimlar = s.scalars(select(ScriptAdim).where(ScriptAdim.script_id == sc.id)).all()
@@ -283,7 +283,7 @@ def test_kirarak_dogrula_ve_insan_onayli_merge(
     with session_scope() as s:
         rv = s.scalars(select(Review).where(Review.nesne_id == sc.id)).one()
         assert rv.karar == "merge" and rv.user_id == muhendis.id
-        pr = s.get(PullRequest, sc.pr_no)
+        pr = s.get(PullRequest, PullRequest.anahtar(sc.pr_no))
         assert pr.durum == "merged" and pr.merge_eden == muhendis.kullanici_adi
     gorunum = api.get(f"/scripts/{sid}").json()["pr"]
     assert gorunum["merge_sha"] == pr.merge_sha and gorunum["merge_eden"] == muhendis.kullanici_adi
@@ -595,7 +595,7 @@ def test_github_kod_yolu_ayni(
     sonuc = service.sync_prs(engine, gh)
     assert sonuc["eski_merged"] == 1 and sonuc["merged"] == 0
     with session_scope() as s:
-        assert s.get(PullRequest, 101).durum == "merged"
+        assert s.get(PullRequest, PullRequest.anahtar(101)).durum == "merged"
         assert s.get(Script, uuid.UUID(sid)).durum == "closed"
         olay = s.execute(
             text("SELECT ozet FROM audit_event WHERE eylem = 'codegen.superseded_pr_merged'")

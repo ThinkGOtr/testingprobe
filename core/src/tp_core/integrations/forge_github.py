@@ -68,7 +68,6 @@ import contextlib
 import io
 import json
 import logging
-import os
 import re
 import shutil
 import stat
@@ -605,17 +604,22 @@ class GitHubForge:
     def from_env(
         cls, env: Mapping[str, str] | None = None, *, transport: httpx.BaseTransport | None = None
     ) -> GitHubForge:
-        env = os.environ if env is None else env
-        repo = (env.get("GITHUB_REPO") or "").strip()
+        from tp_core.integrations import proje_ortami
+
+        # `env` verilmezse bağlamdaki projenin görünümü (`ProjeOrtami`): depo, token'lar ve
+        # zorunlu check'ler projenin; GitHub App kipi ve kurulum token'ı projenin bağlantısı.
+        cfg = proje_ortami.ProjeOrtami() if env is None else env
+        pid = getattr(cfg, "pid", None)
+        repo = (cfg.get("GITHUB_REPO") or "").strip()
         if not repo:
             raise ForgeValidationError("TP_FORGE=github için GITHUB_REPO gerekli")
         auth: GitHubAuth
-        app_id = (env.get("GH_APP_ID") or "").strip()
-        key = env.get("GH_APP_PRIVATE_KEY") or ""
-        key_path = env.get("GH_APP_PRIVATE_KEY_PATH") or ""
+        app_id = (cfg.get("GH_APP_ID") or "").strip()
+        key = cfg.get("GH_APP_PRIVATE_KEY") or ""
+        key_path = cfg.get("GH_APP_PRIVATE_KEY_PATH") or ""
         from tp_core.home_config import baglanti
 
-        if baglanti.github_app_mi():
+        if proje_ortami.baglanti_kipi("github", pid) == "app":
             # Config R1: GitHub App bağlantısı Home'da (özel anahtar Home'da); kurulum token'ı
             # `POST /v1/connections/access-token` ile, yalnız core-worker'da alınır.
             if not baglanti.yetkili_surec():
@@ -623,23 +627,23 @@ class GitHubForge:
                     "GitHub App bağlantısı yalnız core-worker'da kullanılabilir "
                     "(TP_BAGLANTI_TOKENI)"
                 )
-            auth = baglanti.HomeGitHubAuth()
+            auth = proje_ortami.ProjeGitHubAuth(proje_ortami.pid_coz(pid))
         elif app_id and (key or key_path):
             pem = key.replace("\\n", "\n") if key else Path(key_path).read_text(encoding="utf-8")
-            auth = AppAuth(app_id, pem, repo, env.get("GH_APP_INSTALLATION_ID") or None)
-        elif env.get("GITHUB_TOKEN"):
-            auth = TokenAuth(env["GITHUB_TOKEN"])
-        elif env.get("GITHUB_READ_TOKEN"):
-            auth = TokenAuth(env["GITHUB_READ_TOKEN"])
+            auth = AppAuth(app_id, pem, repo, cfg.get("GH_APP_INSTALLATION_ID") or None)
+        elif cfg.get("GITHUB_TOKEN"):
+            auth = TokenAuth(cfg["GITHUB_TOKEN"])
+        elif cfg.get("GITHUB_READ_TOKEN"):
+            auth = TokenAuth(cfg["GITHUB_READ_TOKEN"])
         else:
             raise ForgeValidationError(
                 "GitHub kimliği yok: GH_APP_ID + GH_APP_PRIVATE_KEY(_PATH) veya GITHUB_TOKEN"
             )
-        merge_token = env.get("GITHUB_MERGE_TOKEN") or ""
+        merge_token = cfg.get("GITHUB_MERGE_TOKEN") or ""
         return cls(
             repo,
             auth,
-            api_url=env.get("GITHUB_API_URL") or DEFAULT_API_URL,
+            api_url=cfg.get("GITHUB_API_URL") or DEFAULT_API_URL,
             merge_auth=TokenAuth(merge_token) if merge_token else None,
             # 009 §2.7: etkin uygulama platformlarının iş akışı check'leri de zorunlu
             # (`TP_PLATFORMS=android,windows` → `mobil-android`, `masaustu-windows`).
@@ -647,9 +651,9 @@ class GitHubForge:
             # değilse merge anında `web-java.yml` base ∪ head'de varsa (K-T13,
             # `zorunlu_checkler`).
             required_checks=github_required_checks(
-                parse_required_checks(env.get(REQUIRED_CHECKS_ENV), GITHUB_REQUIRED_CHECKS),
-                etkin_platformlar(env),
-                etkin_web_dilleri(env),
+                parse_required_checks(cfg.get(REQUIRED_CHECKS_ENV), GITHUB_REQUIRED_CHECKS),
+                etkin_platformlar(cfg),
+                etkin_web_dilleri(cfg),
             ),
             transport=transport,
         )

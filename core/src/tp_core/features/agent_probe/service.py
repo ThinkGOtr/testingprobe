@@ -50,6 +50,7 @@ from tp_core.integrations.agent_probe import AgentProbeUnavailable, get_agent_pr
 from tp_core.models import Requirement
 from tp_core.models.agent_probe_feature import AjanTestiTalebi, AjanUrunuBaglantisi
 from tp_core.ports import AgentProduct, AgentTestTicket
+from tp_core.proje import pid_param
 from tp_core.workflow.service import (
     Principal,
     WorkflowError,
@@ -197,10 +198,10 @@ def _aktif_case_var(session: Session, requirement_id: uuid.UUID) -> bool:
     return (
         session.execute(
             text(
-                "SELECT 1 FROM test_case WHERE requirement_id = :r "
+                "SELECT 1 FROM test_case WHERE project_id = :pid AND requirement_id = :r "
                 "AND durum NOT IN ('superseded', 'rejected') LIMIT 1"
             ),
-            {"r": requirement_id},
+            pid_param(r=requirement_id),
         ).first()
         is not None
     )

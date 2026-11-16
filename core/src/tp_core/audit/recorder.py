@@ -22,6 +22,11 @@ değerden NULL'a değiştirmek yine çapayı bozar.
 
 tool_call kolonları: id, ai_call_id, kanal* (agent|ide), cagiran_user_id, arac*, arguman_ozeti,
 sonuc_ozeti, izin_verildi, sure_ms
+
+Proje (0045, TP-COK-PROJE-PLANI §1.3): satır ve çapası aynı projeye yazılır — açık `project_id`,
+yoksa bağlamdaki proje, yoksa `'_kurulum'` (`chain.zincir_projesi`). `project_id` çapaya girmez
+(eski çapalar geçerli kalır); çapa satırla aynı projenin zincirinde aranır ve append-only
+tetikleyicisi satırın projesini değiştirmeyi engeller.
 """
 
 from __future__ import annotations
@@ -36,7 +41,7 @@ from typing import Any
 from sqlalchemy import Connection, Engine, text
 
 from tp_core.audit.canonical import content_hash, normalize
-from tp_core.audit.chain import append_audit
+from tp_core.audit.chain import append_audit, zincir_projesi
 
 DENETIM_AKTORU = "system"
 
@@ -148,18 +153,20 @@ TABLOLAR: dict[str, Mapping[str, str]] = {
 
 
 def _insert(
-    conn: Connection, tablo: str, values: dict[str, Any], columns: Mapping[str, str]
+    conn: Connection, tablo: str, values: dict[str, Any], columns: Mapping[str, str], pid: str
 ) -> Mapping[str, Any] | None:
-    """Satırı ekler ve saklanan halini döndürür; aynı `id` zaten varsa (idempotent) None."""
+    """Satırı `pid` projesine ekler ve saklanan halini döndürür; aynı `id` zaten varsa
+    (idempotent) None."""
     kolonlar = list(values)
     ifadeler = [f"CAST(:{k} AS jsonb)" if columns[k] == "jsonb" else f":{k}" for k in kolonlar]
     return (
         conn.execute(
             text(
-                f"INSERT INTO {tablo} ({', '.join(kolonlar)}) VALUES ({', '.join(ifadeler)}) "
+                f"INSERT INTO {tablo} (project_id, {', '.join(kolonlar)}) "
+                f"VALUES (:project_id, {', '.join(ifadeler)}) "
                 f"ON CONFLICT (id) DO NOTHING RETURNING {', '.join(columns)}"
             ),
-            values,
+            {**values, "project_id": pid},
         )
         .mappings()
         .first()
@@ -196,9 +203,12 @@ def row_anchor(tablo: str, row: Mapping[str, Any]) -> str:
     )
 
 
-def record_ai_call(conn: Connection, row: Mapping[str, Any]) -> uuid.UUID:
+def record_ai_call(
+    conn: Connection, row: Mapping[str, Any], *, project_id: str | None = None
+) -> uuid.UUID:
+    pid = zincir_projesi(project_id)
     values = _hazirla(row, AI_CALL_COLUMNS, AI_CALL_ALIASES, AI_CALL_REQUIRED, "ai_call")
-    saklanan = _insert(conn, "ai_call", values, AI_CALL_COLUMNS)
+    saklanan = _insert(conn, "ai_call", values, AI_CALL_COLUMNS, pid)
     if saklanan is not None:
         append_audit(
             conn,
@@ -214,13 +224,17 @@ def record_ai_call(conn: Connection, row: Mapping[str, Any]) -> uuid.UUID:
                 "satir_sha256": row_anchor("ai_call", saklanan),
                 "capa_surumu": CAPA_SURUMU,
             },
+            project_id=pid,
         )
     return values["id"]
 
 
-def record_tool_call(conn: Connection, row: Mapping[str, Any]) -> uuid.UUID:
+def record_tool_call(
+    conn: Connection, row: Mapping[str, Any], *, project_id: str | None = None
+) -> uuid.UUID:
+    pid = zincir_projesi(project_id)
     values = _hazirla(row, TOOL_CALL_COLUMNS, TOOL_CALL_ALIASES, TOOL_CALL_REQUIRED, "tool_call")
-    saklanan = _insert(conn, "tool_call", values, TOOL_CALL_COLUMNS)
+    saklanan = _insert(conn, "tool_call", values, TOOL_CALL_COLUMNS, pid)
     if saklanan is not None:
         append_audit(
             conn,
@@ -235,6 +249,7 @@ def record_tool_call(conn: Connection, row: Mapping[str, Any]) -> uuid.UUID:
                 "satir_sha256": row_anchor("tool_call", saklanan),
                 "capa_surumu": CAPA_SURUMU,
             },
+            project_id=pid,
         )
     return values["id"]
 
@@ -263,8 +278,10 @@ class AnchorVerification:
 MAX_BROKEN_RAPOR = 50
 
 
-def verify_call_anchors(conn: Connection) -> AnchorVerification:
-    """Zincirdeki her `ai_call`/`tool_call` çapasını satırın bugünkü haliyle karşılaştırır."""
+def verify_call_anchors(conn: Connection, project_id: str | None = None) -> AnchorVerification:
+    """Projenin zincirindeki (`zincir_projesi`) her `ai_call`/`tool_call` çapasını aynı projedeki
+    satırın bugünkü haliyle karşılaştırır."""
+    pid = zincir_projesi(project_id)
     sonuc = AnchorVerification()
 
     def bozuk(nesne: str, neden: str) -> None:
@@ -276,9 +293,9 @@ def verify_call_anchors(conn: Connection) -> AnchorVerification:
         capalar = conn.execute(
             text(
                 "SELECT DISTINCT ON (nesne) nesne, ozet FROM audit_event "
-                "WHERE eylem = :e ORDER BY nesne, id"
+                "WHERE project_id = :pid AND eylem = :e ORDER BY nesne, id"
             ),
-            {"e": f"{tablo}.recorded"},
+            {"pid": pid, "e": f"{tablo}.recorded"},
         ).all()
         sabitli: set[str] = set()
         for capa in capalar:
@@ -296,8 +313,11 @@ def verify_call_anchors(conn: Connection) -> AnchorVerification:
                 continue
             satir = (
                 conn.execute(
-                    text(f"SELECT {', '.join(columns)} FROM {tablo} WHERE id = :id"),
-                    {"id": satir_id},
+                    text(
+                        f"SELECT {', '.join(columns)} FROM {tablo} "
+                        "WHERE project_id = :pid AND id = :id"
+                    ),
+                    {"pid": pid, "id": satir_id},
                 )
                 .mappings()
                 .first()
@@ -307,7 +327,9 @@ def verify_call_anchors(conn: Connection) -> AnchorVerification:
                 bozuk(nesne, "satır silinmiş (zincirde çapası var)")
             elif row_anchor(tablo, satir) != ozet["satir_sha256"]:
                 bozuk(nesne, "satır içeriği çapayla uyuşmuyor (değiştirilmiş)")
-        idler = conn.execute(text(f"SELECT id FROM {tablo}")).scalars()
+        idler = conn.execute(
+            text(f"SELECT id FROM {tablo} WHERE project_id = :pid"), {"pid": pid}
+        ).scalars()
         for satir_id in idler:
             if str(satir_id) not in sabitli:
                 sonuc.sabitsiz += 1
@@ -323,7 +345,7 @@ class PgCallRecorder:
 
     def record_ai_call(self, row: Mapping[str, Any]) -> uuid.UUID:
         with self._engine.begin() as conn:
-            return record_ai_call(conn, row)
+            return record_ai_call(conn, row)  # bağlamdaki proje
 
     def record_tool_call(self, row: Mapping[str, Any]) -> uuid.UUID:
         with self._engine.begin() as conn:

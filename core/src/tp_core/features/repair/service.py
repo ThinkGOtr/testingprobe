@@ -61,7 +61,6 @@ AST, yerel kontrol) `repair.proposed` / `repair.checked` / `repair.pr_opened` de
 from __future__ import annotations
 
 import logging
-import os
 import uuid
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
@@ -93,6 +92,8 @@ from tp_core.models import (
 )
 from tp_core.models.ci_feature import RunAria
 from tp_core.ports import ForgePort
+from tp_core.proje import pid_param
+from tp_core.proje.ayar import ayar
 from tp_core.workflow.jobs import JobContext, PermanentJobError, enqueue
 from tp_core.workflow.service import (
     SYSTEM,
@@ -254,7 +255,7 @@ def forge_yolu(e2e_goreli: str) -> str:
 
 def aria_fallback_acik() -> bool:
     """Sözleşme testi yedeği yalnızca açıkça istenirse (`TP_REPAIR_ARIA_FALLBACK=sozlesme`)."""
-    return (os.environ.get(ARIA_FALLBACK_ENV) or "kapali").strip().lower() == "sozlesme"
+    return (ayar(ARIA_FALLBACK_ENV) or "kapali").strip().lower() == "sozlesme"
 
 
 def _olay(session: Session, ad: str, veri: Mapping[str, Any]) -> None:
@@ -287,9 +288,10 @@ def failure_ek(session: Session, failure_id: uuid.UUID) -> dict[str, Any]:
     row = (
         session.execute(
             text(
-                "SELECT oneri, kanit, oneri_yok_nedeni, kural FROM failure_ek WHERE failure_id = :f"
+                "SELECT oneri, kanit, oneri_yok_nedeni, kural FROM failure_ek "
+                "WHERE project_id = :pid AND failure_id = :f"
             ),
-            {"f": failure_id},
+            pid_param(f=failure_id),
         )
         .mappings()
         .first()
@@ -351,11 +353,12 @@ def kardes_failure_ids(
     rows = session.execute(
         text(
             "SELECT fl.id FROM failure fl JOIN failure_ek fe ON fe.failure_id = fl.id "
-            "WHERE fl.id <> :id AND fl.sinif = 'test_maintenance' "
+            "AND fe.project_id = fl.project_id "
+            "WHERE fl.project_id = :pid AND fl.id <> :id AND fl.sinif = 'test_maintenance' "
             "AND (CAST(:tum AS boolean) OR fl.run_id = :run) "
             "AND fe.oneri->>'locator_key' = :k AND fe.oneri->>'new_testid' = :n"
         ),
-        {"run": f.run_id, "id": f.id, "k": dk[0], "n": dk[1], "tum": tum_kosular},
+        pid_param(run=f.run_id, id=f.id, k=dk[0], n=dk[1], tum=tum_kosular),
     )
     return [r.id for r in rows]
 
@@ -366,10 +369,10 @@ def _kardeslere_yaz(session: Session, f: Failure, durum: str, *, tum_kosular: bo
         return 0
     res = session.execute(
         text(
-            "UPDATE failure SET oneri_durumu = :d WHERE id = ANY(:ids) "
+            "UPDATE failure SET oneri_durumu = :d WHERE project_id = :pid AND id = ANY(:ids) "
             "AND oneri_durumu IN ('proposed', 'pr_open', 'none')"
         ),
-        {"d": durum, "ids": ids},
+        pid_param(d=durum, ids=ids),
     )
     return int(res.rowcount or 0)
 
@@ -383,10 +386,11 @@ def _merge_eskilere_yaz(session: Session, f: Failure, merge_zamani: datetime) ->
     res = session.execute(
         text(
             "UPDATE failure fl SET oneri_durumu = 'merged' FROM run r "
-            "WHERE fl.id = ANY(:ids) AND r.id = fl.run_id AND r.olusturma <= :z "
+            "WHERE fl.project_id = :pid AND r.project_id = fl.project_id "
+            "AND fl.id = ANY(:ids) AND r.id = fl.run_id AND r.olusturma <= :z "
             "AND fl.oneri_durumu IN ('proposed', 'pr_open', 'none')"
         ),
-        {"ids": ids, "z": merge_zamani},
+        pid_param(ids=ids, z=merge_zamani),
     )
     return int(res.rowcount or 0)
 
@@ -445,10 +449,10 @@ def _fix_isi(session: Session, sid: uuid.UUID) -> Any:
     """Script'in en son `repair.fix` işi (id, durum, son_hata) ya da None."""
     return session.execute(
         text(
-            "SELECT id, durum, son_hata FROM job WHERE tur = :t AND yuk->>'script_id' = :s "
-            "ORDER BY olusturma DESC LIMIT 1"
+            "SELECT id, durum, son_hata FROM job WHERE tur = :t AND project_id = :pid "
+            "AND yuk->>'script_id' = :s ORDER BY olusturma DESC LIMIT 1"
         ),
-        {"t": FIX_JOB, "s": str(sid)},
+        pid_param(t=FIX_JOB, s=str(sid)),
     ).first()
 
 
@@ -584,8 +588,11 @@ def request_fix(session: Session, failure_id: uuid.UUID, user: Principal) -> dic
         deneme = (
             int(
                 session.execute(
-                    text("SELECT count(*) FROM job WHERE tur = :t AND yuk->>'script_id' = :s"),
-                    {"t": FIX_JOB, "s": str(sc.id)},
+                    text(
+                        "SELECT count(*) FROM job WHERE tur = :t AND project_id = :pid "
+                        "AND yuk->>'script_id' = :s"
+                    ),
+                    pid_param(t=FIX_JOB, s=str(sc.id)),
                 ).scalar()
                 or 0
             )
@@ -766,12 +773,13 @@ def _ajan_snapshotlari(
     rows = session.execute(
         text(
             "SELECT a.script_id, a.sira, a.ham, a.zaman FROM script_adim a "
-            "JOIN script s ON s.id = a.script_id "
-            "WHERE s.durum = 'merged' AND s.tur = 'test' AND a.hata = false AND a.ham LIKE :d "
+            "JOIN script s ON s.id = a.script_id AND s.project_id = a.project_id "
+            "WHERE a.project_id = :pid AND s.durum = 'merged' AND s.tur = 'test' "
+            "AND a.hata = false AND a.ham LIKE :d "
             "AND (CAST(:once AS timestamptz) IS NULL OR a.zaman < CAST(:once AS timestamptz)) "
             "ORDER BY a.zaman DESC LIMIT 5"
         ),
-        {"d": desen, "once": once},
+        pid_param(d=desen, once=once),
     ).all()
     return [(f"script:{r.script_id}#adim-{r.sira}", r.ham or "") for r in rows]
 
@@ -1826,7 +1834,7 @@ def _pr_ac(
         sc = s.get(Script, sid, with_for_update=True)
         assert sc is not None
         sc.pr_no = pr.number
-        satir = s.get(PullRequest, pr.number)
+        satir = s.get(PullRequest, PullRequest.anahtar(pr.number))
         if satir is None:
             s.add(
                 PullRequest(
@@ -1900,11 +1908,11 @@ def repair_script_for_pr(session: Session, number: int, *, lock: bool = False) -
 def _merge_isi(session: Session, sid: uuid.UUID, head: str) -> tuple[uuid.UUID, str] | None:
     row = session.execute(
         text(
-            "SELECT id, durum FROM job WHERE tur = :t AND yuk->>'script_id' = :s "
-            "AND yuk->>'head_sha' = :h AND durum IN ('queued', 'retry', 'running', 'done') "
-            "ORDER BY olusturma DESC LIMIT 1"
+            "SELECT id, durum FROM job WHERE tur = :t AND project_id = :pid "
+            "AND yuk->>'script_id' = :s AND yuk->>'head_sha' = :h "
+            "AND durum IN ('queued', 'retry', 'running', 'done') ORDER BY olusturma DESC LIMIT 1"
         ),
-        {"t": MERGE_JOB, "s": str(sid), "h": head},
+        pid_param(t=MERGE_JOB, s=str(sid), h=head),
     ).first()
     return (row.id, row.durum) if row else None
 
@@ -1974,7 +1982,7 @@ def run_merge(ctx: JobContext, engine: Engine) -> dict[str, Any]:
         if sc is None:
             raise PermanentJobError("onarım script'i bulunamadı")
         if sc.durum == "merged" and sc.head_sha == head:
-            satir = s.get(PullRequest, number)
+            satir = s.get(PullRequest, PullRequest.anahtar(number))
             return {"durum": "merged", "pr": number, "zaten": True,
                     "merge_sha": satir.merge_sha if satir else None}  # fmt: skip
         if sc.durum != "pr_open" or sc.head_sha != head or sc.pr_no != number:
@@ -2047,7 +2055,7 @@ def _merge_kaydet(
                    sebep="insan onaylı onarım merge'ü"
                    + (" (forge'da merge edilmişti; uzlaştırıldı)" if uzlastirma else ""),
                    ozet={"pr": number})  # fmt: skip
-        satir = s.get(PullRequest, number)
+        satir = s.get(PullRequest, PullRequest.anahtar(number))
         if satir is not None:
             satir.durum = "merged"
             satir.merge_sha = merge_sha
@@ -2118,8 +2126,8 @@ def _son_merge_onaylayan(sid: uuid.UUID) -> str | None:
     with session_scope() as s:
         return s.execute(
             text(
-                "SELECT yuk->>'actor' FROM job WHERE tur = :t AND yuk->>'script_id' = :s "
-                "ORDER BY olusturma DESC LIMIT 1"
+                "SELECT yuk->>'actor' FROM job WHERE tur = :t AND project_id = :pid "
+                "AND yuk->>'script_id' = :s ORDER BY olusturma DESC LIMIT 1"
             ),
-            {"t": MERGE_JOB, "s": str(sid)},
+            pid_param(t=MERGE_JOB, s=str(sid)),
         ).scalar()

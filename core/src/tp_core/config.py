@@ -3,15 +3,94 @@
 Yalnızca `TP_DATABASE_URL` zorunludur; diğer alanların demo için güvenli varsayılanları vardır.
 Oturum sırrı (`TP_SESSION_SECRET`) yalnızca oturum açan/okuyan uçlarda istenir; yoksa bu uçlar
 503 döner (core-worker ve migrate sırra ihtiyaç duymaz).
+
+Çok proje (TP-COK-PROJE-PLANI §3.2): T/A/P sınıfı alanlar (`proje.ayar.PROJE_ANAHTARLARI`'ndaki
+legacy env adları) proje bağlamı varken o projenin etkin config'inden okunur (`ProjeAyarKaynagi`,
+env'in önünde). Varsayılan dışındaki projede bu alanlar süreç ortamına DÜŞMEZ (Bayi Portalı'nın env
+değeri başka projeye sızmasın): projede tanımsızsa alan varsayılanı. D sınıfı alanlar (veritabanı,
+oturum, zaman aşımları …) her zaman süreç ortamından. `get_settings()` önbelleği
+`(pid, proje.ayar.surum(pid))` anahtarlıdır; config etag'i değişince yeni nesne kurulur.
 """
 
-from functools import lru_cache
+import threading
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field, SecretStr, ValidationError, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic.fields import FieldInfo
+from pydantic_settings import (
+    BaseSettings,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
 from sqlalchemy.engine import make_url
+
+
+def _alan_adi(alan: FieldInfo) -> str | None:
+    a = alan.validation_alias
+    return a if isinstance(a, str) else None
+
+
+class ProjeAyarKaynagi(PydanticBaseSettingsSource):
+    """Bağlamdaki projenin T/A/P değerleri (`proje.ayar.ayar`); bağlam yoksa boş (env davranışı)."""
+
+    def get_field_value(self, field: FieldInfo, field_name: str) -> tuple[Any, str, bool]:
+        return None, field_name, False  # __call__ toplu döner
+
+    def __call__(self) -> dict[str, Any]:
+        from tp_core.proje import ayar as proje_ayar
+        from tp_core.proje.baglam import varsa
+
+        b = varsa()
+        if b is None:
+            return {}
+        out: dict[str, Any] = {}
+        for alan in self.settings_cls.model_fields.values():
+            ad = _alan_adi(alan)
+            if ad is None or ad not in proje_ayar.PROJE_ANAHTARLARI:
+                continue
+            deger = proje_ayar.ayar(ad, pid=b.pid)
+            if deger is not None:
+                out[ad] = deger
+        return out
+
+
+class ProjeSuzgecliEnv(PydanticBaseSettingsSource):
+    """Env kaynağı; bağlam varsayılan dışında bir projeyse T/A/P adları süzülür (sızıntı yok)."""
+
+    def __init__(self, settings_cls: type[BaseSettings], ic: PydanticBaseSettingsSource) -> None:
+        super().__init__(settings_cls)
+        self._ic = ic
+
+    def get_field_value(self, field: FieldInfo, field_name: str) -> tuple[Any, str, bool]:
+        return self._ic.get_field_value(field, field_name)
+
+    def __call__(self) -> dict[str, Any]:
+        from tp_core.proje import ayar as proje_ayar
+        from tp_core.proje.baglam import varsa, varsayilan_pid
+
+        veri = self._ic()
+        b = varsa()
+        if b is None or b.pid == varsayilan_pid():
+            return veri
+        return {k: v for k, v in veri.items() if k not in proje_ayar.PROJE_ANAHTARLARI}
+
+
+def proje_kaynaklari(
+    settings_cls: type[BaseSettings],
+    init_settings: PydanticBaseSettingsSource,
+    env_settings: PydanticBaseSettingsSource,
+    dotenv_settings: PydanticBaseSettingsSource,
+    file_secret_settings: PydanticBaseSettingsSource,
+) -> tuple[PydanticBaseSettingsSource, ...]:
+    """`settings_customise_sources` gövdesi: init > proje > (süzgeçli) env > dotenv > secrets."""
+    return (
+        init_settings,
+        ProjeAyarKaynagi(settings_cls),
+        ProjeSuzgecliEnv(settings_cls, env_settings),
+        dotenv_settings,
+        file_secret_settings,
+    )
 
 
 def libpq_auth_zorla(url: str, yontem: str | None) -> str:
@@ -32,6 +111,19 @@ def libpq_auth_zorla(url: str, yontem: str | None) -> str:
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore", populate_by_name=True)
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        return proje_kaynaklari(
+            settings_cls, init_settings, env_settings, dotenv_settings, file_secret_settings
+        )
 
     database_url: str = Field(validation_alias="TP_DATABASE_URL")
     # libpq `require_auth`: varsayılan SCRAM (pg_hba scram-sha-256). Boş = zorlanmaz (ör. trust
@@ -204,6 +296,39 @@ def baslangic_denetimi(ayar: Settings | None = None) -> None:
         )
 
 
-@lru_cache
-def get_settings() -> Settings:
-    return Settings()  # type: ignore[call-arg]
+class _AyarOnbellegi:
+    """`get_settings()`: `(pid, surum)` anahtarlı önbellek; `cache_clear()` (`lru_cache` uyumu)."""
+
+    UST = 64
+
+    def __init__(self) -> None:
+        self._k: dict[tuple[str | None, str], Settings] = {}
+        self._kilit = threading.Lock()
+
+    def _anahtar(self) -> tuple[str | None, str]:
+        from tp_core.proje import ayar as proje_ayar
+        from tp_core.proje.baglam import varsa
+
+        b = varsa()
+        if b is None:
+            return (None, "")
+        return (b.pid, proje_ayar.surum(b.pid))
+
+    def __call__(self) -> Settings:
+        anahtar = self._anahtar()
+        with self._kilit:
+            ayar = self._k.get(anahtar)
+        if ayar is not None:
+            return ayar
+        ayar = Settings()  # type: ignore[call-arg]
+        with self._kilit:
+            if len(self._k) >= self.UST:
+                self._k.clear()
+            return self._k.setdefault(anahtar, ayar)
+
+    def cache_clear(self) -> None:
+        with self._kilit:
+            self._k.clear()
+
+
+get_settings = _AyarOnbellegi()

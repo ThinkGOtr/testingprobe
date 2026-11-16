@@ -60,7 +60,10 @@ def _denetim(engine: Engine, eylem: str) -> list[Any]:
     with engine.connect() as c:
         return list(
             c.execute(
-                text("SELECT aktor, nesne, ozet FROM audit_event WHERE eylem = :e ORDER BY id"),
+                text(
+                    "SELECT aktor, nesne, ozet FROM audit_event WHERE audit_event.project_id = "
+                    "'test-a' AND eylem = :e ORDER BY id"
+                ),
                 {"e": eylem},
             )
         )
@@ -159,7 +162,11 @@ def test_sonradan_giren_tetiklenir_ikinci_turda_cift_tetik_yok(
     assert olusturma.aktor == "jira-tetik"
     with engine.connect() as c:
         wf = c.execute(
-            text("SELECT baslatan FROM workflow_instance WHERE nesne_id = :r"), {"r": req.id}
+            text(
+                "SELECT baslatan FROM workflow_instance WHERE workflow_instance.project_id = "
+                "'test-a' AND nesne_id = :r"
+            ),
+            {"r": req.id},
         ).scalar_one()
     assert wf == "otomasyon"
     ilk_zaman = req.qa_tetik_zamani
@@ -398,7 +405,15 @@ def test_acik_varsayilani_simde_acik_gercek_jirada_kapali(
         assert ayarlar.jira_tetik(s).acik is False
         assert ayarlar.hepsi(s)["jira_tetik"]["acik"] is False
     with engine.connect() as c:
-        assert c.execute(text("SELECT count(*) FROM otomasyon_ayari")).scalar_one() == 0
+        assert (
+            c.execute(
+                text(
+                    "SELECT count(*) FROM otomasyon_ayari WHERE otomasyon_ayari.project_id = "
+                    "'test-a'"
+                )
+            ).scalar_one()
+            == 0
+        )
     sahte = _SahteJira()
     assert jira_tetik.tur(engine, sahte)["acik"] is False and sahte.jql == []
     # Kısmi yazım birbirini ezmez; hesaplanmış `acik` satıra dondurulmaz (backend #3b).
@@ -409,7 +424,10 @@ def test_acik_varsayilani_simde_acik_gercek_jirada_kapali(
     assert (a.acik, a.aralik_s, a.otomatik_case) == (False, 90, False)
     with engine.connect() as c:
         deger = c.execute(
-            text("SELECT deger FROM otomasyon_ayari WHERE anahtar = 'jira_tetik'")
+            text(
+                "SELECT deger FROM otomasyon_ayari WHERE otomasyon_ayari.project_id = 'test-a' AND "
+                "anahtar = 'jira_tetik'"
+            )
         ).scalar_one()
     assert deger == {"aralik_s": 90, "otomatik_case": False}
     monkeypatch.undo()  # sim yeniden doğrulandı: varsayılan açık geri gelir
@@ -599,7 +617,10 @@ def test_uctan_uca_qa_to_do_tetik_on_inceleme_po_onayi_otomatik_case(
     assert _req("TPD-4").durum == "cases_ready"
     with engine.connect() as c:
         n = c.execute(
-            text("SELECT count(*) FROM test_case WHERE requirement_id = :r AND durum = 'draft'"),
+            text(
+                "SELECT count(*) FROM test_case WHERE test_case.project_id = 'test-a' AND "
+                "requirement_id = :r AND durum = 'draft'"
+            ),
             {"r": rid},
         ).scalar_one()
     assert n > 0
@@ -610,7 +631,10 @@ def test_uctan_uca_qa_to_do_tetik_on_inceleme_po_onayi_otomatik_case(
 
     with engine.connect() as c:
         baslatan = c.execute(
-            text("SELECT baslatan FROM workflow_instance WHERE nesne_id = :r AND tur = :t"),
+            text(
+                "SELECT baslatan FROM workflow_instance WHERE workflow_instance.project_id = "
+                "'test-a' AND nesne_id = :r AND tur = :t"
+            ),
             {"r": rid, "t": WORKFLOW_TUR},
         ).scalar_one()
     assert baslatan == "otomasyon"
@@ -802,16 +826,18 @@ def test_demo_jira_status(
     assert jira_tetik.tur(engine)["tetiklenenler"] == ["TPD-2"]
 
     # Sim host adı ama uç kendini jira-sim olarak tanıtmıyor (tünel/proxy): 409.
-    monkeypatch.setattr(jira, "simulator_mu", lambda: False)
-    r = api.post("/demo/jira-status", json={"jira_key": "TPD-1", "durum": QA})
-    assert r.status_code == 409 and "jira-sim" in r.json()["detail"]
-    monkeypatch.undo()
+    # Yerel yamalar: `monkeypatch.undo()` fikstürlerin env'ini (TP_DATABASE_URL) de geri alırdı.
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(jira, "simulator_mu", lambda: False)
+        r = api.post("/demo/jira-status", json={"jira_key": "TPD-1", "durum": QA})
+        assert r.status_code == 409 and "jira-sim" in r.json()["detail"]
     assert jira.simulator_mu() is True
 
     # Gerçek Jira: istek gönderilmeden 409.
-    monkeypatch.setattr(demo_service, "_jira_sim_mi", lambda: False)
-    r = api.post("/demo/jira-status", json={"jira_key": "TPD-1", "durum": QA})
-    assert r.status_code == 409 and "jira-sim" in r.json()["detail"]
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(demo_service, "_jira_sim_mi", lambda: False)
+        r = api.post("/demo/jira-status", json={"jira_key": "TPD-1", "durum": QA})
+        assert r.status_code == 409 and "jira-sim" in r.json()["detail"]
     assert jira.get_issue("TPD-1").status == "To Do"
 
 
@@ -867,7 +893,15 @@ def test_k23_gercek_ortamda_seed_ve_reset_otomatik_koda_dokunmaz(
     assert seed_otomasyon_demo() == {"otomatik_kod_uretimi": "gercek_ortam"}
     assert demo_service._otomasyon_demo_ayarlari() == {"otomatik_kod_uretimi": "gercek_ortam"}
     with engine.connect() as c:
-        assert c.execute(text("SELECT count(*) FROM otomasyon_ayari")).scalar_one() == 0
+        assert (
+            c.execute(
+                text(
+                    "SELECT count(*) FROM otomasyon_ayari WHERE otomasyon_ayari.project_id = "
+                    "'test-a'"
+                )
+            ).scalar_one()
+            == 0
+        )
     assert _denetim(engine, "otomasyon.ayar") == []
     # Gerçek Jira ama model kipi REPLAY (worker bildirimi): demo ortamı → kapatılır.
     _model_kipi_kaydi(engine, "replay")

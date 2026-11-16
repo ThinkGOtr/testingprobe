@@ -31,7 +31,6 @@ Kullanım (işleyici, mesaj başına)::
 
 from __future__ import annotations
 
-import os
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -52,6 +51,7 @@ from tp_core.features.assistant.tools.base import (
 )
 from tp_core.gateway.masking import MaskingSession
 from tp_core.ports import ToolSpec
+from tp_core.proje.ayar import ayar
 
 # Geçidin `ALLOWED_AGENT_TOOLS["assistant"]` kümesiyle birebir (test eşitliği denetler).
 ARAC_ADLARI: tuple[str, ...] = (
@@ -93,12 +93,8 @@ def veri_rolleri(environ: Mapping[str, str] | None = None) -> frozenset[str] | N
     """
     from tp_core.auth.yetki import normalize_rol, roller_icin
 
-    env = os.environ if environ is None else environ
-    roller = frozenset(
-        normalize_rol(r.strip())
-        for r in (env.get(VERI_ROLLERI_ORTAM) or "").split(",")
-        if r.strip()
-    )
+    ham = ayar(VERI_ROLLERI_ORTAM) if environ is None else environ.get(VERI_ROLLERI_ORTAM)
+    roller = frozenset(normalize_rol(r.strip()) for r in (ham or "").split(",") if r.strip())
     return (roller & roller_icin(VERI_IZNI)) if roller else None
 
 

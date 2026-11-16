@@ -89,7 +89,7 @@ def _sha() -> str:
 
 def _kayit(no: int) -> PullRequest:
     with session_scope() as s:
-        k = s.get(PullRequest, no)
+        k = s.get(PullRequest, PullRequest.anahtar(no))
         assert k is not None
         s.expunge(k)
         return k
@@ -207,7 +207,7 @@ def test_merge_kapisi_github_kipinde_db_kopyasini_kullanir(engine: Engine, kip: 
     with session_scope() as s:
         sc = s.get(Script, sid)
         assert any("pending" in e for e in views.merge_engelleri(sc, cg))
-        k = s.get(PullRequest, 503)
+        k = s.get(PullRequest, PullRequest.anahtar(503))
         k.checks, k.checks_sha, k.zorunlu_checkler = YESIL, head, KAPI
         s.flush()
         assert views.merge_engelleri(sc, cg) == []
@@ -356,7 +356,8 @@ def test_0014_model_sema_ayni_ve_tp_app_yazabilir(db: Db) -> None:
     assert _farklar(db.owner_url) == []
     with psycopg.connect(db.app_url.replace("+psycopg", ""), autocommit=True) as c:
         c.execute(
-            "INSERT INTO pull_request (branch, baslik, head_sha, acan) VALUES ('b','t','s','x')"
+            "INSERT INTO pull_request (project_id, number, branch, baslik, head_sha, acan) "
+            "VALUES ('test-a', 1, 'b','t','s','x')"
         )
         c.execute(
             "UPDATE pull_request SET checks = '[]'::jsonb, checks_sha = 's', checks_zaman = now()"
@@ -366,8 +367,9 @@ def test_0014_model_sema_ayni_ve_tp_app_yazabilir(db: Db) -> None:
 def test_0014_downgrade_upgrade(db: Db) -> None:
     with psycopg.connect(db.owner_url.replace("+psycopg", ""), autocommit=True) as c:
         c.execute(
-            "INSERT INTO pull_request (branch, baslik, head_sha, acan, checks, checks_sha) "
-            "VALUES ('b','t','s','x','[]'::jsonb,'s')"
+            "INSERT INTO pull_request "
+            "(project_id, number, branch, baslik, head_sha, acan, checks, checks_sha) "
+            "VALUES ('test-a', 1, 'b','t','s','x','[]'::jsonb,'s')"
         )
     run_alembic(db.owner_url, "0013", "downgrade")
     assert not set(KOLONLAR) & _kolonlar(db.owner_url)
@@ -442,8 +444,9 @@ def test_0022_zorunlu_checkler_kolonu(db: Db) -> None:
     assert "zorunlu_checkler" in _kolonlar(db.owner_url)
     with psycopg.connect(db.app_url.replace("+psycopg", ""), autocommit=True) as c:
         c.execute(
-            "INSERT INTO pull_request (branch, baslik, head_sha, acan, zorunlu_checkler) "
-            "VALUES ('b','t','s','x','[\"web-java\"]'::jsonb)"
+            "INSERT INTO pull_request "
+            "(project_id, number, branch, baslik, head_sha, acan, zorunlu_checkler) "
+            "VALUES ('test-a', 1, 'b','t','s','x','[\"web-java\"]'::jsonb)"
         )
     run_alembic(db.owner_url, "0021", "downgrade")
     assert "zorunlu_checkler" not in _kolonlar(db.owner_url)

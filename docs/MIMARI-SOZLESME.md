@@ -191,6 +191,13 @@ TEKNIK-TASARIM §7'deki tablolar, Türkçe kolon adlarıyla (F0 stili: `kullanic
 `workflow_instance.temporal_id` yerine `job_id`. Ek: `pull_request` (çekirdeğin PR durum/onay kaydı; forge'un kendi PR kaydı LocalForge'da `/forge/tp-prs.json`, GitHub'da GitHub), `run` için `kaynak`
 (`local`/`github`/`sauce`). `ai_call`, `tool_call`, `audit_event` append-only; `audit_event` için
 `prev_hash`/`hash` zinciri (sha256(prev_hash + kanonik JSON)).
+**`audit_event.project_id` bütünlüğü:** zincir proje başınadır (TP-COK-PROJE-PLANI §1.3) ve hash
+formülü `project_id` içermez (0045 öncesi zincir aynen geçerli kalsın; formüle eklemek mevcut
+zinciri sürümlü iki formüle bölerdi). Satırın projesi **append-only tetikleyiciyle** korunur:
+`tp_append_only` (0002) sahip dahil herkes için UPDATE/DELETE/TRUNCATE'i reddeder, `tp_app`'ten bu
+yetkiler ayrıca geri alınmıştır; proje yalnız INSERT anında `zincir_projesi()` ile yazılır. Bir
+satırın başka projeye taşınması (tetikleyici kapatılarak) iki zinciri birden kırar: kaynak zincirde
+`prev_hash` boşluğu, hedef zincirde kopuk `prev_hash` bağı `verify_chain` ile görülür.
 
 **Faz 3 tablolar:** 0009 `script_codegen` (script başına üretim kaydı: case/onaylı hash,
 `story_key`, `sira_no`, eşleme `eslesme`, `uretim_modu`, `ai_call_ids`, `bundle_hash`,

@@ -17,6 +17,8 @@ import httpx
 from sqlalchemy import Engine
 
 from tp_core.config import get_settings
+from tp_core.features.ci.projeler import toolchain_govdesi
+from tp_core.proje.ayar import ayar
 
 _overrides: dict[str, Callable[..., Any]] = {}
 
@@ -41,6 +43,7 @@ class TriageToolchain:
         self._transport = transport
 
     def _post(self, yol: str, govde: dict[str, Any], timeout: float) -> dict[str, Any]:
+        govde = toolchain_govdesi(yol, govde)
         try:
             with httpx.Client(
                 transport=self._transport, timeout=timeout, headers=self._headers
@@ -130,7 +133,7 @@ def kirma_triage() -> bool:
     f = _overrides.get("kirma_triage")
     if f is not None:
         return bool(f())
-    return (os.environ.get("TP_TRIAGE_KIRMA") or "1").strip() not in ("0", "false", "hayir")
+    return (ayar("TP_TRIAGE_KIRMA") or "1").strip() not in ("0", "false", "hayir")
 
 
 def kirma_taslak() -> bool:
@@ -147,7 +150,7 @@ def kirma_taslak() -> bool:
     f = _overrides.get("kirma_taslak")
     if f is not None:
         return bool(f())
-    return (os.environ.get("TP_TRIAGE_KIRMA_TASLAK") or "1").strip().lower() not in (
+    return (ayar("TP_TRIAGE_KIRMA_TASLAK") or "1").strip().lower() not in (
         "0",
         "false",
         "hayir",

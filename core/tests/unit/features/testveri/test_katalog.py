@@ -29,7 +29,11 @@ def _denetim(engine: Engine, eylem: str) -> list[dict[str, Any]]:
     with engine.connect() as c:
         return list(
             c.execute(
-                text("SELECT ozet FROM audit_event WHERE eylem = :e ORDER BY id"), {"e": eylem}
+                text(
+                    "SELECT ozet FROM audit_event WHERE audit_event.project_id = 'test-a' AND "
+                    "eylem = :e ORDER BY id"
+                ),
+                {"e": eylem},
             ).scalars()
         )
 
@@ -145,8 +149,22 @@ def test_gizli_kayit_degeri_donmez(
     assert all(g["deger"] is None and g["gizli"] for g in gecmis)
     # Sır değeri hiçbir yanıta / denetime / sürüm kaydına yazılmadı.
     with engine.connect() as c:
-        dokum = str(c.execute(text("SELECT array_agg(ozet::text) FROM audit_event")).scalar())
-        dokum += str(c.execute(text("SELECT array_agg(deger) FROM test_verisi_surum")).scalar())
+        dokum = str(
+            c.execute(
+                text(
+                    "SELECT array_agg(ozet::text) FROM audit_event WHERE audit_event.project_id = "
+                    "'test-a'"
+                )
+            ).scalar()
+        )
+        dokum += str(
+            c.execute(
+                text(
+                    "SELECT array_agg(deger) FROM test_verisi_surum WHERE "
+                    "test_verisi_surum.project_id = 'test-a'"
+                )
+            ).scalar()
+        )
     assert "Cok-Gizli-1" not in dokum and "Cok-Gizli-1" not in api.get("/test-data").text
 
 

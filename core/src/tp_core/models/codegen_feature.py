@@ -29,7 +29,14 @@ from sqlalchemy import Boolean, ForeignKey, Index, Integer, UniqueConstraint, fa
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from tp_core.models.base import Base, guncelleme_col, in_check, olusturma_col, uuid_pk
+from tp_core.models.base import (
+    Base,
+    ProjeKapsamli,
+    guncelleme_col,
+    in_check,
+    olusturma_col,
+    uuid_pk,
+)
 from tp_core.models.requirements import EMPTY_LIST, EMPTY_OBJ
 
 # İnsana düşme nedenleri (script `blocked` / `failed` iken).
@@ -75,7 +82,7 @@ KONTROL_SINIF = frozenset(
 )
 
 
-class ScriptCodegen(Base):
+class ScriptCodegen(ProjeKapsamli, Base):
     """Üretilen testin kaynağı ve doğrulama/kontrol özeti (script ile 1:1)."""
 
     __tablename__ = "script_codegen"
@@ -133,7 +140,7 @@ class ScriptCodegen(Base):
     guncelleme: Mapped[datetime] = guncelleme_col()
 
 
-class ScriptAdim(Base):
+class ScriptAdim(ProjeKapsamli, Base):
     """Ajanın tek tarayıcı eylemi + model dışı ekran görüntüsü (canlı görünüm)."""
 
     __tablename__ = "script_adim"
@@ -153,7 +160,7 @@ class ScriptAdim(Base):
     zaman: Mapped[datetime] = olusturma_col()
 
 
-class ScriptKontrol(Base):
+class ScriptKontrol(ProjeKapsamli, Base):
     """Yerel kontrol / kırarak doğrula koşusu (zaman çizelgesi)."""
 
     __tablename__ = "script_kontrol"

@@ -45,7 +45,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import threading
 import time
@@ -77,6 +76,8 @@ from tp_core.features.assistant.tools.base import sir_temizle
 from tp_core.gateway.errors import AgentDeadlineExceeded, AgentStopped, BudgetExceeded
 from tp_core.gateway.untrusted import UntrustedKind, wrap_untrusted
 from tp_core.ports import ModelMessage
+from tp_core.proje import mevcut_pid, pid_param
+from tp_core.proje.ayar import ayar
 
 log = logging.getLogger(__name__)
 
@@ -179,9 +180,10 @@ def _mesaj_oku(conn: Connection, mesaj_id: uuid.UUID) -> Mesaj:
                 "m.icerik, m.baglam, m.kip, m.tetik, m.amac, m.ust_mesaj_id, m.job_id, "
                 "s.oneri_kural_id FROM asistan_mesaj m "
                 "JOIN app_user u ON u.id = m.kullanici_id "
-                "JOIN asistan_sohbet s ON s.id = m.sohbet_id WHERE m.id = :i"
+                "JOIN asistan_sohbet s ON s.id = m.sohbet_id AND s.project_id = m.project_id "
+                "WHERE m.id = :i AND m.project_id = :pid"
             ),
-            {"i": mesaj_id},
+            pid_param(i=mesaj_id),
         )
         .mappings()
         .one()
@@ -191,7 +193,9 @@ def _mesaj_oku(conn: Connection, mesaj_id: uuid.UUID) -> Mesaj:
 
 def _musteri_verisi(conn: Connection) -> bool:
     return bool(
-        conn.execute(text("SELECT musteri_verisi FROM asistan_durum WHERE id = 1")).scalar()
+        conn.execute(
+            text("SELECT musteri_verisi FROM asistan_durum WHERE project_id = :pid"), pid_param()
+        ).scalar()
     )
 
 
@@ -220,16 +224,17 @@ def _sure_ms(conn: Connection, mesaj_id: uuid.UUID) -> int | None:
     deger = conn.execute(
         text(
             "SELECT (EXTRACT(EPOCH FROM (now() - olusturma)) * 1000)::int "
-            "FROM asistan_mesaj WHERE id = :i"
+            "FROM asistan_mesaj WHERE id = :i AND project_id = :pid"
         ),
-        {"i": mesaj_id},
+        pid_param(i=mesaj_id),
     ).scalar()
     return max(0, int(deger)) if deger is not None else None
 
 
 def _mevcut_durum(conn: Connection, mesaj_id: uuid.UUID) -> str | None:
     return conn.execute(
-        text("SELECT durum FROM asistan_mesaj WHERE id = :i"), {"i": mesaj_id}
+        text("SELECT durum FROM asistan_mesaj WHERE id = :i AND project_id = :pid"),
+        pid_param(i=mesaj_id),
     ).scalar()
 
 
@@ -280,7 +285,7 @@ def _jira_adresleri() -> JiraAdresleri:
 
 
 def _otomatik_derin_acik() -> bool:
-    return os.environ.get(ORTAM_OTOMATIK_DERIN, "1").strip().lower() not in ("0", "false", "off")
+    return (ayar(ORTAM_OTOMATIK_DERIN, "1") or "").strip().lower() not in ("0", "false", "off")
 
 
 def _baglam_metni(baglam: Any, alan: str) -> str | None:
@@ -323,8 +328,11 @@ def _derin_siniri(conn: Connection, m: Mesaj) -> tuple[int, uuid.UUID | None]:
     kok_id = asistan_budget.kok_mesaj_id(conn, m.ust_mesaj_id)
     kok_sira = (
         conn.execute(
-            text("SELECT sira FROM asistan_mesaj WHERE id = :k AND sohbet_id = :s"),
-            {"k": kok_id, "s": m.sohbet_id},
+            text(
+                "SELECT sira FROM asistan_mesaj "
+                "WHERE id = :k AND sohbet_id = :s AND project_id = :pid"
+            ),
+            pid_param(k=kok_id, s=m.sohbet_id),
         ).scalar_one_or_none()
         if kok_id is not None
         else None
@@ -333,10 +341,10 @@ def _derin_siniri(conn: Connection, m: Mesaj) -> tuple[int, uuid.UUID | None]:
         return m.sira, None
     soru = conn.execute(
         text(
-            "SELECT MAX(sira) FROM asistan_mesaj WHERE sohbet_id = :s AND rol = 'user' "
-            "AND sira < :k"
+            "SELECT MAX(sira) FROM asistan_mesaj WHERE sohbet_id = :s AND project_id = :pid "
+            "AND rol = 'user' AND sira < :k"
         ),
-        {"s": m.sohbet_id, "k": kok_sira},
+        pid_param(s=m.sohbet_id, k=kok_sira),
     ).scalar_one_or_none()
     return (soru if soru is not None else kok_sira), m.ust_mesaj_id
 
@@ -349,9 +357,10 @@ def sohbet_gecmisi(conn: Connection, m: Mesaj) -> str | None:
         conn.execute(
             text(
                 "SELECT rol, icerik, cevap, sira FROM asistan_mesaj WHERE sohbet_id = :s "
-                "AND (sira < :n OR id = :u) AND durum = 'done' ORDER BY sira DESC LIMIT :k"
+                "AND project_id = :pid AND (sira < :n OR id = :u) AND durum = 'done' "
+                "ORDER BY sira DESC LIMIT :k"
             ),
-            {"s": m.sohbet_id, "n": sinir, "u": ust_id, "k": GECMIS_MESAJ + 1},
+            pid_param(s=m.sohbet_id, n=sinir, u=ust_id, k=GECMIS_MESAJ + 1),
         )
         .mappings()
         .all()
@@ -624,9 +633,9 @@ def harcama_oku(engine: Engine, call_id: uuid.UUID, gw: Any = None) -> Harcama:
                 "SELECT COALESCE(SUM(maliyet), 0), COALESCE(SUM(girdi_token), 0), "
                 "COALESCE(SUM(cikti_token), 0), "
                 "COALESCE(bool_or((ek->>'toparlama')::boolean), false) "
-                "FROM ai_call WHERE id = :c OR parent_call_id = :c"
+                "FROM ai_call WHERE project_id = :pid AND (id = :c OR parent_call_id = :c)"
             ),
-            {"c": call_id},
+            pid_param(c=call_id),
         ).one()
     return Harcama(Decimal(str(r[0])), int(r[1]), int(r[2]), bool(r[3]))
 
@@ -736,17 +745,20 @@ def _cocuk_ekle(conn: Connection, m: Mesaj) -> uuid.UUID | None:
     cocuk = uuid.uuid4()
     eklenen = conn.execute(
         text(
-            "INSERT INTO asistan_mesaj (id, sohbet_id, kullanici_id, sira, rol, ust_mesaj_id, "
-            "icerik, baglam, durum, amac, kip, tetik) "
-            "SELECT :id, :s, :k, COALESCE(MAX(sira), 0) + 1, 'assistant', :u, :icerik, "
-            "CAST(:baglam AS jsonb), 'pending', :amac, 'soru', 'otomatik' "
-            "FROM asistan_mesaj WHERE sohbet_id = :s "
+            "INSERT INTO asistan_mesaj (project_id, id, sohbet_id, kullanici_id, sira, rol, "
+            "ust_mesaj_id, icerik, baglam, durum, amac, kip, tetik) "
+            "SELECT CAST(:pid AS varchar), :id, :s, :k, COALESCE(MAX(sira), 0) + 1, "
+            "'assistant', :u, :icerik, CAST(:baglam AS jsonb), 'pending', :amac, 'soru', "
+            "'otomatik' "
+            "FROM asistan_mesaj WHERE sohbet_id = :s AND project_id = :pid "
             # Silinmiş sohbete çocuk eklenmez (silme commit'lendikten sonra gelen ekleme).
             # HAVING: toplamlı SELECT boş kümede de bir satır döndürür, WHERE yetmez.
-            "HAVING EXISTS (SELECT 1 FROM asistan_sohbet WHERE id = :s AND NOT silindi) "
+            "HAVING EXISTS (SELECT 1 FROM asistan_sohbet "
+            "WHERE id = :s AND project_id = :pid AND NOT silindi) "
             "ON CONFLICT (ust_mesaj_id) WHERE ust_mesaj_id IS NOT NULL DO NOTHING RETURNING id"
         ),
         {
+            "pid": mevcut_pid(),
             "id": cocuk,
             "s": m.sohbet_id,
             "k": m.kullanici_id,
@@ -769,7 +781,8 @@ def _cocuk_ekle(conn: Connection, m: Mesaj) -> uuid.UUID | None:
         zaman_asimi_s=IS_ZAMAN_ASIMI_S,
     )
     conn.execute(
-        text("UPDATE asistan_mesaj SET job_id = :j WHERE id = :i"), {"j": is_id, "i": cocuk}
+        text("UPDATE asistan_mesaj SET job_id = :j WHERE id = :i AND project_id = :pid"),
+        pid_param(j=is_id, i=cocuk),
     )
     return cocuk
 
@@ -836,9 +849,10 @@ def model_cevabini_yaz(
                 conn.execute(
                     text(
                         "UPDATE asistan_mesaj SET cevap = cevap || "
-                        "jsonb_build_object('derin_onerilir', true) WHERE id = :i"
+                        "jsonb_build_object('derin_onerilir', true) "
+                        "WHERE id = :i AND project_id = :pid"
                     ),
-                    {"i": m.id},
+                    pid_param(i=m.id),
                 )
         _cevaplandi(conn, m, "done", derin_bekliyor=derin_bekliyor)
         s.commit()
@@ -1016,7 +1030,8 @@ def yanitlayan_model(
             elif engine is not None:
                 with engine.connect() as conn:
                     model = conn.execute(
-                        text("SELECT model FROM ai_call WHERE id = :i"), {"i": son}
+                        text("SELECT model FROM ai_call WHERE id = :i AND project_id = :pid"),
+                        pid_param(i=son),
                     ).scalar_one_or_none()
             else:
                 model = None

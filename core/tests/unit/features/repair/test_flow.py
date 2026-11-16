@@ -104,7 +104,7 @@ def test_mutlu_yol_pr_ve_insan_merge(engine: Engine, ortam: Ortam, api: Any, muh
         assert f is not None and f.oneri_durumu == "pr_open"
         kontrol = s.scalars(select(Run).where(Run.script_id == sc.id)).one()
         assert kontrol.tetik == "local_check" and kontrol.sonuc == "passed"
-        assert s.get(PullRequest, sc.pr_no) is not None
+        assert s.get(PullRequest, PullRequest.anahtar(sc.pr_no)) is not None
     eylemler = _eylemler(engine, f"script:{sc.id}")
     for e in ("repair.requested", "repair.proposed", "repair.checked", "repair.pr_opened"):
         assert e in eylemler
@@ -399,8 +399,9 @@ def test_ajan_snapshotu_son_yesil_kanit(
         c.execute(text("UPDATE script SET durum = 'merged' WHERE id = :i"), {"i": sid})
         c.execute(
             text(
-                "INSERT INTO script_adim (script_id, sira, arac, ham) "
-                "VALUES (:i, 1, 'browser_snapshot', :h)"
+                "INSERT INTO script_adim (project_id, script_id, sira, arac, ham) "
+                "VALUES ((SELECT project_id FROM script WHERE id = :i), :i, 1, "
+                "'browser_snapshot', :h)"
             ),
             {"i": sid, "h": "### Page snapshot\n```yaml\n" + YESIL_ARIA + "```\n"},
         )
@@ -452,8 +453,9 @@ def test_ayni_locator_degisikligi_tek_onarim(
         s.flush()
         s.execute(
             text(
-                "INSERT INTO failure_ek (failure_id, anahtar, oneri) "
-                "VALUES (:f, :a, CAST(:o AS jsonb))"
+                "INSERT INTO failure_ek (project_id, failure_id, anahtar, oneri) "
+                "VALUES ((SELECT project_id FROM failure WHERE id = :f), :f, :a, "
+                "CAST(:o AS jsonb))"
             ),
             {"f": kid, "a": f"{f.run_id}:k", "o": _json.dumps(oneri)},
         )

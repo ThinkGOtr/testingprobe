@@ -34,7 +34,14 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from tp_core.models import enums
-from tp_core.models.base import Base, guncelleme_col, in_check, olusturma_col, uuid_pk
+from tp_core.models.base import (
+    Base,
+    ProjeKapsamli,
+    guncelleme_col,
+    in_check,
+    olusturma_col,
+    uuid_pk,
+)
 from tp_core.models.requirements import EMPTY_LIST, EMPTY_OBJ, _durum
 
 # Onaylı karar tablosu / ilişki onaylanan içerik ve gereksinim hash'i olmadan var olamaz
@@ -44,7 +51,7 @@ ONAY_HASH_KOSULU = (
 )
 
 
-class KararTablosu(Base):
+class KararTablosu(ProjeKapsamli, Base):
     """PO onaylı karar tablosu (§4.1). `sira_no` gereksinim içinde tekildir; yeniden kullanılmaz."""
 
     __tablename__ = "karar_tablosu"
@@ -74,7 +81,7 @@ class KararTablosu(Base):
     guncelleme: Mapped[datetime] = guncelleme_col()
 
 
-class MetamorfikIliski(Base):
+class MetamorfikIliski(ProjeKapsamli, Base):
     """PO onaylı metamorfik ilişki (§4.5). `sira_no` gereksinim içinde tekildir."""
 
     __tablename__ = "metamorfik_iliski"
@@ -107,7 +114,7 @@ class MetamorfikIliski(Base):
     guncelleme: Mapped[datetime] = guncelleme_col()
 
 
-class CaseOracleKontrol(Base):
+class CaseOracleKontrol(ProjeKapsamli, Base):
     """Bir case içeriğinin karar tablolarına göre kontrol sonucu (§4.3)."""
 
     __tablename__ = "case_oracle_kontrol"
@@ -143,7 +150,7 @@ class CaseOracleKontrol(Base):
     guncelleme: Mapped[datetime] = guncelleme_col()
 
 
-class OracleIstisna(Base):
+class OracleIstisna(ProjeKapsamli, Base):
     """Gerekçeli istisna (append-only; §13.2). `tur`: `uyumsuz` (tabloya rağmen onay) ya da
     `kontrolsuz` (kontrol edilemeyen yüksek riskli case'in onayı). `tablo_hashleri` istisnanın
     verildiği karşılaştırmanın tablolarıdır: tablo değişince istisna geçerliliğini yitirir."""
@@ -168,7 +175,7 @@ class OracleIstisna(Base):
     zaman: Mapped[datetime] = olusturma_col()
 
 
-class MetamorfikTuretme(Base):
+class MetamorfikTuretme(ProjeKapsamli, Base):
     """(ilişki, kaynak case) başına türetme kaydı (§4.5); aynı çift ikinci kez türetilmez."""
 
     __tablename__ = "metamorfik_turetme"
@@ -195,7 +202,7 @@ class MetamorfikTuretme(Base):
     olusturma: Mapped[datetime] = olusturma_col()
 
 
-class HataKosusu(Base):
+class HataKosusu(ProjeKapsamli, Base):
     """Ekilmiş hata koşusu (§4.6): seçilen platformlarda temel → her hata → kapanış."""
 
     __tablename__ = "hata_kosusu"
@@ -220,7 +227,7 @@ class HataKosusu(Base):
     olusturma: Mapped[datetime] = olusturma_col()
 
 
-class HataKosusuAdim(Base):
+class HataKosusuAdim(ProjeKapsamli, Base):
     """Koşunun bir adımı: (platform, aşama, hata). Temel ve kapanışta `hata_kodu` boştur."""
 
     __tablename__ = "hata_kosusu_adim"

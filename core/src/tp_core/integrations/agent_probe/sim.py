@@ -5,7 +5,7 @@ Gerçek Agent Probe'a ağ çağrısı yoktur. "Kayıt atılıyor ve cevap geliyo
 - `list_products()`: `rules/agent-probe/urunler.yaml`'daki ürünlerden yalnız `hazir: true` olanlar
   (Agent Probe'da ön tanımları tamamlanmış ürünler).
 - `start_agent_test(urun, gereksinim)`: Agent Probe'da kayıt açar → talep no `APT-<yıl>-<n>`
-  (`n`: `ajan_testi_talebi_no_seq` dizisi, yarışsız), durum `queued`. Simülasyon sonucu
+  (`n`: proje başına sayaç `proje_sayac('talep')`, yarışsız), durum `queued`. Simülasyon sonucu
   gereksinimi `done`'a taşımaz (`features.agent_probe.service`, `TP_AGENT_PROBE_SIM_TAMAMLAR`).
 - `get_agent_test(talep_no)`: deterministik ilerleme, kaydın açılış anından geçen süreye göre:
   `< kuyruk_s` → `queued`; `< kuyruk_s + kosu_s` → `running` (geçen senaryo sayısı orantılı);
@@ -144,26 +144,28 @@ class PgDeposu:  # pragma: no cover - tp_core.features.agent_probe testleri ger�
         self._engine = engine_factory
 
     def sonraki_no(self, yil: int) -> int:
-        """`ajan_testi_talebi_no_seq` (0027): `nextval` işlemden bağımsız ve yarışsızdır —
-        eşzamanlı iki talep aynı numarayı alamaz (eski `MAX+1` kilitsizdi, güvenlik #9).
-        Numara yıla göre sıfırlanmaz; yıl öneki yalnız okunabilirlik içindir."""
-        from sqlalchemy import text
+        """Bağlamdaki projenin `talep` sayacı (`proje_sayac`, TP-COK-PROJE-PLANI §1.5): satır
+        kilidiyle yarışsızdır — eşzamanlı iki talep aynı numarayı alamaz (eski `MAX+1`
+        kilitsizdi, güvenlik #9); eski `ajan_testi_talebi_no_seq` değeri 0045'te varsayılan
+        projenin sayacına taşınır. Numara yıla göre sıfırlanmaz; yıl öneki okunabilirlik içindir."""
+        from tp_core.integrations.proje_ortami import pid_coz
+        from tp_core.proje import sayac
 
         with self._engine().begin() as conn:
-            return int(
-                conn.execute(text("SELECT nextval('ajan_testi_talebi_no_seq')")).scalar_one()
-            )
+            return sayac.sonraki(conn, "talep", pid_coz())
 
     def kayit(self, talep_no: str) -> SimKayit | None:
         from sqlalchemy import text
+
+        from tp_core.integrations.proje_ortami import pid_coz
 
         with self._engine().connect() as conn:
             r = conn.execute(
                 text(
                     "SELECT urun_kodu, requirement_id, olusturma FROM ajan_testi_talebi "
-                    "WHERE talep_no = :t"
+                    "WHERE project_id = :pid AND talep_no = :t"
                 ),
-                {"t": talep_no},
+                {"pid": pid_coz(), "t": talep_no},
             ).first()
         return None if r is None else SimKayit(talep_no, r[0], r[1], r[2])
 

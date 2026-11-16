@@ -10,12 +10,15 @@ Kapsam (specs/012-rol-yetki §4.2): `audit.read_all` (admin, auditor) tüm kayd�
 Denetçi (auditor) görünümünde `ozet` PII maskeleyicisinden geçer (`features/assistant/maskeleme`,
 `TP_PII_MASKING`'den bağımsız her zaman açık; yanıt başına tek oturum, yer tutucular tutarlı):
 denetçi olayları ve zinciri inceler, kişisel veriyi görmez. `hash`/`prev_hash` ham kayda aittir.
+
+Çok proje (TP-COK-PROJE-PLANI §1.3): kayıt ve doğrulama oturumun seçili projesinin zinciridir
+(`_kurulum` zinciri — giriş, proje değiştirme, config olayları — bu uçta görünmez).
 """
 
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel
@@ -24,6 +27,7 @@ from sqlalchemy import text
 from tp_core.audit import chain_tip, verify_call_anchors, verify_chain
 from tp_core.auth import yetki
 from tp_core.auth.deps import DbSession
+from tp_core.proje import KURULUM, pid_param
 from tp_core.workflow.service import Principal
 
 router = APIRouter(tags=["audit"])
@@ -101,9 +105,15 @@ def audit(
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     before_id: Annotated[int | None, Query(ge=1)] = None,
     nesne: Annotated[str | None, Query(max_length=200)] = None,
+    kapsam: Literal["proje", "kurulum"] = "proje",
 ) -> AuditOut:
     if verify and not yetki.izinli(user.rol, "audit.verify"):
         raise yetki.reddet(session, user, "audit.verify", "rol", request.url.path)
+    # `kurulum`: kurulum geneli zincir (giriş, proje değiştirme, config olayları); tüm kaydı okuma
+    # izni gerekir (kendi olayları kapsamı proje zinciriyle sınırlı).
+    if kapsam == "kurulum" and not yetki.izinli(user.rol, "audit.read_all"):
+        raise yetki.reddet(session, user, "audit.read_all", "rol", request.url.path)
+    zincir_pid = KURULUM if kapsam == "kurulum" else user.project_id
     kosul = ["(CAST(:before AS bigint) IS NULL OR id < CAST(:before AS bigint))"]
     if nesne:
         kosul.append("nesne = :nesne")
@@ -113,9 +123,12 @@ def audit(
     rows = conn.execute(
         text(
             "SELECT id, zaman, aktor, eylem, nesne, ozet, prev_hash, hash FROM audit_event "
-            f"WHERE {' AND '.join(kosul)} ORDER BY id DESC LIMIT :limit"
+            "WHERE project_id = :pid AND "
+            f"{' AND '.join(kosul)} ORDER BY id DESC LIMIT :limit"
         ),
-        {"before": before_id, "limit": limit, "nesne": nesne, "aktor": user.kullanici_adi},
+        pid_param(
+            pid=zincir_pid, before=before_id, limit=limit, nesne=nesne, aktor=user.kullanici_adi
+        ),
     ).all()
     events = [AuditEventOut.model_validate(r._asdict()) for r in rows]
     for e in events:
@@ -128,12 +141,12 @@ def audit(
             e.ozet = oturum.mask(e.ozet)[0]
     sonuc = AuditOut(
         events=events,
-        tip_hash=chain_tip(conn),
+        tip_hash=chain_tip(conn, zincir_pid),
         next_before_id=events[-1].id if len(events) == limit else None,
     )
     if verify:
-        zincir = ChainOut(**verify_chain(conn).as_dict())
-        capalar = verify_call_anchors(conn)
+        zincir = ChainOut(**verify_chain(conn, zincir_pid).as_dict())
+        capalar = verify_call_anchors(conn, zincir_pid)
         zincir.anchors = AnchorsOut.model_validate(capalar.as_dict())
         if not capalar.ok:
             zincir.ok = False

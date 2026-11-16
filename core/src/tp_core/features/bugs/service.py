@@ -67,6 +67,7 @@ from tp_core.models import (
 from tp_core.models.bugs_feature import BugDraftEk
 from tp_core.models.codegen_feature import ScriptCodegen
 from tp_core.ports import JiraIssue
+from tp_core.proje import pid_param
 from tp_core.workflow.jobs import JobContext, PermanentJobError, enqueue, idempotency_lock
 from tp_core.workflow.service import (
     SYSTEM,
@@ -194,9 +195,10 @@ def _oneri_durumu_yaz(s: Session, draft: BugDraft, durum: str) -> int:
     sonuc = s.execute(
         text(
             "UPDATE failure SET oneri_durumu = :d, guncelleme = now() "
-            "WHERE id = ANY(:ids) AND oneri_turu = 'bug_draft' AND oneri_durumu <> :d"
+            "WHERE project_id = :pid AND id = ANY(:ids) AND oneri_turu = 'bug_draft' "
+            "AND oneri_durumu <> :d"
         ),
-        {"d": durum, "ids": ids},
+        pid_param(d=durum, ids=ids),
     )
     return int(getattr(sonuc, "rowcount", 0) or 0)
 
@@ -858,10 +860,10 @@ def _yayin_isi_bekliyor(s: Session, draft_id: uuid.UUID) -> bool:
     return bool(
         s.execute(
             text(
-                "SELECT 1 FROM job WHERE tur = :t AND durum IN ('queued', 'running', 'retry') "
-                "AND yuk ->> 'draft_id' = :d LIMIT 1"
+                "SELECT 1 FROM job WHERE tur = :t AND project_id = :pid "
+                "AND durum IN ('queued', 'running', 'retry') AND yuk ->> 'draft_id' = :d LIMIT 1"
             ),
-            {"t": PUBLISH_JOB, "d": str(draft_id)},
+            pid_param(t=PUBLISH_JOB, d=str(draft_id)),
         ).first()
     )
 
@@ -1314,10 +1316,10 @@ def _baska_is_calisiyor(s: Session, draft_id: uuid.UUID, job_id: uuid.UUID | Non
     return bool(
         s.execute(
             text(
-                "SELECT 1 FROM job WHERE tur = :t AND durum = 'running' "
+                "SELECT 1 FROM job WHERE tur = :t AND project_id = :pid AND durum = 'running' "
                 "AND id IS DISTINCT FROM :j AND yuk ->> 'draft_id' = :d LIMIT 1"
             ),
-            {"t": PUBLISH_JOB, "d": str(draft_id), "j": job_id},
+            pid_param(t=PUBLISH_JOB, d=str(draft_id), j=job_id),
         ).first()
     )
 

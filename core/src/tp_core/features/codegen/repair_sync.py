@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from tp_core.audit import audit_on_commit
 from tp_core.events.bus import publish_tx
 from tp_core.models import Failure, PullRequest, Script, session_scope
+from tp_core.proje import pid_param
 from tp_core.workflow.jobs import PermanentJobError
 from tp_core.workflow.service import SYSTEM, approved_hash_matches, transition
 
@@ -44,10 +45,10 @@ def _oneri_durumu_yaz(s: Session, fid: uuid.UUID | None, durum: str) -> int:
         return 1
     res = s.execute(
         text(
-            "UPDATE failure SET oneri_durumu = :d WHERE id = ANY(:ids) "
+            "UPDATE failure SET oneri_durumu = :d WHERE project_id = :pid AND id = ANY(:ids) "
             "AND oneri_durumu IN ('proposed', 'pr_open', 'none')"
         ),
-        {"d": durum, "ids": ids},
+        pid_param(d=durum, ids=ids),
     )
     return 1 + int(res.rowcount or 0)
 
@@ -98,7 +99,7 @@ def merged_isaretle(
             sebep="forge'da insan onarım PR'ını merge etti",
             ozet={"pr": number, "kaynak": "forge"},
         )
-        kayit = s.get(PullRequest, number)
+        kayit = s.get(PullRequest, PullRequest.anahtar(number))
         if kayit is not None:
             kayit.durum = "merged"
             kayit.merge_sha = merge_sha
@@ -131,7 +132,7 @@ def closed_isaretle(sid: uuid.UUID, number: int) -> dict[str, Any]:
             return {"durum": sc.durum, "pr": number, "zaten": True}
         fid = sc.failure_id
         transition(s, sc, "closed", SYSTEM, "pr_open", sebep="onarım PR'ı forge'da kapatıldı")
-        kayit = s.get(PullRequest, number)
+        kayit = s.get(PullRequest, PullRequest.anahtar(number))
         if kayit is not None:
             kayit.durum = "closed"
         _oneri_durumu_yaz(s, fid, "rejected")

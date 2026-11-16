@@ -58,8 +58,9 @@ def _hata(s: Any, rid: uuid.UUID, ad: str) -> uuid.UUID:
     if _failure_ek_var():
         s.execute(
             text(
-                "INSERT INTO failure_ek (failure_id, anahtar, oneri) "
-                "VALUES (:f, :a, CAST(:o AS jsonb))"
+                "INSERT INTO failure_ek (project_id, failure_id, anahtar, oneri) "
+                "VALUES ((SELECT project_id FROM failure WHERE id = :f), :f, :a, "
+                "CAST(:o AS jsonb))"
             ),
             {"f": fid, "a": f"{rid}:{ad}", "o": json.dumps(ONERI)},
         )
@@ -128,8 +129,8 @@ def test_github_arayuzunde_merge_edilen_onarim_pr_i_onarim_semantigiyle_islenir(
     with session_scope() as s:
         rsc = s.get(Script, rsid)
         assert rsc.durum == "merged" and rsc.insan_review_sonucu == "kabul"
-        assert s.get(PullRequest, 9999).durum == "merged"
-        assert s.get(PullRequest, 9999).merge_eden == "github"
+        assert s.get(PullRequest, PullRequest.anahtar(9999)).durum == "merged"
+        assert s.get(PullRequest, PullRequest.anahtar(9999)).merge_eden == "github"
         rv = s.scalars(select(Review).where(Review.nesne_id == rsid)).one()
         assert rv.karar == "merge" and rv.user_id is None
         assert rv.harici_onaylayan == "github" and rv.kanal == "github"
@@ -160,7 +161,7 @@ def test_github_arayuzunde_kapatilan_onarim_pr_i_reddedildi_olur(
     assert codegen.ci[once:] == []
     with session_scope() as s:
         assert s.get(Script, rsid).durum == "closed"
-        assert s.get(PullRequest, 9998).durum == "closed"
+        assert s.get(PullRequest, PullRequest.anahtar(9998)).durum == "closed"
         assert s.get(Failure, fid).oneri_durumu == "rejected"
         if _failure_ek_var():
             assert s.get(Failure, kid).oneri_durumu == "rejected"

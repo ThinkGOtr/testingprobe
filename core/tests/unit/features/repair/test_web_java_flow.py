@@ -149,8 +149,9 @@ def web_java_hata(
         s.flush()
         s.execute(
             text(
-                "INSERT INTO failure_ek (failure_id, anahtar, oneri) "
-                "VALUES (:f, :a, CAST(:o AS jsonb))"
+                "INSERT INTO failure_ek (project_id, failure_id, anahtar, oneri) "
+                "VALUES ((SELECT project_id FROM failure WHERE id = :f), :f, :a, "
+                "CAST(:o AS jsonb))"
             ),
             {"f": fid, "a": f"{rid}:{fid}", "o": json.dumps(oneri or ONERI)},
         )

@@ -98,6 +98,7 @@ from tp_core.models import (
     session_scope,
 )
 from tp_core.ports import CallResult, ModelGateway, ModelMessage
+from tp_core.proje import pid_param
 from tp_core.workflow.jobs import JobContext, PermanentJobError, start_workflow
 from tp_core.workflow.service import (
     SYSTEM,
@@ -738,9 +739,9 @@ def _stuck(session: Session, req: Requirement) -> str | None:
         text(
             "SELECT w.durum AS wf, j.durum AS job, j.son_hata FROM workflow_instance w "
             "LEFT JOIN job j ON j.id = w.job_id WHERE w.tur = :t AND w.nesne_id = :r "
-            "ORDER BY w.olusturma DESC LIMIT 1"
+            "AND w.project_id = :pid ORDER BY w.olusturma DESC LIMIT 1"
         ),
-        {"t": WORKFLOW_TUR, "r": req.id},
+        pid_param(t=WORKFLOW_TUR, r=req.id),
     ).first()
     if row is None:
         # IDE taslakları generating'den aynı işlemde geçer; iş akışsız generating takılı sayılır.
@@ -1647,9 +1648,9 @@ def _review_sure_ms(session: Session, tc: TestCase, user: Principal) -> int | No
     son = latest_review(session, "test_case", tc.id)
     sorgu = (
         "SELECT (EXTRACT(EPOCH FROM (now() - min(zaman))) * 1000)::bigint FROM case_goruntuleme "
-        "WHERE test_case_id = :c AND user_id = :u"
+        "WHERE test_case_id = :c AND user_id = :u AND project_id = :pid"
     )
-    params: dict[str, Any] = {"c": tc.id, "u": user.id}
+    params: dict[str, Any] = pid_param(c=tc.id, u=user.id)
     if son is not None:
         sorgu += " AND zaman > :esik"
         params["esik"] = son.zaman

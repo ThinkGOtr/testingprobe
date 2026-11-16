@@ -50,6 +50,7 @@ from typing import Any, Final, Protocol
 from tp_core.features.assistant.siniflandir import normalize
 from tp_core.features.assistant.tools.base import KanitHavuzu, sir_temizle
 from tp_core.gateway.masking import MaskingSession
+from tp_core.proje import baglamla
 
 log = logging.getLogger(__name__)
 
@@ -495,7 +496,8 @@ class _KaynakDogrulayici:
             raise _ZamanAsimi
         havuz = ThreadPoolExecutor(max_workers=1, thread_name_prefix="asistan-dogrula")
         try:
-            return havuz.submit(fn, *args).result(timeout=kalan)
+            # İş parçacığı bağlamı miras almaz: proje bağlamı (veri doğrulama sorguları) taşınır.
+            return havuz.submit(baglamla(fn), *args).result(timeout=kalan)
         except FutureTimeout:
             raise _ZamanAsimi from None
         finally:

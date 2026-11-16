@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+import dataclasses
+import logging
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
+
+from toolchain_common.proje import ProjeBlogu, token_gonderilir_mi
+
+log = logging.getLogger(__name__)
 
 
 def _float(name: str, default: float) -> float:
@@ -84,6 +91,13 @@ class Settings:
     # ikinci ısıtılmış Maven deposu (`/opt/e2e-java/{pom.xml,m2}`).
     e2e_java_root: str = "e2e-java"
     e2e_java_deps: Path = Path("/opt/e2e-java")
+    # Çok proje (TP-COK-PROJE-PLANI §4.4): istekteki `proje` bloğu. None = blok yok (ortam).
+    pid: str | None = None
+    # Platform → e2e-app ortam adlarıyla uygulama ayarları (yalnız blokta verilen platformlar;
+    # verilen platformda ortamdaki TP_APP_* kullanılmaz).
+    app_ayarlari: Mapping[str, Mapping[str, str]] | None = None
+    # test-runner'a iletilecek ham blok (`model_dump(exclude_none=True)`).
+    proje_blogu: Mapping[str, Any] | None = dataclasses.field(default=None, repr=False)
 
     @property
     def e2e_java_m2(self) -> Path:
@@ -129,7 +143,50 @@ def _flag(name: str, default: bool = False) -> bool:
     return raw in ("1", "true", "yes", "evet")
 
 
-def settings() -> Settings:
+def settings(proje: ProjeBlogu | Mapping[str, Any] | None = None) -> Settings:
+    """Ortam ayarları; `proje` verilirse bloktaki dolu alanlar ortamın üstüne yazılır."""
+    cfg = _ortam_ayarlari()
+    if proje is None:
+        return cfg
+    blok = proje if isinstance(proje, ProjeBlogu) else ProjeBlogu.model_validate(proje)
+    degisen: dict[str, Any] = {
+        "pid": blok.pid,
+        "app_ayarlari": blok.app_ayarlari(),
+        "proje_blogu": blok.model_dump(exclude_none=True),
+    }
+    if blok.forge_path is not None:
+        degisen["forge_path"] = Path(blok.forge_path)
+    if blok.mirror_path is not None:
+        degisen["forge_mirror_path"] = Path(blok.mirror_path)
+    if blok.remote_url is not None:
+        degisen["forge_remote_url"] = blok.remote_url
+    if blok.remote_token:
+        degisen["forge_remote_token"] = blok.remote_token
+    if blok.remote_url is not None or blok.remote_token:
+        # Proje bloğundan gelen adres/token: token yalnız GitHub host'una gider (env token'ı da
+        # projenin seçtiği başka bir host'a sızmasın).
+        adres = degisen.get("forge_remote_url", cfg.forge_remote_url)
+        if degisen.get("forge_remote_token", cfg.forge_remote_token) and not token_gonderilir_mi(
+            adres
+        ):
+            log.warning(
+                "ayna token'ı kullanılmadı (%s): adres izinli GitHub host'unda değil", blok.pid
+            )
+            degisen["forge_remote_token"] = ""
+    if blok.base_url is not None:
+        # Uygulama kökü hem koşu (BASE_URL) hem yoklama (DEMO_WEB_URL) için aynıdır.
+        degisen["base_url"] = blok.base_url
+        degisen["probe_base_url"] = blok.base_url
+    for alan in ("demo_api_url", "probe_user", "probe_password", "e2e_root"):
+        deger = getattr(blok, alan)
+        if deger is not None:
+            degisen[alan] = deger
+    if blok.run_dealers is not None:
+        degisen["run_dealers"] = tuple(blok.run_dealers)
+    return dataclasses.replace(cfg, **degisen)
+
+
+def _ortam_ayarlari() -> Settings:
     env = os.environ.get
     return Settings(
         forge_path=Path(env("TP_FORGE_PATH", "/forge/demo-app.git")),

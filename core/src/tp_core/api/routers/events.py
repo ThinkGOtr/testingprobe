@@ -13,6 +13,11 @@ Kişiye özel olaylar (AI-ASISTAN-PLANI §9): `assistant.*` olayları yalnız `d
 oturum kullanıcısı olan akışa teslim edilir. Kimlik yoksa, eşleşmiyorsa ya da akışın kullanıcısı
 bilinmiyorsa olay hiç gönderilmez (fail-closed). Diğer olaylar önceki gibi herkese gider.
 
+Proje süzgeci (TP-COK-PROJE-PLANI §5.1): akış açıldığı anki oturum projesine aittir; yükünde
+`project_id` (üst düzey ya da `data` içinde) taşıyıp başka projeye ait olan olay gönderilmez.
+`project_id` taşımayan olaylar (proje kapsamı öncesi yayıncılar) geçişte herkese gider. SSE başlık
+taşıyamadığından portal projeyi `?proje=` ile bildirir (oturum projesinden farklıysa 409).
+
 Rol süzgeci (specs/012-rol-yetki §4.2): developer yalnız onaylı/yayınlanmış case ve açılmış bug
 görür. Akışında `case.generated` (taslak case) yoktur; case ve bug taslağı `review.recorded`
 olayları gitmez; `test_case.state` yalnız hedef durum `approved`/`published`, `bug_draft.state`
@@ -38,6 +43,7 @@ from tp_core.auth.yetki import izin
 from tp_core.config import get_settings
 from tp_core.events.listener import Broadcaster, libpq_dsn
 from tp_core.models import new_session
+from tp_core.proje.baglam import KURULUM
 from tp_core.workflow.service import Principal
 
 router = APIRouter(tags=["events"])
@@ -65,6 +71,18 @@ def teslim_edilir_mi(olay: Mapping[str, Any], kullanici_id: object | None) -> bo
     if not isinstance(sahip, str) or not sahip:
         return False
     return sahip.strip().lower() == str(kullanici_id).strip().lower()
+
+
+def proje_eslesir(olay: Mapping[str, Any], pid: str | None) -> bool:
+    """Olay bu akışın projesine mi ait? Projesi eşit ya da açıkça kurulum geneli (`KURULUM`)
+    işaretli olay geçer; proje taşımayan (işaretsiz) olay projeli akışa gitmez (fail-closed)."""
+    if pid is None:
+        return True
+    veri = olay.get("data")
+    olay_pid = olay.get("project_id")
+    if olay_pid is None and isinstance(veri, Mapping):
+        olay_pid = veri.get("project_id")
+    return olay_pid is not None and str(olay_pid) in (pid, KURULUM)
 
 
 # Developer akışında süzülen olaylar: ad → (None = hiç gönderilmez | izinli hedef durumlar).
@@ -131,6 +149,7 @@ async def _akis(
     *,
     kullanici_id: object | None = None,
     rol: str | None = None,
+    pid: str | None = None,
 ) -> AsyncIterator[dict[str, str]]:
     bitti = {"event": OTURUM_BITTI, "data": "{}"}
     try:
@@ -148,7 +167,11 @@ async def _akis(
                         break
                     son_kontrol = time.monotonic()
                 continue
-            if not teslim_edilir_mi(olay, kullanici_id) or not rol_gorur_mu(olay, rol):
+            if (
+                not proje_eslesir(olay, pid)
+                or not teslim_edilir_mi(olay, kullanici_id)
+                or not rol_gorur_mu(olay, rol)
+            ):
                 continue
             # Teslimden önce: çıkıştan sonra yayımlanan olay eski bağlantıya ulaşmamalı.
             if not await oturum_gecerli():
@@ -177,9 +200,17 @@ async def events(
         await b.ensure_started()
     except TimeoutError as exc:
         raise HTTPException(503, "Olay akışı şu anda kullanılamıyor") from exc
-    q = b.subscribe()
+    q = b.subscribe(user.project_id)  # yalnız oturum projesi + kurulum geneli olaylar
     return EventSourceResponse(
-        _akis(request, b, q, oturum_kontrolu(veri), kullanici_id=user.id, rol=user.rol),
+        _akis(
+            request,
+            b,
+            q,
+            oturum_kontrolu(veri),
+            kullanici_id=user.id,
+            rol=user.rol,
+            pid=user.project_id,
+        ),
         ping=PING_S,
         headers={"X-Accel-Buffering": "no"},
     )

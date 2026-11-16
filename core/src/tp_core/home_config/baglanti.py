@@ -11,8 +11,12 @@ token alabilir: OAuth/App token'ı okuma ile yazmayı ayırmaz; core-api'nin yaz
 kuralı (security-check 8) bu kipte de korunur. Not: aynı VM servis hesabı Home'u doğrudan
 çağırabildiği için bu, savunma derinliğidir; asıl sınır konteyner ayrımıdır.
 
-Önbellek: tür başına; `expires_at`ten `YENILEME_PAYI_S` önce yenilenir; 401 alan istemci
-`gecersiz_kil()` ile bir kez yeniler.
+Önbellek: (proje, tür) başına; `expires_at`ten `YENILEME_PAYI_S` önce yenilenir; 401 alan
+istemci `gecersiz_kil()` ile bir kez yeniler.
+
+Çok proje (TP-COK-PROJE-PLANI §4.2): token isteği `{project: pid, type}` ile projenin kendisi
+için yapılır; `pid` verilmezse bağlamdaki proje, bağlam yoksa varsayılan proje
+(`TP_HOME_PROJECT`). Her projenin ayrı istemcisi (ve önbelleği) vardır.
 """
 
 from __future__ import annotations
@@ -29,6 +33,7 @@ import httpx
 
 from tp_core.home_config import durum
 from tp_core.home_config import yukleyici as y
+from tp_core.proje.baglam import KURULUM, varsa
 
 YETKI_ENV = "TP_BAGLANTI_TOKENI"
 YENILEME_PAYI_S = 120.0
@@ -161,83 +166,110 @@ class BaglantiTokenIstemcisi:
             self._onbellek.pop(tur, None)
 
 
-_ISTEMCI: BaglantiTokenIstemcisi | None = None
+_ISTEMCILER: dict[str, BaglantiTokenIstemcisi] = {}
 _ISTEMCI_KILIDI = threading.Lock()
 
 
 def configure(istemci: BaglantiTokenIstemcisi | None) -> None:
-    """Testler: sahte Home ile kurulmuş istemci (None = sıfırla)."""
-    global _ISTEMCI
-    _ISTEMCI = istemci
+    """Testler: sahte Home ile kurulmuş istemci (kendi projesi için; None = hepsini sıfırla)."""
+    with _ISTEMCI_KILIDI:
+        if istemci is None:
+            _ISTEMCILER.clear()
+        else:
+            _ISTEMCILER[istemci.proje] = istemci
 
 
 def yetkili_surec() -> bool:
     return (os.environ.get(YETKI_ENV) or "").strip() == "1"
 
 
-def istemci() -> BaglantiTokenIstemcisi:
-    global _ISTEMCI
+def _proje(pid: str | None) -> str:
+    if pid:
+        return pid
+    b = varsa()
+    if b is not None and b.pid != KURULUM:
+        return b.pid
+    proje = y.ayar(os.environ, y.PROJE_ENV)
+    if not proje:
+        raise BaglantiHatasi("TP_HOME_PROJECT eksik ve proje bağlamı yok")
+    return proje
+
+
+def istemci(pid: str | None = None) -> BaglantiTokenIstemcisi:
     if not yetkili_surec():
         raise BaglantiHatasi(
             "bağlantı token'ı yalnız yazma kimliği taşıyan süreçte (core-worker, "
             "TP_BAGLANTI_TOKENI=1) alınabilir"
         )
+    proje = _proje(pid)
     with _ISTEMCI_KILIDI:
-        if _ISTEMCI is None:
-            proje = y.ayar(os.environ, y.PROJE_ENV)
+        ist = _ISTEMCILER.get(proje)
+        if ist is None:
             url, audience = y.home_adresi(os.environ)
-            if not proje or not url:
-                raise BaglantiHatasi("TP_HOME_PROJECT / AIPROBE_HOME_RUN_URL eksik")
-            _ISTEMCI = BaglantiTokenIstemcisi(
+            if not url:
+                raise BaglantiHatasi("AIPROBE_HOME_RUN_URL eksik")
+            ist = _ISTEMCILER[proje] = BaglantiTokenIstemcisi(
                 url, proje, durum._id_token, audience=audience,
                 http=durum._YAPI.http or y.urllib_http,
             )  # fmt: skip
-        return _ISTEMCI
+        return ist
 
 
-def token_al(tur: str) -> ErisimTokeni:
-    return istemci().al(tur)
+def token_al(tur: str, pid: str | None = None) -> ErisimTokeni:
+    return istemci(pid).al(tur)
 
 
-def gecersiz_kil(tur: str) -> None:
-    if _ISTEMCI is not None:
-        _ISTEMCI.gecersiz_kil(tur)
+def gecersiz_kil(tur: str, pid: str | None = None) -> None:
+    try:
+        proje = _proje(pid)
+    except BaglantiHatasi:
+        return
+    ist = _ISTEMCILER.get(proje)
+    if ist is not None:
+        ist.gecersiz_kil(tur)
 
 
 # ------------------------------------------------------------------ istemci kimlik sarmalayıcıları
 
 
 class HomeJiraAuth(httpx.Auth):
-    """Jira OAuth (3LO): her istekte önbellekli Bearer; 401'de bir kez yeniler."""
+    """Jira OAuth (3LO): her istekte önbellekli Bearer; 401'de bir kez yeniler. `pid` verilirse
+    istemci o projeye sabitlenir (proje başına istemci fabrikası); yoksa çağrı anındaki bağlam."""
 
-    def __init__(self, saglayici: Callable[[], ErisimTokeni] | None = None) -> None:
-        self._saglayici = saglayici or (lambda: token_al("jira"))
+    def __init__(
+        self, saglayici: Callable[[], ErisimTokeni] | None = None, *, pid: str | None = None
+    ) -> None:
+        self._pid = pid
+        self._saglayici = saglayici or (lambda: token_al("jira", self._pid))
 
     def auth_flow(self, request: httpx.Request) -> Generator[httpx.Request, httpx.Response, None]:
         request.headers["Authorization"] = f"Bearer {self._saglayici().access_token}"
         yanit = yield request
         if yanit.status_code == 401:
-            gecersiz_kil("jira")
+            gecersiz_kil("jira", self._pid)
             request.headers["Authorization"] = f"Bearer {self._saglayici().access_token}"
             yield request
 
 
 class HomeGitHubAuth:
-    """`GitHubAuth` protokolü (forge_github): GitHub App kurulum token'ı Home'dan."""
+    """`GitHubAuth` protokolü (forge_github): GitHub App kurulum token'ı Home'dan (proje başına)."""
 
-    def __init__(self, saglayici: Callable[[], ErisimTokeni] | None = None) -> None:
-        self._saglayici = saglayici or (lambda: token_al("github"))
+    def __init__(
+        self, saglayici: Callable[[], ErisimTokeni] | None = None, *, pid: str | None = None
+    ) -> None:
+        self._pid = pid
+        self._saglayici = saglayici or (lambda: token_al("github", self._pid))
 
     def token(self, client: httpx.Client) -> str:
         return self._saglayici().access_token
 
     def invalidate(self) -> None:
-        gecersiz_kil("github")
+        gecersiz_kil("github", self._pid)
 
 
-def jira_oauth_mu() -> bool:
-    return durum.baglanti_kipi("jira") == "oauth"
+def jira_oauth_mu(pid: str | None = None) -> bool:
+    return durum.baglanti_kipi("jira", pid) == "oauth"
 
 
-def github_app_mi() -> bool:
-    return durum.baglanti_kipi("github") == "app"
+def github_app_mi(pid: str | None = None) -> bool:
+    return durum.baglanti_kipi("github", pid) == "app"

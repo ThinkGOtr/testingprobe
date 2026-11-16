@@ -4,8 +4,9 @@
 - `eslem_katalogu`: eşleme kataloğu = `katalog` + değeri ortamda tanımlı gizli kayıtlar; böylece
   parola case metnine düz yazılmaz, `{veri:ortak.demo_parola}` olur. K18: yalnız bayi / ürün /
   kampanya / ortak grupları (`atif.case_esle` ayrıca tutar kuralını uygular).
-- `cozum_degerleri`: kod üretimi / koşu için (değerler, sürümler); gizli değer
-  `os.environ[sir_adi]`'den, sır tanımsızsa o anahtar çözülemez.
+- `cozum_degerleri`: kod üretimi / koşu için (değerler, sürümler); gizli değer projenin
+  sırrından (`proje.ayar.sir`; varsayılan projede `os.environ[sir_adi]`), sır tanımsızsa o
+  anahtar çözülemez.
 - `veri_izi` (013 §9/§10): `{anahtar: "h1:" + HMAC-SHA256(sunucu anahtarı, değer)[:16]}`.
   Anahtar `TP_SESSION_SECRET`'tan türetilir (alan ayrımlı). Oturum sırrı yoksa gizli olmayan
   değerler `h0:` (anahtarsız HMAC; değer zaten katalogda açık) ile özetlenir, gizli değer hiç
@@ -48,6 +49,8 @@ from tp_core.audit.session import audit_on_commit
 from tp_core.features.testveri import atif
 from tp_core.models import Requirement, TestCase
 from tp_core.models.otomasyon_feature import TestVerisi, TestVerisiSurum
+from tp_core.proje import mevcut_pid, pid_param
+from tp_core.proje.ayar import sir as proje_siri
 from tp_core.workflow.service import WorkflowError
 
 log = logging.getLogger(__name__)
@@ -124,8 +127,9 @@ def slug(metin: str) -> str:
 def sir_degeri(sir_adi: str | None) -> str | None:
     if not sir_adi:
         return None
-    deger = os.environ.get(sir_adi)
-    return deger if deger else None
+    # Proje sırrı (TP-COK-PROJE-PLANI §3.1): bağlamdaki projenin sır çözücüsü; varsayılan
+    # projede geriye uyum için ortam.
+    return proje_siri(sir_adi)
 
 
 def etkin_kayitlar(session: Session) -> list[TestVerisi]:
@@ -652,14 +656,15 @@ def _cakisma_freni(session: Session, aktor: str) -> None:
     sayımı birbirinden görür."""
     a = aktor or "bilinmiyor"
     session.execute(
-        text("SELECT pg_advisory_xact_lock(hashtext(:k))"), {"k": "tp-testveri-fren:" + a}
+        text("SELECT pg_advisory_xact_lock(hashtext(:k))"),
+        {"k": f"tp-testveri-fren:{mevcut_pid()}:{a}"},
     )
     sayi = session.execute(
         text(
-            "SELECT count(*) FROM audit_event WHERE eylem = ANY(:e) "
+            "SELECT count(*) FROM audit_event WHERE project_id = :pid AND eylem = ANY(:e) "
             "AND aktor = :a AND zaman > now() - make_interval(mins => :m)"
         ),
-        {"e": list(FREN_EYLEMLERI), "a": a, "m": GIZLI_CAKISMA_PENCERESI_DK},
+        pid_param(e=list(FREN_EYLEMLERI), a=a, m=GIZLI_CAKISMA_PENCERESI_DK),
     ).scalar_one()
     if sayi >= GIZLI_CAKISMA_SINIRI:
         raise TestVerisiCokDeneme(COK_DENEME_METNI)
@@ -954,6 +959,7 @@ def tohumla(session: Session, sorgu: Any = ...) -> int:
             insert(TestVerisi)
             .values(
                 id=uuid.uuid4(),
+                project_id=mevcut_pid(),
                 anahtar=satir["anahtar"],
                 grup=satir["grup"],
                 aciklama=satir["aciklama"],
@@ -967,7 +973,7 @@ def tohumla(session: Session, sorgu: Any = ...) -> int:
                 olusturma=taban + timedelta(microseconds=i),
                 guncelleme=taban,
             )
-            .on_conflict_do_nothing(index_elements=["anahtar"])
+            .on_conflict_do_nothing(index_elements=["project_id", "anahtar"])
             .returning(TestVerisi.id)
         ).first()
         if sonuc is None:

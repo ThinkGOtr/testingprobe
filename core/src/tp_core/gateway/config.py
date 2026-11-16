@@ -9,7 +9,7 @@ from typing import Any, Literal
 
 import yaml
 from pydantic import Field, SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
 from tp_core.gateway.errors import GatewayConfigError
 from tp_core.gateway.providers.base import Usage
@@ -19,7 +19,25 @@ EffectiveMode = Literal["live", "replay", "record"]
 
 
 class GatewaySettings(BaseSettings):
+    """Proje bağlamı varken A/P alanları (anahtar, sağlayıcı, bütçe, PII maskeleme) o projenin
+    etkin config'inden (`tp_core.config.proje_kaynaklari`, TP-COK-PROJE-PLANI §3.2)."""
+
     model_config = SettingsConfigDict(extra="ignore")
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        from tp_core.config import proje_kaynaklari
+
+        return proje_kaynaklari(
+            settings_cls, init_settings, env_settings, dotenv_settings, file_secret_settings
+        )
 
     model_mode: ModelMode = Field(default="auto", validation_alias="TP_MODEL_MODE")
     model_provider: Literal["anthropic", "azure_openai"] = Field(

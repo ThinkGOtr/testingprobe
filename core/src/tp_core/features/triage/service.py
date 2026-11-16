@@ -72,6 +72,7 @@ from tp_core.models.ci_feature import TestResultEk
 from tp_core.models.codegen_feature import ScriptCodegen, ScriptKontrol
 from tp_core.models.kalite_feature import CaseOracleKontrol, KararTablosu, OracleIstisna
 from tp_core.models.triage_feature import FailureEk, TriageKosu
+from tp_core.proje import mevcut_pid, pid_param
 from tp_core.workflow import jobs as jobq
 
 log = logging.getLogger(__name__)
@@ -2150,8 +2151,11 @@ def ensure_sweep(conn: Connection, *, gecikme_s: float = 0.0) -> uuid.UUID | Non
         return None
     jobq.idempotency_lock(conn, JOB_SWEEP)
     bekleyen = conn.execute(
-        text("SELECT id FROM job WHERE tur = :t AND durum IN ('queued', 'retry') LIMIT 1"),
-        {"t": JOB_SWEEP},
+        text(
+            "SELECT id FROM job WHERE project_id = :pid AND tur = :t "
+            "AND durum IN ('queued', 'retry') LIMIT 1"
+        ),
+        pid_param(t=JOB_SWEEP),
     ).scalar_one_or_none()
     if bekleyen is not None:
         return None
@@ -2164,10 +2168,11 @@ def purge_sweep_jobs(engine: Engine, saklama: timedelta = timedelta(hours=1)) ->
         return (
             conn.execute(
                 text(
-                    "DELETE FROM job WHERE tur = :t AND durum IN ('done', 'failed', 'cancelled') "
+                    "DELETE FROM job WHERE tur = :t AND project_id = :pid "
+                    "AND durum IN ('done', 'failed', 'cancelled') "
                     "AND COALESCE(bitis, guncelleme) < now() - make_interval(secs => :sn)"
                 ),
-                {"t": JOB_SWEEP, "sn": saklama.total_seconds()},
+                pid_param(t=JOB_SWEEP, sn=saklama.total_seconds()),
             ).rowcount
             or 0
         )
@@ -2197,10 +2202,10 @@ def bug_taslagi_id(session: Session, failure_id: uuid.UUID) -> uuid.UUID | None:
         return None
     return session.execute(
         text(
-            "SELECT bug_draft_id FROM bug_draft_ek WHERE ilgili_failure_ids @> "
-            "CAST(:j AS jsonb) ORDER BY olusturma LIMIT 1"
+            "SELECT bug_draft_id FROM bug_draft_ek WHERE project_id = :pid "
+            "AND ilgili_failure_ids @> CAST(:j AS jsonb) ORDER BY olusturma LIMIT 1"
         ),
-        {"j": f'["{failure_id}"]'},
+        pid_param(j=f'["{failure_id}"]'),
     ).scalar()
 
 
@@ -2469,17 +2474,25 @@ def triage_sifirla(session: Session, run_id: uuid.UUID, isteyen: str) -> dict[st
         if bagli is None:
             bagli = session.execute(
                 text(
-                    "SELECT 1 FROM bug_draft_ek WHERE ilgili_failure_ids ?| CAST(:ids AS text[]) "
-                    "LIMIT 1"
+                    "SELECT 1 FROM bug_draft_ek WHERE project_id = :pid "
+                    "AND ilgili_failure_ids ?| CAST(:ids AS text[]) LIMIT 1"
                 ),
-                {"ids": [str(i) for i in ids]},
+                pid_param(ids=[str(i) for i in ids]),
             ).scalar()
         if bagli is not None:
             raise YenidenTriageReddi(
                 "koşunun failure kayıtları bug taslağına / onarım script'ine bağlı; sıfırlanmadı"
             )
-        session.execute(Failure.__table__.delete().where(Failure.run_id == run_id))
-    session.execute(TriageKosu.__table__.delete().where(TriageKosu.run_id == run_id))
+        session.execute(
+            Failure.__table__.delete().where(
+                Failure.project_id == mevcut_pid(), Failure.run_id == run_id
+            )
+        )
+    session.execute(
+        TriageKosu.__table__.delete().where(
+            TriageKosu.project_id == mevcut_pid(), TriageKosu.run_id == run_id
+        )
+    )
     audit_on_commit(
         session, isteyen, "triage.reset", f"run:{run_id}", {"silinen_failure": len(ids)}
     )

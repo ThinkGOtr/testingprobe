@@ -65,7 +65,10 @@ def denetimler(engine: Engine, mid: Any) -> list[dict[str, Any]]:
         return [
             dict(r)
             for r in c.execute(
-                text("SELECT * FROM asistan_denetim WHERE mesaj_id = :m ORDER BY olusturma, yon"),
+                text(
+                    "SELECT * FROM asistan_denetim WHERE asistan_denetim.project_id = 'test-a' AND "
+                    "mesaj_id = :m ORDER BY olusturma, yon"
+                ),
                 {"m": mid},
             ).mappings()
         ]
@@ -76,7 +79,10 @@ def denetim_olaylari(engine: Engine, mid: Any) -> list[dict[str, Any]]:
         return [
             {"eylem": r[0], **(r[1] or {})}
             for r in c.execute(
-                text("SELECT eylem, ozet FROM audit_event WHERE nesne = :n ORDER BY id"),
+                text(
+                    "SELECT eylem, ozet FROM audit_event WHERE audit_event.project_id = 'test-a' "
+                    "AND nesne = :n ORDER BY id"
+                ),
                 {"n": f"asistan_mesaj:{mid}"},
             )
         ]
@@ -111,9 +117,14 @@ def test_temiz_soru_ve_cevap_gecer_kayit_ve_maliyet(
     assert "Yön: cevap" in son and "kullanici_sorusu" in son and "Cevap metni." in son
     with engine.connect() as c:
         satir = c.execute(
-            text("SELECT amac, maliyet, ek FROM ai_call WHERE amac = 'assistant_guard'")
+            text(
+                "SELECT amac, maliyet, ek FROM ai_call WHERE ai_call.project_id = 'test-a' AND "
+                "amac = 'assistant_guard'"
+            )
         ).all()
-        toplam = c.execute(text("SELECT SUM(maliyet) FROM ai_call")).scalar()
+        toplam = c.execute(
+            text("SELECT SUM(maliyet) FROM ai_call WHERE ai_call.project_id = 'test-a'")
+        ).scalar()
     assert len(satir) == 2 and all(r[2]["kullanici_id"] == str(u.id) for r in satir)
     # Denetim maliyeti mesaja ve soru başı / kullanıcı günlük bütçeye girer.
     assert float(m["maliyet_usd"]) == pytest.approx(float(toplam))
@@ -171,7 +182,7 @@ def test_kural_on_denetimi_injection_gecit_kurulmaz(
     assert m["kaynak"] == "denetim"
     assert m["cevap"]["denetim"]["soru"]["kategoriler"] == ["prompt_injection"]
     assert [(r["kaynak"], r["karar"]) for r in denetimler(engine, mid)] == [("sim", "engelle")]
-    assert tek(engine, "SELECT count(*) FROM ai_call") == 0
+    assert tek(engine, "SELECT count(*) FROM ai_call WHERE ai_call.project_id = 'test-a'") == 0
 
 
 def test_cevap_engellenirse_gosterilmez(client: TestClient, make_user, engine: Engine) -> None:
@@ -304,7 +315,7 @@ def test_kapali_kipte_kurallarla_denetlenir(client: TestClient, make_user, engin
     assert m["kaynak"] in ("kapali", "sablon")
     assert m["cevap"]["denetim"]["soru"]["kaynak"] == "sim"
     assert [(r["kaynak"], r["karar"]) for r in denetimler(engine, mid)] == [("sim", "gec")]
-    assert tek(engine, "SELECT count(*) FROM ai_call") == 0
+    assert tek(engine, "SELECT count(*) FROM ai_call WHERE ai_call.project_id = 'test-a'") == 0
 
 
 def test_sim_kipinde_model_cagrisi_yok(

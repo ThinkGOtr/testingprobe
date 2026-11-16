@@ -10,7 +10,6 @@ kopyası yoksa ya da güncel head'e ait değilse (bayat) zorunlu check'ler `pend
 from __future__ import annotations
 
 import json
-import os
 import re
 import uuid
 from collections.abc import Mapping, Sequence
@@ -36,7 +35,9 @@ from tp_core.features.testveri import service as testveri
 from tp_core.integrations.forge import (
     GITHUB_REQUIRED_CHECKS,
     LOCAL_REQUIRED_CHECKS,
+    PLATFORMS_ENV,
     REQUIRED_CHECKS_ENV,
+    WEB_DILLERI_ENV,
     ForgeValidationError,
     etkin_platformlar,
     etkin_web_dilleri,
@@ -48,17 +49,23 @@ from tp_core.integrations.forge import (
 from tp_core.models import PullRequest, Script, ScriptTestCase, StepMapping
 from tp_core.models.codegen_feature import ScriptAdim, ScriptCodegen, ScriptKontrol
 from tp_core.ports import CheckRun
+from tp_core.proje.ayar import ayar
 from tp_core.workflow.service import content_hash_of
 
 _SHA_RE = re.compile(r"[0-9a-f]{40}([0-9a-f]{24})?")
 _EKRAN_RE = re.compile(r"codegen/[0-9a-f-]{36}/step-\d{1,4}\.png")
 
 
+def _forge_ayarlari() -> dict[str, str]:
+    """Bağlamdaki projenin forge ayarları (`etkin_platformlar`/`etkin_web_dilleri` girdisi)."""
+    return {ad: deger for ad in (PLATFORMS_ENV, WEB_DILLERI_ENV) if (deger := ayar(ad)) is not None}
+
+
 def required_checks() -> tuple[str, ...]:
     forge = get_settings().forge
     varsayilan = LOCAL_REQUIRED_CHECKS if forge == "local" else GITHUB_REQUIRED_CHECKS
     try:
-        liste = parse_required_checks(os.environ.get(REQUIRED_CHECKS_ENV), varsayilan)
+        liste = parse_required_checks(ayar(REQUIRED_CHECKS_ENV), varsayilan)
     except ForgeValidationError:
         liste = tuple(varsayilan)
     if forge != "github":
@@ -67,9 +74,8 @@ def required_checks() -> tuple[str, ...]:
     try:
         # GitHub: etkin platformların ve web dillerinin iş akışı check'leri (`TP_PLATFORMS`,
         # `TP_WEB_DILLERI`; GitHubForge ile aynı). Geçersiz değer `pr_checks`'te engel olur.
-        return github_required_checks(
-            liste, etkin_platformlar(os.environ), etkin_web_dilleri(os.environ)
-        )
+        env = _forge_ayarlari()
+        return github_required_checks(liste, etkin_platformlar(env), etkin_web_dilleri(env))
     except ForgeValidationError:
         return liste
 
@@ -123,7 +129,7 @@ def script_pr_kaydi(sc: Script) -> PullRequest | None:
     if sc.pr_no is None:
         return None
     s = object_session(sc)
-    return s.get(PullRequest, sc.pr_no) if s is not None else None
+    return s.get(PullRequest, PullRequest.anahtar(sc.pr_no)) if s is not None else None
 
 
 def _check_durumu(c: dict[str, Any]) -> str:
@@ -196,8 +202,9 @@ def pr_checks(
     ek_engel: str | None = None
     if get_settings().forge == "github":
         try:
-            etkin_platformlar(os.environ)
-            etkin_web_dilleri(os.environ)
+            env = _forge_ayarlari()
+            etkin_platformlar(env)
+            etkin_web_dilleri(env)
         except ForgeValidationError as exc:
             # GitHubForge.from_env aynı hatayla kurulamaz (merge kapalı): portal "merge
             # edilebilir" göstermesin.
@@ -273,7 +280,7 @@ def pr_checks(
 def _pr(session: Session, sc: Script, cg: ScriptCodegen) -> dict[str, Any] | None:
     if sc.pr_no is None:
         return None
-    kayit = session.get(PullRequest, sc.pr_no)
+    kayit = session.get(PullRequest, PullRequest.anahtar(sc.pr_no))
     checks, ci, _ = pr_checks(
         sc.head_sha, kayit, degisen=pr_degisen_yollari(sc), platform=sc.platform, dil=sc.dil
     )

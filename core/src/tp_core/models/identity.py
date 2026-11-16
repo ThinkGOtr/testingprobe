@@ -11,7 +11,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from tp_core.models import enums
-from tp_core.models.base import Base, in_check, olusturma_col, uuid_pk
+from tp_core.models.base import Base, ProjeKapsamli, in_check, olusturma_col, uuid_pk
 
 
 class AppUser(Base):
@@ -31,9 +31,11 @@ class AppUser(Base):
     # 0020: adın kaynağı; "aiprobe" = JIT'te AI Probe devrindeki `name` (TP doğrulamaz, portal
     # "AI Probe" diye belirtir). Boş = yerel/yapılandırılmış.
     ad_kaynak: Mapped[str | None]
+    # 0044: son seçili proje (Home pid); giriş bunu tercih eder (TP-COK-PROJE-PLANI §6.1).
+    secili_proje: Mapped[str | None] = mapped_column(String(64))
 
 
-class ApiToken(Base):
+class ApiToken(ProjeKapsamli, Base):
     """8 saatlik kapsamlı bearer token; yalnızca sha256 özeti saklanır (§8.3)."""
 
     __tablename__ = "api_token"

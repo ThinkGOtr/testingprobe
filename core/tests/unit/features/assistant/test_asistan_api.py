@@ -24,6 +24,7 @@ from tests.unit.conftest import PAROLA, Db
 from tp_core.api.main import create_app
 from tp_core.features.assistant import api as asistan_api
 from tp_core.features.assistant import budget, hiz
+from tp_core.proje import baglamla
 from tp_core.workflow.service import Principal
 
 ROLLER = ("analyst", "po", "engineer", "tester", "admin")
@@ -61,9 +62,10 @@ def kalp_atisi(
     with engine.begin() as c:
         c.execute(
             text(
-                "INSERT INTO asistan_durum (id, mod, model_hazir, maskeleme, musteri_verisi, "
-                "paket_commit, kalp_atisi) VALUES (1, :mod, :mh, :mk, :mv, 'abc123', "
-                "now() - make_interval(secs => :y)) ON CONFLICT (id) DO UPDATE SET "
+                "INSERT INTO asistan_durum (project_id, mod, model_hazir, maskeleme, "
+                "musteri_verisi, "
+                "paket_commit, kalp_atisi) VALUES ('test-a', :mod, :mh, :mk, :mv, 'abc123', "
+                "now() - make_interval(secs => :y)) ON CONFLICT (project_id) DO UPDATE SET "
                 "mod = EXCLUDED.mod, model_hazir = EXCLUDED.model_hazir, "
                 "maskeleme = EXCLUDED.maskeleme, musteri_verisi = EXCLUDED.musteri_verisi, "
                 "kalp_atisi = EXCLUDED.kalp_atisi"
@@ -94,14 +96,15 @@ def mesaj_bitir(engine: Engine, mesaj_id: str, *, durum: str = "done", amac: str
         c.execute(
             text(
                 "UPDATE asistan_mesaj SET durum = :d, amac = :a, kaynak = 'model', "
-                "tamamlanma = now() WHERE id = :m"
+                "tamamlanma = now() WHERE id = :m AND project_id = 'test-a'"
             ),
             {"d": durum, "a": amac, "m": mesaj_id},
         )
         c.execute(
             text(
                 "UPDATE job SET durum = 'done', bitis = now() WHERE id = "
-                "(SELECT job_id FROM asistan_mesaj WHERE id = :m)"
+                "(SELECT job_id FROM asistan_mesaj WHERE asistan_mesaj.project_id = 'test-a' AND "
+                "id = :m)"
             ),
             {"m": mesaj_id},
         )
@@ -136,9 +139,9 @@ def ai_call_ekle(
     with engine.begin() as c:
         c.execute(
             text(
-                "INSERT INTO ai_call (id, parent_call_id, amac, saglayici, model, mod, "
+                "INSERT INTO ai_call (project_id, id, parent_call_id, amac, saglayici, model, mod, "
                 "maliyet, ek) "
-                "VALUES (:id, :p, :a, 'anthropic', 'claude-haiku-5-5', 'live', :m, "
+                "VALUES ('test-a', :id, :p, :a, 'anthropic', 'claude-haiku-5-5', 'live', :m, "
                 "CAST(:ek AS jsonb))"
             ),
             {"id": cid, "p": parent, "a": amac, "m": Decimal(maliyet), "ek": json.dumps(ek)},
@@ -223,12 +226,17 @@ def test_soru_akisi_ve_is_yuku(rol: str, client: TestClient, make_user, engine, 
         yuk, tur, key, md = c.execute(
             text(
                 "SELECT yuk, tur, idempotency_key, max_deneme FROM job WHERE id = "
-                "(SELECT job_id FROM asistan_mesaj WHERE id = :m)"
+                "(SELECT job_id FROM asistan_mesaj WHERE asistan_mesaj.project_id = 'test-a' AND "
+                "id = :m)"
             ),
             {"m": mid},
         ).one()
         baglam = c.execute(
-            text("SELECT baglam FROM asistan_mesaj WHERE id = :m"), {"m": mid}
+            text(
+                "SELECT baglam FROM asistan_mesaj WHERE asistan_mesaj.project_id = 'test-a' AND id "
+                "= :m"
+            ),
+            {"m": mid},
         ).scalar_one()
     assert tur == "assistant.answer" and key == f"assistant.answer:{mid}" and md == 1
     assert yuk == {"mesaj_id": mid, "kullanici_id": str(u.id), "tetik": "kullanici"}
@@ -275,7 +283,15 @@ def test_silinmis_sohbet_404(rol: str, client: TestClient, make_user, engine, ca
     assert client.get(f"/assistant/messages/{mid}").status_code == 404
     assert client.delete(f"/assistant/conversations/{s}").status_code == 404
     assert client.get("/assistant/conversations").json() == []
-    assert tek(engine, "SELECT silindi FROM asistan_sohbet WHERE id = :s", s=s) is True
+    assert (
+        tek(
+            engine,
+            "SELECT silindi FROM asistan_sohbet WHERE asistan_sohbet.project_id = 'test-a' AND id "
+            "= :s",
+            s=s,
+        )
+        is True
+    )
 
 
 def test_sohbet_silinince_acik_cevaplar_iptal(client: TestClient, make_user, engine, canli) -> None:
@@ -285,10 +301,18 @@ def test_sohbet_silinince_acik_cevaplar_iptal(client: TestClient, make_user, eng
     s = sohbet_ac(client)
     mid = sor(client, s).json()["mesaj_id"]
     assert client.delete(f"/assistant/conversations/{s}").status_code == 204
-    assert tek(engine, "SELECT durum FROM asistan_mesaj WHERE id = :m", m=mid) == "iptal"
+    assert (
+        tek(
+            engine,
+            "SELECT durum FROM asistan_mesaj WHERE asistan_mesaj.project_id = 'test-a' AND id = :m",
+            m=mid,
+        )
+        == "iptal"
+    )
     durum = tek(
         engine,
-        "SELECT j.durum FROM job j JOIN asistan_mesaj m ON m.job_id = j.id WHERE m.id = :m",
+        "SELECT j.durum FROM job j JOIN asistan_mesaj m ON m.project_id = 'test-a' AND m.job_id = "
+        "j.id WHERE m.id = :m",
         m=mid,
     )
     assert durum == "cancelled"
@@ -306,9 +330,21 @@ def test_sohbet_silinince_acik_cevaplar_iptal(client: TestClient, make_user, eng
     s2 = sohbet_ac(client)
     mid2 = sor(client, s2).json()["mesaj_id"]  # 409 bekleyen_var değil
     with engine.begin() as c:  # worker işi aldı
-        c.execute(text("UPDATE asistan_mesaj SET durum = 'running' WHERE id = :m"), {"m": mid2})
+        c.execute(
+            text(
+                "UPDATE asistan_mesaj SET durum = 'running' WHERE project_id = 'test-a' AND id = :m"
+            ),
+            {"m": mid2},
+        )
     assert client.delete(f"/assistant/conversations/{s2}").status_code == 204
-    assert tek(engine, "SELECT durum FROM asistan_mesaj WHERE id = :m", m=mid2) == "iptal"
+    assert (
+        tek(
+            engine,
+            "SELECT durum FROM asistan_mesaj WHERE asistan_mesaj.project_id = 'test-a' AND id = :m",
+            m=mid2,
+        )
+        == "iptal"
+    )
 
 
 def test_silme_suren_sohbete_gonderim_beklenir_ve_404(
@@ -323,9 +359,20 @@ def test_silme_suren_sohbete_gonderim_beklenir_ve_404(
     sonuc: list[httpx.Response] = []
     with engine.connect() as silen:
         tx = silen.begin()
-        silen.execute(text("SELECT 1 FROM asistan_sohbet WHERE id = :s FOR UPDATE"), {"s": s})
-        silen.execute(text("UPDATE asistan_sohbet SET silindi = true WHERE id = :s"), {"s": s})
-        t = threading.Thread(target=lambda: sonuc.append(sor(client, s)))
+        silen.execute(
+            text(
+                "SELECT 1 FROM asistan_sohbet WHERE asistan_sohbet.project_id = 'test-a' AND id = "
+                ":s FOR UPDATE"
+            ),
+            {"s": s},
+        )
+        silen.execute(
+            text(
+                "UPDATE asistan_sohbet SET silindi = true WHERE project_id = 'test-a' AND id = :s"
+            ),
+            {"s": s},
+        )
+        t = threading.Thread(target=baglamla(lambda: sonuc.append(sor(client, s))))
         t.start()
         bekliyor = False
         for _ in range(200):  # gönderim satır kilidinde beklemeye geçene dek
@@ -345,7 +392,15 @@ def test_silme_suren_sohbete_gonderim_beklenir_ve_404(
         tx.commit()
         t.join(20)
     assert sonuc and sonuc[0].status_code == 404, sonuc and sonuc[0].text
-    assert tek(engine, "SELECT count(*) FROM asistan_mesaj WHERE sohbet_id = :s", s=s) == 0
+    assert (
+        tek(
+            engine,
+            "SELECT count(*) FROM asistan_mesaj WHERE asistan_mesaj.project_id = 'test-a' AND "
+            "sohbet_id = :s",
+            s=s,
+        )
+        == 0
+    )
     assert tek(engine, "SELECT count(*) FROM job WHERE tur = 'assistant.answer'") == 0
 
 
@@ -369,10 +424,12 @@ def test_sohbet_kilidi_fk_key_share_ile_cakismaz(
             worker.execute(text("SET LOCAL lock_timeout = '2s'"))
             worker.execute(
                 text(
-                    "INSERT INTO asistan_mesaj (id, sohbet_id, kullanici_id, sira, rol, "
+                    "INSERT INTO asistan_mesaj (project_id, id, sohbet_id, kullanici_id, sira, "
+                    "rol, "
                     "ust_mesaj_id, icerik, durum, amac, kip, tetik) "
-                    "SELECT :id, :s, kullanici_id, 99, 'assistant', :u, 'x', 'pending', "
-                    "'assistant_deep', 'soru', 'otomatik' FROM asistan_mesaj WHERE id = :u"
+                    "SELECT 'test-a', :id, :s, kullanici_id, 99, 'assistant', :u, 'x', 'pending', "
+                    "'assistant_deep', 'soru', 'otomatik' FROM asistan_mesaj WHERE "
+                    "asistan_mesaj.project_id = 'test-a' AND id = :u"
                 ),
                 {"id": uuid.uuid4(), "s": s, "u": mid},
             )  # lock_timeout aşılsaydı LockNotAvailable
@@ -408,17 +465,25 @@ def test_sohbet_sil_worker_otomatik_cocuk_yarisi_iptal_eder(
     s = sohbet_ac(client)
     mid = sor(client, s).json()["mesaj_id"]
     with engine.begin() as c:
-        c.execute(text("UPDATE asistan_mesaj SET durum = 'running' WHERE id = :m"), {"m": mid})
+        c.execute(
+            text(
+                "UPDATE asistan_mesaj SET durum = 'running' WHERE project_id = 'test-a' AND id = :m"
+            ),
+            {"m": mid},
+        )
     sonuc: list[httpx.Response] = []
     with Session(engine) as worker:
         conn = worker.connection()
         m = flow._mesaj_oku(conn, uuid.UUID(mid))
         conn.execute(
-            text("UPDATE asistan_mesaj SET durum = 'done' WHERE id = :m AND durum = 'running'"),
+            text(
+                "UPDATE asistan_mesaj SET durum = 'done' WHERE project_id = 'test-a' AND id = :m "
+                "AND durum = 'running'"
+            ),
             {"m": mid},
         )  # model_cevabini_yaz (2): üst mesaj kilitli, transaction açık
         t = threading.Thread(
-            target=lambda: sonuc.append(client.delete(f"/assistant/conversations/{s}"))
+            target=baglamla(lambda: sonuc.append(client.delete(f"/assistant/conversations/{s}")))
         )
         t.start()
         son = time.monotonic() + 10
@@ -434,7 +499,7 @@ def test_sohbet_sil_worker_otomatik_cocuk_yarisi_iptal_eder(
         durum, tamam, is_durumu = c.execute(
             text(
                 "SELECT m.durum, m.tamamlanma IS NOT NULL, j.durum FROM asistan_mesaj m "
-                "JOIN job j ON j.id = m.job_id WHERE m.id = :c"
+                "JOIN job j ON j.id = m.job_id WHERE m.id = :c AND m.project_id = 'test-a'"
             ),
             {"c": cocuk},
         ).one()
@@ -460,7 +525,15 @@ def test_silinen_sohbete_otomatik_cocuk_eklenmez(
         conn = worker.connection()
         assert flow._cocuk_ekle(conn, flow._mesaj_oku(conn, uuid.UUID(mid))) is None
         worker.commit()
-    assert tek(engine, "SELECT count(*) FROM asistan_mesaj WHERE ust_mesaj_id = :m", m=mid) == 0
+    assert (
+        tek(
+            engine,
+            "SELECT count(*) FROM asistan_mesaj WHERE asistan_mesaj.project_id = 'test-a' AND "
+            "ust_mesaj_id = :m",
+            m=mid,
+        )
+        == 0
+    )
 
 
 def test_baslat_silinen_sohbetin_mesajini_iptal_eder(
@@ -474,11 +547,19 @@ def test_baslat_silinen_sohbetin_mesajini_iptal_eder(
     s = sohbet_ac(client)
     mid = sor(client, s).json()["mesaj_id"]
     with engine.begin() as c:  # silme ucunu atlayarak: yarışta kaçmış mesajın durumu
-        c.execute(text("UPDATE asistan_sohbet SET silindi = true WHERE id = :s"), {"s": s})
+        c.execute(
+            text(
+                "UPDATE asistan_sohbet SET silindi = true WHERE project_id = 'test-a' AND id = :s"
+            ),
+            {"s": s},
+        )
         assert durum.baslat(c, uuid.UUID(mid)) is False
     with engine.connect() as c:
         d, tamam = c.execute(
-            text("SELECT durum, tamamlanma IS NOT NULL FROM asistan_mesaj WHERE id = :m"),
+            text(
+                "SELECT durum, tamamlanma IS NOT NULL FROM asistan_mesaj WHERE "
+                "asistan_mesaj.project_id = 'test-a' AND id = :m"
+            ),
             {"m": mid},
         ).one()
     assert (d, tamam) == ("iptal", True)
@@ -544,7 +625,13 @@ def test_sirli_soru_ve_baglam_422_deger_yanitta_yok(
     r = sor(client, s, soru="bu ne?", baglam={"secili_eleman": {"ad": f"x {sahte}"}})
     assert r.status_code == 422 and r.json()["kod"] == "sir_icerik"
     assert sahte not in r.text
-    assert tek(engine_of(client), "SELECT count(*) FROM asistan_mesaj") == 0
+    assert (
+        tek(
+            engine_of(client),
+            "SELECT count(*) FROM asistan_mesaj WHERE asistan_mesaj.project_id = 'test-a'",
+        )
+        == 0
+    )
 
 
 def engine_of(_c: TestClient) -> Engine:
@@ -720,7 +807,7 @@ def test_zincirli_derin_kok_soruda_kalir(client: TestClient, make_user, engine, 
         satir = tek(
             engine,
             "SELECT json_build_object('i', icerik, 'b', baglam, 'a', amac) "
-            "FROM asistan_mesaj WHERE id = :m",
+            "FROM asistan_mesaj WHERE asistan_mesaj.project_id = 'test-a' AND id = :m",
             m=mid,
         )
         assert satir["i"] == "Birinci soru: TPD-1 neden bekliyor?", mid
@@ -774,8 +861,9 @@ def test_zaten_derin_tekil_kisittan_eslenir(
     with engine.begin() as c:  # otomatik çocuk (iş yok → sayaç boş)
         c.execute(
             text(
-                "INSERT INTO asistan_mesaj (sohbet_id, kullanici_id, sira, rol, ust_mesaj_id, "
-                "durum, amac, tetik) VALUES (:s, :k, 3, 'assistant', :u, 'done', "
+                "INSERT INTO asistan_mesaj (project_id, sohbet_id, kullanici_id, sira, rol, "
+                "ust_mesaj_id, "
+                "durum, amac, tetik) VALUES ('test-a', :s, :k, 3, 'assistant', :u, 'done', "
                 "'assistant_deep', 'otomatik')"
             ),
             {"s": s, "k": u.id, "u": ust},
@@ -783,7 +871,9 @@ def test_zaten_derin_tekil_kisittan_eslenir(
     gercek = asistan_api.text
 
     def kontrolsuz(sql: str, *a: Any, **k: Any):
-        if sql.startswith("SELECT 1 FROM asistan_mesaj WHERE ust_mesaj_id"):
+        if sql.startswith(
+            "SELECT 1 FROM asistan_mesaj WHERE asistan_mesaj.project_id = 'test-a' AND ust_mesaj_id"
+        ):
             return gercek("SELECT 1 WHERE false AND :u IS NULL")
         return gercek(sql, *a, **k)
 
@@ -811,11 +901,17 @@ def test_iptal_edilip_suren_is_sayimda_kalir(client: TestClient, make_user, engi
     s = sohbet_ac(client)
     mid = sor(client, s).json()["mesaj_id"]
     with engine.begin() as c:  # worker işi aldı
-        c.execute(text("UPDATE asistan_mesaj SET durum = 'running' WHERE id = :m"), {"m": mid})
+        c.execute(
+            text(
+                "UPDATE asistan_mesaj SET durum = 'running' WHERE project_id = 'test-a' AND id = :m"
+            ),
+            {"m": mid},
+        )
         c.execute(
             text(
                 "UPDATE job SET durum = 'running' WHERE id = "
-                "(SELECT job_id FROM asistan_mesaj WHERE id = :m)"
+                "(SELECT job_id FROM asistan_mesaj WHERE asistan_mesaj.project_id = 'test-a' AND "
+                "id = :m)"
             ),
             {"m": mid},
         )
@@ -841,12 +937,14 @@ def test_cevabi_yazilmis_ama_isi_kapanmamis_soru_sayilmaz(
     mid = sor(client, s).json()["mesaj_id"]
     with engine.begin() as c:
         c.execute(
-            text("UPDATE asistan_mesaj SET durum = :d WHERE id = :m"), {"d": son_durum, "m": mid}
+            text("UPDATE asistan_mesaj SET durum = :d WHERE project_id = 'test-a' AND id = :m"),
+            {"d": son_durum, "m": mid},
         )
         c.execute(
             text(
                 "UPDATE job SET durum = 'running' WHERE id = "
-                "(SELECT job_id FROM asistan_mesaj WHERE id = :m)"
+                "(SELECT job_id FROM asistan_mesaj WHERE asistan_mesaj.project_id = 'test-a' AND "
+                "id = :m)"
             ),
             {"m": mid},
         )
@@ -860,7 +958,8 @@ def test_pending_iptal_isi_kuyruktan_dusurur(client: TestClient, make_user, engi
     assert client.post(f"/assistant/messages/{mid}/cancel").json()["durum"] == "iptal"
     durum = tek(
         engine,
-        "SELECT j.durum FROM job j JOIN asistan_mesaj m ON m.job_id = j.id WHERE m.id = :m",
+        "SELECT j.durum FROM job j JOIN asistan_mesaj m ON m.project_id = 'test-a' AND m.job_id = "
+        "j.id WHERE m.id = :m",
         m=mid,
     )
     assert durum == "cancelled"
@@ -902,15 +1001,17 @@ def test_saatlik_sinir_iptal_ve_hata_dahil_derin_iki(
         for i in range(27):
             c.execute(
                 text(
-                    "INSERT INTO asistan_mesaj (sohbet_id, kullanici_id, sira, rol, durum) "
-                    "VALUES (:s, :k, :n, 'assistant', :d)"
+                    "INSERT INTO asistan_mesaj (project_id, sohbet_id, kullanici_id, sira, rol, "
+                    "durum) "
+                    "VALUES ('test-a', :s, :k, :n, 'assistant', :d)"
                 ),
                 {"s": s, "k": u.id, "n": 100 + i, "d": "iptal" if i % 2 else "error"},
             )
         c.execute(
             text(
-                "INSERT INTO asistan_mesaj (sohbet_id, kullanici_id, sira, rol, durum, "
-                "ust_mesaj_id, amac, tetik) VALUES (:s, :k, 200, 'assistant', 'done', :u, "
+                "INSERT INTO asistan_mesaj (project_id, sohbet_id, kullanici_id, sira, rol, durum, "
+                "ust_mesaj_id, amac, tetik) VALUES ('test-a', :s, :k, 200, 'assistant', 'done', "
+                ":u, "
                 "'assistant_deep', 'otomatik')"
             ),
             {"s": s, "k": u.id, "u": ust},
@@ -954,7 +1055,9 @@ def test_asistan_gunluk_ve_kok_soru_butcesi(client: TestClient, make_user, engin
     ai_call_ekle(engine, maliyet="0.20", kullanici_id=u.id, parent=kok_call)  # tur
     with engine.begin() as c:
         c.execute(
-            text("UPDATE asistan_mesaj SET ai_call_id = :c WHERE id = :m"),
+            text(
+                "UPDATE asistan_mesaj SET ai_call_id = :c WHERE project_id = 'test-a' AND id = :m"
+            ),
             {"c": kok_call, "m": ust},
         )
     r = sor(client, s, ust_mesaj_id=ust)
@@ -993,10 +1096,17 @@ def test_oneri_kural_id_gecersiz_409_gecerli_sohbete_yazilir(
         baglam={"rota_kalibi": "/gereksinimler/:id", "oneri": {"baslik": "SAHTE"}},
     )
     assert r.status_code == 202, r.text
-    assert tek(engine, "SELECT oneri_kural_id FROM asistan_sohbet WHERE id = :s", s=s) == (
-        "gereksinim-po-bekliyor"
+    assert tek(
+        engine,
+        "SELECT oneri_kural_id FROM asistan_sohbet WHERE asistan_sohbet.project_id = 'test-a' AND "
+        "id = :s",
+        s=s,
+    ) == ("gereksinim-po-bekliyor")
+    baglam = tek(
+        engine,
+        "SELECT baglam FROM asistan_mesaj WHERE asistan_mesaj.project_id = 'test-a' AND id = :m",
+        m=r.json()["mesaj_id"],
     )
-    baglam = tek(engine, "SELECT baglam FROM asistan_mesaj WHERE id = :m", m=r.json()["mesaj_id"])
     # istemcinin `oneri` metni atılır; sunucu yalnız kural kimliğini yazar
     assert baglam["oneri"] == {"kural_id": "gereksinim-po-bekliyor"}
     assert cagrilar[-1][1]["rota_kalibi"] == "/gereksinimler/:id"
@@ -1026,7 +1136,15 @@ def test_oneri_kural_id_reddedilse_de_kovadan_duser(
     r = sor(client, s, oneri_kural_id="eski-kural")
     assert r.status_code == 429 and r.json()["kod"] == "hiz_siniri"
     assert cagri == 2
-    assert tek(engine, "SELECT count(*) FROM asistan_mesaj WHERE sohbet_id = :s", s=s) == 0
+    assert (
+        tek(
+            engine,
+            "SELECT count(*) FROM asistan_mesaj WHERE asistan_mesaj.project_id = 'test-a' AND "
+            "sohbet_id = :s",
+            s=s,
+        )
+        == 0
+    )
     # Kural kimliksiz düz soru bu kovaya bağlı değildir.
     assert sor(client, s).status_code == 202
 
@@ -1050,7 +1168,15 @@ def test_oneri_kapaliysa_oneri_kipi_reddedilir(
     monkeypatch.setenv("TP_ASISTAN_ONERI", deger)
     r = client.post(f"/assistant/conversations/{s}/messages", json={"kip": "oneri"})
     assert r.status_code == 409 and r.json()["kod"] == "oneri_gecersiz"
-    assert tek(engine, "SELECT count(*) FROM asistan_mesaj WHERE sohbet_id = :s", s=s) == 0
+    assert (
+        tek(
+            engine,
+            "SELECT count(*) FROM asistan_mesaj WHERE asistan_mesaj.project_id = 'test-a' AND "
+            "sohbet_id = :s",
+            s=s,
+        )
+        == 0
+    )
     assert sor(client, s).status_code == 202
 
 
@@ -1095,7 +1221,7 @@ def _ayni_anda(isler: list) -> list[httpx.Response]:
         engel.wait()
         sonuc[i] = isler[i]()
 
-    tlar = [threading.Thread(target=kos, args=(i,)) for i in range(len(isler))]
+    tlar = [threading.Thread(target=baglamla(kos), args=(i,)) for i in range(len(isler))]
     for t in tlar:
         t.start()
     for t in tlar:

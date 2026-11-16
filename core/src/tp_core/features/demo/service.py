@@ -64,6 +64,7 @@ from tp_core.integrations import forge_demo
 from tp_core.integrations.forge import BYPASS_ACTOR, ForgeError
 from tp_core.models import PullRequest, Script, session_scope
 from tp_core.ports import ForgePort
+from tp_core.proje import KURULUM, baglamla, pid_param
 from tp_core.workflow.jobs import JobContext, PermanentJobError, enqueue
 from tp_core.workflow.service import SYSTEM, Principal, WorkflowError, transition
 
@@ -250,10 +251,10 @@ def onarim_on_kosulu(session: Session) -> dict[str, Any]:
 
     row = session.execute(
         text(
-            "SELECT id, commit, tetik, olusturma FROM run WHERE sonuc = 'passed' "
-            "AND tetik = ANY(:t) ORDER BY olusturma DESC LIMIT 1"
+            "SELECT id, commit, tetik, olusturma FROM run WHERE project_id = :pid "
+            "AND sonuc = 'passed' AND tetik = ANY(:t) ORDER BY olusturma DESC LIMIT 1"
         ),
-        {"t": list(SON_YESIL_TETIKLER)},
+        pid_param(t=list(SON_YESIL_TETIKLER)),
     ).first()
     if row is None:
         return {"hazir": False, "son_yesil_kosu": None, "yonerge": ON_KOSUL_YONERGE}
@@ -432,11 +433,12 @@ def _push_ci_zaten(s: Session, sha: str) -> str | None:
     """Son forge değişikliğinden (demo kırılması/sıfırlaması) sonra `sha` için açılmış push CI."""
     row = s.execute(
         text(
-            "SELECT r.id FROM run r WHERE r.commit = :sha AND r.tetik = 'push' AND r.olusturma >= "
-            "COALESCE((SELECT max(zaman) FROM audit_event WHERE eylem IN (:b, :z)), "
-            "'-infinity'::timestamptz) ORDER BY r.olusturma DESC LIMIT 1"
+            "SELECT r.id FROM run r WHERE r.project_id = :pid AND r.commit = :sha "
+            "AND r.tetik = 'push' AND r.olusturma >= COALESCE((SELECT max(zaman) FROM audit_event "
+            "WHERE project_id = :pid AND eylem IN (:b, :z)), '-infinity'::timestamptz) "
+            "ORDER BY r.olusturma DESC LIMIT 1"
         ),
-        {"sha": sha, "b": forge_demo.AUDIT_BREAK, "z": forge_demo.AUDIT_BASELINE},
+        pid_param(sha=sha, b=forge_demo.AUDIT_BREAK, z=forge_demo.AUDIT_BASELINE),
     ).first()
     return str(row.id) if row else None
 
@@ -750,19 +752,25 @@ def model_durumunu_kaydet(conn: Any) -> None:
     """Worker açılışında model kipini denetime yazar (son kayıtla aynıysa yazmaz)."""
     yeni = model_durumu_hesapla()
     son = conn.execute(
-        text("SELECT ozet FROM audit_event WHERE eylem = :e ORDER BY id DESC LIMIT 1"),
-        {"e": MODEL_DURUMU_EYLEM},
+        text(
+            "SELECT ozet FROM audit_event WHERE project_id = :pid AND eylem = :e "
+            "ORDER BY id DESC LIMIT 1"
+        ),
+        {"pid": KURULUM, "e": MODEL_DURUMU_EYLEM},
     ).scalar()
     if isinstance(son, dict) and {k: son.get(k) for k in yeni} == yeni:
         return
-    append_audit(conn, "system", MODEL_DURUMU_EYLEM, "core-worker", yeni)
+    append_audit(conn, "system", MODEL_DURUMU_EYLEM, "core-worker", yeni, project_id=KURULUM)
 
 
 def model_durumu_oku(session: Session) -> dict[str, Any] | None:
     """`/demo/status` → `model`: core-worker'ın son açılış bildirimi (yoksa null = bilinmiyor)."""
     row = session.execute(
-        text("SELECT ozet, zaman FROM audit_event WHERE eylem = :e ORDER BY id DESC LIMIT 1"),
-        {"e": MODEL_DURUMU_EYLEM},
+        text(
+            "SELECT ozet, zaman FROM audit_event WHERE project_id = :pid AND eylem = :e "
+            "ORDER BY id DESC LIMIT 1"
+        ),
+        {"pid": KURULUM, "e": MODEL_DURUMU_EYLEM},
     ).first()
     if row is None or not isinstance(row[0], dict):
         return None
@@ -853,7 +861,9 @@ def _forge_bolumu_onbellekli(forge: Any) -> dict[str, Any]:
         return dict(deger)
     if deger is not None:
         if arka_plan:
-            threading.Thread(target=_arka_planda_yenile, args=(forge,), daemon=True).start()
+            threading.Thread(
+                target=baglamla(_arka_planda_yenile), args=(forge,), daemon=True
+            ).start()
         return dict(deger)
     yeni = _forge_bolumu(forge)
     with _FORGE_KILIT:

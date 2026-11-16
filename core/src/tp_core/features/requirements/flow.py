@@ -117,6 +117,7 @@ from tp_core.models.requirements_feature import (
     RequirementReviewEk,
 )
 from tp_core.ports import AgentStep, ModelMessage
+from tp_core.proje import pid_param
 from tp_core.workflow.jobs import enqueue, idempotency_lock, start_workflow
 from tp_core.workflow.service import (
     SYSTEM,
@@ -1317,10 +1318,11 @@ def po_request_status(s: Session, req: Requirement) -> dict[str, Any] | None:
         return {"durum": "yazildi", "jira_comment_id": ref.external_key, "hata": None}
     son_is = s.execute(
         text(
-            "SELECT durum, son_hata FROM job WHERE tur = :t AND yuk->>'requirement_id' = :id "
-            "AND yuk->>'son_hal_hash' = :h ORDER BY olusturma DESC LIMIT 1"
+            "SELECT durum, son_hata FROM job WHERE tur = :t AND project_id = :pid "
+            "AND yuk->>'requirement_id' = :id AND yuk->>'son_hal_hash' = :h "
+            "ORDER BY olusturma DESC LIMIT 1"
         ),
-        {"t": JOB_PO_REQUEST, "id": str(req.id), "h": kayit.son_hal_hash},
+        pid_param(t=JOB_PO_REQUEST, id=str(req.id), h=kayit.son_hal_hash),
     ).first()
     if son_is is not None and son_is[0] in ("failed", "cancelled"):
         hata = son_is[1] or (ref.hata if ref is not None else None) or "iş tamamlanamadı"
@@ -1344,16 +1346,19 @@ def ensure_po_request(engine: Engine, req_id: uuid.UUID) -> str | None:
         idempotency_lock(conn, f"{JOB_PO_REQUEST}:{req_id}")
         etkin = conn.execute(
             text(
-                "SELECT count(*) FROM job WHERE tur = :t AND yuk->>'requirement_id' = :id "
-                "AND durum IN ('queued', 'retry', 'running')"
+                "SELECT count(*) FROM job WHERE tur = :t AND project_id = :pid "
+                "AND yuk->>'requirement_id' = :id AND durum IN ('queued', 'retry', 'running')"
             ),
-            {"t": JOB_PO_REQUEST, "id": str(req_id)},
+            pid_param(t=JOB_PO_REQUEST, id=str(req_id)),
         ).scalar_one()
         if etkin:
             return "kuyrukta"
         onceki = conn.execute(
-            text("SELECT count(*) FROM job WHERE tur = :t AND yuk->>'requirement_id' = :id"),
-            {"t": JOB_PO_REQUEST, "id": str(req_id)},
+            text(
+                "SELECT count(*) FROM job WHERE tur = :t AND project_id = :pid "
+                "AND yuk->>'requirement_id' = :id"
+            ),
+            pid_param(t=JOB_PO_REQUEST, id=str(req_id)),
         ).scalar_one()
         enqueue(
             conn,
@@ -2404,11 +2409,22 @@ def po_reject_portal(
 
 
 def ensure_po_poll(conn: Connection, *, gecikme_s: float = 0.0) -> uuid.UUID | None:
-    """PO etiket sorgusu işini (yoksa) kuyruğa ekler. Tek bekleyen iş kuralı advisory lock ile."""
+    """PO etiket sorgusu işini (yoksa) kuyruğa ekler; proje başına tek bekleyen iş (advisory
+    lock). Bağlamsız çağrıda (worker açılışı) her aktif proje için (§5.2); son eklenen döner."""
+    from tp_core.features.otomasyon.proje_dongusu import projelerde
+
+    eklenen = [j for j in projelerde(conn, lambda: _ensure_po_poll(conn, gecikme_s)) if j]
+    return eklenen[-1] if eklenen else None
+
+
+def _ensure_po_poll(conn: Connection, gecikme_s: float) -> uuid.UUID | None:
     idempotency_lock(conn, JOB_PO_POLL)
     bekleyen = conn.execute(
-        text("SELECT id FROM job WHERE tur = :t AND durum IN ('queued', 'retry') LIMIT 1"),
-        {"t": JOB_PO_POLL},
+        text(
+            "SELECT id FROM job WHERE tur = :t AND project_id = :pid "
+            "AND durum IN ('queued', 'retry') LIMIT 1"
+        ),
+        pid_param(t=JOB_PO_POLL),
     ).scalar_one_or_none()
     if bekleyen is not None:
         return None
@@ -2486,10 +2502,11 @@ def purge_po_poll_jobs(engine: Engine, saklama: timedelta = PO_POLL_SAKLAMA) -> 
     with engine.begin() as conn:
         return conn.execute(
             text(
-                "DELETE FROM job WHERE tur = :t AND durum IN ('done', 'failed', 'cancelled') "
+                "DELETE FROM job WHERE tur = :t AND project_id = :pid "
+                "AND durum IN ('done', 'failed', 'cancelled') "
                 "AND COALESCE(bitis, guncelleme) < now() - make_interval(secs => :sn)"
             ),
-            {"t": JOB_PO_POLL, "sn": saklama.total_seconds()},
+            pid_param(t=JOB_PO_POLL, sn=saklama.total_seconds()),
         ).rowcount
 
 
@@ -2498,7 +2515,8 @@ def purge_po_poll_jobs(engine: Engine, saklama: timedelta = PO_POLL_SAKLAMA) -> 
 _ETKIN_IS_YOK = """
 NOT EXISTS (
     SELECT 1 FROM job j JOIN workflow_instance w ON w.id = j.workflow_id
-    WHERE w.nesne_turu = 'requirement' AND w.nesne_id = requirement.id
+    WHERE w.project_id = requirement.project_id
+      AND w.nesne_turu = 'requirement' AND w.nesne_id = requirement.id
       AND j.durum IN ('queued', 'retry', 'running')
 )
 """
@@ -2513,9 +2531,10 @@ def stuck(s: Session, req_id: uuid.UUID) -> bool:
     return bool(
         s.execute(
             text(
-                "SELECT 1 FROM requirement WHERE id = :id AND durum = ANY(:d) AND " + _ETKIN_IS_YOK
+                "SELECT 1 FROM requirement WHERE id = :id AND project_id = :pid "
+                "AND durum = ANY(:d) AND " + _ETKIN_IS_YOK
             ),
-            {"id": req_id, "d": list(IS_BEKLEYEN)},
+            pid_param(id=req_id, d=list(IS_BEKLEYEN)),
         ).first()
     )
 
@@ -2524,10 +2543,10 @@ def _son_is_hatasi(s: Session, req_id: uuid.UUID) -> str | None:
     return s.execute(
         text(
             "SELECT j.son_hata FROM job j JOIN workflow_instance w ON w.id = j.workflow_id "
-            "WHERE w.nesne_turu = 'requirement' AND w.nesne_id = :id AND j.durum = 'failed' "
-            "ORDER BY COALESCE(j.bitis, j.guncelleme) DESC LIMIT 1"
+            "WHERE w.project_id = :pid AND w.nesne_turu = 'requirement' AND w.nesne_id = :id "
+            "AND j.durum = 'failed' ORDER BY COALESCE(j.bitis, j.guncelleme) DESC LIMIT 1"
         ),
-        {"id": req_id},
+        pid_param(id=req_id),
     ).scalar_one_or_none()
 
 
@@ -2558,11 +2577,11 @@ def sweep_stuck(engine: Engine) -> list[str]:
         adaylar = list(
             conn.execute(
                 text(
-                    "SELECT id FROM requirement WHERE durum = ANY(:d) AND "
+                    "SELECT id FROM requirement WHERE project_id = :pid AND durum = ANY(:d) AND "
                     + _ETKIN_IS_YOK
                     + " ORDER BY id"
                 ),
-                {"d": list(IS_BEKLEYEN)},
+                pid_param(d=list(IS_BEKLEYEN)),
             ).scalars()
         )
     out: list[str] = []
@@ -2807,19 +2826,20 @@ def last_failure(s: Session, req: Requirement) -> dict[str, Any] | None:
         return None
     gecis = s.execute(
         text(
-            "SELECT zaman, ozet->>'sebep' FROM audit_event WHERE eylem = 'requirement.transition' "
-            "AND nesne = :n AND ozet->>'to' = 'failed' ORDER BY id DESC LIMIT 1"
+            "SELECT zaman, ozet->>'sebep' FROM audit_event WHERE project_id = :pid "
+            "AND eylem = 'requirement.transition' AND nesne = :n AND ozet->>'to' = 'failed' "
+            "ORDER BY id DESC LIMIT 1"
         ),
-        {"n": f"requirement:{req.id}"},
+        pid_param(n=f"requirement:{req.id}"),
     ).first()
     is_ = s.execute(
         text(
             "SELECT j.tur, j.son_hata, COALESCE(j.bitis, j.guncelleme) FROM job j "
             "JOIN workflow_instance w ON w.id = j.workflow_id "
-            "WHERE w.nesne_turu = 'requirement' AND w.nesne_id = :id AND j.durum = 'failed' "
-            "ORDER BY COALESCE(j.bitis, j.guncelleme) DESC LIMIT 1"
+            "WHERE w.project_id = :pid AND w.nesne_turu = 'requirement' AND w.nesne_id = :id "
+            "AND j.durum = 'failed' ORDER BY COALESCE(j.bitis, j.guncelleme) DESC LIMIT 1"
         ),
-        {"id": req.id},
+        pid_param(id=req.id),
     ).first()
     neden = (gecis[1] if gecis is not None else None) or (is_[1] if is_ is not None else None)
     neden = neden or "Hata nedeni kaydedilmemiş"

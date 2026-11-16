@@ -675,11 +675,18 @@ def test_platform_kolonu_ve_kisit(engine: Engine) -> None:
     assert [f for f in farklar if "platform" in repr(f)] == []
     with engine.begin() as conn:
         varsayilan = conn.execute(
-            text("INSERT INTO script (dosya_yolu) VALUES ('e2e/x.spec.ts') RETURNING platform")
+            text(
+                "INSERT INTO script "
+                "(project_id, dosya_yolu) VALUES ('test-a', 'e2e/x.spec.ts') RETURNING platform"
+            )
         ).scalar_one()
         assert varsayilan == "web"
     with pytest.raises(Exception, match="script_platform_ck"), engine.begin() as conn:
-        conn.execute(text("INSERT INTO script (dosya_yolu, platform) VALUES ('x', 'tv')"))
+        conn.execute(
+            text(
+                "INSERT INTO script (project_id, dosya_yolu, platform) VALUES ('test-a', 'x', 'tv')"
+            )
+        )
 
 
 def test_start_generation_gecersiz_platform(engine: Engine) -> None:

@@ -61,7 +61,6 @@ from __future__ import annotations
 import argparse
 import functools
 import json
-import os
 import re
 import sys
 from collections.abc import Callable, Mapping, Sequence
@@ -149,8 +148,10 @@ def _trigger_push_ci(ci: CiTrigger | None, sha: str, actor: str) -> dict[str, An
 def app_root_for(forge: Any, env: Mapping[str, str] | None = None) -> str:
     """Uygulamanın forge deposundaki kökü: `TP_FORGE_APP_ROOT`, yoksa forge'un varsayılanı
     (LocalForge '' — depo demo-app'in kendisi; GitHubForge 'demo-app')."""
-    env = os.environ if env is None else env
-    deger = env.get(APP_ROOT_ENV)
+    from tp_core.integrations.proje_ortami import ProjeOrtami
+
+    cfg = ProjeOrtami() if env is None else env
+    deger = cfg.get(APP_ROOT_ENV)
     if deger is None:
         deger = getattr(forge, "default_app_root", "") or ""
     return str(deger).strip().strip("/")
@@ -746,7 +747,21 @@ def main(
     sub.add_parser("web-state", help="çalışan demo-app-web main'i yansıtıyor mu (JSON)")
     sub.add_parser("web-path", help="forge kipi ve web dizininin depo içi yolu (JSON; API yok)")
     args = parser.parse_args(argv)
+    from tp_core.proje import proje_icinde, varsayilan_pid
 
+    # Demo (demo-app forge'u) yalnız varsayılan projeye aittir (TP-COK-PROJE-PLANI §4.3): denetim
+    # kaydı ve `demo.await_web` işi o projenin bağlamında yazılır.
+    with proje_icinde(varsayilan_pid(), kaynak="cli"):
+        return _calistir(args, env=env, audit=audit, ci=ci)
+
+
+def _calistir(
+    args: argparse.Namespace,
+    *,
+    env: Mapping[str, str] | None,
+    audit: AuditLog | None,
+    ci: CiTrigger | None,
+) -> int:
     forge = get_forge(env)
     try:
         if args.cmd == "web-path":

@@ -170,7 +170,12 @@ def test_taslak_gecerli_ogeleri_yazar_gecersizleri_raporlar(
     with session_scope() as s:
         wf = s.get(WorkflowInstance, uuid.UUID(is_["workflow_id"]))
         assert wf.durum == "done"
-        eylemler = {e for (e,) in s.execute(text("SELECT eylem FROM audit_event")).all()}
+        eylemler = {
+            e
+            for (e,) in s.execute(
+                text("SELECT eylem FROM audit_event WHERE audit_event.project_id = 'test-a'")
+            ).all()
+        }
     assert {
         "karar_tablosu.ai_draft",
         "metamorfik_iliski.ai_draft",
@@ -280,7 +285,10 @@ def test_replay_golden_tpd1(
     assert sonuc[0].durum == "done" and ozet["mode"] == "replay" and ozet["atilan"] == []
     with session_scope() as s:
         mod, ek = s.execute(
-            text("SELECT mod, ek FROM ai_call WHERE amac = 'decision_table_draft'")
+            text(
+                "SELECT mod, ek FROM ai_call WHERE ai_call.project_id = 'test-a' AND amac = "
+                "'decision_table_draft'"
+            )
         ).one()
     assert mod == "replay" and ek["replay_kokeni"] == "golden_matched"
 

@@ -350,3 +350,11 @@ kayitlar:
     neden: İstisna gerekçesi görülmemiş bir karşılaştırmaya verilmesin diye karar, görülen kaydın damgasını taşır; damga uymazsa karar uygulanmaz.
     cozum: Case'i yenileyin, güncel karar tablosu sonucunu inceleyin ve kararınızı yeniden verin.
     rota: /gereksinimler/:id/caseler
+  - id: proje-ayari-eksik
+    kodlar: [proje_ayari_eksik]
+    metinler: []
+    baslik: Projenin bu işlem için gereken ayarı tanımlı değil
+    anlam: Seçili projede bu işlemin ihtiyaç duyduğu ayar (ör. test ortamı adresi, uygulama paketi) tanımlanmamış; işlem başlatılmadı.
+    neden: Her projenin kendi ayarları vardır; eksik ayar başka bir projenin değerleriyle doldurulmaz, bu yüzden işlem durdurulur.
+    cozum: Projenin ayarlarını AI Probe'da tamamlayın (yönetici yetkisi gerekir), sonra işlemi yeniden başlatın.
+    rota: null

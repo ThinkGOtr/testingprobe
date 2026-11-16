@@ -225,6 +225,58 @@ export function mockOturumu(): Kullanici | null {
   return mockOturumKullanicisi;
 }
 
+// ---------------------------------------------------------------- Çok proje (TP-COK-PROJE-PLANI §2.2, §6.3)
+
+/** Her API isteğinde gönderilen tutarlılık başlığı: sekmenin gösterdiği proje. */
+export const PROJE_BASLIGI = "X-TP-Proje";
+/** core 409 `proje_degisti`: oturumun projesi başka bir sekmede değişti. */
+export const PROJE_DEGISTI = "Proje başka bir sekmede değiştirildi; sayfa yeni projeyle yenileniyor.";
+/** core 403 `proje_rolu_yok`: seçili projede TP rolü yok. */
+export const PROJE_ROLU_YOK = "Seçili projede rolünüz yok; başka bir proje seçin.";
+
+let sekmeProjesi: string | null = null;
+
+/** Sekmenin projesi (`/auth/me` → `proje.pid`); null: başlık gönderilmez (tek proje / eski core). */
+export function projeBasliginiAyarla(pid: string | null | undefined): void {
+  sekmeProjesi = pid || null;
+}
+
+export function sekmeninProjesi(): string | null {
+  return sekmeProjesi;
+}
+
+/**
+ * Bu isteğe proje başlığı eklenir mi: oturum (`/auth/*`) ve kullanıcı geneli proje uçları
+ * (`/projeler`, `/proje`) başlıksızdır — başka sekmede değişen projeden sonra `/auth/me` okunabilsin,
+ * seçim değiştirilebilsin.
+ */
+export function projeBasligiGerekli(path: string): boolean {
+  const yol = path.split("?")[0];
+  return !!sekmeProjesi && !yol.startsWith("/auth/") && yol !== "/projeler" && yol !== "/proje";
+}
+
+/** Doğrudan `fetch` eden yerler (artefakt, koşu günlüğü) için başlık nesnesi. */
+export function projeBasliklari(): Record<string, string> {
+  return sekmeProjesi ? { [PROJE_BASLIGI]: sekmeProjesi } : {};
+}
+
+export type ProjeOlayi = "proje_degisti" | "proje_rolu_yok";
+const projeDinleyicileri = new Set<(olay: ProjeOlayi, e: ApiError) => void>();
+
+/** 409 `proje_degisti` / 403 `proje_rolu_yok` bildirimine abone olur (Kabuk'taki proje denetleyicisi). */
+export function projeOlayinaAbone(fn: (olay: ProjeOlayi, e: ApiError) => void): () => void {
+  projeDinleyicileri.add(fn);
+  return () => projeDinleyicileri.delete(fn);
+}
+
+/** Hata proje bağlamı hatasıysa türünü döner. */
+export function projeHatasi(e: unknown): ProjeOlayi | null {
+  if (!(e instanceof ApiError)) return null;
+  if (e.status === 409 && e.kod === "proje_degisti") return "proje_degisti";
+  if (e.status === 403 && e.kod === "proje_rolu_yok") return "proje_rolu_yok";
+  return null;
+}
+
 function sorguMetni(sorgu?: Sorgu): URLSearchParams {
   const p = new URLSearchParams();
   if (sorgu) {
@@ -361,6 +413,13 @@ export async function istek<T>(
     return await istekGonder<T>(method, path, secenek);
   } catch (e) {
     if (e instanceof ApiError) {
+      // `PUT /proje` hatası (ör. hedef projede rol yok) seçicide gösterilir; bağlam olayı değildir.
+      const projeOlayi = path.split("?")[0] === "/proje" ? null : projeHatasi(e);
+      if (projeOlayi) {
+        // Ekran hatası değil, bağlam değişimi: son hata deposuna yazılmaz, denetleyici yeniler/seçtirir.
+        projeDinleyicileri.forEach((fn) => fn(projeOlayi, e));
+        throw e;
+      }
       e.method ??= method;
       e.yol ??= ucuNormallestir(method, path.split("?")[0]).slice(method.length + 1);
       if (method === "GET") hataAdayi(e);
@@ -402,6 +461,7 @@ async function istekGonder<T>(
       headers: {
         Accept: secenek.metin ? "text/plain" : "application/json",
         ...(secenek.govde !== undefined ? { "Content-Type": "application/json" } : {}),
+        ...(projeBasligiGerekli(path) ? projeBasliklari() : {}),
       },
       body: secenek.govde !== undefined ? JSON.stringify(secenek.govde) : undefined,
       signal: secenek.signal,
@@ -439,6 +499,8 @@ async function istekGonder<T>(
   if (res.status === 422 && yolGecersiz) throw new ApiError(404, VARSAYILAN_HATA[404], { kod: kod ?? GECERSIZ_KIMLIK });
   // Demo kipi kapalı (core 403 `demo_kapali`): genel "yetkiniz yok" yerine nedeni söylenir.
   if (kod === "demo_kapali") throw new ApiError(res.status, detail && detail !== VARSAYILAN_HATA[403] ? detail : DEMO_KAPALI, { kod, ek, govde, hatalar });
+  if (kod === "proje_degisti" && res.status === 409) throw new ApiError(409, PROJE_DEGISTI, { kod, govde });
+  if (kod === "proje_rolu_yok" && res.status === 403) throw new ApiError(403, PROJE_ROLU_YOK, { kod, govde });
   // Projede kapalı özellik (core 409 `ozellik_kapali`; ör. kapalı platform): yapılandırma ayrıntısı yerine sabit Türkçe metin.
   if (kod === "ozellik_kapali") throw new ApiError(res.status, OZELLIK_KAPALI, { kod, ek, govde, hatalar });
   throw new ApiError(res.status, detail ?? VARSAYILAN_HATA[res.status] ?? `Beklenmeyen hata (HTTP ${res.status}).`, { kod, ek, govde, hatalar });

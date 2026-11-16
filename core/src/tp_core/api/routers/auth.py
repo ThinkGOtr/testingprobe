@@ -8,7 +8,7 @@ bir AI Probe kişisine bağlı (`kimlik_bagi`) hesap yerel parolayla açılmaz (
 from __future__ import annotations
 
 import uuid
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
@@ -40,6 +40,8 @@ from tp_core.auth.sessions import (
 from tp_core.auth.yetki import rol_izinleri
 from tp_core.config import get_settings
 from tp_core.models import AppUser, Oturum
+from tp_core.models.tp_proje import TpProje
+from tp_core.workflow.service import Principal
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -226,24 +228,39 @@ class MeYaniti(Me):
     """
 
     product: str | None = None
-    # Kişiye bağlı rol hesaplarından AI Probe'un şu an verdiği rollerdekiler (sıralı).
+    # Kişiye bağlı rol hesaplarından AI Probe'un şu an verdiği (proje kipinde: seçili projedeki)
+    # rollerdekiler (sıralı).
     roles: list[str] | None = None
     # Kişinin tüm AI Probe ürünlerindeki rolleri (`{"tp": [...], "ap": [...]}`; devir/kontrol
     # yanıtından, oturumda saklanır). Değiştirici diğer ürünlere erişimi buradan bilir.
     products: dict[str, list[str]] | None = None
-    # Config R1 (yalnız Home etkin config'i yüklüyken; `CONFIG_SOURCE=env`de alan yok): kurulumun
-    # aktif projesinin özellikleri (portal kapalı ekranları gizler) ve başlıkta gösterilen
-    # organizasyon / proje.
+    # Config R1 (yalnız Home etkin config'i yüklüyken; `CONFIG_SOURCE=env`de alan yok): projenin
+    # özellikleri (portal kapalı ekranları gizler) ve başlıkta gösterilen organizasyon / proje.
     ozellikler: dict[str, bool] | None = None
     organizasyon: dict[str, str] | None = None
+    # `{pid, kod, ad}` (+ geriye uyum için `id` = pid).
     proje: dict[str, str | None] | None = None
+    # Çok proje (TP-COK-PROJE-PLANI §6.2; yalnız proje kipinde): seçili projedeki TP rolleri ve
+    # kişinin erişebildiği proje sayısı. `izinler` seçili projede etkin rol yoksa boştur.
+    roller: list[str] | None = None
+    projeler_sayisi: int | None = None
 
 
-def _proje_baglami(yanit: MeYaniti, durum: object) -> None:
+def _proje_alani(pid: str, kod: Any, ad: Any) -> dict[str, str | None]:
+    return {
+        "pid": pid,
+        "kod": str(kod) if kod else None,
+        "ad": str(ad or "") or pid,
+        "id": pid,
+    }
+
+
+def _proje_baglami(yanit: MeYaniti, durum: object, pid: str | None) -> None:
+    """Home etkin config'i yüklüyse (varsayılan ya da seçili proje) özellikler + başlık."""
     from tp_core.home_config import durum as home_durum
 
-    op = home_durum.org_proje()
-    ozellikler = home_durum.ozellikler()
+    op = home_durum.org_proje(pid)
+    ozellikler = home_durum.ozellikler(pid)
     if ozellikler is not None:
         yanit.ozellikler = ozellikler  # Home reddettiyse (N4) proje yok, özellikler kapalı
     if op is None or ozellikler is None:
@@ -252,28 +269,47 @@ def _proje_baglami(yanit: MeYaniti, durum: object) -> None:
     oid = str(org.get("oid") or getattr(durum, "org_id", None) or "")
     if oid or org.get("name"):
         yanit.organizasyon = {"id": oid, "ad": str(org.get("name") or "")}
-    yanit.proje = {
-        "id": str(proje.get("pid") or ""),
-        "ad": str(proje.get("name") or ""),
-        "kod": str(proje["code"]) if proje.get("code") else None,
-    }
+    yanit.proje = _proje_alani(str(proje.get("pid") or pid or ""), proje.get("code"),
+                               proje.get("name"))  # fmt: skip
 
 
-@router.get("/me", response_model=MeYaniti, response_model_exclude_unset=True)
-def me(user: CurrentUser, request: Request, session: DbSession) -> MeYaniti:
+def _cok_proje(yanit: MeYaniti, user: Principal, uid: str, session: Session) -> None:
+    """Proje kipi: seçili proje, oradaki roller, proje sayısı, izinler (seçili projeye göre)."""
+    from tp_core.auth import aiprobe
+
+    pid = user.project_id or ""
+    yanit.roller = sorted(user.roller)
+    if user.rol not in user.roller:
+        yanit.izinler = []
+    try:
+        projeler = aiprobe.kullanici_projeleri(uid)
+    except aiprobe.HomeUlasilamaz:
+        projeler = []
+    yanit.projeler_sayisi = len(projeler)
+    ozet = next((p for p in projeler if p.pid == pid), None)
+    if yanit.proje is None:
+        satir = session.get(TpProje, pid)
+        kod = (ozet.kod if ozet else None) or (satir.kod if satir else None)
+        ad = (ozet.ad if ozet else None) or (satir.ad if satir else None)
+        yanit.proje = _proje_alani(pid, kod, ad)
+    if yanit.organizasyon is None and ozet is not None and (ozet.oid or ozet.org_ad):
+        yanit.organizasyon = {"id": ozet.oid or "", "ad": ozet.org_ad or ""}
+
+
+def me_yaniti(session: Session, user: Principal, durum: object | None) -> MeYaniti:
+    """`/auth/me` gövdesi (`PUT /proje` de yeni durumu bununla döner)."""
     assert user.id is not None
     yanit = MeYaniti(**me_of(session, user.id, user.kullanici_adi, user.rol).model_dump())
-    uid = getattr(request.state, "oturum_external_uid", None)
+    uid = getattr(durum, "external_uid", None)
     if uid is not None:
         from tp_core.auth import aiprobe
 
         yanit.product = get_settings().aiprobe_product_id
-        durum = getattr(request.state, "oturum_durumu", None)
         urunler = getattr(durum, "urunler", None) or {}
         yanit.products = urunler
         # Yalnız AI Probe'un şu an verdiği roller (bağlı hesap rolleriyle kesişim): oturumdaki ürün
         # haritası (devirde ve her kontrolde home'dan yenilenir); yoksa önbellekli kontrol; home'a
-        # ulaşılamazsa yalnız etkin rol.
+        # ulaşılamazsa yalnız etkin rol. Proje kipinde ayrıca seçili projenin rolleriyle kesişim.
         tp_haritasi = urunler.get(aiprobe.URUN_KODU)
         if isinstance(tp_haritasi, list):
             verilen: set[str] = {str(r) for r in tp_haritasi}
@@ -285,6 +321,21 @@ def me(user: CurrentUser, request: Request, session: DbSession) -> MeYaniti:
             except aiprobe.HomeUlasilamaz:
                 verilen = {user.rol}
         bagli = {h.rol for h in aiprobe.bagli_hesaplar(session, uid)}
+        if aiprobe.proje_kipi():
+            # Proje kipi: verilen roller = seçili projedeki (Home `/v1/projects`, `acr` süzgeçli);
+            # ürün haritasındaki `tp` de seçili projenin rolleridir.
+            verilen = set(user.roller)
+            yanit.products = dict(urunler) | {aiprobe.URUN_KODU: sorted(user.roller)}
         yanit.roles = sorted(bagli & verilen)
-    _proje_baglami(yanit, getattr(request.state, "oturum_durumu", None))
+    _proje_baglami(yanit, durum, user.project_id)
+    if uid is not None:
+        from tp_core.auth import aiprobe
+
+        if aiprobe.proje_kipi():
+            _cok_proje(yanit, user, uid, session)
     return yanit
+
+
+@router.get("/me", response_model=MeYaniti, response_model_exclude_unset=True)
+def me(user: CurrentUser, request: Request, session: DbSession) -> MeYaniti:
+    return me_yaniti(session, user, getattr(request.state, "oturum_durumu", None))

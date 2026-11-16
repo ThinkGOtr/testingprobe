@@ -268,15 +268,18 @@ def stale_promotions(store: ReplayStore) -> list[Path]:
 
 _MISS_SQL = (
     "SELECT amac, mod, replay_anahtari, cikti, bundle_hash, ek FROM ai_call "
-    "WHERE mod = 'replay_miss'{where} ORDER BY olusturma, id"
+    "WHERE project_id = :pid AND mod = 'replay_miss'{where} ORDER BY olusturma, id"
 )
 
 
 def fetch_replay_misses(engine: Any, workflow_id: UUID | None = None) -> list[dict[str, Any]]:
+    """Bağlamdaki projenin REPLAY-MISS çağrıları (CLI: `--proje`, yoksa varsayılan proje)."""
     from sqlalchemy import text
 
+    from tp_core.proje import pid_param
+
     sql = _MISS_SQL.format(where=" AND workflow_id = :wf" if workflow_id else "")
-    params = {"wf": workflow_id} if workflow_id else {}
+    params = pid_param(wf=workflow_id) if workflow_id else pid_param()
     with engine.connect() as conn:
         return [dict(r._mapping) for r in conn.execute(text(sql), params)]
 
@@ -292,6 +295,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--database-url", default=os.environ.get("TP_DATABASE_URL"))
     parser.add_argument("--rules", default=None, help="rules/ dizini (varsayılan: bulunur)")
     parser.add_argument("--workflow", type=UUID, default=None, help="yalnızca bu iş akışı")
+    parser.add_argument("--proje", default=None, help="proje (pid; varsayılan: TP_HOME_PROJECT)")
     parser.add_argument("--dry-run", action="store_true", help="yazmadan listele")
     parser.add_argument("--check-stale", action="store_true", help="bayat kayıtları listele")
     args = parser.parse_args(argv)
@@ -308,9 +312,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     engine = create_engine(args.database_url)
     try:
-        outcomes = promote_from_rows(
-            store, fetch_replay_misses(engine, args.workflow), dry_run=args.dry_run
-        )
+        from tp_core.proje import proje_icinde, varsayilan_pid
+
+        with proje_icinde(args.proje or varsayilan_pid(), kaynak="cli"):
+            satirlar = fetch_replay_misses(engine, args.workflow)
+        outcomes = promote_from_rows(store, satirlar, dry_run=args.dry_run)
     finally:
         engine.dispose()
     for o in outcomes:
