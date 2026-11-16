@@ -4,9 +4,10 @@ Bağlantı koparsa üstel geri çekilmeyle (≤ 10 sn) yeniden bağlanır. Her a
 sahiptir; yavaş abonede en eski olay düşürülür (diğer aboneler etkilenmez).
 
 Proje süzgeci (TP-COK-PROJE-PLANI §5.1): `subscribe(project_id)` ile açılan abone yalnız o
-projenin olaylarını ve kurulum geneli (`project_id` null) olayları alır; başka projenin olayı
-kuyruğuna hiç girmez. `subscribe()` (proje yok) tüm olayları alır — yalnız proje bağlamı olmayan
-iç tüketiciler içindir; SSE akışı oturumun projesini vermelidir.
+projenin olaylarını ve açıkça kurulum geneli işaretli (`project_id == KURULUM`) olayları alır;
+başka projenin olayı da, projesi olmayan (`null`, işaretsiz) olay da kuyruğuna hiç girmez.
+`subscribe()` (proje yok) tüm olayları alır — yalnız proje bağlamı olmayan iç tüketiciler içindir;
+SSE akışı oturumun projesini vermelidir.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ import psycopg
 from sqlalchemy.engine import make_url
 
 from tp_core.events.bus import CHANNEL, parse_payload
+from tp_core.proje.baglam import KURULUM
 
 log = logging.getLogger("tp_core.events")
 
@@ -73,8 +75,10 @@ class Broadcaster:
             log.warning("geçersiz olay yükü atlandı")
             return
         olay_projesi = olay.get("project_id")
+        if olay_projesi is None:
+            log.warning("projesiz olay proje abonelerine iletilmedi: %s", olay.get("event"))
         for q, proje in list(self._subs.items()):
-            if proje is not None and olay_projesi is not None and olay_projesi != proje:
+            if proje is not None and olay_projesi not in (proje, KURULUM):
                 continue
             if q.full():
                 with contextlib.suppress(asyncio.QueueEmpty):

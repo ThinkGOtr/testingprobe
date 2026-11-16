@@ -43,6 +43,7 @@ from tp_core.auth.yetki import izin
 from tp_core.config import get_settings
 from tp_core.events.listener import Broadcaster, libpq_dsn
 from tp_core.models import new_session
+from tp_core.proje.baglam import KURULUM
 from tp_core.workflow.service import Principal
 
 router = APIRouter(tags=["events"])
@@ -73,13 +74,15 @@ def teslim_edilir_mi(olay: Mapping[str, Any], kullanici_id: object | None) -> bo
 
 
 def proje_eslesir(olay: Mapping[str, Any], pid: str | None) -> bool:
-    """Olay bu akışın projesine mi ait? Proje taşımayan olay geçer (geçiş); taşıyan yalnız
-    eşitse."""
+    """Olay bu akışın projesine mi ait? Projesi eşit ya da açıkça kurulum geneli (`KURULUM`)
+    işaretli olay geçer; proje taşımayan (işaretsiz) olay projeli akışa gitmez (fail-closed)."""
+    if pid is None:
+        return True
     veri = olay.get("data")
     olay_pid = olay.get("project_id")
     if olay_pid is None and isinstance(veri, Mapping):
         olay_pid = veri.get("project_id")
-    return olay_pid is None or pid is None or str(olay_pid) == pid
+    return olay_pid is not None and str(olay_pid) in (pid, KURULUM)
 
 
 # Developer akışında süzülen olaylar: ad → (None = hiç gönderilmez | izinli hedef durumlar).

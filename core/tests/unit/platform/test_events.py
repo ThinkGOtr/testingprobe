@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
+from typing import Any
 
 import httpx
 import pytest
@@ -17,12 +18,21 @@ from tp_core.api.routers import events as events_router
 from tp_core.auth.passwords import hash_password
 from tp_core.auth.sessions import SessionData
 from tp_core.events import Broadcaster, PgEventBus, build_payload, libpq_dsn, publish_tx
-from tp_core.proje import proje_icinde
+from tp_core.proje import KURULUM, proje_icinde, varsayilan_pid
 from tp_core.workflow.service import Principal
 
 from .conftest import PAROLA, Db
 
 MakeUser = Callable[..., Principal]
+
+
+class _ProjeliBus(PgEventBus):
+    """Testte olayı (oturumun) varsayılan projesinin bağlamında yayınlar: bağlamsız işaretsiz
+    olay artık reddedilir (TP-COK-PROJE-PLANI §5.1)."""
+
+    def publish(self, event: str, data: Mapping[str, Any]) -> None:
+        with proje_icinde(varsayilan_pid(), kaynak="test"):
+            super().publish(event, data)
 
 
 def test_libpq_dsn() -> None:
@@ -45,7 +55,7 @@ def test_yavas_abone_en_eskiyi_dusurur() -> None:
 
 
 def test_dagitici_gercek_notify_ve_yeniden_baglanma(db: Db, engine: Engine) -> None:
-    bus = PgEventBus(engine)
+    bus = _ProjeliBus(engine)
 
     async def bekle(q: asyncio.Queue, olay: str) -> dict:
         while True:
@@ -107,7 +117,7 @@ def test_sse_canli_akis(sunucu: str, make_user: MakeUser, engine: Engine) -> Non
                     if olay == "stream.open":
                         break
             assert olay == "stream.open"
-            PgEventBus(engine).publish("pr.opened", {"id": "pr-7", "url": "local://7"})
+            _ProjeliBus(engine).publish("pr.opened", {"id": "pr-7", "url": "local://7"})
             gelen: dict | None = None
             olay = None
             for satir in satirlar:
@@ -154,7 +164,7 @@ def test_sse_cikistan_sonra_olay_teslim_etmez_ve_kapanir(
                 diger.cookies.set("tp_session", cerez)
                 assert diger.post("/auth/logout").status_code == 200
                 assert diger.get("/auth/me").status_code == 401
-            PgEventBus(engine).publish("requirement.state", {"id": "gizli-1"})
+            _ProjeliBus(engine).publish("requirement.state", {"id": "gizli-1"})
             kalan = list(olaylar)  # akış kapanınca iterasyon biter (zaman aşımı = başarısız)
     assert kalan == [("session.ended", "{}")]
 
@@ -171,7 +181,7 @@ def test_sse_parola_degisince_kapanir(sunucu: str, make_user: MakeUser, engine: 
                     "UPDATE app_user SET parola_hash = %s WHERE id = %s",
                     (hash_password("Yeni-Parola-9!"), u.id),
                 )
-            PgEventBus(engine).publish("case.generated", {"id": "c9"})
+            _ProjeliBus(engine).publish("case.generated", {"id": "c9"})
             kalan = list(olaylar)
     assert kalan == [("session.ended", "{}")]
 
@@ -185,7 +195,7 @@ def test_sse_gecerli_oturumda_olaylar_akmaya_devam_eder(
         with c.stream("GET", "/events") as akis:
             olaylar = _olaylari_oku(akis.iter_lines())
             assert next(olaylar)[0] == "stream.open"
-            bus = PgEventBus(engine)
+            bus = _ProjeliBus(engine)
             for i in range(3):
                 bus.publish("script.state", {"i": i})
             gelen = [json.loads(next(olaylar)[1] or "{}")["data"]["i"] for _ in range(3)]
@@ -234,7 +244,8 @@ def test_oturum_kontrolu_hata_verirse_gecersiz_sayar(monkeypatch: pytest.MonkeyP
 
 
 def test_olay_yuku_projeyi_tasir_kirpmada_da() -> None:
-    assert json.loads(build_payload("x.y", {"i": 1}))["project_id"] is None  # bağlamsız: kurulum
+    assert json.loads(build_payload("x.y", {"i": 1}))["project_id"] is None  # bağlamsız: işaretsiz
+    assert json.loads(build_payload("x.y", {}, project_id=KURULUM))["project_id"] == KURULUM
     with proje_icinde("a", kaynak="test"):
         assert json.loads(build_payload("x.y", {"i": 1}))["project_id"] == "a"
         assert json.loads(build_payload("x.y", {}, project_id="b"))["project_id"] == "b"
@@ -248,7 +259,8 @@ def test_abone_yalniz_kendi_projesinin_ve_kurulum_olaylarini_alir() -> None:
         qa, qb, hepsi = b.subscribe("a"), b.subscribe("b"), b.subscribe()
         b.fanout(build_payload("x.a", {}, project_id="a"))
         b.fanout(build_payload("x.b", {}, project_id="b"))
-        b.fanout(build_payload("x.kurulum", {}))
+        b.fanout(build_payload("x.kurulum", {}, project_id=KURULUM))
+        b.fanout(build_payload("x.isaretsiz", {}))  # bağlamsız, işaretsiz: projeli aboneye gitmez
         return tuple(  # type: ignore[return-value]
             [q.get_nowait()["event"] for _ in range(q.qsize())] for q in (qa, qb, hepsi)
         )
@@ -256,7 +268,7 @@ def test_abone_yalniz_kendi_projesinin_ve_kurulum_olaylarini_alir() -> None:
     qa, qb, hepsi = asyncio.run(senaryo())
     assert qa == ["x.a", "x.kurulum"]
     assert qb == ["x.b", "x.kurulum"]
-    assert hepsi == ["x.a", "x.b", "x.kurulum"]
+    assert hepsi == ["x.a", "x.b", "x.kurulum", "x.isaretsiz"]
 
 
 def test_publish_tx_baglamdaki_projeyi_yazar(db: Db, engine: Engine) -> None:
@@ -278,3 +290,29 @@ def test_publish_tx_baglamdaki_projeyi_yazar(db: Db, engine: Engine) -> None:
 
     olay = asyncio.run(senaryo())
     assert (olay["event"], olay["project_id"]) == ("x.benim", "p1")
+
+
+def test_publish_tx_baglamsiz_isaretsiz_olayi_reddeder(
+    db: Db, engine: Engine, caplog: pytest.LogCaptureFixture
+) -> None:
+    async def senaryo() -> list[dict]:
+        b = Broadcaster(libpq_dsn(db.app_url))
+        await b.ensure_started()
+        q, hepsi = b.subscribe("p1"), b.subscribe()
+
+        def yayinla() -> None:
+            with engine.begin() as c:
+                publish_tx(c, "x.isaretsiz", {})  # bağlam yok, işaret yok → gönderilmez
+                publish_tx(c, "x.kurulum", {}, project_id=KURULUM)
+
+        await asyncio.to_thread(yayinla)
+        olay = await asyncio.wait_for(q.get(), timeout=5)
+        diger = await asyncio.wait_for(hepsi.get(), timeout=5)
+        await b.stop()
+        return [olay, diger]
+
+    with caplog.at_level("WARNING", logger="tp_core.events"):
+        olay, diger = asyncio.run(senaryo())
+    assert (olay["event"], olay["project_id"]) == ("x.kurulum", KURULUM)
+    assert diger["event"] == "x.kurulum"  # işaretsiz olay iç aboneye de ulaşmadı (NOTIFY yok)
+    assert "projesiz olay yayınlanmadı: x.isaretsiz" in caplog.text

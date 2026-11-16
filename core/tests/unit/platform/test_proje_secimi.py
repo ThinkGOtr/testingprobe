@@ -329,4 +329,6 @@ def test_sse_sorgu_projesi(cok: SahteHome, client: TestClient) -> None:
     assert proje_eslesir({"event": "x", "data": {"project_id": A}}, A)
     assert not proje_eslesir({"event": "x", "data": {"project_id": B}}, A)
     assert not proje_eslesir({"event": "x", "project_id": B, "data": {}}, A)
-    assert proje_eslesir({"event": "x", "data": {}}, A)  # geçiş: projesiz olay
+    assert not proje_eslesir({"event": "x", "data": {}}, A)  # işaretsiz olay projeli akışa gitmez
+    assert proje_eslesir({"event": "x", "project_id": "_kurulum", "data": {}}, A)
+    assert proje_eslesir({"event": "x", "data": {}}, None)
