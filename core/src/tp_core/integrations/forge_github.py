@@ -550,6 +550,35 @@ def qualifying_approvals(reviews: Sequence[Mapping[str, Any]], head_sha: str) ->
     )  # fmt: skip
 
 
+def _eski_app_home_uyumu(pid: str | None, kurulum: str) -> None:
+    """`CONFIG_SOURCE=home` iken eski env App'i (`GH_APP_ID` + özel anahtar) sessizce
+    kullanılmasın (TP-GITHUB-404): Home config'i yüklenmemişse ya da kurulum kimliği Home
+    bağlantısından geliyorsa App kimliği ile kurulum kimliği farklı App'lere ait olabilir →
+    GitHub 404. Bunun yerine açık hata. env kipinde ve Home `token` kipinde (kurulum kimliği
+    env'den) bugünkü davranış sürer."""
+    from tp_core.home_config import durum
+    from tp_core.home_config import yukleyici as y
+
+    if y.kaynak() != "home":
+        return
+    cfg = durum.etkin(pid)
+    if cfg is None:
+        raise ForgeValidationError(
+            "CONFIG_SOURCE=home ama Home etkin config'i bu süreçte yüklenmedi: eski GitHub App "
+            "kimliğine (GH_APP_ID / GH_APP_PRIVATE_KEY) düşülmüyor — App kimliği ile kurulum "
+            "kimliği farklı kaynaklardan gelebilir (Home'a/LKG'ye erişimi kontrol edin; CLI ise "
+            "`home_config.durum.cli_yukle` çağrılmalı)"
+        )
+    home_kurulum = str(cfg.baglanti_public("github").get("installation_id") or "").strip()
+    if kurulum.strip() and home_kurulum and kurulum.strip() == home_kurulum:
+        raise ForgeValidationError(
+            f"GitHub App kimliği/kurulum uyuşmazlığı: kurulum {home_kurulum} Home bağlantısından, "
+            "App kimliği ve özel anahtar eski env'den (GH_APP_ID / GH_APP_PRIVATE_KEY) geliyor; "
+            "Home'da GitHub bağlantısı 'app' kipinde değil. Bağlantıyı AI Probe'da 'app' kipine "
+            "alın ya da eski App değişkenlerini kaldırın"
+        )
+
+
 class GitHubForge:
     """GitHub REST ile `ForgePort`."""
 
@@ -629,6 +658,7 @@ class GitHubForge:
                 )
             auth = proje_ortami.ProjeGitHubAuth(proje_ortami.pid_coz(pid))
         elif app_id and (key or key_path):
+            _eski_app_home_uyumu(pid, cfg.get("GH_APP_INSTALLATION_ID") or "")
             pem = key.replace("\\n", "\n") if key else Path(key_path).read_text(encoding="utf-8")
             auth = AppAuth(app_id, pem, repo, cfg.get("GH_APP_INSTALLATION_ID") or None)
         elif cfg.get("GITHUB_TOKEN"):

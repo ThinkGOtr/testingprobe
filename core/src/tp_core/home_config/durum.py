@@ -468,6 +468,24 @@ def baslat(servis: str) -> None:
     log.info("home config: kaynak=%s, yenileme %d sn", _DURUM.kaynak, int(aralik))
 
 
+def cli_yukle(servis: str = "core-worker") -> Durum:
+    """Tek seferlik CLI süreçleri (`python -m tp_core.*`) için: Home etkin config'ini bir kez
+    yükler (Home'a ulaşılamazsa LKG), arka plan yenileyici AÇMAZ. Servis süreçlerinin `baslat`
+    ile kullandığı mekanizmanın aynısı; `servis` LKG dosya adını belirler (konteynerin servis
+    süreciyle aynı LKG paylaşılır). env kipinde no-op. Hata fırlatmaz: yüklenemezse durum
+    `cfg=None` kalır (tüketiciler — ör. `GitHubForge.from_env` — açık hata verir)."""
+    if y.kaynak() != "home":
+        return _DURUM
+    try:
+        ayar_kaynagini_bagla()
+        yenile(servis)
+    except Exception:
+        log.exception("home config: CLI yüklemesi başarısız")
+    if _DURUM.cfg is None:
+        log.warning("home config: CLI için yüklenemedi (kaynak=%s)", _DURUM.kaynak)
+    return _DURUM
+
+
 def durdur() -> None:
     _DUR.set()
     ip = _IPLIK

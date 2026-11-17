@@ -101,6 +101,9 @@ def seed_otomasyon_demo() -> dict[str, str]:
 
 
 def main() -> None:
+    from tp_core.home_config import durum as home_durum
+
+    home_durum.cli_yukle("core-api")  # CLI (core-api kabında): Home etkin config'i bir kez
     yeni = seed()
     print(f"seed: {len(KULLANICILAR)} kullanıcı (yeni: {yeni})")
     print(f"seed: test verisi kataloğu (yeni: {seed_test_verisi()})")

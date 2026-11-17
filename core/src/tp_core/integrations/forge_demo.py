@@ -747,7 +747,12 @@ def main(
     sub.add_parser("web-state", help="çalışan demo-app-web main'i yansıtıyor mu (JSON)")
     sub.add_parser("web-path", help="forge kipi ve web dizininin depo içi yolu (JSON; API yok)")
     args = parser.parse_args(argv)
+    from tp_core.home_config import durum as home_durum
     from tp_core.proje import proje_icinde, varsayilan_pid
+
+    # CLI süreci servis değildir: Home etkin config'i (bağlantı kipi, kurulum kimliği) burada bir
+    # kez yüklenir (TP-GITHUB-404); yoksa `app` kipi görülmez, eski env App'ine düşülürdü.
+    home_durum.cli_yukle("core-worker")
 
     # Demo (demo-app forge'u) yalnız varsayılan projeye aittir (TP-COK-PROJE-PLANI §4.3): denetim
     # kaydı ve `demo.await_web` işi o projenin bağlamında yazılır.

@@ -4474,8 +4474,29 @@ def _eski_pr_senkronu(engine: Engine, forge: ForgePort) -> dict[str, int]:
     return out
 
 
+# Depo tanımsızlığı bildirilmiş projeler (süreç başına bir kez info; sonra debug).
+_DEPOSUZ_BILDIRILEN: set[str] = set()
+
+
+def _depo_tanimsiz() -> bool:
+    """GitHub kipinde projenin kod deposu (`GITHUB_REPO`) bağlanmamış mı? (ör. Home'da depo
+    bağlanmamış ikinci proje). Testlerin enjekte ettiği forge varken depo aranmaz."""
+    if "forge" in _factories:
+        return False
+    github = (ayar("TP_FORGE") or "local").strip().lower() == "github"
+    return github and not (ayar("GITHUB_REPO") or "").strip()
+
+
 def run_pr_sync(ctx: JobContext, engine: Engine) -> dict[str, Any]:
     try:
+        if _depo_tanimsiz():
+            # Senkronlanacak depo yok: hata değil, sessizce atla (her dakika ERROR gürültüsü
+            # yerine proje başına tek info). Depo sonradan bağlanırsa sonraki tur senkronlar.
+            pid = (varsa().pid if varsa() is not None else "") or "?"
+            seviye = logging.DEBUG if pid in _DEPOSUZ_BILDIRILEN else logging.INFO
+            _DEPOSUZ_BILDIRILEN.add(pid)
+            log.log(seviye, "PR senkronu atlandı: proje %s için kod deposu (GITHUB_REPO) yok", pid)
+            return {"atlandi": "depo_yok"}
         return sync_prs(engine)
     finally:
         with engine.begin() as conn:

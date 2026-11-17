@@ -528,6 +528,10 @@ def main(argv: Sequence[str] | None = None, *, jira: RestJira | None = None) -> 
         "--sil", action="store_true", help="koşu kayıtlarını kapatmak yerine sil (geri alınamaz)"
     )
     args = parser.parse_args(argv)
+    from tp_core.home_config import durum as home_durum
+
+    # CLI: Home etkin config'i (Jira bağlantı kipi/OAuth) bir kez yüklenir (TP-GITHUB-404).
+    home_durum.cli_yukle("core-worker")
     # Demo verisi (TPD-1..TPD-7) Bayi Portalı'na özgü: komut yalnız varsayılan projede çalışır
     # (TP-COK-PROJE-PLANI §4.2); başka projenin Jira'sına tohum yazılmaz.
     with proje_icinde(varsayilan_pid(), kaynak="cli"):

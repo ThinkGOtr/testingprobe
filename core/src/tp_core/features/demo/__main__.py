@@ -78,7 +78,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     w.add_argument("--eylem", default="sync", choices=("sync", "break", "baseline"))
     w.add_argument("--isteyen", default="demo-web-sync")
     a = p.parse_args(argv)
+    from tp_core.home_config import durum as home_durum
     from tp_core.proje import proje_icinde, varsayilan_pid
+
+    home_durum.cli_yukle("core-worker")  # CLI: Home etkin config'i bir kez (TP-GITHUB-404)
 
     # Demo (demo-app forge'u) yalnız varsayılan projeye aittir (TP-COK-PROJE-PLANI §4.3).
     with proje_icinde(varsayilan_pid(), kaynak="cli"):
