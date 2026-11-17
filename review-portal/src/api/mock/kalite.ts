@@ -877,7 +877,7 @@ export function kaliteRotalari(b: KaliteBagimliliklari): Rota[] {
   /** Tur 2 (Y4): kısmen sonucun eksik girdi dışındaki nedeni (atılan olgu, kapsanmayan sayı, yok sayılan) zorunlu kapıda gerekçe ister. */
   const kismenRiskli = (r: OracleKaydi) => r.sonuc === "kismen" && (r.kismen_nedeni ?? []).some((n) => n !== "eksik_girdi");
   /**
-   * 012 rol modeli: kapı Testçinin kabulünde (`accept`/`edit`, taslak → ready) ve Analistin son
+   * 012 rol modeli: kapı Test Uzmanının kabulünde (`accept`/`edit`, taslak → ready) ve Analistin son
    * onayında (`approve`, ready → approved) uygulanır; izin denetimi özgün karar ucundadır.
    */
   function kararKapisi(id: string, govde: unknown): Record<string, unknown> {

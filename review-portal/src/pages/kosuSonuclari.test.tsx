@@ -296,7 +296,7 @@ describe("koşu detayı (canlı core şekli)", () => {
     expect(gece).toHaveAccessibleDescription(/zamanlanmış koşuyu şimdi başlatır: aynı onaylı test paketi/);
     expect(screen.getByRole("button", { name: "Deploy sonrası testleri koş" })).toHaveAccessibleDescription(/uygulamayı hiçbir yere yüklemez/);
     expect(screen.queryByText(/tam regresyon/)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Manuel koşu başlat" })).toHaveAccessibleDescription(/Developer rolü yalnız prod dışı/);
+    expect(screen.getByRole("button", { name: "Manuel koşu başlat" })).toHaveAccessibleDescription(/Geliştirici rolü yalnız prod dışı/);
   });
 
   it("core izinleri katalogdan önce gelir: izinlerde tetik yoksa (rol engineer olsa da) düğme çizilmez", async () => {

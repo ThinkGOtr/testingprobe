@@ -11,10 +11,10 @@ export const ROL_ETIKETLERI: Record<Rol, string> = {
   admin: "Sistem Yöneticisi",
   auditor: "Denetçi",
   analyst: "Analist",
-  po: "PO",
-  tester: "Testçi",
-  engineer: "Automation Engineer",
-  developer: "Developer",
+  po: "Ürün Sahibi (PO)",
+  tester: "Test Uzmanı",
+  engineer: "Otomasyon Mühendisi",
+  developer: "Geliştirici",
   viewer: "Görüntüleyici",
 };
 
@@ -48,7 +48,7 @@ export const IZINLER = {
   "case.decide": ["tester"],
   "case.approve": ["analyst"],
   "case.publish": ["tester"],
-  // 2026-11-14: Developer da kendi IDE token'ını üretir (yalnız `submit`; `publish` `case.publish` ister).
+  // 2026-11-14: Geliştirici da kendi IDE token'ını üretir (yalnız `submit`; `publish` `case.publish` ister).
   "token.issue": ["tester", "developer"],
   "code.generate": ["engineer"],
   "code.break_verify": ["engineer"],
@@ -71,7 +71,7 @@ export const IZINLER = {
   "case.ask_po": ["analyst"],
   "agent_test.run": ["tester"],
   // 012 test kalite doğrulama: karar tablosu / ilişki (Analist yazar, PO onaylar), kontrolü
-  // yeniden isteme (Testçi, Analist), ekilmiş hata koşusu (engineer, admin — eski presenter).
+  // yeniden isteme (Test Uzmanı, Analist), ekilmiş hata koşusu (engineer, admin — eski presenter).
   "decision_table.edit": ["analyst"],
   "decision_table.approve": ["po"],
   "case.oracle_check": ["analyst", "tester"],
@@ -141,14 +141,14 @@ export function izinVar(izinler: ReadonlySet<string>, ...istenen: Izin[]): boole
   return istenen.some((i) => izinler.has(i));
 }
 
-/** İzni taşıyan iş rollerinin etiketleri, okunur liste: "Analist ve Automation Engineer". */
+/** İzni taşıyan iş rollerinin etiketleri, okunur liste: "Analist ve Otomasyon Mühendisi". */
 export function izinRolleriMetni(...istenen: Izin[]): string {
   const ad = [...new Set(istenen.flatMap((i) => IZINLER[i]))].filter((r) => r !== "admin").map((r) => ROL_ETIKETLERI[r]);
   if (ad.length <= 1) return ad.join("");
   return `${ad.slice(0, -1).join(", ")} ve ${ad[ad.length - 1]}`;
 }
 
-/** Yetkisiz düğmenin nedeni: "Bu işlem için gereken rol: Testçi". */
+/** Yetkisiz düğmenin nedeni: "Bu işlem için gereken rol: Test Uzmanı". */
 export function izinNedeni(...istenen: Izin[]): string {
   const roller = [...new Set(istenen.flatMap((i) => IZINLER[i]))];
   return `Bu işlem için gereken rol: ${roller.map((r) => ROL_ETIKETLERI[r]).join(" / ")}`;
@@ -181,7 +181,7 @@ export const ROTA_IZINLERI: Record<string, readonly Izin[]> = {
   "/denetim": ["audit.read_all", "audit.read_own"],
   // `token.read` (kendi token'larını listele/iptal et) API düzeyinde tüm rollerdedir; ekran ise token
   // üretme kanalını anlatır ve ANALIZ 012 §4.2'de `claude_code.read` ile sınırlıdır (PO, Denetçi,
-  // Görüntüleyici token üretemez; Developer 2026-11-14'ten beri görür ve kendi token'ını üretir).
+  // Görüntüleyici token üretemez; Geliştirici 2026-11-14'ten beri görür ve kendi token'ını üretir).
   "/claude-code": ["claude_code.read"],
   "/test-verisi": ["case.read"],
   "/otomasyon": ["requirement.read"],

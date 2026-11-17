@@ -107,7 +107,7 @@ describe("Bulgu 2: case'e bağlı olmayan açık soru", () => {
   });
 
   it("sayfada şerit ve toplu kabul teyidi gönderilmemiş soruyu söyler; kabul engellenmez", async () => {
-    // 012/013: toplu karar Testçide (`accept`); yalnız görülen ve engeli olmayan taslak girer.
+    // 012/013: toplu karar Test Uzmanında (`accept`); yalnız görülen ve engeli olmayan taslak girer.
     mockGoruntulemeEkle("case-v3-1", "testci");
     await oturumAc("testci");
     await yereldeGorulmus(["case-v3-1"]);

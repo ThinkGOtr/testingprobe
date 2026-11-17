@@ -1,6 +1,6 @@
 // Örnek veri: üretim seçenekleri (011 K5) ve derinleştirme (P5/P6, K7) uçları.
 //   GET  /requirements/{id}/generation-options  → kayıtlı son seçenekler + varsayılan + katalog
-//   POST /requirements/{id}/deepen              → {tur, teknik?}; `case.generate` (Testçi), yalnız cases_ready
+//   POST /requirements/{id}/deepen              → {tur, teknik?}; `case.generate` (Test Uzmanı), yalnız cases_ready
 //   GET  /requirements/{id}/deepen              → son derinleştirmenin durumu
 // generate-cases gövdesinin doğrulaması/saklanması ve platform golden seçimi de buradadır
 // (handlers.ts `caseUret` çağırır). Model çağrısı yoktur: çıktılar golden kopyasından

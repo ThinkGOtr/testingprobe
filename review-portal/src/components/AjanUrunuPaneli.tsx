@@ -36,7 +36,7 @@ export function useAjanTesti(id: string, etkin = true): VeriDurumu<AjanTestiGoru
         : Promise.resolve(null),
     [id, etkin],
   );
-  // 012: ajan testini başlatan/işleten Testçi (`agent_test.run`).
+  // 012: ajan testini başlatan/işleten Test Uzmanı (`agent_test.run`).
   const isletir = useIzin("agent_test.run");
   // D4: GET yalnız okur; `yenilenebilir` true iken `agent_test.run` sahibi refresh POST'u ile sonucu
   // işletir. Alan yoksa (eski core) talep bitmeyene kadar yoklanır. Diğer roller yalnız GET ile okur.

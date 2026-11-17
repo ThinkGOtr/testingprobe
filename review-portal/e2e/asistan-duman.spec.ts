@@ -127,7 +127,7 @@ test('"? Bu ne?": pasif (disabled) düğme seçilir, nedeni sorulur; Esc önce k
   // Analist için mühendis düğmesi pasif ve nedenini title'da söyler (S1 vakası).
   const merge = page.getByRole("button", { name: "Merge et" });
   await expect(merge).toBeDisabled();
-  await expect(merge).toHaveAttribute("title", "Bu işlem için gereken rol: Automation Engineer");
+  await expect(merge).toHaveAttribute("title", "Bu işlem için gereken rol: Otomasyon Mühendisi");
   await merge.scrollIntoViewIfNeeded();
 
   const p = await paneliAc(page);

@@ -41,7 +41,7 @@ def gecit(replay_gateway: Any) -> Iterator[Any]:
     denetim_akisi.bind_gate()
 
 
-# 012 rol hesapları (gereksinim başına): üretim/review/karar Testçi, son onay/denetim Analist.
+# 012 rol hesapları (gereksinim başına): üretim/review/karar Test Uzmanı, son onay/denetim Analist.
 _ROLLER: dict[uuid.UUID, dict[str, Any]] = {}
 
 
@@ -50,7 +50,7 @@ def _rol(api: TestClient, rid: uuid.UUID, rol: str) -> None:
 
 
 def _uret(api: TestClient, engine: Engine, make_user, make_requirement) -> uuid.UUID:
-    """Testçi üretir; Testçi oturumu açık kalır."""
+    """Test Uzmanı üretir; Test Uzmanı oturumu açık kalır."""
     rid = make_requirement()
     _ROLLER[rid] = {"tester": make_user("tester"), "analyst": make_user("analyst")}
     login(api, _ROLLER[rid]["tester"])
@@ -60,7 +60,7 @@ def _uret(api: TestClient, engine: Engine, make_user, make_requirement) -> uuid.
 
 
 def _onayla(api: TestClient, rid: uuid.UUID) -> list[dict[str, Any]]:
-    """Testçi kabulü + Analist son onayı; Analist oturumu açık kalır (P9'a gönderim Analistin)."""
+    """Test Uzmanı kabulü + Analist son onayı; Analist oturumu açık kalır (P9'a gönderim Analistin)."""
     cases = latest_cases(api, rid)
     testci, analist = _ROLLER[rid]["tester"], _ROLLER[rid]["analyst"]
     for c in cases:
@@ -69,7 +69,7 @@ def _onayla(api: TestClient, rid: uuid.UUID) -> list[dict[str, Any]]:
 
 
 def _set_degistir(api: TestClient, rid: uuid.UUID) -> None:
-    """İkinci case'i taslağa alıp reddeder (set hash'i değişir; Testçi kararı)."""
+    """İkinci case'i taslağa alıp reddeder (set hash'i değişir; Test Uzmanı kararı)."""
     _rol(api, rid, "tester")
     c = latest_cases(api, rid)[1]
     api.post(
@@ -201,7 +201,7 @@ def test_review_set_degisince_yeni_sete_planlanir(
 ) -> None:
     rid = _uret(api, engine, make_user, make_requirement)
     _onayla(api, rid)
-    _rol(api, rid, "tester")  # P8 review Testçinin (case.generate)
+    _rol(api, rid, "tester")  # P8 review Test Uzmanının (case.generate)
     api.post(f"/requirements/{rid}/case-review")
     _set_degistir(api, rid)
     run_jobs(engine)

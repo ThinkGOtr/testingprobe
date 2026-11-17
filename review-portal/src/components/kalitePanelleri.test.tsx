@@ -31,7 +31,7 @@ async function uret() {
   await bekleIsler();
 }
 
-/** 012 iki adım: Testçi kabul eder, Analist son onayı verir; oturum Analistte kalır (denetime gönderen). */
+/** 012 iki adım: Test Uzmanı kabul eder, Analist son onayı verir; oturum Analistte kalır (denetime gönderen). */
 async function ikiAdimOnay(ids: string[]) {
   const hash = (id: string) => mockVerisi().caseler.find((x) => x.id === id)!.icerik_hash;
   await oturumAc("testci");

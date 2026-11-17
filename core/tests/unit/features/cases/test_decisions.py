@@ -1,4 +1,4 @@
-"""Case kararları (Constitution I, X; specs/012-rol-yetki §5): Testçi kararı + Analist son onayı,
+"""Case kararları (Constitution I, X; specs/012-rol-yetki §5): Test Uzmanı kararı + Analist son onayı,
 hash bağı, şema, ölçüm, Taslağa al, geri gönderme, review tamam, developer süzgeci."""
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ from .helpers import (
 
 @pytest.fixture
 def hazir(api: TestClient, engine: Engine, make_user, make_requirement, fake_gateway):
-    """3 draft case'li, PO onaylı gereksinim + oturum açmış Testçi (ve bir Analist hesabı)."""
+    """3 draft case'li, PO onaylı gereksinim + oturum açmış Test Uzmanı (ve bir Analist hesabı)."""
     cases = [
         case_icerik(),
         case_icerik(title="Hatalı parola mesajı", ref="AC2", type="negative"),
@@ -86,7 +86,7 @@ def test_testci_kabulu_ready_ve_review_kaydi(api: TestClient, hazir) -> None:
     assert out["durum"] == "ready" and out["karar"] == "accept"
     assert out["testci_karari"] == "accept" and out["testci"] == testci.kullanici_adi
     assert out["son_onay"] is None
-    # Testçi kabulü onay hash'i yazmaz ve yayını açmaz (son onay Analistindir).
+    # Test Uzmanı kabulü onay hash'i yazmaz ve yayını açmaz (son onay Analistindir).
     assert out["onaylanan_hash"] is None and out["karar_veren"] == testci.kullanici_adi
     assert out["review_sure_ms"] is not None and out["review_sure_ms"] >= 40
     with session_scope() as s:
@@ -175,7 +175,7 @@ def test_geri_gonderme_gerekce_ister_ve_taslaga_doner(api: TestClient, hazir) ->
         "zaman": out["son_onay"]["zaman"],
         "gerekce": "AC1 ön koşulu eksik",
     }
-    # Testçinin önceki kararı ölçüm alanlarında korunur.
+    # Test Uzmanının önceki kararı ölçüm alanlarında korunur.
     assert out["testci_karari"] == "accept"
     # Geri gönderilen case yeniden kabul edilmeden onaylanamaz.
     assert _karar(api, out, karar="approve").status_code == 409
@@ -183,11 +183,11 @@ def test_geri_gonderme_gerekce_ister_ve_taslaga_doner(api: TestClient, hazir) ->
     assert _karar(api, out, karar="accept").json()["durum"] == "ready"
     m = api.get(f"/requirements/{rid}/case-metrics").json()
     assert m["son_onay"]["geri_gonderilen"] == 1 and m["son_onay"]["bekleyen"] == 1
-    assert m["ilk_kararlar"] == {"accept": 1}  # geri gönderme Testçi kabul ölçümüne girmez
+    assert m["ilk_kararlar"] == {"accept": 1}  # geri gönderme Test Uzmanı kabul ölçümüne girmez
 
 
 def test_son_onay_sonraki_testci_kararinda_gizlenir(api: TestClient, hazir) -> None:
-    """Taslağa al ya da yeni kabul eski `approve`'u gizler; `send_back` gerekçesi Testçinin
+    """Taslağa al ya da yeni kabul eski `approve`'u gizler; `send_back` gerekçesi Test Uzmanının
     sonraki kararına kadar görünür kalır."""
     rid, testci, analist = hazir
     c = latest_cases(api, rid)[0]
@@ -202,13 +202,13 @@ def test_son_onay_sonraki_testci_kararinda_gizlenir(api: TestClient, hazir) -> N
     out = _karar(api, out, karar="send_back", gerekce="AC1 eksik").json()
     assert out["durum"] == "draft" and out["son_onay"]["karar"] == "send_back"
     rol_ol(api, testci)
-    assert latest_cases(api, rid)[0]["son_onay"]["gerekce"] == "AC1 eksik"  # Testçi görür
+    assert latest_cases(api, rid)[0]["son_onay"]["gerekce"] == "AC1 eksik"  # Test Uzmanı görür
     out = _karar(api, out, karar="accept").json()
     assert out["durum"] == "ready" and out["son_onay"] is None
 
 
 def test_bayat_testci_karariyla_onay_reddedilir(api: TestClient, engine: Engine, hazir) -> None:
-    """Testçi kararından sonra içerik değiştiyse (ör. yarış) son onay 409 olur."""
+    """Test Uzmanı kararından sonra içerik değiştiyse (ör. yarış) son onay 409 olur."""
     rid, _, analist = hazir
     c = latest_cases(api, rid)[0]
     _karar(api, c, karar="accept")
@@ -220,7 +220,7 @@ def test_bayat_testci_karariyla_onay_reddedilir(api: TestClient, engine: Engine,
     rol_ol(api, analist)
     guncel = latest_cases(api, rid)[0]
     r = _karar(api, guncel, karar="approve")
-    assert r.status_code == 409 and "Testçi kararından sonra" in r.json()["detail"], r.text
+    assert r.status_code == 409 and "Test Uzmanı kararından sonra" in r.json()["detail"], r.text
     assert latest_cases(api, rid)[0]["durum"] == "ready"
 
 
@@ -280,7 +280,7 @@ def test_karar_yalnizca_taslakta_ve_taslaga_al(api: TestClient, engine: Engine, 
     assert r.status_code == 409 and "Taslağa al" in r.json()["detail"]
     assert _karar(api, c, karar="edit", icerik={**c["icerik"], "title": "x"}).status_code == 409
     assert _karar(api, c, karar="reopen", icerik_hash="eski").status_code == 409
-    # Onaylı case'i Testçi taslağa alır: onay düşer.
+    # Onaylı case'i Test Uzmanı taslağa alır: onay düşer.
     r = _karar(api, c, karar="reopen", gerekce="yeniden bakılacak")
     assert r.status_code == 200, r.text
     assert r.json()["durum"] == "draft" and r.json()["onaylanan_hash"] is None
@@ -334,7 +334,7 @@ def test_hazir_case_testci_taslaga_alabilir(api: TestClient, hazir) -> None:
 
 
 def test_goruntuleme_testci_ve_analist(api: TestClient, make_user, hazir) -> None:
-    """`viewed`: Testçi (karar) ve Analist (son onay) kaydeder; diğer roller 403 + denetim."""
+    """`viewed`: Test Uzmanı (karar) ve Analist (son onay) kaydeder; diğer roller 403 + denetim."""
     from tp_core.models import CaseGoruntuleme
 
     rid, testci, analist = hazir
@@ -437,7 +437,7 @@ def test_kabul_orani_ilk_karara_gore_ve_review_tamam(api: TestClient, hazir) -> 
     assert _karar(api, a, karar="accept").status_code == 200
     rol_ol(api, analist)
     r = api.post(f"/requirements/{rid}/review-complete")
-    assert r.status_code == 409 and "Testçi kararı bekleyen 2 case" in r.json()["detail"]
+    assert r.status_code == 409 and "Test Uzmanı kararı bekleyen 2 case" in r.json()["detail"]
 
     rol_ol(api, testci)
     buyuk = {
@@ -452,7 +452,7 @@ def test_kabul_orani_ilk_karara_gore_ve_review_tamam(api: TestClient, hazir) -> 
     assert _karar(api, c2, karar="reopen").status_code == 200
     assert _karar(api, latest_cases(api, rid)[2], karar="accept").status_code == 200
 
-    # Testçi kararları bitti, son onay bekleniyor: review tamamlanamaz.
+    # Test Uzmanı kararları bitti, son onay bekleniyor: review tamamlanamaz.
     rol_ol(api, analist)
     r = api.post(f"/requirements/{rid}/review-complete")
     assert r.status_code == 409 and "Son onay bekleyen 3 case" in r.json()["detail"]
@@ -485,7 +485,7 @@ def test_kabul_orani_ilk_karara_gore_ve_review_tamam(api: TestClient, hazir) -> 
 
 
 def test_eski_akis_kayitlari_olcumde_testci_karari_sayilir(api: TestClient, hazir) -> None:
-    """012 öncesi: analistin doğrudan `approve`'u (önünde kabul yok) Testçi kabulü sayılır."""
+    """012 öncesi: analistin doğrudan `approve`'u (önünde kabul yok) Test Uzmanı kabulü sayılır."""
     from tp_core.features.cases.service import son_onay_kararlari, testci_kararlari
 
     class R:
@@ -498,6 +498,6 @@ def test_eski_akis_kayitlari_olcumde_testci_karari_sayilir(api: TestClient, hazi
     yeni = [R("accept"), R("send_back"), R("edit"), R("approve")]
     assert [r.karar for r in testci_kararlari(yeni)] == ["accept", "edit"]
     assert [r.karar for r in son_onay_kararlari(yeni)] == ["send_back", "approve"]
-    # Eski ret sonrası taslağa al + eski approve: ikisi de Testçi kararı sayılır.
+    # Eski ret sonrası taslağa al + eski approve: ikisi de Test Uzmanı kararı sayılır.
     karma = [R("reject"), R("reopen"), R("approve")]
     assert [r.karar for r in testci_kararlari(karma)] == ["reject", "approve"]

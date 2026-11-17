@@ -4,7 +4,7 @@ import type { ProjeOzelligi } from "../api/types";
 import { izinRolleri, ROL_ETIKETLERI, type Izin } from "../lib/yetki";
 import { BosDurum, Kart, SayfaBasligi } from "./ui";
 
-/** Gereken izinlerden birini taşıyan rollerin etiketleri ("Testçi / Analist"). */
+/** Gereken izinlerden birini taşıyan rollerin etiketleri ("Test Uzmanı / Analist"). */
 export function gerekenRoller(izinler: readonly Izin[]): string {
   return [...new Set(izinler.flatMap((i) => izinRolleri(i)))].map((r) => ROL_ETIKETLERI[r]).join(" / ");
 }
@@ -31,11 +31,15 @@ export function IzinGerekli({ izin, children }: { izin: Izin | readonly Izin[]; 
   return <>{children}</>;
 }
 
-/** Projede kapalı özelliğin (`/auth/me` → `ozellikler`) ekranında gösterilen metin. */
+/** Projede kapalı özelliğin (`/auth/me` → `ozellikler`) ekranında gösterilen metinler. Yetki eksikliği
+ * değildir (canlı E2E T-8): başlık "Erişim yok" olmaz; özellik AI Probe'daki proje ayarından açılır. */
+export const OZELLIK_KAPALI_BASLIK = "Özellik kapalı";
 export const OZELLIK_KAPALI_EKRANI = "Bu ekran bu projede kapalı.";
+export const OZELLIK_KAPALI_ACIKLAMA =
+  "Bu özellik, projenin AI Probe'daki ayarlarından açılır (proje yöneticisi ya da organizasyon yöneticisi).";
 
 /**
- * Özellik koruması: projede kapalı özelliğin ekranı (ör. `ai_agent` → Ajan ürünleri) yerine "erişim yok"
+ * Özellik koruması: projede kapalı özelliğin ekranı (ör. `ai_agent` → Ajan ürünleri) yerine "özellik kapalı"
  * kartı, `IzinGerekli` ile aynı biçimde. Alan yoksa (varsayılan kip) her şey açıktır. Kontrol core'dadır
  * (kapalı Agent Probe uçları 404); bu yalnızca boş/hatalı ekranı önler.
  */
@@ -44,9 +48,9 @@ export function OzellikGerekli({ ozellik, children }: { ozellik: ProjeOzelligi; 
   if (!acik) {
     return (
       <>
-        <SayfaBasligi baslik="Erişim yok" />
+        <SayfaBasligi baslik={OZELLIK_KAPALI_BASLIK} />
         <Kart>
-          <BosDurum baslik={OZELLIK_KAPALI_EKRANI}>Açılması için proje yöneticinize başvurun.</BosDurum>
+          <BosDurum baslik={OZELLIK_KAPALI_EKRANI}>{OZELLIK_KAPALI_ACIKLAMA}</BosDurum>
         </Kart>
       </>
     );

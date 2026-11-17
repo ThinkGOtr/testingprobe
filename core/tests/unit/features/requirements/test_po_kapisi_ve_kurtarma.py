@@ -43,7 +43,7 @@ def analist(api: TestClient, make_user) -> Any:
 
 @pytest.fixture
 def testci(make_user) -> Any:
-    """012: case üretimi ve kararı Testçinindir (gereksinim adımları Analistte kalır)."""
+    """012: case üretimi ve kararı Test Uzmanınındır (gereksinim adımları Analistte kalır)."""
     return make_user("tester")
 
 

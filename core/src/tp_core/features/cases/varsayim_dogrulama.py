@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 
 from tp_core.models import AppUser, Requirement, Review
 
-# 012 (dev birleştirmesi): "Varsayım doğrulandı" Testçinin `edit`'idir ve case'i `ready` yapar;
+# 012 (dev birleştirmesi): "Varsayım doğrulandı" Test Uzmanının `edit`'idir ve case'i `ready` yapar;
 # doğrulama Analist son onayını beklemeden diğer case'lere yansır.
 ONAYLI = frozenset({"ready", "approved", "published"})
 

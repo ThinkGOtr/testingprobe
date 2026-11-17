@@ -103,7 +103,7 @@ export function VarsayimRozeti({
   if (!durum) return null;
   if (durum === "gonderilmedi" && sahip !== "PO") {
     return (
-      <Cip ton="notr" title="Varsayım henüz doğrulanmadı. Doğrulamayı Testçi yapar (Varsayım doğrulandı düğmesi); Analist isterse PO'ya da gönderebilir.">
+      <Cip ton="notr" title="Varsayım henüz doğrulanmadı. Doğrulamayı Test Uzmanı yapar (Varsayım doğrulandı düğmesi); Analist isterse PO'ya da gönderebilir.">
         Doğrulanmadı
       </Cip>
     );

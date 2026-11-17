@@ -265,7 +265,7 @@ export const api = {
       ),
     ),
   /**
-   * 013 §3.2 toplu karar (012 iki adım): Testçi `accept` (taslak → ready, "Toplu kabul"), Analist
+   * 013 §3.2 toplu karar (012 iki adım): Test Uzmanı `accept` (taslak → ready, "Toplu kabul"), Analist
    * `approve` (ready → approved, "Toplu onayla"). Her öğe ekranda görülen kendi hash'iyle; sunucu
    * görülmeyeni atlar. 1..200 öğe (çağıran böler).
    */
@@ -276,10 +276,10 @@ export const api = {
         kaynak: CASE_KAYNAGI,
       }),
     ),
-  /** Testçi (taslak) ya da Analist (onaya hazır) case'i ilk kez gördü: review süresi (`review_sure_ms`) sunucuda bu andan ölçülür. */
+  /** Test Uzmanı (taslak) ya da Analist (onaya hazır) case'i ilk kez gördü: review süresi (`review_sure_ms`) sunucuda bu andan ölçülür. */
   caseGoruntulendi: (id: string) => istek<unknown>("POST", `/cases/${yol(id)}/viewed`, { kaynak: CASE_KAYNAGI }),
   /**
-   * K20 "Varsayım doğrulandı" (`case.decide`, Testçi): varsayım doğrulandı; case görülen içeriğiyle
+   * K20 "Varsayım doğrulandı" (`case.decide`, Test Uzmanı): varsayım doğrulandı; case görülen içeriğiyle
    * (hash) hazır yapılıp `edit` kararıyla kabul edilir (taslak → onaya hazır; Analist son onayı
    * gerekir). Başka atıf kalırsa 422, içerik değiştiyse 409.
    */
@@ -308,7 +308,7 @@ export const api = {
   /** P8 review (011 F2): son review + güncel set hash'i + bayat mı. */
   caseReview: (requirementId: string) =>
     istek<CaseReviewGorunumu>("GET", `/requirements/${yol(requirementId)}/case-review`, { kaynak: CASE_KAYNAGI }),
-  /** Review'u yeniden çalıştır (`case.generate`, Testçi; tavsiye niteliğinde). */
+  /** Review'u yeniden çalıştır (`case.generate`, Test Uzmanı; tavsiye niteliğinde). */
   caseReviewCalistir: (requirementId: string) =>
     istek<CaseReviewGorunumu>("POST", `/requirements/${yol(requirementId)}/case-review`, { kaynak: CASE_KAYNAGI }),
   /** Açık sorular (011 K16): güncel setin soruları/varsayımları, PO'ya gönderim durumu ve yanıtı. */
@@ -398,7 +398,7 @@ export const api = {
   },
 
   // CI ve koşular
-  /** deploy | nightly: Automation Engineer; manual: Automation Engineer + Developer (prod'da developer 403). */
+  /** deploy | nightly: Otomasyon Mühendisi; manual: Otomasyon Mühendisi + Geliştirici (prod'da developer 403). */
   ciTetikle: (tetik: "deploy" | "nightly" | "manual") => istek<IsYaniti>("POST", "/ci/trigger", { govde: { tetik } }),
   kosular: async (): Promise<Kosu[]> => listeUyarla(await istek<unknown>("GET", "/runs"), kosuUyarla),
   kosu: async (id: string): Promise<KosuDetay> => kosuDetayUyarla(nesne(await istek<unknown>("GET", `/runs/${yol(id)}`))),
@@ -448,7 +448,7 @@ export const api = {
   // Bug taslakları
   bugTaslaklari: async (): Promise<BugTaslagi[]> => listeUyarla(await istek<unknown>("GET", "/bug-drafts"), bugTaslagiUyarla),
   bugTaslagi: async (id: string): Promise<BugTaslagi> => bugTaslagiUyarla(nesne(await istek<unknown>("GET", `/bug-drafts/${yol(id)}`))),
-  /** Testçi kararı → `publish_bug` (yeni kayıt / mevcut kayda bağla) ya da ret; içerik hash'ine bağlı. */
+  /** Test Uzmanı kararı → `publish_bug` (yeni kayıt / mevcut kayda bağla) ya da ret; içerik hash'ine bağlı. */
   /** Mükerrer aramasını ve AI taslağını yeniden hazırla (tester; 202). */
   bugHazirla: (id: string) => istek<IsYaniti>("POST", `/bug-drafts/${yol(id)}/prepare`, { kaynak: BUG_KAYNAGI }),
   /** Onaylı taslağın Jira yayınını yeniden dene (tester). */

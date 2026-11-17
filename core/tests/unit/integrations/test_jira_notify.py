@@ -74,7 +74,7 @@ def jira(transport: SimTransport) -> RestJira:
 
 @pytest.fixture
 def roller(monkeypatch: pytest.MonkeyPatch) -> JiraSettings:
-    """Demo eşlemesi: Analist + PO = Cengizhan, Mühendis = Gokhan, Testçi = Fatih."""
+    """Demo eşlemesi: Analist + PO = Cengizhan, Mühendis = Gokhan, Test Uzmanı = Fatih."""
     ayar = JiraSettings(
         jira_hesap_analist=CENGIZHAN,
         jira_hesap_po=CENGIZHAN,

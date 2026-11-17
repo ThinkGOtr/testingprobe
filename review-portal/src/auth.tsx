@@ -298,7 +298,7 @@ const ROL_SAYFALARI: Record<Rol, string[]> = {
 
 /**
  * Rol bazlı varsayılan açılış ekranı (izni olan ilk ekran): sistem yöneticisi → Demo yol haritası,
- * Automation Engineer → Kod üretimi, denetçi → Denetim, görüntüleyici → Kontrol Kulesi. `ucVar`
+ * Otomasyon Mühendisi → Kod üretimi, denetçi → Denetim, görüntüleyici → Kontrol Kulesi. `ucVar`
  * verilirse (canlı derleme, core'un uç listesi) core'un henüz sunmadığı ekran atlanır.
  */
 export function varsayilanSayfa(

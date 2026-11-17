@@ -212,7 +212,7 @@ describe("demo kontrolleri (sunucu)", () => {
     expect(await screen.findByText(/Forge ve demo uygulaması sıfırlandı/)).toBeInTheDocument();
   });
 
-  it("demo.read izni olmayan rol (Developer) göremez", async () => {
+  it("demo.read izni olmayan rol (Geliştirici) göremez", async () => {
     await oturumAc("gelistirici");
     uygulama("/demo");
     expect(await screen.findByText("Bu ekran için yetkiniz yok.")).toBeInTheDocument();

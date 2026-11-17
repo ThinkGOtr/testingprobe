@@ -228,12 +228,12 @@ describe("CaseKarti", () => {
     expect(screen.queryByRole("button", { name: "Onayla" })).toBeNull();
   });
 
-  // core test_case makinesi: Testçi kararı yalnızca draft'tan (rejected → ready, approved → rejected yok).
+  // core test_case makinesi: Test Uzmanı kararı yalnızca draft'tan (rejected → ready, approved → rejected yok).
   it.each([
     ["rejected", "Reddedildi"],
     ["approved", "Onaylı"],
     ["ready", "Onaya hazır"],
-  ] as const)("%s case (Testçi): Kabul/Düzelt/Reddet gösterilmez, yalnızca 'Taslağa al'; istek gitmez", async (durum, etiket) => {
+  ] as const)("%s case (Test Uzmanı): Kabul/Düzelt/Reddet gösterilmez, yalnızca 'Taslağa al'; istek gitmez", async (durum, etiket) => {
     await oturumAc("testci");
     const spy = vi.spyOn(api, "caseKarari");
     const tc = { ...mockVerisi().caseler.find((c) => c.id === "case-1-7")!, durum };
@@ -242,14 +242,14 @@ describe("CaseKarti", () => {
     // Rol yüklendikten sonra da karar düğmeleri yok (pasif düğme "Yeniden aç"ın yanında kafa karıştırıyordu).
     await waitFor(() => expect(screen.getByRole("button", { name: "Taslağa al" })).toBeEnabled());
     for (const ad of ["Kabul et", "Düzelterek kabul", "Reddet"]) expect(screen.queryByRole("button", { name: ad })).toBeNull();
-    // Son onay düğmeleri Testçide etkin değil.
+    // Son onay düğmeleri Test Uzmanında etkin değil.
     if (durum === "ready") expect(screen.getByRole("button", { name: "Onayla" })).toBeDisabled();
     else expect(screen.queryByRole("button", { name: "Onayla" })).toBeNull();
     expect(spy).not.toHaveBeenCalled();
     expect(screen.getByTestId("case-karar-kilit")).toHaveTextContent("taslağa alın");
   });
 
-  it("taslak case (Testçi): üç karar da açık, son onay düğmesi ve kilit notu yok", async () => {
+  it("taslak case (Test Uzmanı): üç karar da açık, son onay düğmesi ve kilit notu yok", async () => {
     await oturumAc("testci");
     sar(<CaseKarti tc={mockVerisi().caseler.find((c) => c.id === "case-1-7")!} guncellendi={() => {}} />);
     for (const ad of ["Kabul et", "Düzelterek kabul", "Reddet"]) await waitFor(() => expect(screen.getByRole("button", { name: ad })).toBeEnabled());
@@ -257,13 +257,13 @@ describe("CaseKarti", () => {
     expect(screen.queryByTestId("case-karar-kilit")).toBeNull();
   });
 
-  it("taslak case (Analist): Testçi kararları pasif ve nedenini söyler; son onay yok", async () => {
+  it("taslak case (Analist): Test Uzmanı kararları pasif ve nedenini söyler; son onay yok", async () => {
     await oturumAc("analist");
     sar(<CaseKarti tc={mockVerisi().caseler.find((c) => c.id === "case-1-7")!} guncellendi={() => {}} />);
     const kabul = await screen.findByRole("button", { name: "Kabul et" });
     await waitFor(() => expect(kabul).toBeDisabled());
     expect(kabul).toHaveAttribute("data-yetkisiz", "true");
-    expect(screen.getByText("Bu işlem için gereken rol: Testçi")).toBeInTheDocument();
+    expect(screen.getByText("Bu işlem için gereken rol: Test Uzmanı")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Onayla" })).toBeNull();
   });
 

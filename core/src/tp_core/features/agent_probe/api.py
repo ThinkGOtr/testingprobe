@@ -31,7 +31,7 @@ from tp_core.workflow.service import Principal
 router = APIRouter(tags=["agent-probe"], dependencies=[Depends(kapi.ai_agent_gerekli)])
 
 # 012 rol modeli (dev birleştirmesi): ürün bağlama gereksinim kapsamı kararıdır (Analist,
-# `requirement.review`); ajan testini başlatma/sorgulama Testçinin (`agent_test.run`).
+# `requirement.review`); ajan testini başlatma/sorgulama Test Uzmanının (`agent_test.run`).
 Baglayici = Annotated[Principal, Depends(izin("requirement.review"))]
 Testci = Annotated[Principal, Depends(izin("agent_test.run"))]
 Okur = Annotated[Principal, Depends(izin("requirement.read"))]

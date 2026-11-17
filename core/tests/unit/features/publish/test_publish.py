@@ -50,8 +50,8 @@ def hazir(
     yayin_testci,
     yayin_analist,
 ):
-    """İki case'li TPD-4: ilki onaylı (Testçi kabulü + Analist son onayı), ikincisi taslak;
-    Testçi (yayıncı) oturumu açık. Dönüş: (gereksinim, onaylayan analist, a, b)."""
+    """İki case'li TPD-4: ilki onaylı (Test Uzmanı kabulü + Analist son onayı), ikincisi taslak;
+    Test Uzmanı (yayıncı) oturumu açık. Dönüş: (gereksinim, onaylayan analist, a, b)."""
     fake_gateway(
         [
             text_response(
@@ -151,7 +151,7 @@ def test_onizleme_ve_yayin_testci_ister(api: TestClient, make_user, engine: Engi
 def test_yayin_yalnizca_son_onaydan_sonra(
     api: TestClient, engine: Engine, jira: RestJira, targets, hazir, yayin_analist
 ) -> None:
-    """Testçi kabulü (ready) yayını açmaz; Analist son onayından sonra yayınlanır."""
+    """Test Uzmanı kabulü (ready) yayını açmaz; Analist son onayından sonra yayınlanır."""
     rid, _, _, b = hazir
     b_hazir = karar_ver(api, b, karar="accept").json()
     assert b_hazir["durum"] == "ready"
@@ -215,7 +215,7 @@ def test_isaretsiz_analist_edit_onay_sayilmaz(
 def test_testci_edit_son_kayitsa_yayin_son_onay_ister(
     engine: Engine, jira: RestJira, targets, hazir, yayin_testci
 ) -> None:
-    """Testçinin `edit`'i onay değildir: son kayıt oysa yayın kapısı kapalıdır."""
+    """Test Uzmanının `edit`'i onay değildir: son kayıt oysa yayın kapısı kapalıdır."""
     _, analist, a, _ = hazir
     _son_kayit_edit(a["id"], yayin_testci.id)
     with session_scope() as s:
@@ -349,7 +349,7 @@ def test_worker_cokmesi_sonrasi_otomatik_yeniden_deneme_tamamlar(
         json={"karar": "reject", "icerik_hash": b["icerik_hash"], "ret_nedeni": "duplicate"},
     )
     assert r.status_code == 200, r.text
-    with session_scope() as s, pytest.raises(publish.ApprovalNotAllowed):  # yayın Testçinindir
+    with session_scope() as s, pytest.raises(publish.ApprovalNotAllowed):  # yayın Test Uzmanınındır
         publish.request_publish(s, [a["id"]], analist)
     with session_scope() as s:
         job_id = publish.request_publish(s, [a["id"]], yayin_testci)
@@ -611,7 +611,7 @@ def test_kismi_hata_duzeltme_sonrasi_eski_issue_yayinlandi_sayilmaz(
     key = ilk["external_key"]
     eski_baslik = jira.get_issue(key).summary
 
-    # Testçi taslağa alır ve başlığı düzeltir; Analist yeni içeriği onaylar (yeni hash).
+    # Test Uzmanı taslağa alır ve başlığı düzeltir; Analist yeni içeriği onaylar (yeni hash).
     r = api.post(
         f"/cases/{a['id']}/decision", json={"karar": "reopen", "icerik_hash": a["icerik_hash"]}
     )

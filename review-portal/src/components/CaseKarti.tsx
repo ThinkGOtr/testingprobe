@@ -69,14 +69,14 @@ const KARAR_ADI: Record<string, string> = {
 };
 
 /**
- * Karar sonrası durum notu (ANALIZ 012 §5). "Taslağa al" Testçinin işlemidir: yönerge yalnız ona;
+ * Karar sonrası durum notu (ANALIZ 012 §5). "Taslağa al" Test Uzmanının işlemidir: yönerge yalnız ona;
  * Analist onaya hazır case'te değişiklik için gerekçeyle geri gönderir.
  */
 export function durumNotu(durum: TestCase["durum"], testci: boolean, onaylayici: boolean): string {
   if (durum === "ready") {
-    if (testci) return "Testçi kabul etti; Analist son onayı bekleniyor. Değiştirmek için taslağa alın.";
-    if (onaylayici) return "Testçi kabul etti; son onayınızı bekliyor. Değişiklik gerekiyorsa gerekçeyle Geri gönderin.";
-    return "Testçi kabul etti; Analist son onayı bekleniyor.";
+    if (testci) return "Test Uzmanı kabul etti; Analist son onayı bekleniyor. Değiştirmek için taslağa alın.";
+    if (onaylayici) return "Test Uzmanı kabul etti; son onayınızı bekliyor. Değişiklik gerekiyorsa gerekçeyle Geri gönderin.";
+    return "Test Uzmanı kabul etti; Analist son onayı bekleniyor.";
   }
   if (durum === "approved") {
     return testci ? "Analist onayladı. Değiştirmek için taslağa alın; onay düşer ve yeniden karar gerekir." : "Analist onayladı.";
@@ -165,7 +165,7 @@ export const YENIDEN_DENEME_SAYISI = 3;
 const sekmeGorunur = () => typeof document === "undefined" || document.visibilityState !== "hidden";
 
 /**
- * K13' (§10): karar bekleyen case kartı karar verecek rolün (Testçi taslakta, Analist onaya hazır
+ * K13' (§10): karar bekleyen case kartı karar verecek rolün (Test Uzmanı taslakta, Analist onaya hazır
  * case'te) ekranında görünür olunca core'a HEMEN bildirilir
  * (`POST /cases/{id}/viewed`; review süresi sunucuda bu andan karara kadar ölçülür). Case yerelde ancak
  * kart 3 sn kesintisiz görünür kalınca (ve sekme görünürken) "görüldü" sayılır ve toplu onaya girer;
@@ -351,11 +351,11 @@ export function CaseKarti({
   const id = useId();
   const testci = useIzin("case.decide");
   const onaylayici = useIzin("case.approve");
-  // Developer: yalnız onaylı/yayınlanmış case, karar geçmişi ve eylem yok (core süzgeciyle aynı).
+  // Geliştirici: yalnız onaylı/yayınlanmış case, karar geçmişi ve eylem yok (core süzgeciyle aynı).
   const kisitli = useCaseKisitli();
   const { kullanici } = useOturum();
   const bildir = useBildirim();
-  // Yalnızca karar verecek rol ve onun karar evresi için görüntüleme ölçülür: Testçi taslakta,
+  // Yalnızca karar verecek rol ve onun karar evresi için görüntüleme ölçülür: Test Uzmanı taslakta,
   // Analist (case.approve) onaya hazır case'te (anahtar durumu içerir; iki evre ayrı sayılır).
   const kullaniciAnahtari = kullanici ? kullanici.id || kullanici.kullanici_adi : null;
   const kartRef = useGoruntulemeBildir(
@@ -369,7 +369,7 @@ export function CaseKarti({
   const d = CASE_DURUMU[tc.durum];
   // Son durumlar (core): yayınlanan ve yerini yenisi alan case'e karar verilmez.
   const kilitli = tc.durum === "published" || tc.durum === "superseded";
-  // core test_case makinesi: Testçi kararı draft'tan (→ ready | rejected), Analist kararı ready'den.
+  // core test_case makinesi: Test Uzmanı kararı draft'tan (→ ready | rejected), Analist kararı ready'den.
   const verilebilir = (k: CaseKarari) => caseKarariVerilebilir(tc.durum, k);
   const gecisYokNedeni = (k: CaseKarari) => (verilebilir(k) ? undefined : `${GECIS_YOK} (${CASE_DURUMU[tc.durum].etiket})`);
   const testciKarari = !kilitli && tc.durum === "draft";
@@ -396,11 +396,11 @@ export function CaseKarti({
             ? 'İçerik uyarısı var: "Düzelterek kabul" ile giderin ya da reddedin.'
             : undefined;
   // K6 (012 iki adım): onaya hazır v3 case'te core `onay_engeli` doluysa Analist son onayı da verilemez
-  // (ör. kabulden sonra içerik/özet tutarsızlaştı); "Geri gönder" ile Testçiye döner.
+  // (ör. kabulden sonra içerik/özet tutarsızlaştı); "Geri gönder" ile Test Uzmanına döner.
   const sonOnayEngeli = !verilebilir("approve")
     ? gecisYokNedeni("approve")
     : tc.onay_engeli
-      ? `${tc.onay_engeli}. "Geri gönder" ile Testçiye döndürün.`
+      ? `${tc.onay_engeli}. "Geri gönder" ile Test Uzmanına döndürün.`
       : undefined;
   const hataAyrik = hataListesi(islem.hata);
 
@@ -631,7 +631,7 @@ export function CaseKarti({
             </>
           )}
         </span>
-        {/* Testçi kararı yalnız taslakta; Analist son onayı yalnız onaya hazır case'te (ANALIZ 012 §5). */}
+        {/* Test Uzmanı kararı yalnız taslakta; Analist son onayı yalnız onaya hazır case'te (ANALIZ 012 §5). */}
         {mod === "goster" && !kisitli && testciKarari && (
           <div className="eylemler">
             <IslemDugmesi
@@ -691,7 +691,7 @@ export function CaseKarti({
           </div>
         )}
       </footer>
-      {/* 012 (ANALIZ §13.2): karar tablosu kapısı Testçi kabulünde ve Analist son onayında aynıdır;
+      {/* 012 (ANALIZ §13.2): karar tablosu kapısı Test Uzmanı kabulünde ve Analist son onayında aynıdır;
           istisna formu bu evrenin kararını (taslakta accept, ready'de approve) gerekçeyle gönderir. Kart
           her role çizilir: yetkisiz düğmeler nedenini gösterir ("Tablo yanlış" Analistin işidir). */}
       {mod === "goster" && !kisitli && (testciKarari || analistKarari) && (
@@ -769,14 +769,14 @@ export function CaseKarti({
 }
 
 /**
- * Kimin ne karar verdiği, ayrı etiketli satırlarda (ANALIZ 012 §5): Testçi kararı (`testci`,
+ * Kimin ne karar verdiği, ayrı etiketli satırlarda (ANALIZ 012 §5): Test Uzmanı kararı (`testci`,
  * `testci_karari`) ve Analist son onayı (`son_onay`). `karar_veren` son karardır (Analist olabilir);
- * yalnız core Testçi/son onay alanlarını vermezse "Son karar" etiketiyle gösterilir.
+ * yalnız core Test Uzmanı/son onay alanlarını vermezse "Son karar" etiketiyle gösterilir.
  */
 function KararIzi({ tc }: { tc: TestCase }) {
   const kisiAdi = useKisiAdi();
   const so = tc.son_onay ?? (tc.onaylayan ? { karar: "approve" as const, veren: tc.onaylayan, zaman: tc.onay_zamani ?? null, gerekce: null } : null);
-  // Testçi kararının zamanı: son karar Testçininse `karar_zamani` (core ayrı zaman alanı vermez).
+  // Test Uzmanı kararının zamanı: son karar Test Uzmanınınsa `karar_zamani` (core ayrı zaman alanı vermez).
   const testciZamani =
     tc.testci && tc.karar_veren === tc.testci && (!so || so.zaman !== tc.karar_zamani) ? tc.karar_zamani : null;
   const satirlar: { id: string; etiket: string; metin: string }[] = [];
@@ -784,7 +784,7 @@ function KararIzi({ tc }: { tc: TestCase }) {
     const k = tc.testci_karari ? (KARAR_ADI[tc.testci_karari] ?? tc.testci_karari) : null;
     satirlar.push({
       id: "case-testci-karari",
-      etiket: "Testçi kararı",
+      etiket: "Test Uzmanı kararı",
       metin: [k, tc.testci ? kisiAdi(tc.testci) : null, testciZamani ? tarih(testciZamani) : null].filter(Boolean).join(" · "),
     });
   }
@@ -1281,7 +1281,7 @@ function GeriGonderFormu({
           aria-required="true"
           aria-invalid={hataVar || undefined}
           aria-describedby={hataVar ? `${id}-gerekce-hata` : undefined}
-          placeholder="Testçinin neyi düzeltmesi gerekiyor?"
+          placeholder="Test Uzmanının neyi düzeltmesi gerekiyor?"
           onChange={(e) => setGerekce(e.target.value)}
         />
       </div>

@@ -147,7 +147,7 @@ test("Demo-A: ön inceleme → 4 doğrulanmış bulgu → düzeltme → Jira PO 
   await jira.getByTestId("po-onayla").click();
   await jira.screenshot({ path: `${EKRAN_DIZINI}/demoa-04-jira-po-onayi.png`, fullPage: true });
 
-  // Case üretimi, kararı ve yayını Testçide; son onay Analistte (ANALIZ 012 §5).
+  // Case üretimi, kararı ve yayını Test Uzmanında; son onay Analistte (ANALIZ 012 §5).
   await page.getByRole("button", { name: "Çıkış" }).click();
   await girisCanli(page, "testci");
   await page.goto(gereksinimYolu);
@@ -289,7 +289,7 @@ test("Demo-B: kod üretimi → yerel kontrol → PR → kırarak doğrula → me
   await expect(page.getByRole("img", { name: /^Kaynak: run\.sonuc/ })).toBeVisible();
   await expect(page.getByText("ÖRNEK VERİ")).toHaveCount(0);
   await page.screenshot({ path: `${EKRAN_DIZINI}/demob-06-kontrol-kulesi.png`, fullPage: true });
-  // Deploy tetiği Automation Engineer'da (run.trigger_scheduled; ANALIZ 012 §6).
+  // Deploy tetiği Otomasyon Mühendisinde (run.trigger_scheduled; ANALIZ 012 §6).
   await page.getByRole("button", { name: "Çıkış" }).click();
   await girisCanli(page, "muhendis");
   await page.goto("/kosular");

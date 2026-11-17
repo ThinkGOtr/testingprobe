@@ -637,13 +637,13 @@ def _requirement_olgulari(session: Session, req: Any, simdi: datetime) -> dict[s
         ).all()
     )
     o["inceleme_bekleyen_case"] = int(sayilar.get("draft", 0))
-    # `ready`: Testçi kabul etti, Analist son onayı bekliyor (specs/012-rol-yetki §5).
+    # `ready`: Test Uzmanı kabul etti, Analist son onayı bekliyor (specs/012-rol-yetki §5).
     o["son_onay_bekleyen_case"] = int(sayilar.get("ready", 0))
     o["onayli_case"] = int(sayilar.get("approved", 0))
     return o
 
 
-# Developer yalnız onaylı/yayınlanmış case ve açılmış bug görür (specs/012-rol-yetki §4.2):
+# Geliştirici yalnız onaylı/yayınlanmış case ve açılmış bug görür (specs/012-rol-yetki §4.2):
 # taslak/son onay bekleyen case sayıları ve karar bekleyen bug taslağı olgularda yer almaz.
 _GELISTIRICI_GIZLI_OLGULAR: Final = frozenset(
     {"inceleme_bekleyen_case", "son_onay_bekleyen_case", "bug_taslagi_var", "bug_taslagi_id"}

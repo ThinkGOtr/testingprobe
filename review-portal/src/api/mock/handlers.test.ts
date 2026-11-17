@@ -25,7 +25,7 @@ async function girisYap(k: string) {
   return api.login(k, "Demo123!");
 }
 
-/** Testçi kabul eder, Analist son onayı verir (ANALIZ 012 §5); oturum Analist'te kalır. */
+/** Test Uzmanı kabul eder, Analist son onayı verir (ANALIZ 012 §5); oturum Analist'te kalır. */
 async function kabulVeOnay(id: string) {
   await girisYap("testci");
   await api.caseKarari(id, { ...caseH(id), karar: "accept" });
@@ -167,7 +167,7 @@ describe("mock arka uç: tutarlılık → PO → case (insan kapıları)", () =>
       ["fnd-9", "stale"],
     ]);
 
-    // Serbest metinde PO teyidi portalda yalnız PO rolüyle (requirement.po_approve_free_text); case üretimi Testçide.
+    // Serbest metinde PO teyidi portalda yalnız PO rolüyle (requirement.po_approve_free_text); case üretimi Test Uzmanında.
     await expect(api.poOnayla(g)).rejects.toMatchObject({ status: 403 });
     await girisYap("po");
     g = await api.poOnayla(g);
@@ -233,7 +233,7 @@ describe("mock arka uç: case kararı ve yayın", () => {
     expect(duzeltilmis.icerik_hash).not.toBe(once.icerik_hash);
     expect(duzeltilmis.onaylanan_hash).toBeNull();
     expect(duzeltilmis.duzeltme_olcusu).toBeGreaterThan(0);
-    // Testçi son onayı veremez; Analist yalnız `ready` case'i onaylar.
+    // Test Uzmanı son onayı veremez; Analist yalnız `ready` case'i onaylar.
     await expect(api.caseKarari("case-1-5", { ...caseH("case-1-5"), karar: "approve" })).rejects.toMatchObject({ status: 403 });
     p = await api.yayinOnizleme("req-tpd-1");
     expect(p.kalemler.find((k) => k.case_id === "case-1-5")?.islem).toBe("blocked_not_approved");
@@ -243,7 +243,7 @@ describe("mock arka uç: case kararı ve yayın", () => {
     expect(onayli).toMatchObject({ durum: "approved", onaylayan: "analist", testci_karari: "edit", testci: "testci", karar_veren: "analist" });
     expect(onayli.son_onay).toMatchObject({ karar: "approve", veren: "analist", gerekce: null });
     expect(onayli.onaylanan_hash).toBe(onayli.icerik_hash);
-    // Analist önizlemeyi salt okunur görür (publish.preview); yayın Testçinin (case.publish).
+    // Analist önizlemeyi salt okunur görür (publish.preview); yayın Test Uzmanının (case.publish).
     await expect(api.yayinOnizleme("req-tpd-1")).resolves.toBeTruthy();
     await expect(api.yayinla(["case-1-5"])).rejects.toMatchObject({ status: 403 });
 
@@ -538,7 +538,7 @@ describe("mock arka uç: Demo-A ölçüm, yeniden açma, token, olaylar", () => 
     expect(acildi).toMatchObject({ durum: "draft", karar: "reject", onaylanan_hash: null });
     const yeniKarar = await api.caseKarari("case-1-6", { ...caseH("case-1-6"), karar: "accept" });
     expect(yeniKarar).toMatchObject({ durum: "ready", karar: "accept" });
-    // Onaya hazır case de taslağa alınabilir (Testçi).
+    // Onaya hazır case de taslağa alınabilir (Test Uzmanı).
     expect((await api.caseYenidenAc({ id: "case-1-6", ...caseH("case-1-6") })).durum).toBe("draft");
     const onayli = await api.caseYenidenAc({ id: "case-1-4", ...caseH("case-1-4") });
     expect(onayli.durum).toBe("draft");

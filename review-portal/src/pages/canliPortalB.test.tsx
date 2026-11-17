@@ -101,10 +101,10 @@ describe("gereksinim tablosu sıralaması", () => {
 });
 
 describe("rol adı tutarlılığı", () => {
-  it("izin rolleri metni rol etiketlerinden gelir (Automation Engineer)", () => {
-    expect(izinRolleriMetni("automation.manage")).toBe("Analist ve Automation Engineer");
-    expect(izinRolleriMetni("testdata.manage")).toBe("Analist, Testçi ve Automation Engineer");
-    expect(izinRolleriMetni("automation.jira_status")).toBe("Automation Engineer");
+  it("izin rolleri metni rol etiketlerinden gelir (Otomasyon Mühendisi)", () => {
+    expect(izinRolleriMetni("automation.manage")).toBe("Analist ve Otomasyon Mühendisi");
+    expect(izinRolleriMetni("testdata.manage")).toBe("Analist, Test Uzmanı ve Otomasyon Mühendisi");
+    expect(izinRolleriMetni("automation.jira_status")).toBe("Otomasyon Mühendisi");
   });
 });
 
@@ -136,7 +136,7 @@ describe("bulunamadı görünümü: Tekrar dene yok", () => {
 });
 
 describe("bug taslağı: kısıtlı rol ve salt okunur form", () => {
-  it("Developer, yayınlanmamış taslağa bağlantı görmez; açıklama görür", async () => {
+  it("Geliştirici, yayınlanmamış taslağa bağlantı görmez; açıklama görür", async () => {
     const { mockVerisi } = await import("../api/mock/handlers");
     const v = mockVerisi();
     const bulgu = v.bulgular.find((b) => b.bug_draft_id && b.karar && v.bugTaslaklari.find((t) => t.id === b.bug_draft_id)?.durum !== "published")!;
@@ -159,7 +159,7 @@ describe("bug taslağı: kısıtlı rol ve salt okunur form", () => {
     expect(screen.getByLabelText("Ret gerekçesi")).toHaveAttribute("readonly");
   });
 
-  it("Testçi taslak formunu düzenleyebilir", async () => {
+  it("Test Uzmanı taslak formunu düzenleyebilir", async () => {
     const { mockVerisi } = await import("../api/mock/handlers");
     const taslak = mockVerisi().bugTaslaklari.find((t) => t.durum === "draft")!;
     await oturumAc("testci");
@@ -183,7 +183,7 @@ describe("Otomasyon: yetkisiz rolde tüm alanlar aynı biçimde pasif", () => {
 });
 
 describe("yetkisi olmayan uç çağrılmaz (403 / sahte authz.denied yok)", () => {
-  it("Testçi ve Analist /kod'da GET /code/languages çağırmaz; Automation Engineer çağırır", async () => {
+  it("Test Uzmanı ve Analist /kod'da GET /code/languages çağırmaz; Otomasyon Mühendisi çağırır", async () => {
     for (const k of ["testci", "analist"]) {
       const c = izle();
       await oturumAc(k);
@@ -199,7 +199,7 @@ describe("yetkisi olmayan uç çağrılmaz (403 / sahte authz.denied yok)", () =
     await waitFor(() => expect(c.some((x) => x.path === "/code/languages")).toBe(true));
   });
 
-  it("Developer Kontrol Kulesi'nde GET /scripts çağırmaz", async () => {
+  it("Geliştirici Kontrol Kulesi'nde GET /scripts çağırmaz", async () => {
     const c = izle();
     await oturumAc("gelistirici");
     uygulama("/kontrol-kulesi");
@@ -208,7 +208,7 @@ describe("yetkisi olmayan uç çağrılmaz (403 / sahte authz.denied yok)", () =
     expect(c.some((x) => x.path === "/scripts")).toBe(false);
   });
 
-  it("Developer gereksinim detayında tasarım modeli ve script listesini istemez", async () => {
+  it("Geliştirici gereksinim detayında tasarım modeli ve script listesini istemez", async () => {
     const { mockVerisi } = await import("../api/mock/handlers");
     const g = mockVerisi().gereksinimler.find((x) => x.durum === "done") ?? mockVerisi().gereksinimler[0];
     const c = izle();
@@ -403,7 +403,7 @@ describe("metinler: durum kodu ve tutar", () => {
 });
 
 describe("bulgu uyarlayıcısı: bug taslağı durumu", () => {
-  it("core'un bug_draft_durum alanı taşınır (Developer yayınlanmış taslağın bağlantısını görebilsin)", async () => {
+  it("core'un bug_draft_durum alanı taşınır (Geliştirici yayınlanmış taslağın bağlantısını görebilsin)", async () => {
     const { bulguUyarla } = await import("../api/uyum");
     expect(bulguUyarla({ id: "f1", requirement_id: "r1", bug_draft_id: "b1", bug_draft_durum: "published" }).bug_draft_durum).toBe("published");
     expect("bug_draft_durum" in bulguUyarla({ id: "f2", requirement_id: "r1" })).toBe(false);

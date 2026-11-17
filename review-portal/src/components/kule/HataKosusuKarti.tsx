@@ -570,7 +570,7 @@ export function kuralEtiketi(oge: HataKatalogOgesi | undefined): string {
   return oge.yakalayan_kural ?? "Kural bilinmiyor";
 }
 
-/** Kaçan hata için Testçiye iletilecek case isteği (düz metin; panoya kopyalanır). */
+/** Kaçan hata için Test Uzmanına iletilecek case isteği (düz metin; panoya kopyalanır). */
 export function caseIstegiMetni(kod: string, oge: HataKatalogOgesi | undefined, platformlar: readonly Platform[]): string {
   const ad = ekilmisHataAdi(kod, oge?.ad);
   const parcalar = [
@@ -665,7 +665,7 @@ function KacanHata({ kod, oge, platformlar }: { kod: string; oge: HataKatalogOge
         oneri ? `?${new URLSearchParams({ iliski: oneri.iliski.id, kaynak: oneri.kaynak.id, girdi: oneri.girdi }).toString()}` : ""
       }#ek-case-turet`
     : null;
-  // 012 rol modeli: ek case türetmek case üretimidir (`case.generate`, Testçi).
+  // 012 rol modeli: ek case türetmek case üretimidir (`case.generate`, Test Uzmanı).
   const turetebilir = useIzin("case.generate");
   async function kopyala(metin = istek, bildiri = "Case isteği panoya kopyalandı.") {
     try {
@@ -719,15 +719,15 @@ function KacanHata({ kod, oge, platformlar }: { kod: string; oge: HataKatalogOge
               Bu girdiyle ek case türet
             </Link>
           )}
-          {/* u2 N7: ek case türetmek Testçinin işi; diğer rollerde düğme Testçiye iletilecek metni kopyalar. */}
+          {/* u2 N7: ek case türetmek Test Uzmanının işi; diğer rollerde düğme Test Uzmanına iletilecek metni kopyalar. */}
           {req && a && turetYolu && !turetebilir && (
             <button
               type="button"
               className="dugme dugme-ikincil dugme-kucuk"
               data-testid={`hk-analiste-ilet-${kod}`}
-              onClick={() => void kopyala(`${istek}${oneri ? ` Önerilen türetme: ${oneri.girdi} (ilişki İ${oneri.iliski.sira_no}, kaynak C${oneri.kaynak.sira_no}).` : ""} Bağlantı: ${window.location.origin}${turetYolu}`, "Testçiye iletilecek istek panoya kopyalandı.")}
+              onClick={() => void kopyala(`${istek}${oneri ? ` Önerilen türetme: ${oneri.girdi} (ilişki İ${oneri.iliski.sira_no}, kaynak C${oneri.kaynak.sira_no}).` : ""} Bağlantı: ${window.location.origin}${turetYolu}`, "Test Uzmanına iletilecek istek panoya kopyalandı.")}
             >
-              Testçiye ilet (kopyala)
+              Test Uzmanına ilet (kopyala)
             </button>
           )}
           <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={() => void kopyala()}>

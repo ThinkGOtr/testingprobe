@@ -273,6 +273,12 @@ export function YolHaritasi() {
             {il.sonraki.ipucu ? ` — ${il.sonraki.ipucu}` : ""}
           </p>
         )}
+        {il.sonraki && il.ileridekiTamam > 0 && (
+          <p className="kucuk soluk" data-testid="yh-onceki-tur">
+            Gereksinim akışı yeniden başladı ({DEMO_STORY} {il.sonraki.no}. adımda); sonraki {il.ileridekiTamam} adımın “tamam” kanıtı önceki turdan.
+            Gereksinimler listesindeki “Adım” sütunu güncel turu gösterir.
+          </p>
+        )}
         <ol className="yh-adimlar" aria-label="14 adımlı demo akışı">
           {adimlar.map((a) => (
             <AdimSatiri key={a.no} a={a} />
@@ -293,7 +299,7 @@ export function YolHaritasi() {
       >
         <p className="soluk kucuk">
           “Sepete ekle” <span className="mono">data-testid</span> <span className="mono">add-to-cart → cart-add</span>: triage “test bakımı /
-          locator” der, onarım PR'ı yalnızca testId değerini değiştirir, Automation Engineer onaylar, CI yeşile döner.
+          locator” der, onarım PR'ı yalnızca testId değerini değiştirir, Otomasyon Mühendisi onaylar, CI yeşile döner.
         </p>
         <ol className="yh-adimlar" aria-label="Test bakımı yolu">
           {loc.map((a) => (

@@ -351,7 +351,7 @@ function YayinDurumu({ b }: { b: BugTaslagi }) {
       </Uyari>
     );
   }
-  if (b.durum === "approved" || b.yayin_suruyor) return <Uyari ton="bilgi">Testçi onayladı; kayıt Jira'ya yazılıyor (publish_bug)…</Uyari>;
+  if (b.durum === "approved" || b.yayin_suruyor) return <Uyari ton="bilgi">Test Uzmanı onayladı; kayıt Jira'ya yazılıyor (publish_bug)…</Uyari>;
   if (b.durum === "dismissed")
     return (
       <Uyari ton="basari" baslik="Taslak reddedildi">
@@ -392,7 +392,7 @@ export function BugTaslakDetay() {
   const [retGerekcesi, setRetGerekcesi] = useState("");
   const islem = useIslem();
   const bildir = useBildirim();
-  // Karar yetkisi (Testçi) yoksa form salt okunur: düzenlenebilir görünen alan, kilitli düğmeyle çelişmesin.
+  // Karar yetkisi (Test Uzmanı) yoksa form salt okunur: düzenlenebilir görünen alan, kilitli düğmeyle çelişmesin.
   const kararYetkisi = useIzin("bug.decide");
   const bugKisitli = useBugKisitli();
   const tekil = useMemo(() => (v.veri ? [v.veri] : []), [v.veri]);

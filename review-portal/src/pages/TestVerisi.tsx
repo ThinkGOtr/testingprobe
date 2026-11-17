@@ -1,5 +1,5 @@
 // Test verisi kataloğu (specs/013-sprint-otomasyonu §3.3, §3.5; K6, K10, K11). Case metni değeri değil
-// `{veri:anahtar}` atfını taşır; kod üretimi değeri buradan okur. Analist, Testçi ve Mühendis düzenler
+// `{veri:anahtar}` atfını taşır; kod üretimi değeri buradan okur. Analist, Test Uzmanı ve Mühendis düzenler
 // (`testdata.manage`, 012), case okuyan roller görür (`case.read`). Her değişiklik sürüm + denetim kaydıdır; düzenleme iyimser kilitle (`beklenen_surum`) gönderilir.
 // Gizli kayıtların değeri kataloğa yazılmaz (ortam sırrı); ekranda yalnız "sır tanımlı / tanımsız".
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from "react";

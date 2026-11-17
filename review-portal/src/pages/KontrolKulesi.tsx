@@ -89,7 +89,7 @@ function KpiBaslik({ ad, k, anahtar }: { ad: string; k: Kule; anahtar: KpiAnahta
 export function KontrolKulesi() {
   const v = useVeri(() => api.kontrolKulesi(), []);
   // 009: platform süzgeci (adres çubuğunda ?platform=). Platform taşıyan veriler: son koşular ve üretilen testler.
-  // `GET /scripts` `code.read` ister (Developer, PO, Denetçi, Görüntüleyici'de yok): izinsiz rolde istenmez.
+  // `GET /scripts` `code.read` ister (Geliştirici, PO, Denetçi, Görüntüleyici'de yok): izinsiz rolde istenmez.
   const kodOkur = useIzin("code.read");
   // Kule verisi (`dashboard.read`) her rolde aynı toplu sayılardır; core rol süzgeci uygulamaz. Gereksinim
   // ayrıntısını (`requirement.read`) göremeyen salt-okur rollerde (Denetçi, Görüntüleyici) bu ayrıca

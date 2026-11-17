@@ -40,7 +40,7 @@ describe("oturum ve yönlendirme", () => {
     expect(screen.getByText("ÖRNEK VERİ")).toBeInTheDocument();
   });
 
-  it("menü role duyarlı: Claude Code kanalı claude_code.read rollerine görünür (PO görmez; Developer görür)", async () => {
+  it("menü role duyarlı: Claude Code kanalı claude_code.read rollerine görünür (PO görmez; Geliştirici görür)", async () => {
     await oturumAc("gelistirici");
     const ilk = uygulama("/");
     expect(await screen.findByRole("heading", { name: "Koşular", level: 1 })).toBeInTheDocument();
@@ -59,10 +59,10 @@ describe("oturum ve yönlendirme", () => {
     await oturumAc("po");
     uygulama("/claude-code");
     expect(await screen.findByText("Bu ekran için yetkiniz yok.")).toBeInTheDocument();
-    expect(screen.getByText("Gereken rol: Sistem Yöneticisi / Analist / Testçi / Automation Engineer / Developer")).toBeInTheDocument();
+    expect(screen.getByText("Gereken rol: Sistem Yöneticisi / Analist / Test Uzmanı / Otomasyon Mühendisi / Geliştirici")).toBeInTheDocument();
   });
 
-  it("Developer kendi token'ını üretir; publish kapsamı Testçiye ait (case.publish)", async () => {
+  it("Geliştirici kendi token'ını üretir; publish kapsamı Test Uzmanına ait (case.publish)", async () => {
     await oturumAc("gelistirici");
     const u = userEvent.setup();
     uygulama("/claude-code");
@@ -70,17 +70,17 @@ describe("oturum ve yönlendirme", () => {
     expect(d).toBeEnabled();
     const yayin = screen.getByRole("radio", { name: /publish_test_cases/ });
     expect(yayin).toBeDisabled();
-    expect(yayin.closest("label")).toHaveAttribute("title", "Bu işlem için gereken rol: Testçi");
+    expect(yayin.closest("label")).toHaveAttribute("title", "Bu işlem için gereken rol: Test Uzmanı");
     await u.click(d);
     expect(await screen.findByLabelText("Ortam değişkeni komutu")).toBeInTheDocument();
   });
 
-  it("Analist Claude Code ekranını görür; token oluşturma Testçi ve Developer'a ait (token.issue)", async () => {
+  it("Analist Claude Code ekranını görür; token oluşturma Test Uzmanı ve Geliştiriciye ait (token.issue)", async () => {
     await oturumAc("analist");
     uygulama("/claude-code");
     const d = await screen.findByRole("button", { name: "8 saatlik token oluştur" });
     expect(d).toBeDisabled();
-    expect(d).toHaveAccessibleDescription("Bu işlem için gereken rol: Testçi / Developer");
+    expect(d).toHaveAccessibleDescription("Bu işlem için gereken rol: Test Uzmanı / Geliştirici");
   });
 
   it("çıkış oturumu kapatır", async () => {
@@ -264,7 +264,7 @@ describe("ekranlar", () => {
     uygulama("/gereksinimler/req-ft-1");
     const d = await screen.findByRole("button", { name: "PO olarak onayla" });
     await waitFor(() => expect(d).toBeDisabled());
-    expect(d).toHaveAttribute("title", "Bu işlem için gereken rol: PO");
+    expect(d).toHaveAttribute("title", "Bu işlem için gereken rol: Ürün Sahibi (PO)");
     expect(screen.queryByTestId("po-onay-ipucu")).toBeNull();
   });
 

@@ -339,7 +339,7 @@ def adopt_pending(engine: Engine | None = None) -> list[str]:
 
 
 def request_prepare(session: Session, draft_id: uuid.UUID, user: Principal) -> uuid.UUID:
-    """Testçinin "mükerrer aramasını/taslağı yenile" isteği (yalnızca karar verilmemiş taslak)."""
+    """Test Uzmanının "mükerrer aramasını/taslağı yenile" isteği (yalnızca karar verilmemiş taslak)."""
     draft = session.get(BugDraft, draft_id, with_for_update=True)
     if draft is None:
         raise BugNotFound("Bug taslağı bulunamadı")
@@ -748,7 +748,7 @@ def decide(
     link_key: str | None = None,
     gerekce: str | None = None,
 ) -> uuid.UUID | None:
-    """Testçi kararı; `new`/`link` için kuyruğa giren yayın işinin kimliğini döndürür."""
+    """Test Uzmanı kararı; `new`/`link` için kuyruğa giren yayın işinin kimliğini döndürür."""
     if user.rol != "tester" or user.kanal != "portal":
         raise ApprovalNotAllowed("Bug taslağı kararını yalnızca portaldaki testçi verir")
     if not icerik_hash:
@@ -1138,7 +1138,7 @@ def publish_bug(
                             key,
                         )
                 else:
-                    # Yeni Bug: açıklamanın ilk satırı bot imi + @Mühendis @Testçi (yorum yazılmaz;
+                    # Yeni Bug: açıklamanın ilk satırı bot imi + @Mühendis @Test Uzmanı (yorum yazılmaz;
                     # Jira açıklamadaki bahsetmeyi de bildirir). Onaylanan içerik/hash aynıdır.
                     key = _create_bug(
                         jira,

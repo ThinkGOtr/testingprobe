@@ -338,7 +338,7 @@ def finding_out(
         "kontrol_turu": f.kontrol_turu,
         "durum": f.durum,
         "bug_draft_id": str(bug_draft_id) if bug_draft_id else None,
-        # Portal bağlantıyı role göre gösterir (Developer yalnız yayınlanmış taslağı açabilir).
+        # Portal bağlantıyı role göre gösterir (Geliştirici yalnız yayınlanmış taslağı açabilir).
         "bug_draft_durum": bug_draft_durum,
         "icerik_hash": content_hash_of(f),
         "mode": f.uretim_modu or None,

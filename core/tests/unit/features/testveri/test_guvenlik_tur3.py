@@ -147,7 +147,7 @@ def test_key_terms_gizli_liste_replay_girdisini_degistirmez() -> None:
 def _uret(api: TestClient, engine: Engine, make_user, make_requirement, fake_gateway, cases):
     fake_gateway([text_response(uretim_cikti(cases))])
     rid = make_requirement()
-    login(api, make_user("tester"))  # 012: case'i Testçi üretir ve düzeltir
+    login(api, make_user("tester"))  # 012: case'i Test Uzmanı üretir ve düzeltir
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     run_jobs(engine)
     return rid
@@ -189,7 +189,7 @@ def test_eski_case_okumada_atif_hash_ve_saklanan_icerik_degismez(
         )
         kullanan = service.anahtar_kullanimi(s, "ortak.demo_parola")
     assert DEMO_PAROLA not in str(kullanan)
-    # Okuma görünümü kabulü düşürmez: görülen hash'le Testçi kabulü geçer.
+    # Okuma görünümü kabulü düşürmez: görülen hash'le Test Uzmanı kabulü geçer.
     r = api.post(
         f"/cases/{c['id']}/decision", json={"karar": "accept", "icerik_hash": c["icerik_hash"]}
     )
@@ -242,7 +242,7 @@ def test_ide_taslak_basligi_da_atfa_eslenir(
     engine: Engine, make_user, make_requirement, katalog: int
 ) -> None:
     make_requirement()
-    testci = make_user("tester")  # 012: IDE taslağını case.generate (Testçi) gönderir
+    testci = make_user("tester")  # 012: IDE taslağını case.generate (Test Uzmanı) gönderir
     ide = Principal(testci.id, testci.kullanici_adi, "tester", kanal="ide", kapsam="submit")
     with session_scope() as s:
         sonuc = submit_drafts(s, "TPD-4", [case_icerik(title=f"{DEMO_PAROLA} ile giriş")], ide)

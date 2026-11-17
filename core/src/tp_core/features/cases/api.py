@@ -8,7 +8,7 @@
 | POST | `/cases/{id}/viewed` | `case.decide` veya `case.approve` — görünürlüğün başında (≥ 3 sn sonra `goruldu`, 013 K13') |
 | POST | `/cases/{id}/decision` (aşağıda `CaseKararGirdisi`) | karar başına: `case.decide` (accept, edit, reject, reopen) / `case.approve` (approve, send_back); yanıtta `otomatik_kod` |
 | POST | `/cases/bulk-decision` (`TopluKararGirdisi`) | karar başına: `case.decide` (accept: toplu kabul) / `case.approve` (approve: toplu son onay; üstte `otomatik_kod`); 011 K20 "Seçilenleri onayla" bu uçtadır |
-| POST | `/cases/{id}/assumption-verified` (`VarsayimDogrulandiGirdisi`) | `case.decide` — 011 K20; Testçinin `edit`'i (draft → ready) |
+| POST | `/cases/{id}/assumption-verified` (`VarsayimDogrulandiGirdisi`) | `case.decide` — 011 K20; Test Uzmanının `edit`'i (draft → ready) |
 | GET  | `/requirements/{id}/case-metrics` | `case.read` — kabul oranı ve süreler (§12); developer: yalnız durum sayıları |
 | GET  | `/requirements/{id}/case-summary` | `case.analysis_read` — üretim özetleri + kapsam matrisi (011 §4.4) |
 | POST | `/requirements/{id}/review-complete` | `case.approve` |
@@ -70,13 +70,13 @@ class TopluKararOgesi(BaseModel):
 
 
 class TopluKararGirdisi(BaseModel):
-    # 012: Testçi toplu kabul (draft → ready) | Analist toplu son onay (ready → approved).
+    # 012: Test Uzmanı toplu kabul (draft → ready) | Analist toplu son onay (ready → approved).
     karar: Literal["accept", "approve"]
     ogeler: list[TopluKararOgesi] = Field(min_length=1, max_length=service.TOPLU_KARAR_MAX)
 
 
 class CaseKararGirdisi(BaseModel):
-    # Testçi: accept | edit | reject | reopen · Analist (son onay): approve | send_back.
+    # Test Uzmanı: accept | edit | reject | reopen · Analist (son onay): approve | send_back.
     karar: Literal["accept", "edit", "reject", "reopen", "approve", "send_back"]
     # Kullanıcının ekranda gördüğü içeriğin hash'i (edit'te düzeltme ÖNCESİ). Portalda zorunlu.
     icerik_hash: str | None = None
@@ -189,7 +189,7 @@ def get_case(case_id: uuid.UUID, session: DbSession, user: Okuyucu) -> dict[str,
 def bulk_decision(
     body: TopluKararGirdisi, request: Request, session: DbSession, user: CurrentUser
 ) -> dict[str, Any]:
-    # 012: toplu kabul (Testçi, `case.decide`) ya da toplu son onay (Analist, `case.approve`);
+    # 012: toplu kabul (Test Uzmanı, `case.decide`) ya da toplu son onay (Analist, `case.approve`);
     # izin tekli kararla aynı tablodan. Her öğe tekli `decide`'ın tüm kapılarından geçer.
     izin_adi = TEST_CASE_KARAR_IZNI[body.karar]
     if not izinli(user.rol, izin_adi):
@@ -203,7 +203,7 @@ def bulk_decision(
 def mark_viewed(
     case_id: uuid.UUID, request: Request, session: DbSession, user: CurrentUser
 ) -> dict[str, Any]:
-    # Testçi kararı ya da Analist son onayı için review süresinin başlangıcı.
+    # Test Uzmanı kararı ya da Analist son onayı için review süresinin başlangıcı.
     if not (izinli(user.rol, "case.decide") or izinli(user.rol, "case.approve")):
         raise reddet(session, user, "case.decide", "rol", request.url.path)
     return service.mark_viewed(session, case_id, user)
@@ -217,7 +217,7 @@ def decide(
     session: DbSession,
     user: CurrentUser,
 ) -> dict[str, Any]:
-    # İzin karara göre: Testçi kararları `case.decide`, son onay `case.approve` (ANALIZ §4.1).
+    # İzin karara göre: Test Uzmanı kararları `case.decide`, son onay `case.approve` (ANALIZ §4.1).
     izin_adi = TEST_CASE_KARAR_IZNI[body.karar]
     if not izinli(user.rol, izin_adi):
         raise reddet(session, user, izin_adi, "rol", request.url.path, karar=body.karar)
@@ -237,7 +237,7 @@ def decide(
     )
     session.flush()
     # 013 §3.2 (K4): son onay (Analist `approve`; case approved olur) otomatik kod üretimini
-    # kuyruğa alır; üretimin reddi/hatası onayı geri almaz. Testçi kabulü kod üretmez (012).
+    # kuyruğa alır; üretimin reddi/hatası onayı geri almaz. Test Uzmanı kabulü kod üretmez (012).
     otomatik_kod = kuyruga_al(session, tc, user) if body.karar == "approve" else None
     return {**service.serialize_cases(session, [tc], user)[0], "otomatik_kod": otomatik_kod}
 
@@ -256,7 +256,7 @@ class VarsayimDogrulandiGirdisi(BaseModel):
 def assumption_verified(
     case_id: uuid.UUID, body: VarsayimDogrulandiGirdisi, session: DbSession, user: Karar
 ) -> dict[str, Any]:
-    # 012: varsayım doğrulaması Testçinin `edit` kararıdır (draft → ready; son onay Analistte).
+    # 012: varsayım doğrulaması Test Uzmanının `edit` kararıdır (draft → ready; son onay Analistte).
     tc = toplu.assumption_verified(
         session,
         case_id,

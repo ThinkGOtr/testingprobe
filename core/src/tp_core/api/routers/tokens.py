@@ -1,7 +1,7 @@
-"""POST /tokens (`token.issue`: Testçi, Developer) · GET /tokens · DELETE /tokens/{id}
+"""POST /tokens (`token.issue`: Test Uzmanı, Geliştirici) · GET /tokens · DELETE /tokens/{id}
 (`token.read`, yalnız kendi token'ları) — MCP kanalı token'ları (specs/012-rol-yetki/ANALIZ.md §4).
 
-`publish` kapsamlı token yalnız `case.publish` iznine sahip role (Testçi) üretilir; Developer
+`publish` kapsamlı token yalnız `case.publish` iznine sahip role (Test Uzmanı) üretilir; Geliştirici
 `submit` kapsamıyla `get_requirement` aracını kullanır (2026-11-14 kararı). Hiçbir rol başkasının
 token'ını listeleyemez ya da iptal edemez.
 

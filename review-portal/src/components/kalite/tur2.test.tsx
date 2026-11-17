@@ -119,7 +119,7 @@ describe("u2 N9: PO incelerken içerik değişirse satır farkı", () => {
 
 describe("u2 N7, N12: Kule'den 'Bu girdiyle ek case türet'", () => {
   it("bağlantı parametreleri ilişkiyi ve C2'yi seçer, 'türetilecek girdi: adet 14' görünür; türetme 14 adetlik case üretir", async () => {
-    await oturumAc("testci"); // 012 rol modeli: ek case türetme case üretimidir (Testçi)
+    await oturumAc("testci"); // 012 rol modeli: ek case türetme case üretimidir (Test Uzmanı)
     uygulama(`${YOL}?iliski=mi-1&kaynak=case-1-2&girdi=adet+14#ek-case-turet`);
     const bolum = await screen.findByTestId("ek-case-turet");
     expect(await within(bolum).findByTestId("turet-onizleme")).toHaveTextContent("Kaçan hata için hazırlandı: İ1 ilişkisi, kaynak C2 · türetilecek girdi: adet 14");
@@ -147,14 +147,14 @@ describe("u2 N7, N12: Kule'den 'Bu girdiyle ek case türet'", () => {
     expect(oneri).toMatchObject({ iliski: { id: "mi-1" }, kaynak: { id: "case-1-2" }, girdi: "adet 14" });
   });
 
-  it("Testçi dışı rolde düğme 'Testçiye ilet (kopyala)': istek + önerilen türetme + bağlantı panoya", async () => {
+  it("Test Uzmanı dışı rolde düğme 'Test Uzmanına ilet (kopyala)': istek + önerilen türetme + bağlantı panoya", async () => {
     await oturumAc("muhendis");
     const yaz = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", { value: { writeText: yaz }, configurable: true });
     sar(<HataKosusuKarti />);
     const kacan = within(await screen.findByTestId("hk-kacan-kampanya_tek_bedava"));
     expect(kacan.queryByRole("link", { name: "Bu girdiyle ek case türet" })).toBeNull();
-    const ilet = await kacan.findByRole("button", { name: "Testçiye ilet (kopyala)" });
+    const ilet = await kacan.findByRole("button", { name: "Test Uzmanına ilet (kopyala)" });
     await waitFor(() => expect(kacan.getByTestId("hk-turet-onizleme-kampanya_tek_bedava")).toBeInTheDocument());
     await userEvent.click(ilet);
     expect(yaz).toHaveBeenCalledWith(expect.stringMatching(/Önerilen türetme: adet 14 \(ilişki İ1, kaynak C2\)\. Bağlantı: .*karar-tablolari\?iliski=mi-1&kaynak=case-1-2&girdi=adet\+14#ek-case-turet$/));
@@ -298,7 +298,7 @@ describe("tur 2: kısmen nedenleri düz Türkçe", () => {
   it("yüksek riskte atılan olgu nedeni: nedenler listelenir, 'Değerleri elle doğruladım, onayla' gerekçe formu (tür kontrolsuz)", async () => {
     await t2Onayla();
     await isleriBekle();
-    await oturumAc("testci"); // 012 rol modeli: kabul kapısı Testçide
+    await oturumAc("testci"); // 012 rol modeli: kabul kapısı Test Uzmanında
     const c = mockVerisi().caseler.find((x) => x.id === "case-1-9")!;
     c.durum = "draft"; // örnek veride yayınlı
     c.icerik = { ...c.icerik, risk: "high" };

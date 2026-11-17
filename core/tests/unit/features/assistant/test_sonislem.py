@@ -1042,7 +1042,7 @@ def _probe_havuzu(arac: str, metin: str) -> KanitHavuzu:
         ("Yeni bir gece koşusu başlat.", None, "admin", ["/kosular"]),
         # Bulunulan ekran ve ifade aynı (eval eylem-demo-sifirla).
         ("Demo verisini sıfırla.", {"rota_kalibi": "/demo"}, "admin", ["/demo"]),
-        # Rolün açamadığı ekran bağlantı olmaz (`/demo` `demo.read`: Developer'da yok).
+        # Rolün açamadığı ekran bağlantı olmaz (`/demo` `demo.read`: Geliştiricide yok).
         ("Demo verisini sıfırla.", {"rota_kalibi": "/demo"}, "developer", []),
         # `:id` bağlamdaki varlıktan; ifade eşleşmezse bulunulan ekran.
         (

@@ -27,7 +27,7 @@ Okur = Annotated[Principal, Depends(izin("failure.read"))]
 
 
 def yalniz_yayinlanmis_bug(user: Principal) -> bool:
-    """Developer yalnız açılmış (yayınlanmış) bug taslağını görür (specs/012 §4.2 `bug.read`)."""
+    """Geliştirici yalnız açılmış (yayınlanmış) bug taslağını görür (specs/012 §4.2 `bug.read`)."""
     return yetki.normalize_rol(user.rol) == yetki.DEVELOPER
 
 

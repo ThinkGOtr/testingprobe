@@ -281,7 +281,7 @@ def _case_bekliyor(t: Tohum, n: datetime) -> Ekran:
 
 
 def _case_son_onayda(t: Tohum, n: datetime) -> Ekran:
-    """Testçi kabul etti (`ready`); Analist'in son onayını bekler."""
+    """Test Uzmanı kabul etti (`ready`); Analist'in son onayını bekler."""
     req = t.gereksinim("cases_ready")
     t.case(req, "ready")
     t.case(req, "approved")
@@ -456,7 +456,7 @@ VAKALAR: dict[str, tuple[str, Kurulum, Kurulum]] = {
         _hata("test_maintenance", alt_tur="beklenti"),
     ),
     "hata-beklenti-case-duzelt": (
-        "tester",  # 012 rol modeli: case düzeltmesi Testçide
+        "tester",  # 012 rol modeli: case düzeltmesi Test Uzmanında
         _hata("test_maintenance", alt_tur="beklenti"),
         _hata("test_maintenance", alt_tur="locator"),
     ),

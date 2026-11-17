@@ -104,13 +104,13 @@ def _case(session: Session, req: Requirement | None = None, sira_no: int = 1) ->
 
 
 def _hazir(session: Session, c: TestCase, testci: Principal) -> None:
-    """Testçi kabulü: draft → ready (`accept`)."""
+    """Test Uzmanı kabulü: draft → ready (`accept`)."""
     record_approval(session, c, testci, "accept")
     transition(session, c, "ready", testci, "draft")
 
 
 def _onayla(session: Session, c: TestCase, testci: Principal, analist: Principal) -> None:
-    """012 akışı: Testçi kabulü (draft → ready) + Analist son onayı (ready → approved)."""
+    """012 akışı: Test Uzmanı kabulü (draft → ready) + Analist son onayı (ready → approved)."""
     _hazir(session, c, testci)
     record_approval(session, c, analist, "approve")
     transition(session, c, "approved", analist, "ready")
@@ -125,7 +125,7 @@ def test_case_onay_ve_yayin_mutlu_yol(session: Session, make_user: MakeUser) -> 
     assert rv.onaylanan_hash == c.icerik_hash and rv.user_id == testci.id
     transition(session, c, "ready", testci, "draft")
     assert (c.durum, c.onaylanan_hash) == ("ready", None)
-    assert not approved_hash_matches(session, c)  # Testçi kabulü yayını açmaz
+    assert not approved_hash_matches(session, c)  # Test Uzmanı kabulü yayını açmaz
     rv = record_approval(session, c, analist, "approve")
     assert rv.user_id == analist.id
     transition(session, c, "approved", analist, "ready")
@@ -154,7 +154,7 @@ def test_onaysiz_kapi_kapali(session: Session, make_user: MakeUser) -> None:
     with pytest.raises(GateClosed):
         transition(session, c, "ready", make_user("tester"), "draft")
     assert c.durum == "draft"
-    # Taslaktan doğrudan onaya geçiş yoktur (son onay Testçi kabulünden sonra).
+    # Taslaktan doğrudan onaya geçiş yoktur (son onay Test Uzmanı kabulünden sonra).
     with pytest.raises(InvalidTransition):
         transition(session, c, "approved", make_user("analyst"), "draft")
     _hazir(session, c, make_user("tester"))
@@ -175,7 +175,7 @@ def test_testci_kabulu_yayin_kapisini_acmaz(session: Session, make_user: MakeUse
 
 def test_eski_analist_edit_onayi_yayin_kapisini_acar(session: Session, make_user: MakeUser) -> None:
     """012 öncesi: 0033 göçünün işaretlediği (`eski_onay`) analist `edit`'i `approve` sayılır;
-    işaretsiz `edit` (Testçinin ya da göçten sonraki) sayılmaz. Hash eşleşmesi yine şarttır."""
+    işaretsiz `edit` (Test Uzmanının ya da göçten sonraki) sayılmaz. Hash eşleşmesi yine şarttır."""
     from tp_core.models import Review
 
     c = _case(session)
@@ -207,7 +207,7 @@ def test_eski_analist_edit_onayi_yayin_kapisini_acar(session: Session, make_user
 
 
 def test_karar_rolleri_karara_gore(session: Session, make_user: MakeUser) -> None:
-    """Testçi son onay veremez, Analist Testçi kararı veremez (derinlemesine savunma)."""
+    """Test Uzmanı son onay veremez, Analist Test Uzmanı kararı veremez (derinlemesine savunma)."""
     c = _case(session)
     testci, analist = make_user("tester"), make_user("analyst")
     for karar in ("approve", "send_back"):
@@ -235,7 +235,7 @@ def test_rol_reddi_etiketli_mesaj_ve_authz_denied(
     testci = make_user("tester")
     with pytest.raises(ApprovalNotAllowed) as hata:
         record_approval(session, c, testci, "approve")
-    assert str(hata.value) == "Testçi rolü case için 'Onayla' kararı veremez"
+    assert str(hata.value) == "Test Uzmanı rolü case için 'Onayla' kararı veremez"
     analist = make_user("analyst")
     with pytest.raises(ApprovalNotAllowed, match="Analist rolü case için 'Düzelterek kabul'"):
         record_approval(session, c, analist, "edit", degisiklik={"icerik": CASE})

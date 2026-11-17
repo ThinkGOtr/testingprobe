@@ -34,7 +34,7 @@ export function TasarimModeliPaneli({
 }) {
   const asamada = MODEL_ASAMASI.has(g.durum);
   // Durum değişince (model üretildi, onaylandı, case üretimi başladı) yeniden okunur.
-  // `GET …/design-model` `case.analysis_read` ister (Developer hariç): izinsiz rolde istenmez, panel çizilmez.
+  // `GET …/design-model` `case.analysis_read` ister (Geliştirici hariç): izinsiz rolde istenmez, panel çizilmez.
   const analiz = useIzin("case.analysis_read");
   const veri = useVeri(() => (analiz ? api.tasarimModeli(g.id) : Promise.resolve(null)), [g.id, g.durum, analiz]);
   const islem = useIslem();
@@ -323,7 +323,7 @@ export function TasarimModeliPaneli({
   );
 }
 
-/** Paneldeki "Sıradaki adım" satırı (UX-8): Testçinin şimdi ne yapacağı; adım yoksa null. */
+/** Paneldeki "Sıradaki adım" satırı (UX-8): Test Uzmanının şimdi ne yapacağı; adım yoksa null. */
 export function siradakiAdim(
   durum: string,
   m: Pick<TasarimModeliKaydi, "durum" | "guncel" | "sorunlar"> | null,

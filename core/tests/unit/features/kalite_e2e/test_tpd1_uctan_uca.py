@@ -105,7 +105,7 @@ def test_tpd1_kalite_dogrulama_uctan_uca(
         beyan["acceptance_criteria"],
     )
     analist, po = make_user("analyst"), make_user("po")
-    # 012 rol modeli: case üretimi, kabulü/düzeltmesi ve ek case türetme Testçide; son onay
+    # 012 rol modeli: case üretimi, kabulü/düzeltmesi ve ek case türetme Test Uzmanında; son onay
     # Analistte (görevler ayrılığı role göre); karar tablosu Analist + PO.
     testci = make_user("tester")
 
@@ -195,7 +195,7 @@ def test_tpd1_kalite_dogrulama_uctan_uca(
     # C2–C6, C9–C13; AC1/AC4/AC5 case'leri (C1, C7, C8, C14, C15) modele gitmez.
     assert sorted(modlar) == ["replay"] * 10
 
-    # 5) Onay kapısı: uyumlu yüksek riskli C3 serbest — Testçi kabulü ve Analist son onayı.
+    # 5) Onay kapısı: uyumlu yüksek riskli C3 serbest — Test Uzmanı kabulü ve Analist son onayı.
     _rol(api, testci)
     r = _ok(
         api.post(
@@ -214,7 +214,7 @@ def test_tpd1_kalite_dogrulama_uctan_uca(
     assert r["durum"] == "approved" and not any("tablo" in u for u in r["uyarilar"])
     _rol(api, testci)
 
-    # 6) Testçi C5'i (yüksek risk) rehber §8.6'daki metinle yanlış düzeltir: önerilen içerik
+    # 6) Test Uzmanı C5'i (yüksek risk) rehber §8.6'daki metinle yanlış düzeltir: önerilen içerik
     # REPLAY golden'ıyla kontrol edilir → uyumsuz.
     c5 = cases[5]
     yanlis = json.loads(json.dumps(c5["icerik"]))

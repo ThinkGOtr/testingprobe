@@ -118,11 +118,15 @@ describe("ai_agent: Agent Probe bölümleri", { timeout: 60000 }, () => {
     expect(await screen.findByRole("heading", { name: "Ürün AI ajanı" }, T)).toBeInTheDocument();
   });
 
-  it("ai_agent=false: menü öğesi yok, sayfa 'erişim yok', gereksinim detayında panel ve gezgin girdisi yok", async () => {
+  it("ai_agent=false: menü öğesi yok, sayfa 'özellik kapalı', gereksinim detayında panel ve gezgin girdisi yok", async () => {
     await oturum("analist", { ozellikler: { ...HEPSI, ai_agent: false } });
     const casus = vi.spyOn(api, "ajanTesti");
     const { unmount } = uygulama("/ajan-urunleri");
     expect(await screen.findByText("Bu ekran bu projede kapalı.", undefined, T)).toBeInTheDocument();
+    // T-8: kapalı özellik yetki eksikliği değildir; başlık "Erişim yok" olmaz.
+    expect(screen.getByRole("heading", { level: 1, name: "Özellik kapalı" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Erişim yok" })).toBeNull();
+    expect(screen.getByText(/projenin AI Probe'daki ayarlarından açılır/)).toBeInTheDocument();
     const menu = screen.getByRole("navigation", { name: "Ana menü" });
     expect(within(menu).queryByRole("link", { name: /Ajan ürünleri/ })).toBeNull();
     expect(screen.queryByRole("table")).toBeNull();

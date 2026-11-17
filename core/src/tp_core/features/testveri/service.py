@@ -60,7 +60,7 @@ SIR_ADI_RE = re.compile(r"^TP_TESTVERI_[A-Z0-9_]{1,64}$")
 DEMO_PAROLA_SIRRI = "TP_TESTVERI_DEMO_PAROLA"
 DEMO_PAROLA_ANAHTARI = "ortak.demo_parola"
 # Atıf sayımında "etkin" case: karar bekleyen, onaylı ya da yayınlı.
-ETKIN_CASE = ("draft", "ready", "approved", "published")  # 012: ready (Testçi kabul etti)
+ETKIN_CASE = ("draft", "ready", "approved", "published")  # 012: ready (Test Uzmanı kabul etti)
 MAX_DEGER = 2000
 MAX_METIN = 500
 TOHUM_AKTOR = "tohum"

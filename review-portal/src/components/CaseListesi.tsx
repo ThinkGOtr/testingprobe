@@ -12,7 +12,7 @@ import { PoyaGonderEylemi } from "./AcikSorular";
 import { CaseKarti, type CaseSecimi } from "./CaseKarti";
 import { BosDurum, HataKutusu, Kart, Yukleniyor } from "./ui";
 
-/** 012: `bekleyen` Testçi kararı bekleyen taslak, `hazir` Analist son onayı bekleyen (onaya hazır). */
+/** 012: `bekleyen` Test Uzmanı kararı bekleyen taslak, `hazir` Analist son onayı bekleyen (onaya hazır). */
 export type CaseFiltresi = "hepsi" | "bekleyen" | "hazir" | "onayli" | "reddedilen" | "hazir-degil";
 const FILTRELER: CaseFiltresi[] = ["hepsi", "bekleyen", "hazir", "onayli", "reddedilen", "hazir-degil"];
 /** Ek süzgeç parametreleri ("Tümünü göster" bunları temizler). */
@@ -86,7 +86,7 @@ export function CaseListesi({
   secim?: (c: TestCase) => CaseSecimi | undefined;
   /** Kart 3 sn kesintisiz görüldü (toplu karar uygunluğu yeniden hesaplanır). */
   goruntulendi?: (anahtar: string) => void;
-  /** Developer kısıtlı görünümü: yalnız onaylı/yayınlanmış case, boş durum ipucu yok. */
+  /** Geliştirici kısıtlı görünümü: yalnız onaylı/yayınlanmış case, boş durum ipucu yok. */
   kisitli?: boolean;
   /** İlk yükleme sürüyor (henüz veri yok). */
   yukleniyor: boolean;
@@ -132,7 +132,7 @@ export function CaseListesi({
 
   return (
     <div className="case-liste-alani">
-      {/* Developer kısıtlı görünümü (012): yalnız onaylı/yayınlanmış case gelir; durum filtresi anlamsız. */}
+      {/* Geliştirici kısıtlı görünümü (012): yalnız onaylı/yayınlanmış case gelir; durum filtresi anlamsız. */}
       {!kisitli && (
         <div className="sekmeler sekmeler-yapiskan" role="group" aria-label="Case filtresi">
           {sekmeler.map(([k, etiket]) => (
@@ -162,7 +162,7 @@ export function CaseListesi({
       ) : gorunen.length === 0 ? (
         <Kart>
           <BosDurum baslik={liste.length ? "Bu filtrede case yok." : "Henüz case üretilmedi."}>
-            {!liste.length && !kisitli && "PO teyidinden sonra gereksinim ekranından 'Tasarım modelini üret (iki tur)' ile başlatın (Testçi)."}
+            {!liste.length && !kisitli && "PO teyidinden sonra gereksinim ekranından 'Tasarım modelini üret (iki tur)' ile başlatın (Test Uzmanı)."}
           </BosDurum>
         </Kart>
       ) : (

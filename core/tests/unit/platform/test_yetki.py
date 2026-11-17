@@ -726,7 +726,7 @@ def test_developer_manuel_tetik_uretimde_403(
     else:
         assert r.status_code == 202, r.text
         assert cagri == [("manual", dev.kullanici_adi)]
-    # Developer zamanlanmış tetik (deploy/nightly) başlatamaz; engineer üretimde de başlatır.
+    # Geliştirici zamanlanmış tetik (deploy/nightly) başlatamaz; engineer üretimde de başlatır.
     assert client.post("/ci/trigger", json={"tetik": "deploy"}).status_code == 403
     _giris(client, make_user("engineer"))
     assert client.post("/ci/trigger", json={"tetik": "manual"}).status_code == 202

@@ -263,7 +263,7 @@ describe("kip rozeti", () => {
         eylem_reddi: false,
       },
     });
-    // 2026-11-14: /demo `demo.read` (eylemler `demo.manage`); /claude-code `claude_code.read` (Developer dahil).
+    // 2026-11-14: /demo `demo.read` (eylemler `demo.manage`); /claude-code `claude_code.read` (Geliştirici dahil).
     const { unmount } = kart(m, null, "tester");
     expect(screen.getByRole("link", { name: "Git: Kontrol Kulesi" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Git: Demo kontrolleri" })).toBeInTheDocument();

@@ -245,7 +245,7 @@ test("4. İsmail akışı: QA To Do → tetik → ön inceleme → PO → otomat
     expect(g?.durum).toBe("cases_ready");
   }).toPass({ timeout: 180_000, intervals: [5_000] });
 
-  // 012 iki adım: Testçi taslakları toplu kabul eder, Analist onaya hazır case'leri toplu onaylar.
+  // 012 iki adım: Test Uzmanı taslakları toplu kabul eder, Analist onaya hazır case'leri toplu onaylar.
   await giris(page, "testci");
   await caseReview(page, "TPD-4");
   await expect(page.locator("article.case").first()).toBeVisible({

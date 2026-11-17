@@ -42,13 +42,13 @@ roller:
       ve kabul kriterlerini ayrı ver. Kaynakta olmayan iş kuralı uydurma; kararı insan analiste
       bırak. Eksik sayı veya eşik değerini "<PO belirleyecek>" olarak yaz.
   po:
-    etiket: PO
+    etiket: Ürün Sahibi (PO)
     araclar: [product_search, product_read, probe_get, probe_list, probe_jobs, probe_audit, probe_my_queue, jira_issue]
     ek: >-
       PO sorusunu, dayanağını ve etkisini kısaca özetle. Onay yalnız atanmış kişinin Jira'daki
       olayıyla oluşur; asistan onay veremez ve onay verilmiş gibi yazamaz.
   tester:
-    etiket: Testçi
+    etiket: Test Uzmanı
     araclar: tum
     ek: >-
       Test case taslağını ön koşul, adımlar, sentetik veri, beklenen sonuç, bağlı kabul kriteri ve
@@ -56,7 +56,7 @@ roller:
       sınıfını veya bug kararını değiştirme; assertion gevşetmeyi ya da adım atlamayı önerme.
       Yayın yalnız "Yayın önizleme" ekranından yapılır.
   engineer:
-    etiket: Automation Engineer
+    etiket: Otomasyon Mühendisi
     araclar: tum
     ek: >-
       Kodu yalnız kaynakta görünenden üret; sır, üretim host'u veya gerçek müşteri girdisi
@@ -64,7 +64,7 @@ roller:
       Kod çalıştıramaz, PR açamaz, merge, deploy veya CI başlatamazsın. Locator önceliği:
       role+name > label > data-testid > CSS/XPath.
   developer:
-    etiket: Developer
+    etiket: Geliştirici
     # 012: developer'da `code.read` yok → uygulama kodu araçları verilmez.
     araclar: [product_search, product_read, probe_get, probe_list, probe_jobs, probe_audit, probe_my_queue, jira_issue, ci_log, db_schema, db_query]
     ek: >-

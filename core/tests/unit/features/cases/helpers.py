@@ -397,7 +397,7 @@ def goruntule(client: TestClient, db: Any, *case_ids: str, once_s: int = 5) -> N
         sahip.dispose()
 
 
-# ------------------------------------------------- 012 case akışı: Testçi kararı + Analist onayı
+# ------------------------------------------------- 012 case akışı: Test Uzmanı kararı + Analist onayı
 
 
 def rol_ol(client: TestClient, user: Principal) -> None:
@@ -422,9 +422,9 @@ def onayla(
     icerik: dict[str, Any] | None = None,
     **govde: Any,
 ) -> dict[str, Any]:
-    """Testçi kabulü (`accept`; `icerik` verilirse `edit`) + Analist son onayı (`approve`).
+    """Test Uzmanı kabulü (`accept`; `icerik` verilirse `edit`) + Analist son onayı (`approve`).
 
-    Sonunda `sonra` (varsayılan: Testçi — yayın Testçinindir) oturumu açık kalır.
+    Sonunda `sonra` (varsayılan: Test Uzmanı — yayın Test Uzmanınındır) oturumu açık kalır.
     """
     rol_ol(client, testci)
     if icerik is None:
@@ -444,7 +444,7 @@ def onayla(
 def onayla_db(
     session: Any, tc: Any, testci: Principal, analist: Principal, *, karar: str = "accept"
 ) -> None:
-    """Servis düzeyinde 012 onayı: draft → ready (Testçi) → approved (Analist)."""
+    """Servis düzeyinde 012 onayı: draft → ready (Test Uzmanı) → approved (Analist)."""
     record_approval(session, tc, testci, karar, beklenen_hash=content_hash_of(tc))
     transition(session, tc, "ready", testci, "draft")
     record_approval(session, tc, analist, "approve", beklenen_hash=content_hash_of(tc))

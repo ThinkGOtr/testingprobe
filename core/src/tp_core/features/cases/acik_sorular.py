@@ -841,7 +841,7 @@ def generation_parts(text: str, kaynak: str, kind: str) -> list[str]:
 
 router = APIRouter(tags=["cases"])
 # 012 (dev birleştirmesi): PO'ya Jira yorumu gönderme Analistin (`case.ask_po`; gereksinimle
-# ilgili Jira yazımı Analistte, K7); yanıtları şimdi okuma Analist ya da Testçi; okuma
+# ilgili Jira yazımı Analistte, K7); yanıtları şimdi okuma Analist ya da Test Uzmanı; okuma
 # `case.analysis_read`.
 Gonderen = Annotated[Principal, Depends(izin("case.ask_po"))]
 Yenileyen = Annotated[Principal, Depends(izinlerden_biri("case.ask_po", "case.decide"))]

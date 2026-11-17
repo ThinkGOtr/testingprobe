@@ -88,7 +88,7 @@ describe("Ajan ürünleri sayfası", { timeout: 60000 }, () => {
 
 describe("mock Agent Probe: talep ilerlemesi ve case üretimi engeli", { timeout: 60000 }, () => {
   it("bağlı gereksinimde generate-cases 409 ajan_urunu; talep refresh ile queued → running → failed (kredi ajanı)", async () => {
-    // 012: bağlama Analistin (`requirement.review`); case üretimi ve ajan testi Testçinin.
+    // 012: bağlama Analistin (`requirement.review`); case üretimi ve ajan testi Test Uzmanının.
     await oturumAc("analist");
     poOnayli();
     await api.ajanUrunuBagla(RID, "kredi-danismani");
@@ -142,7 +142,7 @@ describe("gereksinim detayı: Ürün AI ajanı", { timeout: 90000 }, () => {
     await u.selectOptions(secim, "destek-asistani");
     await u.click(within(kart as HTMLElement).getByRole("button", { name: "Ürün AI ajanı olarak bağla" }));
     await within(kart as HTMLElement).findByText("Müşteri destek asistanı", undefined, T);
-    // Analist ajan testini başlatamaz (`agent_test.run` Testçinin): düğme yetkisiz.
+    // Analist ajan testini başlatamaz (`agent_test.run` Test Uzmanının): düğme yetkisiz.
     expect(within(kart as HTMLElement).getByRole("button", { name: "Agent Probe'da test başlat" })).toBeDisabled();
     unmount();
 

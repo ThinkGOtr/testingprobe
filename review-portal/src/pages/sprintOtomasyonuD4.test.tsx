@@ -43,7 +43,7 @@ function uygulama(yol: string) {
 
 /** Birinci gereksinime üç taslak case (hiçbiri görülmemiş). */
 
-/** 012: case'i Testçi kararı bekleyen taslağa çevirir (düzeltme Testçinin işidir). */
+/** 012: case'i Test Uzmanı kararı bekleyen taslağa çevirir (düzeltme Test Uzmanının işidir). */
 function taslagaCevir(id: string) {
   Object.assign(mockVerisi().caseler.find((x) => x.id === id)!, { durum: "draft", karar: null, testci_karari: null, testci: null, karar_veren: null });
 }
@@ -57,7 +57,7 @@ function taslaklariKur(n = 3): { rid: string; caseler: TestCase[] } {
     id: `tc-d4-${k}`,
     requirement_id: rid,
     sira_no: k,
-    // 012: Testçi kabul etti (onaya hazır); Analist toplu/tekli son onayı verir.
+    // 012: Test Uzmanı kabul etti (onaya hazır); Analist toplu/tekli son onayı verir.
     durum: "ready",
     karar: "accept",
     testci_karari: "accept",
@@ -249,7 +249,7 @@ describe("K13: kart en az 3 sn kesintisiz görünür kalınca bildirilir", () =>
 
     await u.click(within(k1).getByRole("button", { name: "Onayla" }));
     await waitFor(() => expect(mockVerisi().caseler.find((c) => c.id === caseler[0].id)!.durum).toBe("approved"));
-    // 012: Testçi başka oturumda taslağa alıp yeniden kabul etti (yeni karar zamanı); liste olayla yenilenir.
+    // 012: Test Uzmanı başka oturumda taslağa alıp yeniden kabul etti (yeni karar zamanı); liste olayla yenilenir.
     Object.assign(mockVerisi().caseler.find((c) => c.id === caseler[0].id)!, {
       durum: "ready",
       karar: "accept",
@@ -426,7 +426,7 @@ describe("Test verisi düzeltmeleri", () => {
 
   it("Test verisi ekle: atfın alanı olan adım silinince ekleme yapılmaz", async () => {
     const { rid, caseler } = taslaklariKur(1);
-    // 012: düzeltme Testçinin taslaktaki kararıdır.
+    // 012: düzeltme Test Uzmanının taslaktaki kararıdır.
     for (const c of caseler) taslagaCevir(c.id);
     await oturumAc("testci");
     uygulama(`/gereksinimler/${rid}/caseler`);

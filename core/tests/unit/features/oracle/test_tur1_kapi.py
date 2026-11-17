@@ -324,7 +324,7 @@ def test_onaydan_sonra_onaylanan_tablo_onayli_uyumsuz_listesine_duser(
     run_jobs(engine)
     c = latest_cases(api, rid)[0]
     assert _karar(api, c, karar="accept").status_code == 200  # tablo yok: serbest
-    # Analist son onayı (012 rol modeli: Testçi kabulü → ready, Analist onayı → approved).
+    # Analist son onayı (012 rol modeli: Test Uzmanı kabulü → ready, Analist onayı → approved).
     api.cookies.clear()
     login(api, analist)
     c = latest_cases(api, rid)[0]

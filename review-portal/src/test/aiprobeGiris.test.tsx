@@ -306,7 +306,7 @@ describe("/rol-sec", () => {
     expect(await screen.findByRole("heading", { name: "Rol değiştir" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /PO/ }));
     await waitFor(() => expect(cagrildi(f, "POST", "/auth/aiprobe/rol-degistir")).toHaveLength(1));
-    expect(await screen.findByText("Rol değiştirildi: PO.")).toBeInTheDocument();
+    expect(await screen.findByText("Rol değiştirildi: Ürün Sahibi (PO).")).toBeInTheDocument();
   });
 
   it("403 (bağlı olmayan hesap) Türkçe hata olarak gösterilir, oturum değişmez", async () => {
@@ -346,10 +346,10 @@ describe("üst çubuk rol seçici", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Etkin rol: Analist (rol değiştir)" }));
     await userEvent.click(await screen.findByRole("menuitemradio", { name: /PO/ }));
     await waitFor(() => expect(cagrildi(f, "POST", "/auth/aiprobe/rol-degistir")).toHaveLength(1));
-    expect(await screen.findByText("Rol değiştirildi: PO.")).toBeInTheDocument();
+    expect(await screen.findByText("Rol değiştirildi: Ürün Sahibi (PO).")).toBeInTheDocument();
     // me bir kez yeniden denendi; oturum yanıttaki rolle kuruldu, giriş ekranına düşülmedi.
     expect(cagrildi(f, "GET", "/auth/me").length).toBeGreaterThanOrEqual(3);
-    expect(await screen.findByRole("button", { name: "Etkin rol: PO (rol değiştir)" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Etkin rol: Ürün Sahibi (PO) (rol değiştir)" })).toBeInTheDocument();
     expect(screen.getByTestId("konum")).not.toHaveTextContent("/giris");
   });
 

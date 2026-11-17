@@ -288,7 +288,7 @@ describe("yardımcılar", () => {
       enabled: true,
       projects: [{ pid: "p9", name: "Eski", org_name: "Org", roles: ["po"] }],
       activeId: "p9",
-      roleLabels: { po: { tr: "PO", en: "PO" } },
+      roleLabels: { po: { tr: "Ürün Sahibi (PO)", en: "Ürün Sahibi (PO)" } },
     });
     expect(oturumdanListe({ ...k, proje: null })).toBeNull();
   });

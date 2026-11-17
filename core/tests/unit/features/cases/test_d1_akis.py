@@ -271,7 +271,7 @@ def test_model_karari_once_gereksinimi_sonra_modeli_kilitler(
     api: TestClient, engine: Engine, make_user, make_requirement, replay_gateway
 ) -> None:
     rid = make_requirement()
-    testci = make_user("tester")  # 012: model kararı Testçinin (design_model.decide)
+    testci = make_user("tester")  # 012: model kararı Test Uzmanının (design_model.decide)
     login(api, testci)
     api.post(f"/requirements/{rid}/design-model")
     run_jobs(engine)
@@ -322,7 +322,7 @@ def test_tam_yeniden_uretim_korunan_kimlikleri_bilir(
     run_jobs(engine)
     assert "Korunan case'lerin kimlikleri" not in provider.requests[0].messages[0]["content"]
     c1 = latest_cases(api, rid)[0]
-    onayla(api, c1, make_user("tester"), make_user("analyst"))  # 012; Testçi oturumu kalır
+    onayla(api, c1, make_user("tester"), make_user("analyst"))  # 012; Test Uzmanı oturumu kalır
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     (is_,) = run_jobs(engine)
     girdi = provider.requests[1].messages[0]["content"]
@@ -454,7 +454,7 @@ def test_model_ret_nedeni_kaydedilir_case_nedeni_reddedilir(
 
 def test_ide_taslagi_review_planlar(make_user, make_requirement) -> None:
     rid = make_requirement()
-    u = make_user("tester")  # 012: IDE taslağını Testçi gönderir
+    u = make_user("tester")  # 012: IDE taslağını Test Uzmanı gönderir
     ide = Principal(u.id, u.kullanici_adi, "tester", kanal="ide", kapsam="submit")
     with session_scope() as s:
         service.submit_drafts(s, "TPD-4", [case_icerik()], ide, ozet=ozet_icerik([case_icerik()]))

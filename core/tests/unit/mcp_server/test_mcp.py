@@ -209,7 +209,7 @@ def test_submit_draft_cases_ozet_ve_v3_kurallari(
     kayit = _tool_calls()[-1]
     assert kayit.arguman_ozeti["ozet_hash"] and kayit.arguman_ozeti["case_sayisi"] == 2
 
-    # 012: IDE taslağına karar Testçinin (`accept`); hazır olmayan v3 case kabul edilemez.
+    # 012: IDE taslağına karar Test Uzmanının (`accept`); hazır olmayan v3 case kabul edilemez.
     login(api, make_user("tester"))
     hazir, bloklu = latest_cases(api, rid)
     assert bloklu["readiness"] == "blocked" and bloklu["acik_sorular"] == ozet["open_questions"]
@@ -302,7 +302,7 @@ def test_publish_test_cases_portal_onayi_ve_hash_kapisi(
     assert sonuc.structured_content["sonuclar"][0]["durum"] == "failed"
     assert "Onaylı değil" in sonuc.structured_content["sonuclar"][0]["hata"]
 
-    # Portalda Testçi kabul eder, Analist son onayı verir; IDE yalnızca kimlikle yayınlar.
+    # Portalda Test Uzmanı kabul eder, Analist son onayı verir; IDE yalnızca kimlikle yayınlar.
     onaylayan = make_user("analyst", ad="qa_onaylayan")
     login(api, gelistirici)
     a = next(
@@ -427,7 +427,7 @@ def test_tarayici_kaynakli_istek_reddedilir(api: TestClient, make_user) -> None:
 def test_ide_kanali_testcinin(
     api: TestClient, make_user, make_requirement, rol: str, kapsam: str, arac: str
 ) -> None:
-    """012: IDE taslak/yayın araçları Testçinindir; başka rolün token'ı araç kullanamaz."""
+    """012: IDE taslak/yayın araçları Test Uzmanınındır; başka rolün token'ı araç kullanamaz."""
     make_requirement()
     arg = (
         {"requirement_key": "TPD-4", "onaylanan_hash": _hash(), "cases": [case_icerik()]}
@@ -532,8 +532,8 @@ def test_get_requirement_po_onaysiz_ve_publish_kapsami_reddedilir(
 def test_developer_tokeni_yalniz_get_requirement(
     api: TestClient, make_user, make_requirement
 ) -> None:
-    """2026-11-14: Developer IDE token'ıyla PO onaylı story'yi okur (`requirement.read`); taslak
-    gönderimi Testçinindir (`case.generate`)."""
+    """2026-11-14: Geliştirici IDE token'ıyla PO onaylı story'yi okur (`requirement.read`); taslak
+    gönderimi Test Uzmanınındır (`case.generate`)."""
     make_requirement()
     u = make_user("developer")
     token = _token(u, "submit")

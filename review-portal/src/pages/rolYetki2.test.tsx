@@ -38,7 +38,7 @@ async function girisYap(k: string) {
 const CASELER = "/gereksinimler/req-tpd-1/caseler";
 const kart = (sira: number) => screen.getAllByRole("article").find((a) => within(a).queryByText(new RegExp(`^#${sira}$`)))!;
 
-/** core `serialize_cases` çıktısı (cases/service.py): son karar Analist'in, Testçi kararı ayrı alanda. */
+/** core `serialize_cases` çıktısı (cases/service.py): son karar Analist'in, Test Uzmanı kararı ayrı alanda. */
 const CEKIRDEK_CASE = {
   id: "c-1",
   requirement_id: "r-1",
@@ -76,7 +76,7 @@ const CEKIRDEK_CASE = {
 };
 
 describe("case sözleşmesi: core `son_onay` / `testci` / `kisitli`", () => {
-  it("geri gönderilmiş case: gerekçe son_onay'dan, onaylayan yok, Testçi kararı ayrı", () => {
+  it("geri gönderilmiş case: gerekçe son_onay'dan, onaylayan yok, Test Uzmanı kararı ayrı", () => {
     const c = caseUyarla(CEKIRDEK_CASE);
     expect(c).toMatchObject({
       karar: "send_back",
@@ -90,7 +90,7 @@ describe("case sözleşmesi: core `son_onay` / `testci` / `kisitli`", () => {
     });
   });
 
-  it("onaylı case: onaylayan/onay_zamani son_onay'dan; eski 'approve' Testçi kararı kabul edilir", () => {
+  it("onaylı case: onaylayan/onay_zamani son_onay'dan; eski 'approve' Test Uzmanı kararı kabul edilir", () => {
     const c = caseUyarla({
       ...CEKIRDEK_CASE,
       durum: "approved",
@@ -153,7 +153,7 @@ describe("case sözleşmesi: core `son_onay` / `testci` / `kisitli`", () => {
     expect(tc).toMatchObject({ durum: "draft", son_onay: null, onaylayan: null });
   });
 
-  it("görevler ayrılığı: Testçi kararını veren hesap onaylayamaz → 403 `onay_yetkisi_yok`", async () => {
+  it("görevler ayrılığı: Test Uzmanı kararını veren hesap onaylayamaz → 403 `onay_yetkisi_yok`", async () => {
     const c = mockVerisi().caseler.find((x) => x.id === "case-1-7")!;
     c.durum = "ready";
     c.karar = "accept";
@@ -167,7 +167,7 @@ describe("case sözleşmesi: core `son_onay` / `testci` / `kisitli`", () => {
     });
   });
 
-  it("kart: Analist geri gönderimi ve Testçi kararı ayrı etiketli satırlar (karar_veren etiketsiz yok)", async () => {
+  it("kart: Analist geri gönderimi ve Test Uzmanı kararı ayrı etiketli satırlar (karar_veren etiketsiz yok)", async () => {
     const c = mockVerisi().caseler.find((x) => x.id === "case-1-7")!;
     c.durum = "draft";
     c.karar = "send_back";
@@ -181,7 +181,7 @@ describe("case sözleşmesi: core `son_onay` / `testci` / `kisitli`", () => {
     await screen.findAllByRole("article");
     const k = kart(6);
     expect(within(k).getByTestId("case-geri-gonderildi")).toHaveTextContent("Adım 3 eksik");
-    expect(within(k).getByTestId("case-testci-karari")).toHaveTextContent("Testçi kararı: kabul · Fatih Arslan");
+    expect(within(k).getByTestId("case-testci-karari")).toHaveTextContent("Test Uzmanı kararı: kabul · Fatih Arslan");
     expect(within(k).getByTestId("case-testci-karari")).not.toHaveTextContent("2026");
     expect(within(k).getByTestId("case-son-onay")).toHaveTextContent(/Analist son onayı: geri gönderildi · Cengizhan Gunaydin · /);
   });
@@ -211,7 +211,7 @@ describe("case kartı: Analist görüntüleme ölçümü ve metinler", () => {
     for (const id of taslaklar) expect(casus).not.toHaveBeenCalledWith(id);
   });
 
-  it("durum notu: 'taslağa alın' yalnız Testçiye; Analist onaya hazırda 'Geri gönderin'", () => {
+  it("durum notu: 'taslağa alın' yalnız Test Uzmanına; Analist onaya hazırda 'Geri gönderin'", () => {
     expect(durumNotu("ready", true, false)).toContain("taslağa alın");
     expect(durumNotu("ready", false, true)).toContain("Değişiklik gerekiyorsa gerekçeyle Geri gönderin");
     expect(durumNotu("ready", false, true)).not.toContain("taslağa");
@@ -254,7 +254,7 @@ describe("izinsiz rotaya bağlantı verilmez", () => {
     expect(metin.closest("a")).toBeNull();
   });
 
-  it("Testçi aynı koşuda triage bağlantısını görür", async () => {
+  it("Test Uzmanı aynı koşuda triage bağlantısını görür", async () => {
     await oturumAc("testci");
     uygulama("/kosular/run-107");
     expect(await screen.findByRole("link", { name: "Triage sonucunu aç" })).toBeInTheDocument();
@@ -325,7 +325,7 @@ describe("yeni okuma izinleri ve demo kipi", () => {
     await expect(api.demoSifirla()).rejects.toMatchObject({ status: 403, kod: "demo_kapali", detail: DEMO_KAPALI });
   });
 
-  it("Developer prod ortamında 'Manuel koşu başlat' pasif ve nedeni yazılı", async () => {
+  it("Geliştirici prod ortamında 'Manuel koşu başlat' pasif ve nedeni yazılı", async () => {
     mockOrtam.ortam = "prod";
     await oturumAc("gelistirici");
     uygulama("/kosular");
@@ -334,7 +334,7 @@ describe("yeni okuma izinleri ve demo kipi", () => {
     expect(d).toHaveAccessibleDescription(new RegExp(MANUEL_PROD_ENGELI.replace(/[().]/g, "\\$&")));
   });
 
-  it("Developer prod dışında manuel koşu başlatabilir", async () => {
+  it("Geliştirici prod dışında manuel koşu başlatabilir", async () => {
     await oturumAc("gelistirici");
     uygulama("/kosular");
     const d = await screen.findByRole("button", { name: "Manuel koşu başlat" });
@@ -388,7 +388,7 @@ describe("PO geri çevirme (T04, serbest metin)", () => {
     uygulama("/gereksinimler/req-ft-1");
     const d = await screen.findByRole("button", { name: "Geri çevir" });
     expect(d).toBeDisabled();
-    expect(d).toHaveAccessibleDescription("Bu işlem için gereken rol: PO");
+    expect(d).toHaveAccessibleDescription("Bu işlem için gereken rol: Ürün Sahibi (PO)");
   });
 });
 
@@ -425,7 +425,7 @@ describe("Demo yol haritası: rolün okuyamadığı kaynak istenmez (012)", () =
     spy.mockRestore();
   });
 
-  it("Automation Engineer tüm kaynakları okur, not çıkmaz", async () => {
+  it("Otomasyon Mühendisi tüm kaynakları okur, not çıkmaz", async () => {
     await oturumAc("muhendis");
     uygulama("/yol-haritasi");
     await screen.findByText("Demo yol haritası", { selector: "h1" });

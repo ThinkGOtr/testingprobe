@@ -1,7 +1,7 @@
 """012 kalite × 013 toplu karar (ANALIZ §14.5, dev birleşmesi): karar tablosu kapısı toplu kararda
 öğe başına uygulanır.
 
-- Testçinin toplu kabulünde (`accept`) kapının engellediği öğe tek başına düşer; öğe sonucu
+- Test Uzmanının toplu kabulünde (`accept`) kapının engellediği öğe tek başına düşer; öğe sonucu
   `kod` taşır (`oracle_uyumsuz`, `oracle_bekleniyor` …), diğerleri kabul edilir.
 - İstisna gerekçesi toplu kararda verilmez: case tekil kararda istisnayla kabul edilir.
 - Analistin toplu son onayı (`approve`) kapıdan yeniden geçer: aynı tür + tablo kümesiyle verilmiş
@@ -57,7 +57,7 @@ def test_toplu_karar_kapisi_oge_bazinda(
     kayit_yaz(uuid.UUID(uyumsuz["id"]), "uyumsuz", uyumsuz_ayrinti(str(k["tid"]), "45.00"))
     goruntule(api, db, uyumlu["id"], uyumsuz["id"], kayitsiz["id"])
 
-    # 1) Testçinin toplu kabulü: yüksek riskli uyuşmazlık ve bekleyen kontrol öğe başına düşer.
+    # 1) Test Uzmanının toplu kabulü: yüksek riskli uyuşmazlık ve bekleyen kontrol öğe başına düşer.
     sonuc = _toplu(api, "accept", [uyumlu, uyumsuz, kayitsiz])
     assert (sonuc[uyumlu["id"]]["durum"], sonuc[uyumlu["id"]]["kod"]) == ("onaylandi", None)
     assert (sonuc[uyumsuz["id"]]["durum"], sonuc[uyumsuz["id"]]["kod"]) == (
@@ -75,7 +75,7 @@ def test_toplu_karar_kapisi_oge_bazinda(
         kodlar = {o["case_id"]: o["kod"] for o in d.ozet["ogeler"]}
     assert kodlar[uyumsuz["id"]] == "oracle_uyumsuz"
 
-    # 2) İstisna yalnız tekil kararda: Testçi gerekçeyle kabul eder.
+    # 2) İstisna yalnız tekil kararda: Test Uzmanı gerekçeyle kabul eder.
     r = _karar(
         api,
         uyumsuz,

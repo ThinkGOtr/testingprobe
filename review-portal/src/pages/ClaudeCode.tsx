@@ -43,7 +43,7 @@ const KAPSAM: Record<TokenKapsami, { ad: string; aciklama: string; izin: Izin }>
   submit: {
     ad: "submit",
     aciklama:
-      "get_requirement ile PO onaylı story'yi okur; submit_draft_cases: Claude Code'un ürettiği taslak case'ler portala 'karar bekliyor' olarak düşer (Testçi). Jira'ya yazmaz.",
+      "get_requirement ile PO onaylı story'yi okur; submit_draft_cases: Claude Code'un ürettiği taslak case'ler portala 'karar bekliyor' olarak düşer (Test Uzmanı). Jira'ya yazmaz.",
     izin: "token.issue",
   },
   publish: { ad: "publish", aciklama: "publish_test_cases: yalnızca portalda onaylanmış case kimliklerini yayınlar.", izin: "case.publish" },
@@ -51,7 +51,7 @@ const KAPSAM: Record<TokenKapsami, { ad: string; aciklama: string; izin: Izin }>
 
 export function ClaudeCode() {
   const [kapsam, setKapsam] = useState<TokenKapsami>("submit");
-  // 2026-11-14: Developer yalnız `submit` kapsamlı token üretir; `publish` `case.publish` (Testçi) ister.
+  // 2026-11-14: Geliştirici yalnız `submit` kapsamlı token üretir; `publish` `case.publish` (Test Uzmanı) ister.
   const yayinIzni = useIzin("case.publish");
   const [token, setToken] = useState<McpToken | null>(null);
   const [kanalKapali, setKanalKapali] = useState<string | null>(null);

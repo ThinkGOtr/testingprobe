@@ -29,10 +29,10 @@ beforeEach(() => {
 describe("test_case kararları ↔ core test_case makinesi", () => {
   const kararlar: CaseKararGirdisi["karar"][] = ["accept", "edit", "reject", "approve", "send_back"];
   const durumlar = M.test_case.states as TestCase["durum"][];
-  /** Testçi kararları Testçi, son onay kararları Analist hesabıyla (ANALIZ 012 §5). */
+  /** Test Uzmanı kararları Test Uzmanı, son onay kararları Analist hesabıyla (ANALIZ 012 §5). */
   const kararVeren = (k: CaseKararGirdisi["karar"]) => (k === "approve" || k === "send_back" ? "analist" : "testci");
 
-  it("tablo: Testçi kararı yalnız draft'tan, Analist kararı yalnız ready'den", () => {
+  it("tablo: Test Uzmanı kararı yalnız draft'tan, Analist kararı yalnız ready'den", () => {
     expect(caseKarariVerilebilir("draft", "accept")).toBe(true);
     expect(caseKarariVerilebilir("draft", "edit")).toBe(true);
     expect(caseKarariVerilebilir("draft", "reject")).toBe(true);

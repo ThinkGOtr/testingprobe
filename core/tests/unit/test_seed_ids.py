@@ -39,12 +39,12 @@ def test_seed_gorunen_adlari() -> None:
     adlar = configured_names("")
     beklenen = {
         "analist": "Cengizhan Gunaydin · Analist",
-        "po": "Cengizhan Gunaydin · PO",
-        "muhendis": "Gokhan Sipahi · Automation Engineer",
-        "testci": "Fatih Arslan · Testçi",
+        "po": "Cengizhan Gunaydin · Ürün Sahibi (PO)",
+        "muhendis": "Gokhan Sipahi · Otomasyon Mühendisi",
+        "testci": "Fatih Arslan · Test Uzmanı",
         "sunucu": "Sistem Yöneticisi",
         "denetci": "Denetçi",
-        "gelistirici": "Developer",
+        "gelistirici": "Geliştirici",
         "izleyici": "Görüntüleyici",
     }
     assert {ad: display_name(ad, rol, adlar) for ad, rol in KULLANICILAR} == beklenen
@@ -55,5 +55,5 @@ def test_seed_gorunen_adlari() -> None:
     }
     assert configured_names("muhendis=")["muhendis"] == ""
     assert (
-        display_name("muhendis", "engineer", configured_names("muhendis=")) == "Automation Engineer"
+        display_name("muhendis", "engineer", configured_names("muhendis=")) == "Otomasyon Mühendisi"
     )

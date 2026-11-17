@@ -95,7 +95,7 @@ olgular:
   son_onay_bekleyen_case:
     tur: sayi
     varliklar: [requirement]
-    kaynak: gereksinimin `ready` test_case sayısı (Testçi kabul etti, Analist son onayı bekliyor)
+    kaynak: gereksinimin `ready` test_case sayısı (Test Uzmanı kabul etti, Analist son onayı bekliyor)
     yer_tutucu: true
   onayli_case:
     tur: sayi
@@ -269,7 +269,7 @@ kurallar:
     kosul: {durum_in: [pending_po], po_kanal_esit: portal}
     oncelik: 95
     baslik: Onayınız bekleniyor; case üretimi buna bağlı
-    neden: Testçi case üretimini ancak sizin onayınızdan sonra başlatabilir; onay içeriğin bu hâline bağlanır.
+    neden: Test Uzmanı case üretimini ancak sizin onayınızdan sonra başlatabilir; onay içeriğin bu hâline bağlanır.
     eylem:
       tur: rota
       rota: /gereksinimler/:id
@@ -277,7 +277,7 @@ kurallar:
       yetki: {uc: "POST /requirements/{req_id}/po-approve", onay_varligi: requirement}
     aciklama: >-
       Gereksinim dokümanı son hâline geldi ve onayınızı bekliyor. Onay, gördüğünüz içeriğe bağlanır;
-      içerik sonradan değişirse onay yenilenmelidir. Onayınızdan sonra Testçi case üretimini başlatır.
+      içerik sonradan değişirse onay yenilenmelidir. Onayınızdan sonra Test Uzmanı case üretimini başlatır.
 
   - id: gereksinim-po-onayi-jira                                    # §17.3 #7
     ekran: /gereksinimler/:id
@@ -286,7 +286,7 @@ kurallar:
     kosul: {durum_in: [pending_po], po_kanal_esit: jira, jira_key_var: true}
     oncelik: 95
     baslik: Onayınız bekleniyor; case üretimi buna bağlı
-    neden: Testçi case üretimini ancak sizin onayınızdan sonra başlatabilir; bu gereksinimde onay Jira'dan verilir.
+    neden: Test Uzmanı case üretimini ancak sizin onayınızdan sonra başlatabilir; bu gereksinimde onay Jira'dan verilir.
     eylem: {tur: jira_kaydi}
     aciklama: >-
       Bu gereksinimde PO onayı Jira kanalından alınır. Jira kaydını açıp onayınızı orada verin;
@@ -354,8 +354,8 @@ kurallar:
       rota: /gereksinimler/:id/caseler
       yetki: {uc: "POST /cases/{case_id}/decision", onay_varligi: test_case}
     aciklama: >-
-      Testçi bu case'leri kabul etti; onaya hazır durumdalar. Her case'i onaylayın ya da
-      gerekçesiyle Testçi'ye geri gönderin. Yalnızca onayladığınız case'ler yayımlanabilir.
+      Test Uzmanı bu case'leri kabul etti; onaya hazır durumdalar. Her case'i onaylayın ya da
+      gerekçesiyle Test Uzmanına geri gönderin. Yalnızca onayladığınız case'ler yayımlanabilir.
 
   - id: case-yayina-hazir                                           # §17.3 #11
     ekran: /gereksinimler/:id/caseler
@@ -420,7 +420,7 @@ kurallar:
       yetki: {uc: "POST /prs/{number}/merge", onay_varligi: script}
     aciklama: >-
       Script'in PR'ı açık ve kırarak doğrulama geçti. Değişikliği inceleyip merge kararını verin;
-      merge yalnızca Automation Engineer onayıyla yapılır.
+      merge yalnızca Otomasyon Mühendisi onayıyla yapılır.
 
   - id: script-insana-dustu                                         # §17.3 #15
     ekran: /kod/:id
@@ -481,11 +481,11 @@ kurallar:
     roller: [admin]
     kosul: {ci_sonuc_esit: error}
     oncelik: 60
-    baslik: Koşu ortam hatasıyla bitti; Automation Engineer inceliyor
+    baslik: Koşu ortam hatasıyla bitti; Otomasyon Mühendisi inceliyor
     neden: Bu koşunun test sonucu yok; demo öncesi güncel ve başarılı bir koşu gerekir.
     eylem: {tur: bilgi}
     aciklama: >-
-      Koşu testler çalışmadan bitti. İnceleme Automation Engineer rolündedir; düzeltildikten sonra yeni bir koşu
+      Koşu testler çalışmadan bitti. İnceleme Otomasyon Mühendisi rolündedir; düzeltildikten sonra yeni bir koşu
       tetiklenebilir.
 
   # ------------------------------------------------------------------ Hata detay
@@ -530,12 +530,12 @@ kurallar:
     roller: [engineer]
     kosul: {hata_sinifi_esit: test_maintenance, beklenti_farki_esit: true}
     oncelik: 60
-    baslik: Test beklentisi karar tablosundan farklı; case'i Testçi düzeltir
+    baslik: Test beklentisi karar tablosundan farklı; case'i Test Uzmanı düzeltir
     neden: Sorun locator'da ya da kodda değil, case'in beklenen değerinde; otomatik onarım bunu düzeltmez.
     eylem: {tur: bilgi}
     aciklama: >-
       Bu hata test beklentisi farkı olarak sınıflandı (uygulama onaylı karar tablosuna uygun). Case
-      düzeltmesi Testçi rolündedir; düzeltilen case Analist son onayından geçince test yeniden
+      düzeltmesi Test Uzmanı rolündedir; düzeltilen case Analist son onayından geçince test yeniden
       üretilip koşturulabilir.
 
   - id: hata-bug-taslagi-karari                                     # §17.3 #19
@@ -587,11 +587,11 @@ kurallar:
     roller: [engineer]
     kosul: {hata_sinifi_esit: test_data}
     oncelik: 50
-    baslik: Test verisi sorunu; Testçi takip ediyor
+    baslik: Test verisi sorunu; Test Uzmanı takip ediyor
     neden: Hata kodda değil verideyse kod değişikliği sorunu çözmez.
     eylem: {tur: bilgi}
     aciklama: >-
-      Bu hata test verisi sorunu olarak sınıflandı. Takibi Testçi rolündedir; veri düzeltilince test
+      Bu hata test verisi sorunu olarak sınıflandı. Takibi Test Uzmanı rolündedir; veri düzeltilince test
       yeniden koşturulabilir.
 
   # ------------------------------------------------------------------ Bug taslağı
@@ -617,12 +617,12 @@ kurallar:
     roller: [analyst]
     kosul: {durum_in: [draft], bulgu_kaynakli_esit: true}
     oncelik: 40
-    baslik: Bulgudan bug taslağı hazır; karar Testçide
-    neden: Tutarlılık bulgusunda verdiğiniz "kod hatası" kararı bu taslağı üretti; yayın kararı Testçinin.
+    baslik: Bulgudan bug taslağı hazır; karar Test Uzmanında
+    neden: Tutarlılık bulgusunda verdiğiniz "kod hatası" kararı bu taslağı üretti; yayın kararı Test Uzmanının.
     eylem: {tur: bilgi}
     aciklama: >-
       Bu taslak, tutarlılık bulgusunu kod hatası olarak işaretlemenizden üretildi. Taslağı Jira'ya
-      açma, bağlama ya da kapatma kararı Testçi rolündedir.
+      açma, bağlama ya da kapatma kararı Test Uzmanı rolündedir.
 
   # ------------------------------------------------------------------ Kontrol Kulesi ve Koşular
   - id: butce-uyarisi                                               # §17.3 #25

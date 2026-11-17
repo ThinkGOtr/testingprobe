@@ -1,4 +1,4 @@
-// D5 / A2: "Neden kabul edilemiyor" kutusu (UX-2), K20 "Varsayım doğrulandı" (012: Testçi kabulü) ve
+// D5 / A2: "Neden kabul edilemiyor" kutusu (UX-2), K20 "Varsayım doğrulandı" (012: Test Uzmanı kabulü) ve
 // toplu karar (013/012 `bulk-decision`) × v3 hazır olma, "Hazır değil"
 // süzgeci ve URL parametreleri (UX-6), derinleştirme rozeti (UX-5), kart başlığı sadeliği (UX-12),
 // kapsam matrisi etiketleri ve hazır kapsam (UX-13 / D3), örnek verinin K6 tutarlılığı (UX-10).
@@ -90,7 +90,7 @@ describe("Neden kabul edilemiyor kutusu (UX-2)", () => {
     expect(hazirlikYonlendirmesi(await v3Case("case-v3-5"))).toBeNull();
   });
 
-  it("kartta (Testçi): varsayımda 'Varsayım doğrulandı' düğmesi; soruda düğme yok ve D6 yuvası çizilir", async () => {
+  it("kartta (Test Uzmanı): varsayımda 'Varsayım doğrulandı' düğmesi; soruda düğme yok ve D6 yuvası çizilir", async () => {
     await oturumAc("testci");
     jiraStorysiVer();
     const { unmount } = sar(<CaseKarti tc={await v3Case("case-v3-2")} guncellendi={() => {}} />);
@@ -183,7 +183,7 @@ describe("toplu karar × v3 hazır olma (K20 → 013/012 `bulk-decision`)", () =
     expect(topluOnayAdaylari([{ ...tumu[0], onay_engeli: "Tutarlılık ihlali olan case onaylanamaz" }], gorulenler, "accept").uygun).toEqual([]);
   });
 
-  it("mock: Testçi toplu kabulü öğe bazlı (hazır değil → hata, bayat hash → atlandı); kabul edilen onaya hazır", async () => {
+  it("mock: Test Uzmanı toplu kabulü öğe bazlı (hazır değil → hata, bayat hash → atlandı); kabul edilen onaya hazır", async () => {
     await oturumAc("testci");
     const [c1, c2, , c4] = await api.caseler(V3_GEREKSINIM_ID);
     for (const c of [c1, c2, c4]) mockGoruntulemeEkle(c.id, "testci");
@@ -198,7 +198,7 @@ describe("toplu karar × v3 hazır olma (K20 → 013/012 `bulk-decision`)", () =
     expect([ham("case-v3-1").durum, ham("case-v3-2").durum, ham("case-v3-4").durum]).toEqual(["ready", "draft", "draft"]);
   });
 
-  it("mock: Analist toplu son onayı kabul edilmiş v3 case'i onaylar; Testçi toplu son onay veremez (403)", async () => {
+  it("mock: Analist toplu son onayı kabul edilmiş v3 case'i onaylar; Test Uzmanı toplu son onay veremez (403)", async () => {
     await oturumAc("testci");
     const c1 = await v3Case("case-v3-1");
     mockGoruntulemeEkle(c1.id, "testci");

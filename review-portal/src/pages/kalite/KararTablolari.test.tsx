@@ -545,7 +545,7 @@ describe("ilişkiler", () => {
   });
 
   it("Ek case türet: onaylı ilişki + seçili kaynaklar → türetilen bağlantılı, atlananlar nedenli; ikinci kez 'zaten türetildi'", async () => {
-    await oturumAc("testci"); // 012 rol modeli: türetme `case.generate` (Testçi)
+    await oturumAc("testci"); // 012 rol modeli: türetme `case.generate` (Test Uzmanı)
     uygulama();
     const bolum = await screen.findByTestId("ek-case-turet");
     const turet = vi.spyOn(api, "ekCaseTuret");
@@ -576,7 +576,7 @@ describe("ilişkiler", () => {
   });
 
   it("onaylı ilişki yoksa düğme pasif ve nedeni görünür; PO türetemez", async () => {
-    await oturumAc("testci"); // 012 rol modeli: türetme `case.generate` (Testçi)
+    await oturumAc("testci"); // 012 rol modeli: türetme `case.generate` (Test Uzmanı)
     const r = kalite().iliskiler.find((x) => x.id === "mi-1")!;
     r.durum = "draft";
     uygulama();

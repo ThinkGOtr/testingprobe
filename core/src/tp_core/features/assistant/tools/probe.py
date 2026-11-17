@@ -13,7 +13,7 @@ Kaynak, portalın GET uçlarının servis/serileştirme fonksiyonlarıdır (ayn�
 
 - **Rol** yalnızca `AracBaglami.rol`'den (oturum); argümanda rol yoktur. Uç-düzeyi kısıtlar
   izin kataloğundan türetilir (`UC_IZINLERI` → `yetki.roller_icin`; specs/012-rol-yetki §4.3):
-  kısıtlı uca dayanan bölüm başka role **hiç** dönmez (alan adı dahil). Developer yalnız
+  kısıtlı uca dayanan bölüm başka role **hiç** dönmez (alan adı dahil). Geliştirici yalnız
   `approved`/`published` case'leri ve yayınlanmış bug'ları görür; `read_own` denetim izni olan
   roller `probe_audit`'te yalnız kendi olaylarını görür.
 - **Alan izin listesi:** serileştiricinin çıktısından yalnız `*_ALANLARI` kümelerindeki alanlar
@@ -120,7 +120,7 @@ def _uc_rolleri(izinler: tuple[str, ...]) -> frozenset[str] | None:
 UC_ROLLERI: dict[str, frozenset[str] | None] = {
     uc: _uc_rolleri(izinler) for uc, izinler in UC_IZINLERI.items()
 }
-# Developer'ın görebildiği durumlar (specs/012-rol-yetki §4.2 `case.read`, `bug.read`).
+# Geliştiricinin görebildiği durumlar (specs/012-rol-yetki §4.2 `case.read`, `bug.read`).
 DEVELOPER_DURUMLARI: dict[str, frozenset[str]] = {
     "case": frozenset({"approved", "published"}),
     "bug_draft": frozenset({"published"}),
@@ -331,7 +331,7 @@ REQUIREMENT_KAPILARI: dict[str, Kapi] = {
     "failed": Kapi("Son işlem başarısız; neden incelenip yeniden denenmeli", "analyst"),
 }
 CASE_KAPILARI: dict[str, Kapi] = {
-    "draft": Kapi("Testçi kararı bekleniyor (kabul / düzelterek kabul / ret)", "tester"),
+    "draft": Kapi("Test Uzmanı kararı bekleniyor (kabul / düzelterek kabul / ret)", "tester"),
     "ready": Kapi("Analist son onayı bekleniyor (onay / geri gönder)", "analyst"),
     "approved": Kapi("Onaylı; Jira'ya yayın bekleniyor", "tester"),
 }
@@ -596,7 +596,7 @@ def _ekran_rotasi(tur: str, nesne: Any) -> str:
 
 def _cases_ready_kapisi(s: Session, req: Requirement) -> Kapi | None:
     """`cases_ready` gereksinimin gerçek bekleyen kapısı (UX4 Bulgu 6): durum kodu tek başına
-    yetmez. Taslak case varsa Testçi kararı, `ready` case varsa Analist son onayı; yoksa onaylı
+    yetmez. Taslak case varsa Test Uzmanı kararı, `ready` case varsa Analist son onayı; yoksa onaylı
     case'in yayın engeli (ör. P9 denetimi) ya da yayın; her case yayınlandıysa (ya da
     reddedildiyse) bekleyen kapı yok."""
     from tp_core.features.publish.service import _engel
@@ -607,10 +607,10 @@ def _cases_ready_kapisi(s: Session, req: Requirement) -> Kapi | None:
             TestCase.durum.notin_(("superseded", "rejected")),
         )
     ).all()
-    # 012 iki adım: taslak → Testçi kararı, `ready` → Analist son onayı; yayın Testçinin.
+    # 012 iki adım: taslak → Test Uzmanı kararı, `ready` → Analist son onayı; yayın Test Uzmanının.
     taslak = sum(1 for c in caseler if c.durum == "draft")
     if taslak:
-        return Kapi(f"Case incelemesi ({taslak} case Testçi kararı bekliyor)", "tester")
+        return Kapi(f"Case incelemesi ({taslak} case Test Uzmanı kararı bekliyor)", "tester")
     hazir = sum(1 for c in caseler if c.durum == "ready")
     if hazir:
         return Kapi(f"Analist son onayı ({hazir} case bekliyor)", "analyst")
@@ -790,7 +790,7 @@ class BekleyenIs:
 def _kuyruk_kaynaklari(rol: str) -> list[tuple[str, Any, Callable[[Any], str]]]:
     """(tür, sorgu, neden) — rolün kapısındaki varlıklar (izin kataloğu + durum makineleri).
 
-    Görev dağılımı specs/012-rol-yetki §3 ve §5'tedir: Testçi case kararı/yayını ve bug kararı,
+    Görev dağılımı specs/012-rol-yetki §3 ve §5'tedir: Test Uzmanı case kararı/yayını ve bug kararı,
     Analist gereksinim incelemesi ve case son onayı, PO yalnız Jira'dan teyit.
     """
     rol = yetki.normalize_rol(rol)
@@ -883,7 +883,7 @@ def _kuyruk_kaynaklari(rol: str) -> list[tuple[str, Any, Callable[[Any], str]]]:
             (
                 "run",
                 select(Run).where(Run.sonuc == "error"),
-                lambda _n: "Koşu ortam hatasıyla bitti; Automation Engineer inceliyor",
+                lambda _n: "Koşu ortam hatasıyla bitti; Otomasyon Mühendisi inceliyor",
             )
         )
     return out
@@ -1063,7 +1063,7 @@ def probe_audit(baglam: AracBaglami, **arg: Any) -> AracSonucu:
             satirlar.append(f"- {o.zaman.isoformat()} | {o.eylem} | {_ozet_metni(o.ozet)}")
         if not olaylar:
             satirlar.append("- kayıt yok")
-        # Developer karar geçmişini görmez (specs/012-rol-yetki §4.2 `case.read`).
+        # Geliştirici karar geçmişini görmez (specs/012-rol-yetki §4.2 `case.read`).
         kararlar = (
             []
             if yetki.normalize_rol(baglam.rol) == yetki.DEVELOPER

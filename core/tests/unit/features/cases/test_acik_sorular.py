@@ -75,7 +75,7 @@ def ortam(
 ) -> Iterator[uuid.UUID]:
     fake_gateway([text_response(uretim_cikti(_cases(), **OZET))])
     rid = make_requirement()
-    login(api, make_user("tester"))  # 012: üretim Testçinin
+    login(api, make_user("tester"))  # 012: üretim Test Uzmanının
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     (is_,) = run_jobs(engine)
     assert is_.durum == "done", is_
@@ -155,7 +155,7 @@ def test_gonderim_tek_yorum_idempotent_ve_yetki(
         ).all()
         assert len(eylemler) == 2
 
-    # Yalnız analist gönderir; Testçi yanıtları yenileyebilir, diğer roller listeyi okuyabilir.
+    # Yalnız analist gönderir; Test Uzmanı yanıtları yenileyebilir, diğer roller listeyi okuyabilir.
     rol_ol(api, make_user("tester"))
     assert api.post(f"/requirements/{ortam}/open-questions/send").status_code == 403
     assert api.post(f"/requirements/{ortam}/open-questions/refresh").status_code == 200
@@ -200,7 +200,7 @@ def test_po_yaniti_soruya_baglanir_ve_case_duzeltilir(
         "open_question_refs": [],
         "expected_result": "5. hatalı denemede hesap 15 dakika kilitlenir",
     }
-    rol_ol(api, make_user("tester"))  # düzeltme (edit) Testçinin
+    rol_ol(api, make_user("tester"))  # düzeltme (edit) Test Uzmanının
     r = api.post(
         f"/cases/{engelli['id']}/decision",
         json={"icerik_hash": engelli["icerik_hash"], "karar": "edit", "icerik": tam},
@@ -250,7 +250,7 @@ def test_duzeltmeyle_kapanan_soru_yetim_sayilmaz(
         "open_question_refs": [],
         "expected_result": "5. hatalı denemede hesap 15 dakika kilitlenir",
     }
-    rol_ol(api, make_user("tester"))  # düzeltme (edit) Testçinin
+    rol_ol(api, make_user("tester"))  # düzeltme (edit) Test Uzmanının
     r = api.post(
         f"/cases/{engelli['id']}/decision",
         json={"icerik_hash": engelli["icerik_hash"], "karar": "edit", "icerik": tam},
@@ -339,7 +339,7 @@ def yetimli(
     sorular = [*OZET["open_questions"], {"id": "Q2", "question": YETIM, "owner": "PO"}]
     fake_gateway([text_response(uretim_cikti(_cases(), **{**OZET, "open_questions": sorular}))])
     rid = make_requirement()
-    login(api, make_user("tester"))  # 012: üretim Testçinin
+    login(api, make_user("tester"))  # 012: üretim Test Uzmanının
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     (is_,) = run_jobs(engine)
     assert is_.durum == "done", is_

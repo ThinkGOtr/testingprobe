@@ -359,7 +359,7 @@ def test_modeling_sirasinda_story_degisikligi_mesgul(
 def test_yalnizca_testci_karar_verir(
     api: TestClient, engine: Engine, make_user, make_requirement, replay_gateway
 ) -> None:
-    """012: tasarım modeli üretimi ve kararı Testçinin (`case.generate`, `design_model.decide`)."""
+    """012: tasarım modeli üretimi ve kararı Test Uzmanının (`case.generate`, `design_model.decide`)."""
     rid = make_requirement()
     login(api, make_user("tester"))
     api.post(f"/requirements/{rid}/design-model")

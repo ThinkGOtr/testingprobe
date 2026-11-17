@@ -68,7 +68,7 @@ function taslaklariKur(n = 2, gorulen = n): { rid: string; caseler: TestCase[] }
     id: `tc-e4-${k}`,
     requirement_id: rid,
     sira_no: k,
-    // 012: Testçi kabul etti (onaya hazır); Analist toplu/tekli son onayı verir.
+    // 012: Test Uzmanı kabul etti (onaya hazır); Analist toplu/tekli son onayı verir.
     durum: "ready",
     karar: "accept",
     testci_karari: "accept",

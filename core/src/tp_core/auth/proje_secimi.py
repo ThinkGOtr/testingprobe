@@ -37,10 +37,10 @@ ROL_ETIKETLERI_EN: Final[dict[str, str]] = {
     "admin": "System Administrator",
     "auditor": "Auditor",
     "analyst": "Analyst",
-    "po": "PO",
+    "po": "Product Owner (PO)",
     "tester": "Tester",
-    "engineer": "Automation Engineer",
-    "developer": "Developer",
+    "engineer": "Otomasyon Mühendisi",
+    "developer": "Geliştirici",
     "viewer": "Viewer",
 }
 

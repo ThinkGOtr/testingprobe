@@ -97,7 +97,7 @@ describe("CaseKarti v3: rozetler ve bloklar", () => {
     const onayla = screen.getByRole("button", { name: "Kabul et" });
     await waitFor(() => expect(onayla).toHaveAccessibleDescription(/Hazır olmayan case onaylanamaz \(varsayıma bağlı\)/));
     expect(onayla).toBeDisabled();
-    // Düzelterek kabul ve Reddet açık kalır (K6: Testçi hazır yapar ya da reddeder).
+    // Düzelterek kabul ve Reddet açık kalır (K6: Test Uzmanı hazır yapar ya da reddeder).
     expect(screen.getByRole("button", { name: "Düzelterek kabul" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Reddet" })).toBeEnabled();
   });
@@ -179,16 +179,16 @@ describe("CaseKarti v3: rozetler ve bloklar", () => {
 });
 
 describe("CaseKarti v3 × 012 iki adım", () => {
-  it("onaya hazır v3 case'te onay engeli doluysa Analist son onayı pasif ve nedeni yazılı; Testçi düğmeleri yok", async () => {
+  it("onaya hazır v3 case'te onay engeli doluysa Analist son onayı pasif ve nedeni yazılı; Test Uzmanı düğmeleri yok", async () => {
     await oturumAc("analist");
     const tc: TestCase = { ...(await v3Case("case-v3-1")), durum: "ready", onay_engeli: "Tutarlılık ihlali olan case onaylanamaz" };
     sar(<CaseKarti tc={tc} guncellendi={() => {}} />);
     const onayla = screen.getByRole("button", { name: "Onayla" });
-    await waitFor(() => expect(onayla).toHaveAccessibleDescription(/Tutarlılık ihlali olan case onaylanamaz\. "Geri gönder" ile Testçiye döndürün/));
+    await waitFor(() => expect(onayla).toHaveAccessibleDescription(/Tutarlılık ihlali olan case onaylanamaz\. "Geri gönder" ile Test Uzmanına döndürün/));
     expect(onayla).toBeDisabled();
     expect(screen.getByRole("button", { name: "Geri gönder" })).toBeEnabled();
     expect(screen.queryByRole("button", { name: "Kabul et" })).not.toBeInTheDocument();
-    // "Neden kabul edilemiyor" kutusu ve "Varsayım doğrulandı" yalnız taslakta (Testçi).
+    // "Neden kabul edilemiyor" kutusu ve "Varsayım doğrulandı" yalnız taslakta (Test Uzmanı).
     expect(screen.queryByTestId("hazirlik-yonlendirme")).not.toBeInTheDocument();
   });
 
@@ -337,7 +337,7 @@ describe("CaseKarti v3: düzeltme formu", () => {
     expect(maddeler).toContain("Kapsam öğesi tanımlı değil: EP-V9");
     expect(maddeler).toContain("Teknik BVA için kapsam öğesi yok (BV-… bekleniyor).");
     expect(guncellendi).not.toHaveBeenCalled();
-    // Form açık kalır: Testçi düzeltip yeniden gönderebilir.
+    // Form açık kalır: Test Uzmanı düzeltip yeniden gönderebilir.
     expect(screen.getByLabelText("Kapsadığı öğeler")).toHaveValue("EP-V9");
   });
 

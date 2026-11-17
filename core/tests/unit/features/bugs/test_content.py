@@ -153,8 +153,8 @@ def test_jira_govdesi_ve_yorum() -> None:
     )
     yorum = jira_adf.adf_to_text(content.link_comment(ICERIK, **ortak))
     assert "tp-abc" in yorum and "yeni kayıt açılmadı" in yorum and "h123" in yorum
-    assert "Testçi (testci) taslağı bu kayda bağladı" in yorum
-    assert "Testçi testci" not in yorum
+    assert "Test Uzmanı (testci) taslağı bu kayda bağladı" in yorum
+    assert "Test Uzmanı testci" not in yorum
     assert content.SEVERITY_PRIORITY["critical"] == "Highest"
 
 

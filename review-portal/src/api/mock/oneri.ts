@@ -179,10 +179,10 @@ export const MOCK_KURALLAR: MockKural[] = [
     kosul: (o) => o.durum === "pending_po" && o.po_kanal === "portal",
     oncelik: 95,
     baslik: "Onayınız bekleniyor; case üretimi buna bağlı",
-    neden: "Testçi case üretimini ancak sizin onayınızdan sonra başlatabilir; onay içeriğin bu hâline bağlanır.",
+    neden: "Test Uzmanı case üretimini ancak sizin onayınızdan sonra başlatabilir; onay içeriğin bu hâline bağlanır.",
     eylem: { tur: "rota", rota: "/gereksinimler/:id", capa: "po-onay" },
     aciklama:
-      "Serbest metin gereksinimin dokümanı son hâline geldi ve onayınızı bekliyor; Jira kaydı olmadığı için onay portalda verilir. Onay, gördüğünüz içeriğe bağlanır; içerik sonradan değişirse onay yenilenmelidir. Onayınızdan sonra Testçi case üretimini başlatır.",
+      "Serbest metin gereksinimin dokümanı son hâline geldi ve onayınızı bekliyor; Jira kaydı olmadığı için onay portalda verilir. Onay, gördüğünüz içeriğe bağlanır; içerik sonradan değişirse onay yenilenmelidir. Onayınızdan sonra Test Uzmanı case üretimini başlatır.",
   },
   {
     id: "gereksinim-po-onayi-jira",
@@ -191,7 +191,7 @@ export const MOCK_KURALLAR: MockKural[] = [
     kosul: (o) => o.durum === "pending_po" && o.po_kanal === "jira" && var_(o.jira_key),
     oncelik: 95,
     baslik: "Onayınız bekleniyor; case üretimi buna bağlı",
-    neden: "Testçi case üretimini ancak sizin onayınızdan sonra başlatabilir; bu gereksinimde onay Jira'dan verilir.",
+    neden: "Test Uzmanı case üretimini ancak sizin onayınızdan sonra başlatabilir; bu gereksinimde onay Jira'dan verilir.",
     eylem: { tur: "jira_kaydi" },
     aciklama:
       "Bu gereksinimde PO onayı Jira kanalından alınır: Jira kaydına tp-po-approved etiketini koyun. Testing Probe etiketi kendi hesabınızdan gelen teyitle tanır ve durumu günceller; portalda onay düğmesi yoktur.",
@@ -242,7 +242,7 @@ export const MOCK_KURALLAR: MockKural[] = [
     neden: "Son onay verilmeyen case yayımlanamaz ve otomasyona geçemez.",
     eylem: { tur: "rota", rota: "/gereksinimler/:id/caseler" },
     aciklama:
-      "Testçi bu case'leri kabul etti; onaya hazır durumdalar. Her case'i onaylayın ya da gerekçesiyle Testçi'ye geri gönderin. Yalnızca onayladığınız case'ler yayımlanabilir.",
+      "Test Uzmanı bu case'leri kabul etti; onaya hazır durumdalar. Her case'i onaylayın ya da gerekçesiyle Test Uzmanına geri gönderin. Yalnızca onayladığınız case'ler yayımlanabilir.",
   },
   {
     id: "case-yayina-hazir",
@@ -290,7 +290,7 @@ export const MOCK_KURALLAR: MockKural[] = [
     baslik: "PR merge kararınızı bekliyor",
     neden: "Doğrulanmış test merge edilmeden gece koşularına ve regresyon setine girmez.",
     eylem: { tur: "rota", rota: "/kod/:id", capa: "pr" },
-    aciklama: "Script'in PR'ı açık ve kırarak doğrulama geçti. Değişikliği inceleyip merge kararını verin; merge yalnızca Automation Engineer onayıyla yapılır.",
+    aciklama: "Script'in PR'ı açık ve kırarak doğrulama geçti. Değişikliği inceleyip merge kararını verin; merge yalnızca Otomasyon Mühendisi onayıyla yapılır.",
   },
   {
     id: "script-insana-dustu",
@@ -325,7 +325,7 @@ export const MOCK_KURALLAR: MockKural[] = [
     baslik: "Koşu ortam hatasıyla bitti; mühendis inceliyor",
     neden: "Bu koşunun test sonucu yok; demo öncesi güncel ve başarılı bir koşu gerekir.",
     eylem: { tur: "bilgi" },
-    aciklama: "Koşu testler çalışmadan bitti. İnceleme Automation Engineer rolündedir; düzeltildikten sonra yeni bir koşu tetiklenebilir.",
+    aciklama: "Koşu testler çalışmadan bitti. İnceleme Otomasyon Mühendisi rolündedir; düzeltildikten sonra yeni bir koşu tetiklenebilir.",
   },
   {
     id: "hata-bakim-onarim",
@@ -359,11 +359,11 @@ export const MOCK_KURALLAR: MockKural[] = [
     roller: ["engineer"],
     kosul: (o) => o.hata_sinifi === "test_maintenance" && o.beklenti_farki === true,
     oncelik: 60,
-    baslik: "Test beklentisi karar tablosundan farklı; case'i Testçi düzeltir",
+    baslik: "Test beklentisi karar tablosundan farklı; case'i Test Uzmanı düzeltir",
     neden: "Sorun locator'da ya da kodda değil, case'in beklenen değerinde; otomatik onarım bunu düzeltmez.",
     eylem: { tur: "bilgi" },
     aciklama:
-      "Bu hata test beklentisi farkı olarak sınıflandı (uygulama onaylı karar tablosuna uygun). Case düzeltmesi Testçi rolündedir; düzeltilen case Analist son onayından geçince test yeniden üretilip koşturulabilir.",
+      "Bu hata test beklentisi farkı olarak sınıflandı (uygulama onaylı karar tablosuna uygun). Case düzeltmesi Test Uzmanı rolündedir; düzeltilen case Analist son onayından geçince test yeniden üretilip koşturulabilir.",
   },
   {
     id: "hata-bug-taslagi-karari",
@@ -407,10 +407,10 @@ export const MOCK_KURALLAR: MockKural[] = [
     roller: ["engineer"],
     kosul: (o) => o.hata_sinifi === "test_data",
     oncelik: 50,
-    baslik: "Test verisi sorunu; Testçi takip ediyor",
+    baslik: "Test verisi sorunu; Test Uzmanı takip ediyor",
     neden: "Hata kodda değil verideyse kod değişikliği sorunu çözmez.",
     eylem: { tur: "bilgi" },
-    aciklama: "Bu hata test verisi sorunu olarak sınıflandı. Takibi Testçi rolündedir; veri düzeltilince test yeniden koşturulabilir.",
+    aciklama: "Bu hata test verisi sorunu olarak sınıflandı. Takibi Test Uzmanı rolündedir; veri düzeltilince test yeniden koşturulabilir.",
   },
   {
     id: "bug-taslagi-karari",
@@ -430,10 +430,10 @@ export const MOCK_KURALLAR: MockKural[] = [
     roller: ["analyst"],
     kosul: (o) => o.durum === "draft" && o.bulgu_kaynakli === true,
     oncelik: 40,
-    baslik: "Bulgudan bug taslağı hazır; karar Testçide",
-    neden: 'Tutarlılık bulgusunda verdiğiniz "kod hatası" kararı bu taslağı üretti; yayın kararı Testçinin.',
+    baslik: "Bulgudan bug taslağı hazır; karar Test Uzmanında",
+    neden: 'Tutarlılık bulgusunda verdiğiniz "kod hatası" kararı bu taslağı üretti; yayın kararı Test Uzmanının.',
     eylem: { tur: "bilgi" },
-    aciklama: "Bu taslak, tutarlılık bulgusunu kod hatası olarak işaretlemenizden üretildi. Taslağı Jira'ya açma, bağlama ya da kapatma kararı Testçi rolündedir.",
+    aciklama: "Bu taslak, tutarlılık bulgusunu kod hatası olarak işaretlemenizden üretildi. Taslağı Jira'ya açma, bağlama ya da kapatma kararı Test Uzmanı rolündedir.",
   },
   {
     id: "butce-uyarisi",

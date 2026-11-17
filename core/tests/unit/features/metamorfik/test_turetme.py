@@ -497,7 +497,7 @@ def test_api_roller_ve_yanit(
     k = kur()
     yol = f"/requirements/{k.rid}/metamorphic-cases"
     govde = {"iliski_id": str(k.iliski_id)}
-    # 012 rol modeli: ilişkiden türetme case üretimidir (`case.generate`, yalnız Testçi).
+    # 012 rol modeli: ilişkiden türetme case üretimidir (`case.generate`, yalnız Test Uzmanı).
     for rol in ("po", "analyst", "engineer", "admin"):
         login(api, make_user(rol))
         assert api.post(yol, json=govde).status_code == 403, rol

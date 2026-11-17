@@ -2,7 +2,7 @@
 
 Akış:
 
-1. `start_generation` (core-api, Testçi; `case.generate`): gereksinim `po_approved` (veya
+1. `start_generation` (core-api, Test Uzmanı; `case.generate`): gereksinim `po_approved` (veya
    yeniden üretim için `cases_ready`/`failed`) olmalı. `generating`'e geçiş durum makinesinin
    kapısıdır: PO onayının hash'i güncel içerikle eşleşmezse `GateClosed` (409), `ac_missing` ise
    `GuardFailed` (422).
@@ -20,10 +20,10 @@ Akış:
    geçirilir: ihlalli case taslak olarak yazılır, uyarısı gösterilir, düzeltilmeden onaylanamaz.
    Gereksinim `po_approved`'dan (yeni PO onayı) üretime geçerken eski case'ler `superseded` olur;
    iş dışı çöküşle `generating`'de kalan gereksinim yeniden başlatmada `failed`'a alınır.
-3. `decide` (portal; specs/012-rol-yetki/ANALIZ.md §5). Testçi (`case.decide`): accept | edit |
+3. `decide` (portal; specs/012-rol-yetki/ANALIZ.md §5). Test Uzmanı (`case.decide`): accept | edit |
    reject | reopen — `accept`/`edit` draft → ready, `reject` draft → rejected, `reopen`
    ("Taslağa al") ready/approved/rejected → draft. Analist (`case.approve`, son onay): approve
-   ready → approved (Testçi kararının hash'i güncel içerikle eşleşmeli; onaylayan hesap son
+   ready → approved (Test Uzmanı kararının hash'i güncel içerikle eşleşmeli; onaylayan hesap son
    kabul eden/düzenleyen hesaptan farklı olmalı), send_back ready → draft (gerekçe zorunlu).
    Kararlar `record_approval` ile (görülen içerik hash'i zorunlu) `review`'a yazılır. 011 v3
    (K6): hazır olmayan (`readiness != ready`) ya da tutarlılık ihlali olan case kabul edilemez ve
@@ -31,7 +31,7 @@ Akış:
    yalnız v2 alanlarıyla, K9). Düzeltme ölçüsü ve review süresi `review.duzeltme_olculeri`'ndedir.
    Karar yalnızca gereksinim `cases_ready|done` ve PO onayı güncel içerikteyken verilir (story
    değişince 409).
-4. `submit_drafts` (IDE/MCP, `submit` kapsamlı token, Testçi): şemalı (her zaman tam v3)
+4. `submit_drafts` (IDE/MCP, `submit` kapsamlı token, Test Uzmanı): şemalı (her zaman tam v3)
    taslaklar ve isteğe bağlı üretim özeti `kanal='ide'` ile `draft` olarak düşer; Jira'ya
    yazılmaz; karar ve son onay yine portalda insandır.
 5. `case_summary` (`GET /requirements/{id}/case-summary`): üretim başına özet listeleri, güncel
@@ -128,7 +128,7 @@ KIPLER = ("iki_tur", "tek_tur")
 # IDE taslağı kabul edilen gereksinim durumları (PO onayı güncel olmalı).
 IDE_KABUL = frozenset({"po_approved", "cases_ready"})
 KARARLAR = TEST_CASE_KARARLARI
-# Developer'ın gördüğü case durumları (ANALIZ §4.2: yalnız onaylı/yayınlanmış; geçmiş ve chat yok).
+# Geliştiricinin gördüğü case durumları (ANALIZ §4.2: yalnız onaylı/yayınlanmış; geçmiş ve chat yok).
 KISITLI_DURUMLAR = frozenset({"approved", "published"})
 # Kısıtlı görünümde çıkarılan alanlar: karar geçmişi, AI özgün içeriği ve düzeltme ayrıntısı.
 KISITLI_GIZLI_ALANLAR = (
@@ -1057,7 +1057,7 @@ def _supersede_previous(
     """Önceki portal üretimlerinin taslak/ret case'lerini `superseded` yapar; (sayı, korunan IDE).
 
     IDE'den (Claude Code) gelen ve henüz karar verilmemiş taslaklar KORUNUR: onlar bir insanın
-    bilinçli katkısıdır, portal üretimi onları sessizce geçersiz kılmaz (Testçi karar verir).
+    bilinçli katkısıdır, portal üretimi onları sessizce geçersiz kılmaz (Test Uzmanı karar verir).
     """
     eskiler = session.scalars(
         select(TestCase).where(
@@ -1585,7 +1585,7 @@ def submit_drafts(
         "tekrar_sira": tekrar,
         "durum": "draft",
         "mesaj": (
-            f"{len(eklenen)} taslak portala düştü; karar portalda Testçinin, son onay "
+            f"{len(eklenen)} taslak portala düştü; karar portalda Test Uzmanının, son onay "
             "Analistindir."
             + (f" {len(tekrar)} tekrar case atlandı." if tekrar else "")
             + (
@@ -1608,7 +1608,7 @@ def mark_viewed(session: Session, cid: uuid.UUID, user: Principal) -> dict[str, 
 
     K13': portal bunu görünürlüğün BAŞINDA gönderir; review süresi bu andan ölçülür, toplu onay
     bu andan `GORULME_MIN_S` sn sonra açılır. Yalnız kullanıcının kararını bekleyen case'te kayıt
-    açılır (012: taslak → Testçi kararı, `ready` → Analist son onayı): karar ile çakışan
+    açılır (012: taslak → Test Uzmanı kararı, `ready` → Analist son onayı): karar ile çakışan
     (karardan sonra gelen) istek case satırında karar işlemini bekler (FOR SHARE) ve karar
     bekleyen durumda olmayan case için yeni pencere başlatmaz (`yeni: False`,
     `ilk_goruntuleme: null`).
@@ -1618,7 +1618,7 @@ def mark_viewed(session: Session, cid: uuid.UUID, user: Principal) -> dict[str, 
     tc = session.get(TestCase, cid, with_for_update={"read": True})
     if tc is None:
         raise CaseNotFound("Case bulunamadı")
-    # 012: pencere yalnız kullanıcının bu durumda verebileceği karar için açılır (Testçi taslakta,
+    # 012: pencere yalnız kullanıcının bu durumda verebileceği karar için açılır (Test Uzmanı taslakta,
     # Analist `ready`'de); kararı verilmiş / başka rolün evresindeki case'te açılmaz.
     if not (
         (tc.durum == "draft" and izinli(user.rol, "case.decide"))
@@ -1666,7 +1666,7 @@ def _veri_izi(session: Session, icerik: Mapping[str, Any]) -> dict[str, str]:
 
 
 def _karar_engeli(tc: TestCase, req: Requirement | None) -> WorkflowError | None:
-    """Testçi içerik kararının (accept/edit/reject) reddedileceği neden: durum ya da gereksinim."""
+    """Test Uzmanı içerik kararının (accept/edit/reject) reddedileceği neden: durum ya da gereksinim."""
     if tc.durum != "draft":
         return WorkflowError(
             f"Karar yalnızca taslak durumundaki case için verilir (durum: {tc.durum}); "
@@ -1682,7 +1682,7 @@ def _onay_icerik_engeli(
     katalog_anahtarlari: set[str],
     ozet: Mapping[str, Any] | None = None,
 ) -> WorkflowError | None:
-    """Kabulün (Testçi `accept`, Analist `approve`) ek reddi: bilinmeyen AC atfı, hazır olmama
+    """Kabulün (Test Uzmanı `accept`, Analist `approve`) ek reddi: bilinmeyen AC atfı, hazır olmama
     ve üretim özetiyle tutarsızlık (011 K6, `approval_block`), katalogda olmayan test verisi
     atfı."""
     if req is not None:
@@ -1701,7 +1701,7 @@ def _son_onay_engeli(tc: TestCase, req: Requirement | None) -> WorkflowError | N
     """Analist son onayının (`approve`) durum/gereksinim reddi."""
     if tc.durum != "ready":
         return WorkflowError(
-            "Son onay yalnızca Testçinin kabul ettiği (ready) case için verilir "
+            "Son onay yalnızca Test Uzmanının kabul ettiği (ready) case için verilir "
             f"(durum: {tc.durum})"
         )
     engel = requirement_change_reason(req)
@@ -1716,7 +1716,7 @@ def onay_engeli(
 ) -> str | None:
     """Case'in sıradaki kabul kararının reddedileceği neden (portal `onay_engeli`; None = geçer).
 
-    012 iki adım: taslakta Testçinin `accept`'i, `ready`'de Analistin `approve`'u; diğer
+    012 iki adım: taslakta Test Uzmanının `accept`'i, `ready`'de Analistin `approve`'u; diğer
     durumlarda taslak kuralının metni döner. `decide` ile aynı kurallar; hash uyuşmazlığı, görülme
     şartı ve görevler ayrılığı istek anına / kullanıcıya bağlı olduğundan burada yoktur.
     """
@@ -1882,7 +1882,7 @@ def decide(
         if atif.maske_iceriyor_mu(icerik):
             raise InvalidCaseContent(MASKELI_DUZELTME_METNI)
         # Gizli değer işlemleri: aktör başına fren değerden bağımsız (her düzeltmede) sınanır;
-        # Testçinin düz yazdığı gizli değer kaydedilmeden atfa çevrilir, atfa dönemeyen (belirsiz)
+        # Test Uzmanının düz yazdığı gizli değer kaydedilmeden atfa çevrilir, atfa dönemeyen (belirsiz)
         # geçiş reddedilir. Her iki durum denetime yazılır ve frene sayılır. Atfa çevrilen içerik
         # yeni içeriktir (hash ondan).
         testveri.cakisma_freni(session, user.kullanici_adi)
@@ -1897,7 +1897,7 @@ def decide(
         if kalan:
             raise InvalidCaseContent(DUZ_GIZLI_DUZELTME_METNI)
         icerik = esli
-        # Testçinin gördüğü (K22 görünümü) içerikle aynıysa değişiklik yok: ham içerikte düz
+        # Test Uzmanının gördüğü (K22 görünümü) içerikle aynıysa değişiklik yok: ham içerikte düz
         # duran gizli değerin atıf olarak geri gelmesi düzeltme sayılmaz.
         gorunen = atif.case_gorunum(tc.icerik, gizli_eslem, gizliler)
         if content_hash(dict(icerik)) in (tc.icerik_hash, content_hash(gorunen)):
@@ -1914,7 +1914,7 @@ def decide(
         raise InvalidDecision("İçerik yalnızca 'edit' kararında gönderilir")
     elif karar == "accept":
         olculer = {"mesafe": 0.0, "kucuk_duzeltme": True, "degisen_alanlar": []}
-    # --- 012 oracle kancası: karar tablosu onay kapısı (features/oracle/kapi.py). Testçinin
+    # --- 012 oracle kancası: karar tablosu onay kapısı (features/oracle/kapi.py). Test Uzmanının
     # kabulü (`accept`/`edit`, taslak → ready) içeriği kabul eder; Analistin son onayı
     # (`approve`, `_son_onay`) kapıdan yeniden geçer (aynı tür + tablo kümesiyle verilmiş istisna
     # yeniden gerekçe istemez). ---
@@ -1957,7 +1957,7 @@ def decide(
 
 
 def _testci_karari_yok(session: Session, tc: TestCase) -> bool:
-    """Case'e henüz Testçi içerik kararı (veya eski akışta analist kararı) verilmemiş mi?"""
+    """Case'e henüz Test Uzmanı içerik kararı (veya eski akışta analist kararı) verilmemiş mi?"""
     return (
         session.scalar(
             select(func.count()).where(
@@ -1971,7 +1971,7 @@ def _testci_karari_yok(session: Session, tc: TestCase) -> bool:
 
 
 def son_testci_karari(session: Session, tc: TestCase) -> Review | None:
-    """Case'i `ready` yapan son Testçi kararı (`accept`/`edit`)."""
+    """Case'i `ready` yapan son Test Uzmanı kararı (`accept`/`edit`)."""
     return session.scalars(
         select(Review)
         .where(
@@ -2000,10 +2000,10 @@ def _son_onay(
 
     012: `approve` karar tablosu kapısından yeniden geçer (`_oracle_kapisi`)."""
     if icerik is not None:
-        raise InvalidDecision("İçerik yalnızca Testçinin 'edit' kararında gönderilir")
+        raise InvalidDecision("İçerik yalnızca Test Uzmanının 'edit' kararında gönderilir")
     if tc.durum != "ready":
         raise WorkflowError(
-            "Son onay yalnızca Testçinin kabul ettiği (ready) case için verilir "
+            "Son onay yalnızca Test Uzmanının kabul ettiği (ready) case için verilir "
             f"(durum: {tc.durum})"
         )
     gerekce = (gerekce or "").strip() or None
@@ -2012,7 +2012,7 @@ def _son_onay(
     son = latest_review(session, "test_case", tc.id)
     testci = son_testci_karari(session, tc)
     if son is None or testci is None or son.id != testci.id:
-        raise GateClosed("test_case: son karar Testçi kabulü değil; case yeniden kabul edilmeli")
+        raise GateClosed("test_case: son karar Test Uzmanı kabulü değil; case yeniden kabul edilmeli")
     if karar == "approve":
         req = get_requirement(session, tc.requirement_id)
         hata = _son_onay_engeli(tc, req) or _onay_icerik_engeli(
@@ -2022,7 +2022,7 @@ def _son_onay(
             raise hata
         if testci.onaylanan_hash != content_hash_of(tc):
             raise GateClosed(
-                "test_case: içerik Testçi kararından sonra değişmiş; yeniden kabul gerekir"
+                "test_case: içerik Test Uzmanı kararından sonra değişmiş; yeniden kabul gerekir"
             )
         # Görevler ayrılığı (ANALIZ §5, K2): kabul eden/düzenleyen hesap son onayı veremez.
         if testci.user_id is not None and testci.user_id == user.id:
@@ -2062,13 +2062,13 @@ def _son_onay(
 def _reopen(
     session: Session, tc: TestCase, user: Principal, icerik_hash: str, gerekce: str | None
 ) -> TestCase:
-    """'Taslağa al' (Testçi): ready/approved/rejected → draft (içerik değişmez; yeni karar gerekir).
+    """'Taslağa al' (Test Uzmanı): ready/approved/rejected → draft (içerik değişmez; yeni karar gerekir).
 
     Onaylı case'te onay düşer: son review artık onaylamayan 'reopen' olur ve `draft`'a dönüş
     `onaylanan_hash`'i siler.
     """
     if user.kanal != "portal" or not izinli(user.rol, "case.decide"):
-        raise InvalidDecision("Taslağa alma yalnızca portaldaki Testçinin işlemidir")
+        raise InvalidDecision("Taslağa alma yalnızca portaldaki Test Uzmanının işlemidir")
     if tc.durum not in ("ready", "approved", "rejected"):
         raise WorkflowError(
             f"Yalnızca hazır, onaylı veya reddedilmiş case taslağa alınabilir (durum: {tc.durum})"
@@ -2077,7 +2077,7 @@ def _reopen(
         raise GateClosed("test_case: içerik siz görüntüledikten sonra değişmiş; yenileyin")
     onceki = tc.durum
     # Kayıtlı karar: son review artık onaylamayan 'reopen' olduğundan eski onay, yeni bir
-    # Testçi kabulü + Analist onayı olmadan ready → approved / approved → published kapısını
+    # Test Uzmanı kabulü + Analist onayı olmadan ready → approved / approved → published kapısını
     # açamaz.
     record_approval(
         session,
@@ -2137,7 +2137,7 @@ def bulk_decide(
     """Toplu karar (013 §3.2, K3/K13/K16; 012 iki adım): her öğe kendi SAVEPOINT'inde tekli
     `decide(karar)`.
 
-    - 012: `accept` Testçinin toplu kabulüdür (draft → ready), `approve` Analistin toplu son
+    - 012: `accept` Test Uzmanının toplu kabulüdür (draft → ready), `approve` Analistin toplu son
       onayıdır (ready → approved). İzin karar başına API'de denetlenir (`case.decide` /
       `case.approve`); tekli karardaki tüm kapılar (hash, durum, gereksinim, görevler ayrılığı)
       her öğeye ayrı uygulanır. Öğe `durum: "onaylandi"` = karar uygulandı (kabulde "kabul").
@@ -2283,10 +2283,10 @@ def _usernames(session: Session, ids: set[uuid.UUID]) -> dict[uuid.UUID, str]:
 
 
 def testci_kararlari(rs: Sequence[Review]) -> list[Review]:
-    """Testçinin içerik kararları (`accept`/`edit`/`reject`), sırayla.
+    """Test Uzmanının içerik kararları (`accept`/`edit`/`reject`), sırayla.
 
     012 öncesi akışta analist `approve`'u doğrudan draft → approved idi ve AI çıktısına verilen
-    kabul kararıydı; önünde Testçi kabulü (`accept`/`edit`) olmayan `approve` bu yüzden Testçi
+    kabul kararıydı; önünde Test Uzmanı kabulü (`accept`/`edit`) olmayan `approve` bu yüzden Test Uzmanı
     kararı sayılır (eski kayıtların ölçümü değişmez). Yeni akışta `approve` hep bir kabulün
     ardından gelir ve son onaydır.
     """
@@ -2302,15 +2302,15 @@ def testci_kararlari(rs: Sequence[Review]) -> list[Review]:
 
 
 def son_onay_kararlari(rs: Sequence[Review]) -> list[Review]:
-    """Analistin son onay kararları (`send_back` ve bir Testçi kabulünü izleyen `approve`)."""
+    """Analistin son onay kararları (`send_back` ve bir Test Uzmanı kabulünü izleyen `approve`)."""
     eski = {r.id for r in testci_kararlari(rs)}
     return [r for r in rs if r.karar in ("approve", "send_back") and r.id not in eski]
 
 
 def gecerli_son_onay(rs: Sequence[Review]) -> Review | None:
     """Gösterilecek son onay: en son Analist kararı (`approve`/`send_back`), yalnız ondan SONRA
-    Testçi kararı (`accept`/`edit`/`reject`/`reopen`) yoksa. Böylece "Taslağa al" ya da yeni kabul
-    eski onayı gizler; `send_back` gerekçesi Testçinin bir sonraki kararına kadar görünür kalır."""
+    Test Uzmanı kararı (`accept`/`edit`/`reject`/`reopen`) yoksa. Böylece "Taslağa al" ya da yeni kabul
+    eski onayı gizler; `send_back` gerekçesi Test Uzmanının bir sonraki kararına kadar görünür kalır."""
     son_onaylar = son_onay_kararlari(rs)
     if not son_onaylar:
         return None
@@ -2325,7 +2325,7 @@ def gecerli_son_onay(rs: Sequence[Review]) -> Review | None:
 
 
 def kisitli_gorunum(user: Principal | None) -> bool:
-    """Developer kısıtlı görünümü (ANALIZ §4.2): yalnız onaylı/yayınlanmış case, geçmiş yok."""
+    """Geliştirici kısıtlı görünümü (ANALIZ §4.2): yalnız onaylı/yayınlanmış case, geçmiş yok."""
     return user is not None and normalize_rol(user.rol) == "developer"
 
 
@@ -2384,7 +2384,7 @@ def serialize_cases(
     geçmişi, AI özgün içeriği/farkı, düzeltme ayrıntısı alanları çıkarılır (`kisitli: true`).
 
     `goruldu`: `user` bu case'i son karardan sonra en az `GORULME_MIN_S` sn önce görüntüledi mi
-    (verilmezse False). `onay_engeli`: sıradaki kabul kararının (taslakta Testçi `accept`,
+    (verilmezse False). `onay_engeli`: sıradaki kabul kararının (taslakta Test Uzmanı `accept`,
     `ready`'de Analist `approve`) reddedileceği neden (`onay_engeli`).
     `veri_onaydan_sonra_degisen`: onaylı/yayınlı case'te onay anındaki veri izinden değeri değişen,
     silinen ya da çözülemeyen anahtarlar (K10 case yarısı; tüm liste için tek sorgu).
@@ -2437,7 +2437,7 @@ def serialize_cases(
     for c in cases:
         if c.durum not in ("approved", "published"):
             continue
-        # Son kabul/onay kaydının veri izi (012: Analist `approve`'u ya da Testçi kabulü).
+        # Son kabul/onay kaydının veri izi (012: Analist `approve`'u ya da Test Uzmanı kabulü).
         iz_karari = next(
             (
                 r
@@ -2456,7 +2456,7 @@ def serialize_cases(
     for c in cases:
         rs = reviews.get(c.id, [])
         # Gösterilen karar: son karar ('reopen' taslağa alır; önceki karar korunur). Düzeltme
-        # ölçüleri ve ret nedeni Testçinin son içerik kararından okunur (son onay bunları taşımaz).
+        # ölçüleri ve ret nedeni Test Uzmanının son içerik kararından okunur (son onay bunları taşımaz).
         kararlar = [r for r in rs if r.karar != "reopen"]
         son_genel = kararlar[-1] if kararlar else None
         testci = testci_kararlari(rs)
@@ -2511,7 +2511,7 @@ def serialize_cases(
                 if son_genel and son_genel.user_id
                 else None,
                 "karar_zamani": son_genel.zaman if son_genel else None,
-                # 012: Testçi kararı ve Analist son onayı ayrı alanlarda.
+                # 012: Test Uzmanı kararı ve Analist son onayı ayrı alanlarda.
                 "testci_karari": son.karar if son else None,
                 "testci": users.get(son.user_id) if son and son.user_id else None,
                 "son_onay": {
@@ -2796,13 +2796,13 @@ def requirement_metrics(session: Session, requirement_id: uuid.UUID) -> dict[str
             if isinstance(sure, int):
                 review_sureleri.append(sure)
                 araliklar.append((r.zaman - timedelta(milliseconds=sure), r.zaman))
-        # Son onay (Analist) ölçümü Testçi kabul ölçümünden ayrıdır (ANALIZ §5).
+        # Son onay (Analist) ölçümü Test Uzmanı kabul ölçümünden ayrıdır (ANALIZ §5).
         onaylar = son_onay_kararlari(rs)
         son_onay_verilen += sum(1 for r in onaylar if r.karar == "approve")
         geri = sum(1 for r in onaylar if r.karar == "send_back")
         geri_gonderilen += geri
         geri_gonderme_case += 1 if geri else 0
-        # AI kabul ölçümü: Testçinin ilk içerik kararı (accept/edit/reject; eski akışta approve).
+        # AI kabul ölçümü: Test Uzmanının ilk içerik kararı (accept/edit/reject; eski akışta approve).
         rs = testci_kararlari(rs)
         if not rs:
             continue
@@ -2883,7 +2883,7 @@ def requirement_metrics(session: Session, requirement_id: uuid.UUID) -> dict[str
         "kapsam_oranlari": kapsam["oranlar"],
         "onceki_icerik_case_ids": onceki_icerik,
         "uyarilar": uyarilar,
-        # 012 son onay (Analist): Testçi kararından ayrı ölçüm. `bekleyen` = ready case sayısı.
+        # 012 son onay (Analist): Test Uzmanı kararından ayrı ölçüm. `bekleyen` = ready case sayısı.
         "son_onay": {
             "bekleyen": durumlar.get("ready", 0),
             "onaylanan": son_onay_verilen,
@@ -2905,7 +2905,7 @@ def requirement_metrics(session: Session, requirement_id: uuid.UUID) -> dict[str
 
 
 def requirement_metrics_kisitli(session: Session, requirement_id: uuid.UUID) -> dict[str, Any]:
-    """Developer görünümü: yalnız onaylı/yayınlanmış case sayıları (karar ölçümleri yok)."""
+    """Geliştirici görünümü: yalnız onaylı/yayınlanmış case sayıları (karar ölçümleri yok)."""
     req = get_requirement(session, requirement_id)
     durumlar = dict(
         session.execute(
@@ -2968,7 +2968,7 @@ def story_baseline(session: Session, requirement_id: uuid.UUID) -> dict[str, Any
 def review_complete(session: Session, requirement_id: uuid.UUID, user: Principal) -> dict[str, Any]:
     """`POST /requirements/{id}/review-complete` (Analist, `case.approve`): review kapanışı.
 
-    Durum değiştirmez; ölçümü denetim kaydına yazar. 012'den itibaren review, Testçinin tüm
+    Durum değiştirmez; ölçümü denetim kaydına yazar. 012'den itibaren review, Test Uzmanının tüm
     case'lere karar vermesi (`draft` yok) **ve** Analistin son onayı bitirmesiyle (`ready` yok)
     tamamlanır: reddedilmemiş her case `approved` (veya yayınlanmış) olmalıdır.
     """
@@ -2984,7 +2984,7 @@ def review_complete(session: Session, requirement_id: uuid.UUID, user: Principal
     )
     if sayim.get("draft"):
         raise WorkflowError(
-            f"Testçi kararı bekleyen {sayim['draft']} case var; review tamamlanamaz"
+            f"Test Uzmanı kararı bekleyen {sayim['draft']} case var; review tamamlanamaz"
         )
     if sayim.get("ready"):
         raise WorkflowError(f"Son onay bekleyen {sayim['ready']} case var; review tamamlanamaz")

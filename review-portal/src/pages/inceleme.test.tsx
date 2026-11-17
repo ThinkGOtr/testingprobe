@@ -400,16 +400,16 @@ describe("yayın rolü", () => {
     expect(await screen.findByRole("link", { name: "Yayın önizleme" })).toBeInTheDocument();
   });
 
-  it("PO yayın önizlemesini salt okunur görür: yayınla düğmesi pasif ve nedeni Testçi", async () => {
+  it("PO yayın önizlemesini salt okunur görür: yayınla düğmesi pasif ve nedeni Test Uzmanı", async () => {
     await oturumAc("po");
     uygulama("/gereksinimler/req-tpd-1/yayin");
     expect(await screen.findByText("Salt okunur önizleme")).toBeInTheDocument();
     const d = await screen.findByRole("button", { name: /Seçilenleri yayınla/ });
     expect(d).toBeDisabled();
-    expect(d).toHaveAccessibleDescription("Bu işlem için gereken rol: Testçi");
+    expect(d).toHaveAccessibleDescription("Bu işlem için gereken rol: Test Uzmanı");
   });
 
-  it("Developer yayın ekranına gelirse önizleme istenmez; standart 'Erişim yok', yetkisiz bağlantı yok", async () => {
+  it("Geliştirici yayın ekranına gelirse önizleme istenmez; standart 'Erişim yok', yetkisiz bağlantı yok", async () => {
     await oturumAc("gelistirici");
     const casus = vi.spyOn(api, "yayinOnizleme");
     uygulama("/gereksinimler/req-tpd-1/yayin");

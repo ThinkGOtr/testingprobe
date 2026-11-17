@@ -96,7 +96,7 @@ describe("B2: doğrulanan varsayım diğer case'lere ve panele yansır", () => {
     await api.varsayimDogrulandi(iki.id, { icerik_hash: iki.icerik_hash, varsayim_id: "A1" });
     const alti = await v3Case("case-v3-6");
     expect(alti.durum).toBe("draft");
-    // 012: doğrulanan case onaya hazırdır (ready); doğrulama Testçinin kararı olarak yansır.
+    // 012: doğrulanan case onaya hazırdır (ready); doğrulama Test Uzmanının kararı olarak yansır.
     expect((await v3Case("case-v3-2")).durum).toBe("ready");
     expect(alti.varsayimlar?.[0].dogrulama).toMatchObject({ case_id: "case-v3-2", sira_no: 2, kimlik: "A1", kim: "testci" });
     const y = hazirlikYonlendirmesi(alti, (ad) => (ad === "testci" ? "Selin T." : ad ?? ""))!;
@@ -147,7 +147,7 @@ describe("B2: doğrulanan varsayım diğer case'lere ve panele yansır", () => {
 
 describe("B3: PO yanıtı sonrası kart tek mesaj verir", () => {
   it("öneri kutusu yok, birincil 'Düzelterek kabul' kutuda, açık sorular bilgi tonunda, beklenen sonuç satırı ve Kabul et ipucu", async () => {
-    // Analist PO'ya gönderir (`case.ask_po`); yanıtı Testçi de okuyabilir; kartta karar Testçinin.
+    // Analist PO'ya gönderir (`case.ask_po`); yanıtı Test Uzmanı de okuyabilir; kartta karar Test Uzmanının.
     await oturumAc("analist");
     jiraStorysiVer();
     await api.acikSorulariGonder(V3_GEREKSINIM_ID);

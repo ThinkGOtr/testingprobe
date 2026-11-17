@@ -171,7 +171,7 @@ test("insan kapıları uçtan uca: bulgu kararı → düzeltme → PO teyidi", a
   await page.screenshot({ path: `${EKRAN_DIZINI}/21-akis-po-onayli.png`, fullPage: true });
 });
 
-test("Demo-A: Testçi taslağa alır ve kabul eder, Analist onaylar; yayın (kısmi sonuç, jira-sim), Claude Code token'ı", async ({ page }) => {
+test("Demo-A: Test Uzmanı taslağa alır ve kabul eder, Analist onaylar; yayın (kısmi sonuç, jira-sim), Claude Code token'ı", async ({ page }) => {
   await girisYap(page, "testci");
   await page.goto("/gereksinimler/req-tpd-1/caseler");
   const kart = (etiket: string) => page.getByRole("article").filter({ has: page.locator(".cip", { hasText: new RegExp(`^${etiket}$`) }) }).first();
@@ -196,7 +196,7 @@ test("Demo-A: Testçi taslağa alır ve kabul eder, Analist onaylar; yayın (kı
   await expect(page.getByText("Onaya hazır (0)")).toBeVisible();
   await page.screenshot({ path: `${EKRAN_DIZINI}/26b-case-analist-onayi.png`, fullPage: true });
 
-  // Yayın ve Claude Code token'ı Testçide.
+  // Yayın ve Claude Code token'ı Test Uzmanında.
   await page.getByRole("button", { name: "Çıkış" }).click();
   await girisYap(page, "testci");
 
@@ -229,7 +229,7 @@ test("case kararları durum makinesine uyar: reddedilen kabul edilemez, onaylı 
   const onayli = kart("Onaylı");
   await expect(onayli.getByTestId("case-karar-kilit")).toBeVisible();
   for (const ad of ["Kabul et", "Düzelterek kabul", "Reddet"]) await expect(onayli.getByRole("button", { name: ad })).toHaveCount(0);
-  // Taslak case'te Testçi kararları açık ve çalışır.
+  // Taslak case'te Test Uzmanı kararları açık ve çalışır.
   const taslak = kart("Karar bekliyor");
   await expect(taslak.getByRole("button", { name: "Kabul et" })).toBeEnabled();
   await page.screenshot({ path: `${EKRAN_DIZINI}/24-case-karar-kilidi.png`, fullPage: true });
@@ -303,7 +303,7 @@ test("mühendis: kod üretimi canlı adımlar ve kırarak doğrulama", async ({ 
   expect(hatalar).toEqual([]);
 });
 
-test("Sistem Yöneticisi (sunucu): açılış Demo yol haritası; Kontrol Kulesi (KPI kaynağı), koşu süzgeci; deploy tetiği Automation Engineer'da", async ({ page }) => {
+test("Sistem Yöneticisi (sunucu): açılış Demo yol haritası; Kontrol Kulesi (KPI kaynağı), koşu süzgeci; deploy tetiği Otomasyon Mühendisinde", async ({ page }) => {
   const hatalar = konsolHatalariniTopla(page);
   await girisYap(page, "sunucu");
   await expect(page).toHaveURL(/\/yol-haritasi$/);
@@ -316,7 +316,7 @@ test("Sistem Yöneticisi (sunucu): açılış Demo yol haritası; Kontrol Kulesi
   await page.goto("/kosular");
   await page.getByRole("combobox", { name: "Tetik" }).selectOption("break_verify");
   await expect(page).toHaveURL(/tetik=break_verify/);
-  // CI tetikleri Automation Engineer'dadır (ANALIZ 012 §6); Sistem Yöneticisi düğme görmez.
+  // CI tetikleri Otomasyon Mühendisindedir (ANALIZ 012 §6); Sistem Yöneticisi düğme görmez.
   await expect(page.getByRole("button", { name: "Deploy sonrası testleri koş" })).toHaveCount(0);
   await page.getByRole("button", { name: "Çıkış" }).click();
   await girisYap(page, "muhendis");
@@ -823,7 +823,7 @@ for (const tur of TEMA_TURLARI) {
       await page.getByRole("button", { name: "Çıkış" }).click();
       await expect(page.getByRole("heading", { name: "Oturum aç" })).toBeVisible();
 
-      // Demo kontrolleri Sistem Yöneticisi + Automation Engineer'da (demo.manage); onay grubu açık haliyle.
+      // Demo kontrolleri Sistem Yöneticisi + Otomasyon Mühendisinde (demo.manage); onay grubu açık haliyle.
       await girisYap(page, "sunucu");
       await page.goto("/demo");
       await page.getByRole("button", { name: "Buton kimliğini değiştir" }).click();
@@ -934,7 +934,7 @@ test("pasiflik nedeni yerleşimi (review 3): neden kendi düğmesinin altında, 
     });
 
   // Case review, analist, 1440: karar verilmiş case satırında neden paragrafın değil 'Taslağa al' düğmesinin altında
-  // (Taslağa al Testçi kararıdır; Analistte pasif ve gerekçeli). Script detayında da Analist merge edemez.
+  // (Taslağa al Test Uzmanı kararıdır; Analistte pasif ve gerekçeli). Script detayında da Analist merge edemez.
   await page.setViewportSize({ width: 1440, height: 900 });
   await girisYap(page, "analist");
   await page.goto("/gereksinimler/req-tpd-1/caseler");
@@ -1219,7 +1219,7 @@ test("v3 case review (req-ft-2) axe: ciddi ihlal yok; özellik listesi definitio
   }
 });
 
-test("012 demo adım 2–3: PO ızgarada AI sınır hatasını görür → değişiklik iste → analist `< 750` → PO onaylar → AI'ın C6 hatası engellenir → Testçi istisnayla kabul eder", async ({ page }) => {
+test("012 demo adım 2–3: PO ızgarada AI sınır hatasını görür → değişiklik iste → analist `< 750` → PO onaylar → AI'ın C6 hatası engellenir → Test Uzmanı istisnayla kabul eder", async ({ page }) => {
   const hatalar = konsolHatalariniTopla(page);
   await girisYap(page, "po");
   await page.goto("/gereksinimler/req-tpd-1/karar-tablolari");
@@ -1259,7 +1259,7 @@ test("012 demo adım 2–3: PO ızgarada AI sınır hatasını görür → deği
   await page.getByRole("button", { name: "Çıkış" }).click();
   await expect(page.getByRole("heading", { name: "Oturum aç" })).toBeVisible();
 
-  // 012 rol modeli: kapı Testçinin kabulünde ("Kabul et"); Analist son onayında yeniden uygulanır.
+  // 012 rol modeli: kapı Test Uzmanının kabulünde ("Kabul et"); Analist son onayında yeniden uygulanır.
   await girisYap(page, "testci");
   await page.goto("/gereksinimler/req-tpd-1/caseler");
   const c6 = page.getByRole("article", { name: /minimum tutara eşit toplamda/ });

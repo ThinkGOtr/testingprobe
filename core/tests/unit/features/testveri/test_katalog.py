@@ -97,7 +97,7 @@ def test_crud_surum_ve_denetim(api: TestClient, engine: Engine, make_user) -> No
 
 @pytest.mark.parametrize("rol", ["po", "developer", "admin"])
 def test_duzenleme_yalniz_testdata_manage(api: TestClient, make_user, rol: str) -> None:
-    """012: katalogu `testdata.manage` (Analist, Testçi, Mühendis) düzenler; diğerleri okur."""
+    """012: katalogu `testdata.manage` (Analist, Test Uzmanı, Mühendis) düzenler; diğerleri okur."""
     login(api, make_user("engineer"))
     k = api.post("/test-data", json={"anahtar": "ayar.x", "deger": "1"}).json()
     login(api, make_user(rol))
@@ -173,7 +173,7 @@ def test_silme_atif_yapan_etkin_case_varsa_409_listeli(
 ) -> None:
     fake_gateway([text_response(uretim_cikti([case_icerik()]))])
     rid = make_requirement()
-    login(api, make_user("tester"))  # 012: Testçi üretir; katalogu da düzenler (`testdata.manage`)
+    login(api, make_user("tester"))  # 012: Test Uzmanı üretir; katalogu da düzenler (`testdata.manage`)
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     run_jobs(engine)
     (c,) = latest_cases(api, rid)

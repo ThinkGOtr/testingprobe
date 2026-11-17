@@ -304,7 +304,7 @@ def hazir(engine: Engine, make_requirement: Any, make_user: Any) -> dict[str, An
             )
             s.add(tc)
             s.flush()
-            # 012: Testçi kabulü (draft → ready) + Analist son onayı (ready → approved).
+            # 012: Test Uzmanı kabulü (draft → ready) + Analist son onayı (ready → approved).
             onayla_db(s, tc, testci, analist)
             ids[n] = tc.id
     return {"requirement_id": rid, "cases": ids, "analist": analist}

@@ -630,7 +630,7 @@ describe("012 §4.4: test beklentisi farkı (core `beklenti_farki`)", () => {
     expect(await idler()).toContain("hata-bakim-onarim");
   });
 
-  it("beklenti farkında onarım önerilmez; mühendise bilgi, Testçiye case düzeltme önerisi", async () => {
+  it("beklenti farkında onarım önerilmez; mühendise bilgi, Test Uzmanına case düzeltme önerisi", async () => {
     beklentiYap();
     await oturumAc("muhendis");
     const m = await idler();
@@ -648,7 +648,7 @@ describe("012 §4.4: test beklentisi farkı (core `beklenti_farki`)", () => {
 describe("öneri kuralları rol modeli v2 (ANALIZ 012 §5)", () => {
   const kimlikler = (l: OneriListesi) => l.oneriler.map((o) => (o as unknown as { kural_id?: string; id?: string }).kural_id ?? (o as { id?: string }).id);
 
-  it("case kararı bekleyen → Testçi; son onay bekleyen → Analist; yayına hazır → Testçi", async () => {
+  it("case kararı bekleyen → Test Uzmanı; son onay bekleyen → Analist; yayına hazır → Test Uzmanı", async () => {
     const { mockVerisi } = await import("../../api/mock/handlers");
     await oturumAc("testci");
     expect(kimlikler(await oneriApi.liste({ rota: "/gereksinimler/req-tpd-1/caseler" }))).toContain("case-inceleme-bekliyor");

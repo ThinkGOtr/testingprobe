@@ -37,8 +37,8 @@ export function yayinOzeti(s: YayinSonucu) {
   return { olusan, vardi, basarisiz, kismi: basarisiz > 0 && olusan + vardi > 0 };
 }
 
-/** Yayın Testçi rolüne açıktır (`case.publish`); önizleme `publish.preview` rollerine salt okunur. */
-export const YAYIN_ROLU_GEREKLI = "Yayın Testçi rolü gerektirir";
+/** Yayın Test Uzmanı rolüne açıktır (`case.publish`); önizleme `publish.preview` rollerine salt okunur. */
+export const YAYIN_ROLU_GEREKLI = "Yayın Test Uzmanı rolü gerektirir";
 /** Önizlemeyi görebilen roller (`publish.preview`; core `GET /publish/preview` → 403). */
 export const ONIZLEME_YETKISI_YOK = "Yayın önizleme bu rolde görünmez";
 
@@ -127,7 +127,7 @@ function YayinEkrani() {
       />
       {!yayinYetkili && (
         <Uyari ton="bilgi" baslik="Salt okunur önizleme">
-          {YAYIN_ROLU_GEREKLI}: bu ekranda yayınlanacak kayıtları görebilirsiniz, yayını Testçi başlatır.
+          {YAYIN_ROLU_GEREKLI}: bu ekranda yayınlanacak kayıtları görebilirsiniz, yayını Test Uzmanı başlatır.
         </Uyari>
       )}
       {onizleme.yukleniyor && !o ? (

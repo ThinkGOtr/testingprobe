@@ -29,7 +29,7 @@ function uygulama(yol: string) {
 
 beforeEach(() => goruntulenenleriSifirla());
 
-/** Testçi kabul eder, Analist son onayı verir (ANALIZ 012 §5). */
+/** Test Uzmanı kabul eder, Analist son onayı verir (ANALIZ 012 §5). */
 async function kabulVeOnay(id: string) {
   const hash = () => mockVerisi().caseler.find((c) => c.id === id)!.icerik_hash;
   await oturumAc("testci");
@@ -137,7 +137,7 @@ describe("case review", () => {
     vi.unstubAllGlobals();
   });
 
-  it("Testçi olmayan rol görüntüleme bildirmez (ölçüm yalnızca karar verenin süresi)", async () => {
+  it("Test Uzmanı olmayan rol görüntüleme bildirmez (ölçüm yalnızca karar verenin süresi)", async () => {
     await oturumAc("analist");
     const casus = vi.spyOn(api, "caseGoruntulendi");
     uygulama("/gereksinimler/req-tpd-1/caseler");

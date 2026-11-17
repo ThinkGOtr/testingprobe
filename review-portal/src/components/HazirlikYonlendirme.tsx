@@ -1,5 +1,5 @@
 // UX-2 (D5): hazır olmayan taslak case'te kartın üstünde "Neden kabul edilemiyor / ne yapmalı" kutusu ve
-// K20 "Varsayım doğrulandı" eylemi (Testçi, `case.decide`; 012: case kabul edilir, Analist son onayı ayrıca gerekir). Açık soru varsa önce o söylenir ve doğrulama düğmesi sunulmaz;
+// K20 "Varsayım doğrulandı" eylemi (Test Uzmanı, `case.decide`; 012: case kabul edilir, Analist son onayı ayrıca gerekir). Açık soru varsa önce o söylenir ve doğrulama düğmesi sunulmaz;
 // D6'nın "PO'ya gönder" eylemi `poyaGonder` yuvasına bağlanır.
 import { useId, useState, type ReactNode } from "react";
 import { api } from "../api/client";

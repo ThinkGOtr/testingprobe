@@ -308,7 +308,7 @@ def test_giris_turu_ve_jit(client: TestClient, home: SahteHome, engine: Engine) 
     assert me.status_code == 200
     assert me.json()["rol"] == "tester"
     assert me.json()["ad_soyad"] == "Ayşe Yılmaz"
-    assert me.json()["gorunen_ad"] == "Ayşe Yılmaz (AI Probe) · Testçi"
+    assert me.json()["gorunen_ad"] == "Ayşe Yılmaz (AI Probe) · Test Uzmanı"
     assert me.json()["ad_kaynak"] == "aiprobe"
     with engine.connect() as c:
         bag = c.execute(
@@ -1513,7 +1513,7 @@ def test_jit_adi_aiprobe_kaynakli(client: TestClient, home: SahteHome, engine: E
         assert c.execute(text("SELECT ad_kaynak FROM app_user")).scalar_one() == "aiprobe"
     me = client.get("/auth/me").json()
     assert me["ad_soyad"] == "Ayşe Yılmaz" and me["ad_kaynak"] == "aiprobe"
-    assert me["kisiler"][me["kullanici_adi"]] == "Ayşe Yılmaz (AI Probe) · Testçi"
+    assert me["kisiler"][me["kullanici_adi"]] == "Ayşe Yılmaz (AI Probe) · Test Uzmanı"
 
 
 def test_me_products_bos_liste_erisim_olarak_korunur(

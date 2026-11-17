@@ -144,9 +144,9 @@ def test_bilinmeyen_rol_en_dar_ve_none() -> None:
 
 def test_etiket_ve_ek() -> None:
     assert etiket("analyst") == "Analist"
-    assert etiket("po") == "PO"
-    assert etiket("tester") == "Testçi"
-    assert etiket("engineer") == "Automation Engineer"
+    assert etiket("po") == "Ürün Sahibi (PO)"
+    assert etiket("tester") == "Test Uzmanı"
+    assert etiket("engineer") == "Otomasyon Mühendisi"
     assert etiket("presenter") == "Sistem Yöneticisi"
     assert etiket("admin") == "Sistem Yöneticisi"
     assert etiket("bilinmeyen") == "Görüntüleyici"
@@ -458,13 +458,13 @@ def _mesaj(rol: str) -> flow.Mesaj:
     ("rol", "beklenen"),
     [
         ("analyst", "Analist"),
-        ("po", "PO"),
-        ("tester", "Testçi"),
-        ("engineer", "Automation Engineer"),
+        ("po", "Ürün Sahibi (PO)"),
+        ("tester", "Test Uzmanı"),
+        ("engineer", "Otomasyon Mühendisi"),
         ("presenter", "Sistem Yöneticisi"),
         ("admin", "Sistem Yöneticisi"),
         ("auditor", "Denetçi"),
-        ("developer", "Developer"),
+        ("developer", "Geliştirici"),
         ("bilinmeyen", "Görüntüleyici"),
     ],
 )

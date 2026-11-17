@@ -1,5 +1,5 @@
 // Demo kontrolleri: ekran `demo.read` ile salt-okur açılır (2026-11-14 kararı); eylemler Sistem Yöneticisi ve
-// Automation Engineer'ındır (`demo.manage`, yalnız TP_DEMO_MODE=1): locator kırılması (TEKNIK-TASARIM §2 ikinci kırılma
+// Otomasyon Mühendisinindir (`demo.manage`, yalnız TP_DEMO_MODE=1): locator kırılması (TEKNIK-TASARIM §2 ikinci kırılma
 // senaryosu, `make break` eşi) ve demo sıfırlama. Her ikisi de onay ister; ilerleme core olaylarından
 // (`demo.progress`) ve koşu listesinden izlenir — olay gelmese de koşu ve triage görünür.
 import { useCallback, useEffect, useId, useRef, useState } from "react";
@@ -486,7 +486,7 @@ function LocatorKirmaKarti({ durum }: { durum: DemoDurumu | null }) {
               (assertion) dokunulamayacağını garanti eder — gerçek bir hata testi değiştirerek gizlenemez.
             </li>
             <li>
-              <strong>İnsan onaylar</strong>: Automation Engineer bir satırlık farkı görüp merge eder; testler yeşile döner.
+              <strong>İnsan onaylar</strong>: Otomasyon Mühendisi bir satırlık farkı görüp merge eder; testler yeşile döner.
             </li>
           </ol>
           <p className="kucuk">Bu düğme o geliştiriciyi taklit eder: kimliği değiştiren commit'i ana dala alır, uygulamayı yeniden kurar, CI'ı başlatır.</p>
@@ -497,7 +497,7 @@ function LocatorKirmaKarti({ durum }: { durum: DemoDurumu | null }) {
         <span className="mono">demo/break-locator</span> dalı (Sepete ekle butonunun <span className="mono">data-testid</span>'i{" "}
         <span className="mono">add-to-cart</span> → <span className="mono">cart-add</span>) demo-admin yetkisiyle korumalı ana dala
         merge edilir; işlem denetime "demo kırılması" olarak yazılır. Çalışan demo uygulaması main'den yeniden kurulur, CI kırmızıya
-        döner, triage "test bakımı / locator" der ve onarım önerir. Onarım PR'ını Automation Engineer açar ve onaylar.
+        döner, triage "test bakımı / locator" der ve onarım önerir. Onarım PR'ını Otomasyon Mühendisi açar ve onaylar.
       </details>
       {desteksiz && (
         <Uyari ton="hata" baslik="Test bakımı demosu bu kipte yok">

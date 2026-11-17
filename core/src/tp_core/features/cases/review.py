@@ -763,7 +763,7 @@ def rerun(session: Session, requirement_id: uuid.UUID, user: Principal) -> dict[
 # --------------------------------------------------------------------------- API
 
 router = APIRouter(tags=["cases"])
-# 012 (dev birleştirmesi): P8 yeniden çalıştırma `case.generate` (Testçi); okuma
+# 012 (dev birleştirmesi): P8 yeniden çalıştırma `case.generate` (Test Uzmanı); okuma
 # `case.analysis_read`.
 Uretici = Annotated[Principal, Depends(izin("case.generate"))]
 Analiz = Annotated[Principal, Depends(izin("case.analysis_read"))]

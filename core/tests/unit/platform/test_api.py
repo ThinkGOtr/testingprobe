@@ -498,7 +498,7 @@ def test_suresi_dolan_token_gecersiz(
 def test_token_yalnizca_testci(
     client: TestClient, make_user: MakeUser, engine: Engine, rol: str
 ) -> None:
-    """012: IDE token'ı Testçi ve Developer'ındır (`token.issue`, 2026-11-14); red `authz.denied`
+    """012: IDE token'ı Test Uzmanı ve Geliştiricinindir (`token.issue`, 2026-11-14); red `authz.denied`
     yazar."""
     _giris(client, make_user(rol))
     r = client.post("/tokens", json={"kapsam": "submit"})
@@ -516,8 +516,8 @@ def test_token_yalnizca_testci(
 def test_developer_kendi_submit_tokenini_uretir_publish_uretemez(
     mcp_client: TestClient, make_user: MakeUser, engine: Engine
 ) -> None:
-    """2026-11-14: Developer IDE kanalını kullanır (`token.issue`); `publish` kapsamı
-    `case.publish` ister (Testçi). Başkasının token'ını göremez ve iptal edemez."""
+    """2026-11-14: Geliştirici IDE kanalını kullanır (`token.issue`); `publish` kapsamı
+    `case.publish` ister (Test Uzmanı). Başkasının token'ını göremez ve iptal edemez."""
     client = mcp_client
     testci = make_user("tester")
     _giris(client, testci)
@@ -760,7 +760,7 @@ def test_me_gorunen_ad_ve_kisi_eslemesi(
     assert me["gorunen_ad"] == "Cengizhan Gunaydin · Analist"
     assert me["ad_soyad"] == "Cengizhan Gunaydin"
     assert me["kisiler"]["sunucu"] == "Sistem Yöneticisi"
-    assert me["kisiler"]["testci"] == "Fatih Arslan · Testçi"
+    assert me["kisiler"]["testci"] == "Fatih Arslan · Test Uzmanı"
 
     # TP_GORUNEN_ADLAR demo varsayılanlarını geçersiz kılar; rol değişmez.
     monkeypatch.setenv("TP_GORUNEN_ADLAR", "analist=Ayşe  Yılmaz,testci=")
@@ -771,7 +771,7 @@ def test_me_gorunen_ad_ve_kisi_eslemesi(
         monkeypatch.delenv("TP_GORUNEN_ADLAR")
         get_settings.cache_clear()
     assert me["gorunen_ad"] == "Ayşe Yılmaz · Analist" and me["rol"] == "analyst"
-    assert me["kisiler"]["testci"] == "Testçi"
+    assert me["kisiler"]["testci"] == "Test Uzmanı"
 
 
 def test_yetki_ada_degil_role_bakar(client: TestClient, make_user: MakeUser) -> None:

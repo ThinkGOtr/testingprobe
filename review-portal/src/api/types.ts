@@ -507,18 +507,18 @@ export interface TestCase {
   icerik: TestCaseIcerik;
   durum: CaseDurumu;
   /**
-   * Son insan kararı: Testçi `accept` | `edit` | `reject`, Analist `approve` | `send_back`
+   * Son insan kararı: Test Uzmanı `accept` | `edit` | `reject`, Analist `approve` | `send_back`
    * (ANALIZ 012 §5). Eski kayıtlarda Analist `approve`/`edit` kararı da olabilir.
    */
   karar: CaseKararTuru | null;
   /** Son `send_back` gerekçesi (Analist geri gönderdiyse); core `son_onay.gerekce`'den türetilir. */
   gerekce?: string | null;
   /**
-   * Testçinin son içerik kararı (`accept` | `edit` | `reject`); Analist onayından sonra da korunur
-   * (ölçümler). 012 öncesi kayıtlarda Testçi kabulü olmadan verilen `approve` bu alanda kalır (eski).
+   * Test Uzmanının son içerik kararı (`accept` | `edit` | `reject`); Analist onayından sonra da korunur
+   * (ölçümler). 012 öncesi kayıtlarda Test Uzmanı kabulü olmadan verilen `approve` bu alanda kalır (eski).
    */
   testci_karari?: "accept" | "edit" | "reject" | "approve" | null;
-  /** Testçi kararını veren hesap (core `testci`). */
+  /** Test Uzmanı kararını veren hesap (core `testci`). */
   testci?: string | null;
   /** Analistin son onay kararı (core `son_onay`): `approve` ya da `send_back` (gerekçeli). */
   son_onay?: SonOnay | null;
@@ -834,7 +834,7 @@ export interface CaseMetrikleri {
   kapsam_oranlari?: Record<string, KapsamOrani>;
 }
 
-/** Testçi kararları (`case.decide`). `reopen` "Taslağa al"dır. */
+/** Test Uzmanı kararları (`case.decide`). `reopen` "Taslağa al"dır. */
 export type TestciKarari = "accept" | "edit" | "reject" | "reopen";
 /** Analist son onay kararları (`case.approve`; yalnız `ready` case). */
 export type AnalistKarari = "approve" | "send_back";
@@ -1673,7 +1673,7 @@ export interface BugTaslagi {
   ret_gerekcesi?: string | null;
   /** Core'un Türkçe sonuç metni ("Mevcut kayda bağlandı: TPD-5", "Jira'da açıldı: TPD-n" …). */
   sonuc_metni?: string | null;
-  /** Testçi taslağı yeniden açabilir (reddedilmiş ya da yayını kalıcı başarısız). */
+  /** Test Uzmanı taslağı yeniden açabilir (reddedilmiş ya da yayını kalıcı başarısız). */
   yeniden_acilabilir?: boolean;
   /** Bu sistemin açtığı Bug demo sıfırlamasında Jira'dan silindi (`jira_url` null). */
   jira_silindi?: boolean;

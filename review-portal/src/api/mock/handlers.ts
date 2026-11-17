@@ -94,12 +94,12 @@ import { BAZ_NOT_EN_AZ, BAZ_NOT_EN_COK, BAZ_UST_SINIR_S, kazancOzeti } from "../
 // core `auth/display.py` + `seed.GORUNEN_ADLAR` demo varsayılanlarıyla aynı (yalnızca gösterim).
 const KISILER: Record<string, string> = {
   analist: "Cengizhan Gunaydin · Analist",
-  muhendis: "Gokhan Sipahi · Automation Engineer",
+  muhendis: "Gokhan Sipahi · Otomasyon Mühendisi",
   sunucu: "Sistem Yöneticisi",
   po: "Cengizhan Gunaydin · PO",
-  testci: "Fatih Arslan · Testçi",
+  testci: "Fatih Arslan · Test Uzmanı",
   denetci: "Denetçi",
-  gelistirici: "Developer",
+  gelistirici: "Geliştirici",
   izleyici: "Görüntüleyici",
 };
 
@@ -144,7 +144,9 @@ export type MockSenaryosu =
    */
   | "uzun-gecmis"
   /** Çok proje (TP-COK-PROJE-PLANI §6): `/projeler`, `PUT /proje`, `/auth/me` proje alanları (api/mock/projeler.ts). */
-  | "cok-proje";
+  | "cok-proje"
+  /** Ekran denetimi (canlı E2E T-8): Agent Probe özelliği projede kapalı (`/auth/me` → `ozellikler.ai_agent=false`). */
+  | "ajan-kapali";
 
 export function mockSenaryosu(ad: MockSenaryosu): boolean {
   if (ayar.senaryolar.has(ad)) return true;
@@ -957,9 +959,9 @@ const KISITLI_GIZLI_ALANLAR = [
 ] as const;
 
 /**
- * core `serialize_cases` biçimi: Testçi kararı (`testci_karari`, `testci`) ve Analist son onayı
+ * core `serialize_cases` biçimi: Test Uzmanı kararı (`testci_karari`, `testci`) ve Analist son onayı
  * (`son_onay`) ayrı; `karar`/`karar_veren`/`karar_zamani` son karardır (Analist olabilir). Düz
- * `gerekce`/`onaylayan`/`onay_zamani` core'da yoktur. Developer (kısıtlı görünüm): geçmiş alanları
+ * `gerekce`/`onaylayan`/`onay_zamani` core'da yoktur. Geliştirici (kısıtlı görünüm): geçmiş alanları
  * çıkarılır, `kisitli: true`.
  */
 function caseYaniti(c: TestCase, kullanici?: Kullanici | null): Record<string, unknown> {
@@ -967,7 +969,7 @@ function caseYaniti(c: TestCase, kullanici?: Kullanici | null): Record<string, u
   void _g;
   void _o;
   void _z;
-  // 012 öncesi kayıt (örnek veri): Testçi kararı alanı yoksa son karar Testçi kararı sayılır (core testci_kararlari).
+  // 012 öncesi kayıt (örnek veri): Test Uzmanı kararı alanı yoksa son karar Test Uzmanı kararı sayılır (core testci_kararlari).
   const eski = c.testci_karari === undefined && c.karar !== null && c.karar !== "send_back" && c.karar !== "reopen";
   const out: Record<string, unknown> = {
     ...ham,
@@ -993,7 +995,7 @@ const TESTCI_KARARLARI = ["accept", "edit", "reject"] as const;
 const ANALIST_KARARLARI = ["approve", "send_back"] as const;
 
 /**
- * core `POST /cases/{id}/decision` (ANALIZ 012 §5): Testçi `accept` | `edit` (draft → ready),
+ * core `POST /cases/{id}/decision` (ANALIZ 012 §5): Test Uzmanı `accept` | `edit` (draft → ready),
  * `reject` (draft → rejected), `reopen` ("Taslağa al"); Analist `approve` (ready → approved) ve
  * `send_back` (ready → draft, gerekçe zorunlu).
  */
@@ -1101,7 +1103,7 @@ function caseKarari(id: string, govde: unknown): Record<string, unknown> {
       c.kucuk_duzeltme = null;
       c.duzeltme_nedeni = null;
     }
-    // Son onay (Analist) bu içerik hash'ine bağlanır; Testçi kararı onayı düşürür.
+    // Son onay (Analist) bu içerik hash'ine bağlanır; Test Uzmanı kararı onayı düşürür.
     c.onaylanan_hash = null;
     c.son_onay = null;
     c.karar = g.karar;
@@ -1131,7 +1133,7 @@ function caseGoruntulendi(id: string): { case_id: string; ilk_goruntuleme: strin
   // core: görüntüleme kaydı karar verecek rollere (case.decide | case.approve).
   const k = izinGerekli("case.decide", "case.approve");
   const c = bul(veri.caseler, id, "Case");
-  // core (§10; 012): kayıt yalnız kullanıcının bu durumda vereceği karar için açılır (taslak → Testçi,
+  // core (§10; 012): kayıt yalnız kullanıcının bu durumda vereceği karar için açılır (taslak → Test Uzmanı,
   // ready → Analist); diğer case'lerde açılmaz.
   const izin = rolIzinleri(k.rol);
   const bekliyor = (c.durum === "draft" && izin.includes("case.decide")) || (c.durum === "ready" && izin.includes("case.approve"));
@@ -1162,7 +1164,7 @@ function caseYenidenAc(id: string, govde: unknown): Record<string, unknown> {
   gecir("test_case", c, "draft");
   const onceki = c.karar;
   c.onaylanan_hash = null;
-  // Taslağa alınan case'in son onayı düşer (yeniden Testçi kararı + Analist onayı gerekir).
+  // Taslağa alınan case'in son onayı düşer (yeniden Test Uzmanı kararı + Analist onayı gerekir).
   c.son_onay = null;
   c.goruntulenme = null;
   goruntulemeleriUnut(c.id);
@@ -1175,7 +1177,7 @@ function caseYenidenAc(id: string, govde: unknown): Record<string, unknown> {
 }
 
 /**
- * D5 / K20 core `POST /cases/{id}/assumption-verified` (`case.decide`, Testçi): case'in varsayım(lar)ı
+ * D5 / K20 core `POST /cases/{id}/assumption-verified` (`case.decide`, Test Uzmanı): case'in varsayım(lar)ı
  * doğrulandı. Görülen içerik (hash) varsayım atıfları boşaltılıp "hazır" yapılır ve `edit` kararıyla
  * kabul edilir (draft → ready; 012: Analist son onayı ayrıca gerekir); review kaydı düzeltmedir
  * (ölçüde `varsayim_dogrulandi`). Başka varsayım/soru atfı kalırsa 422, bayat hash 409.
@@ -1202,7 +1204,7 @@ function varsayimDogrulandi(id: string, govde: unknown): Record<string, unknown>
   c.icerik = yeni;
   c.surum += 1;
   c.icerik_hash = icerikHash(yeni);
-  // Son onay (Analist) bu içerik hash'ine bağlanır; Testçi kararı onayı düşürür.
+  // Son onay (Analist) bu içerik hash'ine bağlanır; Test Uzmanı kararı onayı düşürür.
   c.onaylanan_hash = null;
   c.son_onay = null;
   c.duzeltme_olcusu = Math.round(duzeltmeOlcusu(once, kanonikJson(yeni)) * 100) / 100;
@@ -1243,7 +1245,7 @@ function caseZengin(c: TestCase): TestCase {
 /**
  * core `varsayim_dogrulama.case_fields`: güncel setteki kabul edilmiş (012: onaya hazır) ya da onaylı
  * başka case'te doğrulanan varsayım. "Varsayım doğrulandı" case'i `ready` yapar (Analist son onayı
- * ayrıca gerekir); doğrulama Testçinin kararıdır, bu yüzden `ready` de sayılır.
+ * ayrıca gerekir); doğrulama Test Uzmanının kararıdır, bu yüzden `ready` de sayılır.
  */
 function varsayimDogrulamaAlanlari(c: TestCase): Pick<TestCase, "varsayimlar"> | Record<string, never> {
   if (!c.varsayimlar?.length || !veri.varsayimDogrulamalari) return {};
@@ -1392,7 +1394,7 @@ function caseMetrikleri(rid: string): CaseMetrikleri {
   );
   const kapsanmayan = g.kabul_kriterleri.map((a) => a.ref).filter((r) => !atiflar.has(acAnahtari(r)));
   const cs = veri.caseler.filter((c) => c.requirement_id === rid && c.ai_generated && c.durum !== "superseded");
-  // Ölçümler Testçi kararını sayar (ANALIZ 012 §5); eski kayıtlarda Analist `approve` kabul sayılır.
+  // Ölçümler Test Uzmanı kararını sayar (ANALIZ 012 §5); eski kayıtlarda Analist `approve` kabul sayılır.
   const ilkKarar = (c: TestCase) => c.testci_karari ?? (c.karar === "send_back" ? null : c.karar);
   const kararli = cs.filter((c) => ilkKarar(c) !== null);
   const kabul = kararli.filter((c) => {
@@ -1993,7 +1995,7 @@ function ciTetikle(govde: unknown): IsYaniti {
   // core: deploy/nightly `run.trigger_scheduled` (engineer); manual `run.trigger_manual` (engineer, developer).
   const kullanici = izinGerekli(tetik === "manual" ? "run.trigger_manual" : "run.trigger_scheduled");
   if (tetik === "manual" && kullanici.rol === "developer" && mockOrtam.ortam === "prod") {
-    throw new ApiError(403, "Developer prod ortamında koşu başlatamaz (üretim ortamı).", { kod: "yetki_yok" });
+    throw new ApiError(403, "Geliştirici prod ortamında koşu başlatamaz (üretim ortamı).", { kod: "yetki_yok" });
   }
   const k = kosuOlustur(tetik, "local", false, null);
   denetimEkle("ci.trigger", k.id, tetik === "deploy" ? "Deploy tetiklendi (repository_dispatch)" : tetik === "manual" ? "Manuel koşu başlatıldı" : "Gece koşusu tetiklendi");
@@ -2391,7 +2393,7 @@ function tokenOlustur(govde: unknown): McpToken {
   izinGerekli("token.issue");
   const kapsam = ((govde ?? {}) as { kapsam?: string }).kapsam;
   if (kapsam !== "submit" && kapsam !== "publish") throw new ApiError(422, "Kapsam submit veya publish olmalı.");
-  // core ile aynı: `publish` kapsamı `case.publish` ister (Developer yalnız `submit` üretir).
+  // core ile aynı: `publish` kapsamı `case.publish` ister (Geliştirici yalnız `submit` üretir).
   if (kapsam === "publish") izinGerekli("case.publish");
   const rastgele = new Uint8Array(24);
   crypto.getRandomValues(rastgele);
@@ -2459,7 +2461,7 @@ function gorulduMu(caseId: string, kullanici: string | null): boolean {
   return t !== undefined && Date.now() - t >= GORULDU_ESIK_MS;
 }
 
-/** core `onay_engeli` (taklit: karar bekleyen case'te — taslak: Testçi kabulü, ready: son onay — katalogda olmayan atıf). */
+/** core `onay_engeli` (taklit: karar bekleyen case'te — taslak: Test Uzmanı kabulü, ready: son onay — katalogda olmayan atıf). */
 function onayEngeli(c: TestCase): string | null {
   if (c.durum !== "draft" && c.durum !== "ready") return null;
   // 011 K6: hazır olmayan / tutarlılık ihlalli v3 case (caseZengin'in `onay_engeli`) önce gelir.
@@ -2494,7 +2496,7 @@ function otomatikKod(c: TestCase): NonNullable<TestCase["otomatik_kod"]> {
 
 function tekliKarar(id: string, govde: unknown): Record<string, unknown> {
   const yanit = caseKarari(id, govde);
-  // 012: otomatik kod yalnız Analist son onayından (case approved) sonra; Testçi kabulü kod üretmez.
+  // 012: otomatik kod yalnız Analist son onayından (case approved) sonra; Test Uzmanı kabulü kod üretmez.
   if ((govde as { karar?: unknown } | null)?.karar !== "approve") return yanit;
   return { ...yanit, otomatik_kod: otomatikKod(bul(veri.caseler, id, "Case")) };
 }
@@ -2511,7 +2513,7 @@ function caseListesi(q: URLSearchParams): Record<string, unknown>[] {
 }
 
 /**
- * core `POST /cases/bulk-decision` (013 §3.2, §9; 012 iki adım): Testçi `accept` (taslak → ready,
+ * core `POST /cases/bulk-decision` (013 §3.2, §9; 012 iki adım): Test Uzmanı `accept` (taslak → ready,
  * `case.decide`) ya da Analist `approve` (ready → approved, `case.approve`). Her öğe kendi hash'iyle
  * tekli kararın kurallarından geçer; görülmeyen (K13) atlanır; biri diğerini bozmaz. Öğe
  * `otomatik_kod` null; kod üretimi yalnız son onayda, üst düzeyde tek iş (K16).
@@ -2881,7 +2883,10 @@ const ROTALAR: Rota[] = [
 
 /** `cok-proje` senaryosunda `/auth/me` ve giriş yanıtı proje alanlarını taşır (api/mock/projeler.ts). */
 function cokProjeyle(k: Kullanici): Kullanici {
-  return mockSenaryosu("cok-proje") ? projeliKullanici(k) : k;
+  const p = mockSenaryosu("cok-proje") ? projeliKullanici(k) : k;
+  return mockSenaryosu("ajan-kapali")
+    ? { ...p, ozellikler: { web: true, android: true, ios: true, windows: true, ...(p.ozellikler ?? {}), ai_agent: false } }
+    : p;
 }
 
 function cokProjeGerekli<T>(fn: () => T): T {

@@ -28,7 +28,7 @@ export function yolGecerli(makine: MakineAdi, mevcut: string, yol: readonly stri
 export type CaseKarari = CaseKararGirdisi["karar"];
 
 /**
- * Case kararlarının hedef durumu (ANALIZ 012 §5): Testçi `accept` | `edit` → `ready`,
+ * Case kararlarının hedef durumu (ANALIZ 012 §5): Test Uzmanı `accept` | `edit` → `ready`,
  * `reject` → `rejected`, `reopen` ("Taslağa al") → `draft`; Analist `approve` → `approved`,
  * `send_back` → `draft`.
  */

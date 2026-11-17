@@ -54,7 +54,7 @@ consistency_finding (başlangıç ``unverified``)::
 
 test_case (başlangıç ``draft``; specs/012-rol-yetki/ANALIZ.md §5)::
 
-    draft      -> ready [KAPI: accept | edit], rejected [KAPI: reject], superseded   (Testçi)
+    draft      -> ready [KAPI: accept | edit], rejected [KAPI: reject], superseded   (Test Uzmanı)
     ready      -> approved [KAPI: approve] (Analist son onayı), draft (send_back | reopen),
                   superseded
     approved   -> published [KAPI: approve; onaylı hash hâlâ güncel], draft (reopen), superseded
@@ -66,7 +66,7 @@ test_case (başlangıç ``draft``; specs/012-rol-yetki/ANALIZ.md §5)::
 
 design_model (tablo `tasarim_modeli`, 011 F3; başlangıç ``draft``)::
 
-    draft      -> approved [KAPI: approve | edit], rejected [KAPI: reject], superseded   (Testçi)
+    draft      -> approved [KAPI: approve | edit], rejected [KAPI: reject], superseded   (Test Uzmanı)
     approved   -> superseded
     rejected   -> superseded
     superseded: son durum
@@ -168,7 +168,7 @@ def _t(**kw: tuple[str, ...]) -> dict[str, frozenset[str]]:
 
 # --------------------------------------------------------------------- karar kümeleri
 
-# Case kararları (ANALIZ §5). Testçi: `accept` (olduğu gibi kabul) ve `edit` (düzelterek kabul)
+# Case kararları (ANALIZ §5). Test Uzmanı: `accept` (olduğu gibi kabul) ve `edit` (düzelterek kabul)
 # case'i `ready` yapar, `reject` reddeder, `reopen` ("Taslağa al") hazır/onaylı/reddedilmiş case'i
 # taslağa döndürür. Analist (son onay): `approve` ready → approved, `send_back` ready → draft
 # (gerekçe zorunlu). `reopen`/`send_back` onaylayan değildir; son karar oldukları için eski bir
@@ -176,14 +176,14 @@ def _t(**kw: tuple[str, ...]) -> dict[str, frozenset[str]]:
 TEST_CASE_TESTCI_KARARLARI = frozenset({"accept", "edit", "reject", "reopen"})
 TEST_CASE_SON_ONAY_KARARLARI = frozenset({"approve", "send_back"})
 TEST_CASE_KARARLARI = TEST_CASE_TESTCI_KARARLARI | TEST_CASE_SON_ONAY_KARARLARI
-# Case'i `ready` yapan (Testçi kabulü) kararlar.
+# Case'i `ready` yapan (Test Uzmanı kabulü) kararlar.
 TEST_CASE_KABUL = frozenset({"accept", "edit"})
 # Kararın gerektirdiği izin (auth/yetki.py kataloğu; rol kümesi oradan türetilir).
 TEST_CASE_KARAR_IZNI: dict[str, str] = {
     **dict.fromkeys(TEST_CASE_TESTCI_KARARLARI, "case.decide"),
     **dict.fromkeys(TEST_CASE_SON_ONAY_KARARLARI, "case.approve"),
 }
-# 011 F3 test tasarım modeli kararı (dev birleştirmesi: `design_model.decide`, Testçi).
+# 011 F3 test tasarım modeli kararı (dev birleştirmesi: `design_model.decide`, Test Uzmanı).
 DESIGN_MODEL_KARARLARI = frozenset({"approve", "edit", "reject"})
 REQUIREMENT_KARARLARI = frozenset({"po_approve"})  # onaylayan (kapılar)
 # T04: serbest metin gereksiniminde PO reddi (gerekçeli; pending_po → new). Onaylayan değildir.
@@ -223,7 +223,7 @@ KARARLAR: dict[str, frozenset[str]] = {
 # Karar verebilecek roller (API izin kontrolüne ek, derinlemesine savunma). Bu modül saf veri
 # olduğu için kümeler burada yazılıdır; auth/yetki.py kataloğuyla eşitliği test edilir
 # (test_canonical_and_states). test_case'te karar başına izin `TEST_CASE_KARAR_IZNI`'dedir:
-# `record_approval` kararın kendi iznini ister (Testçi `approve` veremez, Analist `accept`
+# `record_approval` kararın kendi iznini ister (Test Uzmanı `approve` veremez, Analist `accept`
 # veremez); buradaki küme o iki iznin birleşimidir (kuyruk/asistan gibi tür düzeyi okuyucular).
 APPROVER_ROLES: dict[str, frozenset[str]] = {
     "test_case": frozenset({"tester", "analyst"}),

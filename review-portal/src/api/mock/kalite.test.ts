@@ -261,7 +261,7 @@ describe("ilişkiler ve ek case türetme (§4.5)", () => {
     const y = await api.kararTablolari(REQ);
     const onayli = y.iliskiler.find((r) => r.durum === "approved")!;
     const taslak = await elleIliski();
-    // 012 rol modeli: ilişkiden ek case türetmek case üretimidir (Testçi); Analist türetemez.
+    // 012 rol modeli: ilişkiden ek case türetmek case üretimidir (Test Uzmanı); Analist türetemez.
     expect((await hata(api.ekCaseTuret(REQ, { iliski_id: onayli.id }))).status).toBe(403);
     await oturumAc("testci");
     expect(await hata(api.ekCaseTuret(REQ, { iliski_id: taslak.id }))).toMatchObject({ status: 422, kod: "iliski_gecersiz" });
@@ -384,7 +384,7 @@ describe("beklenen sonuç kontrolü ve onay kapısı (§4.3)", () => {
 
   it("tablo onaylanınca case'ler yeniden kontrol edilir; iş sürerken yüksek riskli onay 409 oracle_bekleniyor", async () => {
     await t2Onayla({ bekle: false });
-    await oturumAc("testci"); // 012 rol modeli: kabul kapısı Testçide
+    await oturumAc("testci"); // 012 rol modeli: kabul kapısı Test Uzmanında
     const c7 = mockVerisi().caseler.find((c) => c.id === "case-1-7")!;
     expect((await caseBul("case-1-7")).oracle).toMatchObject({ sonuc: null, kontrol_suruyor: true });
     expect(await hata(api.caseKarari("case-1-7", { icerik_hash: c7.icerik_hash, karar: "accept" }))).toMatchObject({ status: 409, kod: "oracle_bekleniyor" });
@@ -404,7 +404,7 @@ describe("beklenen sonuç kontrolü ve onay kapısı (§4.3)", () => {
 
   it("yüksek risk + uyuşmazlık: 422 oracle_uyumsuz; kısa gerekçe reddedilir; geçerli istisnayla onay ve denetim kaydı", async () => {
     await minSiparisOnayla();
-    await oturumAc("testci"); // 012 rol modeli: kabul kapısı Testçide
+    await oturumAc("testci"); // 012 rol modeli: kabul kapısı Test Uzmanında
     const c = await caseBul("case-1-7");
     const g = { icerik_hash: c.icerik_hash, karar: "accept" as const };
     expect(await hata(api.caseKarari(c.id, g))).toMatchObject({ status: 422, kod: "oracle_uyumsuz" });
@@ -461,7 +461,7 @@ describe("beklenen sonuç kontrolü ve onay kapısı (§4.3)", () => {
 
   it("orta/düşük risk + uyuşmazlık: onaylanır, uyarı kaydı düşer; kontrol edilemeyen yüksek riskli case gerekçe ister (K10)", async () => {
     await minSiparisOnayla();
-    await oturumAc("testci"); // 012 rol modeli: kabul kapısı Testçide
+    await oturumAc("testci"); // 012 rol modeli: kabul kapısı Test Uzmanında
     const c7 = mockVerisi().caseler.find((c) => c.id === "case-1-7")!;
     c7.icerik = { ...c7.icerik, risk: "medium", priority: "P2" };
     c7.icerik_hash = (await api.caseOracleKontrol(c7.id, c7.icerik)).icerik_hash!;
@@ -487,7 +487,7 @@ describe("beklenen sonuç kontrolü ve onay kapısı (§4.3)", () => {
 
   it("uyumlu, kapsam dışı ve tablosuz yüksek riskli case'ler engelsiz onaylanır; ret kapıya takılmaz", async () => {
     await minSiparisOnayla();
-    await oturumAc("testci"); // 012 rol modeli: kabul kapısı Testçide
+    await oturumAc("testci"); // 012 rol modeli: kabul kapısı Test Uzmanında
     const c7 = await caseBul("case-1-7");
     expect((await api.caseKarari(c7.id, { icerik_hash: c7.icerik_hash, karar: "reject", ret_nedeni: "duplicate" })).durum).toBe("rejected");
     const c5 = await caseBul("case-1-5");
@@ -500,7 +500,7 @@ describe("beklenen sonuç kontrolü ve onay kapısı (§4.3)", () => {
 
   it("düzeltme: önerilen içerik kontrol edilmeden yüksek riskli onay 409; kontrol sonrası tabloya getirilen değer onaylanır", async () => {
     await minSiparisOnayla();
-    await oturumAc("testci"); // 012 rol modeli: kabul kapısı Testçide
+    await oturumAc("testci"); // 012 rol modeli: kabul kapısı Test Uzmanında
     const c = await caseBul("case-1-7");
     // Demo adımı 3'ün düzeltmesi: AI'ın sınır hatası ana yol C6 metnine çevrilir ("uyarı görünmez").
     const duzeltilmis: TestCaseIcerik = JSON.parse(JSON.stringify(TPD1_GOLDEN_CASELER[5])) as TestCaseIcerik;

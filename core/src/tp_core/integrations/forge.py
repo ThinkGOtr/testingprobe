@@ -7,6 +7,7 @@ Her iki adaptör de `tp_core.ports.ForgePort`'u uygular; iş akışları yalnız
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
@@ -16,6 +17,8 @@ from pydantic import BaseModel, Field
 from tp_core.features.codegen import platform as platformlar
 from tp_core.integrations.proje_ortami import ProjeOrtami
 from tp_core.ports import CheckRun
+
+_log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from tp_core.ports import ForgePort
@@ -406,9 +409,11 @@ ZORUNLU_YAPILABILIR_PLATFORMLAR: tuple[str, ...] = ("android", "windows")
 
 def etkin_platformlar(env: Mapping[str, str] | None = None) -> tuple[str, ...]:
     """`TP_PLATFORMS="android,windows"` → ("android", "windows"); boş → (). `web` yok sayılır
-    (her zaman etkin); bilinmeyen ad yanlış yapılandırmadır (`ForgeValidationError`)."""
+    (her zaman etkin); bilinmeyen ad yanlış yapılandırmadır (`ForgeValidationError`). Zorunlu check
+    yapılamayan geçerli platform (ios) atlanır ve uyarı günlüğe yazılır."""
     cfg = ProjeOrtami() if env is None else env
     out: list[str] = []
+    atlanan: list[str] = []
     for parca in (cfg.get(PLATFORMS_ENV) or "").split(","):
         ad = parca.strip().lower()
         if not ad or ad == "web":
@@ -420,12 +425,22 @@ def etkin_platformlar(env: Mapping[str, str] | None = None) -> tuple[str, ...]:
         if ad not in ZORUNLU_YAPILABILIR_PLATFORMLAR:
             # mobil-ios.yml workflow düzeyinde `paths` süzgeçlidir ve push tetiği yoktur: ilgisiz
             # PR'da check hiç oluşmaz → zorunlu yapılırsa her PR süresiz bekler (.github/CI.md).
-            raise ForgeValidationError(
-                f"{PLATFORMS_ENV}={ad}: bu platformun iş akışı zorunlu check olamaz (no-op deseni "
-                "yok); önce iş akışını `changes` + no-op desenine çevirin"
-            )
+            # Home config'i `TP_PLATFORMS`'u proje özelliklerinden türetir (ios dahil); geçerli bir
+            # platform adı yapılandırma hatası değildir → zorunlu check'e eklenmez, açıkça uyarılır
+            # (canlı E2E T-4: hata `make up`'ı ve forge kurulumunu düşürüyordu).
+            if ad not in atlanan:
+                atlanan.append(ad)
+            continue
         if ad not in out:
             out.append(ad)
+    if atlanan:
+        _log.warning(
+            "UYARI: %s=%s: %s iş akışı zorunlu check olamaz (no-op deseni yok); bu platform"
+            " zorunlu check'lere eklenmedi (önce iş akışını `changes` + no-op desenine çevirin)",
+            PLATFORMS_ENV,
+            cfg.get(PLATFORMS_ENV),
+            ", ".join(atlanan),
+        )
     return tuple(out)
 
 

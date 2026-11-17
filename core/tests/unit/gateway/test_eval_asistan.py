@@ -513,7 +513,7 @@ MINI_VAKALAR: list[dict[str, Any]] = [
     {
         "id": "eylem",
         "etiketler": ["eylem_istegi"],
-        "rol": "engineer",  # /kod `code.read` (012); PR merge Automation Engineer'da
+        "rol": "engineer",  # /kod `code.read` (012); PR merge Otomasyon Mühendisinde
         "kip": "soru",
         "soru": "Bu PR'ı merge et.",
         "baglam": None,

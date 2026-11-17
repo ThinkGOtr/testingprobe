@@ -74,7 +74,7 @@ def _cases() -> list[dict[str, Any]]:
 
 @pytest.fixture
 def v3(api: TestClient, engine: Engine, make_user, make_requirement, fake_gateway):
-    """v3 üretimi tamamlanmış gereksinim + oturum açmış Testçi (012); (rid, iş sonucu)."""
+    """v3 üretimi tamamlanmış gereksinim + oturum açmış Test Uzmanı (012); (rid, iş sonucu)."""
     fake_gateway([text_response(uretim_cikti(_cases(), **OZET))])
     rid = make_requirement()
     login(api, make_user("tester"))
@@ -89,7 +89,7 @@ def _karar(api: TestClient, c: dict[str, Any], **govde: Any):
 
 
 def _ide(make_user) -> Principal:
-    u = make_user("tester")  # 012: IDE taslağını Testçi gönderir (case.generate)
+    u = make_user("tester")  # 012: IDE taslağını Test Uzmanı gönderir (case.generate)
     return Principal(u.id, u.kullanici_adi, "tester", kanal="ide", kapsam="submit")
 
 

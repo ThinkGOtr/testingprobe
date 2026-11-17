@@ -24,9 +24,21 @@ def test_etkin_platformlar() -> None:
     )
     with pytest.raises(ForgeValidationError):
         etkin_platformlar({"TP_PLATFORMS": "android,symbian"})
-    # mobil-ios.yml paths süzgeçli / push'suz: zorunlu yapılırsa ilgisiz PR süresiz bekler.
-    with pytest.raises(ForgeValidationError, match="no-op"):
-        etkin_platformlar({"TP_PLATFORMS": "ios"})
+
+
+def test_ios_zorunlu_checke_eklenmez_uyari_verir(caplog: pytest.LogCaptureFixture) -> None:
+    """mobil-ios.yml paths süzgeçli / push'suz: zorunlu yapılırsa ilgisiz PR süresiz bekler. Home
+    config'i TP_PLATFORMS'u proje özelliklerinden türettiği için (ios dahil) hata değil, atlanır
+    ve uyarı yazılır (canlı E2E T-4: `make up` ve forge kurulumu düşüyordu)."""
+    with caplog.at_level("WARNING", logger="tp_core.integrations.forge"):
+        assert etkin_platformlar({"TP_PLATFORMS": "ios"}) == ()
+        assert etkin_platformlar({"TP_PLATFORMS": "android,ios,windows"}) == ("android", "windows")
+    uyarilar = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert len(uyarilar) == 2 and all("ios" in m and "no-op" in m for m in uyarilar)
+    assert github_required_checks(["test-local"], etkin_platformlar({"TP_PLATFORMS": "ios,android"})) == (
+        "test-local",
+        "mobil-android",
+    )
 
 
 def test_platform_check_ve_is_akisi_adlari_ci_md_ile_ayni() -> None:

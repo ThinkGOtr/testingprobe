@@ -93,7 +93,7 @@ SONUC_SINIRI = 200
 TUR_SAKLAMA = timedelta(hours=1)
 SON_TETIKLENEN_SAYISI = 10
 
-ETKIN_CASE = ("draft", "ready", "approved", "published")  # 012: ready (Testçi kabul etti)
+ETKIN_CASE = ("draft", "ready", "approved", "published")  # 012: ready (Test Uzmanı kabul etti)
 AKIS_SURUYOR = ("in_review", "findings_open", "doc_final", "pending_po")
 TETIK_SONUCLARI = frozenset({"tetiklendi", "yeniden_tetiklendi", "case_uretimi"})
 # İçerik çekiminin model işi başlatan sonucu (tutarlılık denetimi yeniden koşar): bütçeden düşer.
@@ -609,7 +609,7 @@ def otomatik_case_baslat(yuk: dict[str, Any], *, son_deneme: bool = True) -> dic
                             {**temel, "sonuc": "kapali"})  # fmt: skip
             return {"durum": "kapali"}
         if req.durum != "po_approved" or req.qa_tetik_zamani is None:
-            # Testçi elle başlatmış ya da onay geri çekilmiş: dokunma.
+            # Test Uzmanı elle başlatmış ya da onay geri çekilmiş: dokunma.
             return {"durum": "atlandi", "neden": f"gereksinim durumu {req.durum}"}
         try:
             with savepoint(s):

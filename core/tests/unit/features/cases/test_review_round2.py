@@ -167,7 +167,7 @@ def test_duzeltilen_case_ai_ozgunu_fark_ve_neden_doner(
     assert "Küçük düzeltme sayılmadı" in tek["duzeltme_nedeni"]
     assert "beklenen sonuç" in tek["duzeltme_nedeni"]
 
-    # Testçi "beklenen sonuç anlamca değişmedi" derse küçük düzeltme sayılır ve nedeni yazılır.
+    # Test Uzmanı "beklenen sonuç anlamca değişmedi" derse küçük düzeltme sayılır ve nedeni yazılır.
     yeni_b = {**b["icerik"], "title": b["icerik"]["title"] + "!"}
     assert _karar(api, b, karar="edit", icerik=yeni_b, beklenen_anlam_degisti=False).status_code
     tek_b = api.get(f"/cases/{b['id']}").json()

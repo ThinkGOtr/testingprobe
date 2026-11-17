@@ -126,7 +126,7 @@ def test_varlik_ve_ekran_bulunamazsa_bos_liste(
         assert govde["rota_kalibi"] is None and govde["diger_ekranlar"] == []
     assert client.get(UC).status_code == 422  # rota zorunlu
     _giris(client, make_user("developer"))
-    r = client.get(UC, params={"rota": "/kod"})  # Developer açamaz
+    r = client.get(UC, params={"rota": "/kod"})  # Geliştirici açamaz
     assert r.status_code == 200 and r.json()["oneriler"] == [], r.text
 
 

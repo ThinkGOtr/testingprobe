@@ -2,7 +2,7 @@
 
 İçerik `rules/schemas/bug_draft.schema.json` şemasındadır (§8.12): `summary, steps, expected,
 actual, environment, evidence[{kind, ref}], story_key, test_case_key, severity_suggestion,
-labels ⊇ ["AI-generated"]`. Testçinin düzenlemesi de aynı şemayla doğrulanır (Constitution III).
+labels ⊇ ["AI-generated"]`. Test Uzmanının düzenlemesi de aynı şemayla doğrulanır (Constitution III).
 
 Model çıktısı üzerinde deterministik düzeltmeler (XI, VIII'e kayıtlı — `bug_draft_ek.duzeltmeler`):
 - `actual` başarısızlığın **literal** gerçekleşen değerini içermek zorunda; içermiyorsa şablonun
@@ -299,7 +299,7 @@ def _anahtar_mi(deger: object) -> bool:
 
 
 def check_human_edit(yeni: Mapping[str, Any], mevcut: Mapping[str, Any], ctx: BugContext) -> None:
-    """Testçinin düzenlemesine bağlam korumaları (`apply_guards`'ın insan karşılığı).
+    """Test Uzmanının düzenlemesine bağlam korumaları (`apply_guards`'ın insan karşılığı).
 
     İzlenebilirlik alanları (story / Test issue) ve kanıtın kökeni düzenlenemez: düzenleme bunları
     değiştirirse `ContentError` (API 422). Kanıt yalnızca koşunun/bulgunun kendi kayıtlarından
@@ -514,7 +514,7 @@ def link_comment(
     content: list[dict[str, Any]] = [
         adf.paragraph(
             f"Testing Probe: Bu hata yeniden gözlendi ({draft_label}). "
-            f"Testçi ({onaylayan or '?'}) taslağı bu kayda bağladı; yeni kayıt açılmadı."
+            f"Test Uzmanı ({onaylayan or '?'}) taslağı bu kayda bağladı; yeni kayıt açılmadı."
         ),
         adf.paragraph(f"Üretim: {mod_etiketi} (AI-generated taslak, insan onaylı)."),
         adf.paragraph(f"Özet: {icerik.get('summary')}"),

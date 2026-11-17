@@ -226,12 +226,12 @@ describe("DerinlestirmePaneli", () => {
     expect(negatif).toHaveAccessibleDescription(/yalnız "Case review aşamasında" olan gereksinimde/);
   });
 
-  it("Testçi olmayan rolde (012: Analist de) pasif ve gereken rol yazılı", async () => {
+  it("Test Uzmanı olmayan rolde (012: Analist de) pasif ve gereken rol yazılı", async () => {
     await oturumAc("analist");
     sar(<DerinlestirmePaneli gereksinim={{ id: V3_GEREKSINIM_ID, durum: "cases_ready" }} tazele={vi.fn()} />);
     const negatif = await screen.findByRole("button", { name: "Negatif kapsamı genişlet" });
     expect(negatif).toBeDisabled();
-    expect(negatif).toHaveAccessibleDescription(/gereken rol: Testçi/);
+    expect(negatif).toHaveAccessibleDescription(/gereken rol: Test Uzmanı/);
   });
 
   it("başlat → çalışıyor → 'N yeni taslak eklendi'; bitince tazele bir kez", async () => {

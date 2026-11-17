@@ -3,7 +3,7 @@
 | Yöntem | Yol | Rol |
 |---|---|---|
 | GET  | `/publish/preview?requirement_id=` | `publish.preview` — hedef başına gövde (dry-run) |
-| POST | `/publish` `{case_ids[]}` | `case.publish` (Testçi) — yayın işini başlatır, sonucu bekler |
+| POST | `/publish` `{case_ids[]}` | `case.publish` (Test Uzmanı) — yayın işini başlatır, sonucu bekler |
 | MCP  | `/mcp` | `Authorization: Bearer tpt_…` — `tp_core.mcp_server` (çerez kullanılmaz) |
 
 `POST /publish` işi kuyruğa koyar (Jira/Xray yazma kimliği yalnızca core-worker'da) ve en fazla

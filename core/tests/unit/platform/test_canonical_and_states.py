@@ -95,7 +95,7 @@ def test_makine_tutarli(ad: str) -> None:
 
 def test_kapilar_ve_onaylar() -> None:
     # Constitution I: case, bug ve merge geçişleri insan kapısından geçer.
-    # 012: Testçi kabulü (draft → ready) ve Analist son onayı (ready → approved) ayrı kapılar.
+    # 012: Test Uzmanı kabulü (draft → ready) ve Analist son onayı (ready → approved) ayrı kapılar.
     assert ("draft", "ready") in MACHINES["test_case"].gates
     assert ("ready", "approved") in MACHINES["test_case"].gates
     assert ("approved", "published") in MACHINES["test_case"].gates

@@ -153,7 +153,7 @@ kayitlar:
     metinler: []
     baslik: Bu kararı sizin rolünüz veremez
     anlam: Bu kayıt türünde onayı yalnızca belirli bir rol verebilir.
-    neden: Onay yetkisi rol bazlıdır (case kararı Testçi, son onay Analist, PO onayı PO, PR merge Automation Engineer, bug taslağı Testçi).
+    neden: Onay yetkisi rol bazlıdır (case kararı Test Uzmanı, son onay Analist, PO onayı PO, PR merge Otomasyon Mühendisi, bug taslağı Test Uzmanı).
     cozum: Kararı ilgili role bırakın; isterseniz kayda yorum ya da not ekleyerek iletin.
     rota: null
   - id: yetki-yok
@@ -161,7 +161,7 @@ kayitlar:
     metinler: []
     baslik: Bu işlem için yetkiniz yok
     anlam: Oturumdaki rolünüz bu ekranı ya da işlemi kullanma iznine sahip değil; istek reddedildi ve denetim kaydına yazıldı.
-    neden: Her işlem rol bazlı bir izin ister (ör. case kararı Testçi, son onay Analist, koşu tetikleme Automation Engineer). Görevler ayrılığı role göredir.
+    neden: Her işlem rol bazlı bir izin ister (ör. case kararı Test Uzmanı, son onay Analist, koşu tetikleme Otomasyon Mühendisi). Görevler ayrılığı role göredir.
     cozum: İşlemi yetkili role bırakın; birden fazla rolünüz varsa Rol değiştir ile uygun role geçin.
     rota: null
   - id: po-onayi-jira

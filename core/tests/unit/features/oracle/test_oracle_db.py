@@ -92,7 +92,7 @@ def test_tpd1_replay_akisi_golden_sonuclari(
     analist, po = make_user("analyst"), make_user("po")
     for n in sorted(tpd1.TABLOLAR):
         tablo_ekle(rid, tpd1.TABLOLAR[n], analist, po)
-    login(api, make_user("tester"))  # 012 rol: üretim ve kabul Testçide
+    login(api, make_user("tester"))  # 012 rol: üretim ve kabul Test Uzmanında
     assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
     run_jobs(engine, limit=100)
     cases = latest_cases(api, rid)
@@ -601,7 +601,7 @@ def test_uclar_ve_roller(api: TestClient, engine: Engine, kur, make_user) -> Non
     r = api.post(f"/cases/{c['id']}/oracle-check")
     assert r.status_code == 202 and r.json()["icerik_hash"] == c["icerik_hash"]
     assert api.get(f"/cases/{uuid.uuid4()}/oracle").status_code == 404
-    # 012 rol modeli: yeniden kontrol `case.oracle_check` (Testçi, Analist); sonuç okuma
+    # 012 rol modeli: yeniden kontrol `case.oracle_check` (Test Uzmanı, Analist); sonuç okuma
     # `case.oracle_read` (developer / auditor / viewer hariç; karar geçmişi sayılır).
     for rol in ("po", "engineer", "admin"):
         api.cookies.clear()

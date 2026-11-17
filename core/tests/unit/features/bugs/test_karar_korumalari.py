@@ -97,7 +97,7 @@ def test_gecersiz_hedefle_takilan_yayin_taslaga_doner(
             .order_by(AuditEvent.id.desc())
         ).first()
         assert olay is not None and olay.ozet["taslaga_dondu"] is True
-    # Testçi yeniden karar verir: önceki kapılar 409 vermez, yeni kayıt açılır.
+    # Test Uzmanı yeniden karar verir: önceki kapılar 409 vermez, yeni kayıt açılır.
     with session_scope() as s:
         service.decide(s, did, testci, "new", b.icerik_hash)
     assert [r.durum for r in run_jobs(engine)] == ["done"]

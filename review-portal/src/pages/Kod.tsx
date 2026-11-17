@@ -80,7 +80,7 @@ export function Kod() {
   const platform: Platform = acikPlatformlar.includes(seciliPlatform) ? seciliPlatform : (acikPlatformlar[0] ?? seciliPlatform);
   // 011: üretim dili ayrı boyuttur. Seçenekler ve repodan algılanan dil core'dan (`GET /code/languages`);
   // uç yoksa (011 öncesi core) `null` döner: seçici çizilmez, üretim bugünkü gibi sürer.
-  // `GET /code/languages` `code.generate` ister: yalnız üretebilen rol (Automation Engineer) okur;
+  // `GET /code/languages` `code.generate` ister: yalnız üretebilen rol (Otomasyon Mühendisi) okur;
   // diğer rollerde istek atılmaz (konsolda 403 ve denetimde sahte `authz.denied` olmasın).
   const uretebilir = useIzin("code.generate");
   const diller = useVeri(() => (uretebilir && !platformYok ? api.kodDilleri(platform) : Promise.resolve(null)), [platform, uretebilir && !platformYok]);

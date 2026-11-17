@@ -22,7 +22,7 @@ from tp_core.features.testveri.service import gizli_degerler, gizli_eslemi
 from tp_core.models import AppUser, BugDraft, Review
 from tp_core.models.bugs_feature import BugDraftEk
 
-# Developer yalnız Jira'ya açılmış ya da mevcut kayda bağlanmış bug'ları görür (specs/012-rol-yetki
+# Geliştirici yalnız Jira'ya açılmış ya da mevcut kayda bağlanmış bug'ları görür (specs/012-rol-yetki
 # §4.2 `bug.read`). `new` ve `link` kararlarının ikisi de yayınla `published` olur.
 DEVELOPER_BUG_DURUMLARI = frozenset({"published"})
 
@@ -73,11 +73,11 @@ def sonuc_metni(b: BugDraft, ek: BugDraftEk | None) -> str:
     if b.durum == "published":
         return f"Jira'da açıldı: {b.jira_key}"
     if b.durum == "dismissed":
-        return "Testçi taslağı reddetti (Jira kaydı açılmadı)"
+        return "Test Uzmanı taslağı reddetti (Jira kaydı açılmadı)"
     if b.durum == "approved" and yayin.get("durum") == "basarisiz":
-        return "Testçi onayladı; Jira yayını başarısız (yeniden dene ya da taslağa al)"
+        return "Test Uzmanı onayladı; Jira yayını başarısız (yeniden dene ya da taslağa al)"
     if b.durum == "approved":
-        return "Testçi onayladı; Jira'ya yazılıyor"
+        return "Test Uzmanı onayladı; Jira'ya yazılıyor"
     return "Bug taslağı testçi kararı bekliyor"
 
 

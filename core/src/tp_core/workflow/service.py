@@ -190,7 +190,7 @@ def eski_analist_onayi(session: Session, review: Review) -> bool:
     0033 göçü, göç anında var olan analist `edit` kayıtlarını `review.eski_onay` ile işaretler;
     yayın / kod üretimi kapısında `approve` sayılır (hash eşleşmesi yine şarttır). Karar verenin
     güncel rolüne bakılmaz: hesabın rolü sonradan değişse de sonuç değişmez. Yeni kayıtlar
-    (Testçi `edit`'i) işaretsizdir. `session` imza uyumu için kalır.
+    (Test Uzmanı `edit`'i) işaretsizdir. `session` imza uyumu için kalır.
     """
     del session
     return review.nesne_turu == "test_case" and review.karar == "edit" and review.eski_onay
@@ -236,7 +236,7 @@ def check_jira_approver(harici_onaylayan: str | None) -> str:
 def karar_rolleri(kind: str, karar: str) -> frozenset[str]:
     """Portal kanalında `kind` için `karar`'ı verebilecek roller (derinlemesine savunma).
 
-    test_case'te karar başına izin kataloğa (auth/yetki.py) bağlıdır: Testçi kararları
+    test_case'te karar başına izin kataloğa (auth/yetki.py) bağlıdır: Test Uzmanı kararları
     `case.decide`, son onay (`approve`/`send_back`) `case.approve`. Diğer türler
     `APPROVER_ROLES`'taki tür düzeyi kümeyi kullanır (requirement: PO; PO teyidi Jira'dadır).
     """
@@ -287,7 +287,7 @@ KARAR_ETIKETLERI: dict[str, str] = {
 
 
 def karar_red_mesaji(rol: str, kind: str, karar: str) -> str:
-    """Ör. "Testçi rolü case için 'Onayla' kararı veremez"."""
+    """Ör. "Test Uzmanı rolü case için 'Onayla' kararı veremez"."""
     from tp_core.auth.yetki import ROL_ETIKETLERI, normalize_rol
 
     rol_etiketi = ROL_ETIKETLERI.get(normalize_rol(rol), rol)

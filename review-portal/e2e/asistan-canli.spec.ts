@@ -8,7 +8,7 @@
 //
 // Kapsam (§2 örnek soruları): S2 (sözlük), S3 ve S6 (şablon), kapalı kip mesajı, gereksinim detayında
 // kural önerisi (S12) — model kapalıyken kartın "Neden? Sor" düğmesi "Açıklamayı göster" olur (§17.6),
-// model çağrısı yapılmaz. Roller: Analist ve Testçi. Prova dürüstlük kilidiyle aynı kural: canlı
+// model çağrısı yapılmaz. Roller: Analist ve Test Uzmanı. Prova dürüstlük kilidiyle aynı kural: canlı
 // yığında "CANLI"/"live" metni ve "ÖRNEK VERİ" hiçbir yerde görünmez.
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";

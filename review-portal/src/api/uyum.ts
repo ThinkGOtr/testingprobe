@@ -377,7 +377,7 @@ export function bulguUyarla(b: Ham): Bulgu {
     kontrol_turu: sayi(b.kontrol_turu, 1),
     durum: metin(b.durum, "unverified") as BulguDurumu,
     bug_draft_id: metinYaDaNull(b.bug_draft_id),
-    // Core taslağın durumunu verir: Developer yalnız yayınlanmış taslağın bağlantısını görür.
+    // Core taslağın durumunu verir: Geliştirici yalnız yayınlanmış taslağın bağlantısını görür.
     ...(b.bug_draft_durum !== undefined ? { bug_draft_durum: metinYaDaNull(b.bug_draft_durum) } : {}),
     icerik_hash: metin(b.icerik_hash),
     mode: modUyarla(ilk(b, "mode", "uretim_modu")),
@@ -521,7 +521,7 @@ function poYanitOnerisiUyarla(x: unknown): TestCase["po_yanit_onerisi"] {
 const nesneler = <T>(x: unknown, donustur: (h: Ham) => T): T[] => (Array.isArray(x) ? x.filter(nesneMi).map(donustur) : []);
 
 const CASE_KARARLARI = new Set(["accept", "edit", "reject", "reopen", "approve", "send_back"]);
-// `approve`: 012 öncesi kayıtta Testçi kabulü olmadan verilen onay (core testci_kararlari, eski).
+// `approve`: 012 öncesi kayıtta Test Uzmanı kabulü olmadan verilen onay (core testci_kararlari, eski).
 const TESTCI_KARARLARI = new Set(["accept", "edit", "reject", "approve"]);
 
 /** core `son_onay` → `{karar, veren, zaman, gerekce}`; geçersizse null. */

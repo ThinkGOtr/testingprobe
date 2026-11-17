@@ -101,7 +101,7 @@ def test_projeler_bicimi_portal_sozlesmesi(cok: SahteHome, client: TestClient) -
     ]
     assert v["role_labels"] == {
         "analyst": {"tr": "Analist", "en": "Analyst"},
-        "tester": {"tr": "Testçi", "en": "Tester"},
+        "tester": {"tr": "Test Uzmanı", "en": "Tester"},
     }
 
 

@@ -85,7 +85,7 @@ def proje_eslesir(olay: Mapping[str, Any], pid: str | None) -> bool:
     return olay_pid is not None and str(olay_pid) in (pid, KURULUM)
 
 
-# Developer akışında süzülen olaylar: ad → (None = hiç gönderilmez | izinli hedef durumlar).
+# Geliştirici akışında süzülen olaylar: ad → (None = hiç gönderilmez | izinli hedef durumlar).
 _GELISTIRICI_DURUM_OLAYLARI: dict[str, frozenset[str]] = {
     "test_case.state": frozenset({"approved", "published"}),
     "bug_draft.state": frozenset({"published"}),

@@ -61,7 +61,7 @@ function izle(ozel?: (c: Cagri) => unknown) {
 
 /** Birinci gereksinime n taslak case; hepsi sunucuda analist tarafından ≥ 3 sn önce görülmüş. */
 
-/** 012: case'i Testçi kararı bekleyen taslağa çevirir (düzeltme Testçinin işidir). */
+/** 012: case'i Test Uzmanı kararı bekleyen taslağa çevirir (düzeltme Test Uzmanının işidir). */
 function taslagaCevir(id: string) {
   Object.assign(mockVerisi().caseler.find((x) => x.id === id)!, { durum: "draft", karar: null, testci_karari: null, testci: null, karar_veren: null });
 }
@@ -75,7 +75,7 @@ function taslaklariKur(n = 2): { rid: string; caseler: TestCase[] } {
     id: `tc-f3-${k}`,
     requirement_id: rid,
     sira_no: k,
-    // 012: Testçi kabul etti (onaya hazır); Analist toplu/tekli son onayı verir.
+    // 012: Test Uzmanı kabul etti (onaya hazır); Analist toplu/tekli son onayı verir.
     durum: "ready",
     karar: "accept",
     testci_karari: "accept",
@@ -197,7 +197,7 @@ describe("QA #5: 200'ü aşan toplu onayda iş başına özet", () => {
 describe("K22: gizli değer atfı ve maske", () => {
   it("başlıktaki atıf çip olarak görünür; düzelt formu atfı korur", async () => {
     const { rid, caseler } = taslaklariKur(1);
-    // 012: düzeltme Testçinin taslaktaki kararıdır.
+    // 012: düzeltme Test Uzmanının taslaktaki kararıdır.
     for (const c of caseler) taslagaCevir(c.id);
     const c = mockVerisi().caseler.find((x) => x.id === caseler[0].id)!;
     c.icerik.title = "{veri:ortak.demo_parola} ile giriş";
@@ -221,7 +221,7 @@ describe("K22: gizli değer atfı ve maske", () => {
 
   it("formda ••• görünürse uyarır ve kaydetmeden durur", async () => {
     const { rid, caseler } = taslaklariKur(1);
-    // 012: düzeltme Testçinin taslaktaki kararıdır.
+    // 012: düzeltme Test Uzmanının taslaktaki kararıdır.
     for (const c of caseler) taslagaCevir(c.id);
     const c = mockVerisi().caseler.find((x) => x.id === caseler[0].id)!;
     c.icerik.steps[0] = { ...c.icerik.steps[0], data: "•••" };
@@ -240,7 +240,7 @@ describe("K22: gizli değer atfı ve maske", () => {
 
   it("sunucunun maske 422'si anlaşılır ipucuyla gösterilir", async () => {
     const { rid, caseler } = taslaklariKur(1);
-    // 012: düzeltme Testçinin taslaktaki kararıdır.
+    // 012: düzeltme Test Uzmanının taslaktaki kararıdır.
     for (const c of caseler) taslagaCevir(c.id);
     await oturumAc("testci");
     izle((x) => {
@@ -302,7 +302,7 @@ describe("Review tur 4: başlık atfı, etiket maskesi, düzeltme 429", () => {
 
   it("düzeltme 429'u anlaşılır ipucuyla gösterilir", async () => {
     const { rid, caseler } = taslaklariKur(1);
-    // 012: düzeltme Testçinin taslaktaki kararıdır.
+    // 012: düzeltme Test Uzmanının taslaktaki kararıdır.
     for (const c of caseler) taslagaCevir(c.id);
     await oturumAc("testci");
     izle((x) => {

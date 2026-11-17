@@ -66,7 +66,7 @@ const durumOlsun = async (id: string, durum: TestCase["durum"]) => {
 async function minSiparisOnayla(bekle = true) {
   await t2Onayla({ bekle: false });
   if (bekle) await isBitsin();
-  // 012 rol modeli: kapı Testçinin kabulünde ("Kabul et" / "Düzelterek kabul"). C9 (AC6) örnek veride
+  // 012 rol modeli: kapı Test Uzmanının kabulünde ("Kabul et" / "Düzelterek kabul"). C9 (AC6) örnek veride
   // yayınlı; kapı senaryoları için taslağa çekilir.
   mockVerisi().caseler.find((x) => x.id === "case-1-9")!.durum = "draft";
   await oturumAc("testci");

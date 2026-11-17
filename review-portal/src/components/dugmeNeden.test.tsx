@@ -164,7 +164,7 @@ describe("grupta ortak neden (tekrar yok)", () => {
     expect(b).toHaveAccessibleDescription("Bu işlem için gereken rol: Analist");
     expect(b.parentElement).not.toHaveClass("neden-var");
     // Farklı metinli neden kendi altında kalır.
-    expect(c).toHaveAccessibleDescription("Bu işlem için gereken rol: Analist / PO");
+    expect(c).toHaveAccessibleDescription("Bu işlem için gereken rol: Analist / Ürün Sahibi (PO)");
   });
 
   it("farklı gruplarda neden ayrı ayrı yazılır", async () => {
@@ -262,9 +262,9 @@ describe("ekranlarda görünür neden", () => {
     uygulama("/kod/scr-3");
     const d = await screen.findByRole("button", { name: "Kırarak doğrula" });
     expect(d).toBeDisabled();
-    const neden = await screen.findByText("Bu işlem için gereken rol: Automation Engineer");
+    const neden = await screen.findByText("Bu işlem için gereken rol: Otomasyon Mühendisi");
     expect(d.getAttribute("aria-describedby")).toBe(`kirma-kapali-neden ${neden.id}`);
-    expect(d).toHaveAccessibleDescription(/^Kırarak doğrulama kapalı.*Bu işlem için gereken rol: Automation Engineer$/);
+    expect(d).toHaveAccessibleDescription(/^Kırarak doğrulama kapalı.*Bu işlem için gereken rol: Otomasyon Mühendisi$/);
   });
 
   it("Script detay (analist): PR ret grubundaki iki düğmede rol nedeni bir kez yazılır", async () => {
@@ -272,8 +272,8 @@ describe("ekranlarda görünür neden", () => {
     const { container } = uygulama("/kod/scr-2");
     const reddet = await screen.findByRole("button", { name: "Reddet" });
     const degisiklik = screen.getByRole("button", { name: "Değişiklik iste" });
-    await waitFor(() => expect(reddet).toHaveAccessibleDescription("Bu işlem için gereken rol: Automation Engineer"));
-    expect(degisiklik).toHaveAccessibleDescription("Bu işlem için gereken rol: Automation Engineer");
+    await waitFor(() => expect(reddet).toHaveAccessibleDescription("Bu işlem için gereken rol: Otomasyon Mühendisi"));
+    expect(degisiklik).toHaveAccessibleDescription("Bu işlem için gereken rol: Otomasyon Mühendisi");
     const grup = reddet.closest(".eylemler")!;
     expect(grup.querySelectorAll(".dugme-neden")).toHaveLength(1);
     // Her eylem grubunda en fazla bir eş neden.
@@ -288,7 +288,7 @@ describe("ekranlarda görünür neden", () => {
     uygulama("/gereksinimler/req-tpd-1/yayin");
     const d = await screen.findByRole("button", { name: /Seçilenleri yayınla/ });
     expect(d).toBeDisabled();
-    expect(d).toHaveAccessibleDescription("Bu işlem için gereken rol: Testçi");
+    expect(d).toHaveAccessibleDescription("Bu işlem için gereken rol: Test Uzmanı");
   });
 
   it("Case review (karar verilmiş case): 'Taslağa al' satırı metin + düğme karışık grup; neden düğmenin sarıcısında", async () => {
@@ -302,7 +302,7 @@ describe("ekranlarda görünür neden", () => {
       expect(g.querySelector(":scope > p")).not.toBeNull();
       const sarici = g.querySelector(":scope > .dugme-neden-sarici.neden-var")!;
       expect(sarici.querySelector(":scope > button")).toHaveTextContent("Taslağa al");
-      expect(sarici.querySelector(":scope > .dugme-neden")).toHaveTextContent("Bu işlem için gereken rol: Testçi");
+      expect(sarici.querySelector(":scope > .dugme-neden")).toHaveTextContent("Bu işlem için gereken rol: Test Uzmanı");
     }
   });
 });

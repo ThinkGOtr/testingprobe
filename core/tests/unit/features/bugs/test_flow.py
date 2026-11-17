@@ -210,12 +210,12 @@ def test_hazirlik_sirasinda_duzenlenen_icerik_ezilmez(
     did, _ = _yeni_taslak()
     testci = make_user("tester")
     b, _ = _draft(did)
-    yeni = {**b.icerik, "summary": "Testçinin özeti"}
+    yeni = {**b.icerik, "summary": "Test Uzmanının özeti"}
     with session_scope() as s:
         service.decide(s, did, testci, "edit", b.icerik_hash, icerik=yeni)
     _hazirla(engine)
     b, ek = _draft(did)
-    assert b.icerik["summary"] == "Testçinin özeti" and ek.duzenleyen == testci.kullanici_adi
+    assert b.icerik["summary"] == "Test Uzmanının özeti" and ek.duzenleyen == testci.kullanici_adi
     assert ek.hazirlik_durum == "hazir" and b.mukerrer_adaylari[0]["key"] == "TPD-5"
 
 
@@ -455,7 +455,7 @@ def test_karar_kurallari(
     r = api.post(yol, json={"karar": "edit", "icerik_hash": h, "icerik": kotu})
     assert r.status_code == 422 and "şemaya uymuyor" in r.json()["detail"]
     assert api.post(yol, json={"karar": "dismiss", "icerik_hash": h}).status_code == 422
-    # Testçi olmayan karar veremez.
+    # Test Uzmanı olmayan karar veremez.
     api.post("/auth/logout")
     login(api, make_user("analyst"))
     assert api.post(yol, json={"karar": "new", "icerik_hash": h}).status_code == 403

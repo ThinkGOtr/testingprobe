@@ -12,7 +12,7 @@ yargısıdır (§12 etiketleme protokolü); portal bu yargıyı göndermezse det
 normalize `expected_result` metni aynı kaldıysa "değişmedi" sayılır. Hangi kaynağın kullanıldığı
 `beklenen_sonuc_kaynagi` alanında (`insan` | `metin_karsilastirma`) kayıtlıdır.
 
-**Kabul oranı:** Testçinin ilk içerik kararına göre (yeniden açıp tekrar kabul etmek oranı
+**Kabul oranı:** Test Uzmanının ilk içerik kararına göre (yeniden açıp tekrar kabul etmek oranı
 şişirmez): `accept` (012 öncesi kayıtlarda analistin doğrudan `approve`'u) veya küçük düzeltmeli
 `edit` sayılır; payda üretilen (AI) case sayısıdır. Analistin son onayı (`approve` / `send_back`)
 bu orana girmez; ayrı "son onay" ölçümüdür (specs/012-rol-yetki/ANALIZ.md §5).
@@ -161,7 +161,7 @@ def edit_metrics(
 
 
 def first_decision_accepted(karar: str, olculer: Mapping[str, Any] | None) -> bool:
-    """İlk Testçi kararı "kabul" mü (accept / eski approve ya da küçük düzeltmeli edit)?"""
+    """İlk Test Uzmanı kararı "kabul" mü (accept / eski approve ya da küçük düzeltmeli edit)?"""
     if karar in ("accept", "approve"):
         return True
     if karar == "edit":

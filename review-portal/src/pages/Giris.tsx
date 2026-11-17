@@ -119,13 +119,13 @@ export function Giris() {
               <code>po</code> — PO: baz değer; serbest metinde PO teyidi (Jira story'sinde onay Jira etiketiyle)
             </li>
             <li>
-              <code>testci</code> — Testçi: case üretimi, kararı ve yayını; bug kararı
+              <code>testci</code> — Test Uzmanı: case üretimi, kararı ve yayını; bug kararı
             </li>
             <li>
-              <code>muhendis</code> — Automation Engineer: kod üretimi, kırarak doğrulama, merge, koşu tetikleri
+              <code>muhendis</code> — Otomasyon Mühendisi: kod üretimi, kırarak doğrulama, merge, koşu tetikleri
             </li>
             <li>
-              <code>gelistirici</code> — Developer: onaylı case'ler ve koşular; manuel koşu
+              <code>gelistirici</code> — Geliştirici: onaylı case'ler ve koşular; manuel koşu
             </li>
             <li>
               <code>denetci</code> — Denetçi: denetim kaydı (salt okunur)

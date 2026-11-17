@@ -47,11 +47,11 @@ PUBLISH = "publish_test_cases"
 READ = "get_requirement"
 TOOL_NAMES = (READ, SUBMIT, PUBLISH)
 KAPSAM = {READ: "submit", SUBMIT: "submit", PUBLISH: "publish"}
-# Token kapsamının gerektirdiği izin (auth/yetki.py; ANALIZ §4.1, K7: yayın token'ı Testçinin).
+# Token kapsamının gerektirdiği izin (auth/yetki.py; ANALIZ §4.1, K7: yayın token'ı Test Uzmanının).
 KAPSAM_IZNI = {"submit": "case.generate", "publish": "case.publish"}
 # Aracın rol izni. Okuma aracı (PO onaylı story metni) `requirement.read` ister: 2026-11-14
-# kararıyla Developer da IDE token'ı üretir ve story'yi okuyabilir; taslak gönderme ve yayın
-# yine Testçinindir.
+# kararıyla Geliştirici da IDE token'ı üretir ve story'yi okuyabilir; taslak gönderme ve yayın
+# yine Test Uzmanınındır.
 ARAC_IZNI = {
     READ: "requirement.read",
     SUBMIT: KAPSAM_IZNI["submit"],
@@ -67,7 +67,7 @@ INSTRUCTIONS = (
     "TPD-1) için §7 şemasında (v3: teknik, kapsam öğeleri, öncelik, hazır olma durumu) test case "
     "taslaklarını ve üretim özetini (ozet: açık sorular, varsayımlar, kapsam öğeleri, negatif "
     "kapsam kararları) onaylanan_hash ile portala gönderir; kaynakta yanıtı olmayan beklenen "
-    "sonucu uydurmayın: açık soru yazıp case'i 'blocked' bırakın. Taslaklar portalda Testçi "
+    "sonucu uydurmayın: açık soru yazıp case'i 'blocked' bırakın. Taslaklar portalda Test Uzmanı "
     "kararı ve Analist son onayı olmadan hiçbir yere yazılmaz; hazır olmayan case kabul "
     "edilemez. publish_test_cases: portalda onaylanmış case "
     "kimliklerini Jira'ya yayınlar; onaysız veya onaydan sonra değişmiş case yayınlanmaz. Bu "
@@ -265,7 +265,7 @@ def _check_scope(caller: Principal, name: str) -> None:
             izin_adi=KAPSAM_IZNI[gerekli],
             neden="kapsam",
         )
-    # 012: taslak `case.generate`, yayın `case.publish` (Testçi); okuma `requirement.read`.
+    # 012: taslak `case.generate`, yayın `case.publish` (Test Uzmanı); okuma `requirement.read`.
     arac_izni = ARAC_IZNI[name]
     if not izinli(caller.rol, arac_izni):
         from tp_core.auth.yetki import ROL_ETIKETLERI, normalize_rol

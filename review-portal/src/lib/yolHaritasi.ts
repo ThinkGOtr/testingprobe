@@ -202,11 +202,11 @@ export function demoAdimlari(x: YolGirdisi): YolAdimi[] {
                   : "Henüz case yok.",
           ipucu:
             g?.durum === "model_ready"
-              ? "Testçi: tasarım modelini inceleyip \"Modeli onayla\"; case'ler (tur 2) otomatik üretilir."
+              ? "Test Uzmanı: tasarım modelini inceleyip \"Modeli onayla\"; case'ler (tur 2) otomatik üretilir."
               : g?.durum === "modeling" || g?.durum === "generating"
                 ? null
                 : poGuncel
-                  ? `Testçi: "${kipDugmeMetni(VARSAYILAN_URETIM_KIPI)}" → modeli onayla (tur 2 otomatik).`
+                  ? `Test Uzmanı: "${kipDugmeMetni(VARSAYILAN_URETIM_KIPI)}" → modeli onayla (tur 2 otomatik).`
                   : null,
           baglanti: g ? { yol: gYolu, etiket: "Story" } : null,
         })
@@ -214,11 +214,11 @@ export function demoAdimlari(x: YolGirdisi): YolAdimi[] {
           hal: taslak === 0 && hazir === 0 && yayinli > 0 ? "tamam" : "suruyor",
           kanit: `${cs.length} case · ${onayli} onaylı · ${yayinli} Jira'da${taslak ? ` · ${taslak} karar bekliyor` : ""}${hazir ? ` · ${hazir} onaya hazır` : ""}`,
           ipucu: taslak
-            ? "Testçi case'lere karar verir (kabul / düzelterek kabul / ret)."
+            ? "Test Uzmanı case'lere karar verir (kabul / düzelterek kabul / ret)."
             : hazir
               ? "Analist onaya hazır case'leri onaylar ya da gerekçeyle geri gönderir."
               : yayinli < onayli
-                ? "Testçi: onaylı case'leri yayınla (önizleme → yayın)."
+                ? "Test Uzmanı: onaylı case'leri yayınla (önizleme → yayın)."
                 : null,
           baglanti: g
             ? { yol: taslak || hazir || yayinli >= onayli ? `${gYolu}/caseler` : `${gYolu}/yayin`, etiket: taslak || hazir || yayinli >= onayli ? "Case review" : "Yayın" }
@@ -259,7 +259,7 @@ export function sonrakiAdimlar(x: SonrakiGirdi): YolAdimi[] {
       ? adim(5, {
           hal: "bekliyor",
           kanit: "Kod üretilmedi.",
-          ipucu: "Automation Engineer: Kod üretimi → C1, C2, C3, C5 seç → üret.",
+          ipucu: "Otomasyon Mühendisi: Kod üretimi → C1, C2, C3, C5 seç → üret.",
           baglanti: { yol: "/kod", etiket: "Kod üretimi" },
         })
       : adim(5, {
@@ -306,7 +306,7 @@ export function sonrakiAdimlar(x: SonrakiGirdi): YolAdimi[] {
         baglanti: { yol: `/kod/${kodla(sonMerge.id)}`, etiket: "Merge edilen PR" },
         simulator: forgeSim,
       })
-    : adim(7, { hal: "bekliyor", kanit: "Merge edilmiş PR yok.", ipucu: "Automation Engineer: zorunlu local-ci yeşilken \"Merge et\"." });
+    : adim(7, { hal: "bekliyor", kanit: "Merge edilmiş PR yok.", ipucu: "Otomasyon Mühendisi: zorunlu local-ci yeşilken \"Merge et\"." });
 
   // 8 — CI tetikleri. Yalnızca BU story'nin koşuları sayılır: story PR'ının CI'ı ya da story'nin ilk
   // merge'ünden sonra başlayan koşular. `make reset` + `make demo-reset`in main için kuyruğa aldığı temel
@@ -328,7 +328,7 @@ export function sonrakiAdimlar(x: SonrakiGirdi): YolAdimi[] {
       : adim(8, {
           hal: anaTetik ? "tamam" : "suruyor",
           kanit: `Tetikler: ${tetikler.map((t) => TETIK_ADI[t] ?? t).join(", ")} · ${ci.length} koşu`,
-          ipucu: anaTetik ? null : "Automation Engineer: Koşular → \"Deploy sonrası testleri koş\" ya da \"Gece koşusunu şimdi başlat\" (merge sonrası push CI otomatik).",
+          ipucu: anaTetik ? null : "Otomasyon Mühendisi: Koşular → \"Deploy sonrası testleri koş\" ya da \"Gece koşusunu şimdi başlat\" (merge sonrası push CI otomatik).",
           baglanti: { yol: "/kosular", etiket: "Koşular" },
           simulator: ciSim,
         });
@@ -522,7 +522,7 @@ export function locatorAdimlari(x: Pick<YolGirdisi, "demo" | "hatalar" | "kosula
     yap("L2", "Buton kimliğini değiştir (add-to-cart → cart-add)", "insan", {
       hal: kirildi ? "tamam" : "bekliyor",
       kanit: kirildi ? `Uygulama testId: ${typeof d?.forge?.testid === "string" ? d.forge.testid : "cart-add"}` : "Main baseline'da.",
-      ipucu: kirildi ? null : "Sistem Yöneticisi / Automation Engineer: Demo kontrolleri → \"Buton kimliğini değiştir\" (host'ta make demo-web-sync A=--watch açık) ya da make break.",
+      ipucu: kirildi ? null : "Sistem Yöneticisi / Otomasyon Mühendisi: Demo kontrolleri → \"Buton kimliğini değiştir\" (host'ta make demo-web-sync A=--watch açık) ya da make break.",
       baglanti: { yol: "/demo", etiket: "Demo kontrolleri" },
     }),
     yap("L3", "Push CI kırmızı → triage: test bakımı / locator", "ai", {
@@ -532,7 +532,7 @@ export function locatorAdimlari(x: Pick<YolGirdisi, "demo" | "hatalar" | "kosula
     }),
     yap("L4", "Onarım PR'ı (yalnızca testId)", "ai", {
       hal: onarimli.length > 0 ? "tamam" : loc.length > 0 ? "suruyor" : "bekliyor",
-      kanit: onarimli.length > 0 ? "Bot PR açıldı (AST koruması + tam paket yerel kontrol)." : loc.length > 0 ? "Automation Engineer: \"Onarım PR'ı aç\"." : "—",
+      kanit: onarimli.length > 0 ? "Bot PR açıldı (AST koruması + tam paket yerel kontrol)." : loc.length > 0 ? "Otomasyon Mühendisi: \"Onarım PR'ı aç\"." : "—",
       baglanti: (onarimli[0] ?? ilkLoc) ? { yol: `/hatalar/${kodla((onarimli[0] ?? ilkLoc)!.id)}`, etiket: "Onarım" } : null,
     }),
     yap("L5", "Merge → CI yeniden yeşil", "insan", {
@@ -637,14 +637,28 @@ export function degerlendirmeOzeti(x: YolGirdisi): DegerlendirmeOzeti {
   return { metin: "Bilinmiyor — çekirdek değerlendirme durumunu bildirmiyor", bekleyen: 0, toplam: null, paketler: [], kaynak: "yok" };
 }
 
-/** Tamamlanan / toplam (yedek de tamam sayılır, ama ayrıca belirtilir). */
-export function ilerleme(adimlar: YolAdimi[]): { tamam: number; yedek: number; toplam: number; sonraki: YolAdimi | null } {
-  const tamam = adimlar.filter((a) => a.hal === "tamam" || a.hal === "yedek").length;
+/**
+ * Tamamlanan / toplam (yedek de tamam sayılır, ama ayrıca belirtilir). `ileridekiTamam`: sıradaki
+ * adımdan SONRA gelen tamam adım sayısı — gereksinim akışı yeniden başladıysa (ör. story değişti ya
+ * da PO etiketi kalktı → `new`) bu kanıtlar önceki turdandır (canlı E2E T-9: liste "Adım 1/14",
+ * yol haritası "8/14 tamam").
+ */
+export function ilerleme(adimlar: YolAdimi[]): {
+  tamam: number;
+  yedek: number;
+  toplam: number;
+  sonraki: YolAdimi | null;
+  ileridekiTamam: number;
+} {
+  const bitti = (a: YolAdimi) => a.hal === "tamam" || a.hal === "yedek";
+  const tamam = adimlar.filter(bitti).length;
+  const sonraki = adimlar.find((a) => !bitti(a)) ?? null;
   return {
     tamam,
     yedek: adimlar.filter((a) => a.hal === "yedek").length,
     toplam: adimlar.length,
-    sonraki: adimlar.find((a) => a.hal !== "tamam" && a.hal !== "yedek") ?? null,
+    sonraki,
+    ileridekiTamam: sonraki ? adimlar.filter((a) => Number(a.no) > Number(sonraki.no) && bitti(a)).length : 0,
   };
 }
 

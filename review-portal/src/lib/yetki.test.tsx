@@ -65,15 +65,15 @@ describe("katalog: portal kopyası core ile aynı", () => {
     expect(rolIzinleri("auditor")).not.toContain("events.read");
   });
 
-  it("011 izinleri (dev birleştirmesi): model kararı ve ajan testi Testçi, PO'ya soru Analist, analiz okuma developer hariç", () => {
+  it("011 izinleri (dev birleştirmesi): model kararı ve ajan testi Test Uzmanı, PO'ya soru Analist, analiz okuma developer hariç", () => {
     const sahip = (i: Izin) => [...IZINLER[i]].sort();
     expect(sahip("design_model.decide")).toEqual(["tester"]);
     expect(sahip("agent_test.run")).toEqual(["tester"]);
     expect(sahip("case.ask_po")).toEqual(["analyst"]);
     expect(sahip("case.analysis_read")).toEqual(["admin", "analyst", "engineer", "po", "tester"]);
     for (const r of ["developer", "viewer", "auditor"] as const) expect(rolIzinleri(r)).not.toContain("case.analysis_read");
-    // Açık soru yanıtlarını okuma: `case.ask_po` ya da `case.decide` (Analist veya Testçi).
-    expect(izinNedeni("case.ask_po", "case.decide")).toBe("Bu işlem için gereken rol: Analist / Testçi");
+    // Açık soru yanıtlarını okuma: `case.ask_po` ya da `case.decide` (Analist veya Test Uzmanı).
+    expect(izinNedeni("case.ask_po", "case.decide")).toBe("Bu işlem için gereken rol: Analist / Test Uzmanı");
     expect(ROTA_IZINLERI["/ajan-urunleri"]).toEqual(["requirement.read"]);
   });
 
@@ -81,7 +81,7 @@ describe("katalog: portal kopyası core ile aynı", () => {
     expect([...oturumIzinleri({ rol: "engineer", izinler: ["run.read"] })]).toEqual(["run.read"]);
     expect(oturumIzinleri({ rol: "tester" }).has("case.decide")).toBe(true);
     expect(oturumIzinleri(null).size).toBe(0);
-    expect(izinNedeni("case.decide", "case.approve")).toBe("Bu işlem için gereken rol: Testçi / Analist");
+    expect(izinNedeni("case.decide", "case.approve")).toBe("Bu işlem için gereken rol: Test Uzmanı / Analist");
   });
 });
 
@@ -107,7 +107,7 @@ describe("useIzin / IzinGerekli", () => {
       </IzinGerekli>,
     );
     expect(await screen.findByText("Bu ekran için yetkiniz yok.")).toBeInTheDocument();
-    expect(screen.getByText("Gereken rol: Testçi / Developer")).toBeInTheDocument();
+    expect(screen.getByText("Gereken rol: Test Uzmanı / Geliştirici")).toBeInTheDocument();
     expect(screen.queryByText("gizli")).toBeNull();
   });
 
@@ -174,7 +174,7 @@ describe("menü: yalnız izinli ekranlar (ANALIZ §4.2)", () => {
     expect(document.querySelector(".kullanici-rol")).toHaveTextContent(ROL_ETIKETLERI[rol]);
   });
 
-  it("beklenen menüler: Görüntüleyici yalnız Kontrol Kulesi + Koşular; Developer Claude Code ve Kod görmez", async () => {
+  it("beklenen menüler: Görüntüleyici yalnız Kontrol Kulesi + Koşular; Geliştirici Claude Code ve Kod görmez", async () => {
     await oturumAc("izleyici");
     uygulama("/kontrol-kulesi");
     const menu = await screen.findByRole("navigation", { name: "Ana menü" });

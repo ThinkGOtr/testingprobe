@@ -315,7 +315,7 @@ describe("core uç keşfi (openapi.json) — örnek veri uçlarına ağ isteği 
   it("case listesi örnek veriden geliyorsa yeniden açma da örnek veriye gider", async () => {
     yapilandir({ mockZorunlu: false, mockOtomatik: true, yetenekKesfi: true });
     vi.stubGlobal("fetch", sahteCore(OPENAPI));
-    // login çekirdekten (analist döner); örnek veri uçları Testçi oturumuyla çalışır (case.decide).
+    // login çekirdekten (analist döner); örnek veri uçları Test Uzmanı oturumuyla çalışır (case.decide).
     await api.login("testci", "Demo123!");
     mockOturumuAyarla({ id: "u-testci", kullanici_adi: "testci", rol: "tester" });
     const caseler = await api.caseler("req-tpd-1");

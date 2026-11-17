@@ -24,7 +24,7 @@ from .conftest import DEMO_PAROLA
 
 @pytest.fixture
 def atifli(engine: Engine, make_requirement: Any, make_user: Any, katalog: int) -> dict:
-    """PO onaylı TPD-1 + katalogla eşlenmiş (store_cases gibi) golden case'ler; Testçi kabul etti,
+    """PO onaylı TPD-1 + katalogla eşlenmiş (store_cases gibi) golden case'ler; Test Uzmanı kabul etti,
     Analist son onayı verdi."""
     rid = make_requirement(
         "TPD-1",
@@ -54,7 +54,7 @@ def atifli(engine: Engine, make_requirement: Any, make_user: Any, katalog: int) 
             )
             s.add(tc)
             s.flush()
-            onayla_db(s, tc, testci, analist)  # 012: Testçi kabulü + Analist son onayı
+            onayla_db(s, tc, testci, analist)  # 012: Test Uzmanı kabulü + Analist son onayı
             ids[n] = tc.id
     return {"requirement_id": rid, "cases": ids, "analist": analist}
 

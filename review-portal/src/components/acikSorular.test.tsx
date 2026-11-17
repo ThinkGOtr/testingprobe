@@ -125,7 +125,7 @@ describe("CaseKarti: PO yanıtı", () => {
     expect(blok.getByText("PO yanıtı bekleniyor")).toBeInTheDocument();
     expect(screen.queryByTestId("po-yanit-onerisi")).not.toBeInTheDocument();
 
-    // Yanıtı Testçi de okuyabilir (`case.ask_po` | `case.decide`); düzeltme kararı Testçinin.
+    // Yanıtı Test Uzmanı de okuyabilir (`case.ask_po` | `case.decide`); düzeltme kararı Test Uzmanının.
     ilk.unmount();
     await oturumAc("testci");
     await api.acikSoruYanitlariniOku(V3_GEREKSINIM_ID);

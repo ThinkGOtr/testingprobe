@@ -140,11 +140,11 @@ export function KosuTablosu({ kosular, kompakt }: { kosular: Kosu[]; kompakt?: b
 const GECE_ACIKLAMASI =
   "Her gece 02:00'de (UTC) zamanlanmış koşuyu şimdi başlatır: aynı onaylı test paketi; kod değişmese de veri/ortam kaymasını ve kararsız (flaky) testleri yakalar.";
 export const MANUEL_ACIKLAMASI =
-  "Main'deki onaylı testleri şimdi koşturur (manuel tetik). Developer rolü yalnız prod dışı ortamda başlatabilir.";
+  "Main'deki onaylı testleri şimdi koşturur (manuel tetik). Geliştirici rolü yalnız prod dışı ortamda başlatabilir.";
 /** Maskeli koşu (core `maskeli: true`): ham artefaktlar rolde gizli; "yok" denmez. */
 export const ARTEFAKT_MASKELI = "Ham artefaktlar bu rolde görünmez";
-/** Developer + `TP_ORTAM=prod`: manuel koşu düğmesi pasif (core 403). */
-export const MANUEL_PROD_ENGELI = "Developer prod ortamında manuel koşu başlatamaz (üretim ortamı).";
+/** Geliştirici + `TP_ORTAM=prod`: manuel koşu düğmesi pasif (core 403). */
+export const MANUEL_PROD_ENGELI = "Geliştirici prod ortamında manuel koşu başlatamaz (üretim ortamı).";
 const DEPLOY_ACIKLAMASI =
   "Müşterinin deploy hattının yükleme bitince göndereceği sinyali taklit eder ve testleri koşturur; uygulamayı hiçbir yere yüklemez.";
 
@@ -187,11 +187,11 @@ export function Kosular() {
   const geceIslem = useIslem();
   const deployIslem = useIslem();
   const manuelIslem = useIslem();
-  // core: deploy/nightly `run.trigger_scheduled` (Automation Engineer); manual `run.trigger_manual`
-  // (Automation Engineer, Developer; developer prod'da 403 → core'un mesajı gösterilir).
+  // core: deploy/nightly `run.trigger_scheduled` (Otomasyon Mühendisi); manual `run.trigger_manual`
+  // (Otomasyon Mühendisi, Geliştirici; developer prod'da 403 → core'un mesajı gösterilir).
   const zamanliTetik = useIzin("run.trigger_scheduled");
   const manuelTetik = useIzin("run.trigger_manual");
-  // Developer prod ortamında manuel koşu başlatamaz (core 403): `/demo/status` → `ortam`.
+  // Geliştirici prod ortamında manuel koşu başlatamaz (core 403): `/demo/status` → `ortam`.
   const { kullanici } = useOturum();
   const gelistirici = normalizeRol(kullanici?.rol) === "developer";
   const [ortam, setOrtam] = useState<string | null>(null);

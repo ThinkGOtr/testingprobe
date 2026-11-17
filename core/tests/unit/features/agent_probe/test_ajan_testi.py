@@ -4,7 +4,7 @@ Gerçek Postgres + gerçek API; Agent Probe süreç içi simülatör (`PgDeposu`
 satırı), denetlenebilir saat. Durum geçişleri: queued → running → passed (gereksinim `done` yalnız
 `TP_AGENT_PROBE_SIM_TAMAMLAR=on` iken; varsayılan `simule`) | failed (bulgu, gereksinim
 `po_approved` kalır); case üretimi ve tasarım modeli bağlı gereksinimde 409. Durum yalnız
-`POST …/agent-test/refresh` (Testçi) ile ilerler; GET yan etkisizdir."""
+`POST …/agent-test/refresh` (Test Uzmanı) ile ilerler; GET yan etkisizdir."""
 
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ def saat(db) -> Iterator[Saat]:
 
 @pytest.fixture
 def roller(make_user) -> dict:
-    """012: ürünü Analist bağlar (`requirement.review`), ajan testini Testçi yürütür
+    """012: ürünü Analist bağlar (`requirement.review`), ajan testini Test Uzmanı yürütür
     (`agent_test.run`)."""
     return {"analyst": make_user("analyst"), "tester": make_user("tester")}
 
@@ -53,7 +53,7 @@ def analist(api: TestClient, roller: dict) -> TestClient:
 
 
 def _bagla(api: TestClient, roller: dict, rid: uuid.UUID, urun_kodu: str | None):
-    """Analist ajan ürününü bağlar; ardından Testçi oturumu açık kalır."""
+    """Analist ajan ürününü bağlar; ardından Test Uzmanı oturumu açık kalır."""
     rol_ol(api, roller["analyst"])
     r = api.put(f"/requirements/{rid}/agent-product", json={"urun_kodu": urun_kodu})
     rol_ol(api, roller["tester"])
@@ -172,14 +172,14 @@ def test_yetki_ve_engeller(api: TestClient, saat: Saat, make_requirement, make_u
     assert r.status_code == 200
     v = api.get(f"/requirements/{rid}/agent-test").json()
     assert not v["baslatilabilir"] and "PO onaylı" in v["engel"]
-    # Ajan testini başlatma / yenileme Testçinin (012 `agent_test.run`).
+    # Ajan testini başlatma / yenileme Test Uzmanının (012 `agent_test.run`).
     assert api.post(f"/requirements/{rid}/agent-test").status_code == 403
     login(api, make_user("tester"))
     r = api.post(f"/requirements/{rid}/agent-test")
     assert r.status_code == 409 and r.json()["kod"] == "ajan_testi_baslatilamaz"
     assert api.get(f"/requirements/{uuid.uuid4()}/agent-test").status_code == 404
     assert api.post(f"/requirements/{uuid.uuid4()}/agent-test/refresh").status_code == 404
-    # Yenileme (yan etkili) yalnız Testçi; GET herkese açık ve yan etkisiz.
+    # Yenileme (yan etkili) yalnız Test Uzmanı; GET herkese açık ve yan etkisiz.
     login(api, make_user("analyst"))
     assert api.post(f"/requirements/{rid}/agent-test/refresh").status_code == 403
     assert api.get(f"/requirements/{rid}/agent-test").status_code == 200

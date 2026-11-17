@@ -4167,7 +4167,7 @@ def review_pr(
     sc.insan_review_sonucu = sonuc
     cg.engel_turu = "human_rejected"
     cg.engel_nedeni = (
-        f"Mühendis {'değişiklik istedi' if karar == 'degisiklik_iste' else 'reddetti'} "
+        f"Otomasyon Mühendisi {'değişiklik istedi' if karar == 'degisiklik_iste' else 'reddetti'} "
         f"({ret_nedeni})" + (f": {not_}" if not_ else "")
     )[:2000]
     transition(

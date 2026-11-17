@@ -1,7 +1,7 @@
 """Toplu karar (013 §3.2, K3/K13/K16; 012 iki adım): görülme şartı (≥ 3 sn), öğe başına SAVEPOINT,
 kilit sırası, `goruldu`/`onay_engeli` alanları, denetim izi ve review `kanal: "toplu"`.
 
-012: Testçinin toplu kabulü (`accept`, draft → ready) ve Analistin toplu son onayı (`approve`,
+012: Test Uzmanının toplu kabulü (`accept`, draft → ready) ve Analistin toplu son onayı (`approve`,
 ready → approved); izin karar başına (`case.decide` / `case.approve`)."""
 
 from __future__ import annotations
@@ -65,7 +65,7 @@ def test_gorulmeyen_atlanir_hash_uyusmazligi_tek_ogeyi_dusurur(api: TestClient, 
     assert sonuc[a["id"]]["durum"] == "onaylandi" and sonuc[a["id"]]["neden"] is None
     assert sonuc[a["id"]]["otomatik_kod"] is None  # K16: üst düzey alanda
     assert out["karar"] == "accept"
-    assert out["otomatik_kod"] is None  # 012: Testçi kabulü kod üretmez (yalnız son onay)
+    assert out["otomatik_kod"] is None  # 012: Test Uzmanı kabulü kod üretmez (yalnız son onay)
     assert sonuc[b["id"]]["durum"] == "hata" and sonuc[b["id"]]["otomatik_kod"] is None
     assert "değişmiş" in sonuc[b["id"]]["neden"] or "hash" in sonuc[b["id"]]["neden"]
     # 012 kalite §14.5: iş kuralı hatası öğede makinece okunur `kod` taşır.
@@ -249,7 +249,7 @@ def test_db_ve_beklenmeyen_hata_yalniz_ogeyi_dusurur(
 
 
 def test_onay_engeli_decide_ile_ayni(api: TestClient, hazir) -> None:
-    """`onay_engeli` kabulün (taslakta Testçi `accept`) gerçek reddini söyler: bilinmeyen AC,
+    """`onay_engeli` kabulün (taslakta Test Uzmanı `accept`) gerçek reddini söyler: bilinmeyen AC,
     gereksinim değişimi."""
     rid, _ = hazir
     a, b, _c = latest_cases(api, rid)
@@ -283,9 +283,9 @@ def test_onay_engeli_decide_ile_ayni(api: TestClient, hazir) -> None:
 def test_analist_toplu_son_onay_ready_gorevler_ayriligi_ve_kod(
     api: TestClient, hazir, db, make_user, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Testçi toplu kabul eder; Analist yalnız `ready` case'leri toplu onaylar (görülme şartı
+    """Test Uzmanı toplu kabul eder; Analist yalnız `ready` case'leri toplu onaylar (görülme şartı
     Analistin kendi görüntülemesi). Taslak öğe tekli kararın durum reddiyle düşer; otomatik kod
-    sonucu yalnız son onayda döner. Testçi toplu onay, Analist toplu kabul veremez (403)."""
+    sonucu yalnız son onayda döner. Test Uzmanı toplu onay, Analist toplu kabul veremez (403)."""
     rid, testci = hazir
     a, b, c = latest_cases(api, rid)
     goruntule(api, db, a["id"], b["id"])
@@ -300,11 +300,11 @@ def test_analist_toplu_son_onay_ready_gorevler_ayriligi_ve_kod(
     analist = make_user("analyst")
     login(api, analist)
     assert _toplu(api, [(c["id"], c["icerik_hash"])], karar="accept").status_code == 403
-    # Testçinin görüntülemesi Analist için sayılmaz; taslak case'te Analist penceresi açılmaz.
+    # Test Uzmanının görüntülemesi Analist için sayılmaz; taslak case'te Analist penceresi açılmaz.
     r = _toplu(api, [(a["id"], a["icerik_hash"])], karar="approve").json()
     assert r["sonuclar"][0]["neden"] == "Case en az 3 saniye ekranda kalmadı"
     assert api.post(f"/cases/{c['id']}/viewed").json()["yeni"] is False
-    # Testçi kabulü az önce yazıldı: görüntüleme geriye çekilemez (kararın önüne düşer); süre şartı
+    # Test Uzmanı kabulü az önce yazıldı: görüntüleme geriye çekilemez (kararın önüne düşer); süre şartı
     # burada sıfırlanır (ayrı testte sınanır).
     from tp_core.features.cases import service
 

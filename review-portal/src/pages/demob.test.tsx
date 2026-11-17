@@ -297,7 +297,7 @@ describe("Koşular", () => {
     expect(kirmasiz.length).toBeLessThan(hepsi.length);
   });
 
-  it("Automation Engineer 'Deploy sonrası testleri koş' ile koşu kuyruğa alır; Sistem Yöneticisi tetik görmez", async () => {
+  it("Otomasyon Mühendisi 'Deploy sonrası testleri koş' ile koşu kuyruğa alır; Sistem Yöneticisi tetik görmez", async () => {
     await oturumAc("muhendis");
     const u = userEvent.setup();
     const { unmount } = uygulama("/kosular");
@@ -310,7 +310,7 @@ describe("Koşular", () => {
     expect(screen.queryByRole("button", { name: "Deploy sonrası testleri koş" })).toBeNull();
   });
 
-  it("Developer manuel koşu başlatır; prod'da core 403 mesajı gösterilir", async () => {
+  it("Geliştirici manuel koşu başlatır; prod'da core 403 mesajı gösterilir", async () => {
     const { mockOrtam } = await import("../api/mock/handlers");
     await oturumAc("gelistirici");
     const u = userEvent.setup();
@@ -430,7 +430,7 @@ describe("Kontrol Kulesi: KPI şeridi (F4)", () => {
 });
 
 describe("rol bazlı açılış", () => {
-  it("varsayilanSayfa: sistem yöneticisi → Demo yol haritası, Automation Engineer → Kod üretimi; uç yoksa sıradaki ekran", () => {
+  it("varsayilanSayfa: sistem yöneticisi → Demo yol haritası, Otomasyon Mühendisi → Kod üretimi; uç yoksa sıradaki ekran", () => {
     expect(varsayilanSayfa("admin")).toBe("/yol-haritasi");
     expect(varsayilanSayfa("engineer")).toBe("/kod");
     expect(varsayilanSayfa("tester")).toBe("/gereksinimler");

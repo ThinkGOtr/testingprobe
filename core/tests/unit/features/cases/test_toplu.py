@@ -64,7 +64,7 @@ def _cases() -> list[dict[str, Any]]:
 
 @pytest.fixture
 def cs(api: TestClient, engine: Engine, make_user, make_requirement, fake_gateway):
-    """v3 üretimi tamamlanmış gereksinim + oturum açmış Testçi (012: üretim, kabul, "Varsayım
+    """v3 üretimi tamamlanmış gereksinim + oturum açmış Test Uzmanı (012: üretim, kabul, "Varsayım
     doğrulandı"); güncel case'ler."""
     fake_gateway([text_response(uretim_cikti(_cases(), **OZET))])
     rid = make_requirement()
@@ -105,7 +105,7 @@ def _denetim(cid: str, eylem: str) -> int:
 
 # --------------------------------------------------------------------------- toplu karar
 # 011 K20 "Seçilenleri onayla" dev birleştirmesinde 013/012'nin `POST /cases/bulk-decision`
-# ucuna katıldı (Testçi toplu kabul / Analist toplu son onay; sözleşme testleri
+# ucuna katıldı (Test Uzmanı toplu kabul / Analist toplu son onay; sözleşme testleri
 # `test_toplu_karar*.py`). Burada v3'e özgü kapı: hazır olmayan case toplu kabulde öğe hatasıdır.
 
 
@@ -123,7 +123,7 @@ def test_toplu_kabul_hazir_olmayan_v3_case_oge_hatasi(api: TestClient, cs, db, m
     assert "hazır değil" in sonuc[tek["id"]]["neden"]
     durum = {c["id"]: c["durum"] for c in latest_cases(api, rid)}
     assert (durum[hazir["id"]], durum[tek["id"]]) == ("ready", "draft")
-    # Analist (son onay) Testçinin toplu kabulünü veremez: 403.
+    # Analist (son onay) Test Uzmanının toplu kabulünü veremez: 403.
     login(api, make_user("analyst"))
     r = api.post("/cases/bulk-decision", json={"karar": "accept", "ogeler": [_kalem(tek)]})
     assert r.status_code == 403
@@ -140,7 +140,7 @@ def _dogrula(api: TestClient, c: dict[str, Any], **govde: Any):
 
 
 def test_varsayim_dogrulandi_case_i_kabul_eder(api: TestClient, cs) -> None:
-    """012: doğrulama Testçinin `edit`'idir; case `ready` olur, son onay Analistindir."""
+    """012: doğrulama Test Uzmanının `edit`'idir; case `ready` olur, son onay Analistindir."""
     _, cases = cs
     c = cases[2]
     r = _dogrula(api, c, varsayim_id="A1")

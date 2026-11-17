@@ -272,7 +272,7 @@ def hazir(api: TestClient, engine: Engine, make_user, make_requirement, fake_gat
         login(api, testci)
         _uret(api, rid, engine)
         c1 = latest_cases(api, rid)[0]
-        onayla(api, c1, testci, make_user("analyst"))  # 012; Testçi oturumu açık kalır
+        onayla(api, c1, testci, make_user("analyst"))  # 012; Test Uzmanı oturumu açık kalır
         return rid, provider
 
     return _kur

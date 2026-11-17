@@ -329,7 +329,7 @@ def test_dup_rank_replay_ranks_exactly_the_search_result(
             assert by_key[kirma_bug]["likelihood"] == "medium"
     elif expected == "kirma-kampanya/HATA":
         if kirma_bug in by_key:
-            # Testçinin önceki kırma koşusunda açtığı Bug aynı belirtidir: o önerilir.
+            # Test Uzmanının önceki kırma koşusunda açtığı Bug aynı belirtidir: o önerilir.
             assert out["candidates"][0]["key"] == kirma_bug
             assert (out["recommendation"], out["link_key"]) == ("link", kirma_bug)
             assert by_key["TPD-5"]["rank"] == 2

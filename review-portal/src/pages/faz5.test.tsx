@@ -608,6 +608,15 @@ describe("demo yol haritası: açılış (make reset + make demo-reset)", () => 
   } as unknown as Kosu;
   const kule = { son_kosular: [temel], gecme_orani: { oran: 1 }, flaky: [] } as unknown as YolGirdisi["kule"];
 
+  it("T-9: akış yeniden başladıysa sıradaki adımdan sonraki tamam adımlar ayrıca sayılır", () => {
+    const a = demoAdimlari({ ...BOS, kosular: [temel], kule }).map((x) =>
+      Number(x.no) === 1 || Number(x.no) === 4 || Number(x.no) === 5 ? { ...x, hal: "tamam" as const } : x,
+    );
+    expect(ilerleme(a)).toMatchObject({ tamam: 3, sonraki: { no: 2 }, ileridekiTamam: 2 });
+    const sirali = a.map((x) => (Number(x.no) <= 5 ? { ...x, hal: "tamam" as const } : x));
+    expect(ilerleme(sirali)).toMatchObject({ tamam: 5, sonraki: { no: 6 }, ileridekiTamam: 0 });
+  });
+
   it("story yokken temel CI koşusu adım 8–11'i doldurmaz: 0/14", () => {
     const a = demoAdimlari({ ...BOS, kosular: [temel], kule });
     expect(a.map((x) => x.hal).every((h) => h === "bekliyor")).toBe(true);

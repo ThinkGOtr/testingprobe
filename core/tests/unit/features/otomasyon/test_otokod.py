@@ -39,7 +39,7 @@ def testci(make_user):
 
 @pytest.fixture
 def hazir(api: TestClient, engine: Engine, make_user, make_requirement, fake_gateway, testci):
-    """012: Testçinin ürettiği ve kabul ettiği (`ready`) 2 case'li PO onaylı gereksinim + oturum
+    """012: Test Uzmanının ürettiği ve kabul ettiği (`ready`) 2 case'li PO onaylı gereksinim + oturum
     açmış Analist (son onay otomatik kodu tetikler); otomatik kod AÇIK."""
     fake_gateway(
         [
@@ -62,7 +62,7 @@ def hazir(api: TestClient, engine: Engine, make_user, make_requirement, fake_gat
 
 
 def _gor(api: TestClient, monkeypatch: pytest.MonkeyPatch, *case_ids: str) -> None:
-    """Analistin `ready` case görüntülemesi. Testçi kabulü az önce yazıldığından görüntüleme
+    """Analistin `ready` case görüntülemesi. Test Uzmanı kabulü az önce yazıldığından görüntüleme
     geriye çekilemez (son karardan önceye düşer): süre şartı bu testlerde sıfırlanır."""
     from tp_core.features.cases import service as cases_service
 
@@ -118,7 +118,7 @@ def test_ayar_acik_onay_otomatik_script_olusturur(api: TestClient, hazir) -> Non
 
 
 def test_testci_duzeltmesi_tetiklemez_son_onay_tetikler(api: TestClient, hazir, testci) -> None:
-    """012: kod üretimi yalnız Analist son onayından sonra (Testçi kabulü/düzeltmesi insan kapısı
+    """012: kod üretimi yalnız Analist son onayından sonra (Test Uzmanı kabulü/düzeltmesi insan kapısı
     değildir; AI/sistem Analist kapısını atlayamaz)."""
     rid, analist = hazir
     c = latest_cases(api, rid)[0]
@@ -212,7 +212,7 @@ def test_otomatik_uretim_acik_prye_dokunmaz_elle_uretim_kapatir(
     c = latest_cases(api, rid)[0]
     sid = _onayla(api, c).json()["otomatik_kod"]["script_id"]
     _pr_ac(sid)
-    # Aynı içerik bile olsa, farklı içerik (Testçi taslağa alıp düzeltir) de olsa: dokunulmaz.
+    # Aynı içerik bile olsa, farklı içerik (Test Uzmanı taslağa alıp düzeltir) de olsa: dokunulmaz.
     rol_ol(api, testci)
     assert karar_ver(api, c, karar="reopen").status_code == 200
     yeni = {**c["icerik"], "title": c["icerik"]["title"] + " yapılır"}

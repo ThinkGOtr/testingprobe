@@ -521,7 +521,7 @@ export function IstisnaFormu({
   calisiyor: boolean;
   dugmeMetni?: string;
   tur?: OracleIstisnaTuru;
-  /** Kararı veren rolün izni: Testçi kabulü/düzeltmesi `case.decide`, Analist son onayı `case.approve`. */
+  /** Kararı veren rolün izni: Test Uzmanı kabulü/düzeltmesi `case.decide`, Analist son onayı `case.approve`. */
   izin?: Izin;
 }) {
   const [gerekce, setGerekce] = useState("");
@@ -725,7 +725,7 @@ export function OracleKapisi({
   onayla: (gerekce: string, tur: OracleIstisnaTuru) => void;
   /** Verilirse uyuşmazlıkta "Tablo yanlış" yolu ve süren kontrolde "Kontrolü yeniden iste" sunulur. */
   tc?: TestCase;
-  /** 012 rol modeli: kapı Testçi kabulünde (`case.decide`) ve Analist son onayında (`case.approve`). */
+  /** 012 rol modeli: kapı Test Uzmanı kabulünde (`case.decide`) ve Analist son onayında (`case.approve`). */
   izin?: Izin;
 }) {
   const [acik, setAcik] = useState(false);

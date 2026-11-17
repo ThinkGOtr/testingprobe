@@ -66,7 +66,7 @@ describe("case üretimi hata ile bitti: yeniden denenir, denetim yeniden başlat
     const dugme = await screen.findByRole("button", { name: "Case üretimini yeniden dene" });
     expect(dugme).toBeEnabled();
     expect(dugme).toHaveAttribute("title", expect.stringMatching(/sunucuda yeniden doğrulanır/));
-    // "Yeniden kontrol et" Analist işidir: Testçide pasif ve gereken rolü söyler.
+    // "Yeniden kontrol et" Analist işidir: Test Uzmanında pasif ve gereken rolü söyler.
     expect(screen.getByRole("button", { name: "Yeniden kontrol et" })).toHaveAttribute("title", "Bu işlem için gereken rol: Analist");
     await u.click(dugme);
     // Üretim formunun kipi açıkça gönderilir (011 K1; varsayılan iki tur → önce tasarım modeli).

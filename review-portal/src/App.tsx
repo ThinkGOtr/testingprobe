@@ -119,7 +119,7 @@ export function Rotalar() {
         <Route path="kontrol-kulesi" element={<Korumali yol="/kontrol-kulesi"><KontrolKulesi /></Korumali>} />
         <Route path="yol-haritasi" element={<Korumali yol="/yol-haritasi"><YolHaritasi /></Korumali>} />
         <Route path="denetim" element={<Korumali yol="/denetim"><Denetim /></Korumali>} />
-        {/* Agent Probe (ürün AI ajanı) projede kapalıysa (`ozellikler.ai_agent`) ekran yerine "erişim yok". */}
+        {/* Agent Probe (ürün AI ajanı) projede kapalıysa (`ozellikler.ai_agent`) ekran yerine "özellik kapalı". */}
         <Route path="ajan-urunleri" element={<Korumali yol="/ajan-urunleri"><OzellikGerekli ozellik="ai_agent"><AjanUrunleri /></OzellikGerekli></Korumali>} />
         <Route path="test-verisi" element={<Korumali yol="/test-verisi"><TestVerisiSayfasi /></Korumali>} />
         <Route path="otomasyon" element={<Korumali yol="/otomasyon"><Otomasyon /></Korumali>} />

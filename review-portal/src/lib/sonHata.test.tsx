@@ -84,7 +84,7 @@ describe("istek → son hata deposu", () => {
   it("mock-zorunlu dalda da GET dışı hata yazılır", async () => {
     yapilandir({ mockZorunlu: true });
     await oturumAc("testci");
-    // Testçi PO onayı veremez: mock rol hatası atar.
+    // Test Uzmanı PO onayı veremez: mock rol hatası atar.
     const e = (await istek("POST", "/requirements/req-1/po-approve", { govde: {} }).catch((x: unknown) => x)) as ApiError;
     expect(e).toBeInstanceOf(ApiError);
     expect(sonHata()).toMatchObject({ kayitId: e.kayitId, uc: "POST /requirements/:id/po-approve", status: e.status });

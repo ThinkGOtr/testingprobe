@@ -5,10 +5,10 @@ her case'e ayrı `review` kaydı (görülen içerik hash'iyle), durum geçişi v
 düşer; onay kuralları (hazır olma, tutarlılık, PO onayının güncelliği) tek yerde kalır.
 
 1. Toplu karar ("Seçilenleri onayla"): dev birleştirmesinde 013/012'nin `POST /cases/bulk-decision`
-   ucuna (`service.bulk_decide`: Testçi toplu kabul / Analist toplu son onay; öğe başına
+   ucuna (`service.bulk_decide`: Test Uzmanı toplu kabul / Analist toplu son onay; öğe başına
    SAVEPOINT, görülme şartı, denetim kaydı) katıldı; 011'in ayrı `bulk_approve`'u kaldırıldı.
 2. `assumption_verified` (`POST /cases/{id}/assumption-verified`, "Varsayım doğrulandı"):
-   varsayıma bağlı taslak case'te Testçi (012: `case.decide`) varsayımı doğruladığını tek
+   varsayıma bağlı taslak case'te Test Uzmanı (012: `case.decide`) varsayımı doğruladığını tek
    eylemle bildirir. Yeni içerik = mevcut içerik − doğrulanan `assumption_refs`; başka
    varsayım/soru kalmadıysa `readiness=ready`. Karar `edit` olarak verilir (denetim zincirine
    düzeltme olarak; K20; 012'de case draft → ready olur, son onay Analistindir),

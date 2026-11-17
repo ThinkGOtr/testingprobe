@@ -33,7 +33,7 @@ BAYI_ATFI = "{veri:bayi.bayi1.kullanici_adi}"
 
 
 def _uret(api: TestClient, engine: Engine, make_user, make_requirement, fake_gateway, cases):
-    """012: case'i Testçi üretir ve kararlar; oturum Testçide kalır."""
+    """012: case'i Test Uzmanı üretir ve kararlar; oturum Test Uzmanında kalır."""
     fake_gateway([text_response(uretim_cikti(cases))])
     rid = make_requirement()
     testci = make_user("tester")
@@ -44,7 +44,7 @@ def _uret(api: TestClient, engine: Engine, make_user, make_requirement, fake_gat
 
 
 def _onayla(api: TestClient, make_user, testci, c: dict[str, Any], **kw: Any) -> dict[str, Any]:
-    """012 iki adım: Testçi kabulü (`icerik` verilirse düzeltme) + Analist son onayı."""
+    """012 iki adım: Test Uzmanı kabulü (`icerik` verilirse düzeltme) + Analist son onayı."""
     return onayla(api, c, testci, make_user("analyst"), **kw)
 
 
@@ -113,7 +113,7 @@ def test_ayni_icerik_yeniden_uretimde_tekrar_sayilir(
 
 def test_ide_taslaklari_da_eslenir(engine: Engine, make_user, make_requirement, katalog) -> None:
     make_requirement()
-    testci = make_user("tester")  # 012: IDE taslağını case.generate (Testçi) gönderir
+    testci = make_user("tester")  # 012: IDE taslağını case.generate (Test Uzmanı) gönderir
     ide = Principal(testci.id, testci.kullanici_adi, "tester", kanal="ide", kapsam="submit")
     with session_scope() as s:
         sonuc = submit_drafts(s, "TPD-4", [case_icerik()], ide)
@@ -304,7 +304,7 @@ def test_onay_veri_izi_yazilir_degisen_anahtar_listelenir(
     assert a["veri_onaydan_sonra_degisen"] == [] and b["veri_onaydan_sonra_degisen"] == []
     assert _onayla(api, make_user, testci, a)["veri_onaydan_sonra_degisen"] == []
     yeni = dict(b["icerik"], expected_result="{veri:bayi.bayi1.ad} kataloğu açılır")
-    # 012: Testçi düzelterek kabul eder, Analist onaylar (iz her iki kayıtta).
+    # 012: Test Uzmanı düzelterek kabul eder, Analist onaylar (iz her iki kayıtta).
     assert _onayla(api, make_user, testci, b, icerik=yeni)["durum"] == "approved"
     with session_scope() as s:
         izler = {

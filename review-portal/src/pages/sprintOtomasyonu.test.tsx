@@ -69,7 +69,7 @@ function taslaklariKur(): { rid: string; caseler: TestCase[] } {
     id: `tc-013-${n}`,
     requirement_id: rid,
     sira_no: n,
-    // 012: Testçi kabul etti (onaya hazır); Analist toplu/tekli son onayı verir.
+    // 012: Test Uzmanı kabul etti (onaya hazır); Analist toplu/tekli son onayı verir.
     durum: "ready",
     karar: "accept",
     testci_karari: "accept",
@@ -208,7 +208,7 @@ describe("Case review: toplu onay", () => {
     expect(await screen.findByText("Otomatik kod kapalı; kodu Kod üretimi ekranından başlatın.")).toBeInTheDocument();
   });
 
-  it("012 Testçi toplu kabul: görülen taslaklar `accept` ile gider, onaya hazır olur; kod üretimi yok", async () => {
+  it("012 Test Uzmanı toplu kabul: görülen taslaklar `accept` ile gider, onaya hazır olur; kod üretimi yok", async () => {
     const { rid, caseler } = taslaklariKur();
     for (const c of mockVerisi().caseler.filter((x) => x.id.startsWith("tc-013-"))) {
       Object.assign(c, { durum: "draft", karar: null, testci_karari: null, testci: null, karar_veren: null });
@@ -234,7 +234,7 @@ describe("Case review: toplu onay", () => {
     expect(mockVerisi().caseler.filter((x) => x.id.startsWith("tc-013-")).map((x) => x.durum)).toEqual(["ready", "ready", "draft"]);
   });
 
-  it("012 ayrılık: Testçi toplu son onay veremez, Analist toplu kabul veremez (403)", async () => {
+  it("012 ayrılık: Test Uzmanı toplu son onay veremez, Analist toplu kabul veremez (403)", async () => {
     const { caseler } = taslaklariKur();
     await oturumAc("testci");
     await expect(api.topluKarar("approve", [caseler[0]])).rejects.toMatchObject({ status: 403 });
@@ -277,7 +277,7 @@ describe("Case kartı: test verisi atıfları", () => {
     expect(el.parentElement).toHaveTextContent("a.b ile");
   });
 
-  it("Düzelterek kabul (Testçi, 012): 'Test verisi ekle' seçilen anahtarı son alanda imlece ekler", async () => {
+  it("Düzelterek kabul (Test Uzmanı, 012): 'Test verisi ekle' seçilen anahtarı son alanda imlece ekler", async () => {
     const { rid, caseler } = taslaklariKur();
     const c = mockVerisi().caseler.find((x) => x.id === caseler[0].id)!;
     Object.assign(c, { durum: "draft", karar: null, testci_karari: null, testci: null, karar_veren: null });
@@ -386,7 +386,7 @@ describe("Test verisi sayfası", () => {
     expect(screen.queryByRole("button", { name: "Yeni kayıt" })).toBeNull();
     expect(screen.queryByRole("button", { name: /düzenle$/ })).toBeNull();
     expect(screen.getAllByRole("button", { name: /sürüm geçmişi$/ }).length).toBeGreaterThan(0);
-    expect(screen.getByText(/Kataloğu Analist, Testçi ve Automation Engineer düzenler/)).toBeInTheDocument();
+    expect(screen.getByText(/Kataloğu Analist, Test Uzmanı ve Otomasyon Mühendisi düzenler/)).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: /Test verisi/ }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("link", { name: /Otomasyon/ }).length).toBeGreaterThan(0);
   });
@@ -418,7 +418,7 @@ describe("Otomasyon sayfası", () => {
     // K14: durum alanı yalnız engineer'a açık; analist için pasif + görünür neden.
     const durum = screen.getByLabelText("Tetikleyen Jira durumu");
     expect(durum).toBeDisabled();
-    expect(durum).toHaveAccessibleDescription("Tetikleyen Jira durumunu yalnız Automation Engineer değiştirir.");
+    expect(durum).toHaveAccessibleDescription("Tetikleyen Jira durumunu yalnız Otomasyon Mühendisi değiştirir.");
     await u.click(within(jiraKarti).getByRole("button", { name: "Kaydet" }));
     await screen.findByText("Jira tetiği ayarı kaydedildi.");
     expect(cagrilar.find((c) => c.method === "PUT" && c.path === "/automation-settings/jira_tetik")?.govde).toEqual({ aralik_s: 120 });
@@ -498,7 +498,7 @@ describe("Otomasyon sayfası", () => {
     expect(kod).toBeDisabled();
     expect(screen.getByLabelText("Sorgu aralığı (saniye)")).toBeDisabled();
     for (const d of screen.getAllByRole("button", { name: "Kaydet" })) expect(d).toBeDisabled();
-    expect(screen.getByText(/Bu ayarları Analist ve Automation Engineer değiştirir/)).toBeInTheDocument();
+    expect(screen.getByText(/Bu ayarları Analist ve Otomasyon Mühendisi değiştirir/)).toBeInTheDocument();
   });
 });
 

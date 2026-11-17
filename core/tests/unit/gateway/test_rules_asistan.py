@@ -877,15 +877,17 @@ def test_asistan_promptu_oneri_kipini_ve_araclari_anlatir() -> None:
         "Denetçi",
         "Analist",
         "PO",
-        "Automation Engineer",
-        "Testçi",
-        "Developer",
+        "Otomasyon Mühendisi",
+        "Test Uzmanı",
+        "Geliştirici",
         "Görüntüleyici",
     ):
         assert etiket_ in duz_govde, etiket_
-    assert "Sunucu (" not in body and "Erişim yöneticisi" not in body and "Mühendis" not in body
+    # Eski "Mühendis" rolü kalmadı; güncel ad "Otomasyon Mühendisi" (Home terim sözlüğü, canlı E2E T-3).
+    eski_muhendis = body.replace("Otomasyon Mühendisi", "")
+    assert "Sunucu (" not in body and "Erişim yöneticisi" not in body and "Mühendis" not in eski_muhendis
     kalip = (
-        "Uygulama kodu ve verisi rolünüze açık değil; Automation Engineer, Testçi ya da Analist "
+        "Uygulama kodu ve verisi rolünüze açık değil; Otomasyon Mühendisi, Test Uzmanı ya da Analist "
         "görebilir."
     )
     assert kalip in " ".join(body.split())

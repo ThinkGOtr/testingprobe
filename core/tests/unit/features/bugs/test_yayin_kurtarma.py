@@ -229,7 +229,7 @@ def test_ret_ve_yeniden_acma_oneri_durumu_ve_ekli_basarisizlik(
     assert _oneri(ids["failure_id"]) == "rejected" and _oneri(ikinci) == "rejected"
     with session_scope() as s:
         assert serialize.bug_draft_view(s, s.get(BugDraft, did))["sonuc_metni"].startswith(
-            "Testçi taslağı reddetti"
+            "Test Uzmanı taslağı reddetti"
         )
         ekli = serialize.bug_draft_list(s, failure_id=ikinci)
     assert [d["id"] for d in ekli] == [str(did)]

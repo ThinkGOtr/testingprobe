@@ -274,7 +274,7 @@ def test_sir_tanimsiz_duz_parolali_case_pr_acmaz(
         )
         s.add(tc)
         s.flush()
-        onayla_db(s, tc, testci, analist)  # 012: Testçi kabulü + Analist son onayı
+        onayla_db(s, tc, testci, analist)  # 012: Test Uzmanı kabulü + Analist son onayı
         cid = tc.id
     monkeypatch.delenv(service.DEMO_PAROLA_SIRRI)
     login(api, make_user("engineer"))

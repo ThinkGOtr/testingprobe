@@ -361,13 +361,13 @@ def test_dosya_adi() -> None:
 
 @pytest.fixture
 def roller(make_user) -> tuple[Any, Any]:
-    """012: (Testçi, Analist) — case kabulü ve son onayı farklı hesaplardır."""
+    """012: (Test Uzmanı, Analist) — case kabulü ve son onayı farklı hesaplardır."""
     return make_user("tester"), make_user("analyst")
 
 
 @pytest.fixture
 def uretilmis(api: TestClient, engine: Engine, roller, make_requirement, fake_gateway):
-    """TPD-4 için 3 v3 case (hazır, hazır, varsayıma bağlı) + 1 eski case; Testçi oturumu."""
+    """TPD-4 için 3 v3 case (hazır, hazır, varsayıma bağlı) + 1 eski case; Test Uzmanı oturumu."""
     neg = {"type": "negative", "technique": ["EP"], "ref": "AC2"}
     cases = [
         case_icerik(),
@@ -401,7 +401,7 @@ def uretilmis(api: TestClient, engine: Engine, roller, make_requirement, fake_ga
 
 
 def _onayla(api: TestClient, c: dict[str, Any], roller: tuple[Any, Any]) -> None:
-    """012: Testçi kabulü + Analist son onayı."""
+    """012: Test Uzmanı kabulü + Analist son onayı."""
     onayla(api, c, *roller)
 
 

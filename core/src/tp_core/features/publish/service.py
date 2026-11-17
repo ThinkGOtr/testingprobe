@@ -277,7 +277,7 @@ def _yayin_engeli_ham(
             and son.karar not in APPROVING["test_case"]
             and not eski_analist_onayi(session, son)
         ):
-            # Son karar onaylayan değil (ör. Testçi `edit`'i): yayın Analist son onayıyla açılır.
+            # Son karar onaylayan değil (ör. Test Uzmanı `edit`'i): yayın Analist son onayıyla açılır.
             return (
                 "blocked_hash_mismatch",
                 f"Analist son onayı yok (son karar: {son.karar}); Taslağa alıp yeniden kabul "
@@ -470,7 +470,7 @@ def request_publish(
     if user.kanal == "ide" and user.kapsam != "publish":
         raise InvalidDecision("yayın için 'publish' kapsamlı token gerekir")
     # Derinlemesine savunma: portal ucu `case.publish` ister; IDE token'ı da yayın yetkili rolün
-    # (Testçi) olmalıdır (token rolü üretim anındaki hesabın rolüdür).
+    # (Test Uzmanı) olmalıdır (token rolü üretim anındaki hesabın rolüdür).
     if not izinli(user.rol, "case.publish"):
         raise ApprovalNotAllowed(f"{user.rol} rolü case yayınlayamaz")
     ids = _parse_ids(case_ids)

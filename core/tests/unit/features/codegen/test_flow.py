@@ -420,7 +420,7 @@ def test_degistirilmis_case_replay_miss_insana(
     with session_scope() as s:
         tc = s.get(TestCase, cid)
         yeni = dict(tc.icerik, title="8 adet kampanyalı üründe 1 adet bedava verilir")
-        # 012: Testçi düzeltir (draft → ready), Analist son onayı verir (ready → approved).
+        # 012: Test Uzmanı düzeltir (draft → ready), Analist son onayı verir (ready → approved).
         record_approval(
             s, tc, testci, "edit", beklenen_hash=content_hash_of(tc), degisiklik={"icerik": yeni}
         )

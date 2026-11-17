@@ -38,7 +38,7 @@ from tp_core.gateway.testing import text_response  # noqa: E402
 def kur(api: TestClient, engine: Engine, make_user, make_requirement, fake_gateway):  # noqa: F811
     """Basit tablolu (AC1) gereksinim + sahte model; case'ler tablo onayından ÖNCE üretilir.
 
-    API oturumu Testçidir (üretim, `accept`/`edit` kapısı, `oracle-check`)."""
+    API oturumu Test Uzmanıdır (üretim, `accept`/`edit` kapısı, `oracle-check`)."""
 
     def _kur(cases: list[dict], *, tablo_once: bool = False, olgu_sayisi: int = 0):
         provider = fake_gateway(
@@ -46,7 +46,7 @@ def kur(api: TestClient, engine: Engine, make_user, make_requirement, fake_gatew
         )
         rid = make_requirement()
         analist, po = make_user("analyst"), make_user("po")
-        # 012 rol modeli: case üretimi ve kabulü (kapı) Testçide, son onay Analistte.
+        # 012 rol modeli: case üretimi ve kabulü (kapı) Test Uzmanında, son onay Analistte.
         testci = make_user("tester")
         tid = tablo_ekle(rid, BASIT, analist, po) if tablo_once else None
         login(api, testci)

@@ -2764,7 +2764,7 @@ def po_check(engine: Engine, jira: Any, req_id: uuid.UUID, hesaplar: frozenset[s
 
 def _otomatik_case(s: Session, req: Requirement) -> None:
     """Jira durum tetiğiyle akışa alınmış gereksinimde case üretimini kuyruğa alır (specs/013
-    §3.4). Kendi savepoint'inde: hata PO onayını geri almaz (Testçi elle başlatabilir, 012)."""
+    §3.4). Kendi savepoint'inde: hata PO onayını geri almaz (Test Uzmanı elle başlatabilir, 012)."""
     if req.qa_tetik_zamani is None:
         return  # elle çekilmiş gereksinim: davranış değişmez
     from tp_core.features.otomasyon import jira_tetik

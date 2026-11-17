@@ -26,7 +26,7 @@ from tp_core.workflow.service import Principal
 
 router = APIRouter(tags=["metamorfik"])
 
-# İzinler tek katalogdan (auth/yetki.py): ilişkiden ek case türetmek case üretimidir (Testçi);
+# İzinler tek katalogdan (auth/yetki.py): ilişkiden ek case türetmek case üretimidir (Test Uzmanı);
 # türetme kayıtları case kontrol sonuçlarıyla aynı okuyucuya açıktır.
 Uretici = Annotated[Principal, Depends(izin("case.generate"))]
 Okuyucu = Annotated[Principal, Depends(izin("case.oracle_read"))]

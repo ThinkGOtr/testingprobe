@@ -46,10 +46,10 @@ ROL_ETIKETLERI: Final[dict[str, str]] = {
     ADMIN: "Sistem Yöneticisi",
     AUDITOR: "Denetçi",
     ANALYST: "Analist",
-    PO: "PO",
-    TESTER: "Testçi",
-    ENGINEER: "Automation Engineer",
-    DEVELOPER: "Developer",
+    PO: "Ürün Sahibi (PO)",
+    TESTER: "Test Uzmanı",
+    ENGINEER: "Otomasyon Mühendisi",
+    DEVELOPER: "Geliştirici",
     VIEWER: "Görüntüleyici",
 }
 
@@ -80,9 +80,9 @@ IZINLER: Final[dict[str, frozenset[str]]] = {
     "case.decide": _r(TESTER),
     "case.approve": _r(ANALYST),
     "case.publish": _r(TESTER),
-    # 2026-11-14 kullanıcı kararı: Developer da kendi IDE (MCP) token'ını üretir (kod yazan rol).
+    # 2026-11-14 kullanıcı kararı: Geliştirici da kendi IDE (MCP) token'ını üretir (kod yazan rol).
     # Token yalnız sahibinindir (liste/iptal `token.read` + user_id süzgeci); MCP araçları rol
-    # iznini ayrıca denetler (Developer: yalnız `get_requirement`, `requirement.read`).
+    # iznini ayrıca denetler (Geliştirici: yalnız `get_requirement`, `requirement.read`).
     "token.issue": _r(TESTER, DEVELOPER),
     "code.generate": _r(ENGINEER),
     "code.break_verify": _r(ENGINEER),
@@ -95,14 +95,14 @@ IZINLER: Final[dict[str, frozenset[str]]] = {
     "demo.manage": _r(ADMIN, ENGINEER),
     "audit.verify": _r(ADMIN, AUDITOR),
     # 013 sprint otomasyonu: otomasyon ayarları ve test verisi kataloğu (specs/013 Y3, K11).
-    # Katalogu case'i düzelten Testçi (012) de düzenler: düzeltmedeki `{veri:…}` atfı katalogda
+    # Katalogu case'i düzelten Test Uzmanı (012) de düzenler: düzeltmedeki `{veri:…}` atfı katalogda
     # olmalı. Jira tetiğinin durum adı yalnız Otomasyon mühendisinin (K14).
     "automation.manage": _r(ANALYST, ENGINEER),
     "automation.jira_status": _r(ENGINEER),
     "testdata.manage": _r(ANALYST, TESTER, ENGINEER),
     # 011 test üretimi v3 (dev birleştirmesi; ANALIZ §4.1 notu). Üretim seçenekli üretim,
     # derinleştirme, tasarım modeli üretimi ve P8 review'u `case.generate`; "Varsayım doğrulandı"
-    # `case.decide` (Testçinin `edit`'i); P9'a gönderme `case.approve` (Analist son onayından
+    # `case.decide` (Test Uzmanının `edit`'i); P9'a gönderme `case.approve` (Analist son onayından
     # sonra). Aşağıdakiler 011'e özgü yeni izinlerdir.
     "design_model.decide": _r(TESTER),  # tasarım modeli approve | edit | reject
     "case.ask_po": _r(ANALYST),  # açık soru / varsayımı PO'ya Jira yorumu olarak gönderme
@@ -110,8 +110,8 @@ IZINLER: Final[dict[str, frozenset[str]]] = {
     # 012 test kalite doğrulama (specs/012-test-kalite-dogrulama/ANALIZ.md §13.3 rol eşlemesi).
     # Karar tablosu / metamorfik ilişki: Analist yazar ve PO onayına gönderir, PO portalda onaylar
     # (paketin kapsamadığı özellik, K7: sahibi PO). Kontrolü yeniden isteme case'i kabul eden
-    # Testçi ve son onayı veren Analist'te. Ekilmiş hata koşusu: eski `engineer` + `presenter`
-    # (→ `admin`). İlişkiden ek case türetme case üretimidir (`case.generate`, Testçi).
+    # Test Uzmanı ve son onayı veren Analist'te. Ekilmiş hata koşusu: eski `engineer` + `presenter`
+    # (→ `admin`). İlişkiden ek case türetme case üretimidir (`case.generate`, Test Uzmanı).
     "decision_table.edit": _r(ANALYST),
     "decision_table.approve": _r(PO),
     "case.oracle_check": _r(ANALYST, TESTER),
@@ -135,7 +135,7 @@ IZINLER: Final[dict[str, frozenset[str]]] = {
     "token.read": _HEPSI,
     "publish.preview": _r(ADMIN, ANALYST, PO, TESTER, ENGINEER),
     # Sayfa izinleri (çekirdek ucu yok; portal menü/rota koruması için).
-    # 2026-11-14: Developer Claude Code kanalını görür. `demo.read` yol haritası ve Demo
+    # 2026-11-14: Geliştirici Claude Code kanalını görür. `demo.read` yol haritası ve Demo
     # kontrolleri ekranını salt-okur açar; ekrandaki eylemler `demo.manage` ister.
     "claude_code.read": _r(ADMIN, ANALYST, TESTER, ENGINEER, DEVELOPER),
     "demo.read": _r(ADMIN, ANALYST, PO, TESTER, ENGINEER),
@@ -154,7 +154,7 @@ KARAR_IZNI: Final[dict[str, str]] = {
     "test_case": "case.decide",  # son onay: case.approve (S2)
     "bug_draft": "bug.decide",
     "script": "code.merge",
-    "design_model": "design_model.decide",  # 011 F3 tasarım modeli kararı (Testçi)
+    "design_model": "design_model.decide",  # 011 F3 tasarım modeli kararı (Test Uzmanı)
     "karar_tablosu": "decision_table.approve",
     "metamorfik_iliski": "decision_table.approve",
 }

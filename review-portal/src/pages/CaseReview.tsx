@@ -125,7 +125,7 @@ export function aiModu(caseler: TestCase[], m?: CaseMetrikleri | null): "live" |
   return modlar.size === 1 ? "live" : "karisik";
 }
 
-/** Testçinin kararı (ölçümler bunu sayar, ANALIZ 012 §5); eski kayıtlarda Analist `approve` kabul sayılır. */
+/** Test Uzmanının kararı (ölçümler bunu sayar, ANALIZ 012 §5); eski kayıtlarda Analist `approve` kabul sayılır. */
 export const testciKarari = (c: TestCase) => c.testci_karari ?? (c.karar === "send_back" ? null : c.karar);
 
 export function caseOzeti(caseler: TestCase[], m?: CaseMetrikleri | null) {
@@ -145,7 +145,7 @@ export function caseOzeti(caseler: TestCase[], m?: CaseMetrikleri | null) {
     duzeltilmis,
     ret,
     bekleyen,
-    /** Testçi kabul etti, Analist son onayı bekleniyor. */
+    /** Test Uzmanı kabul etti, Analist son onayı bekleniyor. */
     hazir,
     /** Hiç karar yoksa null: "%0 hedefin altında" denmez. */
     kabulOrani: caseler.length && kararli.length ? (kararli.filter(kabulMu).length + kucukDuzeltme) / caseler.length : (null as number | null),
@@ -176,7 +176,7 @@ export function caseOzeti(caseler: TestCase[], m?: CaseMetrikleri | null) {
 /** Toplu onay isteğinin üst sınırı (core 1..200 öğe); fazlası sırayla parçalanır. */
 export const TOPLU_UST_SINIR = 200;
 
-/** 012 toplu karar türü: Testçi `accept` (taslak → onaya hazır), Analist `approve` (onaya hazır → onaylı). */
+/** 012 toplu karar türü: Test Uzmanı `accept` (taslak → onaya hazır), Analist `approve` (onaya hazır → onaylı). */
 export type TopluKararTuru = "accept" | "approve";
 
 /** Toplu kararın beklediği durum (core: kabul taslakta, son onay `ready`'de). */
@@ -424,7 +424,7 @@ export function TopluOnaySonucu({ sonuc, kapat }: { sonuc: TopluSonucDurumu; kap
         <ul className="duz-liste kucuk" aria-label="Kod üretimine alınmayan case'ler">
           {otokodAtlanan.map((a) => (
             <li key={a.case_id}>
-              {ad(a.case_id)} — {a.neden ?? "Süren ya da açık PR'lı bir üretim var; yeniden üretim Automation Engineer kararıyla."}
+              {ad(a.case_id)} — {a.neden ?? "Süren ya da açık PR'lı bir üretim var; yeniden üretim Otomasyon Mühendisi kararıyla."}
             </li>
           ))}
         </ul>
@@ -450,7 +450,7 @@ export function TopluOnaySonucu({ sonuc, kapat }: { sonuc: TopluSonucDurumu; kap
 
 /**
  * Toplu karar çubuğu (013 §3.5; 012): Analist "Seçili onayla (n)" / "Toplu onayla (n)" (onaya hazır
- * case'ler), Testçi "Seçili kabul et (n)" / "Toplu kabul (n)" (taslaklar). Tarayıcı diyaloğu yok;
+ * case'ler), Test Uzmanı "Seçili kabul et (n)" / "Toplu kabul (n)" (taslaklar). Tarayıcı diyaloğu yok;
  * onay portalın kendi onay kutusuyla verilir. Teyit açılınca hedef (id + hash) sabitlenir; liste
  * değişirse teyit sıfırlanır. Her case ekranda görülen hash'iyle gönderilir.
  */
@@ -508,7 +508,7 @@ function TopluOnayCubugu({
   function ac(tur: "secili" | "tumu") {
     const no = ++ayarIstegi.current;
     setOtokod("okunuyor");
-    // Kod üretimi yalnız son onayda (Testçi kabulü kod üretmez): ayar yalnız onayda okunur.
+    // Kod üretimi yalnız son onayda (Test Uzmanı kabulü kod üretmez): ayar yalnız onayda okunur.
     if (!kabul)
       api
         .otomasyonAyarlari()
@@ -707,7 +707,7 @@ export function CaseReview() {
   const ozet = useMemo(() => caseOzeti(liste, metrik.veri), [liste, metrik.veri]);
   const g = gereksinim.veri;
   const yayinYetkili = useIzin("publish.preview");
-  // Developer: yalnız onaylı/yayınlanmış case'ler; karar özeti ve geçmişi yok (core süzgeci).
+  // Geliştirici: yalnız onaylı/yayınlanmış case'ler; karar özeti ve geçmişi yok (core süzgeci).
   const kisitli = useCaseKisitli();
   const { kullanici } = useOturum();
   const kullaniciAnahtari = kullanici ? kullanici.id || kullanici.kullanici_adi : null;
@@ -716,7 +716,7 @@ export function CaseReview() {
     setSecili(new Set());
   }, [kullaniciAnahtari]);
   const gorulenler = goruntulenenKumesi(kullaniciAnahtari);
-  // 012 iki adım: Testçi taslakları toplu kabul eder (`case.decide`), Analist onaya hazır case'leri
+  // 012 iki adım: Test Uzmanı taslakları toplu kabul eder (`case.decide`), Analist onaya hazır case'leri
   // toplu onaylar (`case.approve`). Bir hesap tek roldedir; ikisi birden olursa son onay önceliklidir.
   const testci = useIzin("case.decide");
   const onaylayici = useIzin("case.approve");
@@ -738,7 +738,7 @@ export function CaseReview() {
   const hazirlik = aiOlculmedi ? ozet.reviewSure : ozet.aiSure + ozet.reviewSure;
   const reviewBetik = ozet.olculenReview > 0 && !kz.reviewOlculdu;
   const yayinYolu = `/gereksinimler/${encodeURIComponent(id)}/yayin`;
-  // 012: karar bekleyen = Testçi kararı bekleyen taslaklar + Analist son onayı bekleyen case'ler.
+  // 012: karar bekleyen = Test Uzmanı kararı bekleyen taslaklar + Analist son onayı bekleyen case'ler.
   const kararBekleyen = ozet.bekleyen + ozet.hazir;
   // Sayfada tek birincil eylem (UX-7): "Agent Probe'a gönder" birincilse yayın düğmesi ikincildir;
   // yayın düğmesi yalnız yayın kapısı açıkken birincil olur.

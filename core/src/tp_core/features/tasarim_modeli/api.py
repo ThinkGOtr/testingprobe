@@ -28,7 +28,7 @@ from tp_core.workflow.service import Principal
 router = APIRouter(tags=["design-model"])
 
 # 012 rol modeli (dev birleştirmesi): model üretimi `case.generate`, model kararı
-# `design_model.decide` (Testçi), okuma `case.analysis_read` (developer hariç).
+# `design_model.decide` (Test Uzmanı), okuma `case.analysis_read` (developer hariç).
 Uretici = Annotated[Principal, Depends(izin("case.generate"))]
 Karar = Annotated[Principal, Depends(izin("design_model.decide"))]
 Analiz = Annotated[Principal, Depends(izin("case.analysis_read"))]
