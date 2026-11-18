@@ -6067,9 +6067,10 @@ html {
   gap: var(--space-1);
   overflow-x: auto;
   scrollbar-width: thin;
-  /* Odak halkası kesilmesin: liste içinde 3 px pay. */
-  padding: 3px 3px 0;
-  margin: -3px -3px 0;
+  /* Odak halkası içeri çizilir (outline-offset -2px); yalnız üstte 3 px pay. Yatay negatif pay şeridi kabın
+     3 px dışına taşırıyordu (taşma taraması, DZ-12 kalıbı). */
+  padding: 3px 0 0;
+  margin: -3px 0 0;
 }
 .ds-sekme {
   font: inherit;
