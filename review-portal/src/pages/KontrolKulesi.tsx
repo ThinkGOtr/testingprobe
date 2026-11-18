@@ -247,6 +247,10 @@ export function KontrolKulesi() {
           {k.gecme_orani.test && k.gecme_orani.test.toplam > 0 && (
             <p className="kucuk">
               Test bazında: {k.gecme_orani.test.oran === null ? "—" : yuzde(k.gecme_orani.test.oran)} ({k.gecme_orani.test.gecen}/{k.gecme_orani.test.toplam})
+              {/* CL-09: iki oran neden farklı — koşu bazı testleri hiç koşmayan (hata/zaman aşımı) koşuları da sayar. */}
+              {k.gecme_orani.birim === "kosu" && k.gecme_orani.test.oran !== k.gecme_orani.oran && (
+                <span className="soluk"> · yalnız koşan testler; testleri hiç koşmayan (hata, zaman aşımı) koşular koşu bazında başarısız sayılır</span>
+              )}
             </p>
           )}
           {k.gunluk_gecme.length > 0 && (

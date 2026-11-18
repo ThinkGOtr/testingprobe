@@ -608,7 +608,7 @@ export function TestVerisiSayfasi() {
                         </td>
                         <td className="kucuk" data-etiket="Güncelleme">
                           {k.guncelleyen ? kisiAdi(k.guncelleyen) : "—"}
-                          <div className="soluk">{tarih(k.guncelleme)}</div>
+                          <div className="soluk testveri-guncelleme-tarih">{tarih(k.guncelleme)}</div>
                         </td>
                         <td className="sutun-eylem" data-etiket="Eylemler">
                           {/* CL-03: satır başına tek Tab durağı (önce Geçmiş + Düzenle + Sil = 3). */}

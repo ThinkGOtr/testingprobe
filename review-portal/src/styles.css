@@ -7326,3 +7326,7 @@ code {
 .tablo td.sutun-kimlik:has(> a + .mono) > .mono {
   white-space: nowrap;
 }
+/* CL-02: güncelleme tarihi tek satır (1024'te "10 Kas / 09:00" iki satıra bölünmez). */
+.testveri-guncelleme-tarih {
+  white-space: nowrap;
+}
