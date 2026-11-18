@@ -262,6 +262,28 @@ jobs:
           tail -n 100 tp-logs/appium.log
           exit 1
 
+      # Soğuk simülatörde WDA'nın ilk açılışı (uygulama kurulumu + xcodebuild test-without-building)
+      # 60 sn'lik wdaLaunchTimeout'u aşıp yeniden deneniyor; oturum ~10 dk sürüyor ve ilk testin
+      # istemci zaman aşımına (Bayi2SabitlemeTesti, SessionNotCreated) düşüyordu. Isıtma oturumu
+      # bunu test dışında yapar; başarısızlığı uyarıdır (testler kendi oturumunu yine açar).
+      - name: WebDriverAgent ısıt
+        timeout-minutes: 20
+        run: |
+          set -uo pipefail
+          govde="$(jq -n --arg udid "$SIM_UDID" --arg app "$GITHUB_WORKSPACE/$APP_BUNDLE" '
+            {capabilities: {alwaysMatch: {platformName: "iOS", "appium:automationName": "XCUITest",
+              "appium:udid": $udid, "appium:app": $app, "appium:wdaLaunchTimeout": 300000,
+              "appium:wdaStartupRetries": 3, "appium:newCommandTimeout": 60}}}')"
+          yanit="$(curl -sS -m 900 -H 'Content-Type: application/json' -d "$govde" \
+            http://127.0.0.1:4723/session)" || true
+          sid="$(jq -r '.value.sessionId // empty' <<<"$yanit" 2>/dev/null || true)"
+          if [ -n "$sid" ]; then
+            echo "WDA hazır (ısıtma oturumu $sid)"
+            curl -sS -m 60 -X DELETE "http://127.0.0.1:4723/session/$sid" >/dev/null || true
+          else
+            echo "::warning::WDA ısıtma oturumu açılamadı: $(head -c 300 <<<"$yanit")"
+          fi
+
       - name: Testler (simülatörde)
         id: tests
         timeout-minutes: 60
