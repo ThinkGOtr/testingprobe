@@ -282,3 +282,91 @@ def test_kurulum_gereksiz_forgea_dokunmaz():
     f = SahteForge()
     assert mci.kurulum_pr_ac(f, plan, onaylayan="po@acme")["durum"] == "gereksiz"
     assert f.cagrilar == []
+
+
+# ------------------------------------------------- hazırlık betiği (Expo/RN; kabul 2026-11-18)
+
+EXPO_ANDROID = replace(
+    ANDROID,
+    uygulama_koku="mobil/android",
+    hazirlik_betigi=".github/tp/hazirlik.sh",
+    node_surumu="22",
+    izlenen_kok="mobil",
+)
+
+
+def _adim(job: dict[str, Any], ad_onek: str) -> dict[str, Any]:
+    return next(a for a in job["steps"] if str(a.get("name", "")).startswith(ad_onek))
+
+
+@pytest.mark.parametrize(
+    "p",
+    [
+        EXPO_ANDROID,
+        replace(IOS, hazirlik_betigi=".github/tp/h.sh", node_surumu="22", yapilandirma="Release"),
+    ],
+)
+def test_hazirlik_betigi_sablonda(p):
+    h = mci.hedef(p.platform, p.dil)
+    y = yaml.safe_load(mci.sablon_isle(h, p))
+    assert y["env"]["TP_HAZIRLIK_BETIGI"] == p.hazirlik_betigi
+    assert y["env"]["TP_NODE_SURUMU"] == "22"
+    job = y["jobs"][h.is_adi]
+    adlar = [a.get("name") for a in job["steps"]]
+    hz = adlar.index("Hazırlık (müşterinin betiği; isteğe bağlı)")
+    sonraki = "Derle (uygulama + androidTest APK)" if p.platform == "android" else "Simülatör"
+    assert adlar.index("Node (hazırlık betiği için; isteğe bağlı)") < hz < adlar.index(sonraki)
+    assert "TP_HAZIRLIK_BETIGI != ''" in _adim(job, "Hazırlık")["if"]
+    filtre = y["jobs"]["changes"]["steps"][0]["with"]["filters"]
+    assert "'.github/tp/**'" in filtre
+
+
+def test_hazirlik_betigi_bos_adim_atlanir():
+    y = yaml.safe_load(mci.sablon_isle(mci.hedef("android", "kotlin"), ANDROID))
+    assert y["env"]["TP_HAZIRLIK_BETIGI"] == "" and y["env"]["TP_NODE_SURUMU"] == ""
+
+
+def test_izlenen_kok_uretilen_projeden_bagimsiz():
+    y = yaml.safe_load(mci.sablon_isle(mci.hedef("android", "kotlin"), EXPO_ANDROID))
+    filtre = y["jobs"]["changes"]["steps"][0]["with"]["filters"]
+    # Üretilen android/ depoda yok: PR'daki test değişikliği kaynak kökünden yakalanmalı.
+    assert "'mobil/**'" in filtre and "mobil/android/**" not in filtre
+
+
+def test_ios_yapilandirma():
+    y = yaml.safe_load(
+        mci.sablon_isle(mci.hedef("ios", "swift"), replace(IOS, yapilandirma="Release"))
+    )
+    assert y["env"]["TP_YAPILANDIRMA"] == "Release"
+    kos = next(a for a in y["jobs"]["mobil-ios-swift"]["steps"] if a.get("id") == "kos")
+    assert "-configuration" in kos["run"]
+
+
+def test_hazirlik_plan_yerel_proje_aranmaz():
+    plan = mci.kurulum_plani(EXPO_ANDROID, [])
+    kodlar = {e.kod for e in plan.eksikler}
+    assert "gradle_projesi" not in kodlar and "hazirlik_betigi" in kodlar
+    plan = mci.kurulum_plani(EXPO_ANDROID, [".github/tp/hazirlik.sh"])
+    assert {e.kod for e in plan.eksikler} == {"is_akisi"}
+    ios = replace(IOS, hazirlik_betigi=".github/tp/h.sh")
+    kodlar = {e.kod for e in mci.kurulum_plani(ios, [".github/tp/h.sh"]).eksikler}
+    assert not kodlar & {"xcode_projesi", "ui_test_hedefi", "esitlenmis_klasor"}
+
+
+@pytest.mark.parametrize(
+    "degisim",
+    [
+        {"hazirlik_betigi": "../x.sh"},
+        {"hazirlik_betigi": "/abs/x.sh"},
+        {"hazirlik_betigi": "a b.sh"},
+        {"hazirlik_betigi": "x.py"},
+        {"hazirlik_betigi": "./x.sh"},
+        {"hazirlik_betigi": 'x.sh"\n  evil: 1'},
+        {"node_surumu": "22; id"},
+        {"izlenen_kok": "../x"},
+        {"yapilandirma": "$(id)"},
+    ],
+)
+def test_hazirlik_parametre_enjeksiyonu_reddedilir(degisim):
+    temel = IOS if "yapilandirma" in degisim else ANDROID
+    assert kurulum.parametre_hatalari(replace(temel, **degisim))
