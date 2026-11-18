@@ -13,15 +13,16 @@ public class KlavyeBirimTesti {
 
   @Test(groups = "birim")
   public void klavyeninUstundenKenarBoslugundaYukariSurukler() {
-    // Katalog kabı (iPhone 16, 393x852): y=130..769; sayı klavyesi y=561'de başlar.
-    int[] c = Klavye.surukleme(new Rectangle(0, 130, 639, 393), 561);
-    assertEquals(c, new int[] {4, 545, 505});
+    // Katalog kabı (iPhone 16, iOS 27, 393x852): y=155..764; sayı klavyesi öğesi y=567'de, görünen
+    // cam kabı y=550'de başlar → sürükleme 550'nin üstünde kalmalı.
+    int[] c = Klavye.surukleme(new Rectangle(0, 155, 609, 393), 567);
+    assertEquals(c, new int[] {4, 495, 455});
   }
 
   @Test(groups = "birim")
   public void kabinAltiKlavyedenYukaridaysaKabaGoreHesaplar() {
     int[] c = Klavye.surukleme(new Rectangle(10, 100, 300, 200), 700);
-    assertEquals(c, new int[] {14, 384, 344});
+    assertEquals(c, new int[] {14, 328, 288});
   }
 
   @Test(groups = "birim")
@@ -36,7 +37,7 @@ public class KlavyeBirimTesti {
 
   @Test(groups = "birim")
   public void yerYoksaSuruklemez() {
-    assertNull(Klavye.surukleme(new Rectangle(0, 520, 300, 393), 561));
+    assertNull(Klavye.surukleme(new Rectangle(0, 460, 300, 393), 561));
     assertNull(Klavye.surukleme(new Rectangle(0, 100, 300, 8), 561));
   }
 }

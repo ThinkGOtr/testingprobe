@@ -28,10 +28,16 @@ public final class Klavye {
   /** Sürüklemenin başladığı nokta: kabın sol kenarından içeri (kart dışı kenar boşluğu). */
   private static final int KENAR = 4;
 
-  /** Sürükleme mesafesi ve klavyenin üst kenarından uzaklık (pt). */
+  /** Sürükleme mesafesi (pt). */
   private static final int MESAFE = 40;
 
-  private static final int PAY = 16;
+  /**
+   * Klavye öğesinin üst kenarından uzaklık (pt). iOS 27'de klavyenin görünen (cam) kabı
+   * {@code XCUIElementTypeKeyboard} çerçevesinin ~17 pt üstünden başlar, metin klavyesinde öneri
+   * şeridi (~44 pt) da çerçevenin dışındadır; eski 16 pt pay sürüklemeyi klavyeye düşürüyordu
+   * (number-pad açık kalıyor, metin klavyesinde 'q' yazılıyordu). 72 pt ikisini de aşar.
+   */
+  private static final int PAY = 72;
 
   private Klavye() {}
 

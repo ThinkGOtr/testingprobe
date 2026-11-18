@@ -25,9 +25,10 @@ YOK = "(öğe yok)"
 _METIN_NITELIKLERI = ("label", "value", "Name", "content-desc", "text")
 _KENAR = 4
 # iOS klavye kapatma sürüklemesi (Java Klavye.MESAFE / PAY): klavyenin üst kenarının PAY kadar
-# üstünden MESAFE kadar yukarı.
+# üstünden MESAFE kadar yukarı. PAY: iOS 27'de görünen klavye kabı öğe çerçevesinin ~17 pt, öneri
+# şeridi ~44 pt üstünden başlar; 16 pt sürüklemeyi klavyeye düşürüyordu.
 _KLAVYE_MESAFE = 40
-_KLAVYE_PAY = 16
+_KLAVYE_PAY = 72
 
 
 def _id(spec: Mapping[str, str]) -> str:
