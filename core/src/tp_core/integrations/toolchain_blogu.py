@@ -156,6 +156,8 @@ def _ortam_alanlari(blok: dict[str, Any], p: str) -> None:
     blok["ortam"] = {"eid": o.eid, "ad": o.ad, "tur": o.tur}
     if "probe_password" not in blok and _ayar.sir("TP_PROBE_PASSWORD", pid=p) is None:
         blok["probe_password"] = ""
+    if "run_dealer_passwords" not in blok and _ayar.sir("TP_RUN_DEALER_PASSWORDS", pid=p) is None:
+        blok["run_dealer_passwords"] = {}
 
 
 def _taban_blok(p: str) -> dict[str, Any]:

@@ -157,6 +157,7 @@ def test_toolchain_blogu_ortam_baglaminda(home: SahteHome) -> None:
             canli = toolchain_projesi({"sha": "x"})["proje"]
         assert canli["ortam"]["tur"] == "prod"
         assert canli["probe_password"] == ""  # env parolasına düşmesin
+        assert canli["run_dealer_passwords"] == {}
 
 
 def test_env_kipinde_ortam_yok(monkeypatch: pytest.MonkeyPatch) -> None:
