@@ -6850,6 +6850,12 @@ code {
   row-gap: var(--space-0);
   align-content: start;
 }
+/* 641–1279 px: üç sütun (5 → 3+2, 6 → 3+3; 4+1 yalnız kalan kutu olmaz). */
+@media (min-width: 641px) and (max-width: 1279px) {
+  .metrik-izgara.kule-kpi.kule-kpi {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
 @media (max-width: 640px) {
   .metrik-izgara.kule-kpi.kule-kpi {
     grid-template-columns: repeat(2, minmax(0, 1fr));
