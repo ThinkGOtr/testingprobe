@@ -121,7 +121,9 @@ test('"? Bu ne?": pasif (disabled) düğme seçilir, nedeni sorulur; Esc önce k
   // Rolün yapamadığı eylem artık düğme değil "kimi bekliyoruz" satırıdır (IA-10). Kilitli (aria-disabled,
   // ET-07) düğme örneği: defect adayı script'te "Kırarak doğrula" (Otomasyon Mühendisi).
   await girisYap(page, "muhendis");
-  await page.goto("/kod/scr-3");
+  // ≥1600 px: panel itme kipinde, düğme panelin altında kalmaz (1440'ta panel çekmecedir, DZ-11).
+  await page.setViewportSize({ width: 1680, height: 900 });
+  await page.goto("/kod/scr-3?sekme=kirarak-dogrula");
   const merge = page.getByRole("button", { name: "Kırarak doğrula", exact: true });
   await expect(merge).toBeDisabled();
   await merge.scrollIntoViewIfNeeded();
@@ -169,6 +171,9 @@ test('"? Bu ne?": pasif (disabled) düğme seçilir, nedeni sorulur; Esc önce k
 
   // "Git": iç rotaya gider; masaüstünde panel açık kalır, sohbet korunur.
   await kart.getByRole("link", { name: "Git: Kod üretimi" }).click();
+  // Rol bazlı açılış (IA-01): mühendis → İşlerim (core `/work-queue` yoksa eski açılış Kod üretimi).
+  await expect(page).toHaveURL(/\/(islerim|kod)$/);
+  if (!/\/kod$/.test(page.url())) await page.goto("/kod");
   await expect(page).toHaveURL(/\/kod$/);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(/^Kod üretimi$/);
   await expect(panel(page)).toBeVisible();
@@ -217,11 +222,12 @@ for (const tema of ["koyu", "acik"] as const) {
   });
 }
 
-test("masaüstü panel odağı örtmez (WCAG 2.4.11): ≥1440 px içerik boşaltılır; daha dar ekranda Esc örtülen öğeden paneli kapatır", async ({ page }) => {
+test("masaüstü panel odağı örtmez (WCAG 2.4.11): ≥1600 px içerik boşaltılır; daha dar ekranda Esc örtülen öğeden paneli kapatır", async ({ page }) => {
   await girisYap(page, "analist");
+  await page.setViewportSize({ width: 1680, height: 900 });
   await page.goto("/gereksinimler/req-ft-1");
   const p = await paneliAc(page);
-  // 1440 px: içerik sütunu panelin solunda biter.
+  // ≥1600 px (itme kipi, DZ-11/ET-15): içerik sütunu panelin solunda biter. 861–1599 px'te panel çekmecedir.
   const panelSol = (await p.boundingBox())!.x;
   const icerik = await page.locator(".icerik").evaluate((el) => el.getBoundingClientRect().right - parseFloat(getComputedStyle(el).paddingRight));
   expect(icerik).toBeLessThanOrEqual(panelSol);
@@ -252,8 +258,8 @@ test("masaüstü panel odağı örtmez (WCAG 2.4.11): ≥1440 px içerik boşalt
   await expect(panel(page)).toBeVisible();
 });
 
-// Panel açıkken (1440–1699 px) içerik daralır: detay sekme şeridi panelin altına girmez, kendi içinde kayar;
-// sekme değişimi ve gövde genişliği korunur.
+// Panel açıkken: ≥1600 px'te içerik daralır, detay sekme şeridi panelin altına girmez (kendi içinde kayar); 1440 px'te
+// panel çekmecedir (DZ-11), içerik daralmaz. Sekme değişimi ve gövde genişliği korunur.
 test("panel açıkken (1440–1699 px) detay sekme şeridi panelin altına girmez; gövde daralmaz", async ({ page }) => {
   await girisYap(page, "analist");
   await page.goto("/gereksinimler/req-tpd-1");
@@ -264,7 +270,7 @@ test("panel açıkken (1440–1699 px) detay sekme şeridi panelin altına girme
     await page.setViewportSize({ width: w, height: 900 });
     await page.evaluate(() => window.scrollTo(0, 0));
     const g = (await liste.boundingBox())!;
-    expect(g.x + g.width, `${w}: şerit panelin altına girmez`).toBeLessThanOrEqual((await panel(page).boundingBox())!.x + 1);
+    if (w >= 1600) expect(g.x + g.width, `${w}: şerit panelin altına girmez`).toBeLessThanOrEqual((await panel(page).boundingBox())!.x + 1);
     expect(g.height, `${w}: tek satır`).toBeLessThan(60);
     await liste.getByRole("tab", { name: /^Tutarlılık/ }).click();
     const kutu = (await page.getByRole("region", { name: /Tutarlılık bulguları/ }).boundingBox())!;
@@ -280,7 +286,8 @@ test("son hata çipi ve sözlük cevabı (S2, mock örneği)", async ({ page }) 
   const hatalar = konsolHatalariniTopla(page);
   await girisYap(page, "analist");
   await page.goto("/gereksinimler/req-yok-e2e");
-  await expect(page.getByRole("alert").filter({ hasText: "Gereksinim bulunamadı" })).toBeVisible();
+  // IA-05: 404'te kayıt başka projede aranır; hiçbir projede yoksa "Gereksinim bulunamadı" başlığı.
+  await expect(page.getByRole("heading", { level: 1, name: "Gereksinim bulunamadı" })).toBeVisible();
 
   const p = await paneliAc(page);
   const cipler = p.getByLabel("Soruya eklenecek bağlam");
@@ -411,6 +418,8 @@ test("Kontrol Kulesi öneri ölçümü: Faydalı sayısı karta yansır (uygulam
   // Mock durumu sayfa belleğinde: Kule'ye menüden (tam yükleme olmadan) gidilir.
   await page.getByRole("button", { name: "Asistanı kapat" }).click();
   await page.getByRole("navigation", { name: "Ana menü" }).getByRole("link", { name: /Kontrol Kulesi/ }).click();
+  // IA-19: öneri ölçümü "Hız ve maliyet" bölüm sekmesinde.
+  await page.getByRole("tablist", { name: "Kontrol Kulesi bölümleri" }).getByRole("tab", { name: /^Hız ve maliyet/ }).click();
   const kart = page.getByRole("region", { name: "Öneriler ve asistan" });
   await expect(kart).toBeVisible();
   await expect(kart.getByTestId("oneri-toplam-geri-bildirim")).toHaveText("1 / 0 / 0");
@@ -486,8 +495,13 @@ test("kısa görünüm (1280×500): panel bütün olarak kayar, soru alanı odak
 
 test('"Bu ne?" bandı: üst çubuğun altında, kenar çubuğunu örtmez, ÖRNEK VERİ şeridiyle aynı kenarlar; kipte kaydırma payı bandın altına', async ({ page }) => {
   await girisYap(page, "analist");
+  // İtme kipi (≥1600 px): içerik ve bant panelin solunda (861–1599 px'te panel çekmecedir, DZ-11).
+  await page.setViewportSize({ width: 1680, height: 900 });
   await page.goto("/kod/scr-2");
   const p = await paneliAc(page);
+  const pay = () => page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop));
+  // Kip dışı pay sayfaya göre (detay sayfasının yapışkan sekme şeridiyle 120 px, yoksa 72 px).
+  const kipDisiPay = await pay();
   await p.getByRole("button", { name: "? Bu ne?" }).click();
   const bant = page.locator(".asistan-bune-ipucu");
   await expect(bant).toBeVisible();
@@ -498,9 +512,8 @@ test('"Bu ne?" bandı: üst çubuğun altında, kenar çubuğunu örtmez, ÖRNEK
   expect(Math.abs(b.x - s.x)).toBeLessThanOrEqual(1);
   expect(Math.abs(b.x + b.width - (s.x + s.width))).toBeLessThanOrEqual(1);
   expect(b.y + b.height).toBeGreaterThanOrEqual(s.y + s.height);
-  const pay = () => page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop));
   expect(await pay()).toBeGreaterThanOrEqual(b.y + b.height);
   await page.keyboard.press("Escape");
   await expect(bant).toHaveCount(0);
-  expect(await pay()).toBe(72);
+  expect(await pay()).toBe(kipDisiPay);
 });

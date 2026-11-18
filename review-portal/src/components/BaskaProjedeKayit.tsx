@@ -9,7 +9,7 @@ import { Link, useLocation } from "react-router-dom";
 import { bulunamadi } from "../api/http";
 import { islerimApi, type IsTuru, type KayitYeri } from "../api/islerim";
 import { projeyeGecVeAc } from "../lib/proje";
-import { BosDurum, Kart, SayfaBasligi, Yukleniyor } from "./ui";
+import { BosDurum, Kart, SayfaBasligi, useHataKaydi, Yukleniyor } from "./ui";
 
 export function BaskaProjedeKayit({
   tur,
@@ -47,9 +47,11 @@ export function BaskaProjedeKayit({
     };
   }, [yok, tur, id]);
 
+  const baska = yer?.bulundu && !yer.ayni_proje && yer.proje ? yer.proje : null;
+  // Kayıt hiçbir projede yoksa hata asistanın "son hata" kaydına yazılır (HataKutusu'nun yaptığı gibi).
+  useHataKaydi(hata, yok && yer !== undefined && !baska ? (hata instanceof Error ? hata.message : `${ad} bulunamadı`) : null);
   if (!yok) return <>{yedek}</>;
   if (yer === undefined) return <Yukleniyor metin="Kayıt aranıyor…" />;
-  const baska = yer?.bulundu && !yer.ayni_proje && yer.proje ? yer.proje : null;
   return (
     <>
       <SayfaBasligi ust={<Link to={liste[0]}>← {liste[1]}</Link>} baslik={baska ? `${ad} başka projede` : `${ad} bulunamadı`} />

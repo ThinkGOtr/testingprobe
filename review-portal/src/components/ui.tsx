@@ -114,7 +114,7 @@ export function Yukleniyor({ metin = "Yükleniyor…" }: { metin?: string }) {
  * `hataNesnesi`) verilirse o kayıt, verilmezse metinle eşleşen ya da yeni açılan kayıt.
  * Kayıt dışı hatada (asistan/giriş uçları, 501) null.
  */
-function useHataKaydi(kaynak: unknown, hata: string | null, kapali = false): string | null {
+export function useHataKaydi(kaynak: unknown, hata: string | null, kapali = false): string | null {
   const [kayitId, setKayitId] = useState<string | null>(null);
   useEffect(() => {
     setKayitId(kapali || !hata ? null : hataGosterildi(kaynak, hata));

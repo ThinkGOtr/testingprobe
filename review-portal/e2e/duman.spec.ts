@@ -271,7 +271,9 @@ test("TPD-3: seed metni, golden soruları ve golden uyarı bulgusu görünür ('
 test("mühendis: kod üretimi canlı adımlar ve kırarak doğrulama", async ({ page }) => {
   const hatalar = konsolHatalariniTopla(page);
   await girisYap(page, "muhendis");
-  // Rol bazlı açılış: mühendis → Kod üretimi.
+  // Rol bazlı açılış (IA-01): mühendis → İşlerim (core `/work-queue` yoksa eski açılış Kod üretimi).
+  await expect(page).toHaveURL(/\/(islerim|kod)$/);
+  if (!/\/kod$/.test(page.url())) await page.goto("/kod");
   await expect(page).toHaveURL(/\/kod$/);
   await page.getByRole("checkbox", { name: /Kampanyasız siparişte minimum tutarın altında/ }).check();
   await page.getByRole("button", { name: /Seçilenler için kod üret/ }).click();
@@ -285,6 +287,8 @@ test("mühendis: kod üretimi canlı adımlar ve kırarak doğrulama", async ({ 
   await page.getByRole("tab", { name: /^Ajan adımları/ }).click();
   await expect(page.getByRole("region", { name: "Eşlenen adımlar tablosu" })).toContainText('CartPage.expectMinOrderWarning("Minimum sipariş tutarı 750,00 TL")');
   await page.getByRole("tab", { name: /^Pull request/ }).click();
+  // IA-14: hepsi yeşilse tek satır özet; liste açılır ayrıntıda.
+  await page.getByTestId("check-ozeti").first().locator("summary").click();
   await expect(page.getByRole("list", { name: "PR check'leri" })).toContainText("local-ci");
   // Kırma yapılmadı: kapı değil, açık kabul isteyen uyarı (TEKNIK-TASARIM §2 adım 6).
   await expect(page.getByTestId("merge-kapisi")).toContainText("açık ✓");
@@ -351,6 +355,9 @@ test("sunucu: Kontrol Kulesi'nde ekilmiş hata koşusu başlatır (web); ilerlem
   // K12 + u2 N4: ana oran üretilmiş (AI) testlerle — C2 testi 3 kampanya hatasını yakalar; C3 temelde kırmızı (hariç).
   await expect(page.getByTestId("hata-yakalama")).toHaveText("%35");
   await expect(page.getByRole("img", { name: /^Kaynak: Son tamamlanan tam katalog ekilmiş hata koşusu/ })).toBeVisible();
+  // IA-19: ekilmiş hata koşusu bir eylemdir; Kule'den Demo kontrolleri'ne gidilir (uygulama içi, örnek veri korunur).
+  await page.getByRole("link", { name: "Demo kontrolleri →" }).click();
+  await expect(page).toHaveURL(/\/demo$/);
   const kart = page.getByRole("region", { name: "Ekilmiş hata koşusu" });
   // Örnek verideki bitmiş koşu (web + android): web demo uygulamada ölçülen gerçek matris (el yazısı suite
   // 8/9, yalnız kampanya_tek_bedava kaçar — K9); geçersiz adım orana girmez; kaçan hatalar ayrı listede.
@@ -392,8 +399,7 @@ test("sunucu: Kontrol Kulesi'nde ekilmiş hata koşusu başlatır (web); ilerlem
   await expect(kart.getByTestId("hk-kapanis-web")).toContainText("✓ yeşil");
   await expect(kart.getByTestId("hk-oran-web")).toHaveText("%50 (1/2)");
   await expect(kart.getByTestId("hk-kacan-kampanya_tek_bedava")).toContainText("Kampanyada en çok 1 bedava · Web");
-  // Kule ölçüsüne yalnız tam katalog koşusu girer (kısmi seçim girmez); geçmişte iki koşu.
-  await expect(page.getByTestId("hata-yakalama")).toHaveText("%35");
+  // Geçmişte iki koşu.
   await expect(kart.getByTestId("hk-gecmis").getByRole("row")).toHaveCount(3);
   await tamSayfaUstten(page, `${EKRAN_DIZINI}/62-kule-ekilmis-hata-sonuc.png`);
   // Hücre kendi koşusuna bağlanır.
@@ -401,6 +407,9 @@ test("sunucu: Kontrol Kulesi'nde ekilmiş hata koşusu başlatır (web); ilerlem
   await expect(page).toHaveURL(/\/kosular\/hk-2-r2$/);
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Kırarak doğrula koşusu");
   await expect(page.getByText(/Ekilmiş hata koşusu: uygulama bu koşuda bilerek bozuldu/)).toBeVisible();
+  // Kule ölçüsüne yalnız tam katalog koşusu girer (kısmi seçim girmez).
+  await page.getByRole("navigation", { name: "Ana menü" }).getByRole("link", { name: /Kontrol Kulesi/ }).click();
+  await expect(page.getByTestId("hata-yakalama")).toHaveText("%35");
   expect(hatalar).toEqual([]);
 });
 
@@ -468,7 +477,8 @@ test("mobil menü kapalıyken Tab sırasına girmez (dikey ve yatay telefon); me
       });
     for (const tus of ["Tab", "Shift+Tab"]) {
       const yerler = new Set<string>();
-      for (let i = 0; i < 14; i++) {
+      // Menü öğesi sayısı + düğme (İşlerim, Hatalar eklendi): döngü iki kez dolaşılır.
+      for (let i = 0; i < 30; i++) {
         await page.keyboard.press(tus);
         const yer = await odakYeri();
         expect(["menu", "dugme"], `${genislik}×${yukseklik} açık menü ${tus} ${i + 1}: ${yer}`).toContain(yer);
@@ -911,8 +921,9 @@ test("%125 zoom eşdeğeri (1152×720): Script detayında özet, sekmeler ve PR 
 
 test("%125 zoom eşdeğeri (1152×720): TPD-1 üretim düğmesi görünür pasiflik nedenleriyle de sağ üstte; düğme aralıkları 8 px", async ({ page }) => {
   await page.setViewportSize({ width: 1152, height: 720 });
-  // Analistte iki başlık düğmesi pasif ve nedenleri görünür (.dugme-neden): nedenler grubu genişletmemeli.
-  await girisYap(page, "analist");
+  // Test Uzmanında üretim düğmesi görünür; Analistin adımı (ön inceleme) düğme yerine "kimi bekliyoruz" satırıdır
+  // (IA-10, .dugme-neden): nedenler grubu genişletmemeli.
+  await girisYap(page, "testci");
   await page.goto("/gereksinimler/req-tpd-1");
   const baslik = page.locator(".sayfa-basligi");
   const caseUret = baslik.getByRole("button", { name: "Tasarım modelini üret (iki tur)" });

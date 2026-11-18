@@ -283,7 +283,12 @@ export function OzetKarti({
           </div>
         )}
         <h1 className="ds-ozet-baslik">
-          {kimlik && <span className="mono baslik-anahtar">{kimlik}</span>} {baslik}
+          {kimlik && (
+            <>
+              <span className="mono baslik-anahtar">{kimlik}</span>{" "}
+            </>
+          )}
+          {baslik}
         </h1>
         {(rozetler || meta) && (
           <div className="ds-ozet-satir">

@@ -36,6 +36,9 @@ function konsolHatalariniTopla(page: Page): string[] {
 test("009: Kod üretiminde Android seçilir → uygulama ajanı adımları (Türkçe) → PR check'i 'Yerel CI · Android'", async ({ page }) => {
   const hatalar = konsolHatalariniTopla(page);
   await girisYap(page, "muhendis");
+  // Rol bazlı açılış (IA-01): mühendis → İşlerim (core `/work-queue` yoksa eski açılış Kod üretimi).
+  await expect(page).toHaveURL(/\/(islerim|kod)$/);
+  if (!/\/kod$/.test(page.url())) await page.goto("/kod");
   await expect(page).toHaveURL(/\/kod$/);
   const grup = page.getByRole("group", { name: "Hedef platform" });
   await expect(grup.getByRole("radio", { name: "Web" })).toBeChecked();
@@ -50,7 +53,15 @@ test("009: Kod üretiminde Android seçilir → uygulama ajanı adımları (Tür
   await satir.getByRole("link").first().click();
   await expect(page.getByRole("heading", { name: "Ajan adımları (Appium · app-mcp)" })).toBeVisible();
   await expect(page.getByRole("list", { name: "Ajan adımları" })).toContainText("Uygulamayı başlat");
+  // Detay sekmeli (DS-1): PR açılınca PR check'leri "Pull request" sekmesinde; eşleme ve ekran "Ajan adımları"nda.
+  await expect(page.getByTestId("ozet-karti")).toContainText("PR #", { timeout: 20_000 });
+  await page.getByRole("tab", { name: /^Pull request/ }).click();
+  // IA-14: hepsi yeşilse tek satır özet ("✓ 1/1 check geçti"); liste açılır ayrıntıda.
+  const checkOzeti = page.getByTestId("check-ozeti").first();
+  await expect(checkOzeti).toContainText("check geçti", { timeout: 20_000 });
+  await checkOzeti.locator("summary").click();
   await expect(page.getByRole("list", { name: "PR check'leri" }).first()).toContainText("Yerel CI · Android (local-ci-android)", { timeout: 20_000 });
+  await page.getByRole("tab", { name: /^Ajan adımları/ }).click();
   await expect(page.getByRole("region", { name: "Eşlenen adımlar tablosu" })).toContainText("SepetEkrani.dogrulaMinimumTutarUyarisi");
   // Dikey ekran görüntüsü çerçeveye sığar: yükseklik görünür alanı aşmaz, oran korunur.
   const img = page.locator("figure.ajan-ekran-dikey img");
@@ -116,7 +127,7 @@ const TEMALAR = [
 
 const SAYFALAR: { yol: string; ad: string; hazir: (p: Page) => Promise<void> }[] = [
   { yol: "/kod", ad: "kod", hazir: (p) => expect(p.getByRole("group", { name: "Hedef platform" })).toBeVisible() },
-  { yol: "/kod/scr-and", ad: "script-android", hazir: (p) => expect(p.getByRole("list", { name: "Ajan adımları" })).toBeVisible() },
+  { yol: "/kod/scr-and?sekme=ajan", ad: "script-android", hazir: (p) => expect(p.getByRole("list", { name: "Ajan adımları" })).toBeVisible() },
   { yol: "/kontrol-kulesi?platform=android", ad: "kule-android", hazir: (p) => expect(p.getByRole("region", { name: "Platform dağılımı tablosu" })).toBeVisible() },
   { yol: "/kosular/run-110?sekme=ci", ad: "kosu-android", hazir: (p) => expect(p.getByRole("list", { name: "Platform kontrolleri" })).toBeVisible() },
   {

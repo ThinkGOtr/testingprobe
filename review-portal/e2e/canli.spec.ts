@@ -229,6 +229,9 @@ test("Demo-B: kod üretimi → yerel kontrol → PR → kırarak doğrula → me
 
   // Mühendis: rol bazlı açılış Kod üretimi.
   await girisCanli(page, "muhendis");
+  // Rol bazlı açılış (IA-01): mühendis → İşlerim (core `/work-queue` yoksa eski açılış Kod üretimi).
+  await expect(page).toHaveURL(/\/(islerim|kod)$/);
+  if (!/\/kod$/.test(page.url())) await page.goto("/kod");
   await expect(page).toHaveURL(/\/kod$/);
   await expect(page.getByText("ÖRNEK VERİ")).toHaveCount(0);
   const yedi = /7 adet kampanyalı üründe 1 adet bedava verilir/;

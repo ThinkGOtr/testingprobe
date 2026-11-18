@@ -827,13 +827,6 @@ export function KosuDetay() {
         )}
         {ghYedek && !k.maskeli && <p className="kucuk soluk">{ghYedek}</p>}
         {k.hata && <p className="kucuk hata-metin">{k.hata}</p>}
-        {k.uyarilar.length > 0 && (
-          <ul className="kucuk duz-liste">
-            {k.uyarilar.map((u) => (
-              <li key={u}>{u}</li>
-            ))}
-          </ul>
-        )}
       </Kart>
   );
 
@@ -925,8 +918,18 @@ export function KosuDetay() {
         </div>
       }
       ust={
-        (takilma || k.break_campaign || k.saglik_hatasi || sauceUzun) && (
+        (takilma || k.break_campaign || k.saglik_hatasi || sauceUzun || k.uyarilar.length > 0) && (
           <>
+            {/* Koşu uyarıları (ör. ekilmiş hata koşusu: kırmızı beklenir) sekmelerin üstünde, gizli sekmede değil. */}
+            {k.uyarilar.length > 0 && (
+              <Uyari ton="bilgi">
+                <ul className="duz-liste" data-testid="kosu-uyarilari">
+                  {k.uyarilar.map((u) => (
+                    <li key={u}>{u}</li>
+                  ))}
+                </ul>
+              </Uyari>
+            )}
             {takilma && (
               <Uyari baslik="Koşu takılmış olabilir">
                 <span data-testid="takilma-uyarisi">{takilma}</span>. CI kuyruğunu ya da çalıştırıcıyı kontrol edin; core süre aşımında

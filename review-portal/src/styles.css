@@ -6797,6 +6797,14 @@ code {
   margin-top: var(--space-1);
   overflow-wrap: anywhere;
 }
+/* Metin içindeki bağlantı yalnız renkle ayrılmaz (WCAG 1.4.1, axe link-in-text-block): alt çizgi. */
+.tablo td .kod-neden a,
+.kod-neden a,
+.tablo td .kosu-basarisiz-ozet a,
+.kosu-basarisiz-ozet a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 .sayfalama {
   display: flex;
   gap: var(--space-2);
@@ -7230,6 +7238,10 @@ code {
   /* Uzun durum çipi ("Case review aşamasında") dar masaüstünde iki satıra sarabilir. */
   .gereksinim-tablosu td.sutun-durum .cip {
     white-space: normal;
+  }
+  /* Gereksinimler "Sıradaki" (IA-03) ikinci metin sütunu: daha dar başlar, sarar (1024'te tablo kaymaz). */
+  .gereksinim-tablosu td.sutun-metin.gereksinim-siradaki {
+    min-width: 7.5rem;
   }
 }
 .tablo .otomasyon-liste > li {

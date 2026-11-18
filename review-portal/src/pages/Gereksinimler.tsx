@@ -286,7 +286,7 @@ function GereksinimSatiri({ g, kanit }: { g: Gereksinim; kanit: Omit<SonrakiGird
           </div>
         )}
       </td>
-      <td className="sutun-metin" data-etiket="Sıradaki" data-testid="gereksinim-siradaki">
+      <td className="sutun-metin gereksinim-siradaki" data-etiket="Sıradaki" data-testid="gereksinim-siradaki">
         {g.durum === "done" ? (
           // `done`: gereksinim makinesi bitti; sonraki adımlar (kod, CI, triage) kanıtlardan okunur.
           <span>{akisTamam ? "Akış tamam" : adimAdi(adim, g.kaynak)}</span>
