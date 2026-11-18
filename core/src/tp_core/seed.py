@@ -104,10 +104,14 @@ def main() -> None:
     from tp_core.home_config import durum as home_durum
 
     home_durum.cli_yukle("core-api")  # CLI (core-api kabında): Home etkin config'i bir kez
+    from tp_core.proje.baglam import proje_icinde, varsayilan_pid
+
     yeni = seed()
     print(f"seed: {len(KULLANICILAR)} kullanıcı (yeni: {yeni})")
-    print(f"seed: test verisi kataloğu (yeni: {seed_test_verisi()})")
-    print(f"seed: demo otomasyon ayarları {seed_otomasyon_demo()}")
+    # Katalog ve otomasyon ayarları proje kapsamlıdır (çok proje Ş4): CLI'da bağlam yok.
+    with proje_icinde(varsayilan_pid()):
+        print(f"seed: test verisi kataloğu (yeni: {seed_test_verisi()})")
+        print(f"seed: demo otomasyon ayarları {seed_otomasyon_demo()}")
 
 
 if __name__ == "__main__":

@@ -1,5 +1,7 @@
 import uuid
 
+import pytest
+
 from tp_core.seed import GORUNEN_ADLAR, KULLANICILAR, NAMESPACE_TP, tp_uuid
 
 
@@ -57,3 +59,21 @@ def test_seed_gorunen_adlari() -> None:
     assert (
         display_name("muhendis", "engineer", configured_names("muhendis=")) == "Otomasyon Mühendisi"
     )
+
+
+def test_seed_main_proje_kapsamli_tohumlari_baglamda_kosar(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`python -m tp_core.seed` CLI'ında proje bağlamı yoktur; katalog ve otomasyon tohumları
+    proje kapsamlıdır (`mevcut_pid`) ve varsayılan projenin bağlamında koşmalıdır."""
+    from tp_core import seed as modul
+    from tp_core.home_config import durum as home_durum
+    from tp_core.proje.baglam import mevcut_pid, varsayilan_pid
+
+    gorulen: list[str] = []
+    monkeypatch.setattr(home_durum, "cli_yukle", lambda *_a, **_k: None)
+    monkeypatch.setattr(modul, "seed", lambda: 0)
+    monkeypatch.setattr(modul, "seed_test_verisi", lambda: gorulen.append(mevcut_pid()) or 0)
+    monkeypatch.setattr(modul, "seed_otomasyon_demo", lambda: gorulen.append(mevcut_pid()) or {})
+    modul.main()
+    assert gorulen == [varsayilan_pid(), varsayilan_pid()]
