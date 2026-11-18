@@ -7,6 +7,8 @@
   `MAX_CASE`'lik parçalarla `start_generation` (`features/otomasyon/otokod.py:toplu_uret`).
 - `codegen.dil_algila`: GitHub App kipinde core-api'nin `/code/languages` dil algılaması (App
   kurulum token'ı yalnız core-worker'da alınır; API işi kuyruğa alıp sonucu bekler).
+- `codegen.kurulum_pr` (014): müşteri CI kurulum PR'ı (`kurulum_pr.calistir`; forge yazma kimliği
+  yalnız core-worker'da olduğundan API işi kuyruğa alıp sonucu bekler).
 - `codegen.pr_sync`: GitHub kipinde açık PR'ların forge durumunu (GitHub arayüzünde merge/kapatma)
   çekirdeğe işler ve kendini `TP_CODEGEN_PR_SYNC_S` (60 sn) sonrasına yeniden planlar.
 """
@@ -21,7 +23,7 @@ from sqlalchemy.orm import Session
 
 from tp_core.db import get_engine
 from tp_core.features.ci.projeler import her_projede
-from tp_core.features.codegen import service
+from tp_core.features.codegen import kurulum_pr, service
 from tp_core.features.codegen.toolchain import varsayilan_check_timeout_s
 from tp_core.features.otomasyon import otokod
 from tp_core.workflow.jobs import JobContext, job_handler
@@ -58,6 +60,13 @@ def update_branch(ctx: JobContext) -> dict[str, Any]:
 @job_handler(service.DIL_ALGILA_JOB, max_deneme=1, zaman_asimi_s=120)
 def dil_algila(ctx: JobContext) -> dict[str, Any]:
     return service.run_dil_algila(ctx)
+
+
+@job_handler(
+    kurulum_pr.KURULUM_PR_JOB, max_deneme=1, zaman_asimi_s=kurulum_pr.KURULUM_PR_ZAMAN_ASIMI_S
+)
+def kurulum_pr_ac(ctx: JobContext) -> dict[str, Any]:
+    return kurulum_pr.calistir(ctx, get_engine())
 
 
 @job_handler(service.PR_CLOSE_JOB, max_deneme=3, zaman_asimi_s=60)

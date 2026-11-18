@@ -1319,6 +1319,46 @@ export interface KurulumPr {
   elle_adimlar: string[];
 }
 
+/**
+ * 014 `POST /code/ci-setup` parametreleri (hepsi isteğe bağlı; boş → core varsayılanı). Android:
+ * `test_paketi` zorunlu; iOS: `xcode_proje`, `sema`, `ui_test_hedefi` zorunlu. `hazirlik_betigi`,
+ * `node_surumu`, `izlenen_kok`: yerel projesi depoda olmayan (Expo/RN) uygulamalar için.
+ */
+export interface KurulumParametreleri {
+  varsayilan_dal?: string;
+  uygulama_koku?: string;
+  hazirlik_betigi?: string;
+  node_surumu?: string;
+  izlenen_kok?: string;
+  gradle_modulu?: string;
+  test_paketi?: string;
+  emulator_api?: number;
+  xcode_proje?: string;
+  sema?: string;
+  ui_test_hedefi?: string;
+  runs_on?: string;
+  simulator?: string;
+  yapilandirma?: string;
+}
+
+/**
+ * `POST /code/ci-setup` yanıtı. `acildi`: yeni PR; `mevcut`: kurulum dalında açık PR vardı (yenisi
+ * açılmadı); `gereksiz`: PR'a girecek dosya yok; `onizleme`: forge'a yazılmadı; `suruyor`: iş sürüyor (202).
+ */
+export interface KurulumPrSonucu {
+  durum: "acildi" | "mevcut" | "gereksiz" | "onizleme" | "suruyor";
+  pr_no: number | null;
+  url: string | null;
+  dal: string | null;
+  taban: string | null;
+  dosyalar: string[];
+  eksikler: string[];
+  elle_adimlar: string[];
+  hazir: boolean;
+  kurulum: KurulumPr | null;
+  mesaj: string | null;
+}
+
 /** 014 müşteri CI check'inin durumu (GitHub Actions iş akışı + `tp-results` artefaktı). */
 export type MusteriCiDurumu = "bekliyor" | "kosuyor" | "gecti" | "kaldi" | "derleme_hatasi" | "bilinmiyor";
 

@@ -98,6 +98,7 @@ oturumu ve Jira PO kanalını kabul eder).
 | `code.review` | engineer | `POST /prs/{n}/review`, `POST /prs/{n}/update-branch` | |
 | `code.merge` | engineer | `POST /prs/{n}/merge` | yeşil CI + korumalı dal (mevcut merge kapısı); K3 |
 | `code.repair` | engineer | `POST /failures/{id}/fix` | K7 istisnası |
+| `code.ci_setup` | admin, engineer | `POST /code/ci-setup` | 014 müşteri CI kurulum PR'ı (2026-11-18): müşteri deposuna iş akışı + iskelet yazan tek seferlik entegrasyon kurulumu. Kod hattının sahibi Otomasyon Mühendisi; Sistem Yöneticisi de açabilir (`demo.manage`/`fault_run.manage` gibi kurulum işi). PR'ı müşteri GitHub'da birleştirir; onaylayan = istek sahibi |
 | `run.trigger_scheduled` | engineer | `POST /ci/trigger` tetik ∈ `deploy`, `nightly` | |
 | `run.trigger_manual` | engineer, developer | `POST /ci/trigger` tetik = `manual` | developer: `TP_ORTAM≠prod` |
 | `bug.decide` | tester | `POST /bug-drafts/{id}/decision`, `/prepare`, `/publish` | |

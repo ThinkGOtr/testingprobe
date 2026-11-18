@@ -4,6 +4,7 @@
 |---|---|---|
 | POST | `/code/generate` `{case_ids[], platform?, dil?}` | `code.generate` — CasesToCode (202) |
 | GET  | `/code/languages?platform=` | `code.generate` — algılanan dil + seçenekler (K-T8) |
+| POST | `/code/ci-setup` `{platform, dil, onizle?, parametreler}` | `code.ci_setup` (014) |
 | GET  | `/scripts` · `/scripts/{id}` | `code.read` — üretilen test, PR, adımlar, yerel kontrol |
 | GET  | `/scripts/{id}/screenshots/{n}` | `code.read` — ajan adımının ekran görüntüsü (PNG) |
 | POST | `/scripts/{id}/break-verify` | `code.break_verify` — kırarak doğrula (202) |
@@ -28,6 +29,13 @@ açıktır; diğerlerinde portal 403'ü "seçici yok" sayar. GitHub App kipinde 
 core-worker'da kurulabildiği için algılama `codegen.dil_algila` işine gider; uç sonucu en çok
 `service.DIL_ALGILA_BEKLEME_S` bekler (sonuç 2 dk'lık dilimde paylaşılır).
 
+Kurulum PR'ı (`/code/ci-setup`, 014): Android Kotlin / iOS Swift müşteri CI hattının tek seferlik
+kurulum PR'ı (iş akışı + iskelet) projenin forge'u (GitHub App kurulumu) üzerinden açılır. Forge
+yazma kimliği worker'da olduğundan uç `codegen.kurulum_pr` işini kuyruğa alır ve en çok
+`kurulum_pr.KURULUM_PR_BEKLEME_S` bekler: bitti → 200 (`durum`: acildi | mevcut | gereksiz |
+onizleme), sürüyor → 202, iş düştü → 409 (`kod: kurulum_pr_basarisiz`), geçersiz parametre → 422
+(`kod: kurulum_parametre`, `hatalar[]`). Kurulum dalında açık PR varsa yenisi açılmaz (`mevcut`).
+
 Review (`karar` ∈ {degisiklik_iste, reddet}, `ret_nedeni` sabit taksonomiden) script'i kapatır ve
 `insan_review_sonucu`'nu yazar (Constitution X); PR worker'da kapatılır.
 """
@@ -42,11 +50,12 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from tp_core.api.errors import KodluHata
 from tp_core.auth.deps import DbSession
 from tp_core.auth.yetki import izin
 from tp_core.db import get_engine
 from tp_core.features.codegen import depo as depolar
-from tp_core.features.codegen import service, views
+from tp_core.features.codegen import kurulum_pr, service, views
 from tp_core.integrations.toolchain_blogu import ortam_gerekli
 from tp_core.models import session_scope
 from tp_core.workflow.service import Principal
@@ -71,6 +80,7 @@ KiraraDogrular = Annotated[Principal, Depends(izin("code.break_verify"))]
 Inceler = Annotated[Principal, Depends(izin("code.review"))]
 MergeEder = Annotated[Principal, Depends(izin("code.merge"))]
 KodOkur = Annotated[Principal, Depends(izin("code.read"))]
+CiKurar = Annotated[Principal, Depends(izin("code.ci_setup"))]
 MERGE_BEKLEME_S = 20.0  # portal nginx /api/ zaman aşımı 30 sn
 
 
@@ -80,6 +90,38 @@ class KodUretGirdisi(BaseModel):
     platform: Literal["web", "android", "ios", "windows"] = "web"
     # 011 §2.3: üretim dili; yoksa hedef repodan algılanır. Geçersiz (platform, dil) çifti 422.
     dil: Literal["ts", "java", "csharp", "python", "kotlin", "swift"] | None = None
+
+
+class KurulumParametreGirdisi(BaseModel):
+    """Kurulum şablonu parametreleri (hepsi isteğe bağlı; boş → varsayılan). Biçim kontrolü
+    `musteri_ci.parametre_hatalari`'dadır (YAML/kabuk enjeksiyonu yok)."""
+
+    model_config = {"extra": "forbid"}
+
+    varsayilan_dal: str | None = Field(default=None, max_length=100)
+    uygulama_koku: str | None = Field(default=None, max_length=200)
+    hazirlik_betigi: str | None = Field(default=None, max_length=200)
+    node_surumu: str | None = Field(default=None, max_length=10)
+    izlenen_kok: str | None = Field(default=None, max_length=200)
+    # Android
+    gradle_modulu: str | None = Field(default=None, max_length=64)
+    test_paketi: str | None = Field(default=None, max_length=200)
+    emulator_api: int | None = Field(default=None, ge=1, le=99)
+    # iOS
+    xcode_proje: str | None = Field(default=None, max_length=200)
+    sema: str | None = Field(default=None, max_length=100)
+    ui_test_hedefi: str | None = Field(default=None, max_length=100)
+    runs_on: str | None = Field(default=None, max_length=64)
+    simulator: str | None = Field(default=None, max_length=64)
+    yapilandirma: str | None = Field(default=None, max_length=100)
+
+
+class KurulumGirdisi(BaseModel):
+    platform: Literal["android", "ios"]
+    dil: Literal["kotlin", "swift"]
+    # true: forge'a yazmadan plan (eklenecek dosyalar, eksikler) + açık kurulum PR'ı.
+    onizle: bool = False
+    parametreler: KurulumParametreGirdisi = Field(default_factory=KurulumParametreGirdisi)
 
 
 class MergeGirdisi(BaseModel):
@@ -111,6 +153,35 @@ def languages(
 ) -> dict[str, Any]:
     """Algılanan dil, depodaki elle yazılmış test sayıları ve platformun dil seçenekleri."""
     return service.dil_secenekleri(platform)
+
+
+@router.post("/code/ci-setup")
+async def ci_setup(body: KurulumGirdisi, user: CiKurar, response: Response) -> dict[str, Any]:
+    """Müşteri CI kurulum PR'ı (014): önizleme ya da insan onaylı PR (onaylayan = istek sahibi)."""
+    from tp_core.features.publish.service import await_job
+
+    def kuyruga_al() -> uuid.UUID:
+        with session_scope() as s:
+            return kurulum_pr.istek(
+                s,
+                user,
+                body.platform,
+                body.dil,
+                body.parametreler.model_dump(exclude_none=True),
+                onizle=body.onizle,
+            )
+
+    try:
+        job_id = await run_in_threadpool(kuyruga_al)
+    except kurulum_pr.KurulumIstekHatasi as exc:
+        raise KodluHata(422, "kurulum_parametre", str(exc), ek={"hatalar": exc.hatalar}) from exc
+    durum, sonuc, hata = await await_job(get_engine(), job_id, kurulum_pr.KURULUM_PR_BEKLEME_S)
+    if durum in ("failed", "cancelled"):
+        raise KodluHata(409, "kurulum_pr_basarisiz", hata or "Kurulum PR'ı açılamadı")
+    if durum != "done" or not isinstance(sonuc, dict):
+        response.status_code = 202
+        return {"durum": "suruyor", "job_id": str(job_id), "mesaj": kurulum_pr.SURUYOR}
+    return sonuc
 
 
 @router.get("/scripts")

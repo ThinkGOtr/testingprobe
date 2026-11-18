@@ -55,6 +55,8 @@ export const IZINLER = {
   "code.review": ["engineer"],
   "code.merge": ["engineer"],
   "code.repair": ["engineer"],
+  // 014 müşteri CI kurulum PR'ı (müşteri deposuna iş akışı + iskelet; tek seferlik entegrasyon kurulumu).
+  "code.ci_setup": ["admin", "engineer"],
   "run.trigger_scheduled": ["engineer"],
   "run.trigger_manual": ["engineer", "developer"],
   "bug.decide": ["tester"],

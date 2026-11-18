@@ -15,11 +15,11 @@ import {
 } from "./uyum";
 import { bugIcerikCoreBicimi, bugTaslagiUyarla, hataAnaliziUyarla } from "./uyumTriage";
 import { nesneMi } from "./uyum";
-import { dahaFazlaBasligiOku, kodDilleriUyarla, kodUretYanitiUyarla, kontrolKulesiUyarla, kosuDetayUyarla, kosuUyarla, scriptDetayUyarla, scriptListesiUyarla, scriptUyarla } from "./uyumDemoB";
+import { dahaFazlaBasligiOku, kodDilleriUyarla, kodUretYanitiUyarla, kurulumPrSonucuUyarla, kontrolKulesiUyarla, kosuDetayUyarla, kosuUyarla, scriptDetayUyarla, scriptListesiUyarla, scriptUyarla } from "./uyumDemoB";
 import { bazYanitiUyarla, demoDurumuUyarla, gereksinimBazi } from "./uyumFaz5";
 import { caseKalitesiUyarla } from "./uyumCaseKalitesi";
 import { projeListesiUyarla } from "./uyumProje";
-import type { ProjeListesi } from "./types";
+import type { KurulumParametreleri, KurulumPrSonucu, ProjeListesi } from "./types";
 import type { CaseKalitesi } from "./types";
 import {
   jiraTetikDurumuUyarla,
@@ -363,6 +363,15 @@ export const api = {
       if (e instanceof ApiError && (e.status === 501 || e.status === 403)) return null;
       throw e;
     }
+  },
+  /**
+   * 014 müşteri CI kurulum PR'ı (`code.ci_setup`: Sistem Yöneticisi, Otomasyon Mühendisi). `onizle`: forge'a
+   * yazmadan plan. core işi worker'da yapar; 202 → `durum: "suruyor"`. Kurulum dalında açık PR varsa yenisi
+   * açılmaz (`mevcut`). Boş parametreler gönderilmez (core varsayılanı).
+   */
+  kurulumPrAc: async (platform: "android" | "ios", dil: "kotlin" | "swift", parametreler: KurulumParametreleri, onizle = false): Promise<KurulumPrSonucu> => {
+    const dolu = Object.fromEntries(Object.entries(parametreler).filter(([, v]) => v !== undefined && v !== null && !(typeof v === "string" && v.trim() === "")));
+    return kurulumPrSonucuUyarla(await istek<unknown>("POST", "/code/ci-setup", { govde: { platform, dil, onizle, parametreler: dolu }, kaynak: SCRIPT_KAYNAGI }));
   },
   scriptler: async (): Promise<Script[]> => listeUyarla(await istek<unknown>("GET", "/scripts"), scriptUyarla),
   /** `GET /scripts` + liste sınırına ulaşıldı mı (core en yeni 200 kayıt; QA-Y4). */
