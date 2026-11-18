@@ -113,9 +113,12 @@ describe("kart kalıbı (.tablo-yigin) tabloları", () => {
     "%s: her tablo .tablo-yigin, her hücre data-etiket'li",
     (dosya) => {
       const kaynak = oku(dosya);
+      // Ham <table> ya da ortak TabloSarici (varsayılan darEkran="yigin"; "kaydir" yığın değildir).
       const tablolar = kaynak.match(/<table className="[^"]*"/g) ?? [];
-      expect(tablolar.length).toBeGreaterThan(0);
+      const sariciler = kaynak.match(/<TabloSarici\b[^>]*>/g) ?? [];
+      expect(tablolar.length + sariciler.length).toBeGreaterThan(0);
       for (const t of tablolar) expect(t).toContain("tablo-yigin");
+      for (const t of sariciler) expect(t).not.toContain('darEkran="kaydir"');
       const hucreler = kaynak.match(/<td\b[^>]*>/g) ?? [];
       expect(hucreler.length).toBeGreaterThan(0);
       for (const h of hucreler) expect(h).toContain("data-etiket=");

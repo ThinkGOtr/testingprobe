@@ -12,6 +12,7 @@ import { sure, tarih } from "../lib/format";
 import type { Ton } from "../lib/etiketler";
 import { useBildirim } from "./Bildirim";
 import { Cip, HataKutusu, IslemDugmesi, Kart } from "./ui";
+import { MetaIzgara } from "./tasarim";
 
 export const BAZ_KAYNAGI: Record<BazKaynagi, { etiket: string; ton: Ton; aciklama: string }> = {
   olcum: { etiket: "Ölçüm", ton: "basari", aciklama: "Bu story için elle ölçülüp girildi; kazanç bu değerle hesaplanır." },
@@ -55,14 +56,14 @@ function BazDegeri({ b }: { b: ManuelBaz }) {
       </p>
       <p className="soluk kucuk">{k.aciklama}</p>
       {b.kaynak === "olcum" && (
-        <dl className="tanim-izgara kucuk">
-          <dt>Giren</dt>
-          <dd>{b.giren ? <KisiAdi ad={b.giren} /> : "—"}</dd>
-          <dt>Zaman</dt>
-          <dd>{tarih(b.zaman)}</dd>
-          <dt>Not</dt>
-          <dd className="baz-not">{b.not ?? "—"}</dd>
-        </dl>
+        <MetaIzgara
+          className="kucuk"
+          ogeler={[
+            { etiket: "Giren", deger: b.giren ? <KisiAdi ad={b.giren} /> : null },
+            { etiket: "Zaman", deger: tarih(b.zaman) },
+            { etiket: "Not", deger: b.not ? <span className="baz-not">{b.not}</span> : null },
+          ]}
+        />
       )}
     </div>
   );

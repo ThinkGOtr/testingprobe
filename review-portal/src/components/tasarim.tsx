@@ -171,7 +171,7 @@ export function SuzgecCubugu({ etiket, sonuc, children, className }: { etiket: s
     <div className={`suzgec-cubugu${className ? ` ${className}` : ""}`} role="group" aria-label={etiket}>
       <div className="suzgec-cubugu-denetimler">{children}</div>
       {sonuc !== undefined && (
-        <span className="suzgec-sonuc" aria-live="polite">
+        <span className="suzgec-sonuc" role="status">
           {sonuc}
         </span>
       )}
@@ -210,9 +210,10 @@ export function SegmentSecici<D extends string>({
           onClick={() => degistir(s.deger)}
         >
           {s.ad}
+          {s.sayi != null && " "}
           {s.sayi != null && (
             <span className="ds-sayi">
-              <span className="gorunmez"> (</span>
+              <span className="gorunmez">(</span>
               {s.sayi}
               <span className="gorunmez">)</span>
             </span>

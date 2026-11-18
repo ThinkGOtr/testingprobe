@@ -8,7 +8,7 @@ import { BUG_KISITLI_METNI, izinRolleriMetni } from "../lib/yetki";
 import type { BugTaslagi, BugTaslakIcerik, MukerrerAday, MukerrerArama } from "../api/types";
 import { useBildirim } from "../components/Bildirim";
 import { AlanHatasi, BosDurum, Cip, Baglanti, HataKutusu, KayitHatasi, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor, IzinliLink } from "../components/ui";
-import { TabloSarici } from "../components/tasarim";
+import { MetaSatiri, TabloSarici } from "../components/tasarim";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { KisiAdi } from "../components/KisiAdi";
 import { BUG_DURUMU, SEVERITY, type Ton } from "../lib/etiketler";
@@ -633,11 +633,13 @@ export function BugTaslakDetay() {
               </div>
             </div>
           </fieldset>
-          <p className="kucuk">
-            Story {icerik.story_key ? <JiraAnahtari anahtar={icerik.story_key} url={storyUrl} /> : "—"} · Test{" "}
-            {icerik.test_case_key ? <JiraAnahtari anahtar={icerik.test_case_key} url={testUrl} /> : "—"} · Etiketler{" "}
-            <span className="mono">{icerik.labels.join(", ")}</span>
-          </p>
+          <MetaSatiri
+            ogeler={[
+              { etiket: "Story", deger: icerik.story_key ? <JiraAnahtari anahtar={icerik.story_key} url={storyUrl} /> : "—" },
+              { etiket: "Test", deger: icerik.test_case_key ? <JiraAnahtari anahtar={icerik.test_case_key} url={testUrl} /> : "—" },
+              { etiket: "Etiketler", deger: icerik.labels.length ? <span className="mono">{icerik.labels.join(", ")}</span> : "—" },
+            ]}
+          />
           {icerik.evidence.length > 0 && (
             <section aria-label="Kanıt bağlantıları">
               <h3 className="kanit-baslik">Kanıt</h3>

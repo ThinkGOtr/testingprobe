@@ -3,7 +3,7 @@ import { api } from "../api/client";
 import { hataMesaji, ortamAdlariniGizle } from "../api/http";
 import type { DenetimOlayi } from "../api/types";
 import { BosDurum, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
-import { TabloSarici } from "../components/tasarim";
+import { EylemCubugu, Kimlik, TabloSarici } from "../components/tasarim";
 import { useIzin, useKisiAdi } from "../auth";
 import { useVeri } from "../hooks";
 import { kisaHash, tarih } from "../lib/format";
@@ -116,9 +116,12 @@ export function Denetim() {
         }
         eylemler={
           dogrulayabilir && (
-            <IslemDugmesi izin="audit.verify" tur="ikincil" calisiyor={v.yukleniyor} onClick={() => void v.yenile()}>
-              Zinciri yeniden doğrula
-            </IslemDugmesi>
+            // ET-07: doğrulama sürerken düğme odakta kalır (aria-disabled + aria-busy), odak body'ye düşmez.
+            <EylemCubugu hiza="son">
+              <IslemDugmesi izin="audit.verify" tur="ikincil" calisiyor={v.yukleniyor} onClick={() => void v.yenile()}>
+                Zinciri yeniden doğrula
+              </IslemDugmesi>
+            </EylemCubugu>
           )
         }
       />
@@ -183,7 +186,7 @@ export function Denetim() {
                           <OzetHucresi ozet={o.ozet} />
                         </td>
                         <td className="sutun-kimlik" data-etiket="Hash" title={`prev ${o.prev_hash}\nhash ${o.hash}`}>
-                          {kisaHash(o.hash)}
+                          {o.hash ? <Kimlik deger={o.hash.replace(/^sha256:/, "")} tur="sha" kisaltUzunluk={10} kirp="bas" kopyala /> : "—"}
                         </td>
                       </tr>
                     ))}

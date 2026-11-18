@@ -4,7 +4,7 @@ import { api } from "../api/client";
 import { useOlay } from "../api/events";
 import { useBildirim } from "../components/Bildirim";
 import { BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
-import { TabloSarici } from "../components/tasarim";
+import { DurumCipi, TabloSarici } from "../components/tasarim";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { useIzin, usePlatformlar } from "../auth";
 import { SCRIPT_DURUMU, scriptIsareti } from "../lib/etiketler";
@@ -331,7 +331,6 @@ export function Kod() {
               </thead>
               <tbody>
                 {gorunen.map((s) => {
-                  const d = SCRIPT_DURUMU[s.durum] ?? { etiket: s.durum, ton: "notr" as const };
                   const isaret = scriptIsareti(s);
                   const sinif = s.yerel_sinif && s.yerel_sinif !== "gecti" ? YEREL_SINIF[s.yerel_sinif] : null;
                   const yenidenUretilebilir =
@@ -358,7 +357,7 @@ export function Kod() {
                       </td>
                       <td className="sutun-durum" data-etiket="Durum">
                         <span className="satir-ogeler">
-                          <Cip ton={d.ton}>{d.etiket}</Cip>
+                          <DurumCipi harita={SCRIPT_DURUMU} deger={s.durum} />
                           {isaret && (
                             <Cip ton={isaret.ton} title={isaret.aciklama}>
                               {isaret.etiket}

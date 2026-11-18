@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import type { KosuDetay, PwAdimi, TestDenemesi, TestSonucu } from "../api/types";
 import { projeBasliklari } from "../api/http";
 import { Baglanti, BosDurum, Cip, DisBaglanti, Kart, IzinliLink } from "../components/ui";
-import { TabloSarici } from "../components/tasarim";
+import { SegmentSecici, SuzgecCubugu, TabloSarici } from "../components/tasarim";
 import { altTurEtiketi, HATA_SINIFI, KOSU_DURUMU } from "../lib/etiketler";
 import { sure } from "../lib/format";
 
@@ -297,25 +297,26 @@ export function TestSonuclari({ k }: { k: KosuDetay }) {
   }
   return (
     <Kart baslik="Test sonuçları">
-      <div className="filtre-cubugu" role="group" aria-label="Test sonucu süzgeci">
-        <div className="satir-ogeler" role="group" aria-label="Duruma göre">
-          {(["", ...DURUMLAR] as const).map((d) => {
-            const secili = f.durum === d;
-            const n = d ? sayac[d] : sayac.tumu;
-            return (
-              <button
-                key={d || "tumu"}
-                type="button"
-                className={secili ? "dugme dugme-kucuk dugme-birincil" : "dugme dugme-kucuk dugme-ikincil"}
-                aria-pressed={secili}
-                onClick={() => ayarla("t_durum", d)}
-                disabled={d !== "" && n === 0}
-              >
-                {d ? DURUM_ETIKETI[d] : "Tümü"} ({n})
-              </button>
-            );
-          })}
-        </div>
+      <SuzgecCubugu
+        etiket="Test sonucu süzgeci"
+        className="filtre-cubugu"
+        sonuc={
+          <>
+            {suzulen.length}/{k.sonuclar.length} test
+          </>
+        }
+      >
+        <SegmentSecici
+          etiket="Duruma göre"
+          deger={f.durum}
+          degistir={(d) => ayarla("t_durum", d)}
+          secenekler={(["", ...DURUMLAR] as const).map((d) => ({
+            deger: d,
+            ad: d ? DURUM_ETIKETI[d] : "Tümü",
+            sayi: d ? sayac[d] : sayac.tumu,
+            pasif: d !== "" && sayac[d] === 0,
+          }))}
+        />
         <label>
           Ara
           <input type="search" value={f.ara} placeholder="Test adı, dosya ya da hata" onChange={(e) => ayarla("t_ara", e.target.value)} />
@@ -349,10 +350,7 @@ export function TestSonuclari({ k }: { k: KosuDetay }) {
             başarısızlar
           </span>
         </label>
-        <span className="soluk kucuk" role="status">
-          {suzulen.length}/{k.sonuclar.length} test
-        </span>
-      </div>
+      </SuzgecCubugu>
       {suzulen.length === 0 ? (
         <BosDurum baslik="Süzgece uyan test yok." />
       ) : (

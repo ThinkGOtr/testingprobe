@@ -6753,8 +6753,7 @@ html {
     min-width: var(--dokunma);
   }
   summary {
-    display: flex;
-    align-items: center;
+    align-content: center; /* blok kalır (açılır işareti korunur), metin dikeyde ortalanır */
   }
   label:has(> input[type="checkbox"]),
   label:has(> input[type="radio"]) {
