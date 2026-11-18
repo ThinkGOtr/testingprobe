@@ -95,3 +95,16 @@ def test_ios_klavye_suruklemesi_klavyenin_ustunde() -> None:
     # Klavye üstünde yer yok / dar kap: sürükleme yok.
     assert _klavye_suruklemesi(kap, 150) is None
     assert _klavye_suruklemesi({"x": 0, "y": 100, "width": 8, "height": 700}, 500) is None
+
+
+def test_yazilan_deger_dogrulamasi() -> None:
+    """Java `Klavye.degerTutuyor` eşi: düşen tuş vuruşu yeniden yazmayı tetikler."""
+    from ekranlar.ekran import _deger_tutuyor
+
+    assert _deger_tutuyor("bayi2", "bayi2")
+    assert not _deger_tutuyor("ba", "bayi2")
+    assert not _deger_tutuyor("bayi1q", "bayi1")
+    assert _deger_tutuyor("•••••", "abcde")
+    assert not _deger_tutuyor("••", "abcde")
+    assert _deger_tutuyor("", "gizli")
+    assert _deger_tutuyor(None, "gizli")

@@ -51,6 +51,15 @@ def _klavye_suruklemesi(kap: Mapping[str, int], klavye_ust: int) -> tuple[int, i
     return kap["x"] + _KENAR, alt, ust
 
 
+def _deger_tutuyor(okunan: str | None, metin: str) -> bool:
+    """Java `Klavye.degerTutuyor` eşi: okunamayan/boş değer kabul; maskeli (•••) değerde uzunluk."""
+    if not okunan:
+        return True
+    if all(c in "•●*" for c in okunan):
+        return len(okunan) == len(metin)
+    return _sade(okunan) == _sade(metin)
+
+
 def _sade(s: str | None) -> str:
     """NBSP / dar NBSP → boşluk, ardışık boşluk → tek, baş/son kırpılır."""
     return re.sub(r"\s+", " ", (s or "").replace(" ", " ").replace(" ", " ")).strip()
@@ -154,9 +163,22 @@ class Ekran:
     def _yaz(self, kimlik: str, metin: str) -> None:
         """Alana metin yazar (önce temizler), sonra ekran klavyesini kapatır."""
         e = self._gorunur_bekle(kimlik)
-        e.clear()
-        e.send_keys(metin)
+        # Soğuk simülatörde tuş vuruşları düşebiliyor ("bayi2" → "ba"; Java Ekran.yaz eşi):
+        # alanın değeri yazılanı tutmazsa temizleyip yeniden yazılır (en çok 3 deneme).
+        for deneme in range(1, 4):
+            e.clear()
+            e.send_keys(metin)
+            if deneme >= 3 or _deger_tutuyor(self._alan_degeri(e), metin):
+                break
         self._klavyeyi_kapat()
+
+    @staticmethod
+    def _alan_degeri(e: Any) -> str | None:
+        try:
+            v = e.get_attribute("value")
+            return v if v is not None else e.text
+        except WebDriverException:
+            return None
 
     def _klavyeyi_kapat(self) -> None:
         if self._o.platform == "windows":

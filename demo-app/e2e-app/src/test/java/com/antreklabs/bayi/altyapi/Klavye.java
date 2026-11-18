@@ -150,4 +150,22 @@ public final class Klavye {
     }
     return new int[] {kap.getX() + KENAR, alt, ust};
   }
+
+  /**
+   * Okunan alan değeri yazılan metni tutuyor mu. Okunamayan / boş değer (ör. Android parola alanı)
+   * doğrulanamaz sayılır ve kabul edilir; maskeli değerde (•••) yalnız uzunluk karşılaştırılır.
+   */
+  public static boolean degerTutuyor(String okunan, String metin) {
+    if (okunan == null || okunan.isEmpty()) {
+      return true;
+    }
+    if (okunan.chars().allMatch(c -> c == '•' || c == '●' || c == '*')) {
+      return okunan.length() == metin.length();
+    }
+    return bosluklar(okunan).equals(bosluklar(metin));
+  }
+
+  private static String bosluklar(String s) {
+    return s.replace('\u00a0', ' ').replace('\u202f', ' ').replaceAll("\\s+", " ").trim();
+  }
 }

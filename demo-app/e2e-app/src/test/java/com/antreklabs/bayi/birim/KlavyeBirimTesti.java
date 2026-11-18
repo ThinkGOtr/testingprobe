@@ -1,7 +1,9 @@
 package com.antreklabs.bayi.birim;
 
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNull;
+import static org.testng.Assert.assertTrue;
 
 import com.antreklabs.bayi.altyapi.Kaydirma;
 import com.antreklabs.bayi.altyapi.Klavye;
@@ -39,5 +41,16 @@ public class KlavyeBirimTesti {
   public void yerYoksaSuruklemez() {
     assertNull(Klavye.surukleme(new Rectangle(0, 460, 300, 393), 561));
     assertNull(Klavye.surukleme(new Rectangle(0, 100, 300, 8), 561));
+  }
+
+  @Test(groups = "birim")
+  public void yazilanDegerDogrulamasi() {
+    assertTrue(Klavye.degerTutuyor("bayi2", "bayi2"));
+    assertFalse(Klavye.degerTutuyor("ba", "bayi2"));
+    assertFalse(Klavye.degerTutuyor("bayi1q", "bayi1"));
+    assertTrue(Klavye.degerTutuyor("•••••", "abcde"));
+    assertFalse(Klavye.degerTutuyor("••", "abcde"));
+    assertTrue(Klavye.degerTutuyor("", "gizli"));
+    assertTrue(Klavye.degerTutuyor(null, "gizli"));
   }
 }
