@@ -34,6 +34,7 @@ import type {
   YayinOnizleme,
   YayinSonucu,
 } from "../types";
+import type { Ortam, TestOrtami } from "../types";
 import { CASE_KARAR_HEDEFI, caseKarariVerilebilir, GECIS_YOK, type MakineAdi, yolGecerli } from "../sozlesme/durumMakinesi";
 import { duzeltmeOlcusu } from "../../lib/diff";
 import { caseHazirlik, eskiIcerik, tutarlilikSorunlari } from "../../lib/caseV3";
@@ -222,6 +223,8 @@ export function mockSifirla(): void {
   demoKirik = false;
   mockOrtam.ortam = "dev";
   mockOrtam.demoModu = true;
+  mockTestOrtamlari.ortamlar = [];
+  mockTestOrtamlari.varsayilan_eid = null;
   ayar.senaryolar.clear();
   asistanMockSifirla();
   kurulumPrSifirla();
@@ -286,6 +289,26 @@ function izinGerekli(...izinler: [Izin, ...Izin[]]): Kullanici {
 
 /** Örnek veride kurulum ayarları (core `TP_ORTAM`, `TP_DEMO_MODE`); testler değiştirebilir. */
 export const mockOrtam = { ortam: "dev", demoModu: true };
+
+/** Projenin test ortamları (`GET /environments`); varsayılan boş = ortamsız proje. Testler değiştirebilir. */
+export const mockTestOrtamlari: { ortamlar: Ortam[]; varsayilan_eid: string | null } = { ortamlar: [], varsayilan_eid: null };
+
+function mockVarsayilanOrtam(): Ortam | null {
+  const o = mockTestOrtamlari;
+  return o.ortamlar.find((x) => x.eid === o.varsayilan_eid) ?? o.ortamlar.find((x) => x.varsayilan) ?? null;
+}
+
+function testOrtamiOzeti(o: Ortam): TestOrtami {
+  return { eid: o.eid, ad: o.ad, tur: o.tur, canli: o.canli };
+}
+
+/** core: varsayılan ortam canlıysa veriyi değiştiren işlem 409 `engel: canli_ortam`. */
+function canliOrtamEngeli(islem: string): void {
+  const v = mockVarsayilanOrtam();
+  if (!v?.canli) return;
+  const govde = { detail: `Canlı ortamda ${islem} kapalı`, kod: "cakisma", engel: "canli_ortam", ortam: { eid: v.eid, ad: v.ad, tur: v.tur } };
+  throw new ApiError(409, govde.detail, { kod: "cakisma", govde });
+}
 
 function demoGerekli(): Kullanici {
   const k = izinGerekli("demo.manage");
@@ -1907,6 +1930,7 @@ function kosuBitir(k: KosuDetay, gecti: boolean, testAdi: string, hata?: string)
 
 function kirarakDogrula(id: string): IsYaniti {
   izinGerekli("code.break_verify");
+  canliOrtamEngeli("kırarak doğrulama");
   const s = bul(veri.scriptler, id, "Script");
   if (!s.pr || s.pr.durum !== "open") throw new ApiError(409, "Kırarak doğrulama için açık PR gerekir.");
   if (s.break_verify.durum === "running") throw new ApiError(409, "Kırarak doğrulama zaten sürüyor.");
@@ -2043,7 +2067,16 @@ function ciTetikle(govde: unknown): IsYaniti {
   if (tetik === "manual" && kullanici.rol === "developer" && mockOrtam.ortam === "prod") {
     throw new ApiError(403, "Geliştirici prod ortamında koşu başlatamaz (üretim ortamı).", { kod: "yetki_yok" });
   }
+  // Test ortamı: `ortam` yoksa/null ise varsayılan; ortamsız projede null.
+  const istenen = ((govde ?? {}) as { ortam?: unknown }).ortam;
+  let testOrtami: TestOrtami | null = null;
+  if (mockTestOrtamlari.ortamlar.length > 0) {
+    const o = typeof istenen === "string" && istenen ? mockTestOrtamlari.ortamlar.find((x) => x.eid === istenen) : mockVarsayilanOrtam();
+    if (!o) throw new ApiError(422, "Bilinmeyen test ortamı.");
+    testOrtami = testOrtamiOzeti(o);
+  }
   const k = kosuOlustur(tetik, "local", false, null);
+  k.test_ortami = testOrtami;
   denetimEkle("ci.trigger", k.id, tetik === "deploy" ? "Deploy tetiklendi (repository_dispatch)" : tetik === "manual" ? "Manuel koşu başlatıldı" : "Gece koşusu tetiklendi");
   kaydet();
   arkaPlan([
@@ -2053,7 +2086,7 @@ function ciTetikle(govde: unknown): IsYaniti {
     },
     () => kosuBitir(k, true, TEST_C1),
   ]);
-  return is("queued", `${tetik === "deploy" ? "Deploy" : tetik === "manual" ? "Manuel" : "Gece"} koşusu sıraya alındı (${k.id}).`);
+  return { ...is("queued", `${tetik === "deploy" ? "Deploy" : tetik === "manual" ? "Manuel" : "Gece"} koşusu sıraya alındı (${k.id}).`), test_ortami: testOrtami };
 }
 
 /**
@@ -2065,6 +2098,7 @@ let demoKirik = false;
 
 function demoKir(): IsYaniti {
   demoGerekli();
+  canliOrtamEngeli("demo kırma");
   if (demoKirik) throw new ApiError(409, "Buton kimliği zaten değişti (main'de cart-add); önce demoyu sıfırlayın.");
   demoKirik = true;
   denetimEkle("demo.break_locator", "demo-app-web", "demo kırılması: demo/break-locator merge (demo-admin bypass) · add-to-cart → cart-add");
@@ -2225,10 +2259,13 @@ const KULE_KAYNAKLARI: KontrolKulesi["kaynaklar"] = {
   ...KULE_KALITE_KAYNAKLARI,
 };
 
-function kontrolKulesi(): KontrolKulesi & AsistanliKule {
+function kontrolKulesi(ortam: string | null = null): KontrolKulesi & AsistanliKule {
   const kullanici = izinGerekli("dashboard.read");
   // core gibi: Kontrol Kulesi yalnızca CI koşularını sayar (yerel kontrol ve kırarak doğrula hariç).
-  const ciKosulari = veri.kosular.filter((k) => ["pr", "push", "nightly", "deploy", "manual"].includes(k.tetik));
+  // `?ortam=`: koşu tabanlı ölçüler o ortamın koşularından.
+  const ciKosulari = veri.kosular.filter(
+    (k) => ["pr", "push", "nightly", "deploy", "manual"].includes(k.tetik) && (!ortam || k.test_ortami?.eid === ortam),
+  );
   const sonuclar = ciKosulari.flatMap((k) => k.sonuclar.map((s) => ({ ...s, kosu: k })));
   const sayilan = sonuclar.filter((s) => s.durum !== "skipped" && !s.kosu.break_campaign);
   const gecen = sayilan.filter((s) => s.durum === "passed" || s.durum === "flaky").length;
@@ -2255,6 +2292,7 @@ function kontrolKulesi(): KontrolKulesi & AsistanliKule {
   }
   return {
     son_kosular: ciKosulari.slice(0, 6).map((k) => kosuMaskele(ozetKosu(k), kullanici)),
+    ortam_suzgeci: ortam || null,
     gecme_orani: { oran: sayilan.length ? gecen / sayilan.length : null, toplam: sayilan.length, gecen, donem_gun: 7, son_n: null, birim: "test", test: null },
     // Hedef çizgisi yalnızca core bir hedef bildirirse çizilir (tasarımda geçme oranı hedefi yok).
     gecme_hedefi: null,
@@ -2805,9 +2843,12 @@ const ROTALAR: Rota[] = [
   [
     "GET",
     /^\/runs$/,
-    () => {
+    (_m, q) => {
       const k = izinGerekli("run.read");
-      return veri.kosular.map((x) => kosuMaskele(ozetKosu(x), k));
+      const ortam = q.get("ortam");
+      return veri.kosular
+        .filter((x) => !ortam || (ortam === "-" ? !x.test_ortami : x.test_ortami?.eid === ortam))
+        .map((x) => kosuMaskele(ozetKosu(x), k));
     },
   ],
   [
@@ -2878,7 +2919,15 @@ const ROTALAR: Rota[] = [
       return is("queued", "Mükerrer araması ve taslak hazırlanıyor");
     },
   ],
-  ["GET", /^\/control-tower$/, () => kontrolKulesi()],
+  ["GET", /^\/control-tower$/, (_m, q) => kontrolKulesi(q.get("ortam"))],
+  [
+    "GET",
+    /^\/environments$/,
+    () => {
+      izinGerekli("run.read");
+      return { ortamlar: mockTestOrtamlari.ortamlar, varsayilan_eid: mockTestOrtamlari.varsayilan_eid };
+    },
+  ],
   [
     "GET",
     /^\/control-tower\/case-quality$/,
@@ -2908,6 +2957,7 @@ const ROTALAR: Rota[] = [
     /^\/demo\/reset$/,
     () => {
       const k = demoGerekli();
+      canliOrtamEngeli("demo sıfırlama");
       veri = ilkVeri();
       demoKirik = false;
       kuleMockSifirla();

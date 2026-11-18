@@ -15,6 +15,8 @@ import { gereksinimDurumu, HATA_SINIFI, KOSU_DURUMU, TETIK } from "../lib/etiket
 import { saat } from "../lib/format";
 import { izinNedeni } from "../lib/yetki";
 import { kisaKosuAdi, kosuHatalari } from "./Kosular";
+import { useOrtamlar } from "../components/Ortam";
+import { ortamMetni } from "../lib/ortam";
 
 const YOKLAMA_MS = 2000;
 const YOKLAMA_UST_SINIR_MS = 10 * 60 * 1000;
@@ -249,7 +251,7 @@ function useGunluk(): [Gunluk[], (m: string) => void, () => void] {
   return [g, ekle, temizle];
 }
 
-function LocatorKirmaKarti({ durum }: { durum: DemoDurumu | null }) {
+function LocatorKirmaKarti({ durum, canli = false }: { durum: DemoDurumu | null; canli?: boolean }) {
   const bildir = useBildirim();
   const [onay, setOnay] = useState(false);
   const [calisiyor, setCalisiyor] = useState(false);
@@ -410,7 +412,7 @@ function LocatorKirmaKarti({ durum }: { durum: DemoDurumu | null }) {
   const onKosul = durum?.onarim_on_kosulu ?? null;
   // Yeşil temel koşu yoksa core kırılmayı 409 ile reddeder (onarım "son yeşil yok" der): düğme pasif, yönerge görünür.
   const onKosulYok = onKosul?.hazir === false && ld.hal === "baseline";
-  const kirmaPasif = ld.hal !== "baseline" || desteksiz || onKosulYok;
+  const kirmaPasif = ld.hal !== "baseline" || desteksiz || onKosulYok || canli;
   const mk = ld.mainKosusu;
   // Kırılmanın kendi koşusu main'in son koşusuysa (henüz onarım yok) ayrıca "son adım" olarak gösterilmez.
   const onarimAdimlari = ld.hal === "onarildi" && mk && (!k || mk.id !== k.id);
@@ -440,7 +442,9 @@ function LocatorKirmaKarti({ durum }: { durum: DemoDurumu | null }) {
             // görünür notu var; düğme etiketi de hâli söyler. Neden tekrarlanmaz.
             nedenGizli
             title={
-              desteksiz
+              canli
+                ? ortamMetni("canliKapali")
+                : desteksiz
                 ? (durum?.locator_demo?.neden ?? "Test bakımı demosu bu kipte desteklenmiyor.")
                 : onKosulYok
                   ? (onKosul?.yonerge ?? "Önce main için yeşil bir temel koşu gerekir.")
@@ -454,7 +458,9 @@ function LocatorKirmaKarti({ durum }: { durum: DemoDurumu | null }) {
             }
             onClick={() => setOnay(true)}
           >
-            {desteksiz
+            {canli
+              ? ortamMetni("canliKapaliBaslik")
+              : desteksiz
               ? "Bu kipte yok"
               : onKosulYok
                 ? "Önce yeşil temel koşu"
@@ -655,7 +661,7 @@ function LocatorKirmaKarti({ durum }: { durum: DemoDurumu | null }) {
   );
 }
 
-function SifirlamaKarti() {
+function SifirlamaKarti({ canli = false }: { canli?: boolean }) {
   const bildir = useBildirim();
   const [onay, setOnay] = useState(false);
   const [anladim, setAnladim] = useState(false);
@@ -708,7 +714,15 @@ function SifirlamaKarti() {
       baslik="Demo'yu sıfırla"
       eylemler={
         !onay && (
-          <IslemDugmesi izin="demo.manage" tur="ikincil" calisiyor={calisiyor} onClick={() => setOnay(true)}>
+          <IslemDugmesi
+            izin="demo.manage"
+            tur="ikincil"
+            calisiyor={calisiyor}
+            disabled={canli}
+            title={canli ? ortamMetni("canliKapali") : undefined}
+            nedenGizli
+            onClick={() => setOnay(true)}
+          >
             Demo'yu sıfırla
           </IslemDugmesi>
         )
@@ -1040,6 +1054,8 @@ function DurumKarti({ d }: { d: DemoDurumu | null }) {
 
 export function DemoKontrolleri() {
   const durum = useDemoDurumu();
+  // Varsayılan test ortamı canlıysa kırma/sıfırlama kapalı (core 409 `canli_ortam`; düğmeler önceden pasif).
+  const canli = useOrtamlar().varsayilan?.canli === true;
   const yonetebilir = useIzin("demo.manage");
   return (
     <>
@@ -1071,9 +1087,14 @@ export function DemoKontrolleri() {
               Demo durumunu izleyebilirsiniz; locator kırılması, demo sıfırlama ve Jira durum taşıma pasiftir. {izinNedeni("demo.manage")}.
             </Uyari>
           )}
+          {canli && (
+            <Uyari ton="uyari" baslik={ortamMetni("canliKapaliBaslik")}>
+              <span data-testid="demo-canli-ortam">{ortamMetni("canliKapali")}</span>
+            </Uyari>
+          )}
           <div className="iki-sutun">
-            <LocatorKirmaKarti durum={durum} />
-            <SifirlamaKarti />
+            <LocatorKirmaKarti durum={durum} canli={canli} />
+            <SifirlamaKarti canli={canli} />
           </div>
           <JiraDurumKarti />
           <DurumKarti d={durum} />

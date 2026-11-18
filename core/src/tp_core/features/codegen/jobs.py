@@ -39,7 +39,11 @@ KIRMA_ZAMAN_ASIMI_S = int(120 + KIRMA_KONTROL_SAYISI * varsayilan_check_timeout_
 
 @job_handler(service.GEN_JOB, max_deneme=1, zaman_asimi_s=URETIM_ZAMAN_ASIMI_S)
 def generate(ctx: JobContext) -> dict[str, Any]:
-    return service.run_generation(ctx, get_engine())
+    from tp_core.proje.ortam import islem_ortami, ortam_icinde
+
+    # 0048: üretimin yerel kontrolleri projenin varsayılan test ortamında koşar.
+    with ortam_icinde(islem_ortami()):
+        return service.run_generation(ctx, get_engine())
 
 
 @job_handler(service.BREAK_JOB, max_deneme=1, zaman_asimi_s=KIRMA_ZAMAN_ASIMI_S)

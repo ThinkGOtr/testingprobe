@@ -19,6 +19,8 @@ import { dahaFazlaBasligiOku, kodDilleriUyarla, kodUretYanitiUyarla, kurulumPrSo
 import { bazYanitiUyarla, demoDurumuUyarla, gereksinimBazi } from "./uyumFaz5";
 import { caseKalitesiUyarla } from "./uyumCaseKalitesi";
 import { projeListesiUyarla } from "./uyumProje";
+import { ortamlarUyarla, testOrtamiUyarla } from "./uyumOrtam";
+import type { Ortamlar } from "./types";
 import type { KurulumParametreleri, KurulumPrSonucu, ProjeListesi } from "./types";
 import type { CaseKalitesi } from "./types";
 import {
@@ -421,8 +423,20 @@ export const api = {
 
   // CI ve koşular
   /** deploy | nightly: Otomasyon Mühendisi; manual: Otomasyon Mühendisi + Geliştirici (prod'da developer 403). */
-  ciTetikle: (tetik: "deploy" | "nightly" | "manual") => istek<IsYaniti>("POST", "/ci/trigger", { govde: { tetik } }),
-  kosular: async (): Promise<Kosu[]> => listeUyarla(await istek<unknown>("GET", "/runs"), kosuUyarla),
+  /**
+   * `ortam`: test ortamı kimliği (`GET /environments`). Verilmezse gövdeye hiç yazılmaz ve core projenin
+   * varsayılan ortamını kullanır (ortamı olmayan projede istek eskisiyle birebir).
+   */
+  ciTetikle: async (tetik: "deploy" | "nightly" | "manual", ortam?: string | null): Promise<IsYaniti> => {
+    const y = await istek<IsYaniti>("POST", "/ci/trigger", { govde: ortam === undefined ? { tetik } : { tetik, ortam } });
+    if (y && typeof y === "object" && "test_ortami" in y) return { ...y, test_ortami: testOrtamiUyarla((y as { test_ortami?: unknown }).test_ortami) };
+    return y;
+  },
+  /** `ortam`: ortam kimliği ya da `-` (ortamsız koşular); verilmezse tümü. */
+  kosular: async (ortam?: string | null): Promise<Kosu[]> =>
+    listeUyarla(await istek<unknown>("GET", "/runs", ortam ? { sorgu: { ortam } } : undefined), kosuUyarla),
+  /** Projenin test ortamları (`run.read`). */
+  ortamlar: async (): Promise<Ortamlar> => ortamlarUyarla(await istek<unknown>("GET", "/environments")),
   kosu: async (id: string): Promise<KosuDetay> => kosuDetayUyarla(nesne(await istek<unknown>("GET", `/runs/${yol(id)}`))),
 
   /** Triage sonuçları listesi (`GET /failures`, limit ≤200; core her satırı tekil görünümle döner). */
@@ -487,7 +501,9 @@ export const api = {
   },
 
   // Kontrol Kulesi ve denetim
-  kontrolKulesi: async (): Promise<KontrolKulesi> => kontrolKulesiUyarla(await istek<unknown>("GET", "/control-tower")),
+  /** `ortam`: koşu tabanlı ölçüleri (geçme oranı, günlük eğilim, flaky, son koşular) o ortama süzer. */
+  kontrolKulesi: async (ortam?: string | null): Promise<KontrolKulesi> =>
+    kontrolKulesiUyarla(await istek<unknown>("GET", "/control-tower", ortam ? { sorgu: { ortam } } : undefined)),
   /** K21 Case kalitesi; `requirementId` verilirse yalnız o gereksinim. Eski core'da 404 (bölüm gizlenir). */
   caseKalitesi: async (requirementId?: string): Promise<CaseKalitesi> =>
     caseKalitesiUyarla(

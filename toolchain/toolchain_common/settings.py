@@ -123,6 +123,26 @@ class Settings:
     # `tp.test_users.run_pool_passwords`). Yalnız girilen hesaplar; olmayan hesap iskeletin ortak
     # (seed) parolasıyla girer. Sır: repr'de yok.
     run_dealer_passwords: Mapping[str, str] = dataclasses.field(default_factory=dict, repr=False)
+    # Koşunun test ortamı (proje bloğu `ortam`; core 0048). `ortam_turu=prod` = Canlı.
+    ortam_eid: str = ""
+    ortam_adi: str = ""
+    ortam_turu: str = ""
+
+    @property
+    def canli(self) -> bool:
+        """Canlı ortam: veriyi değiştiren işler (test verisi uçları, kırma koşuları) kapalı."""
+        return self.ortam_turu == "prod"
+
+    def ortam_env(self) -> dict[str, str]:
+        """Test sürecine verilen ortam bilgisi (`TP_TEST_ORTAMI*`; ortamsız koşuda boş)."""
+        if not self.ortam_eid:
+            return {}
+        return {
+            "TP_TEST_ORTAMI": self.ortam_eid,
+            "TP_TEST_ORTAMI_ADI": self.ortam_adi,
+            "TP_TEST_ORTAMI_TURU": self.ortam_turu,
+            "TP_CANLI": "1" if self.canli else "",
+        }
 
     @property
     def e2e_java_m2(self) -> Path:
@@ -159,6 +179,13 @@ class Settings:
     @property
     def checks_dir(self) -> Path:
         return self.checks_path or self.artifacts_path / "checks"
+
+
+def ortam_env(cfg: Any) -> dict[str, str]:
+    """Test sürecine verilen test ortamı bilgisi (ortamsız koşuda boş; test sahteleri için
+    `getattr`)."""
+    fn = getattr(cfg, "ortam_env", None)
+    return fn() if callable(fn) else {}
 
 
 def _flag(name: str, default: bool = False) -> bool:
@@ -222,6 +249,14 @@ def settings(proje: ProjeBlogu | Mapping[str, Any] | None = None) -> Settings:
         degisen["run_dealer_passwords"] = dict(blok.run_dealer_passwords)
     if blok.app_paths is not None:
         degisen["app_paths"] = tuple(blok.app_paths)
+    if blok.ortam is not None:
+        degisen["ortam_eid"] = blok.ortam.eid
+        degisen["ortam_adi"] = blok.ortam.ad
+        degisen["ortam_turu"] = blok.ortam.tur
+        if blok.ortam.canli:
+            # Canlı ortamda uygulamanın test verisi uçları (/test/reset, /test/break) kullanılmaz:
+            # token test sürecine hiç verilmez (veri sıfırlama/kırma sunucu tarafında kapalı).
+            degisen["demoapp_test_token"] = ""
     return dataclasses.replace(cfg, **degisen)
 
 

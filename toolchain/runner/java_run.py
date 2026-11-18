@@ -62,7 +62,7 @@ from runner.results import decide_status, failure_groups, failures_of
 from runner.run import testveri_env
 from toolchain_common import gitforge, proc, repos
 from toolchain_common.artifacts import KEEP_MARKER, atomic_write_json, run_dir
-from toolchain_common.settings import Settings, kosu_parola_env
+from toolchain_common.settings import Settings, kosu_parola_env, ortam_env
 from worker import java as javayol
 
 if TYPE_CHECKING:
@@ -270,6 +270,7 @@ def maven_env(
                 "DEMOAPP_TEST_TOKEN": cfg.demoapp_test_token,
                 "BREAK_CAMPAIGN": "1" if req.break_campaign else "",
                 "TP_RUN_ID": req.run_id,
+                **ortam_env(cfg),
                 # Tarayıcı imajdan; sürücü (driver-bundle) açılırken `playwright install`
                 # çalıştırmaz: koşu sırasında indirme yok (çevrimdışı).
                 "PLAYWRIGHT_BROWSERS_PATH": os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
@@ -290,6 +291,7 @@ def maven_env(
             "BREAK_CAMPAIGN": "1" if req.break_campaign else "",
             "TP_FAULT": req.fault or "",
             "TP_RUN_ID": req.run_id,
+            **ortam_env(cfg),
         }
     )
     return env

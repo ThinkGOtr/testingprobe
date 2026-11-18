@@ -433,6 +433,8 @@ def check(body: CheckBody) -> dict[str, Any]:
         raise HTTPException(503, str(exc)) from exc
     except checks.CheckBusy as exc:
         raise HTTPException(409, str(exc)) from exc
+    except checks.CanliOrtamReddi as exc:
+        raise HTTPException(409, str(exc)) from exc
     except gitforge.ForgeError as exc:
         raise HTTPException(503, f"Forge okunamadı: {exc}") from exc
 

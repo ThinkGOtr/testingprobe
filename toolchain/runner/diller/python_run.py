@@ -40,6 +40,7 @@ from runner.diller import _pytest_junit as pj
 from runner.results import decide_status, failure_groups, failures_of
 from toolchain_common import gitforge, proc, repos
 from toolchain_common.artifacts import KEEP_MARKER, atomic_write_json, run_dir
+from toolchain_common.settings import ortam_env
 from worker.diller import python as pyyol
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -136,6 +137,7 @@ def pytest_env(
             "BREAK_CAMPAIGN": "1" if req.break_campaign else "",
             "TP_FAULT": req.fault or "",
             "TP_RUN_ID": req.run_id,
+            **ortam_env(cfg),
             "TP_PLATFORM": platform,
             KANIT_ENV: str(kanit_dir),
         }

@@ -44,6 +44,7 @@ from sqlalchemy import func, or_, select, text
 from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.orm import Session
 
+from tp_core.api.errors import ProjeAyariEksik
 from tp_core.audit import audit_on_commit
 from tp_core.events import publish_tx
 from tp_core.features.ci import dil as dilmod
@@ -89,6 +90,7 @@ from tp_core.models import (
 )
 from tp_core.models.ci_feature import CI_TETIK, CiTetik, RunAria, TestResultEk
 from tp_core.proje import kurulu_projeler, mevcut_pid, pid_param
+from tp_core.proje import ortam as ortamlar
 from tp_core.proje.ayar import ayar
 from tp_core.workflow import jobs as jobq
 
@@ -130,6 +132,28 @@ GITHUB_SONUC = {
     "neutral": "passed",
     "skipped": "passed",
 }
+
+
+# `_enqueue(ortam=...)` verilmediğinde: bağlamdaki ortam, yoksa projenin varsayılan ortamı.
+_ORTAM_SEC: Final = object()
+
+
+def _kosu_ortami_sec(ortam: Any) -> ortamlar.Ortam | None:
+    if ortam is not _ORTAM_SEC:
+        return ortam  # type: ignore[no-any-return]
+    return ortamlar.islem_ortami()
+
+
+def kosu_ortami(run: Run) -> ortamlar.Ortam | None:
+    """Koşunun kayıtlı test ortamı (0048; koşu anındaki ad/tür). Ortamsız → None."""
+    if not run.ortam_eid:
+        return None
+    return ortamlar.Ortam(
+        pid=run.project_id,
+        eid=run.ortam_eid,
+        ad=run.ortam_adi or run.ortam_eid,
+        tur=run.ortam_turu or "test",
+    )
 
 
 class CiError(ValueError):
@@ -207,6 +231,7 @@ def enqueue_ci(
     anahtar: str | None = None,
     ref: str | None = None,
     script_id: uuid.UUID | None = None,
+    ortam: Any = _ORTAM_SEC,
 ) -> uuid.UUID:
     """CI koşusunu kuyruğa alır ve `run.id` döndürür (çağıranın işleminde; commit çağırana).
 
@@ -232,6 +257,10 @@ def enqueue_ci(
     script yoksa platformun güncel deposu) ve `run.ortam.depo`'ya yazılır (`''` = varsayılan
     depo). Forge/Actions çağrıları bu depoyla yapılır; PR numarası yalnız (depo, numara) ile
     tekildir. `ref` verilmezse deponun ana dalı (varsayılan depoda `main`).
+
+    **Test ortamı (0048):** `ortam` verilmezse bağlamdaki ortam, yoksa projenin varsayılan Home
+    ortamı (yoksa ortamsız: proje ayarları). Koşu kaydına `ortam_eid/adi/turu` yazılır; yerel
+    koşuda toolchain bloğu o ortamın adres/hesaplarıyla gider (`run_job`).
     """
     return _enqueue(
         session,
@@ -242,6 +271,7 @@ def enqueue_ci(
         anahtar=anahtar,
         ref=ref,
         script_id=script_id,
+        ortam=ortam,
     )["run_id"]
 
 
@@ -259,6 +289,7 @@ def _enqueue(
     dil: str | None = None,
     platform: str | None = None,
     depo: str | None = None,
+    ortam: Any = _ORTAM_SEC,
 ) -> dict[str, Any]:
     """`dil`: yalnızca script'siz koşuda anlamlıdır (paket koşusunun kardeş dili); script varsa
     dil script'ten gelir. `platform` / `depo`: yalnızca script'siz koşuda (platform deposunun
@@ -268,6 +299,7 @@ def _enqueue(
     if trigger == "pr" and pr_number is None:
         raise CiError("pr tetiği için pr_number gerekli")
     sha = validate_sha(sha)
+    test_ortami = _kosu_ortami_sec(ortam)
     platform, depo = _kosu_hedefi(session, script_id, platform, depo)
     ref = ref or depolar.ana_dal(platform, depo)
     if not REF_RE.fullmatch(ref) or ".." in ref:
@@ -277,6 +309,10 @@ def _enqueue(
     if anahtar is not None and depo:
         # 0046: platform deposunun tetik anahtarı varsayılan deponunkiyle çakışmaz.
         anahtar = f"{anahtar}@{depo}"
+    if anahtar is not None and test_ortami is not None and not anahtar.startswith("nightly:"):
+        # 0048: aynı anahtarlı (elle) koşu başka ortamda ayrı koşudur. Gece anahtarı günlük
+        # tektir (yalnız varsayılan ortamda koşar).
+        anahtar = f"{anahtar}#{test_ortami.eid}"
     if anahtar is not None:
         jobq.idempotency_lock(conn, f"ci_tetik:{anahtar}")
         mevcut = session.scalar(select(CiTetik).where(CiTetik.anahtar == anahtar))
@@ -287,7 +323,11 @@ def _enqueue(
     # web ve android koşuları ayrı kontrollerdir: biri ötekinin yerine geçmez). Web'de dil de
     # ayırır (011): aynı commit'in TS ve Java koşuları birbirini yutmaz. Web + TS anahtarı ve
     # sorgusu değişmez; dili henüz çözülmemiş istek (dil None) etkin ana koşuya uyar.
-    kilit = f"ci_aktif:{trigger}:{kaynak}:{sha or ref}:{pr_number}" + (f"@{depo}" if depo else "")
+    kilit = (
+        f"ci_aktif:{trigger}:{kaynak}:{sha or ref}:{pr_number}"
+        + (f"@{depo}" if depo else "")
+        + (f"#{test_ortami.eid}" if test_ortami is not None else "")
+    )
     web_java = dilmod.web_java_mi(platform, dil)
     jobq.idempotency_lock(
         conn,
@@ -305,6 +345,8 @@ def _enqueue(
         func.coalesce(Run.ortam["platform"].astext, platformlar.WEB) == platform,
         # 0046: PR numarası ve ref depo içinde anlamlı; başka deponun koşusu bunu yutmaz.
         func.coalesce(Run.ortam["depo"].astext, "") == depo,
+        # 0048: başka ortamın koşusu bunu yutmaz (aynı commit Staging'de ve Test'te ayrı koşar).
+        Run.ortam_eid.is_(None) if test_ortami is None else Run.ortam_eid == test_ortami.eid,
     )
     if platform == platformlar.WEB and dil is not None:
         q = q.where(func.coalesce(Run.ortam["dil"].astext, platformlar.TS) == dil)
@@ -374,6 +416,9 @@ def _enqueue(
             **({"dil": dil} if dil is not None else {}),
         },
         artefaktlar={},
+        ortam_eid=test_ortami.eid if test_ortami else None,
+        ortam_adi=test_ortami.ad if test_ortami else None,
+        ortam_turu=test_ortami.tur if test_ortami else None,
     )
     session.add(run)
     session.flush()
@@ -410,6 +455,7 @@ def _enqueue(
             "platform": platform,
             "depo": depo,
             "dil": dil,
+            **({"test_ortami": test_ortami.ozet()} if test_ortami else {}),
         },
     )
     return {"run_id": run.id, "job_id": job_id, "yeni": True}
@@ -583,7 +629,9 @@ def check_body_platformu(platform: str, dil: str | None = None) -> dict[str, Any
     return {}
 
 
-def trigger_manual(session: Session, tetik: str, isteyen: str) -> dict[str, Any]:
+def trigger_manual(
+    session: Session, tetik: str, isteyen: str, ortam: Any = _ORTAM_SEC
+) -> dict[str, Any]:
     """Portal düğmesi (`POST /ci/trigger`): deploy | nightly | manual, main'in o anki head'inde.
 
     local: CI'yı main head'inde koşturur. github: iş `repository_dispatch` (deploy) ya da
@@ -592,7 +640,9 @@ def trigger_manual(session: Session, tetik: str, isteyen: str) -> dict[str, Any]
     """
     if tetik not in ELLE_TETIKLER:
         raise CiError("tetik yalnızca deploy | nightly | manual olabilir")
-    sonuc = _enqueue(session, None, tetik, isteyen=isteyen, dispatch=True)
+    # 0048: `ortam` verilmezse projenin varsayılan ortamı (yoksa ortamsız).
+    test_ortami = _kosu_ortami_sec(ortam)
+    sonuc = _enqueue(session, None, tetik, isteyen=isteyen, dispatch=True, ortam=test_ortami)
     # 0046: elle gece koşusu da ayrı platform depolarında ayrı tetiklenir (aynı işlemde).
     platform_kosulari: list[dict[str, Any]] = []
     if tetik == "nightly":
@@ -603,7 +653,14 @@ def trigger_manual(session: Session, tetik: str, isteyen: str) -> dict[str, Any]
             hedefler = []
         for platform, depo in hedefler:
             ps = _enqueue(
-                session, None, tetik, isteyen=isteyen, dispatch=True, platform=platform, depo=depo
+                session,
+                None,
+                tetik,
+                isteyen=isteyen,
+                dispatch=True,
+                platform=platform,
+                depo=depo,
+                ortam=test_ortami,
             )
             platform_kosulari.append(
                 {
@@ -634,6 +691,7 @@ def trigger_manual(session: Session, tetik: str, isteyen: str) -> dict[str, Any]
         "mesaj": mesaj,
         "kaynak": kaynak,
         "tetik": tetik,
+        "test_ortami": test_ortami.ozet() if test_ortami else None,
         **({"platform_kosulari": platform_kosulari} if platform_kosulari else {}),
     }
 
@@ -1101,6 +1159,7 @@ def _run_job(engine: Engine, run_id: uuid.UUID, *, deneme: int, son_deneme: bool
         mode = _ast_guard_mode(run)
         platform = kosu_platformu(run)
         dil = kosu_dili(run)
+        test_ortami = kosu_ortami(run)
 
     body = {
         "sha": sha,
@@ -1114,7 +1173,18 @@ def _run_job(engine: Engine, run_id: uuid.UUID, *, deneme: int, son_deneme: bool
         **check_body_platformu(platform, dil),
     }
     try:
-        report = services.toolchain().check(toolchain_projesi(body))
+        # 0048: koşunun ortamı bağlamında blok o ortamın adres/hesaplarıyla kurulur.
+        try:
+            with ortamlar.ortam_icinde(test_ortami):
+                govde = toolchain_projesi(body)
+        except ProjeAyariEksik as exc:
+            # Ortam/proje ayarı çözülemedi: koşu başka ortamın değerlerine düşmeden kapanır.
+            with Session(engine, expire_on_commit=False) as session, session.begin():
+                run = _kilitle(session, run_id)
+                if run is not None and run.sonuc not in BITMIS:
+                    _bitir(session, run, "error", hata=str(exc))
+            raise jobq.PermanentJobError(str(exc)) from exc
+        report = services.toolchain().check(govde)
     except ToolchainError as exc:
         if exc.gecici and not son_deneme:
             raise
@@ -2488,6 +2558,8 @@ def serialize_runs(
                 "id": str(r.id),
                 "tetik": r.tetik,
                 "kaynak": r.kaynak,
+                # 0048: koşunun test ortamı `{eid, ad, tur, canli}` (ortamsız → null).
+                "test_ortami": r.test_ortami(),
                 "commit": r.commit or "",
                 "pr_no": r.pr_no,
                 "durum": r.sonuc,
@@ -2575,6 +2647,11 @@ def _github_yerel_ozeti(a: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def ortam_kosulu(ortam: str) -> Any:
+    """`Run` süzgeci: `-` → ortamsız koşular, aksi hâlde o ortamın koşuları."""
+    return Run.ortam_eid.is_(None) if ortam == ortamlar.ORTAMSIZ else Run.ortam_eid == ortam
+
+
 def list_runs(
     session: Session,
     *,
@@ -2586,10 +2663,14 @@ def list_runs(
     limit: int = 50,
     artefakt: bool,
     depo: str | None = None,
+    ortam: str | None = None,
 ) -> list[dict[str, Any]]:
     """`depo` (0046): verilirse yalnız o deponun koşuları (`''` = varsayılan depo); PR numarası
-    depolar arasında çakıştığından `pr_no` süzgeci `depo` ile birlikte anlamlıdır."""
+    depolar arasında çakıştığından `pr_no` süzgeci `depo` ile birlikte anlamlıdır. `ortam`
+    (0048): test ortamı kimliği; `-` = ortamsız koşular."""
     q = select(Run)
+    if ortam is not None:
+        q = q.where(ortam_kosulu(ortam))
     if depo is not None:
         q = q.where(func.coalesce(Run.ortam["depo"].astext, "") == depolar.normalize(depo))
     if tetik:
@@ -2606,7 +2687,7 @@ def list_runs(
         session.scalars(q.order_by(Run.olusturma.desc(), Run.id).limit(max(1, min(limit, 200))))
     )
     sabit: set[uuid.UUID] = set()
-    if all(x is None for x in (tetik, kaynak, sonuc, pr_no, script_id, depo)):
+    if all(x is None for x in (tetik, kaynak, sonuc, pr_no, script_id, depo, ortam)):
         # Açık defect adayının kırmızı kanıtı (son yerel kontrolü) pencereden düşmez: yeni
         # tetikler listeyi doldursa da filtresiz listede kalır (`sabit=true`).
         gorulen = {r.id for r in runs}

@@ -207,6 +207,28 @@ _KESIF_RED: dict[str, float] = {}
 _SAYAC: dict[str, int] = {}
 _BAGLI: list[bool] = [False]
 
+# ------------------------------------------------------------- test ortamları (Home ortamları)
+
+# Ortam düzeyi etkin config (`?environment=`) bu süre boyunca yeniden sorulmaz; sonra ETag'li
+# (304) yenilenir. Sırlar `SIR_TTL_S` ömürlü çözülür. LKG yazılmaz: Home erişilemezse bellekteki
+# son değer kullanılır, hiç yoksa ortam ayarı çözülemez (koşu ortamsız proje değerine DÜŞMEZ).
+ORTAM_TTL_S = 60.0
+
+
+@dataclass
+class _OrtamKaydi:
+    yukleyici: y.Yukleyici | None
+    cfg: y.EtkinConfig | None = None
+    gorunum: dict[str, str] | None = None
+    kaldirilan: frozenset[str] = frozenset()
+    zaman: float | None = None
+    sir_zamani: float | None = None
+    hata: str | None = None
+
+
+# (pid, eid) → ortam config durumu.
+_ORTAMLAR: dict[tuple[str, str], _OrtamKaydi] = {}
+
 
 def configure(*, http: y.Http | None = None, id_token: Callable[[str], str] | None = None,
               temizle: Callable[[], None] | None = None,
@@ -257,6 +279,7 @@ def reset() -> None:
         _EK.clear()
         _KESIF_RED.clear()
         _SAYAC.clear()
+        _ORTAMLAR.clear()
     from tp_core.proje import ayar as proje_ayar
 
     if _BAGLI[0]:
@@ -864,3 +887,65 @@ def ozet() -> dict[str, Any]:
             for pid, ek in sorted(_EK.items())
         },
     }
+
+
+# ------------------------------------------------------------------ test ortamları
+
+
+def ortamlar(pid: str | None = None) -> list[dict[str, Any]]:
+    """Projenin Home'daki test ortamları (`{eid, name, type, is_default}`); env kipinde, Home
+    config'i yoksa ya da eski Home yanıtında boş liste (bugünkü davranış: ortamsız)."""
+    cfg = etkin(pid)
+    return [] if cfg is None else cfg.ortamlar
+
+
+def _ortam_yukleyici(pid: str, eid: str) -> y.Yukleyici | None:
+    url, audience = y.home_adresi(os.environ)
+    if not url:
+        return None
+    istemci = y.HomeConfigIstemcisi(
+        url, pid, _id_token, audience=audience, http=_YAPI.http or y.urllib_http, ortam=eid
+    )
+    return y.Yukleyici(istemci, None)
+
+
+def ortam_gorunumu(pid: str, eid: str) -> tuple[dict[str, str], frozenset[str]] | None:
+    """Ortam düzeyi legacy env görünümü (değerler + çözülmüş sırlar) ve A1 ile kaldırılan adlar.
+    `None`: env kipi, Home reddetti ya da hiç yüklenemedi (çağıran koşuyu başlatmamalı)."""
+    if y.kaynak() != "home" or not pid or not eid:
+        return None
+    anahtar = (pid, eid)
+    with _KILIT:
+        k = _ORTAMLAR.get(anahtar)
+        if k is None:
+            k = _ORTAMLAR[anahtar] = _OrtamKaydi(_ortam_yukleyici(pid, eid))
+    simdi = time.monotonic()
+    if k.zaman is not None and simdi - k.zaman < ORTAM_TTL_S and k.gorunum is not None:
+        return k.gorunum, k.kaldirilan
+    if k.yukleyici is None:
+        k.hata = "yapılandırma eksik"
+        return None
+    sonuc = k.yukleyici.yukle()
+    k.zaman = simdi
+    k.hata = sonuc.hata
+    if sonuc.kaynak == "reddedildi" or sonuc.cfg is None:
+        k.cfg = k.gorunum = None
+        k.kaldirilan = frozenset()
+        return None
+    cfg = sonuc.cfg
+    taze_sir = k.sir_zamani is None or simdi - k.sir_zamani >= SIR_TTL_S
+    if k.cfg is not None and dict(k.cfg.ham) == dict(cfg.ham) and not taze_sir:
+        return (k.gorunum or {}), k.kaldirilan
+    onceki = dict(k.gorunum or {})
+    gorunum = y.env_gorunumu(
+        cfg, _sir_cozucu(), sir_projesi=y.ayar(os.environ, y.SIR_PROJESI_ENV) or None
+    )
+    degerler = dict(gorunum.degerler)
+    for ad in gorunum.cozulemeyen:
+        if ad in onceki and ad not in gorunum.kaldirilan:
+            degerler[ad] = onceki[ad]
+    k.cfg, k.gorunum, k.kaldirilan = cfg, degerler, frozenset(gorunum.kaldirilan)
+    k.sir_zamani = simdi
+    with _KILIT:
+        _SAYAC[pid] = _SAYAC.get(pid, 0) + 1
+    return degerler, k.kaldirilan

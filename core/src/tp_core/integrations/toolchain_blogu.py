@@ -130,6 +130,7 @@ def proje_blogu(pid: str | None = None, platform: str | None = None) -> dict[str
         # Ayrı deponun varsayılan dalı (merge-base tabanı); toolchain yoksa "main" kullanır.
         if dal := (gorunum.get("TP_FORGE_CHECK_REF") or "").strip():
             blok["base_ref"] = dal
+    _ortam_alanlari(blok, p)
     if token := _uzak_token(p):
         # Blokta adres yoksa (varsayılan proje, env'le aynı) toolchain kendi env adresini kullanır
         # ve aynı host kuralını orada uygular.
@@ -140,6 +141,23 @@ def proje_blogu(pid: str | None = None, platform: str | None = None) -> dict[str
                 "ayna token'ı gönderilmedi (%s): ayna adresi izinli GitHub host'unda değil", p
             )
     return blok
+
+
+def _ortam_alanlari(blok: dict[str, Any], p: str) -> None:
+    """Test ortamı bağlamında (`proje.ortam.ortam_icinde`) bloğa ortam kimliği eklenir; toolchain
+    Canlı (`tur=prod`) ortamda uygulamanın test verisi uçlarını (DEMOAPP_TEST_TOKEN) ve kırma
+    koşularını kapatır. Ortam parolayı (A1 ile) kaldırdıysa toolchain env parolasına düşmesin
+    diye boş parola gider (Deployment parolası ortamın adresine gönderilmez)."""
+    from tp_core.proje.ortam import mevcut_ortam
+
+    o = mevcut_ortam()
+    if o is None or o.pid != p:
+        return
+    blok["ortam"] = {"eid": o.eid, "ad": o.ad, "tur": o.tur}
+    if "probe_password" not in blok and _ayar.sir("TP_PROBE_PASSWORD", pid=p) is None:
+        blok["probe_password"] = ""
+    if "run_dealer_passwords" not in blok and _ayar.sir("TP_RUN_DEALER_PASSWORDS", pid=p) is None:
+        blok["run_dealer_passwords"] = {}
 
 
 def _taban_blok(p: str) -> dict[str, Any]:

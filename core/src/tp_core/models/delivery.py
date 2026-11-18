@@ -177,8 +177,10 @@ class Run(ProjeKapsamli, Base):
         in_check("kaynak", enums.RUN_KAYNAK, "run_kaynak_ck"),
         in_check("tetik", enums.RUN_TETIK, "run_tetik_ck"),
         in_check("sonuc", enums.RUN_SONUC, "run_sonuc_ck"),
+        in_check("ortam_turu", enums.ORTAM_TURU, "run_ortam_turu_ck", True),
         Index("run_olusturma_ix", "olusturma"),
         Index("run_proje_olusturma_ix", "project_id", "olusturma"),
+        Index("run_proje_ortam_ix", "project_id", "ortam_eid", "olusturma"),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
@@ -196,7 +198,22 @@ class Run(ProjeKapsamli, Base):
     sure_ms: Mapped[int | None] = mapped_column(Integer)
     baslama: Mapped[datetime | None]
     bitis: Mapped[datetime | None]
+    # 0048: koşunun test ortamı (Home ortamı; koşu anındaki ad/tür). Ortamsız koşuda NULL.
+    ortam_eid: Mapped[str | None]
+    ortam_adi: Mapped[str | None]
+    ortam_turu: Mapped[str | None]
     olusturma: Mapped[datetime] = olusturma_col()
+
+    def test_ortami(self) -> dict[str, Any] | None:
+        """API görünümü `{eid, ad, tur, canli}` (ortamsız → None)."""
+        if not self.ortam_eid:
+            return None
+        return {
+            "eid": self.ortam_eid,
+            "ad": self.ortam_adi or self.ortam_eid,
+            "tur": self.ortam_turu or "test",
+            "canli": self.ortam_turu == "prod",
+        }
 
 
 class TestResult(ProjeKapsamli, Base):

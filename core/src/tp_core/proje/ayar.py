@@ -232,6 +232,22 @@ def _pid(pid: str | None) -> str:
     raise ProjeBaglamiYok("proje ayarı bağlamsız okundu (pid verin ya da proje_icinde kurun)")
 
 
+def _ortam_degeri(ad: str, p: str) -> tuple[bool, str | None]:
+    """Test ortamı bağlamında (`proje.ortam.ortam_icinde`) ortam düzeyi etkin config'teki değer:
+    (bulundu mu, değer). Ortamın A1 ile kaldırdığı ad → (True, None)."""
+    from tp_core.proje import ortam as _ortam
+
+    o = _ortam.mevcut_ortam()
+    if o is None or o.pid != p:
+        return False, None
+    degerler, kaldirilan = _ortam.gorunum(o)
+    if ad in kaldirilan:
+        return True, None
+    if ad in degerler:
+        return True, degerler[ad]
+    return False, None
+
+
 def _ham(ad: str, pid: str | None) -> str | None:
     p = _pid(pid)
     with _KILIT:
@@ -239,6 +255,9 @@ def _ham(ad: str, pid: str | None) -> str | None:
         if ust is not None and ad in ust:
             return ust[ad]
         cozucu = _COZUCU
+    bulundu, deger = _ortam_degeri(ad, p)
+    if bulundu:
+        return deger
     if cozucu is not None:
         harita = cozucu(p)
         if harita is not None and ad in harita:
@@ -307,4 +326,10 @@ def surum(pid: str | None = None) -> str:
         surumcu = _SURUMCU
         ust = _UST_SURUM
     taban = "env" if surumcu is None else surumcu(p)
+    from tp_core.proje.ortam import mevcut_ortam
+
+    o = mevcut_ortam()
+    if o is not None and o.pid == p:
+        # Ortam bağlamında kurulan istemci (adres/hesap ortamın) ortamsız önbelleğe karışmasın.
+        taban = f"{taban}@{o.eid}"
     return f"{taban}+{ust}" if ust else taban

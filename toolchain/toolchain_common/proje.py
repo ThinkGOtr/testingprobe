@@ -145,6 +145,32 @@ class AppAyari(BaseModel):
         }
 
 
+ORTAM_TURLERI = ("dev", "test", "staging", "prod")
+CANLI_TUR = "prod"
+
+
+class OrtamBilgisi(BaseModel):
+    """Koşunun test ortamı (Home proje ortamı; core 0048). `tur=prod` = Canlı: uygulamanın test
+    verisi uçları (DEMOAPP_TEST_TOKEN) test-runner'a iletilmez, kırma koşuları reddedilir."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    eid: str = Field(pattern=r"^[0-9a-f]{12}$")
+    ad: str = Field(default="", max_length=200)
+    tur: Literal["dev", "test", "staging", "prod"] = "test"
+
+    @field_validator("ad")
+    @classmethod
+    def _ad(cls, v: str) -> str:
+        if _KONTROL_RE.search(v):
+            raise ValueError("ortam adı denetim karakteri içeremez")
+        return v.strip()
+
+    @property
+    def canli(self) -> bool:
+        return self.tur == CANLI_TUR
+
+
 DIL_KOK_ADI_RE = re.compile(r"\ATP_[A-Z0-9_]{1,60}_ROOT(?:_(?:ANDROID|IOS|WINDOWS))?\Z")
 
 
@@ -172,6 +198,8 @@ class ProjeBlogu(BaseModel):
     base_ref: str | None = None
     app_paths: list[str] | None = None
     app: dict[AppPlatform, AppAyari] | None = None
+    # Koşunun test ortamı (yoksa ortamsız: proje ayarları).
+    ortam: OrtamBilgisi | None = None
 
     @field_validator("pid")
     @classmethod
