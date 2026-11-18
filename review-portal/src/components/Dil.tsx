@@ -7,31 +7,54 @@
 import type { DilSecenegi, KodDilleri, KurulumPr } from "../api/types";
 import { DIL_CATISI, DIL_ETIKETI, KIRARAK_DOGRULANMADI, KIRARAK_DOGRULANMADI_ACIKLAMA, type Dil } from "../lib/dil";
 import { Baglanti, Uyari } from "./ui";
-import type { Platform } from "../lib/platform";
+import { PLATFORM_ETIKETI, type Platform } from "../lib/platform";
 import { ortamAdlariniGizle } from "../api/http";
 import { SegmentGrubu } from "./Platform";
 
+/** Projenin platform test dilleri ayarının AI Probe'daki yeri (core `dil_listesi_yolu` ile aynı; Home'daki adlar). */
+export function dilListesiYolu(platform: Platform): string {
+  return `AI Probe › Proje › Platform ayarları › ${PLATFORM_ETIKETI[platform]} › Test dilleri`;
+}
+
+/** Dil projenin platform test dillerinde seçili değil (core `liste_engeli_metni` ile aynı metin). */
+export function listeEngeliMetni(platform: Platform, etiket: string): string {
+  return `${etiket} bu projenin ${PLATFORM_ETIKETI[platform]} test dillerinde seçili değil. Açmak için ${dilListesiYolu(platform)} bölümünde ${etiket} seçeneğini işaretleyin`;
+}
+
 /**
- * core'un Java web engeli ("GitHub kipinde Java web hattı etkin değil (TP_WEB_DILLERI …)"). Metin açmak
- * için yapılacak adımı da söyler (Home'da projenin web test dilleri; T2-2).
+ * core'un eski Java web engeli ("GitHub kipinde Java web hattı etkin değil (TP_WEB_DILLERI …)"). Yeni core
+ * aynı metni kendisi yazar (`liste` engeli); eski core'da da kullanıcı açma yolunu görür (T2-2, ekran testi 2 TP-3).
  */
-export const JAVA_WEB_KAPALI =
-  "Java web hattı bu kurulumda etkin değil. Açmak için AI Probe › Proje › Platformlar ve test dilleri › Web test dilleri'ne Java ekleyin";
+export const JAVA_WEB_KAPALI = listeEngeliMetni("web", "Java");
+
+/** Değerlendirme kapısı ("Yakında"): projeden açılamaz; ürün değerlendirmesi bitince açılır. */
+export const YAKINDA_ACIKLAMA = "Değerlendirme sürüyor: bu dil ürün değerlendirmesi tamamlanınca açılır, projeden açılamaz";
 
 /** core: GitHub App kipinde algılama worker'da sürüyor (`codegen.dil_algila`, bekleme süresi doldu). */
 export const ALGILAMA_SURUYOR = /algılama sürüyor/i;
 
 /**
  * Seçenek nedenini kullanıcı metnine çevirir: yapılandırma adı (TP_*), iş akışı / zorunlu check gibi
- * iç ayrıntı görünür metinden çıkar, `ayrinti` olarak (yalnız ipucu) döner.
+ * iç ayrıntı görünür metinden çıkar, `ayrinti` olarak (yalnız ipucu) döner. Yeni core metni zaten
+ * temizdir; eski core'un "GitHub kipinde X hattı etkin değil (TP_…)" metni platform biliniyorsa
+ * açma yoluyla yeniden yazılır. "Değerlendirme sürüyor" açıklanır (her kapalı nedende yol/durum).
  */
-export function dilNedeni(neden: string | null | undefined): { metin: string | null; ayrinti: string | null } {
+export function dilNedeni(
+  neden: string | null | undefined,
+  platform?: Platform | null,
+): { metin: string | null; ayrinti: string | null } {
   const n = neden?.trim();
   if (!n) return { metin: null, ayrinti: null };
+  if (/^Değerlendirme sürüyor$/i.test(n)) return { metin: YAKINDA_ACIKLAMA, ayrinti: null };
   const teknik = /\bTP_[A-Z0-9_]+|iş akışı|zorunlu check|Yapılandırma hatası/i.test(n);
   if (!teknik) return { metin: n, ayrinti: null };
   if (/Java web hattı etkin değil/i.test(n)) return { metin: JAVA_WEB_KAPALI, ayrinti: n };
-  if (/^Yapılandırma hatası/i.test(n)) return { metin: "Bu dil bu kurulumda yapılandırılmamış", ayrinti: n };
+  const hat = /GitHub kipinde (.+?) hattı etkin değil/i.exec(n);
+  if (hat && platform) return { metin: listeEngeliMetni(platform, hat[1]), ayrinti: n };
+  if (/^Yapılandırma hatası/i.test(n)) {
+    if (!/\bTP_[A-Z0-9_]+/.test(n)) return { metin: n, ayrinti: null };
+    return { metin: platform ? `Yapılandırma hatası: ${PLATFORM_ETIKETI[platform]} test dilleri ayarı geçersiz. ${dilListesiYolu(platform)} bölümünü kontrol edip yeniden kaydedin` : "Bu dil bu kurulumda yapılandırılmamış", ayrinti: n };
+  }
   const temiz = ortamAdlariniGizle(n.replace(/\s*\([^)]*(?:TP_|iş akışı|check)[^)]*\)/gi, "")).trim();
   return { metin: temiz || "Bu kurulumda kullanılamıyor", ayrinti: n };
 }
@@ -85,7 +108,48 @@ function dilNotu(diller: KodDilleri, elle: boolean, seciliEtiket: string): strin
   if (elle) return `${seciliEtiket} elle seçildi.`;
   if (diller.neden) return algilamaNotu(diller);
   if (diller.kaynak === "algilandi") return `${algilanan} repodan algılandı${dayanak(diller)}.`;
+  const engelli = engelliAlgilanan(diller);
+  if (engelli) return engelliAlgilananNotu(engelli, algilanan, diller);
   return `${ALGILAMA_KAPSAMI} elle yazılmış test bulunamadı; varsayılan: ${algilanan}.`;
+}
+
+/**
+ * Algılanan (en çok testi olan) dil seçilemediği için varsayılana düşüldüyse o dil ve sayısı (ekran testi 2
+ * TP-2). Yeni core `engelli_algilanan` gönderir; eski core'da sayılardan çıkarılır (en çok testi olan dil).
+ */
+export function engelliAlgilanan(diller: Pick<KodDilleri, "kaynak" | "algilanan" | "sayilar" | "engelli_algilanan" | "secenekler" | "en_az">) {
+  if (diller.kaynak === "algilandi") return null;
+  if (diller.engelli_algilanan) return diller.engelli_algilanan;
+  if (diller.engelli_algilanan === null) return null; // yeni core: algılanan seçilebilir ya da test yok
+  let enCok: Dil | null = null;
+  for (const [d, n] of Object.entries(diller.sayilar) as [Dil, number][]) {
+    if (n > 0 && (enCok === null || n > (diller.sayilar[enCok] ?? 0))) enCok = d;
+  }
+  if (!enCok || enCok === diller.algilanan) return null;
+  const s = diller.secenekler.find((x) => x.dil === enCok);
+  return { dil: enCok, sayi: diller.sayilar[enCok] ?? 0, en_az: !!diller.en_az?.includes(enCok), engel: s?.engel ?? null, neden: s?.neden ?? null };
+}
+
+const ENGEL_KISA: Record<string, string> = {
+  liste: "bu projede seçili değil",
+  yakinda: "henüz değerlendirmede (Yakında)",
+  depo: "bu depoda üretilemiyor",
+  yapilandirma: "yapılandırma hatası nedeniyle seçilemiyor",
+};
+
+function engelliAlgilananNotu(e: NonNullable<ReturnType<typeof engelliAlgilanan>>, varsayilan: string, diller: KodDilleri): string {
+  const ad = DIL_ETIKETI[e.dil];
+  const sayi = `${e.en_az ? "en az " : ""}${e.sayi}`;
+  const neden = (e.engel && ENGEL_KISA[e.engel]) || "seçilemiyor";
+  return `Depoda en çok ${ad} testi var (${sayi}) ama ${ad} ${neden}; varsayılan: ${varsayilan}.${sayilarMetni(diller)}`;
+}
+
+/** " Depodaki elle yazılmış test dosyaları: TypeScript 8, Java 5, C# 9." (birden çok dilde test varsa). */
+export function sayilarMetni(diller: Pick<KodDilleri, "sayilar" | "en_az">): string {
+  const parcalar = (Object.entries(diller.sayilar) as [Dil, number][])
+    .filter(([, n]) => n > 0)
+    .map(([d, n]) => `${DIL_ETIKETI[d]} ${diller.en_az?.includes(d) ? "≥" : ""}${n}`);
+  return parcalar.length > 1 ? ` Depodaki elle yazılmış test dosyaları: ${parcalar.join(", ")}.` : "";
 }
 
 /** Algılamanın dayanağı: "9 elle yazılmış test dosyası" (sayı bilinmiyorsa boş). */
@@ -243,8 +307,8 @@ export function DilSecici({
           <span className="kucuk soluk">
             {tek.cati} · bu platformda tek dil
             {tek.neden && !(diller.neden && tek.kullanilabilir) ? (
-              <span title={dilNedeni(tek.neden).ayrinti ?? undefined}>
-                {tek.kullanilabilir ? ` · ${dilNedeni(tek.neden).metin}` : ` · Kullanılamıyor: ${dilNedeni(tek.neden).metin}`}
+              <span title={dilNedeni(tek.neden, diller.platform).ayrinti ?? undefined}>
+                {tek.kullanilabilir ? ` · ${dilNedeni(tek.neden, diller.platform).metin}` : ` · Kullanılamıyor: ${dilNedeni(tek.neden, diller.platform).metin}`}
               </span>
             ) : (
               ""
@@ -278,8 +342,8 @@ export function DilSecici({
           pasifOnek: s.durum === "yakinda" ? "Yakında" : undefined,
           // Algılama hiç yapılamadıysa (üst düzey `neden`) kullanılabilir seçeneklerdeki aynı "depo
           // okunamadı" nedeni her kutuda tekrarlanmaz; durum altta tek notla söylenir.
-          neden: diller.neden && s.kullanilabilir ? undefined : dilNedeni(s.neden).metin,
-          nedenAyrinti: diller.neden && s.kullanilabilir ? undefined : dilNedeni(s.neden).ayrinti,
+          neden: diller.neden && s.kullanilabilir ? undefined : dilNedeni(s.neden, diller.platform).metin,
+          nedenAyrinti: diller.neden && s.kullanilabilir ? undefined : dilNedeni(s.neden, diller.platform).ayrinti,
         }))}
       />
       <div className="dil-notu kucuk">

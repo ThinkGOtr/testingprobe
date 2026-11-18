@@ -16,6 +16,8 @@ import { DepoCipi, depoGosterimi } from "../components/Depo";
 import { DilRozeti } from "../components/Dil";
 import { checkEtiketi, PLATFORMLAR, PLATFORM_ETIKETI, platformaGoreSuz, platformSecimiOku, type Platform } from "../lib/platform";
 import { EkilmisHataCipi } from "../components/kule/EkilmisHataCipi";
+import { SuzgecSecimi, suzgecSecenekleri } from "../components/Suzgec";
+import { DIL_ETIKETI, DILLER, type Dil } from "../lib/dil";
 
 const TETIK_TONU: Partial<Record<Tetik, "notr" | "bilgi" | "vurgu" | "uyari">> = {
   nightly: "notr",
@@ -245,9 +247,14 @@ export function SauceCipi({ k }: { k: Pick<Kosu, "kaynak" | "durum" | "sauce_dur
   return null;
 }
 
-type Filtre = { tetik: Tetik | ""; kaynak: KosuKaynagi | ""; durum: Kosu["durum"] | ""; kirma: boolean; platform?: Platform | "" };
+type Filtre = { tetik: Tetik | ""; kaynak: KosuKaynagi | ""; durum: Kosu["durum"] | ""; kirma: boolean; platform?: Platform | ""; dil?: Dil | "" };
 
-/** Koşu listesinin süzgeci (adres çubuğunda: ?tetik=&kaynak=&durum=&kirma=1&platform=). */
+/** Adresteki `?dil=` değeri (bilinmeyen değer süzgeç uygulamaz). */
+export function dilSecimiOku(d: string | null): Dil | "" {
+  return d && (DILLER as readonly string[]).includes(d) ? (d as Dil) : "";
+}
+
+/** Koşu listesinin süzgeci (adres çubuğunda: ?tetik=&kaynak=&durum=&kirma=1&platform=&dil=). */
 export function kosulariSuz(kosular: Kosu[], f: Filtre): Kosu[] {
   // Platformu bilinmeyen koşu hiçbir platform seçimine girmez (uydurulmaz).
   return platformaGoreSuz(kosular, f.platform || "tumu", (k) => k.platform).filter(
@@ -255,6 +262,8 @@ export function kosulariSuz(kosular: Kosu[], f: Filtre): Kosu[] {
       (!f.tetik || k.tetik === f.tetik) &&
       (!f.kaynak || k.kaynak === f.kaynak) &&
       (!f.durum || k.durum === f.durum) &&
+      // Dili bilinmeyen koşu hiçbir dil seçimine girmez (ts sayılmaz; ekran testi 2 TP-7).
+      (!f.dil || k.dil === f.dil) &&
       (f.kirma || !k.break_campaign || f.tetik === "break_verify"),
   );
 }
@@ -300,6 +309,7 @@ export function Kosular() {
       const p = platformSecimiOku(sorgu.get("platform"));
       return p === "tumu" ? "" : p;
     })(),
+    dil: dilSecimiOku(sorgu.get("dil")),
   };
   const ayarla = (anahtar: string, deger: string) => {
     const y = new URLSearchParams(sorgu);
@@ -310,7 +320,7 @@ export function Kosular() {
   const tum = v.veri ?? [];
   const suzulen = useMemo(
     () => kosulariSuz(tum, filtre),
-    [tum, filtre.tetik, filtre.kaynak, filtre.durum, filtre.kirma, filtre.platform],
+    [tum, filtre.tetik, filtre.kaynak, filtre.durum, filtre.kirma, filtre.platform, filtre.dil],
   );
   // 009: platform süzgeci yalnız platformu bilinen koşu varsa (liste ucu taşımıyorsa gösterilmez).
   const platformVar = tum.some((k) => k.platform) || !!filtre.platform;
@@ -319,6 +329,8 @@ export function Kosular() {
   // koşu tablosuna alındığında görünür hale gelir).
   const kirmaVar = tum.some((k) => k.break_campaign);
   const kaynaklar = [...new Set(tum.map((k) => k.kaynak))];
+  // TP-7: dil süzgeci yalnız dili bilinen koşu varsa (ya da adreste seçim varsa); seçenekler koşulardaki diller.
+  const dilSecenekleri = suzgecSecenekleri(tum, (k) => k.dil, (d) => DIL_ETIKETI[d], { secili: filtre.dil, sira: DILLER });
 
   const tetikle = async (tetik: "deploy" | "nightly" | "manual") => {
     const islemler = { deploy: deployIslem, nightly: geceIslem, manual: manuelIslem };
@@ -448,6 +460,9 @@ export function Kosular() {
                   ))}
                 </select>
               </label>
+              {dilSecenekleri.length > 0 && (
+                <SuzgecSecimi etiket="Dil" testId="kosu-dil-suzgeci" deger={filtre.dil ?? ""} secenekler={dilSecenekleri} degistir={(d) => ayarla("dil", d)} />
+              )}
               {platformVar && (
                 <label>
                   Platform

@@ -76,7 +76,7 @@ describe("T2-2 açıklama ve Java kapalı nedeni", () => {
   it("Java kapalı nedeni açma yolunu söyler", () => {
     const ham = "GitHub kipinde Java web hattı etkin değil (TP_WEB_DILLERI java içermiyor; web-java iş akışı zorunlu check değil)";
     expect(dilNedeni(ham).metin).toBe(JAVA_WEB_KAPALI);
-    expect(JAVA_WEB_KAPALI).toContain("AI Probe › Proje › Platformlar ve test dilleri › Web test dilleri'ne Java ekleyin");
+    expect(JAVA_WEB_KAPALI).toContain("AI Probe › Proje › Platform ayarları › Web › Test dilleri bölümünde Java seçeneğini işaretleyin");
   });
 });
 

@@ -13,7 +13,7 @@ import { PlatformRozeti, PlatformSecici } from "../components/Platform";
 import { DepoCipi } from "../components/Depo";
 import { PLATFORM_ETIKETI, type Platform } from "../lib/platform";
 import { algilamaSuruyorMu, dilNedeni, DilRozeti, DilSecici, KurulumBilgisi, MusteriCiNotu, uretimAciklamasi } from "../components/Dil";
-import { KurulumPrEylemi } from "../components/KurulumPrEylemi";
+import { KurulumPrEylemi, MusteriCiKurulumYolu } from "../components/KurulumPrEylemi";
 import { DIL_ETIKETI, type Dil } from "../lib/dil";
 import type { Script, UretimSonucu } from "../api/types";
 import { baslamayanlar, DilCakismasiKutusu, dilCakismasiMi, UretimAtlananlar, uretimBildirimi } from "../components/UretimSonuclari";
@@ -82,10 +82,13 @@ export function Kod() {
   const platform: Platform = acikPlatformlar.includes(seciliPlatform) ? seciliPlatform : (acikPlatformlar[0] ?? seciliPlatform);
   // 011: üretim dili ayrı boyuttur. Seçenekler ve repodan algılanan dil core'dan (`GET /code/languages`);
   // uç yoksa (011 öncesi core) `null` döner: seçici çizilmez, üretim bugünkü gibi sürer.
-  // `GET /code/languages` `code.generate` ister: yalnız üretebilen rol (Otomasyon Mühendisi) okur;
-  // diğer rollerde istek atılmaz (konsolda 403 ve denetimde sahte `authz.denied` olmasın).
+  // `GET /code/languages` `code.generate` ya da `code.ci_setup` ister: üretebilen rol (Otomasyon Mühendisi) ve
+  // müşteri CI kurulum PR'ını açabilen Sistem Yöneticisi okur (ekran testi 2 TP-4: yönetici seçiciyi salt
+  // görüntüler, kurulum eylemine ulaşır); diğer rollerde istek atılmaz (konsolda 403 ve sahte `authz.denied` olmasın).
   const uretebilir = useIzin("code.generate");
-  const diller = useVeri(() => (uretebilir && !platformYok ? api.kodDilleri(platform) : Promise.resolve(null)), [platform, uretebilir && !platformYok]);
+  const ciKurabilir = useIzin("code.ci_setup");
+  const dilOkur = uretebilir || ciKurabilir;
+  const diller = useVeri(() => (dilOkur && !platformYok ? api.kodDilleri(platform) : Promise.resolve(null)), [platform, dilOkur && !platformYok]);
   // Kullanıcının elle seçtiği dil (yalnız algılanandan farklıysa); platform değişince sıfırlanır.
   const [elleDil, setElleDil] = useState<Dil | null>(null);
   const dilVerisi = diller.veri ?? null;
@@ -110,7 +113,7 @@ export function Kod() {
   const dogrulanmamis = seciliSecenek?.hat === "dogrulanmamis";
   const musteriCi = seciliSecenek?.hat === "musteri_ci";
   // Algılanan dil bu depoda üretilemiyorsa (seçenek pasif) üretim başlatılmaz: neden seçenekte yazılıdır.
-  const dilEngeli = seciliSecenek && !seciliSecenek.kullanilabilir ? (dilNedeni(seciliSecenek.neden).metin ?? `${seciliSecenek.etiket} bu depoda üretilemiyor.`) : null;
+  const dilEngeli = seciliSecenek && !seciliSecenek.kullanilabilir ? (dilNedeni(seciliSecenek.neden, platform).metin ?? `${seciliSecenek.etiket} bu depoda üretilemiyor.`) : null;
   const islem = useIslem();
   const bildir = useBildirim();
   // K-T12: son isteğin üretimi başlamayan case'leri (çakışma, açık/merge edilmiş PR, süren iş); yeni istekte sıfırlanır.
@@ -222,7 +225,8 @@ export function Kod() {
                 degistir={(d) => setElleDil(d === dilVerisi.algilanan ? null : d)}
                 elle={elleGecerli}
                 algilananaDon={() => setElleDil(null)}
-                disabled={islem.calisiyor}
+                // Üretemeyen rol (Sistem Yöneticisi) seçiciyi yalnız görüntüler.
+                disabled={islem.calisiyor || !uretebilir}
               />
             ) : diller.yukleniyor ? (
               <p className="kucuk soluk dil-yukleniyor" role="status">
@@ -251,6 +255,8 @@ export function Kod() {
             {musteriCi && seciliSecenek?.kullanilabilir && (platform === "android" || platform === "ios") && (
               <KurulumPrEylemi key={`${platform}/${seciliSecenek.dil}`} platform={platform} kurulum={seciliSecenek.kurulum} degisti={() => void diller.yenile()} />
             )}
+            {/* TP-1: seçilemeyen müşteri CI dili için de kurulum yolu (dil listesinde yok / depoda kurulu değil). */}
+            {dilVerisi && ciKurabilir && <MusteriCiKurulumYolu platform={platform} secenekler={dilVerisi.secenekler} seciliDil={seciliDil} degisti={() => void diller.yenile()} />}
             {islem.hata &&
               (dilCakismasiMi(islem.hataNesnesi) ? <DilCakismasiKutusu hata={islem.hataNesnesi} /> : <HataKutusu hata={islem.hata} kaynak={islem.hataNesnesi} />)}
             <UretimAtlananlar sonuclar={atlananlar} caseAdi={caseAdi} kapat={() => setAtlananlar([])} />

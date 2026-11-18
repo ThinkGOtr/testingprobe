@@ -396,6 +396,32 @@ def _ekran_baglami(m: Mesaj, oneri_baglami: Mapping[str, Any] | None) -> dict[st
     return ekran or None
 
 
+# Ekran testi 2 TP-5: Kod üretimi ekranındaki somut dil durumu (seçilebilir mi, neden, nasıl
+# açılır) modelin ekran bağlamına sunucuda eklenir (istemci bağlamı 2 KB ve platformu bilmez).
+# Yalnız ekran bağlamı gönderildiyse ve rol dil seçeneklerini okuyabiliyorsa; prompt değişmez.
+DIL_EKRANLARI = frozenset({"/kod", "/kod/:id"})
+DIL_OKUMA_IZINLERI = ("code.generate", "code.ci_setup")
+
+
+def _dil_durumu_ekle(ekran: dict[str, Any] | None, m: Mesaj) -> dict[str, Any] | None:
+    if not ekran or ekran.get("rota_kalibi") not in DIL_EKRANLARI:
+        return ekran
+    from tp_core.auth.yetki import izinli
+
+    if not any(izinli(m.rol, iz) for iz in DIL_OKUMA_IZINLERI):
+        return ekran
+    try:
+        from tp_core.features.codegen.service import dil_durumu_ozeti
+
+        ozet = dil_durumu_ozeti()
+    except Exception as exc:  # bağlam zenginleştirmesi cevabı düşürmez
+        log.warning("asistan: dil durumu bağlama eklenemedi (%s)", type(exc).__name__)
+        return ekran
+    if ozet:
+        ekran = {**ekran, "dil_secenekleri": ozet}
+    return ekran
+
+
 def _blok(veri: Any, *, kaynak: str, tur: str) -> str:
     metin = veri if isinstance(veri, str) else json.dumps(veri, ensure_ascii=False, indent=1)
     return wrap_untrusted(metin, source=kaynak, kind=cast(UntrustedKind, tur))
@@ -1252,7 +1278,7 @@ def cevapla(
             except Exception as exc:  # olay yayını cevabı düşürmez
                 log.debug("asistan adım olayı yayınlanamadı (%s)", type(exc).__name__)
 
-        ekran = _ekran_baglami(m, oneri_baglami)
+        ekran = _dil_durumu_ekle(_ekran_baglami(m, oneri_baglami), m)
         try:
             sonuc = gw.run_agent(
                 m.hedef_amac,

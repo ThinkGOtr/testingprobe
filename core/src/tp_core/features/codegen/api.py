@@ -52,7 +52,7 @@ from pydantic import BaseModel, Field
 
 from tp_core.api.errors import KodluHata
 from tp_core.auth.deps import DbSession
-from tp_core.auth.yetki import izin
+from tp_core.auth.yetki import izin, izinlerden_biri
 from tp_core.db import get_engine
 from tp_core.features.codegen import depo as depolar
 from tp_core.features.codegen import kurulum_pr, service, views
@@ -81,6 +81,9 @@ Inceler = Annotated[Principal, Depends(izin("code.review"))]
 MergeEder = Annotated[Principal, Depends(izin("code.merge"))]
 KodOkur = Annotated[Principal, Depends(izin("code.read"))]
 CiKurar = Annotated[Principal, Depends(izin("code.ci_setup"))]
+# Ekran testi 2 TP-4: dil seçenekleri (kurulum özeti dahil) kurulum PR'ını açabilen role de açık;
+# Sistem Yöneticisi `code.ci_setup`'a sahip ama `code.generate`'e değil. Yazma yok (salt okuma).
+DilOkur = Annotated[Principal, Depends(izinlerden_biri("code.generate", "code.ci_setup"))]
 MERGE_BEKLEME_S = 20.0  # portal nginx /api/ zaman aşımı 30 sn
 
 
@@ -148,7 +151,7 @@ def generate(body: KodUretGirdisi, session: DbSession, user: Uretir) -> dict[str
 
 @router.get("/code/languages")
 def languages(
-    _user: Uretir,
+    _user: DilOkur,
     platform: Literal["web", "android", "ios", "windows"] = "web",
 ) -> dict[str, Any]:
     """Algılanan dil, depodaki elle yazılmış test sayıları ve platformun dil seçenekleri."""
