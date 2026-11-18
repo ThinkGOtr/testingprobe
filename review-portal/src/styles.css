@@ -6945,6 +6945,33 @@ code {
   font-weight: 600;
 }
 
+.tablo td.denetim-eylem .mono {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+/* 641–1279 px'te (yan menü + FAB oluğu: tablo ≈ 640 px) liste tablolarının metin sütunları daha dar başlar,
+   Denetim aktörü sarabilir; tablo sarıcıda kaymadan sığar. Otomasyon çipleri hücre içinde sarar. */
+@media (min-width: 641px) and (max-width: 1279px) {
+  .tablo-satir-baglantili td.sutun-metin,
+  .tablo td.denetim-ozet-hucre {
+    min-width: 11rem;
+  }
+  .tablo td.denetim-aktor {
+    min-width: 7rem;
+  }
+  /* Uzun durum çipi ("Case review aşamasında") dar masaüstünde iki satıra sarabilir. */
+  .tablo-satir-baglantili td.sutun-durum .cip {
+    white-space: normal;
+  }
+}
+.tablo .otomasyon-liste > li {
+  flex-wrap: wrap;
+}
+/* Test case'leri "Case" hücresi: story anahtarı ve sıra no dar sütunda alt alta sarabilir. */
+.tablo td.sutun-kimlik:has(> a + .mono) {
+  white-space: normal;
+}
+
 /* ---- Yayın: seçim kutusu özetin etiketi (ET-04): satır başına tek denetim, 390'da 44 px dokunma alanı. */
 .yayin-secim {
   display: flex;

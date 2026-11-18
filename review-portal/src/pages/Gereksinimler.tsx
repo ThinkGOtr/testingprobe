@@ -266,7 +266,7 @@ function GereksinimSatiri({ g, kanit }: { g: Gereksinim; kanit: Omit<SonrakiGird
         </Link>
         {g.ac_missing && <span className="soluk"> · kabul kriteri yok</span>}
       </td>
-      <td data-etiket="Durum">
+      <td className="sutun-durum" data-etiket="Durum">
         <Cip ton={d.ton}>{d.etiket}</Cip>
         {g.otomatik_akis && (
           <div>

@@ -129,12 +129,12 @@ describe("liste ekranları", () => {
     expect(screen.getByTestId("konum")).toHaveTextContent(`durum=${durum}`);
   });
 
-  it("Test case'leri: risk verisi olmayan listede Risk sütunu yok (IA-22)", async () => {
+  it("Test case'leri: risk yalnız veri varsa, durumla aynı sütunda (IA-22)", async () => {
     await oturumAc("testci");
     const riskVar = (await api.caseler()).some((c) => c.durum !== "superseded" && c.icerik.risk);
     uygulama("/caseler");
     const tablo = await screen.findByRole("table");
-    expect(within(tablo).queryByRole("columnheader", { name: "Risk" }) !== null).toBe(riskVar);
+    expect(within(tablo).queryByRole("columnheader", { name: /risk/ }) !== null).toBe(riskVar);
   });
 
   it("Bug taslakları: varsayılan 'Karar bekleyen', görünüm adreste (IA-18)", async () => {

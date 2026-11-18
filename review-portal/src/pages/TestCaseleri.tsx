@@ -226,8 +226,10 @@ export function TestCaseleri() {
                       <th scope="col" className="sutun-ikincil">
                         Tür
                       </th>
-                      {riskVar && <th scope="col">Risk</th>}
-                      <th scope="col">Durum</th>
+                      {/* Risk, durumla aynı sütunda (1024 px'te ayrı sütun sığmıyordu); risk verisi yoksa hiç yok (IA-22). */}
+                      <th scope="col">
+                        Durum{riskVar && <span className="soluk"> · risk</span>}
+                      </th>
                       <th scope="col">Jira Test</th>
                       <th scope="col">Otomasyon</th>
                       <th scope="col" className="sutun-ikincil">
@@ -314,11 +316,12 @@ function CaseSatiri({ c, g, scriptler, sinirda, riskVar }: { c: TestCase; g: Ger
   return (
     <tr>
       {/* Story ve sıra no tek sütunda ("TPD-1 · #3"): 1024 px'te 9 sütun 246 px kaydırıyordu. */}
-      <td className="tek-satir" data-etiket="Case">
+      <td className="sutun-kimlik" data-etiket="Case">
+        {/* Serbest metin gereksinimin uzun başlığı sütunu genişletmesin: "Serbest metin", başlık ipucunda. */}
         <Link to={gYolu} title={g?.baslik}>
-          {g?.jira_key ?? c.jira_key ?? g?.baslik ?? "Serbest metin"}
+          {g?.jira_key ?? c.jira_key ?? "Serbest metin"}
         </Link>
-        <span className="mono soluk"> · #{c.sira_no}</span>
+        <span className="mono soluk"> #{c.sira_no}</span>
       </td>
       <td className="sutun-metin yigin-baslik" data-etiket="Başlık">
         <Link to={`${gYolu}/caseler#${encodeURIComponent(caseCapasi(c.id))}`} className="satir-baglanti">
@@ -327,13 +330,16 @@ function CaseSatiri({ c, g, scriptler, sinirda, riskVar }: { c: TestCase; g: Ger
         {c.kanal === "ide" && <span className="soluk"> · IDE kanalı</span>}
       </td>
       <td className="sutun-ikincil" data-etiket="Tür">{CASE_TURU[c.icerik.type] ?? c.icerik.type}</td>
-      {riskVar && (
-        <td className={risk || c.icerik.risk ? undefined : "bos-yigin"} data-etiket="Risk">
-          {risk ? <Cip ton={risk.ton}>{risk.etiket}</Cip> : (c.icerik.risk ?? <span className="bos-hucre">—</span>)}
-        </td>
-      )}
-      <td className="sutun-durum" data-etiket="Durum">
+      <td className="sutun-durum" data-etiket={riskVar ? "Durum · risk" : "Durum"}>
         <Cip ton={durum.ton}>{durum.etiket}</Cip>
+        {riskVar && risk && (
+          <>
+            {" "}
+            <Cip ton={risk.ton} aciklama="Risk">
+              {risk.etiket}
+            </Cip>
+          </>
+        )}
       </td>
       <td className={c.jira_test_key ? "mono" : "mono bos-yigin"} data-etiket="Jira Test">
         {!c.jira_test_key ? "—" : testAdresi ? <DisBaglanti href={testAdresi}>{c.jira_test_key}</DisBaglanti> : c.jira_test_key}

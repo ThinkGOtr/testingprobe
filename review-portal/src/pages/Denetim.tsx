@@ -172,8 +172,9 @@ export function Denetim() {
                       </th>
                       <th scope="col">Zaman</th>
                       <th scope="col">Aktör</th>
-                      <th scope="col">Eylem</th>
-                      <th scope="col">Nesne</th>
+                      <th scope="col">
+                        Eylem <span className="soluk">· nesne</span>
+                      </th>
                       <th scope="col">Özet</th>
                     </tr>
                   </thead>
@@ -189,8 +190,11 @@ export function Denetim() {
                         </td>
                         <td className="sutun-tarih" data-etiket="Zaman">{tarih(o.zaman)}</td>
                         <td className="denetim-aktor" data-etiket="Aktör" title={kisiAdi(o.aktor) !== o.aktor ? o.aktor : undefined}>{kisiAdi(o.aktor)}</td>
-                        <td className="sutun-kimlik" data-etiket="Eylem">{o.eylem}</td>
-                        <td className="mono" data-etiket="Nesne">{o.nesne}</td>
+                        {/* Eylem ve nesne tek sütunda (1024 px'te 6 sütun sığmıyordu). */}
+                        <td className="denetim-eylem" data-etiket="Eylem · nesne">
+                          <span className="mono">{o.eylem}</span>
+                          {o.nesne && <div className="mono soluk kucuk">{o.nesne}</div>}
+                        </td>
                         <td className="denetim-ozet-hucre sutun-metin" data-etiket="Özet">
                           <OzetHucresi ozet={o.ozet} />
                         </td>
