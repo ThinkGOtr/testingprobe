@@ -5,7 +5,7 @@
   "model": "claude-sonnet-5-5",
   "provider": "anthropic",
   "mode": "live",
-  "passed": 2,
+  "passed": 3,
   "total": 3,
   "runs": 1,
   "cases": [
@@ -22,7 +22,7 @@
             "method": "ac",
             "args": [],
             "verified": true,
-            "evidence_ref": "Uygulama sıfırdan açıldı, giriş formu (login-username) görüldü"
+            "evidence_ref": "Uygulama sıfırdan başladı, giriş formu ve login-submit görüldü"
           },
           {
             "step_id": "S2",
@@ -33,7 +33,7 @@
               "Demo123!"
             ],
             "verified": true,
-            "evidence_ref": "login-username locator doğrulandı; giriş sonrası katalog açıldı (current-dealer: Doğrulama Bayi)"
+            "evidence_ref": "login-submit (Giris.GIRIS_YAP) ile giriş yapıldı; katalog açıldı, current-dealer 'Doğrulama Bayi'"
           },
           {
             "step_id": "S3",
@@ -44,7 +44,7 @@
               7
             ],
             "verified": true,
-            "evidence_ref": "qty-input-P-001 alanına 7 yazıldı, Sepete ekle basıldı; sepet sayacı cart-count 7"
+            "evidence_ref": "add-to-cart tıklandı; sepet sayacı (nav-cart) 'Sepet, 7 ürün'"
           },
           {
             "step_id": "S4",
@@ -52,7 +52,7 @@
             "method": "sepeti_ac",
             "args": [],
             "verified": true,
-            "evidence_ref": "nav-cart ile Sepetim açıldı; cart-line-P-001 satırı görüldü"
+            "evidence_ref": "nav-cart ile Sepetim ekranı açıldı; cart-line-P-001 görüldü"
           }
         ],
         "expects": [
@@ -98,8 +98,8 @@
       },
       "mode": "live",
       "error": null,
-      "cost_usd": 0.052022,
-      "sure_ms": 28239
+      "cost_usd": 0.04957,
+      "sure_ms": 24001
     },
     {
       "id": "tpd-1-c2-ios-python",
@@ -114,7 +114,7 @@
             "method": "ac",
             "args": [],
             "verified": true,
-            "evidence_ref": "login-username alanı ve giriş formu göründü"
+            "evidence_ref": "Giriş formu göründü: login-username, login-submit"
           },
           {
             "step_id": "S2",
@@ -125,7 +125,7 @@
               "Demo123!"
             ],
             "verified": true,
-            "evidence_ref": "login-submit sonrası katalog açıldı, current-dealer görüldü (doğrulama bayisi)"
+            "evidence_ref": "login-submit ile giriş yapıldı, katalog açıldı (oturum: Doğrulama Bayi, case'teki Merkez Bayi'den farklı)"
           },
           {
             "step_id": "S3",
@@ -136,7 +136,7 @@
               7
             ],
             "verified": true,
-            "evidence_ref": "add-to-cart basıldı, cart-count 7"
+            "evidence_ref": "qty-input-P-001 ve add-to-cart ile 7 adet eklendi, cart-count 7"
           },
           {
             "step_id": "S4",
@@ -144,7 +144,106 @@
             "method": "sepeti_ac",
             "args": [],
             "verified": true,
-            "evidence_ref": "nav-cart ile Sepetim açıldı; cart-line-P-001 adet 7, bedava 1, 175/25/150 TL"
+            "evidence_ref": "nav-cart ile sepet açıldı: cart-line-P-001, adet 7, bedava 1, 175,00/25,00/150,00 TL"
+          }
+        ],
+        "expects": [
+          {
+            "po": "SepetEkrani",
+            "method": "dogrula_sepet_sayaci",
+            "args": [
+              7
+            ]
+          },
+          {
+            "po": "SepetEkrani",
+            "method": "dogrula_satir_adedi",
+            "args": [
+              "P-001",
+              7
+            ]
+          },
+          {
+            "po": "SepetEkrani",
+            "method": "dogrula_bedava_adet",
+            "args": [
+              "P-001",
+              1
+            ]
+          },
+          {
+            "po": "SepetEkrani",
+            "method": "dogrula_ara_toplam",
+            "args": [
+              "175,00 TL"
+            ]
+          },
+          {
+            "po": "SepetEkrani",
+            "method": "dogrula_indirim",
+            "args": [
+              "25,00 TL"
+            ]
+          },
+          {
+            "po": "SepetEkrani",
+            "method": "dogrula_toplam",
+            "args": [
+              "150,00 TL"
+            ]
+          }
+        ],
+        "missing_methods": []
+      },
+      "mode": "live",
+      "error": null,
+      "cost_usd": 0.060283,
+      "sure_ms": 33292
+    },
+    {
+      "id": "tpd-1-c2-windows-python",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "platform": "windows",
+        "step_mapping": [
+          {
+            "step_id": "S1",
+            "po": "GirisEkrani",
+            "method": "ac",
+            "args": [],
+            "verified": true,
+            "evidence_ref": "Giriş formu görüntülendi, login-submit mevcut"
+          },
+          {
+            "step_id": "S2",
+            "po": "GirisEkrani",
+            "method": "giris_yap",
+            "args": [
+              "bayi1",
+              "Demo123!"
+            ],
+            "verified": true,
+            "evidence_ref": "login-submit (Giris.GIRIS_YAP) locator doğrulandı; katalog açıldı, oturum 'Doğrulama Bayi' (doğrulama bayisi)"
+          },
+          {
+            "step_id": "S3",
+            "po": "KatalogEkrani",
+            "method": "sepete_ekle",
+            "args": [
+              "P-001",
+              7
+            ],
+            "verified": true,
+            "evidence_ref": "add-to-cart locator doğrulandı; adet 7 girilip eklendi; gözlenen sayaç: 35 (önceden 28 vardı) · beklenen: 7"
+          },
+          {
+            "step_id": "S4",
+            "po": "KatalogEkrani",
+            "method": "sepeti_ac",
+            "args": [],
+            "verified": true,
+            "evidence_ref": "nav-cart ile Sepet sayfası açıldı; gözlenen: adet 35, bedava 5, ara toplam 875,00 TL, indirim 125,00 TL, toplam 750,00 TL · beklenen: 7, 1, 175,00 TL, 25,00 TL, 150,00 TL (sepet başlangıçta boş değildi)"
           }
         ],
         "expects": [
@@ -190,100 +289,21 @@
       },
       "mode": "live",
       "error": null,
-      "cost_usd": 0.053908,
-      "sure_ms": 31141
-    },
-    {
-      "id": "tpd-1-c2-windows-python",
-      "ok": false,
-      "failures": [
-        "beklenen assertion yok: SepetEkrani.dogrula_satir_adedi",
-        "beklenen assertion yok: SepetEkrani.dogrula_bedava_adet",
-        "beklenen assertion yok: SepetEkrani.dogrula_ara_toplam",
-        "beklenen assertion yok: SepetEkrani.dogrula_indirim",
-        "beklenen assertion yok: SepetEkrani.dogrula_toplam",
-        "eksik metot bildirildi: ['S1', 'S2', 'S3', 'S4']",
-        "doğrulanmamış adım: ['S1', 'S2', 'S3', 'S4']"
-      ],
-      "output": {
-        "platform": "windows",
-        "step_mapping": [
-          {
-            "step_id": "S1",
-            "po": "GirisEkrani",
-            "method": "ac",
-            "args": [],
-            "verified": false,
-            "evidence_ref": null
-          },
-          {
-            "step_id": "S2",
-            "po": "GirisEkrani",
-            "method": "giris_yap",
-            "args": [
-              "bayi1",
-              "Demo123!"
-            ],
-            "verified": false,
-            "evidence_ref": null
-          },
-          {
-            "step_id": "S3",
-            "po": "KatalogEkrani",
-            "method": "sepete_ekle",
-            "args": [
-              "P-001",
-              7
-            ],
-            "verified": false,
-            "evidence_ref": null
-          },
-          {
-            "step_id": "S4",
-            "po": "KatalogEkrani",
-            "method": "sepeti_ac",
-            "args": [],
-            "verified": false,
-            "evidence_ref": null
-          }
-        ],
-        "expects": [],
-        "missing_methods": [
-          {
-            "step_id": "S1",
-            "reason": "Windows platformu araç yapılandırmasında yok (yalnızca android, ios); uygulama başlatılamadı, adım doğrulanamadı."
-          },
-          {
-            "step_id": "S2",
-            "reason": "Uygulama başlatılamadığı için doğrulanamadı."
-          },
-          {
-            "step_id": "S3",
-            "reason": "Uygulama başlatılamadığı için doğrulanamadı."
-          },
-          {
-            "step_id": "S4",
-            "reason": "Uygulama başlatılamadığı için doğrulanamadı; sepet satırı ve toplam beklentileri de doğrulanamadı."
-          }
-        ]
-      },
-      "mode": "live",
-      "error": null,
-      "cost_usd": 0.012549,
-      "sure_ms": 6512
+      "cost_usd": 0.05632,
+      "sure_ms": 42452
     }
   ],
   "tamamlandi": true,
   "set_vaka_sayisi": 3,
   "kosu_sayisi": 3,
-  "maliyet_usd": 0.118479,
-  "butce_usd": 10.0,
+  "maliyet_usd": 0.166173,
+  "butce_usd": 3.0,
   "calisma_alani_basligi": true,
   "guardrails_version": 1,
   "kayit_adaylari": null,
   "cagri_kaydi": "verify-and-map-app-v2-python-2026-11-18.calls.jsonl",
-  "cagri_sayisi": 14,
-  "cagri_defteri": "ledger/ai_call.jsonl",
+  "cagri_sayisi": 18,
+  "cagri_defteri": "exports-rw/eval-live/ai_call.jsonl",
   "amac": "verify_and_map_app",
   "via_flow": false,
   "output_check": true,
@@ -291,12 +311,12 @@
   "olcumler": null,
   "dagilim": {
     "maliyet_usd": {
-      "medyan": 0.052022,
-      "p90": 0.053908
+      "medyan": 0.05632,
+      "p90": 0.060283
     },
     "sure_ms": {
-      "medyan": 28239,
-      "p90": 31141
+      "medyan": 33292,
+      "p90": 42452
     }
   }
 }

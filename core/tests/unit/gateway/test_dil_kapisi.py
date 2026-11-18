@@ -107,6 +107,8 @@ KABULLE_ACILAN = {
     ("ios", "python"),
     ("android", "kotlin"),
     ("ios", "swift"),
+    ("windows", "python"),
+    ("windows", "csharp"),
 }
 
 
@@ -119,10 +121,8 @@ def test_depoda_ts_java_devralindi_acik_digerleri_yakinda() -> None:
     assert all(sts[c].devralindi for c in dk.DEVRALINABILIR)
     for cift in KABULLE_ACILAN:
         assert all(sts[cift].kanit.get(a) for a in ("eval", "tarih", "kabul"))
-    for cift in (("windows", "python"), ("windows", "csharp")):
-        assert sts[cift].durum == "yakinda"
-        assert not dk.kullanilabilir_mi(RULES, *cift)
-        assert sts[cift].neden == dk.YAKINDA_NEDENI
+    # 2026-11-18: tüm çiftler kabul kanıtıyla açıldı; `yakinda` kalan çift yok.
+    assert not [c for c, s in sts.items() if s.durum == "yakinda"]
     assert sts[("android", "kotlin")].hat == sts[("ios", "swift")].hat == "musteri_ci"
     assert len(sts) == 13 and {d for _, d in sts} == set(dk.DILLER)
 
@@ -139,7 +139,7 @@ def test_home_ozeti_bicimi() -> None:
     assert oz["version"] == 1 and oz["kaynak"] == "rules/diller.yaml"
     assert oz["platformlar"]["web"]["ts"] == {"durum": "acik", "hat": "tam"}
     assert oz["platformlar"]["ios"]["swift"] == {"durum": "acik", "hat": "musteri_ci"}
-    assert oz["platformlar"]["windows"]["python"] == {"durum": "yakinda", "hat": "tam"}
+    assert oz["platformlar"]["windows"]["python"] == {"durum": "acik", "hat": "tam"}
     assert set(oz["platformlar"]) == set(dk.PLATFORMLAR)
 
 
@@ -281,7 +281,7 @@ def test_kabul_cli(kopya: Path) -> None:
 def test_evaluation_dil_filtresi(capsys: pytest.CaptureFixture[str]) -> None:
     assert evaluation.main(["--rules-dir", str(RULES), "--dil", "python"]) == 0
     out = capsys.readouterr().out
-    assert "dil web/python\ttam\tacik" in out and "dil windows/python\ttam\tyakinda" in out
+    assert "dil web/python\ttam\tacik" in out and "dil windows/python\ttam\tacik" in out
     assert "verify-and-map@v" in out and "verify-and-map-app@v" in out
     assert "triage@" not in out
 
