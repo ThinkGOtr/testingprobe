@@ -1373,6 +1373,8 @@ export interface KurulumPrSonucu {
   dosyalar: string[];
   eksikler: string[];
   elle_adimlar: string[];
+  /** TP3-3: PR'ı engelleyen eksikler (parametre hatası, bulunamayan Xcode projesi); `hazir` false. */
+  engeller: string[];
   hazir: boolean;
   kurulum: KurulumPr | null;
   mesaj: string | null;

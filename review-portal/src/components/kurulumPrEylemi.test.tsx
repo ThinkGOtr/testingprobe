@@ -125,6 +125,26 @@ describe("Kod üretimi: Kurulum PR'ı aç", () => {
     expect(screen.queryByRole("button", { name: "Kurulum PR'ı aç" })).toBeNull();
   });
 
+  it("TP3-3: engel (Xcode projesi bulunamadı) hazır değil başlığıyla ve ayrı listede gösterilir", async () => {
+    expect(kurulumPrSonucuUyarla({ durum: "onizleme", hazir: false, engeller: ["Xcode projesi bulunamadı (ios/X.xcodeproj)."] }).engeller).toEqual([
+      "Xcode projesi bulunamadı (ios/X.xcodeproj).",
+    ]);
+    vi.spyOn(api, "kurulumPrAc").mockResolvedValue(
+      kurulumPrSonucuUyarla({ durum: "onizleme", hazir: false, dosyalar: [], eksikler: [], elle_adimlar: [], engeller: ["Xcode projesi bulunamadı (ios/X.xcodeproj)."] }),
+    );
+    await oturumAc("muhendis");
+    const u = userEvent.setup();
+    uygulama("/kod");
+    await kotlinSec(u);
+    await u.click(screen.getByRole("button", { name: "Kurulum PR'ı aç" }));
+    const form = screen.getByTestId("kurulum-pr-form");
+    await u.type(within(form).getByLabelText(/Test paketi/), "com.acme.bayi.tp");
+    await u.click(within(form).getByRole("button", { name: "Önizle" }));
+    const onizleme = await within(form).findByTestId("kurulum-pr-onizleme");
+    expect(onizleme).toHaveTextContent("Kurulum engeli var; PR açılamaz.");
+    expect(within(onizleme).getByRole("list", { name: "PR'ı engelleyenler" })).toHaveTextContent("Xcode projesi bulunamadı");
+  });
+
   it("sunucu doğrulama hatası alan listesiyle gösterilir", async () => {
     await oturumAc("muhendis");
     const u = userEvent.setup();
