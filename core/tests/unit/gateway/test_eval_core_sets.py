@@ -304,13 +304,19 @@ def test_agent_set_runs_tools_through_env_and_marks_evaluated(rules_dir: Path) -
         fake,
         "consistency-check",
         update_status=True,
-        envs={"consistency": lambda: _consistency_env(calls=calls)},
+        envs={
+            # Lehçe vakaları (v5, çoklu DB) kendi ortamlarında: `consistency:<tür>`.
+            ad: (lambda: _consistency_env(calls=calls))
+            for ad in ("consistency", "consistency:mysql", "consistency:oracle")
+        },
     )
     assert code == 0, out
-    assert calls == ["search_code"] * 3  # araçlar ortamda yürüdü (sahte sonuç uydurulmadı)
+    vaka_sayisi = len(load_set(rules_dir, "consistency-check")["cases"])
+    # araçlar ortamda yürüdü (sahte sonuç uydurulmadı)
+    assert calls == ["search_code"] * vaka_sayisi
     st = evaluation_status(rules_dir, "consistency-check")
     assert st.status == "evaluated"
-    assert st.detail["calls"] == "evaluation/results/consistency-check-v4-2026-11-02.calls.jsonl"
+    assert st.detail["calls"] == "evaluation/results/consistency-check-v5-2026-11-02.calls.jsonl"
 
 
 def test_stateful_env_is_reopened_per_case(rules_dir: Path) -> None:
@@ -320,6 +326,8 @@ def test_stateful_env_is_reopened_per_case(rules_dir: Path) -> None:
     başına; ikisi aynı anda açılırsa kilitlenir)."""
     path = rules_dir / "evaluation" / "consistency-check.json"
     data = json.loads(path.read_text(encoding="utf-8"))
+    # Lehçe vakaları (v5) kendi ortamlarını ister; bu test yalnız set ortamı + bir vaka ortamı.
+    data["cases"] = [c for c in data["cases"] if "tool_env" not in c]
     data["cases"][1]["tool_env"] = "consistency-b"
     path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     opened: list[str] = []

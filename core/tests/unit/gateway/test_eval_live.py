@@ -194,7 +194,7 @@ def test_dry_run_never_builds_a_provider(capsys: pytest.CaptureFixture[str]) -> 
         "dup-rank@v2",
         "requirement-review@v3",
         "case-generation@v4",
-        "consistency-check@v4",
+        "consistency-check@v5",
         "verify-and-map@v4",
     ):
         assert f"{bundle}: " in out and "en kötü durum" in out, bundle

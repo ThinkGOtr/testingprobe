@@ -5,11 +5,12 @@ from __future__ import annotations
 import threading
 from typing import Any
 
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from tp_core.proje import varsa, varsayilan_pid
 from tp_core.proje.ayar import PROJE_ANAHTARLARI, ayar, surum
+from tp_core.veri.ro_baglanti import BaglantiTanimi, cozumle
 
 PO_PENDING_LABEL = "tp-po-pending"
 PO_APPROVED_LABEL = "tp-po-approved"
@@ -25,6 +26,14 @@ class RequirementsSettings(BaseSettings):
     demoapp_ro_database_url: str | None = Field(
         default=None, validation_alias="DEMOAPP_RO_DATABASE_URL"
     )
+    # Ayrı alanlar (çoklu DB; Home `env.db.*`). Bağlantı dizesi doluysa onun önüne geçemez.
+    ro_db_type: str | None = Field(default=None, validation_alias="TP_RO_DB_TYPE")
+    ro_db_host: str | None = Field(default=None, validation_alias="TP_RO_DB_HOST")
+    ro_db_port: str | None = Field(default=None, validation_alias="TP_RO_DB_PORT_NO")
+    ro_db_name: str | None = Field(default=None, validation_alias="TP_RO_DB_NAME")
+    ro_db_user: str | None = Field(default=None, validation_alias="TP_RO_DB_USER")
+    # Sır: repr/log'da görünmez.
+    ro_db_password: SecretStr | None = Field(default=None, validation_alias="TP_RO_DB_PASSWORD")
     # PO etiketinin sorgulanma aralığı (TEKNIK-TASARIM §2.1: 15 sn).
     po_poll_s: float = Field(default=15.0, validation_alias="TP_PO_POLL_S")
     # Tutarlılık denetimi döngüsünün en fazla tur sayısı (§8.2b adım 7).
@@ -38,10 +47,35 @@ class RequirementsSettings(BaseSettings):
     def _proje(cls, v: object) -> object:
         return v or "TPD"
 
-    @field_validator("demoapp_ro_database_url", mode="before")
+    @field_validator(
+        "demoapp_ro_database_url",
+        "ro_db_type",
+        "ro_db_host",
+        "ro_db_port",
+        "ro_db_name",
+        "ro_db_user",
+        "ro_db_password",
+        mode="before",
+    )
     @classmethod
     def _bos(cls, v: object) -> object:
         return v or None
+
+    def ro_baglanti(self) -> BaglantiTanimi | None:
+        """Salt okuma test verisi bağlantısı (tek çözüm yeri: `tp_core.veri.ro_baglanti`).
+        Geçersiz yapılandırma `BaglantiHatasi` verir; hiçbiri yoksa None."""
+        return cozumle(
+            url=self.demoapp_ro_database_url,
+            tur=self.ro_db_type,
+            host=self.ro_db_host,
+            port=self.ro_db_port,
+            ad=self.ro_db_name,
+            kullanici=self.ro_db_user,
+            parola=self.ro_db_password.get_secret_value() if self.ro_db_password else None,
+        )
+
+    def ro_yapilandirildi(self) -> bool:
+        return bool(self.demoapp_ro_database_url or self.ro_db_type)
 
 
 def _kur() -> RequirementsSettings:

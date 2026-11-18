@@ -347,7 +347,8 @@ class VarsayilanDogrulayici:
                 from tp_core.features.requirements import services
 
                 self._db = services.demo_db()
-        vq = validate_select(sql, kanit=True)
+        lehce = getattr(self._db, "lehce", None)
+        vq = validate_select(sql, kanit=True, lehce=lehce if isinstance(lehce, str) else "postgres")
         return self._db.query(vq.sql).rows
 
 

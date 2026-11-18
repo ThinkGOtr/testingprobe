@@ -54,7 +54,22 @@ def demo_db() -> DemoDb:
     f = _overrides.get("demo_db")
     if f is not None:
         return f()
-    return DemoDb(get_requirements_settings().demoapp_ro_database_url)
+    return demo_db_ayarlardan()
+
+
+def demo_db_ayarlardan() -> DemoDb:
+    """`DEMOAPP_RO_DATABASE_URL` doluysa ondan (bugünkü kurulumlar aynen), değilse `TP_RO_DB_*`
+    ayrı alanlarından. Geçersiz yapılandırma veri aracında "yapılandırma hatası" olarak döner."""
+    from tp_core.veri.ro_baglanti import BaglantiHatasi
+
+    ayar = get_requirements_settings()
+    if ayar.demoapp_ro_database_url:
+        return DemoDb(ayar.demoapp_ro_database_url)
+    try:
+        tanim = ayar.ro_baglanti()
+    except BaglantiHatasi as exc:
+        return DemoDb.yapilandirma_hatasi(f"Veri erişimi yapılandırması geçersiz: {exc}")
+    return DemoDb(tanim)
 
 
 def po_accounts() -> frozenset[str]:

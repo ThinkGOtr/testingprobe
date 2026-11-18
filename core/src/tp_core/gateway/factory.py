@@ -76,6 +76,7 @@ SECRET_ENV_VARS = (
     "TP_TOOLCHAIN_TOKEN",
     "TP_FORGE_REMOTE_TOKEN",
     "DEMOAPP_RO_PASSWORD",
+    "TP_RO_DB_PASSWORD",
     "SEED_USER_PASSWORD",
 )
 # Listede olmayan ama adı sır olan değişkenler (ör. yeni `GITHUB_*TOKEN`, `JIRA_*_TOKEN`).

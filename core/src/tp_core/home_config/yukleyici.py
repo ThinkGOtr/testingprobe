@@ -116,6 +116,8 @@ BAGLI_SIRLAR: dict[str, tuple[str | None, frozenset[str]]] = {
     "DEMO_WEB_URL": (None, frozenset({"TP_PROBE_PASSWORD", "TP_AGENT_DEALER_PASSWORD"})),
     "BASE_URL": (None, frozenset({"TP_PROBE_PASSWORD", "TP_AGENT_DEALER_PASSWORD"})),
     "DEMO_API_URL": (None, frozenset({"TP_PROBE_PASSWORD", "TP_AGENT_DEALER_PASSWORD"})),
+    # Çoklu DB (Home `env.db.*`): salt okuma veritabanı sunucusu → parolası.
+    "TP_RO_DB_HOST": (None, frozenset({"TP_RO_DB_PASSWORD"})),
 }
 BAGLI_SIR_ADLARI: frozenset[str] = frozenset().union(*(s for _, s in BAGLI_SIRLAR.values()))
 

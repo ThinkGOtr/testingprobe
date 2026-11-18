@@ -129,6 +129,13 @@ _PROJE: frozenset[str] = frozenset(
         "VERIFY_BASE_URL",
         "DEMOAPP_RO_DATABASE_URL",
         "DEMOAPP_RO_PASSWORD",
+        # Çoklu DB (Home `env.db.*`): ayrı alanlar; bağlantı dizesi doluysa onun önüne geçemez.
+        "TP_RO_DB_TYPE",
+        "TP_RO_DB_HOST",
+        "TP_RO_DB_PORT_NO",
+        "TP_RO_DB_NAME",
+        "TP_RO_DB_USER",
+        "TP_RO_DB_PASSWORD",
         "TP_TESTVERI_DEMO_PAROLA",
     }
 )

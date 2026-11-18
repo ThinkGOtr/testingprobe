@@ -42,11 +42,12 @@ bundles:
       guardrails_version: 1
       calls: evaluation/results/requirement-review-v3-2026-11-01.calls.jsonl
   consistency-check:
-    version: 4
+    version: 5
     status: pending
-    note: 'Golden çıktıları elle hazırlandı; araç adımları demo-app kaynağına karşı denetlenir. Değerlendirme
-      seti: rules/evaluation/consistency-check.json (ajan; araç ortamı `consistency`, kanıt yeniden doğrulanır).
-      Canlı değerlendirme yapılmadı; onaylı istisna yok.'
+    note: 'v5: hedef SQL lehçesi (çoklu DB: PostgreSQL, MySQL/MariaDB, SQL Server, Oracle; `db_schema` ilk
+      satırı). Golden çıktıları elle hazırlandı; araç adımları demo-app kaynağına karşı denetlenir. Değerlendirme
+      seti: rules/evaluation/consistency-check.json (ajan; araç ortamı `consistency`, lehçe vakaları
+      `consistency:<tür>`; kanıt yeniden doğrulanır). Canlı değerlendirme bekliyor.'
   case-generation:
     version: 4
     status: pending

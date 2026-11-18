@@ -85,6 +85,14 @@ CALISMA_ANINDA: frozenset[str] = frozenset(
         # Gereksinim akışı (RequirementsSettings; önbellek temizlenir)
         "TP_CONSISTENCY_MAX_ROUNDS",
         "TP_PO_POLL_S",
+        # Salt okuma test verisi bağlantısı, ayrı alanlar (çoklu DB; RequirementsSettings her
+        # veri aracı çağrısında okunur). Parola (`TP_RO_DB_PASSWORD`) sırdır: burada YOK, yeniden
+        # başlatmada uygulanır; sunucu değişirse parola `BAGLI_SIRLAR` kuralıyla hemen düşer.
+        "TP_RO_DB_TYPE",
+        "TP_RO_DB_HOST",
+        "TP_RO_DB_PORT_NO",
+        "TP_RO_DB_NAME",
+        "TP_RO_DB_USER",
         # PO / rol hesapları (JiraSettings, Settings; önbellek temizlenir)
         "JIRA_PO_ACCOUNT_IDS",
         "TP_PO_JIRA_USERS",

@@ -1020,13 +1020,22 @@ def consistency_check_cases() -> list[dict[str, Any]]:
         # Giriş story'si kodla tutarlı: engelleyici bulgu yok.
         ("tpd-4-tutarli", "TPD-4", {"max_blocking": 0}),
     ]
+    # Çoklu DB (v5): aynı vakalar başka lehçedeki demo veritabanına karşı (`consistency:<tür>`;
+    # veri kanıtı o veritabanında yeniden doğrulanır). MySQL + Oracle.
+    lehceli = [
+        ("tpd-1-tur-1-mysql", "TPD-1", "mysql", plan[0][2]),
+        ("serbest-tur-1-mysql", "SERBEST", "mysql", plan[1][2]),
+        ("tpd-1-tur-1-oracle", "TPD-1", "oracle", plan[0][2]),
+    ]
     out = []
-    for case_id, key, exp in plan:
+    for case_id, key, exp in [*plan, *((c, k, e) for c, k, _, e in lehceli)]:
         st = stories[key]
+        tur = next((t for c, _, t, _ in lehceli if c == case_id), None)
         out.append(
             {
                 "id": case_id,
-                "description": f"{key}: 1. kontrol turu",
+                **({"tool_env": f"consistency:{tur}"} if tur else {}),
+                "description": f"{key}: 1. kontrol turu" + (f" ({tur})" if tur else ""),
                 "replay_key": _key(key, check_round=1),
                 "messages": [
                     {

@@ -7,7 +7,9 @@ metninde olmaz) ya da uydurur. Golden'lar bu değerlerle elle yazıldı; blok ay
 deterministik olarak verir.
 
 Kaynaklar:
-- `demoapp_ro` (salt okuma; `DEMOAPP_RO_DATABASE_URL`): `urun` (kod, ad, fiyat), aktif `kampanya`,
+- `demoapp_ro` (salt okuma; `DEMOAPP_RO_DATABASE_URL` ya da `TP_RO_DB_*`; sorgular PostgreSQL
+  ile yazılır, `ro_baglanti.sabit_sql` hedef lehçeye çevirir): `urun` (kod, ad, fiyat), aktif
+  `kampanya`,
   `ayar` (ör. `min_siparis_tutari`), `bayi` (kullanıcı adı, ad, kredi limiti). Parola kolonu bu
   rolde hiç okunamaz.
 - Sabit kısım (docs/DEMO-VERISI.md, bağlayıcı demo verisi): test kullanıcılarının ortak demo
@@ -114,15 +116,15 @@ def build_text(sorgu: Sorgu | None, parola: str = DEMO_PAROLA) -> str:
 
 
 def demo_db_query() -> Sorgu | None:
-    """`DEMOAPP_RO_DATABASE_URL` tanımlıysa salt okuma sorgu fonksiyonu (core-worker)."""
-    from tp_core.features.requirements.datatools import DemoDb
+    """Salt okuma veritabanı yapılandırılmışsa (`DEMOAPP_RO_DATABASE_URL` ya da `TP_RO_DB_*`)
+    sorgu fonksiyonu (core-worker). `SORGULAR` PostgreSQL ile yazılıdır; hedef lehçeye çevrilir."""
+    from tp_core.features.requirements.services import demo_db_ayarlardan
     from tp_core.features.requirements.settings import get_requirements_settings
 
-    url = get_requirements_settings().demoapp_ro_database_url
-    if not url:
+    if not get_requirements_settings().ro_yapilandirildi():
         return None
-    db = DemoDb(url)
-    return lambda sql: db.query(sql).rows
+    db = demo_db_ayarlardan()
+    return lambda sql: db.query(sql, kaynak_lehce="postgres").rows
 
 
 _sorgu_fabrikasi: Callable[[], Sorgu | None] = demo_db_query

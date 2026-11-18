@@ -5,7 +5,9 @@ araç çağrılarını ÜRETİMDEKİ araç uygulamalarıyla yürütür (sahte ar
 canlı değerlendirme ölçmesi gereken şeyi ölçmezdi):
 
 - `consistency`: `features.requirements` kod araçları (`CodeTools`: forge üzerinde salt okuma,
-  sabit commit) + veri araçları (`DataTools`: `DEMOAPP_RO_DATABASE_URL` salt okuma rolü). Bulgu
+  sabit commit) + veri araçları (`DataTools`: `DEMOAPP_RO_DATABASE_URL` / `TP_RO_DB_*` salt
+  okuma rolü; `consistency:<mysql|mssql|oracle>` aynı vakayı o lehçedeki demo veritabanına karşı
+  koşar, bağlantı `TP_EVAL_RO_DB_URL_<TÜR>`). Bulgu
   kanıtları üretimdeki `EvidenceVerifier` ile aynı commit/veritabanında YENİDEN doğrulanır;
   doğrulanamayan kanıt vakayı düşürür (§8.2b adım 4).
 - `browser`: kod üretiminin Playwright MCP oturumu (`AgentBrowser` + `McpBrowserSession`,
@@ -70,10 +72,20 @@ class ToolEnv:
 EnvFactory = Callable[[], ToolEnv]
 
 
-def _consistency_env() -> ToolEnv:  # pragma: no cover - canlı yığın (forge + demo-app PG)
+# Çoklu DB (lehçe) vakaları: `consistency:<tür>` ortamı veritabanını bu değişkendeki bağlantı
+# dizesinden açar (yalnız değerlendirme; demo verisi yüklü, salt okuma kullanıcılı bir sunucu).
+# Tanımlı değilse ortam kurulamaz, vaka çağrılmaz ve paket "bekliyor" kalır.
+LEHCE_DB_ENV: dict[str, str] = {
+    "mysql": "TP_EVAL_RO_DB_URL_MYSQL",
+    "mssql": "TP_EVAL_RO_DB_URL_MSSQL",
+    "oracle": "TP_EVAL_RO_DB_URL_ORACLE",
+}
+
+
+def _consistency_env(tur: str | None = None) -> ToolEnv:  # pragma: no cover - canlı yığın
     from tp_core.features.requirements import services
     from tp_core.features.requirements.codetools import TOOL_SPECS, CodeTools
-    from tp_core.features.requirements.datatools import DataTools
+    from tp_core.features.requirements.datatools import DataTools, DemoDb
     from tp_core.features.requirements.settings import get_requirements_settings
     from tp_core.features.requirements.verifier import EvidenceVerifier
 
@@ -81,12 +93,20 @@ def _consistency_env() -> ToolEnv:  # pragma: no cover - canlı yığın (forge 
     try:
         forge = services.forge()
         sha = forge.head_sha(ayar.forge_ref)
-        db = services.demo_db()
+        if tur is None:
+            db = services.demo_db()
+        else:
+            url = os.environ.get(LEHCE_DB_ENV[tur], "").strip()
+            if not url:
+                raise ToolEnvUnavailable(f"{LEHCE_DB_ENV[tur]} tanımlı değil")
+            db = DemoDb(url)
+            if db.tur != tur:
+                raise ToolEnvUnavailable(f"{LEHCE_DB_ENV[tur]} bir {tur} bağlantısı değil")
         db.schema()  # erişim denetimi: bağlanamıyorsa vakayı çağırmadan dur
     except Exception as exc:
         raise ToolEnvUnavailable(
             f"kod/veri araçları kurulamadı ({type(exc).__name__}: {str(exc)[:200]}); "
-            "forge (TP_FORGE_PATH) ve DEMOAPP_RO_DATABASE_URL gerekli (make up)"
+            "forge (TP_FORGE_PATH) ve DEMOAPP_RO_DATABASE_URL / TP_RO_DB_* gerekli (make up)"
         ) from exc
     code = CodeTools(forge, sha, ayar.forge_repo)
     data = DataTools(db)
@@ -115,7 +135,8 @@ def _consistency_env() -> ToolEnv:  # pragma: no cover - canlı yığın (forge 
                 out.append(f"{finding.get('id')}: kanıt doğrulanamadı ({reasons})")
         return out
 
-    return ToolEnv("consistency", list(TOOL_SPECS), execute, check=check)
+    ad = "consistency" if tur is None else f"consistency:{tur}"
+    return ToolEnv(ad, list(TOOL_SPECS), execute, check=check)
 
 
 def _browser_env() -> ToolEnv:  # pragma: no cover - canlı yığın (Playwright MCP + demo-app)
@@ -499,6 +520,7 @@ def asistan_ortami(akis: AsistanAkisi, *, close: Callable[[], None] | None = Non
 
 ENVS: dict[str, EnvFactory] = {
     "consistency": _consistency_env,
+    **{f"consistency:{t}": partial(_consistency_env, t) for t in LEHCE_DB_ENV},
     "browser": _browser_env,
     **{f"app:{p}": partial(_app_env, p) for p in ("android", "ios", "windows")},
     **{f"{ASISTAN_ORTAM_ONEKI}{rol}": partial(_asistan_env, rol) for rol in ASISTAN_ROLLERI},
