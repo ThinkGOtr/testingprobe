@@ -6825,7 +6825,7 @@ code {
   margin-top: var(--space-1);
   overflow-wrap: anywhere;
 }
-.kod-dosya {
+.kod-satir-dosya {
   margin-top: var(--space-0);
   overflow-wrap: anywhere;
 }
@@ -6905,4 +6905,53 @@ code {
 }
 .grafik-tablo > .tablo {
   margin-top: var(--space-2);
+}
+
+/* Kod üretimi (IA-13): üretim ayarları tek blok; dile bağlı notlar eşit aralıklı ve okunur genişlikte;
+   aday listesi başlıklı. Satırda test adı, çipler ve neden alt alta (çip başlığa yapışmaz). */
+.kod-ayarlar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-soft);
+}
+.kod-ayarlar > .platform-secici,
+.kod-ayarlar .dil-secici .platform-secici {
+  margin-bottom: 0;
+}
+.kod-dil-notlari {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: 60rem;
+}
+.kod-dil-notlari:empty {
+  display: none;
+}
+.kod-dil-notlari .uyari-kutusu,
+.kod-dil-notlari .kurulum-pr,
+.kod-dil-notlari .kurulum-pr-yolu {
+  margin: 0;
+}
+.kod-pano-katli[open] > .kod-ayarlar {
+  margin-top: var(--space-3);
+}
+.kod-aday-baslik {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+.kod-aday-baslik > h3 {
+  margin: 0;
+}
+.kod-tablosu td.sutun-metin > .satir-ogeler {
+  display: flex;
+  margin-top: var(--space-1);
+}
+.kod-tablosu .kod-grup-satiri th {
+  font-size: var(--fs-ikincil);
 }
