@@ -43,5 +43,13 @@ if command -v docker >/dev/null 2>&1; then
   docker builder prune -f --keep-storage "${TP_BUILD_CACHE_KEEP:-6gb}" >/dev/null 2>&1 \
     || echo "UYARI: docker derleme önbelleği temizlenemedi" >&2
   docker image prune -f >/dev/null 2>&1 || true
+  # 2026-11-18 (2.): sınırlı önbellek yetmedi — yeni kaynakla tam yeniden derleme ~15-18G ister.
+  # Kökte TP_BUILD_MIN_FREE_GB'den az yer varsa önbellek ve kullanılmayan imajlar tamamen silinir.
+  bos_gb=$(df -BG --output=avail / 2>/dev/null | tail -1 | tr -dc '0-9')
+  if [ -n "$bos_gb" ] && [ "$bos_gb" -lt "${TP_BUILD_MIN_FREE_GB:-20}" ]; then
+    echo "UYARI: kökte ${bos_gb}G boş; derleme önbelleği ve kullanılmayan imajlar tamamen siliniyor" >&2
+    docker builder prune -af >/dev/null 2>&1 || true
+    docker image prune -af >/dev/null 2>&1 || true
+  fi
 fi
 make up
