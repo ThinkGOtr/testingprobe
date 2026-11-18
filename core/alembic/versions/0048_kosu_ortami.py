@@ -23,9 +23,9 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.add_column("run", sa.Column("ortam_eid", sa.String(), nullable=True))
-    op.add_column("run", sa.Column("ortam_adi", sa.String(), nullable=True))
-    op.add_column("run", sa.Column("ortam_turu", sa.String(), nullable=True))
+    op.add_column("run", sa.Column("ortam_eid", sa.Text(), nullable=True))
+    op.add_column("run", sa.Column("ortam_adi", sa.Text(), nullable=True))
+    op.add_column("run", sa.Column("ortam_turu", sa.Text(), nullable=True))
     op.create_check_constraint(
         "run_ortam_turu_ck",
         "run",

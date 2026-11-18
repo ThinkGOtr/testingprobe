@@ -93,7 +93,9 @@ def ci_trigger(
         # Ortamın adresleri (varsayılan dışı projede) ortam bağlamında denetlenir.
         ortam_gerekli()
     try:
-        return service.trigger_manual(session, body.tetik, user.kullanici_adi, test_ortami)
+        # Ortamsız (proje ayarları) çağrı eski imzayla aynı kalır.
+        ek = {} if test_ortami is None else {"ortam": test_ortami}
+        return service.trigger_manual(session, body.tetik, user.kullanici_adi, **ek)
     except service.CiError as exc:
         raise HTTPException(422, str(exc)) from exc
 
