@@ -21,7 +21,7 @@
   border-radius: var(--radius-hap);
   background: var(--accent-solid);
   color: var(--accent-text);
-  font-size: 0.75rem;
+  font-size: var(--fs-hap);
   font-weight: 700;
   line-height: 18px;
   text-align: center;
@@ -59,11 +59,11 @@
 .oneri-liste {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .oneri-karti {
-  padding: 14px 16px;
+  padding: 14px var(--space-4);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
@@ -84,20 +84,20 @@
 .oneri-ai-etiket {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   margin-bottom: 6px;
-  padding: 2px 8px;
+  padding: var(--space-0) var(--space-2);
   border: 1px solid color-mix(in srgb, var(--vurgu) 30%, transparent);
   border-radius: var(--radius-hap);
   background: var(--vurgu-bg);
   color: var(--vurgu);
-  font-size: 0.75rem;
+  font-size: var(--fs-hap);
   font-weight: 600;
   line-height: 1.4;
 }
 .oneri-baslik {
-  margin: 0 0 4px;
-  font-size: 0.95rem;
+  margin: 0 0 var(--space-1);
+  font-size: var(--fs-h3);
   font-weight: 700;
   line-height: 1.35;
   overflow-wrap: anywhere;
@@ -106,12 +106,12 @@
 .oneri-aciklama {
   margin: 0 0 10px;
   color: var(--text-2);
-  font-size: 0.875rem;
+  font-size: var(--fs-ikincil);
   line-height: 1.5;
 }
 .oneri-aciklama {
   margin: 10px 0 0;
-  padding: 10px 12px;
+  padding: 10px var(--space-3);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-sm);
   background: var(--surface-2);
@@ -119,20 +119,20 @@
 }
 
 .oneri-eylemler {
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
 }
 .oneri-eylem-satiri,
 .oneri-alt {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 8px;
+  gap: 6px var(--space-2);
 }
 /* Geri bildirim araç çubuğu: içerikten ince ayraçla ayrılır; düğmeler ikonlu (dugme-ikincil "Neden? Sor",
    dugme-hayalet Faydalı / Yaptım / Gizle). */
 .oneri-alt {
   justify-content: space-between;
-  margin-top: 12px;
+  margin-top: var(--space-3);
   padding-top: 10px;
   border-top: 1px solid var(--border-soft);
 }
@@ -141,10 +141,10 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 2px;
+  gap: var(--space-0);
 }
 .oneri-alt .dugme-hayalet.dugme-kucuk {
-  padding-inline: 8px;
+  padding-inline: var(--space-2);
 }
 .oneri-alt .dugme .ikon,
 .oneri-taslak .dugme .ikon,
@@ -199,7 +199,7 @@
 
 .oneri-taslak {
   margin-top: 10px;
-  padding: 10px 12px;
+  padding: 10px var(--space-3);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-sm);
   background: var(--surface-2);
@@ -207,9 +207,9 @@
 .oneri-taslak-alanlar {
   display: grid;
   grid-template-columns: max-content 1fr;
-  gap: 2px 12px;
-  margin: 0 0 8px;
-  font-size: 0.8125rem;
+  gap: var(--space-0) var(--space-3);
+  margin: 0 0 var(--space-2);
+  font-size: var(--fs-sik);
 }
 .oneri-taslak-alanlar dt {
   color: var(--muted);
@@ -220,12 +220,12 @@
   overflow-wrap: anywhere;
 }
 .oneri-taslak-metin {
-  margin-bottom: 8px;
-  padding-top: 8px;
+  margin-bottom: var(--space-2);
+  padding-top: var(--space-2);
   border-top: 1px solid var(--border-soft);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-size: 0.8125rem;
+  font-size: var(--fs-sik);
   line-height: 1.5;
 }
 /* AI taslağı uyarısı: amber metin + uyarı ikonu (maske, metin eklenmez); nötr --surface-2 üstünde. */
@@ -233,9 +233,9 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  margin: 0 0 8px;
+  margin: 0 0 var(--space-2);
   color: var(--warn);
-  font-size: 0.8125rem;
+  font-size: var(--fs-sik);
   font-weight: 600;
 }
 .oneri-ai-uyari::before {
@@ -251,9 +251,9 @@
 .oneri-kopya-yedek {
   display: block;
   width: 100%;
-  margin-top: 8px;
+  margin-top: var(--space-2);
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-hap);
 }
 
 /* Hazır soru çipleri: tıklanabilir hap (portal .cip .cip-notr) — hover'da indigo kenar (etkileşim), hedef
@@ -267,7 +267,7 @@
 .oneri-cipi {
   min-height: 24px;
   font: inherit;
-  font-size: 0.75rem;
+  font-size: var(--fs-hap);
   font-weight: 600;
   line-height: 1.4;
   cursor: pointer;
@@ -286,7 +286,7 @@
   flex-direction: column;
   gap: 6px;
   margin-top: 10px;
-  padding: 10px 12px;
+  padding: 10px var(--space-3);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-sm);
   background: var(--surface-2);
@@ -295,13 +295,13 @@
   font-weight: 600;
 }
 .oneri-yaptim .oneri-eylem-satiri {
-  margin-top: 2px;
+  margin-top: var(--space-0);
 }
 
 .oneri-ust {
   display: flex;
   justify-content: flex-end;
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
 }
 /* Yenileme sürerken (aria-busy) ikon döner; hareket azaltmada statik (styles.css genel kuralı süreyi kısar). */
 .oneri-ust .dugme[aria-busy="true"] .oneri-yenile-ikon {
@@ -313,9 +313,9 @@
   }
 }
 .oneri-hata {
-  margin: 8px 0 0;
+  margin: var(--space-2) 0 0;
   color: var(--err);
-  font-size: 0.8125rem;
+  font-size: var(--fs-sik);
   font-weight: 600;
 }
 
@@ -325,13 +325,13 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin-top: 12px;
+  margin-top: var(--space-3);
 }
 .oneri-bastirilan {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 8px 12px;
+  gap: var(--space-0);
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border-soft);
   border-left: 3px solid var(--border-strong);
   border-radius: var(--radius-sm);
@@ -340,24 +340,24 @@
 .oneri-bastirilan-baslik {
   color: var(--text-2);
   text-decoration: line-through;
-  font-size: 0.875rem;
+  font-size: var(--fs-ikincil);
 }
 
 .oneri-diger {
   margin: 14px 0 0;
   color: var(--text-2);
-  font-size: 0.875rem;
+  font-size: var(--fs-ikincil);
 }
 .oneri-ek {
   margin-top: 14px;
-  padding-top: 12px;
+  padding-top: var(--space-3);
   border-top: 1px solid var(--border-soft);
 }
 .oneri-ek > .rozet-mock {
   margin-bottom: 10px;
 }
 .oneri-ek > .oneri-liste + .dugme {
-  margin-top: 12px;
+  margin-top: var(--space-3);
 }
 /* Ek öneriler geldikten sonraki hayalet "Başka ne yapabilirim?": kartların sol kenarıyla hizalı başlar —
    yatay iç boşluk yok, hover zemin yerine alt çizgi (kaynak satırındaki metin eylemleriyle aynı). */
@@ -379,7 +379,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 /* Pasiflik nedeni (§4.5 .dugme-neden; styles.css) düğmenin altında. */
 .oneri-ek > .dugme-neden {

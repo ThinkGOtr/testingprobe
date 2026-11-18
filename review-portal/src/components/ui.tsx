@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode, type RefObject } from "react";
+import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode, type RefObject } from "react";
 import { Link, type LinkProps } from "react-router-dom";
 import { buFazdaYok, bulunamadi } from "../api/http";
 import type { CiktiModu, Degerlendirme } from "../api/types";
@@ -9,21 +9,19 @@ import { baglantiTuru } from "../lib/rotalar";
 import { hataGosterildi, hataTazele } from "../lib/sonHata";
 import { asistanaSor, useAsistanHazir } from "./asistan/kontrol";
 import { Ikon } from "./Ikon";
+import { Ipucu } from "./Ipucu";
 
 /** Kayıtlı (replay) çıktı rozeti. live için hiçbir şey göstermez (Constitution VIII). */
 export function ReplayRozeti({ mode, degerlendirme }: { mode: CiktiModu | null | undefined; degerlendirme?: Degerlendirme | null }) {
   const rozet =
     mode === "replay" ? (
-      <span className="rozet rozet-replay" title="REPLAY: hazırlanmış örnek çıktı; canlı model değil.">
-        REPLAY
-      </span>
+      <Ipucu metin="REPLAY: hazırlanmış örnek çıktı; canlı model değil.">
+        <span className="rozet rozet-replay">REPLAY</span>
+      </Ipucu>
     ) : mode === "replay_miss" ? (
-      <span
-        className="rozet rozet-replay-miss"
-        title="REPLAY-MISS: bu girdi için kayıtlı model çıktısı yok; canlı model gerekir."
-      >
-        REPLAY-MISS
-      </span>
+      <Ipucu metin="REPLAY-MISS: bu girdi için kayıtlı model çıktısı yok; canlı model gerekir.">
+        <span className="rozet rozet-replay-miss">REPLAY-MISS</span>
+      </Ipucu>
     ) : null;
   if (!rozet) return null;
   return (
@@ -65,12 +63,40 @@ export function degerlendirmeNotuMetni(d: Degerlendirme | null | undefined): { m
   };
 }
 
-export function Cip({ ton = "notr", children, title, className }: { ton?: Ton; children: ReactNode; title?: string; className?: string }) {
-  return (
-    <span className={`cip cip-${ton}${className ? ` ${className}` : ""}`} title={title}>
+/**
+ * Çip / hap (§4.6, TS-07). `bicim`: `hap` (durum; varsayılan), `etiket` (kimlik/atıf/tür; köşe 6 px),
+ * `duz` (yığındaki ikincil bilgi; zeminsiz, solunda ince ayraç). `boyut="kucuk"`: yoğun satır. `sar`: uzun metin
+ * (cümle, neden) kabın içinde sarılır, kesilmez. `aciklama`: erişilebilir ipucu (klavye/dokunma; yalnız `title`
+ * yerine, ET-06). `title` geriye uyum için kalır; yeni kodda `aciklama` kullanılır.
+ */
+export function Cip({
+  ton = "notr",
+  children,
+  title,
+  className,
+  bicim = "hap",
+  boyut = "normal",
+  sar,
+  aciklama,
+  testId,
+}: {
+  ton?: Ton;
+  children: ReactNode;
+  title?: string;
+  className?: string;
+  bicim?: "hap" | "etiket" | "duz";
+  boyut?: "normal" | "kucuk";
+  sar?: boolean;
+  aciklama?: string;
+  testId?: string;
+}) {
+  const sinif = ["cip", `cip-${ton}`, bicim !== "hap" && `cip-${bicim}`, boyut === "kucuk" && "cip-kucuk", sar && "cip-uzun", className].filter(Boolean).join(" ");
+  const cip = (
+    <span className={sinif} title={title} data-testid={testId}>
       {children}
     </span>
   );
+  return aciklama ? <Ipucu metin={aciklama}>{cip}</Ipucu> : cip;
 }
 
 export function Yukleniyor({ metin = "Yükleniyor…" }: { metin?: string }) {
@@ -234,14 +260,18 @@ export function Uyari({
 }
 
 /**
- * Boş durum. `kip="sekme"`: detay sayfası sekmesinin tek içeriği (DS-1) — kart yüzeyinde, sola hizalı; sekme
- * gizlenmez, ne olmadığını söyler.
+ * Boş durum (tek biçim, TS-13). `kip`: `bolum` (varsayılan; liste/kart gövdesi, ortalı), `sekme` (detay sayfası
+ * sekmesinin tek içeriği, DS-1 — kart yüzeyinde, sola hizalı; sekme gizlenmez), `satir` (kart içinde küçük alan:
+ * "Varsayım yok." gibi; sola hizalı, dolgusuz). `eylem`: sonraki adım yuvası (bağlantı ya da düğme) — kullanıcı
+ * ne yapacağını bilsin ("Henüz koşu yok." → "Koşu başlat").
  */
-export function BosDurum({ baslik, children, kip }: { baslik: string; children?: ReactNode; kip?: "sekme" }) {
+export function BosDurum({ baslik, children, kip = "bolum", eylem }: { baslik: string; children?: ReactNode; kip?: "bolum" | "sekme" | "satir"; eylem?: ReactNode }) {
+  const sinif = kip === "sekme" ? "bos-durum bos-durum-sekme kart" : kip === "satir" ? "bos-durum bos-durum-satir" : "bos-durum";
   return (
-    <div className={kip === "sekme" ? "bos-durum bos-durum-sekme kart" : "bos-durum"}>
+    <div className={sinif}>
       <p className="bos-baslik">{baslik}</p>
       {children && <div className="soluk">{children}</div>}
+      {eylem && <div className="bos-durum-eylem">{eylem}</div>}
     </div>
   );
 }
@@ -292,6 +322,8 @@ interface IslemDugmesiOzellikleri extends ButtonHTMLAttributes<HTMLButtonElement
    * başka yerde yazılmadığı için bastırılmaz: yetkisiz rolde neden yine görünür yazılır.
    */
   nedenGizli?: boolean;
+  /** Kilitliyken `aria-disabled` (Tab sırasında kalır; ET-07). `EylemCubugu` içinde varsayılan açık. */
+  odaklanabilir?: boolean;
 }
 
 /**
@@ -345,7 +377,14 @@ function useOrtakNeden(sarici: RefObject<HTMLElement>, neden: string | undefined
  * `aria-describedby` ile düğmeye bağlanır. Çalışırken (`calisiyor`) yazılmaz. Aynı gruptaki eş metinli
  * nedenler bir kez yazılır (`useOrtakNeden`).
  */
-export function IslemDugmesi({ izin, calisiyor, tur = "birincil", kucuk, disabled, children, title, className, nedenGizli, ...geri }: IslemDugmesiOzellikleri) {
+/**
+ * `EylemCubugu` içinde (ya da `odaklanabilir` ile) kilitli `IslemDugmesi` yerel `disabled` yerine `aria-disabled`
+ * kullanır: düğme Tab sırasında kalır, nedeni (`aria-describedby`) klavyeyle okunur, tıklama engellenir (ET-07).
+ */
+export const OdaklanabilirKilitBaglami = createContext(false);
+
+export function IslemDugmesi({ izin, calisiyor, tur = "birincil", kucuk, disabled, children, title, className, nedenGizli, odaklanabilir, onClick, ...geri }: IslemDugmesiOzellikleri) {
+  const baglamOdak = useContext(OdaklanabilirKilitBaglami);
   const istenen: Izin[] = izin === undefined ? [] : typeof izin === "string" ? [izin] : [...izin];
   const izinli = useIzin(...istenen);
   const nedenId = useId();
@@ -356,12 +395,22 @@ export function IslemDugmesi({ izin, calisiyor, tur = "birincil", kucuk, disable
   const nedenSahibi = useOrtakNeden(sariciRef, nedenGorunur ? neden : undefined, nedenId);
   const nedenCiz = nedenGorunur && nedenSahibi === nedenId;
   const tanim = [geri["aria-describedby"], nedenGorunur ? nedenSahibi : undefined].filter(Boolean).join(" ") || undefined;
+  const kilitli = !!(disabled || !yetkili || calisiyor);
+  const odakli = odaklanabilir ?? baglamOdak;
   const dugme = (
     <button
       type="button"
       {...geri}
       className={`dugme dugme-${tur}${kucuk ? " dugme-kucuk" : ""} ${className ?? ""}`}
-      disabled={disabled || !yetkili || calisiyor}
+      disabled={odakli ? undefined : kilitli}
+      aria-disabled={odakli && kilitli ? true : undefined}
+      onClick={
+        odakli && kilitli
+          ? (e) => {
+              e.preventDefault();
+            }
+          : onClick
+      }
       title={neden}
       aria-describedby={tanim}
       aria-busy={calisiyor || undefined}

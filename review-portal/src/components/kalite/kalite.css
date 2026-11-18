@@ -4,7 +4,7 @@
 
 /* ---- case review */
 .oracle-ayrinti {
-  margin: 8px 0;
+  margin: var(--space-2) 0;
 }
 .oracle-ayrinti > summary {
   cursor: pointer;
@@ -13,10 +13,10 @@
 }
 .oracle-ayrinti > .tablo-sarici,
 .on-kontrol > .tablo-sarici {
-  margin: 8px 0;
+  margin: var(--space-2) 0;
 }
 .oracle-ozet {
-  margin: 8px 0;
+  margin: var(--space-2) 0;
 }
 /* Farklı satır: sol şerit + "Farklı ✗" metni (renk tek başına anlam taşımaz). */
 .oracle-farkli > td:first-child {
@@ -55,13 +55,13 @@
 .kt-ust {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 8px;
+  gap: 6px var(--space-2);
   align-items: center;
   margin-bottom: 10px;
 }
 .kt-bolum {
   margin: 14px 0 6px;
-  font-size: 0.875rem;
+  font-size: var(--fs-ikincil);
   font-weight: 700;
 }
 .kt-kart .tablo-sarici,
@@ -70,7 +70,7 @@
 }
 .kt-ifade {
   font-family: var(--mono);
-  font-size: 0.85rem;
+  font-size: var(--fs-ikincil);
   overflow-wrap: anywhere;
 }
 /* İfade sözdizimi birebir görünmeli: yazı tipi bitişik harfleri (>= → ≥, != → ≠) kapalı. */
@@ -89,8 +89,8 @@
 }
 .kt-eylemler {
   border-top: 1px solid var(--border-soft);
-  padding-top: 12px;
-  margin-top: 12px;
+  padding-top: var(--space-3);
+  margin-top: var(--space-3);
 }
 .kt-onay {
   margin: 0 0 10px;
@@ -99,21 +99,21 @@
 /* Düzenleyici: her kolon/satır bir ızgara satırı; dar ekranda alanlar alt alta. */
 .kt-duzenle {
   border-top: 1px dashed var(--border);
-  padding-top: 12px;
-  margin-top: 12px;
+  padding-top: var(--space-3);
+  margin-top: var(--space-3);
 }
 .kt-duzenle-ust {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 0 12px;
+  gap: 0 var(--space-3);
 }
 .kt-satir {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 6px 8px;
+  gap: 6px var(--space-2);
   align-items: start;
   padding: 10px;
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-sm);
   background: var(--surface-2);
@@ -154,7 +154,7 @@
 .kt-dene-form {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 0 12px;
+  gap: 0 var(--space-3);
   margin-top: 10px;
 }
 .kt-dene-form input,
@@ -170,8 +170,8 @@
   border: 1px solid var(--border);
   border-left: 3px solid var(--border-strong);
   border-radius: var(--radius);
-  padding: 14px 16px;
-  margin-bottom: 12px;
+  padding: 14px var(--space-4);
+  margin-bottom: var(--space-3);
   background: var(--surface);
 }
 .iliski.iliski-ai {
@@ -184,19 +184,19 @@
   border-left-color: var(--ok);
 }
 .iliski h3 {
-  font-size: 1rem;
+  font-size: var(--fs-govde);
   font-weight: 700;
-  margin: 8px 0;
+  margin: var(--space-2) 0;
 }
 .iliski-tanim {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
-  gap: 4px 12px;
-  margin: 0 0 8px;
+  gap: var(--space-1) var(--space-3);
+  margin: 0 0 var(--space-2);
 }
 .iliski-tanim dt {
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: var(--fs-sik);
   font-weight: 700;
 }
 .iliski-tanim dd {
@@ -210,9 +210,9 @@
   margin-top: 14px;
 }
 .turet h3 {
-  font-size: 1rem;
+  font-size: var(--fs-govde);
   font-weight: 700;
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
 }
 .turet select {
   max-width: 100%;
@@ -220,7 +220,7 @@
 .turet-kaynaklar {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
 }
 .turet-kaynaklar label {
   font-weight: 400;
@@ -228,7 +228,7 @@
 .turet-sonuc > li {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 8px;
+  gap: var(--space-1) var(--space-2);
   align-items: center;
 }
 .kt-eskiler > summary {
@@ -249,16 +249,16 @@
 
 /* ---- sayfa düzeni */
 .kt-giris {
-  margin: 0 0 16px;
+  margin: 0 0 var(--space-4);
   max-width: 70ch;
 }
 .kt-bolum-kap {
   margin-bottom: 20px;
 }
 .kt-bolum-baslik {
-  font-size: 1.05rem;
+  font-size: var(--fs-h2);
   font-weight: 700;
-  margin: 0 0 12px;
+  margin: 0 0 var(--space-3);
 }
 .kt-durum:focus {
   outline: none;
@@ -267,10 +267,10 @@
   display: none;
 }
 .kt-onay-kutu {
-  margin-bottom: 16px;
+  margin-bottom: var(--space-4);
 }
 .kt-onay-kutu > .eylemler {
-  margin-top: 8px;
+  margin-top: var(--space-2);
 }
 
 /* ---- düzenleyici parçaları */
@@ -293,14 +293,14 @@
 .kt-sira {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--space-1);
 }
 .kt-satir .alan-hata,
 .kt-duzenle .alan-hata {
   overflow-wrap: anywhere;
 }
 .turet-sonuc-kutu {
-  margin-top: 12px;
+  margin-top: var(--space-3);
 }
 .turet-sonuc-kutu:focus-visible {
   outline: 2px solid var(--focus);
@@ -317,13 +317,13 @@
 /* Review turu 1: satır anlamı, sınır örnekleri, ifade yardımı, istisna yolları */
 .kt-anlam-liste {
   display: grid;
-  gap: 4px;
+  gap: var(--space-1);
   margin: 0 0 10px;
 }
 .kt-ornek,
 .kt-ifade-yardim,
 .turet-gecmis {
-  margin: 8px 0;
+  margin: var(--space-2) 0;
 }
 .kt-ornek > summary,
 .kt-ifade-yardim > summary,
@@ -336,7 +336,7 @@
 }
 .kt-ad-cip {
   display: inline-block;
-  margin: 2px 4px 2px 0;
+  margin: var(--space-0) var(--space-1) var(--space-0) 0;
   padding: 1px 6px;
   border: 1px solid var(--border-soft);
   border-radius: 6px;
@@ -351,8 +351,8 @@
   max-width: 520px;
 }
 .oracle-yol {
-  margin-top: 8px;
-  padding-top: 8px;
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
   border-top: 1px dashed var(--border-soft);
 }
 .oracle-ozet-satir {
@@ -365,7 +365,7 @@
 }
 .oracle-n {
   display: block;
-  margin-top: 4px;
+  margin-top: var(--space-1);
 }
 
 /* ---------------------------------------------------------------- tur 2 */
@@ -381,42 +381,42 @@
 /* AI taslağındaki özgün koşul (analist değiştirdiyse) satırın altında. */
 .kt-ai-ozgun {
   display: block;
-  margin-top: 2px;
+  margin-top: var(--space-0);
   font-size: 0.85em;
   color: var(--text-2);
 }
 /* u2 N9: görülen → güncel içerik farkı. */
 .kt-fark {
-  margin: 8px 0;
+  margin: var(--space-2) 0;
 }
 .kt-fark del {
   background: var(--err-bg);
   text-decoration: line-through;
-  padding: 0 2px;
+  padding: 0 var(--space-0);
 }
 .kt-fark ins {
   background: var(--ok-bg);
   text-decoration: none;
-  padding: 0 2px;
+  padding: 0 var(--space-0);
 }
 .kt-bagimsizlik {
-  margin: -4px 0 16px;
-  padding: 8px 12px;
+  margin: -4px 0 var(--space-4);
+  padding: var(--space-2) var(--space-3);
   border-left: 3px solid var(--border-strong);
   background: var(--surface-2);
 }
 .kt-gecmis {
-  margin: 8px 0;
+  margin: var(--space-2) 0;
 }
 .kt-satir-hatali {
   border-color: var(--err);
 }
 .oracle-sakli {
-  margin: 4px 0;
+  margin: var(--space-1) 0;
 }
 .turet-onizleme {
-  margin: 8px 0;
-  padding: 8px 12px;
+  margin: var(--space-2) 0;
+  padding: var(--space-2) var(--space-3);
   border-left: 3px solid var(--accent);
   background: var(--surface-2);
 }

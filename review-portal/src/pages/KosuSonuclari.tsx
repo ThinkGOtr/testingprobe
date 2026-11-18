@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import type { KosuDetay, PwAdimi, TestDenemesi, TestSonucu } from "../api/types";
 import { projeBasliklari } from "../api/http";
 import { Baglanti, BosDurum, Cip, DisBaglanti, Kart, IzinliLink } from "../components/ui";
+import { TabloSarici } from "../components/tasarim";
 import { altTurEtiketi, HATA_SINIFI, KOSU_DURUMU } from "../lib/etiketler";
 import { sure } from "../lib/format";
 
@@ -355,8 +356,7 @@ export function TestSonuclari({ k }: { k: KosuDetay }) {
       {suzulen.length === 0 ? (
         <BosDurum baslik="Süzgece uyan test yok." />
       ) : (
-        <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Test sonuçları tablosu">
-          <table className="tablo tablo-yigin test-sonuclari">
+        <TabloSarici etiket="Test sonuçları tablosu" tabloClassName="test-sonuclari" uzun={suzulen.length > 15}>
             <thead>
               <tr>
                 <th scope="col">Test</th>
@@ -420,8 +420,7 @@ export function TestSonuclari({ k }: { k: KosuDetay }) {
                 );
               })}
             </tbody>
-          </table>
-        </div>
+        </TabloSarici>
       )}
     </Kart>
   );

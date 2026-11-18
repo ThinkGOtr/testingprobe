@@ -8,6 +8,7 @@ import { BUG_KISITLI_METNI, izinRolleriMetni } from "../lib/yetki";
 import type { BugTaslagi, BugTaslakIcerik, MukerrerAday, MukerrerArama } from "../api/types";
 import { useBildirim } from "../components/Bildirim";
 import { AlanHatasi, BosDurum, Cip, Baglanti, HataKutusu, KayitHatasi, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor, IzinliLink } from "../components/ui";
+import { TabloSarici } from "../components/tasarim";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { KisiAdi } from "../components/KisiAdi";
 import { BUG_DURUMU, SEVERITY, type Ton } from "../lib/etiketler";
@@ -92,7 +93,7 @@ export function useKirmaTaslaklari(buglar: BugTaslagi[] | null | undefined): Set
 
 function KirmaCipi() {
   return (
-    <Cip ton="uyari" title={KIRMA_ACIKLAMA}>
+    <Cip ton="uyari" sar aciklama={KIRMA_ACIKLAMA}>
       {KIRMA_CIPI}
     </Cip>
   );
@@ -114,8 +115,7 @@ export function BugTaslaklari() {
         ) : (v.veri ?? []).length === 0 ? (
           <BosDurum baslik="Bug taslağı yok." />
         ) : (
-          <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Bug taslakları tablosu">
-            <table className="tablo tablo-yigin">
+          <TabloSarici etiket="Bug taslakları tablosu">
               <thead>
                 <tr>
                   <th scope="col">Özet</th>
@@ -124,7 +124,7 @@ export function BugTaslaklari() {
                   <th scope="col">Önem</th>
                   <th scope="col">Mükerrer adayı</th>
                   <th scope="col">Durum</th>
-                  <th scope="col">Oluşturma</th>
+                  <th scope="col" className="sutun-ikincil">Oluşturma</th>
                 </tr>
               </thead>
               <tbody>
@@ -133,7 +133,7 @@ export function BugTaslaklari() {
                   const yapilmadi = mukerrerAramaDurumu(b) !== "yapildi";
                   return (
                     <tr key={b.id}>
-                      <td data-etiket="Özet">
+                      <td className="sutun-metin" data-etiket="Özet">
                         <Link to={`/bug-taslaklari/${encodeURIComponent(b.id)}`} className="satir-baglanti">
                           {b.icerik.summary}
                         </Link>{" "}
@@ -152,19 +152,18 @@ export function BugTaslaklari() {
                         )}
                       </td>
                       <td data-etiket="Kaynak">{KAYNAK[b.kaynak]}</td>
-                      <td className="mono" data-etiket="Story">{b.icerik.story_key ?? "—"}</td>
+                      <td className="sutun-kimlik" data-etiket="Story">{b.icerik.story_key ?? "—"}</td>
                       <td data-etiket="Önem">{SEVERITY[b.icerik.severity_suggestion]}</td>
                       <td className={yapilmadi ? "soluk" : "mono"} data-etiket="Mükerrer adayı">{aramaOzeti(b)}</td>
-                      <td data-etiket="Durum">
+                      <td className="sutun-durum" data-etiket="Durum">
                         <Cip ton={d.ton}>{d.etiket}</Cip>
                       </td>
-                      <td className="tek-satir" data-etiket="Oluşturma">{tarih(b.olusturma)}</td>
+                      <td className="sutun-tarih sutun-ikincil" data-etiket="Oluşturma">{tarih(b.olusturma)}</td>
                     </tr>
                   );
                 })}
               </tbody>
-            </table>
-          </div>
+          </TabloSarici>
         )}
       </Kart>
     </>

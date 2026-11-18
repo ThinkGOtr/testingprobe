@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import { useOlay } from "../api/events";
 import { useBildirim } from "../components/Bildirim";
 import { BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
+import { TabloSarici } from "../components/tasarim";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { useIzin, usePlatformlar } from "../auth";
 import { SCRIPT_DURUMU, scriptIsareti } from "../lib/etiketler";
@@ -313,17 +314,17 @@ export function Kod() {
         ) : gorunen.length === 0 ? (
           <BosDurum baslik="Açık üretilen test yok; kapatılanlar gizli." />
         ) : (
-          <div className="tablo-sarici kod-tablosu" tabIndex={0} role="region" aria-label="Üretilen testler tablosu">
-            {/* ≤ 640 px'te satırlar kart olur (`tablo-yigin`): başlık ve dosya yolu kesilmez, sayfa yatay kaymaz. */}
-            <table className="tablo tablo-yigin">
+          /* ≤ 640 px'te satırlar kart olur (`tablo-yigin`): başlık ve dosya yolu kesilmez, sayfa yatay kaymaz.
+             1024 px'te Oluşturma gizlenir, Eylem sağa yapışır (DZ-06). */
+          <TabloSarici etiket="Üretilen testler tablosu" className="kod-tablosu">
               <thead>
                 <tr>
                   <th scope="col">Test</th>
                   <th scope="col">Durum</th>
                   <th scope="col">PR</th>
                   <th scope="col">Kırarak doğrula</th>
-                  <th scope="col">Oluşturma</th>
-                  <th scope="col">
+                  <th scope="col" className="sutun-ikincil">Oluşturma</th>
+                  <th scope="col" className="sutun-eylem">
                     <span className="gorunmez">Eylem</span>
                   </th>
                 </tr>
@@ -342,7 +343,7 @@ export function Kod() {
                     !(s.yerel_sinif === "defect_adayi" || s.engel?.tur === "defect_candidate");
                   return (
                     <tr key={s.id}>
-                      <td className="yigin-baslik" data-etiket="Test">
+                      <td className="yigin-baslik sutun-metin" data-etiket="Test">
                         <Link to={`/kod/${encodeURIComponent(s.id)}`} className="satir-baglanti">
                           {s.baslik}
                         </Link>
@@ -355,7 +356,7 @@ export function Kod() {
                           <span className="mono soluk">{s.dosya_yolu}</span>
                         </div>
                       </td>
-                      <td data-etiket="Durum">
+                      <td className="sutun-durum" data-etiket="Durum">
                         <span className="satir-ogeler">
                           <Cip ton={d.ton}>{d.etiket}</Cip>
                           {isaret && (
@@ -396,10 +397,10 @@ export function Kod() {
                                 ? "Tamamlanamadı"
                                 : "—"}
                       </td>
-                      <td className="tek-satir" data-etiket="Oluşturma">
+                      <td className="sutun-tarih sutun-ikincil" data-etiket="Oluşturma">
                         {tarih(s.olusturma)}
                       </td>
-                      <td className={yenidenUretilebilir ? undefined : "bos-hucre"} data-etiket="Eylem">
+                      <td className={yenidenUretilebilir ? "sutun-eylem" : "sutun-eylem bos-hucre"} data-etiket="Eylem">
                         {/* Defect adayının testi doğru (uygulama farklı davranıyor): yeniden üretim önerilmez, karar triage'da. */}
                         {/* 013: test verisi değişen güncel script de yeniden üretilebilir (süren / eski kayıtta değil). */}
                         {yenidenUretilebilir && (
@@ -426,8 +427,7 @@ export function Kod() {
                   );
                 })}
               </tbody>
-            </table>
-          </div>
+          </TabloSarici>
         )}
       </Kart>
     </>

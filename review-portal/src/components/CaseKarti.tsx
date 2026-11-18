@@ -13,6 +13,7 @@ import {
   type CaseHazirlik,
   type CaseTeknigi,
   type CaseTestVerisi,
+  type CaseVeriAtfi,
   type OtomatikKodSonucu,
   type RetNedeni,
   type TestCase,
@@ -56,6 +57,7 @@ import { HazirlikYonlendirme } from "./HazirlikYonlendirme";
 import { AlanHatasi, Cip, IslemDugmesi, ReplayRozeti, Uyari } from "./ui";
 import { damgaAlani, DuzeltmeOnKontrolPaneli, OracleAyrinti, OracleCipi, OracleKapisi, oracleHatasindaYenile, TuretmeCipi, useDuzeltmeOnKontrolu, useOracleKapisi } from "./kalite/oracle";
 import { AtifliMetin, GIZLI_DEGER } from "./VeriAtfi";
+import { TabloSarici } from "./tasarim";
 
 type Mod = "goster" | "duzenle" | "reddet" | "geriGonder";
 
@@ -527,9 +529,8 @@ export function CaseKarti({
               ))}
             </p>
           )}
-          {!eski && <TestVerisiTablosu veriler={tc.icerik.test_data ?? []} baslik={tc.icerik.title} />}
-          <div className="tablo-sarici" tabIndex={0} role="region" aria-label={`Adımlar: ${tc.icerik.title}`}>
-            <table className="tablo tablo-sik tablo-yigin">
+          {!eski && <TestVerisiTablosu veriler={tc.icerik.test_data ?? []} baslik={tc.icerik.title} veri={tc.veri} />}
+          <TabloSarici etiket={`Adımlar: ${tc.icerik.title}`} yogunluk="sik">
               <caption className="gorunmez">Adımlar</caption>
               <thead>
                 <tr>
@@ -545,21 +546,20 @@ export function CaseKarti({
                     <td className="mono adim-no" data-etiket="#">
                       {s.id}
                     </td>
-                    <td data-etiket="Adım">
+                    <td className="sutun-zengin" data-etiket="Adım">
                       <AtifliMetin metin={s.action} veri={tc.veri} />
                     </td>
-                    {/* TS-01: veri hücresi insan dili metin + atıf çipi taşır; mono değil (anahtar çipte mono). */}
-                    <td className={s.data ? undefined : "bos-hucre"} data-etiket="Veri">
+                    {/* TS-01: veri hücresi insan dili metin + atıf çipi taşır → zengin sütun (mono değil; anahtar çipte mono). */}
+                    <td className={s.data ? "sutun-zengin" : "sutun-zengin bos-hucre"} data-etiket="Veri">
                       {s.data ? <AtifliMetin metin={s.data} veri={tc.veri} /> : "—"}
                     </td>
-                    <td className={s.expected ? undefined : "bos-hucre"} data-etiket="Beklenen">
+                    <td className={s.expected ? "sutun-zengin" : "sutun-zengin bos-hucre"} data-etiket="Beklenen">
                       {s.expected ? <AtifliMetin metin={s.expected} veri={tc.veri} /> : "—"}
                     </td>
                   </tr>
                 ))}
               </tbody>
-            </table>
-          </div>
+          </TabloSarici>
           <p>
             <strong>Beklenen sonuç:</strong>{" "}
             {tc.icerik.expected_result ? (
@@ -1078,11 +1078,10 @@ function CaseV3Ozeti({
  * Test verisi tablosu. Değer güvenilmeyen metindir: yalnız metin düğümü olarak (`<code>`) yazılır,
  * HTML olarak işlenmez. Saldırı verisi "güvenlik testi girdisi" olarak işaretlenir.
  */
-function TestVerisiTablosu({ veriler, baslik }: { veriler: CaseTestVerisi[]; baslik: string }) {
+function TestVerisiTablosu({ veriler, baslik, veri }: { veriler: CaseTestVerisi[]; baslik: string; veri?: Record<string, CaseVeriAtfi> }) {
   if (veriler.length === 0) return null;
   return (
-    <div className="tablo-sarici" tabIndex={0} role="region" aria-label={`Test verisi: ${baslik}`} data-testid="case-test-verisi">
-      <table className="tablo tablo-sik tablo-yigin">
+    <TabloSarici etiket={`Test verisi: ${baslik}`} yogunluk="sik" testId="case-test-verisi">
         <caption className="gorunmez">Test verisi</caption>
         <thead>
           <tr>
@@ -1095,11 +1094,12 @@ function TestVerisiTablosu({ veriler, baslik }: { veriler: CaseTestVerisi[]; bas
         <tbody>
           {veriler.map((v, i) => (
             <tr key={`${i}-${v.name}`}>
-              <td className="mono" data-etiket="Veri">
+              {/* TS-03: açıklama insan dili → metin sütunu (mono değil); atıf ham `{veri:…}` değil, çip. */}
+              <td className="sutun-metin" data-etiket="Veri">
                 {v.name}
               </td>
-              <td data-etiket="Değer">
-                <code className="veri-deger">{v.value}</code>
+              <td className="sutun-zengin" data-etiket="Değer">
+                {!v.is_attack_payload && /\{veri:/.test(v.value) ? <AtifliMetin metin={v.value} veri={veri} /> : <code className="veri-deger">{v.value}</code>}
               </td>
               <td className={`mono${v.class ? "" : " bos-hucre"}`} data-etiket="Kapsam öğesi">
                 {v.class ?? "—"}
@@ -1116,8 +1116,7 @@ function TestVerisiTablosu({ veriler, baslik }: { veriler: CaseTestVerisi[]; bas
             </tr>
           ))}
         </tbody>
-      </table>
-    </div>
+    </TabloSarici>
   );
 }
 

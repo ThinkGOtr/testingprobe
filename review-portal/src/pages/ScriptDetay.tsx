@@ -8,6 +8,7 @@ import { useBildirim } from "../components/Bildirim";
 import { KodGorunumu } from "../components/KodGorunumu";
 import { DilCakismasiKutusu, dilCakismasiMi, uretimBildirimi } from "../components/UretimSonuclari";
 import { BosDurum, Cip, Baglanti, HataKutusu, KayitHatasi, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
+import { TabloSarici } from "../components/tasarim";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { useIzin } from "../auth";
 import { SCRIPT_DURUMU, scriptIsareti, scriptUretiliyor, type Ton } from "../lib/etiketler";
@@ -234,8 +235,7 @@ export function KaynakMetni({ metin, args }: { metin: string; args: unknown[] })
 
 function EslemeTablosu({ eslemeler, kosulmaz = false }: { eslemeler: AdimEslemesi[]; kosulmaz?: boolean }) {
   return (
-    <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Eşlenen adımlar tablosu">
-      <table className="tablo tablo-sik">
+    <TabloSarici etiket="Eşlenen adımlar tablosu" yogunluk="sik">
         <thead>
           <tr>
             <th scope="col" className="sayi">
@@ -254,10 +254,10 @@ function EslemeTablosu({ eslemeler, kosulmaz = false }: { eslemeler: AdimEslemes
               <td className="sayi mono" data-etiket="#">
                 {e.adim_no}
               </td>
-              <td className="mono" data-etiket="Case adımı">
+              <td className="sutun-kimlik" data-etiket="Case adımı">
                 {e.step_id ?? "—"}
               </td>
-              <td className="mono" data-etiket="Metot">
+              <td className="mono sutun-metin" data-etiket="Metot">
                 {e.po}.{e.method}({e.args.map(DEGER).join(", ")})
               </td>
               <td data-etiket="Tür">{e.beklenen ? <Cip ton="notr">Doğrulama</Cip> : <Cip>Eylem</Cip>}</td>
@@ -272,7 +272,7 @@ function EslemeTablosu({ eslemeler, kosulmaz = false }: { eslemeler: AdimEslemes
                   <span className="hata-metin">✗ doğrulanmadı</span>
                 )}
               </td>
-              <td data-etiket="Kaynak">
+              <td className="sutun-zengin" data-etiket="Kaynak">
                 {e.beklenen ? (
                   e.args.length === 0 ? (
                     <span className="soluk kucuk">Değer yok (parametresiz doğrulama)</span>
@@ -288,8 +288,7 @@ function EslemeTablosu({ eslemeler, kosulmaz = false }: { eslemeler: AdimEslemes
             </tr>
           ))}
         </tbody>
-      </table>
-    </div>
+    </TabloSarici>
   );
 }
 
