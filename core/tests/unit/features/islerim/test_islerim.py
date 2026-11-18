@@ -118,6 +118,37 @@ def test_test_uzmani_kuyrugu_ve_ekip(
     assert y["menu"]["/kod"] == 0
 
 
+def test_siniflandirma_izni_olan_her_rolun_isi_ve_rozet_liste_sayisi(
+    client: TestClient, make_user: MakeUser, engine: Engine
+) -> None:
+    """YD-06: `failure.classify` Otomasyon Mühendisinde de var → sınıflandırma onun da işi; Hatalar
+    rozeti = Hatalar listesinin "Sınıflandırılmamış" sayısı (aynı test adının iki hatası iki iş)."""
+    t = Tohum(engine)
+    ikinci = uuid.uuid4()
+    with Session(engine) as s, proje_icinde(PID, kaynak="test"):
+        s.add(Failure(id=ikinci, run_id=t.run, test_adi="giriş testi", hata_imzasi="imza-2",
+                      sinif="unknown"))  # fmt: skip
+        s.commit()
+    _giris(client, make_user("engineer"))
+    y = client.get("/work-queue").json()
+    sinif = _grup(y, "benim", "siniflandirma")
+    assert sinif and sinif["sayi"] == 2
+    assert sinif["roller"] == ["tester", "engineer"]
+    assert sinif["rol_etiketi"] == "Test Uzmanı ya da Otomasyon Mühendisi"
+    assert _grup(y, "ekip", "siniflandirma") is None
+    # Test bakımı da mühendisin; ama Hatalar rozeti yalnız varsayılan sekmedir (Sınıflandırılmamış).
+    assert _grup(y, "benim", "test_bakimi")
+    liste = client.get("/failures", params={"sinif": "unknown", "limit": 200}).json()
+    siniflanmamis = [h for h in liste if not h.get("kirma")]
+    assert y["menu"]["/hatalar"] == len(siniflanmamis) == 2
+    assert y["menu"]["/islerim"] == y["toplam"]
+    # Analist için ekipte: iki rol birlikte beklenir.
+    _giris(client, make_user("analyst"))
+    y = client.get("/work-queue").json()
+    ekip = _grup(y, "ekip", "siniflandirma")
+    assert ekip and ekip["rol_etiketi"] == "Test Uzmanı ya da Otomasyon Mühendisi"
+
+
 def test_gorüntuleyici_yalniz_sayi_gorur(
     client: TestClient, make_user: MakeUser, engine: Engine
 ) -> None:
@@ -209,3 +240,49 @@ def test_locate(client: TestClient, make_user: MakeUser, engine: Engine) -> None
     assert y["bulundu"] and y["ayni_proje"] and y["proje"]["pid"] == PID
     yok = client.get("/locate", params={"tur": "script", "id": str(uuid.uuid4())}).json()
     assert yok == {"bulundu": False, "ayni_proje": False, "proje": None}
+
+
+def test_ayni_kisi_tek_ad_gorunen_ad_onceligi() -> None:
+    """YD-05: aynı kişinin iki AI Probe hesabı ("Gokhan Sipahi" ve "gokhansipahi LNU") tek kişi;
+    tercih edilen ad yer tutucusuz ad soyad. Ortak AI Probe kimliği de birleştirir."""
+    from tp_core.auth.display import ayni_kisi_adlari
+
+    kisi = ayni_kisi_adlari(
+        [
+            ("cengiz", "analyst", None, None, None),
+            ("gs-analyst", "analyst", "gokhansipahi LNU", "aiprobe", None),
+            ("gokhan.sipahi-analyst", "analyst", "Gokhan Sipahi", "aiprobe", None),
+            ("gs-engineer", "engineer", "G. S.", "aiprobe", "uid-1"),
+            ("gs-tester", "tester", "Gokhan Sipahi", "aiprobe", "uid-1"),
+            ("ayse", "tester", "Ayşe Yılmaz", None, None),
+        ],
+        {"cengiz": "Cengizhan Gunaydin"},
+    )
+    assert kisi["gs-analyst"][1] == kisi["gokhan.sipahi-analyst"][1] == "Gokhan Sipahi (AI Probe)"
+    assert kisi["gs-analyst"][2] == "gokhan.sipahi-analyst"
+    # Ortak external_uid ("G. S." anahtarı kısa) → aynı kişi, iyi ad.
+    assert kisi["gs-engineer"][0] == kisi["gs-tester"][0] == kisi["gs-analyst"][0]
+    assert kisi["gs-engineer"][1] == "Gokhan Sipahi (AI Probe)"
+    assert kisi["cengiz"][1] == "Cengizhan Gunaydin"
+    assert kisi["ayse"][0] != kisi["cengiz"][0]
+
+
+def test_ekip_kisileri_tekil(client: TestClient, make_user: MakeUser, engine: Engine) -> None:
+    """Ekip grubundaki kişi listesi aynı kişiyi iki kez yazmaz (YD-05)."""
+    Tohum(engine)
+    a1 = make_user("analyst")
+    a2 = make_user("analyst")
+    ad_yaz = text(
+        "UPDATE app_user SET ad_soyad = :a, ad_kaynak = 'aiprobe' WHERE kullanici_adi = :k"
+    )
+    with engine.begin() as c:
+        c.execute(ad_yaz, {"a": "Gokhan Sipahi", "k": a1.kullanici_adi})
+        c.execute(ad_yaz, {"a": "gokhansipahi LNU", "k": a2.kullanici_adi})
+    _giris(client, make_user("tester"))
+    y = client.get("/work-queue").json()
+    son_onay = _grup(y, "ekip", "case_son_onay")
+    assert son_onay
+    assert a1.kullanici_adi in son_onay["kisiler"]
+    assert a2.kullanici_adi not in son_onay["kisiler"]
+    me = client.get("/auth/me").json()
+    assert me["kisiler"][a2.kullanici_adi] == me["kisiler"][a1.kullanici_adi]
