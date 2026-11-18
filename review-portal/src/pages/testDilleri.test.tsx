@@ -140,10 +140,12 @@ describe("Kod üretimi: dil seçici (014)", () => {
     const u = userEvent.setup();
     uygulama("/kod");
     const grup = await screen.findByRole("group", { name: "Dil" });
-    const python = within(grup).getByRole("radio", { name: "Python" });
-    expect(python).toHaveAttribute("aria-disabled", "true");
-    expect(python).toHaveAccessibleDescription(/Yakında.*pytest \+ pytest-playwright.*Yakında: Değerlendirme sürüyor/);
-    await u.click(python);
+    // IA-13: iki ve daha çok kullanılamayan dil seçicide kart olmaz; tek satırda toplanır, neden açılırda.
+    expect(within(grup).queryByRole("radio", { name: "Python" })).toBeNull();
+    const kapali = screen.getByTestId("dil-kapalilar");
+    expect(kapali).toHaveTextContent(/Bu projede kullanılamıyor: .*Python/);
+    await u.click(within(kapali).getByText(/Bu projede kullanılamıyor/));
+    expect(kapali).toHaveTextContent(/Python \(yakında\): .*Değerlendirme sürüyor/);
     expect(within(grup).getByRole("radio", { name: "TypeScript" })).toBeChecked();
     expect(screen.queryByTestId("dogrulanmamis-dil-uyarisi")).toBeNull();
   });

@@ -164,7 +164,8 @@ describe("EKR-E4: üretilen testler dar ekranda kart", () => {
     const bolge = await screen.findByRole("region", { name: "Üretilen testler tablosu" });
     const tablo = within(bolge).getByRole("table");
     expect(tablo).toHaveClass("tablo-yigin");
-    const satirlar = within(tablo).getAllByRole("row").slice(1);
+    // IA-13: grup başlık satırları (`kod-grup-satiri`) veri satırı değildir.
+    const satirlar = within(tablo).getAllByRole("row").slice(1).filter((tr) => !tr.classList.contains("kod-grup-satiri"));
     for (const tr of satirlar) {
       const hucreler = [...tr.querySelectorAll("td")];
       expect(hucreler.map((td) => td.getAttribute("data-etiket"))).toEqual(["Test", "Durum", "PR", "Kırarak doğrula", "Oluşturma", "Eylem"]);

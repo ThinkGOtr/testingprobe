@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
@@ -15,6 +15,7 @@ import { PLATFORM_ETIKETI, type Platform } from "../lib/platform";
 import { algilamaSuruyorMu, dilNedeni, DilRozeti, DilSecici, KurulumBilgisi, MusteriCiNotu, uretimAciklamasi } from "../components/Dil";
 import { KurulumPrEylemi, MusteriCiKurulumYolu } from "../components/KurulumPrEylemi";
 import { DIL_ETIKETI, type Dil } from "../lib/dil";
+import { dikkatNedeni, GRUP_BASLIGI, scriptGrubu, type ScriptGrubu } from "../lib/kodDikkat";
 import type { Script, UretimSonucu } from "../api/types";
 import { baslamayanlar, DilCakismasiKutusu, dilCakismasiMi, UretimAtlananlar, uretimBildirimi } from "../components/UretimSonuclari";
 
@@ -139,7 +140,20 @@ export function Kod() {
   const tumScriptler = scriptler.veri ?? [];
   const kapaliSayisi = tumScriptler.filter((s) => s.durum === "closed").length;
   // Yeniden üretimle kapatılan eski kayıtlar varsayılan olarak gizlenir (aynı test iki kez görünmesin).
-  const gorunen = kapatilanlar ? tumScriptler : tumScriptler.filter((s) => s.durum !== "closed");
+  const gorunenHam = kapatilanlar ? tumScriptler : tumScriptler.filter((s) => s.durum !== "closed");
+  // IA-13: dikkat gerekenler (insana düştü, başarısız, defect adayı, REPLAY-MISS, veri değişti) önce, süren/PR açık
+  // sonra, birleşenler en sonda ve katlanabilir. Grup içinde core sırası korunur.
+  const GRUP_SIRASI: ScriptGrubu[] = ["dikkat", "suren", "birlesen"];
+  const gruplar = GRUP_SIRASI.map((g) => ({
+    g,
+    ogeler: gorunenHam.filter((s) => scriptGrubu(s, veriDegistiGecerli(s, tumScriptler)) === g),
+  })).filter((x) => x.ogeler.length > 0);
+  // Birleşenler, listede dikkat ya da süren kayıt varken varsayılan katlı; yalnız birleşen varsa açık.
+  const [birlesenAcikSecim, setBirlesenAcik] = useState<boolean | null>(null);
+  const birlesenAcik = birlesenAcikSecim ?? (kapatilanlar || gruplar.every((x) => x.g === "birlesen"));
+  const gorunen = gorunenHam;
+  // Kod üretim kuyruğu: herhangi bir açık platformda kodu üretilmemiş onaylı case var mı (seçici pano yalnız o zaman açık).
+  const kuyrukBos = !!caseler.veri && adaylar.length === 0;
 
   // Yeniden üretim: dil yalnız kullanıcı onu elle seçtiyse (`dil_kaynagi="secildi"`) taşınır; algılanan ya da
   // varsayılan dilde `dil` gönderilmez, core yeniden algılar ve kaynak `algilandi` kalır (dil kaynağı
@@ -202,6 +216,13 @@ export function Kod() {
           </div>
         ) : (
           <>
+            {kuyrukBos && (
+              <BosDurum baslik={platform === "web" ? "Kodu üretilecek onaylı case yok." : `${PLATFORM_ETIKETI[platform]} için kodu üretilecek onaylı case yok.`}>
+                Case'ler Analist son onayından sonra burada görünür; otomatik kod üretimi açıksa üretim kendiliğinden başlar.{" "}
+                <Link to="/caseler">Test case'lerine git</Link> · <Link to="/otomasyon">Otomasyon ayarı</Link>
+              </BosDurum>
+            )}
+            <KuyrukPanosu katli={kuyrukBos} ozet={`${PLATFORM_ETIKETI[platform]}${seciliDil ? ` · ${DIL_ETIKETI[seciliDil]}` : ""}`}>
             <PlatformSecici
               etiket="Hedef platform"
               platformlar={acikPlatformlar}
@@ -259,14 +280,13 @@ export function Kod() {
             {dilVerisi && ciKurabilir && <MusteriCiKurulumYolu platform={platform} secenekler={dilVerisi.secenekler} seciliDil={seciliDil} degisti={() => void diller.yenile()} />}
             {islem.hata &&
               (dilCakismasiMi(islem.hataNesnesi) ? <DilCakismasiKutusu hata={islem.hataNesnesi} /> : <HataKutusu hata={islem.hata} kaynak={islem.hataNesnesi} />)}
+            </KuyrukPanosu>
             <UretimAtlananlar sonuclar={atlananlar} caseAdi={caseAdi} kapat={() => setAtlananlar([])} />
             {caseler.yukleniyor && !caseler.veri ? (
               <Yukleniyor />
             ) : caseler.hata && !caseler.veri ? (
               <HataKutusu hata={caseler.hata} kaynak={caseler.hataNesnesi} yenile={() => void caseler.yenile()} />
-            ) : adaylar.length === 0 ? (
-              <BosDurum baslik={platform === "web" ? "Kodu üretilmemiş onaylı case yok." : `${PLATFORM_ETIKETI[platform]} için kodu üretilmemiş onaylı case yok.`} />
-            ) : (
+            ) : adaylar.length === 0 ? null : (
               <ul className="secim-liste">
                 {adaylar.map((c) => (
                   <li key={c.id}>
@@ -309,7 +329,9 @@ export function Kod() {
         ) : scriptler.hata && !scriptler.veri ? (
           <HataKutusu hata={scriptler.hata} kaynak={scriptler.hataNesnesi} yenile={() => void scriptler.yenile()} />
         ) : tumScriptler.length === 0 ? (
-          <BosDurum baslik="Henüz üretilen test yok." />
+          <BosDurum baslik="Henüz üretilen test yok.">
+            Onaylı case seçilip "kod üret" denince (ya da otomatik üretim açıksa onaydan sonra) testler burada listelenir (Otomasyon Mühendisi).
+          </BosDurum>
         ) : gorunen.length === 0 ? (
           <BosDurum baslik="Açık üretilen test yok; kapatılanlar gizli." />
         ) : (
@@ -328,10 +350,25 @@ export function Kod() {
                   </th>
                 </tr>
               </thead>
-              <tbody>
-                {gorunen.map((s) => {
+              {gruplar.map(({ g, ogeler }) => (
+              <tbody key={g} data-grup={g}>
+                <tr className="kod-grup-satiri">
+                  <th scope="colgroup" colSpan={6}>
+                    {GRUP_BASLIGI[g]} ({ogeler.length})
+                    {g === "birlesen" && gruplar.length > 1 && (
+                      <>
+                        {" "}
+                        <button type="button" className="dugme dugme-hayalet dugme-kucuk" aria-expanded={birlesenAcik} onClick={() => setBirlesenAcik(!birlesenAcik)}>
+                          {birlesenAcik ? "Gizle" : "Göster"}
+                        </button>
+                      </>
+                    )}
+                  </th>
+                </tr>
+                {(g === "birlesen" && !birlesenAcik ? [] : ogeler).map((s) => {
                   const d = SCRIPT_DURUMU[s.durum] ?? { etiket: s.durum, ton: "notr" as const };
                   const isaret = scriptIsareti(s);
+                  const neden = dikkatNedeni(s, veriDegistiGecerli(s, tumScriptler));
                   const sinif = s.yerel_sinif && s.yerel_sinif !== "gecti" ? YEREL_SINIF[s.yerel_sinif] : null;
                   const yenidenUretilebilir =
                     (s.durum === "blocked" || s.durum === "failed" || veriDegistiGecerli(s, tumScriptler)) &&
@@ -352,7 +389,22 @@ export function Kod() {
                           <DepoCipi kaynak={s} />
                           {/* Dil rozeti yalnız core dil boyutunu sunuyorsa (alan uyarlayıcı varsayılanı değil, kayıtlı dil). */}
                           {dilVerisi && <DilRozeti dil={s.dil} platform={s.platform} />}
-                          <span className="mono soluk">{s.dosya_yolu}</span>
+                        </div>
+                        {neden && (
+                          <div className="kucuk kod-neden" data-testid="kod-neden">
+                            <strong>{neden.metin}</strong>
+                            {neden.ayrinti && <span className="soluk"> — {neden.ayrinti}</span>}
+                            {neden.eylem?.tur === "baglanti" && (
+                              <>
+                                {" "}
+                                <Link to={neden.eylem.yol}>{neden.eylem.etiket} →</Link>
+                              </>
+                            )}
+                          </div>
+                        )}
+                        {/* Dosya yolu ikincil bilgi: yalnız dosya adı, tam yol ipucunda. */}
+                        <div className="mono soluk kucuk kod-dosya" title={s.dosya_yolu}>
+                          {s.dosya_yolu.split("/").pop()}
                         </div>
                       </td>
                       <td data-etiket="Durum">
@@ -426,10 +478,25 @@ export function Kod() {
                   );
                 })}
               </tbody>
+              ))}
             </table>
           </div>
         )}
       </Kart>
     </>
+  );
+}
+
+/**
+ * IA-13: platform/dil seçici panosu. Kod üretim kuyruğu boşken ekranı kaplamaz: tek satırlık katlı bölümde
+ * ("Platform ve dil: Web · TypeScript") durur; kuyrukta case varken olduğu gibi açık çizilir.
+ */
+function KuyrukPanosu({ katli, ozet, children }: { katli: boolean; ozet: string; children: ReactNode }) {
+  if (!katli) return <>{children}</>;
+  return (
+    <details className="kod-pano-katli" data-testid="kod-pano-katli">
+      <summary>Platform ve dil ayarları: {ozet}</summary>
+      {children}
+    </details>
   );
 }
