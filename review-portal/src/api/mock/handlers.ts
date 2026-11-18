@@ -342,7 +342,7 @@ export function mergeKabulGerekli(s: Pick<ScriptDetay, "durum" | "zayif_test" | 
   // 014: müşteri CI hattında kırarak doğrulama yok; yeşil müşteri CI merge için yeterli (kullanıcı kararı 2).
   if (s.hat === "musteri_ci") return [];
   const bv = s.break_verify.durum;
-  if (bv === "weak" || s.zayif_test) return ["Zayıf test: BREAK_CAMPAIGN ile kırılan uygulamada da yeşil kaldı (açık kabul gerekir)."];
+  if (bv === "weak" || s.zayif_test) return ["Zayıf test: kampanya kuralı bilerek bozulan uygulamada da yeşil kaldı (açık kabul gerekir)."];
   if (bv === "failed") return ["Kırarak doğrulama tamamlanamadı: testin hata yakaladığına dair kanıt yok."];
   if (bv === "not_started") return ["Kırarak doğrulama yapılmadı (yeşil → kırmızı → yeşil kanıtı yok)."];
   return [];

@@ -25,7 +25,7 @@ import { HedefOlcer } from "../components/Grafikler";
 import { useGeciktirilmis, useVeri } from "../hooks";
 import { caseEski, dogrulamayiYay, gonderilmemisSoruSayisi } from "../lib/caseV3";
 import { dolar, sure, yuzde } from "../lib/format";
-import { surumDurumCumlesi, surumKumeleri } from "../lib/durumModeli";
+import { siradakiAdim, siradakiMetni, surumDurumCumlesi, surumKumeleri, varsayilanSurum, type CaseSurumu } from "../lib/durumModeli";
 import { ONIZLEME_YETKISI_YOK } from "./Yayin";
 
 const ONAYLI = new Set(["approved", "published"]);
@@ -699,7 +699,7 @@ export function CaseReview() {
 
   const liste = caseler.veri ?? [];
   // `#case-<id>` (ek case türetme sonucu, Kule bağlantıları): liste yüklenince o karta kaydır ve odakla.
-  const { hash } = useLocation();
+  const { hash, search } = useLocation();
   const odaklanan = useRef<string | null>(null);
   useEffect(() => {
     if (!hash.startsWith("#case-") || !caseler.veri || odaklanan.current === hash) return;
@@ -714,6 +714,10 @@ export function CaseReview() {
   const kumeler = useMemo(() => surumKumeleri(liste), [liste]);
   const guncelListe = useMemo(() => (kumeler.onceki.length ? liste.filter((c) => !c.onceki_icerik) : liste), [liste, kumeler]);
   const durumCumlesi = surumDurumCumlesi(gereksinim.veri, kumeler);
+  // Kararlar sekmesinin listelediği kart sayısı (CaseListesi ile aynı `?surum=` kuralı).
+  const surumParam = new URLSearchParams(search).get("surum");
+  const seciliSurum: CaseSurumu = surumParam === "guncel" || surumParam === "onceki" ? surumParam : varsayilanSurum(kumeler);
+  const seciliSurumSayisi = kumeler.onceki.length === 0 ? liste.length : seciliSurum === "onceki" ? kumeler.onceki.length : guncelListe.length;
   // Core'un "Önceki içerik için yayınlanmış N case var" uyarısı tepedeki durum cümlesiyle aynı şeyi söyler: tekrarlanmaz.
   const metrikUyarilari = (metrik.veri?.uyarilar ?? []).filter((u) => !(durumCumlesi && u.startsWith("Önceki içerik için")));
   const ozet = useMemo(() => caseOzeti(guncelListe, metrik.veri), [guncelListe, metrik.veri]);
@@ -776,7 +780,8 @@ export function CaseReview() {
     : liste.length === 0
       ? { metin: "Henüz case yok: gereksinim ekranından üretimi başlatın (Test Uzmanı).", sekme: "", git: "Gereksinime git" }
       : guncelListe.length === 0
-        ? { metin: "Güncel içerik için henüz case yok; gereksinimin akışı sürüyor.", sekme: "", git: "Gereksinime git" }
+        ? // YD-03: güncel case yokken sıradaki adım gereksinimin gerçek adımıdır (ör. "Ön inceleme · Analist").
+          { metin: g ? `${siradakiMetni(siradakiAdim(g))}. Güncel içerik için case'ler bu adımlardan sonra üretilir.` : "Güncel içerik için henüz case yok; gereksinimin akışı sürüyor.", sekme: "", git: "Gereksinime git" }
       : kararBekleyen > 0
         ? {
             metin: [ozet.bekleyen > 0 && `${ozet.bekleyen} case Test Uzmanı kararı`, ozet.hazir > 0 && `${ozet.hazir} case Analist onayı`].filter(Boolean).join(", ") + " bekliyor.",
@@ -891,8 +896,10 @@ export function CaseReview() {
     : [
         {
           id: "kararlar",
-          ad: "Kararlar",
-          sayi: caseler.veri ? kararBekleyen : null,
+          // YD-03: sayaç sekmenin gösterdiğini sayar. Karar bekleyen varsa "Kararlar (n bekleyen)"; yoksa sekme seçili
+          // sürümün case kartlarını listeler → "Case'ler (n)" (0 sayaçla 15 kart çelişkisi yok).
+          ad: kararBekleyen > 0 ? "Kararlar" : "Case'ler",
+          sayi: caseler.veri ? (kararBekleyen > 0 ? kararBekleyen : seciliSurumSayisi) : null,
           dikkat: kararBekleyen > 0,
           // Kart çapaları (`#case-<id>`: kapsam matrisi, Test case'leri, Kule bağlantıları) da bu sekmeyi açar.
           capalar: [CASE_KARARLARI_ID, ...liste.map((c) => caseCapasi(c.id))],

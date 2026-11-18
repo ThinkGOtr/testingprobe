@@ -2481,8 +2481,9 @@ def serialize_cases(
         uyarilar += consistency_problems(c.icerik, ozet)
         if c.id in eski:
             uyarilar.append(
-                "Bu case gereksinimin önceki (PO onayı yenilenmiş) içeriği için üretildi; "
-                "yeni metne göre gözden geçirin."
+                # YD-02: durum cümlesiyle çelişmeyen tek metin (portal "Önceki sürüm" çipi varken bunu
+                # kartta tekrarlamaz; Jira/Gherkin gibi çipsiz tüketiciler için kalır).
+                "Bu case gereksinimin önceki sürümü için üretildi; yeni metne göre gözden geçirin."
             )
         uyarilar += list(olcu.get("oracle_uyarilari") or [])  # 012: kararda kayda geçen uyarılar
         # AI özgün içeriği = ilk düzeltme kararından ÖNCEKİ içerik (§8.10 "fark").

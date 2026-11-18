@@ -8,7 +8,7 @@ import type { BasarisizOzeti, HataSinifi, Kosu, KosuDetay as KosuDetayTuru, Kosu
 import { useIzin, useOturum, usePlatformlar } from "../auth";
 import { normalizeRol } from "../lib/yetki";
 import { useBildirim } from "../components/Bildirim";
-import { BosDurum, Cip, Baglanti, HataKutusu, KayitHatasi, IslemDugmesi, Kart, Metrik, SayfaBasligi, Uyari, Yukleniyor, IzinliLink } from "../components/ui";
+import { BosDurum, Cip, Baglanti, HataKutusu, KayitHatasi, IslemDugmesi, Kart, KullaniciMetni, Metrik, SayfaBasligi, Uyari, Yukleniyor, IzinliLink } from "../components/ui";
 import { Kimlik, KisaDeger, MetaSatiri, TabloSarici } from "../components/tasarim";
 import { DetaySayfasi, OzetKarti, type DetaySekmesi } from "../components/DetaySayfasi";
 import "../stiller/detay-kosu-hata.css";
@@ -936,7 +936,7 @@ export function KosuDetay() {
                 koşuyu "Zaman aşımı" olarak kapatır.
               </Uyari>
             )}
-            {k.break_campaign && <Uyari>Bu koşuda kampanya kuralı koşunun bayisi için BREAK_CAMPAIGN ile bozuldu (kasıtlı kırma); başarısızlık beklenir.</Uyari>}
+            {k.break_campaign && <Uyari>Bu koşuda kampanya kuralı koşunun bayisi için bilerek bozuldu (kasıtlı kırma); başarısızlık beklenir.</Uyari>}
             {k.saglik_hatasi && (
               <Uyari ton="hata" baslik="Ortam sorunu">
                 Koşu öncesi sağlık yoklaması başarısız; Playwright başlatılmadı: {k.saglik_hatasi}
@@ -945,7 +945,8 @@ export function KosuDetay() {
             {sauceUzun && (
               <div data-testid="sauce-uyarisi">
                 <Uyari ton={k.sauce_durum === "error" ? "uyari" : "bilgi"} baslik={k.sauce_durum === "error" ? "Sauce koşmadı" : "Sauce atlandı"}>
-                  {k.sauce_neden ?? (k.sauce_durum === "error" ? "altyapı hatası" : "neden bildirilmedi")}
+                  {/* YD-07: "SAUCE_TETIKLER=…" gibi iç ayar adı kullanıcı cümlesine çevrilir; ham metin Teknik ayrıntı'da. */}
+                  <KullaniciMetni ham={k.sauce_neden} yedek={k.sauce_durum === "error" ? "altyapı hatası" : "neden bildirilmedi"} />
                   {k.sauce_durum === "error" && ". CI işi bilerek yeşil biter; Sauce sonucu bu koşuda yok."}
                 </Uyari>
               </div>

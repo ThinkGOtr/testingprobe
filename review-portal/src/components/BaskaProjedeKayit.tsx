@@ -9,6 +9,7 @@ import { Link, useLocation } from "react-router-dom";
 import { bulunamadi } from "../api/http";
 import { islerimApi, type IsTuru, type KayitYeri } from "../api/islerim";
 import { projeyeGecVeAc } from "../lib/proje";
+import { Kirinti } from "./DetaySayfasi";
 import { BosDurum, Kart, SayfaBasligi, useHataKaydi, Yukleniyor } from "./ui";
 
 export function BaskaProjedeKayit({
@@ -54,7 +55,11 @@ export function BaskaProjedeKayit({
   if (yer === undefined) return <Yukleniyor metin="Kayıt aranıyor…" />;
   return (
     <>
-      <SayfaBasligi ust={<Link to={liste[0]}>← {liste[1]}</Link>} baslik={baska ? `${ad} başka projede` : `${ad} bulunamadı`} />
+      {/* YD-11: eski "← Liste" hap bağlantısı yerine detay sayfalarıyla aynı kırıntı ("Gereksinimler › Bulunamadı"). */}
+      <SayfaBasligi
+        ust={<Kirinti halkalar={[{ ad: liste[1], yol: liste[0] }, { ad: baska ? "Başka projede" : "Bulunamadı" }]} />}
+        baslik={baska ? `${ad} başka projede` : `${ad} bulunamadı`}
+      />
       <Kart>
         {baska ? (
           <BosDurum baslik={`Bu kayıt ${baska.ad} projesinde.`}>

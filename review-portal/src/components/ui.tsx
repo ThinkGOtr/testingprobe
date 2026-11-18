@@ -1,4 +1,4 @@
-import { createContext, useEffect, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode, type RefObject } from "react";
+import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode, type RefObject } from "react";
 import { Link, type LinkProps } from "react-router-dom";
 import { buFazdaYok, bulunamadi } from "../api/http";
 import type { CiktiModu, Degerlendirme } from "../api/types";
@@ -518,19 +518,26 @@ function useOrtakNeden(sarici: RefObject<HTMLElement>, neden: string | undefined
  */
 export const OdaklanabilirKilitBaglami = createContext(false);
 
+/**
+ * YD-05: yetkisiz rolde "Bu adım <Rol> rolünde: … bekleniyor" notu bu bağlamda çizilmez (false). Kimi beklediğimizi
+ * başka yerde tek kez söyleyen alanlar (ör. özet kartının "Sıradaki adım" satırı) için; düğmeler etkilenmez.
+ */
+export const BekleyenRolNotuBaglami = createContext(true);
+
 export function IslemDugmesi({ izin, calisiyor, tur = "birincil", kucuk, disabled, children, title, className, nedenGizli, odaklanabilir: _odaklanabilir, onClick, ...geri }: IslemDugmesiOzellikleri) {
   const istenen: Izin[] = izin === undefined ? [] : typeof izin === "string" ? [izin] : [...izin];
   const izinli = useIzin(...istenen);
   const kisiler = useKisiler();
   const nedenId = useId();
   const oturumYuklu = useOturumYuklu();
+  const rolNotuGoster = useContext(BekleyenRolNotuBaglami);
   const yetkili = istenen.length === 0 || izinli;
   // Oturum henüz yüklenmediyse rol bilinmez: düğme kilitli çizilir (satıra dönmez, yanıp sönmez).
   const rolBekleniyor = !yetkili && !oturumYuklu;
   const kilitli = !!disabled || !!calisiyor || rolBekleniyor;
   const neden = rolBekleniyor ? undefined : !yetkili ? bekleyenRolMetni(istenen, kisiler) : title;
   const nedenVar = !calisiyor && (!!disabled || !yetkili) && !!neden?.trim();
-  const nedenGorunur = nedenVar && (!nedenGizli || !yetkili);
+  const nedenGorunur = nedenVar && (!nedenGizli || !yetkili) && (yetkili || rolNotuGoster);
   const sariciRef = useRef<HTMLSpanElement>(null);
   const nedenSahibi = useOrtakNeden(sariciRef, nedenGorunur ? neden : undefined, nedenId);
   const nedenCiz = nedenGorunur && nedenSahibi === nedenId;
@@ -587,6 +594,25 @@ export function IslemDugmesi({ izin, calisiyor, tur = "birincil", kucuk, disable
         </span>
       )}
     </span>
+  );
+}
+
+/**
+ * YD-07 (IA-12): iç kod/ayar adı taşıyan metnin kullanıcı cümlesi (`teknikMetniCevir`); çevrildiyse ham metin
+ * "Teknik ayrıntı" açılırında kalır, tanınmazsa metin aynen yazılır.
+ */
+export function KullaniciMetni({ ham, yedek }: { ham: string | null | undefined; yedek?: string }) {
+  const cevrilen = teknikMetniCevir(ham);
+  if (!ham) return <>{yedek ?? ""}</>;
+  if (!cevrilen) return <>{ham}</>;
+  return (
+    <>
+      {cevrilen.charAt(0).toLocaleUpperCase("tr") + cevrilen.slice(1)}
+      <details className="teknik-ayrinti">
+        <summary>Teknik ayrıntı</summary>
+        <code>{ham}</code>
+      </details>
+    </>
   );
 }
 

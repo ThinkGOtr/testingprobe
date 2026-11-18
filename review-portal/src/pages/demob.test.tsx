@@ -138,7 +138,7 @@ describe("Kod üretimi: ekranlar (örnek veri)", () => {
     const kapi = screen.getByTestId("merge-kapisi");
     expect(kapi).toHaveTextContent("açık ✓");
     // Mock core gibi `merge_kabul_gerekli` gönderir; portal metni aynen gösterir.
-    expect(screen.getByTestId("merge-uyarilari")).toHaveTextContent("Zayıf test: BREAK_CAMPAIGN ile kırılan uygulamada da yeşil kaldı (açık kabul gerekir).");
+    expect(screen.getByTestId("merge-uyarilari")).toHaveTextContent("Zayıf test: kampanya kuralı bilerek bozulan uygulamada da yeşil kaldı (açık kabul gerekir).");
     const dugme = screen.getByRole("button", { name: "Merge et" });
     expect(dugme).toHaveAttribute("aria-disabled", "true");
     expect(dugme).toHaveAttribute("title", "Önce uyarıyı kabul edin");

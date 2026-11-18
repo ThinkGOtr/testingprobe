@@ -42,11 +42,32 @@ const SHA_ESLESMESI: Record<NonNullable<LocatorProbeSonucu["sha_eslesmesi"]>, { 
   dogrulanamadi: { etiket: "commit doğrulanamadı", ton: "uyari" },
 };
 
+/** Test adının kısa hâli: "@etiket"ler atılır, " · " öncesi (ör. "TPD-1 C10"); ayraç yoksa ilk 48 karakter. */
+export function testKisaAdi(ad: string | null | undefined): string {
+  const temiz = (ad ?? "").replace(/\s*@\S+/g, "").trim();
+  const bas = temiz.split(" · ")[0].trim();
+  if (!bas) return "Hata";
+  return bas.length > 48 ? `${bas.slice(0, 47)}…` : bas;
+}
+
 /** Karar kaynağı: deterministik kural (adıyla), AI yorumu (yalnızca kural eşleşmediyse) ya da insan (IA-16). */
-export function kararKaynagiMetni(h: Pick<HataAnalizi, "karar_kaynagi" | "kural">): string {
+export function kararKaynagiMetni(h: Pick<HataAnalizi, "karar_kaynagi" | "kural">, { teknik = false }: { teknik?: boolean } = {}): string {
   if (h.karar_kaynagi === "human") return "Karar kaynağı: insan sınıflandırması";
   if (h.karar_kaynagi === "llm") return "Karar kaynağı: AI (kural eşleşmedi)";
-  return h.kural ? `Karar kaynağı: kural · ${h.kural}` : "Karar kaynağı: deterministik kural";
+  // YD-07: iç kural kodu (`product_defect`, `test_maintenance/locator`) kullanıcıya sınıf adıyla; ham kod yalnız
+  // Teknik ayrıntı sekmesinde (`teknik`).
+  const ad = kuralAdi(h.kural);
+  return `Karar kaynağı: otomatik kural${ad ? ` (${ad})` : ""}${teknik && h.kural ? ` · ${h.kural}` : ""}`;
+}
+
+const KURAL_ALT_ADI: Record<string, string> = { locator: "locator değişikliği", timing: "zamanlama", data: "test verisi" };
+
+function kuralAdi(kural: string | null | undefined): string | null {
+  if (!kural) return null;
+  const [sinif, alt] = kural.split("/");
+  const etiket = HATA_SINIFI[sinif as keyof typeof HATA_SINIFI]?.etiket;
+  if (!etiket) return null;
+  return alt ? `${etiket} · ${KURAL_ALT_ADI[alt] ?? alt.replace(/_/g, " ")}` : etiket;
 }
 
 type Asama = { ad: string; durum: "tamam" | "hata" | "bekliyor" | "suruyor"; ayrinti?: string | null };
@@ -928,7 +949,7 @@ export function HataDetay() {
             ogeler={[
               { etiket: "Hata kaydı", deger: <Kimlik deger={h.id} tur="uuid" kopyala /> },
               { etiket: "Koşu", deger: <Link to={`/kosular/${encodeURIComponent(h.run_id)}`}>Koşu {kisaKosu}</Link> },
-              { etiket: "Karar kaynağı", deger: kararKaynagiMetni(h) },
+              { etiket: "Karar kaynağı", deger: kararKaynagiMetni(h, { teknik: true }) },
               { etiket: "Kural", deger: h.kural ? <span className="kucuk mono">{h.kural}</span> : null },
               // IA-12: imza ve sinyal kodları geliştirici/destek içindir; kullanıcı metninde değil, burada.
               { etiket: "Hata imzası", deger: h.hata_imzasi ? <span className="kucuk mono">{h.hata_imzasi}</span> : null, genis: true },
@@ -961,11 +982,10 @@ export function HataDetay() {
       ozet={
         <OzetKarti
           testId="triage-ozet"
-          kirinti={[
-            { ad: "Koşular", yol: "/kosular" },
-            { ad: `Koşu ${kisaKosu}`, yol: `/kosular/${encodeURIComponent(h.run_id)}` },
-            { ad: "Triage sonucu" },
-          ]}
+          // YD-10: menüde "Hatalar" seçili; kırıntı da Hatalar kuyruğundan gelir (koşu bağlantısı meta satırında).
+          kirinti={[{ ad: "Hatalar", yol: "/hatalar" }, { ad: testKisaAdi(h.test_adi) }]}
+          // YD-12: sekme başlığı kısa test adı ("TPD-1 C10 · Triage"); uzun ad ve @etiketler sekmede okunmaz.
+          sekme={`${testKisaAdi(h.test_adi)} · Triage`}
           baslik={h.test_adi}
           rozetler={
             <span className="satir-ogeler" data-testid="triage-sinif">
@@ -980,6 +1000,7 @@ export function HataDetay() {
             <MetaSatiri
               ogeler={[
                 { deger: tarih(h.zaman) },
+                { etiket: "Koşu", deger: <Link to={`/kosular/${encodeURIComponent(h.run_id)}`}>{kisaKosu}</Link> },
                 { etiket: "Gereksinim", deger: h.requirement_id ? <Link to={`/gereksinimler/${encodeURIComponent(h.requirement_id)}`}>Gereksinimi aç</Link> : null },
                 { etiket: "Case", deger: h.case_id ? <span className="mono">{h.case_id}</span> : null },
                 { deger: h.script_id ? <Link to={`/kod/${encodeURIComponent(h.script_id)}`}>Üretilen test</Link> : null },

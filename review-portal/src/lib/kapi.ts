@@ -110,7 +110,7 @@ export function mergeUyarilari(s: KapiGirdisi): string[] {
   const bv = s.break_verify.durum;
   if (s.zayif_test || bv === "weak") {
     return [
-      "Zayıf test: BREAK_CAMPAIGN ile kırılan uygulamada da yeşil kaldı. BREAK_CAMPAIGN yalnızca kampanya kuralını bozar; test kampanya dışı bir davranışı (ör. sepet adedi, minimum sipariş) doğruluyorsa bu beklenen bir sonuçtur.",
+      "Zayıf test: kampanya kuralı bilerek bozulan uygulamada da yeşil kaldı. Kasıtlı kırma yalnızca kampanya kuralını bozar; test kampanya dışı bir davranışı (ör. sepet adedi, minimum sipariş) doğruluyorsa bu beklenen bir sonuçtur.",
     ];
   }
   if (bv === "failed") return ["Kırarak doğrulama tamamlanamadı: testin hata yakaladığına dair kanıt yok."];

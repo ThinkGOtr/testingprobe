@@ -5,7 +5,9 @@ import { useOlay } from "../api/events";
 import { bulunamadi } from "../api/http";
 import { useBugKisitli, useIzin } from "../auth";
 import { BUG_KISITLI_METNI, izinRolleriMetni } from "../lib/yetki";
-import type { BugTaslagi, BugTaslakIcerik, MukerrerAday, MukerrerArama } from "../api/types";
+import type { BugTaslagi, BugTaslakIcerik, CaseVeriAtfi, MukerrerAday, MukerrerArama } from "../api/types";
+import { atifParcalari } from "../api/uyumOtomasyon";
+import { AtifliMetin } from "../components/VeriAtfi";
 import { useBildirim } from "../components/Bildirim";
 import { AlanHatasi, BosDurum, Cip, Baglanti, HataKutusu, KayitHatasi, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, SonrakiAdim, Uyari, Yukleniyor, IzinliLink } from "../components/ui";
 import { DurumCipi, EylemCubugu, KopyalaDugmesi, MetaIzgara, MetaSatiri, SegmentSecici, SuzgecCubugu, TabloSarici } from "../components/tasarim";
@@ -67,8 +69,9 @@ function aramaOzeti(b: BugTaslagi): string {
   return b.mukerrer_adaylari.map((m) => m.key).join(", ") || "—";
 }
 
-export const KIRMA_CIPI = "Kasıtlı kırma koşusu (BREAK_CAMPAIGN)";
-const KIRMA_ACIKLAMA = "Bu taslak bilerek bozulmuş (BREAK_CAMPAIGN / kırarak doğrula) koşudan geldi; gerçek hata değildir.";
+// YD-07: iç ortam değişkeni adı (BREAK_CAMPAIGN) kullanıcı metnine girmez.
+export const KIRMA_CIPI = "Kasıtlı kırma koşusu";
+const KIRMA_ACIKLAMA = "Bu taslak, kırarak doğrulama için uygulamanın bilerek bozulduğu koşudan geldi; gerçek hata değildir.";
 
 /**
  * Kasıtlı kırma koşusunun kırmızısından gelen taslakların kimlikleri (taslak → triage hatası → koşu;
@@ -235,6 +238,24 @@ const ALAN_ADI: Record<string, string> = {
 };
 
 /** Gönderimden önce şema denetimi (core'un 422'sini beklemeden Türkçe alan mesajı). */
+/** YD-04: adım metninin başındaki elle yazılmış numara ("1. ", "2) ") — `<ol>` numarasıyla çift görünmesin. */
+export const adimMetniSade = (adim: string): string => adim.replace(/^\s*\d+\s*[.)]\s+/, "");
+
+/** Gizli görünen anahtarlar (parola, sır, belirteç): bug taslağında değer kataloğu yok; çip maskeli gösterilir. */
+const GIZLI_ANAHTAR = /(parola|sifre|şifre|password|secret|token|sir\b|api[_-]?key)/i;
+
+/**
+ * Bug taslağı metnindeki `{veri:…}` atıfları için çip bilgisi: taslakta katalog değeri taşınmaz; gizli görünen anahtar
+ * "••• (gizli)" ile maskelenir, diğerleri yalnız anahtar çipi (değer bilinmiyor, nötr).
+ */
+export function bugVeriAtiflari(metin: string | null | undefined): Record<string, CaseVeriAtfi> | undefined {
+  const sonuc: Record<string, CaseVeriAtfi> = {};
+  for (const p of atifParcalari(metin)) {
+    if (p.tur === "atif" && GIZLI_ANAHTAR.test(p.anahtar)) sonuc[p.anahtar] = { deger: null, gizli: true, surum: null, var: true };
+  }
+  return Object.keys(sonuc).length ? sonuc : undefined;
+}
+
 export function icerikHatasi(i: Pick<BugTaslakIcerik, "summary" | "expected" | "actual" | "environment">, steps: string[]): string | null {
   const ozet = i.summary.trim();
   if (!ozet) return "Özet boş olamaz.";
@@ -668,7 +689,7 @@ export function BugTaslakDetay() {
           rows={2}
           className="kendiliginden-uzar"
           value={retGerekcesi}
-          placeholder={kirma ? "ör. Kasıtlı kırma (BREAK_CAMPAIGN) koşusu; gerçek hata değil." : undefined}
+          placeholder={kirma ? "ör. Kasıtlı kırma koşusu; gerçek hata değil." : undefined}
           onChange={(e) => setRetGerekcesi(e.target.value)}
         />
       </div>
@@ -700,13 +721,16 @@ export function BugTaslakDetay() {
           deger: icerik.steps.length ? (
             <ol className="bug-adimlar">
               {icerik.steps.map((x, i) => (
-                <li key={i}>{x}</li>
+                // YD-04: `<ol>` zaten numaralar; metindeki "1. " öneki atılır, `{veri:…}` atfı çip olur (gizli anahtar maskeli).
+                <li key={i}>
+                  <AtifliMetin metin={adimMetniSade(x)} veri={bugVeriAtiflari(x)} />
+                </li>
               ))}
             </ol>
           ) : null,
         },
-        { etiket: "Beklenen", deger: icerik.expected, genis: true },
-        { etiket: "Gerçekleşen", deger: icerik.actual, genis: true },
+        { etiket: "Beklenen", deger: <AtifliMetin metin={icerik.expected} veri={bugVeriAtiflari(icerik.expected)} />, genis: true },
+        { etiket: "Gerçekleşen", deger: <AtifliMetin metin={icerik.actual} veri={bugVeriAtiflari(icerik.actual)} />, genis: true },
         { etiket: "Ortam", deger: icerik.environment, genis: true },
         { etiket: "Önem önerisi", deger: SEVERITY[icerik.severity_suggestion] },
       ]}

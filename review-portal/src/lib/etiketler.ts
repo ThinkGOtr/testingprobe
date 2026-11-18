@@ -229,7 +229,7 @@ export function scriptUretiliyor(d: ScriptDurumu): boolean {
 
 /** Kırarak doğrulamada yeşil kalan (`weak` / `zayif_test`) testin liste ipucu. */
 export const ZAYIF_TEST_ACIKLAMA =
-  "Kampanya kırılması (BREAK_CAMPAIGN) bu testi kırmızıya çevirmedi. Kampanya dışı davranışı (ör. sepet sayacı, minimum sipariş) doğrulayan testte beklenir; kampanya testinde zayıf test demektir. Merge engellenmez, açık insan kabulü ister.";
+  "Kasıtlı kampanya kırılması bu testi kırmızıya çevirmedi. Kampanya dışı davranışı (ör. sepet sayacı, minimum sipariş) doğrulayan testte beklenir; kampanya testinde zayıf test demektir. Merge engellenmez, açık insan kabulü ister.";
 
 /**
  * Durumdan ayrı, türetilmiş script işareti: `pr_open` iken kırarak doğrulama sonucu.

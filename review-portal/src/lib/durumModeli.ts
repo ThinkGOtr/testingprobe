@@ -79,15 +79,14 @@ export function varsayilanSurum(k: { guncel: readonly unknown[]; onceki: readonl
  * durumundan söylenir (ör. `new` → ön inceleme, `pending_po` → PO teyidi, `po_approved` → yeni case üretimi).
  */
 export function surumDurumCumlesi(
-  g: Pick<Gereksinim, "durum" | "ac_missing" | "siradaki"> | null | undefined,
+  _g: Pick<Gereksinim, "durum" | "ac_missing" | "siradaki"> | null | undefined,
   k: { guncel: readonly unknown[]; onceki: readonly unknown[] },
 ): string | null {
   const n = k.onceki.length;
   if (n === 0) return null;
-  const s = g ? siradakiAdim(g) : null;
-  const sonraki = s ? ` Sıradaki adım: ${siradakiMetni(s)}.` : "";
+  // YD-03: sıradaki adım burada tekrarlanmaz; özet kartının "Sıradaki adım" satırı aynı adımı (`siradakiAdim`) söyler.
   if (k.guncel.length === 0) {
-    return `Bu ${n} case gereksinimin önceki sürümüne ait; içerik değişti ve PO teyidi yenilenmedi. Yeni sürüm için case'ler, ön inceleme ve PO teyidinden sonra üretilir.${sonraki}`;
+    return `Bu ${n} case gereksinimin önceki sürümüne ait; içerik değişti ve PO teyidi yenilenmedi. Yeni sürüm için case'ler, ön inceleme ve PO teyidinden sonra üretilir.`;
   }
   return `${n} case gereksinimin önceki sürümüne ait ("Önceki sürüm" sekmesinde); sayaçlar ve kapsam yalnız güncel sürümün ${k.guncel.length} case'ini sayar.`;
 }

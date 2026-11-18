@@ -405,6 +405,9 @@ export function CaseKarti({
   const d = CASE_DURUMU[tc.durum];
   // Son durumlar (core): yayınlanan ve yerini yenisi alan case'e karar verilmez.
   const kilitli = tc.durum === "published" || tc.durum === "superseded";
+  // YD-02: önceki sürüm case'inde core'un "önceki sürümü için üretildi" uyarısı "Önceki sürüm" çipini ve sayfa
+  // tepesindeki durum cümlesini tekrarlar; kartlarda yazılmaz (eski metin "PO onayı yenilenmiş" de süzülür).
+  const gorunenUyarilar = (tc.uyarilar ?? []).filter((u) => !(tc.onceki_icerik && u.startsWith("Bu case gereksinimin önceki")));
   // core test_case makinesi: Test Uzmanı kararı draft'tan (→ ready | rejected), Analist kararı ready'den.
   const verilebilir = (k: CaseKarari) => caseKarariVerilebilir(tc.durum, k);
   const gecisYokNedeni = (k: CaseKarari) => (verilebilir(k) ? undefined : `${GECIS_YOK} (${CASE_DURUMU[tc.durum].etiket})`);
@@ -808,9 +811,9 @@ export function CaseKarti({
           . Ekrandaki değer güncel katalog değeridir; onaylanan değer farklıydı. Gerekirse case'i yeniden açıp gözden geçirin.
         </p>
       )}
-      {tc.uyarilar && tc.uyarilar.length > 0 && (
+      {gorunenUyarilar.length > 0 && (
         <ul className="duz-liste kucuk hata-metin">
-          {tc.uyarilar.map((u) => (
+          {gorunenUyarilar.map((u) => (
             <li key={u}>{u}</li>
           ))}
         </ul>
