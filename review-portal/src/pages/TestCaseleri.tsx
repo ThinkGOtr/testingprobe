@@ -335,9 +335,7 @@ function CaseSatiri({ c, g, scriptler, sinirda, riskVar }: { c: TestCase; g: Ger
         {riskVar && risk && (
           <>
             {" "}
-            <Cip ton={risk.ton} aciklama="Risk">
-              {risk.etiket}
-            </Cip>
+            <Cip ton={risk.ton}>{risk.etiket}</Cip>
           </>
         )}
       </td>
