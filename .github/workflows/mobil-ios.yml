@@ -66,9 +66,8 @@ env:
   UV_VERSION: "0.8.24"
   APP_BUNDLE: demo-app/mobile/build/BayiSiparis.app
   SIM_NAME: TP iPhone
-  # Tercih edilen cihaz tipi; çalışma zamanı desteklemiyorsa 16'dan büyük/eşit en küçük "iPhone N"
-  # (yoksa en büyüğü). "İlk desteklenen iPhone" bazı imajlarda iPhone-Duo gibi bir tip çıkarıyor,
-  # build-wda onu cihaz listesinde bulamıyordu.
+  # Tercih edilen cihaz tipi; çalışma zamanı desteklemiyorsa imajda hazır kurulu bir "iPhone N"
+  # simülatörünün tipi kullanılır ("Simülatör oluştur ve aç" adımı).
   SIM_DEVICE_TYPE: iPhone 16
   # Boş = runner'daki en yeni kararlı Xcode (Expo SDK 58 / RN 0.88 yeni Xcode ister).
   XCODE_APP: ""
@@ -175,14 +174,23 @@ jobs:
             | ((map(select(.version == $sdk)) | last) // last)
             | "\(.identifier) \(.version)"')
           [ -n "${rt_id:-}" ] || { echo "::error::Kurulu iOS simülatör çalışma zamanı yok"; exit 1; }
+          # Cihaz tipi: SIM_DEVICE_TYPE destekleniyorsa o; yoksa imajda bu çalışma zamanında hazır
+          # kurulu bir "iPhone N" simülatörünün tipi (≥16'nın en küçüğü, yoksa en büyüğü). Desteklenen
+          # tip listesinden "ilk iPhone" seçmek bazı imajlarda iPhone-Duo veriyordu; build-wda o
+          # simülatörü bulamıyordu.
+          echo "Desteklenen iPhone tipleri:"
+          xcrun simctl list runtimes -j | jq -r --arg id "$rt_id" '.runtimes[] | select(.identifier == $id)
+            | .supportedDeviceTypes[] | select(.productFamily == "iPhone") | "  \(.name) · \(.identifier)"'
           dt="$(xcrun simctl list runtimes -j | jq -r --arg id "$rt_id" --arg ad "$SIM_DEVICE_TYPE" '
-            [.runtimes[] | select(.identifier == $id) | .supportedDeviceTypes[]
-             | select(.productFamily == "iPhone")] as $t
-            | ($t | map(select(.name | test("^iPhone [0-9]+$")))
-                 | sort_by(.name | ltrimstr("iPhone ") | tonumber)) as $n
-            | (($t | map(select(.name == $ad)) | first)
-               // ($n | map(select((.name | ltrimstr("iPhone ") | tonumber) >= 16)) | first)
-               // ($n | last) // ($t | first)) | .identifier')"
+            .runtimes[] | select(.identifier == $id) | .supportedDeviceTypes[]
+            | select(.productFamily == "iPhone" and .name == $ad) | .identifier' | head -n 1)"
+          if [ -z "$dt" ]; then
+            dt="$(xcrun simctl list devices -j | jq -r --arg id "$rt_id" '
+              [(.devices[$id] // [])[] | select(.isAvailable and (.name | test("^iPhone [0-9]+$")))
+               | {n: (.name | ltrimstr("iPhone ") | tonumber), t: .deviceTypeIdentifier}]
+              | sort_by(.n) | ((map(select(.n >= 16)) | first) // last) | .t // empty')"
+          fi
+          [ -n "$dt" ] || { echo "::error::Uygun iPhone cihaz tipi bulunamadı ($rt_id)"; exit 1; }
           udid="$(xcrun simctl create "$SIM_NAME" "$dt" "$rt_id")"
           xcrun simctl boot "$udid"
           xcrun simctl bootstatus "$udid" -b
