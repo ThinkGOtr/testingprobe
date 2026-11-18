@@ -99,10 +99,14 @@ RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv \
  && installed="$(/opt/e2e-python/venv/bin/python -c 'import importlib.metadata as m; print(m.version("playwright"))')" \
  && { [ "$installed" = "$PLAYWRIGHT_VERSION" ] || { \
       echo "playwright (PyPI) $installed != PLAYWRIGHT_VERSION $PLAYWRIGHT_VERSION: e2e-python-deps kilidini güncelleyin" >&2; exit 1; }; }
-RUN --network=none /opt/e2e-python/venv/bin/python -I -c \
+# `COPY --chmod=444` hedefin üst dizinini de 444 yaratır (x yok): worker kullanıcısı (root değil)
+# py_guard.py'ye ulaşamaz ve her Python guard adımı düşer. Dizinler a+rx olmalı (duman denetler).
+RUN --network=none chmod 0555 /opt/e2e-python /opt/e2e-python/py-guard \
+ && /opt/e2e-python/venv/bin/python -I -c \
       "import playwright, pytest, pytest_playwright, pytest_repeat, appium, allure_pytest" \
  && /usr/bin/python3.12 -I /opt/e2e-python/py-guard/py_guard.py --help >/dev/null \
- && chmod -R a-w /opt/e2e-python
+ && chmod -R a-w /opt/e2e-python \
+ && find /opt/e2e-python -type d ! -perm -o=rx -exec echo "erişilemez dizin: {}" \; -exec false {} +
 # ==== dil-python (Ş1) sonu ====
 
 # ==== dil-csharp (Ş2) başı ====
@@ -126,7 +130,9 @@ RUN for d in web windows; do \
         "$(ls /build/e2e-csharp-deps/$d/*.csproj)" || exit 1; \
     done \
  && rm -rf /build/e2e-csharp-deps/*/obj \
- && chmod -R a-w /build/e2e-csharp/nuget
+ && chmod -R a+rX,a-w /build/e2e-csharp/nuget \
+ && find /build/e2e-csharp/nuget -type f -perm -u=x ! -perm -o=x -exec echo "yalnız sahibi çalıştırır: {}" \; \
+      -exec false {} +
 # Çalışma zamanı SDK'sı (derleme + dotnet test); belgeler/örnekler atılır.
 RUN cp -a /usr/share/dotnet /build/dotnet
 # ==== dil-csharp (Ş2) sonu ====
@@ -266,7 +272,13 @@ ENV DOTNET_CLI_TELEMETRY_OPTOUT=1 \
     TP_E2E_CSHARP_DEPS=/opt/e2e-csharp
 # C# duman testi, AĞSIZ: güvenilir web projesi çevrimdışı kilitli restore + derleme
 # (worker/diller/csharp.py ile aynı bayraklar) ve cs-araclar açılışı. Paket eksikse imaj derlenmez.
-RUN --network=none /usr/share/dotnet/dotnet /opt/cs-araclar/cs-araclar.dll --help >/dev/null \
+# `COPY --chmod=444 <dizin>/` hedef dizinleri de 444 yaratır: worker kullanıcısı (root değil)
+# kopyalayamaz. Dizinler a+rx yapılır ve duman denetler. (NuGet paket ikilileri, ör. AspectInjector,
+# 0754 açılır; dil-csharp aşaması `a+rX` ile herkese çalıştırılabilir yapar.)
+RUN --network=none chmod 0555 /opt/e2e-csharp /opt/e2e-csharp/web /opt/e2e-csharp/windows \
+ && find /opt/e2e-csharp /opt/cs-araclar -type d ! -perm -o=rx -exec echo "erişilemez dizin: {}" \; \
+      -exec false {} + \
+ && /usr/share/dotnet/dotnet /opt/cs-araclar/cs-araclar.dll --help >/dev/null \
  && mkdir -p /tmp/cs-duman && cp /opt/e2e-csharp/web/* /tmp/cs-duman/ \
  && cd /tmp/cs-duman \
  && HOME=/tmp/cs-duman NUGET_PACKAGES=/tmp/cs-duman/nuget /usr/share/dotnet/dotnet restore \

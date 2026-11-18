@@ -79,3 +79,19 @@ def test_kirilma_ve_kip() -> None:
     assert veri_yalitimi.kip({"TP_E2E_NO_RESET": "1"}) == "yalniz_sepet"
     with pytest.raises(veri_yalitimi.KurulumHatasi, match="BREAK_CAMPAIGN=1 için"):
         veri_yalitimi.kip({"BREAK_CAMPAIGN": "1"})
+
+
+def test_ios_klavye_suruklemesi_klavyenin_ustunde() -> None:
+    """Java `Klavye.surukleme` eşi: sürükleme kabın klavye üstünde kalan bölümünde, tuşlara
+    dokunmadan (iOS number-pad'de kapatma tuşu yok; `keyboardDismissMode="on-drag"`)."""
+    from ekranlar.ekran import _klavye_suruklemesi
+
+    kap = {"x": 0, "y": 100, "width": 390, "height": 700}  # klavyenin altına uzanan kap
+    assert _klavye_suruklemesi(kap, 500) == (4, 484, 444)
+    # Kap klavyeden önce bitiyorsa kabın altından.
+    assert _klavye_suruklemesi({"x": 10, "y": 100, "width": 300, "height": 200}, 500) == (
+        14, 284, 244,
+    )
+    # Klavye üstünde yer yok / dar kap: sürükleme yok.
+    assert _klavye_suruklemesi(kap, 150) is None
+    assert _klavye_suruklemesi({"x": 0, "y": 100, "width": 8, "height": 700}, 500) is None

@@ -208,3 +208,29 @@ def test_yerel_kapi_dil_koku_check_ister() -> None:
         ("local-ci",), [], ["e2e-app-python/tests/generated/test_x.py"]
     )
     assert neden is not None and "e2e-app-python/" in neden
+
+
+def test_kapi_engeli_kabul_kipi(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`TP_DIL_KABUL_KIPI` yalnız `dil_kapisi.kabul_kipinde_acik_mi` doğruysa kapıyı geçer;
+    değişken yokken kabul kipi hiç sorulmaz."""
+    from tp_core.gateway import dil_kapisi
+
+    monkeypatch.setattr(p, "cift_durumu", lambda *a, **k: "yakinda")
+    sorulan: list[tuple] = []
+
+    def sahte(rules, platform, dil, **kw):
+        sorulan.append((platform, dil, kw["kip_degeri"], kw["forge"]))
+        return (platform, dil) == ("web", "python")
+
+    monkeypatch.setattr(dil_kapisi, "kabul_kipinde_acik_mi", sahte)
+    monkeypatch.setattr(service, "ayar", lambda k: "local" if k == "TP_FORGE" else None)
+    monkeypatch.setattr(
+        service, "get_settings", lambda: SimpleNamespace(ortam="dev", demo_mode=True)
+    )
+    monkeypatch.delenv("TP_DIL_KABUL_KIPI", raising=False)
+    assert service.kapi_engeli("web", "python") == "Değerlendirme sürüyor"
+    assert sorulan == []
+    monkeypatch.setenv("TP_DIL_KABUL_KIPI", "web/python")
+    assert service.kapi_engeli("web", "python") is None
+    assert service.kapi_engeli("web", "csharp") == "Değerlendirme sürüyor"
+    assert sorulan[0] == ("web", "python", "web/python", "local")

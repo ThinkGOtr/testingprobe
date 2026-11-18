@@ -24,6 +24,10 @@ from altyapi.oturum import oturum
 YOK = "(öğe yok)"
 _METIN_NITELIKLERI = ("label", "value", "Name", "content-desc", "text")
 _KENAR = 4
+# iOS klavye kapatma sürüklemesi (Java Klavye.MESAFE / PAY): klavyenin üst kenarının PAY kadar
+# üstünden MESAFE kadar yukarı.
+_KLAVYE_MESAFE = 40
+_KLAVYE_PAY = 16
 
 
 def _id(spec: Mapping[str, str]) -> str:
@@ -32,6 +36,17 @@ def _id(spec: Mapping[str, str]) -> str:
 
 def _ad(kapsayici: str | None, kimlik: str) -> str:
     return f"'{kimlik}'" if kapsayici is None else f"'{kapsayici}' içinde '{kimlik}'"
+
+
+def _klavye_suruklemesi(kap: Mapping[str, int], klavye_ust: int) -> tuple[int, int, int] | None:
+    """iOS klavye kapatma çizgisi (Java `Klavye.surukleme`, saf hesap): (x, başlangıç y, bitiş y).
+    Sürükleme kabın KLAVYENİN ÜSTÜNDE kalan bölümünde yapılır (klavye tuşlarına dokunmaz); o bölüm
+    yetmiyorsa None."""
+    alt = min(kap["y"] + kap["height"], klavye_ust) - _KLAVYE_PAY
+    ust = alt - _KLAVYE_MESAFE
+    if kap["width"] <= 2 * _KENAR or ust <= kap["y"]:
+        return None
+    return kap["x"] + _KENAR, alt, ust
 
 
 def _sade(s: str | None) -> str:
@@ -150,10 +165,21 @@ class Ekran:
             if self._o.platform == "ios":
                 # XCUITest hideKeyboard yalnız klavye tuşuyla kapatır (number-pad'de yok):
                 # uygulamanın `keyboardDismissMode="on-drag"` yolu (Klavye.java notu).
+                # Sürükleme klavyenin üstünde kalır (Java Klavye.iosSurukleyerekKapat): kabın 3/4'ünden
+                # başlayan genel kaydırma klavye tuşlarına basar, klavye açık kalır.
                 klavye = self._d.find_elements("class name", "XCUIElementTypeKeyboard")
-                if klavye:
-                    ust = klavye[0].rect["y"]
-                    self._ios_surukle({"x": 0, "y": ust + 1, "width": 0, "height": 0})
+                if not klavye:
+                    return
+                ust = klavye[0].rect["y"]
+                for k in self._d.find_elements("class name", "XCUIElementTypeScrollView"):
+                    cizgi = _klavye_suruklemesi(k.rect, ust)
+                    if cizgi is not None:
+                        x, bas, son = cizgi
+                        self._d.execute_script(
+                            "mobile: dragFromToForDuration",
+                            {"duration": 0.2, "fromX": x, "fromY": bas, "toX": x, "toY": son},
+                        )
+                        return
                 return
             self._d.hide_keyboard()
         except WebDriverException:
