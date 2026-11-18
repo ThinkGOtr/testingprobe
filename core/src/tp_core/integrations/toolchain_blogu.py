@@ -3,7 +3,8 @@
 toolchain süreç ayarı kurulum geneli (D) kalır; projeye özgü değerler istek gövdesinde gider:
 
     {"pid", "forge_path", "mirror_path", "remote_url", "base_url", "demo_api_url", "probe_user",
-     "probe_password", "run_dealers", "e2e_root", "e2e_app_root", "e2e_java_root", "base_ref", "app_paths",
+     "probe_password", "run_dealers", "run_dealer_passwords", "e2e_root", "e2e_app_root",
+     "e2e_java_root", "base_ref", "app_paths",
      "app": {"android"|"ios"|"windows": {"app_id", "path", "activity", "args", "workdir"}}}
 
 Toolchain'de (`toolchain_common/proje.py`) blokta olmayan alan toolchain'in env değerine düşer;
@@ -29,7 +30,9 @@ ve GitHub host'undaysa gönderilir: izinli host'lar `TP_GITHUB_HOSTS` (D, virgü
 kuralı (env adresi ve env token'ı dahil) uygular (`toolchain_common/proje.py:token_gonderilir_mi`).
 
 Proje config adları toolchain'in env adlarıdır (`BASE_URL`, `DEMO_API_URL`, `TP_PROBE_USER`,
-`TP_PROBE_PASSWORD`, `TP_RUN_DEALERS`, `TP_E2E_ROOT`, `TP_E2E_APP_ROOT`, `TP_E2E_JAVA_ROOT`,
+`TP_PROBE_PASSWORD`, `TP_RUN_DEALERS`, `TP_RUN_DEALER_PASSWORDS` (sır; JSON
+`{"<kullanıcı>": "<parola>"}` → blok `run_dealer_passwords`; bozuk JSON gönderilmez, değer
+loglanmaz), `TP_E2E_ROOT`, `TP_E2E_APP_ROOT`, `TP_E2E_JAVA_ROOT`,
 `TP_APP_PATHS`, `TP_FORGE_REMOTE_URL`, `TP_APP_{ID,PATH,ACTIVITY,ARGS,WORKDIR}_<PLATFORM>`).
 
 **Platform deposu** (`proje_blogu(platform=...)`, platform-depo ANALIZ §3.2.9): platform ayrı
@@ -156,6 +159,8 @@ def _taban_blok(p: str) -> dict[str, Any]:
         blok["probe_password"] = parola
     if bayiler := _deger("TP_RUN_DEALERS", p, varsayilan):
         blok["run_dealers"] = _liste(bayiler)
+    if parolalar := _kosu_parolalari(p, varsayilan):
+        blok["run_dealer_passwords"] = parolalar
     if (yollar := _deger(APP_PATHS_ENV, p, varsayilan)) is not None:
         blok["app_paths"] = _liste(yollar)
     if app := _app(p, varsayilan):
@@ -163,6 +168,25 @@ def _taban_blok(p: str) -> dict[str, Any]:
     if kokler := _dil_kokleri(p, varsayilan):
         blok["dil_kokleri"] = kokler
     return blok
+
+
+def _kosu_parolalari(p: str, varsayilan: bool) -> dict[str, str] | None:
+    """Koşu hesabı başına parola (`TP_RUN_DEALER_PASSWORDS`, sır). Varsayılan projede süreç
+    ortamıyla aynıysa None (toolchain env'i). Bozuk değer gönderilmez (hesaplar ortak parolayla
+    girer); uyarıda değer yoktur."""
+    ham = _deger("TP_RUN_DEALER_PASSWORDS", p, varsayilan, sir=True)
+    if not ham:
+        return None
+    try:
+        v = json.loads(ham)
+    except ValueError:
+        v = None
+    if not isinstance(v, dict) or not all(
+        isinstance(k, str) and k.strip() and isinstance(x, str) and x for k, x in v.items()
+    ):
+        log.warning("TP_RUN_DEALER_PASSWORDS yok sayıldı (%s): JSON {kullanıcı: parola} değil", p)
+        return None
+    return {k.strip(): x for k, x in v.items()}
 
 
 def _dil_kok_adlari() -> tuple[str, ...]:

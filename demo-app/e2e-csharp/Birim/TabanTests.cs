@@ -68,6 +68,21 @@ public class TabanTests
     }
 
     [Test]
+    public void KosuParolasi()
+    {
+        Assert.That(Bayiler.KosuParolalari(null), Is.Empty);
+        Assert.That(Bayiler.KosuParolalari(" "), Is.Empty);
+        var p = Bayiler.KosuParolalari("{\"bayi2\": \"Bayi2 özel!\", \"bos\": \"\", \"sayi\": 1}");
+        Assert.That(p, Is.EquivalentTo(new System.Collections.Generic.Dictionary<string, string> { ["bayi2"] = "Bayi2 özel!" }));
+        var b2 = Bayiler.E2E[1];
+        Assert.That(Bayiler.KosuParolasiyla(b2, p).Parola, Is.EqualTo("Bayi2 özel!"));
+        Assert.That(Bayiler.KosuParolasiyla(b2, p).Ad, Is.EqualTo(b2.Ad));
+        Assert.That(Bayiler.KosuParolasiyla(Bayiler.E2E[0], p), Is.SameAs(Bayiler.E2E[0]));
+        Assert.Throws<ArgumentException>(() => Bayiler.KosuParolalari("{x"));
+        Assert.Throws<ArgumentException>(() => Bayiler.KosuParolalari("[\"a\"]"));
+    }
+
+    [Test]
     public void BayiOzniteligiSinifBayisiniSabitler()
     {
         Assert.That(Bayiler.SinifIcin(typeof(TPD1WebC2_3f9b1c2eTests), 1).KullaniciAdi, Is.EqualTo("bayi1"));

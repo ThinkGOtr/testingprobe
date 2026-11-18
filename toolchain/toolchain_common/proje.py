@@ -38,6 +38,32 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validat
 
 PID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 _KONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
+KOSU_PAROLA_EN_COK = 100  # Home `tp.test_users.run_pool` ui.max_items
+KOSU_KULLANICI_EN_UZUN = 200  # Home ui.max_item_length
+KOSU_PAROLA_EN_UZUN = 1024
+
+
+def kosu_parolalari(v: object) -> dict[str, str]:
+    """Koşu hesabı başına parola haritası (`TP_RUN_DEALER_PASSWORDS`, Home
+    `tp.test_users.run_pool_passwords`: JSON `{"<kullanıcı>": "<parola>"}`) doğrulaması.
+    Hata iletileri değeri (parolayı) içermez."""
+    if not isinstance(v, dict):
+        raise ValueError("run_dealer_passwords bir nesne olmalı")
+    if len(v) > KOSU_PAROLA_EN_COK:
+        raise ValueError(f"run_dealer_passwords en fazla {KOSU_PAROLA_EN_COK} hesap")
+    out: dict[str, str] = {}
+    for ad, parola in v.items():
+        if not isinstance(ad, str) or not isinstance(parola, str):
+            raise ValueError("run_dealer_passwords anahtar ve değerleri metin olmalı")
+        ad = ad.strip()
+        if not ad or len(ad) > KOSU_KULLANICI_EN_UZUN or _KONTROL_RE.search(ad) or "," in ad:
+            raise ValueError("run_dealer_passwords kullanıcı adı geçersiz")
+        if not parola or len(parola) > KOSU_PAROLA_EN_UZUN or _KONTROL_RE.search(parola):
+            raise ValueError("run_dealer_passwords parolası boş/çok uzun ya da denetim karakterli")
+        out[ad] = parola
+    return out
+
+
 _PS_RE = re.compile(r"['‘’‚‛\x00-\x1f\x7f]")
 
 # toolchain-worker'da kalan, test-runner'a iletilmeyen alanlar.
@@ -135,6 +161,8 @@ class ProjeBlogu(BaseModel):
     probe_password: str | None = Field(default=None, repr=False)
     remote_token: str | None = Field(default=None, repr=False)
     run_dealers: list[str] | None = None
+    # Koşu hesabı başına parola (yalnız girilenler; olmayan hesap ortak parolayla girer).
+    run_dealer_passwords: dict[str, str] | None = Field(default=None, repr=False)
     e2e_root: str | None = None
     e2e_app_root: str | None = None
     e2e_java_root: str | None = None
@@ -191,6 +219,11 @@ class ProjeBlogu(BaseModel):
             raise ValueError("run_dealers öğeleri denetim karakteri/virgül içeremez")
         return out
 
+    @field_validator("run_dealer_passwords", mode="before")
+    @classmethod
+    def _parolalar(cls, v: object) -> dict[str, str] | None:
+        return None if v is None else kosu_parolalari(v)
+
     @field_validator("e2e_root", "e2e_app_root", "e2e_java_root")
     @classmethod
     def _e2e(cls, v: str | None, info: ValidationInfo) -> str | None:
@@ -218,7 +251,13 @@ class ProjeBlogu(BaseModel):
         if v is None:
             return None
         v = v.strip()
-        if not v or len(v) > 200 or v.startswith(("-", "/")) or ".." in v or any(c in v for c in " ~^:?*[\\"):
+        if (
+            not v
+            or len(v) > 200
+            or v.startswith(("-", "/"))
+            or ".." in v
+            or any(c in v for c in " ~^:?*[\\")
+        ):
             raise ValueError("base_ref geçersiz dal adı")
         return v
 

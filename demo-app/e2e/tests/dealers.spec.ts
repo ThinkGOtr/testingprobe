@@ -4,16 +4,36 @@ import { test as base } from "@playwright/test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AGENT_DEALER, DEALERS, acquireDealer, expect, pickDealer, test } from "./fixtures";
+import { AGENT_DEALER, DEALERS, type Dealer, acquireDealer, expect, pickDealer, runPasswords, test, withRunPassword } from "./fixtures";
+
+/** Seed listesindeki bayi (koşu ortamı parolasından bağımsız). */
+function seed(username: string): Dealer {
+  const d = DEALERS.find((x) => x.username === username);
+  if (!d) throw new Error(`seed bayisi yok: ${username}`);
+  return d;
+}
 
 base.describe("Bayi seçimi (birim)", () => {
   base("işçi bayisi ve sabitleme; doğrulama ajanının bayisi e2e'ye kapalı", () => {
     expect(pickDealer(undefined, 0).username).toBe("bayi1");
     expect(pickDealer(undefined, 1).username).toBe("bayi2");
-    expect(pickDealer("bayi2", 0)).toEqual(DEALERS[1]);
+    // Parola koşu ortamından gelebilir (TP_RUN_DEALER_PASSWORDS): kimlik ve ad seed listesindeki gibi.
+    expect(pickDealer("bayi2", 0)).toEqual({ ...DEALERS[1], password: pickDealer("bayi2", 0).password });
     expect(() => pickDealer(undefined, DEALERS.length)).toThrow(/paralel işçi/);
     expect(() => pickDealer(AGENT_DEALER, 0)).toThrow(/doğrulama ajanına ayrılmıştır/);
     expect(() => pickDealer("yok", 0)).toThrow(/e2e bayisi değil/);
+  });
+
+  base("koşu hesabı parolası: ortamda girilen hesabın parolası, yoksa seed parolası", () => {
+    expect(runPasswords("")).toEqual({});
+    expect(runPasswords(" ")).toEqual({});
+    const pw = runPasswords('{"bayi2": "Bayi2-ozel!", "bos": ""}');
+    expect(pw).toEqual({ bayi2: "Bayi2-ozel!" });
+    const [bayi1, bayi2] = [seed("bayi1"), seed("bayi2")];
+    expect(withRunPassword(bayi2, pw)).toEqual({ ...bayi2, password: "Bayi2-ozel!" });
+    expect(withRunPassword(bayi1, pw)).toBe(bayi1);
+    expect(() => runPasswords("{bozuk")).toThrow(/geçerli JSON değil/);
+    expect(() => runPasswords('["x"]')).toThrow(/JSON nesnesi/);
   });
 
   base("bayi kilidi özeldir ve bekleyen sıradaki alır", async () => {

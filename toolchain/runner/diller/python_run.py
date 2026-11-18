@@ -117,9 +117,11 @@ def pytest_env(
     cfg: Settings, req: RunRequest, platform: str, tmp_dir: Path | None, kanit_dir: Path
 ) -> dict[str, str]:
     from runner.run import testveri_env
+    from toolchain_common.settings import kosu_parola_env
 
     env = {k: os.environ[k] for k in PASS_ENV if k in os.environ}
     env.update(testveri_env())
+    env.update(kosu_parola_env(cfg))  # hesap başına parola (iskelet `bayiler.sec` okur)
     venv_bin = str(Path(pyyol.venv_python(cfg)).parent)
     env["PATH"] = f"{venv_bin}:{env.get('PATH', '/usr/bin:/bin')}"
     env.update(

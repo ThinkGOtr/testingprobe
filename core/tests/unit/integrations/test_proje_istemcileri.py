@@ -240,6 +240,7 @@ def test_toolchain_blogu_diger_proje(
             TP_PROBE_USER="u",
             TP_PROBE_PASSWORD="p",
             TP_RUN_DEALERS="t1, t2",
+            TP_RUN_DEALER_PASSWORDS='{" t2 ": "kosu-parola-t2"}',
             TP_E2E_ROOT="b/e2e",
             TP_FORGE_REMOTE_URL="https://github.com/org/b.git",
             TP_APP_ID_ANDROID="com.b",
@@ -252,6 +253,7 @@ def test_toolchain_blogu_diger_proje(
         assert blok["remote_url"] == "https://github.com/org/b.git"
         assert blok["probe_user"] == "u" and blok["probe_password"] == "p"
         assert blok["run_dealers"] == ["t1", "t2"] and blok["e2e_root"] == "b/e2e"
+        assert blok["run_dealer_passwords"] == {"t2": "kosu-parola-t2"}
         assert blok["app"] == {
             "android": {"app_id": "com.b", "activity": ".Ana"},
             "ios": {},

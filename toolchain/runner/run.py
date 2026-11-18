@@ -55,7 +55,7 @@ import httpx
 from runner.results import decide_status, failure_groups, failures_of, summarize
 from toolchain_common import gitforge, proc, repos, runlock
 from toolchain_common.artifacts import KEEP_MARKER, atomic_write_json, ensure_inside, run_dir
-from toolchain_common.settings import Settings
+from toolchain_common.settings import Settings, kosu_parola_env
 from toolchain_common.validation import RUN_ID_RE
 
 # Tek koşu: aynı bayi kullanıcılarıyla eşzamanlı iki koşu birbirinin verisini sıfırlar.
@@ -151,6 +151,7 @@ def playwright_argv(cfg: Settings, e2e: Path, req: RunRequest) -> list[str]:
 def playwright_env(cfg: Settings, req: RunRequest) -> dict[str, str]:
     env = {k: os.environ[k] for k in PASS_ENV if k in os.environ}
     env.update(testveri_env())
+    env.update(kosu_parola_env(cfg))  # hesap başına parola (iskelet `pickDealer` okur)
     env.update(
         {
             "CI": "1",

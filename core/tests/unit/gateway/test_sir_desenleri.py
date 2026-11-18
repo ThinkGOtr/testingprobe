@@ -639,3 +639,12 @@ def test_known_secret_values_eski_davranis(monkeypatch: pytest.MonkeyPatch) -> N
         monkeypatch.delenv(ad, raising=False)
     monkeypatch.setenv("TP_AGENT_DEALER_PASSWORD", "kisa")
     assert "kisa" in known_secret_values()
+
+
+def test_known_secret_values_kosu_hesap_parolalari() -> None:
+    """`TP_RUN_DEALER_PASSWORDS` JSON haritası: her parola ayrı maskelenir; JSON metni değil."""
+    env = {"TP_RUN_DEALER_PASSWORDS": '{"bayi1": "Kosu-' + GOVDE + '", "bayi2": "kisa"}'}
+    degerler = known_secret_values(env)
+    assert "Kosu-" + GOVDE in degerler
+    assert "kisa" not in degerler and env["TP_RUN_DEALER_PASSWORDS"] not in degerler
+    assert known_secret_values({"TP_RUN_DEALER_PASSWORDS": "{bozuk"}) == []

@@ -101,6 +101,10 @@ KORUNAN_SONEKLER: tuple[str, ...] = ("_PORT",)
 # Deployment'ın kendi değeri değilse) ve bağlı sır Home'dan gelmiyorsa sır KULLANILMAZ: ele
 # geçirilmiş bir organizasyon yöneticisi hedefi değiştirip Deployment sırlarını (ör. korunan
 # GITHUB_MERGE_TOKEN) kendi sunucusuna çektiremez. (varsayılan hedef, bağlı sırlar)
+# Test edilen uygulamaya gönderilen hesap parolaları (registry `env.web_url` binds_secrets).
+_UYGULAMA_SIRLARI = frozenset(
+    {"TP_PROBE_PASSWORD", "TP_AGENT_DEALER_PASSWORD", "TP_RUN_DEALER_PASSWORDS"}
+)
 BAGLI_SIRLAR: dict[str, tuple[str | None, frozenset[str]]] = {
     "GITHUB_API_URL": (
         "https://api.github.com",
@@ -112,10 +116,10 @@ BAGLI_SIRLAR: dict[str, tuple[str | None, frozenset[str]]] = {
     "JIRA_BASE_URL": (None, frozenset({"JIRA_READ_TOKEN", "JIRA_WRITE_TOKEN"})),
     "XRAY_BASE_URL": (None, frozenset({"XRAY_CLIENT_ID", "XRAY_CLIENT_SECRET"})),
     "AZURE_OPENAI_ENDPOINT": (None, frozenset({"AZURE_OPENAI_API_KEY"})),
-    "TP_DEMO_WEB_URL": (None, frozenset({"TP_PROBE_PASSWORD", "TP_AGENT_DEALER_PASSWORD"})),
-    "DEMO_WEB_URL": (None, frozenset({"TP_PROBE_PASSWORD", "TP_AGENT_DEALER_PASSWORD"})),
-    "BASE_URL": (None, frozenset({"TP_PROBE_PASSWORD", "TP_AGENT_DEALER_PASSWORD"})),
-    "DEMO_API_URL": (None, frozenset({"TP_PROBE_PASSWORD", "TP_AGENT_DEALER_PASSWORD"})),
+    "TP_DEMO_WEB_URL": (None, _UYGULAMA_SIRLARI),
+    "DEMO_WEB_URL": (None, _UYGULAMA_SIRLARI),
+    "BASE_URL": (None, _UYGULAMA_SIRLARI),
+    "DEMO_API_URL": (None, _UYGULAMA_SIRLARI),
 }
 BAGLI_SIR_ADLARI: frozenset[str] = frozenset().union(*(s for _, s in BAGLI_SIRLAR.values()))
 
