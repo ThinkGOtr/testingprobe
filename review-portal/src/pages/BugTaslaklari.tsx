@@ -67,8 +67,8 @@ function aramaOzeti(b: BugTaslagi): string {
   return b.mukerrer_adaylari.map((m) => m.key).join(", ") || "—";
 }
 
-export const KIRMA_CIPI = "Kasıtlı kırma koşusu (BREAK_CAMPAIGN)";
-const KIRMA_ACIKLAMA = "Bu taslak bilerek bozulmuş (BREAK_CAMPAIGN / kırarak doğrula) koşudan geldi; gerçek hata değildir.";
+export const KIRMA_CIPI = "Kasıtlı kırma koşusu";
+const KIRMA_ACIKLAMA = "Bu taslak, uygulamanın bilerek bozulduğu (kırarak doğrula) koşudan geldi; gerçek hata değildir.";
 
 /**
  * Kasıtlı kırma koşusunun kırmızısından gelen taslakların kimlikleri (taslak → triage hatası → koşu;
@@ -668,7 +668,7 @@ export function BugTaslakDetay() {
           rows={2}
           className="kendiliginden-uzar"
           value={retGerekcesi}
-          placeholder={kirma ? "ör. Kasıtlı kırma (BREAK_CAMPAIGN) koşusu; gerçek hata değil." : undefined}
+          placeholder={kirma ? "ör. Kasıtlı kırma koşusu; gerçek hata değil." : undefined}
           onChange={(e) => setRetGerekcesi(e.target.value)}
         />
       </div>

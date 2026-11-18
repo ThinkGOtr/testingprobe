@@ -17,6 +17,7 @@ import type {
 import { useKisiAdi } from "../auth";
 import { useBildirim } from "../components/Bildirim";
 import { AlanHatasi, BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, Uyari, Yukleniyor } from "../components/ui";
+import { SatirEylemleri } from "../components/tasarim";
 import type { VeriDurumu } from "../hooks";
 import type { Ton } from "../lib/etiketler";
 import { tarih } from "../lib/format";
@@ -636,25 +637,14 @@ export function VeritabaniKaynaklari({
                     >
                       Yenile
                     </IslemDugmesi>
-                    <button
-                      type="button"
-                      className="dugme dugme-ikincil dugme-kucuk"
-                      aria-label={`${k.grup} kaynağını düzenle`}
-                      disabled={yenileniyor}
-                      onClick={() => setForm({ tur: "duzenle", kaynak: k })}
-                    >
-                      Düzenle
-                    </button>
-                    <button
-                      type="button"
-                      className="dugme dugme-hayalet dugme-kucuk"
-                      aria-label={`${k.grup} kaynağını sil`}
-                      aria-expanded={silinecek === k.id}
-                      disabled={yenileniyor}
-                      onClick={() => setSilinecek(k.id)}
-                    >
-                      Sil
-                    </button>
+                    {/* CL-03: Düzenle + Sil tek "İşlemler" durağında; Yenile kartın ana eylemi olarak ayrı kalır. */}
+                    <SatirEylemleri
+                      etiket={`${k.grup} kaynağı`}
+                      eylemler={[
+                        { ad: "Düzenle", erisilebilirAd: `${k.grup} kaynağını düzenle`, pasif: yenileniyor, sec: () => setForm({ tur: "duzenle", kaynak: k }) },
+                        { ad: "Sil", erisilebilirAd: `${k.grup} kaynağını sil`, tur: "hayalet", pasif: yenileniyor, sec: () => setSilinecek(k.id) },
+                      ]}
+                    />
                   </span>
                 )}
               </div>
@@ -666,11 +656,12 @@ export function VeritabaniKaynaklari({
                 <div>
                   <dt>Değer kolonları</dt>
                   <dd className="mono">
-                    {k.deger_kolonlari.map((d) => `${d.kolon}${d.alan && d.alan !== d.kolon ? `→${d.alan}` : !d.alan ? "→(anahtar)" : ""}${d.bicim === "tutar" ? " (tutar)" : ""}`).join(", ")}
+                    {/* CL-09: alanı olmayan kolon anahtarın kendisine yazılır ("deger → anahtarın değeri"), ham "(anahtar)" yok. */}
+                    {k.deger_kolonlari.map((d) => `${d.kolon}${d.alan && d.alan !== d.kolon ? ` → ${d.alan}` : !d.alan ? " → anahtarın değeri" : ""}${d.bicim === "tutar" ? " (tutar)" : ""}`).join(", ")}
                   </dd>
                 </div>
                 <div>
-                  <dt>Kayıt</dt>
+                  <dt title="Bu kaynaktan katalogda duran kayıt sayısı (yenilemeden ya da örnek veriden)">Katalogdaki kayıt</dt>
                   <dd>
                     {k.kayit_sayisi}
                     {k.kaynakta_yok_sayisi > 0 && (

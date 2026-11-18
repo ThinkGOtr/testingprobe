@@ -309,7 +309,8 @@ describe("Test verisi: grup temizleme", () => {
     const cagrilar = izle();
     uygulama("/test-verisi");
     const u = userEvent.setup();
-    await u.click(await screen.findByRole("button", { name: "urun.p_001.fiyat düzenle" }));
+    await u.click(await screen.findByRole("button", { name: "İşlemler: urun.p_001.fiyat" }));
+    await u.click(screen.getByRole("button", { name: "urun.p_001.fiyat düzenle" }));
     const grup = screen.getByLabelText("Grup");
     expect(grup).toHaveAccessibleDescription(GRUP_IPUCU);
     await u.clear(grup);

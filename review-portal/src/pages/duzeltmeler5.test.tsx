@@ -295,12 +295,12 @@ describe("demo kontrolleri", () => {
       veritabani: { durum: "dokunulmadi" },
     });
     const metin = s.map((x) => x.metin).join("\n");
-    expect(metin).toContain("Forge main demo-baseline'a döndü");
+    expect(metin).toContain("Demo kod deposunun ana dalı başlangıç sürümüne döndü");
     expect(metin).toContain("Açık demo PR'ları kapatıldı: 1");
     expect(metin).toMatch(/Jira sıfırlanmadı.*make demo-reset/);
     expect(metin).toMatch(/Kararlar.*korunur.*make reset/);
     expect(s.find((x) => x.metin.startsWith("Jira"))?.ton).toBe("uyari");
-    expect(sifirlamaOzeti({ jira: { durum: "tamam" } })[0]).toEqual({ ton: "basari", metin: "jira-sim seed durumuna döndü." });
+    expect(sifirlamaOzeti({ jira: { durum: "tamam" } })[0]).toEqual({ ton: "basari", metin: "Jira simülatörü başlangıç verisine döndü." });
   });
 
   it("kart metni düğmenin yapmadığı şeyi vaat etmez", async () => {

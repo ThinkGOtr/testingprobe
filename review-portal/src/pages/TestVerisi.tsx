@@ -12,6 +12,7 @@ import { useIzin, useKisiAdi } from "../auth";
 import { izinRolleriMetni, type Izin } from "../lib/yetki";
 import { useBildirim } from "../components/Bildirim";
 import { AlanHatasi, BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
+import { SatirEylemleri, TabloSarici } from "../components/tasarim";
 import { GIZLI_DEGER } from "../components/VeriAtfi";
 import { useVeri } from "../hooks";
 import { CASE_DURUMU } from "../lib/etiketler";
@@ -552,17 +553,17 @@ export function TestVerisiSayfasi() {
               <h2 id={`${aramaId}-g-${gi}`} className="testveri-grup-baslik">
                 {grup} <span className="soluk kucuk">({l.length})</span>
               </h2>
-              <div className="tablo-sarici" tabIndex={0} role="region" aria-label={`${grup} grubu test verileri`}>
-                <table className="tablo tablo-sik tablo-yigin">
+              {/* CL-02: 641–1279'da Sürüm/Kullanım ikincil (Geçmiş'te), eylemler tek "İşlemler" düğmesinde; 1024'te gizli sütun yok. */}
+              <TabloSarici etiket={`${grup} grubu test verileri`} yogunluk="sik">
                   <thead>
                     <tr>
                       <th scope="col">Anahtar</th>
                       <th scope="col">Değer</th>
                       <th scope="col">Açıklama</th>
-                      <th scope="col">Sürüm</th>
-                      <th scope="col">Kullanım</th>
+                      <th scope="col" className="sutun-ikincil">Sürüm</th>
+                      <th scope="col" className="sutun-ikincil">Kullanım</th>
                       <th scope="col">Güncelleme</th>
-                      <th scope="col">
+                      <th scope="col" className="sutun-eylem">
                         <span className="gorunmez">Eylemler</span>
                       </th>
                     </tr>
@@ -601,47 +602,28 @@ export function TestVerisiSayfasi() {
                           )}
                         </td>
                         <td data-etiket="Açıklama">{k.aciklama ?? <span className="soluk">—</span>}</td>
-                        <td className="mono" data-etiket="Sürüm">s{k.surum}</td>
-                        <td data-etiket="Kullanım">
+                        <td className="mono sutun-ikincil" data-etiket="Sürüm">s{k.surum}</td>
+                        <td className="sutun-ikincil" data-etiket="Kullanım">
                           <span aria-label={`${k.kullanim} case atıf yapıyor`}>{k.kullanim}</span>
                         </td>
                         <td className="kucuk" data-etiket="Güncelleme">
                           {k.guncelleyen ? kisiAdi(k.guncelleyen) : "—"}
                           <div className="soluk">{tarih(k.guncelleme)}</div>
                         </td>
-                        <td data-etiket="Eylemler">
-                          <div className="satir-ogeler testveri-eylemler">
-                            <button
-                              type="button"
-                              className="dugme dugme-hayalet dugme-kucuk"
-                              aria-label={`${k.anahtar} sürüm geçmişi`}
-                              aria-expanded={gecmis?.id === k.id}
-                              onClick={() => ac(() => setGecmis(k))}
-                            >
-                              Geçmiş
-                            </button>
-                            {duzenleyebilir && (
-                              <>
-                                <button
-                                  type="button"
-                                  className="dugme dugme-ikincil dugme-kucuk"
-                                  aria-label={`${k.anahtar} düzenle`}
-                                  onClick={() => ac(() => setForm({ tur: "duzenle", kayit: k }))}
-                                >
-                                  Düzenle
-                                </button>
-                                <button
-                                  type="button"
-                                  className="dugme dugme-hayalet dugme-kucuk"
-                                  aria-label={`${k.anahtar} sil`}
-                                  aria-expanded={silinecek === k.id}
-                                  onClick={() => ac(() => setSilinecek(k.id))}
-                                >
-                                  Sil
-                                </button>
-                              </>
-                            )}
-                          </div>
+                        <td className="sutun-eylem" data-etiket="Eylemler">
+                          {/* CL-03: satır başına tek Tab durağı (önce Geçmiş + Düzenle + Sil = 3). */}
+                          <SatirEylemleri
+                            etiket={k.anahtar}
+                            eylemler={[
+                              { ad: "Geçmiş", erisilebilirAd: `${k.anahtar} sürüm geçmişi`, tur: "hayalet", sec: () => ac(() => setGecmis(k)) },
+                              ...(duzenleyebilir
+                                ? [
+                                    { ad: "Düzenle", erisilebilirAd: `${k.anahtar} düzenle`, sec: () => ac(() => setForm({ tur: "duzenle", kayit: k })) },
+                                    { ad: "Sil", erisilebilirAd: `${k.anahtar} sil`, tur: "hayalet" as const, sec: () => ac(() => setSilinecek(k.id)) },
+                                  ]
+                                : []),
+                            ]}
+                          />
                           {silinecek === k.id && (
                             <SilmeOnayi
                               kayit={k}
@@ -663,8 +645,7 @@ export function TestVerisiSayfasi() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
-              </div>
+              </TabloSarici>
             </section>
           ))
         )}

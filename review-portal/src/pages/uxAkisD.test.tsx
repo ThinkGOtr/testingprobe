@@ -94,8 +94,14 @@ describe("IA-15 Koşular", () => {
     // Süzgeç varken "temizle" görünür ve süzgeci kaldırır.
     await u.click(screen.getByRole("button", { name: "Süzgeçleri temizle" }));
     expect(await screen.findByText(`${KOSU_SAYFA - 1}/${KOSU_SAYFA} koşu (daha eskileri var)`)).toBeInTheDocument();
+    // CL-04: numaralı sayfalama (25/sayfa); "daha eski" sunucu yüklemesi yalnız son sayfada.
+    const sayfalar = screen.getByRole("navigation", { name: "Sayfalar" });
+    expect(sayfalar).toHaveTextContent(`1–25 / ${KOSU_SAYFA - 1} koşu`);
+    expect(screen.queryByTestId("kosu-sayfalama")).toBeNull();
+    await u.click(within(sayfalar).getByRole("button", { name: "Sonraki" }));
+    expect(screen.getByRole("navigation", { name: "Sayfalar" })).toHaveTextContent(`26–${KOSU_SAYFA - 1} / ${KOSU_SAYFA - 1} koşu`);
     // Daha eski sayfa offset ile istenir ve listeye eklenir.
-    await u.click(screen.getByRole("button", { name: `Daha eski ${KOSU_SAYFA} koşu` }));
+    await u.click(screen.getByRole("button", { name: `Daha eski ${KOSU_SAYFA} koşuyu yükle` }));
     await waitFor(() => expect(sorgular.some((q) => q.get("offset") === String(KOSU_SAYFA))).toBe(true));
     expect(await screen.findByText(`${KOSU_SAYFA}/${KOSU_SAYFA + 1} koşu`)).toBeInTheDocument();
     expect(screen.queryByTestId("kosu-sayfalama")).toBeNull();
@@ -123,7 +129,10 @@ describe("IA-13 Kod üretimi: dikkat nedeni ve grup", () => {
   it("insana düşen: neden + doğru eylem; defect adayı triage'a; REPLAY-MISS ve ortam yeniden üretime", () => {
     const eksik = dikkatNedeni(script({ durum: "blocked", engel: { tur: "missing_method", neden: "S4: page object'te eksik metot. Ayrıntı." } }))!;
     expect(eksik.metin).toBe("İnsana düştü: page object'te eksik metot");
-    expect(eksik.ayrinti).toBe("S4: page object'te eksik metot.");
+    // CL-07: "S4:" kodu ve başlığı tekrarlayan ayrıntı atılır.
+    expect(eksik.ayrinti).toBeNull();
+    const ek = dikkatNedeni(script({ durum: "blocked", engel: { tur: "missing_method", neden: "S4: page object'te eksik metot — CartPage.bedavaAdet yok. Devam." } }))!;
+    expect(ek.ayrinti).toBe("CartPage.bedavaAdet yok.");
     expect(eksik.eylem).toEqual({ tur: "baglanti", etiket: "Page object'e metot ekle (script'i aç)", yol: "/kod/s1" });
     const defect = dikkatNedeni(script({ durum: "blocked", engel: { tur: "defect_candidate", neden: null }, failure_id: "f9" }))!;
     expect(defect.eylem).toEqual({ tur: "baglanti", etiket: "Triage sonucunu aç", yol: "/hatalar/f9" });

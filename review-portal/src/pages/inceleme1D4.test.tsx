@@ -153,7 +153,8 @@ describe("K-T8: /code/languages 403", () => {
     await waitFor(() => expect(screen.queryByText("Dil seçenekleri yükleniyor…")).toBeNull());
     expect(screen.queryByRole("radiogroup", { name: "Dil" })).toBeNull();
     expect(screen.queryByText("Dil seçenekleri yüklenemedi")).toBeNull();
-    expect(screen.getByRole("button", { name: /Seçilenler için kod üret/ })).toBeInTheDocument();
+    // CL-09: kuyruk boşken kilitli "kod üret (0)" düğmesi çizilmez (boş durum sonraki adımı söyler).
+    expect(screen.queryByRole("button", { name: /Seçilenler için kod üret/ })).toBeNull();
   });
 });
 

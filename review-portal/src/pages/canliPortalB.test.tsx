@@ -349,7 +349,7 @@ describe("denetim: okunur özet ve sayfalama", () => {
   it("okunurOzet JSON'u anahtar: değer olarak kısaltır, tamamı ayrıca", async () => {
     const { okunurOzet } = await import("./Denetim");
     const o = okunurOzet('{"sonuc":{"TPD-1":"yeni"},"baz_dosyasi":2,"jira":"TPD"}');
-    expect(o.kisa).toBe("sonuc: {1 alan} · baz_dosyasi: 2 · jira: TPD");
+    expect(o.kisa).toBe("Sonuç: TPD-1: yeni · Baz dosyasi: 2 · Jira: TPD");
     expect(o.tam).toContain('"TPD-1": "yeni"');
     expect(okunurOzet("Oturum açıldı")).toEqual({ kisa: "Oturum açıldı", tam: "Oturum açıldı" });
   });
@@ -371,7 +371,8 @@ describe("denetim: okunur özet ve sayfalama", () => {
     });
     await oturumAc("sunucu");
     uygulama("/denetim");
-    expect(await screen.findByText("Olaylar (2+)")).toBeInTheDocument();
+    expect(await screen.findByText("Olaylar (2)")).toBeInTheDocument();
+    expect(screen.getByText("2 olay · daha eskileri var")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Daha eski olayları yükle" }));
     expect(await screen.findByText("Olaylar (3)")).toBeInTheDocument();
     expect(cagrilar.some((q) => q.includes("before_id=2") && q.includes("verify=false"))).toBe(true);

@@ -560,7 +560,7 @@ describe("Bug taslakları: kasıtlı kırma koşusu işareti", () => {
     // IA-18: varsayılan görünüm "Karar bekleyen" (kasıtlı kırma ayrı); tüm taslaklar `?gorunum=tumu`.
     uygulama("/bug-taslaklari?gorunum=tumu");
     const kirmaSatiri = (await screen.findByText(/7 adet Portakal Gazozu/)).closest("tr")!;
-    expect(await within(kirmaSatiri).findByTestId("kirma-cipi")).toHaveTextContent("Kasıtlı kırma koşusu (BREAK_CAMPAIGN)");
+    expect(await within(kirmaSatiri).findByTestId("kirma-cipi")).toHaveTextContent("Kasıtlı kırma koşusu");
     const digerleri = screen.getAllByRole("row").filter((r) => r !== kirmaSatiri);
     for (const r of digerleri) expect(within(r).queryByTestId("kirma-cipi")).toBeNull();
   });
@@ -569,7 +569,7 @@ describe("Bug taslakları: kasıtlı kırma koşusu işareti", () => {
     await oturumAc("testci");
     uygulama("/bug-taslaklari/bug-1");
     const uyari = await screen.findByTestId("kirma-uyarisi");
-    expect(uyari).toHaveTextContent("Bu taslak bilerek bozulmuş");
+    expect(uyari).toHaveTextContent("uygulamanın bilerek bozulduğu");
     expect(uyari).toHaveTextContent("gerçek hata değildir");
     expect(uyari).toHaveTextContent("Önerilen karar: gerekçeyle reddedin");
     const onayla = screen.getByRole("button", { name: "Onayla ve Jira'da aç" });

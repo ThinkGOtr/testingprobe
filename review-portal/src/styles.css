@@ -7298,3 +7298,31 @@ code {
   outline-offset: 2px;
   border-radius: var(--radius-etiket);
 }
+
+/* ---- CL-02/CL-03 (canlı liste): satır eylemleri tek Tab durağı ("İşlemler" açılırı, SatirEylemleri).
+   Açılınca eylemler satır içinde tek grup; eylem sütunu kapalıyken yalnız bir küçük düğme genişliğinde. */
+.satir-eylemleri {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-1);
+}
+.satir-eylemleri-liste {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-1);
+}
+@media (max-width: 640px) {
+  .satir-eylemleri {
+    align-items: flex-start;
+  }
+  .satir-eylemleri-liste {
+    justify-content: flex-start;
+  }
+}
+/* CL-08: "TPD-1" kısa çizgiden kırılmaz; story anahtarı ile "#1" arasında sarabilir. */
+.tablo td.sutun-kimlik:has(> a + .mono) > a,
+.tablo td.sutun-kimlik:has(> a + .mono) > .mono {
+  white-space: nowrap;
+}

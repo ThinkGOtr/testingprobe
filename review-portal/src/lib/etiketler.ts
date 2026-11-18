@@ -435,3 +435,126 @@ export function sinyalBasligi(s: { kod: string; baslik?: string | null; aciklama
   const baslik = s.baslik || KARAR_TABLOSU_SINYALI[s.kod] || s.aciklama;
   return { baslik, ayrinti: s.aciklama && s.aciklama !== baslik ? s.aciklama : null };
 }
+
+// ---------------------------------------------------------------- CL-07 okunur metin (iç terim ayıklama)
+// Canlı UX doğrulaması (liste şeridi) CL-07: çekirdekten gelen serbest metinlerde iç kodlar (adım öneki
+// `S4:`, `REPLAY-MISS:`, test etiketi `@tp-uretilen`, ortam değişkeni `BREAK_CAMPAIGN`, `jira-sim`) kullanıcıya
+// sızıyordu. Ham metin kaybolmaz: çağıran yer gerekirse ham hali ipucu/"Ayrıntı" açılırında verir.
+
+/** Test adındaki Playwright etiketleri (`@tp-uretilen`, `@tp-…`) gösterimde ayıklanır. */
+export function testAdiGoster(ad: string): string;
+export function testAdiGoster(ad: string | null | undefined): string | null | undefined;
+export function testAdiGoster(ad: string | null | undefined): string | null | undefined {
+  if (!ad) return ad;
+  return ad.replace(/\s*@tp-[\w-]+/g, "").replace(/\s{2,}/g, " ").trim();
+}
+
+const IC_TERIMLER: [RegExp, string][] = [
+  // Adım kodu öneki: "S4: page object'te eksik metot" → "page object'te eksik metot".
+  [/(^|[;—–:]\s*|\.\s+)S\d{1,2}\s*[:—–]\s*/g, "$1"],
+  [/\bREPLAY-MISS\s*:\s*/g, ""],
+  [/\s*@tp-[\w-]+/g, ""],
+  [/\bBREAK_CAMPAIGN(?:=1)?\b/g, "kasıtlı kırma"],
+  [/\bjira-sim\b/g, "Jira simülatörü"],
+  [/\bTP_FORGE=local\b/g, "yerel kod deposu kipi"],
+];
+
+/** Serbest metindeki iç kodları kullanıcı diline çevirir (tanınmayan metin aynen döner). */
+export function icTerimleriAyikla(metin: string): string;
+export function icTerimleriAyikla(metin: string | null | undefined): string | null | undefined;
+export function icTerimleriAyikla(metin: string | null | undefined): string | null | undefined {
+  if (!metin) return metin;
+  let m = metin;
+  for (const [desen, yerine] of IC_TERIMLER) m = m.replace(desen, yerine);
+  m = m.replace(/\s{2,}/g, " ").trim();
+  return m ? m.charAt(0).toLocaleUpperCase("tr-TR") + m.slice(1) : m;
+}
+
+const karsilastir = (m: string) => m.toLocaleLowerCase("tr-TR").replace(/\p{M}/gu, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+
+/**
+ * "Başlık — ayrıntı" birleşiminde ayrıntı başlığın söylediğiyle başlıyorsa tekrar atılır:
+ * ("İnsana düştü: page object'te eksik metot", "S4: page object'te eksik metot. Ayrıntı.") → "Ayrıntı."
+ * Ayrıntıdan geriye bir şey kalmazsa null.
+ */
+export function tekrarsizAyrinti(baslik: string, ayrinti: string | null | undefined): string | null {
+  const a = icTerimleriAyikla(ayrinti ?? "").trim();
+  if (!a) return null;
+  const b = karsilastir(baslik);
+  // Başlığın kendisi ya da ":" sonrası parçası ayrıntının başındaysa o parça düşer.
+  const parcalar = [b, ...baslik.split(/:\s+/).slice(1).map(karsilastir), karsilastir(baslik.split(/:\s+/)[0] ?? "")].filter((p) => p.length >= 6);
+  const ak = karsilastir(a);
+  for (const p of parcalar) {
+    if (!ak.startsWith(p)) continue;
+    // Ham metinde aynı uzunluktaki öneki (noktalama dahil) at.
+    let i = 0;
+    let say = 0;
+    const hedef = p.replace(/ /g, "").length;
+    while (i < a.length && say < hedef) {
+      if (/[\p{L}\p{N}]/u.test(a[i])) say++;
+      i++;
+    }
+    const kalan = a.slice(i).replace(/^[\s.,;:—–-]+/, "").trim();
+    return kalan ? kalan.charAt(0).toLocaleUpperCase("tr-TR") + kalan.slice(1) : null;
+  }
+  return a;
+}
+
+/** Model çağrısı amaçları (core `ai_call.amac`) — Kule › Hız ve maliyet. */
+export const MODEL_CAGRI_AMACI: Record<string, string> = {
+  assistant: "soru-cevap",
+  assistant_deep: "derin yanıt",
+  assistant_guard: "güvenlik denetimi",
+};
+export const modelCagriAmaci = (a: string): string => MODEL_CAGRI_AMACI[a] ?? a.replace(/_/g, " ");
+
+/** Denetim özeti alanları (core olay `ozet` JSON anahtarları). Teknik kimlikler kısa özete girmez. */
+export const DENETIM_ALANI: Record<string, string> = {
+  kanal: "Kanal",
+  onceki: "Önceki",
+  yeni: "Yeni",
+  talep_no: "Talep",
+  neden: "Neden",
+  hata: "Hata",
+  rol: "Rol",
+  anahtar: "Anahtar",
+  eklenen: "Eklenen",
+  sonuc: "Sonuç",
+  baz: "Baz değer",
+  durum: "Durum",
+  karar: "Karar",
+  sayi: "Sayı",
+  adet: "Adet",
+  platform: "Platform",
+  dil: "Dil",
+  tetik: "Tetik",
+  proje: "Proje",
+  from: "Kaynak",
+  kaynak: "Kaynak",
+  jira_key: "Jira",
+  pr: "PR",
+  amac: "Amaç",
+  mesaj: "Mesaj",
+  sebep: "Neden",
+};
+const DENETIM_DEGERI: Record<string, string> = {
+  pr_open: "PR açılışı",
+  pr_sync: "PR güncellemesi",
+  push: "push",
+  manual: "elle",
+  nightly: "gece",
+  portal: "portal",
+  mcp: "IDE kanalı",
+};
+/** Kısa özete girmeyen teknik alan: oturum/çağrı/iş kimliği, sha, hash. */
+export function denetimTeknikAlanMi(anahtar: string): boolean {
+  return /^(sid|uid|pv|id)$/.test(anahtar) || /(_id|_sha|_hash|_uuid)$/.test(anahtar) || /^(hash|sha|set_hash)$/.test(anahtar);
+}
+export function denetimAlanEtiketi(anahtar: string): string {
+  if (DENETIM_ALANI[anahtar]) return DENETIM_ALANI[anahtar];
+  const m = anahtar.replace(/_/g, " ");
+  return m.charAt(0).toLocaleUpperCase("tr-TR") + m.slice(1);
+}
+export function denetimDegeri(v: string): string {
+  return DENETIM_DEGERI[v] ?? v;
+}

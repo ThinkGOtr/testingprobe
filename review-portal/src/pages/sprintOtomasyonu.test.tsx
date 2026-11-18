@@ -330,7 +330,8 @@ describe("Test verisi sayfası", () => {
     const cagrilar = izle();
     uygulama("/test-verisi");
     const u = userEvent.setup();
-    await u.click(await screen.findByRole("button", { name: "urun.p_001.fiyat düzenle" }));
+    await u.click(await screen.findByRole("button", { name: "İşlemler: urun.p_001.fiyat" }));
+    await u.click(screen.getByRole("button", { name: "urun.p_001.fiyat düzenle" }));
     const deger = screen.getByLabelText("Değer");
     await u.clear(deger);
     await u.type(deger, "32,00 TL");
@@ -339,6 +340,7 @@ describe("Test verisi sayfası", () => {
     expect(cagrilar.find((c) => c.method === "PUT")?.govde).toMatchObject({ deger: "32,00 TL", beklenen_surum: 1 });
 
     // Başka biri araya giriyor (sürüm 2 → 3) ve form eski sürümle (2) gönderiliyor.
+    await u.click(screen.getByRole("button", { name: "İşlemler: urun.p_001.fiyat" }));
     await u.click(screen.getByRole("button", { name: "urun.p_001.fiyat düzenle" }));
     await api.testVerisiGuncelle("tv-6", { deger: "35,00 TL", beklenen_surum: 2 });
     await u.clear(screen.getByLabelText("Değer"));
@@ -358,6 +360,7 @@ describe("Test verisi sayfası", () => {
     const satir = () => document.querySelector('tr[data-anahtar="bayi.bayi2.kredi_limiti"]') as HTMLElement;
     await screen.findByRole("heading", { name: /bayi/ });
     expect(satir()).toHaveTextContent("1"); // kullanım
+    await u.click(screen.getByRole("button", { name: "İşlemler: bayi.bayi2.kredi_limiti" }));
     await u.click(screen.getByRole("button", { name: "bayi.bayi2.kredi_limiti sil" }));
     await u.click(within(satir()).getByRole("button", { name: "Evet, sil" }));
     const liste = await screen.findByTestId("atif-yapan-caseler");
@@ -366,11 +369,13 @@ describe("Test verisi sayfası", () => {
     expect(within(liste).getByRole("link", { name: /Taslak 1/ })).toHaveAttribute("href", expect.stringMatching(/^\/gereksinimler\/.+\/caseler$/));
     expect(screen.getByText(/1 etkin case bu test verisine atıf yapıyor/)).toBeInTheDocument();
 
+    await u.click(screen.getByRole("button", { name: "İşlemler: kampanya.k6_1.ad" }));
     await u.click(screen.getByRole("button", { name: "kampanya.k6_1.ad sil" }));
     const k = document.querySelector('tr[data-anahtar="kampanya.k6_1.ad"]') as HTMLElement;
     await u.click(within(k).getByRole("button", { name: "Evet, sil" }));
     await waitFor(() => expect(document.querySelector('tr[data-anahtar="kampanya.k6_1.ad"]')).toBeNull());
 
+    await u.click(screen.getByRole("button", { name: "İşlemler: urun.p_001.ad" }));
     await u.click(screen.getByRole("button", { name: "urun.p_001.ad sürüm geçmişi" }));
     const cekmece = await screen.findByTestId("surum-gecmisi");
     expect(await within(cekmece).findByText("oluşturuldu")).toBeInTheDocument();

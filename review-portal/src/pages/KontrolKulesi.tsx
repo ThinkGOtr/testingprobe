@@ -23,6 +23,7 @@ import { izinVar } from "../lib/yetki";
 import { OrtamSuzgeci, suzgecOrtamlari, useOrtamlar } from "../components/Ortam";
 import { ortamMetni } from "../lib/ortam";
 import { TabloSarici } from "../components/tasarim";
+import { testAdiGoster } from "../lib/etiketler";
 import { Sekmeler, useSekmeSecimi, type DetaySekmesi } from "../components/DetaySayfasi";
 
 /** IA-19: Kule bölüm sekmeleri (`?bolum=`); eski çapalar ilgili sekmeyi açar. */
@@ -359,7 +360,7 @@ export function KontrolKulesi() {
             <ul className="duz-liste">
               {k.flaky.map((f) => (
                 <li key={f.test_adi}>
-                  <div>{f.test_adi}</div>
+                  <div>{testAdiGoster(f.test_adi)}</div>
                   <div className="kucuk soluk">
                     {f.neden === "retry" ? "Yeniden denemeyle geçti" : "Aynı commit'te sonuç değişti"} · {f.sayi} kez
                     {f.son_gorulme && ` · son ${tarih(f.son_gorulme)}`}

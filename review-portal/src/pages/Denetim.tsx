@@ -9,6 +9,7 @@ import { useSayfalama, useSorguSuzgeci } from "../lib/sorguDurumu";
 import { useIzin, useKisiAdi } from "../auth";
 import { useVeri } from "../hooks";
 import { kisaHash, tarih } from "../lib/format";
+import { denetimAlanEtiketi, denetimDegeri, denetimTeknikAlanMi } from "../lib/etiketler";
 
 /** Özet sütununda gösterilen en çok karakter (tamamı ipucunda ve satır ayrıntısında). */
 export const OZET_KISA_SINIR = 140;
@@ -18,15 +19,21 @@ export const DENETIM_SAYFA = 25;
 
 function degerMetni(v: unknown): string {
   if (v === null || v === undefined) return "—";
-  if (typeof v === "string") return v;
-  if (typeof v === "number" || typeof v === "boolean") return String(v);
-  if (Array.isArray(v)) return v.length <= 3 && v.every((x) => typeof x !== "object") ? v.join(", ") : `${v.length} öğe`;
-  return `{${Object.keys(v as object).length} alan}`;
+  if (typeof v === "string") return denetimDegeri(v);
+  if (typeof v === "number") return String(v);
+  if (typeof v === "boolean") return v ? "evet" : "hayır";
+  if (Array.isArray(v)) return v.length <= 3 && v.every((x) => typeof x !== "object") ? v.map(degerMetni).join(", ") : `${v.length} öğe`;
+  // Küçük iç nesne okunur yazılır ({"TPD-1":"yeni"} → "TPD-1: yeni"); büyükse alan sayısı.
+  const g = Object.entries(v as Record<string, unknown>);
+  if (g.length <= 2 && g.every(([, x]) => x === null || typeof x !== "object")) return g.map(([k, x]) => `${k}: ${degerMetni(x)}`).join(", ");
+  return `${g.length} alan`;
 }
 
 /**
- * Denetim özeti (core'da JSON nesne) okunur metne: `{"sonuc":{"TPD-1":"yeni"},"baz":2}` →
- * "sonuc: {1 alan} · baz: 2". `tam`: biçimli tam metin (ipucu ve ayrıntı). JSON değilse metin aynen.
+ * Denetim özeti (core'da JSON nesne) okunur metne (CL-07): alan adları Türkçe (`talep_no` → "Talep"),
+ * `pr_no` → "PR #12", teknik kimlikler (`sid`, `ai_call_id`, `job_id`, `*_sha`) kısa özete girmez;
+ * ham JSON `tam`da ("Ayrıntı" açılırı). `{"sonuc":{"TPD-1":"yeni"},"baz":2}` → "Sonuç: TPD-1: yeni · Baz değer: 2".
+ * JSON değilse metin aynen.
  */
 export function okunurOzet(ozet: string): { kisa: string; tam: string } {
   const temiz = ortamAdlariniGizle(ozet);
@@ -39,9 +46,17 @@ export function okunurOzet(ozet: string): { kisa: string; tam: string } {
     }
   }
   if (nesne && typeof nesne === "object" && !Array.isArray(nesne)) {
-    const kisa = Object.entries(nesne as Record<string, unknown>)
-      .map(([k, v]) => `${k}: ${degerMetni(v)}`)
-      .join(" · ");
+    const parcalar: string[] = [];
+    let gizli = 0;
+    for (const [k, v] of Object.entries(nesne as Record<string, unknown>)) {
+      if (denetimTeknikAlanMi(k)) {
+        gizli++;
+        continue;
+      }
+      if (k === "pr_no" && (typeof v === "number" || typeof v === "string")) parcalar.push(`PR #${v}`);
+      else parcalar.push(`${denetimAlanEtiketi(k)}: ${degerMetni(v)}`);
+    }
+    const kisa = parcalar.length ? parcalar.join(" · ") : gizli ? `Teknik ayrıntı (${gizli} alan)` : "";
     const tam = ortamAdlariniGizle(JSON.stringify(nesne, null, 2));
     return { kisa: kisalt(ortamAdlariniGizle(kisa)), tam };
   }
@@ -69,7 +84,8 @@ function OzetHucresi({ ozet }: { ozet: string }) {
   if (o.kisa === o.tam) return <>{o.kisa}</>;
   return (
     <details className="denetim-ozet">
-      <summary title={o.tam}>{o.kisa}</summary>
+      <summary>{o.kisa}</summary>
+      <span className="soluk kucuk">Ayrıntı (ham kayıt):</span>
       <pre className="kucuk mono">{o.tam}</pre>
     </details>
   );
@@ -120,7 +136,8 @@ export function Denetim() {
       : l;
   }, [v.veri, ekOlaylar, ara, kisiAdi]);
   const yuklenen = (v.veri?.olaylar.length ?? 0) + ekOlaylar.length;
-  const sayac = ara.trim() ? `${olaylar.length}/${yuklenen}` : `${yuklenen}${sonraki ? "+" : ""}`;
+  // CL-09: başlık, sonuç ve sayfalama aynı sayıyı söyler (yüklenen olay); daha eskisi varsa ayrıca yazılır.
+  const sayac = ara.trim() ? `${olaylar.length}/${yuklenen}` : `${yuklenen}`;
   const dg = v.veri?.dogrulama;
   const sayfalama = useSayfalama(olaylar, DENETIM_SAYFA);
 
@@ -164,7 +181,7 @@ export function Denetim() {
             <Uyari ton="bilgi">Zincir doğrulaması yapılmadı.</Uyari>
           ) : null}
           <Kart baslik={tumu ? `Olaylar (${sayac})` : `Olaylarınız (${sayac})`}>
-            <SuzgecCubugu etiket="Olay süzgeci" sonuc={ara.trim() ? `${olaylar.length}/${yuklenen} olay` : `${yuklenen}${sonraki ? "+" : ""} olay`}>
+            <SuzgecCubugu etiket="Olay süzgeci" sonuc={`${ara.trim() ? `${olaylar.length}/${yuklenen}` : yuklenen} olay${sonraki ? " · daha eskileri var" : ""}`}>
               <label htmlFor="denetim-ara">
                 Ara
                 <input id="denetim-ara" type="search" placeholder="Aktör, eylem, nesne ara" value={ara} onChange={(e) => suzgec.ayarla("ara", e.target.value)} />

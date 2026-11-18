@@ -12,7 +12,8 @@ import type { DemoDurumu, Gereksinim, HataAnalizi, HataSinifi, IsYaniti, Kosu, K
 import { useIzin } from "../auth";
 import { useBildirim } from "../components/Bildirim";
 import { Cip, IslemDugmesi, Kart, SayfaBasligi, Uyari } from "../components/ui";
-import { gereksinimDurumu, HATA_SINIFI, KOSU_DURUMU, TETIK } from "../lib/etiketler";
+import { gereksinimDurumu, HATA_SINIFI, icTerimleriAyikla, KOSU_DURUMU, TETIK } from "../lib/etiketler";
+import { teknikMetniCevir } from "../lib/kullaniciMetni";
 import { saat } from "../lib/format";
 import { izinNedeni } from "../lib/yetki";
 import { kisaKosuAdi, kosuHatalari } from "./Kosular";
@@ -219,7 +220,7 @@ export function sifirlamaOzeti(o: Record<string, unknown> | null | undefined): {
   const f = n(o.forge);
   if (Object.keys(f).length) {
     const sha = typeof f.main_sonra === "string" ? ` (${f.main_sonra.slice(0, 10)})` : "";
-    sat.push({ ton: "basari", metin: f.degisti === false ? `Forge main zaten demo-baseline'daydı${sha}.` : `Forge main demo-baseline'a döndü${sha}.` });
+    sat.push({ ton: "basari", metin: f.degisti === false ? `Demo kod deposunun ana dalı zaten başlangıç sürümündeydi${sha}.` : `Demo kod deposunun ana dalı başlangıç sürümüne döndü${sha}.` });
   }
   if (Array.isArray(o.kapanan_prlar)) {
     const k = o.kapanan_prlar.map(n);
@@ -238,7 +239,7 @@ export function sifirlamaOzeti(o: Record<string, unknown> | null | undefined): {
     );
   }
   const j = n(o.jira);
-  if (j.durum === "tamam") sat.push({ ton: "basari", metin: "jira-sim seed durumuna döndü." });
+  if (j.durum === "tamam") sat.push({ ton: "basari", metin: "Jira simülatörü başlangıç verisine döndü." });
   else if (j.durum) sat.push({ ton: "uyari", metin: `Jira sıfırlanmadı${j.neden ? ` (${String(j.neden)})` : ""}: host'ta \`make demo-reset\` çalıştırın.` });
   const v = n(o.veritabani);
   if (v.durum === "dokunulmadi") sat.push({ ton: "uyari", metin: "Kararlar, taslaklar ve koşu geçmişi korunur: tam sıfırlama için host'ta `make reset`." });
@@ -508,7 +509,7 @@ function LocatorKirmaKarti({ durum, canli = false }: { durum: DemoDurumu | null;
       </details>
       {desteksiz && (
         <Uyari ton="hata" baslik="Test bakımı demosu bu kipte yok">
-          <span data-testid="locator-desteksiz">{durum?.locator_demo?.neden ?? "Yalnızca yerel forge'da (TP_FORGE=local) desteklenir."}</span>
+          <span data-testid="locator-desteksiz">{icTerimleriAyikla(durum?.locator_demo?.neden) ?? "Yalnızca yerel demo kod deposunda desteklenir."}</span>
         </Uyari>
       )}
       {!desteksiz && onKosulYok && (
@@ -730,17 +731,16 @@ function SifirlamaKarti({ canli = false }: { canli?: boolean }) {
       }
     >
       <p className="soluk kucuk">
-        Forge ana dalı <span className="mono">demo-baseline</span>'a döner, açık demo PR'ları kapatılır, demo uygulaması main'den yeniden
-        kurulur ve CI koşar. Kararlar, bug taslakları ve koşu geçmişi korunur (tam sıfırlama: host'ta <span className="mono">make reset</span>);
-        jira-sim sıfırlanmaz: yalnızca bu sistemin açtığı AI Bug'ları (<span className="mono">AI-generated</span> +{" "}
-        <span className="mono">tp-&lt;uuid&gt;</span>) silinir; TPD-5, story ve Test issue'ları kalır.
+        Demo kod deposunun ana dalı başlangıç sürümüne döner, açık demo PR'ları kapatılır, demo uygulaması ana daldan yeniden
+        kurulur ve CI koşar. Kararlar, bug taslakları ve koşu geçmişi korunur (tam sıfırlamayı sistem yöneticisi sunucuda yapar).
+        Jira simülatörü sıfırlanmaz: yalnızca bu sistemin açtığı AI bug'ları silinir; TPD-5, story ve Test issue'ları kalır.
         Denetim kaydı silinmez (append-only); sıfırlama da denetime yazılır.
       </p>
       {onay && (
         <div className="onay-kutusu" role="group" aria-label="Sıfırlama onayı">
           <label className="satir-ogeler">
             <input type="checkbox" checked={anladim} onChange={(e) => setAnladim(e.target.checked)} />
-            <span>Forge main baseline'a dönecek ve açık demo PR'ları kapatılacak (kararlar ve Jira kayıtları bu düğmeyle sıfırlanmaz).</span>
+            <span>Demo kod deposunun ana dalı başlangıç sürümüne dönecek ve açık demo PR'ları kapatılacak (kararlar ve Jira kayıtları bu düğmeyle sıfırlanmaz).</span>
           </label>
           <div className="satir-ogeler">
             <IslemDugmesi izin="demo.manage" tur="tehlike" calisiyor={calisiyor} disabled={!anladim} onClick={() => void sifirla()}>
@@ -906,7 +906,7 @@ export function JiraDurumKarti() {
       const y = await api.demoJiraDurumu(k, hedef);
       const mesaj =
         (y && typeof y.mesaj === "string" && y.mesaj) ||
-        (y?.degisti === false ? `${k} zaten "${hedef}" durumunda; değişiklik yapılmadı.` : `${k} jira-sim'de "${hedef}" durumuna taşındı.`);
+        (y?.degisti === false ? `${k} zaten "${hedef}" durumunda; değişiklik yapılmadı.` : `${k} Jira simülatöründe "${hedef}" durumuna taşındı.`);
       setSonuc(mesaj);
       bildir(mesaj);
     } catch (e) {
@@ -917,9 +917,9 @@ export function JiraDurumKarti() {
   }
 
   return (
-    <Kart baslik="Jira durum tetiği (jira-sim)">
+    <Kart baslik="Jira durum tetiği (Jira simülatörü)">
       <p className="soluk kucuk">
-        jira-sim'de story durumunu değiştirir; Jira tetiği bir sonraki turda (bkz. <Link to="/otomasyon">Otomasyon</Link>) story'yi çekip ön
+        Jira simülatöründe story durumunu değiştirir; Jira tetiği bir sonraki turda (bkz. <Link to="/otomasyon">Otomasyon</Link>) story'yi çekip ön
         incelemeye alır. PO onayı yine gerekir. Gerçek Jira'da çalışmaz.
       </p>
       <div className="satir-ogeler">
@@ -949,7 +949,7 @@ export function JiraDurumKarti() {
       </div>
       <p id={`${id}-ipucu`} className="kucuk" data-testid="jira-tetik-ipucu">
         {!k ? (
-          <span className="soluk">TP'deki story'ler öneri olarak listelenir; TP'ye henüz çekilmemiş bir jira-sim story'si de yazılabilir.</span>
+          <span className="soluk">TP'deki story'ler öneri olarak listelenir; TP'ye henüz çekilmemiş bir simülatör story'si de yazılabilir.</span>
         ) : (
           <>
             {secilen ? (
@@ -996,6 +996,12 @@ function useDemoDurumu(): DemoDurumu | null {
   return d;
 }
 
+/** Demo kod deposu okuma hatasının kullanıcı cümlesi (ham metin title'da). */
+export function forgeHatasiMetni(ham: string): string {
+  if (/GitHub App|TP_BAGLANTI_TOKENI|core-worker/i.test(ham)) return "Bu ekrandan okunamıyor: kod deposu bağlantısı yalnız arka plan servisinde tanımlı.";
+  return teknikMetniCevir(ham) ?? icTerimleriAyikla(ham.replace(/^forge\s+/i, "Kod deposu "));
+}
+
 function DurumKarti({ d }: { d: DemoDurumu | null }) {
   if (!d) return null;
   const u = d.uygulama ?? {};
@@ -1004,9 +1010,10 @@ function DurumKarti({ d }: { d: DemoDurumu | null }) {
   return (
     <Kart baslik="Demo durumu">
       <dl className="tanim-izgara">
-        <dt>Forge main</dt>
-        <dd className="mono">
-          {f.hata ? <span className="hata-metin">{f.hata}</span> : (f.main ?? "—").slice(0, 12)}
+        <dt>Kod deposu ana dalı</dt>
+        <dd className={f.hata ? undefined : "mono"}>
+          {/* CL-07: ham hata (ortam değişkeni, servis adı) ipucunda; görünen metin kullanıcı dilinde. */}
+          {f.hata ? <span className="hata-metin" title={String(f.hata)}>{forgeHatasiMetni(String(f.hata))}</span> : (f.main ?? "—").slice(0, 12)}
           {f.main_baseline_mi === true && <Cip ton="basari">baseline</Cip>}
           {f.main_baseline_mi === false && <Cip ton="uyari">baseline'dan farklı</Cip>}
         </dd>
@@ -1064,7 +1071,7 @@ export function DemoKontrolleri() {
         baslik="Demo kontrolleri"
         aciklama={
           <>
-            Sunum için kırılma senaryoları. Hata yakalama (BREAK_CAMPAIGN) kod üretiminde 'Kırarak doğrula' ile, locator kırılması buradan
+            Sunum için kırılma senaryoları. Hata yakalama (kasıtlı kampanya kırması) kod üretiminde 'Kırarak doğrula' ile, locator kırılması buradan
             başlatılır. Adım adım ilerleme: <Link to="/yol-haritasi">Demo yol haritası</Link>.
           </>
         }
