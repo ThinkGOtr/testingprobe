@@ -2,6 +2,7 @@
 // gerçek API'yi taklit eder (insan kapıları atlanamaz), böylece ekranlar arka uç olmadan
 // demo edilebilir ve ekran testine girebilir. Tüm üretilen çıktılar mode alanıyla işaretlidir.
 import { mockCaseKalitesi } from "./caseKalitesi";
+import { islerimRotalari } from "./islerim";
 import { ApiError, DEMO_KAPALI, mockOturumu, mockOturumuAyarla } from "../http";
 import type {
   AjanAdimi,
@@ -2686,6 +2687,11 @@ const ROTALAR: Rota[] = [
   ...ajanProbeRotalari(izinGerekli, (id) => veri.gereksinimler.find((g) => g.id === id)),
   // 012/Ş8 ekilmiş hata koşusu (ANALIZ §4.6): api/mock/kule.ts.
   ...kuleRotalari(girisGerekli, izinGerekli),
+  // TP UX IA-01/05/16: İşlerim, kayıt yeri ve insan sınıflandırması (api/mock/islerim.ts).
+  ...islerimRotalari(girisGerekli, izinGerekli, () => veri, (eylem, nesne, ozet) => {
+    denetimEkle(eylem, nesne, ozet);
+    kaydet();
+  }),
   // 012 Ş7 (karar tabloları, ilişkiler, oracle): api/mock/kalite.ts. Aşağıdaki `GET /cases`,
   // `POST /cases/:id/decision` ve `GET …/case-metrics` uçlarını sarar (ilk eşleşen rota geçerlidir).
   ...kaliteRotalari({ veri: () => veri, girisGerekli, izinGerekli, kaydet, arkaPlan, denetimEkle, yeniId, caseKarari: tekliKarar, caseListesi, caseMetrikleri }),

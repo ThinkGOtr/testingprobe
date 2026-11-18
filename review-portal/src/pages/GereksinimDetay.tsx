@@ -1,3 +1,4 @@
+import { BaskaProjedeKayit } from "../components/BaskaProjedeKayit";
 import { OtomatikAkisRozeti } from "../components/OtomatikAkisRozeti";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
@@ -97,7 +98,7 @@ export function GereksinimDetay() {
   useOlay(sessiz, ["requirement.updated", "finding.updated", "case.generated"], id);
 
   if (detay.yukleniyor && !detay.veri) return <Yukleniyor />;
-  if (detay.hata && !detay.veri) return <HataKutusu hata={detay.hata} kaynak={detay.hataNesnesi} yenile={() => void detay.yenile()} />;
+  if (detay.hata && !detay.veri) return <BaskaProjedeKayit tur="requirement" id={id} hata={detay.hataNesnesi} ad="Gereksinim" liste={["/gereksinimler", "Gereksinimler"]} yedek={<HataKutusu hata={detay.hata} kaynak={detay.hataNesnesi} yenile={() => void detay.yenile()} />} />;
   const g = detay.veri;
   if (!g) return null;
   const d = g.ac_missing && g.durum === "new" ? AC_EKSIK : gereksinimDurumu(g.durum);

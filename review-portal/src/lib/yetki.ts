@@ -60,6 +60,8 @@ export const IZINLER = {
   "run.trigger_scheduled": ["engineer"],
   "run.trigger_manual": ["engineer", "developer"],
   "bug.decide": ["tester"],
+  // TP UX IA-16: kuralın/AI'ın sınıflandıramadığı hatayı insan sınıflandırır (karar_kaynagi=human).
+  "failure.classify": ["tester", "engineer"],
   "demo.manage": ["admin", "engineer"],
   "audit.verify": ["admin", "auditor"],
   // 013 sprint otomasyonu: otomasyon ayarları ve test verisi kataloğu.
@@ -161,6 +163,10 @@ export function izinNedeni(...istenen: Izin[]): string {
  * açılış ekranı aynı tabloyu kullanır.
  */
 export const ROTA_IZINLERI: Record<string, readonly Izin[]> = {
+  // TP UX IA-01: rolün iş kuyruğu (herkes; ayrıntı rol okumasına göre core'da süzülür).
+  "/islerim": ["dashboard.read"],
+  // TP UX IA-16: hata (triage) kuyruğu.
+  "/hatalar": ["failure.read"],
   "/gereksinimler": ["requirement.read"],
   "/gereksinimler/:id": ["requirement.read"],
   "/gereksinimler/:id/caseler": ["case.read"],

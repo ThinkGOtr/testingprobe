@@ -11,6 +11,10 @@ export const ROTA_DESENLERI: readonly string[] = [
   // AI Probe rol seçici (yalnız TP_AUTH_MODE=aiprobe|both; oturum öncesi ekran, asistan yok →
   // `rules/assistant/rotalar.json`'da değil, /giris gibi).
   "/rol-sec",
+  // TP UX IA-01: rolün iş kuyruğu (açılış ekranı). IA-16: hata (triage) kuyruğu. Asistan
+  // `rules/assistant/rotalar.json` güncellenene kadar asistan bağlamı dışında (rotalar.test.ts).
+  "/islerim",
+  "/hatalar",
   "/gereksinimler",
   "/gereksinimler/:id",
   "/gereksinimler/:id/caseler",

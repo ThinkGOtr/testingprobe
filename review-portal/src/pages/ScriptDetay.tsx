@@ -1,3 +1,4 @@
+import { BaskaProjedeKayit } from "../components/BaskaProjedeKayit";
 import { Fragment, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api/client";
@@ -810,7 +811,7 @@ export function ScriptDetay() {
   useCapayaKaydir(Boolean(v.veri));
 
   if (v.yukleniyor && !v.veri) return <Yukleniyor />;
-  if (v.hata && !v.veri) return <KayitHatasi ad="Test kodu" ust={<Link to="/kod">← Kod üretimi</Link>} hata={v.hata} kaynak={v.hataNesnesi} yenile={() => void v.yenile()} />;
+  if (v.hata && !v.veri) return <BaskaProjedeKayit tur="script" id={id} hata={v.hataNesnesi} ad="Test kodu" liste={["/kod", "Kod üretimi"]} yedek={<KayitHatasi ad="Test kodu" ust={<Link to="/kod">← Kod üretimi</Link>} hata={v.hata} kaynak={v.hataNesnesi} yenile={() => void v.yenile()} />} />;
   const s: Detay | undefined = v.veri;
   if (!s) return null;
   const d = SCRIPT_DURUMU[s.durum] ?? { etiket: s.durum, ton: "notr" as const };

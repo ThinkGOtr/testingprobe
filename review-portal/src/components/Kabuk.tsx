@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { canliDerleme, cekirdekYetenekleri, mockDegisikligineAbone, mockUclari, mockZorunlu, ucVar, type Yetenekler } from "../api/http";
-import { useBaglantiDurumu, type BaglantiDurumu } from "../api/events";
-import type { ProjeOzelligi, Rol } from "../api/types";
+import { useBaglantiDurumu, useOlay, type BaglantiDurumu } from "../api/events";
+import { islerimApi } from "../api/islerim";
+import { ISLERIM_OLAYLARI } from "../pages/Islerim";
+import { useGeciktirilmis } from "../hooks";
+import type { ProjeOzelligi } from "../api/types";
 import { DEMO_ROTALARI, useDemoModu, useIzin, useIzinler, useOturum, useOzellikler, useProjeBaglami } from "../auth";
-import { izinVar, normalizeRol, rolEtiketi, ROTA_IZINLERI } from "../lib/yetki";
+import { izinVar, rolEtiketi, ROTA_IZINLERI } from "../lib/yetki";
 import { useCapayaKaydir } from "../lib/capa";
 import { TEMA_ETIKETI, useTema } from "../lib/tema";
 import { OneriDugmesi } from "./asistan/OneriDugmesi";
@@ -23,8 +26,6 @@ interface NavOgesi {
   ad: string;
   /** Menü öğesinin dekoratif ikonu (aria-hidden; erişilebilir ad `ad`dır). */
   ikon: IkonAdi;
-  /** Bu rollerin asıl çalışma alanı (vurgulanır; yalnız gösterim, yetki değil). */
-  odak?: Rol[];
   /** Ekranın core'daki veri ucu. Canlı derlemede core bu ucu sunmuyorsa öğe pasiftir ("bu fazda yok"). */
   uc: readonly [string, string];
   /** Öğe bu proje özelliğine bağlı (`/auth/me` → `ozellikler`); özellik kapalıysa çizilmez. */
@@ -36,25 +37,29 @@ const NAV: { grup: string; ogeler: NavOgesi[] }[] = [
   {
     grup: "İş akışı",
     ogeler: [
-      { yol: "/gereksinimler", ad: "Gereksinimler", ikon: "gereksinim", odak: ["analyst", "po", "tester"], uc: ["GET", "/requirements"] },
-      { yol: "/caseler", ad: "Test case'leri", ikon: "caseler", odak: ["analyst", "tester"], uc: ["GET", "/cases"] },
-      { yol: "/kod", ad: "Kod üretimi", ikon: "kod", odak: ["engineer"], uc: ["GET", "/scripts"] },
-      { yol: "/kosular", ad: "Koşular", ikon: "kosu", odak: ["engineer", "developer"], uc: ["GET", "/runs"] },
-      { yol: "/bug-taslaklari", ad: "Bug taslakları", ikon: "bug", odak: ["tester"], uc: ["GET", "/bug-drafts"] },
+      // TP UX IA-01/IA-02: rolün kuyruğu ilk öğe; rozet yalnız gerçek bekleyen iş sayısı (`GET /work-queue` `menu`).
+      { yol: "/islerim", ad: "İşlerim", ikon: "yaptim", uc: ["GET", "/work-queue"] },
+      { yol: "/gereksinimler", ad: "Gereksinimler", ikon: "gereksinim", uc: ["GET", "/requirements"] },
+      { yol: "/caseler", ad: "Test case'leri", ikon: "caseler", uc: ["GET", "/cases"] },
+      { yol: "/kod", ad: "Kod üretimi", ikon: "kod", uc: ["GET", "/scripts"] },
+      { yol: "/kosular", ad: "Koşular", ikon: "kosu", uc: ["GET", "/runs"] },
+      // TP UX IA-16: hata (triage) kuyruğu — sınıflandırılmamış hata sessizce kaybolmaz.
+      { yol: "/hatalar", ad: "Hatalar", ikon: "soru", uc: ["GET", "/failures"] },
+      { yol: "/bug-taslaklari", ad: "Bug taslakları", ikon: "bug", uc: ["GET", "/bug-drafts"] },
       // 013 (012'ye uyarlandı): katalogu Analist, Test Uzmanı ve Mühendis düzenler (`testdata.manage`);
       // otomasyon ayarlarını Analist ve Mühendis (`automation.manage`).
-      { yol: "/test-verisi", ad: "Test verisi", ikon: "veri", odak: ["analyst", "tester", "engineer"], uc: ["GET", "/test-data"] },
-      { yol: "/otomasyon", ad: "Otomasyon", ikon: "otomasyon", odak: ["analyst", "engineer"], uc: ["GET", "/automation-settings"] },
+      { yol: "/test-verisi", ad: "Test verisi", ikon: "veri", uc: ["GET", "/test-data"] },
+      { yol: "/otomasyon", ad: "Otomasyon", ikon: "otomasyon", uc: ["GET", "/automation-settings"] },
     ],
   },
   {
     grup: "İzleme",
     ogeler: [
-      { yol: "/yol-haritasi", ad: "Demo yol haritası", ikon: "harita", odak: ["admin"], uc: ["GET", "/requirements"] },
-      { yol: "/kontrol-kulesi", ad: "Kontrol Kulesi", ikon: "kule", odak: ["admin", "viewer"], uc: ["GET", "/control-tower"] },
-      { yol: "/demo", ad: "Demo kontrolleri", ikon: "demo", odak: ["admin"], uc: ["POST", "/demo/break-locator"] },
-      { yol: "/ajan-urunleri", ad: "Ajan ürünleri", ikon: "asistan", odak: ["tester"], uc: ["GET", "/agent-probe/products"], ozellik: "ai_agent" },
-      { yol: "/denetim", ad: "Denetim kaydı", ikon: "denetim", odak: ["auditor"], uc: ["GET", "/audit"] },
+      { yol: "/yol-haritasi", ad: "Demo yol haritası", ikon: "harita", uc: ["GET", "/requirements"] },
+      { yol: "/kontrol-kulesi", ad: "Kontrol Kulesi", ikon: "kule", uc: ["GET", "/control-tower"] },
+      { yol: "/demo", ad: "Demo kontrolleri", ikon: "demo", uc: ["POST", "/demo/break-locator"] },
+      { yol: "/ajan-urunleri", ad: "Ajan ürünleri", ikon: "asistan", uc: ["GET", "/agent-probe/products"], ozellik: "ai_agent" },
+      { yol: "/denetim", ad: "Denetim kaydı", ikon: "denetim", uc: ["GET", "/audit"] },
       { yol: "/claude-code", ad: "Claude Code kanalı", ikon: "terminal", uc: ["GET", "/tokens"] },
     ],
   },
@@ -90,6 +95,34 @@ export function useCanliYetenekler(): Yetenekler | null {
     };
   }, []);
   return y;
+}
+
+/**
+ * TP UX IA-02: menü rozetleri — rota → çağıranın bekleyen iş sayısı (`GET /work-queue` `menu`). Rol
+ * değişince ve kuyruğu etkileyen olaylarda tazelenir; okunamazsa rozet yok (uydurma sayı gösterilmez).
+ */
+function useMenuIsSayilari(etkin: boolean): Record<string, number> | null {
+  const { kullanici } = useOturum();
+  const [sayilar, setSayilar] = useState<Record<string, number> | null>(null);
+  const [surum, setSurum] = useState(0);
+  const tazele = useGeciktirilmis(() => setSurum((n) => n + 1));
+  useOlay(tazele, ISLERIM_OLAYLARI);
+  const rol = kullanici?.rol;
+  useEffect(() => {
+    if (!etkin) {
+      setSayilar(null);
+      return;
+    }
+    let iptal = false;
+    islerimApi
+      .isKuyrugu()
+      .then((k) => !iptal && setSayilar(k.menu))
+      .catch(() => !iptal && setSayilar(null));
+    return () => {
+      iptal = true;
+    };
+  }, [etkin, rol, surum]);
+  return sayilar;
 }
 
 /** Üst çubuktaki proje bağlamı metni: "Organizasyon · Proje" (biri yoksa yalnız diğeri). */
@@ -184,6 +217,7 @@ function KabukIcerik() {
   const [tema, temaDegistir] = useTema();
   const { menuAcik, menuAyarla: setMenuAcik } = useKabukDurumu()!;
   const konum = useLocation();
+  const isSayilari = useMenuIsSayilari(!!kullanici && (!yetenekler || ucVar(yetenekler, "GET", "/work-queue")));
 
   const menuDugmesi = useRef<HTMLButtonElement>(null);
   const kabukRef = useRef<HTMLDivElement>(null);
@@ -433,9 +467,10 @@ function KabukIcerik() {
                       <NavLink to={o.yol} className={({ isActive }) => `menu-oge${isActive ? " aktif" : ""}`}>
                         <Ikon ad={o.ikon} />
                         <span>{o.ad}</span>
-                        {kullanici && o.odak?.includes(normalizeRol(kullanici.rol) as Rol) && (
-                          <span className="odak-isaret" title="Rolünüzün çalışma alanı">
-                            <span className="gorunmez">(rolünüzün çalışma alanı)</span>
+                        {(isSayilari?.[o.yol] ?? 0) > 0 && (
+                          <span className="cip cip-bilgi menu-sayac" data-testid={`menu-sayac-${o.yol.slice(1)}`}>
+                            <span aria-hidden="true">{isSayilari![o.yol]}</span>
+                            <span className="gorunmez">({isSayilari![o.yol]} iş bekliyor)</span>
                           </span>
                         )}
                       </NavLink>
