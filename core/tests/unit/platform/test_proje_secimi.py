@@ -332,3 +332,15 @@ def test_sse_sorgu_projesi(cok: SahteHome, client: TestClient) -> None:
     assert not proje_eslesir({"event": "x", "data": {}}, A)  # işaretsiz olay projeli akışa gitmez
     assert proje_eslesir({"event": "x", "project_id": "_kurulum", "data": {}}, A)
     assert proje_eslesir({"event": "x", "data": {}}, None)
+
+
+def test_rol_etiketleri_en_ingilizce() -> None:
+    """T2-5: EN rol etiketleri Türkçe kalmasın; her TR rolün EN karşılığı var (anahtarlar aynı)."""
+    from tp_core.auth import yetki
+    from tp_core.auth.proje_secimi import ROL_ETIKETLERI_EN
+
+    assert set(ROL_ETIKETLERI_EN) == set(yetki.ROL_ETIKETLERI)
+    assert ROL_ETIKETLERI_EN["developer"] == "Developer"
+    assert ROL_ETIKETLERI_EN["engineer"] == "Automation Engineer"
+    for kod, ad in ROL_ETIKETLERI_EN.items():
+        assert ad.isascii(), (kod, ad)

@@ -763,8 +763,143 @@ def _algila(platform: str) -> dil_algila.Algilama:
     """Platform deposunun kontrol dalındaki (`TP_FORGE_CHECK_REF[_<P>]`, varsayılan `main`)
     testlerden dil algılama; forge kurulamaz/okunamazsa varsayılan (`hata` dolu).
 
-    core-api forge'u yalnız okumak için kurar (GitHub kipinde `GITHUB_READ_TOKEN`); kurulamazsa
-    algılama atlanır ve `/code/languages` sonucu "bilinmiyor" diye işaretler."""
+    Token kipinde core-api forge'u yalnız okumak için kurar (`GITHUB_READ_TOKEN`). GitHub App
+    kipinde (Config R1) kurulum token'ı yalnız core-worker'da alınabildiği için algılama
+    `codegen.dil_algila` işiyle worker'a devredilir (`_worker_algilama`)."""
+    return _algila_tam(platform)[0]
+
+
+def _algila_tam(platform: str) -> tuple[dil_algila.Algilama, dict[str, Any] | None]:
+    """(algılama, müşteri CI kurulum özetleri). Özetler yalnız worker'a devredilen yolda dolu
+    (dil → özet); None → çağıran `_kurulum_ozeti`'ni kendisi hesaplar."""
+    if _worker_algilamali():
+        return _worker_algilama(platform)
+    return _algila_dogrudan(platform), None
+
+
+# GitHub App kipinde core-api'nin dil algılamasını worker'a devretmesi (T2-1, deploy sonrası).
+DIL_ALGILA_JOB = "codegen.dil_algila"
+# Aynı (proje, platform) için bu süre diliminde tek iş: sonuç dilim boyunca paylaşılır. Worker'daki
+# `dil_algila` önbelleği head sha'ya bağlı olduğundan yeni iş repo değişmediyse ucuzdur.
+DIL_ALGILA_DILIM_S = 120
+DIL_ALGILA_BEKLEME_S = 15.0  # portal nginx /api/ zaman aşımı 30 sn
+DIL_ALGILA_YOKLAMA_S = 0.25
+DIL_ALGILA_SURUYOR = "algılama sürüyor; birkaç saniye sonra yeniden deneyin"
+
+
+def _worker_algilamali() -> bool:
+    """Bu süreç forge'u kendisi kuramıyor mu: GitHub App kipi + bağlantı token'ı alamayan süreç
+    (core-api). Test fabrikası verilmişse her zaman doğrudan yol."""
+    if _factories.get("forge") is not None:
+        return False
+    from tp_core.home_config import baglanti
+    from tp_core.integrations import proje_ortami
+
+    if baglanti.yetkili_surec():
+        return False
+    try:
+        return proje_ortami.baglanti_kipi("github") == "app"
+    except Exception:  # config okunamadı: doğrudan yol kendi hatasını raporlar
+        log.warning("dil algılama: bağlantı kipi okunamadı", exc_info=True)
+        return False
+
+
+def _alg_json(alg: dil_algila.Algilama) -> dict[str, Any]:
+    return {
+        "dil": alg.dil,
+        "kaynak": alg.kaynak,
+        "sayilar": {str(k): int(v) for k, v in alg.sayilar.items()},
+        "projeler": {str(k): bool(v) for k, v in alg.projeler.items()},
+        "hata": alg.hata,
+        "en_az": list(alg.en_az),
+    }
+
+
+def _alg_coz(platform: str, veri: Any) -> dil_algila.Algilama:
+    """Worker sonucundan `Algilama`; biçim dışıysa varsayılan (`hata` dolu). Platformun geçerli
+    dilleri dışındaki değerler atılır."""
+    gecerli = set(platformlar.platform_dilleri(platform))
+    if not isinstance(veri, Mapping) or veri.get("dil") not in gecerli:
+        return dil_algila.varsayilan(platform, hata="worker sonucu okunamadı")
+    sayilar = veri.get("sayilar") if isinstance(veri.get("sayilar"), Mapping) else {}
+    projeler = veri.get("projeler") if isinstance(veri.get("projeler"), Mapping) else {}
+    en_az = veri.get("en_az") if isinstance(veri.get("en_az"), list) else []
+    hata = veri.get("hata")
+    return dil_algila.Algilama(
+        str(veri["dil"]),
+        "algilandi" if veri.get("kaynak") == "algilandi" else "varsayilan",
+        {d: int(sayilar.get(d, 0) or 0) for d in platformlar.platform_dilleri(platform)},
+        {str(k): bool(v) for k, v in projeler.items() if k in gecerli},
+        hata=str(hata)[:300] if hata else None,
+        en_az=tuple(d for d in platformlar.platform_dilleri(platform) if d in en_az),
+    )
+
+
+def _worker_algilama(platform: str) -> tuple[dil_algila.Algilama, dict[str, Any] | None]:
+    """`codegen.dil_algila` işini (dilim başına tekil) kuyruğa alır ve en çok
+    `DIL_ALGILA_BEKLEME_S` sonucunu bekler. Worker yazma kimliğini core-api'ye taşımaz; API yalnız
+    sayıları ve proje varlığını (sır içermeyen özet) görür."""
+    import time
+
+    from tp_core.db import get_engine
+    from tp_core.features.publish.service import job_status
+
+    dilim = int(time.time() // DIL_ALGILA_DILIM_S)
+    try:
+        with session_scope() as s:
+            job_id = enqueue(
+                s.connection(),
+                DIL_ALGILA_JOB,
+                {"platform": platform},
+                idempotency_key=f"dil_algila:{platform}:{dilim}",
+                max_deneme=1,
+                zaman_asimi_s=120,
+            )
+        engine = get_engine()
+        bitis = time.monotonic() + DIL_ALGILA_BEKLEME_S
+        while True:
+            durum, sonuc, hata = job_status(engine, job_id)
+            if durum in ("done", "failed", "cancelled") or time.monotonic() >= bitis:
+                break
+            time.sleep(DIL_ALGILA_YOKLAMA_S)
+    except Exception as exc:
+        log.warning("dil algılama işi kuyruğa alınamadı: %s", exc)
+        return dil_algila.varsayilan(
+            platform, hata=f"iş kuyruğa alınamadı: {type(exc).__name__}"
+        ), None
+    if durum != "done":
+        if durum in ("failed", "cancelled"):
+            log.warning("dil algılama işi %s: %s", durum, hata)
+            return dil_algila.varsayilan(
+                platform, hata=f"worker algılaması başarısız ({durum})"
+            ), None
+        return dil_algila.varsayilan(platform, hata=DIL_ALGILA_SURUYOR), None
+    sonuc = sonuc if isinstance(sonuc, Mapping) else {}
+    kurulum = sonuc.get("kurulum")
+    return (
+        _alg_coz(platform, sonuc.get("algilama")),
+        dict(kurulum) if isinstance(kurulum, Mapping) else None,
+    )
+
+
+def run_dil_algila(ctx: JobContext) -> dict[str, Any]:
+    """`codegen.dil_algila` (core-worker): platformun dil algılaması + müşteri CI hattındaki
+    dillerin kurulum özeti. Hata işi düşürmez: sonuç `hata` alanıyla döner."""
+    try:
+        p = platformlar.gecerli(str((ctx.yuk or {}).get("platform") or ""))
+    except ValueError as exc:
+        raise PermanentJobError(str(exc)) from exc
+    alg = _algila_dogrudan(p)
+    kurulum = {
+        d: _kurulum_ozeti(p, d)
+        for d in platformlar.platform_dilleri(p)
+        if platformlar.etkin_hat(p, d) == "musteri_ci"
+    }
+    return {"platform": p, "algilama": _alg_json(alg), "kurulum": kurulum}
+
+
+def _algila_dogrudan(platform: str) -> dil_algila.Algilama:
+    """Bu süreçte forge kurularak algılama (core-worker, token kipi ya da LocalForge)."""
     try:
         forge = _forge(platform)
         ref = depolar.kontrol_ref(platform)
@@ -821,7 +956,7 @@ def dil_secenekleri(platform: str | None) -> dict[str, Any]:
     except ValueError as exc:
         raise GecersizDil(str(exc)) from exc
     _platform_acik_mi(p)
-    alg = _algila(p)
+    alg, kurulumlar = _algila_tam(p)
     algilanan, kaynak = alg.dil, alg.kaynak
     if kaynak == "algilandi" and _secim_engeli(alg, p, algilanan) is not None:
         algilanan, kaynak = platformlar.varsayilan_dil(p), "varsayilan"
@@ -841,7 +976,11 @@ def dil_secenekleri(platform: str | None) -> dict[str, Any]:
                 "kirarak_dogrulama": platformlar.kirarak_dogrulama_var_mi(p, d),
                 "check": platformlar.check_adi(p, d),
                 # Ş5 kurulum PR'ı (müşteri CI; plan yoksa None). Entegrasyonda plan bağlanır.
-                "kurulum": _kurulum_ozeti(p, d) if hat == "musteri_ci" else None,
+                "kurulum": (
+                    (kurulumlar.get(d) if kurulumlar is not None else _kurulum_ozeti(p, d))
+                    if hat == "musteri_ci"
+                    else None
+                ),
                 # Depo okunamadıysa engellenmez ama "bilinmiyor" nedeni dürüstçe yazılır.
                 "kullanilabilir": neden is None,
                 "neden": neden or (DEPO_OKUNAMADI if alg.hata else None),

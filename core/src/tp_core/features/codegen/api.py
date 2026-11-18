@@ -24,7 +24,9 @@ yazılmadan 409 döner; dal otomatik güncellenir (ya da `update-branch`).
 
 Yetki (012): her uç `izin(...)` ile korunur (`tp_core/auth/yetki.py`). `GET /code/languages`
 her çağrıda forge'u okur (GitHub hız sınırı, K-T8): yalnız üretimi başlatan role (`code.generate`)
-açıktır; diğerlerinde portal 403'ü "seçici yok" sayar.
+açıktır; diğerlerinde portal 403'ü "seçici yok" sayar. GitHub App kipinde forge yalnız
+core-worker'da kurulabildiği için algılama `codegen.dil_algila` işine gider; uç sonucu en çok
+`service.DIL_ALGILA_BEKLEME_S` bekler (sonuç 2 dk'lık dilimde paylaşılır).
 
 Review (`karar` ∈ {degisiklik_iste, reddet}, `ret_nedeni` sabit taksonomiden) script'i kapatır ve
 `insan_review_sonucu`'nu yazar (Constitution X); PR worker'da kapatılır.

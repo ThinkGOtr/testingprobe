@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
@@ -12,7 +12,7 @@ import { tarih } from "../lib/format";
 import { PlatformRozeti, PlatformSecici } from "../components/Platform";
 import { DepoCipi } from "../components/Depo";
 import { PLATFORM_ETIKETI, type Platform } from "../lib/platform";
-import { dilNedeni, DilRozeti, DilSecici, KurulumBilgisi, MusteriCiNotu } from "../components/Dil";
+import { algilamaSuruyorMu, dilNedeni, DilRozeti, DilSecici, KurulumBilgisi, MusteriCiNotu, uretimAciklamasi } from "../components/Dil";
 import { DIL_ETIKETI, type Dil } from "../lib/dil";
 import type { Script, UretimSonucu } from "../api/types";
 import { baslamayanlar, DilCakismasiKutusu, dilCakismasiMi, UretimAtlananlar, uretimBildirimi } from "../components/UretimSonuclari";
@@ -88,6 +88,20 @@ export function Kod() {
   // Kullanıcının elle seçtiği dil (yalnız algılanandan farklıysa); platform değişince sıfırlanır.
   const [elleDil, setElleDil] = useState<Dil | null>(null);
   const dilVerisi = diller.veri ?? null;
+  // GitHub App kipinde algılama worker'da koşar; core sonucu beklerken süre dolduysa ("algılama
+  // sürüyor") birkaç kez sessizce yeniden sorulur (T2-1).
+  const [algilamaDenemesi, setAlgilamaDenemesi] = useState(0);
+  const suruyor = algilamaSuruyorMu(dilVerisi);
+  const { yenile: dilleriYenile } = diller;
+  useEffect(() => setAlgilamaDenemesi(0), [platform]);
+  useEffect(() => {
+    if (!suruyor || algilamaDenemesi >= 5) return;
+    const t = setTimeout(() => {
+      setAlgilamaDenemesi((n) => n + 1);
+      void dilleriYenile(true);
+    }, 4000);
+    return () => clearTimeout(t);
+  }, [suruyor, algilamaDenemesi, dilleriYenile]);
   const elleGecerli = !!dilVerisi && !!elleDil && dilVerisi.secenekler.some((s) => s.dil === elleDil && s.kullanilabilir) && elleDil !== dilVerisi.algilanan;
   const seciliDil: Dil | null = dilVerisi ? (elleGecerli && elleDil ? elleDil : dilVerisi.algilanan) : null;
   const seciliSecenek = dilVerisi?.secenekler.find((s) => s.dil === seciliDil) ?? null;
@@ -143,7 +157,7 @@ export function Kod() {
         baslik="Kod üretimi"
         aciklama={
           dilVerisi
-            ? "Onaylı case'ler seçilen platformda adım adım doğrulanır (Web: Playwright MCP; Android, iOS, Windows: Appium), page object'lere eşlenir ve seçilen dilde şablondan teste dönüşür. Model kod yazmaz; TypeScript ve Java'da yerel kontrol yeşilse bot ayrı dalda PR açar, C# ve Python kodu doğrulanmamış olarak çıkar."
+            ? uretimAciklamasi(dilVerisi)
             : "Onaylı case'ler seçilen platformda adım adım doğrulanır (Web: Playwright MCP; Android, iOS, Windows: Appium), page object'lere eşlenir ve şablondan teste dönüşür (Web: TypeScript, uygulamalar: Java). Model kod yazmaz; yerel kontrol yeşilse bot ayrı dalda PR açar."
         }
       />

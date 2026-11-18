@@ -11,8 +11,15 @@ import type { Platform } from "../lib/platform";
 import { ortamAdlariniGizle } from "../api/http";
 import { SegmentGrubu } from "./Platform";
 
-/** core'un Java web engeli ("GitHub kipinde Java web hattı etkin değil (TP_WEB_DILLERI …)"). */
-export const JAVA_WEB_KAPALI = "Java web hattı bu kurulumda etkin değil";
+/**
+ * core'un Java web engeli ("GitHub kipinde Java web hattı etkin değil (TP_WEB_DILLERI …)"). Metin açmak
+ * için yapılacak adımı da söyler (Home'da projenin web test dilleri; T2-2).
+ */
+export const JAVA_WEB_KAPALI =
+  "Java web hattı bu kurulumda etkin değil. Açmak için AI Probe › Proje › Platformlar ve test dilleri › Web test dilleri'ne Java ekleyin";
+
+/** core: GitHub App kipinde algılama worker'da sürüyor (`codegen.dil_algila`, bekleme süresi doldu). */
+export const ALGILAMA_SURUYOR = /algılama sürüyor/i;
 
 /**
  * Seçenek nedenini kullanıcı metnine çevirir: yapılandırma adı (TP_*), iş akışı / zorunlu check gibi
@@ -61,11 +68,22 @@ export function algilanamadiMesaji(varsayilan: string, elleSecilebilir = true): 
   return elleSecilebilir ? `${temel} Dili elle seçebilirsiniz.` : temel;
 }
 
+/** Algılama worker'da sürüyorsa (core üst düzey `neden`) "depo okunamadı" denmez. */
+export function algilamaSuruyorMu(diller: Pick<KodDilleri, "neden"> | null | undefined): boolean {
+  return !!diller?.neden && ALGILAMA_SURUYOR.test(diller.neden);
+}
+
+function algilamaNotu(diller: KodDilleri, elleSecilebilir = true): string {
+  const algilanan = DIL_ETIKETI[diller.algilanan];
+  if (algilamaSuruyorMu(diller)) return `Dil algılanıyor; şimdilik varsayılan: ${algilanan}. Birkaç saniye içinde yeniden denenir.`;
+  return algilanamadiMesaji(algilanan, elleSecilebilir);
+}
+
 /** Dil notunun metni: elle seçim, repodan algılama, algılama sonuçsuz ya da algılama yapılamadı. */
 function dilNotu(diller: KodDilleri, elle: boolean, seciliEtiket: string): string {
   const algilanan = DIL_ETIKETI[diller.algilanan];
   if (elle) return `${seciliEtiket} elle seçildi.`;
-  if (diller.neden) return algilanamadiMesaji(algilanan);
+  if (diller.neden) return algilamaNotu(diller);
   if (diller.kaynak === "algilandi") return `${algilanan} repodan algılandı${dayanak(diller)}.`;
   return `${ALGILAMA_KAPSAMI} elle yazılmış test bulunamadı; varsayılan: ${algilanan}.`;
 }
@@ -81,6 +99,35 @@ export function secenekAciklamasi(s: Pick<DilSecenegi, "cati" | "hat">): string 
   if (s.hat === "dogrulanmamis") return `${s.cati} · doğrulanmamış`;
   if (s.hat === "musteri_ci") return `${s.cati} · koşu müşteri CI'da, kırarak doğrulama yok`;
   return s.cati;
+}
+
+/** Seçenek rozeti: durum (Yakında) ve hat (Müşteri CI) ayrı bilgilerdir; ikisi varsa birlikte yazılır. */
+export function secenekRozeti(s: Pick<DilSecenegi, "durum" | "hat">): string | null {
+  const parcalar = [s.durum === "yakinda" ? "Yakında" : null, s.hat === "musteri_ci" ? "Müşteri CI" : null].filter(Boolean);
+  return parcalar.length ? parcalar.join(" · ") : null;
+}
+
+function liste(adlar: string[]): string {
+  return adlar.length > 1 ? `${adlar.slice(0, -1).join(", ")} ve ${adlar[adlar.length - 1]}` : (adlar[0] ?? "");
+}
+
+/**
+ * Kod üretimi sayfa açıklaması (T2-2): yalnız bu kurulumda seçilebilen dillerden söz eder (ör. Java web
+ * hattı kapalıyken Java anılmaz). Hat başına: tam → yerel kontrol + PR; müşteri CI → koşu müşterinin
+ * CI'ında; doğrulanmamış → kod doğrulanmamış çıkar.
+ */
+export function uretimAciklamasi(diller: Pick<KodDilleri, "secenekler">): string {
+  const acik = diller.secenekler.filter((s) => s.durum !== "yakinda" && s.kullanilabilir);
+  const adlar = (hat: DilSecenegi["hat"]) => acik.filter((s) => s.hat === hat).map((s) => s.etiket);
+  const tam = adlar("tam");
+  const musteri = adlar("musteri_ci");
+  const dogrulanmamis = adlar("dogrulanmamis");
+  let m =
+    "Onaylı case'ler seçilen platformda adım adım doğrulanır (Web: Playwright MCP; Android, iOS, Windows: Appium), page object'lere eşlenir ve seçilen dilde şablondan teste dönüşür. Model kod yazmaz; ";
+  m += tam.length ? `${liste(tam)} için yerel kontrol yeşilse bot ayrı dalda PR açar` : "yerel kontrol yeşilse bot ayrı dalda PR açar";
+  if (musteri.length) m += `; ${liste(musteri)} testleri müşteri CI'da koşar`;
+  if (dogrulanmamis.length) m += `; ${liste(dogrulanmamis)} kodu doğrulanmamış olarak çıkar`;
+  return `${m}.`;
 }
 
 /**
@@ -205,7 +252,7 @@ export function DilSecici({
           </span>
           {diller.neden && (
             <span className="kucuk" role="status" data-testid="dil-notu" data-kaynak="algilanamadi">
-              {algilanamadiMesaji(DIL_ETIKETI[diller.algilanan], false)}
+              {algilamaNotu(diller, false)}
             </span>
           )}
         </span>
@@ -225,7 +272,8 @@ export function DilSecici({
           deger: s.dil,
           ad: s.etiket,
           aciklama: secenekAciklamasi(s),
-          rozet: s.durum === "yakinda" ? "Yakında" : s.hat === "musteri_ci" ? "Müşteri CI" : null,
+          // İki bilgi birlikte: "Yakında" müşteri CI hattını gizlemez (T2-3).
+          rozet: secenekRozeti(s),
           pasif: !s.kullanilabilir,
           pasifOnek: s.durum === "yakinda" ? "Yakında" : undefined,
           // Algılama hiç yapılamadıysa (üst düzey `neden`) kullanılabilir seçeneklerdeki aynı "depo
