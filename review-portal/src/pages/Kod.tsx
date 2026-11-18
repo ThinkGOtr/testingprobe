@@ -218,12 +218,22 @@ export function Kod() {
         ) : (
           <>
             {kuyrukBos && (
-              <BosDurum baslik={platform === "web" ? "Kodu üretilecek onaylı case yok." : `${PLATFORM_ETIKETI[platform]} için kodu üretilecek onaylı case yok.`}>
-                Case'ler Analist son onayından sonra burada görünür; otomatik kod üretimi açıksa üretim kendiliğinden başlar.{" "}
-                <Link to="/caseler">Test case'lerine git</Link> · <Link to="/otomasyon">Otomasyon ayarı</Link>
+              /* IA-13: boş kuyruk kompakt tek satır; platform/dil panosu altta katlı özet. */
+              <BosDurum
+                kip="satir"
+                baslik={platform === "web" ? "Kodu üretilecek onaylı case yok." : `${PLATFORM_ETIKETI[platform]} için kodu üretilecek onaylı case yok.`}
+                eylem={
+                  <>
+                    <Link to="/caseler">Test case'lerine git</Link> · <Link to="/otomasyon">Otomasyon ayarı</Link>
+                  </>
+                }
+              >
+                Case'ler Analist son onayından sonra burada görünür; otomatik kod üretimi açıksa üretim kendiliğinden başlar.
               </BosDurum>
             )}
             <KuyrukPanosu katli={kuyrukBos} ozet={`${PLATFORM_ETIKETI[platform]}${seciliDil ? ` · ${DIL_ETIKETI[seciliDil]}` : ""}`}>
+            {/* Üretim ayarları: platform → dil → dile bağlı notlar (doğrulanmamış, müşteri CI, kurulum PR'ı) tek blokta. */}
+            <div className="kod-ayarlar" data-testid="kod-ayarlar">
             <PlatformSecici
               etiket="Hedef platform"
               platformlar={acikPlatformlar}
@@ -264,6 +274,7 @@ export function Kod() {
                 </Uyari>
               )
             )}
+            <div className="kod-dil-notlari">
             {dogrulanmamis && seciliDil && (
               <div data-testid="dogrulanmamis-dil-uyarisi">
                 <Uyari ton="uyari" baslik={`Doğrulanmamış dil: ${DIL_ETIKETI[seciliDil]}`} id="dogrulanmamis-dil-uyarisi">
@@ -279,6 +290,8 @@ export function Kod() {
             )}
             {/* TP-1: seçilemeyen müşteri CI dili için de kurulum yolu (dil listesinde yok / depoda kurulu değil). */}
             {dilVerisi && ciKurabilir && <MusteriCiKurulumYolu platform={platform} secenekler={dilVerisi.secenekler} seciliDil={seciliDil} degisti={() => void diller.yenile()} />}
+            </div>
+            </div>
             {islem.hata &&
               (dilCakismasiMi(islem.hataNesnesi) ? <DilCakismasiKutusu hata={islem.hataNesnesi} /> : <HataKutusu hata={islem.hata} kaynak={islem.hataNesnesi} />)}
             </KuyrukPanosu>
@@ -288,6 +301,23 @@ export function Kod() {
             ) : caseler.hata && !caseler.veri ? (
               <HataKutusu hata={caseler.hata} kaynak={caseler.hataNesnesi} yenile={() => void caseler.yenile()} />
             ) : adaylar.length === 0 ? null : (
+              <>
+              {/* Sıradaki adım: aday listesi başlıklı, sayılı; tümünü seç / temizle tek dokunuş. */}
+              <div className="kod-aday-baslik">
+                <h3>
+                  Bu platformda kodu üretilmemiş onaylı case'ler ({adaylar.length})
+                </h3>
+                {uretebilir && (
+                  <button
+                    type="button"
+                    className="dugme dugme-metin dugme-kucuk"
+                    disabled={islem.calisiyor}
+                    onClick={() => setSecili(seciliAdaylar.length === adaylar.length ? new Set() : new Set(adaylar.map((c) => c.id)))}
+                  >
+                    {seciliAdaylar.length === adaylar.length ? "Seçimi temizle" : "Tümünü seç"}
+                  </button>
+                )}
+              </div>
               <ul className="secim-liste">
                 {adaylar.map((c) => (
                   <li key={c.id}>
@@ -310,6 +340,7 @@ export function Kod() {
                   </li>
                 ))}
               </ul>
+              </>
             )}
           </>
         )}
@@ -403,7 +434,7 @@ export function Kod() {
                           </div>
                         )}
                         {/* Dosya yolu ikincil bilgi: yalnız dosya adı, tam yol ipucunda. */}
-                        <div className="mono soluk kucuk kod-dosya" title={s.dosya_yolu}>
+                        <div className="mono soluk kucuk kod-satir-dosya" title={s.dosya_yolu}>
                           {s.dosya_yolu.split("/").pop()}
                         </div>
                       </td>

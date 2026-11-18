@@ -6,6 +6,7 @@ import { useBildirim } from "../components/Bildirim";
 import { BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { useIslem, useVeri } from "../hooks";
 import { tarih } from "../lib/format";
+import { EylemCubugu, TabloSarici } from "../components/tasarim";
 import { useIzin } from "../auth";
 import { type Izin, izinNedeni } from "../lib/yetki";
 
@@ -107,9 +108,11 @@ export function ClaudeCode() {
             </label>
           ))}
         </fieldset>
-        <IslemDugmesi izin="token.issue" calisiyor={islem.calisiyor} onClick={olustur}>
-          8 saatlik token oluştur
-        </IslemDugmesi>
+        <EylemCubugu>
+          <IslemDugmesi izin="token.issue" calisiyor={islem.calisiyor} onClick={olustur}>
+            8 saatlik token oluştur
+          </IslemDugmesi>
+        </EylemCubugu>
         {kanalKapali && (
           <Uyari ton="bilgi" baslik="IDE (MCP) kanalı henüz etkin değil">
             {kanalKapali}. Çekirdekte <span className="mono">/mcp</span> ucu bağlanınca token üretilebilir; o zamana kadar çalışmayan bir
@@ -182,10 +185,11 @@ export function ClaudeCode() {
         ) : tokenlar.hata && !tokenlar.veri ? (
           <HataKutusu hata={tokenlar.hata} kaynak={tokenlar.hataNesnesi} yenile={() => void tokenlar.yenile()} />
         ) : !tokenlar.veri?.length ? (
-          <BosDurum baslik="Henüz token yok." />
+          <BosDurum kip="satir" baslik="Henüz token yok.">
+            Yukarıdan kapsam seçip 8 saatlik token oluşturun; Claude Code'a bağlama adımları token'la birlikte gösterilir.
+          </BosDurum>
         ) : (
-          <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Token listesi">
-            <table className="tablo tablo-sik">
+          <TabloSarici etiket="Token listesi" yogunluk="sik">
               <thead>
                 <tr>
                   <th scope="col">Kapsam</th>
@@ -193,7 +197,7 @@ export function ClaudeCode() {
                   <th scope="col">Son kullanma</th>
                   <th scope="col">Son kullanım</th>
                   <th scope="col">Durum</th>
-                  <th scope="col">
+                  <th scope="col" className="sutun-eylem">
                     <span className="gorunmez">İşlem</span>
                   </th>
                 </tr>
@@ -203,14 +207,22 @@ export function ClaudeCode() {
                   const suresiDoldu = Date.parse(t.son_kullanma) < Date.now();
                   return (
                     <tr key={t.id}>
-                      <td className="mono">{t.kapsam}</td>
-                      <td>{tarih(t.olusturma)}</td>
-                      <td>{tarih(t.son_kullanma)}</td>
-                      <td>{t.son_kullanim ? tarih(t.son_kullanim) : "—"}</td>
-                      <td>
+                      <td className="sutun-kimlik yigin-baslik" data-etiket="Kapsam">
+                        {t.kapsam}
+                      </td>
+                      <td className="sutun-tarih" data-etiket="Oluşturma">
+                        {tarih(t.olusturma)}
+                      </td>
+                      <td className="sutun-tarih" data-etiket="Son kullanma">
+                        {tarih(t.son_kullanma)}
+                      </td>
+                      <td className="sutun-tarih" data-etiket="Son kullanım">
+                        {t.son_kullanim ? tarih(t.son_kullanim) : "—"}
+                      </td>
+                      <td className="sutun-durum" data-etiket="Durum">
                         {t.iptal ? <Cip ton="notr">İptal</Cip> : suresiDoldu ? <Cip ton="notr">Süresi doldu</Cip> : <Cip ton="basari">Etkin</Cip>}
                       </td>
-                      <td>
+                      <td className="sutun-eylem" data-etiket="İşlem">
                         {!t.iptal && !suresiDoldu && (
                           <IslemDugmesi
                             izin="token.read"
@@ -234,8 +246,7 @@ export function ClaudeCode() {
                   );
                 })}
               </tbody>
-            </table>
-          </div>
+          </TabloSarici>
         )}
         {iptal.hata && <HataKutusu hata={iptal.hata} kaynak={iptal.hataNesnesi} />}
       </Kart>

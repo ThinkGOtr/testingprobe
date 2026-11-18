@@ -19,7 +19,7 @@ import { BildirimProvider } from "../components/Bildirim";
 import { CaseKarti, kucukDuzeltmeDurumu } from "../components/CaseKarti";
 import { HataKutusu } from "../components/ui";
 import { adimAdi, akisAdimi, hataAdimi } from "../lib/akis";
-import { oturumAc, sar } from "../test/yardimci";
+import { oturumAc, sar, sekmeAc } from "../test/yardimci";
 import { bosBulguMetni, DENETIM_HATALI, poYenidenDenemedeGecerli, uretimHatasiMi } from "./GereksinimDetay";
 import { KontrolKulesi } from "./KontrolKulesi";
 
@@ -189,7 +189,8 @@ describe("canlı derleme (VITE_MOCK=0): uydurma KPI yok", () => {
   it("örnek veri modunda da manuel baz değer uydurulmaz: 'ölçülmedi', kazanç yüzdesi yok; tam genişlik ÖRNEK VERİ bandı", async () => {
     await oturumAc("sunucu");
     sar(<KontrolKulesi />);
-    // F4: Hazırlık kazancı AI katkısı kartından KPI şeridine taşındı (§5); bölge "AI katkısı" kalır.
+    // IA-19: AI katkısı "Hız ve maliyet" bölüm sekmesinde; ölçülmüş kazanç Hazırlık kartında (şerit en çok 6).
+    await sekmeAc("Hız ve maliyet");
     expect(await screen.findByRole("region", { name: "AI katkısı" })).toBeInTheDocument();
     const serit = screen.getByTestId("kule-kpi");
     // IA-19: ölçülmemiş kazanç kutu değil, "Ölçülmeyenler" satırında.
@@ -203,6 +204,7 @@ describe("canlı derleme (VITE_MOCK=0): uydurma KPI yok", () => {
   it("örnek veri (tümü REPLAY): 'Case başına AI + review' ölçülmedi; AI süresi sayı olarak yazılmaz (core eşi)", async () => {
     await oturumAc("sunucu");
     sar(<KontrolKulesi />);
+    await sekmeAc("Hız ve maliyet");
     const ai = await screen.findByRole("region", { name: "AI katkısı" });
     const metrik = within(ai).getByText("Case başına AI + review").closest(".metrik") as HTMLElement;
     expect(within(metrik).getByText(/ölçülmedi/)).toBeInTheDocument();

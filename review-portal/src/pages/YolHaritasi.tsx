@@ -36,6 +36,8 @@ const HAL: Record<AdimHali, { etiket: string; ton: Ton; isaret: string }> = {
 };
 
 const TUR: Record<YolAdimi["tur"], string> = { sistem: "Sistem", ai: "AI", insan: "İnsan kapısı", ai_insan: "AI + insan" };
+/** Adım türü çipi tonu (yerel `.yh-tur` kopyası yerine ortak Cip; renkler aynı belirteçler). */
+const TUR_TONU: Record<YolAdimi["tur"], Ton> = { sistem: "notr", ai: "vurgu", insan: "basari", ai_insan: "vurgu" };
 
 interface Yuklenen extends YolGirdisi {
   okunamayan: string[];
@@ -101,7 +103,9 @@ function AdimSatiri({ a }: { a: YolAdimi }) {
             <span className="gorunmez">Adım {a.no}: </span>
             {a.ad}
           </span>
-          <span className="yh-tur">{TUR[a.tur]}</span>
+          <Cip ton={TUR_TONU[a.tur]} className="yh-tur">
+            {TUR[a.tur]}
+          </Cip>
           <Cip ton={h.ton}>{h.etiket}</Cip>
           <ReplayRozeti mode={a.mode} />
         </div>

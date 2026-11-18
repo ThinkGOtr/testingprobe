@@ -3846,28 +3846,7 @@ td .olculmedi {
   font-weight: 600;
 }
 /* Tür metni tür renginde hap (sistem nötr, insan yeşil, AI ve AI + insan mor). */
-.yh-tur {
-  display: inline-flex;
-  align-items: center;
-  font-weight: 600;
-  font-size: var(--fs-hap);
-  padding: 1px var(--space-2);
-  border-radius: var(--radius-hap);
-  border: 1px solid color-mix(in srgb, var(--notr) 30%, transparent);
-  background: var(--notr-bg);
-  color: var(--notr);
-  white-space: nowrap;
-}
-.yh-adim[data-tur="insan"] .yh-tur {
-  border-color: color-mix(in srgb, var(--ok) 30%, transparent);
-  background: var(--ok-bg);
-  color: var(--ok);
-}
-.yh-adim:is([data-tur="ai"], [data-tur="ai_insan"]) .yh-tur {
-  border-color: color-mix(in srgb, var(--vurgu) 30%, transparent);
-  background: var(--vurgu-bg);
-  color: var(--vurgu);
-}
+/* Adım türü çipi: ortak Cip (YolHaritasi TUR_TONU); yerel hap kopyası kaldırıldı. */
 .yh-kanit {
   margin: var(--space-0) 0 0;
   font-size: var(--fs-ikincil);
@@ -6872,7 +6851,7 @@ code {
   margin-top: var(--space-1);
   overflow-wrap: anywhere;
 }
-.kod-dosya {
+.kod-satir-dosya {
   margin-top: var(--space-0);
   overflow-wrap: anywhere;
 }
@@ -7038,4 +7017,129 @@ code {
 }
 .sonraki-adim-satiri {
   margin: 0 0 12px;
+}
+
+/* ===== Şerit pano (UX: Kontrol Kulesi IA-19/ET-08, Kod üretimi IA-13/DZ-06, Yol haritası, Otomasyon,
+   Claude Code) — yalnız ölçek değişkenleri ve mevcut renk belirteçleri ===== */
+
+/* Kule KPI şeridi: en çok 6 karar göstergesi (ölçülmeyenler kutu değil, tek satır). Öğe sayısı veriye göre
+   1–6 değişir; sütunlar eşit ve sarar (≥11rem), öğeler subgrid (etiket · değer · çubuk/alt · hedef aynı
+   çizgide). Çift sınıf: genel :has(5/6/7 öğe) kurallarının özgüllüğünü geçer. */
+.metrik-izgara.kule-kpi.kule-kpi {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+}
+.metrik-izgara.kule-kpi.kule-kpi > * {
+  display: grid;
+  grid-column: auto;
+  grid-row: span 4;
+  grid-template-rows: subgrid;
+  row-gap: var(--space-0);
+  align-content: start;
+}
+/* 641–1279 px: üç sütun (5 → 3+2, 6 → 3+3; 4+1 yalnız kalan kutu olmaz). */
+@media (min-width: 641px) and (max-width: 1279px) {
+  .metrik-izgara.kule-kpi.kule-kpi {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 640px) {
+  .metrik-izgara.kule-kpi.kule-kpi {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+/* Ölçülmeyenler satırı şeridin hemen altında, sekmelerden önce (tek bilgi satırı). */
+.kule-kpi + .olculmeyenler {
+  margin-top: calc(-1 * var(--space-2));
+}
+/* Kule bölüm sekmeleri: şerit sayfa akışında, paneller kart aralığıyla. */
+.kule-bolumler {
+  margin-top: var(--space-4);
+}
+
+/* Grafik okunurluğu: sütun üstünde değer, sağda ızgara etiketi; tablo alternatifi açılır. */
+.grafik-deger {
+  fill: var(--text-2);
+  font-size: var(--fs-sik);
+  font-weight: var(--fw-vurgu);
+  font-family: var(--font);
+  font-variant-numeric: tabular-nums;
+}
+.grafik-eksen-y {
+  font-size: var(--fs-hap);
+}
+.grafik-tablo {
+  margin-top: var(--space-2);
+}
+.grafik-tablo > summary {
+  cursor: pointer;
+  color: var(--text-2);
+}
+.grafik-tablo > .tablo {
+  margin-top: var(--space-2);
+}
+
+/* Kod üretimi (IA-13): üretim ayarları tek blok; dile bağlı notlar eşit aralıklı ve okunur genişlikte;
+   aday listesi başlıklı. Satırda test adı, çipler ve neden alt alta (çip başlığa yapışmaz). */
+.kod-ayarlar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-soft);
+}
+.kod-ayarlar > .platform-secici,
+.kod-ayarlar .dil-secici .platform-secici {
+  margin-bottom: 0;
+}
+.kod-dil-notlari {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: 60rem;
+}
+.kod-dil-notlari:empty {
+  display: none;
+}
+.kod-dil-notlari .uyari-kutusu,
+.kod-dil-notlari .kurulum-pr,
+.kod-dil-notlari .kurulum-pr-yolu {
+  margin: 0;
+}
+.kod-pano-katli[open] > .kod-ayarlar {
+  margin-top: var(--space-3);
+}
+.kod-aday-baslik {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+.kod-aday-baslik > h3 {
+  margin: 0;
+}
+.kod-tablosu td.sutun-metin > .satir-ogeler {
+  display: flex;
+  margin-top: var(--space-1);
+}
+.kod-tablosu .kod-grup-satiri th {
+  font-size: var(--fs-ikincil);
+}
+
+/* Otomasyon (IA-25): kart başı tek cümle etki (durum çipi başlıkta), ayrıntı "Nasıl çalışır?" açılırında. */
+.otomasyon-etki {
+  margin: 0 0 var(--space-2);
+  font-weight: var(--fw-vurgu);
+}
+.otomasyon-ayrinti {
+  margin-bottom: var(--space-3);
+}
+.otomasyon-ayrinti > summary {
+  cursor: pointer;
+  color: var(--text-2);
+}
+.otomasyon-ayrinti > p {
+  margin: var(--space-2) 0 0;
 }

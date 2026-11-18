@@ -8,7 +8,7 @@ import { ApiError } from "../api/http";
 import { mockCaseKalitesi } from "../api/mock/caseKalitesi";
 import { caseKalitesiUyarla } from "../api/uyumCaseKalitesi";
 import { KontrolKulesi } from "../pages/KontrolKulesi";
-import { oturumAc, sar } from "../test/yardimci";
+import { oturumAc, sar, sekmeAc } from "../test/yardimci";
 import { CaseKalitesiBolumu } from "./CaseKalitesi";
 
 afterEach(() => {
@@ -47,6 +47,7 @@ describe("Case kalitesi bölümü", () => {
   it("Kontrol Kulesi'nde mock verisiyle: KPI, P8 dağılımı, P9 kod/model ayrık, hazır olma etiketleri, teknik, içerik kontrolü", async () => {
     await oturumAc("sunucu");
     sar(<KontrolKulesi />);
+    await sekmeAc("Kalite");
     const bolum = await screen.findByRole("region", { name: "Case kalitesi" });
     const kpi = within(bolum).getByTestId("case-kalitesi-kpi");
     expect(kpi).toHaveTextContent("Gereksinim kapsamı");
