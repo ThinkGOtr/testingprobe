@@ -548,9 +548,7 @@ def _istenen_dil(
         raise CiError(f"'{istenen}' dili {platform} platformunda TP CI'ında koşmaz")
     if istenen is None:
         return None
-    if istenen not in platformlar.TAM_HAT_DILLERI and not platformlar.tam_hat_mi(
-        istenen, platform
-    ):
+    if istenen not in platformlar.TAM_HAT_DILLERI and not platformlar.tam_hat_mi(istenen, platform):
         # K3: doğrulanmamış diller (csharp | python) derlenmez/koşulmaz; PR'a ve CI'a giremez.
         raise CiError(f"'{istenen}' dili CI'da koşmaz (yalnızca ts | java tam hattır)")
     return istenen
@@ -2532,7 +2530,14 @@ def serialize_runs(
         if sids
         else {}
     )
-    basarisizlar = _basarisiz_ozetleri(session, [r.id for r in runs if sayac.get(r.id, {}).get("failed") or sayac.get(r.id, {}).get("timedout")])
+    basarisizlar = _basarisiz_ozetleri(
+        session,
+        [
+            r.id
+            for r in runs
+            if sayac.get(r.id, {}).get("failed") or sayac.get(r.id, {}).get("timedout")
+        ],
+    )
     out = []
     for r in runs:
         s = sayac.get(r.id, {})
@@ -2738,7 +2743,9 @@ def list_runs(
     )
     sabit: set[uuid.UUID] = set()
     # UX IA-15 sayfalama: sabitlenen defect adayı kanıtı yalnız ilk sayfaya eklenir.
-    if offset <= 0 and all(x is None for x in (tetik, kaynak, sonuc, pr_no, script_id, depo, ortam)):
+    if offset <= 0 and all(
+        x is None for x in (tetik, kaynak, sonuc, pr_no, script_id, depo, ortam)
+    ):
         # Açık defect adayının kırmızı kanıtı (son yerel kontrolü) pencereden düşmez: yeni
         # tetikler listeyi doldursa da filtresiz listede kalır (`sabit=true`).
         gorulen = {r.id for r in runs}

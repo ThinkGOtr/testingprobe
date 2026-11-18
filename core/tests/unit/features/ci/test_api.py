@@ -112,7 +112,9 @@ def test_runs_listesi_basarisiz_ozet_ve_sayfalama(
     for o in ozet:
         assert set(o) == {"test_adi", "case_ref", "failure_id", "sinif"}
     # Sayfalama: tek koşu var; ikinci sayfa boş, geçersiz offset 422.
-    assert [x["id"] for x in api.get("/runs", params={"offset": 0, "limit": 1}).json()] == [str(rid)]
+    assert [x["id"] for x in api.get("/runs", params={"offset": 0, "limit": 1}).json()] == [
+        str(rid)
+    ]
     assert api.get("/runs", params={"offset": 1}).json() == []
     assert api.get("/runs", params={"offset": -1}).status_code == 422
 
