@@ -23,7 +23,7 @@ public class TPD1WindowsC2_3f9b1c2eTests : TestTabani
         // S1 — Giriş sayfasını aç
         GirisEkrani.Ac();
         // S2 — Bayi kullanıcısıyla giriş yap
-        GirisEkrani.GirisYap("bayi1", "Demo123!");
+        GirisEkrani.GirisYap("bayi1", Gizli("TP_TESTVERI_KOSU_BAYI1"));
         // S3 — "Portakal Gazozu 1L" (P-001) kartında adedi 7 yapıp "Sepete ekle" butonuna bas
         KatalogEkrani.SepeteEkle("P-001", 7);
         // S4 — Üst menüden sepete git

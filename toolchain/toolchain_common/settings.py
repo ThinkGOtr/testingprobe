@@ -6,6 +6,7 @@ import dataclasses
 import json
 import logging
 import os
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -329,15 +330,41 @@ def _kosu_parolalari_ortamdan(ham: str) -> dict[str, str]:
         return {}
 
 
-def kosu_parola_env(cfg: Settings) -> dict[str, str]:
+KOSU_PAROLA_ONEKI = "TP_TESTVERI_KOSU_"
+_SIR_ADI_RE = re.compile(r"TP_TESTVERI_[A-Z0-9_]{1,64}")
+
+
+def kosu_parola_adi(kullanici: str) -> str | None:
+    """Üretilen testin okuduğu koşu hesabı parolası adı `TP_TESTVERI_KOSU_<KULLANICI>` (büyük
+    harf; [A-Z0-9] dışı `_`). core `render.kosu_parola_adi` ve iskeletlerle aynı kural."""
+    ad = KOSU_PAROLA_ONEKI + re.sub(r"[^A-Z0-9]", "_", kullanici.upper())
+    return ad if _SIR_ADI_RE.fullmatch(ad) else None
+
+
+def kosu_parola_env(cfg: Settings, seed: Mapping[str, str] | None = None) -> dict[str, str]:
     """Test sürecine verilen koşu hesabı parolaları: `TP_RUN_DEALER_PASSWORDS` = JSON
     `{"<kullanıcı>": "<parola>"}`, yalnız koşu hesaplarından (`run_dealers`) parolası girilenler.
-    Hiçbiri yoksa değişken verilmez (iskelet bugünkü ortak parolayla girer)."""
+    Hiçbiri yoksa değişken verilmez (iskelet bugünkü ortak parolayla girer).
+
+    Üretilen testler seed parolasıyla girişte `TP_TESTVERI_KOSU_<KULLANICI>` okur: parolası girilen
+    her hesap için bu ad da verilir. `seed` (kullanıcı → seed parolası; ortamı süreç içinde
+    yazamayan Java hedefleri için iskeletten okunur) verilirse eksik adlar seed parolasıyla
+    doldurulur. Adı
+    çakışan kullanıcılar (ör. `a.b` / `a_b`) için ad verilmez."""
     parolalar = getattr(cfg, "run_dealer_passwords", None) or {}
     secili = {u: p for u in getattr(cfg, "run_dealers", ()) or () if (p := parolalar.get(u))}
-    if not secili:
-        return {}
-    return {"TP_RUN_DEALER_PASSWORDS": json.dumps(secili, ensure_ascii=False, sort_keys=True)}
+    env: dict[str, str] = {}
+    if secili:
+        env["TP_RUN_DEALER_PASSWORDS"] = json.dumps(secili, ensure_ascii=False, sort_keys=True)
+    adaylar = {**(seed or {}), **secili}
+    adlar: dict[str, list[str]] = {}
+    for u in adaylar:
+        if (ad := kosu_parola_adi(u)) is not None:
+            adlar.setdefault(ad, []).append(u)
+    for ad, kullanicilar in adlar.items():
+        if len(kullanicilar) == 1:
+            env[ad] = adaylar[kullanicilar[0]]
+    return env
 
 
 def github_kipi(cfg: Settings, env: Mapping[str, str] | None = None) -> bool:

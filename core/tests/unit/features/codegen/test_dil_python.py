@@ -109,8 +109,25 @@ def cagrilar(kaynak: str) -> list[tuple[str, str, list[Any]]]:
         if isinstance(st, ast.Expr) and isinstance(st.value, ast.Call):
             c = st.value
             assert isinstance(c.func, ast.Attribute) and isinstance(c.func.value, ast.Name)
-            out.append((c.func.value.id, c.func.attr, [ast.literal_eval(a) for a in c.args]))
+            out.append((c.func.value.id, c.func.attr, [_deger(a) for a in c.args]))
     return out
+
+
+def _deger(dugum: ast.expr) -> Any:
+    """Literal ya da `os.environ["TP_TESTVERI_…"]` (gizli veri / koşu hesabı parolası) → `$AD`."""
+    if (
+        isinstance(dugum, ast.Subscript)
+        and isinstance(dugum.value, ast.Attribute)
+        and dugum.value.attr == "environ"
+        and isinstance(dugum.slice, ast.Constant)
+    ):
+        return f"${dugum.slice.value}"
+    return ast.literal_eval(dugum)
+
+
+def bayiler_seedsiz() -> dict[str, dict[str, str]]:
+    """Seed parolası case'teki parolayla eşleşmeyen bayiler: koşu hesabı ikamesi yapılmaz."""
+    return {u: {**d, "password": "seed-farkli"} for u, d in girdi().dealers.items()}
 
 
 # ========================================================================= golden + yol
@@ -274,7 +291,9 @@ def test_java_tablosuyla_eslenen_uygulama_ve_python_tablosu_ayni_kodu_uretir() -
     dogrudan = app()
     cevrilmis = app(mapping=py.eslemeyi_donustur(APP_GOLDEN["output"]))
     assert cagrilar(dogrudan.content) == cagrilar(cevrilmis.content)
-    assert ("giris_ekrani", "giris_yap", ["bayi1", "Demo123!"]) in cagrilar(dogrudan.content)
+    assert ("giris_ekrani", "giris_yap", ["bayi1", "$TP_TESTVERI_KOSU_BAYI1"]) in cagrilar(
+        dogrudan.content
+    )
 
 
 @pytest.mark.parametrize(
@@ -327,19 +346,24 @@ def test_kotu_degerler_yalniz_literal_olur(tmp_path: Path) -> None:
 
 
 def test_gizli_test_verisi_ortamdan_okunur(tmp_path: Path) -> None:
-    r = web(gizli_ortam={"Demo123!": "TP_TESTVERI_DEMO_PAROLA"})
+    r = web(gizli_ortam={"Demo123!": "TP_TESTVERI_DEMO_PAROLA"}, dealers=bayiler_seedsiz())
     assert 'os.environ["TP_TESTVERI_DEMO_PAROLA"]' in r.content
     assert "Demo123!" not in r.content and "__import__" not in r.content
     assert r.content.count("\nimport os\n") == 1
     yaz(tmp_path, r)
     assert guard(tmp_path, r.test_file)["ok"]
     # Sır yoksa `os` içe aktarılmaz.
-    assert "import os" not in web().content
+    assert "import os" not in web(dealers=bayiler_seedsiz()).content
+    # Seed parolasıyla giriş: koşu hesabı parolası ortamdan (koruma geçer).
+    k = web()
+    assert 'login_page.login("bayi1", os.environ["TP_TESTVERI_KOSU_BAYI1"])' in k.content
+    yaz(tmp_path / "kosu", k)
+    assert guard(tmp_path / "kosu", k.test_file)["ok"]
 
 
 def test_maskelenmemis_gizli_deger_sizintisi_reddedilir() -> None:
     with pytest.raises(render.GizliSizinti):
-        web(gizli_taranacak=["Demo123!"])
+        web(gizli_taranacak=["Demo123!"], dealers=bayiler_seedsiz())
 
 
 def test_dealer_python_giris_metoduyla_da_sabitlenir() -> None:

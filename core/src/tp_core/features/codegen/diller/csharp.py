@@ -276,7 +276,7 @@ def build_context(inp: _r.RenderInput, platform: str, template_hash: str) -> dic
         return {
             "fixture": erisimci_adi(str(item.get("po"))),
             "method": metot_adi(str(item.get("method")), platform),
-            "args": [_r._gizli_arg(a, gizli) for a in degerler],
+            "args": _r._kosu_arglari(item, inp.dealers, LOGIN_METOTLARI, gizli),
         }
 
     steps: list[dict[str, Any]] = []

@@ -115,6 +115,8 @@ def test_uygulama_eslemesi_java_ile_ayni_cagrilari_uretir() -> None:
     java = (HERE / "golden" / "TPD1AndroidC2_3f9b1c2eTest.java").read_text(encoding="utf-8")
     kotlin = GOLDEN.read_text(encoding="utf-8")
     cagri = re.compile(r"^\s+([a-z]\w*\(\)\.\w+\(.*\));?$", re.M)
+    # Kotlin müşteri CI'ında koşar: koşu hesabı parolası ikamesi yok (case'teki parola literal).
+    java = java.replace('System.getenv("TP_TESTVERI_KOSU_BAYI1")', '"Demo123!"')
     assert cagri.findall(java) == cagri.findall(kotlin)
 
 

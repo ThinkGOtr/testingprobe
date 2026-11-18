@@ -48,6 +48,7 @@ yeniden deneme eklentisi kullanılmaz): istenirse yok sayılır ve raporda belir
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import tempfile
 import time
@@ -224,6 +225,21 @@ def maven_argv(
         argv += [f"-Dtest={test_selector(test_files)}", "-Dsurefire.failIfNoSpecifiedTests=true"]
     argv += ["test-compile", "surefire:test"] if compile_first else ["surefire:test"]
     return argv
+
+
+_BAYI_RE = re.compile(r'new\s+BayiBilgisi\(\s*"([A-Za-z0-9_.-]+)"\s*,\s*"([^"\\]*)"')
+BAYILER_YOLU = "src/test/java/com/antreklabs/bayi/altyapi/Bayiler.java"
+
+
+def seed_bayiler(root: Path) -> dict[str, str]:
+    """İskeletin seed bayileri (`altyapi/Bayiler.java` `new BayiBilgisi("u", "p", …)`;
+    çalıştırılmaz, sözdizimsel). Dosya yoksa ya da okunamazsa {} (yalnız koşu ortamındaki
+    parolalar verilir)."""
+    try:
+        kaynak = (root / BAYILER_YOLU).read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    return {u: p for u, p in _BAYI_RE.findall(kaynak) if p}
 
 
 def maven_env(
@@ -485,6 +501,9 @@ def _run_maven(
     if tmp_dir is not None:
         tmp_dir.mkdir(parents=True, exist_ok=True)
     env = maven_env(cfg, req, platform, tmp_dir)
+    # Üretilen testler `System.getenv("TP_TESTVERI_KOSU_<KULLANICI>")` okur; JVM ortamı süreç içinde
+    # yazılamaz: koşu ortamında parolası olmayan bayiler için iskeletin seed parolası verilir.
+    env.update({k: v for k, v in kosu_parola_env(cfg, seed_bayiler(root)).items() if k not in env})
     try:
         return _run_repeats(
             cfg, req, platform, root, repeats, allure_dir, log_parts, kok, env, tmp_dir

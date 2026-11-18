@@ -75,7 +75,10 @@ def test_sablon_sozlesmesi() -> None:
     k = render.render_test(girdi(), RULES).content
     importlar = re.findall(r"^import .*$", k, re.M)
     assert importlar == ['import { test } from "../fixtures";']
-    for yasak in ("page.", "expect(", "test.step", "process", "`", "if (", "for (", " new "):
+    # Tek `process` kullanımı: koşu hesabı parolasının ortam okuması (seed parolasıyla giriş).
+    assert k.count("process") == 1
+    assert 'await loginPage.login("bayi1", process.env.TP_TESTVERI_KOSU_BAYI1);' in k
+    for yasak in ("page.", "expect(", "test.step", "`", "if (", "for (", " new "):
         assert yasak not in k, yasak
     assert 'test.use({ dealerUsername: "bayi1" });' in k
 
@@ -149,7 +152,9 @@ def test_gizli_test_verisi_ortamdan_okunur() -> None:
     case["title"] = "bayi1 / Demo123! ile giriş"
     for adim in case.get("steps") or []:
         adim["action"] = f"{adim.get('action')} (Demo123!)"
-    r = render.render_test(girdi(2, case=case, gizli_ortam=gizli), RULES)
+    # Seed parolası değil (bayi ayrı parolalı): K19 ortam okuması (koşu hesabı ikamesi yok).
+    bayiler = {u: {**d, "password": "seed-farkli"} for u, d in DEALERS.items()}
+    r = render.render_test(girdi(2, case=case, gizli_ortam=gizli, dealers=bayiler), RULES)
     assert 'await loginPage.login("bayi1", process.env.TP_TESTVERI_DEMO_PAROLA);' in r.content
     assert "Demo123!" not in r.content and "bayi1 / ••• ile giriş" in r.content
     # Gizli değer yoksa (ya da boş harita) çıktı golden'la birebir; şablon hash'i değişmedi.
@@ -161,4 +166,27 @@ def test_gizli_test_verisi_ortamdan_okunur() -> None:
     with pytest.raises(RenderError):
         render.OrtamDegeri("PATH")
     with pytest.raises(RenderError):
-        render.render_test(girdi(2, gizli_ortam={"Demo123!": "HOME"}), RULES)
+        render.render_test(girdi(2, gizli_ortam={"Demo123!": "HOME"}, dealers=bayiler), RULES)
+
+
+def test_kosu_hesabi_parolasi_ortamdan() -> None:
+    """Seed parolasıyla giriş → koşu hesabı parolası (`TP_TESTVERI_KOSU_<KULLANICI>`); bilinçli
+    negatif (hatalı parola) ve bilinmeyen kullanıcı literal kalır; K19 sırrından önce gelir."""
+    assert render.kosu_parola_adi("bayi1") == "TP_TESTVERI_KOSU_BAYI1"
+    assert render.kosu_parola_adi("test.kullanici-2") == "TP_TESTVERI_KOSU_TEST_KULLANICI_2"
+    assert render.kosu_parola_adi("x" * 60) is None
+    seed = DEALERS["bayi1"]["password"]
+    r = render.render_test(girdi(2, gizli_ortam={seed: "TP_TESTVERI_DEMO_PAROLA"}), RULES)
+    assert 'login("bayi1", process.env.TP_TESTVERI_KOSU_BAYI1)' in r.content
+    assert "TP_TESTVERI_DEMO_PAROLA" not in r.content and seed not in r.content
+    m = copy.deepcopy(golden_mapping(2))
+    giris = next(s for s in m["step_mapping"] if s["method"] == "login")
+    giris["args"] = ["bayi1", "YanlisParola1"]
+    r = render.render_test(girdi(2, mapping=m), RULES)
+    assert 'login("bayi1", "YanlisParola1")' in r.content and "process" not in r.content
+    giris["args"] = ["yabanci", seed]
+    r = render.render_test(girdi(2, mapping=m), RULES)
+    assert f'login("yabanci", {json.dumps(seed)})' in r.content and "process" not in r.content
+    # Adı çakışan iki bayi: ikame yapılmaz (hangi hesabın parolası olduğu belirsiz).
+    cakisan = {**DEALERS, "BAYI1": DEALERS["bayi1"]}
+    assert "process" not in render.render_test(girdi(2, dealers=cakisan), RULES).content

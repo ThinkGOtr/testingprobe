@@ -5,6 +5,8 @@
 # Onaylı case hash: f7a67a7af02b8a418cef1ecd99f091def093ea2e4dc866d50dec36cf3c004573
 # Eşleme: verify_and_map_app · platform: android · dil: python · mod: replay · bundle: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 # Eşleme hash: 46175a46bd07b3e2b3e31ca480890fd9846f06f5c3276a5a93846e227326987b · şablon: 2ef4f0120e923a7910802204fdeca23a9cdff7d1b0805e617d971d57f4729f86
+import os
+
 import pytest
 
 from ekranlar.giris_ekrani import GirisEkrani
@@ -25,7 +27,7 @@ def test_tpd_1_android_c2_3f9b1c2e(driver) -> None:
     # S1 — Giriş sayfasını aç
     giris_ekrani.ac()
     # S2 — Bayi kullanıcısıyla giriş yap
-    giris_ekrani.giris_yap("bayi1", "Demo123!")
+    giris_ekrani.giris_yap("bayi1", os.environ["TP_TESTVERI_KOSU_BAYI1"])
     # S3 — "Portakal Gazozu 1L" (P-001) kartında adedi 7 yapıp "Sepete ekle" butonuna bas
     katalog_ekrani.sepete_ekle("P-001", 7)
     # S4 — Üst menüden sepete git

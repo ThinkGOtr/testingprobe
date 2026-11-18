@@ -200,8 +200,15 @@ def test_case_api_ve_kullanim_basligi_maskeli(
 
 def test_render_bilinen_gizli_duz_gecerse_engel() -> None:
     """Güvenlik #4/#5: sırrı tanımsız ya da iç içe geçen gizli değer → fail-closed."""
+    # Seed parolasıyla giriş koşu hesabı parolasına çevrilir (düz değer kalmaz); fail-closed
+    # taramayı sınamak için bayilerin seed parolası case'tekinden farklı verilir.
+    assert (
+        DEMO_PAROLA
+        not in render.render_test(girdi(2, gizli_taranacak=(DEMO_PAROLA,)), RULES).content
+    )
+    seedsiz = {u: {**d, "password": "seed-farkli"} for u, d in girdi().dealers.items()}
     with pytest.raises(render.GizliSizinti) as e:
-        render.render_test(girdi(2, gizli_taranacak=(DEMO_PAROLA,)), RULES)
+        render.render_test(girdi(2, gizli_taranacak=(DEMO_PAROLA,), dealers=seedsiz), RULES)
     assert DEMO_PAROLA not in str(e.value)
     # Sır tanımlı: ortam okuması basılır, tarama temiz.
     r = render.render_test(
@@ -240,7 +247,10 @@ def test_sir_tanimsiz_duz_parolali_case_pr_acmaz(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Güvenlik #5: katalogdan önce yazılmış (atıfsız, düz "Demo123!") onaylı case + sır
-    tanımsız → render taraması `test_verisi` engeli; commit/PR yok."""
+    tanımsız. 2026-11-18'den beri seed parolasıyla giriş koşu hesabı parolasının ortam okumasına
+    (`TP_TESTVERI_KOSU_BAYI1`) çevrilir: üretilen kodda düz parola kalmaz, PR açılır. Düz değerin
+    giriş dışında geçtiği durumun fail-closed engeli:
+    `test_render_bilinen_gizli_duz_gecerse_engel`."""
     from tests.unit.features.codegen.conftest import golden_cases, tpd1_acs
     from tp_core.audit import content_hash
     from tp_core.models import Requirement, Script, TestCase, case_id
@@ -284,6 +294,8 @@ def test_sir_tanimsiz_duz_parolali_case_pr_acmaz(
     run_jobs(engine)
     with session_scope() as s:
         sc, cg = s.get(Script, uuid.UUID(sid)), s.get(ScriptCodegen, uuid.UUID(sid))
-        assert sc.durum == "failed" and cg.engel_turu == "test_verisi", cg.engel_nedeni
-        assert DEMO_PAROLA not in (cg.engel_nedeni or "")
-    assert codegen.forge.find_open_pr(f"tp/case-{cid}") is None
+        assert sc.durum == "pr_open", cg.engel_nedeni
+        assert "process.env.TP_TESTVERI_KOSU_BAYI1" in sc.icerik
+        assert DEMO_PAROLA not in sc.icerik
+    pr = codegen.forge.find_open_pr(f"tp/case-{cid}")
+    assert pr is not None and DEMO_PAROLA not in pr.body

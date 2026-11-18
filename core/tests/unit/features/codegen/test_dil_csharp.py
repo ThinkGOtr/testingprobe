@@ -167,7 +167,7 @@ def test_web_golden() -> None:
     )
     assert not sonuc.dogrulanmamis
     assert sonuc.dealer == "bayi1"
-    assert 'await LoginPage.LoginAsync("bayi1", "Demo123!");' in sonuc.content
+    assert 'await LoginPage.LoginAsync("bayi1", Gizli("TP_TESTVERI_KOSU_BAYI1"));' in sonuc.content
     assert "await LoginPage.GotoAsync();" in sonuc.content
 
 
@@ -175,7 +175,7 @@ def test_windows_golden() -> None:
     sonuc = cs.render_platform(girdi(2, app=True), "windows", RULES)
     golden_karsilastir("TPD1WindowsC2_3f9b1c2eTests.cs", sonuc.content)
     assert sonuc.repo_path == "e2e-app-csharp/Tests/Generated/TPD1WindowsC2_3f9b1c2eTests.cs"
-    assert 'GirisEkrani.GirisYap("bayi1", "Demo123!");' in sonuc.content
+    assert 'GirisEkrani.GirisYap("bayi1", Gizli("TP_TESTVERI_KOSU_BAYI1"));' in sonuc.content
     assert "await" not in sonuc.content.split("namespace", 1)[1]
     assert '[Category("windows")]' in sonuc.content
 
@@ -248,10 +248,17 @@ def test_desteklenmeyen_deger_turu_reddedilir() -> None:
         cs.render_platform(girdi(2, mapping=m), "web", RULES)
 
 
+# Seed parolası case'teki parolayla eşleşmeyen bayiler: koşu hesabı ikamesi yapılmaz (K19 yolu).
+SEEDSIZ = {u: {**d, "password": "seed-farkli"} for u, d in DEALERS.items()}
+
+
 def test_gizli_veri_ortamdan_okunur_ve_sizinti_yok() -> None:
     sonuc = cs.render_platform(
         girdi(
-            2, gizli_ortam={"Demo123!": "TP_TESTVERI_BAYI1_PAROLA"}, gizli_taranacak=("Demo123!",)
+            2,
+            gizli_ortam={"Demo123!": "TP_TESTVERI_BAYI1_PAROLA"},
+            gizli_taranacak=("Demo123!",),
+            dealers=SEEDSIZ,
         ),
         "web",
         RULES,
@@ -266,7 +273,9 @@ def test_gizli_sizinti_fail_closed() -> None:
     case = copy.deepcopy(golden_case(2))
     case["title"] = "parola Demo123! ile giriş"
     with pytest.raises(r.GizliSizinti):
-        cs.render_platform(girdi(2, case=case, gizli_taranacak=("Demo123!",)), "web", RULES)
+        cs.render_platform(
+            girdi(2, case=case, gizli_taranacak=("Demo123!",), dealers=SEEDSIZ), "web", RULES
+        )
 
 
 def test_yanlis_cati_reddedilir() -> None:

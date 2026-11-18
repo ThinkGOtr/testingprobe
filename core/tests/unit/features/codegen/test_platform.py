@@ -175,7 +175,8 @@ def test_java_golden_cikti() -> None:
         f'@Test(groups = {{"uretilen", "android", "tp-case-{CASE_ID}", "TPD-1"}}, '
         'description = "7 adet kampanyalı üründe 1 adet bedava verilir")'
     ) in k
-    assert '    girisEkrani().girisYap("bayi1", "Demo123!");' in k
+    # Seed parolasıyla giriş: koşu hesabı parolası ortamdan (iskelet/runner yoksa seed verir).
+    assert '    girisEkrani().girisYap("bayi1", System.getenv("TP_TESTVERI_KOSU_BAYI1"));' in k
     assert '    katalogEkrani().sepeteEkle("P-001", 7);' in k
     assert '    sepetEkrani().dogrulaToplam("150,00 TL");' in k
     assert "\\u" not in k
@@ -758,7 +759,10 @@ def test_java_gizli_test_verisi_ortamdan_okunur() -> None:
     """013 K19: bilinen gizli değer argümanı `System.getenv("<SIR>")`; metinde düz değer yok."""
     case = json.loads(json.dumps(golden_cases()[1]))
     case["title"] = f"{case.get('title')} (Demo123!)"
-    r = render.render_java_test(_girdi(case=case, gizli_ortam=GIZLI_ORTAM), "android", RULES)
+    seedsiz = {u: {**d, "password": "seed-farkli"} for u, d in _girdi().dealers.items()}
+    r = render.render_java_test(
+        _girdi(case=case, gizli_ortam=GIZLI_ORTAM, dealers=seedsiz), "android", RULES
+    )
     assert '    girisEkrani().girisYap("bayi1", System.getenv("TP_TESTVERI_DEMO_PAROLA"));' in (
         r.content
     )

@@ -24,7 +24,7 @@ public class TPD1WebC2_3f9b1c2eTests : TestTabani
         // S1 — Giriş sayfasını aç
         await LoginPage.GotoAsync();
         // S2 — Bayi kullanıcısıyla giriş yap
-        await LoginPage.LoginAsync("bayi1", "Demo123!");
+        await LoginPage.LoginAsync("bayi1", Gizli("TP_TESTVERI_KOSU_BAYI1"));
         // S3 — "Portakal Gazozu 1L" (P-001) kartında adedi 7 yapıp "Sepete ekle" butonuna bas
         await CatalogPage.AddToCartAsync("P-001", 7);
         // S4 — Üst menüden sepete git
