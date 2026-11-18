@@ -121,7 +121,7 @@ describe("kabul kriteri eksik story (TPD-2): ön inceleme açık, case üretimi 
     g.po = { durum: "approved", onaylayan: "po", zaman: "2026-10-30T10:00:00Z", kanal: "jira" };
     uygulama("/gereksinimler/req-tpd-2");
     const dugme = await screen.findByRole("button", { name: "Tasarım modelini üret (iki tur)" });
-    expect(dugme).toBeDisabled();
+    expect(dugme).toHaveAttribute("aria-disabled", "true");
     expect(dugme).toHaveAttribute("title", AC_YOK_CASE_URETILEMEZ);
   });
 

@@ -520,15 +520,8 @@ export function GereksinimDetay() {
       varsayilanSekme={siradaki.sekme}
       ozet={
         <OzetKarti
-          ust={
-            <>
-              <Link to="/gereksinimler">← Gereksinimler</Link>
-              <span className="soluk" aria-hidden="true">
-                {" · "}
-              </span>
-              <Link to={`/gereksinimler/${encodeURIComponent(g.id)}/karar-tablolari`}>Karar tabloları</Link>
-            </>
-          }
+          kirinti={[{ ad: "Gereksinimler", yol: "/gereksinimler" }, { ad: g.jira_key ?? "Gereksinim" }]}
+          ust={<Link to={`/gereksinimler/${encodeURIComponent(g.id)}/karar-tablolari`}>Karar tabloları</Link>}
           kimlik={g.jira_key}
           baslik={g.baslik}
           rozetler={
@@ -961,6 +954,18 @@ function PoKarti({ g, yenile }: { g: Detay; yenile: () => void }) {
 
 const AC_BASLIGI = "🔑 Acceptance Criteria (Kabul Kriterleri)";
 
+/** Doküman içi başlık (ET-13): sekme kartının h2'sinin altında h3; baştaki emoji süstür, ekran okuyucuya okunmaz. */
+function DokumanBasligi({ metin }: { metin: string }) {
+  const m = /^((?:\p{Extended_Pictographic}|\uFE0F|\u200D)+)\s*/u.exec(metin);
+  if (!m) return <h3>{metin}</h3>;
+  return (
+    <h3>
+      <span aria-hidden="true">{m[1]} </span>
+      {metin.slice(m[0].length)}
+    </h3>
+  );
+}
+
 /** Story açıklaması Jira'daki gibi: şablon başlıkları, maddeler, numaralı akış; AC'ler şablondaki
  *  yerinde (QA Checklist'ten önce). Şablonsuz açıklamada AC listesi açıklamanın altındadır. */
 function Dokuman({ g }: { g: Detay }) {
@@ -984,7 +989,7 @@ function Dokuman({ g }: { g: Detay }) {
       {bloklar.map((b, i) => {
         switch (b.tur) {
           case "baslik":
-            return <h4 key={i}>{b.metin}</h4>;
+            return <DokumanBasligi key={i} metin={b.metin} />;
           case "liste": {
             const Liste = b.numarali ? "ol" : "ul";
             return (
@@ -1009,7 +1014,7 @@ function Dokuman({ g }: { g: Detay }) {
           case "ac":
             return (
               <section key={i}>
-                <h4>{AC_BASLIGI}</h4>
+                <DokumanBasligi metin={AC_BASLIGI} />
                 {acler}
               </section>
             );

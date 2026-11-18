@@ -149,7 +149,7 @@ describe("gereksinim detayı: Ürün AI ajanı", { timeout: 90000 }, () => {
     await oturumAc("testci");
     const ikinci = uygulama(`/gereksinimler/${RID}`);
     const kart2 = (await screen.findByRole("heading", { name: "Ürün AI ajanı" }, T)).closest("section")! as HTMLElement;
-    await waitFor(() => expect(screen.getByRole("button", { name: "Tasarım modelini üret (iki tur)" })).toBeDisabled(), T);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Tasarım modelini üret (iki tur)" })).toHaveAttribute("aria-disabled", "true"), T);
     expect(screen.getByRole("button", { name: "Tasarım modelini üret (iki tur)" })).toHaveAttribute("title", AJAN_URUNU_NEDENI);
 
     await waitFor(() => expect(within(kart2).getByRole("button", { name: "Agent Probe'da test başlat" })).toBeEnabled(), T);

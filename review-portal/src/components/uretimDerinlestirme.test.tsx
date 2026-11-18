@@ -199,7 +199,7 @@ describe("Gereksinim detayı: 'Seçeneklerle üret…'", () => {
   it("PO onayı yoksa düğme pasif", async () => {
     await oturumAc("testci");
     uygulama("/gereksinimler/req-tpd-4");
-    expect(await screen.findByRole("button", { name: "Seçeneklerle üret…" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "Seçeneklerle üret…" })).toHaveAttribute("aria-disabled", "true");
   });
 });
 

@@ -97,7 +97,7 @@ describe("UX-1: çift tıklama tek istek", () => {
     fireEvent.click(dugme);
     expect(spy).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(dugme).toHaveAttribute("aria-busy", "true"));
-    expect(dugme).toBeDisabled();
+    expect(dugme).toHaveAttribute("aria-disabled", "true");
     bitir({ job_id: "j1", durum: "started" });
     await waitFor(() => expect(dugme).not.toHaveAttribute("aria-busy"));
     expect(spy).toHaveBeenCalledTimes(1);
