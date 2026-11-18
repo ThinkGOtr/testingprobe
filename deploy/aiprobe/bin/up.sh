@@ -36,4 +36,12 @@ elif [ "$tp_config_home" = 1 ]; then
   exit 1
 fi
 export TP_WAIT_TIMEOUT="${TP_WAIT_TIMEOUT:-900}"
+# Disk koruması (2026-11-18: 30G diskte derleme önbelleği 19.5G'a çıkıp C# katmanı açılırken
+# "no space left on device"). Derlemeden önce önbellek üst sınırlı tutulur; askıda imajlar silinir.
+# Çalışan/etiketli imajlara dokunulmaz. Hata açılışı durdurmaz.
+if command -v docker >/dev/null 2>&1; then
+  docker builder prune -f --keep-storage "${TP_BUILD_CACHE_KEEP:-6gb}" >/dev/null 2>&1 \
+    || echo "UYARI: docker derleme önbelleği temizlenemedi" >&2
+  docker image prune -f >/dev/null 2>&1 || true
+fi
 make up
