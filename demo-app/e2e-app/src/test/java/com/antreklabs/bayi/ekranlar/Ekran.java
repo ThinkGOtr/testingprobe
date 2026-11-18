@@ -130,12 +130,33 @@ public abstract class Ekran {
     e.click();
   }
 
-  /** Alana metin yazar (önce temizler), sonra ekran klavyesini kapatır. */
+  /** Yazma, alanın değeri yazılanı tutmazsa en çok bu kadar kez denenir. */
+  private static final int YAZMA_DENEME = 3;
+
+  /**
+   * Alana metin yazar (önce temizler), sonra ekran klavyesini kapatır. Soğuk simülatörde ilk
+   * klavye açılışında tuş vuruşları düşebiliyor ("bayi2" → "ba"): alanın değeri yazılanı tutmazsa
+   * temizleyip yeniden yazar.
+   */
   protected final void yaz(String kimlik, String metin) {
     WebElement e = gorunurBekle(kimlik);
-    e.clear();
-    e.sendKeys(metin);
+    for (int deneme = 1; ; deneme++) {
+      e.clear();
+      e.sendKeys(metin);
+      if (deneme >= YAZMA_DENEME || Klavye.degerTutuyor(alanDegeri(e), metin)) {
+        break;
+      }
+    }
     Klavye.kapat(surucu());
+  }
+
+  private static String alanDegeri(WebElement e) {
+    try {
+      String v = e.getAttribute("value");
+      return v != null ? v : e.getText();
+    } catch (WebDriverException ex) {
+      return null;
+    }
   }
 
   // ------------------------------------------------------------------ metin

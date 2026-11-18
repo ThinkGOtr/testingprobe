@@ -1,7 +1,9 @@
 package com.antreklabs.bayi.birim;
 
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNull;
+import static org.testng.Assert.assertTrue;
 
 import com.antreklabs.bayi.altyapi.Kaydirma;
 import com.antreklabs.bayi.altyapi.Klavye;
@@ -13,15 +15,18 @@ public class KlavyeBirimTesti {
 
   @Test(groups = "birim")
   public void klavyeninUstundenKenarBoslugundaYukariSurukler() {
-    // Katalog kabı (iPhone 16, 393x852): y=130..769; sayı klavyesi y=561'de başlar.
-    int[] c = Klavye.surukleme(new Rectangle(0, 130, 639, 393), 561);
-    assertEquals(c, new int[] {4, 545, 505});
+    // Katalog kabı (iPhone 16, iOS 27, 393x852): y=155..764; sayı klavyesi öğesi y=567'de, görünen
+    // cam kabı y=550'de başlar → sürükleme kabın üst bölümünde, klavyeden uzakta.
+    int[] c = Klavye.surukleme(new Rectangle(0, 155, 609, 393), 567);
+    assertEquals(c, new int[] {4, 251, 211});
+    // Bayat çerçeve (y=764) okunsa da nokta aynı kalır: tuşlara düşmez.
+    assertEquals(Klavye.surukleme(new Rectangle(0, 155, 609, 393), 764), new int[] {4, 251, 211});
   }
 
   @Test(groups = "birim")
   public void kabinAltiKlavyedenYukaridaysaKabaGoreHesaplar() {
     int[] c = Klavye.surukleme(new Rectangle(10, 100, 300, 200), 700);
-    assertEquals(c, new int[] {14, 384, 344});
+    assertEquals(c, new int[] {14, 196, 156});
   }
 
   @Test(groups = "birim")
@@ -36,7 +41,18 @@ public class KlavyeBirimTesti {
 
   @Test(groups = "birim")
   public void yerYoksaSuruklemez() {
-    assertNull(Klavye.surukleme(new Rectangle(0, 520, 300, 393), 561));
+    assertNull(Klavye.surukleme(new Rectangle(0, 460, 300, 393), 561));
     assertNull(Klavye.surukleme(new Rectangle(0, 100, 300, 8), 561));
+  }
+
+  @Test(groups = "birim")
+  public void yazilanDegerDogrulamasi() {
+    assertTrue(Klavye.degerTutuyor("bayi2", "bayi2"));
+    assertFalse(Klavye.degerTutuyor("ba", "bayi2"));
+    assertFalse(Klavye.degerTutuyor("bayi1q", "bayi1"));
+    assertTrue(Klavye.degerTutuyor("•••••", "abcde"));
+    assertFalse(Klavye.degerTutuyor("••", "abcde"));
+    assertTrue(Klavye.degerTutuyor("", "gizli"));
+    assertTrue(Klavye.degerTutuyor(null, "gizli"));
   }
 }

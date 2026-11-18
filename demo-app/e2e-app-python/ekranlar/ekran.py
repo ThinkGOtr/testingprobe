@@ -13,6 +13,7 @@ görünmedi: kimlik 'x'" / "kimlik 'kapsayıcı' içinde 'aranan'"); beklenti sa
 from __future__ import annotations
 
 import re
+import time
 from collections.abc import Mapping
 from typing import Any
 
@@ -25,9 +26,13 @@ YOK = "(öğe yok)"
 _METIN_NITELIKLERI = ("label", "value", "Name", "content-desc", "text")
 _KENAR = 4
 # iOS klavye kapatma sürüklemesi (Java Klavye.MESAFE / PAY): klavyenin üst kenarının PAY kadar
-# üstünden MESAFE kadar yukarı.
+# üstünden MESAFE kadar yukarı. PAY: iOS 27'de görünen klavye kabı öğe çerçevesinin ~17 pt, öneri
+# şeridi ~44 pt üstünden başlar; 16 pt sürüklemeyi klavyeye düşürüyordu.
 _KLAVYE_MESAFE = 40
-_KLAVYE_PAY = 16
+_KLAVYE_PAY = 72
+# Sürükleme kabın üst bölümünde başlar (Java Klavye.UST_BOSLUK): bayat klavye çerçevesi (y=764,
+# gerçekte 550) yalnız çerçeveye göre hesaplanan noktayı tuşlara düşürüyordu ("bayi1" → "bayi1q").
+_KLAVYE_UST_BOSLUK = 96
 
 
 def _id(spec: Mapping[str, str]) -> str:
@@ -42,11 +47,20 @@ def _klavye_suruklemesi(kap: Mapping[str, int], klavye_ust: int) -> tuple[int, i
     """iOS klavye kapatma çizgisi (Java `Klavye.surukleme`, saf hesap): (x, başlangıç y, bitiş y).
     Sürükleme kabın KLAVYENİN ÜSTÜNDE kalan bölümünde yapılır (klavye tuşlarına dokunmaz); o bölüm
     yetmiyorsa None."""
-    alt = min(kap["y"] + kap["height"], klavye_ust) - _KLAVYE_PAY
+    alt = min(kap["y"] + _KLAVYE_UST_BOSLUK, min(kap["y"] + kap["height"], klavye_ust) - _KLAVYE_PAY)
     ust = alt - _KLAVYE_MESAFE
     if kap["width"] <= 2 * _KENAR or ust <= kap["y"]:
         return None
     return kap["x"] + _KENAR, alt, ust
+
+
+def _deger_tutuyor(okunan: str | None, metin: str) -> bool:
+    """Java `Klavye.degerTutuyor` eşi: okunamayan/boş değer kabul; maskeli (•••) değerde uzunluk."""
+    if not okunan:
+        return True
+    if all(c in "•●*" for c in okunan):
+        return len(okunan) == len(metin)
+    return _sade(okunan) == _sade(metin)
 
 
 def _sade(s: str | None) -> str:
@@ -152,9 +166,22 @@ class Ekran:
     def _yaz(self, kimlik: str, metin: str) -> None:
         """Alana metin yazar (önce temizler), sonra ekran klavyesini kapatır."""
         e = self._gorunur_bekle(kimlik)
-        e.clear()
-        e.send_keys(metin)
+        # Soğuk simülatörde tuş vuruşları düşebiliyor ("bayi2" → "ba"; Java Ekran.yaz eşi):
+        # alanın değeri yazılanı tutmazsa temizleyip yeniden yazılır (en çok 3 deneme).
+        for deneme in range(1, 4):
+            e.clear()
+            e.send_keys(metin)
+            if deneme >= 3 or _deger_tutuyor(self._alan_degeri(e), metin):
+                break
         self._klavyeyi_kapat()
+
+    @staticmethod
+    def _alan_degeri(e: Any) -> str | None:
+        try:
+            v = e.get_attribute("value")
+            return v if v is not None else e.text
+        except WebDriverException:
+            return None
 
     def _klavyeyi_kapat(self) -> None:
         if self._o.platform == "windows":
@@ -167,23 +194,46 @@ class Ekran:
                 # uygulamanın `keyboardDismissMode="on-drag"` yolu (Klavye.java notu).
                 # Sürükleme klavyenin üstünde kalır (Java Klavye.iosSurukleyerekKapat): kabın 3/4'ünden
                 # başlayan genel kaydırma klavye tuşlarına basar, klavye açık kalır.
-                klavye = self._d.find_elements("class name", "XCUIElementTypeKeyboard")
-                if not klavye:
-                    return
-                ust = klavye[0].rect["y"]
-                for k in self._d.find_elements("class name", "XCUIElementTypeScrollView"):
-                    cizgi = _klavye_suruklemesi(k.rect, ust)
-                    if cizgi is not None:
-                        x, bas, son = cizgi
-                        self._d.execute_script(
-                            "mobile: dragFromToForDuration",
-                            {"duration": 0.2, "fromX": x, "fromY": bas, "toX": x, "toY": son},
-                        )
+                # Klavyenin üst kenarı açılış animasyonu oturunca okunur (Java Klavye.oturmusKlavyeUst):
+                # erken okunan çerçeve (ör. y=764, oturunca 567) sürüklemeyi tuşlara düşürür.
+                for _ in range(3):
+                    ust = self._oturmus_klavye_ust()
+                    if ust is None or not self._klavye_surukle(ust):
+                        return
+                    if self._oturmus_klavye_ust() is None or (
+                        hasattr(self._d, "is_keyboard_shown") and not self._d.is_keyboard_shown()
+                    ):
                         return
                 return
             self._d.hide_keyboard()
         except WebDriverException:
             pass  # sonraki eylemin beklemesi (ve kaydırma) devralır
+
+    def _oturmus_klavye_ust(self) -> int | None:
+        """Klavye çerçevesinin üst kenarı, art arda iki okumada aynı kalınca; klavye yoksa None."""
+        onceki: int | None = None
+        for _ in range(12):
+            klavye = self._d.find_elements("class name", "XCUIElementTypeKeyboard")
+            if not klavye:
+                return None
+            ust = klavye[0].rect["y"]
+            if onceki is not None and onceki == ust:
+                return ust
+            onceki = ust
+            time.sleep(0.15)
+        return onceki
+
+    def _klavye_surukle(self, ust: int) -> bool:
+        for k in self._d.find_elements("class name", "XCUIElementTypeScrollView"):
+            cizgi = _klavye_suruklemesi(k.rect, ust)
+            if cizgi is not None:
+                x, bas, son = cizgi
+                self._d.execute_script(
+                    "mobile: dragFromToForDuration",
+                    {"duration": 0.2, "fromX": x, "fromY": bas, "toX": x, "toY": son},
+                )
+                return True
+        return False
 
     # ------------------------------------------------------------------ metin
 

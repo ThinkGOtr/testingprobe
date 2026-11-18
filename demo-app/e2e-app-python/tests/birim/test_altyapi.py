@@ -87,10 +87,10 @@ def test_ios_klavye_suruklemesi_klavyenin_ustunde() -> None:
     from ekranlar.ekran import _klavye_suruklemesi
 
     kap = {"x": 0, "y": 100, "width": 390, "height": 700}  # klavyenin altına uzanan kap
-    assert _klavye_suruklemesi(kap, 500) == (4, 484, 444)
+    assert _klavye_suruklemesi(kap, 500) == (4, 196, 156)
     # Kap klavyeden önce bitiyorsa kabın altından.
     assert _klavye_suruklemesi({"x": 10, "y": 100, "width": 300, "height": 200}, 500) == (
-        14, 284, 244,
+        14, 196, 156,
     )
     # Klavye üstünde yer yok / dar kap: sürükleme yok.
     assert _klavye_suruklemesi(kap, 150) is None
@@ -112,3 +112,16 @@ def test_kosu_parolasi(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("TP_RUN_DEALER_PASSWORDS", bozuk)
         with pytest.raises(ValueError, match=mesaj):
             bayiler.sec(None, 0)
+
+
+def test_yazilan_deger_dogrulamasi() -> None:
+    """Java `Klavye.degerTutuyor` eşi: düşen tuş vuruşu yeniden yazmayı tetikler."""
+    from ekranlar.ekran import _deger_tutuyor
+
+    assert _deger_tutuyor("bayi2", "bayi2")
+    assert not _deger_tutuyor("ba", "bayi2")
+    assert not _deger_tutuyor("bayi1q", "bayi1")
+    assert _deger_tutuyor("•••••", "abcde")
+    assert not _deger_tutuyor("••", "abcde")
+    assert _deger_tutuyor("", "gizli")
+    assert _deger_tutuyor(None, "gizli")
