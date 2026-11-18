@@ -17,6 +17,8 @@ import type {
   DilSecenegi,
   IsYaniti,
   KodDilleri,
+  KurulumPr,
+  MusteriCi,
   KodUretYaniti,
   KontrolAdimi,
   KontrolKulesi,
@@ -46,7 +48,7 @@ import { dizgeler, ilk, kimlik, metin, metinYaDaNull, modUyarla, nesneMi, sayi, 
 import { hazirlikUyarla } from "./uyumFaz5";
 import { scriptOtomasyonAlanlari } from "./uyumOtomasyon";
 import { checkPlatformu, platformUyarla } from "../lib/platform";
-import { DIL_CATISI, DIL_ETIKETI, DILLER, dilKaynagiUyarla, dilUyarla, dogrulanmamisDilMi, gecerliCift, varsayilanDil, type Dil } from "../lib/dil";
+import { ciftHati, DIL_CATISI, DIL_ETIKETI, dilDurumuUyarla, DILLER, dilKaynagiUyarla, dilUyarla, ESKI_DOGRULANMAMIS_DILLER, gecerliCift, hatMi, varsayilanDil, YAKINDA_NEDENI, type Dil, type Hat } from "../lib/dil";
 import type { AsistanKuleOlcumu, AsistanliKule, MaliyetGrubu } from "../components/asistan/OnerilerOlcumKarti";
 import { kosuHataAlanlari, kuleKaliteKaynaklari, kuleKaliteUyarla } from "./uyumKule";
 
@@ -128,6 +130,23 @@ function ciOzeti(ham: unknown, checks: PrCheck[]): PullRequest["ci"] {
   return "pending";
 }
 
+/**
+ * Platform başına depo (ANALIZ §7 ortak sözleşme): `depo` (`''` = varsayılan depo) ve `depo_adi`
+ * (sahip/ad). Alan yoksa sıradaki kaynağa bakılır (ör. koşuda `run.ortam.depo`, script'te PR'ın
+ * deposu); hiçbirinde yoksa `''` / null (eski core: tek depo). `depo_adi` yoksa ayrı depoda
+ * kimliğin kendisi (sahip/ad) gösterim adıdır.
+ */
+export function depoAlanlari(...kaynaklar: Ham[]): { depo: string; depo_adi: string | null } {
+  for (const k of kaynaklar) {
+    if (typeof k.depo === "string") {
+      const depo = k.depo.trim();
+      return { depo, depo_adi: metinYaDaNull(k.depo_adi) ?? (depo || null) };
+    }
+  }
+  const ad = kaynaklar.map((k) => metinYaDaNull(k.depo_adi)).find((x) => x);
+  return { depo: "", depo_adi: ad ?? null };
+}
+
 const PR_DURUMU: Record<string, PullRequest["durum"]> = { open: "open", acik: "open", merged: "merged", closed: "closed", kapali: "closed" };
 
 export function prUyarla(p: Ham): PullRequest {
@@ -149,6 +168,7 @@ export function prUyarla(p: Ham): PullRequest {
     merge_zamani: metinYaDaNull(ilk(p, "merge_zamani", "merged_at")),
     govde: metinYaDaNull(ilk(p, "govde", "body")),
     dal: dalUyarla(p.dal),
+    ...depoAlanlari(p),
   };
 }
 
@@ -394,12 +414,19 @@ function caseKimlikleri(s: Ham): string[] {
 export function scriptUyarla(s: Ham): Script {
   const zayif = s.zayif_test === true;
   const prHam = ilk(s, "pr", "pull_request");
-  const pr = nesneMi(prHam) ? prUyarla(prHam) : typeof s.pr_no === "number" ? prUyarla({ number: s.pr_no, branch: s.branch, head_sha: s.head_sha }) : null;
+  // Platform deposu: script'in `depo`su; yoksa PR'ın. Gömülü PR'da depo yoksa script'inki yazılır
+  // (PR eylemleri `?depo=` ile doğru depoya gider).
+  const prDepo: Ham = nesneMi(prHam) ? prHam : {};
+  const depoBilgisi = depoAlanlari(s, prDepo);
+  const prTaban = nesneMi(prHam) ? prUyarla(prHam) : typeof s.pr_no === "number" ? prUyarla({ number: s.pr_no, branch: s.branch, head_sha: s.head_sha }) : null;
+  const pr = prTaban ? { ...prTaban, ...depoAlanlari(prDepo, s) } : null;
   const yk = yerelKontrolUyarla(ilk(s, "yerel_kontrol", "yerel_kontrol_sonucu"));
   const durum = metin(s.durum, "pending");
   const sinifHam = metin(ilk(s, "yerel_sinif", "yerel_kontrol_sinifi")).toLowerCase();
   // 009: core her script'te platform gönderir; alan yoksa (009 öncesi core) yalnız web üretilebiliyordu.
   const platform = s.platform === undefined || s.platform === null ? "web" : platformUyarla(s.platform);
+  const dil: Dil | null = s.dil === undefined || s.dil === null ? (platform ? varsayilanDil(platform) : null) : dilUyarla(s.dil);
+  const dogrulanmamis = s.dogrulanmamis === true || durum === "unverified";
   return {
     id: kimlik(s.id),
     case_ids: caseKimlikleri(s),
@@ -418,13 +445,16 @@ export function scriptUyarla(s: Ham): Script {
     platform,
     // 011: core `dil` gönderir; alan yoksa (011 öncesi core / eski kayıt) platformun varsayılanı
     // (web → ts, uygulama → java). Tanınmayan değer ya da bilinmeyen platformda null (uydurulmaz).
-    dil: s.dil === undefined || s.dil === null ? (platform ? varsayilanDil(platform) : null) : dilUyarla(s.dil),
+    dil,
     dil_kaynagi: dilKaynagiUyarla(s.dil_kaynagi),
-    dogrulanmamis: s.dogrulanmamis === true || durum === "unverified",
+    dogrulanmamis,
+    // 014: core `hat`; yoksa doğrulanmamış kayıt ya da (platform, dil) çiftinin hattı (tanınmazsa null).
+    hat: hatMi(s.hat) ? s.hat : dogrulanmamis ? "dogrulanmamis" : platform && dil ? ciftHati(platform, dil) : null,
     mode: modUyarla(ilk(s, "mode", "uretim_modu")),
     olusturma: metin(s.olusturma),
     hata: metinYaDaNull(ilk(s, "hata", "son_hata")),
     ...scriptOtomasyonAlanlari(s),
+    ...depoBilgisi,
   };
 }
 
@@ -453,6 +483,74 @@ export function scriptDetayUyarla(s: Ham): ScriptDetay {
     merge_kabul_gerekli: Array.isArray(s.merge_kabul_gerekli) ? dizgeler(s.merge_kabul_gerekli) : null,
     uyarilar: dizgeler(s.uyarilar),
     gecikme_butcesi_s: typeof s.gecikme_butcesi_s === "number" ? s.gecikme_butcesi_s : null,
+    musteri_ci: musteriCiUyarla(s.musteri_ci),
+    kurulum: kurulumUyarla(ilk(s, "kurulum", "kurulum_pr")),
+  };
+}
+
+// ------------------------------------------------------------------ Müşteri CI + kurulum PR'ı (014)
+
+const MUSTERI_CI_DURUMU: Record<string, MusteriCi["durum"]> = {
+  bekliyor: "bekliyor",
+  queued: "bekliyor",
+  pending: "bekliyor",
+  kosuyor: "kosuyor",
+  in_progress: "kosuyor",
+  running: "kosuyor",
+  gecti: "gecti",
+  success: "gecti",
+  passed: "gecti",
+  kaldi: "kaldi",
+  failure: "kaldi",
+  failed: "kaldi",
+  derleme_hatasi: "derleme_hatasi",
+  derleme: "derleme_hatasi",
+};
+
+/** core `musteri_ci` (Ş5): GitHub Actions check'i + `tp-results` özeti. Ad yoksa null (kart çizilmez). */
+export function musteriCiUyarla(x: unknown): MusteriCi | null {
+  if (!nesneMi(x)) return null;
+  const checkAdi = metin(ilk(x, "check_adi", "check", "is_akisi"));
+  if (!checkAdi) return null;
+  const sonuc = nesneMi(x.sonuc) ? x.sonuc : null;
+  const sayi = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? Math.floor(v) : 0);
+  const artefakt = metin(x.artefakt);
+  return {
+    check_adi: checkAdi,
+    saglayici: "github_actions",
+    durum: MUSTERI_CI_DURUMU[metin(x.durum).toLowerCase()] ?? "bilinmiyor",
+    head_sha: metinYaDaNull(x.head_sha),
+    run_url: adresUyarla(ilk(x, "run_url", "url")),
+    tamamlanma: metinYaDaNull(x.tamamlanma),
+    sonuc: sonuc ? { toplam: sayi(sonuc.toplam), gecen: sayi(sonuc.gecen), kalan: sayi(sonuc.kalan), atlanan: sayi(sonuc.atlanan) } : null,
+    artefakt: artefakt === "alindi" || artefakt === "yok" || artefakt === "bekliyor" ? artefakt : null,
+    neden: metinYaDaNull(x.neden),
+  };
+}
+
+const KURULUM_DURUMU: Record<string, KurulumPr["durum"]> = {
+  gerekli: "gerekli",
+  acik: "acik",
+  open: "acik",
+  birlesti: "birlesti",
+  merged: "birlesti",
+  kapali: "kapali",
+  closed: "kapali",
+};
+
+/** core kurulum PR'ı (Ş5). Tanınmayan durumda null (uydurulmaz). */
+export function kurulumUyarla(x: unknown): KurulumPr | null {
+  if (!nesneMi(x)) return null;
+  const durum = KURULUM_DURUMU[metin(x.durum).toLowerCase()];
+  if (!durum) return null;
+  const n = x.number ?? x.pr_number;
+  return {
+    durum,
+    number: typeof n === "number" && Number.isInteger(n) && n > 0 ? n : null,
+    url: adresUyarla(x.url),
+    baslik: metinYaDaNull(x.baslik),
+    eksikler: dizgeler(x.eksikler),
+    elle_adimlar: dizgeler(x.elle_adimlar),
   };
 }
 
@@ -462,6 +560,16 @@ export function scriptDetayUyarla(s: Ham): ScriptDetay {
  * `GET /code/languages?platform=` yanıtı (011 §2.3). Tanınmayan dil ve platformda geçersiz çift
  * atılır; seçenek kalmazsa null (seçici çizilmez, üretim core'un algıladığı dille sürer).
  */
+/**
+ * Seçeneğin hattı: core `hat` (tanınırsa); yoksa 014 öncesi core'un web C#/Python'u doğrulanmamış,
+ * diğerleri (platform, dil) çiftinin hattı.
+ */
+function secenekHati(ham: unknown, platform: Platform, dil: Dil): Hat {
+  if (hatMi(ham)) return ham;
+  if (platform === "web" && ESKI_DOGRULANMAMIS_DILLER.includes(dil)) return "dogrulanmamis";
+  return ciftHati(platform, dil) ?? "tam";
+}
+
 export function kodDilleriUyarla(govde: unknown, istenen: Platform): KodDilleri | null {
   if (!nesneMi(govde)) return null;
   const platform = platformUyarla(govde.platform) ?? istenen;
@@ -469,14 +577,18 @@ export function kodDilleriUyarla(govde: unknown, istenen: Platform): KodDilleri 
   for (const s of dizi(govde.secenekler)) {
     const dil = dilUyarla(s.dil);
     if (!dil || !gecerliCift(platform, dil) || secenekler.some((x) => x.dil === dil)) continue;
-    const hat = metin(s.hat);
+    // 014 öncesi core `durum` göndermez: kapı yoktur (`acik`); tanınmayan değer güvenli tarafta `yakinda`.
+    const durum = s.durum === undefined || s.durum === null ? "acik" : (dilDurumuUyarla(s.durum) ?? "yakinda");
     secenekler.push({
       dil,
       etiket: metin(s.etiket, DIL_ETIKETI[dil]),
       cati: metin(s.cati, DIL_CATISI(platform, dil) ?? ""),
-      hat: hat === "dogrulanmamis" || (hat !== "tam" && dogrulanmamisDilMi(dil)) ? "dogrulanmamis" : "tam",
-      kullanilabilir: s.kullanilabilir !== false,
-      neden: metinYaDaNull(s.neden),
+      hat: secenekHati(s.hat, platform, dil),
+      durum,
+      // 014: `yakinda` seçilemez (core zaten `kullanilabilir=false` gönderir; eksikse de kapı uygulanır).
+      kullanilabilir: durum === "acik" && s.kullanilabilir !== false,
+      neden: metinYaDaNull(s.neden) ?? (durum === "yakinda" ? YAKINDA_NEDENI : null),
+      kurulum: kurulumUyarla(s.kurulum),
     });
   }
   if (secenekler.length === 0) return null;
@@ -684,6 +796,7 @@ export function kosuUyarla(k: Ham): Kosu {
     kaynak: KAYNAKLAR.has(kaynak) ? kaynak : "local",
     commit: metin(k.commit).slice(0, 12),
     pr_no: sayiYaDaNull(k.pr_no),
+    ...depoAlanlari(k, ortam),
     durum: KOSU_DURUMLARI.has(durum) ? durum : "error",
     baslangic: metin(ilk(k, "baslangic", "baslama", "olusturma")),
     sure_ms: sayiYaDaNull(ilk(k, "sure_ms", "duration_ms")),

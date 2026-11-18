@@ -80,6 +80,10 @@ class Script(ProjeKapsamli, Base):
     dil: Mapped[str] = mapped_column(server_default="ts", default=_varsayilan_dil)
     # Dil nereden geldi: repodan algılandı | kullanıcı seçti | varsayılan.
     dil_kaynagi: Mapped[str] = mapped_column(server_default="varsayilan", default="varsayilan")
+    # Platform deposu (0046): PR'ın açıldığı depo. `''` = projenin varsayılan deposu; ayrı depoda
+    # `sahip/ad` (küçük harf, `proje_ortami.depo_anahtari`). Dala ilk commit'te yazılır; açık PR
+    # config değişse de bu depodan senkronlanır. PR numarası yalnız (depo, pr_no) ile tekildir.
+    depo: Mapped[str] = mapped_column(server_default="", default="")
     olusturma: Mapped[datetime] = olusturma_col()
     guncelleme: Mapped[datetime] = guncelleme_col()
 
@@ -119,13 +123,19 @@ class PullRequest(ProjeKapsamli, Base):
     """Çekirdeğin açtığı PR kaydı (LocalForge'da tek kaynak; GitHub'da forge kopyası)."""
 
     __tablename__ = "pull_request"
-    __table_args__ = (in_check("durum", enums.PR_DURUM, "pull_request_durum_ck"),)
-
-    # PR numarası proje başına (§1.2): LocalForge `proje_sayac('pr')`, GitHub kipinde GitHub'ın.
-    project_id: Mapped[str] = mapped_column(
-        String(64), primary_key=True, default=lambda: mevcut_pid()
+    __table_args__ = (
+        in_check("durum", enums.PR_DURUM, "pull_request_durum_ck"),
+        # 0046: PR numarası depo başına (platform depoları ayrı numaralanır). Sıra `anahtar` ile
+        # aynıdır: `session.get(PullRequest, (pid, depo, number))`.
+        PrimaryKeyConstraint("project_id", "depo", "number", name="pull_request_pkey"),
     )
-    number: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+
+    # PR numarası proje + depo başına (§1.2, 0046): LocalForge `proje_sayac('pr')`, GitHub kipinde
+    # GitHub'ın (her deponun kendi numaraları).
+    project_id: Mapped[str] = mapped_column(String(64), default=lambda: mevcut_pid())
+    # `''` = projenin varsayılan deposu; ayrı platform deposunda `sahip/ad` (`Script.depo`).
+    depo: Mapped[str] = mapped_column(server_default="", default="")
+    number: Mapped[int] = mapped_column(Integer, autoincrement=False)
     branch: Mapped[str]
     base: Mapped[str] = mapped_column(server_default="main", default="main")
     baslik: Mapped[str]
@@ -151,10 +161,12 @@ class PullRequest(ProjeKapsamli, Base):
     guncelleme: Mapped[datetime] = guncelleme_col()
 
     @staticmethod
-    def anahtar(number: int) -> tuple[str, int]:
-        """Bileşik PK (`project_id`, `number`): bağlamdaki projede PR numarası —
-        `session.get(PullRequest, PullRequest.anahtar(no))`."""
-        return (mevcut_pid(), int(number))
+    def anahtar(number: int, depo: str = "") -> tuple[str, str, int]:
+        """Bileşik PK (`project_id`, `depo`, `number`): bağlamdaki projede, verilen depodaki PR
+        numarası — `session.get(PullRequest, PullRequest.anahtar(no, sc.depo))`. `depo` script'in /
+        koşunun kayıtlı deposudur (`''` = varsayılan depo); ayrı depolu PR'da verilmezse başka
+        deponun aynı numaralı PR'ı okunur (yanlış PR): çağıran her zaman depoyu geçirmelidir."""
+        return (mevcut_pid(), depo or "", int(number))
 
 
 class Run(ProjeKapsamli, Base):

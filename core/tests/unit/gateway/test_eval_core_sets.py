@@ -135,9 +135,29 @@ def test_golden_outputs_meet_their_own_expectations(rules_dir: Path, bundle: str
             continue
         out = _golden_output(rules_dir, data, case)
         kaynak = case_source(case)
-        assert check_output(str(data["purpose"]), case["expect"], out, kaynak=kaynak) == [], case[
-            "id"
-        ]
+        hatalar = check_output(str(data["purpose"]), case["expect"], out, kaynak=kaynak)
+        if hatalar and case.get("dil") not in (None, "ts", "java"):
+            # 014: dil vakası TS/Java golden'ını (replay anahtarı) paylaşır. Tablo adları hedef
+            # dilde farklıysa (Python snake_case) golden eklentinin ad dönüşümüyle çevrilir (PO
+            # eşitliği §3); C#/Kotlin/Swift vakalarının tablosu referans adları taşır.
+            from tp_core.features.codegen import diller
+            from tp_core.features.codegen.diller import csharp
+
+            if case["dil"] == "csharp":  # C# adı render'da türer; burada aynı kural
+                out = {
+                    **out,
+                    **{
+                        alan: [
+                            {**m, "method": csharp.metot_adi(m["method"], case["platform"])}
+                            for m in out.get(alan) or []
+                        ]
+                        for alan in ("step_mapping", "expects")
+                    },
+                }
+            else:
+                out = diller.eklenti(case["dil"]).eslemeyi_donustur(out)
+            hatalar = check_output(str(data["purpose"]), case["expect"], out, kaynak=kaynak)
+        assert hatalar == [], case["id"]
 
 
 @pytest.mark.parametrize("bundle", ["requirement-review", "case-generation"])
@@ -208,7 +228,8 @@ def test_consistency_check_flags_missing_doc_ref_and_unknown_ac() -> None:
     assert "kanıtsız bulgu: ['F1']" in failures
 
 
-def test_verify_and_map_check() -> None:
+@pytest.mark.parametrize("purpose", ["verify_and_map", "verify_and_map_app"])
+def test_verify_and_map_check(purpose: str) -> None:
     expect = {
         "steps": ["S1", "S2"],
         "methods": ["LoginPage.goto"],
@@ -223,7 +244,7 @@ def test_verify_and_map_check() -> None:
         "expects": [],
         "missing_methods": [],
     }
-    failures = check_output("verify_and_map", expect, out)
+    failures = check_output(purpose, expect, out)
     assert "adım S2 eşlenmedi" in failures
     assert "sembol tablosunda olmayan metot: LoginPage.uydurma" in failures
     assert "beklenen assertion yok: LoginPage.expectLoggedIn" in failures
@@ -290,6 +311,40 @@ def test_agent_set_runs_tools_through_env_and_marks_evaluated(rules_dir: Path) -
     st = evaluation_status(rules_dir, "consistency-check")
     assert st.status == "evaluated"
     assert st.detail["calls"] == "evaluation/results/consistency-check-v4-2026-11-02.calls.jsonl"
+
+
+def test_stateful_env_is_reopened_per_case(rules_dir: Path) -> None:
+    """Tarayıcı/uygulama oturumu (`vaka_basina`): araç bütçesi ve giriş durumu vakalar arasında
+    taşınmasın diye her vaka kendi oturumunu açar ve vaka sonunda kapatır. Vaka kendi ortamını
+    (`tool_env`, ör. `app:ios`) isterken set ortamı açık kalmaz (ajan bayisi kilidi oturum
+    başına; ikisi aynı anda açılırsa kilitlenir)."""
+    path = rules_dir / "evaluation" / "consistency-check.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["cases"][1]["tool_env"] = "consistency-b"
+    path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    opened: list[str] = []
+    acik: list[str] = []
+
+    def factory(name: str) -> ToolEnv:
+        assert not acik, f"{name} açılırken başka oturum açık: {acik}"
+        opened.append(name)
+        acik.append(name)
+        env = _consistency_env()
+        env.vaka_basina = True
+        env.close = lambda: acik.remove(name)
+        return env
+
+    fake = FakeProvider(_consistency_script(rules_dir))
+    code, out = _run(
+        rules_dir,
+        fake,
+        "consistency-check",
+        envs={"consistency": lambda: factory("a"), "consistency-b": lambda: factory("b")},
+    )
+    assert code == 0, out
+    n = len(data["cases"])
+    # set ortamı başta bir kez (kullanılabilirlik denetimi), sonra her vaka kendi oturumunda
+    assert opened == ["a", "b", "a", *["a"] * (n - 3)] and not acik
 
 
 def test_unverifiable_evidence_fails_the_agent_case(rules_dir: Path) -> None:

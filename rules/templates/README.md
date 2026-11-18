@@ -33,3 +33,22 @@ için Java 17 + Appium + TestNG karşılığı (`render.render_java_test`; model
   `<platform>`, `tp-case-<uuid>`, story. `@Bayi("bayiN")` web `test.use` karşılığıdır.
 - Golden: `core/tests/unit/features/codegen/golden/*.java` (`test_platform.py`); aynı test
   üretilen dosyayı gerçek `java-araclar.jar guard` ile denetler (jar yoksa atlanır).
+
+`xcuitest.swift.j2` (014 test dilleri, Ş4; hat **musteri_ci**): aynı uygulama eşlemesinin iOS
+Swift + XCUITest karşılığı (`codegen/diller/swift.py`; model Swift yazmaz). TP derlemez/koşmaz:
+derleme ve koşu müşterinin macOS GitHub Actions runner'ındadır; kırarak doğrulama yoktur.
+
+- Değerler `swift` süzgecinden geçer: String / Int (64 bit) / Double / Bool. Dize yalnız düz çift
+  tırnaklıdır; ters bölü her zaman kaçışlandığı için `\(…)` interpolasyonu ve `#"…"#` ham dize
+  üretilemez; kontrol / biçim / satır ayırıcı karakterler `\u{XXXX}` olarak görünür basılır.
+  Gizli test verisi `ortam("TP_TESTVERI_…")`.
+- Çağrı biçimi `<erişimci>.<metot>(<etiket>: <değer>, …)`: Swift argüman etiketleri sembol
+  tablosundan okunur (render sembol tablosu ister). Sınıf `<Story>IosC<sıra>_<uuid8>Tests`
+  (`final class …: TestTabani`, tek `func testSenaryo()`), dosya `<UI test klasörü>/TPUretilen/`.
+  UI test klasörü Xcode 16+ **eşitlenmiş klasördür**: TP `project.pbxproj`'a dokunmaz.
+- Koruma: `toolchain/worker/diller/swift.py` (tree-sitter-swift; izin listesi + sembol doğrulaması).
+- Golden: `core/tests/unit/features/codegen/golden/TPD1IosC2_3f9b1c2eTests.swift`
+  (`test_dil_swift.py`); toolchain testi aynı dosyayı korumadan geçirir; demo kopyası
+  `demo-app/mobile/ios-test/BayiSiparisUITests/TPUretilen/` (Xcode 27.2 ile derlendi).
+- `xcuitest_iskelet/`: tek seferlik kurulum PR'ının (Ş5 `musteri_ci.kurulum_plani(iskelet=…)`)
+  Swift dosyaları (ekran tabanı, test tabanı, boş kimlik dosyası).

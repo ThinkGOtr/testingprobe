@@ -28,6 +28,13 @@ setin amaçlarından yalnız bunlar (asistan seti `assistant` ve `assistant_deep
 yalnız tüm amaçlar `esikler`'i geçince kaydı `evaluated` yapar (`evaluation.amaclar`,
 `evaluation.icerik_hash`).
 Her rapor vaka başına maliyet ve uçtan uca sürenin medyan/p90'ını (`dagilim`) taşır.
+
+`--dil <d>` (014 Ş8, dil kapısı): yalnız doğrulama ajanı paketlerinin (`verify-and-map`,
+`verify-and-map-app`) o dile ait vakaları (`dil`) koşar; rapor `<paket>-v<n>-<d>-<tarih>.json`.
+Alt küme koşusu paketi ASLA `evaluated` yazmaz; `--update-status` ile bir (platform, dil) çiftinin
+TÜM vakaları geçtiyse `rules/diller.yaml`'a değerlendirme kanıtı yazar
+(`dil_kapisi.eval_kaniti_yaz`; kabul kanıtı da varsa çift `acik` olur). Vaka `tool_env`
+taşıyorsa (uygulama: `app:<platform>`) o vaka bu araç ortamında koşar.
 Asistan seti seçilip tavan `ASISTAN_ASGARI_BUTCE_USD`'nin (10, plan §13) altındaysa uyarı basılır
 (koşu engellenmez). Model/effort matrisi (Haiku/Sonnet × low/medium, K2) için ayrı bayrak yok:
 `rules/` kopyasında `models.yaml` amaç kaydı değiştirilip `--rules-dir <kopya>` ile koşulur.
@@ -691,8 +698,89 @@ def _flow_env(
     return cache[name]
 
 
+def _vaka_ortami(
+    cache: dict[str, ToolEnv | None],
+    name: str,
+    envs: Mapping[str, EnvFactory] | None,
+    out: Callable[[str], None],
+    bundle: str,
+    secrets: Sequence[str],
+) -> ToolEnv | None:
+    """Vakanın kendi araç ortamı (`tool_env`, ör. `app:ios`), koşu boyunca ad başına bir kez."""
+    if name not in cache:
+        try:
+            cache[name] = open_env(name, envs)
+        except ToolEnvUnavailable as exc:
+            cache[name] = None
+            out(f"  {bundle}: araç ortamı yok ({name}): {redact(exc, secrets)}")
+    return cache[name]
+
+
+def _kapat(
+    env: ToolEnv,
+    name: str,
+    out: Callable[[str], None],
+    bundle: str,
+    secrets: Sequence[str],
+) -> None:
+    """`vaka_basina` ortamını kapatır; sonraki vaka yenisini açar. Kapanış hatası koşuyu
+    durdurmaz."""
+    try:
+        env.close()
+    except Exception as exc:  # pragma: no cover - savunma
+        out(f"  {bundle}: araç ortamı kapatılamadı ({name}): {redact(exc, secrets)}")
+
+
+DIL_ALT_KUMESI = "dil_alt_kumesi"
+DIL_PAKETLERI = ("verify-and-map", "verify-and-map-app")
+
+
 def _tag(data: Mapping[str, Any], purpose: str) -> str | None:
-    return purpose if len(set_purposes(data)) > 1 else None
+    parca = [str(data[DIL_ALT_KUMESI])] if data.get(DIL_ALT_KUMESI) else []
+    if len(set_purposes(data)) > 1:
+        parca.append(purpose)
+    return "-".join(parca) or None
+
+
+def dil_plani(plans: Sequence[BundlePlan], dil: str) -> list[BundlePlan]:
+    """`--dil`: yalnız doğrulama ajanı paketleri, yalnız o dilin vakaları (alt küme işaretli)."""
+    out = []
+    for plan in plans:
+        if plan.bundle not in DIL_PAKETLERI:
+            continue
+        if plan.data is not None:
+            cases = [c for c in plan.data["cases"] if c.get("dil") == dil]
+            if cases:
+                plan.data = {**plan.data, "cases": cases, DIL_ALT_KUMESI: dil}
+            else:
+                plan.data, plan.skip_reason = None, f"setin '{dil}' vakası yok"
+        out.append(plan)
+    return out
+
+
+def _dil_kanitlari(
+    rules_dir: Path,
+    data: Mapping[str, Any],
+    run: BundleRun,
+    today: dt.date | None,
+    out: Callable[[str], None],
+) -> None:
+    """Alt küme koşusunun ardından tüm vakaları geçen her (platform, dil) için kanıt yazar."""
+    from tp_core.gateway.dil_kapisi import eval_kaniti_yaz
+
+    dil = str(data[DIL_ALT_KUMESI])
+    sonuc = {r.id: r.ok for r in run.results}
+    platformlar: dict[str, list[str]] = {}
+    for c in data["cases"]:
+        platformlar.setdefault(str(c.get("platform")), []).append(str(c["id"]))
+    for platform, ids in platformlar.items():
+        if run.report is None or not all(sonuc.get(i) for i in ids):
+            out(f"  {platform}/{dil}: kanıt yazılmadı (vakaların hepsi geçmedi)")
+            continue
+        try:
+            eval_kaniti_yaz(rules_dir, platform, dil, run.report, tarih=today, out=out)
+        except GatewayConfigError as exc:
+            out(f"  {platform}/{dil}: kanıt yazılmadı: {exc}")
 
 
 def run_live(
@@ -775,7 +863,9 @@ def run_live(
         env: ToolEnv | None = None
         flow_envs: dict[str, ToolEnv | None] = {}
         agent = data.get("agent")
-        if agent and not flow:
+        set_env = str(agent.get("tool_env")) if agent else None
+        case_envs: dict[str, ToolEnv | None] = {}
+        if agent and not flow and any(c.get("tool_env", set_env) == set_env for c in data["cases"]):
             try:
                 env = open_env(str(agent.get("tool_env")), envs)
             except ToolEnvUnavailable as exc:
@@ -788,6 +878,7 @@ def run_live(
                 continue
 
         bundle_runs: list[BundleRun] = []
+        kapali: set[str] = set()  # vaka sonunda kapatılan `vaka_basina` ortamları
         repeat = runs_of(data)
         try:
             for purpose in plan.purposes:
@@ -820,16 +911,46 @@ def run_live(
                                 case_env, case, purpose, flow_factory, case_id=cid, clock=clock
                             )
                         else:
+                            ad = str(case.get("tool_env", set_env))
+                            if agent and ad != set_env and env is not None and env.vaka_basina:
+                                # Ajan bayisi kilidi (pg_advisory_lock) oturum başına tutulur:
+                                # başka ortam açılmadan set ortamı bırakılır.
+                                _kapat(env, set_env, out, plan.bundle, secrets)
+                                env = None
+                                kapali.add(set_env)
+                            if agent and ad in kapali:
+                                kapali.discard(ad)
+                                yeni = _vaka_ortami({}, ad, envs, out, plan.bundle, secrets)
+                                if ad == set_env:
+                                    env = yeni
+                                else:
+                                    case_envs[ad] = yeni
+                            case_env = env
+                            if agent and ad != set_env:
+                                case_env = _vaka_ortami(
+                                    case_envs, ad, envs, out, plan.bundle, secrets
+                                )
+                            if agent and case_env is None:
+                                run.complete = False
+                                continue
                             result = run_case(
                                 gw,
                                 pdata,
                                 case,
                                 schema,
-                                env=env,
+                                env=case_env,
                                 case_id=cid,
                                 output_check=output_check,
                             )
                             result.sure_ms = int((clock() - started) * 1000)
+                            if case_env is not None and case_env.vaka_basina:
+                                # Oturum vakaya özgü: araç bütçesi, giriş ve sepet taşınmaz.
+                                _kapat(case_env, ad, out, plan.bundle, secrets)
+                                if ad == set_env:
+                                    env = None
+                                else:
+                                    case_envs[ad] = None
+                                kapali.add(ad)
                         rows = recorder.ai_calls[before:]
                         for r in rows:
                             r.setdefault("eval_vaka", cid)
@@ -898,7 +1019,7 @@ def run_live(
         finally:
             if env is not None:
                 env.close()
-            for e in flow_envs.values():
+            for e in [*flow_envs.values(), *case_envs.values()]:
                 if e is not None:
                     e.close()
         total = len(data["cases"]) * repeat
@@ -909,7 +1030,12 @@ def run_live(
         covered = {r.purpose for r in bundle_runs} == set(set_purposes(data))
         hash_after = icerik_hash(rules_dir, plan.bundle)
         note = ""
-        if update_status and all_ok and not covered:
+        if data.get(DIL_ALT_KUMESI):
+            # Alt küme koşusu paketi `evaluated` yazamaz; yalnız çift kanıtı (dil kapısı).
+            if update_status:
+                for r in bundle_runs:
+                    _dil_kanitlari(rules_dir, data, r, today, out)
+        elif update_status and all_ok and not covered:
             note = " (setin tüm amaçları koşmadı: " + ", ".join(set_purposes(data)) + ")"
         elif update_status and all_ok and hash_before != hash_after:
             note = " (koşu sırasında içerik değişti; yeniden koşturun)"
@@ -1170,6 +1296,11 @@ def main(
         help="geçidin kural yeniden istemesini kapat (ham model ölçümü; üretim davranışı değil)",
     )
     parser.add_argument(
+        "--dil",
+        default=None,
+        help="yalnız doğrulama ajanı setlerinin bu dile ait vakaları (dil kapısı kanıtı)",
+    )
+    parser.add_argument(
         "--via-flow",
         action="store_true",
         help="asistan setini işleyici (flow.cevapla) üzerinden koştur (tohumlu yığın gerekir)",
@@ -1185,6 +1316,12 @@ def main(
             )
         budget = _budget(args.budget_usd)
         plans = plan_bundles(rules_dir, args.bundle, args.purpose)
+        if args.dil:
+            from tp_core.gateway.dil_kapisi import DILLER
+
+            if args.dil not in DILLER:
+                raise GatewayConfigError(f"bilinmeyen dil: {args.dil} ({', '.join(DILLER)})")
+            plans = dil_plani(plans, args.dil)
         _asistan_butce_uyarisi(plans, budget, out)
         if args.dry_run:
             return dry_run(rules_dir, plans, budget, out)

@@ -1,7 +1,10 @@
 """Ürün yorumlarında rol bazlı @bahsetme (yalnızca bildirim).
 
-Roller ``.env``'deki ``JIRA_HESAP_<ROL>`` anahtarlarıyla Jira accountId'lerine eşlenir; boş anahtar
-= o rol için bahsetme yok. Bahsetme yetki vermez ve hiçbir kapıyı açmaz (anayasa I): PO onayı
+Bir rol anıldığında projede o role sahip TÜM kişiler bahsedilir: ``TP_JIRA_MENTIONS_<ROL>``
+(virgüllü accountId listesi; Home kişilerin Profilim'de seçtiği Jira hesaplarından üretir). Liste
+boşsa eski tek değerli ``JIRA_HESAP_<ROL>`` kullanılır; o da boşsa o rol için bahsetme yok (metin
+yine yazılır). Her kişi ayrı ADF mention düğümüdür, aynı kişi bir kez anılır; ürünün kendi
+bot/okuma/yazma hesapları asla anılmaz (``JiraSettings.role_accounts``). Bahsetme yetki vermez ve hiçbir kapıyı açmaz (anayasa I): PO onayı
 yalnızca PO'nun kendi koyduğu ``tp-po-approved`` etiketiyle sayılır; ürün o etiketi asla eklemez.
 
 Yorum kuralı (``RestJira.add_comment``/``add_comment_adf``): her ürün yorumu
@@ -28,12 +31,20 @@ BUG: tuple[Rol, ...] = ("muhendis", "testci")  # mevcut Bug'a bağlandı / yeni 
 
 
 def role_mentions(roles: Sequence[str], settings: Any = None) -> list[str]:
-    """Rollerin accountId'leri (boş/geçersiz atlanır, aynı kişi bir kez)."""
+    """Rollerin accountId'leri: her rolün listesindeki herkes (boş/geçersiz/bot atlanır, aynı kişi
+    bir kez). ``roles`` eski Jira rol adları (``analist`` …) ya da portal rol kodları (``analyst``,
+    ``developer`` …) olabilir; bilinmeyen rol yok sayılır."""
+    from tp_core.integrations.jira import JIRA_ROL_PORTAL, MENTION_ROLLERI
+
     if settings is None:
         from tp_core.integrations.jira import get_jira_settings
 
         settings = get_jira_settings()
-    return unique_mentions([settings.role_account(r) for r in roles if r in ROLLER])
+    ids: list[str] = []
+    for r in roles:
+        if r in ROLLER or JIRA_ROL_PORTAL.get(r, r) in MENTION_ROLLERI:
+            ids.extend(settings.role_accounts(r))
+    return unique_mentions(ids)
 
 
 def post_comment(jira: Any, key: str, body: str, roles: Sequence[str] = ()) -> str:

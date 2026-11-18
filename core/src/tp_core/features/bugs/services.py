@@ -79,19 +79,24 @@ def public_base_url() -> str:
     return f"http://127.0.0.1:{port}"
 
 
-def code_url(path: str, line: Any, sha: str | None) -> str | None:
+def code_url(path: str, line: Any, sha: str | None, depo: str = "") -> str | None:
     """Kod kanıtının denetlenen commit'teki forge bağlantısı (yalnızca web arayüzü olan forge).
 
     `TP_FORGE=github` ve `GITHUB_REPO` → `https://github.com/<repo>/blob/<sha>/<path>#L<n>`
     (`TP_FORGE_WEB_URL` ile değiştirilebilir). LocalForge'un web arayüzü yoktur: None (çağıran
     commit'i metin olarak yazar).
+
+    `depo` (0046): kanıtın commit'inin bulunduğu depo (başarısız koşunun `run.ortam.depo`'su;
+    `''` = varsayılan depo `GITHUB_REPO`). Platform deposundaki commit varsayılan depoda yoktur.
     """
     f = _overrides.get("code_url")
     if f is not None:
         return f(path, line, sha)
     if not sha or (ayar("TP_FORGE") or "local").strip() != "github":
         return None
-    repo = (ayar("GITHUB_REPO") or "").strip().strip("/")
+    from tp_core.features.codegen import depo as depolar
+
+    repo = depolar.depo_adi(depo).strip().strip("/")
     if not repo:
         return None
     web = (ayar("TP_FORGE_WEB_URL") or "https://github.com").rstrip("/")

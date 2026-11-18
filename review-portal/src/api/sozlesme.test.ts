@@ -107,6 +107,8 @@ describe("örnek veri yalnızca core durumlarını üretir", () => {
     const yeni = () => mockVerisi().scriptler.filter((s) => !ESKI.includes(s.id));
     await izle(() => yeni().length === 3 && yeni().every((s) => ["pr_open", "failed", "blocked"].includes(s.durum)));
     // 011: doğrulanmamış dil (Python) — verifying → unverified; başka dilde yeniden üretimde unverified → closed.
+    // 014: yeni üretimde hat kapalı; geçmiş kayıtların durum makinesi 014 öncesi core senaryosuyla gözlenir.
+    ayar.senaryolar.add("eski-dogrulanmamis");
     await api.kodUret(["case-1-4"], "web", "python");
     const py = () => mockVerisi().scriptler.find((s) => s.case_ids.includes("case-1-4") && s.dil === "python");
     await izle(() => py()?.durum === "unverified");

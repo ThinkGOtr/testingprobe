@@ -21,6 +21,7 @@ from pydantic import (
     model_validator,
 )
 
+from runner import diller
 from runner import run as runner
 from toolchain_common import (
     check_artifacts,
@@ -62,7 +63,8 @@ class RunBody(BaseModel):
     # uygulama platformu = e2e-app (Appium + TestNG); "java" + `web` (ya da platform yok) = e2e-java
     # (Playwright for Java + TestNG; Appium yok). test_files proje köküne göre
     # `src/test/java/**/<Ad>Test.java`. Alanlar test_files'tan ÖNCE tanımlıdır (doğrulama sırası).
-    lang: Literal["ts", "java"] = "ts"
+    # 014: kayıtlı runner eklentileri de (`runner/diller/<dil>.py`; `_lang_kayitli`).
+    lang: str = "ts"
     platform: Literal["web", "android", "ios", "windows"] | None = None
     sha: Annotated[str, AfterValidator(validate_ref)]
     run_id: Annotated[str, AfterValidator(validate_run_id)]
@@ -90,10 +92,22 @@ class RunBody(BaseModel):
             raise ValueError("test-runner proje bloğunda remote_token kabul etmez")
         return v
 
+    @field_validator("lang")
+    @classmethod
+    def _lang_kayitli(cls, v: str) -> str:
+        if v not in diller.adlar():
+            raise ValueError(f"lang yalnızca {diller.adlar()} olabilir")
+        return v
+
     @field_validator("test_files")
     @classmethod
     def _test_files(cls, v: list[str], info: ValidationInfo) -> list[str]:
-        if info.data.get("lang") != "java":
+        lang = info.data.get("lang")
+        if lang not in (None, "ts", "java") and (eklenti := diller.eklenti(lang)) is not None:
+            if len(v) > 200:
+                raise ValueError("en fazla 200 test dosyası verilebilir")
+            return list(dict.fromkeys(eklenti.validate_test_file(x) for x in v))
+        if lang != "java":
             return validate_test_files(v)
         if len(v) > 200:
             raise ValueError("en fazla 200 test dosyası verilebilir")
@@ -106,6 +120,11 @@ class RunBody(BaseModel):
                 raise ValueError("Java koşusunda grep desteklenmiyor (test_files kullanın)")
             if self.workers is not None:
                 raise ValueError("Java koşusu tek iş parçacığıdır (workers verilemez)")
+        elif self.lang != "ts":
+            if self.grep:
+                raise ValueError(f"{self.lang} koşusunda grep desteklenmiyor (test_files kullanın)")
+            if self.workers is not None:
+                raise ValueError(f"{self.lang} koşusu tek iş parçacığıdır (workers verilemez)")
         elif self.platform not in (None, "web"):
             raise ValueError(
                 "uygulama platformu yalnızca lang=java ile verilir (lang=ts yalnız web)"
@@ -141,7 +160,7 @@ class RunBody(BaseModel):
             keep=self.keep,
             lang=self.lang,
             # Java'da etkin platform: verilmediyse `web` (Playwright for Java).
-            platform=(self.platform or "web") if self.lang == "java" else self.platform,
+            platform=(self.platform or "web") if self.lang != "ts" else self.platform,
         )
 
 

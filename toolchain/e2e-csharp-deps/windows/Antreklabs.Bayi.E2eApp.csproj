@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Windows masaüstü e2e (Appium .NET + NUnit, NovaWindows). Bu dosya, Directory.Packages.props,
+       packages.lock.json ve nuget.config toolchain/e2e-csharp-deps/windows/ altındaki güvenilir
+       kopyalarla bayt bayt aynı olmalıdır (toolchain deps adımı). -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <RootNamespace>Antreklabs.Bayi</RootNamespace>
+    <AssemblyName>Antreklabs.Bayi.E2eApp</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Ortamdaki PLATFORM=windows (Appium hedefi) MSBuild $(Platform) özelliğine dönüşmesin. -->
+    <Platform>AnyCPU</Platform>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Appium.WebDriver" />
+    <PackageReference Include="NUnit" />
+    <PackageReference Include="NUnit3TestAdapter" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="JunitXml.TestLogger" />
+    <PackageReference Include="Allure.NUnit" />
+  </ItemGroup>
+</Project>

@@ -2,7 +2,7 @@ import { Fragment, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
-import type { AdimEslemesi, AjanAdimi, BreakVerify, PrCheck, PullRequest, RetNedeni, ScriptDetay as Detay, YerelKontrol, YerelKontrolHatasi, YerelKontrolSinifi } from "../api/types";
+import type { AdimEslemesi, AjanAdimi, BreakVerify, MusteriCi, PrCheck, PullRequest, RetNedeni, ScriptDetay as Detay, YerelKontrol, YerelKontrolHatasi, YerelKontrolSinifi } from "../api/types";
 import { ajanAdimiUyarla, kontrolAdimiGecti } from "../api/uyumDemoB";
 import { useBildirim } from "../components/Bildirim";
 import { KodGorunumu } from "../components/KodGorunumu";
@@ -10,14 +10,15 @@ import { DilCakismasiKutusu, dilCakismasiMi, uretimBildirimi } from "../componen
 import { BosDurum, Cip, Baglanti, HataKutusu, KayitHatasi, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { useIzin } from "../auth";
-import { SCRIPT_DURUMU, scriptIsareti, scriptUretiliyor } from "../lib/etiketler";
+import { SCRIPT_DURUMU, scriptIsareti, scriptUretiliyor, type Ton } from "../lib/etiketler";
 import { ENGEL_TURU, kosuKimligiMi, mergeEngelleri, mergeOnayNotu, mergeUyarilari, RET_NEDENI, YEREL_SINIF } from "../lib/kapi";
 import { saat, tarih } from "../lib/format";
 import { PlatformRozeti } from "../components/Platform";
 import { OTOMATIK_TETIK_ACIKLAMA, OTOMATIK_TETIK_ROZETI, VERI_DEGISTI_METNI, veriDegistiGecerli } from "./Kod";
+import { DepoCipi } from "../components/Depo";
 import { aracEtiketi, checkEtiketi, dikeyEkranMi, uygulamaPlatformuMu, type Platform } from "../lib/platform";
-import { DilRozeti } from "../components/Dil";
-import { DIL_CATISI, DIL_ETIKETI, gecerliDiller, KONTROL_ADIMI, kontrolAdimlari, kontrolZinciri, kosuAraci, type Dil } from "../lib/dil";
+import { DilRozeti, KurulumBilgisi } from "../components/Dil";
+import { DIL_CATISI, DIL_ETIKETI, gecerliDiller, KIRARAK_DOGRULANMADI, KIRARAK_DOGRULANMADI_ACIKLAMA, kontrolAdimiEtiketi, kontrolAdimlari, kontrolZinciri, kosuAraci, type Dil, type DilDurumu } from "../lib/dil";
 import { vurguDili } from "../lib/vurgula";
 import { useCapayaKaydir } from "../lib/capa";
 
@@ -324,10 +325,11 @@ export function defectOzeti(yk: YerelKontrol | null): string | null {
  * eski alanlar (`tsc` / `eslint` / `ast_guard`). Eski alanlar boşken Java dilinde adım adları dilden.
  */
 export function kontrolSatirlari(yk: YerelKontrol, dil: Dil | null = null): { ad: string; etiket: string; durum: boolean | null }[] {
-  if (yk.adimlar && yk.adimlar.length) return yk.adimlar.map((a) => ({ ad: a.ad, etiket: KONTROL_ADIMI[a.ad] ?? a.ad, durum: kontrolAdimiGecti(a.durum) }));
+  if (yk.adimlar && yk.adimlar.length) return yk.adimlar.map((a) => ({ ad: a.ad, etiket: kontrolAdimiEtiketi(a.ad, dil), durum: kontrolAdimiGecti(a.durum) }));
   const eski: Record<string, boolean | null> = { tsc: yk.tsc, eslint: yk.eslint, ast_guard: yk.ast_guard };
-  const adlar = dil === "java" && yk.tsc === null && yk.eslint === null && yk.ast_guard === null ? kontrolAdimlari(dil) : ["tsc", "eslint", "ast_guard"];
-  return adlar.map((ad) => ({ ad, etiket: KONTROL_ADIMI[ad] ?? ad, durum: eski[ad] ?? null }));
+  const tsDisi = !!dil && dil !== "ts" && yk.tsc === null && yk.eslint === null && yk.ast_guard === null;
+  const adlar = tsDisi ? kontrolAdimlari(dil) : ["tsc", "eslint", "ast_guard"];
+  return adlar.map((ad) => ({ ad, etiket: kontrolAdimiEtiketi(ad, tsDisi ? dil : null), durum: eski[ad] ?? null }));
 }
 
 export function YerelKontrolKarti({
@@ -401,6 +403,91 @@ export function YerelKontrolKarti({
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+const MUSTERI_CI_DURUMU: Record<MusteriCi["durum"], { ikon: string; etiket: string; ton: Ton }> = {
+  bekliyor: { ikon: "○", etiket: "bekliyor", ton: "bilgi" },
+  kosuyor: { ikon: "◌", etiket: "koşuyor", ton: "bilgi" },
+  gecti: { ikon: "✓", etiket: "geçti", ton: "basari" },
+  kaldi: { ikon: "✗", etiket: "kaldı", ton: "hata" },
+  derleme_hatasi: { ikon: "✗", etiket: "derleme hatası", ton: "hata" },
+  bilinmiyor: { ikon: "?", etiket: "bilinmiyor", ton: "notr" },
+};
+
+/**
+ * 014 müşteri CI check kartı: TP'nin statik koruması (yerel kontrolün `guard` adımı) + müşterinin GitHub
+ * Actions iş akışındaki check (`tp-results` JUnit özeti). Kırarak doğrulama bu hatta yoktur.
+ */
+export function MusteriCiKarti({
+  mc,
+  yk,
+  dil,
+  uretiliyor,
+}: {
+  mc: MusteriCi | null | undefined;
+  yk: YerelKontrol | null;
+  dil: Dil | null;
+  uretiliyor: boolean;
+}) {
+  const statik = yk ? kontrolSatirlari(yk, dil) : [];
+  const d = mc ? MUSTERI_CI_DURUMU[mc.durum] : null;
+  return (
+    <div className="musteri-ci" data-testid="musteri-ci-karti">
+      <p className="soluk kucuk">
+        Test TP'de derlenmez ve koşulmaz: TP statik korumayı yapar, derleme ve koşu müşterinin GitHub Actions iş akışındadır. Sonuç check'ten ve
+        tp-results artefaktından okunur.
+      </p>
+      <ul className="kontrol-liste" aria-label="Müşteri CI adımları">
+        {statik.map((a) => (
+          <li key={a.ad}>
+            <span aria-hidden="true">{ISARET(a.durum)}</span> {a.etiket} (TP)
+            <span className="gorunmez">: {a.durum === null ? "sonuç yok" : a.durum ? "geçti" : "kaldı"}</span>
+          </li>
+        ))}
+        {mc && d ? (
+          <li data-testid="musteri-ci-check" data-durum={mc.durum}>
+            <span aria-hidden="true">{d.ikon}</span> GitHub Actions · <span className="mono">{mc.check_adi}</span>
+            <span className="gorunmez">:</span> <Cip ton={d.ton}>{d.etiket}</Cip>
+            {mc.sonuc && mc.sonuc.toplam > 0 && (
+              <span className="soluk">
+                {" "}
+                · {mc.sonuc.gecen}/{mc.sonuc.toplam} geçti
+                {mc.sonuc.atlanan > 0 && `, ${mc.sonuc.atlanan} atlandı`}
+              </span>
+            )}
+            {mc.head_sha && (
+              <span className="soluk">
+                {" "}
+                · head <span className="mono">{mc.head_sha.slice(0, 7)}</span>
+              </span>
+            )}
+            {mc.run_url && (
+              <>
+                {" · "}
+                <Baglanti href={mc.run_url}>koşu</Baglanti>
+              </>
+            )}
+          </li>
+        ) : (
+          <li data-testid="musteri-ci-check" data-durum="yok">
+            <span aria-hidden="true">○</span> GitHub Actions
+            <span className="soluk"> · {uretiliyor ? "PR açılınca check başlar" : "check sonucu yok"}</span>
+          </li>
+        )}
+      </ul>
+      {mc?.artefakt === "yok" && (
+        <Uyari ton="uyari" baslik="tp-results artefaktı yok">
+          İş akışı bitti ama sonuç artefaktı yüklenmedi; test sonuçları okunamadı. İş akışının tp-results adımını denetleyin.
+        </Uyari>
+      )}
+      {mc?.durum === "derleme_hatasi" && (
+        <Uyari ton="hata" baslik="Müşteri CI'da derleme hatası">
+          {mc.neden ?? "Test müşterinin iş akışında derlenemedi (JUnit sonucu yok)."} Ayrıntı GitHub Actions günlüğünde.
+        </Uyari>
+      )}
+      {mc?.durum === "kaldi" && mc.neden && <p className="kucuk">{mc.neden}</p>}
     </div>
   );
 }
@@ -603,7 +690,8 @@ const RET_SECENEKLERI = Object.entries(RET_NEDENI) as [RetNedeni, string][];
 export function indirmeAdi(dosyaYolu: string, dil: Dil | null | undefined): string {
   const son = dosyaYolu.split(/[\\/]/).filter(Boolean).pop();
   if (son) return son;
-  return `uretilen-test.${dil === "python" ? "py" : dil === "csharp" ? "cs" : dil === "java" ? "java" : "ts"}`;
+  const uzanti: Record<Dil, string> = { ts: "ts", java: "java", csharp: "cs", python: "py", kotlin: "kt", swift: "swift" };
+  return `uretilen-test.${uzanti[dil ?? "ts"]}`;
 }
 
 /** İstemci tarafı indirme (Blob): kod sunucuya yeniden istenmez; ekrandaki içeriğin aynısı kaydedilir. */
@@ -631,7 +719,7 @@ function DogrulanmamisBandi({ s, calisiyor, uret }: { s: Detay; calisiyor: boole
   // `code.generate` yoksa uç çağrılmaz (403); platformun geçerli dilleri gösterilir.
   const uretebilir = useIzin("code.generate");
   const diller = useVeri(() => (uretebilir ? api.kodDilleri(platform) : Promise.resolve(null)), [platform, uretebilir]);
-  const secenekler = (diller.veri?.secenekler ?? gecerliDiller(platform).map((dil) => ({ dil, etiket: DIL_ETIKETI[dil], kullanilabilir: true, neden: null, hat: "tam" as const })))
+  const secenekler = (diller.veri?.secenekler ?? gecerliDiller(platform).map((dil) => ({ dil, etiket: DIL_ETIKETI[dil], kullanilabilir: true, neden: null, hat: "tam" as const, durum: "acik" as DilDurumu })))
     .filter((x) => x.dil !== s.dil);
   const ilkTam = secenekler.find((x) => x.kullanilabilir && x.hat === "tam") ?? secenekler.find((x) => x.kullanilabilir);
   const [hedef, setHedef] = useState<Dil | "">("");
@@ -657,7 +745,8 @@ function DogrulanmamisBandi({ s, calisiyor, uret }: { s: Detay; calisiyor: boole
                   <option key={x.dil} value={x.dil} disabled={!x.kullanilabilir}>
                     {x.etiket}
                     {x.hat === "dogrulanmamis" ? " (doğrulanmamış)" : ""}
-                    {!x.kullanilabilir ? ` — kullanılamıyor: ${x.neden ?? "bu depoda yok"}` : ""}
+                    {x.hat === "musteri_ci" ? " (müşteri CI)" : ""}
+                    {!x.kullanilabilir ? ` — ${x.durum === "yakinda" ? "yakında" : "kullanılamıyor"}: ${x.neden ?? "bu depoda yok"}` : ""}
                   </option>
                 ))}
               </select>
@@ -737,6 +826,8 @@ export function ScriptDetay() {
   const sinif = s.yerel_sinif && s.yerel_sinif !== "gecti" ? YEREL_SINIF[s.yerel_sinif] : null;
   // 011: doğrulanmamış dil (C#, Python) — PR, kırarak doğrulama ve merge bu dilde yoktur.
   const dogrulanmamis = s.durum === "unverified" || s.dogrulanmamis === true;
+  // 014: müşteri CI hattı (Kotlin/Espresso, Swift/XCUITest) — koşu müşterinin GitHub Actions'ında, kırarak doğrulama yok.
+  const musteriCi = !dogrulanmamis && s.hat === "musteri_ci";
   const dilAdi = s.dil ? DIL_ETIKETI[s.dil] : null;
 
   async function baskaDildeUret(dil: Dil) {
@@ -784,6 +875,12 @@ export function ScriptDetay() {
         )}
       </Kart>
 
+      {musteriCi ? (
+        <Kart baslik="Müşteri CI" id="musteri-ci">
+          <MusteriCiKarti mc={s.musteri_ci} yk={s.yerel_kontrol} dil={s.dil ?? null} uretiliyor={uretiliyor} />
+          <KurulumBilgisi kurulum={s.kurulum} dilEtiketi={dilAdi ?? "Bu dil"} />
+        </Kart>
+      ) : (
       <Kart baslik="Yerel kontrol">
         {dogrulanmamis ? (
           <BosDurum baslik={`${dilAdi ?? "Bu dil"} için yerel kontrol yok.`}>Doğrulanmamış dilde kod derlenmez, korunmaz ve koşulmaz.</BosDurum>
@@ -791,6 +888,7 @@ export function ScriptDetay() {
           <YerelKontrolKarti yk={s.yerel_kontrol} uretiliyor={uretiliyor} platform={s.platform} dil={s.dil} />
         )}
       </Kart>
+      )}
     </>
   );
 
@@ -819,6 +917,8 @@ export function ScriptDetay() {
               )}
               <span className="mono kucuk">{s.pr.branch}</span>
               {s.pr.forge && <span className="kucuk soluk">{s.pr.forge === "local" ? "LocalForge" : "GitHub"}</span>}
+              {/* Platform deposu: PR varsayılan dışı depodaysa sahip/ad (tek depolu projede çizilmez). */}
+              <DepoCipi kaynak={s.pr} />
             </p>
             {prBirlesti ? (
               <BirlesmisPrCi pr={s.pr} />
@@ -847,7 +947,7 @@ export function ScriptDetay() {
                     tur="ikincil"
                     calisiyor={islem.calisiyor}
                     disabled={!!s.pr.dal.guncelleme}
-                    onClick={() => s.pr && eylem(() => api.prDaliGuncelle(s.pr!.number), "Dal güncellemesi kuyruğa alındı.", "pr")}
+                    onClick={() => s.pr && eylem(() => api.prDaliGuncelle(s.pr!.number, s.pr!.depo), "Dal güncellemesi kuyruğa alındı.", "pr")}
                   >
                     Dalı güncelle
                   </IslemDugmesi>
@@ -975,7 +1075,7 @@ export function ScriptDetay() {
                           icerik_hash: s.pr!.icerik_hash,
                           head_sha: s.pr!.head_sha,
                           not: retNotu.trim() || null,
-                        }),
+                        }, s.pr!.depo),
                       karar === "reddet" ? "PR reddedildi." : "Değişiklik istendi.",
                       "pr",
                     )
@@ -989,6 +1089,15 @@ export function ScriptDetay() {
         )}
       </Kart>
 
+      {musteriCi ? (
+        <Kart id="kirarak-dogrula" baslik="Kırarak doğrula">
+          <div data-testid="kirarak-dogrulanmadi">
+            <Uyari ton="bilgi" baslik={KIRARAK_DOGRULANMADI}>
+              {KIRARAK_DOGRULANMADI_ACIKLAMA}
+            </Uyari>
+          </div>
+        </Kart>
+      ) : (
       <Kart
         id="kirarak-dogrula"
         baslik="Kırarak doğrula"
@@ -1040,6 +1149,7 @@ export function ScriptDetay() {
           </Uyari>
         )}
       </Kart>
+      )}
     </div>
   );
   // Doğrulanmamış script'te karar kartları (PR, kırarak doğrula, merge) çizilmez: kısa açıklama yerlerini alır.
@@ -1064,12 +1174,25 @@ export function ScriptDetay() {
             {sinif && <Cip ton={sinif.ton}>{sinif.etiket}</Cip>}
             <ReplayRozeti mode={s.mode} />
             <PlatformRozeti platform={s.platform} />
+            <DepoCipi kaynak={s} />
             {s.tetik === "otomatik" && (
               <Cip ton="bilgi" title={OTOMATIK_TETIK_ACIKLAMA}>
                 {OTOMATIK_TETIK_ROZETI}
               </Cip>
             )}
             <DilRozeti dil={s.dil} platform={s.platform} />
+            {musteriCi && (
+              <>
+                <Cip ton="notr" title="Derleme ve koşu müşterinin GitHub Actions iş akışında">
+                  Müşteri CI
+                </Cip>
+                <span data-testid="kirarak-dogrulanmadi-rozeti">
+                  <Cip ton="uyari" title={KIRARAK_DOGRULANMADI_ACIKLAMA}>
+                    {KIRARAK_DOGRULANMADI}
+                  </Cip>
+                </span>
+              </>
+            )}
             {s.requirement_key && <span className="mono">{s.requirement_key}</span>}
             <span className="soluk">{tarih(s.olusturma)}</span>
           </span>

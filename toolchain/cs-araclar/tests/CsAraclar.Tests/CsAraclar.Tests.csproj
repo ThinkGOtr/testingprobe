@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="NUnit" />
+    <PackageReference Include="NUnit3TestAdapter" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/CsAraclar/CsAraclar.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Örnek hedef projeler veri olarak kopyalanır; derlenmez. -->
+    <Compile Remove="Ornekler/**" />
+    <None Include="Ornekler/**" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="beklenen/**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

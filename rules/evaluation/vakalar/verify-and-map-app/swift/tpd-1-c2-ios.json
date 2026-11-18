@@ -1,0 +1,10 @@
+{
+  "id": "tpd-1-c2-ios-swift",
+  "story": "TPD-1",
+  "case_no": 2,
+  "platform": "ios",
+  "baslik": "7 adette 1 bedava (iOS, Swift/XCUITest ekran nesneleri)",
+  "ajan_tablosu": "core/tests/unit/features/codegen/symbols-swift.json",
+  "tablo_dili": "swift",
+  "golden": "TPD-1-C2-android"
+}

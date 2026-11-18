@@ -1,4 +1,4 @@
-// 011: Java ve C# sözdizimi renklendirmesi; dil dosya uzantısından.
+// 011 + 014: Java, C#, Kotlin ve Swift sözdizimi renklendirmesi; dil dosya uzantısından.
 import { describe, expect, it } from "vitest";
 import { belirtecle, dilBul, satirlaraBol, vurguDili, type VurguDili } from "./vurgula";
 
@@ -10,6 +10,9 @@ describe("dilBul ve vurguDili", () => {
     expect(dilBul("Uretilen/Tpd1C8Tests.CS")).toBe("csharp");
     expect(dilBul("tests/test_a.py")).toBe("py");
     expect(dilBul("tests/a.spec.ts")).toBe("ts");
+    expect(dilBul("app/src/androidTest/java/tp/uretilen/C2Test.kt")).toBe("kt");
+    expect(dilBul("build.gradle.kts")).toBe("kt");
+    expect(dilBul("BayiSiparisUITests/C2Tests.swift")).toBe("swift");
     expect(dilBul("README")).toBe("ts");
     expect(dilBul(null)).toBe("ts");
   });
@@ -18,7 +21,9 @@ describe("dilBul ve vurguDili", () => {
     expect(vurguDili("python")).toBe("py");
     expect(vurguDili("csharp")).toBe("csharp");
     expect(vurguDili("java")).toBe("java");
-    expect(vurguDili("kotlin")).toBeNull();
+    expect(vurguDili("kotlin")).toBe("kt");
+    expect(vurguDili("swift")).toBe("swift");
+    expect(vurguDili("rust")).toBeNull();
     expect(vurguDili(null)).toBeNull();
   });
 });
@@ -104,5 +109,73 @@ describe("Python dekoratörü ve güvenlik", () => {
     const s = satirlaraBol(belirtecle('String a = "<img onerror=x>";\nint b = 2;', "java"));
     expect(s).toHaveLength(2);
     expect(s[0].some((x) => x.metin === '"<img onerror=x>"')).toBe(true);
+  });
+});
+
+describe("Kotlin (Espresso)", () => {
+  const kod = `package com.antreklabs.bayi.tp.uretilen
+
+import androidx.test.ext.junit.runners.AndroidJUnit4
+/* blok */
+@RunWith(AndroidJUnit4::class)
+class TPD1AndroidC2Test : EkranTesti() {
+    // yorum
+    @Test
+    fun senaryo() {
+        val adet = 6L
+        sepet.urunEkle("KOLA-330", 6)
+        sepet.toplamBekle("""150,00 TL""")
+    }
+}`;
+
+  it("anahtar sözcük, @Annotation, tip, fonksiyon, dize, ham dize, sayı, yorum", () => {
+    expect(tur(kod, "kt", "package")).toBe("anahtar");
+    expect(tur(kod, "kt", "fun")).toBe("anahtar");
+    expect(tur(kod, "kt", "val")).toBe("anahtar");
+    expect(tur(kod, "kt", "@RunWith")).toBe("ek");
+    expect(tur(kod, "kt", "@Test")).toBe("ek");
+    expect(tur(kod, "kt", "AndroidJUnit4")).toBe("tip");
+    expect(tur(kod, "kt", "senaryo")).toBe("fonksiyon");
+    expect(tur(kod, "kt", '"KOLA-330"')).toBe("metin");
+    expect(tur(kod, "kt", '"""150,00 TL"""')).toBe("metin");
+    expect(tur(kod, "kt", "6L")).toBe("sayi");
+    expect(tur(kod, "kt", "// yorum")).toBe("yorum");
+    expect(tur(kod, "kt", "/* blok */")).toBe("yorum");
+    // Kod metni kayıpsız: belirteçler birleşince aynı metin.
+    expect(belirtecle(kod, "kt").map((b) => b.metin).join("")).toBe(kod);
+  });
+});
+
+describe("Swift (XCUITest)", () => {
+  const kod = `import XCTest
+
+/// Belge yorumu
+final class TPD1IosC2Tests: XCTestCase {
+    @MainActor
+    func testSenaryo() throws {
+        let app = XCUIApplication()
+        app.launch()
+        sepet.urunEkle(kod: "KOLA-330", adet: 6)
+        guard sepet.var else { return }
+        let n = """
+        çok satır
+        """
+    }
+}`;
+
+  it("anahtar sözcük, @attribute, tip, fonksiyon, dize, çok satırlı dize, sayı, yorum", () => {
+    expect(tur(kod, "swift", "import")).toBe("anahtar");
+    expect(tur(kod, "swift", "final")).toBe("anahtar");
+    expect(tur(kod, "swift", "func")).toBe("anahtar");
+    expect(tur(kod, "swift", "guard")).toBe("anahtar");
+    expect(tur(kod, "swift", "@MainActor")).toBe("ek");
+    expect(tur(kod, "swift", "XCTestCase")).toBe("tip");
+    expect(tur(kod, "swift", "testSenaryo")).toBe("fonksiyon");
+    expect(tur(kod, "swift", '"KOLA-330"')).toBe("metin");
+    expect(tur(kod, "swift", '"""\n        çok satır\n        """')).toBe("metin");
+    expect(tur(kod, "swift", "6")).toBe("sayi");
+    expect(tur(kod, "swift", "/// Belge yorumu")).toBe("yorum");
+    expect(belirtecle(kod, "swift").map((b) => b.metin).join("")).toBe(kod);
+    expect(satirlaraBol(belirtecle(kod, "swift"))).toHaveLength(kod.split("\n").length);
   });
 });

@@ -84,6 +84,26 @@ Sleep = Callable[[float], None]
 
 # ------------------------------------------------------------------------ ayarlar
 
+# Rol anma listeleri (`TP_JIRA_MENTIONS_<ROL>`): TP portal rol kodları (auth/yetki.ROLLER).
+MENTION_ROLLERI: tuple[str, ...] = (
+    "analyst",
+    "po",
+    "engineer",
+    "tester",
+    "developer",
+    "admin",
+    "auditor",
+    "viewer",
+)
+# Eski Jira rol adı (`JIRA_HESAP_<ROL>`, jira_notify) ↔ portal rol kodu.
+JIRA_ROL_PORTAL: dict[str, str] = {
+    "analist": "analyst",
+    "po": "po",
+    "muhendis": "engineer",
+    "testci": "tester",
+}
+PORTAL_JIRA_ROL: dict[str, str] = {v: k for k, v in JIRA_ROL_PORTAL.items()}
+
 
 class JiraSettings(BaseSettings):
     """MİMARİ-SÖZLEŞME §6 ortam değişkenleri (Jira ve test yönetimi)."""
@@ -113,6 +133,17 @@ class JiraSettings(BaseSettings):
     jira_hesap_po: str = Field(default="", validation_alias="JIRA_HESAP_PO")
     jira_hesap_muhendis: str = Field(default="", validation_alias="JIRA_HESAP_MUHENDIS")
     jira_hesap_testci: str = Field(default="", validation_alias="JIRA_HESAP_TESTCI")
+    # Rol → o projede rolü olan TÜM kişilerin Jira accountId'leri (virgülle; Home kişinin Profilim'de
+    # seçtiği hesaplardan üretir: `tp.jira.mentions.<rol>`). Doluysa rol anılırken listedeki herkes
+    # @bahsedilir; boşsa eski tek değerli `JIRA_HESAP_<ROL>` kullanılır (geriye uyum).
+    jira_mentions_analyst: str = Field(default="", validation_alias="TP_JIRA_MENTIONS_ANALYST")
+    jira_mentions_po: str = Field(default="", validation_alias="TP_JIRA_MENTIONS_PO")
+    jira_mentions_engineer: str = Field(default="", validation_alias="TP_JIRA_MENTIONS_ENGINEER")
+    jira_mentions_tester: str = Field(default="", validation_alias="TP_JIRA_MENTIONS_TESTER")
+    jira_mentions_developer: str = Field(default="", validation_alias="TP_JIRA_MENTIONS_DEVELOPER")
+    jira_mentions_admin: str = Field(default="", validation_alias="TP_JIRA_MENTIONS_ADMIN")
+    jira_mentions_auditor: str = Field(default="", validation_alias="TP_JIRA_MENTIONS_AUDITOR")
+    jira_mentions_viewer: str = Field(default="", validation_alias="TP_JIRA_MENTIONS_VIEWER")
     # Ürünün bot accountId'leri (virgülle). Gerçek Jira yorum yazarının e-postasını çoğunlukla
     # gizler; asistan okuyucusu bot yorumunu bu kimliklerle tanır.
     jira_bot_account_ids: str = Field(default="", validation_alias="TP_JIRA_BOT_ACCOUNT_IDS")
@@ -146,9 +177,82 @@ class JiraSettings(BaseSettings):
         return pid_coz(self._pid)
 
     def role_account(self, rol: str) -> str:
-        """``analist`` | ``po`` | ``muhendis`` | ``testci`` → accountId (geçersiz/boş → "")."""
+        """``analist`` | ``po`` | ``muhendis`` | ``testci`` → eski tek değerli accountId
+        (``JIRA_HESAP_<ROL>``; geçersiz/boş → "")."""
         deger = str(getattr(self, f"jira_hesap_{rol}", "") or "").strip()
         return deger if valid_account_id(deger) else ""
+
+    def role_accounts(self, rol: str) -> list[str]:
+        """Rol anılırken bahsedilecek accountId'ler (sıralı, tekil; bot/okuma/yazma hesapları hariç).
+
+        ``rol`` portal rol kodu (``analyst`` …) ya da eski Jira rol adı (``analist`` …) olabilir.
+        Önce ``TP_JIRA_MENTIONS_<ROL>`` listesi; boşsa eski ``JIRA_HESAP_<ROL>``; o da yoksa [].
+        """
+        portal = JIRA_ROL_PORTAL.get(rol, rol)
+        if portal not in MENTION_ROLLERI:
+            return []
+        adaylar = [
+            a.strip()
+            for a in str(getattr(self, f"jira_mentions_{portal}", "") or "").split(",")
+            if a.strip() and valid_account_id(a.strip())
+        ]
+        if not adaylar:
+            eski = PORTAL_JIRA_ROL.get(portal)
+            tek = self.role_account(eski) if eski else ""
+            adaylar = [tek] if tek else []
+        haric = self.mention_haric
+        out: list[str] = []
+        for a in adaylar:
+            if a.lower() not in haric and a not in out:
+                out.append(a)
+        return out
+
+    @property
+    def mention_haric(self) -> frozenset[str]:
+        """Asla @bahsedilmeyen ürün kimlikleri (küçük harf): bot kimlikleri (yazma e-postası,
+        ``TP_JIRA_BOT_ACCOUNT_IDS``, OAuth bağlantı sahibi) + okuma e-postası
+        (``workflow.service.reserved_jira_identities`` ile aynı küme ailesi)."""
+        try:
+            ids = set(self.bot_kimlikleri)
+        except Exception:  # bağlantı kipi çözülemedi: en azından statik kimlikler
+            log.warning("Jira bot kimlikleri çözülemedi; yalnız statik kimlikler hariç tutuluyor")
+            ids = {a.strip().lower() for a in self.jira_bot_account_ids.split(",") if a.strip()}
+            if self.jira_write_email and self.jira_write_email.strip():
+                ids.add(self.jira_write_email.strip().lower())
+        if self.jira_read_email and self.jira_read_email.strip():
+            ids.add(self.jira_read_email.strip().lower())
+        return frozenset(ids)
+
+    @field_validator(
+        "jira_mentions_analyst",
+        "jira_mentions_po",
+        "jira_mentions_engineer",
+        "jira_mentions_tester",
+        "jira_mentions_developer",
+        "jira_mentions_admin",
+        "jira_mentions_auditor",
+        "jira_mentions_viewer",
+        mode="before",
+    )
+    @classmethod
+    def _mention_listesi(cls, v: Any) -> str:
+        """Liste (Home `tp.jira.mentions.<rol>`), JSON dizi metni ya da virgüllü metin → virgüllü."""
+        if v is None:
+            return ""
+        if isinstance(v, str):
+            m = v.strip()
+            if m.startswith("["):
+                try:
+                    import json
+
+                    v = json.loads(m)
+                except ValueError:
+                    return m.strip("[]").replace('"', "").replace("'", "")
+            else:
+                return m
+        if isinstance(v, (list, tuple, set, frozenset)):
+            return ",".join(str(x).strip() for x in v if x is not None and str(x).strip())
+        return str(v)
 
     @property
     def bot_kimlikleri(self) -> frozenset[str]:
@@ -1033,7 +1137,8 @@ def get_jira(settings: JiraSettings | None = None, *, http: httpx.Client | None 
 BOT_ETIKETI = "Testing Probe botu"
 PO_ETIKETI = "PO"
 TAKMA_AD_ONEKI = "Kişi"
-# `JIRA_HESAP_*` (ürün yorumlarında @bahsedilen rol hesapları) → portal rol kodu.
+# `JIRA_HESAP_*` (ürün yorumlarında @bahsedilen rol hesapları) → portal rol kodu. Yeni çoklu
+# listeler (`TP_JIRA_MENTIONS_<ROL>`) `JiraSettings.role_accounts` ile aynı eşlemeye katılır.
 HESAP_ROLLERI: tuple[tuple[str, str], ...] = (
     ("analist", "analyst"),
     ("po", "po"),
@@ -1130,6 +1235,9 @@ class KisiEtiketleyici:
         for jira_rol, portal_rol in HESAP_ROLLERI:
             hesap = s.role_account(jira_rol)
             if hesap:
+                roller.setdefault(hesap, portal_rol)
+        for portal_rol in MENTION_ROLLERI:
+            for hesap in s.role_accounts(portal_rol):
                 roller.setdefault(hesap, portal_rol)
         return cls(s.po_accounts, roller, takma_adlar)
 

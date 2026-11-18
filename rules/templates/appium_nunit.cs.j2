@@ -1,0 +1,53 @@
+{#-
+  CasesToCode Windows + C# şablonu (014 test dilleri §3.2; Constitution IV) — Appium .NET istemcisi
+  (WindowsDriver, automationName=NovaWindows) + NUnit, hedef proje `<uygulama kökü>/e2e-app-csharp`.
+  TAM HAT: derlenir, korunur, koşulur, kırarak doğrulanır.
+
+  Model C# yazmaz: bu dosya yalnızca uygulamada (app-mcp) doğrulanmış ve deterministik
+  kontrollerden geçmiş adım → ekran nesnesi eşlemesinden render edilir
+  (tp_core.features.codegen.diller.csharp.render).
+  - Biçim `cs-araclar guard` izin listesidir: yalnız // yorumları, iki izinli `using`, tek dosya
+    kapsamlı ad alanı, en çok bir [Bayi("…")], TestTabani'ndan türeyen tek sınıf, tek parametresiz
+    [Test] metodu, gövdede yalnız `<Erişimci>.<Metot>(<literal>…);` deyimleri. Appium .NET
+    istemcisi eşzamanlıdır: ekran metotları `void` döner, `…Async` soneki yoktur.
+  - Erişimci adı ekran sınıf adıdır (`GirisEkrani`); metot adı referans tablodaki (Java e2e-app)
+    adın PascalCase biçimidir (`girisYap` → `GirisYap`).
+  - Her değer `cs` süzgecinden geçer; adlar `ident`, yorumlar `comment` süzgecinden geçer. Gizli
+    test verisi (013 K19) `Gizli("TP_TESTVERI_…")` ile ortamdan okunur.
+  - Çıktı deterministiktir (golden testi: core/tests/unit/features/codegen/golden/csharp/).
+-#}
+// AI-generated — AI Testing Probe (CasesToCode). Elle düzenlemeyin; değişiklik case'in yeniden
+// onayı ve yeniden üretimle yapılır.
+// Case: {{ case_ref | comment }} ({{ case_id | comment }}) · Story: {{ story_key | comment }} · Jira Test: {{ test_key | comment }}
+// Onaylı case hash: {{ case_hash | comment }}
+// Eşleme: verify_and_map_app · platform: {{ platform | comment }} · dil: csharp · mod: {{ mode | comment }} · bundle: {{ bundle_hash | comment }}
+// Eşleme hash: {{ mapping_hash | comment }} · şablon: {{ template_hash | comment }}
+using Antreklabs.Bayi.Altyapi;
+using NUnit.Framework;
+
+namespace {{ namespace }};
+
+{% if dealer %}
+[Bayi({{ dealer | cs }})]
+{% endif %}
+public class {{ class_name | ident }} : TestTabani
+{
+    [Test]
+{% for tag in categories %}
+    [Category({{ tag | cs }})]
+{% endfor %}
+    [Description({{ description | cs }})]
+    public void {{ test_method | ident }}()
+    {
+{% for step in steps %}
+        // {{ step.label | comment }}
+{% for call in step.calls %}
+        {{ call.fixture | ident }}.{{ call.method | ident }}({{ call.args | csargs }});
+{% endfor %}
+{% endfor %}
+        // Beklenen sonuç (değerler onaylı case metninden)
+{% for call in expects %}
+        {{ call.fixture | ident }}.{{ call.method | ident }}({{ call.args | csargs }});
+{% endfor %}
+    }
+}

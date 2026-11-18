@@ -1,0 +1,34 @@
+# Test dili kapısı (014 test dilleri, TASARIM §2.3): (platform, dil) çiftlerinin TEK kaynağı.
+#
+# Her çift: `hat` (codegen/platform.py CATILAR ile aynı olmalı) ve `durum`:
+#   acik     TP bu dilde üretir, Home/portal seçtirir. Kanıt ZORUNLU:
+#              kanit: devralindi              yalnız 014 öncesi tam hat çiftleri (web/ts, web/java,
+#                                             android|ios|windows/java; kod sabiti DEVRALINABILIR)
+#              kanit: {eval, tarih, kabul}    eval: canlı değerlendirme raporu (rules/'a göre,
+#                                             evaluation/results/<paket>-v<n>-<dil>-<tarih>.json),
+#                                             kabul: kabul koşusu kimliği ya da GitHub run bağlantısı
+#   yakinda  seçilemez ("Yakında"); `POST /code/generate` 422, `GET /code/languages` kullanilabilir=false.
+#            Kısmi kanıt (yalnız eval + tarih, kabul bekliyor) taşıyabilir.
+#
+# Kanıtı yalnız `make eval-live A='--dil <d> --update-status'` (eval + tarih) ve kabul betiği
+# (`python -m tp_core.gateway.dil_kapisi --kabul <p>/<d> --ref <kimlik>`) yazar; ikisi de geçerliyse
+# durum `acik` olur. Ajanlar/otomasyon elle `acik` ya da `devralindi` yazmaz.
+#
+# Kapı: `cd core && uv run python -m tp_core.gateway.dil_kapisi --check` (şema, matris eşitliği,
+# kanıt raporunun güncel prompt sürümüyle o çiftin TÜM vakalarını geçmiş olması). Home kopyası:
+# `python -m tp_core.gateway.dil_kapisi --json` (aiprobe-platform scripts/sync_tp_models.py).
+version: 1
+ciftler:
+  web/ts: {hat: tam, durum: acik, kanit: devralindi}
+  web/java: {hat: tam, durum: acik, kanit: devralindi}
+  android/java: {hat: tam, durum: acik, kanit: devralindi}
+  ios/java: {hat: tam, durum: acik, kanit: devralindi}
+  windows/java: {hat: tam, durum: acik, kanit: devralindi}
+  web/python: {hat: tam, durum: yakinda, kanit: {eval: evaluation/results/verify-and-map-v4-python-2026-11-18.json, tarih: '2026-11-18'}}
+  web/csharp: {hat: tam, durum: yakinda, kanit: {eval: evaluation/results/verify-and-map-v4-csharp-2026-11-18.json, tarih: '2026-11-18'}}
+  android/python: {hat: tam, durum: yakinda, kanit: {eval: evaluation/results/verify-and-map-app-v2-python-2026-11-18.json, tarih: '2026-11-18'}}
+  ios/python: {hat: tam, durum: yakinda, kanit: {eval: evaluation/results/verify-and-map-app-v2-python-2026-11-18.json, tarih: '2026-11-18'}}
+  windows/python: {hat: tam, durum: yakinda}
+  windows/csharp: {hat: tam, durum: yakinda}
+  android/kotlin: {hat: musteri_ci, durum: yakinda, kanit: {eval: evaluation/results/verify-and-map-app-v2-kotlin-2026-11-18.json, tarih: '2026-11-18'}}
+  ios/swift: {hat: musteri_ci, durum: yakinda, kanit: {eval: evaluation/results/verify-and-map-app-v2-swift-2026-11-18.json, tarih: '2026-11-18'}}

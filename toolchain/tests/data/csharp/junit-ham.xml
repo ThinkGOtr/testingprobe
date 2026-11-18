@@ -1,0 +1,65 @@
+<testsuites>
+  <testsuite name="Ornek.dll" tests="5" skipped="1" failures="3" errors="0" time="0.011833" timestamp="2026-11-18T01:15:08" hostname="ornek" id="0" package="Ornek.dll">
+    <properties />
+    <testcase classname="Antreklabs.Bayi.Tests.Generated.KurulumTests" name="Senaryo" time="0.0054180">
+      <failure type="failure" message="SetUp : System.InvalidOperationException : demo API /test/reset başarısız: 401">--SetUp
+   at Antreklabs.Bayi.Tests.Generated.KurulumTests.Hazirla() in @KOK@/Tests/Generated/OrnekTests.cs:line 17
+   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+1) --SetUp
+   at Antreklabs.Bayi.Tests.Generated.KurulumTests.Hazirla() in @KOK@/Tests/Generated/OrnekTests.cs:line 17
+   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)</failure>
+    </testcase>
+    <testcase classname="Antreklabs.Bayi.Tests.Generated.TPD1WebC2_3f9b1c2eTests" name="Senaryo" time="0.0049270">
+      <failure type="failure" message="Locator expected to have text '150,00 TL'&#xA;But was: '175,00 TL'&#xA;Call log:&#xA;  - Expect &quot;ToHaveTextAsync&quot; with timeout 5000ms&#xA;  - waiting for GetByTestId(&quot;cart-total&quot;)">at Antreklabs.Bayi.Tests.Generated.TPD1WebC2_3f9b1c2eTests.Senaryo() in @KOK@/Tests/Generated/OrnekTests.cs:line 7</failure>
+    </testcase>
+    <testcase classname="Antreklabs.Bayi.Tests.Generated.ZamanTests" name="Atla" time="0.0000810">
+      <skipped />
+      <system-out>atla
+</system-out>
+    </testcase>
+    <testcase classname="Antreklabs.Bayi.Tests.Generated.ZamanTests" name="Gecer" time="0.0000590" />
+    <testcase classname="Antreklabs.Bayi.Tests.Generated.ZamanTests" name="Tikla" time="0.0013480">
+      <failure type="failure" message="System.TimeoutException : Timeout 5000ms exceeded.&#xA;Call log:&#xA;  - waiting for GetByTestId(&quot;add-to-cart&quot;)">at Antreklabs.Bayi.Tests.Generated.ZamanTests.Tikla() in @KOK@/Tests/Generated/OrnekTests.cs:line 11
+   at NUnit.Framework.Internal.TaskAwaitAdapter.GenericAdapter`1.BlockUntilCompleted()
+   at NUnit.Framework.Internal.MessagePumpStrategy.NoMessagePumpStrategy.WaitForCompletion(AwaitAdapter awaiter)
+   at NUnit.Framework.Internal.AsyncToSyncAdapter.Await[TResult](TestExecutionContext context, Func`1 invoke)
+   at NUnit.Framework.Internal.AsyncToSyncAdapter.Await(TestExecutionContext context, Func`1 invoke)
+   at NUnit.Framework.Internal.Commands.TestMethodCommand.RunTestMethod(TestExecutionContext context)
+   at NUnit.Framework.Internal.Commands.TestMethodCommand.Execute(TestExecutionContext context)
+   at NUnit.Framework.Internal.Execution.SimpleWorkItem.&lt;&gt;c__DisplayClass3_0.&lt;PerformWork&gt;b__0()
+   at NUnit.Framework.Internal.ContextUtils.&lt;&gt;c__DisplayClass1_0`1.&lt;DoIsolated&gt;b__0(Object _)
+   at NUnit.Framework.Internal.ContextUtils.&lt;&gt;c__DisplayClass2_0.&lt;DoIsolated&gt;b__0(Object s)
+   at System.Threading.ExecutionContext.RunInternal(ExecutionContext executionContext, ContextCallback callback, Object state)
+--- End of stack trace from previous location ---
+   at System.Threading.ExecutionContext.RunInternal(ExecutionContext executionContext, ContextCallback callback, Object state)
+   at NUnit.Framework.Internal.ContextUtils.DoIsolated(ContextCallback callback, Object state)
+   at NUnit.Framework.Internal.ContextUtils.DoIsolated[T](Func`1 func)
+   at NUnit.Framework.Internal.Execution.SimpleWorkItem.PerformWork()
+1)    at Antreklabs.Bayi.Tests.Generated.ZamanTests.Tikla() in @KOK@/Tests/Generated/OrnekTests.cs:line 11
+   at NUnit.Framework.Internal.TaskAwaitAdapter.GenericAdapter`1.BlockUntilCompleted()
+   at NUnit.Framework.Internal.MessagePumpStrategy.NoMessagePumpStrategy.WaitForCompletion(AwaitAdapter awaiter)
+   at NUnit.Framework.Internal.AsyncToSyncAdapter.Await[TResult](TestExecutionContext context, Func`1 invoke)
+   at NUnit.Framework.Internal.AsyncToSyncAdapter.Await(TestExecutionContext context, Func`1 invoke)
+   at NUnit.Framework.Internal.Commands.TestMethodCommand.RunTestMethod(TestExecutionContext context)
+   at NUnit.Framework.Internal.Commands.TestMethodCommand.Execute(TestExecutionContext context)
+   at NUnit.Framework.Internal.Execution.SimpleWorkItem.&lt;&gt;c__DisplayClass3_0.&lt;PerformWork&gt;b__0()
+   at NUnit.Framework.Internal.ContextUtils.&lt;&gt;c__DisplayClass1_0`1.&lt;DoIsolated&gt;b__0(Object _)
+   at NUnit.Framework.Internal.ContextUtils.&lt;&gt;c__DisplayClass2_0.&lt;DoIsolated&gt;b__0(Object s)
+   at System.Threading.ExecutionContext.RunInternal(ExecutionContext executionContext, ContextCallback callback, Object state)
+--- End of stack trace from previous location ---
+   at System.Threading.ExecutionContext.RunInternal(ExecutionContext executionContext, ContextCallback callback, Object state)
+   at NUnit.Framework.Internal.ContextUtils.DoIsolated(ContextCallback callback, Object state)
+   at NUnit.Framework.Internal.ContextUtils.DoIsolated[T](Func`1 func)
+   at NUnit.Framework.Internal.Execution.SimpleWorkItem.PerformWork()</failure>
+    </testcase>
+    <system-out>
+Test Framework Informational Messages:
+NUnit Adapter 6.3.1.0: Test execution started
+Running all tests in @KOK@/bin/Debug/net10.0/Ornek.dll
+   NUnit3TestExecutor discovered 5 of 5 NUnit test cases using Current Discovery mode, Non-Explicit run
+Atla: atla
+</system-out>
+  </testsuite>
+</testsuites>

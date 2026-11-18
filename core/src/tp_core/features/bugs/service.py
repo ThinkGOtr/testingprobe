@@ -36,6 +36,7 @@ Jira yazma kimliği yalnızca core-worker'dadır: core-api yalnızca kuyruğa ko
 
 from __future__ import annotations
 
+import functools
 import uuid
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
@@ -1101,6 +1102,7 @@ def publish_bug(
         mod_metni, mod_etiketi = mod_label_of(s, draft)
         etiket = tp_label(draft.id)
         kod_sha = _kod_sha(s, draft)
+        kod_depo = _kod_deposu(s, draft)
     jira = services.jira()
     bag: list[dict[str, str]] = []
     yorum_id: str | None = None
@@ -1121,7 +1123,7 @@ def publish_bug(
                     icerik.get("evidence"),
                     base_url=services.public_base_url(),
                     kod_sha=kod_sha,
-                    kod_url=services.code_url,
+                    kod_url=functools.partial(services.code_url, depo=kod_depo),
                 ),
             }
             _bag_hedefleri_var(jira, icerik)
@@ -1309,6 +1311,20 @@ def _kod_sha(s: Session, draft: BugDraft) -> str | None:
             .where(Failure.id == draft.failure_id)
         )
     return None
+
+
+def _kod_deposu(s: Session, draft: BugDraft) -> str:
+    """Kod kanıtı commit'inin deposu (0046): başarısızlığın koşusunun `run.ortam.depo`'su;
+    gereksinim bulgusu ve eski koşular varsayılan depoda (`''`)."""
+    if draft.failure_id is None:
+        return ""
+    ortam = s.scalar(
+        select(Run.ortam)
+        .join(Failure, Failure.run_id == Run.id)
+        .where(Failure.id == draft.failure_id)
+    )
+    deger = (ortam or {}).get("depo") if isinstance(ortam, dict) else None
+    return deger.strip().lower() if isinstance(deger, str) else ""
 
 
 def _baska_is_calisiyor(s: Session, draft_id: uuid.UUID, job_id: uuid.UUID | None) -> bool:

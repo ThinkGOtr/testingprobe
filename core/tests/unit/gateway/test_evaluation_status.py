@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 from pathlib import Path
@@ -13,7 +14,6 @@ from tests.unit.gateway.demo_sources import RULES
 from tp_core.gateway.errors import GatewayConfigError
 from tp_core.gateway.evaluation import (
     ICERIK_KAYNAKLARI,
-    PENDING_LABEL,
     blocking,
     evaluation_status,
     evaluation_statuses,
@@ -51,18 +51,17 @@ def test_every_prompt_bundle_has_a_current_evaluation_record() -> None:
     assert not stale_or_missing, f"evaluations.yaml güncellenmedi: {stale_or_missing}"
 
 
-def test_verify_and_map_v3_is_pending_live_evaluation_without_waiver() -> None:
-    """Faz 3 bulgusu: v3 + yeniden kaydedilen golden'lar canlı modelle değerlendirilmedi ve onaylı
-    istisna yok. Golden'larda `recording` (canlı kayıt üst verisi) olunca bu test güncellenir."""
+def test_verify_and_map_v4_is_live_evaluated_with_report() -> None:
+    """014 v4 (hedef dil `language` girdisi): 2026-11-18 canlı değerlendirildi (tam set, ts +
+    python + csharp vakaları, gerçek Playwright MCP). Golden'lar elle kalır (eval-live ajan koşusu
+    golden yazmaz); kanıt, kayıttaki rapor ve çağrı dosyasıdır."""
     st = evaluation_status(RULES, "verify-and-map")
-    assert st.prompt_version == 3
-    goldens = sorted((RULES / "replay" / "verify_and_map" / "golden").rglob("*.json"))
-    assert goldens
-    live = [p for p in goldens if '"recording"' in p.read_text(encoding="utf-8")]
-    if not live:
-        assert st.status == "pending"
-        assert st.label == PENDING_LABEL
-        assert not st.mergeable
+    assert st.prompt_version == 4
+    assert st.status == "evaluated" and st.mergeable
+    rapor = json.loads((RULES / st.detail["results"]).read_text(encoding="utf-8"))
+    assert rapor["mode"] == "live" and rapor["version"] == 4
+    assert rapor["passed"] == rapor["total"] == rapor["set_vaka_sayisi"]
+    assert (RULES / st.detail["calls"]).is_file()
 
 
 def test_no_waiver_is_recorded_without_owner_approval() -> None:
@@ -89,7 +88,7 @@ def test_merge_gate_reports_pending_bundles(capsys) -> None:
     pending = blocking(RULES)
     assert code == (1 if pending else 0)
     out = capsys.readouterr()
-    assert "verify-and-map@v3" in out.out
+    assert "verify-and-map@v4" in out.out
     if pending:
         assert "Constitution X" in out.err
 
@@ -113,13 +112,13 @@ def test_missing_record_blocks_merge(rules_copy: Path) -> None:
 
 
 def test_waiver_requires_approver_date_reason_and_until(rules_copy: Path) -> None:
-    _set(rules_copy, "verify-and-map", version=3, status="waived", waiver={"reason": "demo"})
+    _set(rules_copy, "verify-and-map", version=4, status="waived", waiver={"reason": "demo"})
     with pytest.raises(GatewayConfigError, match=r"waiver\.approved_by"):
         load_evaluations(rules_copy)
     _set(
         rules_copy,
         "verify-and-map",
-        version=3,
+        version=4,
         status="waived",
         waiver={"approved_by": "Sahip", "approved_at": "dün", "reason": "r", "until": "u"},
     )
@@ -129,22 +128,22 @@ def test_waiver_requires_approver_date_reason_and_until(rules_copy: Path) -> Non
 
 def test_evaluated_requires_dated_results(rules_copy: Path) -> None:
     evaluation = {"date": "2026-11-01"}
-    _set(rules_copy, "verify-and-map", version=3, status="evaluated", evaluation=evaluation)
+    _set(rules_copy, "verify-and-map", version=4, status="evaluated", evaluation=evaluation)
     with pytest.raises(GatewayConfigError, match=r"evaluation\.model"):
         load_evaluations(rules_copy)
 
 
 def test_pending_cannot_carry_waiver(rules_copy: Path) -> None:
-    _set(rules_copy, "verify-and-map", version=3, status="pending", waiver={"approved_by": "x"})
+    _set(rules_copy, "verify-and-map", version=4, status="pending", waiver={"approved_by": "x"})
     with pytest.raises(GatewayConfigError, match="pending"):
         load_evaluations(rules_copy)
 
 
 def test_unknown_status_and_orphan_record_rejected(rules_copy: Path) -> None:
-    _set(rules_copy, "verify-and-map", version=3, status="ok")
+    _set(rules_copy, "verify-and-map", version=4, status="ok")
     with pytest.raises(GatewayConfigError, match="status"):
         load_evaluations(rules_copy)
-    _set(rules_copy, "verify-and-map", version=3, status="pending")
+    _set(rules_copy, "verify-and-map", version=4, status="pending")
     _set(rules_copy, "silinmis-paket", version=1, status="pending")
     with pytest.raises(GatewayConfigError, match="silinmis-paket"):
         evaluation_statuses(rules_copy)
@@ -171,7 +170,7 @@ def test_gate_opens_only_when_every_bundle_is_evaluated_or_waived(rules_copy: Pa
     _set(
         rules_copy,
         "verify-and-map",
-        version=3,
+        version=4,
         status="waived",
         waiver={
             "approved_by": "Sahip",

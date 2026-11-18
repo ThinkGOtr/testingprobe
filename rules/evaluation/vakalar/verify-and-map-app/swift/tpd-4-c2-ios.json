@@ -1,0 +1,10 @@
+{
+  "id": "tpd-4-c2-ios-swift",
+  "story": "TPD-4",
+  "case_no": 2,
+  "platform": "ios",
+  "baslik": "Hatalı parolada hata mesajı (iOS, Swift/XCUITest ekran nesneleri; negatif giriş)",
+  "ajan_tablosu": "core/tests/unit/features/codegen/symbols-swift.json",
+  "tablo_dili": "swift",
+  "expects_include": ["GirisEkrani.dogrulaHataMesaji"]
+}

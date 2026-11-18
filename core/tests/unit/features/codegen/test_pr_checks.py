@@ -324,7 +324,7 @@ def test_github_web_java_checki_tp_web_dilleri(
     monkeypatch.delenv("TP_PLATFORMS", raising=False)
     monkeypatch.setenv("TP_WEB_DILLERI", "ts,java")
     assert views.required_checks() == ("test-local", "ast-guard", "semgrep", "web-java")
-    monkeypatch.setenv("TP_WEB_DILLERI", "csharp")
+    monkeypatch.setenv("TP_WEB_DILLERI", "kotlin")  # 014: web matrisinde yok
     assert views.required_checks() == ("test-local", "ast-guard", "semgrep")
     _, _, engeller = views.pr_checks(_sha(), None)
     assert any(e.startswith("Yapılandırma hatası") for e in engeller)

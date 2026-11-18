@@ -43,7 +43,9 @@ x-core-env: &core-env
   # `env` (varsayılan) bugünkü davranış. LKG: tp_home_config volume'ü (/var/lib/tp-config).
   CONFIG_SOURCE: ${CONFIG_SOURCE:-env}
   TP_HOME_PROJECT: ${TP_HOME_PROJECT:-}
-  # TP çok proje: kurulumun ek projeleri (virgüllü pid listesi; Home product_installs/tp.allowed_pids ile aynı)
+  # TP çok proje: açılışta önceden kaydedilecek ek projeler (virgüllü pid listesi; İSTEĞE BAĞLI). Home kapsamı
+  # org genişliğinde (product_installs/tp = {org_id, allowed_pids: ["*"]}) olduğundan kurulum org'unda açılan yeni
+  # proje, rolü olan kişi ilk girişte listelenince keşifle (home_config.durum.kesfet) kendiliğinden kaydolur.
   TP_HOME_PROJECTS: ${TP_HOME_PROJECTS:-}
   HOME_CONFIG_URL: ${HOME_CONFIG_URL:-}
   SECRETS_PROJECT: ${SECRETS_PROJECT:-}
@@ -82,6 +84,26 @@ x-core-env: &core-env
   TP_FORGE_PATH: /forge/demo-app.git
   TP_FORGE_PRS_PATH: /forge/tp-prs.json
   GITHUB_REPO: ${GITHUB_REPO:-}
+  # Platform test depoları (CONFIG_SOURCE=env kipi; Home kipinde proje config'inden gelir). Boş
+  # GITHUB_REPO_<P> = varsayılan depo. docs/GERCEK-SISTEMLER.md §5.5.1, .env.example
+  GITHUB_REPO_ANDROID: ${GITHUB_REPO_ANDROID:-}
+  GITHUB_REPO_IOS: ${GITHUB_REPO_IOS:-}
+  GITHUB_REPO_WINDOWS: ${GITHUB_REPO_WINDOWS:-}
+  TP_FORGE_CHECK_REF_ANDROID: ${TP_FORGE_CHECK_REF_ANDROID:-}
+  TP_FORGE_CHECK_REF_IOS: ${TP_FORGE_CHECK_REF_IOS:-}
+  TP_FORGE_CHECK_REF_WINDOWS: ${TP_FORGE_CHECK_REF_WINDOWS:-}
+  TP_E2E_APP_ROOT_ANDROID: ${TP_E2E_APP_ROOT_ANDROID:-}
+  TP_E2E_APP_ROOT_IOS: ${TP_E2E_APP_ROOT_IOS:-}
+  TP_E2E_APP_ROOT_WINDOWS: ${TP_E2E_APP_ROOT_WINDOWS:-}
+  TP_FORGE_APP_ROOT_ANDROID: ${TP_FORGE_APP_ROOT_ANDROID:-}
+  TP_FORGE_APP_ROOT_IOS: ${TP_FORGE_APP_ROOT_IOS:-}
+  TP_FORGE_APP_ROOT_WINDOWS: ${TP_FORGE_APP_ROOT_WINDOWS:-}
+  TP_APP_PATHS_ANDROID: ${TP_APP_PATHS_ANDROID:-}
+  TP_APP_PATHS_IOS: ${TP_APP_PATHS_IOS:-}
+  TP_APP_PATHS_WINDOWS: ${TP_APP_PATHS_WINDOWS:-}
+  TP_REQUIRED_CHECKS_ANDROID: ${TP_REQUIRED_CHECKS_ANDROID:-}
+  TP_REQUIRED_CHECKS_IOS: ${TP_REQUIRED_CHECKS_IOS:-}
+  TP_REQUIRED_CHECKS_WINDOWS: ${TP_REQUIRED_CHECKS_WINDOWS:-}
   GITHUB_READ_TOKEN: ${GITHUB_READ_TOKEN:-}
   GITHUB_API_URL: ${GITHUB_API_URL:-}
   # GitHub kipinde zorunlu iş akışı check'leri (sır değil; core-api de okur: kod üretimi ekranının
@@ -93,6 +115,24 @@ x-core-env: &core-env
   # (repodaki dosyalar belirler). Geçersiz değer GitHubForge'u başlatmaz (bkz. .env.example).
   TP_PLATFORMS: ${TP_PLATFORMS:-}
   TP_WEB_DILLERI: ${TP_WEB_DILLERI:-}
+  # 014 test dilleri (specs/014-test-dilleri/plan.md §4): platform başına dil listesi (boş =
+  # platformun varsayılan dili: java) ve dil test kökleri (boş = varsayılan). Seçilebilirlik ayrıca
+  # rules/diller.yaml değerlendirme kapısına bağlıdır ("Yakında").
+  TP_DILLERI_ANDROID: ${TP_DILLERI_ANDROID:-}
+  TP_DILLERI_IOS: ${TP_DILLERI_IOS:-}
+  TP_DILLERI_WINDOWS: ${TP_DILLERI_WINDOWS:-}
+  TP_E2E_PYTHON_ROOT: ${TP_E2E_PYTHON_ROOT:-}
+  TP_E2E_CSHARP_ROOT: ${TP_E2E_CSHARP_ROOT:-}
+  TP_E2E_APP_PYTHON_ROOT: ${TP_E2E_APP_PYTHON_ROOT:-}
+  TP_E2E_APP_CSHARP_ROOT: ${TP_E2E_APP_CSHARP_ROOT:-}
+  TP_ANDROID_KOTLIN_ROOT: ${TP_ANDROID_KOTLIN_ROOT:-}
+  TP_IOS_SWIFT_ROOT: ${TP_IOS_SWIFT_ROOT:-}
+  TP_E2E_APP_PYTHON_ROOT_ANDROID: ${TP_E2E_APP_PYTHON_ROOT_ANDROID:-}
+  TP_E2E_APP_PYTHON_ROOT_IOS: ${TP_E2E_APP_PYTHON_ROOT_IOS:-}
+  TP_E2E_APP_PYTHON_ROOT_WINDOWS: ${TP_E2E_APP_PYTHON_ROOT_WINDOWS:-}
+  TP_E2E_APP_CSHARP_ROOT_WINDOWS: ${TP_E2E_APP_CSHARP_ROOT_WINDOWS:-}
+  TP_ANDROID_KOTLIN_ROOT_ANDROID: ${TP_ANDROID_KOTLIN_ROOT_ANDROID:-}
+  TP_IOS_SWIFT_ROOT_IOS: ${TP_IOS_SWIFT_ROOT_IOS:-}
   # Merge kapısının zorunlu check'leri (boş = adaptör varsayılanı: local-ci / ruleset listesi).
   # core-api de okur (kod üretimi ekranının merge kapısı listesi) → ortak blokta (OPS-L2 tur 2).
   # Burada yazılanlar HER PR'da zorunludur: LocalForge'da local-ci-web-java / local-ci-<platform>
@@ -285,6 +325,15 @@ services:
       JIRA_HESAP_PO: ${JIRA_HESAP_PO:-}
       JIRA_HESAP_MUHENDIS: ${JIRA_HESAP_MUHENDIS:-}
       JIRA_HESAP_TESTCI: ${JIRA_HESAP_TESTCI:-}
+      # Rol başına TÜM kişiler (virgüllü accountId; Home `tp.jira.mentions.<rol>`). Doluysa JIRA_HESAP_* yerine.
+      TP_JIRA_MENTIONS_ANALYST: ${TP_JIRA_MENTIONS_ANALYST:-}
+      TP_JIRA_MENTIONS_PO: ${TP_JIRA_MENTIONS_PO:-}
+      TP_JIRA_MENTIONS_ENGINEER: ${TP_JIRA_MENTIONS_ENGINEER:-}
+      TP_JIRA_MENTIONS_TESTER: ${TP_JIRA_MENTIONS_TESTER:-}
+      TP_JIRA_MENTIONS_DEVELOPER: ${TP_JIRA_MENTIONS_DEVELOPER:-}
+      TP_JIRA_MENTIONS_ADMIN: ${TP_JIRA_MENTIONS_ADMIN:-}
+      TP_JIRA_MENTIONS_AUDITOR: ${TP_JIRA_MENTIONS_AUDITOR:-}
+      TP_JIRA_MENTIONS_VIEWER: ${TP_JIRA_MENTIONS_VIEWER:-}
       # Tutarlılık denetiminin veri araçları (salt okuma rolü; core-api demoapp'e hiç bağlanmaz).
       DEMOAPP_RO_DATABASE_URL: postgresql+psycopg://demoapp_ro:${DEMOAPP_RO_PASSWORD:?}@postgres:5432/demoapp?require_auth=scram-sha-256
       # Kod üretimi doğrulama ajanı (Faz 3): ajanın bayisi (e2e bayileriyle çakışmaz) ve uygulama kökü.
@@ -391,6 +440,17 @@ services:
       # Web + Java kökü (011 §2.6; `lang=java` + `platform=web`): LocalForge 'e2e-java';
       # TP_FORGE=github iken 'demo-app/e2e-java'.
       TP_E2E_JAVA_ROOT: ${TP_E2E_JAVA_ROOT:-e2e-java}
+      # 014 test dilleri (plan.md §4): dil test kökleri (boş = varsayılan; GitHub kipinde
+      # demo-app/<kök>). Araç yolları (TP_E2E_PYTHON_DEPS, TP_E2E_CSHARP_DEPS, TP_CS_ARACLAR(_DLL),
+      # TP_DIL_STATIK, TP_DOTNET, TP_PYTHON_E2E) imaj varsayılanındadır; değiştirmeyin.
+      TP_E2E_PYTHON_ROOT: ${TP_E2E_PYTHON_ROOT:-e2e-python}
+      TP_E2E_CSHARP_ROOT: ${TP_E2E_CSHARP_ROOT:-e2e-csharp}
+      TP_E2E_APP_PYTHON_ROOT: ${TP_E2E_APP_PYTHON_ROOT:-e2e-app-python}
+      TP_E2E_APP_CSHARP_ROOT: ${TP_E2E_APP_CSHARP_ROOT:-e2e-app-csharp}
+      TP_ANDROID_KOTLIN_ROOT: ${TP_ANDROID_KOTLIN_ROOT:-app/src/androidTest/java}
+      TP_IOS_SWIFT_ROOT: ${TP_IOS_SWIFT_ROOT:-UITests}
+      TP_DIL_TIMEOUT_S: ${TP_DIL_TIMEOUT_S:-300}
+      TP_DOTNET_TIMEOUT_S: ${TP_DOTNET_TIMEOUT_S:-600}
       # Çalışan uygulamanın commit eşleşmesinde karşılaştırılan uygulama yolları (/check `app`,
       # /locator-probe): LocalForge 'web,api'; TP_FORGE=github iken 'demo-app/web,demo-app/api'.
       TP_APP_PATHS: ${TP_APP_PATHS:-web,api}
@@ -445,6 +505,17 @@ services:
       # Web + Java koşusu (011 §2.6, Playwright for Java): Appium yok; BASE_URL/DEMO_API_URL ve
       # imajdaki /ms-playwright tarayıcısı (indirme kapalı) kullanılır.
       TP_E2E_JAVA_ROOT: ${TP_E2E_JAVA_ROOT:-e2e-java}
+      # 014 test dilleri (plan.md §4): dil test kökleri (boş = varsayılan; GitHub kipinde
+      # demo-app/<kök>). Araç yolları (TP_E2E_PYTHON_DEPS, TP_E2E_CSHARP_DEPS, TP_CS_ARACLAR(_DLL),
+      # TP_DIL_STATIK, TP_DOTNET, TP_PYTHON_E2E) imaj varsayılanındadır; değiştirmeyin.
+      TP_E2E_PYTHON_ROOT: ${TP_E2E_PYTHON_ROOT:-e2e-python}
+      TP_E2E_CSHARP_ROOT: ${TP_E2E_CSHARP_ROOT:-e2e-csharp}
+      TP_E2E_APP_PYTHON_ROOT: ${TP_E2E_APP_PYTHON_ROOT:-e2e-app-python}
+      TP_E2E_APP_CSHARP_ROOT: ${TP_E2E_APP_CSHARP_ROOT:-e2e-app-csharp}
+      TP_ANDROID_KOTLIN_ROOT: ${TP_ANDROID_KOTLIN_ROOT:-app/src/androidTest/java}
+      TP_IOS_SWIFT_ROOT: ${TP_IOS_SWIFT_ROOT:-UITests}
+      TP_DIL_TIMEOUT_S: ${TP_DIL_TIMEOUT_S:-300}
+      TP_DOTNET_TIMEOUT_S: ${TP_DOTNET_TIMEOUT_S:-600}
       APPIUM_URL_ANDROID: ${TP_RUNNER_APPIUM_URL_ANDROID:-http://appium-gw:4723}
       APPIUM_URL_IOS: ${TP_RUNNER_APPIUM_URL_IOS:-http://appium-gw:4723}
       APPIUM_URL_WINDOWS: ${TP_RUNNER_APPIUM_URL_WINDOWS:-}

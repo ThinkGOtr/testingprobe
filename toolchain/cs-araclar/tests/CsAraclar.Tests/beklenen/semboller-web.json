@@ -1,0 +1,327 @@
+{
+  "schema_version": 1,
+  "lang": "csharp",
+  "platform": "web",
+  "root": ".",
+  "page_objects": [
+    {
+      "class": "CartPage",
+      "file": "Pages/CartPage.cs",
+      "doc": "Sepet sayfası.",
+      "methods": [
+        {
+          "name": "ExpectLineQuantityAsync",
+          "params": [
+            {
+              "name": "productCode",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "quantity",
+              "type": "int",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "expect",
+          "async": true,
+          "doc": "",
+          "line": 13
+        },
+        {
+          "name": "ExpectFreeQuantityAsync",
+          "params": [
+            {
+              "name": "productCode",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "quantity",
+              "type": "int",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "expect",
+          "async": true,
+          "doc": "",
+          "line": 14
+        },
+        {
+          "name": "ExpectSubtotalAsync",
+          "params": [
+            {
+              "name": "amount",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "expect",
+          "async": true,
+          "doc": "",
+          "line": 15
+        },
+        {
+          "name": "ExpectDiscountAsync",
+          "params": [
+            {
+              "name": "amount",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "expect",
+          "async": true,
+          "doc": "",
+          "line": 16
+        },
+        {
+          "name": "ExpectTotalAsync",
+          "params": [
+            {
+              "name": "amount",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "expect",
+          "async": true,
+          "doc": "Genel toplamı doğrular.",
+          "line": 19
+        },
+        {
+          "name": "SenkronIslem",
+          "params": [
+            {
+              "name": "acik",
+              "type": "boolean",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "action",
+          "async": false,
+          "doc": "",
+          "line": 21
+        }
+      ],
+      "locators": {
+        "Cart.LINE_QUANTITY_ONEK": {
+          "testId": "cart-line-qty-",
+          "role": "",
+          "name": "",
+          "intent": "",
+          "prefix": true,
+          "file": "Pages/Kimlikler.cs",
+          "line": 37
+        },
+        "Cart.TOTAL": {
+          "testId": "cart-total",
+          "role": "",
+          "name": "",
+          "intent": "",
+          "prefix": false,
+          "file": "Pages/Kimlikler.cs",
+          "line": 38
+        }
+      }
+    },
+    {
+      "class": "CatalogPage",
+      "file": "Pages/CatalogPage.cs",
+      "doc": "Ürün kataloğu.",
+      "methods": [
+        {
+          "name": "AddToCartAsync",
+          "params": [
+            {
+              "name": "productCode",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "quantity",
+              "type": "int",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "action",
+          "async": true,
+          "doc": "Ürünü verilen adetle sepete ekler.",
+          "line": 14
+        },
+        {
+          "name": "OpenCartAsync",
+          "params": [],
+          "returns": "void",
+          "kind": "action",
+          "async": true,
+          "doc": "Sepeti açar.",
+          "line": 22
+        },
+        {
+          "name": "ReadPriceAsync",
+          "params": [
+            {
+              "name": "productCode",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returns": "string",
+          "kind": "action",
+          "async": true,
+          "doc": "Fiyatı döndürür.",
+          "line": 25
+        },
+        {
+          "name": "SecenekliAsync",
+          "params": [
+            {
+              "name": "kod",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "tumu",
+              "type": "boolean",
+              "optional": true
+            },
+            {
+              "name": "oran",
+              "type": "double",
+              "optional": true
+            },
+            {
+              "name": "uzun",
+              "type": "long",
+              "optional": true
+            }
+          ],
+          "returns": "void",
+          "kind": "action",
+          "async": true,
+          "doc": "",
+          "line": 27
+        }
+      ],
+      "locators": {
+        "Catalog.PRODUCT_CARD_ONEK": {
+          "testId": "product-card-",
+          "role": "",
+          "name": "",
+          "intent": "Ürün kartı öneki.",
+          "prefix": true,
+          "file": "Pages/Kimlikler.cs",
+          "line": 26
+        },
+        "Catalog.ProductCard.ADD_TO_CART": {
+          "testId": "add-to-cart",
+          "role": "",
+          "name": "",
+          "intent": "Sepete ekle butonu.",
+          "prefix": false,
+          "file": "Pages/Kimlikler.cs",
+          "line": 31
+        },
+        "Nav.CART_COUNT": {
+          "testId": "nav-cart-count",
+          "role": "",
+          "name": "",
+          "intent": "Sepet sayacı.",
+          "prefix": false,
+          "file": "Pages/Kimlikler.cs",
+          "line": 9
+        }
+      }
+    },
+    {
+      "class": "LoginPage",
+      "file": "Pages/LoginPage.cs",
+      "doc": "Bayi giriş sayfası.",
+      "methods": [
+        {
+          "name": "GotoAsync",
+          "params": [],
+          "returns": "void",
+          "kind": "action",
+          "async": true,
+          "doc": "Giriş sayfasını açar.",
+          "line": 15
+        },
+        {
+          "name": "LoginAsync",
+          "params": [
+            {
+              "name": "username",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "password",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "action",
+          "async": true,
+          "doc": "Kullanıcı adı ve parolayla giriş yapar.",
+          "line": 18
+        }
+      ],
+      "locators": {
+        "Login.PASSWORD": {
+          "testId": "login-password",
+          "role": "",
+          "name": "",
+          "intent": "Parola alanı.",
+          "prefix": false,
+          "file": "Pages/Kimlikler.cs",
+          "line": 18
+        },
+        "Login.SUBMIT": {
+          "testId": "login-submit",
+          "role": "",
+          "name": "",
+          "intent": "",
+          "prefix": false,
+          "file": "Pages/Kimlikler.cs",
+          "line": 20
+        },
+        "Login.USERNAME": {
+          "testId": "login-username",
+          "role": "",
+          "name": "",
+          "intent": "Kullanıcı adı alanı.",
+          "prefix": false,
+          "file": "Pages/Kimlikler.cs",
+          "line": 15
+        }
+      }
+    }
+  ],
+  "locator_files": [
+    {
+      "file": "Pages/Kimlikler.cs",
+      "exports": [
+        "Nav",
+        "Login",
+        "Catalog",
+        "Cart"
+      ]
+    }
+  ],
+  "errors": [],
+  "fixtures": [
+    "CartPage",
+    "CatalogPage",
+    "LoginPage"
+  ]
+}

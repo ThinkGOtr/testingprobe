@@ -160,3 +160,21 @@ yalnızca hata / hiç siparişi olmayan bayi durumunda çıkar).
 - iOS sayı klavyesinde "Bitti" tuşu yoktur; açık klavye alt sekmeleri ve alttaki kartların
   düğmelerini örter. Uygulama "Sepete ekle"de klavyeyi kapatır ve kaydırınca kapanır; testte adet
   yazıldıktan sonra aynı kartın düğmesine basılır (başka karta geçmeden).
+
+## XCUITest (Swift) — müşteri CI hattı demosu (014, Ş4)
+
+`ios-test/BayiSiparisUITests/` Swift + XCUITest ekran nesnesi kütüphanesidir (`Ekranlar/`,
+`Altyapi/`, el testleri `Testler/`, TP'nin ürettikleri `TPUretilen/`). `ios/` depoda olmadığı için
+UI test hedefi prebuild'de eklenir: `plugins/xcuitest-hedefi.js` `BayiSiparisUITests` hedefini
+(UI Testing Bundle) bu klasöre **eşitlenmiş klasör** (Xcode 16+, `objectVersion 77`) olarak bağlar
+ve paylaşılan şemanın Test eylemine koyar. Müşteri projesinde bu adım Xcode'da bir kez elle yapılır;
+TP yalnız klasöre `.swift` ekler, `project.pbxproj`'a dokunmaz.
+
+```bash
+npx expo prebuild --platform ios --clean --no-install && (cd ios && pod install)
+TEST_RUNNER_DEMO_API_URL=http://127.0.0.1:18000 TEST_RUNNER_DEMOAPP_TEST_TOKEN=<token> \
+  xcodebuild test -workspace ios/BayiSiparis.xcworkspace -scheme BayiSiparis -configuration Release \
+  -destination "id=<simülatör udid>" -only-testing:BayiSiparisUITests/GirisTesti CODE_SIGNING_ALLOWED=NO
+```
+
+CI: `.github/workflows/mobil-ios-swift.yml` (yalnız `TPUretilen/` sınıfları; `tp-results` artefaktı).

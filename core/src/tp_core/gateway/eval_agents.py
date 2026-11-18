@@ -61,6 +61,10 @@ class ToolEnv:
     check: Callable[[Any, Mapping[str, Any]], list[str]] = field(default=lambda output, expect: [])
     # Asistan ortamı: vakayı işleyici (`flow.cevapla`) üzerinden koşturan sürücü (`--via-flow`).
     akis: AsistanAkisi | None = None
+    # Durumlu oturum (araç çağrısı bütçesi, tarayıcı/uygulama oturumu, ajan girişi): eval her
+    # vakada kapatıp yeniden açar — üretimde de her doğrulama kendi oturumunu açar. Paylaşılırsa
+    # ilk vakanın araç bütçesi sonrakilere taşar (ToolBudgetExceeded).
+    vaka_basina: bool = False
 
 
 EnvFactory = Callable[[], ToolEnv]
@@ -138,7 +142,7 @@ def _browser_env() -> ToolEnv:  # pragma: no cover - canlı yığın (Playwright
             if lock is not None:
                 lock.__exit__(None, None, None)
 
-    return ToolEnv("browser", session.tools, session.execute, close=close)
+    return ToolEnv("browser", session.tools, session.execute, close=close, vaka_basina=True)
 
 
 def _app_env(platform: str) -> ToolEnv:  # pragma: no cover - canlı cihaz + app-mcp
@@ -175,7 +179,7 @@ def _app_env(platform: str) -> ToolEnv:  # pragma: no cover - canlı cihaz + app
             if lock is not None:
                 lock.__exit__(None, None, None)
 
-    return ToolEnv(f"app:{platform}", tools, agent, close=close)
+    return ToolEnv(f"app:{platform}", tools, agent, close=close, vaka_basina=True)
 
 
 # ------------------------------------------------------------------ asistan (AI-ASISTAN-PLANI §13)

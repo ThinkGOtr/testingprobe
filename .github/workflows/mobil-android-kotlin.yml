@@ -1,0 +1,324 @@
+# Android Kotlin / Espresso müşteri CI hattı — demo hedefi (TASARIM test-dilleri §3.3; Ş3). AI'sız.
+#
+# musteri_ci hattı: TP testi ÜRETİR, statik korumadan geçirir (tree-sitter; TP'de) ve PR açar;
+# DERLEME ve KOŞU bu iş akışındadır (TP'nin VM'inde Android SDK / Kotlin derleyicisi yoktur).
+# Kırarak doğrulama YOKTUR: yeşil koşu merge için yeterlidir, PR ve portal "kırarak doğrulanmadı"
+# rozeti gösterir. Bu dosya müşteri şablonunun (rules/ci-sablonlari/android-espresso.yml, Ş5)
+# demo deposundaki karşılığıdır; Expo/RN uygulaması olduğu için `android/` prebuild ile üretilir ve
+# Espresso ayarları `demo-app/mobile/plugins/espresso.js` ile gelir.
+#
+# Akış (ubuntu, KVM hızlandırmalı x86_64 emülatör):
+#   npm ci + expo prebuild (android) → Gradle: release APK + androidTest APK (derleme hatası burada;
+#   günlük tp-results/derleme.log) → demo uygulaması (API 127.0.0.1:18000, web+vekil 8081;
+#   emülatörden 10.0.2.2) → android-emulator-runner içinde `connectedTpTestAndroidTest`
+#   (yalnız `com.antreklabs.bayisiparis.tp` paketi: kütüphanenin elle yazılmış testleri + TP'nin
+#   ürettikleri `…tp.uretilen`; Test Orchestrator, testler arası clearPackageData).
+#
+# Check adı = job adı `mobil-android-kotlin` (Ş5 `musteri_ci.is_adi("android", "kotlin")`). Platform
+# ve dil etkinse zorunlu check listesine girer; bu yüzden workflow düzeyinde `paths` filtresi YOK:
+# ilgisiz PR'da job "no-op, başarılı" çıkar.
+#
+# Sonuç (Ş5 sözleşmesi, `musteri_ci.sonuc`): her durumda `tp-results` artefaktı —
+#   ci-meta.json   {schema_version, job, platform, dil, sha, run_id, durum, exit_code, tetik, istek_id}
+#   junit/*.xml    Gradle androidTest-results/connected/**/TEST-*.xml kopyaları
+#   ekler/**       Test Storage çıktısı (kanit/<Sınıf>.<metot>/{ekran.png, sayfa-kaynagi.xml})
+#   derleme.log    derleme/koşu adımının son satırları (JUnit yoksa triage türü `derleme`)
+name: mobil-android-kotlin
+run-name: >-
+  ${{ github.event_name == 'workflow_dispatch'
+      && format('mobil-android-kotlin {0} [{1}]', inputs.tetik, inputs.istek_id || 'elle')
+    || github.event.pull_request.title || github.event.head_commit.message || 'mobil-android-kotlin' }}
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+  schedule:
+    # Gece koşusu: 03:00 UTC (mobil-android'den yarım saat sonra; aynı emülatör kotası).
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      tetik:
+        description: "Tetik türü (sonuç kaydında görünür)"
+        type: choice
+        options: [manual, nightly, deploy]
+        default: manual
+      istek_id:
+        description: "Çekirdeğin istek kimliği (koşu adında görünür; [A-Za-z0-9._-], ≤64)"
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobil-android-kotlin-${{ github.event_name }}-${{ github.event.pull_request.number || inputs.istek_id || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  MOBIL: demo-app/mobile
+  NODE_VERSION: "22"
+  JAVA_VERSION: "17"
+  UV_VERSION: "0.8.24"
+  ANDROID_API_LEVEL: "34"
+  # Koşulan test paketi: ekran nesnesi kütüphanesinin taban paketi (TP sembol tablosu `paket`).
+  TP_TEST_PAKETI: com.antreklabs.bayisiparis.tp
+  TP_ISTEK_ID: ${{ inputs.istek_id || '' }}
+
+jobs:
+  changes:
+    name: changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      run_tests: ${{ steps.decide.outputs.run_tests }}
+      trigger: ${{ steps.decide.outputs.trigger }}
+    steps:
+      - name: Değişiklikleri tespit et (yalnızca PR)
+        id: filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: |
+            app:
+              - 'demo-app/mobile/**'
+              - 'demo-app/api/**'
+              - 'demo-app/web/**'
+              - 'demo-app/kimlikler.json'
+              - 'scripts/github-demo-serve.sh'
+              - '.github/workflows/mobil-android-kotlin.yml'
+
+      - name: Karar
+        id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          APP: ${{ steps.filter.outputs.app }}
+          DISPATCH_TETIK: ${{ inputs.tetik }}
+        run: |
+          set -euo pipefail
+          if [ -n "$TP_ISTEK_ID" ] && ! [[ "$TP_ISTEK_ID" =~ ^[A-Za-z0-9._-]{1,64}$ ]]; then
+            echo "::error::istek_id biçimi geçersiz ([A-Za-z0-9._-], en çok 64 karakter)"
+            exit 1
+          fi
+          case "$EVENT" in
+            pull_request)      trigger="pr" ;;
+            push)              trigger="push" ;;
+            schedule)          trigger="nightly" ;;
+            workflow_dispatch) trigger="${DISPATCH_TETIK:-manual}" ;;
+            *)                 trigger="$EVENT" ;;
+          esac
+          if [ "$EVENT" = "pull_request" ]; then run_tests="${APP:-false}"; else run_tests=true; fi
+          echo "run_tests=$run_tests" >> "$GITHUB_OUTPUT"
+          echo "trigger=$trigger" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Değişiklik tespiti (mobil-android-kotlin)"
+            echo "| tetik | istek | testler |"
+            echo "|---|---|---|"
+            echo "| \`$trigger\` | \`${TP_ISTEK_ID:--}\` | $run_tests |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  mobil-android-kotlin:
+    # Zorunlu check adayı (android × kotlin etkinse). Uygulama/test değişmediyse no-op başarılı.
+    name: mobil-android-kotlin
+    needs: changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    env:
+      RUN_TESTS: ${{ needs.changes.outputs.run_tests }}
+      TP_TRIGGER: ${{ needs.changes.outputs.trigger }}
+      CI: "true"
+    steps:
+      - name: No-op (uygulama değişmedi)
+        if: env.RUN_TESTS != 'true'
+        run: echo "Android uygulaması / Espresso testleri değişmedi; mobil-android-kotlin no-op (başarılı)." | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Checkout
+        if: env.RUN_TESTS == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: KVM etkinleştir
+        if: env.RUN_TESTS == 'true'
+        run: |
+          set -euo pipefail
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules >/dev/null
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Java kurulumu
+        if: env.RUN_TESTS == 'true'
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Node kurulumu
+        if: env.RUN_TESTS == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            demo-app/mobile/package-lock.json
+            demo-app/web/package-lock.json
+
+      - name: uv kurulumu
+        if: env.RUN_TESTS == 'true'
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: demo-app/api/uv.lock
+
+      - name: Gradle önbelleği
+        if: env.RUN_TESTS == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-espresso-${{ runner.os }}-${{ hashFiles('demo-app/mobile/package-lock.json', 'demo-app/mobile/app.json', 'demo-app/mobile/plugins/espresso.js') }}
+
+      - name: Android projesini üret (expo prebuild)
+        if: env.RUN_TESTS == 'true'
+        working-directory: ${{ env.MOBIL }}
+        run: |
+          set -euo pipefail
+          echo "ANDROID_HOME=${ANDROID_HOME:?runner imajında ANDROID_HOME yok}"
+          npm ci --no-audit --no-fund --loglevel=error
+          npx expo prebuild --platform android --clean --no-install
+          grep -q "@tp-espresso başlangıç" android/app/build.gradle
+
+      # Derleme emülatörden ÖNCE: derleme hatası koşu kotası harcamaz ve günlüğü ayrıdır
+      # (tp-results/derleme.log; Ş5 `derleme_kesiti` Kotlin `e: …` satırlarını okur).
+      - name: Derle (tpTest APK + androidTest APK; R8 kapalı)
+        if: env.RUN_TESTS == 'true'
+        id: derle
+        working-directory: ${{ env.MOBIL }}/android
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/tp-logs"
+          ./gradlew --no-daemon assembleTpTest assembleTpTestAndroidTest \
+            -PreactNativeArchitectures=x86_64 2>&1 | tee "$GITHUB_WORKSPACE/tp-logs/derleme.log"
+
+      - name: Demo uygulamasını başlat
+        if: env.RUN_TESTS == 'true'
+        run: |
+          set -euo pipefail
+          token="$(openssl rand -hex 24)"
+          echo "::add-mask::$token"
+          echo "DEMOAPP_TEST_TOKEN=$token" >> "$GITHUB_ENV"
+          mkdir -p tp-logs
+          PORT=8081 DEMO_API_PORT=18000 DEMOAPP_TEST_TOKEN="$token" \
+            nohup bash scripts/github-demo-serve.sh > tp-logs/serve.log 2>&1 &
+          for _ in $(seq 1 90); do
+            if curl -fsS "http://127.0.0.1:8081/api/health" >/dev/null 2>&1; then
+              echo "Uygulama hazır: http://127.0.0.1:8081 (emülatörden http://10.0.2.2:8081)"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::Demo uygulaması 180 sn içinde hazır olmadı"
+          tail -n 100 tp-logs/serve.log
+          exit 1
+
+      # Enstrümantasyon argümanları komut satırına değil (süreç listesi) Gradle özellik dosyasına
+      # yazılır; dosya prebuild çıktısıdır (artefakta girmez). Belirteç onaltılıktır.
+      - name: Test argümanları
+        if: env.RUN_TESTS == 'true'
+        working-directory: ${{ env.MOBIL }}/android
+        run: |
+          set -euo pipefail
+          # Önce satır sonu: prebuild'in gradle.properties'i son satırı satır sonusuz bırakır
+          # (yerel denemede `expo.inlineModules.watchedDirectories=[]` satırına yapışıp bozuldu).
+          {
+            echo ""
+            echo "android.testInstrumentationRunnerArguments.package=$TP_TEST_PAKETI"
+            echo "android.testInstrumentationRunnerArguments.tpApiUrl=http://10.0.2.2:18000"
+            echo "android.testInstrumentationRunnerArguments.tpTestToken=$DEMOAPP_TEST_TOKEN"
+          } >> gradle.properties
+
+      # android-emulator-runner `script:` satırlarını ayrı `sh -c` ile koşar: tek satır + pipefail.
+      - name: Testler (emülatörde)
+        if: env.RUN_TESTS == 'true'
+        id: tests
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: ${{ env.ANDROID_API_LEVEL }}
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          emulator-boot-timeout: 900
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot
+          working-directory: ${{ env.MOBIL }}/android
+          script: bash -o pipefail -c './gradlew --no-daemon connectedTpTestAndroidTest -PreactNativeArchitectures=x86_64 2>&1 | tee -a "$GITHUB_WORKSPACE/tp-logs/kosu.log"'
+
+      # --- Sonuçlar (Ş5 tp-results sözleşmesi) ----------------------------------------------------
+      - name: Sonuçları topla
+        if: always() && env.RUN_TESTS == 'true'
+        env:
+          DERLE: ${{ steps.derle.outcome }}
+          OUTCOME: ${{ steps.tests.outcome }}
+          SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          out=tp-results
+          build="$MOBIL/android/app/build/outputs"
+          mkdir -p "$out/junit" "$out/ekler"
+          # JUnit: cihaz/varyant alt dizinleri düzleştirilir (ad çakışmasında dizin adı önek olur).
+          if [ -d "$build/androidTest-results/connected" ]; then
+            find "$build/androidTest-results/connected" -name 'TEST-*.xml' -type f | while read -r f; do
+              ad="$(basename "$f")"
+              [ -e "$out/junit/$ad" ] && ad="$(basename "$(dirname "$f")")-$ad"
+              cp "$f" "$out/junit/$ad"
+            done
+          fi
+          if [ -d "$build/connected_android_test_additional_output" ]; then
+            cp -R "$build/connected_android_test_additional_output/." "$out/ekler/"
+          fi
+          # Derleme/koşu günlüğünün son satırları (JUnit yoksa triage `derleme` kesiti).
+          { cat tp-logs/derleme.log tp-logs/kosu.log 2>/dev/null || true; } | tail -n 400 > "$out/derleme.log"
+          if [ -d tp-logs ]; then cp -R tp-logs "$out/logs"; fi
+          find "$out" -type l -delete
+          if [ -n "${DEMOAPP_TEST_TOKEN:-}" ]; then
+            { grep -rl -- "$DEMOAPP_TEST_TOKEN" "$out" || true; } | while read -r f; do
+              sed -i "s/$DEMOAPP_TEST_TOKEN/***/g" "$f"
+            done
+          fi
+          if [ "$DERLE" != "success" ]; then
+            durum=error; exit_code=1
+          else
+            case "$OUTCOME" in success) durum=passed; exit_code=0 ;; failure) durum=failed; exit_code=1 ;; *) durum=error; exit_code=1 ;; esac
+          fi
+          jq -n --arg platform android --arg dil kotlin --arg sha "$SHA" --arg run_id "$RUN_ID" \
+            --arg tetik "$TP_TRIGGER" --arg istek "$TP_ISTEK_ID" --arg durum "$durum" \
+            --argjson exit_code "$exit_code" --arg derleme "$DERLE" --arg kosu "$OUTCOME" \
+            --arg job mobil-android-kotlin \
+            '{schema_version: 1, job: $job, platform: $platform, dil: $dil, sha: $sha,
+              run_id: $run_id, tetik: $tetik,
+              istek_id: (if $istek == "" then null else $istek end), durum: $durum,
+              exit_code: $exit_code, derleme_adimi: $derleme, kosu_adimi: $kosu,
+              kirarak_dogrulama: false}' > "$out/ci-meta.json"
+          n="$(find "$out/junit" -name '*.xml' | wc -l | tr -d ' ')"
+          {
+            echo "### mobil-android-kotlin (tetik: \`$TP_TRIGGER\`)"
+            echo "Durum: **$durum** · JUnit XML: $n dosya · commit \`${SHA:0:12}\` · kırarak doğrulanmadı"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Artefaktlar
+        if: always() && env.RUN_TESTS == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tp-results
+          retention-days: 14
+          if-no-files-found: warn
+          include-hidden-files: false
+          path: tp-results/

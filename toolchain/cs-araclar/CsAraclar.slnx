@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="src/CsAraclar/CsAraclar.csproj" />
+  <Project Path="tests/CsAraclar.Tests/CsAraclar.Tests.csproj" />
+</Solution>

@@ -5780,6 +5780,25 @@ input[type="checkbox"][role="switch"] {
   color: var(--text);
   font-weight: 500;
 }
+/* 014: seçenek rozeti (Yakında, Müşteri CI): nötr küçük hap, açıklamanın önünde. */
+.secenek-rozeti {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-2);
+}
+/* 014 müşteri CI check kartı ve kurulum PR'ı. */
+.musteri-ci-ozet,
+.kurulum-pr ul {
+  margin: 4px 0 0;
+}
+.kurulum-pr ul {
+  padding-left: 18px;
+}
 /* Doğrulanmamış script bandı: indirme + başka dilde yeniden üretim, dar ekranda alt alta. */
 .dogrulanmamis-bandi .uyari-kutusu > div {
   flex: 1 1 100%;

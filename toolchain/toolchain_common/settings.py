@@ -90,6 +90,9 @@ class Settings:
     # local-forge `e2e-java`, GitHub monorepo `demo-app/e2e-java`) ve imajdaki güvenilir pom +
     # ikinci ısıtılmış Maven deposu (`/opt/e2e-java/{pom.xml,m2}`).
     e2e_java_root: str = "e2e-java"
+    # Platform deposu (ANALIZ §3, risk 6): deponun varsayılan dalı — merge-base/ast-guard tabanı
+    # olarak aynaya çekilir. Blokta yoksa "main".
+    base_ref: str = "main"
     e2e_java_deps: Path = Path("/opt/e2e-java")
     # Çok proje (TP-COK-PROJE-PLANI §4.4): istekteki `proje` bloğu. None = blok yok (ortam).
     pid: str | None = None
@@ -98,6 +101,22 @@ class Settings:
     app_ayarlari: Mapping[str, Mapping[str, str]] | None = None
     # test-runner'a iletilecek ham blok (`model_dump(exclude_none=True)`).
     proje_blogu: Mapping[str, Any] | None = dataclasses.field(default=None, repr=False)
+    # 014 test dilleri (specs/014-test-dilleri/plan.md §3.1, §4): proje bloğundan dil kökleri
+    # (env adı → kök; `worker.diller.kok` çözer) ve imajdaki dil araçları.
+    dil_kokleri: Mapping[str, str] | None = None
+    e2e_python_deps: Path = Path("/opt/e2e-python")
+    e2e_csharp_deps: Path = Path("/opt/e2e-csharp")
+    cs_araclar: Path = Path("/opt/cs-araclar")
+    # Ş2 C#: cs-araclar giriş dll'i ve dotnet restore+build süre sınırı.
+    cs_araclar_dll: Path = Path("/opt/cs-araclar/cs-araclar.dll")
+    dotnet_timeout_s: float = 600
+    dil_statik: Path = Path("/opt/dil-statik")
+    dotnet: str = "/usr/share/dotnet/dotnet"
+    python_e2e: str = "/opt/e2e-python/venv/bin/python"
+    dil_timeout_s: float = 300
+    # Ş1 py-guard (stdlib `ast` koruması) ve onu koşan python (3.10+).
+    py_guard: Path = Path("/opt/e2e-python/py-guard/py_guard.py")
+    py_guard_python: str = "/usr/bin/python3.12"
 
     @property
     def e2e_java_m2(self) -> Path:
@@ -177,12 +196,24 @@ def settings(proje: ProjeBlogu | Mapping[str, Any] | None = None) -> Settings:
         # Uygulama kökü hem koşu (BASE_URL) hem yoklama (DEMO_WEB_URL) için aynıdır.
         degisen["base_url"] = blok.base_url
         degisen["probe_base_url"] = blok.base_url
-    for alan in ("demo_api_url", "probe_user", "probe_password", "e2e_root"):
+    for alan in (
+        "demo_api_url",
+        "probe_user",
+        "probe_password",
+        "e2e_root",
+        "e2e_app_root",
+        "e2e_java_root",
+        "base_ref",
+    ):
         deger = getattr(blok, alan)
         if deger is not None:
             degisen[alan] = deger
+    if blok.dil_kokleri is not None:
+        degisen["dil_kokleri"] = dict(blok.dil_kokleri)
     if blok.run_dealers is not None:
         degisen["run_dealers"] = tuple(blok.run_dealers)
+    if blok.app_paths is not None:
+        degisen["app_paths"] = tuple(blok.app_paths)
     return dataclasses.replace(cfg, **degisen)
 
 
@@ -257,6 +288,23 @@ def _ortam_ayarlari() -> Settings:
         ),
         e2e_java_root=env("TP_E2E_JAVA_ROOT", "e2e-java"),
         e2e_java_deps=Path(env("TP_E2E_JAVA_DEPS", "/opt/e2e-java")),
+        e2e_python_deps=Path(env("TP_E2E_PYTHON_DEPS", "/opt/e2e-python")),
+        e2e_csharp_deps=Path(env("TP_E2E_CSHARP_DEPS", "/opt/e2e-csharp")),
+        cs_araclar=Path(env("TP_CS_ARACLAR", "/opt/cs-araclar")),
+        cs_araclar_dll=Path(
+            env("TP_CS_ARACLAR_DLL", "")
+            or f"{env('TP_CS_ARACLAR', '/opt/cs-araclar')}/cs-araclar.dll"
+        ),
+        dotnet_timeout_s=_float("TP_DOTNET_TIMEOUT_S", 600),
+        dil_statik=Path(env("TP_DIL_STATIK", "/opt/dil-statik")),
+        dotnet=env("TP_DOTNET", "/usr/share/dotnet/dotnet"),
+        python_e2e=env("TP_PYTHON_E2E", "/opt/e2e-python/venv/bin/python"),
+        dil_timeout_s=_float("TP_DIL_TIMEOUT_S", 300),
+        py_guard=Path(
+            env("TP_PY_GUARD", "")
+            or f"{env('TP_E2E_PYTHON_DEPS', '/opt/e2e-python')}/py-guard/py_guard.py"
+        ),
+        py_guard_python=env("TP_PY_GUARD_PYTHON", "/usr/bin/python3.12"),
     )
 
 

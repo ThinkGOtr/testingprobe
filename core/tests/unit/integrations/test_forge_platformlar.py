@@ -100,9 +100,30 @@ def test_etkin_web_dilleri() -> None:
 
     assert etkin_web_dilleri({}) == ("ts",)
     assert etkin_web_dilleri({"TP_WEB_DILLERI": " Java ,ts"}) == ("ts", "java")
-    # Doğrulanmamış diller CI'a/PR'a girmez (K3).
+    # 014: web matrisindeki her dil yazılabilir (seçilebilirlik değerlendirme kapısındadır);
+    # matriste olmayan dil yapılandırma hatası.
+    assert etkin_web_dilleri({"TP_WEB_DILLERI": "ts,csharp"}) == ("ts", "csharp")
     with pytest.raises(ForgeValidationError):
-        etkin_web_dilleri({"TP_WEB_DILLERI": "ts,csharp"})
+        etkin_web_dilleri({"TP_WEB_DILLERI": "ts,kotlin"})
+
+
+def test_etkin_dil_listesi_ve_ciftler(monkeypatch: pytest.MonkeyPatch) -> None:
+    """014: platform başına dil listesi; zorunlu iş akışı check'i yalnız kapısı açık çiftlere."""
+    from tp_core.features.codegen import platform as platformlar
+    from tp_core.integrations import forge
+
+    env = {"TP_DILLERI_ANDROID": "python,kotlin", "TP_WEB_DILLERI": "java,python"}
+    assert forge.etkin_dil_listesi("android", env) == ("java", "python", "kotlin")
+    assert forge.etkin_dil_listesi("ios", env) == ("java",)
+    with pytest.raises(ForgeValidationError):
+        forge.etkin_dil_listesi("ios", {"TP_DILLERI_IOS": "kotlin"})
+    monkeypatch.setattr(
+        platformlar, "cift_durumu", lambda p, d, *a: "acik" if (p, d) != ("web", "python") else "x"
+    )
+    assert forge.etkin_dil_ciftleri(env) == (("android", "python"), ("android", "kotlin"))
+    assert github_required_checks(
+        ("test-local",), (), ("ts",), dil_ciftleri=forge.etkin_dil_ciftleri(env)
+    ) == ("test-local", "mobil-android-python", "mobil-android-kotlin")
 
 
 def test_github_required_checks_web_java() -> None:
@@ -244,11 +265,16 @@ def test_e2e_kokleri_tek_liste() -> None:
     from tp_core.features.codegen import platform as platformlar
     from tp_core.integrations import forge
 
-    assert (
-        forge._TEST_KOKLERI
-        == platformlar.e2e_kokleri("").hepsi
-        == ("e2e/", "e2e-java/", "e2e-app/")
-    )
+    assert platformlar.e2e_kokleri("").hepsi == ("e2e/", "e2e-java/", "e2e-app/")
+    # 014: LocalForge kapısı ayrıca tam hat dil köklerini test kökü sayar.
+    assert forge._TEST_KOKLERI == (
+        "e2e/", "e2e-java/", "e2e-app/", "e2e-python/", "e2e-csharp/", "e2e-app-python/",
+        "e2e-app-csharp/",
+    )  # fmt: skip
+    assert forge.DIL_KOKLERI_YEREL["e2e-python/"] == ("local-ci-web-python",)
+    assert forge.DIL_KOKLERI_YEREL["e2e-app-python/"] == (
+        "local-ci-android-python", "local-ci-ios-python", "local-ci-windows-python",
+    )  # fmt: skip
     assert platformlar.e2e_kokleri("demo-app/").hepsi == (
         "demo-app/e2e/",
         "demo-app/e2e-java/",

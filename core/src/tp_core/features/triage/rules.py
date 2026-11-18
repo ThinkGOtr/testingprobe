@@ -210,6 +210,13 @@ class Girdi:
             java = _java_turu(m)
             if java is not None:
                 return java
+        if self.dil not in (None, "", "ts", "java"):
+            # 014: yeni dillerin hata kalıpları dil eklentisinde (`triage/diller/<dil>.py`).
+            from tp_core.features.triage import diller as triage_diller
+
+            eklenti = triage_diller.eklenti(self.dil)
+            if eklenti is not None and (tur := eklenti.hata_turu(m)) is not None:
+                return triage_diller.normal_tur(tur, m, bool(_VERI_RE.search(m)))
         if _AG_RE.search(m):
             return "navigation"
         if _ASSERTION_RE.search(m) and (self.gerceklesen is not None or "Received" in m):

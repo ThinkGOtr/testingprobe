@@ -5,7 +5,7 @@
 // ön inceleme soruları) TEKNIK-TASARIM'daki İngilizce şema adlarını aynen taşır.
 
 import type { Platform } from "../lib/platform";
-import type { Dil, DilKaynagi } from "../lib/dil";
+import type { Dil, DilDurumu, DilKaynagi, Hat } from "../lib/dil";
 export type { Platform } from "../lib/platform";
 export type { Dil, DilKaynagi } from "../lib/dil";
 
@@ -1050,6 +1050,14 @@ export interface PullRequest {
   govde?: string | null;
   /** Dal durumu: başka bir PR merge edilince bot dalı main'in gerisinde kalır. */
   dal?: PrDalDurumu | null;
+  /**
+   * Platform başına depo: PR'ın açıldığı depo kimliği (core `depo`; `''` = projenin varsayılan deposu).
+   * PR eylemleri (`/prs/{n}/…?depo=`) bu değerle adreslenir; PR numarası yalnız depo içinde tekildir.
+   * Eski core alanı göndermez → `''`.
+   */
+  depo?: string;
+  /** Gösterim adı (sahip/ad); bilinmiyorsa null. */
+  depo_adi?: string | null;
 }
 
 export interface PrDalDurumu {
@@ -1140,6 +1148,8 @@ export interface Script {
   dil_kaynagi?: DilKaynagi | null;
   /** 011: doğrulanmamış dilde üretildi (core `dogrulanmamis` = `durum == "unverified"`): derlenmedi, koşulmadı, PR yok. */
   dogrulanmamis?: boolean;
+  /** 014: script'in hattı (core `hat`); yoksa (014 öncesi core) null — portal (platform, dil)'den türetir. */
+  hat?: Hat | null;
   /** null: model çağrısı yok ya da mod bilinmiyor ("live" uydurulmaz). */
   mode: CiktiModu | null;
   olusturma: string;
@@ -1152,6 +1162,14 @@ export interface Script {
   veri_izi?: Record<string, string>;
   /** 013 §9: değeri üretimden sonra değişen anahtarlar. */
   veri_degisen?: string[];
+  /**
+   * Platform başına depo: script'in (ve PR'ının) deposu kimliği (core `depo`; `''` = projenin varsayılan deposu).
+   * PR eylemleri (`/prs/{n}/…?depo=`) bu değerle adreslenir; PR numarası yalnız depo içinde tekildir.
+   * Eski core alanı göndermez → `''`.
+   */
+  depo?: string;
+  /** Gösterim adı (sahip/ad); bilinmiyorsa null. */
+  depo_adi?: string | null;
 }
 
 /**
@@ -1235,6 +1253,10 @@ export interface YerelKontrol {
 
 export interface ScriptDetay extends Script {
   kod: string | null;
+  /** 014: müşteri CI hattında check kartı (core `musteri_ci`); diğer hatlarda / core göndermiyorsa null. */
+  musteri_ci?: MusteriCi | null;
+  /** 014: dilin kurulum PR'ı (script bu PR birleşmeden CI'da koşamaz); yoksa null. */
+  kurulum?: KurulumPr | null;
   adimlar: AjanAdimi[];
   /** Doğrulanmış adım eşlemesi; core sunmuyorsa boş. */
   eslemeler: AdimEslemesi[];
@@ -1257,15 +1279,69 @@ export interface ScriptDetay extends Script {
 
 // ---------------------------------------------------------------- Üretim dili (011)
 
-/** `GET /code/languages` seçeneği: `hat` tam (derleme + koşu + PR) ya da doğrulanmamış (yalnız kaynak). */
+/**
+ * `GET /code/languages` seçeneği. `hat`: tam (derleme + koşu + kırarak doğrulama + PR), musteri_ci
+ * (014: TP üretir + korur + PR; koşu müşterinin GitHub Actions'ında, kırarak doğrulama yok) ya da
+ * doğrulanmamış (011 eski hattı, yalnız kaynak). `durum` (014, TP `rules/diller.yaml`): `yakinda` seçenek
+ * seçilemez (`kullanilabilir=false`, neden "Değerlendirme sürüyor").
+ */
 export interface DilSecenegi {
   dil: Dil;
   etiket: string;
   /** Test çatısı (ör. "Playwright for Java + TestNG"). */
   cati: string;
-  hat: "tam" | "dogrulanmamis";
-  /** false: bu dilde üretilemez (ör. depoda o dilin test projesi yok); `neden` Türkçe gerekçedir. */
+  hat: Hat;
+  /** 014 dil kapısı; 014 öncesi core göndermez → `acik` (kapı yok, `kullanilabilir` geçerli). */
+  durum: DilDurumu;
+  /** false: bu dilde üretilemez (ör. depoda o dilin test projesi yok, değerlendirme sürüyor); `neden` Türkçe gerekçedir. */
   kullanilabilir: boolean;
+  neden: string | null;
+  /**
+   * 014: depoda dilin iskeleti / ekran nesnesi kütüphanesi / CI iş akışı eksikse tek seferlik, insan onaylı
+   * kurulum PR'ı (kullanıcı kararı 1). Core göndermiyorsa null (gösterilmez).
+   */
+  kurulum?: KurulumPr | null;
+}
+
+/** 014 kurulum PR'ının durumu: `gerekli` (henüz açılmadı), `acik`, `birlesti`, `kapali`. */
+export type KurulumDurumu = "gerekli" | "acik" | "birlesti" | "kapali";
+
+/** 014 (Ş5 `musteri_ci`): dil için tek seferlik kurulum PR'ı (iskelet + kütüphane + CI iş akışı). */
+export interface KurulumPr {
+  durum: KurulumDurumu;
+  /** PR numarası; `gerekli` iken null. */
+  number: number | null;
+  url: string | null;
+  baslik: string | null;
+  /** Depoda eksik olanlar (Türkçe, ör. "Espresso ekran nesnesi kütüphanesi", "mobil-android-kotlin iş akışı"). */
+  eksikler: string[];
+  /** TP'nin yapamadığı, elle yapılacak adımlar (ör. Xcode UI test hedefi eklemek; TP pbxproj'a dokunmaz). */
+  elle_adimlar: string[];
+}
+
+/** 014 müşteri CI check'inin durumu (GitHub Actions iş akışı + `tp-results` artefaktı). */
+export type MusteriCiDurumu = "bekliyor" | "kosuyor" | "gecti" | "kaldi" | "derleme_hatasi" | "bilinmiyor";
+
+/**
+ * 014 (Ş5): müşteri CI hattındaki script'in check kartı. TP koşmaz; müşterinin GitHub Actions iş akışının
+ * check'ini ve `tp-results` artefaktını okur. Kırarak doğrulama bu hatta yoktur.
+ */
+export interface MusteriCi {
+  /** Check / iş akışı adı (şablon iş adı = check adı; ör. "mobil-android-kotlin"). */
+  check_adi: string;
+  /** v1 yalnız GitHub Actions (kullanıcı kararı 2). */
+  saglayici: "github_actions";
+  durum: MusteriCiDurumu;
+  /** Check'in koştuğu PR head'i; bilinmiyorsa null. */
+  head_sha: string | null;
+  /** GitHub Actions koşu bağlantısı. */
+  run_url: string | null;
+  tamamlanma: string | null;
+  /** `tp-results` artefaktından okunan JUnit özeti; artefakt yoksa null. */
+  sonuc: { toplam: number; gecen: number; kalan: number; atlanan: number } | null;
+  /** Artefakt alımı: `alindi`, `yok` (iş bitti ama artefakt yüklenmedi), `bekliyor`. */
+  artefakt: "alindi" | "yok" | "bekliyor" | null;
+  /** Derleme hatası / kalan test özeti (Türkçe, log kesiti kısaltılmış); yoksa null. */
   neden: string | null;
 }
 
@@ -1302,6 +1378,10 @@ export interface Kosu {
   kaynak: KosuKaynagi;
   commit: string;
   pr_no: number | null;
+  /** Koşunun deposu (core `depo` / `run.ortam.depo`; `''` = varsayılan depo); eski core → `''`. */
+  depo?: string;
+  /** Depo gösterim adı (sahip/ad); bilinmiyorsa null. */
+  depo_adi?: string | null;
   /** `zaman_asimi`: core takılan koşuyu süre aşımıyla kapattı (başarısız sayılır). */
   durum: "queued" | "running" | "passed" | "failed" | "error" | "zaman_asimi";
   baslangic: string;

@@ -1,0 +1,17 @@
+{
+  "id": "tpd-1-c3-csharp",
+  "story": "TPD-1",
+  "case_no": 3,
+  "platform": "web",
+  "baslik": "6 adette 1 bedava (C# tablosu; TS gizli görünüm)",
+  "ajan_tablosu": "core/tests/unit/features/codegen/symbols-csharp-web.json",
+  "tablo_dili": "csharp",
+  "golden": "TPD-1-C3",
+  "expects_include": [
+    "CartPage.ExpectLineQuantityAsync",
+    "CartPage.ExpectFreeQuantityAsync",
+    "CartPage.ExpectSubtotalAsync",
+    "CartPage.ExpectDiscountAsync",
+    "CartPage.ExpectTotalAsync"
+  ]
+}

@@ -22,6 +22,11 @@ değişikliği de değerlendirilmemiş içerik sayılır). `waived` kayıtta has
     cd core && uv run python -m tp_core.gateway.evaluation            # durum tablosu
     cd core && uv run python -m tp_core.gateway.evaluation --check    # birleştirme kapısı
     cd core && uv run python -m tp_core.gateway.evaluation --hash     # güncel içerik hash'leri
+    cd core && uv run python -m tp_core.gateway.evaluation --dil python [--check]
+
+`--dil <d>` (014 Ş8): yalnız o dilin (platform, dil) çiftlerinin doğrulama ajanı paketleri ve dil
+kapısı (`rules/diller.yaml`, `tp_core.gateway.dil_kapisi`); `--check` ile paket kapısı + o dilin
+kanıt denetimi birlikte.
 """
 
 from __future__ import annotations
@@ -355,6 +360,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--hash", action="store_true", help="içerik hash'i tutulan paketlerin güncel hash'i"
     )
+    parser.add_argument("--dil", default=None, help="yalnız bu dilin paketleri + dil kapısı")
     args = parser.parse_args(argv)
     rules_dir = args.rules_dir or find_rules_dir()
     if args.hash:
@@ -363,8 +369,20 @@ def main(argv: list[str] | None = None) -> int:
             for rel in icerik_dosyalari(rules_dir, bundle_id):
                 print(f"  {rel}")
         return 0
+    dil_sorunlari: list[str] = []
     try:
         statuses = evaluation_statuses(rules_dir)
+        if args.dil:
+            from tp_core.gateway import dil_kapisi
+
+            if args.dil not in dil_kapisi.DILLER:
+                raise GatewayConfigError(f"bilinmeyen dil: {args.dil}")
+            ciftler = dil_kapisi.dil_ciftleri(rules_dir, args.dil)
+            ilgili = set(dil_kapisi.paketler(ciftler))
+            statuses = {k: v for k, v in statuses.items() if k in ilgili}
+            for st in ciftler:
+                print(f"dil {st.anahtar}\t{st.hat}\t{st.durum}")
+            dil_sorunlari = dil_kapisi.denetle(rules_dir, args.dil)
     except GatewayConfigError as exc:
         print(f"HATA: {exc}", file=sys.stderr)
         return 2
@@ -376,6 +394,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  içerik hash'i: kayıtlı {kayitli}, güncel {guncel}")
     if args.check:
         blocked = [s for s in statuses.values() if not s.mergeable]
+        for sorun in dil_sorunlari:
+            print(f"Dil kapısı: {sorun}", file=sys.stderr)
+        if dil_sorunlari and not blocked:
+            return 1
         if blocked:
             names = ", ".join(f"{s.bundle_id}@v{s.prompt_version} ({s.label})" for s in blocked)
             print(

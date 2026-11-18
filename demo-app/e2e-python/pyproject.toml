@@ -1,0 +1,28 @@
+# demo-app web e2e — Python hattı (pytest + pytest-playwright; TASARIM §3.1, Ş1).
+# Paket kurulmaz (proje değil, test kökü): bağımlılıklar requirements.lock'tan (güvenilir kopya
+# toolchain/e2e-python-deps/requirements.lock ile bayt eşit; TP deps adımı denetler).
+[project]
+name = "demoapp-e2e-python"
+version = "0.0.0"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+# importlib: aynı adlı test modülleri (tests/, tests/generated/) __init__.py olmadan çakışmaz.
+addopts = "--strict-markers --import-mode=importlib -p no:cacheprovider"
+markers = [
+    "uretilen: AI Testing Probe tarafından üretilen test",
+    "web: web platformu testi",
+    "android: Android platformu testi",
+    "ios: iOS platformu testi",
+    "windows: Windows platformu testi",
+    "tp_case(case_id): AI Testing Probe test case kimliği",
+    "story(anahtar): Jira story anahtarı",
+    "dealer(kullanici): testin sabitlendiği e2e bayisi",
+    "birim: tarayıcısız birim testi (PO eşitliği, kimlik saflığı)",
+    "duman: hızlı duman testi",
+    "kampanya: kampanya hesabına bağlı test (kırarak doğrulama grubu)",
+    "sifir_veri: yalnız sıfırlanmış veriyle anlamlı test (TP_E2E_NO_RESET=1 iken atlanır)",
+    "oturumlu: test başında bayi API ile oturum açar",
+]

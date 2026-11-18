@@ -1,0 +1,61 @@
+{#-
+  CasesToCode Python uygulama şablonu (014 Ş1, TASARIM §3.1; Constitution IV) — pytest + Appium
+  (Appium-Python-Client; android | ios | windows — NovaWindows). TAM HAT: toolchain derler, korur,
+  koşar (pytest, Appium sunucusu `APPIUM_URL_<P>`) ve kırarak doğrular.
+
+  Model Python yazmaz: bu dosya yalnızca tarayıcıda doğrulanmış ve deterministik kontrollerden
+  geçmiş adım → ekran nesnesi eşlemesinden render edilir (tp_core.features.codegen.diller.python).
+  - Her değer `pyargs` süzgecinden geçer: düz "…" dize (önek yok: f-string / bytes / raw / üç
+    tırnak YOK), int / float, True / False, None; gizli test verisi yalnız
+    `os.environ["TP_TESTVERI_…"]` (013 K19; `import os` yalnız o zaman basılır).
+  - Sınıf, değişken, modül ve metot adları `ident` süzgecinden geçer; metot, değişken ve modül
+    adı ekran nesnesi adının snake_case biçimidir (`girisYap` → `giris_yap`, `GirisEkrani` →
+    `ekranlar.giris_ekrani`).
+  - Yorumlar `comment` süzgecinden geçer (tek satır #; docstring yok).
+  - Biçim `py-guard guard` izin listesidir (toolchain/py-guard): yalnız # yorumları, izinli
+    importlar, tek `def test_…(driver) -> None`, yalnız `pytest.mark.<izinli>` dekoratörleri,
+    gövdede önce `<değişken> = <Sınıf>(driver)`, sonra yalnız `<değişken>.<metot>(<literal>…)`.
+  - Çıktı deterministiktir (golden testi: core/tests/unit/features/codegen/golden/python/).
+-#}
+# AI-generated — AI Testing Probe (CasesToCode). Elle düzenlemeyin; değişiklik case'in yeniden
+# onayı ve yeniden üretimle yapılır.
+# Case: {{ case_ref | comment }} ({{ case_id | comment }}) · Story: {{ story_key | comment }} · Jira Test: {{ test_key | comment }}
+# Başlık: {{ description | comment }}
+# Onaylı case hash: {{ case_hash | comment }}
+# Eşleme: {{ ajan | comment }} · platform: {{ platform | comment }} · dil: python · mod: {{ mode | comment }} · bundle: {{ bundle_hash | comment }}
+# Eşleme hash: {{ mapping_hash | comment }} · şablon: {{ template_hash | comment }}
+{% if os_gerekli %}
+import os
+
+{% endif %}
+import pytest
+
+{% for o in objects %}
+from {{ po_package | ident }}.{{ o.modul | ident }} import {{ o.sinif | ident }}
+{% endfor %}
+
+
+@pytest.mark.uretilen
+@pytest.mark.{{ platform | ident }}
+@pytest.mark.tp_case({{ case_id | py }})
+{% if story %}
+@pytest.mark.story({{ story | py }})
+{% endif %}
+{% if dealer %}
+@pytest.mark.dealer({{ dealer | py }})
+{% endif %}
+def {{ test_name | ident }}({{ surucu | ident }}) -> None:
+{% for o in objects %}
+    {{ o.degisken | ident }} = {{ o.sinif | ident }}({{ surucu | ident }})
+{% endfor %}
+
+{% for step in steps %}
+    # {{ step.label | comment }}
+{% for call in step.calls %}
+    {{ call.fixture | ident }}.{{ call.method | ident }}({{ call.args | pyargs }})
+{% endfor %}
+{% endfor %}
+    # Beklenen sonuç (değerler onaylı case metninden)
+{% for call in expects %}
+    {{ call.fixture | ident }}.{{ call.method | ident }}({{ call.args | pyargs }})
+{% endfor %}

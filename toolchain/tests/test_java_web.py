@@ -133,9 +133,11 @@ def test_worker_bodies_accept_web_java() -> None:
     b = CheckBody.model_validate({"sha": "main", "platform": "ios"})
     assert (b.dil, b.hedef_platform) == ("java", "ios")
     assert CheckBody.model_validate({"sha": "main", "platform": "web"}).dil == "ts"
+    # 014: csharp/python artık kayıtlı eklenti dilleri; geçersiz örnekler bilinmeyen dil ve
+    # eklentinin desteklemediği platform.
     for bad in (
-        {"lang": "csharp"},
-        {"lang": "python", "platform": "web"},
+        {"lang": "rust"},
+        {"lang": "kotlin", "platform": "web"},
         {"lang": "java", "platform": "web", "test_files": ["tests/a.spec.ts"]},
         {"lang": "java", "platform": "web", "grep": "x"},
         {"lang": "java", "affected_by": ["@diff"]},
@@ -153,7 +155,8 @@ def test_runner_body_web_java() -> None:
     # TS gövdesi: platform=web serbest, istek platformu değişmez.
     assert RunBody.model_validate({"sha": "main", "run_id": "w1", "platform": "web"}).lang == "ts"
     c = TestClient(runner_app)
-    for bad in ({"lang": "csharp"}, {"lang": "java", "workers": 2}, {"platform": "ios"}):
+    # 014: kotlin (müşteri CI) runner eklentisi yazmaz → /run kabul etmez.
+    for bad in ({"lang": "kotlin"}, {"lang": "java", "workers": 2}, {"platform": "ios"}):
         resp = c.post("/run", json={"sha": "main", "run_id": "w1", **bad})
         assert resp.status_code == 422, bad
 

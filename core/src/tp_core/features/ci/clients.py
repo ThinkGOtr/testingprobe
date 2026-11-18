@@ -26,6 +26,7 @@ from urllib.parse import quote
 import httpx
 
 from tp_core.features.ci.parse import MAX_ERROR_CONTEXT, MAX_RAPOR_BAYT
+from tp_core.features.codegen import platform as platformlar
 
 log = logging.getLogger("tp_core.ci")
 
@@ -67,7 +68,19 @@ RESULTS_ARTIFACT = "test-local-results"
 # Web + Java (011 §2.8): `web-java.yml` (`forge.WEB_JAVA_WORKFLOW` ile aynı).
 # Bilinen dosyalar dışında bir yol API'ye gitmez (yol enjeksiyonu yok).
 IZINLI_IS_AKISLARI = frozenset(
-    {WORKFLOW_FILE, "mobil-android.yml", "mobil-ios.yml", "masaustu-windows.yml", "web-java.yml"}
+    {
+        WORKFLOW_FILE,
+        "mobil-android.yml",
+        "mobil-ios.yml",
+        "masaustu-windows.yml",
+        "web-java.yml",
+        # 014: (platform, dil) iş akışları (`platform.CATILAR` `gh_is_akisi`; Ş5 müşteri CI dahil).
+        *(
+            f"{c.gh_is_akisi}.yml"
+            for c in platformlar.CATILAR.values()
+            if c.gh_is_akisi and c.dil not in ("ts", "java")
+        ),
+    }
 )
 
 
@@ -392,12 +405,15 @@ class GitHubCiOkuyucu:
         cls,
         env: Mapping[str, str] | None = None,
         *,
+        platform: str | None = None,
+        depo: str | None = None,
         transport: httpx.BaseTransport | None = None,
     ) -> GitHubCiOkuyucu:
         from tp_core.integrations.proje_ortami import ProjeOrtami
 
-        # `env` verilmezse bağlamdaki projenin görünümü (depo ve token'lar projenin).
-        cfg = ProjeOrtami() if env is None else env
+        # `env` verilmezse bağlamdaki projenin görünümü (depo ve token'lar projenin); `platform`
+        # (ya da kayıtlı `depo` kimliği) verilirse o platformun deposunun görünümü.
+        cfg = ProjeOrtami(platform=platform, depo=depo) if env is None else env
         # En az yetki: ayrı actions:read token'ı, yoksa okuma token'ı; ikisi de yoksa forge kimliği.
         token = (cfg.get(ACTIONS_READ_TOKEN_ENV) or cfg.get("GITHUB_READ_TOKEN") or "").strip()
         if token:
@@ -419,6 +435,11 @@ class GitHubCiOkuyucu:
             "(yalnız actions:read token'ı önerilir)",
             ACTIONS_READ_TOKEN_ENV,
         )
+        platform_deposu = str(getattr(cfg, "depo", "") or "")
+        if platform_deposu:
+            from tp_core.proje import istemciler
+
+            return cls(istemciler.forge_depo(platform_deposu, platform))
         return cls(services.forge())
 
     @property

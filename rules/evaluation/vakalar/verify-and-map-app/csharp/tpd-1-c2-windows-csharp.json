@@ -1,0 +1,17 @@
+{
+  "id": "tpd-1-c2-windows-csharp",
+  "story": "TPD-1",
+  "case_no": 2,
+  "platform": "windows",
+  "baslik": "7 adette 1 bedava (Windows, C# ekran tablosu)",
+  "ajan_tablosu": "core/tests/unit/features/codegen/symbols-csharp-windows.json",
+  "tablo_dili": "csharp",
+  "golden": "TPD-1-C2-android",
+  "expects_include": [
+    "SepetEkrani.DogrulaSatirAdedi",
+    "SepetEkrani.DogrulaBedavaAdet",
+    "SepetEkrani.DogrulaAraToplam",
+    "SepetEkrani.DogrulaIndirim",
+    "SepetEkrani.DogrulaToplam"
+  ]
+}

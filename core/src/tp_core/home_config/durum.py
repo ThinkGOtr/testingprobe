@@ -93,10 +93,27 @@ CALISMA_ANINDA: frozenset[str] = frozenset(
         "JIRA_HESAP_MUHENDIS",
         "JIRA_HESAP_TESTCI",
         "TP_JIRA_BOT_ACCOUNT_IDS",
+        # Rol anma listeleri (JiraSettings; virgüllü accountId, Home `tp.jira.mentions.<rol>`)
+        "TP_JIRA_MENTIONS_ANALYST",
+        "TP_JIRA_MENTIONS_PO",
+        "TP_JIRA_MENTIONS_ENGINEER",
+        "TP_JIRA_MENTIONS_TESTER",
+        "TP_JIRA_MENTIONS_DEVELOPER",
+        "TP_JIRA_MENTIONS_ADMIN",
+        "TP_JIRA_MENTIONS_AUDITOR",
+        "TP_JIRA_MENTIONS_VIEWER",
         # Forge zorunlu check'leri (GitHubForge her kuruluşta okur)
         "TP_PLATFORMS",
         "TP_WEB_DILLERI",
+        # 014: platform başına dil listeleri (GitHub zorunlu dil check'leri bunlara bağlı)
+        "TP_DILLERI_ANDROID",
+        "TP_DILLERI_IOS",
+        "TP_DILLERI_WINDOWS",
         "TP_REQUIRED_CHECKS",
+        # Platform deposunun zorunlu check'leri (`tp.repos.<p>.required_checks`)
+        "TP_REQUIRED_CHECKS_ANDROID",
+        "TP_REQUIRED_CHECKS_IOS",
+        "TP_REQUIRED_CHECKS_WINDOWS",
     }
 )
 

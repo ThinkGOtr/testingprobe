@@ -1,0 +1,1073 @@
+{
+  "schema_version": 1,
+  "root": "",
+  "lang": "kotlin",
+  "paket": "com.antreklabs.bayisiparis.tp",
+  "page_objects": [
+    {
+      "class": "GirisEkrani",
+      "file": "com/antreklabs/bayisiparis/tp/ekranlar/GirisEkrani.kt",
+      "doc": "Bayi giriş ekranı (web: pages/login/login.page.ts `LoginPage`).",
+      "methods": [
+        {
+          "name": "ac",
+          "params": [],
+          "returns": "void",
+          "kind": "action",
+          "async": false,
+          "doc": "Giriş ekranını açar (uygulama her testte sıfırdan, giriş ekranında başlar).",
+          "line": 9
+        },
+        {
+          "name": "girisYap",
+          "params": [
+            {
+              "name": "kullaniciAdi",
+              "type": "String",
+              "optional": false
+            },
+            {
+              "name": "parola",
+              "type": "String",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "action",
+          "async": false,
+          "doc": "Bayi kullanıcı adı ve parolasıyla giriş yapar.",
+          "line": 14
+        },
+        {
+          "name": "cikisYap",
+          "params": [],
+          "returns": "void",
+          "kind": "action",
+          "async": false,
+          "doc": "Oturumu kapatır.",
+          "line": 21
+        },
+        {
+          "name": "dogrulaHataMesaji",
+          "params": [
+            {
+              "name": "beklenen",
+              "type": "String",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "expect",
+          "async": false,
+          "doc": "Hata mesajının göründüğünü ve metnini doğrular.",
+          "line": 26
+        },
+        {
+          "name": "dogrulaGirisYapildi",
+          "params": [
+            {
+              "name": "bayiAdi",
+              "type": "String",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "expect",
+          "async": false,
+          "doc": "Verilen bayi adıyla oturum açıldığını ve kataloğun açıldığını doğrular.",
+          "line": 31
+        },
+        {
+          "name": "dogrulaGirisEkraninda",
+          "params": [],
+          "returns": "void",
+          "kind": "expect",
+          "async": false,
+          "doc": "Giriş ekranında olunduğunu doğrular.",
+          "line": 37
+        }
+      ],
+      "locators": {
+        "Giris.GIRIS_YAP": {
+          "testId": "login-submit",
+          "role": "",
+          "name": "",
+          "intent": "Giriş formunu gönderen buton.",
+          "prefix": false,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 37
+        },
+        "Giris.HATA": {
+          "testId": "login-error",
+          "role": "",
+          "name": "",
+          "intent": "Hatalı girişte gösterilen hata mesajı.",
+          "prefix": false,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 39
+        },
+        "Giris.KULLANICI_ADI": {
+          "testId": "login-username",
+          "role": "",
+          "name": "",
+          "intent": "Giriş formunda kullanıcı adı alanı.",
+          "prefix": false,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 33
+        },
+        "Giris.PAROLA": {
+          "testId": "login-password",
+          "role": "",
+          "name": "",
+          "intent": "Giriş formunda parola alanı.",
+          "prefix": false,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 35
+        },
+        "Katalog.URUN_LISTESI": {
+          "testId": "product-list",
+          "role": "",
+          "name": "",
+          "intent": "Ürün kartlarının listesi.",
+          "prefix": false,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 45
+        },
+        "Menu.BAYI_ADI": {
+          "testId": "current-dealer",
+          "role": "",
+          "name": "",
+          "intent": "Oturum açmış bayinin adı.",
+          "prefix": false,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 27
+        },
+        "Menu.CIKIS": {
+          "testId": "nav-logout",
+          "role": "",
+          "name": "",
+          "intent": "Oturumu kapatan buton.",
+          "prefix": false,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 25
+        }
+      }
+    },
+    {
+      "class": "KatalogEkrani",
+      "file": "com/antreklabs/bayisiparis/tp/ekranlar/KatalogEkrani.kt",
+      "doc": "Ürün kataloğu ekranı (web: pages/catalog/catalog.page.ts `CatalogPage`).",
+      "methods": [
+        {
+          "name": "ac",
+          "params": [],
+          "returns": "void",
+          "kind": "action",
+          "async": false,
+          "doc": "Katalog ekranını açar.",
+          "line": 12
+        },
+        {
+          "name": "menudenAc",
+          "params": [],
+          "returns": "void",
+          "kind": "action",
+          "async": false,
+          "doc": "Üst menüden kataloğa gider.",
+          "line": 18
+        },
+        {
+          "name": "adetGir",
+          "params": [
+            {
+              "name": "urunKodu",
+              "type": "String",
+              "optional": false
+            },
+            {
+              "name": "adet",
+              "type": "int",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "action",
+          "async": false,
+          "doc": "Ürün kartındaki adet alanına değer yazar.",
+          "line": 23
+        },
+        {
+          "name": "sepeteEkle",
+          "params": [
+            {
+              "name": "urunKodu",
+              "type": "String",
+              "optional": false
+            },
+            {
+              "name": "adet",
+              "type": "int",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "action",
+          "async": false,
+          "doc": "Ürün kartında adedi girip \"Sepete ekle\" butonuna basar ve sepetin güncellenmesini bekler.",
+          "line": 28
+        },
+        {
+          "name": "sepetiAc",
+          "params": [],
+          "returns": "void",
+          "kind": "action",
+          "async": false,
+          "doc": "Üst menüden sepete gider.",
+          "line": 44
+        },
+        {
+          "name": "dogrulaUrunGorunur",
+          "params": [
+            {
+              "name": "urunKodu",
+              "type": "String",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "expect",
+          "async": false,
+          "doc": "Ürün kartının katalogda göründüğünü doğrular.",
+          "line": 50
+        },
+        {
+          "name": "dogrulaUrunFiyati",
+          "params": [
+            {
+              "name": "urunKodu",
+              "type": "String",
+              "optional": false
+            },
+            {
+              "name": "fiyat",
+              "type": "String",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "expect",
+          "async": false,
+          "doc": "Ürün kartındaki fiyatın verilen tutar olduğunu doğrular (ör. \"25,00 TL\").",
+          "line": 55
+        },
+        {
+          "name": "dogrulaKampanya",
+          "params": [
+            {
+              "name": "urunKodu",
+              "type": "String",
+              "optional": false
+            },
+            {
+              "name": "kampanyaAdi",
+              "type": "String",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "expect",
+          "async": false,
+          "doc": "Ürün kartında verilen kampanya adının göründüğünü doğrular (ör. \"6 al 1 bedava\").",
+          "line": 60
+        },
+        {
+          "name": "dogrulaSepetSayaci",
+          "params": [
+            {
+              "name": "adet",
+              "type": "int",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "expect",
+          "async": false,
+          "doc": "Üst menüdeki sepet sayacının verilen adet olduğunu doğrular.",
+          "line": 65
+        }
+      ],
+      "locators": {
+        "Katalog.ADET_ONEK": {
+          "testId": "qty-input-",
+          "role": "",
+          "name": "",
+          "intent": "Ürün kartında eklenecek adet alanı.",
+          "prefix": true,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 51
+        },
+        "Katalog.EKLEME_DURUMU_ONEK": {
+          "testId": "product-status-",
+          "role": "",
+          "name": "",
+          "intent": "Sepete ekleme sonrası ürün kartındaki bilgi mesajı.",
+          "prefix": true,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 55
+        },
+        "Katalog.SEPETE_EKLE": {
+          "testId": "add-to-cart",
+          "role": "",
+          "name": "",
+          "intent": "Ürün kartında sepete ekleme butonu (her kartta aynı kimlik; ürün kartının içinde aranır).",
+          "prefix": false,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 53
+        },
+        "Katalog.URUN_FIYATI_ONEK": {
+          "testId": "product-price-",
+          "role": "",
+          "name": "",
+          "intent": "Ürün kartındaki birim fiyat.",
+          "prefix": true,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 49
+        },
+        "Katalog.URUN_KARTI_ONEK": {
+          "testId": "product-card-",
+          "role": "",
+          "name": "",
+          "intent": "Tek bir ürünün kartı.",
+          "prefix": true,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 47
+        },
+        "Katalog.URUN_LISTESI": {
+          "testId": "product-list",
+          "role": "",
+          "name": "",
+          "intent": "Ürün kartlarının listesi.",
+          "prefix": false,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 45
+        },
+        "Menu.KATALOG": {
+          "testId": "nav-catalog",
+          "role": "",
+          "name": "",
+          "intent": "Üst menüde ürün kataloğuna giden bağlantı.",
+          "prefix": false,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 17
+        },
+        "Menu.SEPET": {
+          "testId": "nav-cart",
+          "role": "",
+          "name": "",
+          "intent": "Üst menüde sepete giden bağlantı (sepet sayacını içerir).",
+          "prefix": false,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 19
+        },
+        "Menu.SEPET_SAYACI": {
+          "testId": "cart-count",
+          "role": "",
+          "name": "",
+          "intent": "Sepetteki toplam ürün adedini gösteren sayaç.",
+          "prefix": false,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 21
+        },
+        "Sepet.BOS": {
+          "testId": "cart-empty",
+          "role": "",
+          "name": "",
+          "intent": "Sepet boşken gösterilen bilgi alanı.",
+          "prefix": false,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 63
+        },
+        "Sepet.TABLO": {
+          "testId": "cart-table",
+          "role": "",
+          "name": "",
+          "intent": "Sepet satırları tablosu.",
+          "prefix": false,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 61
+        }
+      }
+    },
+    {
+      "class": "OnayEkrani",
+      "file": "com/antreklabs/bayisiparis/tp/ekranlar/OnayEkrani.kt",
+      "doc": "Sipariş onayı ekranı (web: pages/order/order.page.ts `OrderPage`'in onay bölümü). Web'deki `readOrderNumber()` değer döndürür; ekran nesnesi sözleşmesinde yalnız `Unit` metot olduğundan okunan numara oturumda saklanır ve [SiparisEkrani.dogrulaOnaylananSiparisToplami] gibi metotlar onu kullanır.",
+      "methods": [
+        {
+          "name": "dogrulaSiparisOnayi",
+          "params": [],
+          "returns": "void",
+          "kind": "expect",
+          "async": false,
+          "doc": "Sipariş onayının ve sipariş numarasının gösterildiğini doğrular.",
+          "line": 23
+        },
+        {
+          "name": "dogrulaOnaylananToplam",
+          "params": [
+            {
+              "name": "tutar",
+              "type": "String",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "expect",
+          "async": false,
+          "doc": "Onaylanan siparişin genel toplamını doğrular (ör. \"1.025,00 TL\").",
+          "line": 29
+        },
+        {
+          "name": "dogrulaOnaylananIndirim",
+          "params": [
+            {
+              "name": "tutar",
+              "type": "String",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "expect",
+          "async": false,
+          "doc": "Onaylanan siparişin kampanya indirimini doğrular (ör. \"25,00 TL\").",
+          "line": 34
+        },
+        {
+          "name": "dogrulaOnaylananSiparisGecmiste",
+          "params": [],
+          "returns": "void",
+          "kind": "expect",
+          "async": false,
+          "doc": "Onay ekranında gösterilen siparişin sipariş geçmişinde listelendiğini doğrular.",
+          "line": 39
+        },
+        {
+          "name": "siparislerimeGit",
+          "params": [],
+          "returns": "void",
+          "kind": "action",
+          "async": false,
+          "doc": "Onay ekranından \"Siparişlerime git\" ile sipariş geçmişine gider.",
+          "line": 47
+        },
+        {
+          "name": "alisveriseDevamEt",
+          "params": [],
+          "returns": "void",
+          "kind": "action",
+          "async": false,
+          "doc": "Onay ekranından \"Alışverişe devam et\" ile kataloğa döner.",
+          "line": 53
+        }
+      ],
+      "locators": {
+        "Katalog.URUN_LISTESI": {
+          "testId": "product-list",
+          "role": "",
+          "name": "",
+          "intent": "Ürün kartlarının listesi.",
+          "prefix": false,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 45
+        },
+        "Onay.ALISVERISE_DEVAM": {
+          "testId": "go-catalog",
+          "role": "",
+          "name": "",
+          "intent": "Onay ekranından kataloğa dönen buton.",
+          "prefix": false,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 101
+        },
+        "Onay.INDIRIM": {
+          "testId": "order-discount",
+          "role": "",
+          "name": "",
+          "intent": "Onaylanan siparişin kampanya indirimi.",
+          "prefix": false,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 95
+        },
+        "Onay.ONAY_ALANI": {
+          "testId": "order-confirmation",
+          "role": "",
+          "name": "",
+          "intent": "Sipariş onaylandıktan sonra gösterilen onay alanı.",
+          "prefix": false,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 91
+        },
+        "Onay.SIPARISLERIME_GIT": {
+          "testId": "go-orders",
+          "role": "",
+          "name": "",
+          "intent": "Onay ekranından sipariş geçmişine giden buton.",
+          "prefix": false,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 99
+        },
+        "Onay.SIPARIS_NUMARASI": {
+          "testId": "order-number",
+          "role": "",
+          "name": "",
+          "intent": "Onay alanındaki sipariş numarası.",
+          "prefix": false,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 93
+        },
+        "Onay.TOPLAM": {
+          "testId": "order-total",
+          "role": "",
+          "name": "",
+          "intent": "Onaylanan siparişin genel toplamı.",
+          "prefix": false,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 97
+        },
+        "Siparis.BOS": {
+          "testId": "orders-empty",
+          "role": "",
+          "name": "",
+          "intent": "Hiç sipariş yokken gösterilen bilgi alanı.",
+          "prefix": false,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 109
+        },
+        "Siparis.TABLO": {
+          "testId": "orders-table",
+          "role": "",
+          "name": "",
+          "intent": "Sipariş geçmişi tablosu.",
+          "prefix": false,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 107
+        }
+      }
+    },
+    {
+      "class": "SepetEkrani",
+      "file": "com/antreklabs/bayisiparis/tp/ekranlar/SepetEkrani.kt",
+      "doc": "Sepet ekranı: satırlar, kampanya, toplamlar ve sipariş onayı (web: pages/cart/cart.page.ts `CartPage`).",
+      "methods": [
+        {
+          "name": "ac",
+          "params": [],
+          "returns": "void",
+          "kind": "action",
+          "async": false,
+          "doc": "Sepet ekranını açar.",
+          "line": 10
+        },
+        {
+          "name": "urunuKaldir",
+          "params": [
+            {
+              "name": "urunKodu",
+              "type": "String",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "action",
+          "async": false,
+          "doc": "Ürünü sepetten kaldırır.",
+          "line": 16
+        },
+        {
+          "name": "siparisiOnayla",
+          "params": [],
+          "returns": "void",
+          "kind": "action",
+          "async": false,
+          "doc": "\"Siparişi onayla\" butonuna basar ve onay ekranının açılmasını bekler.",
+          "line": 23
+        },
+        {
+          "name": "dogrulaSatirAdedi",
+          "params": [
+            {
+              "name": "urunKodu",
+              "type": "String",
+              "optional": false
+            },
+            {
+              "name": "adet",
+              "type": "int",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "expect",
+          "async": false,
+          "doc": "Sepet satırındaki adedi doğrular.",
+          "line": 29
+        },
+        {
+          "name": "dogrulaBedavaAdet",
+          "params": [
+            {
+              "name": "urunKodu",
+              "type": "String",
+              "optional": false
+            },
+            {
+              "name": "adet",
+              "type": "int",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "expect",
+          "async": false,
+          "doc": "Sepet satırında kampanyayla bedava verilen adedi doğrular.",
+          "line": 34
+        },
+        {
+          "name": "dogrulaSatirToplami",
+          "params": [
+            {
+              "name": "urunKodu",
+              "type": "String",
+              "optional": false
+            },
+            {
+              "name": "tutar",
+              "type": "String",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "expect",
+          "async": false,
+          "doc": "Sepet satırının indirim sonrası tutarını doğrular (ör. \"150,00 TL\").",
+          "line": 39
+        },
+        {
+          "name": "dogrulaAraToplam",
+          "params": [
+            {
+              "name": "tutar",
+              "type": "String",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "expect",
+          "async": false,
+          "doc": "Ara toplamı doğrular (ör. \"175,00 TL\").",
+          "line": 44
+        },
+        {
+          "name": "dogrulaIndirim",
+          "params": [
+            {
+              "name": "tutar",
+              "type": "String",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "expect",
+          "async": false,
+          "doc": "Kampanya indirimi tutarını doğrular (ör. \"25,00 TL\").",
+          "line": 49
+        },
+        {
+          "name": "dogrulaToplam",
+          "params": [
+            {
+              "name": "tutar",
+              "type": "String",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "expect",
+          "async": false,
+          "doc": "Sepetin indirim sonrası genel toplamını doğrular (ör. \"150,00 TL\").",
+          "line": 54
+        },
+        {
+          "name": "dogrulaMinimumSiparisUyarisi",
+          "params": [
+            {
+              "name": "mesaj",
+              "type": "String",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "expect",
+          "async": false,
+          "doc": "Minimum sipariş uyarısının verilen metni içerdiğini doğrular (ör. \"Minimum sipariş tutarı 750,00 TL\").",
+          "line": 59
+        },
+        {
+          "name": "dogrulaMinimumSiparisUyarisiYok",
+          "params": [],
+          "returns": "void",
+          "kind": "expect",
+          "async": false,
+          "doc": "Minimum sipariş uyarısının gösterilmediğini doğrular.",
+          "line": 64
+        },
+        {
+          "name": "dogrulaOnayPasif",
+          "params": [],
+          "returns": "void",
+          "kind": "expect",
+          "async": false,
+          "doc": "\"Siparişi onayla\" butonunun pasif olduğunu doğrular.",
+          "line": 69
+        },
+        {
+          "name": "dogrulaOnayAktif",
+          "params": [],
+          "returns": "void",
+          "kind": "expect",
+          "async": false,
+          "doc": "\"Siparişi onayla\" butonunun aktif olduğunu doğrular.",
+          "line": 74
+        },
+        {
+          "name": "dogrulaUrunSepetteYok",
+          "params": [
+            {
+              "name": "urunKodu",
+              "type": "String",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "expect",
+          "async": false,
+          "doc": "Sepette ürünün bulunmadığını doğrular.",
+          "line": 79
+        },
+        {
+          "name": "dogrulaSepetSayaci",
+          "params": [
+            {
+              "name": "adet",
+              "type": "int",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "expect",
+          "async": false,
+          "doc": "Üst menüdeki sepet sayacının verilen adet olduğunu doğrular (sepet ekranında).",
+          "line": 84
+        },
+        {
+          "name": "dogrulaSepetBos",
+          "params": [],
+          "returns": "void",
+          "kind": "expect",
+          "async": false,
+          "doc": "Sepetin boş olduğunu doğrular.",
+          "line": 89
+        }
+      ],
+      "locators": {
+        "Menu.SEPET": {
+          "testId": "nav-cart",
+          "role": "",
+          "name": "",
+          "intent": "Üst menüde sepete giden bağlantı (sepet sayacını içerir).",
+          "prefix": false,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 19
+        },
+        "Menu.SEPET_SAYACI": {
+          "testId": "cart-count",
+          "role": "",
+          "name": "",
+          "intent": "Sepetteki toplam ürün adedini gösteren sayaç.",
+          "prefix": false,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 21
+        },
+        "Onay.ONAY_ALANI": {
+          "testId": "order-confirmation",
+          "role": "",
+          "name": "",
+          "intent": "Sipariş onaylandıktan sonra gösterilen onay alanı.",
+          "prefix": false,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 91
+        },
+        "Sepet.ARA_TOPLAM": {
+          "testId": "cart-subtotal",
+          "role": "",
+          "name": "",
+          "intent": "Sepetin indirim öncesi ara toplamı.",
+          "prefix": false,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 75
+        },
+        "Sepet.BEDAVA_ADET_ONEK": {
+          "testId": "cart-line-free-",
+          "role": "",
+          "name": "",
+          "intent": "Sepet satırında kampanyayla bedava verilen adet.",
+          "prefix": true,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 69
+        },
+        "Sepet.BOS": {
+          "testId": "cart-empty",
+          "role": "",
+          "name": "",
+          "intent": "Sepet boşken gösterilen bilgi alanı.",
+          "prefix": false,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 63
+        },
+        "Sepet.INDIRIM": {
+          "testId": "cart-discount",
+          "role": "",
+          "name": "",
+          "intent": "Sepetteki toplam kampanya indirimi.",
+          "prefix": false,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 77
+        },
+        "Sepet.MIN_SIPARIS_UYARISI": {
+          "testId": "min-order-warning",
+          "role": "",
+          "name": "",
+          "intent": "Minimum sipariş tutarının altında gösterilen uyarı.",
+          "prefix": false,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 81
+        },
+        "Sepet.SATIRI_KALDIR_ONEK": {
+          "testId": "cart-line-remove-",
+          "role": "",
+          "name": "",
+          "intent": "Satırı sepetten kaldıran buton.",
+          "prefix": true,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 73
+        },
+        "Sepet.SATIR_ADEDI_ONEK": {
+          "testId": "cart-line-qty-",
+          "role": "",
+          "name": "",
+          "intent": "Sepet satırındaki adet.",
+          "prefix": true,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 67
+        },
+        "Sepet.SATIR_ONEK": {
+          "testId": "cart-line-",
+          "role": "",
+          "name": "",
+          "intent": "Sepette bir ürünün satırı.",
+          "prefix": true,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 65
+        },
+        "Sepet.SATIR_TOPLAMI_ONEK": {
+          "testId": "cart-line-total-",
+          "role": "",
+          "name": "",
+          "intent": "Sepet satırının indirim sonrası tutarı.",
+          "prefix": true,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 71
+        },
+        "Sepet.SIPARISI_ONAYLA": {
+          "testId": "checkout-submit",
+          "role": "",
+          "name": "",
+          "intent": "Siparişi onaylayan buton.",
+          "prefix": false,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 85
+        },
+        "Sepet.TABLO": {
+          "testId": "cart-table",
+          "role": "",
+          "name": "",
+          "intent": "Sepet satırları tablosu.",
+          "prefix": false,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 61
+        },
+        "Sepet.TOPLAM": {
+          "testId": "cart-total",
+          "role": "",
+          "name": "",
+          "intent": "Sepetin indirim sonrası genel toplamı.",
+          "prefix": false,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 79
+        }
+      }
+    },
+    {
+      "class": "SiparisEkrani",
+      "file": "com/antreklabs/bayisiparis/tp/ekranlar/SiparisEkrani.kt",
+      "doc": "Sipariş geçmişi (Siparişlerim) ekranı (web: pages/order/order.page.ts `OrderPage`'in geçmiş bölümü).",
+      "methods": [
+        {
+          "name": "ac",
+          "params": [],
+          "returns": "void",
+          "kind": "action",
+          "async": false,
+          "doc": "Sipariş geçmişi ekranını açar.",
+          "line": 10
+        },
+        {
+          "name": "menudenAc",
+          "params": [],
+          "returns": "void",
+          "kind": "action",
+          "async": false,
+          "doc": "Üst menüden sipariş geçmişine gider.",
+          "line": 16
+        },
+        {
+          "name": "dogrulaSiparisGecmiste",
+          "params": [
+            {
+              "name": "siparisNo",
+              "type": "String",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "expect",
+          "async": false,
+          "doc": "Verilen sipariş numarasının sipariş geçmişinde listelendiğini doğrular.",
+          "line": 21
+        },
+        {
+          "name": "dogrulaSiparisToplami",
+          "params": [
+            {
+              "name": "siparisNo",
+              "type": "String",
+              "optional": false
+            },
+            {
+              "name": "tutar",
+              "type": "String",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "expect",
+          "async": false,
+          "doc": "Sipariş geçmişindeki siparişin genel toplamını doğrular.",
+          "line": 26
+        },
+        {
+          "name": "dogrulaOnaylananSiparisToplami",
+          "params": [
+            {
+              "name": "tutar",
+              "type": "String",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "expect",
+          "async": false,
+          "doc": "Bu testte onay ekranında görülen son siparişin geçmişteki genel toplamını doğrular.",
+          "line": 31
+        },
+        {
+          "name": "dogrulaSiparisYok",
+          "params": [],
+          "returns": "void",
+          "kind": "expect",
+          "async": false,
+          "doc": "Sipariş geçmişinin boş olduğunu doğrular.",
+          "line": 39
+        }
+      ],
+      "locators": {
+        "Menu.SIPARISLER": {
+          "testId": "nav-orders",
+          "role": "",
+          "name": "",
+          "intent": "Üst menüde sipariş geçmişine giden bağlantı.",
+          "prefix": false,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 23
+        },
+        "Siparis.BOS": {
+          "testId": "orders-empty",
+          "role": "",
+          "name": "",
+          "intent": "Hiç sipariş yokken gösterilen bilgi alanı.",
+          "prefix": false,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 109
+        },
+        "Siparis.SATIR_ONEK": {
+          "testId": "order-row-",
+          "role": "",
+          "name": "",
+          "intent": "Sipariş geçmişinde bir siparişin satırı.",
+          "prefix": true,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 111
+        },
+        "Siparis.SATIR_TOPLAMI_ONEK": {
+          "testId": "order-total-",
+          "role": "",
+          "name": "",
+          "intent": "Sipariş geçmişi satırındaki genel toplam.",
+          "prefix": true,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 113
+        },
+        "Siparis.TABLO": {
+          "testId": "orders-table",
+          "role": "",
+          "name": "",
+          "intent": "Sipariş geçmişi tablosu.",
+          "prefix": false,
+          "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+          "line": 107
+        }
+      }
+    }
+  ],
+  "locator_files": [
+    {
+      "file": "com/antreklabs/bayisiparis/tp/ekranlar/Kimlikler.kt",
+      "exports": [
+        "Menu",
+        "Giris",
+        "Katalog",
+        "Sepet",
+        "Onay",
+        "Siparis"
+      ]
+    }
+  ],
+  "fixtures": [
+    "girisEkrani",
+    "katalogEkrani",
+    "onayEkrani",
+    "sepetEkrani",
+    "siparisEkrani"
+  ],
+  "errors": []
+}

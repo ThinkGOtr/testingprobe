@@ -1,5 +1,5 @@
 {
-  "aciklama": "Core (codegen/platform.py) ile toolchain worker arasindaki sozlesme. Iki tarafin testleri bu dosyayi okur: core tests/unit/test_cross_lane_contracts.py, toolchain tests/test_core_sozlesme.py. Bir taraf degisirse dosya ve diger taraf birlikte guncellenir.",
+  "aciklama": "Core (codegen/platform.py) ile toolchain worker arasindaki sozlesme. Iki tarafin testleri bu dosyayi okur: core tests/unit/test_cross_lane_contracts.py, toolchain tests/test_core_sozlesme.py. dil_check_adlari (014): eklenti dillerinin check adi (core platform.check_adi_genel; toolchain check_name eklenti kayitliyken). Bir taraf degisirse dosya ve diger taraf birlikte guncellenir.",
   "check_adlari": [
     {"lang": "ts", "platform": "web", "check": "local-ci"},
     {"lang": "ts", "platform": null, "check": "local-ci"},
@@ -8,6 +8,16 @@
     {"lang": "java", "platform": "android", "check": "local-ci-android"},
     {"lang": "java", "platform": "ios", "check": "local-ci-ios"},
     {"lang": "java", "platform": "windows", "check": "local-ci-windows"}
+  ],
+  "dil_check_adlari": [
+    {"lang": "python", "platform": "web", "check": "local-ci-web-python"},
+    {"lang": "python", "platform": "android", "check": "local-ci-android-python"},
+    {"lang": "python", "platform": "ios", "check": "local-ci-ios-python"},
+    {"lang": "python", "platform": "windows", "check": "local-ci-windows-python"},
+    {"lang": "csharp", "platform": "web", "check": "local-ci-web-csharp"},
+    {"lang": "csharp", "platform": "windows", "check": "local-ci-windows-csharp"},
+    {"lang": "kotlin", "platform": "android", "check": "local-ci-android-kotlin"},
+    {"lang": "swift", "platform": "ios", "check": "local-ci-ios-swift"}
   ],
   "java_kapsam_sonekleri": ["Test.java", "Testi.java"],
   "java_kapsam_ornekleri": {

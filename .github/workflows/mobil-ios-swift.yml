@@ -1,0 +1,325 @@
+# iOS Swift / XCUITest e2e CI'ı — müşteri CI hattının (musteri_ci) demo karşılığı (014 test dilleri,
+# TASARIM §3.4; şerit Ş4). AI'sız (Constitution II): model anahtarı, MCP sunucusu yoktur.
+#
+# TP Swift testlerini ÜRETİR ve PR açar; derleme ve koşu bu iş akışındadır (TP VM'inde Xcode yok).
+# Müşteri deposundaki karşılığı `rules/ci-sablonlari/ios-xcuitest.yml` (Ş5); bu dosya aynı sözleşmeyi
+# (job adı = check adı `mobil-ios-swift`, `tp-results` artefaktı: ci-meta.json, junit/, ekler/,
+# derleme.log) demo monoreposunun düzenine uygular. Kırarak doğrulama YOKTUR ("kırarak doğrulanmadı").
+#
+# Akış (kendi barındırılan macOS runner `xcode-27`; mobil-ios.yml ile aynı gerekçe):
+#   demo-app/mobile: npm ci → expo prebuild (plugins/xcuitest-hedefi.js `BayiSiparisUITests` hedefini
+#   eşitlenmiş klasörle ekler: ios-test/BayiSiparisUITests) → pod install
+#   → demo uygulaması (scripts/github-demo-serve.sh: API + vite preview, 127.0.0.1:8081)
+#   → simülatör "TP iPhone" → xcodebuild test (Release; JS paketi .app içinde, Metro yok)
+#     yalnız TP'nin ürettiği sınıflar: `-only-testing:BayiSiparisUITests/<Sınıf>` (TPUretilen/*.swift)
+#   → xcresult → JUnit (rules/ci-sablonlari/xcresult_junit.py) → tp-results artefaktı.
+#
+# Test koşucusuna değerler `TEST_RUNNER_` önekiyle verilir (önek düşer): DEMO_API_URL,
+# DEMOAPP_TEST_TOKEN (bayi verisi sıfırlama), TP_TESTVERI_* (gizli test verisi; varsa repo sırları).
+#
+# MALİYET: macOS dakikaları pahalıdır; `changes` job'u ilgisiz PR'da no-op başarılı döner (zorunlu
+# check süresiz beklemez).
+name: mobil-ios-swift
+run-name: >-
+  ${{ github.event_name == 'workflow_dispatch'
+      && format('mobil-ios-swift {0} [{1}]', inputs.tetik, inputs.istek_id || 'elle')
+    || github.event.pull_request.title || 'mobil-ios-swift' }}
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  schedule:
+    # Gece koşusu: 03:30 UTC = 06:30 TR (mobil-ios ile çakışmasın)
+    - cron: "30 3 * * *"
+  workflow_dispatch:
+    inputs:
+      tetik:
+        description: "Tetik türü (sonuç kaydında görünür)"
+        type: choice
+        options: [manual, nightly, deploy]
+        default: manual
+      istek_id:
+        description: "Çekirdeğin istek kimliği (koşu adında görünür; [A-Za-z0-9._-], ≤64)"
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobil-ios-swift-${{ github.event_name }}-${{ github.event.pull_request.number || inputs.istek_id || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  TP_PLATFORM: ios
+  TP_DIL: swift
+  TP_IS: mobil-ios-swift
+  MOBIL: demo-app/mobile
+  UI_TEST_HEDEFI: BayiSiparisUITests
+  UI_TEST_KOKU: demo-app/mobile/ios-test/BayiSiparisUITests
+  NODE_VERSION: "22"
+  UV_VERSION: "0.8.24"
+  SIM_NAME: TP iPhone
+  SIM_DEVICE_TYPE: iPhone 16
+  XCODE_APP: ""
+  TP_ISTEK_ID: ${{ inputs.istek_id || '' }}
+  TP_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  changes:
+    name: changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      run_tests: ${{ steps.decide.outputs.run_tests }}
+    steps:
+      - name: Değişiklikleri tespit et (yalnızca PR)
+        id: filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: |
+            app:
+              - 'demo-app/mobile/**'
+              - 'demo-app/api/**'
+              - 'demo-app/web/**'
+              - 'demo-app/kimlikler.json'
+              - 'scripts/github-demo-serve.sh'
+              - 'rules/ci-sablonlari/xcresult_junit.py'
+              - '.github/workflows/mobil-ios-swift.yml'
+      - name: Karar
+        id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          APP: ${{ steps.filter.outputs.app }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then run_tests="${APP:-false}"; else run_tests=true; fi
+          echo "run_tests=$run_tests" >> "$GITHUB_OUTPUT"
+
+  mobil-ios-swift:
+    # Zorunlu check adı (TP merge kapısı; Ş5 musteri_ci.is_adi). Değiştirmeyin.
+    name: mobil-ios-swift
+    needs: changes
+    runs-on: xcode-27
+    timeout-minutes: 120
+    env:
+      CI: "true"
+      RUN_TESTS: ${{ needs.changes.outputs.run_tests }}
+      EVENT: ${{ github.event_name }}
+      DISPATCH_TETIK: ${{ inputs.tetik }}
+    steps:
+      - name: No-op (uygulama/test değişmedi)
+        if: env.RUN_TESTS != 'true'
+        run: echo "Uygulama ya da TP testleri değişmedi; mobil-ios-swift no-op (başarılı)." | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Tetik
+        if: env.RUN_TESTS == 'true'
+        run: |
+          set -euo pipefail
+          if [ -n "$TP_ISTEK_ID" ] && ! [[ "$TP_ISTEK_ID" =~ ^[A-Za-z0-9._-]{1,64}$ ]]; then
+            echo "::error::istek_id biçimi geçersiz ([A-Za-z0-9._-], en çok 64 karakter)"
+            exit 1
+          fi
+          case "$EVENT" in
+            pull_request)      trigger="pr" ;;
+            schedule)          trigger="nightly" ;;
+            workflow_dispatch) trigger="${DISPATCH_TETIK:-manual}" ;;
+            *)                 trigger="$EVENT" ;;
+          esac
+          {
+            echo "TP_TRIGGER=$trigger"
+            echo "TP_RESULTS=$RUNNER_TEMP/tp-results"
+            echo "TP_XCRESULT=$RUNNER_TEMP/TestResults.xcresult"
+          } >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/tp-results/junit" "$RUNNER_TEMP/tp-results/ekler"
+
+      - name: Checkout
+        if: env.RUN_TESTS == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Xcode seçimi
+        if: env.RUN_TESTS == 'true'
+        run: |
+          set -euo pipefail
+          xcode="${XCODE_APP:-}"
+          if [ -z "$xcode" ]; then
+            xcode="$(find /Applications -maxdepth 1 -name 'Xcode_*.app' -type d \
+              | grep -viE 'beta|release_candidate|_rc' | sort -V | tail -n 1)"
+          fi
+          [ -d "$xcode" ] || { echo "::error::Xcode bulunamadı: ${xcode:-yok}"; exit 1; }
+          sudo xcode-select -s "$xcode/Contents/Developer"
+          xcodebuild -version
+
+      - name: Node kurulumu
+        if: env.RUN_TESTS == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            demo-app/mobile/package-lock.json
+            demo-app/web/package-lock.json
+
+      - name: uv kurulumu
+        if: env.RUN_TESTS == 'true'
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: demo-app/api/uv.lock
+
+      - name: Xcode projesi (prebuild + UI test hedefi + pod install)
+        if: env.RUN_TESTS == 'true'
+        working-directory: demo-app/mobile
+        env:
+          EXPO_NO_TELEMETRY: "1"
+          LANG: en_US.UTF-8
+        run: |
+          set -euo pipefail
+          npm ci --no-audit --no-fund
+          node scripts/kimlik-kontrol.mjs
+          npx expo prebuild --platform ios --clean --no-install
+          grep -q 'PBXFileSystemSynchronizedRootGroup' ios/*.xcodeproj/project.pbxproj \
+            || { echo "::error::UI test hedefi (eşitlenmiş klasör) prebuild'de eklenmedi"; exit 1; }
+          (cd ios && pod install)
+
+      - name: TP testleri (yalnız TPUretilen)
+        if: env.RUN_TESTS == 'true'
+        run: |
+          set -euo pipefail
+          argv=()
+          shopt -s nullglob
+          for f in "$UI_TEST_KOKU"/TPUretilen/*.swift; do
+            ad="$(basename "$f" .swift)"
+            [[ "$ad" =~ ^[A-Za-z][A-Za-z0-9]*C[0-9]+_[0-9a-f]{8}Tests$ ]] \
+              || { echo "::error::beklenmeyen dosya: $f"; exit 1; }
+            argv+=("-only-testing:$UI_TEST_HEDEFI/$ad")
+          done
+          # macOS /bin/bash 3.2: boş dizi `set -u` altında genişletilemez.
+          if [ "${#argv[@]}" -eq 0 ]; then
+            echo "TP_BOS=1" >> "$GITHUB_ENV"
+            echo "TPUretilen boş; koşulacak TP testi yok." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          printf '%s\n' "${argv[@]}" > "$RUNNER_TEMP/only-testing.txt"
+          echo "TP testleri: ${#argv[@]}"
+
+      - name: Simülatör oluştur ve aç
+        if: env.RUN_TESTS == 'true' && env.TP_BOS != '1'
+        run: |
+          set -euo pipefail
+          sdkver="$(xcrun --sdk iphonesimulator --show-sdk-version)"
+          read -r rt_id rt_ver < <(xcrun simctl list runtimes -j | jq -r --arg sdk "$sdkver" '
+            [.runtimes[] | select(.platform == "iOS" and .isAvailable)]
+            | sort_by(.version | split(".") | map(tonumber))
+            | ((map(select(.version == $sdk)) | last) // last)
+            | "\(.identifier) \(.version)"')
+          [ -n "${rt_id:-}" ] || { echo "::error::Kurulu iOS simülatör çalışma zamanı yok"; exit 1; }
+          dt="$(xcrun simctl list runtimes -j | jq -r --arg id "$rt_id" --arg ad "$SIM_DEVICE_TYPE" '
+            [.runtimes[] | select(.identifier == $id) | .supportedDeviceTypes[]
+             | select(.productFamily == "iPhone")] as $t
+            | (($t | map(select(.name == $ad)) | first) // ($t | first)) | .identifier')"
+          udid="$(xcrun simctl create "$SIM_NAME" "$dt" "$rt_id")"
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+          echo "SIM_UDID=$udid" >> "$GITHUB_ENV"
+          echo "Simülatör: $SIM_NAME ($udid) · $dt · iOS $rt_ver"
+
+      - name: Demo uygulamasını başlat
+        if: env.RUN_TESTS == 'true' && env.TP_BOS != '1'
+        run: |
+          set -euo pipefail
+          token="$(openssl rand -hex 24)"
+          echo "::add-mask::$token"
+          echo "DEMOAPP_TEST_TOKEN=$token" >> "$GITHUB_ENV"
+          mkdir -p tp-logs
+          PORT=8081 DEMO_API_PORT=18000 DEMOAPP_TEST_TOKEN="$token" \
+            nohup bash scripts/github-demo-serve.sh > tp-logs/serve.log 2>&1 &
+          for _ in $(seq 1 90); do
+            if curl -fsS "http://127.0.0.1:8081/api/health" >/dev/null 2>&1; then
+              echo "Uygulama hazır: http://127.0.0.1:8081"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::Demo uygulaması 180 sn içinde hazır olmadı"
+          tail -n 100 tp-logs/serve.log
+          exit 1
+
+      - name: XCUITest (derle + koş)
+        id: kos
+        if: env.RUN_TESTS == 'true' && env.TP_BOS != '1'
+        working-directory: demo-app/mobile
+        env:
+          # Test koşucusunun ortamı (xcodebuild `TEST_RUNNER_` önekini düşürür).
+          TEST_RUNNER_DEMO_API_URL: http://127.0.0.1:18000
+        run: |
+          set -o pipefail
+          export TEST_RUNNER_DEMOAPP_TEST_TOKEN="$DEMOAPP_TEST_TOKEN"
+          only=()
+          while IFS= read -r satir; do only+=("$satir"); done < "$RUNNER_TEMP/only-testing.txt"
+          ws="$(find ios -maxdepth 1 -name '*.xcworkspace' -type d | sort | head -n1)"
+          sema="$(basename "$ws" .xcworkspace)"
+          xcodebuild test \
+            -workspace "$ws" -scheme "$sema" -configuration Release \
+            -destination "id=$SIM_UDID" \
+            "${only[@]}" \
+            -resultBundlePath "$TP_XCRESULT" \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee -a "$TP_RESULTS/derleme.log"
+
+      - name: tp-results topla
+        if: always() && env.RUN_TESTS == 'true'
+        env:
+          KOS: ${{ steps.kos.outcome }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -u
+          if [ -d "$TP_XCRESULT" ]; then
+            python3 rules/ci-sablonlari/xcresult_junit.py --xcresult "$TP_XCRESULT" \
+              --cikti "$TP_RESULTS/junit/xcresult-junit.xml" --ekler "$TP_RESULTS/ekler" || true
+          fi
+          if [ -f "$TP_RESULTS/derleme.log" ]; then
+            if [ -n "${DEMOAPP_TEST_TOKEN:-}" ]; then
+              sed -i '' "s/$DEMOAPP_TEST_TOKEN/***/g" "$TP_RESULTS/derleme.log"
+            fi
+            tail -n 2000 "$TP_RESULTS/derleme.log" > "$TP_RESULTS/derleme.log.kuyruk"
+            mv "$TP_RESULTS/derleme.log.kuyruk" "$TP_RESULTS/derleme.log"
+          fi
+          find "$TP_RESULTS" -type l -delete
+          case "${KOS:-skipped}" in
+            success) durum=basarili ;;
+            skipped) durum=basarili ;;  # TPUretilen boş
+            *) if [ -s "$TP_RESULTS/junit/xcresult-junit.xml" ]; then durum=test_hatasi; else durum=derleme_hatasi; fi ;;
+          esac
+          python3 - "$TP_RESULTS/ci-meta.json" "$durum" <<'PY'
+          import json, os, sys
+          json.dump({
+              "platform": os.environ["TP_PLATFORM"], "dil": os.environ["TP_DIL"],
+              "sha": os.environ["TP_HEAD_SHA"], "run_id": os.environ["RUN_ID"],
+              "run_attempt": os.environ["RUN_ATTEMPT"], "job": os.environ["TP_IS"],
+              "tetik": os.environ.get("TP_TRIGGER", ""),
+              "istek_id": os.environ.get("TP_ISTEK_ID") or None,
+              "durum": sys.argv[2],
+          }, open(sys.argv[1], "w"), ensure_ascii=False)
+          PY
+          {
+            echo "### mobil-ios-swift (tetik: \`${TP_TRIGGER:-?}\`) · kırarak doğrulanmadı"
+            echo "Durum: **$durum** · commit \`${TP_HEAD_SHA:0:12}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: tp-results yükle
+        if: always() && env.RUN_TESTS == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tp-results
+          path: ${{ runner.temp }}/tp-results/
+          retention-days: 14
+          if-no-files-found: warn
+          include-hidden-files: false

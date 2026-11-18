@@ -77,6 +77,44 @@ def test_bos_remote_url_uzak_cekmeyi_kapatir(kokler: None, monkeypatch: pytest.M
     assert settings({"pid": "p", "remote_url": ""}).forge_remote_url == ""
 
 
+def test_platform_deposu_blogu_java_kokleri_ve_uygulama_yollari(kokler: None) -> None:
+    """Platform deposu (platform-depo ANALIZ §3.2.9): ayna `_depolar/<pid>/<sahip>/<ad>.git`,
+    Java kökleri ve uygulama yolları bloktan; boş `app_paths` ortamın `web,api`'sine düşmez."""
+    cfg = settings(
+        {
+            "pid": "p",
+            "mirror_path": "/forge-mirror/_depolar/p/org/mobil.git",
+            "forge_path": "/forge/_depolar/p/org/mobil.git",
+            "e2e_app_root": "e2e-app",
+            "e2e_java_root": "e2e-java/",
+            "app_paths": [],
+        }
+    )
+    assert cfg.forge_mirror_path == Path("/forge-mirror/_depolar/p/org/mobil.git")
+    assert cfg.e2e_app_root == "e2e-app" and cfg.e2e_java_root == "e2e-java"
+    assert cfg.app_paths == ()
+    assert settings({"pid": "p", "app_paths": [" a/web ", "a/api"]}).app_paths == ("a/web", "a/api")
+    taban = settings()
+    assert settings({"pid": "p"}).app_paths == taban.app_paths
+    assert settings({"pid": "p"}).e2e_app_root == taban.e2e_app_root
+
+
+@pytest.mark.parametrize(
+    "degisiklik",
+    [
+        {"e2e_app_root": "/mutlak"},
+        {"e2e_java_root": "../yukari"},
+        {"app_paths": ["../etc"]},
+        {"app_paths": ["/mutlak"]},
+        {"app_paths": ["a,b"]},
+        {"mirror_path": "/forge/_depolar/p/org/x.git"},
+    ],
+)
+def test_platform_deposu_gecersiz_alanlar(kokler: None, degisiklik: dict[str, Any]) -> None:
+    with pytest.raises(ValidationError):
+        ProjeBlogu.model_validate({**TAM_BLOK, **degisiklik})
+
+
 def test_parola_repr_ve_dokumda_yok(kokler: None) -> None:
     blok = ProjeBlogu.model_validate(TAM_BLOK)
     assert "gizli-b" not in repr(blok)

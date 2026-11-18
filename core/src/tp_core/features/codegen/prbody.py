@@ -187,7 +187,14 @@ def pr_body(
             return "✓" if v is True else ("✗" if v is False else "—")
 
         surucu = f"Appium ({hucre(platform, 20)})" if uygulama else "Playwright"
-        if java:
+        if dil not in (platformlar.TS, platformlar.JAVA):
+            # 014: yeni dilde adımlar worker eklentisinin adlarıdır (`kontrol.adimlar`).
+            ozet = " · ".join(f"{hucre(ad, 20)} {isaret(v)}" for ad, v in adim.items())
+            out.append(
+                f"- {ozet} · {surucu} {kontrol.get('gecen', 0)}/{kontrol.get('toplam', 0)} "
+                f"geçti (repeat-each={int(tekrar)}, retries=0)"
+            )
+        elif java:
             out.append(
                 f"- pom kilidi {isaret(adim.get('deps'))} · Java AST koruması "
                 f"{isaret(adim.get('guard'))} · test-compile {isaret(adim.get('compile'))} · "
@@ -211,6 +218,8 @@ def pr_body(
         )
     if agent_dealer_note:
         out.append(f"- {hucre(agent_dealer_note, 300)}")
+    if platformlar.musteri_ci_mi(platform, dil):
+        out += ["", *_musteri_ci_notu(platform, dil)]
     out += [
         "",
         "### Denetim",
@@ -220,3 +229,23 @@ def pr_body(
     ]
     govde = "\n".join(out) + "\n"
     return govde if len(govde) <= MAX_BODY else govde[: MAX_BODY - 20] + "\n…(kırpıldı)\n"
+
+
+def _musteri_ci_notu(platform: str, dil: str) -> list[str]:
+    """014 karar 2: müşteri CI hattı PR notu (Ş5 `musteri_ci.pr_govdesi_notu`; paket yoksa yerel
+    metin)."""
+    try:
+        from tp_core.features import musteri_ci as mci  # type: ignore[attr-defined]
+
+        metin = str(mci.pr_govdesi_notu(platform, dil) or "")
+        if metin:
+            return [metin]
+    except Exception:
+        pass
+    return [
+        "### Müşteri CI",
+        "",
+        f"- Bu test TP'de derlenmez/koşulmaz: `{platformlar.gh_check_adi(platform, dil)}` iş "
+        "akışı (GitHub Actions) derler ve koşar; merge kapısı bu check'i ister.",
+        "- **Kırarak doğrulanmadı**: müşteri uygulamasında kırılma bayrağı yok.",
+    ]

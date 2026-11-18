@@ -77,6 +77,83 @@ RUN /build/maven/bin/mvn -B -q -Dmaven.repo.local=/build/e2e-java-m2 test-compil
 RUN cp -a /opt/java/openjdk /build/jdk \
  && rm -rf /build/jdk/jmods /build/jdk/lib/src.zip /build/jdk/man /build/jdk/demo
 
+# ============================================================== 014 test dilleri: dil aşamaları
+# Sözleşme specs/014-test-dilleri/plan.md §5. Ş0 aşamaları boş bıraktı; her şerit YALNIZ kendi
+# işaretli bloğunu düzenler (bloklar arasındaki boş satırlar git birleştirmesi için korunur).
+# Aşama çıktıları `ci` aşamasında "dil COPY" bölümünde kopyalanır.
+
+# ==== dil-python (Ş1) başı ====
+# Python test hattı (TASARIM §3.1; plan.md §5): /opt/e2e-python/venv güvenilir kilitten
+# (e2e-python-deps/requirements.lock, --require-hashes, --no-deps) kurulur; tarayıcılar ortak
+# (/ms-playwright). Playwright (PyPI) sürümü PLAYWRIGHT_VERSION ile eşit olmalı (R3). py-guard
+# (yalnız stdlib; analiz ettiği kodu içe aktarmaz/çalıştırmaz) aynı dizine girer: `ci` aşamasında
+# tek `COPY --from=dil-python /opt/e2e-python` yeter. Ağsız duman: paketler içe aktarılır.
+FROM base AS dil-python
+ARG PLAYWRIGHT_VERSION
+COPY --chmod=444 e2e-python-deps/requirements.lock /opt/e2e-python/requirements.lock
+COPY --chmod=444 py-guard/py_guard.py /opt/e2e-python/py-guard/py_guard.py
+RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv \
+    UV_PYTHON_DOWNLOADS=never uv venv --python /usr/bin/python3.12 /opt/e2e-python/venv \
+ && UV_PYTHON_DOWNLOADS=never uv pip install --no-cache --require-hashes --no-deps \
+      --python /opt/e2e-python/venv/bin/python -r /opt/e2e-python/requirements.lock \
+ && installed="$(/opt/e2e-python/venv/bin/python -c 'import importlib.metadata as m; print(m.version("playwright"))')" \
+ && { [ "$installed" = "$PLAYWRIGHT_VERSION" ] || { \
+      echo "playwright (PyPI) $installed != PLAYWRIGHT_VERSION $PLAYWRIGHT_VERSION: e2e-python-deps kilidini güncelleyin" >&2; exit 1; }; }
+RUN --network=none /opt/e2e-python/venv/bin/python -I -c \
+      "import playwright, pytest, pytest_playwright, pytest_repeat, appium, allure_pytest" \
+ && /usr/bin/python3.12 -I /opt/e2e-python/py-guard/py_guard.py --help >/dev/null \
+ && chmod -R a-w /opt/e2e-python
+# ==== dil-python (Ş1) sonu ====
+
+# ==== dil-csharp (Ş2) başı ====
+# C# / .NET 10 (TASARIM §3.2): .NET SDK + cs-araclar (Roslyn; yalnızca ayrıştırır) + iki C# hedef
+# projesinin (web: e2e-csharp, windows: e2e-app-csharp) çevrimdışı, ısıtılmış NuGet paket klasörü.
+# SDK imajı özetle sabit; paketler güvenilir kopyaların kilit dosyalarıyla (--locked-mode;
+# e2e-csharp-deps/, demo projelerle bayt eşit — tests/test_csharp.py denetler). Ağ yalnızca burada.
+FROM mcr.microsoft.com/dotnet/sdk:10.0.401-noble@sha256:e70cdb7f80b0348f5cb85f19a8f670fca061f033d57eed12fa003d58b0e06317 AS dil-csharp
+ENV DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1
+WORKDIR /build/cs-araclar
+COPY cs-araclar/ ./
+# Derle + NUnit golden testleri (sözleşme kırılırsa imaj derlenmez), sonra tek dizine yayımla.
+RUN dotnet test CsAraclar.slnx -c Release --nologo \
+ && dotnet publish src/CsAraclar -c Release --no-restore -o /build/cs-araclar-yayin \
+ && rm -rf /root/.nuget/packages
+# Hedef projelerin paketleri: yalnızca güvenilir proje/kilit dosyalarıyla restore (kaynak kod
+# gerekmez). Playwright paketi tarayıcı indirmez (tarayıcılar ortak: /ms-playwright).
+COPY e2e-csharp-deps/ /build/e2e-csharp-deps/
+RUN for d in web windows; do \
+      NUGET_PACKAGES=/build/e2e-csharp/nuget dotnet restore --locked-mode \
+        "$(ls /build/e2e-csharp-deps/$d/*.csproj)" || exit 1; \
+    done \
+ && rm -rf /build/e2e-csharp-deps/*/obj \
+ && chmod -R a-w /build/e2e-csharp/nuget
+# Çalışma zamanı SDK'sı (derleme + dotnet test); belgeler/örnekler atılır.
+RUN cp -a /usr/share/dotnet /build/dotnet
+# ==== dil-csharp (Ş2) sonu ====
+
+# ==== dil-statik (Ş3 Kotlin / Ş4 Swift) başı ====
+FROM base AS dil-statik
+RUN mkdir -p /opt/dil-statik
+# Ortak tree-sitter çekirdeği (Ş3 + Ş4; tek satır). Paketler /opt/dil-statik'e (worker PYTHONPATH'e
+# eklenir); ağ yalnız derleme anında, sürümler sabit.
+RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv \
+    uv pip install --no-cache --python /usr/bin/python3.12 --target /opt/dil-statik \
+      tree-sitter==0.26.1
+# ---- Ş3 Kotlin satırları başı ----
+# Hash kilitli (statik-deps/kotlin.txt; tree-sitter çekirdeği yukarıdaki ortak satırla aynı sürüm).
+COPY --chmod=444 statik-deps/kotlin.txt /build/statik-deps/kotlin.txt
+RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv \
+    uv pip install --no-cache --python /usr/bin/python3.12 --require-hashes --no-deps \
+      --target /opt/dil-statik -r /build/statik-deps/kotlin.txt
+# ---- Ş3 Kotlin satırları sonu ----
+
+# ---- Ş4 Swift satırları başı ----
+RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv \
+    uv pip install --no-cache --python /usr/bin/python3.12 --target /opt/dil-statik \
+      tree-sitter-swift==0.7.4
+# ---- Ş4 Swift satırları sonu ----
+# ==== dil-statik sonu ====
+
 FROM base AS ci
 ARG PLAYWRIGHT_VERSION
 LABEL org.opencontainers.image.title="testingprobe-toolchain" \
@@ -168,6 +245,38 @@ RUN --network=none cp /opt/e2e-java/pom.xml /tmp/e2e-java-duman/pom.xml \
  && grep -q 'tests="1" errors="0" skipped="0" failures="0"' \
       target/surefire-reports/TEST-com.antreklabs.bayi.birim.IsinmaTest.xml \
  && cd / && rm -rf /tmp/e2e-java-duman /tmp/playwright-java-*
+
+# ==== dil COPY (014) başı ====
+# ---- Ş1 Python ----
+COPY --from=dil-python /opt/e2e-python /opt/e2e-python
+
+# ---- Ş2 C# ----
+# .NET SDK, cs-araclar ve ısıtılmış NuGet klasörü (salt okunur; worker/diller/csharp.py restore'da
+# kaynak + geri dönüş klasörü olarak kullanır, yazılabilir NUGET_PACKAGES koşu başına geçicidir).
+COPY --from=dil-csharp /build/dotnet /usr/share/dotnet
+COPY --from=dil-csharp /build/cs-araclar-yayin /opt/cs-araclar
+COPY --from=dil-csharp /build/e2e-csharp/nuget /opt/e2e-csharp/nuget
+COPY --chmod=444 e2e-csharp-deps/web/ /opt/e2e-csharp/web/
+COPY --chmod=444 e2e-csharp-deps/windows/ /opt/e2e-csharp/windows/
+ENV DOTNET_CLI_TELEMETRY_OPTOUT=1 \
+    DOTNET_NOLOGO=1 \
+    DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1 \
+    TP_DOTNET=/usr/share/dotnet/dotnet \
+    TP_CS_ARACLAR_DLL=/opt/cs-araclar/cs-araclar.dll \
+    TP_E2E_CSHARP_DEPS=/opt/e2e-csharp
+# C# duman testi, AĞSIZ: güvenilir web projesi çevrimdışı kilitli restore + derleme
+# (worker/diller/csharp.py ile aynı bayraklar) ve cs-araclar açılışı. Paket eksikse imaj derlenmez.
+RUN --network=none /usr/share/dotnet/dotnet /opt/cs-araclar/cs-araclar.dll --help >/dev/null \
+ && mkdir -p /tmp/cs-duman && cp /opt/e2e-csharp/web/* /tmp/cs-duman/ \
+ && cd /tmp/cs-duman \
+ && HOME=/tmp/cs-duman NUGET_PACKAGES=/tmp/cs-duman/nuget /usr/share/dotnet/dotnet restore \
+      --locked-mode --source /opt/e2e-csharp/nuget -p:RestoreFallbackFolders=/opt/e2e-csharp/nuget \
+      "$(ls /tmp/cs-duman/*.csproj)" \
+ && cd / && rm -rf /tmp/cs-duman
+
+# ---- Ş3/Ş4 statik (tree-sitter) ----
+COPY --from=dil-statik /opt/dil-statik /opt/dil-statik
+# ==== dil COPY (014) sonu ====
 
 COPY --from=nodebuild /build/ast-guard/package.json ./ast-guard/package.json
 COPY --from=nodebuild /build/ast-guard/dist ./ast-guard/dist

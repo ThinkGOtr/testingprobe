@@ -42,7 +42,20 @@ __all__ = [
 def tam_hat_dili(deger: Any) -> str | None:
     """Değer CI'da koşan bir dil mi (`ts` | `java`)? Değilse None. (`platform.gecerli_dil`
     ValueError atan doğrulayıcıdır; bu süzgeç sessizdir.)"""
-    return deger if isinstance(deger, str) and deger in platformlar.TAM_HAT_DILLERI else None
+    if not isinstance(deger, str):
+        return None
+    if deger in platformlar.TAM_HAT_DILLERI:
+        return deger
+    # 014: koşu kaydında yeni dil (ör. `python`): çekirdek eklentisi yüklü ve TP'de koşan (tam
+    # hat) diller; doğrulanmamış ve müşteri CI dilleri TP CI'ında koşmaz.
+    from tp_core.features.codegen import diller
+
+    if diller.eklenti(deger) is not None and any(
+        c.dil == deger and platformlar.tam_hat_mi(deger, c.platform)
+        for c in platformlar.CATILAR.values()
+    ):
+        return deger
+    return None
 
 
 def script_dili(script: Any) -> str:

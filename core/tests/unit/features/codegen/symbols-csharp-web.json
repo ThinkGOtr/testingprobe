@@ -1,0 +1,915 @@
+{
+ "schema_version": 1,
+ "lang": "csharp",
+ "platform": "web",
+ "root": ".",
+ "page_objects": [
+  {
+   "class": "CartPage",
+   "file": "Pages/CartPage.cs",
+   "doc": "Sepet sayfas\u0131: sat\u0131rlar, kampanya, toplamlar ve sipari\u015f onay\u0131.",
+   "methods": [
+    {
+     "name": "GotoAsync",
+     "params": [],
+     "returns": "void",
+     "kind": "action",
+     "async": true,
+     "doc": "Sepet sayfas\u0131n\u0131 a\u00e7ar.",
+     "line": 23
+    },
+    {
+     "name": "RemoveProductAsync",
+     "params": [
+      {
+       "name": "productCode",
+       "type": "string",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "action",
+     "async": true,
+     "doc": "\u00dcr\u00fcn\u00fc sepetten kald\u0131r\u0131r.",
+     "line": 30
+    },
+    {
+     "name": "CheckoutAsync",
+     "params": [],
+     "returns": "void",
+     "kind": "action",
+     "async": true,
+     "doc": "\"Sipari\u015fi onayla\" butonuna basar ve onay sayfas\u0131n\u0131n a\u00e7\u0131lmas\u0131n\u0131 bekler.",
+     "line": 37
+    },
+    {
+     "name": "ExpectLineQuantityAsync",
+     "params": [
+      {
+       "name": "productCode",
+       "type": "string",
+       "optional": false
+      },
+      {
+       "name": "quantity",
+       "type": "int",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": true,
+     "doc": "Sepet sat\u0131r\u0131ndaki adedi do\u011frular.",
+     "line": 44
+    },
+    {
+     "name": "ExpectFreeQuantityAsync",
+     "params": [
+      {
+       "name": "productCode",
+       "type": "string",
+       "optional": false
+      },
+      {
+       "name": "quantity",
+       "type": "int",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": true,
+     "doc": "Sepet sat\u0131r\u0131nda kampanyayla bedava verilen adedi do\u011frular.",
+     "line": 50
+    },
+    {
+     "name": "ExpectLineTotalAsync",
+     "params": [
+      {
+       "name": "productCode",
+       "type": "string",
+       "optional": false
+      },
+      {
+       "name": "amount",
+       "type": "string",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": true,
+     "doc": "Sepet sat\u0131r\u0131n\u0131n indirim sonras\u0131 tutar\u0131n\u0131 do\u011frular (\u00f6r.",
+     "line": 56
+    },
+    {
+     "name": "ExpectSubtotalAsync",
+     "params": [
+      {
+       "name": "amount",
+       "type": "string",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": true,
+     "doc": "Ara toplam\u0131 do\u011frular (\u00f6r.",
+     "line": 62
+    },
+    {
+     "name": "ExpectDiscountAsync",
+     "params": [
+      {
+       "name": "amount",
+       "type": "string",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": true,
+     "doc": "Kampanya indirimi tutar\u0131n\u0131 do\u011frular (\u00f6r.",
+     "line": 68
+    },
+    {
+     "name": "ExpectTotalAsync",
+     "params": [
+      {
+       "name": "amount",
+       "type": "string",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": true,
+     "doc": "\u0130ndirim sonras\u0131 genel toplam\u0131 do\u011frular (\u00f6r.",
+     "line": 74
+    },
+    {
+     "name": "ExpectMinOrderWarningAsync",
+     "params": [
+      {
+       "name": "message",
+       "type": "string",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": true,
+     "doc": "Minimum sipari\u015f uyar\u0131s\u0131n\u0131n verilen metni i\u00e7erdi\u011fini do\u011frular (\u00f6r.",
+     "line": 80
+    },
+    {
+     "name": "ExpectNoMinOrderWarningAsync",
+     "params": [],
+     "returns": "void",
+     "kind": "expect",
+     "async": true,
+     "doc": "Minimum sipari\u015f uyar\u0131s\u0131n\u0131n g\u00f6sterilmedi\u011fini do\u011frular.",
+     "line": 86
+    },
+    {
+     "name": "ExpectCheckoutDisabledAsync",
+     "params": [],
+     "returns": "void",
+     "kind": "expect",
+     "async": true,
+     "doc": "\"Sipari\u015fi onayla\" butonunun pasif oldu\u011funu do\u011frular.",
+     "line": 92
+    },
+    {
+     "name": "ExpectCheckoutEnabledAsync",
+     "params": [],
+     "returns": "void",
+     "kind": "expect",
+     "async": true,
+     "doc": "\"Sipari\u015fi onayla\" butonunun aktif oldu\u011funu do\u011frular.",
+     "line": 98
+    },
+    {
+     "name": "ExpectProductNotInCartAsync",
+     "params": [
+      {
+       "name": "productCode",
+       "type": "string",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": true,
+     "doc": "Sepette \u00fcr\u00fcn\u00fcn bulunmad\u0131\u011f\u0131n\u0131 do\u011frular.",
+     "line": 104
+    },
+    {
+     "name": "ExpectCartCountAsync",
+     "params": [
+      {
+       "name": "count",
+       "type": "int",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": true,
+     "doc": "\u00dcst men\u00fcdeki sepet sayac\u0131n\u0131n verilen adet oldu\u011funu do\u011frular (sepet sayfas\u0131nda).",
+     "line": 110
+    },
+    {
+     "name": "ExpectEmptyAsync",
+     "params": [],
+     "returns": "void",
+     "kind": "expect",
+     "async": true,
+     "doc": "Sepetin bo\u015f oldu\u011funu do\u011frular.",
+     "line": 116
+    }
+   ],
+   "locators": {
+    "Cart.CHECKOUT_SUBMIT": {
+     "testId": "checkout-submit",
+     "role": "",
+     "name": "",
+     "intent": "Sipari\u015fi onaylayan buton.",
+     "prefix": false,
+     "file": "Pages/Kimlikler.cs",
+     "line": 97
+    },
+    "Cart.DISCOUNT": {
+     "testId": "cart-discount",
+     "role": "",
+     "name": "",
+     "intent": "Sepetteki toplam kampanya indirimi.",
+     "prefix": false,
+     "file": "Pages/Kimlikler.cs",
+     "line": 89
+    },
+    "Cart.EMPTY": {
+     "testId": "cart-empty",
+     "role": "",
+     "name": "",
+     "intent": "Sepet bo\u015fken g\u00f6sterilen bilgi alan\u0131.",
+     "prefix": false,
+     "file": "Pages/Kimlikler.cs",
+     "line": 75
+    },
+    "Cart.LINE_FREE_ONEK": {
+     "testId": "cart-line-free-",
+     "role": "",
+     "name": "",
+     "intent": "Sepet sat\u0131r\u0131nda kampanyayla bedava verilen adet.",
+     "prefix": true,
+     "file": "Pages/Kimlikler.cs",
+     "line": 81
+    },
+    "Cart.LINE_ONEK": {
+     "testId": "cart-line-",
+     "role": "",
+     "name": "",
+     "intent": "Sepette bir \u00fcr\u00fcn\u00fcn sat\u0131r\u0131.",
+     "prefix": true,
+     "file": "Pages/Kimlikler.cs",
+     "line": 77
+    },
+    "Cart.LINE_QUANTITY_ONEK": {
+     "testId": "cart-line-qty-",
+     "role": "",
+     "name": "",
+     "intent": "Sepet sat\u0131r\u0131ndaki adet.",
+     "prefix": true,
+     "file": "Pages/Kimlikler.cs",
+     "line": 79
+    },
+    "Cart.LINE_REMOVE_ONEK": {
+     "testId": "cart-line-remove-",
+     "role": "",
+     "name": "",
+     "intent": "Sat\u0131r\u0131 sepetten kald\u0131ran buton.",
+     "prefix": true,
+     "file": "Pages/Kimlikler.cs",
+     "line": 85
+    },
+    "Cart.LINE_TOTAL_ONEK": {
+     "testId": "cart-line-total-",
+     "role": "",
+     "name": "",
+     "intent": "Sepet sat\u0131r\u0131n\u0131n indirim sonras\u0131 tutar\u0131.",
+     "prefix": true,
+     "file": "Pages/Kimlikler.cs",
+     "line": 83
+    },
+    "Cart.MIN_ORDER_WARNING": {
+     "testId": "min-order-warning",
+     "role": "",
+     "name": "",
+     "intent": "Minimum sipari\u015f tutar\u0131n\u0131n alt\u0131nda g\u00f6sterilen uyar\u0131.",
+     "prefix": false,
+     "file": "Pages/Kimlikler.cs",
+     "line": 93
+    },
+    "Cart.SUBTOTAL": {
+     "testId": "cart-subtotal",
+     "role": "",
+     "name": "",
+     "intent": "Sepetin indirim \u00f6ncesi ara toplam\u0131.",
+     "prefix": false,
+     "file": "Pages/Kimlikler.cs",
+     "line": 87
+    },
+    "Cart.TABLE": {
+     "testId": "cart-table",
+     "role": "",
+     "name": "",
+     "intent": "Sepet sat\u0131rlar\u0131 tablosu.",
+     "prefix": false,
+     "file": "Pages/Kimlikler.cs",
+     "line": 73
+    },
+    "Cart.TOTAL": {
+     "testId": "cart-total",
+     "role": "",
+     "name": "",
+     "intent": "Sepetin indirim sonras\u0131 genel toplam\u0131.",
+     "prefix": false,
+     "file": "Pages/Kimlikler.cs",
+     "line": 91
+    },
+    "Nav.CART_COUNT": {
+     "testId": "cart-count",
+     "role": "",
+     "name": "",
+     "intent": "Sepetteki toplam \u00fcr\u00fcn adedini g\u00f6steren saya\u00e7.",
+     "prefix": false,
+     "file": "Pages/Kimlikler.cs",
+     "line": 25
+    }
+   }
+  },
+  {
+   "class": "CatalogPage",
+   "file": "Pages/CatalogPage.cs",
+   "doc": "\u00dcr\u00fcn katalo\u011fu sayfas\u0131.",
+   "methods": [
+    {
+     "name": "GotoAsync",
+     "params": [],
+     "returns": "void",
+     "kind": "action",
+     "async": true,
+     "doc": "Katalog sayfas\u0131n\u0131 a\u00e7ar.",
+     "line": 23
+    },
+    {
+     "name": "OpenFromMenuAsync",
+     "params": [],
+     "returns": "void",
+     "kind": "action",
+     "async": true,
+     "doc": "\u00dcst men\u00fcden katalo\u011fa gider.",
+     "line": 30
+    },
+    {
+     "name": "SetQuantityAsync",
+     "params": [
+      {
+       "name": "productCode",
+       "type": "string",
+       "optional": false
+      },
+      {
+       "name": "quantity",
+       "type": "int",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "action",
+     "async": true,
+     "doc": "\u00dcr\u00fcn kart\u0131ndaki adet alan\u0131na de\u011fer yazar.",
+     "line": 37
+    },
+    {
+     "name": "AddToCartAsync",
+     "params": [
+      {
+       "name": "productCode",
+       "type": "string",
+       "optional": false
+      },
+      {
+       "name": "quantity",
+       "type": "int",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "action",
+     "async": true,
+     "doc": "\u00dcr\u00fcn kart\u0131nda adedi girip \"Sepete ekle\" butonuna basar ve sepetin g\u00fcncellenmesini bekler.",
+     "line": 44
+    },
+    {
+     "name": "OpenCartAsync",
+     "params": [],
+     "returns": "void",
+     "kind": "action",
+     "async": true,
+     "doc": "\u00dcst men\u00fcden sepete gider.",
+     "line": 57
+    },
+    {
+     "name": "ExpectProductVisibleAsync",
+     "params": [
+      {
+       "name": "productCode",
+       "type": "string",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": true,
+     "doc": "\u00dcr\u00fcn kart\u0131n\u0131n katalogda g\u00f6r\u00fcnd\u00fc\u011f\u00fcn\u00fc do\u011frular.",
+     "line": 64
+    },
+    {
+     "name": "ExpectProductPriceAsync",
+     "params": [
+      {
+       "name": "productCode",
+       "type": "string",
+       "optional": false
+      },
+      {
+       "name": "price",
+       "type": "string",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": true,
+     "doc": "\u00dcr\u00fcn kart\u0131ndaki fiyat\u0131n verilen tutar oldu\u011funu do\u011frular (\u00f6r.",
+     "line": 70
+    },
+    {
+     "name": "ExpectCampaignAsync",
+     "params": [
+      {
+       "name": "productCode",
+       "type": "string",
+       "optional": false
+      },
+      {
+       "name": "campaignName",
+       "type": "string",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": true,
+     "doc": "\u00dcr\u00fcn kart\u0131nda verilen kampanya ad\u0131n\u0131n g\u00f6r\u00fcnd\u00fc\u011f\u00fcn\u00fc do\u011frular (\u00f6r.",
+     "line": 76
+    },
+    {
+     "name": "ExpectCartCountAsync",
+     "params": [
+      {
+       "name": "count",
+       "type": "int",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": true,
+     "doc": "\u00dcst men\u00fcdeki sepet sayac\u0131n\u0131n verilen adet oldu\u011funu do\u011frular.",
+     "line": 82
+    }
+   ],
+   "locators": {
+    "Catalog.PRODUCT_CARD_ONEK": {
+     "testId": "product-card-",
+     "role": "",
+     "name": "",
+     "intent": "Tek bir \u00fcr\u00fcn\u00fcn kart\u0131.",
+     "prefix": true,
+     "file": "Pages/Kimlikler.cs",
+     "line": 53
+    },
+    "Catalog.PRODUCT_LIST": {
+     "testId": "product-list",
+     "role": "",
+     "name": "",
+     "intent": "\u00dcr\u00fcn kartlar\u0131n\u0131n listesi.",
+     "prefix": false,
+     "file": "Pages/Kimlikler.cs",
+     "line": 51
+    },
+    "Catalog.PRODUCT_PRICE_ONEK": {
+     "testId": "product-price-",
+     "role": "",
+     "name": "",
+     "intent": "\u00dcr\u00fcn kart\u0131ndaki birim fiyat.",
+     "prefix": true,
+     "file": "Pages/Kimlikler.cs",
+     "line": 55
+    },
+    "Catalog.ProductCard.ADD_TO_CART": {
+     "testId": "add-to-cart",
+     "role": "",
+     "name": "",
+     "intent": "\u00dcr\u00fcn kart\u0131nda sepete ekleme butonu.",
+     "prefix": false,
+     "file": "Pages/Kimlikler.cs",
+     "line": 65
+    },
+    "Catalog.ProductCard.QUANTITY_INPUT_ONEK": {
+     "testId": "qty-input-",
+     "role": "",
+     "name": "",
+     "intent": "\u00dcr\u00fcn kart\u0131nda eklenecek adet alan\u0131.",
+     "prefix": true,
+     "file": "Pages/Kimlikler.cs",
+     "line": 63
+    },
+    "Nav.CART": {
+     "testId": "nav-cart",
+     "role": "",
+     "name": "",
+     "intent": "\u00dcst men\u00fcde sepete giden ba\u011flant\u0131 (sepet sayac\u0131n\u0131 i\u00e7erir).",
+     "prefix": false,
+     "file": "Pages/Kimlikler.cs",
+     "line": 23
+    },
+    "Nav.CART_COUNT": {
+     "testId": "cart-count",
+     "role": "",
+     "name": "",
+     "intent": "Sepetteki toplam \u00fcr\u00fcn adedini g\u00f6steren saya\u00e7.",
+     "prefix": false,
+     "file": "Pages/Kimlikler.cs",
+     "line": 25
+    },
+    "Nav.CATALOG": {
+     "testId": "nav-catalog",
+     "role": "",
+     "name": "",
+     "intent": "\u00dcst men\u00fcde \u00fcr\u00fcn katalo\u011funa giden ba\u011flant\u0131.",
+     "prefix": false,
+     "file": "Pages/Kimlikler.cs",
+     "line": 21
+    }
+   }
+  },
+  {
+   "class": "LoginPage",
+   "file": "Pages/LoginPage.cs",
+   "doc": "Bayi giri\u015f sayfas\u0131.",
+   "methods": [
+    {
+     "name": "GotoAsync",
+     "params": [],
+     "returns": "void",
+     "kind": "action",
+     "async": true,
+     "doc": "Giri\u015f sayfas\u0131n\u0131 a\u00e7ar.",
+     "line": 17
+    },
+    {
+     "name": "LoginAsync",
+     "params": [
+      {
+       "name": "username",
+       "type": "string",
+       "optional": false
+      },
+      {
+       "name": "password",
+       "type": "string",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "action",
+     "async": true,
+     "doc": "Kullan\u0131c\u0131 ad\u0131 ve parolay\u0131 girip giri\u015f yapar.",
+     "line": 24
+    },
+    {
+     "name": "LogoutAsync",
+     "params": [],
+     "returns": "void",
+     "kind": "action",
+     "async": true,
+     "doc": "Oturumu kapat\u0131r.",
+     "line": 32
+    },
+    {
+     "name": "ExpectLoginErrorAsync",
+     "params": [
+      {
+       "name": "message",
+       "type": "string",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": true,
+     "doc": "Giri\u015f hatas\u0131 mesaj\u0131n\u0131n verilen metin oldu\u011funu do\u011frular.",
+     "line": 38
+    },
+    {
+     "name": "ExpectLoggedInAsync",
+     "params": [
+      {
+       "name": "dealerName",
+       "type": "string",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": true,
+     "doc": "Verilen bayi ad\u0131yla oturum a\u00e7\u0131ld\u0131\u011f\u0131n\u0131 ve katalo\u011fun a\u00e7\u0131ld\u0131\u011f\u0131n\u0131 do\u011frular.",
+     "line": 44
+    },
+    {
+     "name": "ExpectOnLoginPageAsync",
+     "params": [],
+     "returns": "void",
+     "kind": "expect",
+     "async": true,
+     "doc": "Giri\u015f sayfas\u0131nda olundu\u011funu do\u011frular.",
+     "line": 51
+    }
+   ],
+   "locators": {
+    "Login.ERROR": {
+     "testId": "login-error",
+     "role": "",
+     "name": "",
+     "intent": "Hatal\u0131 giri\u015fte g\u00f6sterilen hata mesaj\u0131.",
+     "prefix": false,
+     "file": "Pages/Kimlikler.cs",
+     "line": 44
+    },
+    "Login.PASSWORD": {
+     "testId": "login-password",
+     "role": "",
+     "name": "",
+     "intent": "Giri\u015f formunda parola alan\u0131.",
+     "prefix": false,
+     "file": "Pages/Kimlikler.cs",
+     "line": 40
+    },
+    "Login.SUBMIT": {
+     "testId": "login-submit",
+     "role": "",
+     "name": "",
+     "intent": "Giri\u015f formunu g\u00f6nderen buton.",
+     "prefix": false,
+     "file": "Pages/Kimlikler.cs",
+     "line": 42
+    },
+    "Login.USERNAME": {
+     "testId": "login-username",
+     "role": "",
+     "name": "",
+     "intent": "Giri\u015f formunda kullan\u0131c\u0131 ad\u0131 alan\u0131.",
+     "prefix": false,
+     "file": "Pages/Kimlikler.cs",
+     "line": 38
+    },
+    "Nav.CURRENT_DEALER": {
+     "testId": "current-dealer",
+     "role": "",
+     "name": "",
+     "intent": "Oturum a\u00e7m\u0131\u015f bayinin ad\u0131.",
+     "prefix": false,
+     "file": "Pages/Kimlikler.cs",
+     "line": 31
+    },
+    "Nav.LOGOUT": {
+     "testId": "nav-logout",
+     "role": "",
+     "name": "",
+     "intent": "Oturumu kapatan buton.",
+     "prefix": false,
+     "file": "Pages/Kimlikler.cs",
+     "line": 29
+    }
+   }
+  },
+  {
+   "class": "OrderPage",
+   "file": "Pages/OrderPage.cs",
+   "doc": "Sipari\u015f onay\u0131 ve sipari\u015f ge\u00e7mi\u015fi.",
+   "methods": [
+    {
+     "name": "GotoHistoryAsync",
+     "params": [],
+     "returns": "void",
+     "kind": "action",
+     "async": true,
+     "doc": "Sipari\u015f ge\u00e7mi\u015fi sayfas\u0131n\u0131 a\u00e7ar.",
+     "line": 20
+    },
+    {
+     "name": "OpenHistoryAsync",
+     "params": [],
+     "returns": "void",
+     "kind": "action",
+     "async": true,
+     "doc": "\u00dcst men\u00fcden sipari\u015f ge\u00e7mi\u015fine gider.",
+     "line": 27
+    },
+    {
+     "name": "ReadOrderNumberAsync",
+     "params": [],
+     "returns": "string",
+     "kind": "action",
+     "async": true,
+     "doc": "Onay sayfas\u0131ndaki sipari\u015f numaras\u0131n\u0131 okur.",
+     "line": 37
+    },
+    {
+     "name": "ExpectConfirmationAsync",
+     "params": [],
+     "returns": "void",
+     "kind": "expect",
+     "async": true,
+     "doc": "Sipari\u015f onay\u0131n\u0131n ve sipari\u015f numaras\u0131n\u0131n g\u00f6sterildi\u011fini do\u011frular.",
+     "line": 45
+    },
+    {
+     "name": "ExpectConfirmedTotalAsync",
+     "params": [
+      {
+       "name": "amount",
+       "type": "string",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": true,
+     "doc": "Onaylanan sipari\u015fin genel toplam\u0131n\u0131 do\u011frular (\u00f6r.",
+     "line": 52
+    },
+    {
+     "name": "ExpectConfirmedOrderInHistoryAsync",
+     "params": [],
+     "returns": "void",
+     "kind": "expect",
+     "async": true,
+     "doc": "Onay sayfas\u0131nda g\u00f6sterilen sipari\u015fin sipari\u015f ge\u00e7mi\u015finde listelendi\u011fini do\u011frular.",
+     "line": 58
+    },
+    {
+     "name": "ExpectOrderInHistoryAsync",
+     "params": [
+      {
+       "name": "orderNumber",
+       "type": "string",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": true,
+     "doc": "Verilen sipari\u015f numaras\u0131n\u0131n sipari\u015f ge\u00e7mi\u015finde listelendi\u011fini do\u011frular.",
+     "line": 66
+    },
+    {
+     "name": "ExpectOrderTotalInHistoryAsync",
+     "params": [
+      {
+       "name": "orderNumber",
+       "type": "string",
+       "optional": false
+      },
+      {
+       "name": "amount",
+       "type": "string",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": true,
+     "doc": "Sipari\u015f ge\u00e7mi\u015findeki sipari\u015fin genel toplam\u0131n\u0131 do\u011frular.",
+     "line": 72
+    },
+    {
+     "name": "ExpectNoOrdersAsync",
+     "params": [],
+     "returns": "void",
+     "kind": "expect",
+     "async": true,
+     "doc": "Sipari\u015f ge\u00e7mi\u015finin bo\u015f oldu\u011funu do\u011frular.",
+     "line": 78
+    }
+   ],
+   "locators": {
+    "Nav.ORDERS": {
+     "testId": "nav-orders",
+     "role": "",
+     "name": "",
+     "intent": "\u00dcst men\u00fcde sipari\u015f ge\u00e7mi\u015fine giden ba\u011flant\u0131.",
+     "prefix": false,
+     "file": "Pages/Kimlikler.cs",
+     "line": 27
+    },
+    "Order.CONFIRMATION": {
+     "testId": "order-confirmation",
+     "role": "",
+     "name": "",
+     "intent": "Sipari\u015f onayland\u0131ktan sonra g\u00f6sterilen onay alan\u0131.",
+     "prefix": false,
+     "file": "Pages/Kimlikler.cs",
+     "line": 104
+    },
+    "Order.ORDERS_EMPTY": {
+     "testId": "orders-empty",
+     "role": "",
+     "name": "",
+     "intent": "Hi\u00e7 sipari\u015f yokken g\u00f6sterilen bilgi alan\u0131.",
+     "prefix": false,
+     "file": "Pages/Kimlikler.cs",
+     "line": 112
+    },
+    "Order.ORDERS_TABLE": {
+     "testId": "orders-table",
+     "role": "",
+     "name": "",
+     "intent": "Sipari\u015f ge\u00e7mi\u015fi tablosu.",
+     "prefix": false,
+     "file": "Pages/Kimlikler.cs",
+     "line": 110
+    },
+    "Order.ORDER_NUMBER": {
+     "testId": "order-number",
+     "role": "",
+     "name": "",
+     "intent": "Onay alan\u0131ndaki sipari\u015f numaras\u0131.",
+     "prefix": false,
+     "file": "Pages/Kimlikler.cs",
+     "line": 106
+    },
+    "Order.ORDER_ROW_ONEK": {
+     "testId": "order-row-",
+     "role": "",
+     "name": "",
+     "intent": "Sipari\u015f ge\u00e7mi\u015finde bir sipari\u015fin sat\u0131r\u0131.",
+     "prefix": true,
+     "file": "Pages/Kimlikler.cs",
+     "line": 114
+    },
+    "Order.ORDER_ROW_TOTAL_ONEK": {
+     "testId": "order-total-",
+     "role": "",
+     "name": "",
+     "intent": "Sipari\u015f ge\u00e7mi\u015fi sat\u0131r\u0131ndaki genel toplam.",
+     "prefix": true,
+     "file": "Pages/Kimlikler.cs",
+     "line": 116
+    },
+    "Order.ORDER_TOTAL": {
+     "testId": "order-total",
+     "role": "",
+     "name": "",
+     "intent": "Onaylanan sipari\u015fin genel toplam\u0131.",
+     "prefix": false,
+     "file": "Pages/Kimlikler.cs",
+     "line": 108
+    }
+   }
+  }
+ ],
+ "locator_files": [
+  {
+   "file": "Pages/Kimlikler.cs",
+   "exports": [
+    "Nav",
+    "Login",
+    "Catalog",
+    "Cart",
+    "Order"
+   ]
+  }
+ ],
+ "errors": [],
+ "fixtures": [
+  "CartPage",
+  "CatalogPage",
+  "LoginPage",
+  "OrderPage"
+ ]
+}

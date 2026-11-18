@@ -51,7 +51,11 @@ describe("MİM-B1: dil algılanamadı (depo okunamadı)", () => {
     const w = (await api.kodDilleri("web"))!;
     expect(w).toMatchObject({ algilanan: "ts", kaynak: "varsayilan" });
     expect(w.neden).toMatch(/^Dil algılanamadı/);
-    expect(w.secenekler.every((s) => s.kullanilabilir && s.neden === DEPO_OKUNAMADI)).toBe(true);
+    // 014: değerlendirmeden geçmiş (açık) her seçenek kullanılabilir + DEPO_OKUNAMADI; yakında seçenekler kapıda kalır.
+    const acik = w.secenekler.filter((s) => s.durum === "acik");
+    expect(acik.map((s) => s.dil)).toEqual(["ts", "java"]);
+    expect(acik.every((s) => s.kullanilabilir && s.neden === DEPO_OKUNAMADI)).toBe(true);
+    expect(w.secenekler.filter((s) => s.durum === "yakinda").every((s) => !s.kullanilabilir && s.neden === "Değerlendirme sürüyor")).toBe(true);
   });
 
   it("Kod üretimi: dürüst ileti ('test bulunamadı' denmez); depo okunamadı nedeni tek notta, açık seçeneklerde tekrarlanmaz", async () => {
@@ -69,7 +73,10 @@ describe("MİM-B1: dil algılanamadı (depo okunamadı)", () => {
     expect(java).not.toHaveAttribute("aria-disabled");
     // Aynı "depo okunamadı" nedeni dört kutuda tekrarlanmaz (ekran testi bulgusu); not tek yerde söyler.
     expect(java).toHaveAccessibleDescription("Playwright for Java + TestNG");
-    expect(within(grup).queryAllByTestId("secenek-neden")).toHaveLength(0);
+    // 014: yalnız "Yakında" seçeneklerin (C#, Python) kendi nedeni görünür.
+    const nedenler = within(grup).queryAllByTestId("secenek-neden");
+    expect(nedenler).toHaveLength(2);
+    for (const n of nedenler) expect(n).toHaveTextContent(/^\. Yakında: Değerlendirme sürüyor$/);
     expect(grup).not.toHaveTextContent(DEPO_OKUNAMADI);
     // Açık seçenek seçilebilir; üretim engellenmez.
     await u.click(java);
@@ -80,9 +87,10 @@ describe("MİM-B1: dil algılanamadı (depo okunamadı)", () => {
     expect(screen.getByRole("button", { name: "Seçilenler için kod üret (1)" })).toBeEnabled();
   });
 
-  it("tek dilli platform: algılanamadı notu tek yerde (elle seçim önerilmez)", async () => {
+  it("tek dilli platform (014 öncesi core): algılanamadı notu tek yerde (elle seçim önerilmez)", async () => {
     await oturumAc("muhendis");
     ayar.senaryolar.add("depo-okunamadi");
+    ayar.senaryolar.add("eski-dogrulanmamis");
     const u = userEvent.setup();
     uygulama("/kod");
     await screen.findByRole("group", { name: "Dil" });
@@ -196,7 +204,8 @@ describe("K-T12: kod üretiminde dil çakışması", () => {
     expect(y.mesaj).toBe(
       "1 case için kod üretimi başlatıldı. 1 case başka dilde merge edilmiş testi olduğu için üretilmedi (mevcut test dosyasını silen bir PR'ı merge edin, sonra yeniden üretin).",
     );
-    // Doğrulanmamış dil tam hat testine dokunmaz: çakışma yok.
+    // Doğrulanmamış dil (014 öncesi core) tam hat testine dokunmaz: çakışma yok.
+    ayar.senaryolar.add("eski-dogrulanmamis");
     const py = await api.kodUret(["case-1-9"], "web", "python");
     expect(py.sonuclar[0].durum).toBe("basladi");
   });

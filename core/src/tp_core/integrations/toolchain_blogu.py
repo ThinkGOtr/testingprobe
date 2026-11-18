@@ -3,7 +3,7 @@
 toolchain süreç ayarı kurulum geneli (D) kalır; projeye özgü değerler istek gövdesinde gider:
 
     {"pid", "forge_path", "mirror_path", "remote_url", "base_url", "demo_api_url", "probe_user",
-     "probe_password", "run_dealers", "e2e_root",
+     "probe_password", "run_dealers", "e2e_root", "e2e_app_root", "e2e_java_root", "base_ref", "app_paths",
      "app": {"android"|"ios"|"windows": {"app_id", "path", "activity", "args", "workdir"}}}
 
 Toolchain'de (`toolchain_common/proje.py`) blokta olmayan alan toolchain'in env değerine düşer;
@@ -29,8 +29,14 @@ ve GitHub host'undaysa gönderilir: izinli host'lar `TP_GITHUB_HOSTS` (D, virgü
 kuralı (env adresi ve env token'ı dahil) uygular (`toolchain_common/proje.py:token_gonderilir_mi`).
 
 Proje config adları toolchain'in env adlarıdır (`BASE_URL`, `DEMO_API_URL`, `TP_PROBE_USER`,
-`TP_PROBE_PASSWORD`, `TP_RUN_DEALERS`, `TP_E2E_ROOT`, `TP_FORGE_REMOTE_URL`,
-`TP_APP_{ID,PATH,ACTIVITY,ARGS,WORKDIR}_<PLATFORM>`).
+`TP_PROBE_PASSWORD`, `TP_RUN_DEALERS`, `TP_E2E_ROOT`, `TP_E2E_APP_ROOT`, `TP_E2E_JAVA_ROOT`,
+`TP_APP_PATHS`, `TP_FORGE_REMOTE_URL`, `TP_APP_{ID,PATH,ACTIVITY,ARGS,WORKDIR}_<PLATFORM>`).
+
+**Platform deposu** (`proje_blogu(platform=...)`, platform-depo ANALIZ §3.2.9): platform ayrı
+GitHub deposundaysa (`ProjeOrtami(pid, platform).ayri_depo`) varsayılan proje dahil şu alanlar her
+zaman gider: `forge_path` / `mirror_path` (`forge_yollari.*(pid, depo)`), `remote_url` (türetilmiş;
+taban ayna kapalıysa ""), `e2e_app_root` (`TP_E2E_APP_ROOT_<P>`, yoksa taban) ve `app_paths`
+(`TP_APP_PATHS_<P>`, devralmaz; boş liste). Ayna token'ı aynı host kuralıyla gider.
 """
 
 from __future__ import annotations
@@ -59,7 +65,10 @@ METIN_ALANLARI: dict[str, str] = {
     "demo_api_url": "DEMO_API_URL",
     "probe_user": "TP_PROBE_USER",
     "e2e_root": "TP_E2E_ROOT",
+    "e2e_app_root": "TP_E2E_APP_ROOT",
+    "e2e_java_root": "TP_E2E_JAVA_ROOT",
 }
+APP_PATHS_ENV = "TP_APP_PATHS"
 ORTAM_ALANLARI = ("base_url", "demo_api_url")  # koşu için gerekli ortam adresleri
 
 
@@ -87,9 +96,51 @@ def _app(pid: str, varsayilan: bool) -> dict[str, dict[str, str]]:
     return out
 
 
-def proje_blogu(pid: str | None = None) -> dict[str, Any]:
-    """Bağlamdaki (ya da verilen) projenin toolchain bloğu."""
+def _liste(deger: str) -> list[str]:
+    return [b.strip() for b in deger.split(",") if b.strip()]
+
+
+def proje_blogu(pid: str | None = None, platform: str | None = None) -> dict[str, Any]:
+    """Bağlamdaki (ya da verilen) projenin toolchain bloğu (`platform` verilirse o platformun
+    deposuyla)."""
     p = pid_coz(pid)
+    blok = _taban_blok(p)
+    gorunum = proje_ortami.ProjeOrtami(p, platform)
+    if gorunum.ayri_depo:
+        blok["forge_path"] = str(forge_yollari.depo_yolu(p, gorunum.depo))
+        blok["mirror_path"] = str(forge_yollari.ayna_yolu(p, gorunum.depo))
+        blok["remote_url"] = (gorunum.get("TP_FORGE_REMOTE_URL") or "").strip()
+        if kok := (gorunum.get("TP_E2E_APP_ROOT") or "").strip():
+            blok["e2e_app_root"] = kok
+        else:
+            blok.pop("e2e_app_root", None)
+        blok["app_paths"] = _liste(gorunum.get(APP_PATHS_ENV) or "")
+        # 014: ayrı depoda dil kökleri kaplamadan (`<kok_ayari>` ← `<kok_ayari>_<P>` ?? taban).
+        kokler = dict(blok.get("dil_kokleri") or {})
+        for ad in _dil_kok_adlari():
+            if ad.endswith(("_ANDROID", "_IOS", "_WINDOWS")):
+                continue
+            if d := (gorunum.get(ad) or "").strip():
+                kokler[ad] = d
+        if kokler:
+            blok["dil_kokleri"] = kokler
+        # Ayrı deponun varsayılan dalı (merge-base tabanı); toolchain yoksa "main" kullanır.
+        if dal := (gorunum.get("TP_FORGE_CHECK_REF") or "").strip():
+            blok["base_ref"] = dal
+    if token := _uzak_token(p):
+        # Blokta adres yoksa (varsayılan proje, env'le aynı) toolchain kendi env adresini kullanır
+        # ve aynı host kuralını orada uygular.
+        if "remote_url" not in blok or github_adresi_mi(blok["remote_url"]):
+            blok["remote_token"] = token
+        else:
+            log.warning(
+                "ayna token'ı gönderilmedi (%s): ayna adresi izinli GitHub host'unda değil", p
+            )
+    return blok
+
+
+def _taban_blok(p: str) -> dict[str, Any]:
+    """Varsayılan deponun bloğu (token hariç)."""
     varsayilan = p == varsayilan_pid()
     blok: dict[str, Any] = {"pid": p}
     if not varsayilan:
@@ -104,19 +155,34 @@ def proje_blogu(pid: str | None = None) -> dict[str, Any]:
     if parola := _deger("TP_PROBE_PASSWORD", p, varsayilan, sir=True):
         blok["probe_password"] = parola
     if bayiler := _deger("TP_RUN_DEALERS", p, varsayilan):
-        blok["run_dealers"] = [b.strip() for b in bayiler.split(",") if b.strip()]
+        blok["run_dealers"] = _liste(bayiler)
+    if (yollar := _deger(APP_PATHS_ENV, p, varsayilan)) is not None:
+        blok["app_paths"] = _liste(yollar)
     if app := _app(p, varsayilan):
         blok["app"] = app
-    if token := _uzak_token(p):
-        # Blokta adres yoksa (varsayılan proje, env'le aynı) toolchain kendi env adresini kullanır
-        # ve aynı host kuralını orada uygular.
-        if "remote_url" not in blok or github_adresi_mi(blok["remote_url"]):
-            blok["remote_token"] = token
-        else:
-            log.warning(
-                "ayna token'ı gönderilmedi (%s): ayna adresi izinli GitHub host'unda değil", p
-            )
+    if kokler := _dil_kokleri(p, varsayilan):
+        blok["dil_kokleri"] = kokler
     return blok
+
+
+def _dil_kok_adlari() -> tuple[str, ...]:
+    """014: ts/java dışı dil köklerinin env adları (taban + matristeki `_<P>` kaplamaları)."""
+    from tp_core.features.codegen import platform as platformlar
+
+    adlar: list[str] = []
+    for c in platformlar.CATILAR.values():
+        if c.dil in (platformlar.TS, platformlar.JAVA):
+            continue
+        adlar.append(c.kok_ayari)
+        if ad_p := platformlar.kok_ayari_platform(c.kok_ayari, c.platform):
+            adlar.append(ad_p)
+    return tuple(dict.fromkeys(adlar))
+
+
+def _dil_kokleri(p: str, varsayilan: bool) -> dict[str, str]:
+    """014 (plan.md §3.1): projenin dil kökleri (toolchain `ProjeBlogu.dil_kokleri`); varsayılan
+    projede yalnız süreç ortamından farklı olanlar."""
+    return {ad: d for ad in _dil_kok_adlari() if (d := _deger(ad, p, varsayilan))}
 
 
 def github_hostlari() -> frozenset[str]:

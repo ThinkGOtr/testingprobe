@@ -1,15 +1,16 @@
-"""011 üretim dili (Ş2 render): `render_dil` tek giriş noktası, web + Java şablonu, doğrulanmamış
-C# / Python şablonları, `cs_literal` / `py_literal` süzgeçleri ve enjeksiyon güvenliği.
+"""011 üretim dili: `render_dil` tek giriş noktası, web + Java şablonu, `cs_literal` /
+`py_literal` süzgeçleri ve enjeksiyon güvenliği.
+
+014 karar 3a: 011'in doğrulanmamış web C#/Python render yolu ve testleri emekliye ayrıldı; o diller
+tam hat eklentileriyle üretilir (`test_dil_csharp.py`, `test_dil_python.py`).
 
 Kanıt düzeyi (şablon başına golden + gerçek araç):
 - web + Java: gerçek `java-araclar guard` (jar yoksa atlanır: `toolchain/java-araclar/mvnw -q -B
   package -DskipTests`) ve `javac` — TS sembol tablosundan türetilen SAHTE `e2e-java` iskeletine
   karşı (gerçek `demo-app/e2e-java` varsa guard onu kullanır).
-- C#: SDK ile gelen Roslyn `csc` ile sahte NUnit / Playwright / page object tanımlarına karşı TAM
-  derleme + literallerin çalıştırılıp değerlerinin geri okunması (`dotnet` yoksa atlanır). Gerçek
-  Microsoft.Playwright.NUnit / NUnit paketlerine karşı derleme ve koşu YAPILMAZ.
-- Python: `ast.parse` + `compile` + AST biçim denetimi (yalnız `x = Sinif(page)` atamaları ve
-  `x.metot(<literal>…)` çağrıları) + literallerin `ast.literal_eval` ile geri okunması.
+- C# literali: SDK ile gelen Roslyn `csc` ile derlenip çalıştırılarak değerlerin geri okunması
+  (`dotnet` yoksa atlanır).
+- Python literali: `ast.literal_eval` ile geri okunması.
 
 Golden güncelleme:
 `TP_UPDATE_GOLDEN=1 uv run pytest tests/unit/features/codegen/test_render_dil.py`.
@@ -36,7 +37,7 @@ from tp_core.features.codegen import checks, render
 from tp_core.features.codegen import platform as platformlar
 from tp_core.features.codegen.render import RenderError, RenderInput
 
-from .test_checks import FIXTURES, RULES, golden_case, golden_mapping, symbols
+from .test_checks import RULES, golden_case, golden_mapping, symbols
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[4]
@@ -189,7 +190,6 @@ def test_mevcut_sablonlar_degismedi() -> None:
     [
         ("ts", "android"),
         ("csharp", "ios"),
-        ("python", "windows"),
         ("kotlin", "web"),
         ("", "web"),
         ("TS", "web"),
@@ -206,7 +206,7 @@ def test_render_dil_gecerli_ciftler() -> None:
     """§2.1: web × her dil; uygulama × yalnız java."""
     from .test_platform import _girdi as app_girdi
 
-    for dil in render.DILLER:
+    for dil in render.platformlar.platform_dilleri("web"):
         inp = java_web_girdi() if dil == "java" else girdi()
         assert render.render_dil(inp, dil=dil, platform="web", rules=RULES).dil == dil
     for platform in ("android", "ios", "windows"):
@@ -602,265 +602,7 @@ def test_ad_turetme() -> None:
             f(ad)
 
 
-# ================================================================================== Python
-
-
-def _py_yapi(kaynak: str) -> dict[str, Any]:
-    """Üretilen Python dosyasının AST'si yalnız izinli biçimi taşır; çağrıları döndürür."""
-    agac = ast.parse(kaynak)
-    compile(kaynak, "uretilen.py", "exec")  # sözdizimi + derleme (çalıştırılmaz)
-    *importlar, islev = agac.body
-    assert isinstance(importlar[0], ast.Import) and [a.name for a in importlar[0].names] == [
-        "pytest"
-    ]
-    moduller = {}
-    for imp in importlar[1:]:
-        assert isinstance(imp, ast.ImportFrom) and imp.level == 0 and len(imp.names) == 1
-        assert imp.names[0].asname is None
-        moduller[imp.module] = imp.names[0].name
-    assert moduller.pop("playwright.sync_api") == "Page"
-    assert all(m.startswith("pages.") for m in moduller)
-    assert isinstance(islev, ast.FunctionDef) and not ast.get_docstring(islev)
-    assert [a.arg for a in islev.args.args] == ["page"]
-    isaretler = []
-    for d in islev.decorator_list:
-        hedef = d.func if isinstance(d, ast.Call) else d
-        assert isinstance(hedef, ast.Attribute) and ast.unparse(hedef.value) == "pytest.mark"
-        degerler = [a.value for a in d.args] if isinstance(d, ast.Call) else []
-        if isinstance(d, ast.Call):
-            assert all(isinstance(a, ast.Constant) for a in d.args) and not d.keywords
-        isaretler.append((hedef.attr, *degerler))
-    nesneler, cagrilar = {}, []
-    for deyim in islev.body:
-        if isinstance(deyim, ast.Assign):
-            assert not cagrilar, "nesne atamaları çağrılardan önce gelir"
-            (hedef,) = deyim.targets
-            c = deyim.value
-            assert isinstance(hedef, ast.Name) and isinstance(c, ast.Call)
-            assert isinstance(c.func, ast.Name) and ast.unparse(c) == f"{c.func.id}(page)"
-            nesneler[hedef.id] = c.func.id
-            continue
-        assert isinstance(deyim, ast.Expr) and isinstance(deyim.value, ast.Call), ast.dump(deyim)
-        c = deyim.value
-        assert isinstance(c.func, ast.Attribute) and isinstance(c.func.value, ast.Name)
-        assert c.func.value.id in nesneler and not c.keywords
-        cagrilar.append(
-            (nesneler[c.func.value.id], c.func.attr, [ast.literal_eval(a) for a in c.args])
-        )
-    assert set(moduller.values()) == set(nesneler.values())
-    # Hiçbir yerde f-string / üç tırnak / lambda / alt çağrı yok.
-    for dugum in ast.walk(islev):
-        assert not isinstance(dugum, ast.JoinedStr | ast.Lambda | ast.Subscript | ast.BinOp)
-    return {"islev": islev.name, "isaretler": isaretler, "moduller": moduller, "cagrilar": cagrilar}
-
-
-def _beklenen_cagrilar(mapping: dict[str, Any]) -> list[tuple[str, str, list[Any]]]:
-    return [
-        (i["po"], render.snake_case(i["method"]), list(i["args"]))
-        for i in [*mapping["step_mapping"], *mapping["expects"]]
-    ]
-
-
-def test_python_golden_cikti() -> None:
-    r = render.render_dil(
-        girdi(), dil="python", platform="web", rules=RULES, sembol_tablosu=SEMBOLLER
-    )
-    # Uzantı `.golden`: pytest `test_*.py` toplar, ruff `.py` denetler; golden ikisine de girmez.
-    golden_karsilastir("test_tpd_1_c2_3f9b1c2e.py.golden", r.content)
-    assert r.test_file == "tests/generated/test_tpd_1_c2_3f9b1c2e.py"
-    assert r.repo_path == "e2e-python/tests/generated/test_tpd_1_c2_3f9b1c2e.py"
-    assert (r.dil, r.sinif_adi, r.test_adi, r.dealer) == (
-        "python", None, "test_tpd_1_c2_3f9b1c2e", "bayi1",
-    )  # fmt: skip
-    assert r.dogrulanmamis and r.referans_dil == "ts" and r.kaynak == r.content
-    satirlar = r.content.splitlines()
-    assert satirlar[0].startswith("# AI-generated — AI Testing Probe (CasesToCode).")
-    assert satirlar[2] == f"# {UYARI}"
-    yapi = _py_yapi(r.content)
-    assert yapi["islev"] == "test_tpd_1_c2_3f9b1c2e"
-    assert yapi["isaretler"] == [
-        ("uretilen",), ("web",), ("tp_case", str(CASE_ID)), ("story", "TPD-1"), ("dealer", "bayi1"),
-    ]  # fmt: skip
-    assert yapi["moduller"] == {
-        "pages.cart_page": "CartPage",
-        "pages.catalog_page": "CatalogPage",
-        "pages.login_page": "LoginPage",
-    }
-    assert yapi["cagrilar"] == _beklenen_cagrilar(golden_mapping(2))
-    assert '    catalog_page.add_to_cart("P-001", 7)' in satirlar
-    assert '    cart_page.expect_total("150,00 TL")' in satirlar
-
-
-@pytest.mark.parametrize("n", GOLDEN_NOLAR)
-def test_python_tum_goldenlar_gecerli_python(n: int) -> None:
-    """TS tablosuyla doğrulanmış her golden eşleme geçerli Python'a render edilir (§2.7)."""
-    m = golden_mapping(n)
-    sonuc = checks.check_mapping(m, golden_case(n), symbols(), fixtures=FIXTURES)
-    # C7: bilinen eksik metot (missing_method) bulgusu; render yine de adları türetebilmeli.
-    assert sonuc.ok or {b.tur for b in sonuc.bulgular} == {"missing_method"}
-    r = render.render_dil(girdi(n), dil="python", platform="web", rules=RULES)
-    assert _py_yapi(r.content)["cagrilar"] == _beklenen_cagrilar(m)
-
-
-def test_python_enjeksiyona_kapali() -> None:
-    degerler = [*KOTU, *KOTU_GORUNMEZ]
-    m = kotu_esleme(degerler)
-    temiz = render.render_dil(
-        girdi(5, mapping=kotu_esleme(["x"] * len(degerler))),
-        dil="python", platform="web", rules=RULES,
-    )  # fmt: skip
-    for kotu_metin in degerler:
-        case = copy.deepcopy(golden_case(5))
-        case["title"] = kotu_metin
-        case["steps"][0]["action"] = kotu_metin
-        r = render.render_dil(
-            girdi(5, case=case, mapping=m, test_key=kotu_metin, mode=kotu_metin),
-            dil="python", platform="web", rules=RULES,
-        )  # fmt: skip
-        k = r.content
-        # Değerler AYNEN literal olarak geri okunur; çağrı listesi eşlemenin aynısıdır.
-        assert _py_yapi(k)["cagrilar"] == _beklenen_cagrilar(m)
-        # Yorumlar satır açamaz: satır sayısı ve kod satırları temiz girdidekiyle aynı.
-        assert len(k.splitlines()) == len(temiz.content.splitlines()) == k.count("\n")
-        kod = [s for s in k.splitlines() if s.strip() and not s.lstrip().startswith("#")]
-        assert len(kod) == len(
-            [s for s in temiz.content.splitlines() if s.strip() and not s.lstrip().startswith("#")]
-        )
-        # İlk iki satır sabit: kodlama bildirimi (PEP 263) enjekte edilemez.
-        assert k.splitlines()[:2] == temiz.content.splitlines()[:2]
-        assert k.isprintable() or set(c for c in k if not c.isprintable()) == {"\n"}
-
-
-# ====================================================================================== C#
-
-
-def test_csharp_golden_cikti() -> None:
-    r = render.render_dil(
-        girdi(), dil="csharp", platform="web", rules=RULES, sembol_tablosu=SEMBOLLER
-    )
-    golden_karsilastir("TPD1WebC2_3f9b1c2eTests.cs", r.content)
-    assert r.test_file == "tests/Generated/TPD1WebC2_3f9b1c2eTests.cs"
-    assert r.repo_path == "e2e-csharp/tests/Generated/TPD1WebC2_3f9b1c2eTests.cs"
-    assert (r.dil, r.sinif_adi, r.test_adi, r.dealer) == (
-        "csharp", "TPD1WebC2_3f9b1c2eTests", "Senaryo", "bayi1",
-    )  # fmt: skip
-    assert r.dogrulanmamis and r.referans_dil == "ts"
-    k = r.content
-    satirlar = k.splitlines()
-    assert satirlar[0].startswith("// AI-generated — AI Testing Probe (CasesToCode).")
-    assert satirlar[2] == f"// {UYARI}"
-    assert re.findall(r"^using (.*);$", k, re.M) == [
-        "System.Threading.Tasks",
-        "Antreklabs.Bayi.Pages",
-        "Microsoft.Playwright.NUnit",
-        "NUnit.Framework",
-    ]
-    assert "public class TPD1WebC2_3f9b1c2eTests : PageTest" in k
-    assert f'[Category("tp-case-{CASE_ID}")]' in k and '[Category("uretilen")]' in k
-    assert '[Property("dealerUsername", "bayi1")]' in k
-    assert '    [Description("7 adet kampanyalı üründe 1 adet bedava verilir")]' in k
-    assert "        var loginPage = new LoginPage(Page);" in satirlar
-    assert '        await loginPage.LoginAsync("bayi1", "Demo123!");' in satirlar
-    assert '        await catalogPage.AddToCartAsync("P-001", 7);' in satirlar
-    assert '        await cartPage.ExpectTotalAsync("150,00 TL");' in satirlar
-    for yasak in ('$"', '@"', '"""', "/*", "#", "unsafe", "dynamic"):
-        assert yasak not in k, yasak
-
-
-_CS_KOD_SATIRI = re.compile(
-    r"^        (?:var [A-Za-z_][A-Za-z0-9_]* = new [A-Za-z_][A-Za-z0-9_]*\(Page\);"
-    r"|await [A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*\(.*\);)$"
-)
-
-
-def test_csharp_enjeksiyona_kapali_sozdizimsel() -> None:
-    degerler = [*KOTU, *KOTU_GORUNMEZ]
-    m = kotu_esleme(degerler)
-    temiz = render.render_dil(
-        girdi(5, mapping=kotu_esleme(["x"] * len(degerler))),
-        dil="csharp", platform="web", rules=RULES,
-    ).content.splitlines()  # fmt: skip
-    for kotu_metin in degerler:
-        case = copy.deepcopy(golden_case(5))
-        case["title"] = kotu_metin
-        case["steps"][0]["action"] = kotu_metin
-        k = render.render_dil(
-            girdi(5, case=case, mapping=m, test_key=kotu_metin, mode=kotu_metin),
-            dil="csharp", platform="web", rules=RULES,
-        ).content  # fmt: skip
-        satirlar = k.splitlines()
-        assert len(satirlar) == len(temiz) == k.count("\n")
-        assert set(c for c in k if not c.isprintable()) <= {"\n"}
-        for i, (satir, temiz_satir) in enumerate(zip(satirlar, temiz, strict=True)):
-            # Yorum satırı yorum kalır, kod satırı kod; başlık ilk üç satırda sabit.
-            assert satir.lstrip().startswith("//") == temiz_satir.lstrip().startswith("//"), i
-            if satir.startswith("        ") and not satir.lstrip().startswith("//"):
-                assert _CS_KOD_SATIRI.match(satir), satir
-        # Her kötü değer tek bir düz dize literali olarak tek çağrıda.
-        for deger in degerler:
-            assert (
-                f"        await cartPage.ExpectMinOrderWarningAsync({render.cs_literal(deger)});"
-                in satirlar
-            )
-
-
-def test_dogrulanmamis_referans_dil_ve_bos_esleme() -> None:
-    for dil, on in (("csharp", "//"), ("python", "#")):
-        r = render.render_dil(girdi(), dil=dil, platform="web", rules=RULES, referans_dil="java")
-        assert r.referans_dil == "java"
-        assert r.content.splitlines()[2] == f"{on} {UYARI.replace('TypeScript', 'Java')}"
-        with pytest.raises(RenderError):
-            render.render_dil(girdi(), dil=dil, platform="web", rules=RULES, referans_dil="go")
-        with pytest.raises(RenderError, match="eşleme boş"):
-            render.render_dil(
-                girdi(mapping={"step_mapping": [], "expects": []}),
-                dil=dil, platform="web", rules=RULES,
-            )  # fmt: skip
-        # Tam hat dilinde referans_dil yok sayılır.
-    assert render.render_dil(
-        girdi(), dil="ts", platform="web", rules=RULES, referans_dil="java"
-    ) == render.render_test(girdi(), RULES)
-
-
-def test_dogrulanmamis_bayisiz_ve_serbest_case() -> None:
-    m = copy.deepcopy(golden_mapping(2))
-    m["step_mapping"] = [s for s in m["step_mapping"] if s["method"] != "login"]
-    cs = render.render_dil(
-        girdi(mapping=m, story_key=None, test_key=None), dil="csharp", platform="web", rules=RULES
-    )
-    assert cs.dealer is None and "[Property(" not in cs.content
-    assert cs.sinif_adi == "SerbestWebC2_3f9b1c2eTests" and "TPD-1" not in cs.content
-    py = render.render_dil(
-        girdi(mapping=m, story_key=None), dil="python", platform="web", rules=RULES
-    )
-    assert py.dealer is None and py.test_adi == "test_serbest_c2_3f9b1c2e"
-    assert [i[0] for i in _py_yapi(py.content)["isaretler"]] == ["uretilen", "web", "tp_case"]
-
-
-@pytest.mark.parametrize("dil", ["csharp", "python"])
-def test_dogrulanmamis_gecersiz_ad_ve_cakisma(dil: str) -> None:
-    def dene(**degisiklik: Any) -> None:
-        m = copy.deepcopy(golden_mapping(2))
-        m["expects"][0].update(degisiklik)
-        with pytest.raises(RenderError):
-            render.render_dil(girdi(mapping=m), dil=dil, platform="web", rules=RULES)
-
-    dene(method="expectTotal(); evil")
-    dene(method="expect$Total")
-    dene(po="Cart Page")
-    dene(po="Page")  # şablonun kendi `Page` adıyla çakışır
-    dene(args=[{"a": 1}])
-    dene(args=[float("nan")])
-    dene(args=[["liste"]])
-    m = copy.deepcopy(golden_mapping(2))
-    m["expects"][0]["po"] = "cartPage"  # `CartPage` ile aynı değişken adına düşer
-    with pytest.raises(RenderError, match="aynı değişken"):
-        render.render_dil(girdi(mapping=m), dil=dil, platform="web", rules=RULES)
-
-
-# ------------------------------------------------------------ C#: gerçek derleyici (Roslyn csc)
-
-_CS_TUR = {"string": "string", "number": "double", "boolean": "bool"}
+# --------------------------------------------- C# literali: gerçek derleyici (Roslyn csc)
 
 
 def _dotnet() -> dict[str, Any] | None:
@@ -906,99 +648,6 @@ def _csc(cikti: Path, kaynaklar: list[Path], hedef: str = "library") -> subproce
          *[f"-r:{r}" for r in DOTNET["refler"]], *[str(k) for k in kaynaklar]],
         capture_output=True, text=True, timeout=300, check=False,
     )  # fmt: skip
-
-
-def _sahte_cs_kutuphaneleri(dizin: Path) -> Path:
-    """NUnit öznitelikleri, `PageTest`, `IPage` ve TS tablosundan türetilen page object'ler —
-    yalnız imzalar (gerçek paketler DEĞİL)."""
-    siniflar = []
-    for po in SEMBOLLER["page_objects"]:
-        metotlar = "".join(
-            f"        public Task {render.cs_method_name(m['name'])}("
-            + ", ".join(f"{_CS_TUR[p['type']]} {p['name']}" for p in m["params"])
-            + ") => Task.CompletedTask;\n"
-            for m in po["methods"]
-            if m["returns"] == "Promise<void>"
-        )
-        siniflar.append(
-            f"    public class {po['class']}\n    {{\n"
-            f"        public {po['class']}(Microsoft.Playwright.IPage page) {{ }}\n"
-            f"{metotlar}    }}\n"
-        )
-    hedef = dizin / "Sahte.cs"
-    hedef.write_text(
-        "using System;\nusing System.Threading.Tasks;\n\n"
-        "namespace NUnit.Framework\n{\n"
-        "    [AttributeUsage(AttributeTargets.Class)]\n"
-        "    public sealed class TestFixtureAttribute : Attribute { }\n"
-        "    [AttributeUsage(AttributeTargets.Method)]\n"
-        "    public sealed class TestAttribute : Attribute { }\n"
-        "    [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method,"
-        " AllowMultiple = true)]\n"
-        "    public sealed class CategoryAttribute : Attribute\n"
-        "    { public CategoryAttribute(string name) { } }\n"
-        "    [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]\n"
-        "    public sealed class DescriptionAttribute : Attribute\n"
-        "    { public DescriptionAttribute(string description) { } }\n"
-        "    [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method,"
-        " AllowMultiple = true)]\n"
-        "    public sealed class PropertyAttribute : Attribute\n"
-        "    { public PropertyAttribute(string name, string value) { } }\n}\n\n"
-        "namespace Microsoft.Playwright\n{\n    public interface IPage { }\n}\n\n"
-        "namespace Microsoft.Playwright.NUnit\n{\n    public class PageTest\n    {\n"
-        "        public Microsoft.Playwright.IPage Page { get; } = null!;\n    }\n}\n\n"
-        f"namespace {render.CS_PO_NAMESPACE}\n{{\n{''.join(siniflar)}}}\n",
-        encoding="utf-8",
-    )
-    return hedef
-
-
-@dotnet_gerekli
-def test_csharp_roslyn_ile_derlenir(tmp_path: Path) -> None:
-    """Tüm golden'lar + kötü değerli çıktı, sahte kütüphanelere karşı uyarısız TAM derlenir
-    (sözdizimi + bağlama: PascalCase metot adları, argüman türleri, öznitelikler)."""
-    sahte = _sahte_cs_kutuphaneleri(tmp_path)
-    case = copy.deepcopy(golden_case(5))
-    case["title"] = '"); Environment.Exit(0); //\n*/ {0} $"{x}" ‮'
-    case["steps"][0]["action"] = "eylem\n        Environment.Exit(1); //   Environment.Exit(2);"
-    uretilenler = [
-        render.render_dil(girdi(n), dil="csharp", platform="web", rules=RULES) for n in GOLDEN_NOLAR
-    ] + [
-        render.render_dil(
-            girdi(5, case=case, mapping=kotu_esleme([*KOTU, *KOTU_GORUNMEZ]), sira_no=99),
-            dil="csharp",
-            platform="web",
-            rules=RULES,
-        )
-    ]
-    kaynaklar = [sahte]
-    for r in uretilenler:
-        hedef = tmp_path / r.repo_path
-        hedef.parent.mkdir(parents=True, exist_ok=True)
-        hedef.write_text(r.content, encoding="utf-8")
-        kaynaklar.append(hedef)
-    sonuc = _csc(tmp_path / "uretilen.dll", kaynaklar)
-    assert sonuc.returncode == 0, sonuc.stdout + sonuc.stderr
-    assert (tmp_path / "uretilen.dll").stat().st_size > 0
-
-
-@dotnet_gerekli
-def test_csharp_derleyici_bozuk_ciktiyi_yakalar(tmp_path: Path) -> None:
-    """Kontrol: derleme gerçekten koşuyor (bilinmeyen metot / tür uyumsuzluğu reddedilir)."""
-    sahte = _sahte_cs_kutuphaneleri(tmp_path)
-    r = render.render_dil(girdi(), dil="csharp", platform="web", rules=RULES)
-    for i, (eski, yeni, hata) in enumerate(
-        (
-            ("cartPage.ExpectTotalAsync(", "cartPage.ExpectTotal(", "CS1061"),
-            ('AddToCartAsync("P-001", 7)', 'AddToCartAsync("P-001", "7")', "CS1503"),
-            ('"150,00 TL");', '"150,00 TL"); System.Environment.Exit(0) //', "CS1002"),
-        )
-    ):
-        assert eski in r.content
-        hedef = tmp_path / f"Bozuk{i}.cs"
-        hedef.write_text(r.content.replace(eski, yeni), encoding="utf-8")
-        sonuc = _csc(tmp_path / f"bozuk{i}.dll", [sahte, hedef])
-        assert sonuc.returncode != 0 and hata in sonuc.stdout, sonuc.stdout
 
 
 @dotnet_gerekli
@@ -1140,81 +789,6 @@ def test_story_rakamlari_ascii() -> None:
     assert render.slug("TPD-١٢", 2, CASE_ID) == "serbest-c2-3f9b1c2e"  # Unicode rakam
 
 
-def test_dogrulanmamis_yol_tek_kaynak() -> None:
-    """K-T6: `<e2e-csharp|e2e-python kökü>/<alt yol>`; render ve başlangıç yolu aynı işlev."""
-    yol = render.dogrulanmamis_repo_path
-    assert yol("csharp", "TPD-1", 2, CASE_ID) == (
-        "e2e-csharp/tests/Generated/TPD1WebC2_3f9b1c2eTests.cs"
-    )
-    assert yol("python", "TPD-1", 2, CASE_ID) == (
-        "e2e-python/tests/generated/test_tpd_1_c2_3f9b1c2e.py"
-    )
-    assert yol("csharp", "TPD-1", 2, CASE_ID, "demo-app/e2e-csharp/") == (
-        "demo-app/e2e-csharp/tests/Generated/TPD1WebC2_3f9b1c2eTests.cs"
-    )
-    # Boş ya da ts kökü (`RenderInput` varsayılanı) → dilin varsayılan kökü.
-    for kok in (None, "", "/", "e2e"):
-        assert yol("python", None, 3, CASE_ID, kok) == (
-            "e2e-python/tests/generated/test_serbest_c3_3f9b1c2e.py"
-        )
-    with pytest.raises(RenderError):
-        yol("ts", "TPD-1", 2, CASE_ID)
-    for dil in ("csharp", "python"):
-        for kok, beklenen in (
-            (render.E2E_ROOT, None),
-            ("demo-app/e2e-" + dil, "demo-app/e2e-" + dil),
-        ):
-            r = render.render_dil(girdi(e2e_root=kok), dil=dil, platform="web", rules=RULES)
-            assert r.repo_path == yol(dil, "TPD-1", 2, CASE_ID, beklenen)
-            assert r.repo_path.endswith("/" + r.test_file)
-        # Sınıf / test adı yolun dosya adıyla aynı kuralı kullanır.
-        r = render.render_dil(girdi(), dil=dil, platform="web", rules=RULES)
-        assert Path(r.repo_path).stem == (r.sinif_adi or r.test_adi)
-
-
-@pytest.mark.parametrize("dil", ["csharp", "python"])
-def test_dogrulanmamis_baslik_uyarlama_ve_imzalar(dil: str) -> None:
-    """K-T9 küçük kısım: "Elle düzenlemeyin" yok; varsayılan PO imzaları listelenir. Tablo
-    verilmezse türler değerden, adlar `argN`."""
-    on = "//" if dil == "csharp" else "#"
-    r = render.render_dil(girdi(), dil=dil, platform="web", rules=RULES)
-    assert "Elle düzenlemeyin" not in r.content
-    assert "uyarlanmak üzere" in r.content.splitlines()[0]
-    satirlar = r.content.splitlines()
-    if dil == "csharp":
-        assert f"{on}     Task AddToCartAsync(string arg1, int arg2)" in satirlar
-        assert f"{on}     Task GotoAsync()" in satirlar
-        assert f"{on}   CartPage" in satirlar
-    else:
-        assert f"{on}     def add_to_cart(self, arg1: str, arg2: int) -> None" in satirlar
-        assert f"{on}   pages.catalog_page.CatalogPage" in satirlar
-    # Tablolu: referans türleri hedef dile çevrilir (TS number → double / float; Java int → int).
-    java_tablo = json.loads((HERE / "symbols-java-web.json").read_text(encoding="utf-8"))
-    tr = render.render_dil(
-        girdi(),
-        dil=dil,
-        platform="web",
-        rules=RULES,
-        referans_dil="java",
-        sembol_tablosu=java_tablo,
-    )
-    beklenen = (
-        f"{on}     Task AddToCartAsync(string productCode, int quantity)"
-        if dil == "csharp"
-        else f"{on}     def add_to_cart(self, product_code: str, quantity: int) -> None"
-    )
-    assert beklenen in tr.content.splitlines()
-    # Tablodaki kötü parametre adı / bilinmeyen tür imzaya taşınmaz (`argN`, değerden tür).
-    kotu = copy.deepcopy(SEMBOLLER)
-    for po in kotu["page_objects"]:
-        for m in po["methods"]:
-            for p in m["params"]:
-                p["name"] = 'x");\nEvil(); //'
-                p["type"] = "Promise<any>"
-    kr = render.render_dil(girdi(), dil=dil, platform="web", rules=RULES, sembol_tablosu=kotu)
-    assert kr.content == r.content.replace(r.template_hash, kr.template_hash)
-
-
 @pytest.mark.parametrize("dil", ["ts", "java"])
 def test_tam_hat_basligi_degismedi(dil: str) -> None:
     """Tam hat dillerinde başlık ("Elle düzenlemeyin") ve çıktı aynen kalır."""
@@ -1222,68 +796,3 @@ def test_tam_hat_basligi_degismedi(dil: str) -> None:
     r = render.render_dil(inp, dil=dil, platform="web", rules=RULES, sembol_tablosu=SEMBOLLER)
     assert r == render.render_dil(inp, dil=dil, platform="web", rules=RULES)
     assert "Elle düzenlemeyin" in r.content
-
-
-def test_python_strict_markers_parcasi_sablonla_birebir() -> None:
-    """QA-O7: başlıktaki `conftest.py` parçası çalıştırılınca şablonun kullandığı tüm işaretleri
-    kaydeder (`--strict-markers` kırılmaz)."""
-    r = render.render_dil(girdi(), dil="python", platform="web", rules=RULES)
-    satirlar = r.content.splitlines()
-    bas = satirlar.index("#   def pytest_configure(config):")
-    parca = []
-    for satir in satirlar[bas:]:
-        if not satir.startswith("#   "):
-            break
-        parca.append(satir[4:])
-    kayitlar: list[tuple[str, str]] = []
-
-    class Config:
-        def addinivalue_line(self, ad: str, deger: str) -> None:
-            kayitlar.append((ad, deger))
-
-    alan: dict[str, Any] = {}
-    exec(compile("\n".join(parca), "conftest.py", "exec"), alan)  # sabit parça (şablondan)
-    alan["pytest_configure"](Config())
-    kayitli = {d.split(":")[0].split("(")[0] for ad, d in kayitlar if ad == "markers"}
-    kullanilan = {i[0] for i in _py_yapi(r.content)["isaretler"]}  # story + dealer dahil
-    assert kullanilan == kayitli == {ad.split("(")[0] for ad, _ in render.PY_ISARETLER}
-
-
-# --------------------------------------------- 013 K19 × 011: doğrulanmamış dilde gizli test verisi
-
-
-@pytest.mark.parametrize(
-    ("dil", "okuma"),
-    [
-        ("csharp", 'System.Environment.GetEnvironmentVariable("TP_TESTVERI_DEMO_PAROLA")'),
-        ("python", '__import__("os").environ["TP_TESTVERI_DEMO_PAROLA"]'),
-    ],
-)
-def test_dogrulanmamis_dilde_gizli_deger_ortamdan_okunur(dil: str, okuma: str) -> None:
-    """Gizli değer argümanı ortam değişkeninden okunur; başlık/adım etiketinde `•••`; boş harita
-    çıktıyı (golden) değiştirmez."""
-    gizli = {"Demo123!": "TP_TESTVERI_DEMO_PAROLA"}
-    case = copy.deepcopy(golden_case(2))
-    case["title"] = "bayi1 / Demo123! ile giriş"
-    for adim in case.get("steps") or []:
-        adim["action"] = f"{adim.get('action')} (Demo123!)"
-    r = render.render_dil(
-        girdi(2, case=case, gizli_ortam=gizli), dil=dil, platform="web", rules=RULES
-    )
-    assert okuma in r.content
-    assert "Demo123!" not in r.content and "•••" in r.content
-    assert (
-        render.render_dil(girdi(2, gizli_ortam={}), dil=dil, platform="web", rules=RULES).content
-        == render.render_dil(girdi(2), dil=dil, platform="web", rules=RULES).content
-    )
-
-
-@pytest.mark.parametrize("dil", ["csharp", "python"])
-def test_dogrulanmamis_dilde_sirri_tanimsiz_gizli_deger_sizinti_taramasina_takilir(
-    dil: str,
-) -> None:
-    """Sırrı tanımsız (yalnız taranacak) gizli değer düz literal kalırsa render fail-closed."""
-    with pytest.raises(render.GizliSizinti):
-        render.render_dil(
-            girdi(2, gizli_taranacak=("Demo123!",)), dil=dil, platform="web", rules=RULES
-        )

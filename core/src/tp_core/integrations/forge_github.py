@@ -101,6 +101,7 @@ from tp_core.integrations.forge import (
     ForgeStateError,
     ForgeValidationError,
     MergeResult,
+    etkin_dil_ciftleri,
     etkin_platformlar,
     etkin_web_dilleri,
     evaluate_required_checks,
@@ -603,6 +604,7 @@ class GitHubForge:
         update_wait_s: float = 60.0,
         poll_interval_s: float = 1.0,
         sleep: Callable[[float], None] = time.sleep,
+        base_branch: str = "main",
     ) -> None:
         if not _REPO_RE.match(repo or ""):
             raise ForgeValidationError(f"geçersiz GITHUB_REPO: {repo!r} (sahip/ad)")
@@ -615,6 +617,9 @@ class GitHubForge:
         self._update_wait_s = max(0.0, float(update_wait_s))
         self._poll_interval_s = max(0.01, float(poll_interval_s))
         self._sleep = sleep
+        # Platform deposu (ANALIZ §3, risk 6): PR'ların hedef dalı deponun varsayılan dalı
+        # (`TP_FORGE_CHECK_REF` / ayrı depoda platform görünümündeki karşılığı); boşsa "main".
+        self.base_branch = validate_branch(base_branch.strip()) if (base_branch or "").strip() else "main"
         self._api_url = api_url
         self._transport = transport
         self._timeout = timeout
@@ -684,7 +689,9 @@ class GitHubForge:
                 parse_required_checks(cfg.get(REQUIRED_CHECKS_ENV), GITHUB_REQUIRED_CHECKS),
                 etkin_platformlar(cfg),
                 etkin_web_dilleri(cfg),
+                dil_ciftleri=etkin_dil_ciftleri(cfg),
             ),
+            base_branch=(cfg.get("TP_FORGE_CHECK_REF") or "main"),
             transport=transport,
         )
 
@@ -742,6 +749,7 @@ class GitHubForge:
             api_url=self._api_url,
             merge_auth=self._merge_auth,
             required_checks=self.required_checks,
+            base_branch=self.base_branch,
             transport=self._transport,
             timeout=self._timeout,
             update_wait_s=self._update_wait_s,
@@ -1066,7 +1074,7 @@ class GitHubForge:
         data = self._post(
             f"{self._r}/pulls",
             "PR açma",
-            {"title": title, "head": branch, "base": "main", "body": body},
+            {"title": title, "head": branch, "base": self.base_branch, "body": body},
         )
         pr = self._pr(data)
         if clean:

@@ -35,8 +35,8 @@
     `source_grounded` (karar tablosu aksiyonları);
   - consistency_check (ajan): `doc_refs_include`, `acs`, `min_blocking`/`max_blocking`; kanıt
     araç ortamında üretimin `EvidenceVerifier`'ıyla yeniden doğrulanır (`eval_agents`);
-  - verify_and_map (ajan): `steps`, `methods` (sembol tablosu), `expects_include`,
-    `no_missing_methods`, `all_verified`;
+  - verify_and_map, verify_and_map_app (ajan): `steps`, `methods` (sembol tablosu),
+    `expects_include`, `no_missing_methods`, `all_verified`;
   - assistant_guard (011 F7; `eval_agents.guard_problems`): `yon`, kodun kararı (`karar_ver`,
     eşikler 40/70) için `karar` | `karar_in` | `min_karar` (kaçırma) | `max_karar` (yanlış
     engelleme), `kategori_include` / `kategori_exclude`; rapor yanlış engelleme, kaçırma ve
@@ -238,7 +238,8 @@ def check_output(
         failures += deepening_problems(out, expect, kaynak=kaynak)
     elif purpose == "consistency_check":
         failures += findings_problems(out, expect)
-    elif purpose == "verify_and_map":
+    elif purpose in ("verify_and_map", "verify_and_map_app"):
+        # Uygulama ajanı aynı eşleme sözleşmesini taşır (+ `platform`).
         failures += mapping_problems(out, expect)
     elif purpose == "case_review":
         failures += review_set_problems(out, expect)

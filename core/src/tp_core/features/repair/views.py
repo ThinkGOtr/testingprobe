@@ -88,15 +88,18 @@ def _dogrulama(k: Mapping[str, Any]) -> list[str]:
     return out
 
 
-def pr_web_url(number: int) -> str | None:
+def pr_web_url(number: int, depo: str = "") -> str | None:
     """Onarım PR'ının tarayıcı adresi: GitHub kipinde depo adından; LocalForge'da web arayüzü yok.
 
     Onarım PR'ı açılırken forge'un döndürdüğü adres saklanmaz; adres depo + numaradan
-    deterministiktir (GitHub Enterprise'da web kökü `GITHUB_API_URL`'den türetilir).
+    deterministiktir (GitHub Enterprise'da web kökü `GITHUB_API_URL`'den türetilir). `depo`: PR'ın
+    kayıtlı deposu (0046; `''` = varsayılan depo `GITHUB_REPO`).
     """
     if (ayar("TP_FORGE") or "local").strip().lower() != "github":
         return None
-    repo = (ayar("GITHUB_REPO") or "").strip().strip("/")
+    from tp_core.features.codegen import depo as depolar
+
+    repo = depolar.depo_adi(depo).strip().strip("/")
     if not repo:
         return None
     api = (ayar("GITHUB_API_URL") or "https://api.github.com").rstrip("/")
@@ -104,14 +107,17 @@ def pr_web_url(number: int) -> str | None:
     return f"{web}/{repo}/pull/{number}"
 
 
-def pr_response(session: Session, number: int) -> dict[str, Any] | None:
-    sc = repair_script_for_pr(session, number)
+def pr_response(session: Session, number: int, *, depo: str = "") -> dict[str, Any] | None:
+    from tp_core.features.codegen.views import depo_alanlari
+
+    sc = repair_script_for_pr(session, number, depo=depo)
     if sc is None:
         return None
-    satir = session.get(PullRequest, PullRequest.anahtar(number))
+    satir = session.get(PullRequest, PullRequest.anahtar(number, sc.depo))
     return {
         "number": number,
-        "url": pr_web_url(number),
+        **depo_alanlari(sc.depo),
+        "url": pr_web_url(number, sc.depo),
         "baslik": satir.baslik if satir else None,
         "branch": sc.branch,
         "durum": satir.durum if satir else ("merged" if sc.durum == "merged" else "open"),
@@ -151,7 +157,7 @@ def onarim(
         else (_svc._oneri(session, sc.failure_id) if sc.failure_id else {})
     )
     loc = k.get("locator") or {}
-    pr = pr_response(session, sc.pr_no) if sc.pr_no else None
+    pr = pr_response(session, sc.pr_no, depo=sc.depo or "") if sc.pr_no else None
     engel = k.get("engel") if sc.durum in ("blocked", "failed") else None
     return {
         "tur": TUR,

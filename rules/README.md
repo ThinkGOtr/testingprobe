@@ -289,8 +289,8 @@ varsa çıkış 1. Bu tablo kayıtla aynı olmalıdır (`test_evaluation_status.
 | `platform-data` (P4.5) | v1 | **canlı değerlendirildi** — 2026-11-14 (`evaluation/results/platform-data-v1-2026-11-14.json`, 1/1); ev sahibi `case-generation` v4 son prompt'uyla yeniden koşuldu |
 | `case-negative` (P5; `case_deepening`) | v1 | **değerlendirme sonrası içerik değişti (içerik hash'i uyuşmuyor)** — 2026-11-12 canlı değerlendirildi (`evaluation/results/case-negative-v1-2026-11-12.json`); tur 2 açık soru bağı (`not_covered.question_ref`) sonrası yeniden koşulacak |
 | `case-technique` (P6; `case_deepening`) | v1 | **değerlendirme sonrası içerik değişti (içerik hash'i uyuşmuyor)** — 2026-11-12 canlı değerlendirildi (`evaluation/results/case-technique-v1-2026-11-12.json`); tur 2 açık soru bağı (`not_covered.question_ref`) sonrası yeniden koşulacak |
-| `verify-and-map` (+ `verify_and_map` golden'ları) | v3 | **canlı değerlendirme bekliyor** |
-| `verify-and-map-app` (+ `verify_and_map_app` golden'ları; 009 mobil/masaüstü) | v1 | **canlı değerlendirme bekliyor** |
+| `verify-and-map` (+ `verify_and_map` golden'ları) | v4 | **canlı değerlendirildi** — 2026-11-18 (`evaluation/results/verify-and-map-v4-2026-11-18.json`, Sonnet 9/9: ts 3, python 3, csharp 3; gerçek Playwright MCP + demo uygulaması); v4 (014): hedef dil `language` girdisi, ad dönüşümü yasağı; vakalar dil başına `evaluation/vakalar/verify-and-map/<dil>/` |
+| `verify-and-map-app` (+ `verify_and_map_app` golden'ları; 009 mobil/masaüstü) | v2 | **canlı değerlendirme bekliyor** — 2026-11-18 tam set 7/9 (`evaluation/results/verify-and-map-app-v2-2026-11-18.json`): android ve ios vakalarının hepsi geçti, iki windows vakası Windows Appium'u (GCP `tp-windows`) kapalı olduğu için kaldı; v2 (014): dilden bağımsız metin (Java sabiti kalktı) + `language` girdisi; vakalar `evaluation/vakalar/verify-and-map-app/<dil>/` |
 | `triage` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
 | `bug-draft` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
 | `dup-rank` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
@@ -321,6 +321,22 @@ istisnasıyla birleştirilir. İstisna bu depoda **onaylanmış değildir**; ona
 yazılır (ajanlar/otomasyon istisna yazmaz) ve bu tablo güncellenir. Kimlik bilgisi gelince: `TP_MODEL_MODE=record` ile verify_and_map
 yeniden kaydedilir, `usage.cache_read_input_tokens` ile ajan önbelleği doğrulanır ve kayıt
 `status: evaluated` + `evaluation: {date, model, provider, results}` olarak güncellenir.
+
+### Test dili kapısı (`diller.yaml`, 014)
+
+`diller.yaml` (platform, dil) çiftlerinin seçilebilirliğinin tek kaynağıdır: `acik` ya da
+`yakinda` ("Yakında", seçilemez). `acik` için kanıt zorunludur: `devralindi` (yalnız 014 öncesi
+web/ts, web/java, android|ios|windows/java) ya da `{eval, tarih, kabul}`. Değerlendirme kanıtını
+`make eval-live A='--dil <d> --update-status'` yazar (yalnız o dilin `verify-and-map(-app)`
+vakaları; paketi `evaluated` yapmaz, çiftin TÜM vakaları geçerse kanıt yazar), kabulü
+`python -m tp_core.gateway.dil_kapisi --kabul <p>/<d> --ref <koşu>` yazar. Kapı:
+`make dil-kapisi A=--check` (rapor güncel prompt sürümünde değilse kanıt bayattır). Home kopyası:
+`make dil-kapisi A=--json`.
+
+Durum (2026-11-18 canlı `--dil` koşuları, Sonnet): web/python, web/csharp, android/python,
+ios/python, android/kotlin, ios/swift çiftlerinin tüm vakaları geçti; `eval` kanıtı yazıldı, çiftler
+kabul kanıtı (`--kabul`) beklediği için `yakinda`. windows/python ve windows/csharp kanıtsız: Windows
+Appium'u (GCP `tp-windows`) bu koşuda kapalıydı.
 
 ### Canlı değerlendirmeyi koşturmak (`make eval-live`)
 

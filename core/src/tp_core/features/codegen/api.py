@@ -7,9 +7,13 @@
 | GET  | `/scripts` · `/scripts/{id}` | `code.read` — üretilen test, PR, adımlar, yerel kontrol |
 | GET  | `/scripts/{id}/screenshots/{n}` | `code.read` — ajan adımının ekran görüntüsü (PNG) |
 | POST | `/scripts/{id}/break-verify` | `code.break_verify` — kırarak doğrula (202) |
-| POST | `/prs/{number}/merge` `{icerik_hash, head_sha, onay_notu?}` | `code.merge` |
-| POST | `/prs/{number}/update-branch` | `code.review` — dalı main ile güncelle (202) |
-| POST | `/prs/{number}/review` `{karar, ret_nedeni, icerik_hash, head_sha, not?}` | `code.review` |
+| POST | `/prs/{number}/merge?depo=` `{icerik_hash, head_sha, onay_notu?}` | `code.merge` |
+| POST | `/prs/{number}/update-branch?depo=` | `code.review` — dalı main ile güncelle (202) |
+| POST | `/prs/{number}/review?depo=` `{karar, ret_nedeni, icerik_hash, head_sha, not?}` | review |
+
+Platform depoları (0046): PR numarası yalnız depo içinde tekildir. `?depo=` PR'ın deposudur
+(script/PR yanıtlarındaki `depo` alanı: `''` = projenin varsayılan deposu, ayrı platform
+deposunda `sahip/ad`); eksik ya da boş → varsayılan depo (bugünkü davranış). Biçim dışı değer 422.
 
 Merge, forge yazma kimliği yalnızca core-worker'da olduğu için işe (`codegen.merge`) gider; uç en
 çok `MERGE_BEKLEME_S` bekler: bitti → 200 `PullRequest`, reddedildi → 409, sürüyor → 202. Aynı
@@ -31,7 +35,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
@@ -39,12 +43,26 @@ from pydantic import BaseModel, Field
 from tp_core.auth.deps import DbSession
 from tp_core.auth.yetki import izin
 from tp_core.db import get_engine
+from tp_core.features.codegen import depo as depolar
 from tp_core.features.codegen import service, views
 from tp_core.integrations.toolchain_blogu import ortam_gerekli
 from tp_core.models import session_scope
 from tp_core.workflow.service import Principal
 
 router = APIRouter(tags=["codegen"])
+
+
+def _depo_param(
+    depo: Annotated[str, Query(max_length=201, description="PR'ın deposu ('' = varsayılan)")] = "",
+) -> str:
+    """`?depo=` → normal depo kimliği (`''` | `sahip/ad`); biçim dışıysa 422."""
+    d = depolar.normalize(depo)
+    if not depolar.gecerli_mi(d):
+        raise HTTPException(422, "depo 'sahip/ad' biçiminde olmalı (boş = varsayılan depo)")
+    return d
+
+
+Depo = Annotated[str, Depends(_depo_param)]
 
 Uretir = Annotated[Principal, Depends(izin("code.generate"))]
 KiraraDogrular = Annotated[Principal, Depends(izin("code.break_verify"))]
@@ -59,7 +77,7 @@ class KodUretGirdisi(BaseModel):
     # 009 §2.1: üretilecek testin platformu; yoksa web (geriye uyum). Bilinmeyen değer 422.
     platform: Literal["web", "android", "ios", "windows"] = "web"
     # 011 §2.3: üretim dili; yoksa hedef repodan algılanır. Geçersiz (platform, dil) çifti 422.
-    dil: Literal["ts", "java", "csharp", "python"] | None = None
+    dil: Literal["ts", "java", "csharp", "python", "kotlin", "swift"] | None = None
 
 
 class MergeGirdisi(BaseModel):
@@ -130,12 +148,14 @@ def break_verify(script_id: uuid.UUID, session: DbSession, user: KiraraDogrular)
 
 
 @router.post("/prs/{number}/update-branch", status_code=202)
-def update_branch(number: int, session: DbSession, user: Inceler) -> dict[str, Any]:
-    return service.request_update_branch(session, number, user)
+def update_branch(number: int, session: DbSession, user: Inceler, depo: Depo) -> dict[str, Any]:
+    return service.request_update_branch(session, number, user, depo=depo)
 
 
 @router.post("/prs/{number}/review")
-def review(number: int, body: ReviewGirdisi, session: DbSession, user: Inceler) -> dict[str, Any]:
+def review(
+    number: int, body: ReviewGirdisi, session: DbSession, user: Inceler, depo: Depo
+) -> dict[str, Any]:
     return service.review_pr(
         session,
         number,
@@ -145,12 +165,13 @@ def review(number: int, body: ReviewGirdisi, session: DbSession, user: Inceler) 
         body.icerik_hash,
         body.head_sha,
         body.not_,
+        depo=depo,
     )
 
 
 @router.post("/prs/{number}/merge")
 async def merge(
-    number: int, body: MergeGirdisi, user: MergeEder, response: Response
+    number: int, body: MergeGirdisi, user: MergeEder, response: Response, depo: Depo
 ) -> dict[str, Any]:
     from tp_core.features.publish.service import await_job
     from tp_core.features.repair import service as repair_service
@@ -159,12 +180,12 @@ async def merge(
     def kuyruga_al() -> uuid.UUID:
         with session_scope() as s:
             # Faz 4: locator onarım PR'ları (`tp/repair-*`) repair şeridinin merge yoluna gider.
-            if repair_service.repair_script_for_pr(s, number) is not None:
+            if repair_service.repair_script_for_pr(s, number, depo=depo) is not None:
                 return repair_service.request_merge(
-                    s, number, user, body.icerik_hash, body.head_sha
+                    s, number, user, body.icerik_hash, body.head_sha, depo=depo
                 )
             return service.request_merge(
-                s, number, user, body.icerik_hash, body.head_sha, body.onay_notu
+                s, number, user, body.icerik_hash, body.head_sha, body.onay_notu, depo=depo
             )
 
     job_id = await run_in_threadpool(kuyruga_al)
@@ -174,13 +195,13 @@ async def merge(
 
     def pr() -> dict[str, Any] | None:
         with session_scope() as s:
-            onarim_pr = repair_views.pr_response(s, number)
+            onarim_pr = repair_views.pr_response(s, number, depo=depo)
             if onarim_pr is not None:
                 return onarim_pr
-            sc = service.script_for_pr(s, number)
+            sc = service.script_for_pr(s, number, depo=depo)
             return views.pr_response(s, number, [sc])
 
-    yanit = await run_in_threadpool(pr) or {"number": number}
+    yanit = await run_in_threadpool(pr) or {"number": number, **views.depo_alanlari(depo)}
     if durum != "done":
         response.status_code = 202
         return {**yanit, "job_id": str(job_id), "is_durumu": durum}

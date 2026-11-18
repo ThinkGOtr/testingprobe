@@ -299,8 +299,6 @@ FREE_TEXT = {
         "Sepet tutarı 500,00 TL altına düşerse minimum tutar uyarısı gösterilir.",
     ],
 }
-SYMBOLS_FIXTURE = Path(__file__).resolve().parents[1] / "features" / "codegen" / "symbols.json"
-SYMBOLS_JAVA_FIXTURE = SYMBOLS_FIXTURE.with_name("symbols-java.json")
 
 
 def _stories() -> dict[str, dict[str, Any]]:
@@ -1042,94 +1040,171 @@ def consistency_check_cases() -> list[dict[str, Any]]:
     return out
 
 
-def verify_and_map_cases() -> list[dict[str, Any]]:
-    """Kod üretimi doğrulama ajanı (Playwright MCP): üretimin `mapping_messages` kurucusu, gerçek
-    page object sembol tablosu (toolchain çıkarımı, codegen fikstürü)."""
+# ---------------------------------------------------- doğrulama ajanı vakaları, dil başına (014 Ş8)
+#
+# Vaka kaynakları `rules/evaluation/vakalar/<paket>/<dil>/<vaka>.json` (dil şeritleri yalnız kendi
+# `<dil>/` dizinine dosya ekler; set buradan birleştirilir). Alanlar: `id` (sette benzersiz),
+# `story`, `case_no` (onaylı case: `case_generation` golden'ı), `platform`, `baslik`,
+# `ajan_tablosu` (depo köküne göre sembol tablosu fikstürü; K-T5: repoda TS varsa TS tablosu, yoksa
+# Java, yoksa hedef dilin tablosu), isteğe bağlı `tablo_dili` (vars. tablonun `lang`'ı, yoksa
+# `ts`), `golden` (vars. `<STORY>-C<n>`, uygulamada `-<platform>` ekli), `expects_include` (vars.
+# golden'ın `expects`'i; tablo adları golden'dan farklıysa verilir). Set vakası `dil`, `platform`
+# ve (uygulama) `tool_env: app:<platform>` taşır; dil kapısı (`tp_core.gateway.dil_kapisi`) bir
+# çiftin kanıtını o çiftin TÜM vakaları geçmişse kabul eder.
+
+VAKALAR = RULES / EVAL_DIR / "vakalar"
+REPO = RULES.parent
+_VAKA_ALANLARI = {
+    "id",
+    "story",
+    "case_no",
+    "platform",
+    "baslik",
+    "ajan_tablosu",
+    "tablo_dili",
+    "golden",
+    "expects_include",
+}
+
+
+def vaka_kaynaklari(bundle: str, rules_dir: Path = RULES) -> list[tuple[str, dict[str, Any]]]:
+    """(dil, kaynak) listesi; dil sırası `dil_kapisi.DILLER`, dil içinde dosya adı sırası."""
+    from tp_core.gateway.dil_kapisi import DILLER, PLATFORMLAR, ajan_paketi
+
+    kok = rules_dir / EVAL_DIR / "vakalar" / bundle
+    out: list[tuple[str, dict[str, Any]]] = []
+    if not kok.is_dir():
+        return out
+    bilinmeyen = sorted(d.name for d in kok.iterdir() if d.is_dir() and d.name not in DILLER)
+    if bilinmeyen:
+        raise ValueError(f"{kok}: bilinmeyen dil dizini {bilinmeyen}")
+    for dil in DILLER:
+        for path in sorted((kok / dil).glob("*.json")):
+            src = json.loads(path.read_text(encoding="utf-8"))
+            fazla = sorted(set(src) - _VAKA_ALANLARI)
+            if fazla:
+                raise ValueError(f"{path}: bilinmeyen alan(lar) {fazla}")
+            if src.get("platform") not in PLATFORMLAR or ajan_paketi(src["platform"]) != bundle:
+                raise ValueError(
+                    f"{path}: platform {src.get('platform')!r} {bundle} paketinde değil"
+                )
+            out.append((dil, src))
+    ids = [s["id"] for _, s in out]
+    if len(ids) != len(set(ids)):
+        raise ValueError(f"{kok}: vaka kimlikleri benzersiz değil")
+    return out
+
+
+def _dilli_mesajlar(
+    builder: Callable[..., Sequence[ModelMessage]], *args: Any, dil: str, tablo_dili: str, **kw: Any
+) -> list[dict[str, Any]]:
+    """Ş0 sözleşmesi `builder(..., dil=, tablo_dili=)`; henüz yoksa geçici adaptör: aynı dil
+    satırı (`dil_kapisi.ajan_dil_girdisi`) mesajın sonuna eklenir, "(Java)" başlığı tablo diline
+    çevrilir. Ş0 birleşince adaptör dalı ölü kod olur (entegrasyonda silinir)."""
+    import inspect
+
+    from tp_core.gateway.dil_kapisi import DIL_ADLARI, ajan_dil_girdisi
+
+    if "dil" in inspect.signature(builder).parameters:
+        return _msgs(builder(*args, dil=dil, tablo_dili=tablo_dili, **kw))
+    msgs = _msgs(builder(*args, **kw))
+    son = msgs[-1]
+    son["content"] = (
+        son["content"].replace(
+            "Ekran nesnesi sembol tablosu (Java):",
+            f"Ekran nesnesi sembol tablosu ({DIL_ADLARI[tablo_dili]}):",
+        )
+        + "\n\n"
+        + ajan_dil_girdisi(dil, tablo_dili)
+    )
+    return msgs
+
+
+def _ajan_vakalari(bundle: str) -> list[dict[str, Any]]:
     from tp_core.features.codegen.checks import SymbolTable
-    from tp_core.features.codegen.service import case_ref, mapping_messages
+    from tp_core.features.codegen.service import app_mapping_messages, case_ref, mapping_messages
     from tp_core.gateway.inputs import VERIFY_AGENT_DEALER, VERIFY_BASE_URL
 
-    symbols = json.loads(SYMBOLS_FIXTURE.read_text(encoding="utf-8"))
-    table = SymbolTable(symbols)
-    methods = sorted(
-        f"{po['class']}.{m['name']}" for po in symbols["page_objects"] for m in po["methods"]
-    )
+    purpose = "verify_and_map" if bundle == "verify-and-map" else "verify_and_map_app"
     out = []
-    for key, n, title in (
-        ("TPD-1", 3, "6 adette 1 bedava (ana senaryo F2 case'i)"),
-        ("TPD-4", 1, "geçerli kullanıcıyla giriş"),
-        ("TPD-4", 2, "hatalı parola"),
-    ):
-        case = load_golden("case_generation", key)["output"]["cases"][n - 1]
-        golden = load_golden("verify_and_map", golden_name(key, case_no=n))["output"]
-        out.append(
-            {
-                "id": f"{key.lower()}-c{n}",
-                "description": f"{key}-C{n}: {title}",
-                "replay_key": _key(key, case_no=n),
-                "messages": _msgs(
-                    mapping_messages(
-                        case,
-                        case_ref(key, n),
-                        table,
-                        agent_dealer=VERIFY_AGENT_DEALER,
-                        demo_web_url=VERIFY_BASE_URL,
-                    )
-                ),
-                "expect": {
-                    "steps": [s["id"] for s in case["steps"]],
-                    "methods": methods,
-                    # Golden'daki case'e özgü assertion'lar (en azından son beklenen değer).
-                    "expects_include": [f"{e['po']}.{e['method']}" for e in golden["expects"]],
-                    "no_missing_methods": True,
-                    "all_verified": True,
-                },
-            }
+    for dil, src in vaka_kaynaklari(bundle):
+        key, n, platform = src["story"], int(src["case_no"]), src["platform"]
+        symbols = json.loads((REPO / src["ajan_tablosu"]).read_text(encoding="utf-8"))
+        tablo_dili = src.get("tablo_dili") or symbols.get("lang") or "ts"
+        table = SymbolTable(symbols)
+        methods = sorted(
+            f"{po['class']}.{m['name']}" for po in symbols["page_objects"] for m in po["methods"]
         )
+        case = load_golden("case_generation", key)["output"]["cases"][n - 1]
+        ref = case_ref(key, n)
+        if bundle == "verify-and-map":
+            ad = src.get("golden") or golden_name(key, case_no=n)
+            replay_key = (
+                _key(key, case_no=n)
+                if ad == golden_name(key, case_no=n)
+                else {"name": ad, "jira_key": key}
+            )
+            messages = _dilli_mesajlar(
+                mapping_messages,
+                case,
+                ref,
+                table,
+                dil=dil,
+                tablo_dili=tablo_dili,
+                agent_dealer=VERIFY_AGENT_DEALER,
+                demo_web_url=VERIFY_BASE_URL,
+            )
+        else:
+            ad = src.get("golden") or f"{golden_name(key, case_no=n)}-{platform}"
+            replay_key = {"name": ad, "jira_key": key}
+            messages = _dilli_mesajlar(
+                app_mapping_messages,
+                case,
+                ref,
+                table,
+                dil=dil,
+                tablo_dili=tablo_dili,
+                platform=platform,
+                agent_dealer=VERIFY_AGENT_DEALER,
+            )
+        expects = src.get("expects_include")
+        if expects is None:
+            golden = load_golden(purpose, ad)["output"]
+            # Golden'daki case'e özgü assertion'lar (en azından son beklenen değer).
+            expects = [f"{e['po']}.{e['method']}" for e in golden["expects"]]
+        vaka: dict[str, Any] = {
+            "id": src["id"],
+            "description": f"{key}-C{n} ({platform}/{dil}): {src['baslik']}",
+            "dil": dil,
+            "platform": platform,
+        }
+        if bundle != "verify-and-map":
+            vaka["tool_env"] = f"app:{platform}"
+        vaka |= {
+            "replay_key": replay_key,
+            "messages": messages,
+            "expect": {
+                "steps": [s["id"] for s in case["steps"]],
+                "methods": methods,
+                "expects_include": expects,
+                "no_missing_methods": True,
+                "all_verified": True,
+            },
+        }
+        out.append(vaka)
     return out
+
+
+def verify_and_map_cases() -> list[dict[str, Any]]:
+    """Kod üretimi doğrulama ajanı (Playwright MCP): üretimin `mapping_messages` kurucusu, dil
+    başına vaka kaynakları ve gerçek page object sembol tabloları (codegen fikstürleri)."""
+    return _ajan_vakalari("verify-and-map")
 
 
 def verify_and_map_app_cases() -> list[dict[str, Any]]:
     """Mobil/masaüstü doğrulama ajanı (app-mcp; 009 §2.6): üretimin `app_mapping_messages`
-    kurucusu, gerçek Java ekran nesnesi tablosu (`java-araclar symbols`, codegen fikstürü)."""
-    from tp_core.features.codegen.checks import SymbolTable
-    from tp_core.features.codegen.service import app_mapping_messages, case_ref
-    from tp_core.gateway.inputs import VERIFY_AGENT_DEALER
-
-    symbols = json.loads(SYMBOLS_JAVA_FIXTURE.read_text(encoding="utf-8"))
-    table = SymbolTable(symbols)
-    methods = sorted(
-        f"{po['class']}.{m['name']}" for po in symbols["page_objects"] for m in po["methods"]
-    )
-    out = []
-    for key, n, platform, title in (("TPD-1", 2, "android", "7 adette 1 bedava (Android)"),):
-        case = load_golden("case_generation", key)["output"]["cases"][n - 1]
-        ad = f"{golden_name(key, case_no=n)}-{platform}"
-        golden = load_golden("verify_and_map_app", ad)["output"]
-        out.append(
-            {
-                "id": f"{key.lower()}-c{n}-{platform}",
-                "description": f"{key}-C{n} ({platform}): {title}",
-                "replay_key": {"name": ad, "jira_key": key},
-                "messages": _msgs(
-                    app_mapping_messages(
-                        case,
-                        case_ref(key, n),
-                        table,
-                        platform=platform,
-                        agent_dealer=VERIFY_AGENT_DEALER,
-                    )
-                ),
-                "expect": {
-                    "steps": [s["id"] for s in case["steps"]],
-                    "methods": methods,
-                    "expects_include": [f"{e['po']}.{e['method']}" for e in golden["expects"]],
-                    "no_missing_methods": True,
-                    "all_verified": True,
-                },
-            }
-        )
-    return out
+    kurucusu, dil başına vaka kaynakları; vaka başına araç ortamı `app:<platform>`."""
+    return _ajan_vakalari("verify-and-map-app")
 
 
 # ---------------------------------------------------- case review (P8) / denetim (P9), 011 D

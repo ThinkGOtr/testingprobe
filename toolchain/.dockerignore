@@ -11,3 +11,7 @@ Dockerfile
 .dockerignore
 tests
 **/target
+# C# derleme çıktıları (014 Ş2; yerel derlemeden kalırsa imaja girmesin)
+cs-araclar/**/bin
+cs-araclar/**/obj
+cs-araclar/**/TestResults

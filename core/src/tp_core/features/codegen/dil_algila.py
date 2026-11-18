@@ -59,6 +59,7 @@ engellemez.
 
 from __future__ import annotations
 
+import fnmatch
 import logging
 import posixpath
 import re
@@ -537,6 +538,51 @@ def _python_say(
     return n
 
 
+def _eklenti_kok(platform: str, kok_ayari: str, uygulama_koku: str) -> str | None:
+    """Eklenti kalıbının kökü: matristeki çiftin varsayılan kökü (uygulama köküne göre)."""
+    for c in platformlar.CATILAR.values():
+        if c.platform == platform and c.kok_ayari == kok_ayari:
+            return _kok(uygulama_koku, c.kok_varsayilan)
+    return None
+
+
+def _eklenti_say(
+    tum: Sequence[str],
+    kume: set[str],
+    platform: str,
+    uygulama_koku: str,
+    sayilar: dict[str, int],
+    projeler: dict[str, bool],
+) -> None:
+    """014: ts/java dışı dil eklentilerinin (`codegen/diller/<dil>.py` `algila_kaliplari`) sayımı
+    ve test projesi işareti. ts/java sayımı yukarıdaki kurallarla değişmez; web C#/Python sayısı
+    (Playwright işaretli, 011) korunur, eklenti yalnız proje işaretini ekler."""
+    from tp_core.features.codegen import diller
+
+    for ad, e in diller.kayit().items():
+        if ad in (platformlar.TS, platformlar.JAVA) or not platformlar.gecerli_cift(platform, ad):
+            continue
+        sayi, proje = 0, False
+        for kalip in e.algila_kaliplari:
+            if platform not in kalip.platformlar:
+                continue
+            kok = _eklenti_kok(platform, kalip.kok_ayari, uygulama_koku)
+            if kok is None:
+                continue
+            onek = f"{kok}/{kalip.alt_dizin}".replace("//", "/")
+            sayi += sum(1 for y in tum if y.startswith(onek) and e.test_dosyasi_mi(y))
+            hedef = f"{kok}/{e.proje_dosyasi}"
+            if "*" in e.proje_dosyasi:
+                proje = proje or any(
+                    fnmatch.fnmatch(y, hedef) and "/" not in y[len(kok) + 1 :] for y in kume
+                )
+            else:
+                proje = proje or hedef in kume
+        if ad not in sayilar:
+            sayilar[ad] = sayi
+        projeler[ad] = proje
+
+
 def _say(forge: Any, sha: str, platform: str, uygulama_koku: str) -> Algilama:
     tum = forge.list_files(prefix=f"{uygulama_koku}/" if uygulama_koku else "", ref=sha)
     kume = set(tum)
@@ -560,6 +606,7 @@ def _say(forge: Any, sha: str, platform: str, uygulama_koku: str) -> Algilama:
             "python": _python_say(forge, sha, tum, uygulama_koku, java_agaclari, _Butce()),
         }
         projeler = {"ts": f"{e2e}/package.json" in kume, "java": f"{e2e_java}/pom.xml" in kume}
+    _eklenti_say(tum, kume, platform, uygulama_koku, sayilar, projeler)
     en_cok = max(sayilar.values(), default=0)
     if en_cok <= 0:
         return Algilama(

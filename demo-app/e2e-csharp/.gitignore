@@ -1,0 +1,7 @@
+bin/
+obj/
+TestResults/
+results/
+allure-results/
+allure-report/
+*.user

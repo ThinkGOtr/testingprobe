@@ -1,0 +1,11 @@
+# Güvenilir Python test bağımlılıkları (Ş1, TASARIM §3.1) — kilit: requirements.lock
+# Yeniden üretim (toolchain/e2e-python-deps içinde):
+#   uv pip compile requirements.in --generate-hashes --python-version 3.12 --universal --no-header -o requirements.lock
+#   (sonra 2 satırlık başlığı ekleyin ve demo-app/e2e-python + e2e-app-python kopyalarını güncelleyin)
+# playwright sürümü depo kökündeki .playwright-version ile eşit olmalı (R3).
+playwright==1.64.1
+pytest
+pytest-playwright
+pytest-repeat
+Appium-Python-Client
+allure-pytest

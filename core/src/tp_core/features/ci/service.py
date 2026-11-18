@@ -66,6 +66,7 @@ from tp_core.features.ci.parse import (
     RaporHatasi,
     TestSatiri,
     aria_dosyalari,
+    dil_ayristirmasi,
     java_ayristirmasi,
     parse_files,
     parse_reports,
@@ -74,6 +75,7 @@ from tp_core.features.ci.parse import (
     temiz,
 )
 from tp_core.features.ci.projeler import toolchain_projesi
+from tp_core.features.codegen import depo as depolar
 from tp_core.features.codegen import platform as platformlar
 from tp_core.models import (
     ExternalRef,
@@ -203,7 +205,7 @@ def enqueue_ci(
     *,
     isteyen: str = "system",
     anahtar: str | None = None,
-    ref: str = "main",
+    ref: str | None = None,
     script_id: uuid.UUID | None = None,
 ) -> uuid.UUID:
     """CI koşusunu kuyruğa alır ve `run.id` döndürür (çağıranın işleminde; commit çağırana).
@@ -225,6 +227,11 @@ def enqueue_ci(
     (`e2e/` → ts, `e2e-java/` → java; ikisi de değiştiyse iki koşu), paket koşusunda (push |
     nightly | deploy) repoda web testi bulunan her tam hat dili ayrı koşuda koşar. Script'li push
     da paket koşusudur: ana koşu script'in dilinde, repodaki diğer diller kardeş koşuda.
+
+    **Depo (platform-depo 0046):** koşunun deposu script'in kayıtlı deposudur (`script.depo`;
+    script yoksa platformun güncel deposu) ve `run.ortam.depo`'ya yazılır (`''` = varsayılan
+    depo). Forge/Actions çağrıları bu depoyla yapılır; PR numarası yalnız (depo, numara) ile
+    tekildir. `ref` verilmezse deponun ana dalı (varsayılan depoda `main`).
     """
     return _enqueue(
         session,
@@ -246,34 +253,41 @@ def _enqueue(
     *,
     isteyen: str = "system",
     anahtar: str | None = None,
-    ref: str = "main",
+    ref: str | None = None,
     script_id: uuid.UUID | None = None,
     dispatch: bool = False,
     dil: str | None = None,
+    platform: str | None = None,
+    depo: str | None = None,
 ) -> dict[str, Any]:
     """`dil`: yalnızca script'siz koşuda anlamlıdır (paket koşusunun kardeş dili); script varsa
-    dil script'ten gelir."""
+    dil script'ten gelir. `platform` / `depo`: yalnızca script'siz koşuda (platform deposunun
+    gece koşusu, kardeş koşu); script varsa ikisi de script'ten gelir."""
     if trigger not in CI_TETIK:
         raise CiError(f"geçersiz tetik: {trigger!r} (pr | push | nightly | deploy)")
     if trigger == "pr" and pr_number is None:
         raise CiError("pr tetiği için pr_number gerekli")
     sha = validate_sha(sha)
+    platform, depo = _kosu_hedefi(session, script_id, platform, depo)
+    ref = ref or depolar.ana_dal(platform, depo)
     if not REF_RE.fullmatch(ref) or ".." in ref:
         raise CiError(f"geçersiz ref: {ref!r}")
     kaynak = _kaynak()
     conn = session.connection()
+    if anahtar is not None and depo:
+        # 0046: platform deposunun tetik anahtarı varsayılan deponunkiyle çakışmaz.
+        anahtar = f"{anahtar}@{depo}"
     if anahtar is not None:
         jobq.idempotency_lock(conn, f"ci_tetik:{anahtar}")
         mevcut = session.scalar(select(CiTetik).where(CiTetik.anahtar == anahtar))
         if mevcut is not None:
             return {"run_id": mevcut.run_id, "job_id": None, "yeni": False}
-    platform = script_platformu(session, script_id)
     dil = _istenen_dil(session, script_id, platform, trigger, dil)
     # Aynı commit/tetik/PR/platform için etkin koşu varsa ikinci koşu açılmaz (merge sonrası main'de
     # web ve android koşuları ayrı kontrollerdir: biri ötekinin yerine geçmez). Web'de dil de
     # ayırır (011): aynı commit'in TS ve Java koşuları birbirini yutmaz. Web + TS anahtarı ve
     # sorgusu değişmez; dili henüz çözülmemiş istek (dil None) etkin ana koşuya uyar.
-    kilit = f"ci_aktif:{trigger}:{kaynak}:{sha or ref}:{pr_number}"
+    kilit = f"ci_aktif:{trigger}:{kaynak}:{sha or ref}:{pr_number}" + (f"@{depo}" if depo else "")
     web_java = dilmod.web_java_mi(platform, dil)
     jobq.idempotency_lock(
         conn,
@@ -289,6 +303,8 @@ def _enqueue(
         Run.sonuc.in_(AKTIF),
         Run.pr_no.is_(None) if pr_number is None else Run.pr_no == pr_number,
         func.coalesce(Run.ortam["platform"].astext, platformlar.WEB) == platform,
+        # 0046: PR numarası ve ref depo içinde anlamlı; başka deponun koşusu bunu yutmaz.
+        func.coalesce(Run.ortam["depo"].astext, "") == depo,
     )
     if platform == platformlar.WEB and dil is not None:
         q = q.where(func.coalesce(Run.ortam["dil"].astext, platformlar.TS) == dil)
@@ -351,6 +367,8 @@ def _enqueue(
             "dispatch": trigger if (dispatch and kaynak == "github") else None,
             # 009 §2.9: `script.platform` (web | android | ios | windows).
             "platform": platform,
+            # 0046: koşunun deposu (`''` = varsayılan; ayrı platform deposunda `sahip/ad`).
+            "depo": depo,
             # 011 §2.8: koşunun dili (ts | java). None: script'siz web koşusu — iş dilleri
             # çözünce yazar (`_dilleri_dagit`).
             **({"dil": dil} if dil is not None else {}),
@@ -390,10 +408,46 @@ def _enqueue(
             "anahtar": anahtar,
             "job_id": str(job_id),
             "platform": platform,
+            "depo": depo,
             "dil": dil,
         },
     )
     return {"run_id": run.id, "job_id": job_id, "yeni": True}
+
+
+def _kosu_hedefi(
+    session: Session,
+    script_id: uuid.UUID | None,
+    platform: str | None,
+    depo: str | None,
+) -> tuple[str, str]:
+    """Yeni koşunun (platform, depo)'su. Script'li: script'in platformu ve KAYITLI deposu.
+    Script'siz: verilen platform (bilinmeyen/None → web) ve verilen depo (yoksa platformun
+    güncel deposu)."""
+    if script_id is not None:
+        p = script_platformu(session, script_id)
+        sc = session.get(Script, script_id)
+        return p, depolar.normalize(sc.depo if sc is not None else "")
+    p = platform if platform in platformlar.UYGULAMA_PLATFORMLARI else platformlar.WEB
+    if depo is not None:
+        return p, depolar.normalize(depo)
+    return p, depolar.depo_anahtari(p)
+
+
+def kosu_deposu(run: Run) -> str:
+    """`run.ortam.depo` (eski kayıtlarda yok → `''` = varsayılan depo)."""
+    deger = (run.ortam or {}).get("depo")
+    return depolar.normalize(deger) if isinstance(deger, str) else ""
+
+
+def kosu_forge(run: Run) -> Any:
+    """Koşunun deposunun forge'u (`run.ortam.depo`)."""
+    return services.forge(kosu_deposu(run), kosu_platformu(run))
+
+
+def kosu_github(run: Run) -> Any:
+    """Koşunun deposunun GitHub Actions istemcisi (`run.ortam.depo`)."""
+    return services.github(kosu_deposu(run), kosu_platformu(run))
 
 
 def script_platformu(session: Session, script_id: uuid.UUID | None) -> str:
@@ -437,12 +491,19 @@ def _istenen_dil(
 ) -> str | None:
     """Yeni koşunun dili. Uygulama → `java`. Web: script'in dili; script'siz koşu verilen `dil`
     (kardeş koşu) ya da None (işte çözülür: PR'da değişen yollar, paket koşusunda repo)."""
-    if platform in platformlar.UYGULAMA_PLATFORMLARI:
-        return platformlar.JAVA
     istenen = script_dili(session, script_id) if script_id is not None else dil
+    if platform in platformlar.UYGULAMA_PLATFORMLARI:
+        if istenen in (None, platformlar.JAVA, platformlar.TS):
+            return platformlar.JAVA
+        # 014: uygulamada yeni tam hat dili (ör. python); müşteri CI hattı TP'de koşmaz.
+        if platformlar.tam_hat_mi(istenen, platform):
+            return istenen
+        raise CiError(f"'{istenen}' dili {platform} platformunda TP CI'ında koşmaz")
     if istenen is None:
         return None
-    if istenen not in platformlar.TAM_HAT_DILLERI:
+    if istenen not in platformlar.TAM_HAT_DILLERI and not platformlar.tam_hat_mi(
+        istenen, platform
+    ):
         # K3: doğrulanmamış diller (csharp | python) derlenmez/koşulmaz; PR'a ve CI'a giremez.
         raise CiError(f"'{istenen}' dili CI'da koşmaz (yalnızca ts | java tam hattır)")
     return istenen
@@ -456,9 +517,19 @@ def gh_is_akisi(run: Run) -> dict[str, str]:
     from tp_core.integrations.forge import GITHUB_PLATFORM_WORKFLOWS, WEB_JAVA_WORKFLOW
 
     p = kosu_platformu(run)
+    if (ad := _yeni_dil_is_adi(run)) is not None:
+        return {"workflow": f"{ad}.yml"}
     if p in platformlar.UYGULAMA_PLATFORMLARI:
         return {"workflow": GITHUB_PLATFORM_WORKFLOWS[p]}
     return {"workflow": WEB_JAVA_WORKFLOW} if kosu_dili(run) == platformlar.JAVA else {}
+
+
+def _yeni_dil_is_adi(run: Run) -> str | None:
+    """014: ts/java dışı dilin koşusunda (platform, dil) iş akışı/job adı (`web-python` …)."""
+    d = kosu_dili(run)
+    if d in (platformlar.TS, platformlar.JAVA):
+        return None
+    return platformlar.gh_check_adi(kosu_platformu(run), d)
 
 
 def gh_sonuc_artefakti(run: Run) -> str:
@@ -467,6 +538,8 @@ def gh_sonuc_artefakti(run: Run) -> str:
     from tp_core.integrations.forge import GITHUB_PLATFORM_CHECKS, WEB_JAVA_CHECK
 
     p = kosu_platformu(run)
+    if (ad := _yeni_dil_is_adi(run)) is not None:
+        return f"{ad}-results"
     if p in platformlar.UYGULAMA_PLATFORMLARI:
         return f"{GITHUB_PLATFORM_CHECKS[p]}-results"
     if kosu_dili(run) == platformlar.JAVA:
@@ -484,6 +557,8 @@ def gh_check_adi(run: Run) -> str:
     )
 
     p = kosu_platformu(run)
+    if (ad := _yeni_dil_is_adi(run)) is not None:
+        return ad
     if p in platformlar.UYGULAMA_PLATFORMLARI:
         return GITHUB_PLATFORM_CHECKS[p]
     if kosu_dili(run) == platformlar.JAVA:
@@ -495,6 +570,12 @@ def check_body_platformu(platform: str, dil: str | None = None) -> dict[str, Any
     """toolchain `/check` gövdesinin dil alanları: web + TS için boş (istek baytları değişmez),
     uygulama için `lang=java` + `platform` (toolchain `/check` Java yolu, `local-ci-<platform>`
     kaydı), web + Java için `lang=java` + `platform=web` (011 K-T1; kayıt `local-ci-web-java`)."""
+    if dil not in (None, platformlar.TS, platformlar.JAVA) and platformlar.gecerli_cift(
+        platform, dil
+    ):
+        # 014: yeni diller toolchain'e dil + platformla gider (worker eklentisi; kayıt
+        # `local-ci-<platform>-<dil>`).
+        return {"lang": dil, "platform": platform}
     if platform in platformlar.UYGULAMA_PLATFORMLARI:
         return {"lang": "java", "platform": platform}
     if dil == platformlar.JAVA:
@@ -512,6 +593,27 @@ def trigger_manual(session: Session, tetik: str, isteyen: str) -> dict[str, Any]
     if tetik not in ELLE_TETIKLER:
         raise CiError("tetik yalnızca deploy | nightly | manual olabilir")
     sonuc = _enqueue(session, None, tetik, isteyen=isteyen, dispatch=True)
+    # 0046: elle gece koşusu da ayrı platform depolarında ayrı tetiklenir (aynı işlemde).
+    platform_kosulari: list[dict[str, Any]] = []
+    if tetik == "nightly":
+        try:
+            hedefler = depolar.ayri_depolu_platformlar()
+        except Exception as exc:
+            log.warning("platform depoları okunamadı; platform koşuları atlandı: %s", exc)
+            hedefler = []
+        for platform, depo in hedefler:
+            ps = _enqueue(
+                session, None, tetik, isteyen=isteyen, dispatch=True, platform=platform, depo=depo
+            )
+            platform_kosulari.append(
+                {
+                    "platform": platform,
+                    "depo": depo,
+                    "run_id": str(ps["run_id"]) if ps["run_id"] else None,
+                    "job_id": str(ps["job_id"]) if ps.get("job_id") else None,
+                    "yeni": ps["yeni"],
+                }
+            )
     kaynak = _kaynak()
     if not sonuc["yeni"]:
         mesaj = "Aynı tetik için koşu zaten kuyrukta ya da sürüyor."
@@ -532,6 +634,7 @@ def trigger_manual(session: Session, tetik: str, isteyen: str) -> dict[str, Any]
         "mesaj": mesaj,
         "kaynak": kaynak,
         "tetik": tetik,
+        **({"platform_kosulari": platform_kosulari} if platform_kosulari else {}),
     }
 
 
@@ -782,7 +885,7 @@ def _ast_guard_mode(run: Run) -> str:
     try:
         from tp_core.integrations.forge import REPAIR_BRANCH_PREFIX, REPAIR_LABEL
 
-        pr = services.forge().get_pr(run.pr_no)
+        pr = kosu_forge(run).get_pr(run.pr_no)
     except Exception:
         return "pr"
     if pr.branch.startswith(REPAIR_BRANCH_PREFIX) or REPAIR_LABEL in (pr.labels or []):
@@ -823,8 +926,9 @@ def rapor_dili(report: Mapping[str, Any]) -> str | None:
     (TS raporu `lang` taşımaz)."""
     rr = report.get("run") if isinstance(report.get("run"), Mapping) else {}
     for aday in (report.get("lang"), (rr or {}).get("lang")):
-        if aday in (platformlar.TS, platformlar.JAVA):
-            return str(aday)
+        # 014: TP CI'ında koşan yeni diller de (python, csharp; `dilmod.tam_hat_dili`).
+        if (d := dilmod.tam_hat_dili(aday)) is not None:
+            return d
     return None
 
 
@@ -840,11 +944,13 @@ def ingest_check_report(session: Session, run: Run, report: Mapping[str, Any]) -
     """
     rr = report.get("run") if isinstance(report.get("run"), Mapping) else {}
     platform = rapor_platformu(report) or kosu_platformu(run)
-    java = (
-        platform in platformlar.UYGULAMA_PLATFORMLARI
-        or (rapor_dili(report) or dilmod.ortam_dili(run.ortam)) == platformlar.JAVA
+    kosu_dili = rapor_dili(report) or dilmod.ortam_dili(run.ortam)
+    # 014: ts/java dışı dil (python, csharp) kendi kimlik kuralıyla; adımları Java ile aynı.
+    yeni_dil = kosu_dili not in (None, platformlar.TS, platformlar.JAVA)
+    java = not yeni_dil and (
+        platform in platformlar.UYGULAMA_PLATFORMLARI or kosu_dili == platformlar.JAVA
     )
-    adim_adlari = TOOLCHAIN_ADIMLAR_JAVA if java else TOOLCHAIN_ADIMLAR
+    adim_adlari = TOOLCHAIN_ADIMLAR_JAVA if java or yeni_dil else TOOLCHAIN_ADIMLAR
     adimlar = {k: _adim_ozeti(report.get(k)) for k in adim_adlari}
     uzak = rr.get("artifacts_dir") if isinstance(rr.get("artifacts_dir"), str) else None
     dizin_rel = rr.get("artifacts_rel") if isinstance(rr.get("artifacts_rel"), str) else None
@@ -874,6 +980,8 @@ def ingest_check_report(session: Session, run: Run, report: Mapping[str, Any]) -
             )
             if java:
                 ayr = java_ayristirmasi(ayr)
+            elif yeni_dil:
+                ayr = dil_ayristirmasi(ayr, str(kosu_dili))
             uyarilar.extend(ayr.uyarilar)
         except RaporHatasi as exc:
             uyarilar.append(str(exc))
@@ -970,8 +1078,10 @@ def _run_job(engine: Engine, run_id: uuid.UUID, *, deneme: int, son_deneme: bool
             return {"durum": "github_bekleniyor", "run_id": str(run.id)}
         try:
             if not run.commit:
-                ref = (run.ortam or {}).get("ref") or "main"
-                run.commit = services.forge().head_sha(ref)
+                ref = (run.ortam or {}).get("ref") or depolar.ana_dal(
+                    kosu_platformu(run), kosu_deposu(run)
+                )
+                run.commit = kosu_forge(run).head_sha(ref)
         except Exception as exc:
             if not son_deneme:
                 raise
@@ -1034,9 +1144,9 @@ def _web_dilleri(run: Run) -> tuple[str, ...]:
     from tp_core.features.codegen import service as cg
 
     o = run.ortam or {}
-    ref = run.commit or o.get("ref") or "main"
+    ref = run.commit or o.get("ref") or depolar.ana_dal(kosu_platformu(run), kosu_deposu(run))
     try:
-        forge = services.forge()
+        forge = kosu_forge(run)
     except Exception as exc:  # forge kurulamadı: koşu engellenmez, bugünkü davranış
         log.warning("ci.run %s: forge kurulamadı (%s); ts koşuyor", run.id, exc)
         return (platformlar.TS,)
@@ -1121,7 +1231,10 @@ def _dilleri_dagit(session: Session, run: Run) -> list[uuid.UUID]:
             run.tetik,
             run.pr_no if run.tetik == "pr" else None,
             isteyen=str(o.get("isteyen") or "system"),
-            ref=str(o.get("ref") or "main"),
+            ref=str(o.get("ref") or depolar.ana_dal(kosu_platformu(run), kosu_deposu(run))),
+            # Kardeş koşu ana koşunun deposunda (web: varsayılan depo).
+            platform=kosu_platformu(run),
+            depo=kosu_deposu(run),
             # Elle tetik (GitHub): kardeşin iş akışı ayrı dosyadır, kendi `workflow_dispatch`'i
             # gerekir (deploy'un `repository_dispatch`'i `web-java.yml`'e ulaşmaz).
             dispatch=bool(o.get("dispatch")),
@@ -1337,7 +1450,7 @@ def _dispatch(engine: Engine, run_id: uuid.UUID) -> None:
         simdi = services.now()
         if ref is not None and ref.hata is None:
             # Önceki deneme çağrıyı yapmış olabilir: kör tekrar yok.
-            gh = services.github()
+            gh = kosu_github(run)
             adaylar: list[dict[str, Any]] = []
             for olay in _olaylar(run):
                 adaylar += gh.workflow_runs(head_sha=None, event=olay, **gh_is_akisi(run))
@@ -1374,11 +1487,15 @@ def _dispatch(engine: Engine, run_id: uuid.UUID) -> None:
             "dispatch_deneme": deneme,
             "dispatch_deneme_zamani": simdi.isoformat(),
         }
-        hedef_ref = (run.ortam or {}).get("ref") or "main"
+        hedef_ref = (run.ortam or {}).get("ref") or depolar.ana_dal(
+            kosu_platformu(run), kosu_deposu(run)
+        )
         isteyen = str((run.ortam or {}).get("isteyen") or "system")
         is_akisi = gh_is_akisi(run)
+        # 0046: dispatch koşunun deposuna (platform deposunun gece koşusu o deponun iş akışı).
+        gh_depo, gh_platform = kosu_deposu(run), kosu_platformu(run)
     # (2) API çağrısı: işlem dışında; `intent` kalıcı.
-    gh = services.github()
+    gh = services.github(gh_depo, gh_platform)
     try:
         if tetik == "deploy" and not is_akisi:
             gh.repository_dispatch("deploy", {"tetik": "deploy", "tp_run_id": str(run_id)})
@@ -1631,7 +1748,7 @@ def aria_kaydet(
 def _sonuc_artefakti(run: Run) -> tuple[Any, Mapping[str, Any]]:
     if run.kaynak != "github" or not run.github_run_id:
         raise CiError("koşu GitHub kaynaklı değil ya da GitHub koşu kimliği yok")
-    gh = services.github()
+    gh = kosu_github(run)
     art = next(
         (a for a in gh.artifacts(run.github_run_id) if a.get("name") == RESULTS_ARTIFACT), None
     )
@@ -1773,7 +1890,7 @@ def github_artefakt_indir(session: Session, run: Run, isteyen: str = "system") -
     a = run.artefaktlar or {}
     gh_bilgi = a.get("github") if isinstance(a.get("github"), dict) else {}
     gh_dizin = github_artifacts.dizin_adi(run.github_run_id, gh_bilgi.get("deneme"))
-    gh = services.github()
+    gh = kosu_github(run)
     artefaktlar = [] if github_artifacts.mevcut(gh_dizin) else gh.artifacts(run.github_run_id)
     yerel = _github_yerel(session, gh, artefaktlar, gh_dizin)
     run.artefaktlar = {**a, "github_yerel": yerel}
@@ -1789,7 +1906,7 @@ def github_artefakt_indir(session: Session, run: Run, isteyen: str = "system") -
 
 def github_ingest(session: Session, run: Run, wr: Mapping[str, Any]) -> str:
     """Tamamlanmış GitHub workflow koşusunu koşu kaydına işler."""
-    gh = services.github()
+    gh = kosu_github(run)
     artefaktlar = gh.artifacts(wr["id"])
     isler = gh.jobs(wr["id"])
     uyarilar: list[str] = []
@@ -1932,9 +2049,9 @@ def github_poll(engine: Engine, run_id: uuid.UUID, tur: int) -> dict[str, Any]:
             alindi: dict[str, Any] = {"durum": "atlandi", "sonuc": run.sonuc}
             pr_no = run.pr_no if run.kaynak == "github" else None
         else:
-            gh = services.github()
+            gh = kosu_github(run)
             if not run.commit and (run.ortam or {}).get("ref") and run.tetik in ("pr", "push"):
-                run.commit = services.forge().head_sha((run.ortam or {}).get("ref"))
+                run.commit = kosu_forge(run).head_sha((run.ortam or {}).get("ref"))
             wr: dict[str, Any] | None = None
             if run.github_run_id:
                 wr = gh.workflow_run(run.github_run_id)
@@ -2096,8 +2213,10 @@ def post_pr_comment(engine: Engine, run_id: uuid.UUID) -> str:
         ref.hata = None
         pr_no = run.pr_no
         govde = pr_comment_body(run)
+        # 0046: yorum koşunun deposundaki PR'a (numara depolar arasında çakışır).
+        yorum_depo, yorum_platform = kosu_deposu(run), kosu_platformu(run)
     try:
-        services.forge().comment_pr(pr_no, govde)
+        services.forge(yorum_depo, yorum_platform).comment_pr(pr_no, govde)
     except Exception as exc:
         log.warning("PR #%s yorumu yazılamadı (koşu %s): %s", pr_no, run_id, exc)
         if not _belirsiz_hata(exc):
@@ -2194,7 +2313,56 @@ def nightly_job(engine: Engine, tarih: str) -> dict[str, Any]:
             anahtar=f"nightly:{tarih}",
             dispatch=True,
         )
-        return {"run_id": str(sonuc["run_id"]) if sonuc["run_id"] else None, "yeni": sonuc["yeni"]}
+    # Platform depoları (0046, kullanıcı kararı 2): ayrı depoya bağlı her etkin platformun gece
+    # koşusu kendi deposunda, kendi iş akışıyla ayrı tetiklenir; sonuçlar platform bazlı görünür
+    # (`run.ortam.platform` + `run.ortam.depo`). Biri açılamazsa diğerleri etkilenmez.
+    platformlar_ = _platform_gece_kosulari(
+        engine, isteyen="system:gece", anahtar_koku=f"nightly:{tarih}"
+    )
+    return {
+        "run_id": str(sonuc["run_id"]) if sonuc["run_id"] else None,
+        "yeni": sonuc["yeni"],
+        **({"platform_kosulari": platformlar_} if platformlar_ else {}),
+    }
+
+
+def _platform_gece_kosulari(
+    engine: Engine, *, isteyen: str, anahtar_koku: str | None, tetik: str = "nightly"
+) -> list[dict[str, Any]]:
+    """Ayrı depoya bağlı her etkin uygulama platformu için script'siz paket koşusu (her biri kendi
+    işleminde). `anahtar_koku` verilirse tetik anahtarı `<kök>:<platform>@<depo>` (idempotent)."""
+    try:
+        hedefler = depolar.ayri_depolu_platformlar()
+    except Exception as exc:  # config okunamadı: varsayılan deponun koşusu yine açıldı
+        log.warning("platform depoları okunamadı; platform gece koşuları atlandı: %s", exc)
+        return []
+    out: list[dict[str, Any]] = []
+    for platform, depo in hedefler:
+        try:
+            with Session(engine, expire_on_commit=False) as session, session.begin():
+                s = _enqueue(
+                    session,
+                    None,
+                    tetik,
+                    isteyen=isteyen,
+                    anahtar=f"{anahtar_koku}:{platform}" if anahtar_koku else None,
+                    dispatch=True,
+                    platform=platform,
+                    depo=depo,
+                )
+            out.append(
+                {
+                    "platform": platform,
+                    "depo": depo,
+                    "run_id": str(s["run_id"]) if s["run_id"] else None,
+                    "job_id": str(s["job_id"]) if s.get("job_id") else None,
+                    "yeni": s["yeni"],
+                }
+            )
+        except Exception as exc:  # tek deponun hatası diğer depoları durdurmaz
+            log.warning("%s gece koşusu (%s, %s) açılamadı: %s", tetik, platform, depo, exc)
+            out.append({"platform": platform, "depo": depo, "run_id": None, "hata": str(exc)[:300]})
+    return out
 
 
 # =============================================================================== okuma
@@ -2258,6 +2426,16 @@ def maskele_kosu(kosu: Mapping[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _depo_alanlari(depo: str, onbellek: dict[str, str]) -> dict[str, str]:
+    """`depo` + `depo_adi` (gösterim; config okunamazsa kimlik). Liste başına depo adı bir kez."""
+    if depo not in onbellek:
+        try:
+            onbellek[depo] = depolar.depo_adi(depo)
+        except Exception:  # yalnız gösterim
+            onbellek[depo] = depo
+    return {"depo": depo, "depo_adi": onbellek[depo]}
+
+
 def serialize_runs(
     session: Session, runs: Sequence[Run], *, artefakt: bool
 ) -> list[dict[str, Any]]:
@@ -2265,6 +2443,7 @@ def serialize_runs(
     if not artefakt:
         return [maskele_kosu(k) for k in serialize_runs(session, runs, artefakt=True)]
     ids = [r.id for r in runs]
+    depo_adlari: dict[str, str] = {}
     sayac: dict[uuid.UUID, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     if ids:
         for run_id, sonuc, n in session.execute(
@@ -2345,6 +2524,8 @@ def serialize_runs(
                 "platform": o.get("platform")
                 or script_platform.get(r.script_id)
                 or platformlar.WEB,
+                # 0046: koşunun deposu (`''` = varsayılan) ve gösterim adı (platform bazlı özet).
+                **_depo_alanlari(kosu_deposu(r), depo_adlari),
                 # 011: koşunun dili (`ortam.dil`; eski kayıtta platformun varsayılanı).
                 "dil": dilmod.ortam_dili(o)
                 or platformlar.varsayilan_dil(
@@ -2402,8 +2583,13 @@ def list_runs(
     script_id: uuid.UUID | None = None,
     limit: int = 50,
     artefakt: bool,
+    depo: str | None = None,
 ) -> list[dict[str, Any]]:
+    """`depo` (0046): verilirse yalnız o deponun koşuları (`''` = varsayılan depo); PR numarası
+    depolar arasında çakıştığından `pr_no` süzgeci `depo` ile birlikte anlamlıdır."""
     q = select(Run)
+    if depo is not None:
+        q = q.where(func.coalesce(Run.ortam["depo"].astext, "") == depolar.normalize(depo))
     if tetik:
         q = q.where(Run.tetik == tetik)
     if kaynak:
@@ -2418,7 +2604,7 @@ def list_runs(
         session.scalars(q.order_by(Run.olusturma.desc(), Run.id).limit(max(1, min(limit, 200))))
     )
     sabit: set[uuid.UUID] = set()
-    if all(x is None for x in (tetik, kaynak, sonuc, pr_no, script_id)):
+    if all(x is None for x in (tetik, kaynak, sonuc, pr_no, script_id, depo)):
         # Açık defect adayının kırmızı kanıtı (son yerel kontrolü) pencereden düşmez: yeni
         # tetikler listeyi doldursa da filtresiz listede kalır (`sabit=true`).
         gorulen = {r.id for r in runs}

@@ -1,0 +1,8 @@
+{
+  "id": "tpd-1-c2-android",
+  "story": "TPD-1",
+  "case_no": 2,
+  "platform": "android",
+  "baslik": "7 adette 1 bedava (Android)",
+  "ajan_tablosu": "core/tests/unit/features/codegen/symbols-java.json"
+}

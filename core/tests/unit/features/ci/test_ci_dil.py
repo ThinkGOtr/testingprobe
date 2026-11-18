@@ -186,8 +186,10 @@ def test_web_ts_scripti_govdesi_ve_kaydi_degismez(engine: Engine, toolchain: Fak
 
 
 def test_dogrulanmamis_dil_ci_ye_giremez(engine: Engine) -> None:
-    sid = _web_script(engine, "csharp")
-    with Session(engine) as s, s.begin(), pytest.raises(service.CiError, match="csharp"):
+    # 014: csharp/python artık tam hat (eklentiyle TP CI'ında koşar); TP CI'ına girmeyen dil
+    # örneği müşteri CI dili kotlin.
+    sid = _web_script(engine, "kotlin")
+    with Session(engine) as s, s.begin(), pytest.raises(service.CiError, match="kotlin"):
         enqueue_ci(s, SHA, "pr", 10, script_id=sid)
 
 
@@ -543,6 +545,8 @@ def test_degisen_web_dilleri_kokler_disi_degisiklik_repodaki_tum_diller() -> Non
     app = {**kw, "repodaki": iki, "diger_test_kokleri": ("demo-app/e2e-app",)}
     assert dil.degisen_web_dilleri(["demo-app/e2e-app/pom.xml"], **app) == ("ts",)
     assert dil.degisen_web_dilleri(["demo-app/e2e-java/a"], **app) == ("java",)
-    # Doğrulanmamış diller repodaki listesinde olsa da CI'a girmez.
-    assert dil.degisen_web_dilleri(["x"], **kw, repodaki=("csharp",)) == ("ts",)
-    assert dil.tam_hat_dili("csharp") is None and dil.tam_hat_dili("java") == "java"
+    # TP CI'ında koşmayan diller (014: müşteri CI dili kotlin) repodaki listesinde olsa da girmez.
+    assert dil.degisen_web_dilleri(["x"], **kw, repodaki=("kotlin",)) == ("ts",)
+    assert dil.tam_hat_dili("kotlin") is None and dil.tam_hat_dili("java") == "java"
+    # 014: eklentili csharp/python tam hattır.
+    assert dil.tam_hat_dili("csharp") == "csharp" and dil.tam_hat_dili("python") == "python"

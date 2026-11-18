@@ -953,5 +953,11 @@ def test_unevaluated_prompt_bundle_is_marked_pending_live_evaluation() -> None:
     row = re.search(r"^\| `verify-and-map`.*\| v(\d+) \| (.+) \|$", readme, re.MULTILINE)
     assert row, "rules/README.md canlı değerlendirme tablosunda verify-and-map satırı yok"
     assert row.group(1) == version.group(1)
-    if not live:
+    # Golden'lar elle (kayıt üst verisi yok) olsa da paket canlı değerlendirilmiş olabilir
+    # (eval-live ajan koşusu golden yazmaz): durum kaydı (`evaluations.yaml`) belirleyicidir.
+    from tp_core.gateway.evaluation import evaluation_status
+
+    st = evaluation_status(RULES, "verify-and-map")
+    if not live and st.status != "evaluated":
         assert "canlı değerlendirme bekliyor" in row.group(2)
+    assert st.label in row.group(2)

@@ -74,8 +74,9 @@ import { mockOlayYayinla } from "./olaylar";
 import { denetimBaslat, denetimGorunumu, denetimTamamla, gonderEngeli, reviewCalistir, reviewGorunumu, setImzasi, yayinEngeli } from "./kaliteSeti";
 import { javaDosyaYolu, javaTestKodu, uygulamayaCevir } from "./platformlar";
 import { PLATFORMLAR, PLATFORM_ETIKETI, platformUyarla, type Platform } from "../../lib/platform";
-import { DIL_ETIKETI, DILLER, dilUyarla, dogrulanmamisDilMi, gecerliCift, varsayilanDil, type Dil } from "../../lib/dil";
-import { algilananDil, csharpCiktisi, JAVA_KONTROL_ACIKLAMASI, javaAdimlari, javaWebCiktisi, javaYerelGecti, kodDilleriYaniti, pythonCiktisi } from "./diller";
+import { DIL_ETIKETI, DILLER, dilUyarla, ESKI_DOGRULANMAMIS_DILLER, gecerliCift, gecerliDiller, varsayilanDil, YAKINDA_NEDENI, type Dil } from "../../lib/dil";
+import { musteriCiScriptleri } from "./musteriCi";
+import { algilananDil, csharpCiktisi, JAVA_KONTROL_ACIKLAMASI, javaAdimlari, javaWebCiktisi, javaYerelGecti, kodDilleriYaniti, mockDilDurumu, pythonCiktisi } from "./diller";
 import { asistanMockSifirla, asistanRotalari } from "./asistan";
 import { modelUretimiBaslat, onayliModel, tasarimModeliRotalari, type ModelBaglami } from "./tasarimModeli";
 import { derinlestirmeRotalari, PLATFORM_REPLAY_MISS, platformGoldenAdi, platformGoldeni, uretimGovdesiniDogrula } from "./derinlestirme";
@@ -146,7 +147,24 @@ export type MockSenaryosu =
   /** Çok proje (TP-COK-PROJE-PLANI §6): `/projeler`, `PUT /proje`, `/auth/me` proje alanları (api/mock/projeler.ts). */
   | "cok-proje"
   /** Ekran denetimi (canlı E2E T-8): Agent Probe özelliği projede kapalı (`/auth/me` → `ozellikler.ai_agent=false`). */
-  | "ajan-kapali";
+  | "ajan-kapali"
+  /**
+   * 014 öncesi core (011): web C#/Python doğrulanmamış hatta üretilir (yalnız kaynak), `durum` alanı yok,
+   * Kotlin/Swift yok. Eski doğrulanmamış akışın ekran denetimi için.
+   */
+  | "eski-dogrulanmamis"
+  /** 014: tüm (platform, dil) çiftleri değerlendirmeden geçmiş gibi açık (müşteri CI rozeti, kurulum PR'ı). */
+  | "diller-acik";
+
+/** `diller-acik`: müşteri CI örnek script'leri (scr-kt, scr-sw) ilk okumada veriye bir kez eklenir. */
+function musteriCiOrnekleriniEkle(): void {
+  if (mockSenaryosu("diller-acik") && !veri.scriptler.some((s) => s.id === "scr-kt")) veri.scriptler.push(...musteriCiScriptleri());
+}
+
+/** 011 doğrulanmamış hat yalnız `eski-dogrulanmamis` senaryosunda (014: değerlendirilmemiş = seçilemez). */
+function mockDogrulanmamis(platform: Platform, dil: Dil): boolean {
+  return mockSenaryosu("eski-dogrulanmamis") && platform === "web" && ESKI_DOGRULANMAMIS_DILLER.includes(dil);
+}
 
 export function mockSenaryosu(ad: MockSenaryosu): boolean {
   if (ayar.senaryolar.has(ad)) return true;
@@ -293,8 +311,10 @@ const kopya = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
  * core `merge_kabul_gerekceleri` ile aynı metinler: merge'i engellemeyen ama açık insan kabulü
  * (`onay_notu`) isteyen gerekçeler. Yalnızca `pr_open` script'te; durum değişince yeniden hesaplanır.
  */
-export function mergeKabulGerekli(s: Pick<ScriptDetay, "durum" | "zayif_test" | "break_verify">): string[] {
+export function mergeKabulGerekli(s: Pick<ScriptDetay, "durum" | "zayif_test" | "break_verify" | "hat">): string[] {
   if (s.durum !== "pr_open") return [];
+  // 014: müşteri CI hattında kırarak doğrulama yok; yeşil müşteri CI merge için yeterli (kullanıcı kararı 2).
+  if (s.hat === "musteri_ci") return [];
   const bv = s.break_verify.durum;
   if (bv === "weak" || s.zayif_test) return ["Zayıf test: BREAK_CAMPAIGN ile kırılan uygulamada da yeşil kaldı (açık kabul gerekir)."];
   if (bv === "failed") return ["Kırarak doğrulama tamamlanamadı: testin hata yakaladığına dair kanıt yok."];
@@ -1553,7 +1573,7 @@ const KOD_GOLDEN: Record<string, { adimlar: () => AjanAdimi[]; kaynak: Record<st
  * varsa Türkçe neden. `uzun-gecmis` senaryosunda liste dışındaki eski kayıtlar da sayılır.
  */
 function mockDilCakismasi(caseId: string, platform: Platform, dil: Dil): string | null {
-  if (dogrulanmamisDilMi(dil)) return null;
+  if (mockDogrulanmamis(platform, dil)) return null;
   const merged = [
     ...veri.scriptler.filter((s) => s.durum === "merged" && s.case_ids.includes(caseId) && (s.platform ?? "web") === platform).map((s) => s.dil ?? "ts"),
     ...(mockSenaryosu("uzun-gecmis") ? LISTE_DISI_MERGED.filter((x) => x.case_id === caseId && x.platform === platform).map((x) => x.dil) : []),
@@ -1587,7 +1607,7 @@ function hedefEki(platform: Platform, dil: Dil): string {
   const parcalar: string[] = platform === "web" ? [] : [platform];
   if (dil !== varsayilanDil(platform)) parcalar.push(DIL_ETIKETI[dil]);
   let ek = parcalar.length ? ` (${parcalar.join(", ")}).` : ".";
-  if (dogrulanmamisDilMi(dil)) ek += " Doğrulanmamış dil: kod üretilir ama derlenmez/koşulmaz, PR açılmaz.";
+  if (mockDogrulanmamis(platform, dil)) ek += " Doğrulanmamış dil: kod üretilir ama derlenmez/koşulmaz, PR açılmaz.";
   return ek;
 }
 
@@ -1604,9 +1624,23 @@ function kodUret(govde: unknown): KodUretYaniti {
   const dilVar = g.dil !== undefined && g.dil !== null;
   const dil: Dil | null = dilVar ? dilUyarla(g.dil) : algilananDil(platform);
   if (!dil) throw new ApiError(422, `dil yalnızca ${DILLER.join(", ")} olabilir.`);
-  if (!gecerliCift(platform, dil)) throw new ApiError(422, `${PLATFORM_ETIKETI[platform]} platformunda yalnız Java üretilebilir.`);
+  const eski = mockSenaryosu("eski-dogrulanmamis");
+  const gecerli = eski ? (platform === "web" ? !["kotlin", "swift"].includes(dil) : dil === "java") : gecerliCift(platform, dil);
+  if (!gecerli) {
+    const diller = eski ? (platform === "web" ? ["ts", "java", "csharp", "python"] : ["java"]) : gecerliDiller(platform);
+    throw new ApiError(422, `${PLATFORM_ETIKETI[platform]} platformunda yalnız ${diller.map((d) => DIL_ETIKETI[d as Dil]).join(", ")} üretilebilir.`);
+  }
+  // 014 dil kapısı (TP `rules/diller.yaml`): değerlendirmeden geçmemiş çift 422 (env'de açık olsa bile).
+  if (!eski && mockDilDurumu(dil, mockSenaryosu("diller-acik")) === "yakinda") {
+    throw new ApiError(422, `${DIL_ETIKETI[dil]} (${PLATFORM_ETIKETI[platform]}) henüz kullanılamıyor: ${YAKINDA_NEDENI}.`);
+  }
+  // Örnek arka uç 014'ün yeni hatlarında (Python/C# tam, Kotlin/Swift müşteri CI) üretim akışını taklit etmez;
+  // müşteri CI ekranı örnek script'lerle denetlenir (scr-kt-1, scr-sw-1).
+  if (!eski && dil !== "ts" && dil !== "java") {
+    throw new ApiError(422, `Örnek arka uç ${DIL_ETIKETI[dil]} ile kod üretmez; müşteri CI örneği için örnek script'lere bakın.`);
+  }
   const dilKaynagi = dilVar ? ("secildi" as const) : ("algilandi" as const);
-  const dogrulanmamis = dogrulanmamisDilMi(dil);
+  const dogrulanmamis = mockDogrulanmamis(platform, dil);
   const javaWeb = platform === "web" && dil === "java";
   const app = platform !== "web";
   const caseler = ids.map((id) => bul(veri.caseler, id, "Case"));
@@ -1919,10 +1953,21 @@ function mergeBagi(govde: unknown, pr: PullRequest): void {
   if (head !== pr.head_sha) throw new ApiError(409, "PR head sha'sı siz incelediğinizden beri değişmiş; yenileyip tekrar inceleyin.");
 }
 
-function prBirlestir(no: number, govde: unknown) {
+/**
+ * Platform başına depo: PR numarası yalnız depo içinde tekil (core PK `(project_id, depo, number)`).
+ * `?depo=` yok/boş = varsayılan depo (`pr.depo` yok ya da `''`).
+ */
+function prDeposu(q: URLSearchParams | undefined): string {
+  return (q?.get("depo") ?? "").trim();
+}
+function prEsit(pr: PullRequest | null | undefined, no: number, depo: string): boolean {
+  return !!pr && pr.number === no && (pr.depo ?? "").trim() === depo;
+}
+
+function prBirlestir(no: number, govde: unknown, depo = "") {
   izinGerekli("code.merge");
-  const s = veri.scriptler.find((x) => x.pr?.number === no);
-  const h = veri.hatalar.find((x) => x.oneri?.tur === "locator_fix" && x.oneri.pr?.number === no);
+  const s = veri.scriptler.find((x) => prEsit(x.pr, no, depo));
+  const h = veri.hatalar.find((x) => x.oneri?.tur === "locator_fix" && prEsit(x.oneri.pr, no, depo));
   if (s?.pr) {
     mergeBagi(govde, s.pr);
     if (s.pr.durum !== "open") throw new ApiError(409, "PR açık değil.");
@@ -1960,9 +2005,9 @@ function prBirlestir(no: number, govde: unknown) {
 const RET_NEDENLERI = new Set(["hallucinated_step", "missing_ac", "wrong_test_data", "out_of_scope", "duplicate", "wrong_element"]);
 
 /** core POST /prs/{n}/review: değişiklik iste / reddet → script kapanır, PR kapatılır. */
-function prReview(no: number, govde: unknown) {
+function prReview(no: number, govde: unknown, depo = "") {
   izinGerekli("code.review");
-  const s = veri.scriptler.find((x) => x.pr?.number === no);
+  const s = veri.scriptler.find((x) => prEsit(x.pr, no, depo));
   if (!s?.pr) throw new ApiError(404, `PR bulunamadı: #${no}`);
   const g = (govde ?? {}) as { karar?: unknown; ret_nedeni?: unknown; not?: unknown };
   if (g.karar !== "degisiklik_iste" && g.karar !== "reddet") throw new ApiError(422, "karar degisiklik_iste veya reddet olmalı.");
@@ -1979,9 +2024,9 @@ function prReview(no: number, govde: unknown) {
 }
 
 /** core POST /prs/{n}/update-branch: geride kalan bot dalını main'e taşır (202). */
-function prDaliGuncelle(no: number): IsYaniti {
+function prDaliGuncelle(no: number, depo = ""): IsYaniti {
   izinGerekli("code.review");
-  const s = veri.scriptler.find((x) => x.pr?.number === no);
+  const s = veri.scriptler.find((x) => prEsit(x.pr, no, depo));
   if (!s?.pr) throw new ApiError(404, `PR bulunamadı: #${no}`);
   if (s.pr.durum !== "open") throw new ApiError(409, `PR #${no} açık değil.`);
   s.pr.dal = { geride: false, guncelleme: null, neden: null };
@@ -2710,7 +2755,11 @@ const ROTALAR: Rota[] = [
       const ham = q.get("platform");
       const p = ham === null || ham === "" ? "web" : platformUyarla(ham);
       if (!p) throw new ApiError(422, `platform yalnızca ${PLATFORMLAR.join(", ")} olabilir.`);
-      return kodDilleriYaniti(p, { depoOkunamadi: mockSenaryosu("depo-okunamadi") });
+      return kodDilleriYaniti(p, {
+        depoOkunamadi: mockSenaryosu("depo-okunamadi"),
+        eski: mockSenaryosu("eski-dogrulanmamis"),
+        hepsiAcik: mockSenaryosu("diller-acik"),
+      });
     },
   ],
   [
@@ -2718,6 +2767,7 @@ const ROTALAR: Rota[] = [
     /^\/scripts$/,
     () => {
       izinGerekli("code.read");
+      musteriCiOrnekleriniEkle();
       // core `views.list_scripts`: en yeni 200 kayıt (sayfalama yok). `uzun-gecmis`te örnek veri sınırın dışında kalır.
       const tum = mockSenaryosu("uzun-gecmis") ? [...uzunGecmisListesi(), ...veri.scriptler] : veri.scriptler;
       return tum.slice(0, 200).map((s) => {
@@ -2731,14 +2781,15 @@ const ROTALAR: Rota[] = [
     /^\/scripts\/([^/]+)$/,
     (m) => {
       izinGerekli("code.read");
+      musteriCiOrnekleriniEkle();
       const s = bul(veri.scriptler, decodeURIComponent(m[1]), "Script");
       return { ...s, merge_kabul_gerekli: mergeKabulGerekli(s) };
     },
   ],
   ["POST", /^\/scripts\/([^/]+)\/break-verify$/, (m) => kirarakDogrula(decodeURIComponent(m[1]))],
-  ["POST", /^\/prs\/(\d+)\/merge$/, (m, _q, g) => prBirlestir(Number(m[1]), g)],
-  ["POST", /^\/prs\/(\d+)\/review$/, (m, _q, g) => prReview(Number(m[1]), g)],
-  ["POST", /^\/prs\/(\d+)\/update-branch$/, (m) => prDaliGuncelle(Number(m[1]))],
+  ["POST", /^\/prs\/(\d+)\/merge$/, (m, q, g) => prBirlestir(Number(m[1]), g, prDeposu(q))],
+  ["POST", /^\/prs\/(\d+)\/review$/, (m, q, g) => prReview(Number(m[1]), g, prDeposu(q))],
+  ["POST", /^\/prs\/(\d+)\/update-branch$/, (m, q) => prDaliGuncelle(Number(m[1]), prDeposu(q))],
   ["POST", /^\/ci\/trigger$/, (_m, _q, g) => ciTetikle(g)],
   [
     "GET",

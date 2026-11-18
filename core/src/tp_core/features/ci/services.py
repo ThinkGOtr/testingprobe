@@ -23,10 +23,14 @@ def mode() -> str:
     return (ayar("TP_FORGE") or "local").strip().lower() or "local"
 
 
-def forge() -> Any:
+def forge(depo: str = "", platform: str | None = None) -> Any:
+    """Koşunun deposunun forge'u (0046): `depo` = `run.ortam.depo` (`''` = varsayılan depo,
+    bugünkü yol). Test geçersiz kılması argümansız çağrılır."""
     f = _overrides.get("forge")
     if f is not None:
         return f()
+    if depo:
+        return istemciler.forge_depo(depo, platform)
     return istemciler.forge()
 
 
@@ -39,17 +43,18 @@ def toolchain() -> Any:
     return ToolchainClient(get_settings().toolchain_url, token=get_settings().toolchain_token)
 
 
-def github() -> Any:
+def github(depo: str = "", platform: str | None = None) -> Any:
+    """Koşunun deposunun GitHub Actions istemcisi (0046; `depo` = `run.ortam.depo`)."""
     f = _overrides.get("github")
     if f is not None:
         return f()
     if "forge" not in _overrides:
-        istemci = istemciler.ci()
+        istemci = istemciler.ci_depo(depo, platform) if depo else istemciler.ci()
         if istemci is not None:
             return istemci
     from tp_core.features.ci.clients import GitHubCi
 
-    return GitHubCi(forge())
+    return GitHubCi(forge(depo, platform))
 
 
 def artifacts_root() -> Path:

@@ -4,7 +4,7 @@
 |---|---|---|
 | POST | `/ci/trigger` `{tetik: deploy\\|nightly}` | `run.trigger_scheduled` — 202 `{job_id, run_id, …}` |
 | POST | `/ci/trigger` `{tetik: manual}` | `run.trigger_manual` — developer `TP_ORTAM=prod` iken 403 |
-| GET  | `/runs?tetik=&kaynak=&sonuc=&pr_no=&script_id=&limit=` | `run.read` |
+| GET  | `/runs?tetik=&kaynak=&sonuc=&pr_no=&script_id=&depo=&limit=` | `run.read` |
 | GET  | `/runs/{id}` | `run.read` — testler, süreler, artefakt bağlantıları |
 | GET  | `/artifacts/runs/{run_id}/{yol}` | `run.artifacts` — oturumlu, yolu doğrulanmış artefakt |
 | GET  | `/artifacts/k/{imza}/runs/{run_id}/{yol}` | imzalı rapor bağlantısı (oturumsuz, süreli) |
@@ -90,7 +90,13 @@ def list_runs(
     pr_no: int | None = None,
     script_id: uuid.UUID | None = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    # 0046: koşunun deposu (`''` = varsayılan depo; ayrı platform deposunda `sahip/ad`).
+    depo: Annotated[str | None, Query(max_length=201)] = None,
 ) -> list[dict[str, Any]]:
+    from tp_core.features.codegen import depo as depolar
+
+    if depo is not None and not depolar.gecerli_mi(depolar.normalize(depo)):
+        raise HTTPException(422, "depo 'sahip/ad' biçiminde olmalı (boş = varsayılan depo)")
     kosular = service.list_runs(
         session,
         tetik=tetik,
@@ -98,6 +104,7 @@ def list_runs(
         sonuc=sonuc,
         pr_no=pr_no,
         script_id=script_id,
+        depo=depo,
         limit=limit,
         artefakt=yetki.izinli(user.rol, "run.artifacts"),
     )

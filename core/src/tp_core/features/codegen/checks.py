@@ -401,7 +401,13 @@ def check_mapping(
 
     if fixtures is not None:
         for po in sorted(kullanilan):
-            if table.classes.get(po) is not None and fixture_name(po) not in fixtures:
+            # Erişimci adı dile göre: ts/java/kotlin lowerCamel (`cartPage`), C# sınıf adının
+            # kendisi (`CartPage`; 014 Ş2). İkisinden biri yeterli.
+            if (
+                table.classes.get(po) is not None
+                and fixture_name(po) not in fixtures
+                and po not in fixtures
+            ):
                 b.append(
                     Bulgu(
                         "unknown_method",

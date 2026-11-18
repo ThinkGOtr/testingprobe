@@ -34,7 +34,7 @@ TS_SYMBOLS = json.loads((HERE / "symbols.json").read_text(encoding="utf-8"))
 
 
 def test_dil_sabitleri() -> None:
-    assert p.DILLER == ("ts", "java", "csharp", "python")
+    assert p.DILLER == ("ts", "java", "csharp", "python", "kotlin", "swift")
     assert p.TAM_HAT_DILLERI == ("ts", "java")
     assert p.DOGRULANMAMIS_DILLER == ("csharp", "python")
     assert set(p.DIL_ETIKETI) == set(p.DILLER)
@@ -53,7 +53,13 @@ def test_dil_sabitleri() -> None:
         ("windows", "java", True),
         ("android", "ts", False),
         ("ios", "csharp", False),
-        ("windows", "python", False),
+        ("windows", "python", True),  # 014 matrisi
+        ("windows", "csharp", True),
+        ("android", "kotlin", True),
+        ("ios", "swift", True),
+        ("ios", "kotlin", False),
+        ("web", "kotlin", False),
+        ("android", "csharp", False),
         ("web", "go", False),
         ("tv", "java", False),
         ("web", None, False),
@@ -69,8 +75,10 @@ def test_varsayilan_ve_dil_uyumu() -> None:
     # Eski imza aynen çalışır (toolchain `lang`); dil verilirse o kazanır.
     assert p.dil("web") == "ts" and p.dil("android") == "java"
     assert p.dil("web", "java") == "java" and p.dil("web", "bilinmez") == "ts"
-    assert p.platform_dilleri("android") == ("java",)
-    assert p.platform_dilleri("web") == p.DILLER
+    assert p.platform_dilleri("android") == ("java", "python", "kotlin")
+    assert p.platform_dilleri("ios") == ("java", "python", "swift")
+    assert p.platform_dilleri("windows") == ("java", "csharp", "python")
+    assert p.platform_dilleri("web") == ("ts", "java", "csharp", "python")
 
 
 def test_java_mi_ve_tam_hat_mi_platformdan_bagimsiz() -> None:
@@ -94,12 +102,18 @@ def test_gecerli_dil_turkce_hata() -> None:
 def test_cati_ve_check_adi() -> None:
     assert p.cati("web", "java") == "Playwright for Java + TestNG"
     assert p.cati("web", "csharp") == "Playwright .NET + NUnit"
-    assert p.cati("web", "python") == "pytest-playwright"
+    assert p.cati("web", "python") == "pytest + Playwright"
     assert p.cati("android", "java") == "Appium + TestNG"
     # K-T1: web + ts `local-ci`, web + Java `local-ci-web-java`, uygulama `local-ci-<platform>`.
     assert p.check_adi("web") == p.check_adi("web", "ts") == "local-ci"
     assert p.check_adi("web", "java") == "local-ci-web-java"
-    assert p.check_adi("web", "csharp") == "local-ci"
+    # 014: yeni çiftler `local-ci-<platform>-<dil>` (plan.md §1).
+    assert p.check_adi("web", "csharp") == "local-ci-web-csharp"
+    assert p.check_adi("android", "python") == "local-ci-android-python"
+    assert p.check_adi("android", "kotlin") == "local-ci-android-kotlin"
+    assert p.gh_check_adi("android", "kotlin") == "mobil-android-kotlin"
+    assert p.gh_check_adi("ios", "swift") == "mobil-ios-swift"
+    assert p.gh_check_adi("web", "python") == "web-python"
     assert p.check_adi("ios") == p.check_adi("ios", "java") == "local-ci-ios"
 
 
@@ -171,7 +185,8 @@ def test_algila_ts_uretilenleri_saymaz() -> None:
     a = dil_algila.algila(SahteForge(_depo()), "main", "web", uygulama_koku="")
     assert (a.dil, a.kaynak) == ("ts", "algilandi")
     assert a.sayilar == {"ts": 2, "java": 0, "csharp": 0, "python": 0}
-    assert a.projeler == {"ts": True, "java": False}
+    # 014: eklenti dilleri de proje işareti taşır (C#/Python projesi yok).
+    assert a.projeler == {"ts": True, "java": False, "csharp": False, "python": False}
 
 
 def test_algila_java_cogunlukta_ve_uretilen_birim_haric() -> None:
@@ -242,8 +257,10 @@ def test_algila_uygulama_koku_ve_uygulama_platformu() -> None:
     web = dil_algila.algila(f, "main", "web", uygulama_koku="demo-app")
     assert web.sayilar["ts"] == 2 and web.dil == "ts"
     app = dil_algila.algila(f, "main", "android", uygulama_koku="demo-app")
-    assert app.sayilar == {"java": 1} and app.dil == "java" and app.kaynak == "algilandi"
-    assert app.projeler == {"java": True}
+    # 014: android'in eklenti dilleri (python, kotlin) sayıma ve proje işaretine girer.
+    assert app.sayilar == {"java": 1, "python": 0, "kotlin": 0}
+    assert app.dil == "java" and app.kaynak == "algilandi"
+    assert app.projeler == {"java": True, "python": False, "kotlin": False}
 
 
 def test_algila_bos_depo_ve_forge_hatasi_varsayilan() -> None:
@@ -299,7 +316,13 @@ def test_toolchain_symbols_govdeleri_ve_onbellek() -> None:
     clear_symbol_cache()
 
 
-def test_toolchain_dogrulanmamis_dil_gitmez() -> None:
+def test_toolchain_dogrulanmamis_dil_gitmez(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 011 davranışı eklentisiz web C#/Python içindir (014: eklentiyle tam hat, toolchain'e gider).
+    from tp_core.features.codegen import diller
+
+    monkeypatch.setattr(
+        diller, "_KAYIT", {k: v for k, v in diller.kayit().items() if k in ("ts", "java")}
+    )
     istekler: list[tuple[str, dict[str, Any]]] = []
     c = _istemci(istekler)
     for dil in ("csharp", "python"):
@@ -351,11 +374,16 @@ def test_service_toolchain_hedefi_ve_kokler(monkeypatch: pytest.MonkeyPatch) -> 
     )
     cid = uuid.UUID("0a1b2c3d-0000-0000-0000-000000000000")
     assert service.baslangic_dosya_yolu("java", "web", "TPD-1", 2, cid) == yol
-    # K-T6: doğrulanmamış başlangıç yolu render'ın yol kuralıdır (uygulama kökü altında).
-    for dil, kok in (("csharp", "demo-app/e2e-csharp"), ("python", "demo-app/e2e-python")):
-        yol_d = service.baslangic_dosya_yolu(dil, "web", "TPD-1", 2, cid)
-        assert yol_d == render_modulu.dogrulanmamis_repo_path(dil, "TPD-1", 2, cid, kok)
-        assert yol_d.startswith(kok + "/tests/")
+    # K-T6: başlangıç yolu render'ın yol kuralıdır (uygulama kökü altında; 014: eklentinin).
+    assert service.baslangic_dosya_yolu("csharp", "web", "TPD-1", 2, cid) == (
+        "demo-app/e2e-csharp/Tests/Generated/TPD1WebC2_0a1b2c3dTests.cs"
+    )
+    assert service.baslangic_dosya_yolu("python", "web", "TPD-1", 2, cid) == (
+        "demo-app/e2e-python/tests/generated/test_tpd_1_c2_0a1b2c3d.py"
+    )
+    assert render_modulu.dogrulanmamis_repo_path("csharp", "TPD-1", 2, cid).startswith(
+        "e2e-csharp/tests/Generated/"
+    )  # eski (011) kayıtların yol kuralı değişmedi
     assert service.proje_dosyasi("java") == "demo-app/e2e-java/pom.xml"
     assert service.proje_dosyasi("ts") == "demo-app/e2e/package.json"
     # Tekrar sayısı ve dal adı araç/ortam sorusudur: dile bakmaz.
@@ -368,7 +396,7 @@ def test_service_toolchain_hedefi_ve_kokler(monkeypatch: pytest.MonkeyPatch) -> 
 
 def test_render_dil_gecersiz_cift() -> None:
     # Geçerli çiftlerin render'ı Ş2'nin `test_render_dil.py`'sinde; burada yalnız çift kuralı.
-    with pytest.raises(RenderError, match="yalnızca java"):
+    with pytest.raises(RenderError, match="android platformunda ts ile üretim yok"):
         render_dil(None, dil="ts", platform="android", rules=Path("."))  # type: ignore[arg-type]
 
 
@@ -610,15 +638,22 @@ def test_code_languages_ve_generate_dil_dogrulamasi(
     assert list(secenek) == ["ts", "java", "csharp", "python"]
     assert secenek["ts"] == {
         "dil": "ts", "etiket": "TypeScript", "cati": "Playwright Test", "hat": "tam",
+        "durum": "acik", "kirarak_dogrulama": True, "check": "local-ci", "kurulum": None,
         "kullanilabilir": True, "neden": None,
     }  # fmt: skip
     # Forge'da e2e-java yok: Java web seçilemez, neden Türkçe.
     assert secenek["java"]["kullanilabilir"] is False
     assert secenek["java"]["neden"] == "Depoda Java web test projesi (e2e-java/pom.xml) yok"
-    assert secenek["csharp"]["hat"] == "dogrulanmamis" and secenek["csharp"]["kullanilabilir"]
+    # 014 karar 3a: değerlendirilmemiş C#/Python "Yakında" (seçilemez); eklentiyle tam hat.
+    assert secenek["csharp"]["hat"] == "tam"
+    assert secenek["csharp"]["durum"] == "yakinda" and not secenek["csharp"]["kullanilabilir"]
+    assert secenek["csharp"]["neden"] == "Değerlendirme sürüyor"
 
     app = api.get("/code/languages", params={"platform": "android"}).json()
-    assert [x["dil"] for x in app["secenekler"]] == ["java"]
+    assert [x["dil"] for x in app["secenekler"]] == ["java", "python", "kotlin"]
+    kt = app["secenekler"][2]
+    assert (kt["hat"], kt["durum"], kt["kirarak_dogrulama"]) == ("musteri_ci", "yakinda", False)
+    assert kt["check"] == "local-ci-android-kotlin" and not kt["kullanilabilir"]
     assert app["secenekler"][0]["cati"] == "Appium + TestNG"
     assert api.get("/code/languages", params={"platform": "tv"}).status_code == 422
 
@@ -626,6 +661,8 @@ def test_code_languages_ve_generate_dil_dogrulamasi(
     for govde, parca in [
         ({"case_ids": [cid], "platform": "android", "dil": "ts"}, "android platformunda"),
         ({"case_ids": [cid], "dil": "java"}, "e2e-java/pom.xml"),
+        ({"case_ids": [cid], "dil": "csharp"}, "Değerlendirme sürüyor"),
+        ({"case_ids": [cid], "platform": "android", "dil": "kotlin"}, "Değerlendirme sürüyor"),
     ]:
         r = api.post("/code/generate", json=govde)
         assert r.status_code == 422, r.text
@@ -724,7 +761,7 @@ def test_algila_android_e2e_app_testi_kalibi() -> None:
         f"{kok}/uretilen/TPD1AndroidC2_3f9b1c2eTest.java": "",
     }
     a = _algila(depo, "android")
-    assert a.sayilar == {"java": 2} and a.kaynak == "algilandi"
+    assert a.sayilar == {"java": 2, "python": 0, "kotlin": 0} and a.kaynak == "algilandi"
 
 
 def test_algila_dotnet_monorepo_okuma_butcesi_test_dizini_once() -> None:
@@ -1082,8 +1119,11 @@ def test_github_kipinde_java_tp_web_dillerine_bagli(monkeypatch: pytest.MonkeyPa
     _github_kipi(monkeypatch, "go")
     with pytest.raises(service.GecersizDil, match="Yapılandırma hatası"):
         service.dil_coz("web", "java")
-    # Uygulama platformu ve doğrulanmamış diller TP_WEB_DILLERI'ne bağlı değildir.
-    assert service.dil_coz("web", "csharp") == ("csharp", "secildi")
+    # 014: eklentili web C# tam hattır; TP_WEB_DILLERI'ne bağlıdır (bozuk liste = yapılandırma
+    # hatası, kapı açık olsa da).
+    monkeypatch.setattr(service.platformlar, "cift_durumu", lambda *a, **k: "acik")
+    with pytest.raises(service.GecersizDil, match="Yapılandırma hatası"):
+        service.dil_coz("web", "csharp")
 
 
 def test_depo_okunamazsa_secenekler_bilinmiyor(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1098,8 +1138,14 @@ def test_depo_okunamazsa_secenekler_bilinmiyor(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(service, "_forge", kurulamaz)
     d = service.dil_secenekleri("web")
     assert d["kaynak"] == "varsayilan" and "Dil algılanamadı" in d["neden"]
-    assert all(x["kullanilabilir"] for x in d["secenekler"])
-    assert all(x["neden"] == service.DEPO_OKUNAMADI for x in d["secenekler"])
+    acik = [x for x in d["secenekler"] if x["durum"] == "acik"]
+    assert [x["dil"] for x in acik] == ["ts", "java"]
+    assert all(x["kullanilabilir"] for x in acik)
+    assert all(x["neden"] == service.DEPO_OKUNAMADI for x in acik)
+    # 014: kapı kapalı diller depo okunamasa da "Yakında" (değerlendirme sürüyor).
+    assert all(
+        x["neden"] == "Değerlendirme sürüyor" for x in d["secenekler"] if x["durum"] == "yakinda"
+    )
 
 
 def test_ajan_tablo_dili_k_t5(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1142,7 +1188,8 @@ def test_dil_cakismasi_yalniz_tam_hat_ve_baska_dilde_merged() -> None:
         "testi kaldırın: mevcut test dosyasını silen bir PR'ı merge edin, sonra yeniden üretin"
     )  # K-T12: çıkış yolu mesajda
     assert service.dil_cakismasi([ts_merged], "web", "ts") is None
-    assert service.dil_cakismasi([ts_merged], "web", "csharp") is None
+    # 014: eklentili C# tam hattır (repoya yazar): başka dilde merge edilmiş test çakışır.
+    assert service.dil_cakismasi([ts_merged], "web", "csharp") is not None
     assert service.dil_cakismasi([java_acik], "web", "ts") is None
 
 
@@ -1160,7 +1207,7 @@ def test_views_web_java_kendi_checkini_bekler_ve_adim_listesi_tek_kaynak(
         return tuple(conf), None
 
     monkeypatch.setattr(views, "local_required_checks", kapi)
-    monkeypatch.setattr(views, "required_checks", lambda: ("local-ci",))
+    monkeypatch.setattr(views, "required_checks", lambda *a, **k: ("local-ci",))
     views.yerel_zorunlu_checkler([], ["e2e-java/x/YTest.java"], "web", "java")
     views.yerel_zorunlu_checkler([], ["e2e/tests/a.spec.ts"], "web", "ts")
     views.yerel_zorunlu_checkler([], ["e2e-app/x/YTest.java"], "android", None)
@@ -1175,4 +1222,5 @@ def test_enum_kumeleri_platform_modulu_ile_ayni() -> None:
     from tp_core.models import enums
 
     assert frozenset(p.PLATFORMLAR) == enums.PLATFORM
-    assert frozenset(p.DILLER) == enums.DIL
+    assert frozenset(p.TUM_DILLER) == enums.DIL
+    assert frozenset(c.hat for c in p.CATILAR.values()) <= enums.HAT

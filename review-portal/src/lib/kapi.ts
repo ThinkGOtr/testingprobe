@@ -46,6 +46,9 @@ function checkOzeti(checks: PrCheck[] | undefined): string {
 }
 
 type KapiGirdisi = Pick<ScriptDetay, "pr" | "zayif_test" | "break_verify" | "yerel_sinif" | "durum"> & {
+  /** 014: müşteri CI hattında kırarak doğrulama yoktur; yeşil müşteri CI merge için yeterlidir (kullanıcı kararı 2). */
+  hat?: ScriptDetay["hat"];
+  musteri_ci?: ScriptDetay["musteri_ci"];
   merge_engelleri?: string[] | null;
   merge_kabul_gerekli?: string[] | null;
 };
@@ -89,7 +92,8 @@ function turetilenEngeller(s: KapiGirdisi): string[] {
   if (s.pr.durum === "merged") return ["PR zaten birleştirildi."];
   if (s.pr.durum !== "open") return ["PR kapalı."];
   if (s.pr.ci === "failed") n.push(`CI kırmızı${checkOzeti(s.pr.checks)}.`);
-  else if (s.pr.ci !== "passed") n.push("CI sonucu bekleniyor (zorunlu check: local-ci).");
+  else if (s.pr.ci !== "passed")
+    n.push(s.hat === "musteri_ci" ? `Müşteri CI sonucu bekleniyor (zorunlu check: ${s.musteri_ci?.check_adi ?? "müşteri iş akışı"}).` : "CI sonucu bekleniyor (zorunlu check: local-ci).");
   if (s.break_verify.durum === "running") n.push("Kırarak doğrulama sürüyor.");
   return n;
 }
@@ -102,6 +106,7 @@ export function mergeUyarilari(s: KapiGirdisi): string[] {
   if (s.pr?.durum !== "open") return [];
   // Core gönderiyorsa politikanın tek kaynağı odur (`merge_kabul_gerekli` ↔ request_merge).
   if (Array.isArray(s.merge_kabul_gerekli)) return s.merge_kabul_gerekli.map(turkcele);
+  if (s.hat === "musteri_ci") return [];
   const bv = s.break_verify.durum;
   if (s.zayif_test || bv === "weak") {
     return [
@@ -117,6 +122,7 @@ export function mergeUyarilari(s: KapiGirdisi): string[] {
 export function mergeOnayNotu(s: KapiGirdisi): string | null {
   if (s.pr?.durum !== "open") return null;
   if (Array.isArray(s.merge_kabul_gerekli) && s.merge_kabul_gerekli.length === 0) return null;
+  if (s.hat === "musteri_ci" && !s.merge_kabul_gerekli?.length) return null;
   const bv = s.break_verify.durum;
   if (s.zayif_test || bv === "weak") return "Zayıf test olarak merge edildi (insan kabulü).";
   if (bv === "failed") return "Kırarak doğrulama tamamlanmadan merge edildi (insan kabulü).";

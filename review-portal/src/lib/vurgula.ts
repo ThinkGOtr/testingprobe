@@ -1,7 +1,7 @@
-// Hafif TypeScript / Python / Java / C# sözdizimi renklendirme: belirteç listesi üretir (HTML üretmez; React metin
+// Hafif TypeScript / Python / Java / C# / Kotlin / Swift sözdizimi renklendirme: belirteç listesi üretir (HTML üretmez; React metin
 // düğümleriyle basılır, böylece kod içeriği asla HTML olarak yorumlanmaz).
 
-/** `ek`: Java `@Annotation`, C# `[Attribute]`, Python `@decorator`. */
+/** `ek`: Java/Kotlin `@Annotation`, C# `[Attribute]`, Python `@decorator`, Swift `@attribute`. */
 export type BelirtecTuru = "anahtar" | "metin" | "yorum" | "sayi" | "tip" | "fonksiyon" | "ek" | "duz";
 export interface Belirtec {
   tur: BelirtecTuru;
@@ -49,28 +49,59 @@ const ANAHTAR_CS = new Set([
   "var", "true", "false", "null", "async", "await", "is", "as", "get", "set",
 ]);
 
-/** Renklendirilen sözdizimleri (üretim dili `python` burada `py`dir; bkz. `vurguDili`). */
-export type VurguDili = "ts" | "py" | "java" | "csharp";
+// Kotlin: `//`, `/* */`; `"""…"""` (ham metin), `"…"` (şablon `${…}` metnin parçası kalır), `'c'`;
+// `@Annotation` / `@file:Annotation`; sayı ekleri `L`, `f`, `F`, `u`.
+const DESEN_KT =
+  /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|("""[\s\S]*?"""|"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*')|(\b\d+(?:\.\d+)?(?:[LfFuU]|uL)?\b)|([A-Za-z_][\w]*)|(@(?:[a-z]+:)?[A-Za-z_][\w.]*)/g;
+
+const ANAHTAR_KT = new Set([
+  "package", "import", "class", "interface", "object", "fun", "val", "var", "return", "if", "else", "when", "for", "while",
+  "do", "in", "is", "as", "try", "catch", "finally", "throw", "this", "super", "null", "true", "false", "private",
+  "public", "protected", "internal", "open", "override", "abstract", "final", "data", "companion", "lateinit", "const",
+  "suspend", "inline", "by", "init", "constructor", "typealias", "enum", "sealed", "break", "continue",
+]);
+
+// Swift: `//`, `/* */`; `"""…"""` (çok satırlı), `"…"` (`\(…)` metnin parçası kalır); `@attribute` (`@MainActor`,
+// `@available`); `#if` gibi derleyici yönergeleri anahtar sözcük sayılmaz (düz).
+const DESEN_SWIFT =
+  /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|("""[\s\S]*?"""|"(?:[^"\\\n]|\\.)*")|(\b\d+(?:\.\d+)?\b)|([A-Za-z_][\w]*)|(@[A-Za-z_][\w]*)/g;
+
+const ANAHTAR_SWIFT = new Set([
+  "import", "class", "struct", "enum", "protocol", "extension", "func", "let", "var", "return", "if", "else", "guard",
+  "switch", "case", "default", "for", "in", "while", "repeat", "do", "try", "catch", "throw", "throws", "rethrows",
+  "self", "Self", "super", "nil", "true", "false", "private", "fileprivate", "public", "internal", "open", "final",
+  "static", "override", "init", "deinit", "async", "await", "as", "is", "where", "some", "any", "inout", "break",
+  "continue", "defer", "lazy", "weak", "mutating",
+]);
+
+/** Renklendirilen sözdizimleri (üretim dili `python` burada `py`dir, `kotlin` → `kt`; bkz. `vurguDili`). */
+export type VurguDili = "ts" | "py" | "java" | "csharp" | "kt" | "swift";
 
 const SOZDIZIMI: Record<VurguDili, { desen: RegExp; anahtarlar: Set<string> }> = {
   ts: { desen: DESEN, anahtarlar: ANAHTAR },
   py: { desen: DESEN_PY, anahtarlar: ANAHTAR_PY },
   java: { desen: DESEN_JAVA, anahtarlar: ANAHTAR_JAVA },
   csharp: { desen: DESEN_CS, anahtarlar: ANAHTAR_CS },
+  kt: { desen: DESEN_KT, anahtarlar: ANAHTAR_KT },
+  swift: { desen: DESEN_SWIFT, anahtarlar: ANAHTAR_SWIFT },
 };
 
-/** Dosya uzantısından sözdizimi: `.java`, `.cs`, `.py`, `.ts` (bilinmiyorsa TypeScript). */
+/** Dosya uzantısından sözdizimi: `.java`, `.cs`, `.py`, `.kt`/`.kts`, `.swift`, `.ts` (bilinmiyorsa TypeScript). */
 export function dilBul(dosya?: string | null): VurguDili {
   if (!dosya) return "ts";
   if (/\.java$/i.test(dosya)) return "java";
+  if (/\.kts?$/i.test(dosya)) return "kt";
+  if (/\.swift$/i.test(dosya)) return "swift";
   if (/\.cs$/i.test(dosya)) return "csharp";
   if (/\.py$/i.test(dosya)) return "py";
   return "ts";
 }
 
-/** Üretim dilinden (ts | java | csharp | python) sözdizimi; bilinmiyorsa null (çağıran dosya adına düşer). */
+/** Üretim dilinden (ts | java | csharp | python | kotlin | swift) sözdizimi; bilinmiyorsa null (çağıran dosya adına düşer). */
 export function vurguDili(dil: string | null | undefined): VurguDili | null {
   if (dil === "python" || dil === "py") return "py";
+  if (dil === "kotlin" || dil === "kt") return "kt";
+  if (dil === "swift") return "swift";
   return dil === "ts" || dil === "java" || dil === "csharp" ? dil : null;
 }
 

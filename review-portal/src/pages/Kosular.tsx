@@ -12,6 +12,7 @@ import { altTurEtiketi, HATA_SINIFI, KAYNAK, KOSU_DURUMU, TETIK } from "../lib/e
 import { sure, tarih } from "../lib/format";
 import { CiAdimlari, githubYedekNotu, TestSonuclari } from "./KosuSonuclari";
 import { PlatformRozeti } from "../components/Platform";
+import { DepoCipi, depoGosterimi } from "../components/Depo";
 import { DilRozeti } from "../components/Dil";
 import { checkEtiketi, PLATFORMLAR, PLATFORM_ETIKETI, platformaGoreSuz, platformSecimiOku, type Platform } from "../lib/platform";
 import { EkilmisHataCipi } from "../components/kule/EkilmisHataCipi";
@@ -100,6 +101,8 @@ export function KosuTablosu({ kosular, kompakt }: { kosular: Kosu[]; kompakt?: b
               <td data-etiket="Tetik">
                 <Cip ton={TETIK_TONU[k.tetik] ?? "notr"}>{TETIK[k.tetik] ?? k.tetik}</Cip>
                 {k.pr_no !== null && <span className="mono"> #{k.pr_no}</span>}
+                {/* Platform deposu: koşu varsayılan dışı depoda koştuysa sahip/ad. */}
+                <DepoCipi kaynak={k} />
                 {k.platform && (
                   <>
                     {" "}
@@ -137,8 +140,83 @@ export function KosuTablosu({ kosular, kompakt }: { kosular: Kosu[]; kompakt?: b
   );
 }
 
+/** Platform bazlı gece koşusu özeti satırı: platformun en son gece koşusu ve deposu. */
+export type GeceSatiri = { platform: Platform; kosu: Kosu };
+
+/**
+ * Gece koşusu her platform deposunda ayrı tetiklenir (kullanıcı kararı 2): son gece koşusu platform
+ * başına. Platformu bilinmeyen koşu atlanır (uydurulmaz). Özet yalnız anlamlıysa döner: en az iki
+ * platformda gece koşusu var ya da biri varsayılan dışı depoda koştu; yoksa null (tek depolu, tek
+ * platformlu projede ekran bugünküyle aynı).
+ */
+export function geceOzeti(kosular: readonly Kosu[]): GeceSatiri[] | null {
+  const son = new Map<Platform, Kosu>();
+  for (const k of kosular) {
+    if (k.tetik !== "nightly" || !k.platform) continue;
+    const onceki = son.get(k.platform);
+    if (!onceki || Date.parse(k.baslangic) > Date.parse(onceki.baslangic)) son.set(k.platform, k);
+  }
+  const satirlar = PLATFORMLAR.filter((p) => son.has(p)).map((p) => ({ platform: p, kosu: son.get(p)! }));
+  if (satirlar.length >= 2 || satirlar.some((x) => (x.kosu.depo ?? "").trim())) return satirlar;
+  return null;
+}
+
+export function GeceOzeti({ kosular }: { kosular: readonly Kosu[] }) {
+  const satirlar = geceOzeti(kosular);
+  if (!satirlar) return null;
+  return (
+    <Kart baslik="Gece koşuları: platform bazlı son sonuç">
+      <p className="kucuk soluk">Gece koşusu her platformun deposunda ayrı tetiklenir; her platformun en son gece koşusu.</p>
+      <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Platform bazlı gece koşuları">
+        <table className="tablo tablo-yigin" data-testid="gece-ozeti">
+          <thead>
+            <tr>
+              <th scope="col">Platform</th>
+              <th scope="col">Depo</th>
+              <th scope="col">Durum</th>
+              <th scope="col" className="sayi">
+                Geçen / toplam
+              </th>
+              <th scope="col">Koşu</th>
+              <th scope="col">Başlangıç</th>
+            </tr>
+          </thead>
+          <tbody>
+            {satirlar.map(({ platform, kosu: k }) => (
+              <tr key={platform} data-platform={platform}>
+                <td data-etiket="Platform">
+                  <PlatformRozeti platform={platform} />
+                </td>
+                <td data-etiket="Depo">{depoGosterimi(k) ? <span className="mono">{depoGosterimi(k)}</span> : <span className="soluk">Varsayılan depo</span>}</td>
+                <td data-etiket="Durum">
+                  <DurumCipi d={k.durum} />
+                  <TakilmaCipi k={k} />
+                  {k.flaky > 0 && (
+                    <Cip ton="uyari" title="Yeniden denemeyle geçen test">
+                      {k.flaky} flaky
+                    </Cip>
+                  )}
+                </td>
+                <td className="sayi mono" data-etiket="Geçen / toplam">
+                  {k.gecen}/{k.toplam}
+                </td>
+                <td data-etiket="Koşu">
+                  <Link to={`/kosular/${encodeURIComponent(k.id)}`} className="mono" title={`Koşu kimliği: ${k.id}`}>
+                    {kisaKosuAdi(k.id)}
+                  </Link>
+                </td>
+                <td className="tek-satir" data-etiket="Başlangıç">{tarih(k.baslangic)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Kart>
+  );
+}
+
 const GECE_ACIKLAMASI =
-  "Her gece 02:00'de (UTC) zamanlanmış koşuyu şimdi başlatır: aynı onaylı test paketi; kod değişmese de veri/ortam kaymasını ve kararsız (flaky) testleri yakalar.";
+  "Her gece 02:00'de (UTC) zamanlanmış koşuyu şimdi başlatır: aynı onaylı test paketi; kod değişmese de veri/ortam kaymasını ve kararsız (flaky) testleri yakalar. Platformların ayrı depoları varsa her depoda ayrı koşu başlar.";
 export const MANUEL_ACIKLAMASI =
   "Main'deki onaylı testleri şimdi koşturur (manuel tetik). Geliştirici rolü yalnız prod dışı ortamda başlatabilir.";
 /** Maskeli koşu (core `maskeli: true`): ham artefaktlar rolde gizli; "yok" denmez. */
@@ -326,6 +404,7 @@ export function Kosular() {
       )}
       {tetikHatasi && <HataKutusu hata={tetikHatasi.hata!} kaynak={tetikHatasi.hataNesnesi} />}
       {sonTetik && !tetikHatasi && <Uyari ton="bilgi">{sonTetik}</Uyari>}
+      {v.veri && <GeceOzeti kosular={v.veri} />}
       <Kart>
         {v.yukleniyor && !v.veri ? (
           <Yukleniyor />
@@ -546,6 +625,7 @@ export function KosuDetay() {
             </Cip>
             <Cip ton="notr">{KAYNAK[k.kaynak] ?? k.kaynak}</Cip>
             <PlatformRozeti platform={k.platform} />
+            <DepoCipi kaynak={k} />
             <EkilmisHataCipi kosu={k} />
             {/* 011 §2.8: koşunun dili (core `dil` / `ortam.dil`); bilinmiyorsa çizilmez. */}
             <DilRozeti dil={k.dil} platform={k.platform} />

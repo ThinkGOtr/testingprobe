@@ -427,6 +427,14 @@ def _execute_locked(
         from runner import java_run
 
         return java_run.execute_locked(cfg, req, loc, http)
+    if req.lang != "ts":
+        # 014: kayıtlı runner eklentisi (`runner/diller/<dil>.py`).
+        from runner import diller
+
+        eklenti = diller.eklenti(req.lang)
+        if eklenti is None:
+            raise RunRejected(f"Bilinmeyen dil: {req.lang}")
+        return eklenti.execute_locked(cfg, req, loc, http)
     full_sha = loc.sha
     dest = run_dir(cfg.artifacts_path, req.run_id)
     try:

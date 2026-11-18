@@ -65,6 +65,11 @@ class ForgeValidationError(ForgeError, ValueError):
     """Geçersiz girdi (dal adı, yol, sorgu ...). Komut çalıştırılmadan reddedilir."""
 
 
+class GecersizPlatformDeposu(ForgeValidationError):
+    """Platform deposu (`GITHUB_REPO_<P>` ya da kayıtlı depo kimliği) `sahip/ad` biçiminde değil
+    (`integrations.proje_ortami.depo_anahtari`)."""
+
+
 class ForgeNotFoundError(ForgeError, LookupError):
     """Ref, dosya veya PR bulunamadı."""
 
@@ -272,7 +277,25 @@ _KENDI_KONTROLLU_KOKLER: tuple[str, ...] = (LOCAL_APP_E2E_ROOT, LOCAL_WEB_JAVA_E
 # aynı): bunların DIŞINDA bir değişiklik (uygulama kodu vb.) repodaki tüm tam hat dillerinin
 # kontrolünü ister (K-T11). LocalForge deposu yalnız demo-app'tir (uygulama kökü '').
 _YEREL_KOKLER = platformlar.e2e_kokleri("")
-_TEST_KOKLERI: tuple[str, ...] = _YEREL_KOKLER.hepsi
+
+
+def _dil_kokleri_yerel() -> dict[str, tuple[str, ...]]:
+    """014: LocalForge düzeninde ts/java dışı TAM hat dillerinin test kökleri → o kökün yerel
+    check adları (`e2e-python/` → (`local-ci-web-python`,), `e2e-app-python/` → üç platform).
+    Müşteri CI hattı (kotlin/swift) LocalForge'da yoktur."""
+    out: dict[str, list[str]] = {}
+    for (p, d), c in platformlar.CATILAR.items():
+        if d in (platformlar.TS, platformlar.JAVA) or c.hat != "tam":
+            continue
+        out.setdefault(f"{c.kok_varsayilan.strip('/')}/", []).append(platformlar.check_adi(p, d))
+    return {k: tuple(v) for k, v in out.items()}
+
+
+DIL_KOKLERI_YEREL: dict[str, tuple[str, ...]] = _dil_kokleri_yerel()
+DIL_CHECKLERI_YEREL: frozenset[str] = frozenset(
+    n for adlar in DIL_KOKLERI_YEREL.values() for n in adlar
+)
+_TEST_KOKLERI: tuple[str, ...] = (*_YEREL_KOKLER.hepsi, *DIL_KOKLERI_YEREL)
 
 
 def yerel_repodaki_web_dilleri(
@@ -319,7 +342,7 @@ def local_required_checks(
     - `e2e-app/` değişip hiç platform kontrolü yoksa ikinci değer ihlal nedenidir.
     """
     platform_names = set(APP_PLATFORM_CHECKS)
-    kendi_kontrollu = platform_names | {LOCAL_WEB_JAVA_CHECK}
+    kendi_kontrollu = platform_names | {LOCAL_WEB_JAVA_CHECK} | DIL_CHECKLERI_YEREL
     recorded = [c.name for c in checks if c.name in kendi_kontrollu]
     fark_bilinmiyor = changed_paths is None
     changed_paths = list(changed_paths or ())
@@ -333,7 +356,7 @@ def local_required_checks(
     touches_java = any(p.startswith(LOCAL_WEB_JAVA_E2E_ROOT) for p in changed_paths)
     touches_ts = any(p.startswith(LOCAL_WEB_E2E_ROOT) for p in changed_paths)
     own_only = bool(changed_paths) and all(
-        p.startswith(_KENDI_KONTROLLU_KOKLER) for p in changed_paths
+        p.startswith((*_KENDI_KONTROLLU_KOKLER, *DIL_KOKLERI_YEREL)) for p in changed_paths
     )
     # Kayıtlı her kontrol yeşil olmalı (simetri): web local-ci yalnızca KAYDEDİLMEMİŞSE düşer.
     web_recorded = any(c.name == REQUIRED_CHECK for c in checks)
@@ -363,10 +386,20 @@ def local_required_checks(
                 required.insert(0, ad)
             else:
                 required.append(ad)
+    reason = None
+    for kok, adlar in DIL_KOKLERI_YEREL.items():
+        # 014: dil test kökünü değiştiren PR o dilin kontrolü olmadan merge edilemez (tek
+        # platformlu kökte o check; çok platformlu kökte en az biri kayıtlı olmalı).
+        if not any(p.startswith(kok) for p in changed_paths):
+            continue
+        if len(adlar) == 1:
+            if adlar[0] not in required:
+                required.append(adlar[0])
+        elif not any(n in recorded for n in adlar):
+            reason = f"{kok} değişikliği için en az bir kontrol gerekli ({' | '.join(adlar)})"
     for name in recorded:
         if name not in required:
             required.append(name)
-    reason = None
     if touches_app and not any(n in platform_names for n in required):
         reason = (
             f"{LOCAL_APP_E2E_ROOT} değişikliği için en az bir uygulama kontrolü gerekli "
@@ -402,6 +435,9 @@ WEB_JAVA_WORKFLOW = f"{WEB_JAVA_CHECK}.yml"
 WEB_JAVA_WORKFLOW_YOLU = f".github/workflows/{WEB_JAVA_WORKFLOW}"
 WEB_DILLERI_ENV = "TP_WEB_DILLERI"
 WEB_TAM_HAT_DILLERI: tuple[str, ...] = platformlar.TAM_HAT_DILLERI
+# 014: web dil listesine yazılabilen diller (matris); platform başına liste env'leri.
+WEB_LISTE_DILLERI: tuple[str, ...] = platformlar.platform_dilleri(platformlar.WEB)
+DIL_LISTESI_ENV: dict[str, str] = dict(platformlar.DIL_LISTESI_AYARI)
 
 # Zorunlu check yapılabilen platform iş akışları (`changes` + no-op deseni; .github/CI.md).
 ZORUNLU_YAPILABILIR_PLATFORMLAR: tuple[str, ...] = ("android", "windows")
@@ -448,18 +484,53 @@ def etkin_web_dilleri(env: Mapping[str, str] | None = None) -> tuple[str, ...]:
     """`TP_WEB_DILLERI="ts,java"` → ("ts", "java"); boş → ("ts",) (bugünkü davranış). `ts` her
     zaman etkindir. Yalnızca tam hat dilleri (`ts` | `java`) yazılabilir: doğrulanmamış diller
     (csharp | python) PR'a ve CI'a girmez (011 K3) → `ForgeValidationError`."""
+    return etkin_dil_listesi(platformlar.WEB, env)
+
+
+def etkin_dil_listesi(platform: str, env: Mapping[str, str] | None = None) -> tuple[str, ...]:
+    """014: platformun dil listesi (`TP_WEB_DILLERI`, `TP_DILLERI_<P>`); platformun varsayılan
+    dili (web ts, uygulama java) her zaman ilk ve etkindir. Matriste olmayan dil yapılandırma
+    hatasıdır (`ForgeValidationError`). Seçilebilirlik ayrıca değerlendirme kapısına bağlıdır."""
     cfg = ProjeOrtami() if env is None else env
-    out = ["ts"]
-    for parca in (cfg.get(WEB_DILLERI_ENV) or "").split(","):
+    ad_env = DIL_LISTESI_ENV[platform]
+    gecerli = platformlar.platform_dilleri(platform)
+    out = [platformlar.varsayilan_dil(platform)]
+    for parca in (cfg.get(ad_env) or "").split(","):
         ad = parca.strip().lower()
         if not ad:
             continue
-        if ad not in WEB_TAM_HAT_DILLERI:
+        if ad not in gecerli:
             raise ForgeValidationError(
-                f"{WEB_DILLERI_ENV} yalnızca {', '.join(WEB_TAM_HAT_DILLERI)} içerebilir: {parca!r}"
+                f"{ad_env} yalnızca {', '.join(gecerli)} içerebilir: {parca!r}"
             )
         if ad not in out:
             out.append(ad)
+    return tuple(out)
+
+
+def dil_is_akisi(platform: str, dil: str) -> str | None:
+    """(p, d) çiftinin GitHub iş akışı check adı: Ş5 `musteri_ci.sozlesme.is_adi` (varsa), yoksa
+    `platform.gh_check_adi` (aynı kural)."""
+    try:
+        from tp_core.features.musteri_ci import sozlesme  # type: ignore[import-not-found]
+
+        return str(sozlesme.is_adi(platform, dil))
+    except (ImportError, AttributeError):
+        return platformlar.gh_check_adi(platform, dil)
+    except Exception:
+        return platformlar.gh_check_adi(platform, dil)
+
+
+def etkin_dil_ciftleri(env: Mapping[str, str] | None = None) -> tuple[tuple[str, str], ...]:
+    """014: GitHub kipinde zorunlu dil iş akışı check'i isteyen çiftler: listelerde seçili, ts/java
+    dışı (onların check'leri 009/011 kurallarıyla gelir) ve değerlendirme kapısı `acik` olanlar."""
+    out: list[tuple[str, str]] = []
+    for p in platformlar.PLATFORMLAR:
+        for d in etkin_dil_listesi(p, env):
+            if d in (platformlar.TS, platformlar.JAVA):
+                continue
+            if platformlar.cift_durumu(p, d) == "acik":
+                out.append((p, d))
     return tuple(out)
 
 
@@ -469,6 +540,7 @@ def github_required_checks(
     web_dilleri: Sequence[str] = (),
     *,
     web_java_is_akisi: bool = False,
+    dil_ciftleri: Sequence[tuple[str, str]] = (),
 ) -> tuple[str, ...]:
     """GitHub zorunlu kontrolleri (TEK hesap noktası, MİM-D4): yapılandırılmış liste + etkin
     platformların job adları + `web-java` (K-T10/K-T13: `web_java_is_akisi` — `web-java.yml`
@@ -480,6 +552,8 @@ def github_required_checks(
             *configured,
             *(GITHUB_PLATFORM_CHECKS[p] for p in platforms),
             *((WEB_JAVA_CHECK,) if web_java else ()),
+            # 014: açık ve seçili (platform, dil) çiftlerinin iş akışı check'leri.
+            *(ad for p, d in dil_ciftleri if (ad := dil_is_akisi(p, d))),
         ]
     )
 
@@ -493,10 +567,11 @@ class ZorunluCheckKaynagi(Protocol):
     def zorunlu_checkler(self, head: str, base: str | None = None) -> tuple[str, ...]: ...
 
 
-def get_forge(env: Mapping[str, str] | None = None) -> ForgePort:
+def get_forge(env: Mapping[str, str] | None = None, *, platform: str | None = None) -> ForgePort:
     """`TP_FORGE`'a göre adaptör kurar (varsayılan: local). `env` verilmezse bağlamdaki projenin
-    config görünümü (`ProjeOrtami`: proje ayarları + proje forge yolları + kurulum env'i)."""
-    cfg = ProjeOrtami() if env is None else env
+    config görünümü (`ProjeOrtami`: proje ayarları + proje forge yolları + kurulum env'i);
+    `platform` verilirse o platformun deposunun görünümü (`ProjeOrtami(platform=...)`)."""
+    cfg = ProjeOrtami(platform=platform) if env is None else env
     kind = (cfg.get("TP_FORGE") or "local").strip().lower()
     if kind == "local":
         from tp_core.integrations.forge_local import LocalForge

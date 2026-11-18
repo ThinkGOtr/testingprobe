@@ -12,6 +12,7 @@ import { altTurEtiketi, HATA_SINIFI, sinyalBasligi, TRIAGE_ALT_TUR, type Ton } f
 import { tarih } from "../lib/format";
 import { kisaKosuAdi } from "./Kosular";
 import { PlatformRozeti } from "../components/Platform";
+import { DepoCipi } from "../components/Depo";
 import { EkranGoruntusuKaniti, SayfaKaynagiGoruntuleyici } from "../components/SayfaKaynagi";
 import { PLATFORM_ETIKETI, uygulamaPlatformuMu } from "../lib/platform";
 
@@ -310,6 +311,7 @@ function OnarimKarti({ o, hataId, yenile }: { o: LocatorOnarimi; hataId: string;
         {pr && (
           <>
             <span className="mono">#{pr.number}</span>
+            <DepoCipi kaynak={pr} />
             {pr.ci && (
               <Cip ton={pr.ci === "passed" ? "basari" : pr.ci === "failed" ? "hata" : "bilgi"}>
                 CI: {pr.ci === "passed" ? "yeşil" : pr.ci === "failed" ? "kırmızı" : "bekliyor"}

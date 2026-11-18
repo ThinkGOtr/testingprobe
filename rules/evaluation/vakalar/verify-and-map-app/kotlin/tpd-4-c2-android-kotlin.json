@@ -1,0 +1,11 @@
+{
+  "id": "tpd-4-c2-android-kotlin",
+  "story": "TPD-4",
+  "case_no": 2,
+  "platform": "android",
+  "baslik": "Hatalı parola ile girişte hata mesajı (Android, Kotlin/Espresso tablosu; negatif)",
+  "ajan_tablosu": "core/tests/unit/features/codegen/symbols-kotlin.json",
+  "tablo_dili": "kotlin",
+  "golden": "TPD-4-C2-android",
+  "expects_include": ["GirisEkrani.dogrulaHataMesaji"]
+}

@@ -42,9 +42,9 @@ const WEB_DILLERI: KodDilleri = {
   kaynak: "algilandi",
   sayilar: { ts: 9, java: 0 },
   secenekler: [
-    { dil: "ts", etiket: "TypeScript", cati: "Playwright Test", hat: "tam", kullanilabilir: true, neden: null },
-    { dil: "java", etiket: "Java", cati: "Playwright for Java + TestNG", hat: "tam", kullanilabilir: false, neden: "Depoda Java web test projesi (e2e-java/pom.xml) yok" },
-    { dil: "python", etiket: "Python", cati: "pytest-playwright", hat: "dogrulanmamis", kullanilabilir: true, neden: null },
+    { dil: "ts", etiket: "TypeScript", cati: "Playwright Test", hat: "tam", durum: "acik", kullanilabilir: true, neden: null },
+    { dil: "java", etiket: "Java", cati: "Playwright for Java + TestNG", hat: "tam", durum: "acik", kullanilabilir: false, neden: "Depoda Java web test projesi (e2e-java/pom.xml) yok" },
+    { dil: "python", etiket: "Python", cati: "pytest-playwright", hat: "dogrulanmamis", durum: "acik", kullanilabilir: true, neden: null },
   ],
   neden: null,
 };
@@ -54,7 +54,7 @@ describe("uyum katmanı (core şekli, §2.3)", () => {
     expect(scriptUyarla({ id: "s", platform: "web", dil: "java", dil_kaynagi: "secildi" })).toMatchObject({ dil: "java", dil_kaynagi: "secildi", dogrulanmamis: false });
     expect(scriptUyarla({ id: "s" })).toMatchObject({ platform: "web", dil: "ts", dil_kaynagi: null });
     expect(scriptUyarla({ id: "s", platform: "ios" }).dil).toBe("java");
-    expect(scriptUyarla({ id: "s", dil: "kotlin" }).dil).toBeNull();
+    expect(scriptUyarla({ id: "s", dil: "rust" }).dil).toBeNull();
     // `unverified` portal durum kümesinde; dogrulanmamis core alanı ya da durumdan.
     expect(scriptUyarla({ id: "s", durum: "unverified", dil: "python" })).toMatchObject({ durum: "unverified", dogrulanmamis: true });
     expect(scriptUyarla({ id: "s", dogrulanmamis: true, dil: "csharp" }).dogrulanmamis).toBe(true);
@@ -102,17 +102,17 @@ describe("uyum katmanı (core şekli, §2.3)", () => {
         algilanan: "ts",
         kaynak: "algilandi",
         sayilar: { java: 3 },
-        secenekler: [{ dil: "ts" }, { dil: "java", etiket: "Java", cati: "Appium + TestNG", hat: "tam", kullanilabilir: true }, { dil: "kotlin" }],
+        secenekler: [{ dil: "ts" }, { dil: "java", etiket: "Java", cati: "Appium + TestNG", hat: "tam", kullanilabilir: true }, { dil: "swift" }],
       },
       "android",
     )!;
     expect(d.secenekler.map((s) => s.dil)).toEqual(["java"]);
     expect(d).toMatchObject({ algilanan: "java", kaynak: "varsayilan", sayilar: { java: 3 } });
-    // Eksik alanlar dilden tamamlanır; csharp/python hat bilgisi yoksa doğrulanmamış.
+    // Eksik alanlar dilden tamamlanır; 014 öncesi core (hat/durum yok): web csharp/python doğrulanmamış, kapı yok (acik).
     const w = kodDilleriUyarla({ algilanan: "ts", kaynak: "algilandi", secenekler: [{ dil: "ts" }, { dil: "csharp" }] }, "web")!;
     expect(w.secenekler).toEqual([
-      { dil: "ts", etiket: "TypeScript", cati: "Playwright Test", hat: "tam", kullanilabilir: true, neden: null },
-      { dil: "csharp", etiket: "C#", cati: "Playwright .NET + NUnit", hat: "dogrulanmamis", kullanilabilir: true, neden: null },
+      { dil: "ts", etiket: "TypeScript", cati: "Playwright Test", hat: "tam", durum: "acik", kullanilabilir: true, neden: null, kurulum: null },
+      { dil: "csharp", etiket: "C#", cati: "Playwright .NET + NUnit", hat: "dogrulanmamis", durum: "acik", kullanilabilir: true, neden: null, kurulum: null },
     ]);
     expect(kodDilleriUyarla({ secenekler: [] }, "web")).toBeNull();
     expect(kodDilleriUyarla("yok", "web")).toBeNull();
@@ -134,8 +134,9 @@ describe("uyum katmanı (core şekli, §2.3)", () => {
 });
 
 describe("örnek arka uç: dil boyutu", () => {
-  it("GET /code/languages: web'de ts algılanmış, java tam hat, csharp/python doğrulanmamış; uygulamada yalnız java", async () => {
+  it("GET /code/languages (014 öncesi core): web'de ts algılanmış, java tam hat, csharp/python doğrulanmamış; uygulamada yalnız java", async () => {
     await oturumAc("muhendis");
+    ayar.senaryolar.add("eski-dogrulanmamis");
     const web = (await api.kodDilleri("web"))!;
     expect(web).toMatchObject({ algilanan: "ts", kaynak: "algilandi" });
     expect(web.secenekler.map((s) => [s.dil, s.hat])).toEqual([
@@ -167,8 +168,9 @@ describe("örnek arka uç: dil boyutu", () => {
     await expect(api.kodUret(["case-1-4"], "web", "kotlin" as never)).rejects.toMatchObject({ status: 422 });
   });
 
-  it("kodUret: csharp → doğrulanmamış (PR yok, dal yok, kaynak saklı); dil yoksa ts algilandi", async () => {
+  it("kodUret (014 öncesi core): csharp → doğrulanmamış (PR yok, dal yok, kaynak saklı); dil yoksa ts algilandi", async () => {
     await oturumAc("muhendis");
+    ayar.senaryolar.add("eski-dogrulanmamis");
     await api.kodUret(["case-1-4"], "web", "csharp");
     const bul = () => mockVerisi().scriptler.find((s) => s.case_ids.includes("case-1-4") && s.platform === "web" && s.durum !== "closed")!;
     await waitFor(() => expect(bul().durum).toBe("unverified"));
@@ -191,8 +193,9 @@ describe("örnek arka uç: dil boyutu", () => {
 });
 
 describe("Kod üretimi: dil seçici", () => {
-  it("algılanan dil seçili ve 'repodan algılandı'; doğrulanmamış dil seçilince açık uyarı; algılanana dön", async () => {
+  it("algılanan dil seçili ve 'repodan algılandı'; doğrulanmamış dil (014 öncesi core) seçilince açık uyarı; algılanana dön", async () => {
     await oturumAc("muhendis");
+    ayar.senaryolar.add("eski-dogrulanmamis");
     const u = userEvent.setup();
     uygulama("/kod");
     const grup = await screen.findByRole("group", { name: "Dil" });
@@ -236,8 +239,9 @@ describe("Kod üretimi: dil seçici", () => {
     expect(within(satir).getByTestId("dil-rozeti")).toHaveTextContent("Dil: Java");
   });
 
-  it("platform değişince seçenekler yeniden yüklenir, elle seçim düşer; uygulamada tek dil salt bilgi", async () => {
+  it("platform değişince seçenekler yeniden yüklenir, elle seçim düşer; uygulamada tek dil salt bilgi (014 öncesi core)", async () => {
     await oturumAc("muhendis");
+    ayar.senaryolar.add("eski-dogrulanmamis");
     const u = userEvent.setup();
     const casus = vi.spyOn(api, "kodDilleri");
     uygulama("/kod");
@@ -303,7 +307,7 @@ describe("Script detayı: dil", () => {
     const u = userEvent.setup();
     uygulama("/kod/scr-py");
     const bant = await screen.findByTestId("dogrulanmamis-bandi");
-    expect(bant).toHaveTextContent("Doğrulanmamış kod: Python (pytest-playwright)");
+    expect(bant).toHaveTextContent("Doğrulanmamış kod: Python (pytest + pytest-playwright)");
     expect(bant).toHaveTextContent("Bu kod derlenmedi ve koşulmadı; PR açılmadı ve merge edilemez.");
     expect(screen.getByText("Doğrulanmamış", { selector: ".cip" })).toBeInTheDocument();
     expect(screen.getByText("Python için PR, kırarak doğrulama ve merge yok.")).toBeInTheDocument();
@@ -332,7 +336,9 @@ describe("Script detayı: dil", () => {
     uygulama("/kod/scr-py");
     const bant = await screen.findByTestId("dogrulanmamis-bandi");
     const secim = within(bant).getByRole("combobox", { name: "Başka dil" });
-    await waitFor(() => expect(within(secim).getAllByRole("option").map((o) => o.textContent)).toEqual(["TypeScript", "Java", "C# (doğrulanmamış)"]));
+    await waitFor(() => expect(within(secim).getAllByRole("option").map((o) => o.textContent)).toEqual(["TypeScript", "Java", "C# — yakında: Değerlendirme sürüyor"]));
+    // 014: değerlendirilmemiş dil seçilemez.
+    expect(within(secim).getByRole("option", { name: /C#/ })).toBeDisabled();
     await u.selectOptions(secim, "java");
     await u.click(within(bant).getByRole("button", { name: "Başka dilde yeniden üret" }));
     await waitFor(() => expect(casus).toHaveBeenCalledWith(["case-1-8"], "web", "java"));

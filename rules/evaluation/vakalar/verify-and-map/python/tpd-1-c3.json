@@ -1,0 +1,17 @@
+{
+  "id": "tpd-1-c3-python",
+  "story": "TPD-1",
+  "case_no": 3,
+  "platform": "web",
+  "baslik": "6 adette 1 bedava (ana senaryo F2 case'i) — Python tablosu (TS gizli)",
+  "ajan_tablosu": "core/tests/unit/features/codegen/symbols-python.json",
+  "tablo_dili": "python",
+  "golden": "TPD-1-C3",
+  "expects_include": [
+    "CartPage.expect_line_quantity",
+    "CartPage.expect_free_quantity",
+    "CartPage.expect_subtotal",
+    "CartPage.expect_discount",
+    "CartPage.expect_total"
+  ]
+}

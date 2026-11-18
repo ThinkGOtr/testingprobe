@@ -4,51 +4,96 @@
 // (specs/011-uretim-dili/plan.md §2.3, §2.7). Model kod yazmaz ilkesi örnekte de korunur: kod eşleme
 // tablosundan (ajan adımları) deterministik üretilir.
 
-import type { AjanAdimi, KodDilleri, ScriptDetay } from "../types";
-import { DIL_CATISI, DIL_ETIKETI, gecerliDiller, type Dil } from "../../lib/dil";
+import type { AjanAdimi, DilSecenegi, KodDilleri, KurulumPr, ScriptDetay } from "../types";
+import { ciftHati, DIL_CATISI, DIL_ETIKETI, gecerliDiller, YAKINDA_NEDENI, type Dil, type DilDurumu } from "../../lib/dil";
 import type { Platform } from "../../lib/platform";
 import { sha256Hex } from "../../lib/sha256";
 import { ekranGoruntusu } from "./ekran";
 import { eslemeler, t, TPD1_GOLDEN_CASELER } from "./fixtures";
 
 /** Örnek depodaki elle yazılmış test sayıları (algılamanın dayanağı): web'de TypeScript çoğunlukta. */
-const WEB_SAYILARI: Record<Dil, number> = { ts: 9, java: 4, csharp: 0, python: 0 };
+const WEB_SAYILARI: Partial<Record<Dil, number>> = { ts: 9, java: 4, csharp: 0, python: 0 };
 
 /** core `codegen.service.DEPO_OKUNAMADI`: depo okunamadığında her seçeneğin nedeni (seçenek açık kalır). */
 export const DEPO_OKUNAMADI = "Depo okunamadı; bu dilin test projesi doğrulanamadı (kullanılabilirlik bilinmiyor)";
 
 /**
- * `GET /code/languages?platform=` örnek yanıtı (core şekli, §2.3). `depoOkunamadi` (mock senaryosu
- * `depo-okunamadi`): core'un forge'u kuramadığı/okuyamadığı durum — kaynak `varsayilan`, sayılar 0,
- * üst düzey `neden` dolu ve her seçenekte `DEPO_OKUNAMADI` (kullanılabilir kalır).
+ * TP `rules/diller.yaml` varsayılanı (TASARIM §2.3): 011 öncesi hatlar (ts, java) `acik/devralindi`,
+ * yeni çiftler değerlendirme geçene kadar `yakinda`. `diller-acik` senaryosu hepsini açar (ekran denetimi).
  */
-export function kodDilleriYaniti(platform: Platform, secenek: { depoOkunamadi?: boolean } = {}): KodDilleri {
+export function mockDilDurumu(dil: Dil, hepsiAcik = false): DilDurumu {
+  if (hepsiAcik) return "acik";
+  return dil === "ts" || dil === "java" ? "acik" : "yakinda";
+}
+
+/**
+ * 014 kurulum PR'ı örnekleri (`diller-acik`): Android Kotlin deposunda Espresso iskeleti ve iş akışı eksik
+ * (PR henüz açılmadı); iOS Swift için kurulum PR'ı açık, UI test hedefi elle eklenecek (TP pbxproj'a dokunmaz).
+ */
+export const KURULUM_ORNEKLERI: Partial<Record<`${Platform}/${Dil}`, KurulumPr>> = {
+  "android/kotlin": {
+    durum: "gerekli",
+    number: null,
+    url: null,
+    baslik: null,
+    eksikler: ["Espresso ekran nesnesi kütüphanesi (Ekran taban sınıfı + Kimlikler.kt)", "mobil-android-kotlin iş akışı (GitHub Actions)"],
+    elle_adimlar: [],
+  },
+  "ios/swift": {
+    durum: "acik",
+    number: 41,
+    url: "https://github.com/antreklabs/bayi-siparis/pull/41",
+    baslik: "TP kurulum: XCUITest iskeleti ve mobil-ios-swift iş akışı",
+    eksikler: ["XCUITest ekran nesnesi kütüphanesi", "mobil-ios-swift iş akışı (GitHub Actions)"],
+    elle_adimlar: ["Xcode'da eşitlenmiş klasörlü (synchronized folder) bir UI Testing Bundle hedefi ekleyin: BayiSiparisUITests"],
+  },
+};
+
+export interface DilYanitiSecenegi {
+  /** MİM-B1 `depo-okunamadi`: forge okunamadı. */
+  depoOkunamadi?: boolean;
+  /** `eski-dogrulanmamis`: 014 öncesi core (C#/Python web doğrulanmamış, `durum` alanı yok, Kotlin/Swift yok). */
+  eski?: boolean;
+  /** `diller-acik`: tüm çiftler değerlendirmeden geçmiş gibi açık (müşteri CI ve kurulum PR'ı ekran denetimi). */
+  hepsiAcik?: boolean;
+}
+
+/**
+ * `GET /code/languages?platform=` örnek yanıtı (core şekli, 011 §2.3 + 014 `hat`/`durum`). `depoOkunamadi`:
+ * core'un forge'u kuramadığı/okuyamadığı durum — kaynak `varsayilan`, sayılar 0, üst düzey `neden` dolu ve
+ * her açık seçenekte `DEPO_OKUNAMADI` (kullanılabilir kalır).
+ */
+export function kodDilleriYaniti(platform: Platform, secenek: DilYanitiSecenegi = {}): KodDilleri {
   const okunamadi = !!secenek.depoOkunamadi;
   const neden = okunamadi ? "Dil algılanamadı (forge kurulamadı: ConnectError); varsayılan dil önerildi" : null;
   const secenekNedeni = okunamadi ? DEPO_OKUNAMADI : null;
-  if (platform !== "web") {
+  const diller = secenek.eski ? (platform === "web" ? (["ts", "java", "csharp", "python"] as Dil[]) : (["java"] as Dil[])) : gecerliDiller(platform);
+  const secenekler: DilSecenegi[] = diller.map((dil) => {
+    const cati = DIL_CATISI(platform, dil)!;
+    if (secenek.eski) {
+      return { dil, etiket: DIL_ETIKETI[dil], cati: dil === "python" ? "pytest-playwright" : cati, hat: dil === "csharp" || dil === "python" ? "dogrulanmamis" : "tam", durum: "acik", kullanilabilir: true, neden: secenekNedeni };
+    }
+    const durum = mockDilDurumu(dil, secenek.hepsiAcik);
+    const acik = durum === "acik";
     return {
-      platform,
-      algilanan: "java",
-      kaynak: okunamadi ? "varsayilan" : "algilandi",
-      sayilar: { java: okunamadi ? 0 : 6 },
-      secenekler: [{ dil: "java", etiket: "Java", cati: DIL_CATISI(platform, "java")!, hat: "tam", kullanilabilir: true, neden: secenekNedeni }],
-      neden,
-    };
-  }
-  return {
-    platform,
-    algilanan: "ts",
-    kaynak: okunamadi ? "varsayilan" : "algilandi",
-    sayilar: okunamadi ? { ts: 0, java: 0, csharp: 0, python: 0 } : { ...WEB_SAYILARI },
-    secenekler: gecerliDiller(platform).map((dil) => ({
       dil,
       etiket: DIL_ETIKETI[dil],
-      cati: DIL_CATISI(platform, dil)!,
-      hat: dil === "ts" || dil === "java" ? "tam" : "dogrulanmamis",
-      kullanilabilir: true,
-      neden: secenekNedeni,
-    })),
+      cati,
+      hat: ciftHati(platform, dil)!,
+      durum,
+      kullanilabilir: acik,
+      neden: acik ? secenekNedeni : YAKINDA_NEDENI,
+      kurulum: acik ? (KURULUM_ORNEKLERI[`${platform}/${dil}`] ?? null) : null,
+    };
+  });
+  const sayilar: Partial<Record<Dil, number>> = {};
+  for (const d of diller) sayilar[d] = okunamadi ? 0 : platform === "web" ? (WEB_SAYILARI[d] ?? 0) : d === "java" ? 6 : 0;
+  return {
+    platform,
+    algilanan: platform === "web" ? "ts" : "java",
+    kaynak: okunamadi ? "varsayilan" : "algilandi",
+    sayilar,
+    secenekler,
     neden,
   };
 }

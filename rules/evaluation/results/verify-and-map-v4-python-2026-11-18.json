@@ -1,0 +1,226 @@
+{
+  "bundle": "verify-and-map",
+  "version": 4,
+  "date": "2026-11-18",
+  "model": "claude-sonnet-5-5",
+  "provider": "anthropic",
+  "mode": "live",
+  "passed": 3,
+  "total": 3,
+  "runs": 1,
+  "cases": [
+    {
+      "id": "tpd-1-c3-python",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "step_mapping": [
+          {
+            "step_id": "S1",
+            "po": "LoginPage",
+            "method": "goto",
+            "args": [],
+            "verified": true,
+            "evidence_ref": "/giris açıldı; testId login-username, login-password, login-submit alanları görüldü"
+          },
+          {
+            "step_id": "S2",
+            "po": "LoginPage",
+            "method": "login",
+            "args": [
+              "bayi1",
+              "Demo123!"
+            ],
+            "verified": true,
+            "evidence_ref": "button 'Giriş yap' (login-submit) ile giriş yapıldı, URL /katalog; oturum adı 'Doğrulama Bayi' (case: Merkez Bayi, doğrulama bayisi farkı)"
+          },
+          {
+            "step_id": "S3",
+            "po": "CatalogPage",
+            "method": "add_to_cart",
+            "args": [
+              "P-001",
+              6
+            ],
+            "verified": true,
+            "evidence_ref": "qty-input-P-001 = 6, product-card-P-001 add-to-cart tıklandı, '6 adet sepete eklendi.' görüldü, sepet sayacı 6"
+          },
+          {
+            "step_id": "S4",
+            "po": "CatalogPage",
+            "method": "open_cart",
+            "args": [],
+            "verified": true,
+            "evidence_ref": "nav-cart bağlantısı tıklandı, URL /sepet; P-001 adet 6, bedava 1, ara toplam 150,00 TL, indirim −25,00 TL, genel toplam 125,00 TL"
+          }
+        ],
+        "expects": [
+          {
+            "po": "CartPage",
+            "method": "expect_cart_count",
+            "args": [
+              6
+            ]
+          },
+          {
+            "po": "CartPage",
+            "method": "expect_line_quantity",
+            "args": [
+              "P-001",
+              6
+            ]
+          },
+          {
+            "po": "CartPage",
+            "method": "expect_free_quantity",
+            "args": [
+              "P-001",
+              1
+            ]
+          },
+          {
+            "po": "CartPage",
+            "method": "expect_subtotal",
+            "args": [
+              "150,00 TL"
+            ]
+          },
+          {
+            "po": "CartPage",
+            "method": "expect_discount",
+            "args": [
+              "25,00 TL"
+            ]
+          },
+          {
+            "po": "CartPage",
+            "method": "expect_total",
+            "args": [
+              "125,00 TL"
+            ]
+          }
+        ],
+        "missing_methods": []
+      },
+      "mode": "live",
+      "error": null,
+      "cost_usd": 0.103336,
+      "sure_ms": 28977
+    },
+    {
+      "id": "tpd-4-c1-python",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "step_mapping": [
+          {
+            "step_id": "S1",
+            "po": "LoginPage",
+            "method": "goto",
+            "args": [],
+            "verified": true,
+            "evidence_ref": "/giris sayfası açıldı; login-username ve login-submit testId'leri doğrulandı"
+          },
+          {
+            "step_id": "S2",
+            "po": "LoginPage",
+            "method": "login",
+            "args": [
+              "bayi1",
+              "Demo123!"
+            ],
+            "verified": true,
+            "evidence_ref": "login-submit tıklandı, URL /katalog oldu, Ürün kataloğu başlığı görüldü"
+          }
+        ],
+        "expects": [
+          {
+            "po": "LoginPage",
+            "method": "expect_logged_in",
+            "args": [
+              "Merkez Bayi"
+            ]
+          }
+        ],
+        "missing_methods": []
+      },
+      "mode": "live",
+      "error": null,
+      "cost_usd": 0.044354,
+      "sure_ms": 11761
+    },
+    {
+      "id": "tpd-4-c2-python",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "step_mapping": [
+          {
+            "step_id": "S1",
+            "po": "LoginPage",
+            "method": "goto",
+            "args": [],
+            "verified": true,
+            "evidence_ref": "/giris sayfası açıldı; 'Bayi girişi' başlığı, Kullanıcı adı ve Parola alanları, 'Giriş yap' butonu (login-submit) görüldü"
+          },
+          {
+            "step_id": "S2",
+            "po": "LoginPage",
+            "method": "login",
+            "args": [
+              "bayi1",
+              "Yanlis123!"
+            ],
+            "verified": true,
+            "evidence_ref": "login-username ve login-password dolduruldu, login-submit tıklandı; URL /giris kaldı, alert 'Kullanıcı adı veya parola hatalı' görüldü"
+          }
+        ],
+        "expects": [
+          {
+            "po": "LoginPage",
+            "method": "expect_login_error",
+            "args": [
+              "Kullanıcı adı veya parola hatalı"
+            ]
+          },
+          {
+            "po": "LoginPage",
+            "method": "expect_on_login_page",
+            "args": []
+          }
+        ],
+        "missing_methods": []
+      },
+      "mode": "live",
+      "error": null,
+      "cost_usd": 0.042556,
+      "sure_ms": 10832
+    }
+  ],
+  "tamamlandi": true,
+  "set_vaka_sayisi": 3,
+  "kosu_sayisi": 3,
+  "maliyet_usd": 0.190246,
+  "butce_usd": 10.0,
+  "calisma_alani_basligi": true,
+  "guardrails_version": 1,
+  "kayit_adaylari": null,
+  "cagri_kaydi": "verify-and-map-v4-python-2026-11-18.calls.jsonl",
+  "cagri_sayisi": 24,
+  "cagri_defteri": "ledger/ai_call.jsonl",
+  "amac": "verify_and_map",
+  "via_flow": false,
+  "output_check": true,
+  "icerik_hash": null,
+  "olcumler": null,
+  "dagilim": {
+    "maliyet_usd": {
+      "medyan": 0.044354,
+      "p90": 0.103336
+    },
+    "sure_ms": {
+      "medyan": 11761,
+      "p90": 28977
+    }
+  }
+}

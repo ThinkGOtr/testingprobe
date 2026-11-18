@@ -51,6 +51,10 @@ export type SegmentSecenegi<T extends string> = {
   neden?: string | null;
   /** Nedenin teknik ayrıntısı (yapılandırma adı vb.): yalnız ipucu (`title`), görünür metinde yok. */
   nedenAyrinti?: string | null;
+  /** Pasif nedenin öneki (varsayılan "Kullanılamıyor"; 014 dil kapısında "Yakında"). */
+  pasifOnek?: string;
+  /** Adın yanında küçük nötr rozet (014: "Yakında", "Müşteri CI"); adın parçası olarak okunmaz, tanıma girer. */
+  rozet?: string | null;
 };
 
 /** Segment görünümünde yerel radyo grubu (fieldset + legend). Platform ve dil seçicilerinin ortak gövdesi. */
@@ -78,7 +82,7 @@ export function SegmentGrubu<T extends string>({
           // Pasif seçeneğin nedeni "Kullanılamıyor: …" diye; açık seçeneğin nedeni (ör. depo okunamadığı için
           // kullanılabilirlik bilinmiyor) de görünür ve aynı tanımla okunur (MİM-B1).
           const neden = s.pasif ? s.neden?.trim() || "Bu seçenek kullanılamıyor." : s.neden?.trim() || undefined;
-          const alt = !!aciklama || !!neden;
+          const alt = !!aciklama || !!neden || !!s.rozet;
           return (
             <label key={s.deger} className={`platform-secenek${s.pasif ? " pasif" : ""}`} title={s.nedenAyrinti ?? undefined}>
               <input
@@ -99,11 +103,17 @@ export function SegmentGrubu<T extends string>({
               </span>
               {alt && (
                 <span className="platform-secenek-alt" id={altId}>
+                  {s.rozet && (
+                    <span className="secenek-rozeti" data-testid="secenek-rozeti">
+                      {s.rozet}
+                      {aciklama && <span className="gorunmez">. </span>}
+                    </span>
+                  )}
                   {aciklama}
                   {neden && (
                     <span className="platform-secenek-neden" data-testid="secenek-neden" data-pasif={s.pasif ? "evet" : "hayir"}>
                       {aciklama && <span className="gorunmez">. </span>}
-                      {s.pasif ? `Kullanılamıyor: ${neden}` : neden}
+                      {s.pasif ? `${s.pasifOnek ?? "Kullanılamıyor"}: ${neden}` : neden}
                     </span>
                   )}
                 </span>

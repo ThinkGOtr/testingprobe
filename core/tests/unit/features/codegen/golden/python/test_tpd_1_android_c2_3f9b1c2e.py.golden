@@ -1,0 +1,38 @@
+# AI-generated — AI Testing Probe (CasesToCode). Elle düzenlemeyin; değişiklik case'in yeniden
+# onayı ve yeniden üretimle yapılır.
+# Case: TPD-1 C2 (3f9b1c2e-0000-5000-8000-0000000000c2) · Story: TPD-1 · Jira Test: TPD-12
+# Başlık: 7 adet kampanyalı üründe 1 adet bedava verilir
+# Onaylı case hash: f7a67a7af02b8a418cef1ecd99f091def093ea2e4dc866d50dec36cf3c004573
+# Eşleme: verify_and_map_app · platform: android · dil: python · mod: replay · bundle: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+# Eşleme hash: 46175a46bd07b3e2b3e31ca480890fd9846f06f5c3276a5a93846e227326987b · şablon: 2ef4f0120e923a7910802204fdeca23a9cdff7d1b0805e617d971d57f4729f86
+import pytest
+
+from ekranlar.giris_ekrani import GirisEkrani
+from ekranlar.katalog_ekrani import KatalogEkrani
+from ekranlar.sepet_ekrani import SepetEkrani
+
+
+@pytest.mark.uretilen
+@pytest.mark.android
+@pytest.mark.tp_case("3f9b1c2e-0000-5000-8000-0000000000c2")
+@pytest.mark.story("TPD-1")
+@pytest.mark.dealer("bayi1")
+def test_tpd_1_android_c2_3f9b1c2e(driver) -> None:
+    giris_ekrani = GirisEkrani(driver)
+    katalog_ekrani = KatalogEkrani(driver)
+    sepet_ekrani = SepetEkrani(driver)
+
+    # S1 — Giriş sayfasını aç
+    giris_ekrani.ac()
+    # S2 — Bayi kullanıcısıyla giriş yap
+    giris_ekrani.giris_yap("bayi1", "Demo123!")
+    # S3 — "Portakal Gazozu 1L" (P-001) kartında adedi 7 yapıp "Sepete ekle" butonuna bas
+    katalog_ekrani.sepete_ekle("P-001", 7)
+    # S4 — Üst menüden sepete git
+    katalog_ekrani.sepeti_ac()
+    # Beklenen sonuç (değerler onaylı case metninden)
+    sepet_ekrani.dogrula_satir_adedi("P-001", 7)
+    sepet_ekrani.dogrula_bedava_adet("P-001", 1)
+    sepet_ekrani.dogrula_ara_toplam("175,00 TL")
+    sepet_ekrani.dogrula_indirim("25,00 TL")
+    sepet_ekrani.dogrula_toplam("150,00 TL")

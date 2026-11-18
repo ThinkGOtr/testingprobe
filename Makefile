@@ -10,7 +10,7 @@ export PLAYWRIGHT_VERSION := $(strip $(shell cat .playwright-version 2>/dev/null
 
 S ?=
 
-.PHONY: help env up asistan-paket status seed reset jira-seed forge-init forge-sync-dizin playwright-surum-denetle break demo-break demo-reset demo-web-sync locator-break-verify demo-baseline export-audit security-check e2e-smoke demo-check demo-prova prova-temizle eval-live asistan-perf prune logs down cihaz-kur cihaz-baslat cihaz-durdur cihaz-durum cihaz-wda cihaz-ag windows-vm-olustur windows-vm-ac windows-vm-kapat windows-vm-yeniden windows-vm-durum windows-vm-bekle windows-vm-ekran windows-vm-sil windows-vm-ip windows-vm-selftest
+.PHONY: help env up asistan-paket status seed reset jira-seed forge-init forge-sync-dizin playwright-surum-denetle break demo-break demo-reset demo-web-sync locator-break-verify demo-baseline export-audit security-check e2e-smoke demo-check demo-prova prova-temizle eval-live dil-kapisi asistan-perf prune logs down cihaz-kur cihaz-baslat cihaz-durdur cihaz-durum cihaz-wda cihaz-ag windows-vm-olustur windows-vm-ac windows-vm-kapat windows-vm-yeniden windows-vm-durum windows-vm-bekle windows-vm-ekran windows-vm-sil windows-vm-ip windows-vm-selftest
 
 help: ## Hedefleri listeler
 	@echo "Kullanım: make <hedef>"
@@ -95,6 +95,9 @@ prova-temizle: ## Eski prova raporlarını temizle (N=10: son N koşu klasörü 
 
 eval-live: ## Prompt değerlendirme setini CANLI modelle koşturur, sert bütçe TP_EVAL_BUDGET_USD (5; asistan seti ≥10) (A='--ping' | '--dry-run' | '--bundle triage --update-status' | '--record' | '--bundle assistant --via-flow')
 	@scripts/eval-live.sh $(A)
+
+dil-kapisi: ## Test dili kapısı rules/diller.yaml (A='--check' | '--check --dil python' | '--json'); dil kanıtı: make eval-live A='--dil python --update-status'
+	@cd core && uv run python -m tp_core.gateway.dil_kapisi $(A)
 
 asistan-perf: ## Asistan süre testleri (§16.12 öneri ucu p95 < 300 ms; T132): TP_TEST_PERF=1 pytest -m perf (geçici test postgres'i; toplu gönderim öncesi)
 	@cd core && TP_TEST_PERF=1 TP_TEST_REQUIRE_DB=1 uv run pytest tests/unit/features/assistant -m perf -q

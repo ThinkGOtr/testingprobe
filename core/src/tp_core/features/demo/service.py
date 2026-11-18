@@ -645,12 +645,15 @@ def _prlari_kapat(engine: Engine, forge: Any, isteyen: str) -> list[dict[str, An
     if numaralar:
         with session_scope() as s:
             for sc in s.scalars(
-                select(Script).where(Script.pr_no.in_(numaralar), Script.durum == "pr_open")
+                # Demo forge'u varsayılan depodur (0046: platform depolarının PR'ları değil).
+                select(Script).where(
+                    Script.pr_no.in_(numaralar), Script.depo == "", Script.durum == "pr_open"
+                )
             ).all():
                 transition(s, sc, "closed", SYSTEM, "pr_open", sebep="demo sıfırlaması",
                            ozet={"pr": sc.pr_no, "isteyen": isteyen})  # fmt: skip
             for satir in s.scalars(
-                select(PullRequest).where(PullRequest.number.in_(numaralar))
+                select(PullRequest).where(PullRequest.number.in_(numaralar), PullRequest.depo == "")
             ).all():
                 if satir.durum == "open":
                     satir.durum = "closed"

@@ -289,6 +289,13 @@ başlar; yeni açılan Bug'ın açıklamasının ilk satırı da aynıdır. Rol 
 olarak verilir ve ilgili kişiler aynı satırda ADF `mention` düğümüyle **@bahsedilir** (Jira bildirim
 gönderir). Anahtar boşsa o rol bahsedilmez; aynı kişi iki rolde ise bir kez bahsedilir.
 
+Rol başına çoklu anma (2026-11-18): Home, projede rolü olan herkesin Profilim'de seçtiği Jira hesabından
+`TP_JIRA_MENTIONS_<ROL>` (ANALYST, PO, ENGINEER, TESTER, DEVELOPER, ADMIN, AUDITOR, VIEWER; virgüllü
+accountId) üretir. Liste doluysa rol anılırken listedeki **herkes** ayrı `mention` düğümüyle anılır;
+boşsa eski tek değerli `JIRA_HESAP_<ROL>`'e düşülür. Ürünün bot/okuma/yazma kimlikleri
+(`TP_JIRA_BOT_ACCOUNT_IDS`, `JIRA_WRITE_EMAIL`, `JIRA_READ_EMAIL`, OAuth bağlantı sahibi) asla anılmaz
+(`JiraSettings.role_accounts`).
+
 | Yorum (yer) | Bahsedilen |
 |---|---|
 | PO soru yorumu (story; ön inceleme son hal) | PO + Analist |
@@ -515,6 +522,38 @@ TP_WEB_DILLERI=                         # ts,java → web-java zorunlu + web Jav
   ya da GitHub arayüzünden merge etmelidir (core bunu `review.kanal='github'` ile işler).
 - `make security-check`: `GH_APP_*`, `GITHUB_TOKEN`, `GITHUB_MERGE_TOKEN` yalnızca core-worker'da;
   `TP_FORGE_REMOTE_TOKEN` yalnızca toolchain-worker'da (salt okuma).
+
+### 5.5.1 Platform başına depo (android / ios / windows)
+
+Mobil ya da masaüstü testleri ayrı bir GitHub deposunda tutulabilir (Home: proje ayrıntısı →
+"Android/iOS/Windows test deposu", `tp.repos.<p>.*`). TP'ye platform son ekli env olarak gelir:
+
+```dotenv
+GITHUB_REPO_ANDROID=ThinkGOtr/bayi-mobil        # boş = varsayılan depo (GITHUB_REPO)
+GITHUB_REPO_IOS=ThinkGOtr/bayi-mobil            # aynı ad = aynı depo (tek ayna, tek istemci)
+TP_FORGE_CHECK_REF_ANDROID=                     # boş = TP_FORGE_CHECK_REF (devralır)
+TP_E2E_APP_ROOT_ANDROID=e2e-app                 # boş = TP_E2E_APP_ROOT (devralır)
+TP_FORGE_APP_ROOT_ANDROID=                      # boş = depo kökü (DEVRALMAZ)
+TP_APP_PATHS_ANDROID=                           # boş = yok (DEVRALMAZ)
+TP_REQUIRED_CHECKS_ANDROID=                     # boş = mobil-android (DEVRALMAZ)
+```
+
+- Çözüm: `ProjeOrtami(pid, platform)` (`integrations/proje_ortami.py`). `GITHUB_REPO_<P>` boşsa ya da
+  `GITHUB_REPO` ile aynıysa (büyük/küçük harf duyarsız) görünüm bugünküyle birebir aynıdır.
+  `TP_FORGE=local` kipinde platform depoları yok sayılır (uyarı).
+- Zorunlu check'ler devralınmaz: taban liste (`test-local,ast-guard,semgrep`) web iş akışının
+  adlarıdır, mobil depoda hiç oluşmaz ve merge kapısı süresiz bekler. Boşsa depoya düşen
+  platformların iş akışı check'i zorunludur. Varsayılan deponun `TP_PLATFORMS`'undan ayrı depoya
+  taşınan platformlar çıkarılır (web PR'ı `mobil-android`'i beklemez).
+- Ayna (toolchain-worker): `TP_FORGE_REMOTE_URL` doluysa `<TP_FORGE_WEB_URL|https://github.com>/<sahip/ad>.git`
+  türetilir, yol `/forge-mirror/_depolar/<pid>/<sahip>/<ad>.git`. Ayna token'ı yalnız izinli GitHub
+  host'una gider (`TP_GITHUB_HOSTS`). Token kipinde `GITHUB_TOKEN`, `GITHUB_READ_TOKEN`,
+  `GITHUB_MERGE_TOKEN`, `TP_FORGE_REMOTE_TOKEN` tüm depolara erişmelidir; App kipinde Home token'ı
+  projenin tüm depolarını kapsar.
+- Her platform deposunda iş akışları (`mobil-android.yml` …), ruleset (`scripts/github-ruleset.sh
+  --repo <depo>`) ve Java test projesi (`e2e-app`) olmalıdır.
+- Sürüm sırası: toolchain imajı core'dan önce (ya da birlikte) güncellenir; eski toolchain
+  `proje` bloğundaki yeni alanları (`e2e_app_root`, `e2e_java_root`, `app_paths`) reddeder.
 
 ### 5.6 Tetikler
 

@@ -19,6 +19,10 @@ açma `safe_extract_zip` ile yapılır (zip-slip, sembolik bağ, dosya sayısı/
 - **Saklama:** en yeni `TP_GITHUB_ARTIFACTS_KEEP` (varsayılan 30) dizin kalır; silinenlerin koşu
   kaydı `budandi` olarak işaretlenir (çağıran).
 - Hata alımı düşürmez: `durum="hata"` + kısa neden döner; portal GitHub bağlantısına düşer.
+- **Artefakt adı ve düzeni genel (test-dilleri Ş5):** `hazirla(sonuc_adi=, sonuc_kok=,
+  rapor_adi=)`. Müşteri CI hattı (Kotlin/Swift) `tp-results` artefaktını
+  `src/<platform>-<dil>/results/` köküne açar (`sonuc_koku(platform, dil)`); kök yine izinli
+  `src/**/results/**` alt ağacındadır. Varsayılanlar web hattının bugünkü davranışıdır.
 """
 
 from __future__ import annotations
@@ -49,6 +53,8 @@ log = logging.getLogger(__name__)
 
 REPORT_ARTIFACT = "playwright-report"
 SONUC_KOK = "src/e2e/results"  # yerel koşunun sonuç dizini (izinli alt ağaç `src/**/results/**`)
+# Kabul edilen sonuç kökleri: web `src/e2e/results`, müşteri CI `src/<platform>-<dil>/results`.
+SONUC_KOK_RE = re.compile(r"src/(?:e2e|[a-z][a-z0-9]{1,15}-[a-z][a-z0-9]{1,15})/results")
 ISARET = ".tp-github.json"
 GH_DIR_RE = re.compile(r"gh/[0-9]{1,20}-[0-9]{1,4}")  # fullmatch (sonda satır sonu yok)
 GECICI_ESKI_S = 3600  # yarıda kalmış geçici dizinler bu süreden sonra silinir
@@ -57,6 +63,27 @@ MAX_ARAMA = 20_000  # disk taraması üst sınırı (safe_extract_zip dosya sın
 
 def kok() -> Path:
     return services.github_artifacts_root()
+
+
+def sonuc_koku(platform: str | None = None, dil: str | None = None) -> str:
+    """Yerel kopyada sonuç kökü: verilmezse web `src/e2e/results`; (platform, dil) verilirse
+    `src/<platform>-<dil>/results` (müşteri CI hattı). Geçersiz ad `ValueError`."""
+    if platform is None and dil is None:
+        return SONUC_KOK
+    aday = f"src/{platform}-{dil}/results"
+    if (
+        not isinstance(platform, str)
+        or not isinstance(dil, str)
+        or not SONUC_KOK_RE.fullmatch(aday)
+    ):
+        raise ValueError(f"geçersiz sonuç kökü: {platform!r}/{dil!r}")
+    return aday
+
+
+def _kok_dogrula(sonuc_kok: str) -> str:
+    if not isinstance(sonuc_kok, str) or not SONUC_KOK_RE.fullmatch(sonuc_kok):
+        raise ValueError(f"geçersiz sonuç kökü: {sonuc_kok!r}")
+    return sonuc_kok
 
 
 def dizin_adi(github_run_id: Any, deneme: Any) -> str | None:
@@ -106,10 +133,14 @@ def _dosyalari_gez(sonuc: Path) -> list[tuple[str, int, Path]]:
 
 
 def disk_dosyalari(
-    yerel: Path, adlar: tuple[str, ...], ekler: tuple[str, ...] = ()
+    yerel: Path,
+    adlar: tuple[str, ...],
+    ekler: tuple[str, ...] = (),
+    sonuc_kok: str = SONUC_KOK,
 ) -> dict[str, bytes]:
     """Yerel kopyadan `GitHubCi.artifact_files` ile aynı seçim (anahtarlar zip içi yollardır)."""
-    girdiler = ((r, b, p.read_bytes) for r, b, p in _dosyalari_gez(yerel / SONUC_KOK))
+    kok_ = yerel / _kok_dogrula(sonuc_kok)
+    girdiler = ((r, b, p.read_bytes) for r, b, p in _dosyalari_gez(kok_))
     return dosya_sec(girdiler, adlar, ekler)
 
 
@@ -117,9 +148,12 @@ def _en_kisa(adaylar: list[str]) -> str | None:
     return min(adaylar, key=lambda y: (y.count("/"), len(y), y)) if adaylar else None
 
 
-def yollari_bul(yerel: Path) -> dict[str, str]:
-    """Yerel kopyadaki raporların koşu dizinine göre yolları (`_url` ile sunulur)."""
-    sonuc = yerel / SONUC_KOK
+def yollari_bul(yerel: Path, sonuc_kok: str = SONUC_KOK) -> dict[str, str]:
+    """Yerel kopyadaki raporların koşu dizinine göre yolları (`_url` ile sunulur).
+
+    Müşteri CI kökünde (`sonuc_kok != SONUC_KOK`) ayrıca `junit_dizini` (`junit/`), `ekler`
+    (`ekler/`) ve `derleme_log` (`derleme.log`) döner."""
+    sonuc = yerel / _kok_dogrula(sonuc_kok)
     dosyalar = [r for r, _b, _p in _dosyalari_gez(sonuc)]
 
     def ada_gore(ad: str) -> str | None:
@@ -152,7 +186,15 @@ def yollari_bul(yerel: Path) -> dict[str, str]:
         "log": ada_gore("run-checks.log"),
         "meta": ada_gore("ci-meta.json"),
     }
-    return {k: f"{SONUC_KOK}/{v}" for k, v in bulunan.items() if v}
+    if sonuc_kok != SONUC_KOK:
+        bulunan.update(
+            {
+                "junit_dizini": dizin_ici("junit"),
+                "ekler": dizin_ici("ekler"),
+                "derleme_log": ada_gore("derleme.log"),
+            }
+        )
+    return {k: f"{sonuc_kok}/{v}" for k, v in bulunan.items() if v}
 
 
 def _gecicileri_temizle(gh_kok: Path) -> None:
@@ -184,27 +226,42 @@ def hazirla(
     dizin: str,
     *,
     sonuc_zip: bytes | None = None,
+    sonuc_adi: str = RESULTS_ARTIFACT,
+    sonuc_kok: str = SONUC_KOK,
+    rapor_adi: str | None = REPORT_ARTIFACT,
 ) -> dict[str, Any]:
     """Koşunun yerel kopyasını hazırlar (varsa dokunmaz). Hata fırlatmaz.
 
     Döner: `{dizin, durum: indirildi|mevcut|yok|hata, yollar, hata?, indirilen: [ad]}`.
-    `sonuc_zip`: alımın ayrıştırma için zaten indirdiği `test-local-results` zip'i (ikinci indirme
-    yapılmaz).
+    `sonuc_zip`: alımın ayrıştırma için zaten indirdiği sonuç artefaktı zip'i (ikinci indirme
+    yapılmaz). `sonuc_adi` / `sonuc_kok`: sonuç artefaktının adı ve koşu dizinindeki kökü (web
+    `test-local-results` → `src/e2e/results`; müşteri CI `tp-results` →
+    `src/<platform>-<dil>/results`). `rapor_adi`: ayrı HTML rapor artefaktı (yoksa None).
     """
     hedef = yol(dizin)
     if hedef is None:
         return {"dizin": None, "durum": "hata", "hata": "geçersiz yerel dizin", "yollar": {}}
+    try:
+        _kok_dogrula(sonuc_kok)
+    except ValueError as exc:
+        return {"dizin": None, "durum": "hata", "hata": temiz(exc, 200), "yollar": {}}
     var = mevcut(dizin)
     if var is not None:
-        return {"dizin": dizin, "durum": "mevcut", "yollar": yollari_bul(var), "indirilen": []}
+        return {
+            "dizin": dizin,
+            "durum": "mevcut",
+            "yollar": yollari_bul(var, sonuc_kok),
+            "indirilen": [],
+        }
     canli = [a for a in artefaktlar if isinstance(a, Mapping) and not a.get("expired")]
-    sonuc_art = next((a for a in canli if a.get("name") == RESULTS_ARTIFACT), None)
-    rapor_art = next((a for a in canli if a.get("name") == REPORT_ARTIFACT), None)
+    sonuc_art = next((a for a in canli if a.get("name") == sonuc_adi), None)
+    rapor_art = next((a for a in canli if a.get("name") == rapor_adi), None) if rapor_adi else None
     if sonuc_art is None and rapor_art is None:
+        adlar = " / ".join(f"'{a}'" for a in (sonuc_adi, rapor_adi) if a)
         return {
             "dizin": dizin,
             "durum": "yok",
-            "hata": f"'{RESULTS_ARTIFACT}' / '{REPORT_ARTIFACT}' artefaktı yok ya da süresi dolmuş",
+            "hata": f"{adlar} artefaktı yok ya da süresi dolmuş",
             "yollar": {},
         }
     gh_kok = hedef.parent
@@ -213,15 +270,15 @@ def hazirla(
     try:
         gh_kok.mkdir(parents=True, exist_ok=True)
         _gecicileri_temizle(gh_kok)
-        sonuc = gecici / SONUC_KOK
+        sonuc = gecici / sonuc_kok
         sonuc.mkdir(parents=True)
         if sonuc_art is not None:
             _ac(sonuc_zip if sonuc_zip is not None else gh.artifact_zip(sonuc_art), sonuc)
-            indirilen.append(RESULTS_ARTIFACT)
-        if rapor_art is not None and "html" not in yollari_bul(gecici):
+            indirilen.append(sonuc_adi)
+        if rapor_art is not None and "html" not in yollari_bul(gecici, sonuc_kok):
             # test-local-results raporu taşımıyorsa (eski ci.yml) ayrı rapor artefaktı.
             _ac(gh.artifact_zip(rapor_art), sonuc / "playwright-report")
-            indirilen.append(REPORT_ARTIFACT)
+            indirilen.append(str(rapor_adi))
         (gecici / ISARET).write_text(
             json.dumps(
                 {
@@ -231,6 +288,7 @@ def hazirla(
                         if a is not None and a.get("name") in indirilen
                     },
                     "zaman": services.now().isoformat(),
+                    "sonuc_kok": sonuc_kok,
                 },
                 ensure_ascii=False,
             )
@@ -239,14 +297,24 @@ def hazirla(
         # koymuş olabilir: işaretliyse ona dokunulmaz, bu kopya atılır.
         if (var := mevcut(dizin)) is not None:
             shutil.rmtree(gecici, ignore_errors=True)
-            return {"dizin": dizin, "durum": "mevcut", "yollar": yollari_bul(var), "indirilen": []}
+            return {
+                "dizin": dizin,
+                "durum": "mevcut",
+                "yollar": yollari_bul(var, sonuc_kok),
+                "indirilen": [],
+            }
         if hedef.exists():  # işaretsiz (yarım) eski kopya
             shutil.rmtree(hedef)
         gecici.rename(hedef)
     except Exception as exc:  # yerel kopya alımı asla düşürmez
         shutil.rmtree(gecici, ignore_errors=True)
         if (var := mevcut(dizin)) is not None:  # yarışı başka alım kazandı: geçerli kopya var
-            return {"dizin": dizin, "durum": "mevcut", "yollar": yollari_bul(var), "indirilen": []}
+            return {
+                "dizin": dizin,
+                "durum": "mevcut",
+                "yollar": yollari_bul(var, sonuc_kok),
+                "indirilen": [],
+            }
         log.warning("GitHub artefaktı yerel kopyaya alınamadı (%s): %s", dizin, exc)
         return {
             "dizin": dizin,
@@ -258,7 +326,7 @@ def hazirla(
     return {
         "dizin": dizin,
         "durum": "indirildi",
-        "yollar": yollari_bul(hedef),
+        "yollar": yollari_bul(hedef, sonuc_kok),
         "indirilen": indirilen,
     }
 

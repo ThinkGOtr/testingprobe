@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    web e2e — C# hattı (Playwright .NET + NUnit; specs 014 test dilleri §3.2). Bu dosya,
+    Directory.Packages.props, packages.lock.json ve nuget.config toolchain'deki güvenilir kopyalarla
+    (toolchain/e2e-csharp-deps/web/) BAYT EŞİT olmalıdır: MSBuild proje dosyası kod çalıştırabilir.
+    Bağımlılık değişikliği önce oraya (ve imaja) girer.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <RootNamespace>Antreklabs.Bayi</RootNamespace>
+    <AssemblyName>Antreklabs.Bayi.E2e</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Playwright" />
+    <PackageReference Include="NUnit" />
+    <PackageReference Include="NUnit3TestAdapter" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="JunitXml.TestLogger" />
+    <PackageReference Include="Allure.NUnit" />
+  </ItemGroup>
+</Project>

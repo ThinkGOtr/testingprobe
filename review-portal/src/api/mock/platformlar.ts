@@ -11,6 +11,14 @@ type UygulamaPlatformu = "android" | "ios" | "windows";
 
 const E2E_APP = "demo-app/e2e-app/src/test/java/com/antreklabs/bayi";
 const ETIKET: Record<UygulamaPlatformu, string> = { android: "Android", ios: "iOS", windows: "Windows" };
+/**
+ * Platform başına depo örneği: Android testleri ayrı depoda (`tp.repos.android.repo`); iOS ve Windows
+ * varsayılan depoyu kullanır (`depo: ''`, alan yazılmaz). PR eylemleri `?depo=` ile bu depoya gider.
+ */
+export const ANDROID_DEPOSU = "antreklabs/bayi-mobil";
+const DEPO: Partial<Record<UygulamaPlatformu, { depo: string; depo_adi: string }>> = {
+  android: { depo: ANDROID_DEPOSU, depo_adi: ANDROID_DEPOSU },
+};
 
 function adim(
   platform: UygulamaPlatformu,
@@ -111,8 +119,10 @@ function uygulamaScripti(
     dosya_yolu: `${E2E_APP}/uretilen/${sinif}.java`,
     branch,
     platform,
+    ...DEPO[platform],
     durum: "pr_open",
     pr: {
+      ...DEPO[platform],
       number: prNo,
       url: null,
       baslik: `[TPD-1-C2 · ${platform}] ${TPD1_GOLDEN_CASELER[1].title} [AI-generated]`,
@@ -200,6 +210,7 @@ export function uygulamaKosulari(): KosuDetay[] {
       {
         commit: "a1d5e70",
         platform: "android",
+        ...DEPO.android,
         platform_kontrolleri: [{ ad: "local-ci-android", platform: "android", durum: "failed" }],
       },
     ),

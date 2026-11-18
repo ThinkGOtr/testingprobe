@@ -36,7 +36,10 @@ SCRIPT_TUR = frozenset({"test", "locator_fix"})
 # 009 §2.1: üretilen testin hedef platformu (web = Playwright/TS; diğerleri Appium/Java). 0018.
 PLATFORM = frozenset({"web", "android", "ios", "windows"})
 # 011 §2.1–2.2: üretim dili (platformdan bağımsız boyut) ve dilin nereden geldiği. 0021.
-DIL = frozenset({"ts", "java", "csharp", "python"})
+# 014: kotlin (Espresso) ve swift (XCUITest) müşteri CI hattı dilleri. 0047.
+DIL = frozenset({"ts", "java", "csharp", "python", "kotlin", "swift"})
+# 014: (platform, dil) çiftinin hattı (codegen/platform.py `CATILAR`; şemada kolon değil).
+HAT = frozenset({"tam", "musteri_ci", "dogrulanmamis"})
 DIL_KAYNAGI = frozenset({"algilandi", "secildi", "varsayilan"})
 RUN_KAYNAK = frozenset({"local", "github", "sauce"})
 # CI ile ortak liste: .github/workflows/ci.yml `trigger` girdisi (workflow_dispatch → manual).

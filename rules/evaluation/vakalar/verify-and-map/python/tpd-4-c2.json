@@ -1,0 +1,14 @@
+{
+  "id": "tpd-4-c2-python",
+  "story": "TPD-4",
+  "case_no": 2,
+  "platform": "web",
+  "baslik": "hatalı parola — Python tablosu (TS gizli)",
+  "ajan_tablosu": "core/tests/unit/features/codegen/symbols-python.json",
+  "tablo_dili": "python",
+  "golden": "TPD-4-C2",
+  "expects_include": [
+    "LoginPage.expect_login_error",
+    "LoginPage.expect_on_login_page"
+  ]
+}

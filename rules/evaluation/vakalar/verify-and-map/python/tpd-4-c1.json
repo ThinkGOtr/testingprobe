@@ -1,0 +1,13 @@
+{
+  "id": "tpd-4-c1-python",
+  "story": "TPD-4",
+  "case_no": 1,
+  "platform": "web",
+  "baslik": "geçerli kullanıcıyla giriş — Python tablosu (TS gizli)",
+  "ajan_tablosu": "core/tests/unit/features/codegen/symbols-python.json",
+  "tablo_dili": "python",
+  "golden": "TPD-4-C1",
+  "expects_include": [
+    "LoginPage.expect_logged_in"
+  ]
+}

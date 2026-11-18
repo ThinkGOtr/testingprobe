@@ -63,7 +63,7 @@ from toolchain_common import appsha, gitforge, repos
 from toolchain_common.artifacts import atomic_write_json, checks_file
 from toolchain_common.proje import TEST_RUNNER_HARIC
 from toolchain_common.settings import Settings
-from worker import affected, static
+from worker import affected, diller, static
 from worker import java as javayol
 from worker.astguard import AstGuardError, run_ast_guard
 
@@ -110,7 +110,11 @@ class CheckRequest:
 
     @property
     def step_names(self) -> tuple[str, ...]:
-        return javayol.STEPS if self.lang == "java" else STEPS
+        if self.lang == "java":
+            return javayol.STEPS
+        if self.lang != "ts" and (eklenti := diller.eklenti(self.lang)) is not None:
+            return tuple(eklenti.steps)
+        return STEPS
 
     @property
     def check_name(self) -> str | None:
@@ -168,7 +172,10 @@ def skipped(reason: str) -> dict[str, Any]:
 
 
 def aggregate(
-    sha: str, steps: dict[str, dict[str, Any]], names: tuple[str, ...] = STEPS
+    sha: str,
+    steps: dict[str, dict[str, Any]],
+    names: tuple[str, ...] = STEPS,
+    lang: str | None = None,
 ) -> dict[str, Any]:
     """Adım sonuçlarından tek rapor: hepsi tamam ve koşu `passed` ise `success`."""
     failed = [
@@ -180,7 +187,9 @@ def aggregate(
     run_tests = run.get("tests") if isinstance(run.get("tests"), list) else []
     complete = all(name in steps and not steps[name].get("skipped") for name in names)
     success = complete and not failed and run.get("status") == "passed"
-    if success and names == javayol.STEPS:
+    if success and lang not in (None, "ts", "java"):
+        summary = f"Yerel CI ({lang}) geçti: " + ", ".join(names) + " adımları yeşil."
+    elif success and names == javayol.STEPS:
         summary = (
             "Yerel CI (Java) geçti: uygulama eşleşmesi, bağımlılıklar, AST koruması, derleme ve "
             "testler yeşil."
@@ -224,6 +233,12 @@ def check_name(lang: str, platform: str | None) -> str:
     """Koşunun check'i (core `platform.check_adi` ile aynı): web + TS `local-ci`, web + Java
     `local-ci-web-java`, uygulamada (Java) `local-ci-<platform>`. `lang=java` + platform yok =
     web + Java (011 §2.6)."""
+    if lang not in ("ts", "java") and diller.eklenti(lang) is not None:
+        # 014: core `platform.check_adi_genel` ile aynı kural.
+        p = platform or javayol.WEB
+        if p not in diller.eklenti(lang).platformlar:  # type: ignore[union-attr]
+            raise ValueError(f"{lang} kontrolü platformu: {diller.eklenti(lang).platformlar}")  # type: ignore[union-attr]
+        return f"{CHECK_NAME}-{p}-{lang}"
     if lang != "java":
         return CHECK_NAME
     if platform in (None, javayol.WEB):
@@ -366,11 +381,16 @@ def _execute_locked(
     try:
         if req.lang == "java":
             steps = _run_java_steps(cfg, req, head, base, runner_client, steps)
+        elif req.lang != "ts":
+            eklenti = diller.eklenti(req.lang)
+            if eklenti is None:
+                raise ValueError(f"Bilinmeyen dil: {req.lang}")
+            steps = eklenti.run_static(cfg, req, head, base, runner_client, steps)
         else:
             steps = _run_steps(cfg, req, head, base, runner_client, steps)
-        report = aggregate(full, steps, req.step_names)
+        report = aggregate(full, steps, req.step_names, req.lang)
     except Exception as exc:  # dosya her durumda failure ile kapanır
-        report = aggregate(full, steps, req.step_names)
+        report = aggregate(full, steps, req.step_names, req.lang)
         report.update(
             conclusion="failure",
             ok=False,

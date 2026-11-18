@@ -1,0 +1,47 @@
+{#-
+  CasesToCode Swift / XCUITest şablonu (014 test dilleri, TASARIM §3.4; Constitution IV) — iOS,
+  müşteri CI hattı (musteri_ci).
+
+  Model Swift yazmaz: bu dosya yalnızca uygulamada (app-mcp) doğrulanmış ve deterministik
+  kontrollerden geçmiş adım → ekran nesnesi eşlemesinden render edilir
+  (tp_core.features.codegen.diller.swift).
+  - Her değer `swift` süzgecinden geçer: Swift literali (String / Int / Double / Bool). Dize yalnız
+    düz çift tırnaklıdır; ters bölü kaçışlıdır (`\(` interpolasyonu üretilemez), kontrol ve
+    görünmez karakterler `\u{XXXX}` olarak basılır. Gizli test verisi `ortam("TP_TESTVERI_…")`.
+  - Erişimci / metot / etiket / sınıf adları `ident` süzgecinden geçer (tanımlayıcı dilbilgisi,
+    Swift anahtar sözcükleri reddedilir); etiketler sembol tablosundaki parametre etiketleridir.
+  - Yorum satırları `comment` süzgecinden geçer (tek satır, kontrol karakteri yok).
+  - Çıktı deterministiktir (golden testi: core/tests/unit/features/codegen/golden/).
+  - Biçim `worker/diller/swift.py` korumasının izin listesidir: yalnız // yorumları, tek
+    `import XCTest`, `TestTabani`'ndan türeyen tek `final class`, en çok bir `override class var
+    bayi`, tek parametresiz `func testSenaryo()`, gövdede yalnız
+    `<erişimci>.<metot>(<etiket>: <literal>, …)` deyimleri.
+-#}
+// AI-generated — AI Testing Probe (CasesToCode). Elle düzenlemeyin; değişiklik case'in yeniden
+// onayı ve yeniden üretimle yapılır.
+// Case: {{ case_ref | comment }} ({{ case_id | comment }}) · Story: {{ story_key | comment }} · Jira Test: {{ test_key | comment }}
+// Onaylı case hash: {{ case_hash | comment }}
+// Eşleme: verify_and_map_app · platform: ios · mod: {{ mode | comment }} · bundle: {{ bundle_hash | comment }}
+// Eşleme hash: {{ mapping_hash | comment }} · şablon: {{ template_hash | comment }}
+// Doğrulama: müşteri CI ({{ check | comment }}) · kırarak doğrulanmadı
+// Senaryo: {{ description | comment }}
+import XCTest
+
+final class {{ class_name | ident }}: TestTabani {
+{% if dealer %}
+    override class var bayi: String? { {{ dealer | swift }} }
+
+{% endif %}
+    func testSenaryo() {
+{% for step in steps %}
+        // {{ step.label | comment }}
+{% for call in step.calls %}
+        {{ call.fixture | ident }}.{{ call.method | ident }}({{ call.args | sargs }})
+{% endfor %}
+{% endfor %}
+        // Beklenen sonuç (değerler onaylı case metninden)
+{% for call in expects %}
+        {{ call.fixture | ident }}.{{ call.method | ident }}({{ call.args | sargs }})
+{% endfor %}
+    }
+}

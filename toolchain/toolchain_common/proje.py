@@ -10,6 +10,11 @@ toolchain ayrı dağıtılabilir).
 - `app.<platform>` verilirse o platformun uygulama ayarları (`TP_APP_{ID,PATH,ACTIVITY,ARGS,
   WORKDIR}_<P>`) YALNIZ bloktan gelir (ortamla karışmaz). Cihaz/Appium ayarları (`APPIUM_URL_*`,
   `TP_DEVICE_*`, `TP_PLATFORM_VERSION`) paylaşımlı havuzdur (K2): her zaman ortamdan.
+- `e2e_app_root` / `e2e_java_root` (Java test kökleri, `TP_E2E_APP_ROOT` / `TP_E2E_JAVA_ROOT`)
+  ve `app_paths` (`TP_APP_PATHS`; boş liste = uygulama yolu karşılaştırması yok) ortamın üstüne
+  yazılır. Platform ayrı GitHub deposundaysa core bu alanları ve o deponun `mirror_path` /
+  `remote_url`'ini her zaman gönderir (platform-depo ANALIZ §3.2.9; ayna
+  `/forge-mirror/_depolar/<pid>/<sahip>/<ad>.git`).
 - `probe_password` ve `remote_token` repr'da görünmez (loglara düşmesin).
 - `remote_token`: uzak depo (ayna) okuma token'ı. GitHub bağlantısı Home'da `app` kipindeyken
   core-worker projenin kısa ömürlü kurulum token'ını (`/v1/connections/access-token
@@ -72,6 +77,14 @@ def _mutlak_alt(deger: str, kok: PurePosixPath, ad: str) -> str:
     return str(p)
 
 
+def _goreli(deger: str, ad: str) -> str:
+    """Depo içi göreli yol (mutlak değil, `..` yok, denetim karakteri yok)."""
+    p = PurePosixPath(deger.strip())
+    if not deger.strip() or p.is_absolute() or ".." in p.parts or _KONTROL_RE.search(deger):
+        raise ValueError(f"{ad} göreli ve '..' içermeyen bir yol olmalı")
+    return str(p)
+
+
 def _url(deger: str, ad: str) -> str:
     v = deger.strip()
     if not re.match(r"^https?://[^\s/]+", v) or _KONTROL_RE.search(v):
@@ -106,6 +119,9 @@ class AppAyari(BaseModel):
         }
 
 
+DIL_KOK_ADI_RE = re.compile(r"\ATP_[A-Z0-9_]{1,60}_ROOT(?:_(?:ANDROID|IOS|WINDOWS))?\Z")
+
+
 class ProjeBlogu(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -120,6 +136,13 @@ class ProjeBlogu(BaseModel):
     remote_token: str | None = Field(default=None, repr=False)
     run_dealers: list[str] | None = None
     e2e_root: str | None = None
+    e2e_app_root: str | None = None
+    e2e_java_root: str | None = None
+    # 014 test dilleri: dil kökleri (anahtar = env adı, ör. TP_E2E_PYTHON_ROOT ya da
+    # TP_E2E_APP_PYTHON_ROOT_ANDROID; değer depo köküne göre göreli yol).
+    dil_kokleri: dict[str, str] | None = None
+    base_ref: str | None = None
+    app_paths: list[str] | None = None
     app: dict[AppPlatform, AppAyari] | None = None
 
     @field_validator("pid")
@@ -168,15 +191,47 @@ class ProjeBlogu(BaseModel):
             raise ValueError("run_dealers öğeleri denetim karakteri/virgül içeremez")
         return out
 
-    @field_validator("e2e_root")
+    @field_validator("e2e_root", "e2e_app_root", "e2e_java_root")
     @classmethod
-    def _e2e(cls, v: str | None) -> str | None:
+    def _e2e(cls, v: str | None, info: ValidationInfo) -> str | None:
         if v is None:
             return None
-        p = PurePosixPath(v.strip())
-        if not v.strip() or p.is_absolute() or ".." in p.parts or _KONTROL_RE.search(v):
-            raise ValueError("e2e_root göreli ve '..' içermeyen bir yol olmalı")
-        return str(p)
+        return _goreli(v, info.field_name or "e2e_root")
+
+    @field_validator("dil_kokleri")
+    @classmethod
+    def _dil_kokleri(cls, v: dict[str, str] | None) -> dict[str, str] | None:
+        if v is None:
+            return None
+        if len(v) > 32:
+            raise ValueError("dil_kokleri en fazla 32 anahtar")
+        out: dict[str, str] = {}
+        for ad, yol in v.items():
+            if not DIL_KOK_ADI_RE.match(ad):
+                raise ValueError(f"dil_kokleri anahtarı geçersiz: {ad!r}")
+            out[ad] = _goreli(yol, f"dil_kokleri.{ad}")
+        return out
+
+    @field_validator("base_ref")
+    @classmethod
+    def _base_ref(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        if not v or len(v) > 200 or v.startswith(("-", "/")) or ".." in v or any(c in v for c in " ~^:?*[\\"):
+            raise ValueError("base_ref geçersiz dal adı")
+        return v
+
+    @field_validator("app_paths")
+    @classmethod
+    def _yollar(cls, v: list[str] | None) -> list[str] | None:
+        if v is None:
+            return None
+        out = [y.strip() for y in v if y.strip()]
+        for y in out:
+            if "," in y:
+                raise ValueError("app_paths öğeleri virgül içeremez")
+        return [_goreli(y, "app_paths") for y in out]
 
     @field_validator("app")
     @classmethod

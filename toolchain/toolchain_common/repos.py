@@ -49,9 +49,11 @@ def _try(repo: Path, ref: str, cfg: Settings) -> str | None:
 
 
 def _fetch(cfg: Settings, ref: str) -> None:
-    """Uzak depodan `ref`'i (ve `main`'i: merge-base/ast-guard tabanı) aynaya çeker."""
+    """Uzak depodan `ref`'i (ve deponun varsayılan dalını — `base_ref`, yoksa `main`: merge-base/
+    ast-guard tabanı) aynaya çeker."""
     gitforge.init_mirror(cfg.forge_mirror_path, cfg.git_timeout_s)
-    base = ["+refs/heads/main:refs/heads/main"]
+    taban = getattr(cfg, "base_ref", None) or "main"
+    base = [f"+refs/heads/{taban}:refs/heads/{taban}"]
     if SHA_RE.match(ref) and len(ref) == FULL_SHA_LEN:
         wanted = [f"+{ref}:refs/tp/{ref}"]
     elif SHA_RE.match(ref):

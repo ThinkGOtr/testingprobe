@@ -1,0 +1,8 @@
+bin/
+obj/
+TestResults/
+results/
+allure-results/
+kanit/
+*.user
+kirarak-dogrula/

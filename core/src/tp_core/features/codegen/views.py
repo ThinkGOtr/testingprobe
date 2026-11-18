@@ -10,7 +10,10 @@ kopyası yoksa ya da güncel head'e ait değilse (bayat) zorunlu check'ler `pend
 from __future__ import annotations
 
 import json
+import logging
 import re
+import threading
+import time
 import uuid
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -20,6 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, object_session
 
 from tp_core.config import get_settings
+from tp_core.features.codegen import depo as depolar
 from tp_core.features.codegen import platform as platformlar
 from tp_core.features.codegen.browser import AgentConfig, sayfa_adresi
 from tp_core.features.codegen.classify import GORUNEN_ADIMLAR
@@ -33,12 +37,14 @@ from tp_core.features.codegen.service import (
 )
 from tp_core.features.testveri import service as testveri
 from tp_core.integrations.forge import (
+    DIL_LISTESI_ENV,
     GITHUB_REQUIRED_CHECKS,
     LOCAL_REQUIRED_CHECKS,
     PLATFORMS_ENV,
     REQUIRED_CHECKS_ENV,
     WEB_DILLERI_ENV,
     ForgeValidationError,
+    etkin_dil_ciftleri,
     etkin_platformlar,
     etkin_web_dilleri,
     github_required_checks,
@@ -56,16 +62,45 @@ _SHA_RE = re.compile(r"[0-9a-f]{40}([0-9a-f]{24})?")
 _EKRAN_RE = re.compile(r"codegen/[0-9a-f-]{36}/step-\d{1,4}\.png")
 
 
-def _forge_ayarlari() -> dict[str, str]:
-    """Bağlamdaki projenin forge ayarları (`etkin_platformlar`/`etkin_web_dilleri` girdisi)."""
-    return {ad: deger for ad in (PLATFORMS_ENV, WEB_DILLERI_ENV) if (deger := ayar(ad)) is not None}
+def _gorunum(platform: str | None, depo: str | None) -> Mapping[str, str] | None:
+    """Platform deposunun config görünümü (0046); varsayılan depoda None (bugünkü `ayar` yolu)."""
+    if not depolar.normalize(depo):
+        return None
+    return depolar.gorunum(platform, depo)
 
 
-def required_checks() -> tuple[str, ...]:
+def _forge_ayarlari(platform: str | None = None, depo: str | None = None) -> dict[str, str]:
+    """Bağlamdaki projenin (ayrı platform deposunda o deponun) forge ayarları
+    (`etkin_platformlar`/`etkin_web_dilleri` girdisi)."""
+    g = _gorunum(platform, depo)
+    oku = ayar if g is None else g.get
+    adlar = (PLATFORMS_ENV, WEB_DILLERI_ENV, *DIL_LISTESI_ENV.values())
+    return {ad: deger for ad in dict.fromkeys(adlar) if (deger := oku(ad)) is not None}
+
+
+def depo_alanlari(depo: str | None) -> dict[str, str]:
+    """API yanıtlarının depo alanları (platform-depo sözleşmesi): `depo` (`''` = varsayılan) ve
+    `depo_adi` (gösterim, `sahip/ad`; okunamazsa kimlik)."""
+    d = depolar.normalize(depo)
+    try:
+        adi = depolar.depo_adi(d)
+    except Exception:  # gösterim adı yalnız bilgi: config okunamazsa kimlik
+        adi = d
+    return {"depo": d, "depo_adi": adi}
+
+
+def required_checks(platform: str | None = None, depo: str | None = None) -> tuple[str, ...]:
+    """Merge kapısının yapılandırılmış zorunlu listesi. Platform deposu (0046): kayıtlı depo
+    (`depo`, `platform` ipucu) ayrıysa o deponun `TP_REQUIRED_CHECKS` kaplaması (taban liste
+    DEVRALINMAZ: web check'leri mobil depoda oluşmaz → merge kilidi) ve o depoya düşen
+    platformlar; web dilleri yalnız varsayılan depoda."""
     forge = get_settings().forge
     varsayilan = LOCAL_REQUIRED_CHECKS if forge == "local" else GITHUB_REQUIRED_CHECKS
+    g = _gorunum(platform, depo)
     try:
-        liste = parse_required_checks(ayar(REQUIRED_CHECKS_ENV), varsayilan)
+        liste = parse_required_checks(
+            ayar(REQUIRED_CHECKS_ENV) if g is None else g.get(REQUIRED_CHECKS_ENV), varsayilan
+        )
     except ForgeValidationError:
         liste = tuple(varsayilan)
     if forge != "github":
@@ -74,8 +109,16 @@ def required_checks() -> tuple[str, ...]:
     try:
         # GitHub: etkin platformların ve web dillerinin iş akışı check'leri (`TP_PLATFORMS`,
         # `TP_WEB_DILLERI`; GitHubForge ile aynı). Geçersiz değer `pr_checks`'te engel olur.
-        env = _forge_ayarlari()
-        return github_required_checks(liste, etkin_platformlar(env), etkin_web_dilleri(env))
+        env = _forge_ayarlari(platform, depo)
+        # 014: açık ve seçili (platform, dil) çiftlerinin iş akışı check'leri.
+        ciftler = etkin_dil_ciftleri(env)
+        if g is not None:
+            # Ayrı depoda web yok: `web-java` eklenmez (TP_WEB_DILLERI kaplamada boş).
+            ciftler = tuple(c for c in ciftler if c[0] != "web")
+            return github_required_checks(liste, etkin_platformlar(env), (), dil_ciftleri=ciftler)
+        return github_required_checks(
+            liste, etkin_platformlar(env), etkin_web_dilleri(env), dil_ciftleri=ciftler
+        )
     except ForgeValidationError:
         return liste
 
@@ -109,6 +152,7 @@ def github_checks(sha: str | None, kayit: PullRequest | None) -> list[dict[str, 
 def github_kapi_zorunlu(
     yapilandirilmis: Sequence[str], kayit: PullRequest | None
 ) -> tuple[str, ...]:
+    # Ayrı platform deposunda (0046) web yok: kapalı taraf `web-java` eklemez.
     """GitHub merge kapısının zorunlu listesi (MİM-D3: kapıyla AYNI sonuç). core-worker PR
     senkronu `GitHubForge.zorunlu_checkler(head, base)` sonucunu (K-T13: hedef dal ∪ head
     `web-java.yml`, okunamazsa kapalı taraf) `pull_request.zorunlu_checkler`'e yazar; liste
@@ -121,7 +165,8 @@ def github_kapi_zorunlu(
             return validate_required_checks([*yapilandirilmis, *sakli])
         except ForgeValidationError:
             pass  # bozuk kopya → kapalı taraf
-    return github_required_checks(yapilandirilmis, (), web_java_is_akisi=True)
+    ayri = kayit is not None and bool(depolar.normalize(kayit.depo))
+    return github_required_checks(yapilandirilmis, (), web_java_is_akisi=not ayri)
 
 
 def script_pr_kaydi(sc: Script) -> PullRequest | None:
@@ -129,7 +174,7 @@ def script_pr_kaydi(sc: Script) -> PullRequest | None:
     if sc.pr_no is None:
         return None
     s = object_session(sc)
-    return s.get(PullRequest, PullRequest.anahtar(sc.pr_no)) if s is not None else None
+    return s.get(PullRequest, PullRequest.anahtar(sc.pr_no, sc.depo)) if s is not None else None
 
 
 def _check_durumu(c: dict[str, Any]) -> str:
@@ -164,6 +209,7 @@ def yerel_zorunlu_checkler(
     platform: str | None = None,
     dil: str | None = None,
     repodaki_web_dilleri: Sequence[str] = (platformlar.TS,),
+    depo: str | None = None,
 ) -> tuple[tuple[str, ...], str | None]:
     """LocalForge merge kapısıyla AYNI kural (`forge.local_required_checks`): portal ve
     `merge_pr` aynı zorunlu listeyi görür. Script'in kendi check'i (`platform.check_adi`:
@@ -178,10 +224,10 @@ def yerel_zorunlu_checkler(
         kosular.append(CheckRun(name=beklenen, status="queued"))
     try:
         return local_required_checks(
-            required_checks(), kosular, list(degisen), repodaki_web_dilleri
+            required_checks(platform, depo), kosular, list(degisen), repodaki_web_dilleri
         )
     except ForgeValidationError:
-        return required_checks(), None
+        return required_checks(platform, depo), None
 
 
 def pr_checks(
@@ -191,6 +237,7 @@ def pr_checks(
     degisen: Sequence[str] = (),
     platform: str | None = None,
     dil: str | None = None,
+    depo: str | None = None,
 ) -> tuple[list[dict[str, Any]], str | None, list[str]]:
     """(portal check listesi, ci özeti, zorunlu check engelleri).
 
@@ -198,11 +245,14 @@ def pr_checks(
     (`yerel_zorunlu_checkler`; `degisen` = PR'ın değiştirdiği yollar, `platform` = script'in
     platformu). GitHub: `kayit` (PR kaydı) üzerindeki worker kopyası; kopya yok/bayatsa zorunlu
     check'ler `pending` (asla `passed` değil); platform iş akışları `TP_PLATFORMS` ile zorunlu."""
-    zorunlu = required_checks()
+    # Platform deposu (0046): zorunlu liste PR'ın kayıtlı deposununkidir (`depo`; yoksa kayıttaki).
+    if depo is None and kayit is not None:
+        depo = kayit.depo
+    zorunlu = required_checks(platform, depo)
     ek_engel: str | None = None
     if get_settings().forge == "github":
         try:
-            env = _forge_ayarlari()
+            env = _forge_ayarlari(platform, depo)
             etkin_platformlar(env)
             etkin_web_dilleri(env)
         except ForgeValidationError as exc:
@@ -242,7 +292,7 @@ def pr_checks(
             )
     else:
         ham = read_checks(sha)
-        zorunlu, ek_engel = yerel_zorunlu_checkler(ham, degisen, platform, dil)
+        zorunlu, ek_engel = yerel_zorunlu_checkler(ham, degisen, platform, dil, depo=depo)
     son: dict[str, dict[str, Any]] = {}
     for c in ham:
         son[c["name"]] = c
@@ -280,12 +330,19 @@ def pr_checks(
 def _pr(session: Session, sc: Script, cg: ScriptCodegen) -> dict[str, Any] | None:
     if sc.pr_no is None:
         return None
-    kayit = session.get(PullRequest, PullRequest.anahtar(sc.pr_no))
+    kayit = session.get(PullRequest, PullRequest.anahtar(sc.pr_no, sc.depo))
     checks, ci, _ = pr_checks(
-        sc.head_sha, kayit, degisen=pr_degisen_yollari(sc), platform=sc.platform, dil=sc.dil
+        sc.head_sha,
+        kayit,
+        degisen=pr_degisen_yollari(sc),
+        platform=sc.platform,
+        dil=sc.dil,
+        depo=sc.depo or "",
     )
     return {
         "number": sc.pr_no,
+        # 0046: PR'ın deposu (`''` = varsayılan; eylemler `/prs/{n}/…?depo=` ile) ve gösterim adı.
+        **depo_alanlari(sc.depo),
         "url": cg.pr_url,
         "baslik": kayit.baslik if kayit else (cg.baslik or ""),
         "branch": sc.branch or (kayit.branch if kayit else ""),
@@ -328,6 +385,51 @@ def _break_verify(sc: Script, cg: ScriptCodegen) -> dict[str, Any]:
     return {"durum": cg.break_durum, "asamalar": asamalar, "neden": kd.get("neden")}
 
 
+log = logging.getLogger(__name__)
+
+# 014 müşteri CI özeti: (depo, platform, dil, head_sha) → (zaman, özet). Kalıcı kayıt/poll yok:
+# script okunurken GitHub check + tp-results okunur; aynı head için kısa süre önbellekte kalır.
+_MCI_ONBELLEK: dict[tuple[str, str, str, str], tuple[float, dict[str, Any] | None]] = {}
+_MCI_KILIT = threading.Lock()
+MCI_ONBELLEK_S = 60.0
+_MCI_ONBELLEK_MAX = 256
+
+
+def _musteri_ci_ozeti(sc: Script) -> dict[str, Any] | None:
+    """Ş5 `portal_musteri_ci(hat_durumu(...))`: yalnız müşteri CI çiftinde, PR'ı ve head'i olan
+    script'te ve GitHub kipinde (yerel forge'da müşteri CI yok). Okuma hatası → None."""
+    p = sc.platform or platformlar.WEB
+    d = platformlar.dil(p, sc.dil)
+    if not platformlar.musteri_ci_mi(p, d) or not sc.head_sha or not sc.pr_no:
+        return None
+    if get_settings().forge != "github":
+        return None
+    anahtar = (sc.depo or "", p, d, sc.head_sha)
+    simdi = time.monotonic()
+    with _MCI_KILIT:
+        kayit = _MCI_ONBELLEK.get(anahtar)
+    if kayit is not None and simdi - kayit[0] < MCI_ONBELLEK_S:
+        return kayit[1]
+    ozet: dict[str, Any] | None
+    try:
+        from tp_core.features import musteri_ci as mci
+        from tp_core.features.ci import services as ci_services
+        from tp_core.features.codegen.service import _forge_depo
+
+        g = mci.hat_durumu(
+            _forge_depo(sc.depo, p), ci_services.github(sc.depo or "", p), sc.head_sha, p, d
+        )
+        ozet = mci.portal_musteri_ci(g, sc.head_sha)
+    except Exception:
+        log.warning("müşteri CI durumu okunamadı: script %s", sc.id, exc_info=True)
+        ozet = None
+    with _MCI_KILIT:
+        _MCI_ONBELLEK[anahtar] = (simdi, ozet)
+        while len(_MCI_ONBELLEK) > _MCI_ONBELLEK_MAX:
+            _MCI_ONBELLEK.pop(next(iter(_MCI_ONBELLEK)))
+    return ozet
+
+
 def serialize(
     session: Session,
     sc: Script,
@@ -354,10 +456,18 @@ def serialize(
         "dosya_yolu": sc.dosya_yolu,
         # 009 §2.1: web | android | ios | windows (portal rozeti / Kontrol Kulesi süzgeci).
         "platform": sc.platform,
+        # 0046: script'in (PR'ının) deposu ve gösterim adı.
+        **depo_alanlari(sc.depo),
         # 011 §2.3: üretim dili, nereden geldiği ve doğrulanmamış (csharp | python) bayrağı.
         "dil": sc.dil,
         "dil_kaynagi": sc.dil_kaynagi,
         "dogrulanmamis": dogrulanmamis(sc),
+        # 014 (Ş7): çiftin hattı (eski `unverified` kayıtlar `dogrulanmamis`) ve müşteri CI özeti
+        # (Ş5 `portal_musteri_ci`; GitHub check + tp-results okumasından, kısa önbellekli).
+        "hat": "dogrulanmamis"
+        if dogrulanmamis(sc)
+        else platformlar.etkin_hat(sc.platform, platformlar.dil(sc.platform, sc.dil)),
+        "musteri_ci": _musteri_ci_ozeti(sc),
         "branch": sc.branch or "",
         "durum": sc.durum,
         # Faz 4: defect adayı script'in triage sonucu (portal "Triage sonucuna git").
@@ -479,6 +589,7 @@ def merge_engelleri(sc: Script, cg: ScriptCodegen) -> list[str]:
         degisen=pr_degisen_yollari(sc),
         platform=sc.platform,
         dil=sc.dil,
+        depo=sc.depo or "",
     )
     engeller += check_engelleri
     return engeller

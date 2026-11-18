@@ -63,11 +63,20 @@ class _Hedef:
     java: bool
     govde: dict[str, Any]  # `/symbols` gövdesine eklenecek alanlar
     anahtar: tuple[str, ...]  # sembol önbelleği anahtar eki
+    # 014: ts/java dışı dil (worker eklentisi); None = ts/java yolu (davranış değişmez).
+    eklenti_dili: str | None = None
 
 
 def _hedef(platform: str | None, lang: str | None) -> _Hedef:
     p = platform or platformlar.WEB
     dil = platformlar.dil(p, lang)
+    if (
+        lang not in (None, platformlar.TS, platformlar.JAVA)
+        and lang == dil
+        and platformlar.repoya_yazar_mi(dil, p)
+    ):
+        # 014: tam / müşteri CI hattındaki yeni dil → toolchain worker eklentisi.
+        return _Hedef(p, False, {"lang": dil, "platform": p}, (dil, p), eklenti_dili=dil)
     if dil not in platformlar.TAM_HAT_DILLERI or (lang is not None and lang != dil):
         # `csharp` / `python` toolchain'e hiç gitmez (011 §2.6).
         raise ToolchainError(None, f"toolchain yalnızca ts | java dillerini işler: {lang!r}")
@@ -146,9 +155,13 @@ class ToolchainClient:
         tablo = self._post("/symbols", {"sha": sha, **yol.govde}, SYMBOLS_TIMEOUT_S)
         if "page_objects" not in tablo:
             raise ToolchainError(200, "sembol tablosu page_objects içermiyor")
+        if yol.eklenti_dili and tablo.get("lang") not in (None, yol.eklenti_dili):
+            raise ToolchainError(
+                200, f"{yol.eklenti_dili} sembol tablosu beklenirken lang={tablo.get('lang')}"
+            )
         if yol.java and tablo.get("lang") not in (None, "java"):
             raise ToolchainError(200, f"Java sembol tablosu beklenirken lang={tablo.get('lang')}")
-        if not yol.java and tablo.get("lang") not in (None, "ts"):
+        if not yol.java and not yol.eklenti_dili and tablo.get("lang") not in (None, "ts"):
             raise ToolchainError(200, f"TS sembol tablosu beklenirken lang={tablo.get('lang')}")
         with _LOCK:
             _SYMBOL_CACHE[anahtar] = tablo
@@ -192,7 +205,10 @@ class ToolchainClient:
         if fault is not None:
             body["fault"] = fault
         yol = _hedef(platform, lang)
-        if yol.java:
+        if yol.eklenti_dili:
+            body["lang"] = yol.eklenti_dili
+            body["platform"] = yol.platform
+        elif yol.java:
             # Java yolu açıkça (`lang`) + sürücü/ortam (`platform`: Appium platformu ya da `web`).
             body["lang"] = "java"
             body["platform"] = yol.platform

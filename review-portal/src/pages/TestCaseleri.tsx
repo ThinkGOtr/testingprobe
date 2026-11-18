@@ -6,6 +6,7 @@ import { CASE_DURUMLARI, type CaseDurumu, type Gereksinim, type Script, type Tes
 import { caseCapasi } from "../components/CaseKarti";
 import { DilRozeti } from "../components/Dil";
 import { PlatformRozeti } from "../components/Platform";
+import { DepoCipi } from "../components/Depo";
 import { BosDurum, Cip, DisBaglanti, HataKutusu, IzinliLink, Kart, SayfaBasligi, Yukleniyor } from "../components/ui";
 import { useIzin } from "../auth";
 import { useGeciktirilmis, useVeri } from "../hooks";
@@ -258,6 +259,7 @@ function OtomasyonHucresi({ scriptler, sinirda }: { scriptler: Script[] | null; 
             <DilRozeti dil={s.dil} platform={s.platform} />
             <Cip ton={d.ton}>{d.etiket}</Cip>
             {/* Script ekranı (`/kod/:id`, `code.read`); PR numarası o ekranın PR kartına götürür. */}
+            <DepoCipi kaynak={s} />
             {s.pr ? (
               <IzinliLink to={`/kod/${encodeURIComponent(s.id)}#pr`} className="mono" data-testid="otomasyon-pr">
                 PR #{s.pr.number}{" "}

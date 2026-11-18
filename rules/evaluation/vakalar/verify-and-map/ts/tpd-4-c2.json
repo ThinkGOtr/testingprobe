@@ -1,0 +1,8 @@
+{
+  "id": "tpd-4-c2",
+  "story": "TPD-4",
+  "case_no": 2,
+  "platform": "web",
+  "baslik": "hatalı parola",
+  "ajan_tablosu": "core/tests/unit/features/codegen/symbols.json"
+}

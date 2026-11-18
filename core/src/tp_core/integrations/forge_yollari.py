@@ -9,6 +9,13 @@ Kökler kurulum ayarıdır (D): `TP_FORGE_PATH` (bugün varsayılan projenin bar
 - **Diğer projeler:** `/forge/<pid>/repo.git`, `/forge/<pid>/prs/`, `/forge-mirror/<pid>.git`.
 
 pid yol bileşeni olarak kullanıldığından burada doğrulanır (`/`, `..`, boşluk yok).
+
+**Platform depoları** (platform-depo ANALIZ §3.2.9): ayrı GitHub deposu (`depo` = küçük harfli
+`sahip/ad`, `proje_ortami.depo_anahtari`) için ayna `/forge-mirror/_depolar/<pid>/<sahip>/<ad>.git`
+(ve kullanılmayan yerel depo yolu `/forge/_depolar/<pid>/<sahip>/<ad>.git`: GitHub kipinde ref bu
+depoya değil aynaya çözülsün). `_depolar` pid olamaz (pid harf/rakamla başlar), dolayısıyla
+türetilen yol hiçbir projenin `<pid>.git` aynasıyla ya da varsayılan aynayla çakışmaz; aynı depoyu
+paylaşan platformlar (ör. android + ios) tek aynayı kullanır. `depo=''` = bugünkü yollar.
 """
 
 from __future__ import annotations
@@ -23,6 +30,9 @@ VARSAYILAN_DEPO = "/forge/demo-app.git"
 VARSAYILAN_AYNA = "/forge-mirror/demo-app.git"
 PRS_DOSYASI = "tp-prs.json"
 _PID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
+_SAHIP_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,38}$")
+_AD_RE = re.compile(r"^[a-z0-9._-]{1,100}$")
+PLATFORM_DEPOLARI = "_depolar"
 
 
 class GecersizProjeKimligi(ValueError):
@@ -63,8 +73,24 @@ def ayna_koku() -> Path:
     return _ortam("TP_FORGE_MIRROR_PATH", VARSAYILAN_AYNA).parent
 
 
-def depo_yolu(pid: str) -> Path:
-    """Projenin bare deposu."""
+def _depo_parcalari(depo: str) -> tuple[str, str]:
+    """Küçük harfli `sahip/ad` → (sahip, ad); yol bileşeni olamayan değer `GecersizProjeKimligi`."""
+    sahip, _, ad = depo.partition("/")
+    if not _SAHIP_RE.fullmatch(sahip) or not _AD_RE.fullmatch(ad) or ad in (".", ".."):
+        raise GecersizProjeKimligi(f"depo kimliği yol bileşeni olamaz: {depo!r}")
+    return sahip, ad
+
+
+def _platform_deposu(kok: Path, pid: str, depo: str) -> Path:
+    sahip, ad = _depo_parcalari(depo)
+    pid_kok = pid if varsayilan_mi(pid) and _PID_RE.fullmatch(pid or "") else _dogrula(pid)
+    return kok / PLATFORM_DEPOLARI / pid_kok / sahip / f"{ad}.git"
+
+
+def depo_yolu(pid: str, depo: str = "") -> Path:
+    """Projenin bare deposu (`depo` verilirse platform deposunun kullanılmayan yerel yolu)."""
+    if depo:
+        return _platform_deposu(forge_koku(), pid, depo)
     if varsayilan_mi(pid):
         return _ortam("TP_FORGE_PATH", VARSAYILAN_DEPO)
     return forge_koku() / _dogrula(pid) / "repo.git"
@@ -87,8 +113,10 @@ def pr_dosyasi(pid: str) -> Path:
     return pr_dizini(pid) / PRS_DOSYASI
 
 
-def ayna_yolu(pid: str) -> Path:
-    """GitHub kipinde toolchain'in salt okunur aynası."""
+def ayna_yolu(pid: str, depo: str = "") -> Path:
+    """GitHub kipinde toolchain'in salt okunur aynası (`depo` verilirse platform deposununki)."""
+    if depo:
+        return _platform_deposu(ayna_koku(), pid, depo)
     if varsayilan_mi(pid):
         return _ortam("TP_FORGE_MIRROR_PATH", VARSAYILAN_AYNA)
     return ayna_koku() / f"{_dogrula(pid)}.git"

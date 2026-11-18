@@ -18,6 +18,8 @@
 #       --via-flow          asistan setini gerçek akıştan (flow.cevapla) koşar; bayraksız atlanır
 #                           (tohumlu yığın ister: make up + seed; worker durdurulmalı)
 #       --purpose AMAÇ      yalnız bu amacı koşar (tekrarlanabilir; ör. assistant, assistant_deep)
+#       --dil DİL           yalnız verify-and-map(-app) setlerinin bu dile ait vakaları; --update-status
+#                           paketi değil rules/diller.yaml çift kanıtını yazar (dil kapısı)
 #
 # Ajan setleri (consistency-check, verify-and-map) yığını ister (make up): forge, demo-app salt
 # okuma veritabanı (DEMOAPP_RO_DATABASE_URL), Playwright MCP (PLAYWRIGHT_MCP_URL). Erişilemezse
@@ -31,7 +33,7 @@ set -euo pipefail
 
 case "${1:-}" in
   -h|--help)
-    sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'
     exit 0
     ;;
 esac

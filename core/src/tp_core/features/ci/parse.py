@@ -909,3 +909,97 @@ def java_ayristirmasi(ayr: Ayristirma) -> Ayristirma:
         istatistik=ayr.istatistik,
         raporlar=ayr.raporlar,
     )
+
+
+def dil_ayristirmasi(ayr: Ayristirma, dil: str) -> Ayristirma:
+    """014: ts/java dışı dilin (python, csharp) JUnit ayrıştırması. Test kimliği dilin triage
+    eklenti modülündeki `junit_kimligi(classname, name)` ile test-runner özetinin biçimine
+    çevrilir (C#: `Tests/…/<Sınıf>.cs`, `<Sınıf> › Senaryo`); kanca yoksa değer değişmez. Bu
+    dillerde JSON rapor olmadığından "JSON yok" uyarısı düşer."""
+    import importlib
+
+    try:
+        kimlik = getattr(
+            importlib.import_module(f"tp_core.features.triage.diller.{dil}"), "junit_kimligi", None
+        )
+    except ImportError:
+        kimlik = None
+    testler = list(ayr.testler)
+    if kimlik is not None:
+        out = []
+        for t in testler:
+            dosya, ad = kimlik(t.dosya, t.test_adi)
+            out.append(TestSatiri(**{**t.__dict__, "dosya": dosya, "test_adi": ad}))
+        testler = out
+    return Ayristirma(
+        testler=testler,
+        uyarilar=[u for u in ayr.uyarilar if not u.startswith(_JSON_YOK_UYARISI)],
+        istatistik=ayr.istatistik,
+        raporlar=ayr.raporlar,
+    )
+
+
+# ------------------------------------------- müşteri CI (Ş5): Gradle / xcresult yol yardımcıları
+
+# Android (Espresso): `./gradlew connected<Variant>AndroidTest` JUnit raporları
+# `<modül>/build/outputs/androidTest-results/connected/[<flavor>/][<cihaz>/]TEST-*.xml`.
+GRADLE_ANDROIDTEST_DIZINI = "androidTest-results"
+GRADLE_CONNECTED_DIZINI = "connected"
+# iOS (XCUITest): `xcresult_junit.py` (rules/ci-sablonlari) çıktısı; tp-results `junit/` altında.
+XCRESULT_JUNIT_AD = "xcresult-junit.xml"
+XCRESULT_SONEKI = ".xcresult"
+# tp-results artefaktının JUnit dizini (`musteri_ci.sozlesme.JUNIT_DIZINI` ile aynı).
+MUSTERI_CI_JUNIT_DIZINI = "junit"
+
+
+def _guvenli_parcalar(yol: str) -> list[str] | None:
+    """Artefakt içi göreli yolun parçaları; mutlak, `..`'lı ya da boş parçalı yol None."""
+    if not isinstance(yol, str) or not yol or yol.startswith("/") or "\\" in yol:
+        return None
+    parcalar = yol.split("/")
+    if any(p in ("", ".", "..") for p in parcalar):
+        return None
+    return parcalar
+
+
+def gradle_rapor_dizini(modul: str = "app") -> str:
+    """Gradle modülünün bağlı cihaz (emülatör) koşusu JUnit dizini (şablon ve kurulum için)."""
+    return f"{modul}/build/outputs/{GRADLE_ANDROIDTEST_DIZINI}/{GRADLE_CONNECTED_DIZINI}"
+
+
+def gradle_androidtest_yolu_mu(yol: str) -> bool:
+    """Yol Gradle'ın bağlı cihaz koşusu JUnit raporu mu
+    (`…/androidTest-results/connected/**/TEST-*.xml`)?"""
+    parcalar = _guvenli_parcalar(yol)
+    if not parcalar or not fnmatch.fnmatchcase(parcalar[-1], SUREFIRE_KALIBI):
+        return False
+    dizinler = parcalar[:-1]
+    for i, p in enumerate(dizinler[:-1]):
+        if p == GRADLE_ANDROIDTEST_DIZINI and dizinler[i + 1] == GRADLE_CONNECTED_DIZINI:
+            return True
+    return False
+
+
+def xcresult_junit_yolu_mu(yol: str) -> bool:
+    """Yol `xcresult_junit.py` çıktısı mı (`…/xcresult-junit.xml`)?"""
+    parcalar = _guvenli_parcalar(yol)
+    return bool(parcalar) and parcalar[-1] == XCRESULT_JUNIT_AD
+
+
+def xcresult_paketi_mi(yol: str) -> bool:
+    """Yol bir `.xcresult` paketi (dizin) ya da onun içinde mi? (ham paket JUnit sayılmaz.)"""
+    parcalar = _guvenli_parcalar(yol)
+    return bool(parcalar) and any(p.endswith(XCRESULT_SONEKI) for p in parcalar)
+
+
+def musteri_ci_junit_yolu_mu(yol: str) -> bool:
+    """tp-results artefaktında JUnit raporu mu? `junit/**.xml`, Gradle özgün yolu ya da
+    `xcresult-junit.xml`; `.xcresult` paketinin içi asla."""
+    parcalar = _guvenli_parcalar(yol)
+    if not parcalar or not parcalar[-1].endswith(".xml") or xcresult_paketi_mi(yol):
+        return False
+    return (
+        MUSTERI_CI_JUNIT_DIZINI in parcalar[:-1]
+        or gradle_androidtest_yolu_mu(yol)
+        or xcresult_junit_yolu_mu(yol)
+    )

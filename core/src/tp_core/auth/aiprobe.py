@@ -106,6 +106,10 @@ class DevirYaniti:
     # Config R1 (CONTRACT, handoff): devrin organizasyon / proje kimliği (isteğe bağlı).
     org_id: str | None = None
     project_id: str | None = None
+    # Org varsayılan dili (2026-11-18): Home'un `locale`'i hangi kuraldan geldi
+    # (`profile` | `org` | `platform`; eski Home'da yok → None). TP arayüzü şimdilik yalnız
+    # Türkçe ve ürün içi dil seçimi yok; alan ileride arayüz dili için taşınır (bkz. `_dil_alani`).
+    locale_source: str | None = None
 
 
 @dataclass(frozen=True)
@@ -155,6 +159,23 @@ def _kimlik_alani(deger: Any) -> str | None:
     if isinstance(deger, str) and _KIMLIK.match(deger):
         return deger
     return None
+
+
+DILLER = frozenset({"tr", "en"})
+DIL_KAYNAKLARI = frozenset({"profile", "org", "platform"})
+
+
+def _dil_alani(deger: Any) -> str | None:
+    """Home `locale`: `tr` | `en` (bölge eki atılır, `en-US` → `en`); tanınmayan → `None`."""
+    if not isinstance(deger, str):
+        return None
+    dil = deger.strip().lower().replace("_", "-").split("-", 1)[0]
+    return dil if dil in DILLER else None
+
+
+def _dil_kaynagi(deger: Any) -> str | None:
+    """Home `locale_source`: `profile` | `org` | `platform`; yoksa / tanınmazsa `None`."""
+    return deger if isinstance(deger, str) and deger in DIL_KAYNAKLARI else None
 
 
 # ------------------------------------------------------------------ servis kimliği (enjekte)
@@ -397,7 +418,8 @@ class HomeIstemcisi:
                 acr=str(v.get("acr") or "1"),
                 state=str(v.get("state") or ""),
                 continue_=str(v.get("continue") or "/"),
-                locale=v.get("locale"),
+                locale=_dil_alani(v.get("locale")),
+                locale_source=_dil_kaynagi(v.get("locale_source")),
                 session_epoch_ms=int(v["session_epoch_ms"]) if v.get("session_epoch_ms") else None,
                 products=_urun_haritasi(v.get("products")),
                 org_id=_kimlik_alani(v.get("org_id")),

@@ -1,0 +1,17 @@
+{
+  "id": "tpd-1-c2-windows-python",
+  "story": "TPD-1",
+  "case_no": 2,
+  "platform": "windows",
+  "baslik": "7 adette 1 bedava (Windows) — Python ekran tablosu (Java gizli)",
+  "ajan_tablosu": "core/tests/unit/features/codegen/symbols-python-app.json",
+  "tablo_dili": "python",
+  "golden": "TPD-1-C2-android",
+  "expects_include": [
+    "SepetEkrani.dogrula_satir_adedi",
+    "SepetEkrani.dogrula_bedava_adet",
+    "SepetEkrani.dogrula_ara_toplam",
+    "SepetEkrani.dogrula_indirim",
+    "SepetEkrani.dogrula_toplam"
+  ]
+}

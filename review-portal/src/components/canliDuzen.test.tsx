@@ -100,7 +100,8 @@ describe("kart kalıbı (.tablo-yigin) tabloları", () => {
   it("Koşular tablosu dar ekranda karta döner; Durum ve Geçen hücreleri etiketli", async () => {
     await oturumAc("muhendis");
     uygulama("/kosular");
-    const tablo = await screen.findByRole("table");
+    // Sayfada platform-depo gece özeti tablosu da var (T3): koşular tablosu "Tetik" sütunlu olandır.
+    const tablo = (await screen.findByRole("columnheader", { name: "Tetik" })).closest("table") as HTMLElement;
     expect(tablo).toHaveClass("tablo-yigin");
     const ilk = within(tablo).getAllByRole("row")[1];
     const etiketler = [...ilk.querySelectorAll("td")].map((td) => td.getAttribute("data-etiket"));

@@ -1,0 +1,13 @@
+{
+  "id": "tpd-4-c1-csharp",
+  "story": "TPD-4",
+  "case_no": 1,
+  "platform": "web",
+  "baslik": "TPD-4 C1 (C# tablosu; TS gizli görünüm)",
+  "ajan_tablosu": "core/tests/unit/features/codegen/symbols-csharp-web.json",
+  "tablo_dili": "csharp",
+  "golden": "TPD-4-C1",
+  "expects_include": [
+    "LoginPage.ExpectLoggedInAsync"
+  ]
+}

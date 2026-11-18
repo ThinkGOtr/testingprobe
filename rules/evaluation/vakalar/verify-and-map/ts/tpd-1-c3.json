@@ -1,0 +1,8 @@
+{
+  "id": "tpd-1-c3",
+  "story": "TPD-1",
+  "case_no": 3,
+  "platform": "web",
+  "baslik": "6 adette 1 bedava (ana senaryo F2 case'i)",
+  "ajan_tablosu": "core/tests/unit/features/codegen/symbols.json"
+}

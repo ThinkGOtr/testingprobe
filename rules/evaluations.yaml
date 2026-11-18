@@ -90,20 +90,26 @@ bundles:
       guardrails_version: 1
       calls: evaluation/results/case-audit-v1-2026-11-13.calls.jsonl
   verify-and-map:
-    version: 3
-    status: pending
-    note: 'Faz 3: v3 (eylemdeki her locator''a ilk dayanmadan önce browser_generate_locator) ve verify_and_map
-      golden''ları yeniden kaydedildi. Tarayıcı adımları gerçek Playwright MCP''de kaydedildi ve replay_check
-      ile tekrarlandı; model çıktısı elle hazırlandı. Bu model değerlendirmesi değildir. Değerlendirme
-      seti: rules/evaluation/verify-and-map.json (ajan; araç ortamı `browser`, Playwright MCP). Canlı
-      değerlendirme yapılmadı; onaylı istisna yok.'
+    version: 4
+    status: evaluated
+    note: 'Canlı değerlendirme 2026-11-18, claude-sonnet-5-5 (anthropic), 9/9 vaka geçti: evaluation/results/verify-and-map-v4-2026-11-18.json'
+    evaluation:
+      date: '2026-11-18'
+      model: claude-sonnet-5-5
+      provider: anthropic
+      results: evaluation/results/verify-and-map-v4-2026-11-18.json
+      guardrails_version: 1
+      calls: evaluation/results/verify-and-map-v4-2026-11-18.calls.jsonl
   verify-and-map-app:
-    version: 1
+    version: 2
     status: pending
-    note: '009 Ş6: mobil/masaüstü (app-mcp/Appium) doğrulama ve eşleme paketi v1. REPLAY golden''ı (verify_and_map_app/golden/TPD-1-C2-android)
-      elle hazırlandı; araç adımları app-mcp sözleşmesine (docs/CIHAZ-ALTYAPISI.md §6) göre yazıldı, canlı
-      cihazda kaydedilmedi. Bu model değerlendirmesi değildir. Canlı değerlendirme yapılmadı; onaylı istisna
-      yok.'
+    note: '014 Ş8: v2 dilden bağımsız metin (Java sabiti kalktı; hedef dil `language` girdisi, ad dönüşümü
+      yasağı). Vaka kaynakları rules/evaluation/vakalar/verify-and-map-app/<dil>/ (vaka başına araç ortamı
+      app:<platform>). Canlı tam set koşusu 2026-11-18 (claude-sonnet-5-5, gerçek Android emülatörü + iOS
+      simülatörü, app-mcp): 7/9 — android (java, python, kotlin×2) ve ios (python, swift×2) vakalarının
+      hepsi geçti; iki windows vakası (python, csharp) Windows Appium''u olmadığı için kaldı (GCP tp-windows
+      kapalı, onaysız açılmadı): evaluation/results/verify-and-map-app-v2-2026-11-18.json. Windows vakaları
+      geçmeden evaluated yazılmaz; onaylı istisna yok.'
   triage:
     version: 2
     status: evaluated

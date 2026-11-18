@@ -157,13 +157,36 @@ def reset_factories() -> None:
     _factories.clear()
 
 
-def _forge() -> ForgePort:
+def _forge(depo: str = "", platform: str | None = None) -> ForgePort:
+    """Onarım script'inin KAYITLI deposunun forge'u (0046; `''` = varsayılan depo, bugünkü yol).
+    Test fabrikası argümansız çağrılır."""
     f = _factories.get("forge")
     if f is not None:
         return f()
+    from tp_core.features.codegen import depo as depolar
+
+    if depolar.normalize(depo):
+        return depolar.depo_forge(depo, platform)
     from tp_core.integrations.forge import get_forge
 
     return get_forge()
+
+
+def onarim_deposu(session: Session, f: Failure, platform: str) -> str:
+    """Onarım PR'ının deposu (0046): kırık koşunun deposu (`run.ortam.depo`) → koşunun script'inin
+    deposu → platformun güncel deposu. Onarım, kırık testin bulunduğu depoya gider."""
+    from tp_core.features.codegen import depo as depolar
+
+    run = session.get(Run, f.run_id)
+    if run is not None:
+        o = run.ortam or {}
+        if isinstance(o.get("depo"), str):
+            return depolar.normalize(o["depo"])
+        if run.script_id is not None:
+            sc = session.get(Script, run.script_id)
+            if sc is not None:
+                return depolar.normalize(sc.depo)
+    return depolar.depo_anahtari(platform)
 
 
 def _toolchain() -> RepairToolchain:
@@ -191,11 +214,12 @@ def e2e_root() -> str:
     return _kok()
 
 
-def e2e_app_root() -> str:
-    """Forge deposunda Java test projesinin kökü (`e2e-app` ya da `demo-app/e2e-app`)."""
+def e2e_app_root(platform: str | None = None) -> str:
+    """Forge deposunda Java test projesinin kökü (`e2e-app` ya da `demo-app/e2e-app`); `platform`
+    ayrı depodaysa o deponun uygulama kökü altında (0046)."""
     from tp_core.features.codegen import service as cg
 
-    return cg.e2e_app_root()
+    return cg.e2e_app_root(platform)
 
 
 def forge_yolu_java(goreli: str, kok: str | None = None) -> str:
@@ -215,8 +239,6 @@ def e2e_java_root() -> str:
 def onarim_dili(session: Session, f: Failure, oneri: Mapping[str, Any], platform: str) -> str:
     """Onarılan testin üretim dili (011): uygulama → `java`; web: triage önerisi → koşu ortamı
     (`dil` / `lang`) → koşunun script'i (`script.dil`) → `ts`."""
-    if platform != "web":
-        return "java"
     adaylar: list[Any] = [oneri.get("dil")]
     run = session.get(Run, f.run_id)
     if run is not None:
@@ -224,6 +246,16 @@ def onarim_dili(session: Session, f: Failure, oneri: Mapping[str, Any], platform
         if run.script_id is not None:
             sc = session.get(Script, run.script_id)
             adaylar.append(sc.dil if sc is not None else None)
+    yeni = [
+        a
+        for a in adaylar
+        if a not in (None, platformlar.TS, platformlar.JAVA) and platformlar.tam_hat_mi(a, platform)
+    ]
+    if yeni:
+        # 014: yeni tam hat dilinin testi (onarım şimdilik insana düşer: `_onar`).
+        return str(yeni[0])
+    if platform != "web":
+        return "java"
     for a in adaylar:
         if a in platformlar.TAM_HAT_DILLERI:
             return str(a)
@@ -574,11 +606,15 @@ def request_fix(session: Session, failure_id: uuid.UUID, user: Principal) -> dic
     elif platform == "web":
         dosya = forge_yolu(str(oneri.get("dosya") or "pages/locators.ts"))
     else:
-        dosya = forge_yolu_java(str(oneri.get("dosya") or locators.KIMLIKLER_VARSAYILAN))
+        dosya = forge_yolu_java(
+            str(oneri.get("dosya") or locators.KIMLIKLER_VARSAYILAN), e2e_app_root(platform)
+        )
+    depo = onarim_deposu(session, f, platform)
     yeniden = mevcut is not None and mevcut.durum in TEKRAR_DURUMLARI
     if yeniden:
         assert mevcut is not None
         sc = mevcut
+        sc.depo = depo  # PR'ı yok (TEKRAR_DURUMLARI): güncel kırık koşunun deposu
         if sc.durum == "failed":
             transition(session, sc, "pending", user.kullanici_adi, "failed",
                        sebep="onarım yeniden denendi")  # fmt: skip
@@ -607,6 +643,7 @@ def request_fix(session: Session, failure_id: uuid.UUID, user: Principal) -> dic
             failure_id=f.id,
             uretim_modu=None,  # model çağrısı yok (deterministik)
             platform=platform,
+            depo=depo,
         )
         # 011: merge sonrası `push` koşusu onarılan testin dilinde koşar (`ci.enqueue_ci`).
         sc.dil = dil
@@ -1017,6 +1054,8 @@ def _onar(engine: Engine, sid: uuid.UUID, fid: uuid.UUID, kayit: dict[str, Any])
         test_adi = f.test_adi
         kirik_run = s.get(Run, f.run_id)
         kayit["kirik_commit"] = kirik_run.commit if kirik_run is not None else None
+        sc_ = s.get(Script, sid)
+        depo = (sc_.depo or "") if sc_ is not None else ""
         platform = onarim_platformu(s, f, oneri)
         dil = onarim_dili(s, f, oneri, platform)
         kirik_dizin = (kirik_run.artefaktlar or {}).get("dizin") if kirik_run is not None else None
@@ -1028,6 +1067,13 @@ def _onar(engine: Engine, sid: uuid.UUID, fid: uuid.UUID, kayit: dict[str, Any])
             triage_onerisi=bool(oneri),
             platform=platform,
             dil=dil,
+            depo=depo,
+        )
+    if dil not in (None, "", "ts", "java"):
+        # 014: yeni dillerin locator yaması (Kimlikler dosyası) dil eklentisi kancasıyla gelecek;
+        # o zamana dek insana düşer (PR yok).
+        raise _Engel(
+            "baglam", f"{dil} dilinde otomatik locator onarımı henüz yok (014)", "uygun_degil"
         )
     web_java = platform == "web" and dil == "java"
     if web_java:
@@ -1046,9 +1092,11 @@ def _onar(engine: Engine, sid: uuid.UUID, fid: uuid.UUID, kayit: dict[str, Any])
         raise _Engel("locator", "Kırık locator'ın testId'si hata metninden çıkarılamadı")
     _adim(engine, sid, fid, "locator", "ok", f"Kırık testId: {eski}")
 
-    forge = _forge()
+    from tp_core.features.codegen import depo as depolar
+
     try:
-        main_sha = forge.head_sha("main")
+        forge = _forge(depo, platform)
+        main_sha = forge.head_sha(depolar.ana_dal(platform, depo))
     except ForgeError as exc:
         raise _Engel("forge", f"Forge okunamadı: {exc}", "environment") from exc
     kayit["main_sha"] = main_sha
@@ -1279,7 +1327,7 @@ def _kontrol_sonrasi(
         etkilenen,
         (str(kayit.get("eski_test_id") or ""), str(yeni)),
         java=java,
-        kok=e2e_java_root() if platform == "web" and java else None,
+        kok=e2e_java_root() if platform == "web" and java else e2e_app_root(platform),
     )
     if rapor is None:
         raise _Engel("yerel_kontrol", f"Yerel kontrol koşturulamadı: {hata}", "environment")
@@ -1403,7 +1451,7 @@ def _onar_java(
     yöntemi, kök `e2e-java`. Yerel kontrol (tam paket) asıl doğrulamadır.
     """
     web = platform == "web"
-    kok = e2e_java_root() if web else e2e_app_root()
+    kok = e2e_java_root() if web else e2e_app_root(platform)
     dil_alani: dict[str, Any] = {"lang": "java"} if web else {}
     # 2) sembol tablosu (Java) → kimlik sabiti
     try:
@@ -1834,11 +1882,13 @@ def _pr_ac(
         sc = s.get(Script, sid, with_for_update=True)
         assert sc is not None
         sc.pr_no = pr.number
-        satir = s.get(PullRequest, PullRequest.anahtar(pr.number))
+        depo = sc.depo or ""
+        satir = s.get(PullRequest, PullRequest.anahtar(pr.number, depo))
         if satir is None:
             s.add(
                 PullRequest(
                     number=pr.number,
+                    depo=depo,
                     branch=pr.branch,
                     base=pr.base,
                     baslik=pr.title[:300],
@@ -1892,11 +1942,14 @@ def _pr_ac(
 # --------------------------------------------------------------------- merge (insan)
 
 
-def repair_script_for_pr(session: Session, number: int, *, lock: bool = False) -> Script | None:
-    """PR bir locator onarımına mı ait? (codegen `/prs/{n}/merge` yönlendirmesi için)."""
+def repair_script_for_pr(
+    session: Session, number: int, *, depo: str = "", lock: bool = False
+) -> Script | None:
+    """PR bir locator onarımına mı ait? (codegen `/prs/{n}/merge` yönlendirmesi için). PR
+    numarası depo içinde tekildir (0046): `depo` = `''` (varsayılan) | `sahip/ad`."""
     sorgu = (
         select(Script)
-        .where(Script.pr_no == number, Script.tur == TUR)
+        .where(Script.pr_no == number, Script.depo == (depo or ""), Script.tur == TUR)
         .order_by(Script.olusturma.desc())
         .limit(1)
     )
@@ -1923,12 +1976,14 @@ def request_merge(
     user: Principal,
     icerik_hash: str | None,
     head_sha: str | None,
+    *,
+    depo: str = "",
 ) -> uuid.UUID:
     """İnsan merge kararı (görülen içerik hash'i + head) → `repair.merge` işi (Constitution I).
 
     Bot merge etmez; forge merge'ü onaylayan mühendis adına, onaylanan head'e bağlı yapılır.
     """
-    sc = repair_script_for_pr(session, number, lock=True)
+    sc = repair_script_for_pr(session, number, depo=depo, lock=True)
     if sc is None:
         raise RepairNotFound(f"PR #{number} bir locator onarımı değil")
     if not head_sha:
@@ -1960,6 +2015,7 @@ def request_merge(
         {
             "script_id": str(sc.id),
             "pr_number": number,
+            "depo": sc.depo or "",
             "actor": user.kullanici_adi,
             "head_sha": head_sha,
             "review_id": str(review.id),
@@ -1981,15 +2037,18 @@ def run_merge(ctx: JobContext, engine: Engine) -> dict[str, Any]:
         sc = s.get(Script, sid, with_for_update=True)
         if sc is None:
             raise PermanentJobError("onarım script'i bulunamadı")
+        depo, platform = sc.depo or "", sc.platform
+        if (yuk.get("depo") or "") != depo:
+            raise PermanentJobError("PR deposu merge kararından sonra değişti")
         if sc.durum == "merged" and sc.head_sha == head:
-            satir = s.get(PullRequest, PullRequest.anahtar(number))
+            satir = s.get(PullRequest, PullRequest.anahtar(number, depo))
             return {"durum": "merged", "pr": number, "zaten": True,
                     "merge_sha": satir.merge_sha if satir else None}  # fmt: skip
         if sc.durum != "pr_open" or sc.head_sha != head or sc.pr_no != number:
             raise PermanentJobError("PR/onarım durumu merge kararından sonra değişti")
         if not approved_hash_matches(s, sc, frozenset({"merge"})):
             raise PermanentJobError("güncel içerikle eşleşen insan merge onayı yok")
-    forge = _forge()
+    forge = _forge(depo, platform)
     zaten = _forge_merge_sha(forge, number, head)
     try:
         merge_sha = zaten or forge.merge_pr(number, actor, expected_head_sha=head)
@@ -2055,7 +2114,7 @@ def _merge_kaydet(
                    sebep="insan onaylı onarım merge'ü"
                    + (" (forge'da merge edilmişti; uzlaştırıldı)" if uzlastirma else ""),
                    ozet={"pr": number})  # fmt: skip
-        satir = s.get(PullRequest, PullRequest.anahtar(number))
+        satir = s.get(PullRequest, PullRequest.anahtar(number, sc.depo))
         if satir is not None:
             satir.durum = "merged"
             satir.merge_sha = merge_sha
@@ -2073,7 +2132,7 @@ def _merge_kaydet(
             actor,
             "repair.merged",
             f"script:{sid}",
-            {"pr": number, "head_sha": head, "merge_sha": merge_sha,
+            {"pr": number, "depo": sc.depo, "head_sha": head, "merge_sha": merge_sha,
              "failure_id": str(fid) if fid else None, "uzlastirma": uzlastirma,
              "eskiyen_oneri": eskiyen},
         )  # fmt: skip
@@ -2098,7 +2157,7 @@ def reconcile_merged(forge: ForgePort | None = None) -> int:
     Yalnızca güncel içerikle eşleşen insan merge onayı olanlar uzlaştırılır (Constitution I)."""
     with session_scope() as s:
         adaylar = [
-            (sc.id, sc.pr_no, sc.head_sha)
+            (sc.id, sc.pr_no, sc.head_sha, sc.depo or "", sc.platform)
             for sc in s.scalars(
                 select(Script).where(
                     Script.tur == TUR, Script.durum == "pr_open", Script.pr_no.is_not(None)
@@ -2108,12 +2167,25 @@ def reconcile_merged(forge: ForgePort | None = None) -> int:
         ]
     if not adaylar:
         return 0
-    forge = forge or _forge()
     n = 0
-    for sid, number, head in adaylar:
+    forgelar: dict[str, ForgePort | None] = {}
+    for sid, number, head, depo, platform in adaylar:
         if number is None or not head:
             continue
-        merge_sha = _forge_merge_sha(forge, number, head)
+        # 0046: her onarım PR'ı kendi kayıtlı deposunda (numaralar depolar arasında çakışır).
+        if forge is not None:
+            pr_forge: ForgePort | None = forge
+        else:
+            if depo not in forgelar:
+                try:
+                    forgelar[depo] = _forge(depo, platform)
+                except Exception as exc:  # o deponun forge'u kurulamadı: diğer depolar sürer
+                    log.warning("onarım uzlaştırması: %s deposu kurulamadı: %s", depo, exc)
+                    forgelar[depo] = None
+            pr_forge = forgelar[depo]
+        if pr_forge is None:
+            continue
+        merge_sha = _forge_merge_sha(pr_forge, number, head)
         if merge_sha is None:
             continue
         aktor = _son_merge_onaylayan(sid) or "system"

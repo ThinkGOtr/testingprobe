@@ -1,0 +1,1073 @@
+{
+ "schema_version": 1,
+ "lang": "csharp",
+ "platform": "windows",
+ "root": ".",
+ "page_objects": [
+  {
+   "class": "GirisEkrani",
+   "file": "Ekranlar/GirisEkrani.cs",
+   "doc": "Bayi giri\u015f ekran\u0131 (Java GirisEkrani; web LoginPage).",
+   "methods": [
+    {
+     "name": "Ac",
+     "params": [],
+     "returns": "void",
+     "kind": "action",
+     "async": false,
+     "doc": "Giri\u015f ekran\u0131n\u0131 a\u00e7ar (uygulama her testte s\u0131f\u0131rdan, giri\u015f ekran\u0131nda ba\u015flar).",
+     "line": 14
+    },
+    {
+     "name": "GirisYap",
+     "params": [
+      {
+       "name": "kullaniciAdi",
+       "type": "string",
+       "optional": false
+      },
+      {
+       "name": "parola",
+       "type": "string",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "action",
+     "async": false,
+     "doc": "Bayi kullan\u0131c\u0131 ad\u0131 ve parolas\u0131yla giri\u015f yapar.",
+     "line": 17
+    },
+    {
+     "name": "CikisYap",
+     "params": [],
+     "returns": "void",
+     "kind": "action",
+     "async": false,
+     "doc": "Oturumu kapat\u0131r.",
+     "line": 25
+    },
+    {
+     "name": "DogrulaHataMesaji",
+     "params": [
+      {
+       "name": "beklenen",
+       "type": "string",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": false,
+     "doc": "Hata mesaj\u0131n\u0131n g\u00f6r\u00fcnd\u00fc\u011f\u00fcn\u00fc ve metnini do\u011frular.",
+     "line": 28
+    },
+    {
+     "name": "DogrulaGirisYapildi",
+     "params": [
+      {
+       "name": "bayiAdi",
+       "type": "string",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": false,
+     "doc": "Verilen bayi ad\u0131yla oturum a\u00e7\u0131ld\u0131\u011f\u0131n\u0131 ve katalo\u011fun a\u00e7\u0131ld\u0131\u011f\u0131n\u0131 do\u011frular.",
+     "line": 31
+    },
+    {
+     "name": "DogrulaGirisEkraninda",
+     "params": [],
+     "returns": "void",
+     "kind": "expect",
+     "async": false,
+     "doc": "Giri\u015f ekran\u0131nda olundu\u011funu do\u011frular.",
+     "line": 38
+    }
+   ],
+   "locators": {
+    "Giris.GIRIS_YAP": {
+     "testId": "login-submit",
+     "role": "",
+     "name": "",
+     "intent": "Giri\u015f formunu g\u00f6nderen buton.",
+     "prefix": false,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 38
+    },
+    "Giris.HATA": {
+     "testId": "login-error",
+     "role": "",
+     "name": "",
+     "intent": "Hatal\u0131 giri\u015fte g\u00f6sterilen hata mesaj\u0131.",
+     "prefix": false,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 40
+    },
+    "Giris.KULLANICI_ADI": {
+     "testId": "login-username",
+     "role": "",
+     "name": "",
+     "intent": "Giri\u015f formunda kullan\u0131c\u0131 ad\u0131 alan\u0131.",
+     "prefix": false,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 34
+    },
+    "Giris.PAROLA": {
+     "testId": "login-password",
+     "role": "",
+     "name": "",
+     "intent": "Giri\u015f formunda parola alan\u0131.",
+     "prefix": false,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 36
+    },
+    "Katalog.URUN_LISTESI": {
+     "testId": "product-list",
+     "role": "",
+     "name": "",
+     "intent": "\u00dcr\u00fcn kartlar\u0131n\u0131n listesi.",
+     "prefix": false,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 47
+    },
+    "Menu.BAYI_ADI": {
+     "testId": "current-dealer",
+     "role": "",
+     "name": "",
+     "intent": "Oturum a\u00e7m\u0131\u015f bayinin ad\u0131.",
+     "prefix": false,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 27
+    },
+    "Menu.CIKIS": {
+     "testId": "nav-logout",
+     "role": "",
+     "name": "",
+     "intent": "Oturumu kapatan buton.",
+     "prefix": false,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 25
+    }
+   }
+  },
+  {
+   "class": "KatalogEkrani",
+   "file": "Ekranlar/KatalogEkrani.cs",
+   "doc": "\u00dcr\u00fcn katalo\u011fu ekran\u0131 (Java KatalogEkrani; web CatalogPage).",
+   "methods": [
+    {
+     "name": "Ac",
+     "params": [],
+     "returns": "void",
+     "kind": "action",
+     "async": false,
+     "doc": "Katalog ekran\u0131n\u0131 a\u00e7ar.",
+     "line": 23
+    },
+    {
+     "name": "MenudenAc",
+     "params": [],
+     "returns": "void",
+     "kind": "action",
+     "async": false,
+     "doc": "\u00dcst men\u00fcden katalo\u011fa gider.",
+     "line": 30
+    },
+    {
+     "name": "AdetGir",
+     "params": [
+      {
+       "name": "urunKodu",
+       "type": "string",
+       "optional": false
+      },
+      {
+       "name": "adet",
+       "type": "int",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "action",
+     "async": false,
+     "doc": "\u00dcr\u00fcn kart\u0131ndaki adet alan\u0131na de\u011fer yazar.",
+     "line": 33
+    },
+    {
+     "name": "SepeteEkle",
+     "params": [
+      {
+       "name": "urunKodu",
+       "type": "string",
+       "optional": false
+      },
+      {
+       "name": "adet",
+       "type": "int",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "action",
+     "async": false,
+     "doc": "\u00dcr\u00fcn kart\u0131nda adedi girip \"Sepete ekle\" butonuna basar ve sepetin g\u00fcncellenmesini bekler.",
+     "line": 37
+    },
+    {
+     "name": "SepetiAc",
+     "params": [],
+     "returns": "void",
+     "kind": "action",
+     "async": false,
+     "doc": "\u00dcst men\u00fcden sepete gider.",
+     "line": 58
+    },
+    {
+     "name": "DogrulaUrunGorunur",
+     "params": [
+      {
+       "name": "urunKodu",
+       "type": "string",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": false,
+     "doc": "\u00dcr\u00fcn kart\u0131n\u0131n katalogda g\u00f6r\u00fcnd\u00fc\u011f\u00fcn\u00fc do\u011frular.",
+     "line": 65
+    },
+    {
+     "name": "DogrulaUrunFiyati",
+     "params": [
+      {
+       "name": "urunKodu",
+       "type": "string",
+       "optional": false
+      },
+      {
+       "name": "fiyat",
+       "type": "string",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": false,
+     "doc": "\u00dcr\u00fcn kart\u0131ndaki fiyat\u0131n verilen tutar oldu\u011funu do\u011frular (\u00f6r.",
+     "line": 68
+    },
+    {
+     "name": "DogrulaKampanya",
+     "params": [
+      {
+       "name": "urunKodu",
+       "type": "string",
+       "optional": false
+      },
+      {
+       "name": "kampanyaAdi",
+       "type": "string",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": false,
+     "doc": "\u00dcr\u00fcn kart\u0131nda verilen kampanya ad\u0131n\u0131n g\u00f6r\u00fcnd\u00fc\u011f\u00fcn\u00fc do\u011frular (\u00f6r.",
+     "line": 72
+    },
+    {
+     "name": "DogrulaSepetSayaci",
+     "params": [
+      {
+       "name": "adet",
+       "type": "int",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": false,
+     "doc": "\u00dcst men\u00fcdeki sepet sayac\u0131n\u0131n verilen adet oldu\u011funu do\u011frular.",
+     "line": 75
+    }
+   ],
+   "locators": {
+    "Katalog.ADET_ONEK": {
+     "testId": "qty-input-",
+     "role": "",
+     "name": "",
+     "intent": "\u00dcr\u00fcn kart\u0131nda eklenecek adet alan\u0131.",
+     "prefix": true,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 53
+    },
+    "Katalog.EKLEME_DURUMU_ONEK": {
+     "testId": "product-status-",
+     "role": "",
+     "name": "",
+     "intent": "Sepete ekleme sonras\u0131 \u00fcr\u00fcn kart\u0131ndaki bilgi mesaj\u0131.",
+     "prefix": true,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 57
+    },
+    "Katalog.SEPETE_EKLE": {
+     "testId": "add-to-cart",
+     "role": "",
+     "name": "",
+     "intent": "\u00dcr\u00fcn kart\u0131nda sepete ekleme butonu (her kartta ayn\u0131 kimlik; \u00fcr\u00fcn kart\u0131n\u0131n i\u00e7inde aran\u0131r).",
+     "prefix": false,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 55
+    },
+    "Katalog.URUN_FIYATI_ONEK": {
+     "testId": "product-price-",
+     "role": "",
+     "name": "",
+     "intent": "\u00dcr\u00fcn kart\u0131ndaki birim fiyat.",
+     "prefix": true,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 51
+    },
+    "Katalog.URUN_KARTI_ONEK": {
+     "testId": "product-card-",
+     "role": "",
+     "name": "",
+     "intent": "Tek bir \u00fcr\u00fcn\u00fcn kart\u0131.",
+     "prefix": true,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 49
+    },
+    "Katalog.URUN_LISTESI": {
+     "testId": "product-list",
+     "role": "",
+     "name": "",
+     "intent": "\u00dcr\u00fcn kartlar\u0131n\u0131n listesi.",
+     "prefix": false,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 47
+    },
+    "Menu.KATALOG": {
+     "testId": "nav-catalog",
+     "role": "",
+     "name": "",
+     "intent": "\u00dcst men\u00fcde \u00fcr\u00fcn katalo\u011funa giden ba\u011flant\u0131.",
+     "prefix": false,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 17
+    },
+    "Menu.SEPET": {
+     "testId": "nav-cart",
+     "role": "",
+     "name": "",
+     "intent": "\u00dcst men\u00fcde sepete giden ba\u011flant\u0131 (sepet sayac\u0131n\u0131 i\u00e7erir).",
+     "prefix": false,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 19
+    },
+    "Menu.SEPET_SAYACI": {
+     "testId": "cart-count",
+     "role": "",
+     "name": "",
+     "intent": "Sepetteki toplam \u00fcr\u00fcn adedini g\u00f6steren saya\u00e7.",
+     "prefix": false,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 21
+    },
+    "Sepet.BOS": {
+     "testId": "cart-empty",
+     "role": "",
+     "name": "",
+     "intent": "Sepet bo\u015fken g\u00f6sterilen bilgi alan\u0131.",
+     "prefix": false,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 66
+    },
+    "Sepet.TABLO": {
+     "testId": "cart-table",
+     "role": "",
+     "name": "",
+     "intent": "Sepet sat\u0131rlar\u0131 tablosu.",
+     "prefix": false,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 64
+    }
+   }
+  },
+  {
+   "class": "OnayEkrani",
+   "file": "Ekranlar/OnayEkrani.cs",
+   "doc": "Sipari\u015f onay\u0131 ekran\u0131 (Java OnayEkrani; web OrderPage onay b\u00f6l\u00fcm\u00fc).",
+   "methods": [
+    {
+     "name": "DogrulaSiparisOnayi",
+     "params": [],
+     "returns": "void",
+     "kind": "expect",
+     "async": false,
+     "doc": "Sipari\u015f onay\u0131n\u0131n ve sipari\u015f numaras\u0131n\u0131n g\u00f6sterildi\u011fini do\u011frular.",
+     "line": 30
+    },
+    {
+     "name": "DogrulaOnaylananToplam",
+     "params": [
+      {
+       "name": "tutar",
+       "type": "string",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": false,
+     "doc": "Onaylanan sipari\u015fin genel toplam\u0131n\u0131 do\u011frular (\u00f6r.",
+     "line": 37
+    },
+    {
+     "name": "DogrulaOnaylananIndirim",
+     "params": [
+      {
+       "name": "tutar",
+       "type": "string",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": false,
+     "doc": "Onaylanan sipari\u015fin kampanya indirimini do\u011frular (\u00f6r.",
+     "line": 40
+    },
+    {
+     "name": "DogrulaOnaylananSiparisGecmiste",
+     "params": [],
+     "returns": "void",
+     "kind": "expect",
+     "async": false,
+     "doc": "Onay ekran\u0131nda g\u00f6sterilen sipari\u015fin sipari\u015f ge\u00e7mi\u015finde listelendi\u011fini do\u011frular.",
+     "line": 43
+    },
+    {
+     "name": "SiparislerimeGit",
+     "params": [],
+     "returns": "void",
+     "kind": "action",
+     "async": false,
+     "doc": "Onay ekran\u0131ndan \"Sipari\u015flerime git\" ile sipari\u015f ge\u00e7mi\u015fine gider.",
+     "line": 52
+    },
+    {
+     "name": "AlisveriseDevamEt",
+     "params": [],
+     "returns": "void",
+     "kind": "action",
+     "async": false,
+     "doc": "Onay ekran\u0131ndan \"Al\u0131\u015fveri\u015fe devam et\" ile katalo\u011fa d\u00f6ner.",
+     "line": 59
+    }
+   ],
+   "locators": {
+    "Katalog.URUN_LISTESI": {
+     "testId": "product-list",
+     "role": "",
+     "name": "",
+     "intent": "\u00dcr\u00fcn kartlar\u0131n\u0131n listesi.",
+     "prefix": false,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 47
+    },
+    "Onay.ALISVERISE_DEVAM": {
+     "testId": "go-catalog",
+     "role": "",
+     "name": "",
+     "intent": "Onay ekran\u0131ndan katalo\u011fa d\u00f6nen buton.",
+     "prefix": false,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 105
+    },
+    "Onay.INDIRIM": {
+     "testId": "order-discount",
+     "role": "",
+     "name": "",
+     "intent": "Onaylanan sipari\u015fin kampanya indirimi.",
+     "prefix": false,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 99
+    },
+    "Onay.ONAY_ALANI": {
+     "testId": "order-confirmation",
+     "role": "",
+     "name": "",
+     "intent": "Sipari\u015f onayland\u0131ktan sonra g\u00f6sterilen onay alan\u0131.",
+     "prefix": false,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 95
+    },
+    "Onay.SIPARISLERIME_GIT": {
+     "testId": "go-orders",
+     "role": "",
+     "name": "",
+     "intent": "Onay ekran\u0131ndan sipari\u015f ge\u00e7mi\u015fine giden buton.",
+     "prefix": false,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 103
+    },
+    "Onay.SIPARIS_NUMARASI": {
+     "testId": "order-number",
+     "role": "",
+     "name": "",
+     "intent": "Onay alan\u0131ndaki sipari\u015f numaras\u0131.",
+     "prefix": false,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 97
+    },
+    "Onay.TOPLAM": {
+     "testId": "order-total",
+     "role": "",
+     "name": "",
+     "intent": "Onaylanan sipari\u015fin genel toplam\u0131.",
+     "prefix": false,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 101
+    },
+    "Siparis.BOS": {
+     "testId": "orders-empty",
+     "role": "",
+     "name": "",
+     "intent": "Hi\u00e7 sipari\u015f yokken g\u00f6sterilen bilgi alan\u0131.",
+     "prefix": false,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 114
+    },
+    "Siparis.TABLO": {
+     "testId": "orders-table",
+     "role": "",
+     "name": "",
+     "intent": "Sipari\u015f ge\u00e7mi\u015fi tablosu.",
+     "prefix": false,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 112
+    }
+   }
+  },
+  {
+   "class": "SepetEkrani",
+   "file": "Ekranlar/SepetEkrani.cs",
+   "doc": "Sepet ekran\u0131: sat\u0131rlar, kampanya, toplamlar ve sipari\u015f onay\u0131 (Java SepetEkrani; web CartPage).",
+   "methods": [
+    {
+     "name": "Ac",
+     "params": [],
+     "returns": "void",
+     "kind": "action",
+     "async": false,
+     "doc": "Sepet ekran\u0131n\u0131 a\u00e7ar.",
+     "line": 14
+    },
+    {
+     "name": "UrunuKaldir",
+     "params": [
+      {
+       "name": "urunKodu",
+       "type": "string",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "action",
+     "async": false,
+     "doc": "\u00dcr\u00fcn\u00fc sepetten kald\u0131r\u0131r.",
+     "line": 21
+    },
+    {
+     "name": "SiparisiOnayla",
+     "params": [],
+     "returns": "void",
+     "kind": "action",
+     "async": false,
+     "doc": "\"Sipari\u015fi onayla\" butonuna basar ve onay ekran\u0131n\u0131n a\u00e7\u0131lmas\u0131n\u0131 bekler.",
+     "line": 29
+    },
+    {
+     "name": "DogrulaSatirAdedi",
+     "params": [
+      {
+       "name": "urunKodu",
+       "type": "string",
+       "optional": false
+      },
+      {
+       "name": "adet",
+       "type": "int",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": false,
+     "doc": "Sepet sat\u0131r\u0131ndaki adedi do\u011frular.",
+     "line": 36
+    },
+    {
+     "name": "DogrulaBedavaAdet",
+     "params": [
+      {
+       "name": "urunKodu",
+       "type": "string",
+       "optional": false
+      },
+      {
+       "name": "adet",
+       "type": "int",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": false,
+     "doc": "Sepet sat\u0131r\u0131nda kampanyayla bedava verilen adedi do\u011frular.",
+     "line": 40
+    },
+    {
+     "name": "DogrulaSatirToplami",
+     "params": [
+      {
+       "name": "urunKodu",
+       "type": "string",
+       "optional": false
+      },
+      {
+       "name": "tutar",
+       "type": "string",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": false,
+     "doc": "Sepet sat\u0131r\u0131n\u0131n indirim sonras\u0131 tutar\u0131n\u0131 do\u011frular (\u00f6r.",
+     "line": 44
+    },
+    {
+     "name": "DogrulaAraToplam",
+     "params": [
+      {
+       "name": "tutar",
+       "type": "string",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": false,
+     "doc": "Ara toplam\u0131 do\u011frular (\u00f6r.",
+     "line": 48
+    },
+    {
+     "name": "DogrulaIndirim",
+     "params": [
+      {
+       "name": "tutar",
+       "type": "string",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": false,
+     "doc": "Kampanya indirimi tutar\u0131n\u0131 do\u011frular (\u00f6r.",
+     "line": 51
+    },
+    {
+     "name": "DogrulaToplam",
+     "params": [
+      {
+       "name": "tutar",
+       "type": "string",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": false,
+     "doc": "Sepetin indirim sonras\u0131 genel toplam\u0131n\u0131 do\u011frular (\u00f6r.",
+     "line": 54
+    },
+    {
+     "name": "DogrulaMinimumSiparisUyarisi",
+     "params": [
+      {
+       "name": "mesaj",
+       "type": "string",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": false,
+     "doc": "Minimum sipari\u015f uyar\u0131s\u0131n\u0131n verilen metni i\u00e7erdi\u011fini do\u011frular.",
+     "line": 57
+    },
+    {
+     "name": "DogrulaMinimumSiparisUyarisiYok",
+     "params": [],
+     "returns": "void",
+     "kind": "expect",
+     "async": false,
+     "doc": "Minimum sipari\u015f uyar\u0131s\u0131n\u0131n g\u00f6sterilmedi\u011fini do\u011frular.",
+     "line": 60
+    },
+    {
+     "name": "DogrulaOnayPasif",
+     "params": [],
+     "returns": "void",
+     "kind": "expect",
+     "async": false,
+     "doc": "\"Sipari\u015fi onayla\" butonunun pasif oldu\u011funu do\u011frular.",
+     "line": 63
+    },
+    {
+     "name": "DogrulaOnayAktif",
+     "params": [],
+     "returns": "void",
+     "kind": "expect",
+     "async": false,
+     "doc": "\"Sipari\u015fi onayla\" butonunun aktif oldu\u011funu do\u011frular.",
+     "line": 66
+    },
+    {
+     "name": "DogrulaUrunSepetteYok",
+     "params": [
+      {
+       "name": "urunKodu",
+       "type": "string",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": false,
+     "doc": "Sepette \u00fcr\u00fcn\u00fcn bulunmad\u0131\u011f\u0131n\u0131 do\u011frular.",
+     "line": 69
+    },
+    {
+     "name": "DogrulaSepetSayaci",
+     "params": [
+      {
+       "name": "adet",
+       "type": "int",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": false,
+     "doc": "\u00dcst men\u00fcdeki sepet sayac\u0131n\u0131n verilen adet oldu\u011funu do\u011frular (sepet ekran\u0131nda).",
+     "line": 72
+    },
+    {
+     "name": "DogrulaSepetBos",
+     "params": [],
+     "returns": "void",
+     "kind": "expect",
+     "async": false,
+     "doc": "Sepetin bo\u015f oldu\u011funu do\u011frular.",
+     "line": 75
+    }
+   ],
+   "locators": {
+    "Menu.SEPET": {
+     "testId": "nav-cart",
+     "role": "",
+     "name": "",
+     "intent": "\u00dcst men\u00fcde sepete giden ba\u011flant\u0131 (sepet sayac\u0131n\u0131 i\u00e7erir).",
+     "prefix": false,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 19
+    },
+    "Menu.SEPET_SAYACI": {
+     "testId": "cart-count",
+     "role": "",
+     "name": "",
+     "intent": "Sepetteki toplam \u00fcr\u00fcn adedini g\u00f6steren saya\u00e7.",
+     "prefix": false,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 21
+    },
+    "Onay.ONAY_ALANI": {
+     "testId": "order-confirmation",
+     "role": "",
+     "name": "",
+     "intent": "Sipari\u015f onayland\u0131ktan sonra g\u00f6sterilen onay alan\u0131.",
+     "prefix": false,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 95
+    },
+    "Sepet.ARA_TOPLAM": {
+     "testId": "cart-subtotal",
+     "role": "",
+     "name": "",
+     "intent": "Sepetin indirim \u00f6ncesi ara toplam\u0131.",
+     "prefix": false,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 78
+    },
+    "Sepet.BEDAVA_ADET_ONEK": {
+     "testId": "cart-line-free-",
+     "role": "",
+     "name": "",
+     "intent": "Sepet sat\u0131r\u0131nda kampanyayla bedava verilen adet.",
+     "prefix": true,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 72
+    },
+    "Sepet.BOS": {
+     "testId": "cart-empty",
+     "role": "",
+     "name": "",
+     "intent": "Sepet bo\u015fken g\u00f6sterilen bilgi alan\u0131.",
+     "prefix": false,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 66
+    },
+    "Sepet.INDIRIM": {
+     "testId": "cart-discount",
+     "role": "",
+     "name": "",
+     "intent": "Sepetteki toplam kampanya indirimi.",
+     "prefix": false,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 80
+    },
+    "Sepet.MIN_SIPARIS_UYARISI": {
+     "testId": "min-order-warning",
+     "role": "",
+     "name": "",
+     "intent": "Minimum sipari\u015f tutar\u0131n\u0131n alt\u0131nda g\u00f6sterilen uyar\u0131.",
+     "prefix": false,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 84
+    },
+    "Sepet.SATIRI_KALDIR_ONEK": {
+     "testId": "cart-line-remove-",
+     "role": "",
+     "name": "",
+     "intent": "Sat\u0131r\u0131 sepetten kald\u0131ran buton.",
+     "prefix": true,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 76
+    },
+    "Sepet.SATIR_ADEDI_ONEK": {
+     "testId": "cart-line-qty-",
+     "role": "",
+     "name": "",
+     "intent": "Sepet sat\u0131r\u0131ndaki adet.",
+     "prefix": true,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 70
+    },
+    "Sepet.SATIR_ONEK": {
+     "testId": "cart-line-",
+     "role": "",
+     "name": "",
+     "intent": "Sepette bir \u00fcr\u00fcn\u00fcn sat\u0131r\u0131.",
+     "prefix": true,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 68
+    },
+    "Sepet.SATIR_TOPLAMI_ONEK": {
+     "testId": "cart-line-total-",
+     "role": "",
+     "name": "",
+     "intent": "Sepet sat\u0131r\u0131n\u0131n indirim sonras\u0131 tutar\u0131.",
+     "prefix": true,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 74
+    },
+    "Sepet.SIPARISI_ONAYLA": {
+     "testId": "checkout-submit",
+     "role": "",
+     "name": "",
+     "intent": "Sipari\u015fi onaylayan buton.",
+     "prefix": false,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 88
+    },
+    "Sepet.TABLO": {
+     "testId": "cart-table",
+     "role": "",
+     "name": "",
+     "intent": "Sepet sat\u0131rlar\u0131 tablosu.",
+     "prefix": false,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 64
+    },
+    "Sepet.TOPLAM": {
+     "testId": "cart-total",
+     "role": "",
+     "name": "",
+     "intent": "Sepetin indirim sonras\u0131 genel toplam\u0131.",
+     "prefix": false,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 82
+    }
+   }
+  },
+  {
+   "class": "SiparisEkrani",
+   "file": "Ekranlar/SiparisEkrani.cs",
+   "doc": "Sipari\u015f ge\u00e7mi\u015fi (Sipari\u015flerim) ekran\u0131 (Java SiparisEkrani; web OrderPage ge\u00e7mi\u015f b\u00f6l\u00fcm\u00fc).",
+   "methods": [
+    {
+     "name": "Ac",
+     "params": [],
+     "returns": "void",
+     "kind": "action",
+     "async": false,
+     "doc": "Sipari\u015f ge\u00e7mi\u015fi ekran\u0131n\u0131 a\u00e7ar.",
+     "line": 15
+    },
+    {
+     "name": "MenudenAc",
+     "params": [],
+     "returns": "void",
+     "kind": "action",
+     "async": false,
+     "doc": "\u00dcst men\u00fcden sipari\u015f ge\u00e7mi\u015fine gider.",
+     "line": 22
+    },
+    {
+     "name": "DogrulaSiparisGecmiste",
+     "params": [
+      {
+       "name": "siparisNo",
+       "type": "string",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": false,
+     "doc": "Verilen sipari\u015f numaras\u0131n\u0131n sipari\u015f ge\u00e7mi\u015finde listelendi\u011fini do\u011frular.",
+     "line": 25
+    },
+    {
+     "name": "DogrulaSiparisToplami",
+     "params": [
+      {
+       "name": "siparisNo",
+       "type": "string",
+       "optional": false
+      },
+      {
+       "name": "tutar",
+       "type": "string",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": false,
+     "doc": "Sipari\u015f ge\u00e7mi\u015findeki sipari\u015fin genel toplam\u0131n\u0131 do\u011frular.",
+     "line": 28
+    },
+    {
+     "name": "DogrulaOnaylananSiparisToplami",
+     "params": [
+      {
+       "name": "tutar",
+       "type": "string",
+       "optional": false
+      }
+     ],
+     "returns": "void",
+     "kind": "expect",
+     "async": false,
+     "doc": "Bu testte onay ekran\u0131nda g\u00f6r\u00fclen son sipari\u015fin ge\u00e7mi\u015fteki genel toplam\u0131n\u0131 do\u011frular.",
+     "line": 32
+    },
+    {
+     "name": "DogrulaSiparisYok",
+     "params": [],
+     "returns": "void",
+     "kind": "expect",
+     "async": false,
+     "doc": "Sipari\u015f ge\u00e7mi\u015finin bo\u015f oldu\u011funu do\u011frular.",
+     "line": 40
+    }
+   ],
+   "locators": {
+    "Menu.SIPARISLER": {
+     "testId": "nav-orders",
+     "role": "",
+     "name": "",
+     "intent": "\u00dcst men\u00fcde sipari\u015f ge\u00e7mi\u015fine giden ba\u011flant\u0131.",
+     "prefix": false,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 23
+    },
+    "Siparis.BOS": {
+     "testId": "orders-empty",
+     "role": "",
+     "name": "",
+     "intent": "Hi\u00e7 sipari\u015f yokken g\u00f6sterilen bilgi alan\u0131.",
+     "prefix": false,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 114
+    },
+    "Siparis.SATIR_ONEK": {
+     "testId": "order-row-",
+     "role": "",
+     "name": "",
+     "intent": "Sipari\u015f ge\u00e7mi\u015finde bir sipari\u015fin sat\u0131r\u0131.",
+     "prefix": true,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 116
+    },
+    "Siparis.SATIR_TOPLAMI_ONEK": {
+     "testId": "order-total-",
+     "role": "",
+     "name": "",
+     "intent": "Sipari\u015f ge\u00e7mi\u015fi sat\u0131r\u0131ndaki genel toplam.",
+     "prefix": true,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 118
+    },
+    "Siparis.TABLO": {
+     "testId": "orders-table",
+     "role": "",
+     "name": "",
+     "intent": "Sipari\u015f ge\u00e7mi\u015fi tablosu.",
+     "prefix": false,
+     "file": "Ekranlar/Kimlikler.cs",
+     "line": 112
+    }
+   }
+  }
+ ],
+ "locator_files": [
+  {
+   "file": "Ekranlar/Kimlikler.cs",
+   "exports": [
+    "Menu",
+    "Giris",
+    "Katalog",
+    "Sepet",
+    "Onay",
+    "Siparis"
+   ]
+  }
+ ],
+ "errors": [],
+ "fixtures": [
+  "GirisEkrani",
+  "KatalogEkrani",
+  "OnayEkrani",
+  "SepetEkrani",
+  "SiparisEkrani"
+ ]
+}

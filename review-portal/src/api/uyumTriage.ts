@@ -270,7 +270,7 @@ export function onarimUyarla(o: Ham): LocatorOnarimi {
   const prHam = ilk(o, "pr", "pull_request");
   const scriptDurumu = metin(o.script_durumu).toLowerCase();
   const durum = SCRIPT_ONARIM[scriptDurumu] ?? metin(ilk(o, "durum", "status")).toLowerCase();
-  const pr = nesneMi(prHam) ? prUyarla(prHam) : typeof o.pr_no === "number" ? prUyarla({ number: o.pr_no, branch: o.branch, head_sha: o.head_sha }) : null;
+  const pr = nesneMi(prHam) ? prUyarla(prHam) : typeof o.pr_no === "number" ? prUyarla({ number: o.pr_no, branch: o.branch, head_sha: o.head_sha, depo: o.depo, depo_adi: o.depo_adi }) : null;
   return {
     tur: "locator_fix",
     dosya: metin(ilk(o, "dosya", "file", "path")),

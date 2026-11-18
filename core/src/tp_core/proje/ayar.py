@@ -67,6 +67,14 @@ _PROJE: frozenset[str] = frozenset(
         "JIRA_HESAP_MUHENDIS",
         "JIRA_HESAP_PO",
         "JIRA_HESAP_TESTCI",
+        "TP_JIRA_MENTIONS_ANALYST",
+        "TP_JIRA_MENTIONS_PO",
+        "TP_JIRA_MENTIONS_ENGINEER",
+        "TP_JIRA_MENTIONS_TESTER",
+        "TP_JIRA_MENTIONS_DEVELOPER",
+        "TP_JIRA_MENTIONS_ADMIN",
+        "TP_JIRA_MENTIONS_AUDITOR",
+        "TP_JIRA_MENTIONS_VIEWER",
         "CONTENT_FIELDS",
         "TP_FORGE",
         "GITHUB_REPO",
@@ -78,12 +86,41 @@ _PROJE: frozenset[str] = frozenset(
         "TP_REQUIRED_CHECKS",
         "TP_PLATFORMS",
         "TP_WEB_DILLERI",
+        # 014 test dilleri: platform başına dil listesi ve dil test kökleri (plan.md §4).
+        "TP_DILLERI_ANDROID",
+        "TP_DILLERI_IOS",
+        "TP_DILLERI_WINDOWS",
+        "TP_E2E_PYTHON_ROOT",
+        "TP_E2E_CSHARP_ROOT",
+        "TP_E2E_APP_PYTHON_ROOT",
+        "TP_E2E_APP_CSHARP_ROOT",
+        "TP_ANDROID_KOTLIN_ROOT",
+        "TP_IOS_SWIFT_ROOT",
         "TP_FORGE_REQUIRE_UP_TO_DATE",
         "BYPASS_ACTOR",
         "TP_CI_NIGHTLY_SAAT",
         "TP_CI_NIGHTLY_GEC_S",
         "TP_MANUAL_BASELINE_S",
         "TP_DEMO_WEB_URL",
+        # Platform test depoları (Home `tp.repos.<p>.*`; boş `GITHUB_REPO_<P>` = varsayılan depo;
+        # çözüm `integrations.proje_ortami.ProjeOrtami(pid, platform)`).
+        *(
+            f"{ad}_{p}"
+            for ad in (
+                "GITHUB_REPO",
+                "TP_FORGE_CHECK_REF",
+                "TP_E2E_APP_ROOT",
+                "TP_FORGE_APP_ROOT",
+                "TP_APP_PATHS",
+                "TP_REQUIRED_CHECKS",
+            )
+            for p in ("ANDROID", "IOS", "WINDOWS")
+        ),
+        # 014: dil kökü kaplaması `<kok_ayari>_<P>` (yalnız matristeki çiftler).
+        *(f"TP_E2E_APP_PYTHON_ROOT_{p}" for p in ("ANDROID", "IOS", "WINDOWS")),
+        "TP_E2E_APP_CSHARP_ROOT_WINDOWS",
+        "TP_ANDROID_KOTLIN_ROOT_ANDROID",
+        "TP_IOS_SWIFT_ROOT_IOS",
         "TP_AGENT_DEALER",
         "TP_AGENT_DEALER_PASSWORD",
         "TP_PROBE_PASSWORD",

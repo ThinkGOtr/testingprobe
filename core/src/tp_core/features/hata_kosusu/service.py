@@ -92,6 +92,7 @@ from tp_core.events.bus import publish_tx
 from tp_core.features.ci import services as ci_services
 from tp_core.features.ci.clients import ToolchainError, check_timeout_s
 from tp_core.features.ci.projeler import toolchain_projesi
+from tp_core.features.codegen import depo as depolar
 from tp_core.features.codegen.classify import classify, java_raporu_mu, test_error_kind
 from tp_core.features.hata_kosusu import katalog as kat
 from tp_core.features.hata_kosusu.hatalar import HataKosusuSuruyor
@@ -1239,32 +1240,64 @@ class _Plan:
     temel_kirmizi: tuple[str, ...]
     temel_yesil: tuple[str, ...] | None
     ai_dosyalari: frozenset[str]
+    # 0046: adımın platform deposu (`''` = varsayılan); `sha` o deponun commit'idir.
+    depo: str = ""
+
+
+PLATFORM_COMMITLERI = "platform_commitleri"  # ic: {platform: {"depo": d, "sha": s}} (ayrı depo)
 
 
 def _ilk_bekleyen(adimlar: Sequence[HataKosusuAdim]) -> HataKosusuAdim | None:
     return next((a for a in adimlar if a.sonuc == "bekliyor"), None)
 
 
-def _commit_coz(son_deneme: bool) -> tuple[str | None, str | None]:
-    """`main`'in commit'i — satır kilidi alınmadan önce (N12: ağ çağrısı iptali bekletmez).
-    `(sha, hata ayrıntısı)`; geçici hata son deneme değilse yeniden fırlatılır."""
+def _commit_coz(
+    son_deneme: bool, platformlar: Iterable[str] = ()
+) -> tuple[str | None, str | None, dict[str, dict[str, str]]]:
+    """Kontrol dalının (`TP_FORGE_CHECK_REF`, varsayılan `main`; sabit `main` değil) commit'i —
+    satır kilidi alınmadan önce (N12: ağ çağrısı iptali bekletmez). `(sha, hata ayrıntısı,
+    platform commit'leri)`; geçici hata son deneme değilse yeniden fırlatılır.
+
+    Platform depoları (0046): ayrı depodaki her platformun commit'i kendi deposunun kontrol
+    dalından çözülür (`{platform: {"depo", "sha"}}`); o platformun adımları bu commit'te koşar.
+    Biri çözülemezse koşu başlamaz (hata ayrıntısı döner)."""
+    platform_shalari: dict[str, dict[str, str]] = {}
     try:
-        sha = ci_services.forge().head_sha("main")
+        sha = ci_services.forge().head_sha(depolar.kontrol_ref(None))
+        for p in platformlar:
+            d = depolar.depo_anahtari(p)
+            if not d:
+                continue
+            psha = ci_services.forge(d, p).head_sha(depolar.kontrol_ref(p))
+            if not psha:
+                return None, f"{p} deposu ({d}) kontrol dalı boş döndü", {}
+            platform_shalari[p] = {"depo": d, "sha": str(psha)}
     except Exception as exc:
         if gecici_mi(exc) and not son_deneme:
             raise
-        return None, _detay(exc)
+        return None, _detay(exc), {}
     if not sha:
-        return None, "main boş döndü"
-    return str(sha), None
+        return None, "main boş döndü", {}
+    return str(sha), None, platform_shalari
 
 
-def _baslangic(s: Session, kosu: HataKosusu, sha: str | None, hata: str | None) -> bool:
+def _baslangic(
+    s: Session,
+    kosu: HataKosusu,
+    sha: str | None,
+    hata: str | None,
+    platform_shalari: Mapping[str, Mapping[str, str]] | None = None,
+) -> bool:
     """`queued` → `running` (kilitli satır; commit önceden çözülmüştür). Çözülemediyse koşu
-    `failed` (False); ayrıntı yalnız denetime."""
+    `failed` (False); ayrıntı yalnız denetime. Ayrı depolu platformların commit'leri iç özete
+    (`_ic.platform_commitleri`) yazılır; `kosu.commit` varsayılan deponunkidir."""
     if not sha:
         _kapat(s, kosu, "failed", "Koşulacak commit çözülemedi (main).", detay=hata)
         return False
+    if platform_shalari:
+        ic = _ic(kosu)
+        ic[PLATFORM_COMMITLERI] = {p: dict(v) for p, v in platform_shalari.items()}
+        _ic_yaz(kosu, ic)
     kosu.commit = sha
     kosu.durum = "running"
     kosu.baslama = _simdi()
@@ -1276,11 +1309,15 @@ def _baslangic(s: Session, kosu: HataKosusu, sha: str | None, hata: str | None) 
 def _adim_isle(kosu_id: uuid.UUID, *, son_deneme: bool = True) -> dict[str, Any]:
     sha: str | None = None
     sha_hatasi: str | None = None
+    platform_shalari: dict[str, dict[str, str]] = {}
     with session_scope() as s:
         # Kilitsiz bakış: başlangıçta commit kilit dışında çözülür (N12).
-        durum = s.scalar(select(HataKosusu.durum).where(HataKosusu.id == kosu_id))
+        bakis = s.execute(
+            select(HataKosusu.durum, HataKosusu.platformlar).where(HataKosusu.id == kosu_id)
+        ).first()
+    durum = bakis[0] if bakis is not None else None
     if durum == "queued":
-        sha, sha_hatasi = _commit_coz(son_deneme)
+        sha, sha_hatasi, platform_shalari = _commit_coz(son_deneme, list(bakis[1] or []))
     with session_scope() as s:
         kosu = _kilitle(s, kosu_id)
         if kosu is None:
@@ -1293,7 +1330,7 @@ def _adim_isle(kosu_id: uuid.UUID, *, son_deneme: bool = True) -> dict[str, Any]
         if kosu.durum == "queued":
             if sha is None and sha_hatasi is None:  # bakıştan sonra durum değişti (yarış)
                 sha, sha_hatasi = None, "commit kilitten önce çözülmedi"
-            if not _baslangic(s, kosu, sha, sha_hatasi):
+            if not _baslangic(s, kosu, sha, sha_hatasi, platform_shalari):
                 return {"durum": kosu.durum}
         adim = _ilk_bekleyen(_adimlar(s, kosu_id))
         if adim is None:
@@ -1307,17 +1344,20 @@ def _adim_isle(kosu_id: uuid.UUID, *, son_deneme: bool = True) -> dict[str, Any]
             )
         temel = (_ic(kosu).get("temel") or {}).get(adim.platform) or {}
         yesil = temel.get("yesil")
+        # 0046: ayrı depolu platformun adımı kendi deposunun commit'inde koşar.
+        pc = (_ic(kosu).get(PLATFORM_COMMITLERI) or {}).get(adim.platform) or {}
         plan = _Plan(
             adim.id,
             adim.platform,
             adim.asama,
             adim.hata_kodu,
             adim.sira,
-            str(kosu.commit),
+            str(pc.get("sha") or kosu.commit),
             isteyen,
             tuple(temel.get("kirmizi") or ()),
             tuple(yesil) if isinstance(yesil, list) else None,
             uretilen_dosyalar(s, adim.platform),
+            str(pc.get("depo") or "") if pc.get("sha") else "",
         )
         _olay(s, kosu, platform=plan.platform, hata_kodu=plan.kod, asama=plan.asama, sonuc=None)
     # `/check` kilit dışında koşar (dakikalar sürebilir; iptal ve okuma beklemez).
@@ -1488,6 +1528,7 @@ def _kosu_kaydet(
                     "isteyen": plan.isteyen,
                     "ref": None,
                     "platform": plan.platform,
+                    "depo": plan.depo,
                     # 012 §4.6 / V6: KPI dışlama `tetik`'ten, triage atlaması `hata_kosusu_id`'den.
                     "hata_kodu": plan.kod,
                     "hata_kosusu_id": str(kosu_id),

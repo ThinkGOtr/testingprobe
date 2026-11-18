@@ -24,6 +24,7 @@ Bu modül saf yardımcıdır (veritabanı/ağ yok): hem core-api hem core-worker
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from typing import Any, Literal, NamedTuple
 
 Platform = Literal["web", "android", "ios", "windows"]
@@ -39,18 +40,21 @@ E2E_DIZINI = "e2e"
 # e2e-app / e2e-java köküne göre (iki Java projesi aynı paket düzenini kullanır).
 JAVA_URETILEN_DIZIN = "src/test/java/com/antreklabs/bayi/uretilen"
 
-Dil = Literal["ts", "java", "csharp", "python"]
+Dil = Literal["ts", "java", "csharp", "python", "kotlin", "swift"]
 TS = "ts"
 JAVA = "java"
 TAM_HAT_DILLERI: tuple[str, ...] = ("ts", "java")
 DOGRULANMAMIS_DILLER: tuple[str, ...] = ("csharp", "python")
-# Sıra aynı zamanda algılama eşitlik önceliğidir (011 §2.4): ts > java > csharp > python.
-DILLER: tuple[str, ...] = (*TAM_HAT_DILLERI, *DOGRULANMAMIS_DILLER)
+# Sıra aynı zamanda algılama eşitlik önceliğidir (011 §2.4): ts > java > csharp > python >
+# kotlin > swift (014). Geçerli çiftler `CATILAR`'dadır (aşağıda).
+DILLER: tuple[str, ...] = ("ts", "java", "csharp", "python", "kotlin", "swift")
 DIL_ETIKETI: dict[str, str] = {
     "ts": "TypeScript",
     "java": "Java",
     "csharp": "C#",
     "python": "Python",
+    "kotlin": "Kotlin",
+    "swift": "Swift",
 }
 _WEB_CATISI: dict[str, str] = {
     "ts": "Playwright Test",
@@ -97,11 +101,9 @@ def varsayilan_dil(platform: str | None) -> str:
 
 
 def gecerli_cift(platform: str | None, dil: str | None) -> bool:
-    """(platform, dil) üretilebilir mi? `web` × her dil; `android|ios|windows` × yalnız `java`."""
-    p = platform or WEB
-    if p not in PLATFORMLAR or dil not in DILLER:
-        return False
-    return dil == JAVA if p in UYGULAMA_PLATFORMLARI else True
+    """(platform, dil) matriste mi (`CATILAR`, 014 plan.md §1)? Seçilebilirlik ayrıca değerlendirme
+    kapısına (`cift_durumu`) ve dil eklentisine bağlıdır."""
+    return ((platform or WEB), dil) in CATILAR
 
 
 def platform_dilleri(platform: str | None) -> tuple[str, ...]:
@@ -130,17 +132,27 @@ def java_mi(dil: str | None) -> bool:
     return dil == JAVA
 
 
-def tam_hat_mi(dil: str | None) -> bool:
-    """Dil tam hat mı (derleme + koşu + PR)? `csharp` / `python` doğrulanmamıştır."""
+def tam_hat_mi(dil: str | None, platform: str | None = None) -> bool:
+    """Tam hat mı (TP derler, korur, koşar, kırarak doğrular)? `platform` verilirse çiftin hattı
+    (`CATILAR`); verilmezse 011 anlamı (yalnız `ts` / `java`)."""
+    if platform is not None:
+        return etkin_hat(platform, dil) == "tam"
     return dil in TAM_HAT_DILLERI
 
 
-def dogrulanmamis_mi(dil: str | None) -> bool:
+def dogrulanmamis_mi(dil: str | None, platform: str | None = None) -> bool:
+    """Doğrulanmamış (011) çıktı mı? `platform` verilirse çiftin etkin hattı (`etkin_hat`);
+    verilmezse 011 anlamı (`csharp` | `python`; geçmiş kayıtlar)."""
+    if platform is not None:
+        return etkin_hat(platform, dil) == "dogrulanmamis"
     return dil in DOGRULANMAMIS_DILLER
 
 
 def cati(platform: str | None, dil: str | None) -> str:
-    """Test çatısının görünen adı (`GET /code/languages` `cati`)."""
+    """Test çatısının görünen adı (`GET /code/languages` `cati`; `CATILAR` etiketi)."""
+    c = cati_bul(platform, dil)
+    if c is not None:
+        return c.etiket
     if uygulama_mi(platform):
         return UYGULAMA_CATISI
     return _WEB_CATISI.get(dil or "", "")
@@ -179,6 +191,9 @@ def check_adi(platform: str | None, dil: str | None = None) -> str:
     """Yerel CI check adı (K-T1, tek kaynak): web + ts `local-ci` (değişmez); web + Java
     `local-ci-web-java` (GitHub karşılığı `web-java`); uygulama `local-ci-<platform>` (değişmez,
     dil her zaman Java). Doğrulanmamış diller CI'a girmez; verilirse web `local-ci` döner."""
+    if dil not in (None, "", TS, JAVA) and ((platform or WEB), dil) in CATILAR:
+        # 014: yeni çiftler `local-ci-<platform>-<dil>` (plan.md §1).
+        return f"{YEREL_CHECK}-{platform or WEB}-{dil}"
     if uygulama_mi(platform):
         return f"{YEREL_CHECK}-{platform}"
     if java_mi(dil):
@@ -312,3 +327,299 @@ def degisen_web_dilleri(
     if any(not y.startswith(test_kokleri) for y in degisen):
         secilen.update(d for d in repodaki if d in TAM_HAT_DILLERI)
     return tuple(d for d in TAM_HAT_DILLERI if d in secilen) or (TS,)
+
+
+# ===================================================== 014 test dilleri: (platform, dil) matrisi
+# Sözleşme: specs/014-test-dilleri/plan.md §1. `CATILAR` tek kaynaktır; yeni dil yeni satır +
+# eklenti modülüdür (`codegen/diller/<dil>.py`). Eski yardımcılar (yukarıda) ts/java
+# davranışını korur.
+
+Hat = Literal["tam", "musteri_ci", "dogrulanmamis"]
+HATLAR: tuple[str, ...] = ("tam", "musteri_ci", "dogrulanmamis")
+Sonuc = Literal["junit", "playwright-json", "surefire"]
+Ajan = Literal["verify_and_map", "verify_and_map_app"]
+TUM_DILLER: tuple[str, ...] = ("ts", "java", "csharp", "python", "kotlin", "swift")
+TUM_DIL_ETIKETI: dict[str, str] = DIL_ETIKETI
+# Değerlendirme kapısı (Ş8 `rules/diller.yaml`) yoksa açık sayılan çiftler (011 öncesi hat,
+# "devralındı").
+DEVRALINAN_CIFTLER: frozenset[tuple[str, str]] = frozenset(
+    {("web", "ts"), ("web", "java"), ("android", "java"), ("ios", "java"), ("windows", "java")}
+)
+DIL_DURUM_DOSYASI = "diller.yaml"
+YAKINDA_NEDENI = "Değerlendirme sürüyor"  # Ş8 dil_kapisi.YAKINDA_NEDENI ile aynı
+
+
+@dataclass(frozen=True)
+class Cati:
+    """Bir (platform, dil) çiftinin test çatısı (plan.md §1)."""
+
+    platform: str
+    dil: str
+    hat: str
+    etiket: str
+    sablon: str
+    kok_ayari: str
+    kok_varsayilan: str
+    uretilen_alt_yol: str
+    sonuc: str
+    ajan: str
+    gh_is_akisi: str | None
+
+    @property
+    def anahtar(self) -> str:
+        """`rules/diller.yaml` anahtarı (`web/python`)."""
+        return f"{self.platform}/{self.dil}"
+
+    @property
+    def check(self) -> str:
+        return check_adi_genel(self.platform, self.dil)
+
+
+def _uygulama_catisi(
+    p: str, dil: str, hat: str, etiket: str, sablon: str, kok_ayari: str, kok: str, alt: str,
+    sonuc: str, is_akisi: str | None,
+) -> Cati:  # fmt: skip
+    return Cati(p, dil, hat, etiket, sablon, kok_ayari, kok, alt, sonuc, "verify_and_map_app",
+                is_akisi)  # fmt: skip
+
+
+_UYGULAMA_IS_AKISI = {"android": "mobil-android", "ios": "mobil-ios", "windows": "masaustu-windows"}
+
+CATILAR: dict[tuple[str, str], Cati] = {
+    ("web", "ts"): Cati(
+        "web",
+        "ts",
+        "tam",
+        "Playwright Test",
+        "playwright_test.ts.j2",
+        "TP_E2E_ROOT",
+        E2E_DIZINI,
+        "tests/generated",
+        "playwright-json",
+        "verify_and_map",
+        "ci",
+    ),
+    ("web", "java"): Cati(
+        "web",
+        "java",
+        "tam",
+        "Playwright for Java + TestNG",
+        "playwright_testng.java.j2",
+        "TP_E2E_JAVA_ROOT",
+        E2E_JAVA_DIZINI,
+        JAVA_URETILEN_DIZIN,
+        "surefire",
+        "verify_and_map",
+        "web-java",
+    ),
+    ("web", "python"): Cati(
+        "web",
+        "python",
+        "tam",
+        "pytest + Playwright",
+        "playwright_pytest.py.j2",
+        "TP_E2E_PYTHON_ROOT",
+        "e2e-python",
+        "tests/generated",
+        "junit",
+        "verify_and_map",
+        "web-python",
+    ),
+    ("web", "csharp"): Cati(
+        "web",
+        "csharp",
+        "tam",
+        "Playwright .NET + NUnit",
+        "playwright_nunit.cs.j2",
+        "TP_E2E_CSHARP_ROOT",
+        "e2e-csharp",
+        "Tests/Generated",
+        "junit",
+        "verify_and_map",
+        "web-csharp",
+    ),
+    **{
+        (p, "java"): _uygulama_catisi(
+            p,
+            "java",
+            "tam",
+            UYGULAMA_CATISI,
+            "appium_testng.java.j2",
+            "TP_E2E_APP_ROOT",
+            E2E_APP_DIZINI,
+            JAVA_URETILEN_DIZIN,
+            "surefire",
+            _UYGULAMA_IS_AKISI[p],
+        )
+        for p in UYGULAMA_PLATFORMLARI
+    },
+    **{
+        (p, "python"): _uygulama_catisi(
+            p,
+            "python",
+            "tam",
+            "pytest + Appium",
+            "appium_pytest.py.j2",
+            "TP_E2E_APP_PYTHON_ROOT",
+            "e2e-app-python",
+            "tests/generated",
+            "junit",
+            f"{_UYGULAMA_IS_AKISI[p]}-python",
+        )
+        for p in UYGULAMA_PLATFORMLARI
+    },
+    ("windows", "csharp"): _uygulama_catisi(
+        "windows",
+        "csharp",
+        "tam",
+        "Appium .NET + NUnit (NovaWindows)",
+        "appium_nunit.cs.j2",
+        "TP_E2E_APP_CSHARP_ROOT",
+        "e2e-app-csharp",
+        "Tests/Generated",
+        "junit",
+        "masaustu-windows-csharp",
+    ),
+    ("android", "kotlin"): _uygulama_catisi(
+        "android",
+        "kotlin",
+        "musteri_ci",
+        "Espresso (AndroidX Test, JUnit4)",
+        "espresso_junit.kt.j2",
+        "TP_ANDROID_KOTLIN_ROOT",
+        "app/src/androidTest/java",
+        # Demo kütüphane paketi yolu; gerçek yol sembol tablosunun `paket` alanından (Ş3).
+        "com/antreklabs/bayisiparis/tp/uretilen",
+        "junit",
+        "mobil-android-kotlin",
+    ),
+    ("ios", "swift"): _uygulama_catisi(
+        "ios",
+        "swift",
+        "musteri_ci",
+        "XCUITest",
+        "xcuitest.swift.j2",
+        "TP_IOS_SWIFT_ROOT",
+        "UITests",
+        "TPUretilen",
+        "junit",
+        "mobil-ios-swift",
+    ),
+}
+
+# Platform başına dil listesi env'i (proje ayarı; boş = platformun varsayılan dili).
+DIL_LISTESI_AYARI: dict[str, str] = {
+    "web": "TP_WEB_DILLERI",
+    "android": "TP_DILLERI_ANDROID",
+    "ios": "TP_DILLERI_IOS",
+    "windows": "TP_DILLERI_WINDOWS",
+}
+
+
+def cati_bul(platform: str | None, dil: str | None) -> Cati | None:
+    return CATILAR.get((platform or WEB, dil or ""))
+
+
+def hat(platform: str | None, dil: str | None) -> str | None:
+    c = cati_bul(platform, dil)
+    return c.hat if c else None
+
+
+def musteri_ci_mi(platform: str | None, dil: str | None) -> bool:
+    return hat(platform, dil) == "musteri_ci"
+
+
+def check_adi_genel(platform: str | None, dil: str | None) -> str:
+    """Genel yerel CI check adı (plan.md §1): ts/java için `check_adi` (değişmez), diğer çiftlerde
+    `local-ci-<platform>-<dil>`."""
+    return check_adi(platform or WEB, dil)
+
+
+def gh_check_adi(platform: str | None, dil: str | None) -> str | None:
+    """GitHub kipinde çiftin iş akışı check adı (`web-python`, `mobil-android-kotlin`)."""
+    c = cati_bul(platform, dil)
+    return c.gh_is_akisi if c else None
+
+
+def kok_ayari_platform(kok_ayari: str, platform: str | None) -> str | None:
+    """Ayrı platform deposu kaplaması: `<kok_ayari>_<P>` (web için yok)."""
+    if not platform or platform == WEB:
+        return None
+    return f"{kok_ayari}_{platform.upper()}"
+
+
+def _durum_dosyasi(rules_dir: Any = None) -> Any:
+    from pathlib import Path
+
+    if rules_dir is not None:
+        return Path(rules_dir) / DIL_DURUM_DOSYASI
+    from tp_core.gateway.config import find_rules_dir
+
+    return find_rules_dir() / DIL_DURUM_DOSYASI
+
+
+def dil_durumlari(rules_dir: Any = None) -> dict[str, str]:
+    """`rules/diller.yaml` (Ş8) `ciftler` → {"web/ts": "acik", ...}. Dosya yoksa ya da okunamazsa
+    devralınan çiftler `acik`, diğerleri `yakinda` (güvenli taraf: yeni dil kapalı)."""
+    out = {
+        c.anahtar: ("acik" if k in DEVRALINAN_CIFTLER else "yakinda") for k, c in CATILAR.items()
+    }
+    try:
+        import yaml
+
+        veri = yaml.safe_load(_durum_dosyasi(rules_dir).read_text(encoding="utf-8")) or {}
+        ciftler = veri.get("ciftler") or {}
+    except Exception:
+        return out
+    if not isinstance(ciftler, dict):
+        return out
+    for anahtar, kayit in ciftler.items():
+        if anahtar not in out:
+            continue
+        durum = kayit.get("durum") if isinstance(kayit, dict) else kayit
+        if durum in ("acik", "yakinda"):
+            out[anahtar] = durum
+    return out
+
+
+def cift_durumu(platform: str | None, dil: str | None, rules_dir: Any = None) -> str:
+    """`acik` | `yakinda` (matriste olmayan çift `yakinda`). Tek kaynak Ş8 kapısıdır
+    (`tp_core.gateway.dil_kapisi.kullanilabilir_mi`: kayıt yok / dosya bozuk → kapalı); modül
+    yoksa (Ş8 birleşmeden) `dil_durumlari` yedeği."""
+    c = cati_bul(platform, dil)
+    if c is None:
+        return "yakinda"
+    try:
+        from tp_core.gateway import dil_kapisi  # type: ignore[attr-defined]
+    except ImportError:
+        return dil_durumlari(rules_dir).get(c.anahtar, "yakinda")
+    from pathlib import Path
+
+    from tp_core.gateway.config import find_rules_dir
+
+    kok = Path(rules_dir) if rules_dir is not None else find_rules_dir()
+    return "acik" if dil_kapisi.kullanilabilir_mi(kok, c.platform, c.dil) else "yakinda"
+
+
+def etkin_hat(platform: str | None, dil: str | None) -> str | None:
+    """Çiftin bugünkü hattı: `CATILAR` hattı; web C#/Python'un çekirdek dil eklentisi henüz
+    yoksa (Ş1/Ş2 birleşmeden) 011 `dogrulanmamis` yolu (yeni üretim kapıyla zaten kapalı)."""
+    c = cati_bul(platform, dil)
+    if c is None:
+        return None
+    if c.platform == WEB and c.dil in DOGRULANMAMIS_DILLER:
+        from tp_core.features.codegen import diller
+
+        if diller.eklenti(c.dil) is None:
+            return "dogrulanmamis"
+    return c.hat
+
+
+def repoya_yazar_mi(dil: str | None, platform: str | None) -> bool:
+    """Üretim forge'a commit + PR açar mı (`tam` ya da `musteri_ci`)?"""
+    return etkin_hat(platform, dil) in ("tam", "musteri_ci")
+
+
+def kirarak_dogrulama_var_mi(platform: str | None, dil: str | None) -> bool:
+    """Kırarak doğrulama yalnız tam hatta (müşteri CI: "kırarak doğrulanmadı" rozeti)."""
+    return etkin_hat(platform, dil) == "tam"

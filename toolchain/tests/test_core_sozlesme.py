@@ -44,3 +44,17 @@ def test_java_test_dosyasi_kalibi_core_kapsam_sonekleriyle_ayni() -> None:
         with pytest.raises(ValueError):
             java.validate_java_test_file(yol)
         assert not yol.endswith(tuple(SOZLESME["java_kapsam_sonekleri"]))
+
+
+@pytest.mark.parametrize(
+    "girdi", SOZLESME["dil_check_adlari"], ids=lambda g: f"{g['lang']}-{g['platform']}"
+)
+def test_eklenti_dili_check_adi_core_ile_ayni(girdi: dict, monkeypatch: pytest.MonkeyPatch) -> None:
+    """014: eklenti dili kayıtlıyken worker `check_name` core `check_adi_genel` ile aynı."""
+    from types import SimpleNamespace
+
+    from worker import diller
+
+    sahte = SimpleNamespace(ad=girdi["lang"], platformlar=("web", "android", "ios", "windows"))
+    monkeypatch.setattr(diller, "eklenti", lambda d: sahte if d == girdi["lang"] else None)
+    assert checks.check_name(girdi["lang"], girdi["platform"]) == girdi["check"]

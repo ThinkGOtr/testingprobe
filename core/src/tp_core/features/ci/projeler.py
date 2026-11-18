@@ -58,12 +58,20 @@ def toolchain_projesi(body: dict[str, Any], *, kosu: bool = True) -> dict[str, A
 
     Varsayılan projede (ve bağlamsız çağrıda) blok eklenmez: toolchain süreç ortamı varsayılan
     projeninkidir ve gövde baytları eski toolchain'lerle (`extra="forbid"`) aynı kalır.
+
+    Platform deposu (0046): gövdenin `platform`'u (android | ios | windows) ayrı depodaysa blok
+    varsayılan projede de eklenir ve o deponun bloğudur (ayna yolu, uzak adres, Java kökü);
+    toolchain koşuyu/sembol tablosunu o deponun aynasında yapar.
     """
+    from tp_core.features.codegen import depo as depolar
+
+    platform = depolar.uygulama_platformu(body.get("platform"))
+    ayri = bool(depolar.depo_anahtari(platform)) if platform else False
     b = varsa()
-    if b is not None and b.pid != varsayilan_pid():
+    if ayri or (b is not None and b.pid != varsayilan_pid()):
         from tp_core.proje import istemciler
 
-        blok = istemciler.toolchain_proje_blogu()
+        blok = istemciler.toolchain_proje_blogu(platform)
         if kosu:
             from tp_core.integrations.toolchain_blogu import ortam_denetle
 

@@ -63,7 +63,7 @@ from toolchain_common.validation import (
     validate_test_id,
     validate_url_path,
 )
-from worker import affected
+from worker import affected, diller
 from worker import check as checks
 from worker import java as javayol
 from worker.astguard import AstGuardError, run_ast_guard
@@ -90,8 +90,9 @@ AUTH = [Depends(require_token)]
 # | windows). İkisi de verilmezse `ts` — mevcut Playwright/TypeScript yolu, davranışı değişmez.
 # Geçerli çiftler: web × (ts | java), uygulama × java. `lang=java` tek başına (ya da `platform=web`
 # ile) web + Java hattıdır (Playwright for Java, `TP_E2E_JAVA_ROOT`); uygulama hattı platformu
-# açıkça ister. `csharp|python` toolchain'e hiç gelmez (doğrulanmamış diller; 422).
-Lang = Literal["ts", "java"]
+# açıkça ister. 014: diğer diller kayıtlı worker eklentileridir (`worker/diller/<dil>.py`); `lang`
+# kayıtlı adlardan doğrulanır (`diller.resolve_lang`; ts/java iletileri değişmez).
+Lang = str
 Platform = Literal["web", "android", "ios", "windows"]
 
 
@@ -101,17 +102,17 @@ class LangMixin(BaseModel):
 
     @model_validator(mode="after")
     def _lang_uyumu(self) -> LangMixin:
-        javayol.resolve_lang(self.lang, self.platform)
+        diller.resolve_lang(self.lang, self.platform)
         return self
 
     @property
     def dil(self) -> str:
-        return javayol.resolve_lang(self.lang, self.platform)
+        return diller.resolve_lang(self.lang, self.platform)
 
     @property
     def hedef_platform(self) -> str:
         """Etkin platform (verilmediyse `web`)."""
-        return javayol.resolve_platform(self.lang, self.platform)
+        return diller.resolve_platform(self.lang, self.platform)
 
 
 def _resolve(cfg: Settings, ref: str, prefer: Path | None = None) -> repos.Located:
@@ -153,6 +154,8 @@ def extract_symbols(
     symbols` ile TS `tp-symbols` şemasındadır (009 §2.5).
     """
     repo = repo or cfg.forge_path
+    if lang not in ("ts", "java"):
+        return _eklenti_sembolleri(cfg, full_sha, repo, lang, platform or "web")
     kok = javayol.java_kok(cfg, platform) if lang == "java" else None
     key = (str(repo), full_sha, lang, kok.root if kok else cfg.e2e_root)
     with _SYMBOL_CACHE_LOCK:
@@ -185,6 +188,35 @@ def extract_symbols(
         if kok.web:
             # Uygulama tablosu (009) platform taşımaz; web + Java tablosu açıkça işaretlenir.
             table["platform"] = kok.platform
+    with _SYMBOL_CACHE_LOCK:
+        _SYMBOL_CACHE[key] = table
+        while len(_SYMBOL_CACHE) > _SYMBOL_CACHE_MAX:
+            _SYMBOL_CACHE.popitem(last=False)
+    return table
+
+
+def _eklenti_sembolleri(
+    cfg: Settings, full_sha: str, repo: Path, lang: str, platform: str
+) -> dict[str, Any]:
+    """014: ts/java dışındaki dilin tablosu (`worker/diller/<dil>.py` `symbols`). Önbellek anahtarı
+    (depo, sha, dil, platform); tabloya `sha`, `lang`, `platform` eklenir."""
+    eklenti = diller.eklenti(lang)
+    if eklenti is None:
+        raise HTTPException(422, f"Bilinmeyen dil: {lang}")
+    key = (str(repo), full_sha, lang, f"@{platform}")
+    with _SYMBOL_CACHE_LOCK:
+        if key in _SYMBOL_CACHE:
+            _SYMBOL_CACHE.move_to_end(key)
+            return _SYMBOL_CACHE[key]
+    try:
+        table = eklenti.symbols(cfg, full_sha, repo, platform)
+    except (RuntimeError, ValueError) as exc:  # eklenti araç hatası (CsAracError vb.)
+        if isinstance(exc, gitforge.ForgeError):
+            raise
+        raise HTTPException(422, f"Sembol tablosu çıkarılamadı ({lang}): {exc}") from exc
+    if not isinstance(table, dict) or "page_objects" not in table:
+        raise HTTPException(422, f"Sembol tablosu çıkarılamadı ({lang}): page_objects yok")
+    table = {"sha": full_sha, **table, "lang": lang, "platform": platform}
     with _SYMBOL_CACHE_LOCK:
         _SYMBOL_CACHE[key] = table
         while len(_SYMBOL_CACHE) > _SYMBOL_CACHE_MAX:
@@ -233,6 +265,18 @@ def ast_guard(body: AstGuardBody) -> dict[str, Any]:
             kok = javayol.java_kok(cfg, body.hedef_platform)
             with gitforge.checkout(head_loc.repo, head, kok.root, cfg.git_timeout_s) as root:
                 report = javayol.guard_report(cfg, head_loc.repo, base, head, body.mode, root, kok)
+        elif body.dil != "ts":
+            eklenti = diller.eklenti(body.dil)
+            if eklenti is None:  # pragma: no cover - LangMixin zaten reddeder
+                raise HTTPException(422, f"Bilinmeyen dil: {body.dil}")
+            try:
+                report = eklenti.guard(
+                    cfg, head_loc.repo, base, head, body.mode, body.hedef_platform
+                )
+            except (RuntimeError, ValueError) as exc:  # eklenti araç hatası (PyAracError vb.)
+                if isinstance(exc, gitforge.ForgeError):
+                    raise
+                raise HTTPException(422, str(exc)) from exc
         else:
             report = run_ast_guard(cfg, base, head, body.mode, head_loc.repo)
     except (AstGuardError, javayol.JavaAracError) as exc:
@@ -286,9 +330,16 @@ class CheckBody(LangMixin):
     @classmethod
     def _test_files(cls, v: list[str], info: ValidationInfo) -> list[str]:
         try:
-            lang = javayol.resolve_lang(info.data.get("lang"), info.data.get("platform"))
+            lang = diller.resolve_lang(info.data.get("lang"), info.data.get("platform"))
         except ValueError:
             lang = "ts"  # uyumsuzluk model doğrulamasında ayrıca bildirilir
+        if lang not in ("ts", "java"):
+            eklenti = diller.eklenti(lang)
+            if eklenti is None:  # pragma: no cover - resolve_lang zaten reddeder
+                return validate_test_files(v)
+            if len(v) > 200:
+                raise ValueError("en fazla 200 test dosyası verilebilir")
+            return list(dict.fromkeys(eklenti.validate_test_file(x) for x in v))
         if lang != "java":
             return validate_test_files(v)
         if len(v) > 200:
@@ -312,6 +363,10 @@ class CheckBody(LangMixin):
         if self.dil == "java" and (self.grep or self.affected_by):
             raise ValueError(
                 "Java yolunda grep ve affected_by henüz desteklenmiyor (test_files kullanın)"
+            )
+        if self.dil not in ("ts", "java") and (self.grep or self.affected_by):
+            raise ValueError(
+                f"{self.dil} yolunda grep ve affected_by desteklenmiyor (test_files kullanın)"
             )
         if self.affected_by and (self.test_files or self.grep):
             raise ValueError("affected_by, test_files ve grep ile birlikte verilemez")
@@ -367,7 +422,8 @@ def check(body: CheckBody) -> dict[str, Any]:
         affected_by=body.affected_by,
         lang=body.dil,
         # Java'da etkin platform (verilmediyse `web`); TS gövdesinde alan olduğu gibi kalır.
-        platform=body.hedef_platform if body.dil == "java" else body.platform,
+        # 014: eklenti dillerinde de etkin platform.
+        platform=body.hedef_platform if body.dil != "ts" else body.platform,
     )
     try:
         return checks.execute(cfg, req)

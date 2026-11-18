@@ -1,0 +1,188 @@
+# TP müşteri CI şablonu — Android / Kotlin + Espresso (testing-probe rules/ci-sablonlari/android-espresso.yml).
+#
+# Testing Probe (TP) bu deponun testlerini ÜRETİR ve PR açar; derleme ve koşu bu iş akışındadır.
+# Tek seferlik, insan onaylı kurulum PR'ıyla eklendi. Yapay zekâ / model anahtarı YOKTUR.
+#
+# - Job adı (__TP_IS_ADI__) TP'nin beklediği check adıdır: DEĞİŞTİRMEYİN (merge kapısı bu adı ister).
+# - Yalnız TP'nin ürettiği testler koşar (instrumentation `package=__TP_TEST_PAKETI__`).
+# - Kırarak doğrulama YOKTUR: yeşil koşu, testin derlenip geçtiğini gösterir; testin hatayı
+#   yakaladığı TP tarafından doğrulanmadı ("kırarak doğrulanmadı").
+# - Sonuç her durumda `tp-results` artefaktına yüklenir (ci-meta.json, junit/, ekler/, derleme.log).
+# - Testler ayrı `tpTest` derleme türüne karşı koşar (`initWith release`, R8/minify KAPALI,
+#   `android { testBuildType "tpTest" }`): debug derlemesi React Native/Expo'da Metro ister, R8'li
+#   release test APK'sını bozar (androidx.tracing). Expo/RN projesinde bu tür bir config plugin ile
+#   eklenir (prebuild sonrası); kurulum PR'ı bunu elle adım olarak listeler.
+name: __TP_IS_ADI__
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [__TP_VARSAYILAN_DAL__]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: __TP_IS_ADI__-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  TP_PLATFORM: android
+  TP_DIL: kotlin
+  TP_IS: __TP_IS_ADI__
+  TP_UYGULAMA_KOKU: "__TP_UYGULAMA_KOKU__"
+  TP_GRADLE_MODULU: "__TP_GRADLE_MODULU__"
+  TP_TEST_PAKETI: "__TP_TEST_PAKETI__"
+  TP_EMULATOR_API: "__TP_EMULATOR_API__"
+  TP_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  changes:
+    name: changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      run_tests: ${{ steps.decide.outputs.run_tests }}
+    steps:
+      - name: Değişiklikleri tespit et (yalnızca PR)
+        id: filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: |
+            app:
+              - '__TP_IZLENEN_YOL__'
+              - '.github/workflows/__TP_IS_ADI__.yml'
+      - name: Karar
+        id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          APP: ${{ steps.filter.outputs.app }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then run_tests="${APP:-false}"; else run_tests=true; fi
+          echo "run_tests=$run_tests" >> "$GITHUB_OUTPUT"
+
+  __TP_IS_ADI__:
+    # Zorunlu check (TP merge kapısı). Uygulama/test değişmediyse no-op başarılı.
+    name: __TP_IS_ADI__
+    needs: changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      RUN_TESTS: ${{ needs.changes.outputs.run_tests }}
+    steps:
+      - name: No-op (uygulama/test değişmedi)
+        if: env.RUN_TESTS != 'true'
+        run: echo "Uygulama ya da TP testleri değişmedi; __TP_IS_ADI__ no-op (başarılı)." | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Checkout
+        if: env.RUN_TESTS == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: tp-results dizini
+        if: env.RUN_TESTS == 'true'
+        run: |
+          echo "TP_RESULTS=$RUNNER_TEMP/tp-results" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/tp-results/junit" "$RUNNER_TEMP/tp-results/ekler"
+
+      - name: KVM (emülatör hızlandırma)
+        if: env.RUN_TESTS == 'true'
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Java 17
+        if: env.RUN_TESTS == 'true'
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Derle (uygulama + androidTest APK)
+        id: derle
+        if: env.RUN_TESTS == 'true'
+        working-directory: __TP_UYGULAMA_KOKU__
+        run: |
+          set -o pipefail
+          chmod +x ./gradlew
+          ./gradlew --no-daemon ":$TP_GRADLE_MODULU:assembleTpTest" ":$TP_GRADLE_MODULU:assembleTpTestAndroidTest" 2>&1 \
+            | tee -a "$TP_RESULTS/derleme.log"
+
+      - name: Emülatör koşu betiği
+        if: env.RUN_TESTS == 'true' && steps.derle.outcome == 'success'
+        run: |
+          cat > "$RUNNER_TEMP/tp-kos.sh" <<'BETIK'
+          #!/usr/bin/env bash
+          set -o pipefail
+          cd "$TP_UYGULAMA_KOKU"
+          ./gradlew --no-daemon ":$TP_GRADLE_MODULU:connectedTpTestAndroidTest" \
+            "-Pandroid.testInstrumentationRunnerArguments.package=$TP_TEST_PAKETI" 2>&1 \
+            | tee -a "$TP_RESULTS/derleme.log"
+          BETIK
+          chmod +x "$RUNNER_TEMP/tp-kos.sh"
+
+      - name: Espresso testleri (emülatör)
+        id: kos
+        if: env.RUN_TESTS == 'true' && steps.derle.outcome == 'success'
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: __TP_EMULATOR_API__
+          arch: x86_64
+          target: google_apis
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          disable-animations: true
+          script: bash "$RUNNER_TEMP/tp-kos.sh"
+
+      - name: tp-results topla
+        if: always() && env.RUN_TESTS == 'true'
+        env:
+          DERLE: ${{ steps.derle.outcome }}
+          KOS: ${{ steps.kos.outcome }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -u
+          rapor="$TP_UYGULAMA_KOKU/$TP_GRADLE_MODULU/build/outputs/androidTest-results/connected"
+          if [ -d "$rapor" ]; then
+            find "$rapor" -name 'TEST-*.xml' -type f | while read -r f; do
+              ad="$(echo "${f#"$rapor"/}" | tr '/' '_')"
+              cp "$f" "$TP_RESULTS/junit/$ad"
+            done
+          fi
+          ek="$TP_UYGULAMA_KOKU/$TP_GRADLE_MODULU/build/outputs/connected_android_test_additional_output"
+          if [ -d "$ek" ]; then cp -R "$ek/." "$TP_RESULTS/ekler/" || true; fi
+          if [ -f "$TP_RESULTS/derleme.log" ]; then
+            tail -n 2000 "$TP_RESULTS/derleme.log" > "$TP_RESULTS/derleme.log.kuyruk"
+            mv "$TP_RESULTS/derleme.log.kuyruk" "$TP_RESULTS/derleme.log"
+          fi
+          durum=basarili
+          [ "$DERLE" = "success" ] || durum=derleme_hatasi
+          [ "$DERLE" != "success" ] || [ "$KOS" = "success" ] || durum=test_hatasi
+          python3 - "$TP_RESULTS/ci-meta.json" "$durum" <<'PY'
+          import json, os, sys
+          json.dump({
+              "platform": os.environ["TP_PLATFORM"], "dil": os.environ["TP_DIL"],
+              "sha": os.environ["TP_HEAD_SHA"], "run_id": os.environ["RUN_ID"],
+              "run_attempt": os.environ["RUN_ATTEMPT"], "job": os.environ["TP_IS"],
+              "durum": sys.argv[2],
+          }, open(sys.argv[1], "w"), ensure_ascii=False)
+          PY
+
+      - name: tp-results yükle
+        if: always() && env.RUN_TESTS == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tp-results
+          path: ${{ runner.temp }}/tp-results/
+          retention-days: 14
+          if-no-files-found: warn

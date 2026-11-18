@@ -149,6 +149,12 @@ const nesne = (x: unknown) => (x && typeof x === "object" ? (x as Record<string,
 const CASE_KAYNAGI = ["GET", "/cases"] as const;
 /** Script işlemleri (kırarak doğrula, merge) script listesine bağlıdır (gerçek script örnek veriye düşmez). */
 const SCRIPT_KAYNAGI = ["GET", "/scripts"] as const;
+
+/** `/prs/{n}/…?depo=`: yalnız varsayılan dışı depoda sorgu eklenir (`''`/yok = varsayılan depo). */
+export function prDepoSorgusu(depo: string | null | undefined): { depo?: string } | undefined {
+  const d = (depo ?? "").trim();
+  return d ? { depo: d } : undefined;
+}
 /** Onarım işlemi triage sonucuna bağlıdır ("1": herhangi bir kimlik; yol kalıbı ve mock anahtarı ":id" ile eşleşir). */
 const HATA_KAYNAGI = ["GET", "/failures/1"] as const;
 /** Test verisi işlemleri katalog listesine bağlıdır. */
@@ -374,16 +380,23 @@ export const api = {
    * yanıt PR'ın merged olduğunu söylüyorsa denir; iş kuyruğa alındıysa SSE `pr.merged` beklenir.
    */
   /** Geride kalan bot PR dalını main'e taşır (`codegen.update_branch`; 202). */
-  prDaliGuncelle: (number: number) => istek<IsYaniti>("POST", `/prs/${number}/update-branch`, { kaynak: SCRIPT_KAYNAGI }),
+  /**
+   * Platform başına depo: PR numarası yalnız depo içinde tekil olduğundan PR eylemleri `?depo=` taşır
+   * (`depo` = PR'ın `depo` alanı; `''`/yok = varsayılan depo, sorgu hiç eklenmez — eski core ile birebir).
+   */
+  prDaliGuncelle: (number: number, depo?: string | null) =>
+    istek<IsYaniti>("POST", `/prs/${number}/update-branch`, { sorgu: prDepoSorgusu(depo), kaynak: SCRIPT_KAYNAGI }),
   /** Script review reddi: değişiklik iste / reddet (ret nedeni sabit taksonomiden). */
   prReview: (
     number: number,
     g: { karar: "degisiklik_iste" | "reddet"; ret_nedeni: RetNedeni; icerik_hash: string; head_sha: string; not?: string | null },
-  ) => istek<unknown>("POST", `/prs/${number}/review`, { govde: g, kaynak: SCRIPT_KAYNAGI }),
-  prBirlestir: async (pr: Pick<PullRequest, "number"> & MergeGirdisi): Promise<{ number: number; birlesti: boolean; mesaj: string }> => {
+    depo?: string | null,
+  ) => istek<unknown>("POST", `/prs/${number}/review`, { govde: g, sorgu: prDepoSorgusu(depo), kaynak: SCRIPT_KAYNAGI }),
+  prBirlestir: async (pr: Pick<PullRequest, "number" | "depo"> & MergeGirdisi): Promise<{ number: number; birlesti: boolean; mesaj: string }> => {
     const g = nesne(
       await istek<unknown>("POST", `/prs/${pr.number}/merge`, {
         govde: { icerik_hash: pr.icerik_hash, head_sha: pr.head_sha, ...(pr.onay_notu ? { onay_notu: pr.onay_notu } : {}) },
+        sorgu: prDepoSorgusu(pr.depo),
         kaynak: SCRIPT_KAYNAGI,
       }),
     );

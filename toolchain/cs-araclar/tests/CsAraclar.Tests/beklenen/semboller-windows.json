@@ -1,0 +1,225 @@
+{
+  "schema_version": 1,
+  "lang": "csharp",
+  "platform": "windows",
+  "root": ".",
+  "page_objects": [
+    {
+      "class": "GirisEkrani",
+      "file": "Ekranlar/GirisEkrani.cs",
+      "doc": "Bayi giriş ekranı.",
+      "methods": [
+        {
+          "name": "Ac",
+          "params": [],
+          "returns": "void",
+          "kind": "action",
+          "async": false,
+          "doc": "Giriş ekranını açar.",
+          "line": 7
+        },
+        {
+          "name": "GirisYap",
+          "params": [
+            {
+              "name": "kullaniciAdi",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "parola",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "action",
+          "async": false,
+          "doc": "Giriş yapar.",
+          "line": 12
+        }
+      ],
+      "locators": {
+        "Giris.KULLANICI_ADI": {
+          "testId": "login-username",
+          "role": "",
+          "name": "",
+          "intent": "Kullanıcı adı alanı.",
+          "prefix": false,
+          "file": "Ekranlar/Kimlikler.cs",
+          "line": 8
+        },
+        "Giris.PAROLA": {
+          "testId": "login-password",
+          "role": "",
+          "name": "",
+          "intent": "",
+          "prefix": false,
+          "file": "Ekranlar/Kimlikler.cs",
+          "line": 9
+        }
+      }
+    },
+    {
+      "class": "KatalogEkrani",
+      "file": "Ekranlar/KatalogEkrani.cs",
+      "doc": "Katalog ekranı.",
+      "methods": [
+        {
+          "name": "SepeteEkle",
+          "params": [
+            {
+              "name": "urunKodu",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "adet",
+              "type": "int",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "action",
+          "async": false,
+          "doc": "",
+          "line": 6
+        },
+        {
+          "name": "SepetiAc",
+          "params": [],
+          "returns": "void",
+          "kind": "action",
+          "async": false,
+          "doc": "",
+          "line": 10
+        }
+      ],
+      "locators": {}
+    },
+    {
+      "class": "SepetEkrani",
+      "file": "Ekranlar/SepetEkrani.cs",
+      "doc": "Sepet ekranı.",
+      "methods": [
+        {
+          "name": "DogrulaSatirAdedi",
+          "params": [
+            {
+              "name": "urunKodu",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "adet",
+              "type": "int",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "expect",
+          "async": false,
+          "doc": "",
+          "line": 6
+        },
+        {
+          "name": "DogrulaBedavaAdet",
+          "params": [
+            {
+              "name": "urunKodu",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "adet",
+              "type": "int",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "expect",
+          "async": false,
+          "doc": "",
+          "line": 10
+        },
+        {
+          "name": "DogrulaAraToplam",
+          "params": [
+            {
+              "name": "tutar",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "expect",
+          "async": false,
+          "doc": "",
+          "line": 14
+        },
+        {
+          "name": "DogrulaIndirim",
+          "params": [
+            {
+              "name": "tutar",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "expect",
+          "async": false,
+          "doc": "",
+          "line": 18
+        },
+        {
+          "name": "DogrulaToplam",
+          "params": [
+            {
+              "name": "tutar",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returns": "void",
+          "kind": "expect",
+          "async": false,
+          "doc": "Toplamı doğrular.",
+          "line": 23
+        }
+      ],
+      "locators": {
+        "Sepet.TOPLAM": {
+          "testId": "cart-total",
+          "role": "",
+          "name": "",
+          "intent": "",
+          "prefix": false,
+          "file": "Ekranlar/Kimlikler.cs",
+          "line": 14
+        }
+      }
+    }
+  ],
+  "locator_files": [
+    {
+      "file": "Ekranlar/Kimlikler.cs",
+      "exports": [
+        "Giris",
+        "Sepet"
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "file": "Ekranlar/SepetEkrani.cs",
+      "line": 28,
+      "message": "SepetEkrani.Karisik: parametre tutar sözleşme dışı (decimal tutar); yalnız string/int/long/double/bool"
+    }
+  ],
+  "fixtures": [
+    "GirisEkrani",
+    "KatalogEkrani",
+    "SepetEkrani"
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "id": "tpd-4-c1",
+  "story": "TPD-4",
+  "case_no": 1,
+  "platform": "web",
+  "baslik": "geçerli kullanıcıyla giriş",
+  "ajan_tablosu": "core/tests/unit/features/codegen/symbols.json"
+}

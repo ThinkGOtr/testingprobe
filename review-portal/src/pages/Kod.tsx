@@ -10,9 +10,10 @@ import { SCRIPT_DURUMU, scriptIsareti } from "../lib/etiketler";
 import { YEREL_SINIF } from "../lib/kapi";
 import { tarih } from "../lib/format";
 import { PlatformRozeti, PlatformSecici } from "../components/Platform";
+import { DepoCipi } from "../components/Depo";
 import { PLATFORM_ETIKETI, type Platform } from "../lib/platform";
-import { dilNedeni, DilRozeti, DilSecici } from "../components/Dil";
-import { DIL_ETIKETI, dogrulanmamisDilMi, type Dil } from "../lib/dil";
+import { dilNedeni, DilRozeti, DilSecici, KurulumBilgisi, MusteriCiNotu } from "../components/Dil";
+import { DIL_ETIKETI, type Dil } from "../lib/dil";
 import type { Script, UretimSonucu } from "../api/types";
 import { baslamayanlar, DilCakismasiKutusu, dilCakismasiMi, UretimAtlananlar, uretimBildirimi } from "../components/UretimSonuclari";
 
@@ -90,7 +91,9 @@ export function Kod() {
   const elleGecerli = !!dilVerisi && !!elleDil && dilVerisi.secenekler.some((s) => s.dil === elleDil && s.kullanilabilir) && elleDil !== dilVerisi.algilanan;
   const seciliDil: Dil | null = dilVerisi ? (elleGecerli && elleDil ? elleDil : dilVerisi.algilanan) : null;
   const seciliSecenek = dilVerisi?.secenekler.find((s) => s.dil === seciliDil) ?? null;
-  const dogrulanmamis = seciliSecenek ? seciliSecenek.hat === "dogrulanmamis" : dogrulanmamisDilMi(seciliDil);
+  // Hat core'dan (`GET /code/languages`); seçenek yoksa bilinmez — uyarı uydurulmaz.
+  const dogrulanmamis = seciliSecenek?.hat === "dogrulanmamis";
+  const musteriCi = seciliSecenek?.hat === "musteri_ci";
   // Algılanan dil bu depoda üretilemiyorsa (seçenek pasif) üretim başlatılmaz: neden seçenekte yazılıdır.
   const dilEngeli = seciliSecenek && !seciliSecenek.kullanilabilir ? (dilNedeni(seciliSecenek.neden).metin ?? `${seciliSecenek.etiket} bu depoda üretilemiyor.`) : null;
   const islem = useIslem();
@@ -153,7 +156,7 @@ export function Kod() {
             disabled={platformYok || seciliAdaylar.length === 0 || !!dilEngeli}
             calisiyor={islem.calisiyor}
             title={platformYok ? ACIK_PLATFORM_YOK : (dilEngeli ?? undefined)}
-            aria-describedby={dogrulanmamis ? "dogrulanmamis-dil-uyarisi" : undefined}
+            aria-describedby={dogrulanmamis ? "dogrulanmamis-dil-uyarisi" : musteriCi ? "musteri-ci-notu" : undefined}
             onClick={async () => {
               // `dil` yalnız elle seçimde gönderilir (core `dil_kaynagi="secildi"`); aksi halde core algılar.
               const dil = elleGecerli ? seciliDil : null;
@@ -171,7 +174,7 @@ export function Kod() {
             Seçilenler için kod üret ({seciliAdaylar.length}){platform !== "web" && ` · ${PLATFORM_ETIKETI[platform]}`}
             {/* Dil düğmede yalnız algılanandan saparken yazılır; "doğrulanmamış" uyarısı düğmeye tanım olarak bağlı
                 (390 px'te düğme adı kısa kalır, sayfa yatay kaymaz). */}
-            {seciliDil && (elleGecerli || dogrulanmamis) && ` · ${DIL_ETIKETI[seciliDil]}`}
+            {seciliDil && (elleGecerli || dogrulanmamis || musteriCi) && ` · ${DIL_ETIKETI[seciliDil]}`}
           </IslemDugmesi>
         }
       >
@@ -228,6 +231,8 @@ export function Kod() {
                 </Uyari>
               </div>
             )}
+            {musteriCi && seciliSecenek && <MusteriCiNotu etiket={seciliSecenek.etiket} id="musteri-ci-notu" />}
+            {seciliSecenek?.kullanilabilir && <KurulumBilgisi kurulum={seciliSecenek.kurulum} dilEtiketi={seciliSecenek.etiket} />}
             {islem.hata &&
               (dilCakismasiMi(islem.hataNesnesi) ? <DilCakismasiKutusu hata={islem.hataNesnesi} /> : <HataKutusu hata={islem.hata} kaynak={islem.hataNesnesi} />)}
             <UretimAtlananlar sonuclar={atlananlar} caseAdi={caseAdi} kapat={() => setAtlananlar([])} />
@@ -319,6 +324,8 @@ export function Kod() {
                         </Link>
                         <div className="satir-ogeler kucuk">
                           <PlatformRozeti platform={s.platform} />
+                          {/* Platform deposu (varsayılan dışı depoda sahip/ad; PR'ı da o depoda). */}
+                          <DepoCipi kaynak={s} />
                           {/* Dil rozeti yalnız core dil boyutunu sunuyorsa (alan uyarlayıcı varsayılanı değil, kayıtlı dil). */}
                           {dilVerisi && <DilRozeti dil={s.dil} platform={s.platform} />}
                           <span className="mono soluk">{s.dosya_yolu}</span>

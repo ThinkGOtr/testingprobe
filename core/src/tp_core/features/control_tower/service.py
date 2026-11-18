@@ -524,7 +524,9 @@ def _ci_gecti(session: Session, sc: Any, case_id: uuid.UUID | None) -> bool:
     shalar = {x for x in (sc.head_sha,) if x}
     if sc.pr_no is not None:
         merge_sha = session.scalar(
-            select(PullRequest.merge_sha).where(PullRequest.number == sc.pr_no)
+            select(PullRequest.merge_sha).where(
+                PullRequest.number == sc.pr_no, PullRequest.depo == (sc.depo or "")
+            )
         )
         if merge_sha:
             shalar.add(merge_sha)
