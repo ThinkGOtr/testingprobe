@@ -7,7 +7,7 @@ import { KAYNAK } from "../api/mock/fixtures";
 import { mockOlayYayinla } from "../api/mock/olaylar";
 import { OturumProvider } from "../auth";
 import { BildirimProvider } from "../components/Bildirim";
-import { oturumAc } from "../test/yardimci";
+import { oturumAc, sekmeAc } from "../test/yardimci";
 
 function uygulama(yol: string) {
   return render(
@@ -187,7 +187,7 @@ describe("ekranlar", () => {
 
   it("TPD-1 detayı: 4 bilinçli uyumsuzluk (+2. tur: kampanya ve kredi limiti kodda) kanıtlı ve kararlı görünür", async () => {
     await oturumAc("analist");
-    uygulama("/gereksinimler/req-tpd-1");
+    uygulama("/gereksinimler/req-tpd-1?sekme=tutarlilik");
     // Golden TPD-1 F2 "observed" metni aynen.
     const f2 = KAYNAK.consistency_check["TPD-1"].findings.find((x) => x.id === "F2")!.observed;
     expect(await screen.findByText(f2)).toBeInTheDocument();
@@ -202,7 +202,8 @@ describe("ekranlar", () => {
     expect(screen.getByText("Doküman ↔ veri")).toBeInTheDocument();
     expect(screen.getAllByText("Kodda eksik")).toHaveLength(2);
     expect(screen.getByText("İç çelişki")).toBeInTheDocument();
-    expect(screen.getByText("po@sim.local")).toBeInTheDocument();
+    await sekmeAc("PO teyidi");
+    expect(await screen.findByText("po@sim.local")).toBeInTheDocument();
   });
 
   it("serbest metin: PO rolü portalda onaylar", async () => {
@@ -238,7 +239,9 @@ describe("ekranlar", () => {
     await u.click(dugme);
     expect(await screen.findByRole("alert")).toHaveTextContent("İçerik değişti, yeniden inceleyin.");
     expect(g.durum).toBe("pending_po");
+    await sekmeAc("Doküman");
     expect(await screen.findByText(/Ek cümle\./)).toBeInTheDocument();
+    await sekmeAc("PO teyidi");
     await u.click(screen.getByRole("button", { name: "PO olarak onayla" }));
     expect(await screen.findByText("Onaylı")).toBeInTheDocument();
     expect(g.durum).toBe("po_approved");

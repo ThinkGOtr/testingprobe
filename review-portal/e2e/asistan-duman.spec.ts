@@ -231,9 +231,20 @@ test("masaüstü panel odağı örtmez (WCAG 2.4.11): ≥1440 px içerik boşalt
 
   // 1280 px: panel bindirme; panelin altındaki odaklı öğede Esc paneli kapatır, odak yerinde kalır.
   await page.setViewportSize({ width: 1280, height: 900 });
-  const ortulen = page.getByRole("link", { name: "PO teyidi" }).first();
+  // Panelin altında kalan ilk odaklanabilir içerik öğesi (ör. özet kartındaki sağ eylemler).
+  const panelX = (await p.boundingBox())!.x;
+  const sira = await page.locator("#ana-icerik").evaluate((kok, x) => {
+    const adaylar = [...kok.querySelectorAll<HTMLElement>("a[href], button:not(:disabled), [tabindex='0']")];
+    return adaylar.findIndex((e) => {
+      const r = e.getBoundingClientRect();
+      return r.width > 0 && r.left + r.width / 2 > x && r.top >= 0 && r.bottom <= window.innerHeight;
+    });
+  }, panelX);
+  expect(sira).toBeGreaterThanOrEqual(0);
+  const ortulen = page.locator("#ana-icerik").locator("a[href], button:not(:disabled), [tabindex='0']").nth(sira);
   await ortulen.focus();
-  expect((await ortulen.boundingBox())!.x).toBeGreaterThan((await p.boundingBox())!.x);
+  const ok = (await ortulen.boundingBox())!;
+  expect(ok.x + ok.width / 2).toBeGreaterThan((await p.boundingBox())!.x);
   await page.keyboard.press("Escape");
   await expect(panel(page)).toHaveCount(0);
   await expect(ortulen).toBeFocused();
@@ -244,41 +255,28 @@ test("masaüstü panel odağı örtmez (WCAG 2.4.11): ≥1440 px içerik boşalt
   await expect(panel(page)).toBeVisible();
 });
 
-// Panel açıkken (1440–1699 px) içerik 861–1279 px genişliğine iner: bölüm gezgini sağ sütunda kalmaz,
-// yapışkan tek satır şerit olur; gövde içerik genişliğini alır. ≥1700 px'te sütun geri gelir.
-test("panel açıkken (1440–1699 px) bölüm gezgini yatay şerit, gövde daralmaz; ≥1700 px sütun", async ({ page }) => {
+// Panel açıkken (1440–1699 px) içerik daralır: detay sekme şeridi panelin altına girmez, kendi içinde kayar;
+// sekme değişimi ve gövde genişliği korunur.
+test("panel açıkken (1440–1699 px) detay sekme şeridi panelin altına girmez; gövde daralmaz", async ({ page }) => {
   await girisYap(page, "analist");
   await page.goto("/gereksinimler/req-tpd-1");
-  const gezgin = page.getByRole("navigation", { name: "Sayfa bölümleri" });
-  const govde = page.locator(".bolum-govde");
-  await expect(gezgin).toHaveCSS("flex-direction", "column");
+  const liste = page.getByRole("tablist", { name: "Gereksinim bölümleri" });
+  await expect(liste).toBeVisible();
   await paneliAc(page);
   for (const w of [1440, 1680]) {
     await page.setViewportSize({ width: w, height: 900 });
     await page.evaluate(() => window.scrollTo(0, 0));
-    await expect(gezgin).toHaveCSS("flex-direction", "row");
-    await expect(gezgin).toHaveCSS("position", "sticky");
-    const g = (await gezgin.boundingBox())!;
-    const b = (await govde.boundingBox())!;
-    expect(g.y + g.height, `${w}: şerit gövdenin üstünde`).toBeLessThanOrEqual(b.y);
-    expect(g.height, `${w}: tek satır`).toBeLessThan(60);
-    expect(b.width, `${w}: gövde içerik genişliğinde`).toBeGreaterThanOrEqual(700);
+    const g = (await liste.boundingBox())!;
     expect(g.x + g.width, `${w}: şerit panelin altına girmez`).toBeLessThanOrEqual((await panel(page).boundingBox())!.x + 1);
-    await gezgin.getByRole("link", { name: "Doküman" }).click();
-    await gezgin.getByRole("link", { name: "Tutarlılık bulguları" }).click();
-    await expect
-      .poll(async () => {
-        const serit = await gezgin.boundingBox();
-        const kutu = await page.getByRole("region", { name: "Tutarlılık bulguları" }).boundingBox();
-        return !!serit && !!kutu && kutu.y >= serit.y + serit.height;
-      })
-      .toBe(true);
+    expect(g.height, `${w}: tek satır`).toBeLessThan(60);
+    await liste.getByRole("tab", { name: /^Tutarlılık/ }).click();
+    const kutu = (await page.getByRole("region", { name: /Tutarlılık bulguları/ }).boundingBox())!;
+    expect(kutu.width, `${w}: gövde içerik genişliğinde`).toBeGreaterThanOrEqual(700);
+    expect(kutu.y).toBeGreaterThanOrEqual(g.y + g.height);
+    await liste.getByRole("tab", { name: /^Doküman/ }).click();
+    await expect(page.getByRole("region", { name: "Doküman" })).toBeVisible();
   }
-  await page.setViewportSize({ width: 1700, height: 900 });
-  await expect(gezgin).toHaveCSS("flex-direction", "column");
-  await page.getByRole("button", { name: "Asistanı kapat" }).click();
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await expect(gezgin).toHaveCSS("flex-direction", "column");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1680);
 });
 
 test("son hata çipi ve sözlük cevabı (S2, mock örneği)", async ({ page }) => {

@@ -233,9 +233,13 @@ export function Uyari({
   );
 }
 
-export function BosDurum({ baslik, children }: { baslik: string; children?: ReactNode }) {
+/**
+ * Boş durum. `kip="sekme"`: detay sayfası sekmesinin tek içeriği (DS-1) — kart yüzeyinde, sola hizalı; sekme
+ * gizlenmez, ne olmadığını söyler.
+ */
+export function BosDurum({ baslik, children, kip }: { baslik: string; children?: ReactNode; kip?: "sekme" }) {
   return (
-    <div className="bos-durum">
+    <div className={kip === "sekme" ? "bos-durum bos-durum-sekme kart" : "bos-durum"}>
       <p className="bos-baslik">{baslik}</p>
       {children && <div className="soluk">{children}</div>}
     </div>

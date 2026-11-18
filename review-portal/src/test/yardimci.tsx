@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { api } from "../api/client";
@@ -26,6 +26,14 @@ export async function yereldeGorulmus(caseler: (string | Pick<TestCase, "id" | "
     const kayit = typeof c !== "string" ? c : m ? m : { id: c, durum: "draft" as const, karar: null, karar_zamani: null };
     goruntulemeyiKaydetTest(k.id || k.kullanici_adi, kayit);
   }
+}
+
+/**
+ * Detay sayfası iskeletinde (DS-1) ana sekmeyi açar: `role=tab` adıyla bulunur (sayı rozeti adın
+ * parçasıdır, bu yüzden düzenli ifade önerilir: /^PO teyidi/).
+ */
+export async function sekmeAc(ad: string | RegExp): Promise<void> {
+  fireEvent.click(await screen.findByRole("tab", { name: typeof ad === "string" ? new RegExp(`^${ad}`) : ad }));
 }
 
 export function sar(ui: ReactElement, { yol = "/" }: { yol?: string } = {}) {

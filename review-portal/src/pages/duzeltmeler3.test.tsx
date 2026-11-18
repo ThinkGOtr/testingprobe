@@ -78,7 +78,7 @@ describe("case üretimi hata ile bitti: yeniden denenir, denetim yeniden başlat
   it("core failed'da PO onayını göstermese de (not_requested) yeniden deneme açık; PO kartı 'henüz istenmedi' demez", async () => {
     await oturumAc("testci");
     uretimiDusur("not_requested");
-    uygulama("/gereksinimler/req-tpd-1");
+    uygulama("/gereksinimler/req-tpd-1?sekme=po-teyidi");
     expect(await screen.findByRole("button", { name: "Case üretimini yeniden dene" })).toBeEnabled();
     expect(screen.getByTestId("po-uretim-hatasi")).toHaveTextContent("PO teyidi verilmişti");
     expect(screen.queryByText(/Henüz istenmedi/)).not.toBeInTheDocument();
@@ -87,7 +87,7 @@ describe("case üretimi hata ile bitti: yeniden denenir, denetim yeniden başlat
   it("tutarlılık kartı 'denetim tamamlanmadı (iş hata ile bitti)' demez; akış case adımında (4) durur", async () => {
     await oturumAc("analist");
     uretimiDusur("approved");
-    uygulama("/gereksinimler/req-tpd-1");
+    uygulama("/gereksinimler/req-tpd-1?sekme=tutarlilik");
     // "Yeniden kontrol et" (Analist) ikincil ve yeni PO teyidi gerektirdiğini söyler.
     expect(await screen.findByRole("button", { name: "Yeniden kontrol et" })).toHaveAttribute("title", expect.stringMatching(/yeni PO teyidi/));
     const kart = await screen.findByRole("region", { name: /Tutarlılık bulguları/ });

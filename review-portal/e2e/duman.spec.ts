@@ -255,9 +255,11 @@ test("Case review: Case filtresi sekmeleri ≥641 px'te üst çubuğun altında 
 
 test("TPD-3: seed metni, golden soruları ve golden uyarı bulgusu görünür ('Bulgu yok' değil)", async ({ page }) => {
   await girisYap(page, "analist");
-  await page.goto("/gereksinimler/req-tpd-3");
+  await page.goto("/gereksinimler/req-tpd-3?sekme=dokuman");
   await expect(page.getByText("Bayi katalogda ürün adının bir bölümünü yazdığında yalnızca eşleşen ürünler listelenir.").first()).toBeVisible();
+  await page.getByRole("tab", { name: /^PO teyidi/ }).click();
   await expect(page.getByText(/Aramanın başlaması için en az kaç karakter girilmeli/)).toBeVisible();
+  await page.getByRole("tab", { name: /^Tutarlılık/ }).click();
   await expect(page.getByText("api/src/demoapp_api/main.py:331")).toBeVisible();
   await expect(page.getByText("Bulgu yok: doküman kod ve veriyle tutarlı.")).toHaveCount(0);
   await page.screenshot({ path: `${EKRAN_DIZINI}/25-tpd3-golden.png`, fullPage: true });
@@ -604,7 +606,7 @@ test("hiçbir rolde ölü iç bağlantı yok (her href bir ekrana çıkar)", asy
 test("mobil gereksinim detayı: kanıt blokları yatay taşmaz", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await girisYap(page, "analist");
-  await page.goto("/gereksinimler/req-tpd-1");
+  await page.goto("/gereksinimler/req-tpd-1?sekme=tutarlilik");
   await expect(page.getByText("api/src/demoapp_api/pricing.py:97").first()).toBeVisible();
   await fontlariBekle(page);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
@@ -669,7 +671,8 @@ const TEMA_TURLARI: TemaTuru[] = [
 /** axe sayfaları: yol, ekran görüntüsü adı (açık tema, 1440 px) ve içeriğin yüklendiğini gösteren bekleme. */
 const AXE_SAYFALARI: { yol: string; ad: string; hazir: (p: Page) => Promise<void> }[] = [
   { yol: "/gereksinimler", ad: "01-gereksinimler", hazir: (p) => expect(p.getByRole("region", { name: "Gereksinimler tablosu" })).toBeVisible() },
-  { yol: "/gereksinimler/req-tpd-1", ad: "02-gereksinim-tpd1", hazir: (p) => expect(p.getByText("api/src/demoapp_api/pricing.py:94").first()).toBeVisible() },
+  { yol: "/gereksinimler/req-tpd-1?sekme=tutarlilik", ad: "02-gereksinim-tpd1", hazir: (p) => expect(p.getByText("api/src/demoapp_api/pricing.py:94").first()).toBeVisible() },
+  { yol: "/gereksinimler/req-tpd-1?sekme=po-teyidi", ad: "02b-gereksinim-po-sekmesi", hazir: (p) => expect(p.getByRole("region", { name: "Ön inceleme soruları" })).toBeVisible() },
   { yol: "/gereksinimler/req-ft-1", ad: "03-gereksinim-serbest-metin", hazir: (p) => expect(p.getByText("Kontrol turu").first()).toBeVisible() },
   {
     yol: "/gereksinimler/req-tpd-1/caseler",
@@ -731,6 +734,9 @@ const AXE_SAYFALARI: { yol: string; ad: string; hazir: (p: Page) => Promise<void
 const F0_INCOMPLETE: Record<string, [number, number, number, number, number]> = {
   "/giris": [0, 0, 0, 0, 0],
   "/gereksinimler/req-tpd-1": [6, 9, 6, 9, 6],
+  // DS-1: sayfa sekmelere bölündü; her sekme eski tek sayfanın alt kümesi → eski tavan korunur.
+  "/gereksinimler/req-tpd-1?sekme=tutarlilik": [6, 9, 6, 9, 6],
+  "/gereksinimler/req-tpd-1?sekme=po-teyidi": [6, 9, 6, 9, 6],
   "/gereksinimler/req-tpd-1/caseler": [0, 0, 0, 0, 0],
   "/kod/scr-2": [8, 8, 8, 8, 8],
   // 011 tur 1 (D4) ölçümü: scr-java'nın kırma/onay simgeleri scr-2 ile aynı ("yalnız metin dışı karakter");
@@ -974,7 +980,13 @@ test("pasiflik nedeni yerleşimi (review 3): neden kendi düğmesinin altında, 
     const baslik = page.locator(".sayfa-basligi");
     await expect(baslik.locator(".dugme-neden").first()).toBeVisible();
     await fontlariBekle(page);
-    const kap = await kutu(baslik);
+    // DS-1: başlık artık özet kartı (iç boşluklu): kenar, kartın içerik kutusunun sağ kenarıdır.
+    const kart = await kutu(baslik);
+    const ic = await baslik.evaluate((e) => {
+      const c = getComputedStyle(e);
+      return parseFloat(c.paddingRight) + parseFloat(c.borderRightWidth);
+    });
+    const kap = { ...kart, width: kart.width - ic };
     const son = await kutu(baslik.locator(".eylemler .dugme").last());
     expect(Math.abs(son.x + son.width - (kap.x + kap.width))).toBeLessThanOrEqual(1);
     for (const n of await baslik.locator(".dugme-neden").all()) {
@@ -1003,14 +1015,19 @@ test("mobil (375 px) yayın önizleme ve akış göstergesi: sayfa yatay kaymaz,
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
 });
 
-test("akış göstergesi 1024 px (1280 ekran %125): adım adları çakışmaz, düzen içerik genişliğine göre 7x2; tamamlanmış AI adımı kesik kalır", async ({ page }) => {
+// DS-1: detay sayfasında akış kompakt şerittir — dar kapta 7x2'ye sarmak yerine tek satır kalır ve kendi
+// içinde yatay kayar (sayfa kaymaz); şimdiki adım görünür alana getirilir.
+test("akış göstergesi 1024 px (1280 ekran %125): kompakt şerit tek satır, kendi içinde kayar, adım adları çakışmaz; tamamlanmış AI adımı kesik kalır", async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 768 });
   await girisYap(page, "analist");
   await page.goto("/gereksinimler/req-tpd-1");
   await expect(page.locator(".akis-ad").first()).toBeVisible();
   await fontlariBekle(page);
   expect(await akisAdCakismalari(page)).toEqual([]);
-  expect(await page.locator(".akis ol").evaluate((e) => getComputedStyle(e).gridTemplateColumns.split(" ").length)).toBe(7);
+  expect(await page.locator(".akis ol").evaluate((e) => getComputedStyle(e).gridTemplateColumns.split(" ").length)).toBe(14);
+  await expect(page.locator(".akis-kompakt")).toHaveCSS("overflow-x", "auto");
+  await expect(page.locator('.akis-kompakt [aria-current="step"]')).toBeInViewport();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1024);
   // Kesik kenar regresyonu: tür dolgusu kenarın altına boyanmaz (background-clip: padding-box), kenar kesik kalır.
   const aiNo = page.locator(".akis-tamam.akis-tur-ai .akis-no").first();
   await expect(aiNo).toBeAttached();
@@ -1035,56 +1052,41 @@ test("bilinmeyen sayfa: h1 başlığı var (axe page-has-heading-one)", async ({
   expect(sonuc.violations.map((v) => v.id)).toEqual([]);
 });
 
-// Bölüm gezgini (`nav "Sayfa bölümleri"`) bağlantıları kart başlıklarıyla aynı metni taşır ve DOM'da
-// içerikten önce gelir: kart başlığı `getByText(...).first()` ile değil, `getByRole("region", { name })`
-// ile aranır (860 px ve altında gezgin gizlidir, `.first()` gizli bağlantıyı bulur; ≥861 px'te görünür
-// bağlantıyı bulur ve kart kaybını yakalamaz). 861–1279 px'te gezgin üst çubuğun altında yapışkan tek satır
-// yatay şerittir, ≥1280 px'te sağda yapışkan sütun.
-test("bölüm gezgini: ≥1280 px yapışkan sütun, 1152 ve 861 px yapışkan tek satır şerit, 860 px'te gizli; bağlantı bölümü üst çubuğun altına getirir", async ({ page }) => {
+// Detay sayfa iskeleti (DS-1): ana sekme şeridi ≥641 px'te üst çubuğun altında yapışkan; seçim `?sekme=`'de;
+// eski bölüm çapası (`#bulgular`) ilgili sekmeyi açar ve bölüm şeridin altına gelir (WCAG 2.4.11). 390 px'te
+// şerit kendi içinde kayar, sayfa yatay kaymaz; klavye ←/→ sekme değiştirir.
+test("detay sekmeleri: yapışkan şerit, ?sekme= derin bağlantı, eski çapa, klavye; 390 px'te sayfa kaymaz", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await girisYap(page, "analist");
-  await page.goto("/gereksinimler/req-tpd-1");
-  const gezgin = page.getByRole("navigation", { name: "Sayfa bölümleri" });
-  await expect(gezgin).toBeVisible();
-  const bolum = page.getByRole("region", { name: "Tutarlılık bulguları" });
-  await gezgin.getByRole("link", { name: "Tutarlılık bulguları" }).click();
-  await expect(page).toHaveURL(/#bulgular$/);
+  await page.goto("/gereksinimler/req-tpd-1#bulgular");
+  const liste = page.getByRole("tablist", { name: "Gereksinim bölümleri" });
+  await expect(liste.getByRole("tab", { name: /^Tutarlılık/ })).toHaveAttribute("aria-selected", "true");
+  const bolum = page.getByRole("region", { name: /Tutarlılık bulguları/ });
   await expect(bolum).toBeInViewport();
-  await expect
-    .poll(async () => {
-      const ust = await page.locator(".ust-cubuk").boundingBox();
-      const kutu = await bolum.boundingBox();
-      return !!ust && !!kutu && kutu.y >= ust.y + ust.height;
-    })
-    .toBe(true);
-  await page.setViewportSize({ width: 1152, height: 720 });
-  await expect(gezgin).toBeVisible();
-  await expect(gezgin).toHaveCSS("position", "sticky");
-  // Kaydırınca şerit üst çubuğun altında kalır; bağlantı bölümü şeridin altına getirir (WCAG 2.4.11).
-  await gezgin.getByRole("link", { name: "Doküman" }).click();
-  await gezgin.getByRole("link", { name: "Tutarlılık bulguları" }).click();
-  await expect(gezgin).toBeInViewport();
-  await expect
-    .poll(async () => {
-      const serit = await gezgin.boundingBox();
-      const kutu = await bolum.boundingBox();
-      return !!serit && !!kutu && kutu.y >= serit.y + serit.height;
-    })
-    .toBe(true);
-  // Şeridin en dar ucu (861 px): bağlantılar sarmaz, şerit tek satır kalır → sabit çapa payı yeter.
-  await page.setViewportSize({ width: 861, height: 720 });
-  await gezgin.getByRole("link", { name: "Doküman" }).click();
-  await gezgin.getByRole("link", { name: "Tutarlılık bulguları" }).click();
-  await expect
-    .poll(async () => {
-      const serit = await gezgin.boundingBox();
-      const kutu = await bolum.boundingBox();
-      return !!serit && !!kutu && serit.height < 60 && kutu.y >= serit.y + serit.height;
-    })
-    .toBe(true);
-  await page.setViewportSize({ width: 860, height: 800 });
-  await expect(gezgin).toBeHidden();
-  await expect(page.getByRole("region", { name: "Tutarlılık bulguları" })).toBeVisible();
+  await expect(page).toHaveURL(/\?sekme=tutarlilik#bulgular$/);
+  // Kaydırınca şerit üst çubuğun altında kalır.
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await expect(liste).toBeInViewport();
+  const ust = (await page.locator(".ust-cubuk").boundingBox())!;
+  const serit = (await liste.boundingBox())!;
+  expect(serit.y).toBeGreaterThanOrEqual(ust.y + ust.height - 1);
+  // Klavye: ← önceki sekme (PO teyidi), adres güncellenir, odak sekmede.
+  await liste.getByRole("tab", { name: /^Tutarlılık/ }).focus();
+  await page.keyboard.press("ArrowLeft");
+  const po = liste.getByRole("tab", { name: /^PO teyidi/ });
+  await expect(po).toHaveAttribute("aria-selected", "true");
+  await expect(po).toBeFocused();
+  await expect(page).toHaveURL(/\?sekme=po-teyidi$/);
+  await expect(page.getByRole("region", { name: "PO teyidi" })).toBeVisible();
+  await expect(bolum).toBeHidden();
+  // 390 px: şerit yatay kayar, sayfa kaymaz; özet kartı yığılır.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(liste).toHaveCSS("overflow-x", "auto");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  const h1 = (await page.getByRole("heading", { level: 1 }).boundingBox())!;
+  const eylem = (await page.getByTestId("ozet-karti").locator(".eylemler .dugme").first().boundingBox())!;
+  expect(eylem.y).toBeGreaterThan(h1.y + h1.height);
+  await page.screenshot({ path: `${EKRAN_DIZINI}/36-mobil-detay-sekmeleri.png`, fullPage: true });
 });
 
 // ---------------------------------------------------------------- Faz 4

@@ -14,9 +14,18 @@ React 18 + Vite 8 + TypeScript (strict), react-router. Arayüz metinleri Türkç
 | `PORTAL_LIVE=1 npx playwright test` | Canlı yığın testi (`e2e/canli.spec.ts`): çalışan portala (`PORTAL_URL`, varsayılan `http://127.0.0.1:8080`) analist olarak girer (`SEED_USER_PASSWORD`; `set -a; . ../.env; set +a`), gerekirse Jira'dan çeker, TPD-1'i açar; çekirdek `/requirements` sunmuyorsa açıkça başarısız olur (örnek veriye düşen sahte geçiş yok) |
 | `npm run e2e` | Playwright duman testi: mock derlemeyi `vite preview` ile açar, tüm rotaları gezer, ekran görüntülerini `e2e/ekranlar/` altına yazar; her rolde ölü iç bağlantı, 390 px taşma ve axe (WCAG 2 AA, açık/koyu tema) denetimi yapar (ilk seferde `npx playwright install chromium`) |
 
-**Test yazarken:** gereksinim detayındaki bölüm gezgini (`nav "Sayfa bölümleri"`) kart başlıklarıyla
-aynı metinli bağlantılar taşır, DOM'da içerikten önce gelir ve 860 px ve altında gizlidir (861–1279 px yatay şerit). Kart başlıkları
-`getByText(...).first()` ile değil `getByRole("region", { name })` ile aranır. Aynı düğme grubundaki eş
+**Detay sayfa iskeleti (DS-1):** detay sayfaları `src/components/DetaySayfasi.tsx` ile çizilir: özet kartı
+(`OzetKarti`: kimlik + başlık h1, durum rozetleri, meta, "Sıradaki adım", sağda eylemler) → isteğe bağlı şerit
+(ör. `<AkisAdimlari kompakt />`) → üst alan (sayfa geneli uyarı ve açılan formlar) → ana sekmeler
+(`role=tablist`, ←/→ Home/End, `?sekme=<id>` derin bağlantı; eski bölüm çapaları `#bulgular` gibi
+sekmenin `capalar` listesinden ilgili sekmeyi açar). Paneller tembel çizilir ve sonra `hidden` kalır
+(form durumu korunur). Alt düzey için aynı `Sekmeler` bileşeni `duzey="alt"` ile kullanılır (ör. tasarım
+modeli `?model=<id>`). Boş sekme gizlenmez, `SekmeBos`/`BosDurum` ile ne olmadığını söyler. Aralıklar
+`--space-1…6` (4/8/12/16/24/32) token'larıdır. Örnek: `pages/GereksinimDetay.tsx`.
+
+**Test yazarken:** sekme içeriği yalnız o sekme açıkken DOM'dadır. Sayfayı `…?sekme=tutarlilik` ile açın ya da
+`sekmeAc("PO teyidi")` (`src/test/yardimci.tsx`) kullanın. Kart başlıkları `getByRole("region", { name })`
+ile aranır. Aynı düğme grubundaki eş
 pasiflik nedeni (`.dugme-neden`) bir kez yazılır; diğer düğmeler `aria-describedby` ile ona bağlanır,
 neden metnini düğmenin erişilebilir açıklamasıyla (`toHaveAccessibleDescription`) doğrulayın.
 

@@ -112,13 +112,13 @@ describe("Kontrol Kulesi: platform süzgeci", { timeout: 60000 }, () => {
 describe("ai_agent: Agent Probe bölümleri", { timeout: 60000 }, () => {
   it("varsayılan kipte menüde Ajan ürünleri ve gereksinim detayında panel var", async () => {
     await oturum("analist");
-    uygulama("/gereksinimler/req-ft-1");
+    uygulama("/gereksinimler/req-ft-1?sekme=caseler");
     const menu = await screen.findByRole("navigation", { name: "Ana menü" }, T);
     expect(within(menu).getByRole("link", { name: /Ajan ürünleri/ })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Ürün AI ajanı" }, T)).toBeInTheDocument();
   });
 
-  it("ai_agent=false: menü öğesi yok, sayfa 'özellik kapalı', gereksinim detayında panel ve gezgin girdisi yok", async () => {
+  it("ai_agent=false: menü öğesi yok, sayfa 'özellik kapalı', gereksinim detayında panel yok", async () => {
     await oturum("analist", { ozellikler: { ...HEPSI, ai_agent: false } });
     const casus = vi.spyOn(api, "ajanTesti");
     const { unmount } = uygulama("/ajan-urunleri");
@@ -132,8 +132,9 @@ describe("ai_agent: Agent Probe bölümleri", { timeout: 60000 }, () => {
     expect(screen.queryByRole("table")).toBeNull();
     unmount();
 
-    uygulama("/gereksinimler/req-ft-1");
-    await screen.findByRole("heading", { name: "Doküman" }, T);
+    uygulama("/gereksinimler/req-ft-1?sekme=caseler");
+    // DS-1: ajan paneli Case'ler sekmesinde; kapalıyken orada da yok.
+    await screen.findByRole("heading", { name: "Manuel baz değer" }, T);
     expect(screen.queryByRole("heading", { name: "Ürün AI ajanı" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Ürün AI ajanı" })).toBeNull();
     expect(casus).not.toHaveBeenCalled();

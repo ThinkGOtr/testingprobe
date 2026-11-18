@@ -51,7 +51,7 @@ describe("kararla çözülen ön inceleme sorusu", () => {
     ikinci.cevap = null;
     ikinci.kararla_cozuldu = null;
     g.po = { ...g.po, durum: "pending" };
-    uygulama(`/gereksinimler/${g.id}`);
+    uygulama(`/gereksinimler/${g.id}?sekme=po-teyidi`);
     const cozuldu = await screen.findByTestId(`soru-cozuldu-${ilk.id}`);
     expect(cozuldu).toHaveTextContent("Çözüldü");
     expect(cozuldu).toHaveTextContent("F1 (tur 1)");
