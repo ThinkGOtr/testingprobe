@@ -257,3 +257,56 @@ def test_onceki_icerik_uyarisi_denetim_kaydinda(
         ).first()
         assert ev.ozet["onceki_icerik_case_ids"] == [a["id"]]
         assert s.get(TestCase, uuid.UUID(a["id"])).durum == "published"
+
+
+# ------------------------- UX IA-03: liste durum modeli (tur, sıradaki, önceki tur ürünleri)
+
+
+def _liste_ogesi(api: TestClient, rid: uuid.UUID) -> dict[str, Any]:
+    return next(g for g in api.get("/requirements").json() if g["id"] == str(rid))
+
+
+def test_liste_tur_siradaki_ve_onceki_tur_urunleri(
+    api: TestClient, engine: Engine, make_user, make_requirement, fake_gateway, targets, monkeypatch
+) -> None:
+    monkeypatch.setenv("TP_DENETIM_KAPISI", "off")
+    from tests.unit.features.publish.test_publish import _ctx
+    from tp_core.features.publish import service as publish
+    from tp_core.features.requirements import flow
+
+    ciktilar = [case_icerik(), case_icerik(title="Hatalı parola", ref="AC2")]
+    fake_gateway([text_response(uretim_cikti(ciktilar)), text_response(uretim_cikti(ciktilar))])
+    rid = make_requirement()
+    testci, analist = make_user("tester"), make_user("analyst")
+    po = make_user("po")
+    login(api, testci)
+    assert api.post(f"/requirements/{rid}/generate-cases").status_code == 202
+    run_jobs(engine)
+    eskiler = latest_cases(api, rid)
+    for c in eskiler:
+        onayla(api, c, testci, analist)
+    publish.run_publish(_ctx([c["id"] for c in eskiler]), engine)
+
+    g = _liste_ogesi(api, rid)
+    assert g["tur"] == 1 and g["onceki_tur"] is None
+    assert g["sayaclar"]["case_toplam"] == 2 and g["sayaclar"]["case_onayli"] == 2
+
+    # Story değişti → `new` (onaylanan hash silindi): case'ler önceki tura ait.
+    with session_scope() as s:
+        req = s.get(Requirement, rid, with_for_update=True)
+        flow.apply_content_change(
+            s, req, req.baslik, req.aciklama + " Ek kural.", list(req.kabul_kriterleri),
+            "system", sebep="Jira içeriği değişti",
+        )
+    g = _liste_ogesi(api, rid)
+    assert g["durum"] == "new" and g["tur"] == 2
+    assert g["onceki_tur"] == {
+        "case_toplam": 2, "case_onayli": 2, "case_yayinda": 2, "pr_birlesen": 0,
+    }
+    assert g["sayaclar"]["case_toplam"] == 0 and g["sayaclar"]["case_onayli"] == 0
+    assert g["siradaki"] == {
+        "adim_no": 2, "ad": "Ön inceleme", "rol": "analyst", "rol_etiketi": "Analist",
+    }
+    d = api.get(f"/requirements/{rid}").json()
+    assert d["tur"] == 2 and d["onceki_tur"]["case_yayinda"] == 2
+    assert d["siradaki"]["rol"] == "analyst" and d["sayaclar"]["case_toplam"] == 0
