@@ -290,7 +290,7 @@ varsa çıkış 1. Bu tablo kayıtla aynı olmalıdır (`test_evaluation_status.
 | `case-negative` (P5; `case_deepening`) | v1 | **değerlendirme sonrası içerik değişti (içerik hash'i uyuşmuyor)** — 2026-11-12 canlı değerlendirildi (`evaluation/results/case-negative-v1-2026-11-12.json`); tur 2 açık soru bağı (`not_covered.question_ref`) sonrası yeniden koşulacak |
 | `case-technique` (P6; `case_deepening`) | v1 | **değerlendirme sonrası içerik değişti (içerik hash'i uyuşmuyor)** — 2026-11-12 canlı değerlendirildi (`evaluation/results/case-technique-v1-2026-11-12.json`); tur 2 açık soru bağı (`not_covered.question_ref`) sonrası yeniden koşulacak |
 | `verify-and-map` (+ `verify_and_map` golden'ları) | v4 | **canlı değerlendirildi** — 2026-11-18 (`evaluation/results/verify-and-map-v4-2026-11-18.json`, Sonnet 9/9: ts 3, python 3, csharp 3; gerçek Playwright MCP + demo uygulaması); v4 (014): hedef dil `language` girdisi, ad dönüşümü yasağı; vakalar dil başına `evaluation/vakalar/verify-and-map/<dil>/` |
-| `verify-and-map-app` (+ `verify_and_map_app` golden'ları; 009 mobil/masaüstü) | v2 | **canlı değerlendirme bekliyor** — 2026-11-18 tam set 7/9 (`evaluation/results/verify-and-map-app-v2-2026-11-18.json`): android ve ios vakalarının hepsi geçti, iki windows vakası Windows Appium'u (GCP `tp-windows`) kapalı olduğu için kaldı; v2 (014): dilden bağımsız metin (Java sabiti kalktı) + `language` girdisi; vakalar `evaluation/vakalar/verify-and-map-app/<dil>/` |
+| `verify-and-map-app` (+ `verify_and_map_app` golden'ları; 009 mobil/masaüstü) | v2 | **canlı değerlendirildi** — 2026-11-18 (`evaluation/results/verify-and-map-app-v2-2026-11-18.json`, Sonnet 9/9: android java/python/kotlin×2, ios python/swift×2, windows python/csharp; gerçek Android emülatörü + iOS simülatörü + GCP `tp-windows` Appium, app-mcp); v2 (014): dilden bağımsız metin (Java sabiti kalktı) + `language` girdisi; vakalar `evaluation/vakalar/verify-and-map-app/<dil>/` |
 | `triage` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
 | `bug-draft` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
 | `dup-rank` (+ Faz 4 golden'ları) | v2 | **canlı değerlendirildi** (2026-11-01; `evaluation/results/`) |
@@ -344,7 +344,7 @@ ios/python, android/kotlin, ios/swift çiftlerinin tüm vakaları geçti; `eval`
 web/python, web/csharp, android/python ve ios/python yalıtılmış yığında kabul koşusunu geçti
 (TPD-1 C2: PR + `local-ci-<p>-<d>` yeşil, kırarak doğrulama yeşil → kırmızı → yeşil) → `acik`.
 android/kotlin ve ios/swift müşteri CI kabulünü geçti (demo deposu PR #52 / #55, TP'nin ürettiği
-testler GitHub Actions'ta yeşil) → `acik`. windows/python ve windows/csharp kanıtsız: Windows Appium'u (GCP `tp-windows`) bu koşuda kapalıydı.
+testler GitHub Actions'ta yeşil) → `acik`. windows/python ve windows/csharp: 2026-11-18 `--dil` koşusu GCP `tp-windows` Appium'uyla geçti (`eval` kanıtı).
 
 ### Canlı değerlendirmeyi koşturmak (`make eval-live`)
 

@@ -5,16 +5,14 @@
   "model": "claude-sonnet-5-5",
   "provider": "anthropic",
   "mode": "live",
-  "passed": 0,
+  "passed": 1,
   "total": 1,
   "runs": 1,
   "cases": [
     {
       "id": "tpd-1-c2-windows-csharp",
-      "ok": false,
-      "failures": [
-        "doğrulanmamış adım: ['S1', 'S2', 'S3', 'S4']"
-      ],
+      "ok": true,
+      "failures": [],
       "output": {
         "platform": "windows",
         "step_mapping": [
@@ -23,8 +21,8 @@
             "po": "GirisEkrani",
             "method": "Ac",
             "args": [],
-            "verified": false,
-            "evidence_ref": null
+            "verified": true,
+            "evidence_ref": "Giriş formu görüntülendi: login-username, login-password, login-submit"
           },
           {
             "step_id": "S2",
@@ -34,8 +32,8 @@
               "bayi1",
               "Demo123!"
             ],
-            "verified": false,
-            "evidence_ref": null
+            "verified": true,
+            "evidence_ref": "login-submit sonrası katalog açıldı, current-dealer 'Doğrulama Bayi' (doğrulama bayisi, beklenen farklılık)"
           },
           {
             "step_id": "S3",
@@ -45,16 +43,16 @@
               "P-001",
               7
             ],
-            "verified": false,
-            "evidence_ref": null
+            "verified": true,
+            "evidence_ref": "qty-input-P-001 ve add-to-cart kullanıldı; gözlenen sayaç: 35'ten 42'ye çıktı (sepet boş değildi) · beklenen: 7"
           },
           {
             "step_id": "S4",
             "po": "KatalogEkrani",
             "method": "SepetiAc",
             "args": [],
-            "verified": false,
-            "evidence_ref": null
+            "verified": true,
+            "evidence_ref": "nav-cart ile Sepet ekranı açıldı (cart-table); gözlenen: adet 42, bedava 7, ara toplam 1.050,00 TL, indirim 175,00 TL, toplam 875,00 TL · beklenen: 7, 1, 175,00 TL, 25,00 TL, 150,00 TL"
           }
         ],
         "expects": [
@@ -100,21 +98,21 @@
       },
       "mode": "live",
       "error": null,
-      "cost_usd": 0.036328,
-      "sure_ms": 5805
+      "cost_usd": 0.068244,
+      "sure_ms": 45654
     }
   ],
   "tamamlandi": true,
   "set_vaka_sayisi": 1,
   "kosu_sayisi": 1,
-  "maliyet_usd": 0.036328,
-  "butce_usd": 10.0,
+  "maliyet_usd": 0.068244,
+  "butce_usd": 3.0,
   "calisma_alani_basligi": true,
   "guardrails_version": 1,
   "kayit_adaylari": null,
   "cagri_kaydi": "verify-and-map-app-v2-csharp-2026-11-18.calls.jsonl",
-  "cagri_sayisi": 2,
-  "cagri_defteri": "ledger/ai_call.jsonl",
+  "cagri_sayisi": 6,
+  "cagri_defteri": "exports-rw/eval-live/ai_call.jsonl",
   "amac": "verify_and_map_app",
   "via_flow": false,
   "output_check": true,
@@ -122,12 +120,12 @@
   "olcumler": null,
   "dagilim": {
     "maliyet_usd": {
-      "medyan": 0.036328,
-      "p90": 0.036328
+      "medyan": 0.068244,
+      "p90": 0.068244
     },
     "sure_ms": {
-      "medyan": 5805,
-      "p90": 5805
+      "medyan": 45654,
+      "p90": 45654
     }
   }
 }

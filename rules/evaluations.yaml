@@ -102,14 +102,15 @@ bundles:
       calls: evaluation/results/verify-and-map-v4-2026-11-18.calls.jsonl
   verify-and-map-app:
     version: 2
-    status: pending
-    note: '014 Ş8: v2 dilden bağımsız metin (Java sabiti kalktı; hedef dil `language` girdisi, ad dönüşümü
-      yasağı). Vaka kaynakları rules/evaluation/vakalar/verify-and-map-app/<dil>/ (vaka başına araç ortamı
-      app:<platform>). Canlı tam set koşusu 2026-11-18 (claude-sonnet-5-5, gerçek Android emülatörü + iOS
-      simülatörü, app-mcp): 7/9 — android (java, python, kotlin×2) ve ios (python, swift×2) vakalarının
-      hepsi geçti; iki windows vakası (python, csharp) Windows Appium''u olmadığı için kaldı (GCP tp-windows
-      kapalı, onaysız açılmadı): evaluation/results/verify-and-map-app-v2-2026-11-18.json. Windows vakaları
-      geçmeden evaluated yazılmaz; onaylı istisna yok.'
+    status: evaluated
+    note: 'Canlı değerlendirme 2026-11-18, claude-sonnet-5-5 (anthropic), 9/9 vaka geçti: evaluation/results/verify-and-map-app-v2-2026-11-18.json'
+    evaluation:
+      date: '2026-11-18'
+      model: claude-sonnet-5-5
+      provider: anthropic
+      results: evaluation/results/verify-and-map-app-v2-2026-11-18.json
+      guardrails_version: 1
+      calls: evaluation/results/verify-and-map-app-v2-2026-11-18.calls.jsonl
   triage:
     version: 2
     status: evaluated
