@@ -649,3 +649,15 @@ def test_artefakt_volume_yoksa_hicbir_kosu_budanmaz(engine: Engine, artefakt_kok
     with Session(engine) as s, s.begin():
         assert service.mark_pruned_runs(s) == 0
     assert _run(engine, rid).artefaktlar["dizin"] == f"runs/ci-{rid}-1"
+
+
+def test_yeni_dil_kosusu_dilini_korur(engine: Engine, artefakt_kok: Path) -> None:
+    """014: python/csharp koşusunun `ortam.dil`i alımdan sonra da kendi dilidir (`ts` değil)."""
+    rid = _enqueue(engine)
+    rep = kosu_yaz(artefakt_kok, "ci-manual", sha=SHA)
+    with Session(engine) as s, s.begin():
+        run = s.get(Run, rid)
+        run.ortam = {**(run.ortam or {}), "dil": "python", "platform": "web"}
+        service.ingest_check_report(s, run, rep)
+        assert run.ortam["dil"] == "python"
+        assert "lang" not in run.ortam

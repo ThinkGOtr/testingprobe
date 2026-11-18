@@ -1005,7 +1005,9 @@ def ingest_check_report(session: Session, run: Run, report: Mapping[str, Any]) -
         "saglik": dict(saglik) if saglik else None,
         "ast_guard_mode": koruma.get("mode"),
         "platform": platform,
-        "dil": platformlar.JAVA if java else platformlar.TS,
+        # 014: yeni dil (python, csharp) kendi adıyla kalır; `ts`ye düşerse koşu listesi/süzgeci
+        # ve sonraki triage dili yanlış okur.
+        "dil": platformlar.JAVA if java else (str(kosu_dili) if yeni_dil else platformlar.TS),
         **({"lang": "java"} if java else {}),
     }
     run.artefaktlar = {
