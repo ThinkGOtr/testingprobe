@@ -155,17 +155,19 @@ describe("Koşular: rozet ve süzgeç", () => {
     const v = mockVerisi();
     v.kosular[0].test_ortami = { eid: STAGING.eid, ad: STAGING.ad, tur: STAGING.tur, canli: false };
     await oturumAc("muhendis");
-    const liste = vi.spyOn(api, "kosular");
+    // IA-15: liste sayfalı uçtan okunur (`kosuSayfasi`, ilk sayfa offset 0).
+    const liste = vi.spyOn(api, "kosuSayfasi");
     const u = userEvent.setup();
-    uygulama("/kosular");
+    // Örnek verinin ilk koşusu kasıtlı kırma koşusu: IA-15'ten beri varsayılan gizli, `?kirma=1` gösterir.
+    uygulama("/kosular?kirma=1");
     const suzgec = await screen.findByTestId("ortam-suzgeci");
     expect(within(suzgec).getByRole("option", { name: "Ortamsız" })).toBeInTheDocument();
     expect(await screen.findAllByTestId("ortam-rozeti")).toHaveLength(1);
     await u.selectOptions(suzgec, STAGING.eid);
-    await waitFor(() => expect(liste).toHaveBeenLastCalledWith(STAGING.eid));
+    await waitFor(() => expect(liste).toHaveBeenLastCalledWith({ ortam: STAGING.eid, offset: 0, limit: 50 }));
     expect(await screen.findByText("1/1 koşu")).toBeInTheDocument();
     await u.selectOptions(screen.getByTestId("ortam-suzgeci"), "-");
-    await waitFor(() => expect(liste).toHaveBeenLastCalledWith("-"));
+    await waitFor(() => expect(liste).toHaveBeenLastCalledWith({ ortam: "-", offset: 0, limit: 50 }));
     await waitFor(() => expect(screen.queryAllByTestId("ortam-rozeti")).toHaveLength(0));
   });
 

@@ -191,7 +191,8 @@ describe("canlı derleme (VITE_MOCK=0): uydurma KPI yok", () => {
     // F4: Hazırlık kazancı AI katkısı kartından KPI şeridine taşındı (§5); bölge "AI katkısı" kalır.
     expect(await screen.findByRole("region", { name: "AI katkısı" })).toBeInTheDocument();
     const serit = screen.getByTestId("kule-kpi");
-    expect(within(serit).getByText("ölçülmüş baz yok")).toBeInTheDocument();
+    // IA-19: ölçülmemiş kazanç kutu değil, "Ölçülmeyenler" satırında.
+    expect(screen.getByTestId("kule-olculmeyenler")).toHaveTextContent(/Hazırlık kazancı: hiçbir story'de manuel baz değer ölçülmedi/);
     expect(serit).not.toHaveTextContent(/Kazanç %/);
     // Uydurma kazanç yüzdesi hiçbir kartta yok (şerit, AI katkısı, hazırlık tablosu dahil tüm sayfa).
     expect(document.body).not.toHaveTextContent(/Kazanç %/);

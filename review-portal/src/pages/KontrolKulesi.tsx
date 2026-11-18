@@ -89,7 +89,7 @@ function KpiBaslik({ ad, k, anahtar }: { ad: string; k: Kule; anahtar: KpiAnahta
 }
 
 /** UX IA-19: KPI şeridinde değeri olmayan ölçü (kutu yerine tek bilgi satırında toplanır). */
-export type OlculmeyenKpi = { ad: string; neden: string };
+export type OlculmeyenKpi = { ad: string; neden: string; kaynak?: string };
 
 /** Projede henüz hiç veri yok mu (story, koşu, hazırlık satırı yok): Kule tek bir "ilk adım" kartı gösterir. */
 export function kuleBosMu(k: Pick<Kule, "karne" | "son_kosular" | "hazirlik" | "gecme_orani">): boolean {
@@ -106,8 +106,8 @@ function OlculmeyenlerSatiri({ liste }: { liste: OlculmeyenKpi[] }) {
       </summary>
       <ul className="duz-liste">
         {liste.map((o) => (
-          <li key={o.ad}>
-            <strong>{o.ad}:</strong> {o.neden}
+          <li key={o.ad} data-testid={`olculmeyen-${o.ad}`}>
+            <strong>{o.ad}:</strong> {o.neden} {o.kaynak && <KaynakIpucu kaynak={o.kaynak} />}
           </li>
         ))}
       </ul>
@@ -184,19 +184,24 @@ export function KontrolKulesi() {
   const b = k.beklenti_dogrulugu;
   const h = k.hata_yakalama;
   const olculmeyenler: OlculmeyenKpi[] = [];
-  if (k.gecme_orani.oran === null) olculmeyenler.push({ ad: "Geçme oranı", neden: k.gecme_orani.metin ?? "henüz sayılan CI koşusu yok (kasıtlı kırma koşuları sayılmaz)" });
-  if (ai.kabul_orani === null) olculmeyenler.push({ ad: "Case kabul oranı", neden: "henüz case kararı yok" });
-  if (ai.script_ilk_review === null) olculmeyenler.push({ ad: "Script ilk review başarısı", neden: "henüz birleşen ya da review edilen test kodu yok" });
+  if (k.gecme_orani.oran === null)
+    olculmeyenler.push({ ad: "Geçme oranı", neden: k.gecme_orani.metin ?? "henüz sayılan CI koşusu yok (kasıtlı kırma koşuları sayılmaz)", kaynak: k.kaynaklar.gecme_orani });
+  if (ai.kabul_orani === null) olculmeyenler.push({ ad: "Case kabul oranı", neden: "henüz case kararı yok", kaynak: k.kaynaklar.kabul_orani });
+  if (ai.script_ilk_review === null)
+    olculmeyenler.push({ ad: "Script ilk review başarısı", neden: "henüz birleşen ya da review edilen test kodu yok", kaynak: k.kaynaklar.script_ilk_review });
   if (kazanc.oran === null)
     olculmeyenler.push({
       ad: "Hazırlık kazancı",
       neden: `${kazanc.replay_haric > 0 ? "REPLAY çıktılarında AI süresi ölçülmez" : bazOlculdu ? "ölçülmüş baz değeri olan story'de hazırlık süresi yok" : "hiçbir story'de manuel baz değer ölçülmedi"}. ${kazancKapsami}`.trim(),
+      kaynak: k.kaynaklar.kazanc_orani,
     });
-  if (!b || b.oran === null) olculmeyenler.push({ ad: "Beklenti doğruluğu", neden: b ? "onaylı karar tablosuyla karşılaştırılan case yok" : CEKIRDEK_BILDIRMIYOR });
+  if (!b || b.oran === null)
+    olculmeyenler.push({ ad: "Beklenti doğruluğu", neden: b ? "onaylı karar tablosuyla karşılaştırılan case yok" : CEKIRDEK_BILDIRMIYOR, kaynak: k.kaynaklar.beklenti_dogrulugu });
   if (!h || h.oran === null)
     olculmeyenler.push({
       ad: "Hata yakalama oranı",
       neden: h === undefined ? CEKIRDEK_BILDIRMIYOR : h === null ? "henüz ekilmiş hata koşusu yok" : (h.kapsam?.not ?? "geçerli hata adımı yetersiz"),
+      kaynak: k.kaynaklar.hata_yakalama,
     });
   const olculmedi = (ad: string) => olculmeyenler.some((o) => o.ad === ad);
 

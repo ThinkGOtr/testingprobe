@@ -179,8 +179,9 @@ describe("Kontrol Kulesi: kazanç ipucu kazanc_orani kaynağını gösterir", ()
   it("Hazırlık kazancı KPI'ı kazanc_orani kaynak metnini; tablo başlığı manuel_baz kaynağını taşır", async () => {
     await oturumAc("sunucu");
     uygulama("/kontrol-kulesi");
-    const kazanc = await screen.findByTestId("hazirlik-kazanci");
-    const kpi = kazanc.closest(".metrik")!;
+    // IA-19: örnek veride kazanç ölçülmedi → kutu yok; kaynak ipucu "Ölçülmeyenler" satırında kalır.
+    await screen.findByTestId("kule-olculmeyenler");
+    const kpi = screen.getByTestId("olculmeyen-Hazırlık kazancı");
     const ipucu = within(kpi as HTMLElement).getByTestId("kaynak-ipucu");
     expect(ipucu.getAttribute("aria-label")).toMatch(/1 − Σ\(AI \+ review süresi\) \/ Σ\(manuel baz\)/);
     expect(ipucu.getAttribute("aria-label")).not.toMatch(/requirement_baz_deger/);
