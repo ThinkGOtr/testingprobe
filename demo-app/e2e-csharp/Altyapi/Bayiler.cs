@@ -73,6 +73,23 @@ public static class Bayiler
     public static BayiBilgisi KosuParolasiyla(BayiBilgisi bayi, IReadOnlyDictionary<string, string> parolalar) =>
         parolalar.TryGetValue(bayi.KullaniciAdi, out var p) ? bayi with { Parola = p } : bayi;
 
+    /// <summary>Koşu hesabı parolasının ortam adı (core <c>render.kosu_parola_adi</c> ile aynı kural); 64'ü aşarsa null.</summary>
+    public static string? KosuParolaAdi(string kullaniciAdi)
+    {
+        var ad = "TP_TESTVERI_KOSU_" + System.Text.RegularExpressions.Regex.Replace(
+            kullaniciAdi.ToUpperInvariant(), "[^A-Z0-9]", "_");
+        return System.Text.RegularExpressions.Regex.IsMatch(ad, "^TP_TESTVERI_[A-Z0-9_]{1,64}$") ? ad : null;
+    }
+
+    /// <summary>
+    /// Üretilen testin <c>Gizli("TP_TESTVERI_KOSU_&lt;KULLANICI&gt;")</c> okuması runner'dan gelmediyse: o e2e
+    /// bayisinin bu koşudaki parolası (koşu ortamı → seed; geriye uyum). Eşleşen bayi yoksa null.
+    /// </summary>
+    public static string? KosuParolasiAdla(string ad) =>
+        E2E.Where(b => KosuParolaAdi(b.KullaniciAdi) == ad)
+            .Select(b => KosuParolasiyla(b).Parola)
+            .FirstOrDefault();
+
     private static BayiBilgisi KosuParolasiyla(BayiBilgisi bayi) =>
         KosuParolasiyla(bayi, KosuParolalari(Environment.GetEnvironmentVariable(KosuParolalariEnv)));
 

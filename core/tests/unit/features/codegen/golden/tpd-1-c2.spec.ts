@@ -13,7 +13,7 @@ test.describe("TPD-1 · C2", () => {
     // S1 — Giriş sayfasını aç
     await loginPage.goto();
     // S2 — Bayi kullanıcısıyla giriş yap
-    await loginPage.login("bayi1", "Demo123!");
+    await loginPage.login("bayi1", process.env.TP_TESTVERI_KOSU_BAYI1);
     // S3 — "Portakal Gazozu 1L" (P-001) kartında adedi 7 yapıp "Sepete ekle" butonuna bas
     await catalogPage.addToCart("P-001", 7);
     // S4 — Üst menüden sepete git

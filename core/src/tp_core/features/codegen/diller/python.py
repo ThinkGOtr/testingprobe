@@ -187,7 +187,7 @@ def build_context(inp: r.RenderInput, platform: str, template_hash: str) -> dict
         args = list(item["args"])
         for a in args:  # basılamayan değer şablondan önce reddedilir
             r.py_literal(a)
-        args = [r._gizli_arg(a, inp.gizli_ortam) for a in args]
+        args = r._kosu_arglari(item, inp.dealers, LOGIN_METOTLARI, inp.gizli_ortam)
         os_gerekli = os_gerekli or any(isinstance(a, r.OrtamDegeri) for a in args)
         return {
             "fixture": nesne(item.get("po")),

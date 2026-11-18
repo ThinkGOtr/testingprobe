@@ -13,7 +13,7 @@ test.describe("TPD-1 · C5", () => {
     // S1 — Giriş sayfasını aç
     await loginPage.goto();
     // S2 — Bayi kullanıcısıyla giriş yap
-    await loginPage.login("bayi1", "Demo123!");
+    await loginPage.login("bayi1", process.env.TP_TESTVERI_KOSU_BAYI1);
     // S3 — "Limonata 330ml" (P-002) kartında adedi 10 yapıp "Sepete ekle" butonuna bas
     await catalogPage.addToCart("P-002", 10);
     // S4 — Üst menüden sepete git

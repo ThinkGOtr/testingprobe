@@ -15,7 +15,7 @@ from runner import java_run
 from runner import run as runner
 from runner.diller import csharp_run, python_run
 from toolchain_common.proje import ProjeBlogu
-from toolchain_common.settings import kosu_parola_env, settings
+from toolchain_common.settings import kosu_parola_adi, kosu_parola_env, settings
 
 GIZLI = "Kosu-Parola-9f8e7d"
 
@@ -66,11 +66,36 @@ def test_blok_dogrulama(deger: object) -> None:
 
 
 def test_test_surecine_yalniz_kosu_hesaplari() -> None:
-    cfg = SimpleNamespace(run_dealers=("bayi1", "bayi2"),
-                          run_dealer_passwords={"bayi2": GIZLI, "baska": "x"})  # fmt: skip
-    assert kosu_parola_env(cfg) == {"TP_RUN_DEALER_PASSWORDS": json.dumps({"bayi2": GIZLI})}  # type: ignore[arg-type]
-    assert kosu_parola_env(SimpleNamespace(run_dealers=("bayi1",), run_dealer_passwords={})) == {}  # type: ignore[arg-type]
+    cfg = SimpleNamespace(
+        run_dealers=("bayi1", "bayi2"), run_dealer_passwords={"bayi2": GIZLI, "baska": "x"}
+    )
+    assert kosu_parola_env(cfg) == {  # type: ignore[arg-type]
+        "TP_RUN_DEALER_PASSWORDS": json.dumps({"bayi2": GIZLI}),
+        "TP_TESTVERI_KOSU_BAYI2": GIZLI,
+    }
+    bos = SimpleNamespace(run_dealers=("bayi1",), run_dealer_passwords={})
+    assert kosu_parola_env(bos) == {}  # type: ignore[arg-type]
     assert kosu_parola_env(SimpleNamespace()) == {}  # type: ignore[arg-type]
+    # Java: seed yedeği (koşu parolası önce), adı çakışan kullanıcılar atlanır.
+    seed = {"bayi1": "seed1", "bayi2": "seed2", "a.b": "s", "a_b": "s"}
+    env = kosu_parola_env(cfg, seed)  # type: ignore[arg-type]
+    assert env["TP_TESTVERI_KOSU_BAYI1"] == "seed1" and env["TP_TESTVERI_KOSU_BAYI2"] == GIZLI
+    assert "TP_TESTVERI_KOSU_A_B" not in env
+    assert (
+        kosu_parola_adi("x" * 60) is None and kosu_parola_adi("t.k-2") == "TP_TESTVERI_KOSU_T_K_2"
+    )
+
+
+def test_java_seed_bayileri(tmp_path: Path) -> None:
+    yol = tmp_path / java_run.BAYILER_YOLU
+    assert java_run.seed_bayiler(tmp_path) == {}
+    yol.parent.mkdir(parents=True)
+    yol.write_text(
+        'List.of(\n new BayiBilgisi("bayi1", "Demo123!", "Merkez"),\n'
+        '   new BayiBilgisi( "bayi2" ,"P\\"x", "S"), new BayiBilgisi("bos", "", "B"));',
+        encoding="utf-8",
+    )
+    assert java_run.seed_bayiler(tmp_path) == {"bayi1": "Demo123!"}
 
 
 def test_tum_dil_ortamlarinda(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -96,3 +121,4 @@ def test_tum_dil_ortamlarinda(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     }
     for dil, env in ortamlar.items():
         assert env.get("TP_RUN_DEALER_PASSWORDS") == beklenen, dil
+        assert env.get("TP_TESTVERI_KOSU_BAYI1") == GIZLI, dil

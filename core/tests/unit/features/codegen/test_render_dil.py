@@ -234,7 +234,7 @@ def test_web_java_golden_cikti() -> None:
     assert '@Bayi("bayi1")\npublic class TPD1WebC2_3f9b1c2eTest extends TestTabani {' in k
     # §2.5: gruplar [uretilen, web, tp-case-<uuid>] (+ story), page object adları TS ile aynı.
     assert f'@Test(groups = {{"uretilen", "web", "tp-case-{CASE_ID}", "TPD-1"}}, ' in k
-    assert '    loginPage().login("bayi1", "Demo123!");' in k
+    assert '    loginPage().login("bayi1", System.getenv("TP_TESTVERI_KOSU_BAYI1"));' in k
     assert '    catalogPage().addToCart("P-001", 7);' in k
     assert '    cartPage().expectTotal("150,00 TL");' in k
     # Guard izin listesi: yalnız üç import; Playwright türü / ham sürücü yok.

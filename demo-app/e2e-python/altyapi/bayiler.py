@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+from collections.abc import MutableMapping
 from dataclasses import dataclass, replace
 
 
@@ -50,6 +52,23 @@ def kosu_parolasiyla(bayi: Bayi, parolalar: dict[str, str] | None = None) -> Bay
     return replace(bayi, parola=p) if p else bayi
 
 
+def kosu_parola_adi(kullanici_adi: str) -> str | None:
+    """Koşu hesabı parolasının ortam adı (core `render.kosu_parola_adi` ile aynı kural)."""
+    ad = "TP_TESTVERI_KOSU_" + re.sub(r"[^A-Z0-9]", "_", kullanici_adi.upper())
+    return ad if re.fullmatch(r"TP_TESTVERI_[A-Z0-9_]{1,64}", ad) else None
+
+
+def kosu_parola_ortamini_yaz(ortam: MutableMapping[str, str] | None = None) -> None:
+    """Üretilen testler seed parolasıyla girişte parolayı `os.environ["TP_TESTVERI_KOSU_<KULLANICI>"]`
+    okur. Runner yalnız parolası girilen hesapları verir; verilmeyen her e2e bayisi için bu koşudaki
+    parola (koşu ortamı → seed) yazılır (geriye uyum)."""
+    ortam = os.environ if ortam is None else ortam
+    for b in E2E:
+        ad = kosu_parola_adi(b.kullanici_adi)
+        if ad and not ortam.get(ad):
+            ortam[ad] = kosu_parolasiyla(b).parola
+
+
 def sec(sabit: str | None, isci_sirasi: int) -> Bayi:
     """Testin bayisi: `sabit` (`@pytest.mark.dealer("bayi2")`) verilmişse o, yoksa işçinin bayisi
     (parola koşu ortamından, yoksa seed)."""
@@ -66,3 +85,6 @@ def sec(sabit: str | None, isci_sirasi: int) -> Bayi:
             f"işçi sırası {isci_sirasi}"
         )
     return kosu_parolasiyla(E2E[isci_sirasi])
+
+
+kosu_parola_ortamini_yaz()

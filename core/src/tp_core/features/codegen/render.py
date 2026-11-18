@@ -21,6 +21,14 @@ deterministik kontrollerden geçmiş `step_mapping` / `expects` ile render edili
   `Demo123!x`, kaçışlı biçim; güvenlik tur 3 #2) `GizliSizinti` (fail-closed; servis
   `test_verisi` engeliyle durdurur, commit/PR yok). Etiket/başlık maskesi de bu listeyi ve
   `atif.maskele` kuralını kullanır.
+- Koşu hesabı (kullanıcı kararı 2026-11-18): giriş metodunda case bir e2e bayisinin SEED
+  parolasıyla giriyorsa parola literal yerine `TP_TESTVERI_KOSU_<KULLANICI>` ortam okuması basılır
+  (`_kosu_arglari`; K19 ile aynı biçim, korumalar değişmez): test koşuya atanan hesabın parolasıyla
+  girer. Runner parolası girilen hesapları verir; vermediğinde iskelet (TS fixtures, Python
+  bayiler, C# `Gizli`) ya da Java runner/CI betiği seed parolasını koyar (geriye uyum). Hatalı
+  parola gibi seed'den farklı değerler (bilinçli negatif case) literal kalır. Eşleme (model)
+  case'teki kimliği kullanmaya devam eder; ikame yalnız render'dadır. Kotlin/Swift (müşteri CI)
+  hariç: o dillerde ikame yoktur.
 - Çıktı deterministiktir (zaman/rastgelelik yok); dosya adı case'e göre sabittir
   (`<e2e kökü>/tests/generated/<story>-c<sıra>-<case uuid'nin ilk 8'i>.spec.ts`; e2e kökü
   LocalForge'da `e2e`, GitHub monoreposunda `demo-app/e2e`). Yeniden üretim aynı dosya yolunu
@@ -98,6 +106,44 @@ def _gizli_arg(value: Any, gizli_ortam: Mapping[str, str]) -> Any:
     if isinstance(value, str) and value in gizli_ortam:
         return OrtamDegeri(gizli_ortam[value])
     return value
+
+
+KOSU_PAROLA_ONEKI = "TP_TESTVERI_KOSU_"
+
+
+def kosu_parola_adi(kullanici: str) -> str | None:
+    """Koşu hesabı parolasının ortam adı: `TP_TESTVERI_KOSU_<KULLANICI>` (büyük harf; [A-Z0-9]
+    dışı `_`). Toolchain runner (`toolchain_common.settings.kosu_parola_env`) ve iskeletler aynı
+    kuralı kullanır. Ad 64 sınırını aşarsa None (ikame yapılmaz)."""
+    ad = KOSU_PAROLA_ONEKI + re.sub(r"[^A-Z0-9]", "_", kullanici.upper())
+    return ad if SIR_ADI_RE.match(ad) and ad != KOSU_PAROLA_ONEKI else None
+
+
+def _kosu_arglari(
+    item: Mapping[str, Any],
+    dealers: Mapping[str, Mapping[str, str]],
+    login_metotlari: frozenset[str],
+    gizli_ortam: Mapping[str, str],
+) -> list[Any]:
+    """Çağrı argümanları (K19 + koşu hesabı). Giriş metodunda case bir e2e bayisinin SEED
+    parolasıyla giriyorsa parola literal yerine koşu hesabı parolasının ortam okuması olur
+    (`TP_TESTVERI_KOSU_<KULLANICI>`): test, koşuya atanan hesabın parolasıyla girer; koşu ortamı
+    vermezse iskelet/runner seed parolasını koyar (geriye uyum). Seed'den farklı parola (bilinçli
+    negatif case: hatalı parola), bilinmeyen kullanıcı ve adı çakışan bayiler olduğu gibi kalır."""
+    args = list(item["args"])
+    if (
+        item.get("method") in login_metotlari
+        and len(args) >= 2
+        and isinstance(args[0], str)
+        and isinstance(args[1], str)
+        and args[0] in dealers
+        and args[1] == (dealers[args[0]] or {}).get("password")
+    ):
+        ad = kosu_parola_adi(args[0])
+        ayni = [d for d in dealers if kosu_parola_adi(d) == ad]
+        if ad is not None and ayni == [args[0]]:
+            return [args[0], OrtamDegeri(ad), *(_gizli_arg(a, gizli_ortam) for a in args[2:])]
+    return [_gizli_arg(a, gizli_ortam) for a in args]
 
 
 def _maskeli(metin: str, gizli: Iterable[str]) -> str:
@@ -298,7 +344,7 @@ def build_context(inp: RenderInput, template_hash: str) -> dict[str, Any]:
         return {
             "fixture": fx,
             "method": ident(str(item.get("method"))),
-            "args": [_gizli_arg(a, gizli) for a in item["args"]],
+            "args": _kosu_arglari(item, inp.dealers, frozenset({"login"}), gizli),
         }
 
     steps: list[dict[str, Any]] = []
@@ -587,7 +633,7 @@ def build_java_context(inp: RenderInput, platform: str, template_hash: str) -> d
         return {
             "fixture": java_ident(fixture_name(java_ident(str(item.get("po"))))),
             "method": java_ident(str(item.get("method"))),
-            "args": [_gizli_arg(a, gizli) for a in item["args"]],
+            "args": _kosu_arglari(item, inp.dealers, LOGIN_METOTLARI, gizli),
         }
 
     steps: list[dict[str, Any]] = []

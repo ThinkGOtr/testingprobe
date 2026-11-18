@@ -4,7 +4,7 @@ import { test as base } from "@playwright/test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AGENT_DEALER, DEALERS, type Dealer, acquireDealer, expect, pickDealer, runPasswords, test, withRunPassword } from "./fixtures";
+import { AGENT_DEALER, DEALERS, type Dealer, acquireDealer, expect, pickDealer, runPasswordEnvName, runPasswords, setRunPasswordEnv, test, withRunPassword } from "./fixtures";
 
 /** Seed listesindeki bayi (koşu ortamı parolasından bağımsız). */
 function seed(username: string): Dealer {
@@ -34,6 +34,16 @@ base.describe("Bayi seçimi (birim)", () => {
     expect(withRunPassword(bayi1, pw)).toBe(bayi1);
     expect(() => runPasswords("{bozuk")).toThrow(/geçerli JSON değil/);
     expect(() => runPasswords('["x"]')).toThrow(/JSON nesnesi/);
+  });
+
+  base("üretilen testin koşu parolası ortam adı: girilmemişse seed yazılır, girilmişse korunur", () => {
+    expect(runPasswordEnvName("bayi1")).toBe("TP_TESTVERI_KOSU_BAYI1");
+    expect(runPasswordEnvName("test.k-2")).toBe("TP_TESTVERI_KOSU_TEST_K_2");
+    expect(runPasswordEnvName("x".repeat(60))).toBeUndefined();
+    const env: Record<string, string | undefined> = { TP_TESTVERI_KOSU_BAYI2: "runner-verdi" };
+    setRunPasswordEnv(env);
+    expect(env["TP_TESTVERI_KOSU_BAYI2"]).toBe("runner-verdi");
+    expect(env["TP_TESTVERI_KOSU_BAYI1"]).toBe(pickDealer("bayi1", 0).password);
   });
 
   base("bayi kilidi özeldir ve bekleyen sıradaki alır", async () => {

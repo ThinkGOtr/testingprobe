@@ -51,6 +51,10 @@ if [[ "${SKIP_BIRIM:-0}" != "1" ]]; then
     -Dallure.results.directory=target/birim-raporlari/allure-results -Dsurefire.timeout=600
 fi
 
+# Üretilen testlerin koşu hesabı parolaları (TP_TESTVERI_KOSU_<KULLANICI>; yoksa seed).
+# shellcheck source=kosu-parolalari.sh
+source "$root/ci/kosu-parolalari.sh" "src/test/java/com/antreklabs/bayi/altyapi/Bayiler.java"
+
 step "cihaz koşusu: platform=$platform $*"
 rc=0
 ./mvnw "${mvn_opts[@]}" surefire:test -Dplatform="$platform" "$@" || rc=$?

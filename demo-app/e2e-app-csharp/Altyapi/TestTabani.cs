@@ -60,6 +60,11 @@ public abstract class TestTabani
         string? deger = Environment.GetEnvironmentVariable(ad);
         if (string.IsNullOrEmpty(deger))
         {
+            // Koşu hesabı parolası (TP_TESTVERI_KOSU_<KULLANICI>): runner vermediyse bayinin koşu/seed parolası.
+            deger = Bayiler.KosuParolasiAdla(ad);
+        }
+        if (string.IsNullOrEmpty(deger))
+        {
             throw new InvalidOperationException($"gizli test verisi tanımsız: {ad} (koşu ortamında verilmeli)");
         }
         return deger;

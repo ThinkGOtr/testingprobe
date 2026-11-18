@@ -125,3 +125,14 @@ def test_yazilan_deger_dogrulamasi() -> None:
     assert not _deger_tutuyor("••", "abcde")
     assert _deger_tutuyor("", "gizli")
     assert _deger_tutuyor(None, "gizli")
+
+
+def test_kosu_parola_ortami() -> None:
+    """Üretilen testin okuduğu `TP_TESTVERI_KOSU_<KULLANICI>`: verilmemişse yazılır, verilmişse korunur."""
+    assert bayiler.kosu_parola_adi("bayi1") == "TP_TESTVERI_KOSU_BAYI1"
+    assert bayiler.kosu_parola_adi("test.k-2") == "TP_TESTVERI_KOSU_TEST_K_2"
+    assert bayiler.kosu_parola_adi("x" * 60) is None
+    ortam = {"TP_TESTVERI_KOSU_BAYI2": "runner-verdi"}
+    bayiler.kosu_parola_ortamini_yaz(ortam)
+    assert ortam["TP_TESTVERI_KOSU_BAYI2"] == "runner-verdi"
+    assert ortam["TP_TESTVERI_KOSU_BAYI1"] == bayiler.sec("bayi1", 0).parola

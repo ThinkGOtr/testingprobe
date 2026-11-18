@@ -68,6 +68,16 @@ public class TabanTests
     }
 
     [Test]
+    public void KosuParolaAdiVeSeedYedegi()
+    {
+        Assert.That(Bayiler.KosuParolaAdi("bayi1"), Is.EqualTo("TP_TESTVERI_KOSU_BAYI1"));
+        Assert.That(Bayiler.KosuParolaAdi("test.k-2"), Is.EqualTo("TP_TESTVERI_KOSU_TEST_K_2"));
+        Assert.That(Bayiler.KosuParolaAdi(new string('x', 60)), Is.Null);
+        Assert.That(Bayiler.KosuParolasiAdla("TP_TESTVERI_KOSU_BAYI1"), Is.EqualTo(Bayiler.Sec("bayi1", 0).Parola));
+        Assert.That(Bayiler.KosuParolasiAdla("TP_TESTVERI_KOSU_YOK"), Is.Null);
+    }
+
+    [Test]
     public void KosuParolasi()
     {
         Assert.That(Bayiler.KosuParolalari(null), Is.Empty);

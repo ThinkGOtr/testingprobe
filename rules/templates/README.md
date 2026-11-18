@@ -52,3 +52,8 @@ derleme ve koşu müşterinin macOS GitHub Actions runner'ındadır; kırarak do
   `demo-app/mobile/ios-test/BayiSiparisUITests/TPUretilen/` (Xcode 27.2 ile derlendi).
 - `xcuitest_iskelet/`: tek seferlik kurulum PR'ının (Ş5 `musteri_ci.kurulum_plani(iskelet=…)`)
   Swift dosyaları (ekran tabanı, test tabanı, boş kimlik dosyası).
+
+**Koşu hesabı parolası (2026-11-18):** ts / java / python / csharp şablonlarında giriş çağrısının
+parolası, case bir e2e bayisinin seed parolasıyla giriyorsa `TP_TESTVERI_KOSU_<KULLANICI>` ortam
+okuması olarak basılır (`render._kosu_arglari`; şablonlar değişmedi, süzgeç düzeyinde). Bilinçli
+negatif değerler (hatalı parola) literal kalır. Kotlin / Swift (müşteri CI) hariç.

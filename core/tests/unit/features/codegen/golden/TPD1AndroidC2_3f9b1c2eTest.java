@@ -17,7 +17,7 @@ public class TPD1AndroidC2_3f9b1c2eTest extends TestTabani {
     // S1 — Giriş sayfasını aç
     girisEkrani().ac();
     // S2 — Bayi kullanıcısıyla giriş yap
-    girisEkrani().girisYap("bayi1", "Demo123!");
+    girisEkrani().girisYap("bayi1", System.getenv("TP_TESTVERI_KOSU_BAYI1"));
     // S3 — "Portakal Gazozu 1L" (P-001) kartında adedi 7 yapıp "Sepete ekle" butonuna bas
     katalogEkrani().sepeteEkle("P-001", 7);
     // S4 — Üst menüden sepete git

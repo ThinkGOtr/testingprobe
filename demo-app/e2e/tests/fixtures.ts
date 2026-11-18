@@ -69,6 +69,25 @@ export function withRunPassword(dealer: Dealer, passwords: Record<string, string
   return pw ? { ...dealer, password: pw } : dealer;
 }
 
+/** Koşu hesabı parolasının ortam adı (core `render.kosu_parola_adi`, toolchain `kosu_parola_env` ile aynı). */
+export function runPasswordEnvName(username: string): string | undefined {
+  const name = `TP_TESTVERI_KOSU_${username.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`;
+  return /^TP_TESTVERI_[A-Z0-9_]{1,64}$/.test(name) ? name : undefined;
+}
+
+/**
+ * Üretilen testler seed parolasıyla girişte parolayı `process.env.TP_TESTVERI_KOSU_<KULLANICI>`'dan
+ * okur. Runner yalnız parolası girilen hesapları verir; verilmeyen her e2e bayisi için bu koşudaki
+ * parola (koşu ortamı → seed) burada yazılır (geriye uyum: koşu ortamı yoksa case'teki seed parolası).
+ */
+export function setRunPasswordEnv(env: Record<string, string | undefined> = process.env): void {
+  for (const d of DEALERS) {
+    const name = runPasswordEnvName(d.username);
+    if (name && !env[name]) env[name] = withRunPassword(d).password;
+  }
+}
+setRunPasswordEnv();
+
 /** Testin bayisi: `dealerUsername` verilmişse o, yoksa paralel işçinin bayisi (parola koşu ortamından). */
 export function pickDealer(dealerUsername: string | undefined, parallelIndex: number): Dealer {
   if (dealerUsername !== undefined) {

@@ -99,7 +99,8 @@ def test_atifli_case_cozulmus_gider_replay_eslesir_veri_izi(
     assert 'await cartPage.expectFreeQuantity("P-001", 1);' in sc.icerik
     assert "{veri:" not in sc.icerik
     # K19: gizli değer kodda ortamdan okunur; PR/commit içeriğinde düz parola yok.
-    assert 'await loginPage.login("bayi1", process.env.TP_TESTVERI_DEMO_PAROLA);' in sc.icerik
+    # Seed parolasıyla giriş: koşu hesabı parolası (K19 sırrından önce; 2026-11-18 kararı).
+    assert 'await loginPage.login("bayi1", process.env.TP_TESTVERI_KOSU_BAYI1);' in sc.icerik
     assert DEMO_PAROLA not in sc.icerik
     pr = codegen.forge.find_open_pr(f"tp/case-{cid}")
     assert pr is not None and "{veri:" not in pr.body

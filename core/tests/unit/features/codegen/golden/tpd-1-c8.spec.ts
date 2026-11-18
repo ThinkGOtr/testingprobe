@@ -13,7 +13,7 @@ test.describe("TPD-1 · C8", () => {
     // S1 — Giriş sayfasını aç
     await loginPage.goto();
     // S2 — Bayi kullanıcısıyla giriş yap
-    await loginPage.login("bayi1", "Demo123!");
+    await loginPage.login("bayi1", process.env.TP_TESTVERI_KOSU_BAYI1);
     // S3 — "Şeftalili Soğuk Çay 1L" (P-004) kartında adedi 25 yapıp "Sepete ekle" butonuna bas
     await catalogPage.addToCart("P-004", 25);
     // S4 — Üst menüden sepete git
