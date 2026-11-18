@@ -7,7 +7,7 @@ import { jiraKayitAdresi } from "../api/uyum";
 import { useIzin } from "../auth";
 import { useBildirim } from "../components/Bildirim";
 import { DenetimOzeti } from "../components/KalitePanelleri";
-import { Baglanti, BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, Uyari, Yukleniyor, IzinliLink } from "../components/ui";
+import { Baglanti, BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, Kirinti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { durumKodunuCevir, type Ton } from "../lib/etiketler";
 import { hataMetniniAyikla, yayinlanamazOnekiz } from "../lib/kalite";
@@ -121,7 +121,17 @@ function YayinEkrani() {
   return (
     <>
       <SayfaBasligi
-        ust={<IzinliLink to={`/gereksinimler/${encodeURIComponent(id)}/caseler`}>← Case review</IzinliLink>}
+        ust={
+          <Kirinti
+            ogeler={[
+              { ad: "Gereksinimler", to: "/gereksinimler" },
+              { ad: gereksinim.veri?.jira_key ?? gereksinim.veri?.baslik ?? "Gereksinim", to: `/gereksinimler/${encodeURIComponent(id)}` },
+              { ad: "Case review", to: `/gereksinimler/${encodeURIComponent(id)}/caseler` },
+              { ad: "Yayın önizleme" },
+            ]}
+          />
+        }
+        sekme={`${gereksinim.veri?.jira_key ? `${gereksinim.veri.jira_key} ` : ""}Yayın önizleme`}
         baslik="Yayın önizleme"
         aciklama="Önizleme: bu ekranda hiçbir kayıt oluşturulmaz. Yalnızca onaylı ve onaydan sonra değişmemiş case'ler yayınlanır; yayın tekrarlansa da aynı içerik ikinci kez oluşturulmaz."
       />

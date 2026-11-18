@@ -7,7 +7,7 @@ import { useBugKisitli, useIzin } from "../auth";
 import { BUG_KISITLI_METNI, izinRolleriMetni } from "../lib/yetki";
 import type { BugTaslagi, BugTaslakIcerik, MukerrerAday, MukerrerArama } from "../api/types";
 import { useBildirim } from "../components/Bildirim";
-import { AlanHatasi, BosDurum, Cip, Baglanti, HataKutusu, KayitHatasi, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor, IzinliLink } from "../components/ui";
+import { AlanHatasi, BosDurum, Cip, Baglanti, HataKutusu, KayitHatasi, IslemDugmesi, Kart, Kirinti, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor, IzinliLink } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { KisiAdi } from "../components/KisiAdi";
 import { BUG_DURUMU, SEVERITY, type Ton } from "../lib/etiketler";
@@ -522,7 +522,8 @@ export function BugTaslakDetay() {
   return (
     <>
       <SayfaBasligi
-        ust={<Link to="/bug-taslaklari">← Bug taslakları</Link>}
+        ust={<Kirinti ogeler={[{ ad: "Bug taslakları", to: "/bug-taslaklari" }, { ad: b.icerik.story_key ? `${b.icerik.story_key} bug taslağı` : "Bug taslağı" }]} />}
+        sekme={`${b.icerik.story_key ? `${b.icerik.story_key} ` : ""}Bug taslağı`}
         baslik={b.icerik.summary}
         aciklama={
           <span className="satir-ogeler">

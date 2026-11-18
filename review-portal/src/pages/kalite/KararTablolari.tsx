@@ -11,7 +11,7 @@ import { IliskiDuzenleyici, IliskiKarti } from "../../components/kalite/IliskiKa
 import { KararTablosuKarti } from "../../components/kalite/KararTablosuKarti";
 import "../../components/kalite/kalite.css";
 import { BAGIMSIZLIK_NOTU } from "../../components/kule/KaliteKpilari";
-import { BosDurum, HataKutusu, IslemDugmesi, SayfaBasligi, Uyari, Yukleniyor } from "../../components/ui";
+import { BosDurum, HataKutusu, IslemDugmesi, Kirinti, SayfaBasligi, Uyari, Yukleniyor } from "../../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../../hooks";
 
 /** AI taslağı yalnız PO onaylı (ya da sonrasındaki) gereksinimden üretilir (ANALIZ §4.1). */
@@ -146,7 +146,16 @@ export function KararTablolari() {
   return (
     <>
       <SayfaBasligi
-        ust={<Link to={`/gereksinimler/${encodeURIComponent(id)}`}>← {g?.jira_key ?? g?.baslik ?? "Gereksinim"}</Link>}
+        ust={
+          <Kirinti
+            ogeler={[
+              { ad: "Gereksinimler", to: "/gereksinimler" },
+              { ad: g?.jira_key ?? g?.baslik ?? "Gereksinim", to: `/gereksinimler/${encodeURIComponent(id)}` },
+              { ad: "Karar tabloları" },
+            ]}
+          />
+        }
+        sekme={`${g?.jira_key ? `${g.jira_key} ` : ""}Karar tabloları`}
         baslik="Karar tabloları"
         aciklama={g ? `${g.jira_key ? `${g.jira_key} · ` : ""}${g.baslik}` : undefined}
         eylemler={eylemler}

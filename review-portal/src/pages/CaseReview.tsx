@@ -17,7 +17,7 @@ import { GherkinIndir } from "../components/GherkinIndir";
 import { DenetimPaneli, gonderBirincilMi, ReviewPaneli } from "../components/KalitePanelleri";
 import { BeklentiDogruluguMetrigi, KaliteSaglayici, kararTablolariYolu } from "../components/kalite/oracle";
 import { KapsamPaneli } from "../components/KapsamPaneli";
-import { Cip, HataKutusu, IslemDugmesi, Kart, Metrik, ReplayRozeti, SayfaBasligi, Uyari } from "../components/ui";
+import { Cip, HataKutusu, IslemDugmesi, Kart, Kirinti, Metrik, ReplayRozeti, SayfaBasligi, Uyari } from "../components/ui";
 import { HedefOlcer } from "../components/Grafikler";
 import { useGeciktirilmis, useVeri } from "../hooks";
 import { caseEski, dogrulamayiYay, gonderilmemisSoruSayisi } from "../lib/caseV3";
@@ -751,7 +751,16 @@ export function CaseReview() {
   return (
     <>
       <SayfaBasligi
-        ust={<Link to={`/gereksinimler/${encodeURIComponent(id)}`}>← {g?.jira_key ?? g?.baslik ?? "Gereksinim"}</Link>}
+        ust={
+          <Kirinti
+            ogeler={[
+              { ad: "Gereksinimler", to: "/gereksinimler" },
+              { ad: g?.jira_key ?? g?.baslik ?? "Gereksinim", to: `/gereksinimler/${encodeURIComponent(id)}` },
+              { ad: "Case review" },
+            ]}
+          />
+        }
+        sekme={`${g?.jira_key ? `${g.jira_key} ` : ""}Case review`}
         baslik="Case review"
         aciklama={g ? `${g.jira_key ? `${g.jira_key} · ` : ""}${g.baslik}` : undefined}
         eylemler={

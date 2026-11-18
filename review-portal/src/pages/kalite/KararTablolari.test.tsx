@@ -64,7 +64,10 @@ describe("liste", () => {
     const iliskiler = screen.getByTestId("iliskiler");
     expect(within(iliskiler).getAllByTestId("iliski-kart")).toHaveLength(1);
     expect(screen.getByRole("link", { name: "Case review" })).toHaveAttribute("href", `/gereksinimler/${REQ}/caseler`);
-    expect(screen.getByRole("link", { name: /← TPD-1/ })).toHaveAttribute("href", `/gereksinimler/${REQ}`);
+    const kirinti = within(screen.getByRole("navigation", { name: "Kırıntı" }));
+    expect(kirinti.getByRole("link", { name: "TPD-1" })).toHaveAttribute("href", `/gereksinimler/${REQ}`);
+    expect(kirinti.getByRole("link", { name: "Gereksinimler" })).toHaveAttribute("href", "/gereksinimler");
+    expect(kirinti.getByText("Karar tabloları")).toHaveAttribute("aria-current", "page");
   });
 
   it("u2 N8, N13, N18, N19: satır anlamı iş dilinde, hücrelerde Türkçe; PO ızgarada 750'deki AI sınır hatasını story cümlesiyle görür", async () => {

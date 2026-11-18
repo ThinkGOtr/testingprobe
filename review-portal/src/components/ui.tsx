@@ -2,7 +2,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAtt
 import { Link, type LinkProps } from "react-router-dom";
 import { buFazdaYok, bulunamadi } from "../api/http";
 import type { CiktiModu, Degerlendirme } from "../api/types";
-import { useIzin, useKisiler, useOturumYuklu, useRotaIzni } from "../auth";
+import { useIzin, useKisiler, useOturumYuklu, useProjeBaglami, useRotaIzni } from "../auth";
 import { type Ton } from "../lib/etiketler";
 import { bekleyenRolMetni, type Izin } from "../lib/yetki";
 import { baglantiTuru } from "../lib/rotalar";
@@ -242,7 +242,103 @@ export function BosDurum({ baslik, children }: { baslik: string; children?: Reac
   );
 }
 
-export function SayfaBasligi({ baslik, aciklama, eylemler, ust }: { baslik: ReactNode; aciklama?: ReactNode; eylemler?: ReactNode; ust?: ReactNode }) {
+/**
+ * IA-21 boş durum kalıbı: ne olacak + kim yapar + bağlantı. `BosDurum`'un çocuğu olarak kullanılır:
+ * `<BosDurum baslik="Henüz koşu yok."><SonrakiAdim metin="…" kim="Otomasyon Mühendisi" baglanti={{ to: "/kod", ad: "Kod üretimine git" }} /></BosDurum>`.
+ * Bağlantı korumalı rotadaysa ve rolün izni yoksa düz metin kalır (`IzinliLink`).
+ */
+export function SonrakiAdim({ metin, kim, baglanti }: { metin: ReactNode; kim?: string; baglanti?: { to: string; ad: string } }) {
+  return (
+    <span className="sonraki-adim" data-testid="sonraki-adim">
+      {metin}
+      {kim && <> ({kim})</>}
+      {baglanti && (
+        <>
+          {" "}
+          <IzinliLink to={baglanti.to} className="sonraki-adim-baglanti">
+            {baglanti.ad}
+          </IzinliLink>
+        </>
+      )}
+    </span>
+  );
+}
+
+/** Kırıntı gezinme öğesi: `to` yoksa geçerli sayfa (bağlantı değil, `aria-current="page"`). */
+export interface KirintiOgesi {
+  ad: ReactNode;
+  to?: string;
+}
+
+/**
+ * Kırıntı gezinme (IA-22): `SayfaBasligi` / `OzetKarti` `ust` alanına konur:
+ * `Gereksinimler › TPD-1 › Case review`. Son öğe (bağlantısız) geçerli sayfadır.
+ */
+export function Kirinti({ ogeler }: { ogeler: readonly KirintiOgesi[] }) {
+  return (
+    <nav aria-label="Kırıntı" className="kirinti">
+      <ol>
+        {ogeler.map((o, i) => (
+          <li key={i}>
+            {o.to ? (
+              <IzinliLink to={o.to}>{o.ad}</IzinliLink>
+            ) : (
+              <span aria-current={i === ogeler.length - 1 ? "page" : undefined}>{o.ad}</span>
+            )}
+          </li>
+        ))}
+      </ol>
+    </nav>
+  );
+}
+
+/** Ürün adı: sekme başlığının sonu ve varsayılan başlık (index.html). */
+export const URUN_ADI = "Testing Probe";
+
+/** React düğümünün düz metni (sekme başlığı için): metin/sayı/dizi ve öğe çocukları gezilir. */
+export function dugumMetni(d: ReactNode): string {
+  if (d === null || d === undefined || typeof d === "boolean") return "";
+  if (typeof d === "string" || typeof d === "number") return String(d);
+  if (Array.isArray(d)) return d.map(dugumMetni).join("");
+  if (typeof d === "object" && "props" in d) return dugumMetni((d.props as { children?: ReactNode }).children);
+  return "";
+}
+
+/** IA-11: sekme başlığı "<Sayfa> · <Proje> · Testing Probe" (proje bilinmiyorsa atlanır). */
+export function sekmeBasligi(sayfa: string, proje: string | null | undefined): string {
+  return [sayfa.replace(/\s+/g, " ").trim(), proje?.trim(), URUN_ADI].filter(Boolean).join(" · ");
+}
+
+/** Sayfanın `document.title`'ını ayarlar; sayfa kapanınca ürün adına döner. */
+export function useSekmeBasligi(sayfa: string | null | undefined) {
+  const proje = useProjeBaglami()?.proje ?? null;
+  useEffect(() => {
+    if (!sayfa?.trim()) return;
+    document.title = sekmeBasligi(sayfa, proje);
+    return () => {
+      document.title = URUN_ADI;
+    };
+  }, [sayfa, proje]);
+}
+
+/**
+ * Sayfa başlığı (h1). `sekme`: tarayıcı sekmesi başlığındaki sayfa adı (verilmezse h1'in düz metni);
+ * her sayfa `document.title`'ı "<Sayfa> · <Proje> · Testing Probe" olarak ayarlar (IA-11).
+ */
+export function SayfaBasligi({
+  baslik,
+  aciklama,
+  eylemler,
+  ust,
+  sekme,
+}: {
+  baslik: ReactNode;
+  aciklama?: ReactNode;
+  eylemler?: ReactNode;
+  ust?: ReactNode;
+  sekme?: string;
+}) {
+  useSekmeBasligi(sekme ?? dugumMetni(baslik));
   return (
     <header className="sayfa-basligi">
       <div>
