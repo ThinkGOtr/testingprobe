@@ -20,6 +20,7 @@ import { akisKanitlari, guncelAdim } from "../lib/yolHaritasi";
 import { AC_EKSIK, gereksinimDurumu, SORU_TURU } from "../lib/etiketler";
 import { AJAN_URUNU_NEDENI } from "../lib/ajanProbe";
 import { tarih } from "../lib/format";
+import { tumCaseSayisi } from "../lib/durumModeli";
 import { dokumanBloklari } from "../lib/dokuman";
 import type { UretimKipi } from "../api/tasarimModeliTipleri";
 import { MODEL_ASAMASI, TASARIM_MODELI_BOLUMU, TasarimModeliPaneli } from "../components/TasarimModeliPaneli";
@@ -86,7 +87,7 @@ export function GereksinimDetay() {
   // Bölüm gezgini yalnız çizilen bölümleri listeler (tasarım modeli paneli kendi verisine göre çizilir).
   const [modelGorunur, setModelGorunur] = useState(false);
   // Case'ler: Gherkin indir ve yeniden üretim onayındaki sayılar için (yalnız case varsa okunur).
-  const caseVarHam = (detay.veri?.sayaclar.case_toplam ?? 0) > 0;
+  const caseVarHam = detay.veri ? tumCaseSayisi(detay.veri) > 0 : false;
   const caseler = useVeri(() => (caseVarHam ? api.caseler(id) : Promise.resolve([])), [id, caseVarHam, detay.veri?.durum]);
 
   const tumunuYenile = useCallback(() => {
@@ -164,7 +165,7 @@ export function GereksinimDetay() {
       : uretimHatasi
         ? "İçerik PO onayından sonra değişti; yeniden PO teyidi gerekir"
         : "Case üretimi için PO teyidi gerekir";
-  const caseVar = g.sayaclar.case_toplam > 0;
+  const caseVar = tumCaseSayisi(g) > 0; // IA-03: önceki sürüm case'leri de Case review'da okunur
   const caseReviewYolu = `/gereksinimler/${encodeURIComponent(g.id)}/caseler`;
   // cases_ready: sıradaki adım case review (birincil); yeniden üretim ikincil ve onaylı (UX-4).
   const reviewAsamasi = g.durum === "cases_ready" && caseVar && !ajanBagli;

@@ -12,6 +12,7 @@ import { adimAdi, akisAdimi } from "../lib/akis";
 import { akisKanitlari, guncelAdim, type SonrakiGirdi } from "../lib/yolHaritasi";
 import { AC_EKSIK, AKIS_ADIMLARI, gereksinimDurumu } from "../lib/etiketler";
 import { tarih } from "../lib/format";
+import { oncekiTurMetni, siradakiAdim, siradakiMetni, turNo } from "../lib/durumModeli";
 import { ORNEK_SERBEST_GEREKSINIM } from "../lib/ornekGereksinim";
 
 const PO_ETIKET = { not_requested: "—", pending: "Bekliyor", approved: "Onaylı" } as const;
@@ -99,10 +100,11 @@ export function Gereksinimler() {
           </div>
         }
       >
-        {yukleniyor && !veri ? (
-          <Yukleniyor />
-        ) : hata && !veri ? (
+        {/* Veri gelmeden boş durum gösterilmez (duzen notu: ilk yüklemede "Henüz gereksinim yok" görünüyordu). */}
+        {hata && !veri ? (
           <HataKutusu hata={hata} kaynak={hataNesnesi} yenile={() => void yenile()} />
+        ) : (yukleniyor && !veri) || veri === undefined ? (
+          <Yukleniyor />
         ) : liste.length === 0 ? (
           <BosDurum baslik={filtre ? "Aramaya uyan gereksinim yok." : "Henüz gereksinim yok."}>
             {!filtre && "Jira'dan çekin veya serbest metin gereksinim ekleyin."}
@@ -115,7 +117,7 @@ export function Gereksinimler() {
                   <SiralanabilirBaslik {...baslikOz("anahtar")}>Anahtar</SiralanabilirBaslik>
                   <SiralanabilirBaslik {...baslikOz("baslik")}>Başlık</SiralanabilirBaslik>
                   <SiralanabilirBaslik {...baslikOz("durum")}>Durum</SiralanabilirBaslik>
-                  <SiralanabilirBaslik {...baslikOz("adim")}>Adım</SiralanabilirBaslik>
+                  <SiralanabilirBaslik {...baslikOz("adim")}>Sıradaki</SiralanabilirBaslik>
                   <SiralanabilirBaslik {...baslikOz("po")}>PO</SiralanabilirBaslik>
                   <SiralanabilirBaslik {...baslikOz("bulgu")} className="sayi baslik-sarar">
                     Açık bulgu
@@ -123,7 +125,7 @@ export function Gereksinimler() {
                   <SiralanabilirBaslik {...baslikOz("case")} className="sayi baslik-sarar">
                     Case (onaylı/
                     <wbr />
-                    toplam)
+                    toplam, güncel)
                   </SiralanabilirBaslik>
                   <SiralanabilirBaslik {...baslikOz("cekim")}>Çekim</SiralanabilirBaslik>
                 </tr>
@@ -155,7 +157,7 @@ function siralamaDegeri(g: Gereksinim, alan: SiralamaAlani): string | number {
     case "durum":
       return (g.ac_missing && g.durum === "new" ? AC_EKSIK : gereksinimDurumu(g.durum)).etiket;
     case "adim":
-      return akisAdimi(g.durum, g.adim);
+      return g.durum === "done" ? akisAdimi(g.durum, g.adim) : siradakiAdim(g).adim_no;
     case "po":
       return PO_SIRASI[g.po.durum] ?? -1;
     case "bulgu":
@@ -236,6 +238,10 @@ function GereksinimSatiri({ g, kanit }: { g: Gereksinim; kanit: Omit<SonrakiGird
   const d = g.ac_missing && g.durum === "new" ? AC_EKSIK : gereksinimDurumu(g.durum);
   const adim = guncelAdim(g, kanit, akisAdimi(g.durum, g.adim));
   const akisTamam = adim > AKIS_ADIMLARI.length;
+  // IA-03: durum + tur + sıradaki adım (kim) tek modelden; önceki turun ürünleri ayrı, soluk alt satırda.
+  const sira = siradakiAdim(g);
+  const tur = turNo(g);
+  const onceki = oncekiTurMetni(g.onceki_tur);
   return (
     <tr>
       <td className="mono" data-etiket="Anahtar">
@@ -253,17 +259,28 @@ function GereksinimSatiri({ g, kanit }: { g: Gereksinim; kanit: Omit<SonrakiGird
       </td>
       <td data-etiket="Durum">
         <Cip ton={d.ton}>{d.etiket}</Cip>
+        {tur > 1 && (
+          <span className="soluk kucuk" data-testid="gereksinim-tur" title="Akış turu: içerik değişip PO teyidi yenilendikçe artar">
+            {" "}
+            · Tur {tur}
+          </span>
+        )}
         {g.otomatik_akis && (
           <div>
             <OtomatikAkisRozeti akis={g.otomatik_akis} />
           </div>
         )}
       </td>
-      <td data-etiket="Adım">
-        <span className="mono">
-          {Math.min(adim, AKIS_ADIMLARI.length)}/{AKIS_ADIMLARI.length}
-        </span>{" "}
-        <span className="soluk">{akisTamam ? "akış tamam" : adimAdi(adim, g.kaynak)}</span>
+      <td data-etiket="Sıradaki" data-testid="gereksinim-siradaki">
+        {g.durum === "done" ? (
+          // `done`: gereksinim makinesi bitti; sonraki adımlar (kod, CI, triage) kanıtlardan okunur.
+          <span>{akisTamam ? "Akış tamam" : adimAdi(adim, g.kaynak)}</span>
+        ) : (
+          <span>{siradakiMetni(sira)}</span>
+        )}{" "}
+        <span className="soluk kucuk mono" title={`Akış adımı ${Math.min(g.durum === "done" ? adim : sira.adim_no, AKIS_ADIMLARI.length)}/${AKIS_ADIMLARI.length}`}>
+          ({Math.min(g.durum === "done" ? adim : sira.adim_no, AKIS_ADIMLARI.length)}/{AKIS_ADIMLARI.length})
+        </span>
       </td>
       <td data-etiket="PO">{PO_ETIKET[g.po.durum]}</td>
       <td className="sayi" data-etiket="Açık bulgu">
@@ -279,6 +296,11 @@ function GereksinimSatiri({ g, kanit }: { g: Gereksinim; kanit: Omit<SonrakiGird
       </td>
       <td className="sayi" data-etiket="Case (onaylı)">
         {g.sayaclar.case_toplam ? `${g.sayaclar.case_onayli}/${g.sayaclar.case_toplam}` : "—"}
+        {onceki && (
+          <div className="soluk kucuk" data-testid="gereksinim-onceki-tur">
+            {onceki}
+          </div>
+        )}
       </td>
       <td className="tek-satir" data-etiket="Çekim">{tarih(g.cekim_zamani)}</td>
     </tr>

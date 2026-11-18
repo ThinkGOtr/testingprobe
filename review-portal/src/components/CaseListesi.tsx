@@ -8,6 +8,7 @@ import type { CaseUretimOzeti, TestCase } from "../api/types";
 import { useIzin } from "../auth";
 import { caseHazirlik, onayaHazirDegil, sayiEki } from "../lib/caseV3";
 import { CASE_HAZIRLIK, CASE_TEKNIGI } from "../lib/etiketler";
+import { surumKumeleri, varsayilanSurum, type CaseSurumu } from "../lib/durumModeli";
 import { PoyaGonderEylemi } from "./AcikSorular";
 import { CaseKarti, type CaseSecimi } from "./CaseKarti";
 import { BosDurum, HataKutusu, Kart, Yukleniyor } from "./ui";
@@ -17,6 +18,7 @@ export type CaseFiltresi = "hepsi" | "bekleyen" | "hazir" | "onayli" | "reddedil
 const FILTRELER: CaseFiltresi[] = ["hepsi", "bekleyen", "hazir", "onayli", "reddedilen", "hazir-degil"];
 /** Ek süzgeç parametreleri ("Tümünü göster" bunları temizler). */
 export const EK_SUZGECLER = ["uretim", "hazirlik", "teknik"] as const;
+const SURUMLER: CaseSurumu[] = ["guncel", "onceki"];
 
 const onayli = (c: TestCase) => c.durum === "approved" || c.durum === "published";
 
@@ -38,6 +40,9 @@ export function useCaseSuzgeci() {
   const uretim = p.get("uretim") && Number.isInteger(uretimHam) && uretimHam > 0 ? uretimHam : null;
   const hazirlik = p.get("hazirlik") || null;
   const teknik = p.get("teknik") || null;
+  // IA-04: `?surum=guncel|onceki` (yoksa varsayılan: güncel case varsa güncel, yoksa önceki sürüm).
+  const surumHam = p.get("surum");
+  const surum: CaseSurumu | null = SURUMLER.includes(surumHam as CaseSurumu) ? (surumHam as CaseSurumu) : null;
   const guncelle = (fn: (q: URLSearchParams) => void) => {
     const q = new URLSearchParams(p);
     fn(q);
@@ -48,6 +53,8 @@ export function useCaseSuzgeci() {
     uretim,
     hazirlik,
     teknik,
+    surum,
+    surumSec: (v: CaseSurumu) => guncelle((q) => q.set("surum", v)),
     filtreSec: (f: CaseFiltresi) => guncelle((q) => (f === "hepsi" ? q.delete("filtre") : q.set("filtre", f))),
     ekleriTemizle: () => guncelle((q) => EK_SUZGECLER.forEach((k) => q.delete(k))),
   };
@@ -108,15 +115,20 @@ export function CaseListesi({
   const poyaSorabilir = useIzin("case.ask_po");
   const turler = useMemo(() => new Map((uretimler ?? []).map((u) => [u.uretim_no, u.tur])), [uretimler]);
   // Ek süzgeçler sayaçlara da uygulanır: sekme sayıları görünen kümeyi anlatır.
+  // IA-04: önceki sürüm case'leri ayrı kategori; sayaçlar ve filtreler yalnız seçili sürüm kümesini sayar.
+  const kumeler = useMemo(() => surumKumeleri(liste), [liste]);
+  const surumVar = kumeler.onceki.length > 0;
+  const surum = s.surum ?? varsayilanSurum(kumeler);
+  const surumListesi = !surumVar ? liste : surum === "onceki" ? kumeler.onceki : liste.filter((c) => !c.onceki_icerik);
   const taban = useMemo(
     () =>
-      liste.filter(
+      surumListesi.filter(
         (c) =>
           (s.uretim === null || (c.uretim_no ?? 1) === s.uretim) &&
           (!s.hazirlik || caseHazirlik(c) === s.hazirlik) &&
           (!s.teknik || (c.icerik.technique ?? []).includes(s.teknik as never)),
       ),
-    [liste, s.uretim, s.hazirlik, s.teknik],
+    [surumListesi, s.uretim, s.hazirlik, s.teknik],
   );
   const gorunen = useMemo(() => taban.filter((c) => filtreUygula(c, s.filtre)), [taban, s.filtre]);
   const suzgec = suzgecMetni(s);
@@ -133,6 +145,20 @@ export function CaseListesi({
   return (
     <div className="case-liste-alani">
       {/* Geliştirici kısıtlı görünümü (012): yalnız onaylı/yayınlanmış case gelir; durum filtresi anlamsız. */}
+      {surumVar && (
+        <div className="sekmeler" role="group" aria-label="Case sürümü" data-testid="case-surum-secici">
+          {(
+            [
+              ["guncel", `Güncel (${kumeler.guncel.length})`],
+              ["onceki", `Önceki sürüm (${kumeler.onceki.length})`],
+            ] as [CaseSurumu, string][]
+          ).map(([k, etiket]) => (
+            <button key={k} type="button" className={`sekme${surum === k ? " aktif" : ""}`} aria-pressed={surum === k} onClick={() => s.surumSec(k)}>
+              {etiket}
+            </button>
+          ))}
+        </div>
+      )}
       {!kisitli && (
         <div className="sekmeler sekmeler-yapiskan" role="group" aria-label="Case filtresi">
           {sekmeler.map(([k, etiket]) => (
@@ -161,8 +187,18 @@ export function CaseListesi({
         <HataKutusu hata={hata} kaynak={hataNesnesi} yenile={yeniden} />
       ) : gorunen.length === 0 ? (
         <Kart>
-          <BosDurum baslik={liste.length ? "Bu filtrede case yok." : "Henüz case üretilmedi."}>
-            {!liste.length && !kisitli && "PO teyidinden sonra gereksinim ekranından 'Tasarım modelini üret (iki tur)' ile başlatın (Test Uzmanı)."}
+          <BosDurum
+            baslik={
+              surumVar && surum === "guncel" && kumeler.guncel.length === 0
+                ? "Güncel sürüm için henüz case yok."
+                : liste.length
+                  ? "Bu filtrede case yok."
+                  : "Henüz case üretilmedi."
+            }
+          >
+            {(!liste.length || (surumVar && surum === "guncel" && kumeler.guncel.length === 0)) &&
+              !kisitli &&
+              "PO teyidinden sonra gereksinim ekranından 'Tasarım modelini üret (iki tur)' ile başlatın (Test Uzmanı)."}
           </BosDurum>
         </Kart>
       ) : (

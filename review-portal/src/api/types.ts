@@ -162,6 +162,28 @@ export interface Gereksinim {
   otomatik_akis?: OtomatikAkis | null;
   /** 013 §3.0: tetiğin gördüğü son Jira durumu (core gönderirse). */
   jira_durumu?: string | null;
+  /** UX IA-03: kaçıncı akış turu (PO'nun onayladığı farklı içerik sayısı; onaysız güncel içerik +1). */
+  tur?: number;
+  /** UX IA-03: akışta sıradaki adım ve kimi bekliyor (rol null = sistem işi). */
+  siradaki?: SiradakiAdim;
+  /** UX IA-03: önceki içerik (tur) için üretilmiş ürünler; `sayaclar` yalnız güncel sürümü sayar. */
+  onceki_tur?: OncekiTur | null;
+}
+
+/** UX IA-03 (core `requirements.serialize.siradaki_adim`). */
+export interface SiradakiAdim {
+  adim_no: number;
+  ad: string;
+  rol: Rol | null;
+  rol_etiketi: string;
+}
+
+/** UX IA-03 (core `requirements.serialize.tur_ve_onceki`). */
+export interface OncekiTur {
+  case_toplam: number;
+  case_onayli: number;
+  case_yayinda: number;
+  pr_birlesen: number;
 }
 
 export type SoruTuru = "ambiguity" | "missing_ac" | "conflict" | "untestable";
