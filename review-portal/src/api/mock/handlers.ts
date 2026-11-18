@@ -76,7 +76,7 @@ import { javaDosyaYolu, javaTestKodu, uygulamayaCevir } from "./platformlar";
 import { PLATFORMLAR, PLATFORM_ETIKETI, platformUyarla, type Platform } from "../../lib/platform";
 import { DIL_ETIKETI, DILLER, dilUyarla, ESKI_DOGRULANMAMIS_DILLER, gecerliCift, gecerliDiller, varsayilanDil, YAKINDA_NEDENI, type Dil } from "../../lib/dil";
 import { musteriCiScriptleri } from "./musteriCi";
-import { algilananDil, csharpCiktisi, JAVA_KONTROL_ACIKLAMASI, javaAdimlari, javaWebCiktisi, javaYerelGecti, kodDilleriYaniti, mockDilDurumu, pythonCiktisi } from "./diller";
+import { algilananDil, csharpCiktisi, JAVA_KONTROL_ACIKLAMASI, javaAdimlari, javaWebCiktisi, javaYerelGecti, kodDilleriYaniti, kurulumPrSifirla, kurulumPrYaniti, mockDilDurumu, pythonCiktisi } from "./diller";
 import { asistanMockSifirla, asistanRotalari } from "./asistan";
 import { modelUretimiBaslat, onayliModel, tasarimModeliRotalari, type ModelBaglami } from "./tasarimModeli";
 import { derinlestirmeRotalari, PLATFORM_REPLAY_MISS, platformGoldenAdi, platformGoldeni, uretimGovdesiniDogrula } from "./derinlestirme";
@@ -224,6 +224,7 @@ export function mockSifirla(): void {
   mockOrtam.demoModu = true;
   ayar.senaryolar.clear();
   asistanMockSifirla();
+  kurulumPrSifirla();
   ajanMockSifirla();
   oneriMockSifirla();
   kuleMockSifirla();
@@ -2760,6 +2761,16 @@ const ROTALAR: Rota[] = [
         eski: mockSenaryosu("eski-dogrulanmamis"),
         hepsiAcik: mockSenaryosu("diller-acik"),
       });
+    },
+  ],
+  [
+    "POST",
+    /^\/code\/ci-setup$/,
+    (_m, _q, g) => {
+      const k = izinGerekli("code.ci_setup");
+      const y = kurulumPrYaniti(g);
+      if (y.durum === "acildi" || y.durum === "mevcut") denetimEkle(`musteri_ci.kurulum_pr_${y.durum}`, `kurulum:${y.dal}`, `Kurulum PR'ı #${y.pr_no}`, k.kullanici_adi);
+      return y;
     },
   ],
   [

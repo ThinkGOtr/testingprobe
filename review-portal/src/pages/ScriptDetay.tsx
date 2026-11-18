@@ -18,6 +18,7 @@ import { OTOMATIK_TETIK_ACIKLAMA, OTOMATIK_TETIK_ROZETI, VERI_DEGISTI_METNI, ver
 import { DepoCipi } from "../components/Depo";
 import { aracEtiketi, checkEtiketi, dikeyEkranMi, uygulamaPlatformuMu, type Platform } from "../lib/platform";
 import { DilRozeti, KurulumBilgisi } from "../components/Dil";
+import { KurulumPrEylemi } from "../components/KurulumPrEylemi";
 import { DIL_CATISI, DIL_ETIKETI, gecerliDiller, KIRARAK_DOGRULANMADI, KIRARAK_DOGRULANMADI_ACIKLAMA, kontrolAdimiEtiketi, kontrolAdimlari, kontrolZinciri, kosuAraci, type Dil, type DilDurumu } from "../lib/dil";
 import { vurguDili } from "../lib/vurgula";
 import { useCapayaKaydir } from "../lib/capa";
@@ -879,6 +880,9 @@ export function ScriptDetay() {
         <Kart baslik="Müşteri CI" id="musteri-ci">
           <MusteriCiKarti mc={s.musteri_ci} yk={s.yerel_kontrol} dil={s.dil ?? null} uretiliyor={uretiliyor} />
           <KurulumBilgisi kurulum={s.kurulum} dilEtiketi={dilAdi ?? "Bu dil"} />
+          {(s.platform === "android" || s.platform === "ios") && (
+            <KurulumPrEylemi platform={s.platform} kurulum={s.kurulum} degisti={() => void v.yenile()} />
+          )}
         </Kart>
       ) : (
       <Kart baslik="Yerel kontrol">

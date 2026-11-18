@@ -5,6 +5,7 @@
 // tablosundan (ajan adımları) deterministik üretilir.
 
 import type { AjanAdimi, DilSecenegi, KodDilleri, KurulumPr, ScriptDetay } from "../types";
+import { ApiError } from "../http";
 import { ciftHati, DIL_CATISI, DIL_ETIKETI, gecerliDiller, YAKINDA_NEDENI, type Dil, type DilDurumu } from "../../lib/dil";
 import type { Platform } from "../../lib/platform";
 import { sha256Hex } from "../../lib/sha256";
@@ -49,6 +50,64 @@ export const KURULUM_ORNEKLERI: Partial<Record<`${Platform}/${Dil}`, KurulumPr>>
   },
 };
 
+const KURULUM_ZORUNLU: Record<"android" | "ios", string[]> = {
+  android: ["test_paketi"],
+  ios: ["xcode_proje", "sema", "ui_test_hedefi"],
+};
+const KURULUM_DOSYALARI: Record<"android" | "ios", string[]> = {
+  android: [".github/workflows/mobil-android-kotlin.yml", "app/src/androidTest/java/tp/altyapi/Ekran.kt", "app/src/androidTest/java/tp/altyapi/Kimlikler.kt"],
+  ios: [".github/workflows/mobil-ios-swift.yml", ".github/tp/xcresult_junit.py", "ios/BayiSiparisUITests/TP/Ekran.swift"],
+};
+let sonrakiKurulumPr = 60;
+/** Örnek oturumda açılan kurulum PR'ları (`KURULUM_ORNEKLERI`'nin üstüne; `mockSifirla` temizler). */
+const acilanKurulumlar = new Map<string, KurulumPr>();
+
+export function kurulumPrSifirla(): void {
+  acilanKurulumlar.clear();
+  sonrakiKurulumPr = 60;
+}
+
+function kurulumOrnegi(anahtar: `${Platform}/${Dil}`): KurulumPr | null {
+  return acilanKurulumlar.get(anahtar) ?? KURULUM_ORNEKLERI[anahtar] ?? null;
+}
+
+/**
+ * `POST /code/ci-setup` örnek yanıtı (core `kurulum_pr.calistir`). Kurulum dalında açık PR varsa yenisi
+ * açılmaz (`mevcut`); zorunlu parametre eksikse 422 `kurulum_parametre` + `hatalar[]`. Açılan PR
+ * `acilanKurulumlar`'a yazılır (dil seçenekleri "açık" gösterir).
+ */
+export function kurulumPrYaniti(govde: unknown): Record<string, unknown> {
+  const g = (govde && typeof govde === "object" ? govde : {}) as Record<string, unknown>;
+  const platform = g.platform === "android" || g.platform === "ios" ? g.platform : null;
+  const dil: Dil | null = platform === "android" ? "kotlin" : platform === "ios" ? "swift" : null;
+  if (!platform || !dil || g.dil !== dil) throw new ApiError(422, "Kurulum PR'ı yalnız Android Kotlin ve iOS Swift için açılır.");
+  const p = (g.parametreler && typeof g.parametreler === "object" ? g.parametreler : {}) as Record<string, unknown>;
+  const hatalar = KURULUM_ZORUNLU[platform].filter((a) => !String(p[a] ?? "").trim()).map((a) => `${a} gerekli`);
+  if (typeof p.hazirlik_betigi === "string" && p.hazirlik_betigi && !/^[A-Za-z0-9_.][A-Za-z0-9._/-]*\.sh$/.test(p.hazirlik_betigi)) hatalar.push(`hazırlık betiği geçersiz (depo içi .sh yolu): '${p.hazirlik_betigi}'`);
+  if (hatalar.length) throw new ApiError(422, `kurulum parametreleri geçersiz: ${hatalar.join("; ")}`, { kod: "kurulum_parametre", hatalar });
+  const anahtar: `${Platform}/${Dil}` = `${platform}/${dil}`;
+  const dal = `tp/kurulum-${platform}-${dil}`;
+  const mevcut = kurulumOrnegi(anahtar);
+  const elle = p.hazirlik_betigi ? [`Hazırlık betiği yok (${String(p.hazirlik_betigi)}): iş akışı derlemeden önce bu betiği koşar. Betik uygulamaya özgüdür; TP eklemez.`] : [];
+  const ortak = { dal, taban: "main", dosyalar: KURULUM_DOSYALARI[platform], eksikler: mevcut?.eksikler ?? [], elle_adimlar: elle, hazir: true };
+  if (g.onizle === true) {
+    const acik = mevcut?.durum === "acik" ? mevcut : null;
+    return { durum: "onizleme", ...ortak, pr: acik ? { number: acik.number, url: acik.url, state: "open" } : null, kurulum: mevcut ?? null };
+  }
+  if (mevcut?.durum === "acik") return { durum: "mevcut", pr_no: mevcut.number, url: mevcut.url, sha: "c".repeat(40), ...ortak, kurulum: mevcut };
+  const number = sonrakiKurulumPr++;
+  const kurulum: KurulumPr = {
+    durum: "acik",
+    number,
+    url: `https://github.com/antreklabs/bayi-siparis/pull/${number}`,
+    baslik: `TP kurulumu: ${platform}/${dil} müşteri CI (mobil-${platform}-${dil})`,
+    eksikler: mevcut?.eksikler ?? [],
+    elle_adimlar: elle,
+  };
+  acilanKurulumlar.set(anahtar, kurulum);
+  return { durum: "acildi", pr_no: number, url: kurulum.url, sha: "b".repeat(40), ...ortak, kurulum };
+}
+
 export interface DilYanitiSecenegi {
   /** MİM-B1 `depo-okunamadi`: forge okunamadı. */
   depoOkunamadi?: boolean;
@@ -83,7 +142,7 @@ export function kodDilleriYaniti(platform: Platform, secenek: DilYanitiSecenegi 
       durum,
       kullanilabilir: acik,
       neden: acik ? secenekNedeni : YAKINDA_NEDENI,
-      kurulum: acik ? (KURULUM_ORNEKLERI[`${platform}/${dil}`] ?? null) : null,
+      kurulum: acik ? kurulumOrnegi(`${platform}/${dil}`) : null,
     };
   });
   const sayilar: Partial<Record<Dil, number>> = {};

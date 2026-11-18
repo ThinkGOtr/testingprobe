@@ -13,6 +13,7 @@ import { PlatformRozeti, PlatformSecici } from "../components/Platform";
 import { DepoCipi } from "../components/Depo";
 import { PLATFORM_ETIKETI, type Platform } from "../lib/platform";
 import { algilamaSuruyorMu, dilNedeni, DilRozeti, DilSecici, KurulumBilgisi, MusteriCiNotu, uretimAciklamasi } from "../components/Dil";
+import { KurulumPrEylemi } from "../components/KurulumPrEylemi";
 import { DIL_ETIKETI, type Dil } from "../lib/dil";
 import type { Script, UretimSonucu } from "../api/types";
 import { baslamayanlar, DilCakismasiKutusu, dilCakismasiMi, UretimAtlananlar, uretimBildirimi } from "../components/UretimSonuclari";
@@ -247,6 +248,9 @@ export function Kod() {
             )}
             {musteriCi && seciliSecenek && <MusteriCiNotu etiket={seciliSecenek.etiket} id="musteri-ci-notu" />}
             {seciliSecenek?.kullanilabilir && <KurulumBilgisi kurulum={seciliSecenek.kurulum} dilEtiketi={seciliSecenek.etiket} />}
+            {musteriCi && seciliSecenek?.kullanilabilir && (platform === "android" || platform === "ios") && (
+              <KurulumPrEylemi key={`${platform}/${seciliSecenek.dil}`} platform={platform} kurulum={seciliSecenek.kurulum} degisti={() => void diller.yenile()} />
+            )}
             {islem.hata &&
               (dilCakismasiMi(islem.hataNesnesi) ? <DilCakismasiKutusu hata={islem.hataNesnesi} /> : <HataKutusu hata={islem.hata} kaynak={islem.hataNesnesi} />)}
             <UretimAtlananlar sonuclar={atlananlar} caseAdi={caseAdi} kapat={() => setAtlananlar([])} />

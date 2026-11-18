@@ -18,6 +18,7 @@ import type {
   IsYaniti,
   KodDilleri,
   KurulumPr,
+  KurulumPrSonucu,
   MusteriCi,
   KodUretYaniti,
   KontrolAdimi,
@@ -551,6 +552,29 @@ export function kurulumUyarla(x: unknown): KurulumPr | null {
     baslik: metinYaDaNull(x.baslik),
     eksikler: dizgeler(x.eksikler),
     elle_adimlar: dizgeler(x.elle_adimlar),
+  };
+}
+
+const KURULUM_SONUCU: ReadonlySet<KurulumPrSonucu["durum"]> = new Set(["acildi", "mevcut", "gereksiz", "onizleme", "suruyor"]);
+
+/** `POST /code/ci-setup` yanıtı (014). Tanınmayan `durum` → `suruyor` değil, hata (core sözleşmesi dışı). */
+export function kurulumPrSonucuUyarla(x: unknown): KurulumPrSonucu {
+  const g = nesne(x);
+  const durum = metin(g.durum) as KurulumPrSonucu["durum"];
+  if (!KURULUM_SONUCU.has(durum)) throw new Error("Kurulum PR'ı yanıtı okunamadı.");
+  const n = g.pr_no ?? (nesneMi(g.pr) ? g.pr.number : null);
+  return {
+    durum,
+    pr_no: typeof n === "number" && Number.isInteger(n) && n > 0 ? n : null,
+    url: adresUyarla(g.url ?? (nesneMi(g.pr) ? g.pr.url : null)),
+    dal: metinYaDaNull(g.dal),
+    taban: metinYaDaNull(g.taban),
+    dosyalar: dizgeler(g.dosyalar),
+    eksikler: dizgeler(g.eksikler),
+    elle_adimlar: dizgeler(g.elle_adimlar),
+    hazir: g.hazir !== false,
+    kurulum: kurulumUyarla(g.kurulum),
+    mesaj: metinYaDaNull(g.mesaj),
   };
 }
 

@@ -5799,6 +5799,29 @@ input[type="checkbox"][role="switch"] {
 .kurulum-pr ul {
   padding-left: 18px;
 }
+/* 014 "Kurulum PR'ı aç" formu: kurulum kutusunun altında, kart içi yüzey. */
+.kurulum-pr-eylem,
+.kurulum-pr-sonuc {
+  margin: 8px 0;
+}
+.kurulum-pr-form {
+  margin: 8px 0 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  max-width: 640px;
+}
+.kurulum-pr-form fieldset {
+  border-top: 1px solid var(--border-soft);
+  padding-top: 8px;
+}
+.kurulum-pr-onizleme ul,
+.kurulum-pr-sonuc ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  overflow-wrap: anywhere;
+}
 /* Doğrulanmamış script bandı: indirme + başka dilde yeniden üretim, dar ekranda alt alta. */
 .dogrulanmamis-bandi .uyari-kutusu > div {
   flex: 1 1 100%;
