@@ -6,6 +6,9 @@
   taşır (`tp_core.features.testveri.atif`). Gizli kayıtta değer tutulmaz; `sir_adi` ortam
   değişkeninin adıdır.
 - `test_verisi_surum`: her oluşturma / güncelleme / silmenin değişmez kaydı.
+- `test_verisi_kaynagi` (0049): projenin salt okuma veritabanından kataloğu dolduran sorgu
+  tanımları (`tp_core.features.testveri.kaynak`). Kaynaktan gelen kayıt `test_verisi.kaynak_id`
+  taşır; kaynağın son yenilemesinde dönmeyen kayıt silinmez, `kaynakta_yok` işaretlenir.
 """
 
 from __future__ import annotations
@@ -18,6 +21,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     ForeignKey,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -52,6 +56,33 @@ class OtomasyonAyari(ProjeKapsamli, Base):
     guncelleme: Mapped[datetime] = guncelleme_col()
 
 
+class TestVerisiKaynagi(ProjeKapsamli, Base):
+    __tablename__ = "test_verisi_kaynagi"
+    __test__ = False
+    __table_args__ = (
+        UniqueConstraint("project_id", "grup", name="test_verisi_kaynagi_grup_uq"),
+        CheckConstraint("grup ~ '^[a-z0-9_]+$'", name="test_verisi_kaynagi_grup_ck"),
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    grup: Mapped[str]
+    aciklama: Mapped[str] = mapped_column(server_default="", default="")
+    sorgu: Mapped[str]
+    anahtar_kolonu: Mapped[str]
+    # [{kolon, alan, bicim: metin|tutar, aciklama}] (`kaynak.KolonTanimi`).
+    deger_kolonlari: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
+    sira: Mapped[int] = mapped_column(Integer, server_default="0", default=0)
+    on_tanimli: Mapped[bool] = mapped_column(Boolean, server_default=false(), default=False)
+    surum: Mapped[int] = mapped_column(Integer, server_default="1", default=1)
+    silindi: Mapped[bool] = mapped_column(Boolean, server_default=false(), default=False)
+    guncelleyen: Mapped[str]
+    olusturma: Mapped[datetime] = olusturma_col()
+    guncelleme: Mapped[datetime] = guncelleme_col()
+    son_yenileme: Mapped[datetime | None]
+    # Son yenilemenin özeti (sayılar + uyarılar; değer içermez).
+    son_durum: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+
+
 class TestVerisi(ProjeKapsamli, Base):
     __tablename__ = "test_verisi"
     __test__ = False  # pytest bu sınıfı test sınıfı sanmasın
@@ -65,6 +96,7 @@ class TestVerisi(ProjeKapsamli, Base):
             "OR (NOT gizli AND deger IS NOT NULL AND sir_adi IS NULL)",
             name="test_verisi_gizli_ck",
         ),
+        Index("test_verisi_kaynak_ix", "project_id", "kaynak_id"),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
@@ -79,6 +111,12 @@ class TestVerisi(ProjeKapsamli, Base):
     guncelleyen: Mapped[str]
     olusturma: Mapped[datetime] = olusturma_col()
     guncelleme: Mapped[datetime] = guncelleme_col()
+    # 0049: kaydı dolduran veritabanı kaynağı (elle kayıtta NULL) ve kaynağın son yenilemesinde
+    # dönmediği (silinmez, işaretlenir).
+    kaynak_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("test_verisi_kaynagi.id", ondelete="SET NULL")
+    )
+    kaynakta_yok: Mapped[bool] = mapped_column(Boolean, server_default=false(), default=False)
 
 
 class TestVerisiSurum(ProjeKapsamli, Base):

@@ -33,6 +33,8 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 KAYNAK = "testdata:demo-app"
+# Demo dışı projelerin genel (katalogdan) bloğu.
+KAYNAK_GENEL = "testdata:katalog"
 VERITABANI_YOK = "Veritabanı okunamadı"
 # docs/DEMO-VERISI.md: "bayi1 / Demo123!", "bayi2 / Demo123!" (yerel demo; gerçek kimlik değil).
 DEMO_PAROLA = "Demo123!"
@@ -51,7 +53,7 @@ UI_ETIKETLERI: tuple[str, ...] = (
 SORGULAR: dict[str, str] = {
     "urun": "SELECT kod, ad, fiyat FROM urun WHERE aktif ORDER BY sira, kod",
     "kampanya": (
-        "SELECT kampanya.kod, kampanya.ad, urun.kod FROM kampanya JOIN urun ON "
+        "SELECT kampanya.kod, kampanya.ad, urun.kod AS urun_kodu FROM kampanya JOIN urun ON "
         "urun.id = kampanya.urun_id WHERE kampanya.aktif ORDER BY kampanya.kod"
     ),
     "ayar": "SELECT anahtar, deger FROM ayar ORDER BY anahtar",
@@ -150,6 +152,11 @@ def model_kipi() -> str | None:
 def block(session: Session | None = None) -> str:
     """Modele giden güvenilmeyen veri bloğu (kaynak `testdata:demo-app`).
 
+    Demo dışı projede (bağlamdaki proje varsayılan proje değilse) blok her kipte **katalogdan
+    genel biçimde** kurulur (kaynak `testdata:katalog`; grup başlıkları + `anahtar = değer`;
+    `testveri.service.genel_blok_metni`); demo DB'si ve demo sabitleri hiç kullanılmaz.
+    `session` verilmezse kısa bir okuma oturumu açılır.
+
     K17 (specs/013 §9): model kipi `live`/`record` ve `session` verilmişse blok **test verisi
     kataloğundan** kurulur (yeni kayıtlar ve değişen değerler dahil; biçim DB bloğuyla aynı
     kurallar). `replay`'de (ve katalog kurulamazsa) bugünkü demo DB bloğu kullanılır: REPLAY
@@ -157,6 +164,8 @@ def block(session: Session | None = None) -> str:
     """
     from tp_core.gateway import wrap_untrusted
 
+    if not _demo_projesi():
+        return wrap_untrusted(_genel_metin(session), source=KAYNAK_GENEL, kind="data")
     if session is not None and model_kipi() in ("live", "record"):
         katalogdan = _katalog_metni(session)
         if katalogdan is not None:
@@ -183,6 +192,8 @@ def ide_block(session: Session) -> str:
     """
     from tp_core.gateway import wrap_untrusted
 
+    if not _demo_projesi():
+        return wrap_untrusted(_genel_metin(session), source=KAYNAK_GENEL, kind="data")
     metin = _katalog_metni(session, gizli_atif=True)
     if metin is None:
         log.warning("IDE test verisi bloğu katalogdan kurulamadı; demo DB'den (parola atıfla)")
@@ -210,3 +221,25 @@ def _katalog_metni(session: Session, *, gizli_atif: bool = False) -> str | None:
     except Exception as exc:  # katalog okunamazsa model girdisi eski yoldan
         log.warning("Test verisi bloğu katalogdan kurulamadı: %s", exc)
         return None
+
+
+def _demo_projesi() -> bool:
+    from tp_core.features.testveri.service import demo_projesi_mi
+
+    return demo_projesi_mi()
+
+
+def _genel_metin(session: Session | None) -> str:
+    """Demo dışı projenin genel bloğu; katalog okunamazsa boş katalog metni (demo verisi değil)."""
+    from tp_core.features.testveri.service import GENEL_BASLIK, genel_blok_metni
+
+    try:
+        if session is not None:
+            return genel_blok_metni(session)
+        from tp_core.models import session_scope
+
+        with session_scope() as s:
+            return genel_blok_metni(s)
+    except Exception as exc:
+        log.warning("Test verisi bloğu katalogdan kurulamadı: %s", type(exc).__name__)
+        return GENEL_BASLIK + "\n- Katalog okunamadı; test verisi yok."

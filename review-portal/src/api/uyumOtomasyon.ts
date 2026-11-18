@@ -4,6 +4,10 @@
 import type {
   AtifYapanCase,
   CaseVeriAtfi,
+  KaynakIsi,
+  KaynakOnizleme,
+  KaynakOnizlemeDurumu,
+  KaynakYenilemeSonucu,
   JiraTetikDurumu,
   JiraTetikTurSonucu,
   KodUretimIsi,
@@ -13,7 +17,10 @@ import type {
   Script,
   TestCase,
   TestVerisi,
+  TestVerisiKaynagi,
+  TestVerisiKaynakKolonu,
   TestVerisiSurumu,
+  TestVerisiYenilemeSayaclari,
   TopluKararSonucu,
   TopluKararYaniti,
   TopluOtomatikKod,
@@ -234,12 +241,108 @@ export function testVerisiUyarla(x: Ham): TestVerisi {
     guncelleyen: metinYaDaNull(x.guncelleyen),
     guncelleme: metinYaDaNull(x.guncelleme),
     kullanim: sayi(x.kullanim),
+    // Eski core bu alanları göndermez: elle girilmiş, kaynakta var sayılır.
+    kaynak_id: kimlik(x.kaynak_id) || null,
+    kaynakta_yok: x.kaynakta_yok === true,
   };
 }
 
 export function testVerileriUyarla(govde: unknown): TestVerisi[] {
   const liste = Array.isArray(govde) ? govde : nesneMi(govde) ? (govde.kayitlar ?? govde.items) : [];
   return dizi(liste).map(testVerisiUyarla);
+}
+
+// ---------------------------------------------------------------- veritabanı kaynakları (/test-data-sources)
+
+const metinler = (x: unknown): string[] => (Array.isArray(x) ? x.filter((v): v is string => typeof v === "string") : []);
+
+function kolonUyarla(x: Ham): TestVerisiKaynakKolonu {
+  return { kolon: metin(x.kolon), alan: metin(x.alan), bicim: x.bicim === "tutar" ? "tutar" : "metin", aciklama: metin(x.aciklama) };
+}
+
+function sayaclarUyarla(x: Ham): TestVerisiYenilemeSayaclari {
+  return {
+    eklenen: sayi(x.eklenen),
+    guncellenen: sayi(x.guncellenen),
+    ayni: sayi(x.ayni),
+    kaynakta_yok: sayi(x.kaynakta_yok),
+    geri_gelen: sayi(x.geri_gelen),
+    atlanan: sayi(x.atlanan),
+    satir: sayi(x.satir),
+    kesildi: x.kesildi === true,
+    uyarilar: metinler(x.uyarilar),
+  };
+}
+
+export function testVerisiKaynagiUyarla(x: Ham): TestVerisiKaynagi {
+  const d = nesneMi(x.son_durum) ? x.son_durum : null;
+  return {
+    id: kimlik(x.id),
+    grup: metin(x.grup),
+    aciklama: metin(x.aciklama),
+    sorgu: metin(x.sorgu),
+    anahtar_kolonu: metin(x.anahtar_kolonu),
+    deger_kolonlari: dizi(x.deger_kolonlari).map(kolonUyarla),
+    sira: sayi(x.sira),
+    on_tanimli: x.on_tanimli === true,
+    surum: sayi(x.surum, 1),
+    guncelleyen: metinYaDaNull(x.guncelleyen),
+    guncelleme: metinYaDaNull(x.guncelleme),
+    kayit_sayisi: sayi(x.kayit_sayisi),
+    kaynakta_yok_sayisi: sayi(x.kaynakta_yok_sayisi),
+    son_yenileme: metinYaDaNull(x.son_yenileme),
+    son_durum: d ? { ...sayaclarUyarla(d), hata: metinYaDaNull(d.hata), aktor: metinYaDaNull(d.aktor) } : null,
+  };
+}
+
+export function testVerisiKaynaklariUyarla(govde: unknown): TestVerisiKaynagi[] {
+  const liste = Array.isArray(govde) ? govde : nesneMi(govde) ? (govde.kaynaklar ?? govde.items) : [];
+  return dizi(liste)
+    .map(testVerisiKaynagiUyarla)
+    .sort((a, b) => a.sira - b.sira || a.grup.localeCompare(b.grup, "tr"));
+}
+
+const ONIZLEME_DURUMLARI = new Set(["yeni", "ayni", "degisecek", "silinmis", "gizli_kayit", "gizli_cakisma"]);
+
+export function kaynakOnizlemeUyarla(x: unknown): KaynakOnizleme | null {
+  if (!nesneMi(x)) return null;
+  if (typeof x.hata === "string" && x.hata) return { hata: x.hata };
+  return {
+    hata: null,
+    kolonlar: metinler(x.kolonlar),
+    satirlar: (Array.isArray(x.satirlar) ? x.satirlar : [])
+      .filter(Array.isArray)
+      .map((r: unknown[]) => r.map((h) => (h === null || h === undefined ? null : String(h)))),
+    toplam_satir: sayi(x.toplam_satir),
+    kesildi: x.kesildi === true,
+    kayit_sayisi: sayi(x.kayit_sayisi),
+    kayitlar: dizi(x.kayitlar).map((k) => {
+      const d = metin(k.durum);
+      const durum = (ONIZLEME_DURUMLARI.has(d) ? d : "yeni") as KaynakOnizlemeDurumu;
+      // Gizli kayıtla/değerle çakışan değer gösterilmez (core null gönderir; yine de süzülür).
+      return { anahtar: metin(k.anahtar), deger: durum.startsWith("gizli") ? null : metinYaDaNull(k.deger), durum };
+    }),
+    uyarilar: metinler(x.uyarilar),
+  };
+}
+
+export function kaynakYenilemeUyarla(x: unknown): KaynakYenilemeSonucu | null {
+  if (!nesneMi(x)) return null;
+  const t = nesneMi(x.toplam) ? x.toplam : {};
+  return {
+    kaynaklar: dizi(x.kaynaklar).map((k) => ({ ...sayaclarUyarla(k), id: kimlik(k.id), grup: metin(k.grup), hata: metinYaDaNull(k.hata) })),
+    toplam: { ...sayaclarUyarla(t), hata: sayiYaDaNull(t.hata) },
+  };
+}
+
+const IS_DURUMLARI = new Set(["kuyrukta", "calisiyor", "tamam", "hata"]);
+
+export function kaynakIsiUyarla(x: Ham): KaynakIsi {
+  const d = metin(x.durum);
+  const ortak = { id: kimlik(x.id), durum: (IS_DURUMLARI.has(d) ? d : "hata") as KaynakIsi["durum"], hata: metinYaDaNull(x.hata) };
+  return x.tur === "onizle"
+    ? { ...ortak, tur: "onizle", sonuc: kaynakOnizlemeUyarla(x.sonuc) }
+    : { ...ortak, tur: "yenile", sonuc: kaynakYenilemeUyarla(x.sonuc) };
 }
 
 const ISLEMLER = new Set(["olustur", "guncelle", "sil"]);

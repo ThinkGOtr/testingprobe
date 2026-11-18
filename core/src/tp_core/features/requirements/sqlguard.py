@@ -50,12 +50,20 @@ CASE/COALESCE/CONCAT/aritmetik projeksiyonlar reddedilir (ör. `SELECT anahtar, 
 gerçek değeri 750.00 iken 500.00 "kanıtı" üretirdi). Koşullarda iki tarafı da
 sabit karşılaştırma (`1 = 0`) ve çıplak TRUE/FALSE da reddedilir.
 
+Test verisi kaynakları (`izinli` verilir; `tp_core.features.testveri.kaynak`): proje veritabanının
+şeması demo tablolarından farklıdır. İzin listesi sorgunun okuduğu tabloların gerçek şemasından
+(`information_schema`; Oracle `ALL_TAB_COLUMNS`) kurulur ve hassas adlı kolonlar
+(`hassas_kolon_mu`: parola/şifre/password/hash/secret/token/salt/otp/cvv…) çıkarılır; diğer tüm
+kurallar (tek SELECT, fonksiyon/kaynak yasakları, takma ad gölgeleme, kapsam çözümü) aynıdır.
+
 Veritabanı tarafında ayrıca: `demoapp_ro` rolü (yalnızca bu tablolara/kolonlara SELECT), salt
 okuma işlemi, `statement_timeout` 5 sn; araç en fazla 100 satır döndürür (`datatools`).
 """
 
 from __future__ import annotations
 
+import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 import sqlglot
@@ -150,6 +158,64 @@ _YASAK_KAYNAK: tuple[type[exp.Expression], ...] = (
 
 _TUM_KOLON_ADLARI: frozenset[str] = frozenset().union(*ALLOWED_COLUMNS.values()) | GIZLI_KOLONLAR
 
+# Hassas kolon adı parçaları (test verisi kaynakları; `_` ile ayrılmış parça ya da ad başı/sonu).
+_HASSAS_PARCALAR: frozenset[str] = frozenset(
+    {
+        "parola",
+        "sifre",
+        "şifre",
+        "password",
+        "passwd",
+        "pwd",
+        "pass",
+        "hash",
+        "secret",
+        "sir",
+        "token",
+        "salt",
+        "otp",
+        "cvv",
+        "cvc",
+        "apikey",
+        "credential",
+        "credentials",
+    }
+)
+
+
+def hassas_kolon_mu(ad: str) -> bool:
+    """Kolon adı hassas mı (`parola_hash`, `user_password`, `api_token`, `PasswordHash`…)?"""
+    a = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", str(ad)).lower()
+    parcalar = [p for p in re.split(r"[^a-z0-9şğıöüç]+", a) if p]
+    if any(p in _HASSAS_PARCALAR for p in parcalar):
+        return True
+    birlesik = "".join(parcalar)
+    return any(k in birlesik for k in ("password", "parola", "sifre", "passwd", "apikey", "secret"))
+
+
+def tablo_adlari(sql: str, *, lehce: str = "postgres") -> list[str]:
+    """Sorgunun okuduğu tablo adları (küçük harf, sıralı, tekrarsız); şema keşfi için. Ayrıştırma
+    hatası `QueryRejected`. Yetki denetimi yapmaz (onu `validate_select` yapar)."""
+    if lehce not in LEHCE_SEMALARI:
+        raise QueryRejected(f"Desteklenmeyen SQL lehçesi: {lehce}")
+    if not isinstance(sql, str) or not sql.strip():
+        raise QueryRejected("Sorgu boş")
+    if len(sql) > MAX_SQL_LEN:
+        raise QueryRejected(f"Sorgu çok uzun (en fazla {MAX_SQL_LEN} karakter)")
+    try:
+        ifadeler = [s for s in sqlglot.parse(sql, read=lehce) if s is not None]
+    except (ParseError, sqlglot.errors.TokenError) as exc:
+        raise QueryRejected(
+            f"Sorgu ayrıştırılamadı (SQL lehçesi: {lehce}): {str(exc).splitlines()[0][:200]}"
+        ) from exc
+    if len(ifadeler) != 1:
+        raise QueryRejected("Tek bir SELECT ifadesi gönderin")
+    out: list[str] = []
+    for t in ifadeler[0].find_all(exp.Table):
+        if isinstance(t.this, exp.Identifier):
+            out.append(t.name.lower())
+    return sorted(dict.fromkeys(out))
+
 
 class QueryRejected(ValueError):
     """Sorgu izin listesine uymuyor; çalıştırılmaz."""
@@ -161,11 +227,38 @@ class ValidatedQuery:
     tables: tuple[str, ...]
 
 
-def validate_select(sql: str, *, kanit: bool = False, lehce: str = "postgres") -> ValidatedQuery:
+def validate_select(
+    sql: str,
+    *,
+    kanit: bool = False,
+    lehce: str = "postgres",
+    izinli: Mapping[str, frozenset[str]] | None = None,
+) -> ValidatedQuery:
     """Sorguyu izin listesine göre doğrular. `kanit=True`: kanıt sorgusu kuralları da uygulanır.
 
     `lehce`: hedef veritabanının sqlglot lehçesi (`postgres`, `mysql`, `tsql`, `oracle`);
-    ayrıştırma ve çalıştırılacak metnin üretimi bu lehçededir."""
+    ayrıştırma ve çalıştırılacak metnin üretimi bu lehçededir.
+
+    `izinli`: tablo → izinli kolonlar (verilmezse demo uygulamasının `ALLOWED_COLUMNS`'u). Verilen
+    listeden hassas adlı kolonlar (`hassas_kolon_mu`) her durumda çıkarılır ve hassas adlı takma ad
+    reddedilir (test verisi kaynakları)."""
+    if izinli is None:
+        izin: Mapping[str, frozenset[str]] = ALLOWED_COLUMNS
+        tum_kolonlar = _TUM_KOLON_ADLARI
+        gizli_ad = GIZLI_KOLONLAR.__contains__
+    else:
+        izin = {
+            str(t).lower(): frozenset(str(k).lower() for k in ks if not hassas_kolon_mu(str(k)))
+            for t, ks in izinli.items()
+        }
+        hassas = frozenset(
+            str(k).lower() for ks in izinli.values() for k in ks if hassas_kolon_mu(str(k))
+        )
+        tum_kolonlar = frozenset().union(*izin.values(), hassas, GIZLI_KOLONLAR)
+
+        def gizli_ad(a: str) -> bool:
+            return a in GIZLI_KOLONLAR or hassas_kolon_mu(a)
+
     if lehce not in LEHCE_SEMALARI:
         raise QueryRejected(f"Desteklenmeyen SQL lehçesi: {lehce}")
     if not isinstance(sql, str) or not sql.strip():
@@ -224,14 +317,14 @@ def validate_select(sql: str, *, kanit: bool = False, lehce: str = "postgres") -
             tablo = kaynak.this
             if not isinstance(tablo, exp.Table):
                 raise QueryRejected("FROM/JOIN yalnızca izinli tabloları okuyabilir")
-            ad = _tablo_adi(tablo, lehce)
+            ad = _tablo_adi(tablo, lehce, izin)
             tablolar.append(ad)
             takma_ad = tablo.args.get("alias")
             if takma_ad is not None and takma_ad.args.get("columns"):
                 raise QueryRejected("Tablo takma adında kolon listesi kullanılamaz")
             if tablo.alias:
                 ta = tablo.alias.lower()
-                if ta in _TUM_KOLON_ADLARI or (ta in ALLOWED_COLUMNS and ta != ad):
+                if ta in tum_kolonlar or (ta in izin and ta != ad):
                     raise QueryRejected(f"Tablo takma adı bir kolon/tablo adını gölgeleyemez: {ta}")
                 kapsam[ta] = ad
             else:
@@ -239,14 +332,14 @@ def validate_select(sql: str, *, kanit: bool = False, lehce: str = "postgres") -
         kapsamlar[id(s)] = kapsam
     for tablo in kok.find_all(exp.Table):
         # Kapsam dışında kalan tablo (ör. bir ifadenin içinde) olamaz; yine de adı denetlenir.
-        _tablo_adi(tablo, lehce)
+        _tablo_adi(tablo, lehce, izin)
 
     if not tablolar:
         raise QueryRejected("Sorgu en az bir izinli tabloyu okumalı (FROM gerekli)")
 
     for s in kok.find_all(exp.Select):
         for e in s.expressions:
-            if e.alias and e.alias.lower() in GIZLI_KOLONLAR:
+            if e.alias and gizli_ad(e.alias.lower()):
                 raise QueryRejected(f"İzin verilmeyen takma ad: {e.alias}")
     # Takma adlar yalnızca üst düzey ORDER BY öğesinde (Postgres orada çıktı adını önce çözer).
     projeksiyon_adlari = {e.alias.lower() for e in kok.expressions if e.alias}
@@ -266,7 +359,7 @@ def validate_select(sql: str, *, kanit: bool = False, lehce: str = "postgres") -
             hedef = next((k[niteleyici] for k in zincir if niteleyici in k), None)
             if hedef is None:
                 raise QueryRejected(f"Bilinmeyen tablo niteleyicisi: {kolon.table}")
-            if ad not in ALLOWED_COLUMNS[hedef]:
+            if ad not in izin[hedef]:
                 raise QueryRejected(f"İzin verilmeyen kolon: {hedef}.{ad}")
             continue
         if ad in projeksiyon_adlari and _ust_duzey_siralama(kolon, kok):
@@ -274,7 +367,7 @@ def validate_select(sql: str, *, kanit: bool = False, lehce: str = "postgres") -
         # Nitelenmemiş ad yalnızca KENDİ SELECT'inin tablolarına çözülmeli (örtük dış kapsam
         # bağıntısı yok: başka tablodaki aynı adlı kolon ya da tüm satır referansı okunamaz).
         kendi = zincir[0] if zincir else {}
-        if not any(ad in ALLOWED_COLUMNS[t] for t in kendi.values()):
+        if not any(ad in izin[t] for t in kendi.values()):
             raise QueryRejected(f"İzin verilmeyen ya da bilinmeyen kolon: {ad}")
 
     if kanit:
@@ -283,7 +376,11 @@ def validate_select(sql: str, *, kanit: bool = False, lehce: str = "postgres") -
     return ValidatedQuery(kok.sql(dialect=lehce, comments=False), tuple(dict.fromkeys(tablolar)))
 
 
-def _tablo_adi(tablo: exp.Table, lehce: str = "postgres") -> str:
+def _tablo_adi(
+    tablo: exp.Table,
+    lehce: str = "postgres",
+    izin: Mapping[str, frozenset[str]] = ALLOWED_COLUMNS,
+) -> str:
     if not isinstance(tablo.this, exp.Identifier):
         raise QueryRejected("FROM'da tablo fonksiyonu kullanılamaz")
     ad = tablo.name.lower()
@@ -292,10 +389,12 @@ def _tablo_adi(tablo: exp.Table, lehce: str = "postgres") -> str:
     sema = tablo.args.get("db")
     if sema is not None and sema.name.lower() not in LEHCE_SEMALARI.get(lehce, frozenset()):
         raise QueryRejected(f"İzin verilmeyen şema: {sema.name}")
-    if ad not in ALLOWED_COLUMNS:
-        raise QueryRejected(
-            f"İzin verilmeyen tablo: {ad} (izinli: {', '.join(sorted(ALLOWED_COLUMNS))})"
-        )
+    if ad not in izin:
+        if izin is ALLOWED_COLUMNS:
+            raise QueryRejected(
+                f"İzin verilmeyen tablo: {ad} (izinli: {', '.join(sorted(ALLOWED_COLUMNS))})"
+            )
+        raise QueryRejected(f"Tablo bulunamadı ya da okuma yetkisi yok: {ad}")
     return ad
 
 

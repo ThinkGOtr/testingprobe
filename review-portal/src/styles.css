@@ -5686,6 +5686,53 @@ td > .satir-baglanti + .cip,
   background: var(--surface-2);
   color: var(--text-2);
 }
+.testveri-kaynak-rozetleri {
+  display: flex;
+  margin-top: 4px;
+}
+.testveri-kaynak + .testveri-kaynak {
+  border-top: 1px solid var(--border);
+}
+.testveri-kaynak {
+  padding: 10px 0;
+}
+.testveri-kaynak-ust {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+}
+.testveri-kaynak-ayrinti {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 4px 16px;
+  margin: 6px 0;
+}
+.testveri-kaynak-ayrinti dt {
+  color: var(--text-2);
+}
+.testveri-kaynak-ayrinti dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.testveri-sorgu {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 6px 0;
+}
+.testveri-kolonlar {
+  border: 0;
+  padding: 0;
+  margin: 12px 0;
+}
+.testveri-kolonlar input,
+.testveri-kolonlar select {
+  width: 100%;
+}
+.testveri-onizleme-baslik {
+  font-size: 0.875rem;
+  margin: 12px 0 6px;
+}
 
 /* Sürüm geçmişi çekmecesi: sayfa akışında açılan bölüm (kipsel değil; Esc ve "Kapat" kapatır). */
 .cekmece {

@@ -2,8 +2,8 @@
 
 - `katalog`: gizli olmayan etkin kayıtlar (anahtar → değer).
 - `eslem_katalogu`: eşleme kataloğu = `katalog` + değeri ortamda tanımlı gizli kayıtlar; böylece
-  parola case metnine düz yazılmaz, `{veri:ortak.demo_parola}` olur. K18: yalnız bayi / ürün /
-  kampanya / ortak grupları (`atif.case_esle` ayrıca tutar kuralını uygular).
+  parola case metnine düz yazılmaz, `{veri:ortak.demo_parola}` olur. K18: arayüz etiketleri
+  dışındaki tüm gruplar (`atif.ESLENMEYEN_GRUPLAR`; `atif.case_esle` ayrıca tutar kuralını uygular).
 - `cozum_degerleri`: kod üretimi / koşu için (değerler, sürümler); gizli değer projenin
   sırrından (`proje.ayar.sir`; varsayılan projede `os.environ[sir_adi]`), sır tanımsızsa o
   anahtar çözülemez.
@@ -21,8 +21,12 @@
   değerle aynı değeri taşıyan gizli olmayan kayıt reddedilir (genel metin + denetim).
 - CRUD: her değişiklik `test_verisi_surum` satırı + denetim (`testveri.olustur|guncelle|sil`).
   İyimser kilit `beklenen_surum` (409); silme yumuşaktır ve atıf yapan etkin case varsa 409.
-- `tohumla`: demo DB (`cases/testdata.py` sorguları) + sabitlerden; anahtar başına idempotent
-  (var olan ya da silinmiş anahtara dokunmaz).
+- `tohumla`: varsayılan projenin (Bayi Portalı) ön tanımlı veritabanı kaynakları
+  (`kaynak.on_tanimli_kaynaklar`; `cases/testdata.py` sorguları) + sabitlerden; anahtar başına
+  idempotent (var olan ya da silinmiş anahtara dokunmaz). Diğer projelerde katalog veritabanı
+  kaynaklarının "Yenile" işiyle (`kaynak.yenile`) ve elle dolar.
+- Model girdisi bloğu: demo projesinde `blok_metni` (bugünkü biçim, bayt bayt aynı); diğer
+  projelerde `genel_blok_metni` (grup başlıkları + `anahtar = değer`, sınırlı boyut).
 
 Gizli kaydın değeri katalogda yoktur, API'den dönmez, denetime yazılmaz. `sir_adi` yalnız
 `TP_TESTVERI_` önekli olabilir: aksi hâlde katalog düzenleyen biri herhangi bir süreç sırrını
@@ -556,6 +560,8 @@ def serialize(k: TestVerisi, kullanim_sayisi: int | None = None) -> dict[str, An
         "guncelleyen": k.guncelleyen,
         "guncelleme": k.guncelleme,
         "kullanim": kullanim_sayisi,
+        "kaynak_id": str(k.kaynak_id) if k.kaynak_id else None,
+        "kaynakta_yok": bool(k.kaynakta_yok),
     }
 
 
@@ -890,37 +896,28 @@ def sil(session: Session, kid: uuid.UUID, beklenen_surum: int | None, aktor: str
 
 
 def tohum_kayitlari(sorgu: Callable[[str], Sequence[Sequence[Any]]] | None) -> list[dict]:
-    """`testdata.block()`'un okuduğu verilerden katalog satırları (sırası = blok sırası)."""
+    """Varsayılan projenin tohum satırları (sırası = blok sırası): ön tanımlı veritabanı
+    kaynaklarının (`kaynak.on_tanimli_kaynaklar`) kayıtları (`kaynak_grup` ile) + sabitler (parola
+    sırrı, arayüz etiketleri). Kaynaklardan biri okunamazsa hiçbir kaynak kaydı eklenmez (bugünkü
+    davranış: yalnız sabitler)."""
     from tp_core.features.cases import testdata
+    from tp_core.features.testveri import kaynak
 
-    veri: dict[str, Sequence[Sequence[Any]]] = {}
+    satirlar: list[dict[str, Any]] = []
     if sorgu is not None:
+        calistir = kaynak.satir_calistirici(sorgu)
         try:
-            veri = {ad: sorgu(sql) for ad, sql in testdata.SORGULAR.items()}
+            for t in kaynak.on_tanimli_kaynaklar():
+                kolonlar, rows = calistir(t.sorgu)
+                kayitlar, _ = kaynak.kayitlari_uret(t, kolonlar, rows)
+                satirlar += [{**r, "kaynak_grup": t.grup} for r in kayitlar]
         except Exception as exc:  # demo DB yoksa yalnız sabitler
             log.info("Test verisi tohumu: demo DB okunamadı (%s); yalnız sabitler", exc)
-            veri = {}
-    satirlar: list[dict[str, Any]] = []
+            satirlar = []
 
     def ekle(anahtar: str, deger: str, grup: str, aciklama: str) -> None:
         satirlar.append({"anahtar": anahtar, "deger": deger, "grup": grup, "aciklama": aciklama})
 
-    for kullanici, ad, limit in veri.get("bayi", ()):
-        b = f"bayi.{slug(kullanici)}"
-        ekle(f"{b}.kullanici_adi", str(kullanici), "bayi", "Test kullanıcısının kullanıcı adı")
-        ekle(f"{b}.ad", str(ad), "bayi", "Bayi adı")
-        ekle(f"{b}.kredi_limiti", testdata.tl(limit), "bayi", "Kredi limiti")
-    for kod, ad, fiyat in veri.get("urun", ()):
-        u = f"urun.{slug(kod)}"
-        ekle(f"{u}.kod", str(kod), "urun", "Ürün kodu")
-        ekle(f"{u}.ad", str(ad), "urun", "Ürün adı")
-        ekle(f"{u}.fiyat", testdata.tl(fiyat), "urun", "Birim fiyat")
-    for kod, ad, urun in veri.get("kampanya", ()):
-        k = f"kampanya.{slug(kod)}"
-        ekle(f"{k}.kod", str(kod), "kampanya", f"Kampanya kodu; ürün: {urun}")
-        ekle(f"{k}.ad", str(ad), "kampanya", "Kampanya adı")
-    for anahtar, deger in veri.get("ayar", ()):
-        ekle(f"ayar.{slug(anahtar)}", str(deger), "ayar", f"Uygulama ayarı ({anahtar})")
     satirlar.append(
         {
             "anahtar": DEMO_PAROLA_ANAHTARI,
@@ -937,13 +934,19 @@ def tohum_kayitlari(sorgu: Callable[[str], Sequence[Sequence[Any]]] | None) -> l
 
 
 def tohumla(session: Session, sorgu: Any = ...) -> int:
-    """Katalogda olmayan tohum anahtarlarını ekler; eklenen sayısı. İdempotent, eşzamanlı güvenli.
+    """Varsayılan projenin tohumu; eklenen kayıt sayısı. İdempotent, eşzamanlı güvenli.
+
+    1. Ön tanımlı veritabanı kaynakları (grup başına; silinmiş kaynak yeniden açılmaz).
+    2. Katalogda olmayan tohum anahtarları eklenir; kaynaktan gelenler kaynağa bağlanır
+       (`kaynak_id`). Var olan ya da silinmiş anahtara dokunulmaz (analistin değişikliği korunur);
+       sahipsiz aynı anahtar ön tanımlı kaynağa bağlanır (değeri değişmez).
 
     `sorgu` verilmezse `testdata`'nın sorgu fabrikası (`DEMOAPP_RO_DATABASE_URL`) kullanılır;
     demo DB okunamazsa sessizce yalnız sabitler (parola sırrı + arayüz etiketleri) eklenir.
-    Var olan ya da silinmiş anahtara dokunulmaz (analistin değişikliği korunur).
     """
     from tp_core.features.cases import testdata
+    from tp_core.features.testveri import kaynak
+    from tp_core.models.otomasyon_feature import TestVerisiKaynagi
 
     if sorgu is ...:
         try:
@@ -951,10 +954,19 @@ def tohumla(session: Session, sorgu: Any = ...) -> int:
         except Exception as exc:
             log.info("Test verisi tohumu: demo DB kaynağı açılamadı (%s)", exc)
             sorgu = None
+    kaynak.on_tanimlilari_ekle(session, TOHUM_AKTOR)
+    kaynak_idleri = {
+        g: i
+        for g, i, sil in session.execute(
+            select(TestVerisiKaynagi.grup, TestVerisiKaynagi.id, TestVerisiKaynagi.silindi)
+        ).all()
+        if not sil
+    }
     satirlar = tohum_kayitlari(sorgu)
     taban = datetime.now(UTC)
     eklenen: list[str] = []
     for i, satir in enumerate(satirlar):
+        kid = kaynak_idleri.get(satir.get("kaynak_grup") or "")
         sonuc = session.execute(
             insert(TestVerisi)
             .values(
@@ -972,11 +984,22 @@ def tohumla(session: Session, sorgu: Any = ...) -> int:
                 # Sıra korunur: blok katalogdan aynı sırayla kurulur.
                 olusturma=taban + timedelta(microseconds=i),
                 guncelleme=taban,
+                kaynak_id=kid,
             )
             .on_conflict_do_nothing(index_elements=["project_id", "anahtar"])
             .returning(TestVerisi.id)
         ).first()
         if sonuc is None:
+            if kid is not None:  # sahipsiz aynı anahtar ön tanımlı kaynağa bağlanır
+                var = session.scalars(
+                    select(TestVerisi).where(
+                        TestVerisi.anahtar == satir["anahtar"],
+                        TestVerisi.kaynak_id.is_(None),
+                        TestVerisi.gizli.is_(False),
+                    )
+                ).first()
+                if var is not None:
+                    var.kaynak_id = kid
             continue
         session.add(
             TestVerisiSurum(
@@ -990,8 +1013,8 @@ def tohumla(session: Session, sorgu: Any = ...) -> int:
             )
         )
         eklenen.append(satir["anahtar"])
+    session.flush()
     if eklenen:
-        session.flush()
         audit_on_commit(session, TOHUM_AKTOR, "testveri.tohumla", None, {"eklenen": len(eklenen)})
     return len(eklenen)
 
@@ -1022,7 +1045,7 @@ def blok_metni(session: Session, *, gizli_atif: bool = False) -> str | None:
     """
     from tp_core.features.cases import testdata
 
-    kayitlar = etkin_kayitlar(session)
+    kayitlar = [k for k in etkin_kayitlar(session) if not k.kaynakta_yok]
     if not kayitlar:
         return None
     bayiler: dict[str, dict[str, str]] = {}
@@ -1098,3 +1121,77 @@ def blok_metni(session: Session, *, gizli_atif: bool = False) -> str | None:
     satirlar.append("Arayüz etiketleri: " + ", ".join(f'"{e}"' for e in etiketler))
     satirlar.append("Tutar biçimi: 1.250,00 TL (tr-TR, iki ondalık).")
     return "\n".join(satirlar)
+
+
+# --------------------------------------------------------------------------- genel blok (demo dışı)
+
+GENEL_BASLIK = "Test verisi (proje test verisi kataloğu; anahtar = değer):"
+GENEL_MAX_KAYIT = 300
+GENEL_MAX_KARAKTER = 16000
+
+
+def demo_projesi_mi() -> bool:
+    """Bağlamdaki proje Bayi Portalı (varsayılan proje: demo uygulaması) mı? Bağlamsızsa evet.
+
+    Demo projesinde model girdisi bloğu bugünkü biçimdedir (`blok_metni` / `testdata.build_text`;
+    REPLAY golden'ları); diğer projelerde katalogdan genel biçim (`genel_blok_metni`)."""
+    from tp_core.proje import varsa, varsayilan_pid
+
+    b = varsa()
+    return b is None or b.pid == varsayilan_pid()
+
+
+def genel_blok_satirlari(
+    kayitlar: Iterable[tuple[str, str, str | None, bool]],
+    *,
+    max_kayit: int = GENEL_MAX_KAYIT,
+    max_karakter: int = GENEL_MAX_KARAKTER,
+) -> str:
+    """Saf biçimleyici: `(anahtar, grup, değer, gizli)` kayıtları (katalog sırasıyla) → grup
+    başlıkları + `- anahtar = değer` satırları. Gizli kayıt değer değil atıf olarak
+    (`{veri:anahtar}`, "(gizli)") verilir: sır modele gitmez, model case'e atfı yazar. Boyut
+    sınırı (`max_kayit`, `max_karakter`) aşılırsa kalan kayıt sayısı not edilir."""
+    gruplar: dict[str, list[str]] = {}
+    for anahtar, grup, deger, gizli in kayitlar:
+        g = (grup or anahtar.split(".", 1)[0]).strip() or anahtar.split(".", 1)[0]
+        if gizli or deger is None:
+            satir = f"- {anahtar} = {atif.atif(anahtar)} (gizli)"
+        else:
+            tek = " ".join(str(deger).split())
+            satir = f"- {anahtar} = {tek}"
+        gruplar.setdefault(g, []).append(satir)
+    satirlar = [GENEL_BASLIK]
+    if not gruplar:
+        satirlar.append("- Katalogda test verisi yok.")
+        return "\n".join(satirlar)
+    toplam = sum(len(v) for v in gruplar.values())
+    yazilan = 0
+    uzunluk = len(GENEL_BASLIK)
+    dolu = False
+    for g, liste in gruplar.items():
+        if dolu:
+            break
+        baslik = f"[{g}]"
+        if yazilan >= max_kayit or uzunluk + len(baslik) + 1 > max_karakter:
+            break
+        satirlar.append(baslik)
+        uzunluk += len(baslik) + 1
+        for satir in liste:
+            if yazilan >= max_kayit or uzunluk + len(satir) + 1 > max_karakter:
+                dolu = True
+                break
+            satirlar.append(satir)
+            uzunluk += len(satir) + 1
+            yazilan += 1
+    if yazilan < toplam:
+        satirlar.append(f"- … {toplam - yazilan} kayıt daha katalogda (burada gösterilmedi).")
+    return "\n".join(satirlar)
+
+
+def genel_blok_metni(session: Session) -> str:
+    """Demo dışı projelerin model girdisi bloğu: etkin, kaynakta bulunan katalog kayıtları
+    (`genel_blok_satirlari`); bilinen gizli değerlerin düz geçişleri `•••`."""
+    kayitlar = [
+        (k.anahtar, k.grup, k.deger, k.gizli) for k in etkin_kayitlar(session) if not k.kaynakta_yok
+    ]
+    return atif.maskele(genel_blok_satirlari(kayitlar), gizli_degerler(session))

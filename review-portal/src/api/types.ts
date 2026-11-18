@@ -667,7 +667,99 @@ export interface TestVerisi {
   guncelleme: string | null;
   /** Atıf yapan etkin case sayısı. */
   kullanim: number;
+  /** Kaydı üreten veritabanı kaynağı (`/test-data-sources`); elle girilmişse null. */
+  kaynak_id: string | null;
+  /** Kaynağın son yenilemesinde dönmedi (kayıt silinmez, işaretlenir). */
+  kaynakta_yok: boolean;
 }
+
+/** Kaynağın bir değer kolonu: her kolon `<grup>.<slug(anahtar)>.<alan>` kaydı üretir. */
+export interface TestVerisiKaynakKolonu {
+  kolon: string;
+  /** Boşsa (yalnız tek değer kolonunda) anahtar `<grup>.<slug(anahtar)>` olur. */
+  alan: string;
+  bicim: "metin" | "tutar";
+  /** `{kolon}` yer tutucuları satırdan doldurulur. */
+  aciklama: string;
+}
+
+/** Yenileme sayaçları (kaynak başına ya da toplam). */
+export interface TestVerisiYenilemeSayaclari {
+  eklenen: number;
+  guncellenen: number;
+  ayni: number;
+  kaynakta_yok: number;
+  geri_gelen: number;
+  atlanan: number;
+  satir: number;
+  kesildi: boolean;
+  uyarilar: string[];
+}
+
+export interface TestVerisiKaynakDurumu extends TestVerisiYenilemeSayaclari {
+  hata: string | null;
+  aktor: string | null;
+}
+
+/** `GET /test-data-sources` kaydı: katalog kayıtlarını salt okunur veritabanındaki SELECT'ten üretir. */
+export interface TestVerisiKaynagi {
+  id: string;
+  grup: string;
+  aciklama: string;
+  sorgu: string;
+  anahtar_kolonu: string;
+  deger_kolonlari: TestVerisiKaynakKolonu[];
+  sira: number;
+  on_tanimli: boolean;
+  surum: number;
+  guncelleyen: string | null;
+  guncelleme: string | null;
+  kayit_sayisi: number;
+  kaynakta_yok_sayisi: number;
+  son_yenileme: string | null;
+  son_durum: TestVerisiKaynakDurumu | null;
+}
+
+export interface TestVerisiKaynakGirdisi {
+  grup: string;
+  sorgu: string;
+  anahtar_kolonu: string;
+  deger_kolonlari: { kolon: string; alan?: string | null; bicim?: "metin" | "tutar"; aciklama?: string | null }[];
+  aciklama?: string | null;
+}
+
+export interface TestVerisiKaynakGuncelleme extends Partial<Omit<TestVerisiKaynakGirdisi, "grup">> {
+  beklenen_surum: number;
+}
+
+export type KaynakOnizlemeDurumu = "yeni" | "ayni" | "degisecek" | "silinmis" | "gizli_kayit" | "gizli_cakisma";
+
+/** Önizleme işinin sonucu: sorgu hatası ya da ilk satırlar + çıkacak anahtarlar. */
+export type KaynakOnizleme =
+  | { hata: string }
+  | {
+      hata: null;
+      kolonlar: string[];
+      satirlar: (string | null)[][];
+      toplam_satir: number;
+      kesildi: boolean;
+      kayit_sayisi: number;
+      kayitlar: { anahtar: string; deger: string | null; durum: KaynakOnizlemeDurumu }[];
+      uyarilar: string[];
+    };
+
+export interface KaynakYenilemeSonucu {
+  kaynaklar: (TestVerisiYenilemeSayaclari & { id: string; grup: string; hata: string | null })[];
+  /** `hata`: hata veren kaynak sayısı (yoksa null). */
+  toplam: TestVerisiYenilemeSayaclari & { hata: number | null };
+}
+
+/** `GET /test-data-sources/jobs/{id}`. */
+export type KaynakIsi = {
+  id: string;
+  durum: "kuyrukta" | "calisiyor" | "tamam" | "hata";
+  hata: string | null;
+} & ({ tur: "onizle"; sonuc: KaynakOnizleme | null } | { tur: "yenile"; sonuc: KaynakYenilemeSonucu | null });
 
 export interface TestVerisiGirdisi {
   anahtar: string;
