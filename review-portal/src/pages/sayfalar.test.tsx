@@ -50,7 +50,8 @@ describe("oturum ve yönlendirme", () => {
     ilk.unmount();
     await oturumAc("muhendis");
     uygulama("/");
-    expect(await screen.findByRole("heading", { name: "Kod üretimi", level: 1 })).toBeInTheDocument();
+    // TP UX IA-01: Otomasyon Mühendisinin açılışı İşlerim (rolün kuyruğu).
+    expect(await screen.findByRole("heading", { name: "İşlerim", level: 1 })).toBeInTheDocument();
     menu = screen.getByRole("navigation", { name: "Ana menü" });
     expect(within(menu).getByText("Claude Code kanalı")).toBeInTheDocument();
   });

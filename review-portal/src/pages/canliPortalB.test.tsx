@@ -130,7 +130,9 @@ describe("bulunamadı görünümü: Tekrar dene yok", () => {
     });
     await oturumAc("analist");
     uygulama("/gereksinimler/olmayan-id");
-    expect(await screen.findByText("Kayıt bulunamadı.")).toBeInTheDocument();
+    // TP UX IA-05: başka projede de yoksa "bu projede yok" + listeye dönüş (ham "bulunamadı" tekrarı yok).
+    expect(await screen.findByText("Kayıt bu projede yok.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Gereksinimler listesine dön" })).toHaveAttribute("href", "/gereksinimler");
     expect(screen.queryByRole("button", { name: "Tekrar dene" })).toBeNull();
   });
 });

@@ -727,6 +727,7 @@ export function SiniflandirmaKarti({ h, guncellendi }: { h: HataAnalizi; guncell
   const [sinif, setSinif] = useState<(typeof INSAN_SINIFLARI)[number] | "">("");
   const [gerekce, setGerekce] = useState("");
   const [acilan, setAcilan] = useState<string | null>(null);
+  const [duzeltAcik, setDuzeltAcik] = useState(false);
   const belirsiz = h.sinif === "unknown";
   const kilitli = h.oneri?.tur === "bug_draft" || (h.oneri?.tur === "locator_fix" && (h.oneri.durum === "pr_open" || h.oneri.durum === "merged"));
   if (!belirsiz && (!yetkili || kilitli)) {
@@ -797,9 +798,9 @@ export function SiniflandirmaKarti({ h, guncellendi }: { h: HataAnalizi; guncell
           {form}
         </Kart>
       ) : (
-        <details className="siniflandirma-duzelt">
+        <details className="siniflandirma-duzelt" onToggle={(e) => setDuzeltAcik((e.currentTarget as HTMLDetailsElement).open)}>
           <summary>Sınıfı düzelt</summary>
-          {form}
+          {duzeltAcik && form}
         </details>
       )}
     </div>

@@ -104,7 +104,9 @@ describe("Kod üretimi ve Koşular izin tablosuna göre", () => {
   });
 
   it("testçinin açılış ekranı sırası: Gereksinimler, sonra Test case'leri", () => {
-    expect(varsayilanSayfa("tester")).toBe("/gereksinimler");
-    expect(varsayilanSayfa("tester", (_m, yol) => yol !== "/requirements")).toBe("/caseler");
+    // TP UX IA-01: açılış İşlerim; core `/work-queue` sunmuyorsa Gereksinimler, o da yoksa Test case'leri.
+    expect(varsayilanSayfa("tester")).toBe("/islerim");
+    expect(varsayilanSayfa("tester", (_m, yol) => yol !== "/work-queue")).toBe("/gereksinimler");
+    expect(varsayilanSayfa("tester", (_m, yol) => yol !== "/requirements" && yol !== "/work-queue")).toBe("/caseler");
   });
 });
