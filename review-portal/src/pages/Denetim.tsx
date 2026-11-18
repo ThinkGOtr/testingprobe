@@ -47,6 +47,17 @@ export function okunurOzet(ozet: string): { kisa: string; tam: string } {
   return { kisa: kisalt(temiz), tam: temiz };
 }
 
+/** "case.decision" dar sütunda harf ortasından değil noktadan sarar. */
+function noktadaKir(m: string) {
+  return m.split(".").map((p, i) => (
+    <span key={i}>
+      {i > 0 && "."}
+      {i > 0 && <wbr />}
+      {p}
+    </span>
+  ));
+}
+
 function kisalt(m: string): string {
   return m.length > OZET_KISA_SINIR ? `${m.slice(0, OZET_KISA_SINIR - 1)}…` : m;
 }
@@ -192,7 +203,7 @@ export function Denetim() {
                         <td className="denetim-aktor" data-etiket="Aktör" title={kisiAdi(o.aktor) !== o.aktor ? o.aktor : undefined}>{kisiAdi(o.aktor)}</td>
                         {/* Eylem ve nesne tek sütunda (1024 px'te 6 sütun sığmıyordu). */}
                         <td className="denetim-eylem" data-etiket="Eylem · nesne">
-                          <span className="mono">{o.eylem}</span>
+                          <span className="mono">{noktadaKir(o.eylem)}</span>
                           {o.nesne && <div className="mono soluk kucuk">{o.nesne}</div>}
                         </td>
                         <td className="denetim-ozet-hucre sutun-metin" data-etiket="Özet">

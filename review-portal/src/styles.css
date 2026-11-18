@@ -6897,6 +6897,11 @@ code {
   .tablo-yigin td.yigin-baslik {
     font-size: var(--fs-govde);
   }
+  /* Satır bağlantılı liste kartında ikincil sütunlar (Kaynak, Commit, tarih) gizli: ayrıntı bir dokunuş ötede;
+     kart kısa kalır (IA-15 "mobilde iki satırlık kart", DZ-20). */
+  .tablo-yigin.tablo-satir-baglantili td.sutun-ikincil {
+    display: none !important;
+  }
   /* Yığın kartında boş değer satırı yer kaplamaz (— yazan etiketli satırlar kartı uzatıyordu). */
   .tablo-yigin td.bos-yigin {
     display: none !important;
@@ -6947,7 +6952,7 @@ code {
 
 .tablo td.denetim-eylem .mono {
   white-space: normal;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 /* 641–1279 px'te (yan menü + FAB oluğu: tablo ≈ 640 px) liste tablolarının metin sütunları daha dar başlar,
    Denetim aktörü sarabilir; tablo sarıcıda kaymadan sığar. Otomasyon çipleri hücre içinde sarar. */
@@ -6960,7 +6965,7 @@ code {
     min-width: 7rem;
   }
   /* Uzun durum çipi ("Case review aşamasında") dar masaüstünde iki satıra sarabilir. */
-  .tablo-satir-baglantili td.sutun-durum .cip {
+  .gereksinim-tablosu td.sutun-durum .cip {
     white-space: normal;
   }
 }

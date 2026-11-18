@@ -117,7 +117,7 @@ export function Gereksinimler() {
             {!filtre && "Jira'dan çekin veya serbest metin gereksinim ekleyin."}
           </BosDurum>
         ) : (
-          <TabloSarici etiket="Gereksinimler tablosu" satirBaglanti uzun={liste.length > 15}>
+          <TabloSarici etiket="Gereksinimler tablosu" satirBaglanti uzun={liste.length > 15} tabloClassName="gereksinim-tablosu">
               <thead>
                 <tr>
                   <SiralanabilirBaslik {...baslikOz("anahtar")}>Anahtar</SiralanabilirBaslik>
