@@ -2,6 +2,7 @@
 // gerçek API'yi taklit eder (insan kapıları atlanamaz), böylece ekranlar arka uç olmadan
 // demo edilebilir ve ekran testine girebilir. Tüm üretilen çıktılar mode alanıyla işaretlidir.
 import { mockCaseKalitesi } from "./caseKalitesi";
+import { islerimRotalari } from "./islerim";
 import { ApiError, DEMO_KAPALI, mockOturumu, mockOturumuAyarla } from "../http";
 import type {
   AjanAdimi,
@@ -223,6 +224,7 @@ export function mockSifirla(): void {
   demoKirik = false;
   mockOrtam.ortam = "dev";
   mockOrtam.demoModu = true;
+  mockOrtam.demoProjesi = true;
   mockTestOrtamlari.ortamlar = [];
   mockTestOrtamlari.varsayilan_eid = null;
   ayar.senaryolar.clear();
@@ -288,7 +290,7 @@ function izinGerekli(...izinler: [Izin, ...Izin[]]): Kullanici {
 }
 
 /** Örnek veride kurulum ayarları (core `TP_ORTAM`, `TP_DEMO_MODE`); testler değiştirebilir. */
-export const mockOrtam = { ortam: "dev", demoModu: true };
+export const mockOrtam = { ortam: "dev", demoModu: true, demoProjesi: true };
 
 /** Projenin test ortamları (`GET /environments`); varsayılan boş = ortamsız proje. Testler değiştirebilir. */
 export const mockTestOrtamlari: { ortamlar: Ortam[]; varsayilan_eid: string | null } = { ortamlar: [], varsayilan_eid: null };
@@ -1860,7 +1862,13 @@ function kodUret(govde: unknown): KodUretYaniti {
 function ozetKosu(k: KosuDetay): Kosu {
   const { sonuclar: _s, ...ozet } = k;
   void _s;
-  return ozet;
+  // UX IA-15: core `basarisiz_ozet` (ilk 3 başarısız test; ada göre sıralı).
+  const basarisiz_ozet = (k.sonuclar ?? [])
+    .filter((t) => t.durum === "failed")
+    .sort((a, b) => a.test_adi.localeCompare(b.test_adi))
+    .slice(0, 3)
+    .map((t) => ({ test_adi: t.test_adi, case_ref: null, failure_id: t.failure_id ?? null, sinif: t.triage_sinifi ?? null }));
+  return { ...ozet, basarisiz_ozet };
 }
 
 /** core `ci/api.ARTEFAKT_ALANLARI`: `run.artifacts` olmayan rolde null'lanan ham artefakt alanları. */
@@ -2686,6 +2694,11 @@ const ROTALAR: Rota[] = [
   ...ajanProbeRotalari(izinGerekli, (id) => veri.gereksinimler.find((g) => g.id === id)),
   // 012/Ş8 ekilmiş hata koşusu (ANALIZ §4.6): api/mock/kule.ts.
   ...kuleRotalari(girisGerekli, izinGerekli),
+  // TP UX IA-01/05/16: İşlerim, kayıt yeri ve insan sınıflandırması (api/mock/islerim.ts).
+  ...islerimRotalari(girisGerekli, izinGerekli, () => veri, (eylem, nesne, ozet) => {
+    denetimEkle(eylem, nesne, ozet);
+    kaydet();
+  }),
   // 012 Ş7 (karar tabloları, ilişkiler, oracle): api/mock/kalite.ts. Aşağıdaki `GET /cases`,
   // `POST /cases/:id/decision` ve `GET …/case-metrics` uçlarını sarar (ilk eşleşen rota geçerlidir).
   ...kaliteRotalari({ veri: () => veri, girisGerekli, izinGerekli, kaydet, arkaPlan, denetimEkle, yeniId, caseKarari: tekliKarar, caseListesi, caseMetrikleri }),
@@ -2846,8 +2859,12 @@ const ROTALAR: Rota[] = [
     (_m, q) => {
       const k = izinGerekli("run.read");
       const ortam = q.get("ortam");
+      // UX IA-15: core gibi `offset`/`limit` (varsayılan 50) ile sayfalanır.
+      const offset = Math.max(0, Number(q.get("offset") ?? 0) || 0);
+      const limit = Math.min(200, Math.max(1, Number(q.get("limit") ?? 50) || 50));
       return veri.kosular
         .filter((x) => !ortam || (ortam === "-" ? !x.test_ortami : x.test_ortami?.eid === ortam))
+        .slice(offset, offset + limit)
         .map((x) => kosuMaskele(ozetKosu(x), k));
     },
   ],
@@ -2972,8 +2989,11 @@ const ROTALAR: Rota[] = [
     /^\/demo\/status$/,
     () => {
       girisGerekli();
+      // TP3-1: demo projesi olmayan projede core 200 + "demo yok" döner (404 değil).
+      if (!mockOrtam.demoProjesi) return { demo_modu: false, demo_projesi: false, ortam: mockOrtam.ortam };
       return {
         demo_modu: mockOrtam.demoModu,
+        demo_projesi: true,
         ortam: mockOrtam.ortam,
         forge: { main: demoKirik ? "d3b1c0ffee42" : "9c41e2b07a11", testid: demoKirik ? "cart-add" : "add-to-cart", baseline: "9c41e2b07a11", main_baseline_mi: !demoKirik },
         uygulama: { sha: demoKirik ? "d3b1c0ffee42" : "9c41e2b07a11", kaynak: "build.json", main_ile_eslesiyor: true, neden: null },

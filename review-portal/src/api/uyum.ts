@@ -49,6 +49,9 @@ import type {
   YayinSonucKalemi,
   YayinSonucu,
   ZincirDogrulama,
+  OncekiTur,
+  Rol,
+  SiradakiAdim,
 } from "./types";
 import { caseOracleAlani } from "./uyumKalite";
 
@@ -250,6 +253,29 @@ export function gereksinimUyarla(g: Ham): Gereksinim {
     },
     ...(g.otomatik_akis !== undefined ? { otomatik_akis: otomatikAkisUyarla(g.otomatik_akis) } : {}),
     ...(typeof g.jira_durumu === "string" && g.jira_durumu ? { jira_durumu: g.jira_durumu } : {}),
+    // UX IA-03 durum modeli (core yoksa alanlar yok; portal `lib/durumModeli` durumdan türetir).
+    ...(typeof g.tur === "number" && g.tur >= 1 ? { tur: Math.round(g.tur) } : {}),
+    ...(nesneMi(g.siradaki) ? { siradaki: siradakiUyarla(g.siradaki) } : {}),
+    ...(g.onceki_tur !== undefined ? { onceki_tur: oncekiTurUyarla(g.onceki_tur) } : {}),
+  };
+}
+
+function siradakiUyarla(x: Ham): SiradakiAdim {
+  return {
+    adim_no: sayi(x.adim_no) || 1,
+    ad: metin(x.ad),
+    rol: typeof x.rol === "string" && x.rol ? (x.rol as Rol) : null,
+    rol_etiketi: metin(x.rol_etiketi),
+  };
+}
+
+function oncekiTurUyarla(x: unknown): OncekiTur | null {
+  if (!nesneMi(x)) return null;
+  return {
+    case_toplam: sayi(x.case_toplam),
+    case_onayli: sayi(x.case_onayli),
+    case_yayinda: sayi(x.case_yayinda),
+    pr_birlesen: sayi(x.pr_birlesen),
   };
 }
 

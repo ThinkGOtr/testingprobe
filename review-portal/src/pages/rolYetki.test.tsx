@@ -38,7 +38,7 @@ describe("case inceleme: Test Uzmanı kararı → Analist son onayı", () => {
     expect(within(k).queryByRole("button", { name: "Onayla" })).toBeNull();
     await u.click(within(k).getByRole("button", { name: "Kabul et" }));
     await waitFor(() => expect(within(k).getByText("Onaya hazır")).toBeInTheDocument());
-    expect(within(k).getByRole("button", { name: "Onayla" })).toBeDisabled();
+    expect(within(k).queryByRole("button", { name: "Onayla" })).toBeNull();
     expect(mockVerisi().caseler.find((c) => c.id === "case-1-7")!.durum).toBe("ready");
     ilk.unmount();
 
@@ -48,7 +48,7 @@ describe("case inceleme: Test Uzmanı kararı → Analist son onayı", () => {
     expect(screen.getByText(/Onaya hazır \(1\)/)).toBeInTheDocument();
     const k2 = kart(6);
     // Analist Test Uzmanı kararlarını veremez; yayın önizlemesini salt okunur görür (publish.preview).
-    expect(within(kart(7)).getByRole("button", { name: "Kabul et" })).toBeDisabled();
+    expect(within(kart(7)).queryByRole("button", { name: "Kabul et" })).toBeNull();
     expect(screen.getByRole("link", { name: "Yayın önizleme" })).toBeInTheDocument();
     await waitFor(() => expect(within(k2).getByRole("button", { name: "Onayla" })).toBeEnabled());
     await u.click(within(k2).getByRole("button", { name: "Onayla" }));
@@ -99,10 +99,9 @@ describe("demo kontrolleri: ekran demo.read, eylemler admin + engineer, yalnız 
     expect(await screen.findByRole("heading", { name: "Demo kontrolleri", level: 1 })).toBeInTheDocument();
     expect(screen.queryByText("Bu ekran için yetkiniz yok.")).toBeNull();
     expect(await screen.findByText("Salt okunur görünüm")).toBeInTheDocument();
-    const kilitli = await screen.findAllByTitle("Bu işlem için gereken rol: Sistem Yöneticisi / Otomasyon Mühendisi");
-    expect(kilitli.length).toBeGreaterThanOrEqual(3);
-    for (const d of kilitli) expect(d).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Demo'yu sıfırla" })).toBeDisabled();
+    const satirlar = await screen.findAllByText("Bu adım Otomasyon Mühendisi rolünde: Gokhan Sipahi bekleniyor");
+    expect(satirlar.length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByRole("button", { name: "Demo'yu sıfırla" })).toBeNull();
     expect(screen.getByLabelText("Story")).toBeDisabled();
   });
 
@@ -120,6 +119,17 @@ describe("demo kontrolleri: ekran demo.read, eylemler admin + engineer, yalnız 
     expect(await screen.findByText("Demo kontrolleri kapalı")).toBeInTheDocument();
     expect(screen.getByText("staging")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Demo'yu sıfırla" })).toBeNull();
+  });
+
+  it("TP3-1: demo projesi olmayan projede 'Bu projede demo yok'; menüde demo öğeleri yok", async () => {
+    mockOrtam.demoProjesi = false;
+    await oturumAc("sunucu");
+    uygulama("/demo");
+    expect(await screen.findByText("Bu projede demo yok")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Demo'yu sıfırla" })).toBeNull();
+    const menu = screen.getByRole("navigation", { name: "Ana menü" });
+    await waitFor(() => expect(within(menu).queryByRole("link", { name: /Demo kontrolleri/ })).toBeNull());
+    expect(within(menu).queryByRole("link", { name: /Demo yol haritası/ })).toBeNull();
   });
 
   it("demo kipinde Sistem Yöneticisi kontrolleri görür", async () => {

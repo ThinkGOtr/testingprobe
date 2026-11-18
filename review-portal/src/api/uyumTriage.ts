@@ -350,7 +350,8 @@ export function hataAnaliziUyarla(h: Ham): HataAnalizi {
     eslesen_sinyaller: dizi(ilk(h, "eslesen_sinyaller", "sinyaller", "signals", "matched_signals"))
       .map(sinyalUyarla)
       .filter((s): s is EslesenSinyal => s !== null),
-    karar_kaynagi: llm ? "llm" : "rule",
+    karar_kaynagi: kaynak === "human" ? "human" : llm ? "llm" : "rule",
+    ...(h.kirma === true ? { kirma: true } : {}),
     kural: metinYaDaNull(ilk(h, "kural", "rule", "eslesen_kural")),
     gerekce: metinYaDaNull(h.gerekce),
     llm_yorumu: metinYaDaNull(ilk(h, "llm_yorumu", "llm_gerekce", "rationale")),

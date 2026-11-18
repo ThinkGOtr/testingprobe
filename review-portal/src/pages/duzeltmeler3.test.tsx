@@ -67,7 +67,8 @@ describe("case üretimi hata ile bitti: yeniden denenir, denetim yeniden başlat
     expect(dugme).toBeEnabled();
     expect(dugme).toHaveAttribute("title", expect.stringMatching(/sunucuda yeniden doğrulanır/));
     // "Yeniden kontrol et" Analist işidir: Test Uzmanında pasif ve gereken rolü söyler.
-    expect(screen.getByRole("button", { name: "Yeniden kontrol et" })).toHaveAttribute("title", "Bu işlem için gereken rol: Analist");
+    expect(screen.queryByRole("button", { name: "Yeniden kontrol et" })).toBeNull();
+    expect(screen.getAllByText("Bu adım Analist rolünde: Cengizhan Gunaydin bekleniyor").length).toBeGreaterThan(0);
     await u.click(dugme);
     // Üretim formunun kipi açıkça gönderilir (011 K1; varsayılan iki tur → önce tasarım modeli).
     await waitFor(() => expect(spy).toHaveBeenCalledWith("req-tpd-1", "iki_tur"));
@@ -191,7 +192,8 @@ describe("canlı derleme (VITE_MOCK=0): uydurma KPI yok", () => {
     // F4: Hazırlık kazancı AI katkısı kartından KPI şeridine taşındı (§5); bölge "AI katkısı" kalır.
     expect(await screen.findByRole("region", { name: "AI katkısı" })).toBeInTheDocument();
     const serit = screen.getByTestId("kule-kpi");
-    expect(within(serit).getByText("ölçülmüş baz yok")).toBeInTheDocument();
+    // IA-19: ölçülmemiş kazanç kutu değil, "Ölçülmeyenler" satırında.
+    expect(screen.getByTestId("kule-olculmeyenler")).toHaveTextContent(/Hazırlık kazancı: hiçbir story'de manuel baz değer ölçülmedi/);
     expect(serit).not.toHaveTextContent(/Kazanç %/);
     // Uydurma kazanç yüzdesi hiçbir kartta yok (şerit, AI katkısı, hazırlık tablosu dahil tüm sayfa).
     expect(document.body).not.toHaveTextContent(/Kazanç %/);

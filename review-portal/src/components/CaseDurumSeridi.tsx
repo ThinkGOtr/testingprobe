@@ -66,7 +66,9 @@ export function useCaseListesineGit() {
 
 /** Onay için hazır olmayan güncel case: hazır olma durumu "ready" değil ya da core onay engeli var. */
 export function hazirDegilMi(c: TestCase): boolean {
-  if (c.durum === "rejected" || c.durum === "superseded") return false;
+  // IA-04: yalnız karar bekleyen güncel case (lib/caseV3 `onayaHazirDegil` ile aynı kural).
+  if (c.durum !== "draft" && c.durum !== "ready") return false;
+  if (c.onceki_icerik) return false;
   return caseHazirlik(c) !== "ready" || !!c.onay_engeli;
 }
 
@@ -81,7 +83,7 @@ export function denetimSeritDurumu(g: CaseDenetimGorunumu | null | undefined): {
   if (k?.karar) return { metin: DENETIM_KARARI[k.karar]?.etiket ?? k.karar, ton: k.karar === "KABUL" ? "basari" : k.karar === "ENGELLE" ? "hata" : "uyari" };
   const son = g.denetim;
   if (son && son.durum === "hata" && son.guncel !== false) return { metin: "yapılamadı", ton: "hata" };
-  if (son && son.guncel === false) return { metin: "karar bayat", ton: "uyari" };
+  if (son && son.guncel === false) return { metin: "karar güncel değil (case'ler değişti)", ton: "uyari" };
   return { metin: "karar yok", ton: "uyari" };
 }
 

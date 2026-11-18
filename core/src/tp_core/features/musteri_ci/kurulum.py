@@ -92,6 +92,18 @@ class KurulumPlani:
     hazir: bool = True  # parametre eksiği yok (PR açılabilir)
 
     @property
+    def engeller(self) -> tuple[str, ...]:
+        """PR'ı engelleyen eksikler (parametre eksiği, bulunamayan Xcode projesi; TP3-3)."""
+        return tuple(e.aciklama for e in self.eksikler if e.kod in ENGEL_KODLARI)
+
+    @property
+    def depo_eksikleri(self) -> tuple[str, ...]:
+        """Engel ya da elle adım olarak ayrıca listelenmeyen eksikler (aynı madde iki listede
+        görünmesin; TP3-3)."""
+        ayri = set(self.elle_adimlar) | set(self.engeller)
+        return tuple(e.aciklama for e in self.eksikler if e.aciklama not in ayri)
+
+    @property
     def gerekli(self) -> bool:
         """PR'a girecek dosya ya da kullanıcıya gösterilecek elle adım var mı?"""
         return bool(self.dosyalar or self.elle_adimlar)
@@ -110,6 +122,10 @@ _YER_TUTUCU_RE = re.compile(r"__TP_[A-Z_]+__")
 EMULATOR_API_ARALIGI = (24, 40)
 UI_TEST_URUN_TURU = "com.apple.product-type.bundle.ui-testing"
 PARAMETRE_EKSIGI = "parametre"
+# PR açılmasını engelleyen eksik kodları: parametre hatası ve depoda bulunamayan Xcode projesi
+# (yanlış `xcode_proje` yolu; iş akışı derleyemez). TP3-3: önceden Xcode projesi yokken `hazir`
+# True dönüyordu.
+ENGEL_KODLARI = frozenset({PARAMETRE_EKSIGI, "xcode_projesi"})
 
 
 def _yol_gecerli(deger: str, *, nokta: bool = False) -> bool:
@@ -123,6 +139,13 @@ def _yol_gecerli(deger: str, *, nokta: bool = False) -> bool:
     )
 
 
+def _deger(v: object) -> str:
+    """Hata metnine eklenen değer: boşsa hiç (``: ''`` gibi anlamsız ek olmasın; TP3-3)."""
+    if v is None or (isinstance(v, str) and not v.strip()):
+        return ""
+    return f": {v!r}"
+
+
 def parametre_hatalari(p: KurulumParametreleri) -> list[str]:
     """Şablona girecek değerlerin doğrulaması (YAML/kabuk enjeksiyonu yok). Boş liste = geçerli."""
     h: list[str] = []
@@ -132,44 +155,44 @@ def parametre_hatalari(p: KurulumParametreleri) -> list[str]:
         return [str(exc)]
     dal = p.varsayilan_dal
     if not (isinstance(dal, str) and _DAL_RE.fullmatch(dal) and ".." not in dal):
-        h.append(f"varsayılan dal geçersiz: {dal!r}")
+        h.append(f"varsayılan dal geçersiz{_deger(dal)}")
     if not _yol_gecerli(p.uygulama_koku, nokta=True):
-        h.append(f"uygulama kökü geçersiz: {p.uygulama_koku!r}")
+        h.append(f"uygulama kökü geçersiz{_deger(p.uygulama_koku)}")
     if p.hazirlik_betigi and not (
         isinstance(p.hazirlik_betigi, str)
         and _BETIK_RE.fullmatch(p.hazirlik_betigi)
         and all(s not in ("", ".", "..") for s in p.hazirlik_betigi.split("/"))
         and p.hazirlik_betigi.endswith(".sh")
     ):
-        h.append(f"hazırlık betiği geçersiz (depo içi .sh yolu): {p.hazirlik_betigi!r}")
+        h.append(f"hazırlık betiği geçersiz (depo içi .sh yolu){_deger(p.hazirlik_betigi)}")
     if p.node_surumu and not (isinstance(p.node_surumu, str) and _NODE_RE.fullmatch(p.node_surumu)):
-        h.append(f"Node sürümü geçersiz: {p.node_surumu!r}")
+        h.append(f"Node sürümü geçersiz{_deger(p.node_surumu)}")
     if p.izlenen_kok and not _yol_gecerli(p.izlenen_kok, nokta=True):
-        h.append(f"izlenen kök geçersiz: {p.izlenen_kok!r}")
+        h.append(f"izlenen kök geçersiz{_deger(p.izlenen_kok)}")
     if p.platform == "android":
         if not (isinstance(p.gradle_modulu, str) and _MODUL_RE.fullmatch(p.gradle_modulu)):
-            h.append(f"Gradle modülü geçersiz: {p.gradle_modulu!r}")
+            h.append(f"Gradle modülü geçersiz{_deger(p.gradle_modulu)}")
         if not (isinstance(p.test_paketi, str) and _PAKET_RE.fullmatch(p.test_paketi)):
-            h.append(f"test paketi gerekli (ör. com.acme.uygulama.tp): {p.test_paketi!r}")
+            h.append(f"test paketi gerekli (ör. com.acme.uygulama.tp){_deger(p.test_paketi)}")
         lo, hi = EMULATOR_API_ARALIGI
         if not (isinstance(p.emulator_api, int) and lo <= p.emulator_api <= hi):
-            h.append(f"emülatör API düzeyi {lo}–{hi} aralığında olmalı: {p.emulator_api!r}")
+            h.append(f"emülatör API düzeyi {lo}–{hi} aralığında olmalı{_deger(p.emulator_api)}")
     elif p.platform == "ios":
         if not (
             _yol_gecerli(p.xcode_proje) and p.xcode_proje.endswith((".xcodeproj", ".xcworkspace"))
         ):
-            h.append(f"Xcode projesi (.xcodeproj/.xcworkspace) gerekli: {p.xcode_proje!r}")
+            h.append(f"Xcode projesi (.xcodeproj/.xcworkspace) gerekli{_deger(p.xcode_proje)}")
         for ad, deger in (("şema", p.sema), ("UI test hedefi", p.ui_test_hedefi)):
             if not (isinstance(deger, str) and _AD_RE.fullmatch(deger)):
-                h.append(f"{ad} gerekli: {deger!r}")
+                h.append(f"{ad} gerekli{_deger(deger)}")
         if not (isinstance(p.runs_on, str) and _RUNNER_RE.fullmatch(p.runs_on)):
-            h.append(f"runs-on geçersiz: {p.runs_on!r}")
+            h.append(f"runs-on geçersiz{_deger(p.runs_on)}")
         if not (isinstance(p.simulator, str) and _SIM_RE.fullmatch(p.simulator)):
-            h.append(f"simülatör adı geçersiz: {p.simulator!r}")
+            h.append(f"simülatör adı geçersiz{_deger(p.simulator)}")
         if p.yapilandirma and not (
             isinstance(p.yapilandirma, str) and _AD_RE.fullmatch(p.yapilandirma)
         ):
-            h.append(f"yapılandırma geçersiz: {p.yapilandirma!r}")
+            h.append(f"yapılandırma geçersiz{_deger(p.yapilandirma)}")
     return h
 
 
@@ -434,7 +457,7 @@ def kurulum_plani(
     h = hedef(p.platform, p.dil)
     iskelet = dict(iskelet or {})
     eksikler = eksikleri_bul(depo_dosyalari, p, iskelet_yollari=iskelet, oku=oku)
-    hazir = not any(e.kod == PARAMETRE_EKSIGI for e in eksikler)
+    hazir = not any(e.kod in ENGEL_KODLARI for e in eksikler)
     dosyalar: dict[str, str] = {}
     if hazir:
         for e in eksikler:
@@ -446,7 +469,7 @@ def kurulum_plani(
                 dosyalar[e.yol] = sablon_metni(e.yol.rsplit("/", 1)[-1])
             elif e.kod == "iskelet":
                 dosyalar[e.yol] = iskelet[e.yol]
-    elle = [e.aciklama for e in eksikler if not e.otomatik and e.kod != PARAMETRE_EKSIGI]
+    elle = [e.aciklama for e in eksikler if not e.otomatik and e.kod not in ENGEL_KODLARI]
     if any(e.kod == "is_akisi" for e in eksikler):
         if h.platform == "android":
             # Ş3: iş akışı `assembleTpTest` / `connectedTpTestAndroidTest` koşar.
@@ -486,7 +509,7 @@ def kurulum_pr_ac(
     if not isinstance(onaylayan, str) or not onaylayan.strip():
         raise KurulumOnayiYok("kurulum PR'ı insan onayı olmadan açılamaz")
     if not plan.hazir:
-        eksik = "; ".join(e.aciklama for e in plan.eksikler if e.kod == PARAMETRE_EKSIGI)
+        eksik = "; ".join(plan.engeller)
         raise MusteriCiHatasi(f"kurulum planı hazır değil: {eksik}")
     temel = {
         "dal": plan.dal,

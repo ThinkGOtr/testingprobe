@@ -18,7 +18,8 @@ kimliğiyle (`GITHUB_MERGE_TOKEN`, demo-admin bypass) PR olarak yapılır; token
 olur ve 409 Türkçe neden döner (`/demo/status` → `locator_demo.kip`).
 
 Demo uçları yalnız varsayılan projede (`TP_HOME_PROJECT`; demo-app) vardır; başka projede 404
-(TP-COK-PROJE-PLANI §4.3).
+(TP-COK-PROJE-PLANI §4.3). İstisna `/demo/status`: başka projede 200 `{demo_modu: false,
+demo_projesi: false, ortam}` döner (portal demo öğelerini gizler; TP3-1).
 
 Forge yazımı yalnızca core-worker'dadır: uçlar işi kuyruğa alır ve en çok `BEKLEME_S` bekler
 (bitti → 200 sonuç, sürüyor → 202 `{job_id}`, başarısız → 409 Türkçe neden).
@@ -128,8 +129,20 @@ async def reset(user: DemoYoneticisi, response: Response) -> dict[str, Any]:
     return await _calistir(service.request_reset, user, response)
 
 
+def _demo_projesi_mi(user: Principal) -> bool:
+    try:
+        varsayilan_projede(user)
+    except HTTPException:
+        return False
+    return True
+
+
 @router.get("/demo/status")
-def status(_user: Okur) -> dict[str, Any]:
+def status(user: Annotated[Principal, Depends(izin("dashboard.read"))]) -> dict[str, Any]:
+    if not _demo_projesi_mi(user):
+        # TP3-1: demo yalnız varsayılan projede; başka projede 404 yerine "demo yok" durumu (portal
+        # her sayfada okur; konsol hatası ve demo menüsü/eylemleri çıkmaz). Yazan uçlar 404 kalır.
+        return {"demo_modu": False, "demo_projesi": False, "ortam": get_settings().ortam}
     with session_scope() as s:
         ayar = get_settings()
         from tp_core.proje.ortam import islem_ortami
@@ -138,6 +151,7 @@ def status(_user: Okur) -> dict[str, Any]:
         return {
             **service.durum(session=s),
             "demo_modu": ayar.demo_mode,
+            "demo_projesi": True,
             "ortam": ayar.ortam,
             # 0048: varsayılan test ortamı (Canlı ise kırma/sıfırlama kapalı).
             "test_ortami": o.ozet() if o else None,

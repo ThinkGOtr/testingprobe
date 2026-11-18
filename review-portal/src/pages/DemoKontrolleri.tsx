@@ -2,6 +2,7 @@
 // Otomasyon Mühendisinindir (`demo.manage`, yalnız TP_DEMO_MODE=1): locator kırılması (TEKNIK-TASARIM §2 ikinci kırılma
 // senaryosu, `make break` eşi) ve demo sıfırlama. Her ikisi de onay ister; ilerleme core olaylarından
 // (`demo.progress`) ve koşu listesinden izlenir — olay gelmese de koşu ve triage görünür.
+import { HataKosusuKarti } from "../components/kule/HataKosusuKarti";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
@@ -1068,7 +1069,12 @@ export function DemoKontrolleri() {
           </>
         }
       />
-      {durum?.demo_modu === false ? (
+      {durum?.demo_projesi === false ? (
+        // TP3-1: demo yalnız varsayılan (demo-app) projesinde; başka projede kontroller gösterilmez.
+        <Uyari ton="bilgi" baslik="Bu projede demo yok">
+          Demo kontrolleri yalnız demo projesinde çalışır. Bu proje için kırılma, sıfırlama ve Jira durum taşıma kullanılmaz.
+        </Uyari>
+      ) : durum?.demo_modu === false ? (
         // core TP_DEMO_MODE=0: kırma/sıfırlama uçları 403 döner; kontroller gösterilmez (ANALIZ 012 §6).
         <Uyari ton="bilgi" baslik="Demo kontrolleri kapalı">
           Bu kurulumda demo kipi kapalı (<span className="mono">TP_DEMO_MODE=0</span>
@@ -1098,6 +1104,9 @@ export function DemoKontrolleri() {
           </div>
           <JiraDurumKarti />
           <DurumKarti d={durum} />
+          {/* IA-19: ekilmiş hata koşusu (başlat, ilerleme, hata × platform tablosu, demo hata kataloğu) izleme
+              ekranından (Kontrol Kulesi) buraya taşındı; Kule yalnız hata yakalama oranını gösterir. */}
+          <HataKosusuKarti />
         </>
       )}
     </>

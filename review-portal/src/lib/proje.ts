@@ -144,7 +144,7 @@ export function projeHedefYolu(pathname: string): string {
 }
 
 /** Kendi listesi olmayan ayrıntı bölümleri. */
-const LISTESIZ = new Set(["/hatalar"]);
+const LISTESIZ = new Set<string>(); // TP UX IA-16: /hatalar artık liste ekranı
 
 let geciyor = false;
 /** Geçiş sürüyor mu (çift tıklama / olay + düğme yarışı tek istek göndersin). */
@@ -172,6 +172,23 @@ export async function projeyiDegistir(pid: string, pathname: string = window.loc
   }
   oturumVerileriniTemizle();
   gezinti.git(projeHedefYolu(pathname));
+}
+
+/**
+ * TP UX IA-05: başka projedeki kaydın bağlantısı — projeye geçip kaydın kendisini açar (`projeyiDegistir`
+ * listeye döner; burada hedef aynı ayrıntı adresi, sorgu dahil).
+ */
+export async function projeyeGecVeAc(pid: string, yol: string): Promise<void> {
+  if (geciyor) return;
+  geciyor = true;
+  try {
+    await api.projeDegistir(pid);
+  } catch (e) {
+    geciyor = false;
+    throw e;
+  }
+  oturumVerileriniTemizle();
+  gezinti.git(yol);
 }
 
 /** Başka sekmede değişen proje (409 `proje_degisti`): bulunulan bölümün listesinde yeniden yüklenir. */

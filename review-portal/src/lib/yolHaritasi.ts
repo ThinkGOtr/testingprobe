@@ -1,6 +1,7 @@
 // Demo yol haritası: TEKNIK-TASARIM §2'deki 14 adım + locator yolu, demo story'si (TPD-1) için
 // gerçek API durumundan türetilir. Hiçbir adım varsayımla "tamam" sayılmaz: kanıt yoksa
 // "bekliyor"; yerine yedek kullanılan adım (Sauce yerine yerel Chromium) "yedek" olarak açıkça yazılır.
+import { teknikMetniCevir } from "./kullaniciMetni";
 import type {
   BugTaslagi,
   CiktiModu,
@@ -198,7 +199,7 @@ export function demoAdimlari(x: YolGirdisi): YolAdimi[] {
               : g?.durum === "modeling"
                 ? "Test tasarım modeli üretiliyor (iki tur)."
                 : g?.durum === "model_ready"
-                  ? "Tasarım modeli testçi onayı bekliyor; onaydan sonra case üretilir."
+                  ? "Tasarım modeli Test Uzmanı onayı bekliyor; onaydan sonra case üretilir."
                   : "Henüz case yok.",
           ipucu:
             g?.durum === "model_ready"
@@ -356,7 +357,7 @@ export function sonrakiAdimlar(x: SonrakiGirdi): YolAdimi[] {
       : sauceUlasilamadi.length > 0
         ? adim(9, {
             hal: "yedek",
-            kanit: `Sauce Labs'a ulaşılamadı (${sauceUlasilamadi[0].sauce_neden ?? "altyapı hatası"}) — testler yerel Chromium job'unda koştu.`,
+            kanit: `Sauce Labs'a ulaşılamadı (${sauceUlasilamadi[0].sauce_neden ? sauceNedenMetni(sauceUlasilamadi[0].sauce_neden) : "altyapı hatası"}) — testler yerel Chromium job'unda koştu.`,
             ipucu: "Sahnede açıkça söyleyin: Sauce bu koşularda çalışmadı; bir sonraki koşuda (deploy/gece) yeniden denenir.",
             baglanti: { yol: "/kosular", etiket: "Koşular" },
           })
@@ -371,8 +372,8 @@ export function sonrakiAdimlar(x: SonrakiGirdi): YolAdimi[] {
           : sauceAtlandi
             ? adim(9, {
                 hal: "yedek",
-                kanit: `Sauce bu tetiklerde atlandı (${ghCi.find((k) => k.sauce_neden)?.sauce_neden ?? "neden bildirilmedi"}) — testler yerel Chromium job'unda koştu.`,
-                ipucu: "Sahnede açıkça söyleyin: Sauce bu koşularda bilerek atlandı (SAUCE_TETIKLER).",
+                kanit: `Sauce bu tetiklerde atlandı (${sauceNedenMetni(ghCi.find((k) => k.sauce_neden)?.sauce_neden)}) — testler yerel Chromium job'unda koştu.`,
+                ipucu: "Sahnede açıkça söyleyin: Sauce bu koşularda proje ayarı gereği bilerek atlandı.",
                 baglanti: { yol: "/kosular", etiket: "Koşular" },
               })
             : bitenGh.length > 0
@@ -464,10 +465,10 @@ export function sonrakiAdimlar(x: SonrakiGirdi): YolAdimi[] {
       ? adim(13, { hal: "bekliyor", kanit: `Story için bug taslağı yok.${kirmaNotu}` })
       : adim(13, {
           hal: kararli.length > 0 && bekleyen.length === 0 ? "tamam" : "suruyor",
-          kanit: `${buglar.length} taslak · ${kararli.length} karar verildi${bekleyen.length ? ` · ${bekleyen.length} testçi kararı bekliyor` : ""}${kirmaNotu}`,
+          kanit: `${buglar.length} taslak · ${kararli.length} karar verildi${bekleyen.length ? ` · ${bekleyen.length} Test Uzmanı kararı bekliyor` : ""}${kirmaNotu}`,
           ipucu: bekleyen.length
             ? tpd5Bagli
-              ? "Kalan taslaklara testçi kararı verin (onayla / bağla / reddet)."
+              ? "Kalan taslaklara Test Uzmanı kararı verin (onayla / bağla / reddet)."
               : "Sahne: F2 ve C3 taslakları açık TPD-5'in mükerreri → \"TPD-5 kaydına bağla\"; F4 → \"Onayla ve Jira'da aç\"."
             : null,
           baglanti: ilkBug ? { yol: `/bug-taslaklari/${kodla(ilkBug.id)}`, etiket: "Bug taslağı" } : null,
@@ -516,13 +517,13 @@ export function locatorAdimlari(x: Pick<YolGirdisi, "demo" | "hatalar" | "kosula
         : on?.hazir === false
           ? "Yeşil temel koşu yok: kırılma reddedilir (onarım 'son yeşil yok' der)."
           : "Ön koşul bilinmiyor (çekirdek bildirmedi).",
-      ipucu: on?.hazir === false ? (on.yonerge ?? "make demo-reset, yeşil koşudan sonra kırın.") : null,
+      ipucu: on?.hazir === false ? (on.yonerge ?? "Demo kontrolleri → \"Demo'yu sıfırla\"; yeşil koşu bittikten sonra kırın.") : null,
       baglanti: on?.son_yesil_kosu?.run_id ? { yol: `/kosular/${kodla(on.son_yesil_kosu.run_id)}`, etiket: "Koşu" } : { yol: "/kosular", etiket: "Koşular" },
     }),
     yap("L2", "Buton kimliğini değiştir (add-to-cart → cart-add)", "insan", {
       hal: kirildi ? "tamam" : "bekliyor",
       kanit: kirildi ? `Uygulama testId: ${typeof d?.forge?.testid === "string" ? d.forge.testid : "cart-add"}` : "Main baseline'da.",
-      ipucu: kirildi ? null : "Sistem Yöneticisi / Otomasyon Mühendisi: Demo kontrolleri → \"Buton kimliğini değiştir\" (host'ta make demo-web-sync A=--watch açık) ya da make break.",
+      ipucu: kirildi ? null : "Sistem Yöneticisi / Otomasyon Mühendisi: Demo kontrolleri → \"Buton kimliğini değiştir\".",
       baglanti: { yol: "/demo", etiket: "Demo kontrolleri" },
     }),
     yap("L3", "Push CI kırmızı → triage: test bakımı / locator", "ai", {
@@ -705,4 +706,10 @@ export async function akisKanitlari(
   } catch {
     return null;
   }
+}
+
+/** Sauce nedeninin kullanıcı metni (IA-12): "SAUCE_TETIKLER=…" gibi iç adlar çevrilir, tanınmayan aynen. */
+function sauceNedenMetni(neden: string | null | undefined): string {
+  if (!neden) return "neden bildirilmedi";
+  return teknikMetniCevir(neden) ?? neden;
 }

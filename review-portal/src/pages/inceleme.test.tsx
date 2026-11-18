@@ -404,9 +404,8 @@ describe("yayın rolü", () => {
     await oturumAc("po");
     uygulama("/gereksinimler/req-tpd-1/yayin");
     expect(await screen.findByText("Salt okunur önizleme")).toBeInTheDocument();
-    const d = await screen.findByRole("button", { name: /Seçilenleri yayınla/ });
-    expect(d).toBeDisabled();
-    expect(d).toHaveAccessibleDescription("Bu işlem için gereken rol: Test Uzmanı");
+    expect(await screen.findByText("Bu adım Test Uzmanı rolünde: Fatih Arslan bekleniyor")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Seçilenleri yayınla/ })).toBeNull();
   });
 
   it("Geliştirici yayın ekranına gelirse önizleme istenmez; standart 'Erişim yok', yetkisiz bağlantı yok", async () => {

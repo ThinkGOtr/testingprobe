@@ -98,7 +98,8 @@ def portal_kurulum(plan: KurulumPlani | None, pr: Any = None) -> dict[str, Any] 
     """`kurulum = {durum: gerekli|acik|birlesti|kapali, number, url, baslik, eksikler[],
     elle_adimlar[]}`. `pr`: kurulum PR'ı (`PullRequest` ya da `kurulum_pr_ac` sonucu); yoksa
     plan gerekliyse `gerekli`, değilse None (kurulum tamam, gösterilmez)."""
-    eksikler = [e.aciklama for e in plan.eksikler] if plan is not None else []
+    # TP3-3: elle adım ya da engel olarak ayrıca listelenen madde `eksikler`'de tekrar etmez.
+    eksikler = list(plan.depo_eksikleri) if plan is not None else []
     elle = list(plan.elle_adimlar) if plan is not None else []
     if pr is not None:
         durum = _pr_alan(pr, "state")

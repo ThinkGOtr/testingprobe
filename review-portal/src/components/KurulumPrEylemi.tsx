@@ -177,6 +177,14 @@ export function KurulumPrEylemi({
       {sonuc?.durum === "onizleme" && (
         <div className="kurulum-pr-onizleme" data-testid="kurulum-pr-onizleme">
           <Uyari ton={sonuc.hazir ? "bilgi" : "uyari"} baslik={sonuc.hazir ? m("onizlemeBaslik") : m("hazirDegil")}>
+            {!sonuc.hazir && sonuc.engeller.length > 0 && (
+              // TP3-3: engel (ör. Xcode projesi bulunamadı) dosya listesinden önce, tek yerde.
+              <ul className="kucuk" aria-label={m("engeller")} data-testid="kurulum-pr-engeller">
+                {sonuc.engeller.map((e) => (
+                  <li key={e}>{e}</li>
+                ))}
+              </ul>
+            )}
             {sonuc.dosyalar.length > 0 ? (
               <ul className="kucuk mono" aria-label={m("onizlemeBaslik")}>
                 {sonuc.dosyalar.map((d) => (

@@ -324,6 +324,12 @@ export function DilSecici({
     );
   }
 
+  // IA-13: iki ve daha çok kullanılamayan dil, seçicide ayrı kartlar yerine tek satırda toplanır
+  // ("Bu projede kullanılamıyor: Java, C#, Python") ve nedenleri açılır bölümde durur. Seçili dil
+  // kullanılamıyorsa (algılanan pasif) seçici bugünkü gibi hepsini gösterir.
+  const kapalilar = diller.secenekler.filter((s) => !s.kullanilabilir);
+  const topla = kapalilar.length >= 2 && !!secili?.kullanilabilir;
+  const gosterilen = topla ? diller.secenekler.filter((s) => s.kullanilabilir) : diller.secenekler;
   return (
     <div className="dil-secici">
       <SegmentGrubu
@@ -332,7 +338,7 @@ export function DilSecici({
         degistir={degistir}
         disabled={disabled}
         aciklamali
-        secenekler={diller.secenekler.map((s) => ({
+        secenekler={gosterilen.map((s) => ({
           deger: s.dil,
           ad: s.etiket,
           aciklama: secenekAciklamasi(s),
@@ -346,6 +352,19 @@ export function DilSecici({
           nedenAyrinti: diller.neden && s.kullanilabilir ? undefined : dilNedeni(s.neden, diller.platform).ayrinti,
         }))}
       />
+      {topla && (
+        <details className="dil-kapalilar kucuk" data-testid="dil-kapalilar">
+          <summary>Bu projede kullanılamıyor: {kapalilar.map((s) => s.etiket).join(", ")} (nasıl açılır?)</summary>
+          <ul>
+            {kapalilar.map((s) => (
+              <li key={s.dil}>
+                <strong>{s.etiket}</strong>
+                {s.durum === "yakinda" ? " (yakında)" : ""}: {dilNedeni(s.neden, diller.platform).metin ?? "bu depoda üretilemiyor"}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
       <div className="dil-notu kucuk">
         <span role="status" data-testid="dil-notu" data-kaynak={elle ? "secildi" : diller.neden ? "algilanamadi" : diller.kaynak}>
           {dilNotu(diller, elle, secili?.etiket ?? DIL_ETIKETI[deger])}

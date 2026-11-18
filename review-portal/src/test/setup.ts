@@ -28,3 +28,20 @@ afterEach(() => {
   sessionStorage.clear();
   localStorage.clear();
 });
+
+// ET-07: kilitli eylem düğmeleri yerel `disabled` yerine `aria-disabled="true"` taşır (Tab sırasında
+// kalır, neden okunur). Testlerde "kullanıcı için pasif" anlamı korunur: toBeDisabled/toBeEnabled
+// `aria-disabled="true"` olan düğmeyi de pasif sayar.
+import { expect } from "vitest";
+const ariaPasif = (el: unknown) => el instanceof Element && el.getAttribute("aria-disabled") === "true";
+const yerelPasif = (el: unknown) => el instanceof Element && (el as HTMLButtonElement).matches?.(":disabled");
+expect.extend({
+  toBeDisabled(el: unknown) {
+    const pass = yerelPasif(el) || ariaPasif(el);
+    return { pass, message: () => `öğe ${pass ? "pasif olmamalıydı" : "pasif (disabled ya da aria-disabled) olmalıydı"}` };
+  },
+  toBeEnabled(el: unknown) {
+    const pass = !(yerelPasif(el) || ariaPasif(el));
+    return { pass, message: () => `öğe ${pass ? "pasif olmalıydı" : "etkin olmalıydı (disabled/aria-disabled var)"}` };
+  },
+});

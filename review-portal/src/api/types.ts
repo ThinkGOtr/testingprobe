@@ -162,6 +162,28 @@ export interface Gereksinim {
   otomatik_akis?: OtomatikAkis | null;
   /** 013 §3.0: tetiğin gördüğü son Jira durumu (core gönderirse). */
   jira_durumu?: string | null;
+  /** UX IA-03: kaçıncı akış turu (PO'nun onayladığı farklı içerik sayısı; onaysız güncel içerik +1). */
+  tur?: number;
+  /** UX IA-03: akışta sıradaki adım ve kimi bekliyor (rol null = sistem işi). */
+  siradaki?: SiradakiAdim;
+  /** UX IA-03: önceki içerik (tur) için üretilmiş ürünler; `sayaclar` yalnız güncel sürümü sayar. */
+  onceki_tur?: OncekiTur | null;
+}
+
+/** UX IA-03 (core `requirements.serialize.siradaki_adim`). */
+export interface SiradakiAdim {
+  adim_no: number;
+  ad: string;
+  rol: Rol | null;
+  rol_etiketi: string;
+}
+
+/** UX IA-03 (core `requirements.serialize.tur_ve_onceki`). */
+export interface OncekiTur {
+  case_toplam: number;
+  case_onayli: number;
+  case_yayinda: number;
+  pr_birlesen: number;
 }
 
 export type SoruTuru = "ambiguity" | "missing_ac" | "conflict" | "untestable";
@@ -1465,6 +1487,8 @@ export interface KurulumPrSonucu {
   dosyalar: string[];
   eksikler: string[];
   elle_adimlar: string[];
+  /** TP3-3: PR'ı engelleyen eksikler (parametre hatası, bulunamayan Xcode projesi); `hazir` false. */
+  engeller: string[];
   hazir: boolean;
   kurulum: KurulumPr | null;
   mesaj: string | null;
@@ -1795,7 +1819,8 @@ export interface HataAnalizi {
   sinif: HataSinifi;
   alt_tur: string | null;
   eslesen_sinyaller: EslesenSinyal[];
-  karar_kaynagi: "rule" | "llm";
+  /** `human`: Test Uzmanı / Otomasyon Mühendisi sınıflandırdı (IA-16, `POST /failures/{id}/classify`). */
+  karar_kaynagi: "rule" | "llm" | "human";
   /** Eşleşen kuralın adı (ör. "product_defect", "test_maintenance/locator"); yoksa null. */
   kural?: string | null;
   /** Kuralın/LLM'in Türkçe gerekçesi (core `failure.gerekce`); yoksa null. */
@@ -1821,6 +1846,8 @@ export interface HataAnalizi {
    * kaynağı varsa uygulama testi olduğu bilinir ama hangi platform olduğu uydurulmaz). Bilinmiyorsa null.
    */
   platform?: Platform | null;
+  /** Kasıtlı kırma (kırarak doğrulama) kırmızısı; hata kuyruğuna girmez (core `kirma`). */
+  kirma?: boolean;
 }
 
 // ---------------------------------------------------------------- Bug taslakları
@@ -1936,6 +1963,8 @@ export interface DemoDurumu {
    * kapalı (core kırma/sıfırlama uçlarında 403 verir). Core vermezse `undefined` (bilinmiyor).
    */
   demo_modu?: boolean | null;
+  /** TP3-1: seçili proje demo projesi mi (`false`: demo öğeleri gizli; core başka projede 200 döner). */
+  demo_projesi?: boolean;
   /** Kurulum ortamı (core `TP_ORTAM`: dev | test | staging | prod); core vermezse yok. */
   ortam?: string | null;
   forge: {
@@ -3217,3 +3246,20 @@ export interface IsYaniti {
   /** `POST /ci/trigger`: koşunun ortamı (ortam yoksa null). */
   test_ortami?: TestOrtami | null;
 }
+
+// ===== Şerit D (UX IA-15): koşu listesinde başarısız testlerin kısa özeti =====
+/** core `GET /runs` → `basarisiz_ozet[]`: ilk 3 başarısız testin adı, case kısaltması, triage kaydı ve sınıfı. */
+export interface BasarisizOzeti {
+  test_adi: string;
+  /** "TPD-1·C10"; test bir case'e bağlı değilse null. */
+  case_ref: string | null;
+  failure_id: string | null;
+  /** Triage sınıfı; triage henüz yoksa null. */
+  sinif: HataSinifi | null;
+}
+
+export interface Kosu {
+  /** Alan yoksa (eski core) liste satırında yalnız sayı gösterilir. */
+  basarisiz_ozet?: BasarisizOzeti[];
+}
+

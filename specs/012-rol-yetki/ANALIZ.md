@@ -102,6 +102,7 @@ oturumu ve Jira PO kanalını kabul eder).
 | `run.trigger_scheduled` | engineer | `POST /ci/trigger` tetik ∈ `deploy`, `nightly` | |
 | `run.trigger_manual` | engineer, developer | `POST /ci/trigger` tetik = `manual` | developer: `TP_ORTAM≠prod` |
 | `bug.decide` | tester | `POST /bug-drafts/{id}/decision`, `/prepare`, `/publish` | |
+| `failure.classify` | tester, engineer | `POST /failures/{id}/classify` | TP UX IA-16 (2026-11-18): kuralın/AI'ın sınıflandıramadığı hatayı insan sınıflandırır; `karar_kaynagi=human` (0049), denetim `failure.classified`; ürün hatası seçilince bug taslağı açılır |
 | `demo.manage` | admin, engineer | `POST /demo/break-locator`, `POST /demo/reset`, `POST /demo/jira-status` (013) | `TP_DEMO_MODE=1`; kapalıyken 403 `demo_kapali` ("Demo kipi kapalı (TP_DEMO_MODE=0)", denetimde `authz.denied` `neden: demo_kapali`); worker işleri (`demo.break`/`demo.reset`) ve host CLI (`python -m tp_core.features.demo on-kosul`, `web-istek --eylem break\|baseline`) da reddeder |
 | `audit.verify` | admin, auditor | `GET /audit?verify=true` | |
 | `automation.manage` | analyst, engineer | `PUT /automation-settings/{anahtar}` (013 Y3) | `jira_tetik` gövdesinde `durum` varsa ayrıca `automation.jira_status` |

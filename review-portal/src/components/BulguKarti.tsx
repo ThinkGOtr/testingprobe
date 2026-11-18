@@ -243,7 +243,7 @@ export function BulguKarti({
             </div>
           )}
           {karar === "code_defect" && (
-            <p className="soluk">Doküman doğru, uygulama hatalı: bu bulgu için bug taslağı oluşturulur ve testçinin onayına düşer.</p>
+            <p className="soluk">Doküman doğru, uygulama hatalı: bu bulgu için bug taslağı oluşturulur ve Test Uzmanının onayına düşer.</p>
           )}
           {karar === "accept_difference" && (
             <div className="alan">

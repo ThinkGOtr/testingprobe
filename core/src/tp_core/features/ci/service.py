@@ -82,6 +82,7 @@ from tp_core.models import (
     ExternalRef,
     Failure,
     Job,
+    Requirement,
     Run,
     Script,
     ScriptTestCase,
@@ -547,9 +548,7 @@ def _istenen_dil(
         raise CiError(f"'{istenen}' dili {platform} platformunda TP CI'ında koşmaz")
     if istenen is None:
         return None
-    if istenen not in platformlar.TAM_HAT_DILLERI and not platformlar.tam_hat_mi(
-        istenen, platform
-    ):
+    if istenen not in platformlar.TAM_HAT_DILLERI and not platformlar.tam_hat_mi(istenen, platform):
         # K3: doğrulanmamış diller (csharp | python) derlenmez/koşulmaz; PR'a ve CI'a giremez.
         raise CiError(f"'{istenen}' dili CI'da koşmaz (yalnızca ts | java tam hattır)")
     return istenen
@@ -2531,6 +2530,14 @@ def serialize_runs(
         if sids
         else {}
     )
+    basarisizlar = _basarisiz_ozetleri(
+        session,
+        [
+            r.id
+            for r in runs
+            if sayac.get(r.id, {}).get("failed") or sayac.get(r.id, {}).get("timedout")
+        ],
+    )
     out = []
     for r in runs:
         s = sayac.get(r.id, {})
@@ -2620,9 +2627,52 @@ def serialize_runs(
                 "github_artefakt": {"durum": gy["durum"], "hata": gy["hata"]}
                 if r.kaynak == "github" and gy["durum"]
                 else None,
+                # UX IA-15: listede "ne kırıldı" — ilk BASARISIZ_OZET_UST başarısız testin adı,
+                # case kısaltması, triage kaydı ve sınıfı (sınıf yoksa null: triage henüz yok).
+                "basarisiz_ozet": basarisizlar.get(r.id, []),
             }
         )
     return out
+
+
+BASARISIZ_OZET_UST: Final = 3
+
+
+def _basarisiz_ozetleri(
+    session: Session, ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, list[dict[str, Any]]]:
+    """Koşu başına ilk `BASARISIZ_OZET_UST` başarısız (failed/timedout) test: ad, case kısaltması
+    ("TPD-1·C10"), triage kaydı ve sınıfı. Yalnız SELECT; tek sorgu."""
+    if not ids:
+        return {}
+    satirlar = session.execute(
+        select(
+            TestResult.run_id,
+            TestResult.test_adi,
+            Failure.id,
+            Failure.sinif,
+            TestCase.sira_no,
+            Requirement.jira_key,
+        )
+        .outerjoin(Failure, Failure.test_result_id == TestResult.id)
+        .outerjoin(TestCase, TestCase.id == TestResult.test_case_id)
+        .outerjoin(Requirement, Requirement.id == TestCase.requirement_id)
+        .where(TestResult.run_id.in_(list(ids)), TestResult.sonuc.in_(("failed", "timedout")))
+        .order_by(TestResult.run_id, TestResult.test_adi, TestResult.id)
+    ).all()
+    out: dict[uuid.UUID, list[dict[str, Any]]] = defaultdict(list)
+    for run_id, ad, fid, sinif, sira_no, jira_key in satirlar:
+        if len(out[run_id]) >= BASARISIZ_OZET_UST:
+            continue
+        out[run_id].append(
+            {
+                "test_adi": temiz(ad, 160),
+                "case_ref": f"{jira_key or 'SERBEST'}·C{sira_no}" if sira_no is not None else None,
+                "failure_id": str(fid) if fid else None,
+                "sinif": sinif,
+            }
+        )
+    return dict(out)
 
 
 def _github_yerel_ozeti(a: Mapping[str, Any]) -> dict[str, Any]:
@@ -2664,6 +2714,7 @@ def list_runs(
     artefakt: bool,
     depo: str | None = None,
     ortam: str | None = None,
+    offset: int = 0,
 ) -> list[dict[str, Any]]:
     """`depo` (0046): verilirse yalnız o deponun koşuları (`''` = varsayılan depo); PR numarası
     depolar arasında çakıştığından `pr_no` süzgeci `depo` ile birlikte anlamlıdır. `ortam`
@@ -2684,10 +2735,17 @@ def list_runs(
     if script_id is not None:
         q = q.where(Run.script_id == script_id)
     runs = list(
-        session.scalars(q.order_by(Run.olusturma.desc(), Run.id).limit(max(1, min(limit, 200))))
+        session.scalars(
+            q.order_by(Run.olusturma.desc(), Run.id)
+            .offset(max(0, offset))
+            .limit(max(1, min(limit, 200)))
+        )
     )
     sabit: set[uuid.UUID] = set()
-    if all(x is None for x in (tetik, kaynak, sonuc, pr_no, script_id, depo, ortam)):
+    # UX IA-15 sayfalama: sabitlenen defect adayı kanıtı yalnız ilk sayfaya eklenir.
+    if offset <= 0 and all(
+        x is None for x in (tetik, kaynak, sonuc, pr_no, script_id, depo, ortam)
+    ):
         # Açık defect adayının kırmızı kanıtı (son yerel kontrolü) pencereden düşmez: yeni
         # tetikler listeyi doldursa da filtresiz listede kalır (`sabit=true`).
         gorulen = {r.id for r in runs}

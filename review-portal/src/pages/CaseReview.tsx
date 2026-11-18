@@ -17,11 +17,12 @@ import { GherkinIndir } from "../components/GherkinIndir";
 import { DenetimPaneli, gonderBirincilMi, ReviewPaneli } from "../components/KalitePanelleri";
 import { BeklentiDogruluguMetrigi, KaliteSaglayici, kararTablolariYolu } from "../components/kalite/oracle";
 import { KapsamPaneli } from "../components/KapsamPaneli";
-import { Cip, HataKutusu, IslemDugmesi, Kart, Metrik, ReplayRozeti, SayfaBasligi, Uyari } from "../components/ui";
+import { Cip, HataKutusu, IslemDugmesi, Kart, Kirinti, Metrik, ReplayRozeti, SayfaBasligi, Uyari } from "../components/ui";
 import { HedefOlcer } from "../components/Grafikler";
 import { useGeciktirilmis, useVeri } from "../hooks";
 import { caseEski, dogrulamayiYay, gonderilmemisSoruSayisi } from "../lib/caseV3";
 import { dolar, sure, yuzde } from "../lib/format";
+import { surumDurumCumlesi, surumKumeleri } from "../lib/durumModeli";
 import { ONIZLEME_YETKISI_YOK } from "./Yayin";
 
 const ONAYLI = new Set(["approved", "published"]);
@@ -704,7 +705,14 @@ export function CaseReview() {
     el.scrollIntoView?.({ block: "start" });
     el.focus();
   }, [hash, caseler.veri]);
-  const ozet = useMemo(() => caseOzeti(liste, metrik.veri), [liste, metrik.veri]);
+  // IA-04 tek durum modeli: önceki sürüm (`onceki_icerik`) case'leri ayrı kategori; özet, durum şeridi ve kapsam
+  // uyarısı yalnız güncel sürümü sayar. Önceki sürüm varsa tepede tek durum cümlesi söylenir.
+  const kumeler = useMemo(() => surumKumeleri(liste), [liste]);
+  const guncelListe = useMemo(() => (kumeler.onceki.length ? liste.filter((c) => !c.onceki_icerik) : liste), [liste, kumeler]);
+  const durumCumlesi = surumDurumCumlesi(gereksinim.veri, kumeler);
+  // Core'un "Önceki içerik için yayınlanmış N case var" uyarısı tepedeki durum cümlesiyle aynı şeyi söyler: tekrarlanmaz.
+  const metrikUyarilari = (metrik.veri?.uyarilar ?? []).filter((u) => !(durumCumlesi && u.startsWith("Önceki içerik için")));
+  const ozet = useMemo(() => caseOzeti(guncelListe, metrik.veri), [guncelListe, metrik.veri]);
   const g = gereksinim.veri;
   const yayinYetkili = useIzin("publish.preview");
   // Geliştirici: yalnız onaylı/yayınlanmış case'ler; karar özeti ve geçmişi yok (core süzgeci).
@@ -751,7 +759,16 @@ export function CaseReview() {
   return (
     <>
       <SayfaBasligi
-        ust={<Link to={`/gereksinimler/${encodeURIComponent(id)}`}>← {g?.jira_key ?? g?.baslik ?? "Gereksinim"}</Link>}
+        ust={
+          <Kirinti
+            ogeler={[
+              { ad: "Gereksinimler", to: "/gereksinimler" },
+              { ad: g?.jira_key ?? g?.baslik ?? "Gereksinim", to: `/gereksinimler/${encodeURIComponent(id)}` },
+              { ad: "Case review" },
+            ]}
+          />
+        }
+        sekme={`${g?.jira_key ? `${g.jira_key} ` : ""}Case review`}
         baslik="Case review"
         aciklama={g ? `${g.jira_key ? `${g.jira_key} · ` : ""}${g.baslik}` : undefined}
         eylemler={
@@ -773,14 +790,21 @@ export function CaseReview() {
         }
       />
 
+      {durumCumlesi && (
+        <div data-testid="case-surum-durumu">
+          <Uyari ton="bilgi" baslik={kumeler.guncel.length === 0 ? "Bu case'ler önceki sürüme ait" : "Önceki sürüm case'leri ayrı"}>
+            {durumCumlesi}
+          </Uyari>
+        </div>
+      )}
       {kisitli ? (
         <Uyari ton="bilgi" baslik="Salt okunur görünüm">
           Yalnız onaylı ve yayınlanmış case'ler gösterilir; karar geçmişi ve ölçümler bu rolde yer almaz.
         </Uyari>
       ) : (
         <>
-          {caseler.veri && liste.length > 0 && (
-            <CaseDurumSeridi caseler={liste} denetim={denetim.veri} yayinYolu={yayinYolu} acikSorular={acikSorular?.sorular} />
+          {caseler.veri && guncelListe.length > 0 && (
+            <CaseDurumSeridi caseler={guncelListe} denetim={denetim.veri} yayinYolu={yayinYolu} acikSorular={acikSorular?.sorular} />
           )}
 
           <Kart baslik="Özet" eylemler={aiOlculmedi ? <ReplayRozeti mode={mod} /> : undefined}>
@@ -862,15 +886,16 @@ export function CaseReview() {
               hedef={metrik.veri?.kabul_hedefi ?? 0.7}
               bosMetin="henüz karar yok"
             />
-            {(metrik.veri?.kapsanmayan_ac?.length ?? 0) > 0 && (
+            {/* Güncel case yokken "hiçbir güncel case atıf yapmıyor" uyarısı yanıltır (durum cümlesi yeterli). */}
+            {kumeler.guncel.length > 0 && (metrik.veri?.kapsanmayan_ac?.length ?? 0) > 0 && (
               <Uyari baslik="Kapsanmayan kabul kriteri">
                 Hiçbir güncel case şu kabul kriterlerine atıf yapmıyor: {metrik.veri!.kapsanmayan_ac!.join(", ")}. Reddetmeden önce kapsamı
                 kontrol edin.
               </Uyari>
             )}
-            {(metrik.veri?.uyarilar?.length ?? 0) > 0 && (
+            {metrikUyarilari.length > 0 && (
               <ul className="soluk kucuk" data-testid="metrik-uyarilari">
-                {metrik.veri!.uyarilar!.map((u) => (
+                {metrikUyarilari.map((u) => (
                   <li key={u}>{u}</li>
                 ))}
               </ul>
@@ -938,7 +963,7 @@ export function CaseReview() {
               gonderiliyor={kaliteIslem === "denetim"}
               islemHata={kaliteHata?.tur === "denetim" ? kaliteHata.mesaj : null}
               bekleyen={kararBekleyen}
-              toplam={liste.filter((c) => c.durum !== "rejected" && c.durum !== "superseded").length}
+              toplam={guncelListe.filter((c) => c.durum !== "rejected" && c.durum !== "superseded").length}
               yayinYolu={yayinYolu}
             />
           )}
@@ -1008,7 +1033,7 @@ export function CaseReview() {
                     // Odak body'ye düşmesin: varsa "Toplu kabul/onayla", yoksa filtre sekmesi.
                     requestAnimationFrame(() => {
                       const hedef =
-                        (document.querySelector('[data-toplu="tumu"]:not(:disabled)') as HTMLElement | null) ??
+                        (document.querySelector('[data-toplu="tumu"]:not(:disabled):not([aria-disabled="true"])') as HTMLElement | null) ??
                         (document.querySelector(".sekmeler .sekme.aktif") as HTMLElement | null);
                       hedef?.focus();
                     });

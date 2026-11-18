@@ -450,6 +450,15 @@ export const api = {
   /** `ortam`: ortam kimliği ya da `-` (ortamsız koşular); verilmezse tümü. */
   kosular: async (ortam?: string | null): Promise<Kosu[]> =>
     listeUyarla(await istek<unknown>("GET", "/runs", ortam ? { sorgu: { ortam } } : undefined), kosuUyarla),
+  /** UX IA-15: koşu listesinin sayfası (en yeniden eskiye; `offset` > 0 sabitlenen kanıtı içermez). */
+  kosuSayfasi: async (sayfa: { ortam?: string | null; offset: number; limit: number }): Promise<Kosu[]> =>
+    listeUyarla(
+      await istek<unknown>("GET", "/runs", {
+        sorgu: { ...(sayfa.ortam ? { ortam: sayfa.ortam } : {}), offset: sayfa.offset, limit: sayfa.limit },
+        kaynak: ["GET", "/runs"],
+      }),
+      kosuUyarla,
+    ),
   /** Projenin test ortamları (`run.read`). */
   ortamlar: async (): Promise<Ortamlar> => ortamlarUyarla(await istek<unknown>("GET", "/environments")),
   kosu: async (id: string): Promise<KosuDetay> => kosuDetayUyarla(nesne(await istek<unknown>("GET", `/runs/${yol(id)}`))),

@@ -46,7 +46,9 @@ describe("ROTA_DESENLERI", () => {
   it.skipIf(!existsSync(ROTALAR_JSON))("rules/assistant/rotalar.json ile aynı (giriş ve rol seçimi hariç)", () => {
     // /rol-sec (AI Probe rol seçici) asistan bağlamı dışındadır; rotalar.json'a girmez (core
     // test_rules_asistan.ASISTAN_DISI).
-    const disarida = ["/giris", "/rol-sec"].map((d) => desenKalibi(d).source);
+    // /islerim ve /hatalar (TP UX IA-01/IA-16): rules/assistant/rotalar.json güncellenene kadar dışarıda
+    // (rules/assistant bu şeritte değiştirilmedi; core test_rules_asistan.ASISTAN_DISI ile aynı).
+    const disarida = ["/giris", "/rol-sec", "/islerim", "/hatalar"].map((d) => desenKalibi(d).source);
     const json = yolDizgeleri(JSON.parse(readFileSync(ROTALAR_JSON, "utf8")) as unknown);
     const portal = new Set(ROTA_DESENLERI.map(kaynak).filter((s) => !disarida.includes(s)));
     const core = new Set(json.map(kaynak).filter((s) => !disarida.includes(s)));

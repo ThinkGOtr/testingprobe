@@ -465,7 +465,16 @@ export function CaseKarti({
           )}
           <span className="mono soluk">#{tc.sira_no}</span>
           <Cip ton={d.ton}>{d.etiket}</Cip>
-          {!eski && <HazirlikRozeti durum={hazirlik} />}
+          {/* IA-04: önceki sürüme ait case'te hazır olma rozeti ("✓ Hazır") yanıltır; yerine sürüm rozeti. */}
+          {tc.onceki_icerik ? (
+            <span data-testid="case-onceki-surum">
+              <Cip ton="notr" title="Bu case gereksinimin önceki içeriği için üretildi; güncel sürümün sayaçlarına ve kapsamına girmez.">
+                Önceki sürüm
+              </Cip>
+            </span>
+          ) : (
+            !eski && <HazirlikRozeti durum={hazirlik} />
+          )}
           {!eski && <OncelikRozeti tc={tc} />}
           {eski && (
             <span className="soluk kucuk" data-testid="case-eski-sema" title="Bu case önceki şemayla üretildi: teknik, öncelik ve hazır olma bilgisi yok; hazır sayılır.">

@@ -1,8 +1,9 @@
+import { nesneEtiketi, olayEtiketi } from "../lib/kullaniciMetni";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import { hataMesaji, ortamAdlariniGizle } from "../api/http";
 import type { DenetimOlayi } from "../api/types";
-import { BosDurum, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
+import { BosDurum, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, SonrakiAdim, Uyari, Yukleniyor } from "../components/ui";
 import { EylemCubugu, Kimlik, TabloSarici } from "../components/tasarim";
 import { useIzin, useKisiAdi } from "../auth";
 import { useVeri } from "../hooks";
@@ -98,7 +99,7 @@ export function Denetim() {
     const q = ara.trim().toLocaleLowerCase("tr-TR");
     const l = [...(v.veri?.olaylar ?? []), ...ekOlaylar];
     return q
-      ? l.filter((o) => `${o.aktor} ${kisiAdi(o.aktor)} ${o.eylem} ${o.nesne} ${o.ozet}`.toLocaleLowerCase("tr-TR").includes(q))
+      ? l.filter((o) => `${o.aktor} ${kisiAdi(o.aktor)} ${o.eylem} ${olayEtiketi(o.eylem)} ${o.nesne} ${nesneEtiketi(o.nesne)} ${o.ozet}`.toLocaleLowerCase("tr-TR").includes(q))
       : l;
   }, [v.veri, ekOlaylar, ara, kisiAdi]);
   const yuklenen = (v.veri?.olaylar.length ?? 0) + ekOlaylar.length;
@@ -156,8 +157,8 @@ export function Denetim() {
             }
           >
             {olaylar.length === 0 ? (
-              <BosDurum baslik="Olay yok.">
-                {ara ? "Aramayla eşleşen olay yok; aramayı temizleyin." : "Portalda bir işlem yapıldıkça (çekim, üretim, onay) olaylar burada zincire eklenir."}
+              <BosDurum baslik={ara ? "Aramaya uyan olay yok." : "Olay yok."}>
+                {ara ? "Aramayı temizleyin." : <SonrakiAdim metin="Portalda yapılan her işlem (giriş, karar, yayın, koşu) burada zincirli olarak kaydedilir." />}
               </BosDurum>
             ) : (
               <TabloSarici etiket="Denetim olayları tablosu" yogunluk="sik" uzun>
@@ -180,8 +181,14 @@ export function Denetim() {
                         <td className="sayi mono" data-etiket="#">{o.sira}</td>
                         <td className="sutun-tarih" data-etiket="Zaman">{tarih(o.zaman)}</td>
                         <td className="denetim-aktor" data-etiket="Aktör" title={kisiAdi(o.aktor) !== o.aktor ? o.aktor : undefined}>{kisiAdi(o.aktor)}</td>
-                        <td className="sutun-kimlik" data-etiket="Eylem">{o.eylem}</td>
-                        <td className="mono" data-etiket="Nesne">{o.nesne}</td>
+                        {/* IA-12: okunur etiket önde, olay kodu ikinci satırda (aranabilir, kopyalanabilir). */}
+                        <td className="sutun-kimlik" data-etiket="Eylem">
+                          <span className="denetim-olay-etiketi">{olayEtiketi(o.eylem)}</span>
+                          <span className="mono kucuk soluk denetim-olay-kodu">{o.eylem}</span>
+                        </td>
+                        <td data-etiket="Nesne" title={nesneEtiketi(o.nesne) !== o.nesne ? o.nesne : undefined}>
+                          {nesneEtiketi(o.nesne)}
+                        </td>
                         <td className="denetim-ozet-hucre sutun-metin" data-etiket="Özet">
                           <OzetHucresi ozet={o.ozet} />
                         </td>

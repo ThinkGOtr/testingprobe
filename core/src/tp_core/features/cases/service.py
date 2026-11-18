@@ -1717,9 +1717,13 @@ def onay_engeli(
     """Case'in sıradaki kabul kararının reddedileceği neden (portal `onay_engeli`; None = geçer).
 
     012 iki adım: taslakta Test Uzmanının `accept`'i, `ready`'de Analistin `approve`'u; diğer
-    durumlarda taslak kuralının metni döner. `decide` ile aynı kurallar; hash uyuşmazlığı, görülme
-    şartı ve görevler ayrılığı istek anına / kullanıcıya bağlı olduğundan burada yoktur.
+    durumlarda (onaylı, yayınlanmış, reddedilmiş, geçersiz) sıradaki kabul kararı yoktur: None
+    (UX IA-04: aksi hâlde yayınlanmış case'ler portalda "Hazır değil" sayılıyordu). `decide` ile
+    aynı kurallar; hash uyuşmazlığı, görülme şartı ve görevler ayrılığı istek anına / kullanıcıya
+    bağlı olduğundan burada yoktur.
     """
+    if tc.durum not in ("draft", "ready"):
+        return None
     hata = _son_onay_engeli(tc, req) if tc.durum == "ready" else _karar_engeli(tc, req)
     hata = hata or _onay_icerik_engeli(tc, req, katalog_anahtarlari, ozet)
     if hata is None:

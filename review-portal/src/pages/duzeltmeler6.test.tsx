@@ -92,7 +92,7 @@ describe("yol haritası: kasıtlı kırma taslağı adım 13'ü bekletmez", () =
     expect(kirmaTaslagiMi(buglar[3], hatalar, kampanya)).toBe(true);
     const a13 = demoAdimlari({ ...TAM, bugTaslaklari: [...buglar, bug("b9", { durum: "draft", karar: null })] })[12];
     expect(a13.hal).toBe("suruyor");
-    expect(a13.ipucu).toBe("Kalan taslaklara testçi kararı verin (onayla / bağla / reddet).");
+    expect(a13.ipucu).toBe("Kalan taslaklara Test Uzmanı kararı verin (onayla / bağla / reddet).");
     const ilk = demoAdimlari({ ...TAM, bugTaslaklari: [bug("b1", { failure_id: "f3", durum: "draft", karar: null })] })[12];
     expect(ilk.ipucu).toMatch(/F2 ve C3 taslakları/);
   });
@@ -170,7 +170,7 @@ describe("14 adımlı akış: done sonrası adım kanıtlardan", () => {
     uygulama("/gereksinimler");
     const satir = (await screen.findByRole("link", { name: "Kampanyalı sepet" })).closest("tr")!;
     await waitFor(() => expect(satir).toHaveTextContent("14/14"));
-    expect(satir).toHaveTextContent("akış tamam");
+    expect(satir).toHaveTextContent("Akış tamam");
     expect(satir).not.toHaveTextContent("5/14");
   });
 });
@@ -179,8 +179,9 @@ describe("Kontrol Kulesi: kazanç ipucu kazanc_orani kaynağını gösterir", ()
   it("Hazırlık kazancı KPI'ı kazanc_orani kaynak metnini; tablo başlığı manuel_baz kaynağını taşır", async () => {
     await oturumAc("sunucu");
     uygulama("/kontrol-kulesi");
-    const kazanc = await screen.findByTestId("hazirlik-kazanci");
-    const kpi = kazanc.closest(".metrik")!;
+    // IA-19: örnek veride kazanç ölçülmedi → kutu yok; kaynak ipucu "Ölçülmeyenler" satırında kalır.
+    await screen.findByTestId("kule-olculmeyenler");
+    const kpi = screen.getByTestId("olculmeyen-Hazırlık kazancı");
     const ipucu = within(kpi as HTMLElement).getByTestId("kaynak-ipucu");
     expect(ipucu.getAttribute("aria-label")).toMatch(/1 − Σ\(AI \+ review süresi\) \/ Σ\(manuel baz\)/);
     expect(ipucu.getAttribute("aria-label")).not.toMatch(/requirement_baz_deger/);

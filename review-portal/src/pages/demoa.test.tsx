@@ -120,7 +120,7 @@ describe("case review", () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const u = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     uygulama("/gereksinimler/req-tpd-1/caseler");
-    await screen.findByText("Case review");
+    await screen.findByRole("heading", { name: "Case review", level: 1 });
     // K13: gözlenen (karar bekleyen) kartlar görünür olur, 3 sn dolar.
     await waitFor(() => expect(g.gozlenenler().length).toBe(2));
     for (const el of g.gozlenenler()) g.goster(el);

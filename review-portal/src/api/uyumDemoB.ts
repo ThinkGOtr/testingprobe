@@ -9,6 +9,7 @@
 // dönüştürücüden geçer (iki şekil de kabul edilir).
 
 import type {
+  BasarisizOzeti,
   AdimEslemesi,
   AjanAdimi,
   BreakAsamasi,
@@ -575,6 +576,7 @@ export function kurulumPrSonucuUyarla(x: unknown): KurulumPrSonucu {
     dosyalar: dizgeler(g.dosyalar),
     eksikler: dizgeler(g.eksikler),
     elle_adimlar: dizgeler(g.elle_adimlar),
+    engeller: dizgeler(g.engeller),
     hazir: g.hazir !== false,
     kurulum: kurulumUyarla(g.kurulum),
     mesaj: metinYaDaNull(g.mesaj),
@@ -879,7 +881,18 @@ export function kosuUyarla(k: Ham): Kosu {
     ...kosuHataAlanlari(k, ortam),
     ...(k.maskeli === true ? { maskeli: true } : {}),
     dil: kosuDili(k, ortam),
+    // UX IA-15: listede "ne kırıldı" (eski core göndermez → alan yok).
+    ...(Array.isArray(k.basarisiz_ozet) ? { basarisiz_ozet: basarisizOzetiUyarla(k.basarisiz_ozet) } : {}),
   };
+}
+
+/** core `basarisiz_ozet[]` (IA-15): adı olmayan satır atlanır. */
+export function basarisizOzetiUyarla(v: unknown[]): BasarisizOzeti[] {
+  return v.filter(nesneMi).flatMap((o) => {
+    const ad = metin(o.test_adi);
+    if (!ad) return [];
+    return [{ test_adi: ad, case_ref: metinYaDaNull(o.case_ref), failure_id: metinYaDaNull(kimlik(o.failure_id)), sinif: (metinYaDaNull(o.sinif) as BasarisizOzeti["sinif"]) ?? null }];
+  });
 }
 
 /**

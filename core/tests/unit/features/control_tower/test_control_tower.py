@@ -222,7 +222,7 @@ def test_manuel_baz_verilirse_kullanilir(
     assert {x["manuel_baz_kaynagi"] for x in k["hazirlik"]} == {"varsayilan"}
     assert all(x["manuel_baz_ms"] is None for x in k["hazirlik"])
     assert {x["manuel_baz"]["varsayilan_ms"] for x in k["hazirlik"]} == {3_600_000}
-    assert any("varsayılan (TP_MANUAL_BASELINE_S) ölçüm sayılmadı" in u for u in k["uyarilar"])
+    assert any("varsayılan baz değer (yönetici ayarı) ölçüm sayılmadı" in u for u in k["uyarilar"])
 
 
 def test_bos_veritabaninda_uydurma_yok(engine: Engine) -> None:

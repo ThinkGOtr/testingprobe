@@ -143,7 +143,7 @@ describe("gereksinim detayı: Ürün AI ajanı", { timeout: 90000 }, () => {
     await u.click(within(kart as HTMLElement).getByRole("button", { name: "Ürün AI ajanı olarak bağla" }));
     await within(kart as HTMLElement).findByText("Müşteri destek asistanı", undefined, T);
     // Analist ajan testini başlatamaz (`agent_test.run` Test Uzmanının): düğme yetkisiz.
-    expect(within(kart as HTMLElement).getByRole("button", { name: "Agent Probe'da test başlat" })).toBeDisabled();
+    expect(within(kart as HTMLElement).queryByRole("button", { name: "Agent Probe'da test başlat" })).toBeNull();
     unmount();
 
     await oturumAc("testci");

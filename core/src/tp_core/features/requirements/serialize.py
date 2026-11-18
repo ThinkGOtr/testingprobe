@@ -91,6 +91,96 @@ def requirement_summary(req: Requirement, sayaclar: dict[str, int]) -> dict[str,
     }
 
 
+# --------------------------------------------------------------- durum modeli (UX IA-03)
+# Gereksinimin "sıradaki adımı ve kimi bekliyor" bilgisi (assistant/tools/probe.py
+# REQUIREMENT_KAPILARI ile aynı görev dağılımı; specs/012-rol-yetki §3). `rol` None = sistem işi.
+SIRADAKI: dict[str, tuple[int, str, str | None]] = {
+    "new": (2, "Ön inceleme", "analyst"),
+    "in_review": (2, "Ön inceleme sürüyor", None),
+    "findings_open": (2, "Bulgu kararları", "analyst"),
+    "doc_final": (3, "PO onayına gönder", "analyst"),
+    "pending_po": (3, "PO teyidi", "po"),
+    "po_approved": (4, "Case üretimi", "tester"),
+    "modeling": (4, "Tasarım modeli üretiliyor", None),
+    "model_ready": (4, "Tasarım modeli kararı", "tester"),
+    "generating": (4, "Case üretimi sürüyor", None),
+    "cases_ready": (4, "Case kararı ve yayın", "tester"),
+    "done": (5, "Kod üretimi", "engineer"),
+    "failed": (2, "Başarısız işi yeniden dene", "analyst"),
+}
+_HATA_ADIMI = {"cases.generate": 4, "model.generate": 4}
+
+
+def siradaki_adim(req: Requirement, son_hata_job: str | None = None) -> dict[str, Any]:
+    """`{adim_no, ad, rol, rol_etiketi}` — akışta sıradaki adım ve kimi bekliyor."""
+    from tp_core.auth.yetki import ROL_ETIKETLERI
+
+    adim, ad, rol = SIRADAKI.get(req.durum, (1, "Ön inceleme", "analyst"))
+    if req.durum == "new" and req.ac_missing:
+        ad = "Kabul kriteri eksik · PO'ya sor"
+    if req.durum == "failed" and son_hata_job in _HATA_ADIMI:
+        adim = _HATA_ADIMI[son_hata_job]
+    return {
+        "adim_no": adim,
+        "ad": ad,
+        "rol": rol,
+        "rol_etiketi": ROL_ETIKETLERI.get(rol, rol) if rol else "Sistem (otomatik)",
+    }
+
+
+def tur_ve_onceki(
+    s: Session, reqs: Sequence[Requirement], sayac: dict[uuid.UUID, dict[str, int]]
+) -> dict[uuid.UUID, dict[str, Any]]:
+    """Gereksinim başına `{tur, onceki_tur}`; `sayac` güncel sürüme indirgenir (yerinde).
+
+    Tur: PO'nun onayladığı farklı içerik sayısı; güncel içerik henüz onaylı değilse +1 (ilk tur
+    = 1). Önceki tur ürünleri: güncel PO onaylı içerikten farklı içerik için üretilmiş case'ler
+    (`cases.service.old_content_case_ids`; yayınlanmış case, toplam ve birleşmiş PR'lı script).
+    Bu case'ler `case_toplam`/`case_onayli` sayaçlarından çıkarılır: liste güncel sürümü sayar.
+    """
+    from tp_core.features.cases.service import _po_onaylari, old_content_case_ids
+    from tp_core.models import Script, ScriptTestCase, TestCase
+
+    out: dict[uuid.UUID, dict[str, Any]] = {}
+    for r in reqs:
+        hashler: list[str] = []
+        for _z, h in _po_onaylari(s, r.id):
+            if h and (not hashler or hashler[-1] != h):
+                hashler.append(h)
+        tur = len(hashler)
+        if not (r.onaylanan_hash and hashler and r.onaylanan_hash == hashler[-1]):
+            tur += 1
+        eski = old_content_case_ids(s, r)
+        onceki: dict[str, Any] | None = None
+        if eski:
+            yayinda = onayli = 0
+            for (durum,) in s.execute(select(TestCase.durum).where(TestCase.id.in_(eski))):
+                if durum == "published":
+                    yayinda += 1
+                if durum in ("approved", "published"):
+                    onayli += 1
+            pr = int(
+                s.scalar(
+                    select(func.count(func.distinct(Script.id)))
+                    .join(ScriptTestCase, ScriptTestCase.script_id == Script.id)
+                    .where(ScriptTestCase.test_case_id.in_(eski), Script.durum == "merged")
+                )
+                or 0
+            )
+            onceki = {
+                "case_toplam": len(eski),
+                "case_onayli": onayli,
+                "case_yayinda": yayinda,
+                "pr_birlesen": pr,
+            }
+            c = sayac.get(r.id)
+            if c is not None:
+                c["case_toplam"] = max(0, c["case_toplam"] - len(eski))
+                c["case_onayli"] = max(0, c["case_onayli"] - onayli)
+        out[r.id] = {"tur": max(1, tur), "onceki_tur": onceki}
+    return out
+
+
 def list_requirements(s: Session) -> list[dict[str, Any]]:
     reqs = list(
         s.scalars(
@@ -102,14 +192,24 @@ def list_requirements(s: Session) -> list[dict[str, Any]]:
     sayac = counts_for(s, [r.id for r in reqs])
     bazlar = baseline.baselines_for(s, [r.id for r in reqs])
     akislar = _otomatik_akislar(s, reqs)
+    turlar = tur_ve_onceki(s, reqs, sayac)
     return [
         {
             **requirement_summary(r, sayac[r.id]),
+            **turlar[r.id],
+            "siradaki": siradaki_adim(r, _son_hata_isi(s, r)),
             "baseline": bazlar[r.id],
             "otomatik_akis": akislar[r.id],
         }
         for r in reqs
     ]
+
+
+def _son_hata_isi(s: Session, req: Requirement) -> str | None:
+    if req.durum != "failed":
+        return None
+    h = last_failure(s, req)
+    return (h or {}).get("job_tur")
 
 
 def _otomatik_akislar(s: Session, reqs: list[Requirement]) -> dict[uuid.UUID, Any]:
@@ -226,8 +326,10 @@ def finding_counts(s: Session, req_id: uuid.UUID, *, tumu: bool = False) -> dict
 
 
 def requirement_detail(s: Session, req: Requirement) -> dict[str, Any]:
-    sayac = counts_for(s, [req.id])[req.id]
-    out = requirement_summary(req, sayac)
+    sayaclar = counts_for(s, [req.id])
+    turlar = tur_ve_onceki(s, [req], sayaclar)
+    out = requirement_summary(req, sayaclar[req.id])
+    out.update(turlar[req.id])
     uyarilar = injection_warnings(req.baslik, req.aciklama, *req.kabul_kriterleri)
     if req.ac_missing:
         uyarilar.insert(0, AC_MISSING_UYARISI)
@@ -246,6 +348,7 @@ def requirement_detail(s: Session, req: Requirement) -> dict[str, Any]:
             "yazılmadan konan onay etiketi sayılmaz."
         )
     son_hata = last_failure(s, req)
+    out["siradaki"] = siradaki_adim(req, (son_hata or {}).get("job_tur"))
     if son_hata is not None:
         uyarilar.append(f"Son işlem başarısız: {son_hata['neden']} — {son_hata['oneri']}")
     son = s.scalars(

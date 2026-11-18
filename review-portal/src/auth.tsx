@@ -6,6 +6,7 @@ import { PLATFORMLAR, type Platform } from "./lib/platform";
 import { oturumVerileriniTemizle } from "./lib/oturumTemizligi";
 import { formlariSakla } from "./lib/formYedegi";
 import { izinVar, KISITLI_BUG_ROLLERI, KISITLI_CASE_ROLLERI, normalizeRol, oturumIzinleri, rotaIzinleri, ROTA_IZINLERI, type Izin } from "./lib/yetki";
+import { yeniProjedeYenile } from "./lib/proje";
 import { aiprobeCikisAdresi, aiprobeKipinde, cikisSurecinde, cikisSureciniAyarla, cikisYonlendirmesi, kimlikKipi, yonlendirmeSayaciniSifirla } from "./lib/kimlikKipi";
 
 interface OturumBaglami {
@@ -52,11 +53,20 @@ export function OturumProvider({ children }: { children: ReactNode }) {
       })
       .catch(() => !iptal && ayarla(null))
       .finally(() => !iptal && setYukleniyor(false));
-    yetkisizOlunca(() => {
+    const oturumuBitir = () => {
       // AI Probe kipinde 401 yeniden giriş demektir (tam sayfa yönlendirme): ekrandaki form verisi
       // önce yedeklenir, dönüşte geri konur (lib/formYedegi.ts). `local` kipte davranış aynı.
       if (aiprobeKipinde() && !cikisSurecinde()) formlariSakla(window.location.pathname + window.location.search, oncekiId.current);
       ayarla(null);
+    };
+    yetkisizOlunca(() => {
+      // TP3-2: proje değişimi rol hesabını değiştirince (`PUT /proje`) eski oturum iptal edilir ve
+      // yeni çerez yazılır. Eski oturumla açık kalan olay akışı (`session.ended`) ya da yoldaki
+      // istek (401) burada yeniden girişe götürürse AI Probe devri, kişinin yeni seçimi yerine
+      // Home'daki projeyle döner: proje "eski projeye geri dönmüş" görünür. Önce çerezdeki oturum
+      // doğrulanır; geçerliyse giriş yerine sayfa yeni oturumla yenilenir.
+      if (!aiprobeKipinde() || cikisSurecinde()) return oturumuBitir();
+      void oturumYenilendiMi(() => api.me()).then((yenile) => (yenile ? yeniProjedeYenile() : oturumuBitir()));
     });
     return () => {
       iptal = true;
@@ -142,6 +152,16 @@ export function useKisiAdi(): (ad: string | null | undefined) => string {
   // Sağlayıcı dışında (bileşen testleri) eşleme yok: ad aynen gösterilir.
   const kisiler = useContext(Baglam)?.kullanici?.kisiler;
   return useCallback((ad: string | null | undefined) => kisiAdiCevir(kisiler, ad), [kisiler]);
+}
+
+/** Portal kullanıcılarının görünen adları (`/auth/me` → `kisiler`); sağlayıcı dışında boş. */
+export function useKisiler(): Record<string, string> | undefined {
+  return useContext(Baglam)?.kullanici?.kisiler;
+}
+
+/** Oturum (kullanıcı) yüklendi mi; sağlayıcı dışında ya da yüklenirken false. */
+export function useOturumYuklu(): boolean {
+  return !!useContext(Baglam)?.kullanici;
 }
 
 /** Oturumun etkin izinleri (`/auth/me` → `izinler`; yoksa katalogdan rolün izinleri). */
@@ -274,6 +294,7 @@ export function useDemoModu(etkin = true): boolean | null | undefined {
 
 /** Ekranın core'daki veri ucu (canlı derlemede ekran ancak uç varsa açılış sayfası olur). */
 const EKRAN_UCU: Record<string, readonly [string, string]> = {
+  "/islerim": ["GET", "/work-queue"],
   "/kod": ["GET", "/scripts"],
   "/kosular": ["GET", "/runs"],
   "/kontrol-kulesi": ["GET", "/control-tower"],
@@ -288,10 +309,11 @@ const EKRAN_UCU: Record<string, readonly [string, string]> = {
 const ROL_SAYFALARI: Record<Rol, string[]> = {
   admin: ["/yol-haritasi", "/kontrol-kulesi", "/kosular"],
   auditor: ["/denetim", "/kontrol-kulesi"],
-  analyst: ["/gereksinimler", "/caseler"],
-  po: ["/gereksinimler"],
-  tester: ["/gereksinimler", "/caseler", "/bug-taslaklari", "/kosular"],
-  engineer: ["/kod", "/kosular", "/gereksinimler"],
+  // TP UX IA-01: insan kapısı olan rollerin açılışı İşlerim (rolün kuyruğu); core ucu yoksa sonraki ekran.
+  analyst: ["/islerim", "/gereksinimler", "/caseler"],
+  po: ["/islerim", "/gereksinimler"],
+  tester: ["/islerim", "/gereksinimler", "/caseler", "/bug-taslaklari", "/kosular"],
+  engineer: ["/islerim", "/kod", "/kosular", "/gereksinimler"],
   developer: ["/kosular", "/gereksinimler"],
   viewer: ["/kontrol-kulesi", "/kosular"],
 };
@@ -314,4 +336,41 @@ export function varsayilanSayfa(
   const son = "/kontrol-kulesi";
   if (!ucVar) return adaylar[0] ?? son;
   return adaylar.find((y) => !EKRAN_UCU[y] || ucVar(...EKRAN_UCU[y])) ?? son;
+}
+
+
+// TP3-2: 401 / `session.ended` sonrası oturum başka bir çerezle sürüyor mu (proje değişimi yeni
+// rol hesabıyla yeni oturum açtı)? Döngü olmasın: aynı sekmede 30 sn içinde bir kez yenilenir.
+const OTURUM_YENILEME_ANAHTARI = "tp.oturumYenilendi";
+const OTURUM_YENILEME_ARALIGI_MS = 30_000;
+let oturumDogrulaniyor: Promise<boolean> | null = null;
+
+export function oturumYenilendiMi(me: () => Promise<Kullanici | null>, simdi: () => number = Date.now): Promise<boolean> {
+  if (oturumDogrulaniyor) return oturumDogrulaniyor;
+  const p = (async () => {
+    let son = 0;
+    try {
+      son = Number(sessionStorage.getItem(OTURUM_YENILEME_ANAHTARI) ?? 0);
+    } catch {
+      /* depo yok */
+    }
+    if (simdi() - son < OTURUM_YENILEME_ARALIGI_MS) return false;
+    try {
+      const k = await me();
+      if (!k) return false;
+    } catch {
+      return false;
+    }
+    try {
+      sessionStorage.setItem(OTURUM_YENILEME_ANAHTARI, String(simdi()));
+    } catch {
+      /* depo yok */
+    }
+    return true;
+  })();
+  oturumDogrulaniyor = p;
+  void p.finally(() => {
+    if (oturumDogrulaniyor === p) oturumDogrulaniyor = null;
+  });
+  return p;
 }

@@ -40,9 +40,10 @@ describe("KPI şeridi: Beklenti doğruluğu ve Hata yakalama oranı", () => {
     await oturumAc("sunucu");
     sar(<KontrolKulesi />);
     const serit = await screen.findByTestId("kule-kpi");
-    expect(serit.children).toHaveLength(7);
-    expect(serit.children[5]).toHaveTextContent("Beklenti doğruluğu");
-    expect(serit.children[6]).toHaveTextContent("Hata yakalama oranı");
+    // IA-19: ölçülmeyen KPI kutu olarak çizilmez; iki kalite karosu yine şeridin sonunda.
+    const n = serit.children.length;
+    expect(serit.children[n - 2]).toHaveTextContent("Beklenti doğruluğu");
+    expect(serit.children[n - 1]).toHaveTextContent("Hata yakalama oranı");
     // u2 N1: örnek veriden hesaplanır (case kartlarıyla aynı): başlangıçta yalnız T1 onaylı → 3/3, C10 tekrar.
     expect(within(serit).getByTestId("beklenti-dogrulugu")).toHaveTextContent("%100");
     expect(within(serit).getByTestId("beklenti-ayrinti")).toHaveTextContent(
@@ -61,8 +62,9 @@ describe("KPI şeridi: Beklenti doğruluğu ve Hata yakalama oranı", () => {
     ).toBeInTheDocument();
     expect(within(serit).getByRole("img", { name: /^Kaynak: Son tamamlanan tam katalog ekilmiş hata koşusu \(2026-11-10 14:46; web, android\)/ })).toBeInTheDocument();
     // Var olan öğeler yerinde ve tekil.
-    for (const id of ["gecme-orani", "defect-adayi-ozet", "hazirlik-kazanci"]) expect(within(serit).getAllByTestId(id)).toHaveLength(1);
-    expect(screen.getAllByText("ölçülmüş baz yok")).toHaveLength(1);
+    for (const id of ["gecme-orani", "defect-adayi-ozet"]) expect(within(serit).getAllByTestId(id)).toHaveLength(1);
+    // IA-19: ölçülmemiş kazanç kutu değil, tek "Ölçülmeyenler" satırında.
+    expect(screen.getByTestId("kule-olculmeyenler")).toHaveTextContent("Hazırlık kazancı");
   });
 
   it("anahtarlar yanıtta yoksa (eski core): 'ölçülmedi' + 'çekirdek bildirmiyor'; sıfır ya da yüzde yazılmaz", () => {
@@ -115,8 +117,13 @@ describe("KPI şeridi: Beklenti doğruluğu ve Hata yakalama oranı", () => {
   it("örnek veride hiç koşu yokken: karo ölçülmedi, kart boş durum", async () => {
     await oturumAc("sunucu");
     kuleMockKosulariBosalt();
-    sar(<KontrolKulesi />);
-    expect(await screen.findByTestId("hata-yakalama")).toHaveTextContent(/^ölçülmedi$/);
+    const { unmount } = sar(<KontrolKulesi />);
+    // IA-19: değeri olmayan karo çizilmez; nedeni "Ölçülmeyenler" satırında. Kart Demo kontrolleri'nde.
+    expect(await screen.findByTestId("kule-olculmeyenler")).toHaveTextContent("Hata yakalama oranı: henüz ekilmiş hata koşusu yok");
+    expect(screen.queryByTestId("hata-yakalama")).toBeNull();
+    expect(screen.queryByRole("region", { name: "Ekilmiş hata koşusu" })).toBeNull();
+    unmount();
+    sar(<HataKosusuKarti />);
     const k = await kart();
     expect(await within(k).findByText("Henüz ekilmiş hata koşusu yok.")).toBeInTheDocument();
     expect(within(k).queryByTestId("hk-sonuc")).toBeNull();
@@ -182,15 +189,14 @@ describe("Ekilmiş hata koşusu kartı: form ve rol kapısı", () => {
     sar(<HataKosusuKarti />);
     const k = await kart();
     await within(k).findByRole("group", { name: "Kod hatası (5)" });
-    const dugme = within(k).getByRole("button", { name: "Koşuyu başlat" });
+    const dugme = within(k).queryByRole("button", { name: "Koşuyu başlat" });
     if (yetkili) {
       expect(dugme).toBeEnabled();
       expect(within(k).getByRole("checkbox", { name: "Android" })).toBeEnabled();
       expect(k.querySelector(".dugme-neden")).toBeNull();
     } else {
-      expect(dugme).toBeDisabled();
-      expect(dugme).toHaveAccessibleDescription("Bu işlem için gereken rol: Sistem Yöneticisi / Otomasyon Mühendisi");
-      expect(within(k).getByText("Bu işlem için gereken rol: Sistem Yöneticisi / Otomasyon Mühendisi")).toHaveClass("dugme-neden");
+      expect(dugme).toBeNull();
+      expect(within(k).getByText("Bu adım Otomasyon Mühendisi rolünde: Gokhan Sipahi bekleniyor")).toHaveClass("dugme-neden");
       for (const c of within(k).getAllByRole("checkbox")) expect(c).toBeDisabled();
     }
     expect(await within(k).findByTestId("hk-sonuc")).toBeInTheDocument();
@@ -494,8 +500,8 @@ describe("Ekilmiş hata koşusu kartı: başlat → ilerleme → bitiş, 409, ip
     await oturumAc("analist");
     sar(<HataKosusuKarti />);
     const ilerleme = within(await screen.findByTestId("hk-ilerleme"));
-    expect(ilerleme.getByRole("button", { name: "İptal et" })).toBeDisabled();
-    expect(ilerleme.getByRole("button", { name: "İptal et" })).toHaveAccessibleDescription("Bu işlem için gereken rol: Sistem Yöneticisi / Otomasyon Mühendisi");
+    expect(ilerleme.queryByRole("button", { name: "İptal et" })).toBeNull();
+    expect(ilerleme.getByText("Bu adım Otomasyon Mühendisi rolünde: Gokhan Sipahi bekleniyor")).toBeInTheDocument();
   });
 });
 

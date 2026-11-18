@@ -55,13 +55,13 @@ describe("Case kalitesi bölümü", () => {
     expect(within(kpi).getByTestId("tekrar-orani")).toHaveTextContent("%7,9");
     expect(within(kpi).getByTestId("yetim-soru")).toHaveTextContent("2/9");
 
-    const review = within(bolum).getByRole("region", { name: /Case seti review \(P8\)/ });
+    const review = within(bolum).getByRole("region", { name: /^Case seti AI incelemesi/ });
     expect(within(review).getByTestId("review-ortalama")).toHaveTextContent("%79,2");
     const dagilim = within(review).getByRole("list", { name: "Review skor dağılımı (yüzde aralıkları)" });
     expect(within(dagilim).getAllByRole("listitem")).toHaveLength(4);
     expect(within(dagilim).getByText("70–84").closest("li")).toHaveTextContent("3 (%50)");
 
-    const denetim = within(bolum).getByRole("region", { name: /Agent Probe denetimi \(P9\)/ });
+    const denetim = within(bolum).getByRole("region", { name: /^Agent Probe denetimi/ });
     expect(within(denetim).getByTestId("denetim-kod").textContent).toContain("Engelle1");
     expect(within(denetim).getByTestId("denetim-model").textContent).toContain("Engelle0");
     expect(denetim).toHaveTextContent("1 bekliyor · 1 hata");

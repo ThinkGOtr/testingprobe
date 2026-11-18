@@ -138,8 +138,8 @@ def test_varsayilan_etiketlenir(
     assert (b["deger_s"], b["deger_ms"]) == (None, None)
     assert (b["kaynak"], b["etiket"]) == ("varsayilan", "varsayılan")
     assert (b["varsayilan_s"], b["varsayilan_ms"]) == (1800, 1_800_000)
-    assert b["aciklama"] == "ölçülmedi; varsayılan 30 dk (TP_MANUAL_BASELINE_S), ölçüm değil"
-    assert b["giren"] is None and "TP_MANUAL_BASELINE_S" in b["not"]
+    assert b["aciklama"] == "ölçülmedi; varsayılan 30 dk (yönetici ayarı), ölçüm değil"
+    assert b["giren"] is None and "varsayılan baz değer" in b["not"]
 
 
 @pytest.mark.parametrize("rol", ["analyst", "engineer", "tester", "admin"])
@@ -328,8 +328,8 @@ def test_kapsam_metni_turkce_ekler() -> None:
     assert baseline.kapsam_metni(4, 3, 0, 1) == "4 story'den 3'ünde ölçüm var, 1'inde ölçülmedi"
     assert (
         baseline.kapsam_metni(4, 2, 2, 0)
-        == "4 story'den 2'sinde ölçüm var, 2'sinde ölçüm yok (yalnız varsayılan "
-        "TP_MANUAL_BASELINE_S; ölçüm sayılmaz)"
+        == "4 story'den 2'sinde ölçüm var, 2'sinde ölçüm yok (yalnız yönetici ayarındaki "
+        "varsayılan baz değer; ölçüm sayılmaz)"
     )
     assert baseline.kapsam_metni(6, 0, 0, 6) == "6 story'den 0'ında ölçüm var, 6'sında ölçülmedi"
     ekler = {n: baseline.bulunma_eki(n) for n in (5, 7, 9, 10, 20, 40, 100, 1000)}

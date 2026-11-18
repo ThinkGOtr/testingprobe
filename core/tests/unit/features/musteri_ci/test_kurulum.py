@@ -370,3 +370,28 @@ def test_hazirlik_plan_yerel_proje_aranmaz():
 def test_hazirlik_parametre_enjeksiyonu_reddedilir(degisim):
     temel = IOS if "yapilandirma" in degisim else ANDROID
     assert kurulum.parametre_hatalari(replace(temel, **degisim))
+
+
+def test_tp3_3_xcode_projesi_yoksa_hazir_degil_ve_engel_listede():
+    plan = mci.kurulum_plani(IOS, [])
+    assert not plan.hazir and plan.dosyalar == {}
+    assert len(plan.engeller) == 1 and "Xcode projesi bulunamadı" in plan.engeller[0]
+    # Engel elle adımlarda ya da depo eksiklerinde tekrar etmez.
+    assert not any("Xcode projesi bulunamadı" in a for a in plan.elle_adimlar)
+    assert not any("Xcode projesi bulunamadı" in a for a in plan.depo_eksikleri)
+    with pytest.raises(mci.MusteriCiHatasi, match="Xcode projesi bulunamadı"):
+        mci.kurulum_pr_ac(object(), plan, onaylayan="u", base="main")
+
+
+def test_tp3_3_android_madde_iki_listede_degil():
+    plan = mci.kurulum_plani(ANDROID, [])
+    gradle = [a for a in plan.elle_adimlar if "gradlew" in a]
+    assert gradle and not any("gradlew" in a for a in plan.depo_eksikleri)
+    portal = mci.portal_kurulum(plan)
+    assert portal is not None and not set(portal["eksikler"]) & set(portal["elle_adimlar"])
+
+
+def test_tp3_3_bos_deger_hata_metnine_eklenmez():
+    hatalar = kurulum.parametre_hatalari(replace(ANDROID, test_paketi=""))
+    assert any(h.startswith("test paketi gerekli") for h in hatalar)
+    assert not any("''" in h for h in hatalar)

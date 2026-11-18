@@ -1,12 +1,13 @@
-import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode, type RefObject } from "react";
+import { createContext, useEffect, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode, type RefObject } from "react";
 import { Link, type LinkProps } from "react-router-dom";
 import { buFazdaYok, bulunamadi } from "../api/http";
 import type { CiktiModu, Degerlendirme } from "../api/types";
-import { useIzin, useRotaIzni } from "../auth";
+import { useIzin, useKisiler, useOturumYuklu, useProjeBaglami, useRotaIzni } from "../auth";
 import { type Ton } from "../lib/etiketler";
-import { izinNedeni, type Izin } from "../lib/yetki";
+import { bekleyenRolMetni, type Izin } from "../lib/yetki";
 import { baglantiTuru } from "../lib/rotalar";
 import { hataGosterildi, hataTazele } from "../lib/sonHata";
+import { teknikMetniCevir } from "../lib/kullaniciMetni";
 import { asistanaSor, useAsistanHazir } from "./asistan/kontrol";
 import { Ikon } from "./Ikon";
 import { Ipucu } from "./Ipucu";
@@ -195,9 +196,17 @@ export function HataKutusu({
   }
   // Yalnız metin canlı bölgededir (AlanHatasi ile aynı desen): düğmeler kardeş öğedir; kayıt
   // yazıldıktan sonra beliren "Asistana sor" duyuruya eklenmez, ikinci değişiklik yaratmaz.
+  // IA-12: bilinen teknik hata (ör. forge deposu yok) kullanıcı cümlesine çevrilir; ham metin "Ayrıntı"da.
+  const cevrilen = teknikMetniCevir(hata);
   return (
     <div className="uyari-kutusu uyari-hata">
-      <span role="alert">{hata}</span>
+      <span role="alert">{cevrilen ?? hata}</span>
+      {cevrilen && (
+        <details className="teknik-ayrinti">
+          <summary>Ayrıntı</summary>
+          <code>{hata}</code>
+        </details>
+      )}
       {yenile && !bulunamadi(kaynak) && (
         <button type="button" className="dugme dugme-ikincil dugme-kucuk" onClick={yenile}>
           Tekrar dene
@@ -276,7 +285,103 @@ export function BosDurum({ baslik, children, kip = "bolum", eylem }: { baslik: s
   );
 }
 
-export function SayfaBasligi({ baslik, aciklama, eylemler, ust }: { baslik: ReactNode; aciklama?: ReactNode; eylemler?: ReactNode; ust?: ReactNode }) {
+/**
+ * IA-21 boş durum kalıbı: ne olacak + kim yapar + bağlantı. `BosDurum`'un çocuğu olarak kullanılır:
+ * `<BosDurum baslik="Henüz koşu yok."><SonrakiAdim metin="…" kim="Otomasyon Mühendisi" baglanti={{ to: "/kod", ad: "Kod üretimine git" }} /></BosDurum>`.
+ * Bağlantı korumalı rotadaysa ve rolün izni yoksa düz metin kalır (`IzinliLink`).
+ */
+export function SonrakiAdim({ metin, kim, baglanti }: { metin: ReactNode; kim?: string; baglanti?: { to: string; ad: string } }) {
+  return (
+    <span className="sonraki-adim" data-testid="sonraki-adim">
+      {metin}
+      {kim && <> ({kim})</>}
+      {baglanti && (
+        <>
+          {" "}
+          <IzinliLink to={baglanti.to} className="sonraki-adim-baglanti">
+            {baglanti.ad}
+          </IzinliLink>
+        </>
+      )}
+    </span>
+  );
+}
+
+/** Kırıntı gezinme öğesi: `to` yoksa geçerli sayfa (bağlantı değil, `aria-current="page"`). */
+export interface KirintiOgesi {
+  ad: ReactNode;
+  to?: string;
+}
+
+/**
+ * Kırıntı gezinme (IA-22): `SayfaBasligi` / `OzetKarti` `ust` alanına konur:
+ * `Gereksinimler › TPD-1 › Case review`. Son öğe (bağlantısız) geçerli sayfadır.
+ */
+export function Kirinti({ ogeler }: { ogeler: readonly KirintiOgesi[] }) {
+  return (
+    <nav aria-label="Kırıntı" className="kirinti">
+      <ol>
+        {ogeler.map((o, i) => (
+          <li key={i}>
+            {o.to ? (
+              <IzinliLink to={o.to}>{o.ad}</IzinliLink>
+            ) : (
+              <span aria-current={i === ogeler.length - 1 ? "page" : undefined}>{o.ad}</span>
+            )}
+          </li>
+        ))}
+      </ol>
+    </nav>
+  );
+}
+
+/** Ürün adı: sekme başlığının sonu ve varsayılan başlık (index.html). */
+export const URUN_ADI = "Testing Probe";
+
+/** React düğümünün düz metni (sekme başlığı için): metin/sayı/dizi ve öğe çocukları gezilir. */
+export function dugumMetni(d: ReactNode): string {
+  if (d === null || d === undefined || typeof d === "boolean") return "";
+  if (typeof d === "string" || typeof d === "number") return String(d);
+  if (Array.isArray(d)) return d.map(dugumMetni).join("");
+  if (typeof d === "object" && "props" in d) return dugumMetni((d.props as { children?: ReactNode }).children);
+  return "";
+}
+
+/** IA-11: sekme başlığı "<Sayfa> · <Proje> · Testing Probe" (proje bilinmiyorsa atlanır). */
+export function sekmeBasligi(sayfa: string, proje: string | null | undefined): string {
+  return [sayfa.replace(/\s+/g, " ").trim(), proje?.trim(), URUN_ADI].filter(Boolean).join(" · ");
+}
+
+/** Sayfanın `document.title`'ını ayarlar; sayfa kapanınca ürün adına döner. */
+export function useSekmeBasligi(sayfa: string | null | undefined) {
+  const proje = useProjeBaglami()?.proje ?? null;
+  useEffect(() => {
+    if (!sayfa?.trim()) return;
+    document.title = sekmeBasligi(sayfa, proje);
+    return () => {
+      document.title = URUN_ADI;
+    };
+  }, [sayfa, proje]);
+}
+
+/**
+ * Sayfa başlığı (h1). `sekme`: tarayıcı sekmesi başlığındaki sayfa adı (verilmezse h1'in düz metni);
+ * her sayfa `document.title`'ı "<Sayfa> · <Proje> · Testing Probe" olarak ayarlar (IA-11).
+ */
+export function SayfaBasligi({
+  baslik,
+  aciklama,
+  eylemler,
+  ust,
+  sekme,
+}: {
+  baslik: ReactNode;
+  aciklama?: ReactNode;
+  eylemler?: ReactNode;
+  ust?: ReactNode;
+  sekme?: string;
+}) {
+  useSekmeBasligi(sekme ?? dugumMetni(baslik));
   return (
     <header className="sayfa-basligi">
       <div>
@@ -369,64 +474,89 @@ function useOrtakNeden(sarici: RefObject<HTMLElement>, neden: string | undefined
 }
 
 /**
- * Rol farkındalıklı eylem düğmesi: yetkisiz rolde pasif ve nedenini söyler
- * (sunucu yine de her uçta rolü kontrol eder).
+ * Rol farkındalıklı eylem düğmesi (sunucu yine de her uçta rolü kontrol eder).
  *
- * Pasifken (`disabled` ya da yetkisiz rol) bir neden varsa, native `disabled` düğme odak almadığı ve
- * `title` klavyede okunmadığı için neden düğmenin dışında görünür yazılır (`.dugme-neden`) ve
- * `aria-describedby` ile düğmeye bağlanır. Çalışırken (`calisiyor`) yazılmaz. Aynı gruptaki eş metinli
- * nedenler bir kez yazılır (`useOrtakNeden`).
+ * - Yetkisiz rol (IA-10): düğme çizilmez; yerine tek satır "Bu adım <Rol> rolünde: <kişi> bekleniyor"
+ *   yazılır (`.bekleyen-rol`). Aynı gruptaki eş metinli satırlar bir kez yazılır (`useOrtakNeden`):
+ *   kilitli düğme yığını yerine "kimi bekliyoruz" bilgisi kalır.
+ * - Ön koşulla kilitli (`disabled`) ya da çalışırken (`calisiyor`) düğme (ET-07): yerel `disabled`
+ *   yerine `aria-disabled="true"`; Tab sırasında kalır, tıklama/gönderim engellenir, neden görünür
+ *   yazılır ve `aria-describedby` ile bağlanır (klavye ve ekran okuyucu nedeni duyar). Çalışırken
+ *   `aria-busy` taşır; odak düğmede kalır (odak `body`ye düşmez).
+ * - `nedenGizli`: neden ekranda başka yerde görünür yazılıysa düğme altına tekrar yazılmaz; neden
+ *   yine erişilebilir açıklama olarak bağlanır (görünmez metin).
  */
 /**
- * `EylemCubugu` içinde (ya da `odaklanabilir` ile) kilitli `IslemDugmesi` yerel `disabled` yerine `aria-disabled`
- * kullanır: düğme Tab sırasında kalır, nedeni (`aria-describedby`) klavyeyle okunur, tıklama engellenir (ET-07).
+ * Geriye uyum: `EylemCubugu` bağlamı / `odaklanabilir` (UX-T). Kilitli `IslemDugmesi` artık her yerde
+ * `aria-disabled` kullanır (ET-07), bu yüzden bağlam ve özellik davranışı değiştirmez.
  */
 export const OdaklanabilirKilitBaglami = createContext(false);
 
-export function IslemDugmesi({ izin, calisiyor, tur = "birincil", kucuk, disabled, children, title, className, nedenGizli, odaklanabilir, onClick, ...geri }: IslemDugmesiOzellikleri) {
-  const baglamOdak = useContext(OdaklanabilirKilitBaglami);
+export function IslemDugmesi({ izin, calisiyor, tur = "birincil", kucuk, disabled, children, title, className, nedenGizli, odaklanabilir: _odaklanabilir, onClick, ...geri }: IslemDugmesiOzellikleri) {
   const istenen: Izin[] = izin === undefined ? [] : typeof izin === "string" ? [izin] : [...izin];
   const izinli = useIzin(...istenen);
+  const kisiler = useKisiler();
   const nedenId = useId();
+  const oturumYuklu = useOturumYuklu();
   const yetkili = istenen.length === 0 || izinli;
-  const neden = !yetkili ? izinNedeni(...istenen) : title;
-  const nedenGorunur = (!nedenGizli || !yetkili) && !calisiyor && (!!disabled || !yetkili) && !!neden?.trim();
+  // Oturum henüz yüklenmediyse rol bilinmez: düğme kilitli çizilir (satıra dönmez, yanıp sönmez).
+  const rolBekleniyor = !yetkili && !oturumYuklu;
+  const kilitli = !!disabled || !!calisiyor || rolBekleniyor;
+  const neden = rolBekleniyor ? undefined : !yetkili ? bekleyenRolMetni(istenen, kisiler) : title;
+  const nedenVar = !calisiyor && (!!disabled || !yetkili) && !!neden?.trim();
+  const nedenGorunur = nedenVar && (!nedenGizli || !yetkili);
   const sariciRef = useRef<HTMLSpanElement>(null);
   const nedenSahibi = useOrtakNeden(sariciRef, nedenGorunur ? neden : undefined, nedenId);
   const nedenCiz = nedenGorunur && nedenSahibi === nedenId;
-  const tanim = [geri["aria-describedby"], nedenGorunur ? nedenSahibi : undefined].filter(Boolean).join(" ") || undefined;
-  const kilitli = !!(disabled || !yetkili || calisiyor);
-  const odakli = odaklanabilir ?? baglamOdak;
-  const dugme = (
-    <button
-      type="button"
-      {...geri}
-      className={`dugme dugme-${tur}${kucuk ? " dugme-kucuk" : ""} ${className ?? ""}`}
-      disabled={odakli ? undefined : kilitli}
-      aria-disabled={odakli && kilitli ? true : undefined}
-      onClick={
-        odakli && kilitli
-          ? (e) => {
-              e.preventDefault();
-            }
-          : onClick
-      }
-      title={neden}
-      aria-describedby={tanim}
-      aria-busy={calisiyor || undefined}
-      data-yetkisiz={!yetkili || undefined}
-    >
-      {calisiyor && <span className="donen donen-kucuk" aria-hidden="true" />}
-      {children}
-    </button>
-  );
-  // Sarıcı her zaman çizilir (neden yokken `display: contents`): neden belirip kaybolurken düğme
-  // yeniden bağlanmaz (odak ve öğe kimliği korunur).
+  if (!yetkili && !rolBekleniyor) {
+    // Sarıcı korunur (grup içi ortak satır); düğme yok. Satırın eşi başka düğmede çizildiyse boş kalır.
+    return (
+      <span ref={sariciRef} id={geri.id} className={`dugme-neden-sarici${nedenCiz ? " neden-var" : ""}`} data-yetkisiz="true">
+        {nedenCiz && (
+          <span id={nedenId} className="dugme-neden bekleyen-rol" data-testid="bekleyen-rol">
+            {neden}
+          </span>
+        )}
+      </span>
+    );
+  }
+  const gizliNedenId = `${nedenId}-gizli`;
+  // `nedenGizli` + çağıranın görünür neden kimliği yoksa neden görünmez metinle bağlanır (ET-07).
+  const gizliNeden = nedenVar && !nedenGorunur && !geri["aria-describedby"];
+  const tanim =
+    [geri["aria-describedby"], nedenGorunur ? nedenSahibi : gizliNeden ? gizliNedenId : undefined].filter(Boolean).join(" ") || undefined;
   return (
+    // Sarıcı her zaman çizilir (neden yokken `display: contents`): neden belirip kaybolurken düğme
+    // yeniden bağlanmaz (odak ve öğe kimliği korunur).
     <span ref={sariciRef} className={`dugme-neden-sarici${nedenCiz ? " neden-var" : ""}`}>
-      {dugme}
+      <button
+        type="button"
+        {...geri}
+        className={`dugme dugme-${tur}${kucuk ? " dugme-kucuk" : ""} ${className ?? ""}`}
+        aria-disabled={kilitli || undefined}
+        onClick={(e) => {
+          // Kilitliyken tıklama ve (submit düğmesinde) örtük form gönderimi engellenir.
+          if (kilitli) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
+          onClick?.(e);
+        }}
+        title={neden}
+        aria-describedby={tanim}
+        aria-busy={calisiyor || undefined}
+      >
+        {calisiyor && <span className="donen donen-kucuk" aria-hidden="true" />}
+        {children}
+      </button>
       {nedenCiz && (
         <span id={nedenId} className="dugme-neden">
+          {neden}
+        </span>
+      )}
+      {gizliNeden && (
+        <span id={gizliNedenId} className="gorunmez">
           {neden}
         </span>
       )}

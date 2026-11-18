@@ -12,6 +12,7 @@ import { useIslem, useVeri } from "../hooks";
 import { useIzin } from "../auth";
 import { MODEL_RET_NEDENI, RET_NEDENI } from "../lib/etiketler";
 import { tarih } from "../lib/format";
+import { tasarimModeliBayat } from "../lib/durumModeli";
 import { MODEL_DURUMU, tur2Bildirimi, YER_TUTUCU_NEDENI, yerTutucuModelMi, type Tur2Bilgisi } from "../lib/tasarimModeli";
 import { useBildirim } from "./Bildirim";
 import { TasarimModeliDuzenleyici } from "./TasarimModeliDuzenleyici";
@@ -45,6 +46,8 @@ export function TasarimModeliPaneli({
   const [yenidenOnay, setYenidenOnay] = useState(false);
   // Son onay yanıtının tur 2 bilgisi (D1); null: alan yok (eski core) ya da henüz onay verilmedi.
   const [tur2, setTur2] = useState<Tur2Bilgisi | null>(null);
+  // IA-06: bayat (eski içeriğe ait / geçersiz) model varsayılan kapalı: tek satırlık durum özeti + "Göster".
+  const [bayatAcik, setBayatAcik] = useState(false);
 
   const y = veri.veri;
   const gorunur = analiz && (asamada || !!y?.model);
@@ -69,6 +72,19 @@ export function TasarimModeliPaneli({
     );
   }
   const m: TasarimModeliKaydi | null = y?.model ?? null;
+  const bayatlik = tasarimModeliBayat(g, m);
+  if (bayatlik.bayat && !bayatAcik) {
+    return (
+      <Kart baslik={baslik} id={TASARIM_MODELI_BOLUMU} eylemler={m && <Cip ton={MODEL_DURUMU[m.durum]?.ton ?? "notr"}>{MODEL_DURUMU[m.durum]?.etiket ?? m.durum}</Cip>}>
+        <p className="satir-ogeler kucuk" data-testid="tasarim-modeli-bayat">
+          <span>{bayatlik.ozet}</span>
+          <button type="button" className="dugme dugme-hayalet dugme-kucuk" aria-expanded={false} onClick={() => setBayatAcik(true)}>
+            Göster
+          </button>
+        </p>
+      </Kart>
+    );
+  }
 
   async function eylem<T>(fn: () => Promise<T>, basari: string | ((s: T) => string)) {
     const s = await islem.calistir(fn, { cakismada: () => void veri.yenile(true) });
@@ -144,6 +160,13 @@ export function TasarimModeliPaneli({
           <Uyari ton="hata" baslik="Model eski içeriğe ait">
             Gereksinim içeriği bu model üretildikten sonra değişti. Model kullanılamaz; PO teyidinden sonra yeniden üretin.
           </Uyari>
+        )}
+        {bayatlik.bayat && (
+          <p>
+            <button type="button" className="dugme dugme-hayalet dugme-kucuk" aria-expanded={true} onClick={() => setBayatAcik(false)}>
+              Gizle
+            </button>
+          </p>
         )}
         {m && yerTutucu && m.durum === "draft" && (
           <div data-testid="model-yer-tutucu">

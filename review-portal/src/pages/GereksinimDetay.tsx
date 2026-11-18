@@ -1,3 +1,4 @@
+import { BaskaProjedeKayit } from "../components/BaskaProjedeKayit";
 import { OtomatikAkisRozeti } from "../components/OtomatikAkisRozeti";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
@@ -5,7 +6,7 @@ import { api } from "../api/client";
 import { ApiError } from "../api/http";
 import { useOlay } from "../api/events";
 import type { Bulgu, GereksinimDetay as Detay } from "../api/types";
-import { useIzin, useIzinler, useOzellik } from "../auth";
+import { useIzin, useIzinler, useOturum, useOzellik } from "../auth";
 import { AjanUrunuPaneli, useAjanTesti } from "../components/AjanUrunuPaneli";
 import { AkisAdimlari } from "../components/AkisAdimlari";
 import { BazDegerKarti } from "../components/BazDegerKarti";
@@ -22,6 +23,7 @@ import { akisKanitlari, guncelAdim } from "../lib/yolHaritasi";
 import { AC_EKSIK, gereksinimDurumu, SORU_TURU } from "../lib/etiketler";
 import { AJAN_URUNU_NEDENI } from "../lib/ajanProbe";
 import { tarih } from "../lib/format";
+import { tasarimModeliBayat, tumCaseSayisi, varsayilanSekme } from "../lib/durumModeli";
 import { dokumanBloklari } from "../lib/dokuman";
 import type { UretimKipi } from "../api/tasarimModeliTipleri";
 import { MODEL_ASAMASI, TASARIM_MODELI_BOLUMU, TasarimModeliPaneli } from "../components/TasarimModeliPaneli";
@@ -88,8 +90,17 @@ export function GereksinimDetay() {
   // Tasarım modeli paneli kendi verisine göre çizilir; çizilmezse sekme boş durumu söyler.
   const [modelGorunur, setModelGorunur] = useState(false);
   // Case'ler: Gherkin indir ve yeniden üretim onayındaki sayılar için (yalnız case varsa okunur).
-  const caseVarHam = (detay.veri?.sayaclar.case_toplam ?? 0) > 0;
+  const caseVarHam = detay.veri ? tumCaseSayisi(detay.veri) > 0 : false;
   const caseler = useVeri(() => (caseVarHam ? api.caseler(id) : Promise.resolve([])), [id, caseVarHam, detay.veri?.durum]);
+  // IA-06/07: varsayılan sekme rol ve model bayatlığına göre; model yalnız model aşamasında okunur (bayatlık
+  // yalnız orada varsayılan sekmeyi değiştirir). `GET …/design-model` `case.analysis_read` ister.
+  const rol = useOturum().kullanici?.rol ?? null;
+  const modelOkunur = useIzin("case.analysis_read");
+  const modelOkunacak = !!detay.veri && MODEL_ASAMASI.has(detay.veri.durum);
+  const modelVeri = useVeri(
+    () => (modelOkunur && modelOkunacak ? api.tasarimModeli(id) : Promise.resolve(null)),
+    [id, modelOkunur, modelOkunacak, detay.veri?.durum],
+  );
 
   const tumunuYenile = useCallback(() => {
     void detay.yenile(true);
@@ -99,7 +110,7 @@ export function GereksinimDetay() {
   useOlay(sessiz, ["requirement.updated", "finding.updated", "case.generated"], id);
 
   if (detay.yukleniyor && !detay.veri) return <Yukleniyor />;
-  if (detay.hata && !detay.veri) return <HataKutusu hata={detay.hata} kaynak={detay.hataNesnesi} yenile={() => void detay.yenile()} />;
+  if (detay.hata && !detay.veri) return <BaskaProjedeKayit tur="requirement" id={id} hata={detay.hataNesnesi} ad="Gereksinim" liste={["/gereksinimler", "Gereksinimler"]} yedek={<HataKutusu hata={detay.hata} kaynak={detay.hataNesnesi} yenile={() => void detay.yenile()} />} />;
   const g = detay.veri;
   if (!g) return null;
   const d = g.ac_missing && g.durum === "new" ? AC_EKSIK : gereksinimDurumu(g.durum);
@@ -166,7 +177,7 @@ export function GereksinimDetay() {
       : uretimHatasi
         ? "İçerik PO onayından sonra değişti; yeniden PO teyidi gerekir"
         : "Case üretimi için PO teyidi gerekir";
-  const caseVar = g.sayaclar.case_toplam > 0;
+  const caseVar = tumCaseSayisi(g) > 0; // IA-03: önceki sürüm case'leri de Case review'da okunur
   const caseReviewYolu = `/gereksinimler/${encodeURIComponent(g.id)}/caseler`;
   // cases_ready: sıradaki adım case review (birincil); yeniden üretim ikincil ve onaylı (UX-4).
   const reviewAsamasi = g.durum === "cases_ready" && caseVar && !ajanBagli;
@@ -214,7 +225,7 @@ export function GereksinimDetay() {
     {
       id: S.caseler,
       ad: GEREKSINIM_SEKME_ADI[S.caseler],
-      sayi: g.sayaclar.case_toplam,
+      sayi: tumCaseSayisi(g),
       capalar: [BOLUM_ID.caseler, BOLUM_ID.ajan, BOLUM_ID.baz],
       icerik: () => (
         <>
@@ -516,8 +527,10 @@ export function GereksinimDetay() {
     <DetaySayfasi
       sekmeEtiketi="Gereksinim bölümleri"
       key={g.id}
-      // Varsayılan sekme sıradaki adımın sekmesi; kullanıcı sekme alanında işlem yapınca sabitlenir (DetaySayfasi).
-      varsayilanSekme={siradaki.sekme}
+      // Varsayılan sekme sıradaki adımın sekmesi (rol ve bayat modele göre, IA-06/07); kullanıcı sekme alanında
+      // işlem yapınca sabitlenir (DetaySayfasi).
+      // `failed`: hangi işin düştüğünü (üretim / denetim) yalnız sıradaki adım bilir; onun sekmesi açılır.
+      varsayilanSekme={g.durum === "failed" ? siradaki.sekme : varsayilanSekme(g, rol, tasarimModeliBayat(g, modelVeri.veri?.model).bayat)}
       ozet={
         <OzetKarti
           ust={
@@ -547,6 +560,11 @@ export function GereksinimDetay() {
           siradaki={
             <>
               {siradaki.metin}{" "}
+              {g.siradaki?.rol && (
+                <span className="soluk" data-testid="siradaki-rol">
+                  {g.siradaki.rol_etiketi} bekleniyor.{" "}
+                </span>
+              )}
               <Link to={`?sekme=${siradaki.sekme}`} className="ds-siradaki-git">
                 {GEREKSINIM_SEKME_ADI[siradaki.sekme]} →
               </Link>

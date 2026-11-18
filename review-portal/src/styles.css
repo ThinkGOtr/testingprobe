@@ -6858,3 +6858,184 @@ code {
   white-space: normal;
   overflow-wrap: anywhere;
 }
+
+/* ===== Şerit D (UX iş akışı: IA-13 Kod üretimi, IA-15 Koşular, IA-19 Kontrol Kulesi) — mevcut tokenlar, yeni renk yok ===== */
+.kod-grup-satiri th {
+  text-align: left;
+  font-weight: var(--fw-vurgu);
+  color: var(--text-2);
+  background: var(--surface-2);
+  padding-top: var(--space-2);
+  padding-bottom: var(--space-2);
+}
+.kod-neden {
+  margin-top: var(--space-1);
+  overflow-wrap: anywhere;
+}
+.kod-dosya {
+  margin-top: var(--space-0);
+  overflow-wrap: anywhere;
+}
+.kod-pano-katli,
+.dil-kapalilar,
+.olculmeyenler {
+  margin: var(--space-2) 0;
+}
+.kod-pano-katli > summary,
+.dil-kapalilar > summary,
+.olculmeyenler > summary {
+  cursor: pointer;
+  color: var(--text-2);
+}
+.kosu-basarisiz-ozet {
+  margin-top: var(--space-1);
+  overflow-wrap: anywhere;
+}
+.sayfalama {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  margin-top: var(--space-3);
+}
+/* ── Şerit C (UX iş akışı, ET-07/IA-10): kilitli düğme `aria-disabled` taşır (Tab sırasında kalır);
+   tür sınıflarının :hover kuralları yerel :disabled'ı dışladığı için kilitli görünüm hover'da da korunur.
+   Yetkisiz rolde düğme yerine tek satır "kimi bekliyoruz" (.bekleyen-rol). Yeni renk yok. */
+.dugme-neden.bekleyen-rol {
+  font-size: 0.82rem;
+  max-width: 48ch;
+}
+/* Kırıntı gezinme (IA-22): "Gereksinimler › TPD-1 › Case review"; mevcut tonlar. */
+.kirinti ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.kirinti li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.kirinti li + li::before {
+  content: "›";
+  color: var(--muted);
+}
+.ust-baglanti .kirinti a {
+  padding: 2px 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.kirinti [aria-current="page"] {
+  color: var(--text-2);
+  font-weight: 600;
+}
+/* Boş durum sonraki adım (IA-21): ne olacak + kim + bağlantı. */
+.sonraki-adim-baglanti {
+  font-weight: 600;
+  white-space: nowrap;
+}
+/* Denetim olayı (IA-12): okunur etiket + ikinci satırda olay kodu. */
+.denetim-olay-etiketi,
+.denetim-olay-kodu {
+  display: block;
+}
+/* Teknik ayrıntı açılırı (IA-12): kullanıcı cümlesinin altında ham hata/komut metni. */
+.teknik-ayrinti {
+  font-size: 0.82rem;
+}
+.teknik-ayrinti > summary {
+  cursor: pointer;
+}
+.teknik-ayrinti code {
+  display: block;
+  margin-top: 4px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* ------------------------------------------------------------------ TP UX şerit A (İşlerim, Hatalar, IA-05)
+   Yalnız yerleşim; renkler mevcut çip/kart değişkenlerinden. */
+.menu-sayac {
+  margin-left: auto;
+  padding: 0 7px;
+  min-width: 1.6em;
+  justify-content: center;
+}
+.islerim-bolum {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.islerim-bolum-baslik {
+  font-size: 1rem;
+  margin: 0;
+}
+.islerim-sonraki {
+  margin: 0 0 8px;
+}
+.islerim-liste {
+  display: grid;
+  gap: 0;
+}
+.islerim-oge,
+.islerim-ekip-satiri {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+.islerim-oge:first-child,
+.islerim-ekip-satiri:first-child {
+  border-top: 0;
+}
+.islerim-oge-govde {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.islerim-oge-baslik {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.islerim-ekip-ogeleri {
+  margin: 4px 0 0;
+  display: grid;
+  gap: 2px;
+}
+.siniflandirma-formu .secenek-satiri {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 4px 0;
+}
+.siniflandirma-duzelt,
+.teknik-ayrinti {
+  margin: 8px 0;
+}
+.siniflandirma-duzelt > summary,
+.teknik-ayrinti > summary {
+  cursor: pointer;
+}
+.teknik-ayrinti dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  margin: 8px 0 0;
+}
+.teknik-ayrinti dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.sonraki-adim-satiri {
+  margin: 0 0 12px;
+}
