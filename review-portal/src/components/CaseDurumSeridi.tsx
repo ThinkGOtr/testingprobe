@@ -66,7 +66,9 @@ export function useCaseListesineGit() {
 
 /** Onay için hazır olmayan güncel case: hazır olma durumu "ready" değil ya da core onay engeli var. */
 export function hazirDegilMi(c: TestCase): boolean {
-  if (c.durum === "rejected" || c.durum === "superseded") return false;
+  // IA-04: yalnız karar bekleyen güncel case (lib/caseV3 `onayaHazirDegil` ile aynı kural).
+  if (c.durum !== "draft" && c.durum !== "ready") return false;
+  if (c.onceki_icerik) return false;
   return caseHazirlik(c) !== "ready" || !!c.onay_engeli;
 }
 

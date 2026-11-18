@@ -354,7 +354,10 @@ export function gonderilmemisSoruSayisi(sorular?: readonly AcikSoruKaydi[] | nul
  * UX-6 "Hazır değil" süzgeci: güncel (reddedilmemiş, yerini yenisi almamış) case'in hazır olma durumu
  * "ready" değil ya da core onay engeli var. Durum şeridinin (A1) sayacıyla aynı kural.
  */
-export function onayaHazirDegil(c: Pick<TestCase, "durum" | "readiness" | "icerik" | "onay_engeli">): boolean {
-  if (c.durum === "rejected" || c.durum === "superseded") return false;
+export function onayaHazirDegil(c: Pick<TestCase, "durum" | "readiness" | "icerik" | "onay_engeli" | "onceki_icerik">): boolean {
+  // IA-04: yalnız karar bekleyen (taslak / onaya hazır) case'ler; onaylı ve yayınlanmış case'in sıradaki kabul
+  // kararı yoktur ("Hazır değil" sayılmaz). Önceki sürüm case'i güncel sürümün hazırlık sayımına girmez.
+  if (c.durum !== "draft" && c.durum !== "ready") return false;
+  if (c.onceki_icerik) return false;
   return caseHazirlik(c) !== "ready" || !!c.onay_engeli;
 }

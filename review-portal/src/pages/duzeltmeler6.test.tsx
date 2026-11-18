@@ -170,7 +170,7 @@ describe("14 adımlı akış: done sonrası adım kanıtlardan", () => {
     uygulama("/gereksinimler");
     const satir = (await screen.findByRole("link", { name: "Kampanyalı sepet" })).closest("tr")!;
     await waitFor(() => expect(satir).toHaveTextContent("14/14"));
-    expect(satir).toHaveTextContent("akış tamam");
+    expect(satir).toHaveTextContent("Akış tamam");
     expect(satir).not.toHaveTextContent("5/14");
   });
 });
