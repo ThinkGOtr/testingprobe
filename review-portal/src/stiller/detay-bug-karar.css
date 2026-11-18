@@ -1,0 +1,101 @@
+/* Detay şeridi (dk/ux-detay): Bug taslağı detayı + Karar tabloları sayfası. Yalnız ölçek değişkenleri ve mevcut renk
+   belirteçleri; yeni renk yok. */
+
+/* ---- Bug taslağı: karar şeridi (IA-17) — özet kartının hemen altında, formdan önce. */
+.bug-karar-seridi {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.bug-karar-ust {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-4);
+}
+.bug-karar-ust h2 {
+  margin: 0;
+}
+.bug-karar-ust p {
+  margin: 0;
+}
+.bug-karar-seridi .karar-paneli {
+  margin: 0;
+}
+.bug-karar-seridi .karar-paneli > div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.bug-karar-seridi .karar-paneli h3,
+.bug-karar-seridi .karar-paneli p,
+.bug-karar-seridi .karar-paneli .alan {
+  margin: 0;
+}
+.bug-karar-seridi .karar-paneli .eylemler {
+  margin-top: auto;
+}
+
+/* ---- Bug taslağı formu (DZ-09): kırpılmayan, kendiliğinden uzayan alanlar; ızgara ≤1279 px'te tek sütun. */
+textarea.kendiliginden-uzar {
+  field-sizing: content;
+  min-height: calc(2lh + 2 * var(--space-2));
+  max-height: 24lh;
+  resize: vertical;
+}
+.bug-taslak-form #bug-adimlar {
+  min-height: calc(4lh + 2 * var(--space-2));
+}
+.bug-alan-izgara {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 var(--space-4);
+  align-items: start;
+}
+@media (max-width: 1279px) {
+  .bug-alan-izgara {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Salt okunur taslak: tanım listesi, uzun metin sarar. */
+.bug-taslak-dl dd {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.bug-adimlar {
+  margin: 0;
+  padding-left: var(--space-5);
+  white-space: normal;
+}
+.bug-taslak-kart > * + * {
+  margin-top: var(--space-3);
+}
+
+/* ---- JQL (ET-14): sorgu sarılır, sonu görünür; yanında kopyala. */
+.bug-jql {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+.bug-jql .kod-blok {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ---- Karar tabloları sayfası. */
+.kt-ozet-aciklama {
+  margin: 0;
+  max-width: 80ch;
+}
+.kt-panel > * + * {
+  margin-top: var(--space-4);
+}
+.kt-panel > .kt-bolum-kap {
+  margin-top: 0;
+}

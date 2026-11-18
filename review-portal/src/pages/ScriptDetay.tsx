@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
@@ -7,8 +7,11 @@ import { ajanAdimiUyarla, kontrolAdimiGecti } from "../api/uyumDemoB";
 import { useBildirim } from "../components/Bildirim";
 import { KodGorunumu } from "../components/KodGorunumu";
 import { DilCakismasiKutusu, dilCakismasiMi, uretimBildirimi } from "../components/UretimSonuclari";
-import { BosDurum, Cip, Baglanti, HataKutusu, KayitHatasi, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
-import { TabloSarici } from "../components/tasarim";
+import { BosDurum, Cip, Baglanti, HataKutusu, KayitHatasi, IslemDugmesi, Kart, ReplayRozeti, Uyari, Yukleniyor } from "../components/ui";
+import { DurumCipi, EylemCubugu, Kimlik, KisaDeger, TabloSarici } from "../components/tasarim";
+import { DetaySayfasi, OzetKarti, type DetaySekmesi, type KirintiHalkasi } from "../components/DetaySayfasi";
+import { caseCapasi } from "../components/CaseKarti";
+import "../stiller/detay-script.css";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { useIzin } from "../auth";
 import { SCRIPT_DURUMU, scriptIsareti, scriptUretiliyor, type Ton } from "../lib/etiketler";
@@ -65,7 +68,7 @@ function kirikSinifi(a: BreakVerify["asamalar"][number], bv: BreakVerify): Yerel
   return null;
 }
 
-export function KirmaZaman({ bv, uygulanmaz = false }: { bv: BreakVerify; uygulanmaz?: boolean }) {
+export function KirmaZaman({ bv, uygulanmaz = false, yapilmadi = false }: { bv: BreakVerify; uygulanmaz?: boolean; yapilmadi?: boolean }) {
   return (
     <ol className="kirma-zaman" aria-label="Kırarak doğrulama zaman çizelgesi">
       {bv.asamalar.map((a) => {
@@ -79,6 +82,20 @@ export function KirmaZaman({ bv, uygulanmaz = false }: { bv: BreakVerify; uygula
               <div>
                 <div className="kirma-ad">{ASAMA_ADI[a.ad]}</div>
                 <div className="kucuk soluk">Uygulanmaz (defect adayı)</div>
+              </div>
+            </li>
+          );
+        }
+        // Merge edilmiş PR'da hiç koşmamış aşama "Bekliyor" değil "Yapılmadı" (IA-14): artık koşmayacak.
+        if (yapilmadi && a.sonuc === "pending") {
+          return (
+            <li key={a.ad} className="kirma-asama kirma-uygulanmaz" data-testid="kirma-yapilmadi">
+              <span className="kirma-ikon" aria-hidden="true">
+                –
+              </span>
+              <div>
+                <div className="kirma-ad">{ASAMA_ADI[a.ad]}</div>
+                <div className="kucuk soluk">Yapılmadı</div>
               </div>
             </li>
           );
@@ -129,18 +146,26 @@ export function KirmaZaman({ bv, uygulanmaz = false }: { bv: BreakVerify; uygula
 export function AjanAdimlari({ adimlar, canli, platform = null }: { adimlar: AjanAdimi[]; canli: boolean; platform?: Platform | null }) {
   const [secili, setSecili] = useState<number | null>(null);
   const aktif = adimlar.find((a) => a.sira === secili) ?? adimlar[adimlar.length - 1];
+  const listeRef = useRef<HTMLOListElement>(null);
+  // ET-09: liste iç kaydırmasız (sayfayla kayar); seçim değişince seçili adım görünür alanda kalır.
+  useEffect(() => {
+    if (secili === null) return;
+    const el = listeRef.current?.querySelector<HTMLElement>('[aria-current="step"]');
+    el?.scrollIntoView?.({ block: "nearest" });
+  }, [secili]);
   if (adimlar.length === 0) {
     return <BosDurum baslik={canli ? "Ajan başlıyor…" : "Ajan adımı yok."} />;
   }
   return (
     <div className="ajan">
-      <ol className="ajan-adimlar" aria-label="Ajan adımları">
+      <ol ref={listeRef} className="ajan-adimlar" aria-label="Ajan adımları">
         {adimlar.map((a) => (
           <li key={a.sira}>
             <button
               type="button"
               className={`ajan-adim${aktif?.sira === a.sira ? " aktif" : ""}`}
               aria-pressed={aktif?.sira === a.sira}
+              aria-current={aktif?.sira === a.sira ? "step" : undefined}
               onClick={() => setSecili(a.sira)}
             >
               <span className="mono soluk">
@@ -530,6 +555,29 @@ function CheckListesi({ checks }: { checks: PrCheck[] }) {
   );
 }
 
+/** Check'lerin özet metni: "9/9 check geçti" (hepsi yeşil değilse kaçının geçtiği). */
+export function checkOzetMetni(checks: PrCheck[]): string {
+  const gecen = checks.filter((c) => c.durum === "passed").length;
+  return `${gecen}/${checks.length} check geçti`;
+}
+
+/** Check listesi (IA-14): hepsi yeşilse tek satır özet, liste açılır ayrıntıda; değilse liste açık. */
+function CheckOzeti({ checks }: { checks: PrCheck[] }) {
+  const hepsiYesil = checks.length > 0 && checks.every((c) => c.durum === "passed");
+  if (!hepsiYesil) return <CheckListesi checks={checks} />;
+  return (
+    <details className="check-ozeti" data-testid="check-ozeti">
+      <summary>
+        <span className="ok-metin" aria-hidden="true">
+          ✓
+        </span>{" "}
+        {checkOzetMetni(checks)}
+      </summary>
+      <CheckListesi checks={checks} />
+    </details>
+  );
+}
+
 const PUSH_CI_METNI: Record<NonNullable<PullRequest["ci"]> | "yok", { metin: string; ton: "basari" | "hata" | "bilgi" | "notr" }> = {
   pending: { metin: "koşuyor", ton: "bilgi" },
   passed: { metin: "yeşil", ton: "basari" },
@@ -555,12 +603,15 @@ export function BirlesmisPrCi({ pr }: { pr: PullRequest }) {
         <>
           {checks.length > 0 && (
             <>
-              <div className="soluk">PR check'leri (merge öncesi, head {pr.head_sha.slice(0, 7)}):</div>
-              <CheckListesi checks={checks.map((c) => ({ ...c, zorunlu: null }))} />
+              <div className="soluk">
+                PR check'leri (merge öncesi, head <KisaDeger deger={pr.head_sha} kopyala={false} kirp="bas" />
+                ):
+              </div>
+              <CheckOzeti checks={checks.map((c) => ({ ...c, zorunlu: null }))} />
             </>
           )}
           <p>
-            <strong>main üzerinde push CI</strong> (merge commit <span className="mono">{sha}</span>):{" "}
+            <strong>main üzerinde push CI</strong> (merge commit <KisaDeger deger={pr.merge_sha ?? sha} kopyala={false} kirp="bas" />):{" "}
             <Link to="/kosular?tetik=push">Koşular'da izle</Link>
           </p>
         </>
@@ -571,12 +622,12 @@ export function BirlesmisPrCi({ pr }: { pr: PullRequest }) {
             {sha && (
               <>
                 {" "}
-                (commit <span className="mono">{sha}</span>)
+                (commit <KisaDeger deger={pr.merge_sha || pr.head_sha || sha} kopyala={false} kirp="bas" />)
               </>
             )}
             : <Cip ton={durum.ton}>{durum.metin}</Cip> · <Link to="/kosular?tetik=push">Koşular'da izle</Link>
           </p>
-          {checks.length > 0 && <CheckListesi checks={checks.map((c) => ({ ...c, zorunlu: null }))} />}
+          {checks.length > 0 && <CheckOzeti checks={checks.map((c) => ({ ...c, zorunlu: null }))} />}
         </>
       )}
     </div>
@@ -611,7 +662,12 @@ function SatirIci({ metin }: { metin: string }) {
     <>
       {parcalar.map((p, i) =>
         p.startsWith("`") && p.endsWith("`") && p.length > 1 ? (
-          <code key={i}>{p.slice(1, -1)}</code>
+          // Uzun özet (sha256, commit) kısaltılır; tam değer ipucunda ve kopyalanır (DZ-03, TS-09).
+          /^[0-9a-f]{16,}$/i.test(p.slice(1, -1)) ? (
+            <KisaDeger key={i} deger={p.slice(1, -1)} uzunluk={12} />
+          ) : (
+            <code key={i}>{p.slice(1, -1)}</code>
+          )
         ) : (
           <span key={i}>{p.replace(/\*\*/g, "")}</span>
         ),
@@ -620,9 +676,51 @@ function SatirIci({ metin }: { metin: string }) {
   );
 }
 
+const hucreler = (satir: string) =>
+  satir
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((h) => h.trim());
+
+/**
+ * Markdown tablosu (`| a | b |` + `|---|---|`) gerçek tablo olarak (DZ-03): ≤640 px'te "etiket: değer" yığını,
+ * hücreler sarar. Ayraç satırı yoksa ilk satır yine başlık sayılır.
+ */
+function PrTablosu({ satirlar }: { satirlar: string[] }) {
+  const [bas, ...kalan] = satirlar;
+  const basliklar = hucreler(bas);
+  const govde = kalan.filter((x) => !/^\s*\|?\s*:?-{2,}/.test(x)).map(hucreler);
+  return (
+    <TabloSarici etiket="PR açıklaması tablosu" yogunluk="sik" className="pr-govde-tablo">
+      <thead>
+        <tr>
+          {basliklar.map((b, i) => (
+            <th key={i} scope="col">
+              <SatirIci metin={b} />
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {govde.map((r, i) => (
+          <tr key={i}>
+            {basliklar.map((b, j) => (
+              <td key={j} className="sutun-metin" data-etiket={b.replace(/[`*]/g, "")}>
+                <SatirIci metin={r[j] ?? ""} />
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </TabloSarici>
+  );
+}
+
 /**
  * PR açıklamasının (core `pull_request.govde`, Markdown) güvenli, küçük bir alt kümesi: başlık, madde,
- * tablo satırı (mono), satır içi kod. Ham HTML hiçbir zaman yorumlanmaz.
+ * tablo (gerçek tablo), satır içi kod (uzun özetler kısaltılır). Ham HTML hiçbir zaman yorumlanmaz.
  */
 export function PrAciklamasi({ govde }: { govde: string }) {
   const bloklar: JSX.Element[] = [];
@@ -643,11 +741,7 @@ export function PrAciklamasi({ govde }: { govde: string }) {
       maddeler = [];
     }
     if (tablo.length) {
-      bloklar.push(
-        <pre key={`t${bloklar.length}`} className="pr-govde-tablo mono">
-          {tablo.join("\n")}
-        </pre>,
-      );
+      bloklar.push(<PrTablosu key={`t${bloklar.length}`} satirlar={tablo} />);
       tablo = [];
     }
   };
@@ -777,6 +871,8 @@ export function ScriptDetay() {
   // "Test verisi değişti" uyarısı Kod listesindeki kuralla aynı (veriDegistiGecerli): daha yeni script
   // olup olmadığı için liste yalnız uyarı adayı varsa okunur; okunamazsa yalnız durum kuralı uygulanır.
   const veriAdayi = !!v.veri?.veri_degisti;
+  // Kaynak case'in sıra numarası ve gereksinimi (kırıntı, "Kaynak" bağlantısı); okunamazsa yalnız Jira anahtarı.
+  const caseler = useVeri(() => api.caseler().catch(() => null), [id]);
   const tumScriptler = useVeri(() => (veriAdayi ? api.scriptler().catch(() => null) : Promise.resolve(null)), [id, veriAdayi]);
   const islem = useIslem();
   const bildir = useBildirim();
@@ -812,7 +908,6 @@ export function ScriptDetay() {
   if (v.hata && !v.veri) return <KayitHatasi ad="Test kodu" ust={<Link to="/kod">← Kod üretimi</Link>} hata={v.hata} kaynak={v.hataNesnesi} yenile={() => void v.yenile()} />;
   const s: Detay | undefined = v.veri;
   if (!s) return null;
-  const d = SCRIPT_DURUMU[s.durum] ?? { etiket: s.durum, ton: "notr" as const };
   const prAcik = s.pr?.durum === "open";
   const prBirlesti = s.pr?.durum === "merged";
   /** Kod üretiminin defect adayı (tutarlı assertion farkı): kırarak doğrulama kapalıdır (§2 adım 6, 12). */
@@ -834,6 +929,87 @@ export function ScriptDetay() {
   const musteriCi = !dogrulanmamis && s.hat === "musteri_ci";
   const dilAdi = s.dil ? DIL_ETIKETI[s.dil] : null;
 
+  // Kaynak case (IA-14): kırıntı ve özet kartı case review'daki kartına bağlanır.
+  const kaynakCase = (caseler.veri ?? []).find((c) => c.id === s.case_ids[0]) ?? null;
+  const caseAdi = kaynakCase ? `Case #${kaynakCase.sira_no}` : s.case_ids.length ? "Kaynak case" : null;
+  const gereksinimYolu = kaynakCase ? `/gereksinimler/${encodeURIComponent(kaynakCase.requirement_id)}` : null;
+  const caseYolu = kaynakCase && gereksinimYolu ? `${gereksinimYolu}/caseler#${encodeURIComponent(caseCapasi(kaynakCase.id))}` : null;
+  const checks = s.pr?.checks ?? [];
+  // Kırarak doğrulamanın durumu açık metinle (IA-14): yapılmadı mı, bekliyor mu, kimi bekliyor.
+  const kirmaDurumu: string = musteriCi
+    ? "Bu hatta yok (koşu müşterinin CI'ında)."
+    : defectAdayi
+      ? "Uygulanmaz: defect adayı (test zaten kırmızı)."
+      : s.break_verify.durum === "running"
+        ? "Sürüyor."
+        : s.break_verify.durum === "passed"
+          ? "Geçti: test hata yakalıyor."
+          : s.break_verify.durum === "weak" || s.zayif_test
+            ? "Zayıf test: kırılmış uygulamada yeşil kaldı."
+            : s.break_verify.durum === "failed"
+              ? "Tamamlanamadı; yeniden deneyin."
+              : prBirlesti
+                ? "Yapılmadı (merge öncesi zorunlu değildi; kabul notu denetimde)."
+                : prAcik
+                  ? canliOrtam
+                    ? "Yapılamaz: varsayılan test ortamı canlı."
+                    : "Bekliyor — Otomasyon Mühendisi başlatacak."
+                  : "PR açılınca yapılır.";
+  const kirmaBekliyor = prAcik && !musteriCi && !defectAdayi && !canliOrtam && s.break_verify.durum === "not_started" && !s.zayif_test;
+  // Tek "Sıradaki adım" (kimi bekliyoruz) ve onun sekmesi (varsayılan sekme).
+  const siradaki: { metin: ReactNode; sekme: string } = uretiliyor
+    ? { metin: "Ajan test kodunu üretiyor; bitince yerel kontrol koşar. Sizden bir şey beklenmiyor.", sekme: "ajan" }
+    : dogrulanmamis
+      ? { metin: "Kodu indirip kendi projenizde derleyin ya da tam hatlı bir dilde yeniden üretin — Otomasyon Mühendisi.", sekme: "kod" }
+      : s.engel?.tur === "defect_candidate"
+        ? {
+            metin: (
+              <>
+                Defect adayı: triage sonucuna ve bug taslağına karar verilecek — Test Uzmanı.{" "}
+                {s.failure_id && (
+                  <Link className="ds-siradaki-git" to={`/hatalar/${encodeURIComponent(s.failure_id)}`}>
+                    Triage →
+                  </Link>
+                )}
+              </>
+            ),
+            sekme: "kontrol",
+          }
+        : s.engel
+          ? { metin: `İnsana düştü (${ENGEL_TURU[s.engel.tur] ?? s.engel.tur}): Otomasyon Mühendisi düzeltip yeniden üretecek.`, sekme: "kontrol" }
+          : prAcik && s.pr?.dal?.geride
+            ? { metin: "Dal main'in gerisinde: önce dalı güncelleyin — Otomasyon Mühendisi.", sekme: "pr" }
+            : s.break_verify.durum === "running"
+              ? { metin: "Kırarak doğrulama sürüyor; bitince merge kapısı güncellenir.", sekme: "kirarak-dogrula" }
+              : kirmaBekliyor
+                ? { metin: "Kırarak doğrulayın, ardından PR'ı merge edin — Otomasyon Mühendisi.", sekme: "kirarak-dogrula" }
+                : prAcik
+                  ? {
+                      metin: mergeHazir
+                        ? "PR'ı inceleyip merge edin — Otomasyon Mühendisi."
+                        : engeller.length
+                          ? `Merge kapısı kapalı: ${engeller[0]}`
+                          : "Uyarıyı kabul edip merge edin — Otomasyon Mühendisi.",
+                      sekme: "pr",
+                    }
+                  : prBirlesti
+                    ? {
+                        metin: (
+                          <>
+                            Yapılacak iş yok: kod main'e birleşti.{" "}
+                            <Link className="ds-siradaki-git" to="/kosular?tetik=push">
+                              Koşuları izle →
+                            </Link>
+                          </>
+                        ),
+                        sekme: "pr",
+                      }
+                    : s.durum === "closed"
+                      ? { metin: "PR kapatıldı; case Kod üretimi ekranından yeniden üretilebilir — Otomasyon Mühendisi.", sekme: "pr" }
+                      : s.durum === "failed"
+                        ? { metin: "Üretim başarısız; Kod üretimi ekranından yeniden deneyin — Otomasyon Mühendisi.", sekme: "kontrol" }
+                        : { metin: "PR'ın açılması bekleniyor (yerel kontrol geçince otomatik açılır).", sekme: "kontrol" };
+
   async function baskaDildeUret(dil: Dil) {
     setHataYeri("genel");
     const r = await islem.calistir(() => api.kodUret(s!.case_ids, s!.platform ?? "web", dil));
@@ -853,7 +1029,7 @@ export function ScriptDetay() {
     }
   }
 
-  const uretimKartlari = (
+  const ajanKartlari = (
     <>
       <Kart
         baslik={uygulamaPlatformuMu(s.platform) ? "Ajan adımları (Appium · app-mcp)" : "Ajan adımları (Playwright MCP)"}
@@ -879,6 +1055,10 @@ export function ScriptDetay() {
         )}
       </Kart>
 
+    </>
+  );
+  const kontrolKarti = (
+    <>
       {musteriCi ? (
         <Kart baslik="Müşteri CI" id="musteri-ci">
           <MusteriCiKarti mc={s.musteri_ci} yk={s.yerel_kontrol} dil={s.dil ?? null} uretiliyor={uretiliyor} />
@@ -899,15 +1079,12 @@ export function ScriptDetay() {
     </>
   );
 
-  // Karar kartları (PR + Kırarak doğrula). Sıra değişiminde iki bölüm anahtarlı kardeş olarak yer değiştirir:
-  // React taşır, yeniden mount etmez (AjanAdimlari seçimi ve kart durumları korunur).
-  const kararKartlari = (
-    <div key="karar" className="iki-sutun">
+  const prKarti = (
       <Kart baslik="Pull request" id="pr">
         {s.pr ? (
           <>
             <p>
-              <span className="mono">#{s.pr.number}</span> {s.pr.baslik}
+              <Kimlik deger={`#${s.pr.number}`} /> {s.pr.baslik}
             </p>
             <p className="satir-ogeler">
               <Cip ton={s.pr.durum === "merged" ? "basari" : s.pr.durum === "open" ? "bilgi" : "notr"}>
@@ -922,7 +1099,7 @@ export function ScriptDetay() {
                   CI: {s.pr.ci === "passed" ? "yeşil" : s.pr.ci === "failed" ? "kırmızı" : s.pr.ci === "pending" ? "bekliyor" : "—"}
                 </Cip>
               )}
-              <span className="mono kucuk">{s.pr.branch}</span>
+              <Kimlik deger={s.pr.branch} tur="yol" />
               {s.pr.forge && <span className="kucuk soluk">{s.pr.forge === "local" ? "LocalForge" : "GitHub"}</span>}
               {/* Platform deposu: PR varsayılan dışı depodaysa sahip/ad (tek depolu projede çizilmez). */}
               <DepoCipi kaynak={s.pr} />
@@ -930,7 +1107,7 @@ export function ScriptDetay() {
             {prBirlesti ? (
               <BirlesmisPrCi pr={s.pr} />
             ) : (
-              s.pr.checks && s.pr.checks.length > 0 && <CheckListesi checks={s.pr.checks} />
+              s.pr.checks && s.pr.checks.length > 0 && <CheckOzeti checks={s.pr.checks} />
             )}
             {s.pr.url && (
               <p>
@@ -948,7 +1125,7 @@ export function ScriptDetay() {
                 {s.pr.dal.guncelleme
                   ? `Dal güncelleniyor (${s.pr.dal.guncelleme}).`
                   : (s.pr.dal.neden ?? "Başka bir PR merge edildi; önce dalı güncelleyin. Güncelleme yeni head ve yeni CI üretir, yeniden incelemeniz gerekir.")}
-                <div className="eylemler">
+                <EylemCubugu>
                   <IslemDugmesi
                     izin="code.review"
                     tur="ikincil"
@@ -958,7 +1135,7 @@ export function ScriptDetay() {
                   >
                     Dalı güncelle
                   </IslemDugmesi>
-                </div>
+                </EylemCubugu>
               </Uyari>
             )}
             {s.pass_at_1 !== null && <p className="kucuk">pass@1 (düzeltme turu öncesi): {s.pass_at_1 ? "✓" : "✗"}</p>}
@@ -979,7 +1156,7 @@ export function ScriptDetay() {
               {s.pr.merge_sha && (
                 <>
                   {" · merge commit "}
-                  <span className="mono">{s.pr.merge_sha.slice(0, 7)}</span>
+                  <KisaDeger deger={s.pr.merge_sha} kirp="bas" />
                 </>
               )}
             </div>
@@ -1012,7 +1189,7 @@ export function ScriptDetay() {
           </div>
         )}
         {s.pr && prAcik && (
-          <div className="eylemler">
+          <EylemCubugu>
             <IslemDugmesi
               izin="code.merge"
               disabled={!mergeHazir}
@@ -1038,7 +1215,7 @@ export function ScriptDetay() {
             >
               Merge et
             </IslemDugmesi>
-          </div>
+          </EylemCubugu>
         )}
         {islem.hata && hataYeri === "pr" && <HataKutusu hata={islem.hata} kaynak={islem.hataNesnesi} />}
         {s.pr && prAcik && (
@@ -1095,7 +1272,9 @@ export function ScriptDetay() {
           </details>
         )}
       </Kart>
-
+  );
+  const kirmaKarti = (
+    <>
       {musteriCi ? (
         <Kart id="kirarak-dogrula" baslik="Kırarak doğrula">
           <div data-testid="kirarak-dogrulanmadi">
@@ -1112,7 +1291,8 @@ export function ScriptDetay() {
           !prBirlesti && (
           <IslemDugmesi
             izin="code.break_verify"
-            tur="ikincil"
+            tur={kirmaBekliyor ? "birincil" : "ikincil"}
+            odaklanabilir
             disabled={!prAcik || defectAdayi || canliOrtam || s.break_verify.durum === "running"}
             calisiyor={s.break_verify.durum === "running"}
             // Defect adayında / canlı ortamda kutu nedeni zaten görünür yazar; düğmeye bağlanır.
@@ -1134,6 +1314,9 @@ export function ScriptDetay() {
           )
         }
       >
+        <p className="kirma-durum" data-testid="kirma-durum">
+          <strong>Durum:</strong> {kirmaDurumu}
+        </p>
         <p className="soluk kucuk">
           Koşunun bayisi için kampanya kuralı BREAK_CAMPAIGN ile bozulur (diğer bayiler ve ajan etkilenmez); test kırmızıya dönmezse "zayıf test" sayılır.
         </p>
@@ -1148,7 +1331,7 @@ export function ScriptDetay() {
             kanıt üretmez. Hata triage'a gitti; bug taslağı ve testçi kararı triage sayfasında.
           </Uyari>
         )}
-        <KirmaZaman bv={s.break_verify} uygulanmaz={defectAdayi} />
+        <KirmaZaman bv={s.break_verify} uygulanmaz={defectAdayi} yapilmadi={prBirlesti} />
         {s.break_verify.durum === "passed" && <Uyari ton="basari">Test hata yakalıyor ✓</Uyari>}
         {(s.zayif_test || s.break_verify.durum === "weak") && (
           <Uyari ton="uyari">
@@ -1164,54 +1347,57 @@ export function ScriptDetay() {
         )}
       </Kart>
       )}
-    </div>
+    </>
   );
   // Doğrulanmamış script'te karar kartları (PR, kırarak doğrula, merge) çizilmez: kısa açıklama yerlerini alır.
-  const kararYerine = (
-    <Kart key="karar" baslik="Pull request ve kırarak doğrulama" id="pr">
-      <BosDurum baslik={`${dilAdi ?? "Bu dil"} için PR, kırarak doğrulama ve merge yok.`}>
+  const dogrulanmamisPr = (
+    <Kart baslik="Pull request ve kırarak doğrulama" id="pr">
+      <BosDurum kip="sekme" baslik={`${dilAdi ?? "Bu dil"} için PR, kırarak doğrulama ve merge yok.`}>
         Doğrulanmamış dilde üretilen kod depoya yazılmaz; PR'a ve merge'e giremez. Tam hat için TypeScript ya da Java ile yeniden üretin.
       </BosDurum>
     </Kart>
   );
-  const karar = dogrulanmamis ? kararYerine : kararKartlari;
 
-  return (
+  const sekmeler: DetaySekmesi[] = [
+    { id: "pr", ad: "Pull request", capalar: ["pr"], icerik: dogrulanmamis ? dogrulanmamisPr : prKarti },
+    {
+      id: "kirarak-dogrula",
+      ad: "Kırarak doğrula",
+      capalar: ["kirarak-dogrula"],
+      dikkat: kirmaBekliyor,
+      icerik: dogrulanmamis ? (
+        <Kart baslik="Kırarak doğrula">
+          <BosDurum kip="sekme" baslik="Doğrulanmamış dilde kırarak doğrulama yok." />
+        </Kart>
+      ) : (
+        kirmaKarti
+      ),
+    },
+    { id: "ajan", ad: "Ajan adımları", sayi: s.adimlar.length, icerik: ajanKartlari },
+    { id: "kontrol", ad: musteriCi ? "Müşteri CI" : "Yerel kontrol", capalar: ["musteri-ci"], icerik: kontrolKarti },
+    {
+      id: "kod",
+      ad: "Kod",
+      icerik: (
+        <Kart baslik={dogrulanmamis ? "Üretilen test dosyası (doğrulanmamış)" : "Üretilen test dosyası"}>
+          {s.kod ? (
+            <KodGorunumu kod={s.kod} dosya={s.dosya_yolu} dil={vurguDili(s.dil) ?? undefined} />
+          ) : (
+            <BosDurum kip="sekme" baslik="Kod henüz üretilmedi." />
+          )}
+        </Kart>
+      ),
+    },
+  ];
+
+  const kirinti: KirintiHalkasi[] = [
+    { ad: "Kod üretimi", yol: "/kod" },
+    ...(s.requirement_key ? [{ ad: s.requirement_key, yol: gereksinimYolu }] : []),
+    { ad: caseAdi ?? "Test kodu" },
+  ];
+
+  const ust = (
     <>
-      <SayfaBasligi
-        ust={<Link to="/kod">← Kod üretimi</Link>}
-        baslik={s.baslik}
-        aciklama={
-          <span className="satir-ogeler">
-            <Cip ton={d.ton}>{d.etiket}</Cip>
-            {isaret && <Cip ton={isaret.ton}>{isaret.etiket}</Cip>}
-            {sinif && <Cip ton={sinif.ton}>{sinif.etiket}</Cip>}
-            <ReplayRozeti mode={s.mode} />
-            <PlatformRozeti platform={s.platform} />
-            <DepoCipi kaynak={s} />
-            {s.tetik === "otomatik" && (
-              <Cip ton="bilgi" title={OTOMATIK_TETIK_ACIKLAMA}>
-                {OTOMATIK_TETIK_ROZETI}
-              </Cip>
-            )}
-            <DilRozeti dil={s.dil} platform={s.platform} />
-            {musteriCi && (
-              <>
-                <Cip ton="notr" title="Derleme ve koşu müşterinin GitHub Actions iş akışında">
-                  Müşteri CI
-                </Cip>
-                <span data-testid="kirarak-dogrulanmadi-rozeti">
-                  <Cip ton="uyari" title={KIRARAK_DOGRULANMADI_ACIKLAMA}>
-                    {KIRARAK_DOGRULANMADI}
-                  </Cip>
-                </span>
-              </>
-            )}
-            {s.requirement_key && <span className="mono">{s.requirement_key}</span>}
-            <span className="soluk">{tarih(s.olusturma)}</span>
-          </span>
-        }
-      />
       {s.engel ? (
         <Uyari ton={s.engel.tur === "defect_candidate" ? "hata" : "uyari"} baslik={`İnsana düştü: ${ENGEL_TURU[s.engel.tur] ?? s.engel.tur}`}>
           {defectMetni ?? nedenTemizle(s.engel.neden ?? s.hata) ?? "Ayrıntı yerel kontrol ve eşleme kartlarında."}
@@ -1260,20 +1446,92 @@ export function ScriptDetay() {
       {islem.hata &&
         hataYeri === "genel" &&
         (dilCakismasiMi(islem.hataNesnesi) ? <DilCakismasiKutusu hata={islem.hataNesnesi} /> : <HataKutusu hata={islem.hata} kaynak={islem.hataNesnesi} />)}
-
-      {/* PR açıldıktan sonra karar kartları (PR + Kırarak doğrula) üste gelir: demo Adım 6–7 kaydırmasız
-          (1152×720). Üretim sürerken ajan adımları üstte kalır. Okuma ve sekme sırası görsel sırayla aynı. */}
-      {s.pr
-        ? [karar, <Fragment key="uretim">{uretimKartlari}</Fragment>]
-        : [<Fragment key="uretim">{uretimKartlari}</Fragment>, karar]}
-
-      <Kart baslik={dogrulanmamis ? "Üretilen test dosyası (doğrulanmamış)" : "Üretilen test dosyası"}>
-        {s.kod ? (
-          <KodGorunumu kod={s.kod} dosya={s.dosya_yolu} dil={vurguDili(s.dil) ?? undefined} />
-        ) : (
-          <BosDurum baslik="Kod henüz üretilmedi." />
-        )}
-      </Kart>
     </>
   );
+  const ustVar = !!(s.engel || s.hata || veriDegistiGecerli(s, tumScriptler.veri ?? [s]) || s.uyarilar.length || dogrulanmamis || (islem.hata && hataYeri === "genel"));
+
+  return (
+    <DetaySayfasi
+      key={s.id}
+      sekmeEtiketi="Test kodu bölümleri"
+      varsayilanSekme={siradaki.sekme}
+      ozet={
+        <OzetKarti
+          kirinti={kirinti}
+          baslik={s.baslik}
+          rozetler={
+            <>
+              <DurumCipi harita={SCRIPT_DURUMU} deger={s.durum} />
+              {isaret && <Cip ton={isaret.ton}>{isaret.etiket}</Cip>}
+              {sinif && <Cip ton={sinif.ton}>{sinif.etiket}</Cip>}
+              <ReplayRozeti mode={s.mode} />
+              {s.tetik === "otomatik" && <Cip ton="bilgi" aciklama={OTOMATIK_TETIK_ACIKLAMA}>{OTOMATIK_TETIK_ROZETI}</Cip>}
+              {musteriCi && (
+                <>
+                  <Cip ton="notr" aciklama="Derleme ve koşu müşterinin GitHub Actions iş akışında">
+                    Müşteri CI
+                  </Cip>
+                  <span data-testid="kirarak-dogrulanmadi-rozeti">
+                    <Cip ton="uyari" aciklama={KIRARAK_DOGRULANMADI_ACIKLAMA}>
+                      {KIRARAK_DOGRULANMADI}
+                    </Cip>
+                  </span>
+                </>
+              )}
+            </>
+          }
+          meta={
+            <>
+              {caseAdi && (
+                <span data-testid="kaynak-case">
+                  Kaynak: {s.requirement_key && <>{s.requirement_key} · </>}
+                  {caseYolu ? <Link to={caseYolu}>{caseAdi}</Link> : caseAdi}
+                  {s.case_ids.length > 1 && ` (+${s.case_ids.length - 1})`}
+                </span>
+              )}
+              <PlatformRozeti platform={s.platform} />
+              <DilRozeti dil={s.dil} platform={s.platform} />
+              <DepoCipi kaynak={s} />
+              {s.pr && (
+                <span>
+                  PR <Kimlik deger={`#${s.pr.number}`} />
+                </span>
+              )}
+              {checks.length > 0 && !prBirlesti && <span data-testid="check-ozet-metni">{checkOzetMetni(checks)}</span>}
+              <span>{tarih(s.olusturma)}</span>
+            </>
+          }
+          siradaki={
+            <>
+              {siradaki.metin}{" "}
+              {typeof siradaki.metin === "string" && (
+                <Link to={`?sekme=${siradaki.sekme}`} className="ds-siradaki-git">
+                  {sekmeler.find((x) => x.id === siradaki.sekme)?.ad} →
+                </Link>
+              )}
+            </>
+          }
+          eylemler={
+            (caseYolu || s.pr?.url) && (
+              <>
+                {s.pr?.url && (
+                  <a className="dugme dugme-ikincil" href={s.pr.url} target="_blank" rel="noopener noreferrer">
+                    PR'ı GitHub'da aç
+                  </a>
+                )}
+                {caseYolu && (
+                  <Link className="dugme dugme-ikincil" to={caseYolu}>
+                    Case'i aç
+                  </Link>
+                )}
+              </>
+            )
+          }
+        />
+      }
+      ust={ustVar ? ust : undefined}
+      sekmeler={sekmeler}
+    />
+  );
+
 }

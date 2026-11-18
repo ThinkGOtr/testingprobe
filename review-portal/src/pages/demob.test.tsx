@@ -11,7 +11,7 @@ import { ayar, mockVerisi } from "../api/mock/handlers";
 import { OturumProvider, varsayilanSayfa } from "../auth";
 import { BildirimProvider } from "../components/Bildirim";
 import { mergeEngelleri, mergeOnayNotu, mergeUyarilari } from "../lib/kapi";
-import { oturumAc } from "../test/yardimci";
+import { oturumAc, sekmeAc } from "../test/yardimci";
 import { kosulariSuz } from "./Kosular";
 import { BirlesmisPrCi } from "./ScriptDetay";
 
@@ -40,37 +40,46 @@ describe("Kod üretimi: ekranlar (örnek veri)", () => {
     await oturumAc("muhendis");
     uygulama("/kod/scr-3");
     expect(await screen.findByRole("heading", { level: 1, name: /6 adet kampanyalı üründe bedava ürün verilmez/ })).toBeInTheDocument();
+    // Defect adayında varsayılan sekme yerel kontrol (sıradaki adım: triage kararı).
+    const sinif = screen.getByTestId("yerel-sinif");
+    expect(sinif).toHaveTextContent("Defect adayı");
+    expect(sinif).toHaveTextContent(/otomatik düzeltme yapılmaz/i);
+    expect(screen.getByText(/Gerçekleşen:/).closest("li")).toHaveTextContent("bedava adet 1 · indirim 25,00 TL");
+    expect(screen.getByTestId("siradaki-adim")).toHaveTextContent("Test Uzmanı");
+    await sekmeAc("Ajan adımları");
     const tablo = screen.getByRole("region", { name: "Eşlenen adımlar tablosu" });
     const satir = within(tablo).getByText('CartPage.expectDiscount("0,00 TL")').closest("tr")!;
     expect(satir).toHaveTextContent("Doğrulama");
     expect(satir).toHaveTextContent("yerel kontrolde koşulur"); // doğrulama uygulamada gözlem iddia etmez
     expect(satir).toHaveTextContent("indirim 0,00 TL");
-    const sinif = screen.getByTestId("yerel-sinif");
-    expect(sinif).toHaveTextContent("Defect adayı");
-    expect(sinif).toHaveTextContent(/otomatik düzeltme yapılmaz/i);
-    expect(screen.getByText(/Gerçekleşen:/).closest("li")).toHaveTextContent("bedava adet 1 · indirim 25,00 TL");
+    await sekmeAc("Pull request");
     expect(screen.getByText("PR açılmadı: defect adayı insana düştü.")).toBeInTheDocument();
     // PR yokken merge kapısı yok (core merge_engelleri = []); PR kartı nedenini söyler.
     expect(screen.queryByTestId("merge-kapisi")).toBeNull();
     expect(screen.queryByRole("button", { name: "Merge et" })).not.toBeInTheDocument();
     // Kod görünümü renklendirilmiş (belirteç sınıfları) ve dosya adını taşır.
+    await sekmeAc("Kod");
     const kod = screen.getByLabelText("demo-app/e2e/tests/tpd-1/c3-kampanya-6-adet-bedava-yok.spec.ts içeriği");
     expect(kod.querySelector(".tk-metin")).not.toBeNull();
   });
 
   it("hata yakalayan test: check listesi, kırma zaman çizelgesi, 'test hata yakalıyor ✓', merge kapısı açık", async () => {
     await oturumAc("muhendis");
-    uygulama("/kod/scr-2");
+    uygulama("/kod/scr-2?sekme=kirarak-dogrula");
     expect(await screen.findByText("Test hata yakalıyor ✓")).toBeInTheDocument();
-    const checks = screen.getByRole("list", { name: "PR check'leri" });
-    expect(checks).toHaveTextContent("local-ci");
-    expect(checks).toHaveTextContent("zorunlu");
+    expect(screen.getByTestId("kirma-durum")).toHaveTextContent("Geçti: test hata yakalıyor.");
     const zaman = screen.getByRole("list", { name: "Kırarak doğrulama zaman çizelgesi" });
     expect(within(zaman).getAllByRole("listitem").map((l) => l.textContent)).toEqual([
       expect.stringContaining("Yeşil"),
       expect.stringContaining("Kırmızı"),
       expect.stringContaining("Yeşil"),
     ]);
+    await sekmeAc("Pull request");
+    // Hepsi yeşil check'ler tek satır özet (IA-14); liste açılır ayrıntıda.
+    expect(screen.getByTestId("check-ozeti")).toHaveTextContent(/\d+\/\d+ check geçti/);
+    const checks = screen.getByRole("list", { name: "PR check'leri" });
+    expect(checks).toHaveTextContent("local-ci");
+    expect(checks).toHaveTextContent("zorunlu");
     expect(screen.getByTestId("merge-kapisi")).toHaveTextContent("açık ✓");
     // İnsan kapısı henüz geçilmedi (merge insan kararı): amber "bekliyor" şeridi, yeşil değil.
     expect(screen.getByTestId("merge-kapisi")).toHaveClass("kapi-bekliyor");
@@ -85,7 +94,11 @@ describe("Kod üretimi: ekranlar (örnek veri)", () => {
     expect(within(bolum).getByText("PR açıklaması")).toBeInTheDocument();
     expect(within(bolum).getByText("İzlenebilirlik").closest("strong")).not.toBeNull();
     expect(within(bolum).getByText("TPD-1").tagName).toBe("CODE");
-    expect(bolum.querySelector("pre")).toHaveTextContent("| S3 | CartPage | expectFreeQuantity |");
+    // Markdown tablosu gerçek tablo (DZ-03): satır hücreleri ayrı, sayfa yatay kaymaz.
+    const tablo = within(bolum).getAllByRole("region", { name: "PR açıklaması tablosu" });
+    const satir = tablo.map((t) => within(t).queryByText("expectFreeQuantity")).find(Boolean)!.closest("tr")!;
+    expect(satir).toHaveTextContent("S3");
+    expect(satir).toHaveTextContent("CartPage");
     expect(screen.queryByText(/LocalForge'un PR sayfası yok/)).not.toBeInTheDocument();
   });
 
@@ -119,17 +132,18 @@ describe("Kod üretimi: ekranlar (örnek veri)", () => {
   it("zayıf test: kapı açık, uyarı açık kabulle merge edilir ve kabul notu core'a gider", async () => {
     await oturumAc("muhendis");
     const u = userEvent.setup();
-    uygulama("/kod/scr-1");
+    uygulama("/kod/scr-1?sekme=kirarak-dogrula");
     expect(await screen.findByText(/Zayıf test: kırılmış uygulamada da yeşil kaldı\./)).toBeInTheDocument();
+    await sekmeAc("Pull request");
     const kapi = screen.getByTestId("merge-kapisi");
     expect(kapi).toHaveTextContent("açık ✓");
     // Mock core gibi `merge_kabul_gerekli` gönderir; portal metni aynen gösterir.
     expect(screen.getByTestId("merge-uyarilari")).toHaveTextContent("Zayıf test: BREAK_CAMPAIGN ile kırılan uygulamada da yeşil kaldı (açık kabul gerekir).");
     const dugme = screen.getByRole("button", { name: "Merge et" });
-    expect(dugme).toBeDisabled();
+    expect(dugme).toHaveAttribute("aria-disabled", "true");
     expect(dugme).toHaveAttribute("title", "Önce uyarıyı kabul edin");
     await u.click(screen.getByRole("checkbox", { name: /zayıf test olarak merge et/ }));
-    expect(dugme).toBeEnabled();
+    expect(dugme).not.toHaveAttribute("aria-disabled");
     await u.click(dugme);
     await waitFor(() => expect(screen.getByTestId("merge-kapisi")).toHaveTextContent("✓ Birleştirildi — muhendis"));
     expect(screen.getByTestId("merge-kapisi")).toHaveTextContent(/merge commit \w{7}/);
@@ -172,7 +186,7 @@ describe("Kod üretimi: ekranlar (örnek veri)", () => {
     };
     uygulama("/kod/scr-2");
     const push = await screen.findByTestId("push-ci");
-    expect(push).toHaveTextContent(/^main üzerinde push CI \(commit [0-9a-f]{7}\): koşuyor/);
+    expect(push).toHaveTextContent(/^main üzerinde push CI \(commit [0-9a-f]{7}…?\): koşuyor/);
     expect(push).not.toHaveTextContent("zorunlu");
     expect(within(push).getByRole("link", { name: "Koşular'da izle" })).toHaveAttribute("href", "/kosular?tetik=push");
     expect(screen.getByText("PR CI: merge öncesi yeşil")).toBeInTheDocument();
@@ -200,8 +214,9 @@ describe("Kod üretimi: ekranlar (örnek veri)", () => {
       </MemoryRouter>,
     );
     const push = screen.getByTestId("push-ci");
-    expect(push).toHaveTextContent("PR check'leri (merge öncesi, head aaaaaaa)");
-    expect(push).toHaveTextContent("main üzerinde push CI (merge commit bbbbbbb)");
+    // Uzun sha 7 karakter + "…" (tam değer ipucunda; TS-09).
+    expect(push).toHaveTextContent("PR check'leri (merge öncesi, head aaaaaaa…)");
+    expect(push).toHaveTextContent("main üzerinde push CI (merge commit bbbbbbb…)");
     expect(push).not.toHaveTextContent("zorunlu");
   });
 
@@ -209,7 +224,7 @@ describe("Kod üretimi: ekranlar (örnek veri)", () => {
     await oturumAc("analist");
     uygulama("/kod/scr-2");
     const d = await screen.findByRole("button", { name: "Merge et" });
-    expect(d).toBeDisabled();
+    expect(d).toHaveAttribute("aria-disabled", "true");
     expect(d).toHaveAttribute("title", expect.stringMatching(/gereken rol/i));
   });
 
@@ -328,7 +343,7 @@ describe("Koşular", () => {
 
   it("koşu detayı: raporlar kartı, adres yoksa nedeniyle düz metin; üretilen teste bağlantı", async () => {
     await oturumAc("muhendis");
-    uygulama("/kosular/run-108");
+    uygulama("/kosular/run-108?sekme=raporlar");
     const kart = await screen.findByRole("region", { name: "Raporlar ve bağlantılar" });
     expect(kart).toHaveTextContent("Playwright HTML raporu");
     expect(within(kart).queryByRole("link", { name: /Playwright HTML raporu/ })).not.toBeInTheDocument();
@@ -598,12 +613,14 @@ describe("canlı derleme: core şekilli Demo-B yanıtları", () => {
         "/cases": [],
       }),
     );
-    uygulama("/kod/s-1");
+    uygulama("/kod/s-1?sekme=kirarak-dogrula");
     expect(await screen.findByText("Test hata yakalıyor ✓")).toBeInTheDocument();
     expect(screen.getAllByText("REPLAY", { selector: ".rozet-replay" }).length).toBeGreaterThan(0);
-    expect(screen.getByText('CartPage.expectDiscount("25,00 TL")')).toBeInTheDocument();
+    await sekmeAc("Pull request");
     expect(screen.getByRole("list", { name: "PR check'leri" })).toHaveTextContent("local-ci");
     expect(screen.getByTestId("merge-kapisi")).toHaveTextContent("açık ✓");
+    await sekmeAc("Ajan adımları");
+    expect(screen.getByText('CartPage.expectDiscount("25,00 TL")')).toBeInTheDocument();
     // Core göreli ekran görüntüsü adresi portalda /api önekiyle açılır; ajan olayı doğrulama taşımıyorsa uydurulmaz.
     expect(screen.getByRole("img", { name: /Adım 1 ekran görüntüsü/ })).toHaveAttribute("src", "/api/scripts/s-1/screens/1.png");
     expect(screen.queryByText(/snapshot'ta doğrulandı/)).not.toBeInTheDocument();

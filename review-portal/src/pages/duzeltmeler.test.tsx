@@ -189,7 +189,7 @@ describe("case review özeti: ölçülmeyen süre '0 ms' değil '—'", () => {
   it("hiç review süresi ölçülmediyse Review süresi '—' ve 'henüz ölçülmedi'", async () => {
     await oturumAc("analist");
     for (const c of mockVerisi().caseler) if (c.requirement_id === "req-tpd-1") c.review_sure_ms = null;
-    uygulama("/gereksinimler/req-tpd-1/caseler");
+    uygulama("/gereksinimler/req-tpd-1/caseler?sekme=olculer");
     const etiket = await screen.findByText("Review süresi");
     const kutu = etiket.closest(".metrik") as HTMLElement;
     await waitFor(() => expect(within(kutu).getByText("henüz ölçülmedi")).toBeInTheDocument());

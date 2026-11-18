@@ -51,7 +51,7 @@ describe("triage: test beklentisi (karar tablosu)", () => {
 
   it("HataDetay (C3 defect adayı): karar tablosu sinyali tek satır başlıkla, ayrıntı altında; beklenti için bug taslağı düğmesi eklenmez", async () => {
     await oturumAc("analist");
-    uygulama("/hatalar/fail-4");
+    uygulama("/hatalar/fail-4?sekme=sinyaller");
     const sinyal = await screen.findByTestId("sinyal-karar_tablosu_uyumlu");
     expect(within(sinyal).getByText("Uygulama onaylı kurala aykırı (T1 · R2: adet 6 → bedava_adet 0)").tagName).toBe("STRONG");
     expect(sinyal).toHaveTextContent(/Test beklentisi 0, gerçekleşen 1, onaylı karar tablosu \(T1, satır R2\) 0/);

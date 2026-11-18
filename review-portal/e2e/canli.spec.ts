@@ -367,6 +367,8 @@ test("testçi: bug taslağı → mükerrer adayları → karar → jira-sim bağ
   await expect(page.getByText("Jira'da benzer açık bug'lar aranıyor…")).toHaveCount(0, { timeout: 60_000 });
   await page.screenshot({ path: `${EKRAN_DIZINI}/11-bug-taslak.png`, fullPage: true });
 
+  // Bug taslağı detayı sekmeli (DS-1): AI mükerrer önerisi "Olası mükerrerler" sekmesinde.
+  await page.getByRole("tab", { name: /^Olası mükerrerler/ }).click();
   const oneri = page.getByTestId("mukerrer-onerisi");
   const bagla = (await oneri.isVisible().catch(() => false)) && /mevcut kayda bağla \((TPD-\d+)\)/.exec((await oneri.textContent()) ?? "");
   if (bagla) {
@@ -412,7 +414,7 @@ test("sunucu: Demo yol haritası (çekirdek durumu) ve TPD-1 baz değer kartı",
   const r = await page.request.get("/api/failures?sinif=test_maintenance&limit=1");
   const loc = r.ok() ? ((await r.json()) as { id: string }[])[0] : undefined;
   if (loc) {
-    await page.goto(`/hatalar/${loc.id}`);
+    await page.goto(`/hatalar/${loc.id}?sekme=kanit`);
     const kanit = page.getByRole("list", { name: "Kanıt bağlantıları" });
     await expect(kanit).toBeVisible();
     const satirlar = await kanit.locator(":scope > li").allTextContents();

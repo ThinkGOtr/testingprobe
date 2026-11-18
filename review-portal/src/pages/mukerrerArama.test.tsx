@@ -42,7 +42,7 @@ describe("mükerrer araması durumu", () => {
     b.mukerrer_arama = null;
     b.mukerrer_adaylari = [];
     await oturumAc("testci");
-    uygulama("/bug-taslaklari/bug-3");
+    uygulama("/bug-taslaklari/bug-3?sekme=mukerrer");
     expect(await screen.findByText("Mükerrer araması yapılmadı.")).toBeInTheDocument();
     expect(screen.queryByText("Jira'da benzer açık bug bulunamadı.")).toBeNull();
     const uyari = screen.getByText("Onaylamadan önce Jira'yı kontrol edin").closest("[role=note]")!;
@@ -52,7 +52,7 @@ describe("mükerrer araması durumu", () => {
 
   it("tutarlılık (F2) taslağı da aramadan geçer: TPD-5 yüksek olasılık, AI önerisi bağla", async () => {
     await oturumAc("testci");
-    uygulama("/bug-taslaklari/bug-3");
+    uygulama("/bug-taslaklari/bug-3?sekme=mukerrer");
     const liste = await screen.findByRole("list", { name: "Mükerrer adayları" });
     expect(within(liste).getByText("TPD-5")).toBeInTheDocument();
     expect(within(liste).getByText("yüksek olasılık")).toBeInTheDocument();
@@ -62,7 +62,7 @@ describe("mükerrer araması durumu", () => {
 
   it("adayı olan taslak adayları gösterir, uyarı çıkmaz", async () => {
     await oturumAc("testci");
-    uygulama("/bug-taslaklari/bug-1");
+    uygulama("/bug-taslaklari/bug-1?sekme=mukerrer");
     expect(await screen.findByRole("link", { name: /^TPD-5/ })).toHaveAttribute("href", "http://127.0.0.1:8090/browse/TPD-5");
     expect(screen.queryByText(/Mükerrer araması yapılmadı/)).toBeNull();
     expect(screen.queryByText("Onaylamadan önce Jira'yı kontrol edin")).toBeNull();
@@ -72,7 +72,7 @@ describe("mükerrer araması durumu", () => {
     const b = mockVerisi().bugTaslaklari.find((x) => x.id === "bug-1")!;
     b.mukerrer_adaylari = [];
     await oturumAc("testci");
-    uygulama("/bug-taslaklari/bug-1");
+    uygulama("/bug-taslaklari/bug-1?sekme=mukerrer");
     expect(await screen.findByText("Jira'da benzer açık bug bulunamadı.")).toBeInTheDocument();
     expect(screen.queryByText("Onaylamadan önce Jira'yı kontrol edin")).toBeNull();
   });

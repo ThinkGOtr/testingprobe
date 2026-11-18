@@ -6,6 +6,7 @@ import type { KararTablosu, KararTablosuIcerik } from "../../api/types";
 import { KOLON_TURU } from "../../lib/etiketler";
 import { ifadeGosterimi, satiriOku } from "../../lib/ifadeAciklama";
 import { Cip, IslemDugmesi, Kart } from "../ui";
+import { TabloSarici } from "../tasarim";
 import { OrnekIzgarasi } from "./OrnekIzgarasi";
 import { DurumEylemleri, KayitCipleri, KayitNotlari } from "./ortak";
 import { OrnekleDene } from "./OrnekleDene";
@@ -87,14 +88,14 @@ export function KararTablosuKarti({
             ek={
               taslak && !duzenle ? (
                 <IslemDugmesi
-                id={duzenleId}
-                izin="decision_table.edit"
-                kucuk
-                tur="ikincil"
-                disabled={kriterler === null}
-                title={kriterler === null ? "Gereksinim okunamadı; kabul kriterleri bilinmeden düzenlenemez." : undefined}
-                onClick={() => setDuzenle(true)}
-              >
+                  id={duzenleId}
+                  izin="decision_table.edit"
+                  kucuk
+                  tur="ikincil"
+                  disabled={kriterler === null}
+                  title={kriterler === null ? "Gereksinim okunamadı; kabul kriterleri bilinmeden düzenlenemez." : undefined}
+                  onClick={() => setDuzenle(true)}
+                >
                   Düzenle
                 </IslemDugmesi>
               ) : null
@@ -136,116 +137,110 @@ export function TabloGorunumu({ tablo }: { tablo: KararTablosu }) {
       {t.girdiler.length === 0 ? (
         <p className="soluk kucuk">Girdi tanımlanmadı.</p>
       ) : (
-        <div className="tablo-sarici" tabIndex={0} role="region" aria-label={`${ad}: girdiler`}>
-          <table className="tablo tablo-sik tablo-yigin">
-            <thead>
-              <tr>
-                <th scope="col">Ad</th>
-                <th scope="col">Tür</th>
-                <th scope="col">Birim</th>
-                <th scope="col">Açıklama</th>
+        <TabloSarici etiket={`${ad}: girdiler`} yogunluk="sik" darEkran="yigin">
+          <thead>
+            <tr>
+              <th scope="col">Ad</th>
+              <th scope="col">Tür</th>
+              <th scope="col">Birim</th>
+              <th scope="col">Açıklama</th>
+            </tr>
+          </thead>
+          <tbody>
+            {t.girdiler.map((g) => (
+              <tr key={g.ad}>
+                <td className="mono" data-etiket="Ad">
+                  {g.ad}
+                </td>
+                <td data-etiket="Tür">{KOLON_TURU[g.tur]}</td>
+                <td data-etiket="Birim">{g.birim ?? "—"}</td>
+                <td data-etiket="Açıklama">{g.aciklama ?? "—"}</td>
               </tr>
-            </thead>
-            <tbody>
-              {t.girdiler.map((g) => (
-                <tr key={g.ad}>
-                  <td className="mono" data-etiket="Ad">
-                    {g.ad}
-                  </td>
-                  <td data-etiket="Tür">{KOLON_TURU[g.tur]}</td>
-                  <td data-etiket="Birim">{g.birim ?? "—"}</td>
-                  <td data-etiket="Açıklama">{g.aciklama ?? "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </TabloSarici>
       )}
 
       <h3 className="kt-bolum">Çıktılar</h3>
       {t.ciktilar.length === 0 ? (
         <p className="soluk kucuk">Çıktı tanımlanmadı.</p>
       ) : (
-        <div className="tablo-sarici" tabIndex={0} role="region" aria-label={`${ad}: çıktılar`}>
-          <table className="tablo tablo-sik tablo-yigin">
-            <thead>
-              <tr>
-                <th scope="col">Ad</th>
-                <th scope="col">Tür</th>
-                <th scope="col">Birim</th>
-                <th scope="col">Tolerans</th>
+        <TabloSarici etiket={`${ad}: çıktılar`} yogunluk="sik" darEkran="yigin">
+          <thead>
+            <tr>
+              <th scope="col">Ad</th>
+              <th scope="col">Tür</th>
+              <th scope="col">Birim</th>
+              <th scope="col">Tolerans</th>
+            </tr>
+          </thead>
+          <tbody>
+            {t.ciktilar.map((c) => (
+              <tr key={c.ad}>
+                <td className="mono" data-etiket="Ad">
+                  {c.ad}
+                </td>
+                <td data-etiket="Tür">{KOLON_TURU[c.tur]}</td>
+                <td data-etiket="Birim">{c.birim ?? "—"}</td>
+                <td className="mono" data-etiket="Tolerans">
+                  {c.tur === "sayi" ? (c.tolerans ?? "0") : "—"}
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {t.ciktilar.map((c) => (
-                <tr key={c.ad}>
-                  <td className="mono" data-etiket="Ad">
-                    {c.ad}
-                  </td>
-                  <td data-etiket="Tür">{KOLON_TURU[c.tur]}</td>
-                  <td data-etiket="Birim">{c.birim ?? "—"}</td>
-                  <td className="mono" data-etiket="Tolerans">
-                    {c.tur === "sayi" ? (c.tolerans ?? "0") : "—"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </TabloSarici>
       )}
 
       <h3 className="kt-bolum">Satırlar</h3>
       {t.satirlar.length === 0 ? (
         <p className="soluk kucuk">Satır tanımlanmadı.</p>
       ) : (
-        <div className="tablo-sarici" tabIndex={0} role="region" aria-label={`${ad}: satırlar`}>
-          <table className="tablo tablo-sik tablo-yigin">
-            <caption className="gorunmez">Koşulu ilk sağlayan satır geçerlidir.</caption>
-            <thead>
-              <tr>
-                <th scope="col">Satır</th>
-                <th scope="col">Koşul</th>
+        <TabloSarici etiket={`${ad}: satırlar`} yogunluk="sik" darEkran="kaydir">
+          <caption className="gorunmez">Koşulu ilk sağlayan satır geçerlidir.</caption>
+          <thead>
+            <tr>
+              <th scope="col">Satır</th>
+              <th scope="col">Koşul</th>
+              {t.ciktilar.map((c) => (
+                <th key={c.ad} scope="col" className="mono">
+                  {c.ad}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {t.satirlar.map((s) => (
+              <tr key={s.id}>
+                <td className="mono" data-etiket="Satır">
+                  {s.id}
+                  {degisenler.has(s.id) && (
+                    <>
+                      {" "}
+                      <span data-testid="kt-analist-degistirdi">
+                        <Cip ton="notr" title="Bu satır AI taslağındaki hâlinden farklı: analist düzenledi.">
+                          analist değiştirdi
+                        </Cip>
+                      </span>
+                    </>
+                  )}
+                </td>
+                <td className="kt-ifade" data-etiket="Koşul">
+                  {ifadeGosterimi(s.kosul)}
+                  {aiSatir(s.id)?.kosul !== undefined && aiSatir(s.id)!.kosul.trim() !== s.kosul.trim() && (
+                    <span className="kt-ai-ozgun" data-testid="kt-ai-ozgun">
+                      AI taslağında: <span className="mono">{ifadeGosterimi(aiSatir(s.id)!.kosul)}</span>
+                    </span>
+                  )}
+                </td>
                 {t.ciktilar.map((c) => (
-                  <th key={c.ad} scope="col" className="mono">
-                    {c.ad}
-                  </th>
+                  <td key={c.ad} className="kt-ifade" data-etiket={c.ad}>
+                    {s.cikti[c.ad] !== undefined ? ifadeGosterimi(s.cikti[c.ad]) : "—"}
+                  </td>
                 ))}
               </tr>
-            </thead>
-            <tbody>
-              {t.satirlar.map((s) => (
-                <tr key={s.id}>
-                  <td className="mono" data-etiket="Satır">
-                    {s.id}
-                    {degisenler.has(s.id) && (
-                      <>
-                        {" "}
-                        <span data-testid="kt-analist-degistirdi">
-                          <Cip ton="notr" title="Bu satır AI taslağındaki hâlinden farklı: analist düzenledi.">
-                            analist değiştirdi
-                          </Cip>
-                        </span>
-                      </>
-                    )}
-                  </td>
-                  <td className="kt-ifade" data-etiket="Koşul">
-                    {ifadeGosterimi(s.kosul)}
-                    {aiSatir(s.id)?.kosul !== undefined && aiSatir(s.id)!.kosul.trim() !== s.kosul.trim() && (
-                      <span className="kt-ai-ozgun" data-testid="kt-ai-ozgun">
-                        AI taslağında: <span className="mono">{ifadeGosterimi(aiSatir(s.id)!.kosul)}</span>
-                      </span>
-                    )}
-                  </td>
-                  {t.ciktilar.map((c) => (
-                    <td key={c.ad} className="kt-ifade" data-etiket={c.ad}>
-                      {s.cikti[c.ad] !== undefined ? ifadeGosterimi(s.cikti[c.ad]) : "—"}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </TabloSarici>
       )}
       {t.satirlar.length > 0 && (
         <div className="kt-anlam" data-testid="kt-anlam">
@@ -254,8 +249,7 @@ export function TabloGorunumu({ tablo }: { tablo: KararTablosu }) {
           <ol className="duz-liste kt-anlam-liste">
             {t.satirlar.map((s) => (
               <li key={s.id}>
-                <span className="mono soluk">{s.id}</span>{" "}
-                {satiriOku(s.kosul, s.cikti, t.ciktilar)}
+                <span className="mono soluk">{s.id}</span> {satiriOku(s.kosul, s.cikti, t.ciktilar)}
               </li>
             ))}
           </ol>

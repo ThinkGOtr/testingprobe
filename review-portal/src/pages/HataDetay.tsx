@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { ARIA_KAYNAKLARI } from "../api/uyumTriage";
@@ -6,7 +7,10 @@ import { useBugKisitli } from "../auth";
 import { BUG_KISITLI_METNI } from "../lib/yetki";
 import type { BugTaslagi, HataAnalizi, LocatorOnarimi, LocatorProbeSonucu, SaglikSonucu, SaglikUcu, TriageKaniti } from "../api/types";
 import { useBildirim } from "../components/Bildirim";
-import { Baglanti, BosDurum, Cip, HataKutusu, KayitHatasi, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
+import { Baglanti, BosDurum, Cip, HataKutusu, KayitHatasi, IslemDugmesi, Kart, ReplayRozeti, Uyari, Yukleniyor } from "../components/ui";
+import { DurumCipi, EylemCubugu, Kimlik, MetaIzgara, MetaSatiri } from "../components/tasarim";
+import { DetaySayfasi, OzetKarti, type DetaySekmesi } from "../components/DetaySayfasi";
+import "../stiller/detay-kosu-hata.css";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { altTurEtiketi, HATA_SINIFI, sinyalBasligi, TRIAGE_ALT_TUR, type Ton } from "../lib/etiketler";
 import { tarih } from "../lib/format";
@@ -596,30 +600,38 @@ function KanitKarti({
   linkler: HataAnalizi["kanit_linkleri"];
   platform?: HataAnalizi["platform"];
 }) {
+  const [sar, setSar] = useState(false);
   if (!k && linkler.length === 0) return null;
   const app = uygulamaKanitlari(linkler, platform);
   // Sayfa kaynağı görüntüleyicide (kendi bağlantısıyla) gösterilir; listede tekrarlanmaz.
   const listedeki = app.sayfaKaynagi ? linkler.filter((l) => kanitTuru(l) !== "page_source") : linkler;
   return (
     <Kart baslik="Kanıt">
-      <div className="kanit-izgara">
-        {k?.hata_mesaji && (
-          <section aria-labelledby="kanit-hata">
+      {/* DZ-10: hata mesajı tam genişlikte (yığın izi girintisi korunur, yatay kayar; "Satırları sar" ile sarılır);
+          aria snapshot, locator yoklaması ve sağlık yoklaması altında iki sütun. */}
+      {k?.hata_mesaji && (
+        <section aria-labelledby="kanit-hata" className="kanit-hata">
+          <div className="kanit-hata-ust">
             <h3 id="kanit-hata" className="kanit-baslik">
               Hata mesajı
             </h3>
-            <pre className="hata-mesaji" tabIndex={0}>
-              {k.hata_mesaji}
-            </pre>
-            {(k.beklenen || k.gerceklesen) && (
-              <p className="kucuk">
-                Beklenen <span className="mono">{k.beklenen ?? "—"}</span> · Gerçekleşen <span className="mono">{k.gerceklesen ?? "—"}</span>
-              </p>
-            )}
-            {k.konum && <p className="kucuk mono soluk">{k.konum}</p>}
-            {k.tekrarlar && k.tekrarlar.length > 0 && <p className="kucuk">Tekrarlar: {k.tekrarlar.join(" · ")}</p>}
-          </section>
-        )}
+            <label className="kanit-sar">
+              <input type="checkbox" checked={sar} onChange={(e) => setSar(e.target.checked)} /> Satırları sar
+            </label>
+          </div>
+          <pre className={`hata-mesaji kanit-hata-metni${sar ? " kanit-sar-acik" : ""}`} tabIndex={0}>
+            {k.hata_mesaji}
+          </pre>
+          {(k.beklenen || k.gerceklesen) && (
+            <p className="kucuk">
+              Beklenen <span className="mono">{k.beklenen ?? "—"}</span> · Gerçekleşen <span className="mono">{k.gerceklesen ?? "—"}</span>
+            </p>
+          )}
+          {k.konum && <p className="kucuk mono soluk">{k.konum}</p>}
+          {k.tekrarlar && k.tekrarlar.length > 0 && <p className="kucuk">Tekrarlar: {k.tekrarlar.join(" · ")}</p>}
+        </section>
+      )}
+      <div className="kanit-izgara">
         {k?.aria_snippet && (
           <section aria-labelledby="kanit-aria">
             <h3 id="kanit-aria" className="kanit-baslik">
@@ -684,50 +696,81 @@ export function HataDetay() {
   if (v.hata && !v.veri) return <KayitHatasi ad="Hata kaydı" hata={v.hata} kaynak={v.hataNesnesi} yenile={() => void v.yenile()} />;
   const h = v.veri;
   if (!h) return null;
-  const s = HATA_SINIFI[h.sinif] ?? { etiket: h.sinif, ton: "notr" as const };
   const ortam = h.sinif === "environment";
+  const kisaKosu = kisaKosuAdi(h.run_id);
+  const bugTaslagi = !ortam && h.oneri?.tur === "bug_draft" ? h.oneri.bug_draft_id : null;
+  const locatorOnarimi = !ortam && h.oneri?.tur === "locator_fix" ? h.oneri : null;
+  const beklenti = !ortam && h.alt_tur === "beklenti";
+  const oneriYok = !h.oneri && h.oneri_yok_nedeni && h.alt_tur !== "beklenti";
+  const onarimVar = Boolean(locatorOnarimi || bugTaslagi || beklenti || oneriYok);
+  const kanitVar = Boolean(h.kanit || h.kanit_linkleri.length > 0);
 
-  return (
-    <>
-      <SayfaBasligi
-        ust={<Link to={`/kosular/${encodeURIComponent(h.run_id)}`}>← Koşu {kisaKosuAdi(h.run_id)}</Link>}
-        baslik="Triage sonucu"
-        aciklama={h.test_adi}
-      />
-      {/* Triage ızgarası (§5 görsel kapı, 1152 px): solda Sınıf + öneri, sağda iki satıra yayılan sinyaller.
-          DOM sırası Sınıf → Sinyaller → Öneri olarak kalır; yerleşim yalnız CSS ızgarasıyla. */}
-      <div className="iki-sutun triage-izgara">
-        <Kart baslik="Sınıf">
-          <p className="satir-ogeler" data-testid="triage-sinif">
-            <Cip ton={s.ton}>{s.etiket}</Cip>
-            {h.alt_tur && (TRIAGE_ALT_TUR[h.alt_tur] ? <span data-testid="triage-alt-tur">{altTurEtiketi(h.alt_tur)}</span> : <span className="mono">{h.alt_tur}</span>)}
-            <Cip ton={h.karar_kaynagi === "rule" ? "notr" : "vurgu"}>{kararKaynagiMetni(h)}</Cip>
-            <ReplayRozeti mode={h.mode} degerlendirme={h.degerlendirme} />
-            <PlatformRozeti platform={h.platform} />
-          </p>
-          <p className="soluk kucuk">
-            Önce kural seti uygulanır; LLM yalnızca hiçbir kural eşleşmezse devreye girer ve ortam kararını ezemez. Sayısal güven yerine
-            eşleşen sinyaller gösterilir.
-          </p>
-          {ortam && (
-            <Uyari ton="bilgi" baslik="Ortam sorunu">
-              Test koşmadan önce ortam sağlıksızdı ya da ağ hatası oluştu. Bu başarısızlık için onarım PR'ı ya da bug taslağı üretilmez.
-            </Uyari>
+  // Öneri kartındaki "Git" çapası (#onarim): onarım/öneri bölümü her durumda bu kapta (Onarım sekmesi).
+  const onarim = (
+    <div id="onarim" className="triage-oneri">
+      {locatorOnarimi && <OnarimKarti o={locatorOnarimi} hataId={h.id} yenile={() => void v.yenile(true)} />}
+      {bugTaslagi && (
+        <Kart baslik="Öneri">
+          <p>Ürün hatası adayı: bug taslağı hazırlandı ve Jira'da mükerrer araması yapıldı. Kayıt yalnızca testçi onayıyla açılır.</p>
+          <MukerrerSatiri id={bugTaslagi} kisitli={bugKisitli} />
+          {/* DZ-10: eylem paragrafın içinde değil, kartın alt eylem satırında. */}
+          {!bugKisitli && (
+            <EylemCubugu etiket="Öneri eylemleri">
+              <Link className="dugme dugme-birincil" to={`/bug-taslaklari/${encodeURIComponent(bugTaslagi)}`}>
+                Bug taslağına git
+              </Link>
+            </EylemCubugu>
           )}
-          {h.gerekce && <p className="kucuk">{h.gerekce}</p>}
-          {/* Kanıt kartı tam hata metnini gösteriyorsa burada tekrar edilmez. */}
-          {h.hata_mesaji && !h.kanit?.hata_mesaji && <pre className="hata-mesaji">{h.hata_mesaji}</pre>}
-          {h.hata_imzasi && <p className="kucuk mono soluk">imza: {h.hata_imzasi}</p>}
-          <p className="kucuk soluk">
-            {tarih(h.zaman)}
-            {h.script_id && (
-              <>
-                {" · "}
-                <Link to={`/kod/${encodeURIComponent(h.script_id)}`}>Üretilen test</Link>
-              </>
-            )}
-          </p>
         </Kart>
+      )}
+      {/* 012 Ş3: test beklentisi onaylı karar tablosuyla uyuşmuyor → bug/onarım değil, case düzeltilir. */}
+      {beklenti && (
+        <div data-testid="case-duzeltilmeli">
+          <Uyari ton="uyari" baslik="Case düzeltilmeli">
+            Case'in beklenen değeri onaylı karar tablosuyla uyuşmuyor; uygulama tabloya uygun. Bug taslağı ve locator onarımı açılmaz.{" "}
+            {/* Çekirdek `GET /failures/{id}` case/gereksinim kimliği vermez (yalnız `script_id`, `run_id`,
+                `test_adi`); gelirse doğrudan case listesine, yoksa script'e, o da yoksa koşuya bağlanır. */}
+            {h.requirement_id ? (
+              <Link to={`/gereksinimler/${encodeURIComponent(h.requirement_id)}/caseler`}>Case'i aç{h.case_id ? ` (${h.case_id})` : ""}</Link>
+            ) : h.script_id ? (
+              <Link to={`/kod/${encodeURIComponent(h.script_id)}`}>Script ve bağlı case'i aç</Link>
+            ) : h.run_id ? (
+              <Link to={`/kosular/${encodeURIComponent(h.run_id)}`}>Koşuyu aç ({h.test_adi})</Link>
+            ) : null}
+          </Uyari>
+        </div>
+      )}
+      {oneriYok && (
+        <Uyari ton="uyari" baslik="Öneri üretilmedi">
+          {h.oneri_yok_nedeni}
+        </Uyari>
+      )}
+      {!onarimVar && (
+        <BosDurum kip="sekme" baslik={ortam ? "Ortam sorunu için onarım ya da bug taslağı üretilmez." : "Bu hata için öneri yok."}>
+          {ortam ? "Ortam düzelince koşuyu yeniden çalıştırın." : "Sınıflandırma ve kanıtı inceleyip kararı verin."}
+        </BosDurum>
+      )}
+    </div>
+  );
+
+  const sekmeler: DetaySekmesi[] = [
+    {
+      id: "kanit",
+      ad: "Kanıt",
+      icerik: () =>
+        kanitVar ? (
+          <KanitKarti k={h.kanit} linkler={h.kanit_linkleri} platform={h.platform} />
+        ) : (
+          <BosDurum kip="sekme" baslik="Bu hata için kanıt kaydı yok.">
+            {h.hata_mesaji ? <pre className="hata-mesaji">{h.hata_mesaji}</pre> : "Koşunun raporlarına koşu sayfasından ulaşabilirsiniz."}
+          </BosDurum>
+        ),
+    },
+    {
+      id: "sinyaller",
+      ad: "Sinyaller",
+      sayi: h.eslesen_sinyaller.length,
+      icerik: () => (
         <Kart baslik="Eşleşen sinyaller">
           {h.eslesen_sinyaller.length === 0 ? (
             <BosDurum baslik="Sinyal kaydı yok." />
@@ -773,50 +816,108 @@ export function HataDetay() {
             </Uyari>
           )}
         </Kart>
+      ),
+    },
+    { id: "onarim", ad: "Onarım", capalar: ["onarim"], icerik: onarim },
+    {
+      id: "teknik",
+      ad: "Teknik ayrıntı",
+      icerik: () => (
+        <Kart baslik="Teknik ayrıntı">
+          <MetaIzgara
+            etiket="Triage teknik ayrıntısı"
+            ogeler={[
+              { etiket: "Hata kaydı", deger: <Kimlik deger={h.id} tur="uuid" kopyala /> },
+              { etiket: "Koşu", deger: <Link to={`/kosular/${encodeURIComponent(h.run_id)}`}>Koşu {kisaKosu}</Link> },
+              { etiket: "Karar kaynağı", deger: kararKaynagiMetni(h) },
+              { etiket: "Hata imzası", deger: h.hata_imzasi ? <span className="kucuk mono">imza: {h.hata_imzasi}</span> : null, genis: true },
+              { etiket: "Zaman", deger: tarih(h.zaman) },
+            ]}
+          />
+          <p className="soluk kucuk">
+            Önce kural seti uygulanır; LLM yalnızca hiçbir kural eşleşmezse devreye girer ve ortam kararını ezemez. Sayısal güven yerine
+            eşleşen sinyaller gösterilir.
+          </p>
+          {/* Kanıt sekmesi tam hata metnini gösteriyorsa burada tekrar edilmez. */}
+          {h.hata_mesaji && !h.kanit?.hata_mesaji && <pre className="hata-mesaji">{h.hata_mesaji}</pre>}
+        </Kart>
+      ),
+    },
+  ];
 
-        {/* Öneri kartındaki "Git" çapası (#onarim): onarım/öneri bölümü her durumda bu kapta. Izgaranın üçüncü
-            öğesi; öneri yokken kap boştur ve ızgarada yer tutmaz (styles.css .triage-oneri:empty). */}
-        <div id="onarim" className="triage-oneri">
-          {!ortam && h.oneri?.tur === "locator_fix" && <OnarimKarti o={h.oneri} hataId={h.id} yenile={() => void v.yenile(true)} />}
-          {!ortam && h.oneri?.tur === "bug_draft" && (
-            <Kart baslik="Öneri">
-              <p>
-                Ürün hatası adayı: bug taslağı hazırlandı ve Jira'da mükerrer araması yapıldı. Kayıt yalnızca testçi onayıyla açılır.{" "}
-                {!bugKisitli && (
-                  <Link className="dugme dugme-birincil dugme-kucuk" to={`/bug-taslaklari/${encodeURIComponent(h.oneri.bug_draft_id)}`}>
-                    Bug taslağına git
-                  </Link>
-                )}
-              </p>
-              <MukerrerSatiri id={h.oneri.bug_draft_id} kisitli={bugKisitli} />
-            </Kart>
-          )}
-          {/* 012 Ş3: test beklentisi onaylı karar tablosuyla uyuşmuyor → bug/onarım değil, case düzeltilir. */}
-          {!ortam && h.alt_tur === "beklenti" && (
-            <div data-testid="case-duzeltilmeli">
-              <Uyari ton="uyari" baslik="Case düzeltilmeli">
-                Case'in beklenen değeri onaylı karar tablosuyla uyuşmuyor; uygulama tabloya uygun. Bug taslağı ve locator onarımı açılmaz.{" "}
-                {/* Çekirdek `GET /failures/{id}` case/gereksinim kimliği vermez (yalnız `script_id`, `run_id`,
-                    `test_adi`); gelirse doğrudan case listesine, yoksa script'e, o da yoksa koşuya bağlanır. */}
-                {h.requirement_id ? (
-                  <Link to={`/gereksinimler/${encodeURIComponent(h.requirement_id)}/caseler`}>Case'i aç{h.case_id ? ` (${h.case_id})` : ""}</Link>
-                ) : h.script_id ? (
-                  <Link to={`/kod/${encodeURIComponent(h.script_id)}`}>Script ve bağlı case'i aç</Link>
-                ) : h.run_id ? (
-                  <Link to={`/kosular/${encodeURIComponent(h.run_id)}`}>Koşuyu aç ({h.test_adi})</Link>
-                ) : null}
-              </Uyari>
-            </div>
-          )}
-          {!h.oneri && h.oneri_yok_nedeni && h.alt_tur !== "beklenti" && (
-            <Uyari ton="uyari" baslik="Öneri üretilmedi">
-              {h.oneri_yok_nedeni}
+  return (
+    <DetaySayfasi
+      key={h.id}
+      sekmeEtiketi="Triage bölümleri"
+      varsayilanSekme={locatorOnarimi || bugTaslagi || beklenti ? "onarim" : "kanit"}
+      ozet={
+        <OzetKarti
+          testId="triage-ozet"
+          kirinti={[
+            { ad: "Koşular", yol: "/kosular" },
+            { ad: `Koşu ${kisaKosu}`, yol: `/kosular/${encodeURIComponent(h.run_id)}` },
+            { ad: "Triage sonucu" },
+          ]}
+          baslik={h.test_adi}
+          rozetler={
+            <span className="satir-ogeler" data-testid="triage-sinif">
+              <DurumCipi harita={HATA_SINIFI} deger={h.sinif} />
+              {h.alt_tur && (TRIAGE_ALT_TUR[h.alt_tur] ? <span data-testid="triage-alt-tur">{altTurEtiketi(h.alt_tur)}</span> : <span className="mono">{h.alt_tur}</span>)}
+              <Cip ton={h.karar_kaynagi === "rule" ? "notr" : "vurgu"}>{kararKaynagiMetni(h)}</Cip>
+              <ReplayRozeti mode={h.mode} degerlendirme={h.degerlendirme} />
+              <PlatformRozeti platform={h.platform} />
+            </span>
+          }
+          meta={
+            <MetaSatiri
+              ogeler={[
+                { deger: tarih(h.zaman) },
+                { etiket: "Gereksinim", deger: h.requirement_id ? <Link to={`/gereksinimler/${encodeURIComponent(h.requirement_id)}`}>Gereksinimi aç</Link> : null },
+                { etiket: "Case", deger: h.case_id ? <span className="mono">{h.case_id}</span> : null },
+                { deger: h.script_id ? <Link to={`/kod/${encodeURIComponent(h.script_id)}`}>Üretilen test</Link> : null },
+              ]}
+            />
+          }
+          siradaki={<TriageSiradaki ortam={ortam} locator={Boolean(locatorOnarimi)} bug={bugTaslagi} bugKisitli={bugKisitli} beklenti={beklenti} />}
+        />
+      }
+      ust={
+        // Karar alanı (IA-16 yuvası): sınıfın gerekçesi ve ortam notu burada; sınıflandırma eylemi (dk/ux-akis) bu kaba
+        // eklenir. İçerik yoksa kap gizlenir (.karar-yuvasi:empty).
+        <section className="kart karar-yuvasi" aria-label="Triage kararı" data-testid="karar-yuvasi">
+          {h.gerekce && <p className="karar-yuvasi-gerekce">{h.gerekce}</p>}
+          {ortam && (
+            <Uyari ton="bilgi" baslik="Ortam sorunu">
+              Test koşmadan önce ortam sağlıksızdı ya da ağ hatası oluştu. Bu başarısızlık için onarım PR'ı ya da bug taslağı üretilmez.
             </Uyari>
           )}
-        </div>
-      </div>
-
-      <KanitKarti k={h.kanit} linkler={h.kanit_linkleri} platform={h.platform} />
-    </>
+        </section>
+      }
+      sekmeler={sekmeler}
+    />
   );
+}
+
+/** Triage'ın tek "Sıradaki adım"ı (öneriye göre). */
+function TriageSiradaki({ ortam, locator, bug, bugKisitli, beklenti }: { ortam: boolean; locator: boolean; bug: string | null; bugKisitli: boolean; beklenti: boolean }) {
+  const onarimaGit = (
+    <Link to="?sekme=onarim" className="ds-siradaki-git">
+      Onarım →
+    </Link>
+  );
+  if (ortam) return <>Ortam sorunu: ortamı düzeltip koşuyu yeniden çalıştırın; onarım ya da bug taslağı üretilmez.</>;
+  if (locator) return <>Önerilen locator onarımını inceleyin (Otomasyon Mühendisi). {onarimaGit}</>;
+  if (bug)
+    return bugKisitli ? (
+      <>Ürün hatası adayı; bug kararını Test Uzmanı verir.</>
+    ) : (
+      <>
+        Bug taslağını inceleyip kararı verin (Test Uzmanı).{" "}
+        <Link to={`/bug-taslaklari/${encodeURIComponent(bug)}`} className="ds-siradaki-git">
+          Bug taslağı →
+        </Link>
+      </>
+    );
+  if (beklenti) return <>Case'in beklenen değeri düzeltilmeli (Analist). {onarimaGit}</>;
+  return <>Öneri üretilmedi; hatayı Test Uzmanı kanıta bakarak sınıflandırmalı.</>;
 }

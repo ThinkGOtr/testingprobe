@@ -280,7 +280,7 @@ describe("maskeli koşu (run.artifacts yok)", () => {
 
   it("ekran: 'yok' yerine 'Ham artefaktlar bu rolde görünmez'", async () => {
     await oturumAc("denetci");
-    uygulama("/kosular/run-107");
+    uygulama("/kosular/run-107?sekme=raporlar");
     expect(await screen.findByTestId("artefakt-maskeli")).toHaveTextContent(ARTEFAKT_MASKELI);
     expect(screen.queryByText("Playwright HTML raporu")).toBeNull();
   });

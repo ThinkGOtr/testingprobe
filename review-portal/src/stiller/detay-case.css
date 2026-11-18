@@ -1,0 +1,49 @@
+/* Case review detay iskeleti (FAZ 2): kompakt case kartı, AC satırı, açılır ayrıntı. Yalnız ölçek değişkenleri;
+   renkler mevcut belirteçler. */
+
+/* Sekme içindeki ilk başlık: sekme şeridinin hemen altında üst boşluk gereksiz. */
+.ds-panel > .bolum-basligi-case:first-child {
+  margin-top: 0;
+}
+
+/* AC satırı (IA-09): kimlik + metin, başlığın hemen altında. */
+.case-ac-satiri {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0 0 var(--space-2);
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-ikincil);
+  color: var(--text-2);
+}
+.case-ac-satiri li {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Açılır ayrıntılar (DZ-20): kapalıyken kart başlık + AC + eylem satırına iner. */
+.case-ayrinti {
+  margin: 0 0 var(--space-2);
+}
+.case-ayrinti > summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-weight: 600;
+  padding: var(--space-1) 0;
+}
+.case-ayrinti > summary:hover {
+  color: var(--accent-hover);
+}
+.case-ayrinti[open] > summary {
+  margin-bottom: var(--space-2);
+}
+
+/* Kompakt kart: başlık ve satırlar arası boşluk ölçekte. */
+.case .case-ad {
+  margin: var(--space-2) 0 var(--space-1);
+}
+.case .case-alt {
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+}

@@ -15,7 +15,7 @@ import type { CaseKapsamOzeti, TestCase } from "../api/types";
 import { OturumProvider } from "../auth";
 import { caseHazirlik, hazirlikYonlendirmesi, sayiEki } from "../lib/caseV3";
 import { topluOnayAdaylari } from "../pages/CaseReview";
-import { oturumAc, sar } from "../test/yardimci";
+import { oturumAc, sar, sekmeAc } from "../test/yardimci";
 import { BildirimProvider } from "./Bildirim";
 import { PoyaGonderEylemi } from "./AcikSorular";
 import { CaseKarti, goruntulemeAnahtari } from "./CaseKarti";
@@ -243,10 +243,12 @@ describe("case listesi süzgeçleri (UX-6)", () => {
   it("kapsam panelindeki dağılım rozeti listeyi süzer", async () => {
     await oturumAc("analist");
     const u = userEvent.setup();
-    uygulama(SAYFA);
+    uygulama(`${SAYFA}?sekme=kapsam`);
     await u.click(await screen.findByRole("button", { name: "Soru bekliyor: 1 case — listeyi bu duruma süz" }));
     expect(await screen.findByTestId("case-suzgec")).toHaveTextContent('Hazır olma durumu "Soru bekliyor" olan case\'ler gösteriliyor');
     await waitFor(() => expect(document.querySelectorAll("article.case")).toHaveLength(1));
+    // Süzgeç bağlantısı Kararlar sekmesini açtı; teknik rozeti Kapsam sekmesinde.
+    await sekmeAc("Kapsam");
     await u.click(screen.getByRole("button", { name: /^EP \(eşdeğerlik bölümleme\): 4 case/ }));
     expect(await screen.findByTestId("case-suzgec")).toHaveTextContent("EP (eşdeğerlik bölümleme) tekniğini kullanan case'ler");
   });
@@ -298,7 +300,7 @@ describe("case kartı sadeliği (UX-12) ve derinleştirme rozeti (UX-5)", () => 
 describe("kapsam matrisi (UX-13, D3)", () => {
   it("hazır case kapsamı satırda ve oranlarda; 'hazır case yok' uyarısı", async () => {
     await oturumAc("analist");
-    uygulama(SAYFA);
+    uygulama(`${SAYFA}?sekme=kapsam`);
     const matris = within(await screen.findByRole("region", { name: "Kapsam matrisi tablosu" }));
     const satir = (oge: string) => within(matris.getByRole("cell", { name: oge }).closest("tr")!);
     // BV-1: #1 (hazır) ve #6 (varsayıma bağlı) kapsar.

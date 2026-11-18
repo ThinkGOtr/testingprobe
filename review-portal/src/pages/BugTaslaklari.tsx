@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
@@ -8,7 +8,9 @@ import { BUG_KISITLI_METNI, izinRolleriMetni } from "../lib/yetki";
 import type { BugTaslagi, BugTaslakIcerik, MukerrerAday, MukerrerArama } from "../api/types";
 import { useBildirim } from "../components/Bildirim";
 import { AlanHatasi, BosDurum, Cip, Baglanti, HataKutusu, KayitHatasi, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor, IzinliLink } from "../components/ui";
-import { MetaSatiri, TabloSarici } from "../components/tasarim";
+import { DurumCipi, EylemCubugu, KopyalaDugmesi, MetaIzgara, MetaSatiri, TabloSarici } from "../components/tasarim";
+import { DetaySayfasi, OzetKarti, type DetaySekmesi } from "../components/DetaySayfasi";
+import "../stiller/detay-bug-karar.css";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { KisiAdi } from "../components/KisiAdi";
 import { BUG_DURUMU, SEVERITY, type Ton } from "../lib/etiketler";
@@ -333,9 +335,12 @@ function MukerrerKarti({
       {a?.jql && (
         <details className="kucuk">
           <summary>Arama sorgusu (JQL)</summary>
-          <pre className="kod-blok" tabIndex={0}>
-            {a.jql}
-          </pre>
+          <div className="bug-jql">
+            <pre className="kod-blok" tabIndex={0} aria-label="Arama sorgusu (JQL)">
+              {a.jql}
+            </pre>
+            <KopyalaDugmesi deger={a.jql} etiket="JQL'i kopyala" />
+          </div>
         </details>
       )}
     </Kart>
@@ -377,6 +382,43 @@ function YayinDurumu({ b }: { b: BugTaslagi }) {
       </span>
     </Uyari>
   );
+}
+
+type KararOnerisi = { tur: "new" | "link" | "dismiss" | "yok"; metin: string };
+
+/** Karar şeridinin önerisi (IA-17): kasıtlı kırma → Reddet; mükerrer AI önerisi → bağla / yeni kayıt. */
+function kararOnerisi(b: BugTaslagi, kirma: boolean): KararOnerisi {
+  if (kirma) return { tur: "dismiss", metin: "Reddet — kasıtlı kırma koşusu, gerçek hata değil." };
+  const a = b.mukerrer_arama;
+  if (a?.oneri === "link") {
+    const k = a.oneri_link_key ?? b.mukerrer_adaylari[0]?.key;
+    return { tur: "link", metin: `Mevcut kayda bağla (${k ?? "aday"}) — AI mükerrer sıralaması.` };
+  }
+  if (a?.oneri === "new") return { tur: "new", metin: "Jira'da yeni kayıt aç — adaylar aynı hata değil." };
+  if (mukerrerAramaDurumu(b) !== "yapildi") return { tur: "yok", metin: "Önce Jira'da mükerrerleri kontrol edin; AI önerisi yok." };
+  if (b.mukerrer_adaylari.length > 0) return { tur: "yok", metin: "AI önerisi yok; olası mükerrerleri inceleyip karar verin." };
+  return { tur: "new", metin: "Jira'da yeni kayıt aç — benzer açık bug bulunamadı." };
+}
+
+function OnerilenCipi({ aciklama }: { aciklama?: string }) {
+  return (
+    <Cip ton="uyari" aciklama={aciklama}>
+      Önerilen
+    </Cip>
+  );
+}
+
+/** Özet kartındaki tek "Sıradaki adım" cümlesi. */
+function siradakiAdim(b: BugTaslagi, yetki: boolean, oneri: KararOnerisi): string {
+  if (b.yayin_hatasi && b.durum !== "published") return "Jira'ya yazılamadı; nedeni giderip yayını yeniden deneyin.";
+  if (b.durum === "approved" || b.yayin_suruyor) return "Kayıt Jira'ya yazılıyor; sonuç gelince bu sayfa yenilenir.";
+  if (b.durum === "dismissed") return "Yok — taslak reddedildi. Yanlışlıkla reddedildiyse taslağa alın.";
+  if (b.durum === "published") return "Yok — karar Jira'ya yazıldı.";
+  if (!yetki) return `${izinRolleriMetni("bug.decide")} karar verecek (yeni kayıt, mevcut kayda bağlama ya da ret). Bu ekranda sizin eyleminiz yok.`;
+  if (oneri.tur === "dismiss") return "Taslağı gerekçeyle reddedin (aşağıdaki karar alanı).";
+  if (oneri.tur === "link") return "Önerilen kayda bağlayın ya da gerekirse yeni kayıt açın (aşağıdaki karar alanı).";
+  if (mukerrerAramaDurumu(b) !== "yapildi") return "Olası mükerrerleri kontrol edin, sonra karar verin.";
+  return "Taslağı gözden geçirin; Jira'da açın, mevcut kayda bağlayın ya da reddedin.";
 }
 
 export function BugTaslakDetay() {
@@ -424,8 +466,7 @@ export function BugTaslakDetay() {
   const bag = { icerik_hash: b.icerik_hash };
   const cakisma = { cakismada: () => void v.yenile(true) };
 
-  async function yeniKayit(e: FormEvent) {
-    e.preventDefault();
+  async function yeniKayit() {
     if (!icerik) return;
     const steps = satirlar(adimMetni);
     const sorun = icerikHatasi(icerik, steps);
@@ -517,122 +558,188 @@ export function BugTaslakDetay() {
   const alan = <K extends keyof BugTaslakIcerik>(k: K, deger: BugTaslakIcerik[K]) => setIcerik({ ...icerik, [k]: deger });
   const storyUrl = b.jira_browse_url && icerik.story_key ? `${b.jira_browse_url.replace(/\/+$/, "")}/${encodeURIComponent(icerik.story_key)}` : null;
   const testUrl = b.jira_browse_url && icerik.test_case_key ? `${b.jira_browse_url.replace(/\/+$/, "")}/${encodeURIComponent(icerik.test_case_key)}` : null;
+  const oneri = kararOnerisi(b, kirma);
+  const karar = taslak && kararYetkisi;
 
-  return (
-    <>
-      <SayfaBasligi
-        ust={<Link to="/bug-taslaklari">← Bug taslakları</Link>}
-        baslik={b.icerik.summary}
-        aciklama={
-          <span className="satir-ogeler">
-            <Cip ton={d.ton}>{d.etiket}</Cip>
-            <span>{KAYNAK[b.kaynak]}</span>
-            <ReplayRozeti mode={b.mode} degerlendirme={b.degerlendirme} />
-            {b.icerik.uretim === "sablon" && (
-              <Cip ton="notr" title="Doğrulanmış kanıttan şablonla yazıldı; model çağrısı yok">Şablon</Cip>
-            )}
-            {kirma && <KirmaCipi />}
-            {b.failure_id && <IzinliLink to={`/hatalar/${encodeURIComponent(b.failure_id)}`}>Triage sonucu</IzinliLink>}
-            {b.onaylayan && (
-              <span className="soluk">
-                <KisiAdi ad={b.onaylayan} />
-                {b.onay_zamani && ` · ${tarih(b.onay_zamani)}`}
-              </span>
-            )}
-          </span>
-        }
-      />
+  // IA-17: karar sütunları önerilen karar önde; önerilen eylem birincil.
+  const yeniKayitSutunu = (
+    <div key="yeni">
+      <h3>
+        Yeni kayıt {oneri.tur === "new" && <OnerilenCipi />}
+      </h3>
+      <p className="soluk kucuk">Düzenlenmiş taslak onaylanan içerik hash'iyle Jira'ya Bug olarak yazılır; story ve teste bağlanır.</p>
+      <EylemCubugu>
+        <IslemDugmesi
+          izin="bug.decide"
+          tur={oneri.tur === "new" ? "birincil" : "ikincil"}
+          calisiyor={islem.calisiyor}
+          title={kirma ? "Kasıtlı kırma koşusu: gerçek hata değil; önerilen karar Reddet" : undefined}
+          onClick={() => void yeniKayit()}
+        >
+          Onayla ve Jira'da aç
+        </IslemDugmesi>
+      </EylemCubugu>
+    </div>
+  );
+  const baglaSutunu = (
+    <div key="bagla">
+      <h3>
+        Mevcut kayda bağla {oneri.tur === "link" && <OnerilenCipi />}
+      </h3>
+      <div className="alan alan-satir">
+        <label htmlFor="bug-bagla">Jira anahtarı</label>
+        <input
+          id="bug-bagla"
+          className="mono"
+          value={baglanacak}
+          onChange={(e) => setBaglanacak(e.target.value)}
+          list="mukerrer-anahtarlar"
+          placeholder="TPD-21"
+        />
+        <datalist id="mukerrer-anahtarlar">
+          {b.mukerrer_adaylari.map((m) => (
+            <option key={m.key} value={m.key} />
+          ))}
+        </datalist>
+      </div>
+      <EylemCubugu>
+        <IslemDugmesi izin="bug.decide" tur={oneri.tur === "link" ? "birincil" : "ikincil"} calisiyor={islem.calisiyor} onClick={() => void bagla(baglanacak)}>
+          Mevcut kayda bağla
+        </IslemDugmesi>
+      </EylemCubugu>
+    </div>
+  );
+  const retSutunu = (
+    <div key="ret">
+      <h3>
+        Kayıt açma {oneri.tur === "dismiss" && <OnerilenCipi aciklama={KIRMA_ACIKLAMA} />}
+      </h3>
+      <p className="soluk kucuk">Taslak hata değilse gerekçeyle reddedin; Jira'ya hiçbir şey yazılmaz.</p>
+      <div className="alan">
+        <label htmlFor="bug-ret">Ret gerekçesi</label>
+        <textarea
+          id="bug-ret"
+          rows={2}
+          className="kendiliginden-uzar"
+          value={retGerekcesi}
+          placeholder={kirma ? "ör. Kasıtlı kırma (BREAK_CAMPAIGN) koşusu; gerçek hata değil." : undefined}
+          onChange={(e) => setRetGerekcesi(e.target.value)}
+        />
+      </div>
+      <EylemCubugu>
+        <IslemDugmesi
+          izin="bug.decide"
+          tur="tehlike"
+          calisiyor={islem.calisiyor}
+          disabled={!retGerekcesi.trim()}
+          title={retGerekcesi.trim() ? undefined : "Önce gerekçe yazın"}
+          onClick={reddet}
+        >
+          Taslağı reddet
+        </IslemDugmesi>
+      </EylemCubugu>
+    </div>
+  );
+  const sutunlar = oneri.tur === "dismiss" ? [retSutunu, baglaSutunu, yeniKayitSutunu] : oneri.tur === "link" ? [baglaSutunu, yeniKayitSutunu, retSutunu] : [yeniKayitSutunu, baglaSutunu, retSutunu];
 
-      {kirma && (
-        <div data-testid="kirma-uyarisi">
-          <Uyari baslik={KIRMA_CIPI}>
-            {KIRMA_ACIKLAMA}{" "}
-            {taslak
-              ? "Önerilen karar: gerekçeyle reddedin (Jira'ya hiçbir şey yazılmaz). \"Onayla ve Jira'da aç\" sahte bir Bug açar; AI önerisi bu bilgiyi bilmez."
-              : "Demo sırasında bu taslağa dokunulmaz."}
-          </Uyari>
-        </div>
-      )}
-      <YayinDurumu b={b} />
-      {b.yayin_hatasi && b.durum !== "published" && (
-        <p>
-          <IslemDugmesi izin="bug.decide" tur="ikincil" calisiyor={islem.calisiyor} onClick={() => void yayiniYinele()}>
-            Yayını yeniden dene
-          </IslemDugmesi>
-        </p>
-      )}
-      {b.durum === "dismissed" && (
-        <p>
-          <IslemDugmesi izin="bug.decide" tur="ikincil" calisiyor={islem.calisiyor} onClick={() => void taslagaAl()}>
-            Taslağa al
-          </IslemDugmesi>
-        </p>
-      )}
+  const ozetAlanlari = (
+    <MetaIzgara
+      etiket="Taslak alanları"
+      className="bug-taslak-dl"
+      ogeler={[
+        { etiket: "Özet", deger: icerik.summary, genis: true },
+        {
+          etiket: "Adımlar",
+          genis: true,
+          deger: icerik.steps.length ? (
+            <ol className="bug-adimlar">
+              {icerik.steps.map((x, i) => (
+                <li key={i}>{x}</li>
+              ))}
+            </ol>
+          ) : null,
+        },
+        { etiket: "Beklenen", deger: icerik.expected, genis: true },
+        { etiket: "Gerçekleşen", deger: icerik.actual, genis: true },
+        { etiket: "Ortam", deger: icerik.environment, genis: true },
+        { etiket: "Önem önerisi", deger: SEVERITY[icerik.severity_suggestion] },
+      ]}
+    />
+  );
 
-      <MukerrerKarti
-        b={b}
-        taslak={taslak}
-        calisiyor={islem.calisiyor}
-        bagla={(k) => void bagla(k)}
-        aramayiYenile={() => void aramayiYenile()}
-      />
-
-      <Kart baslik={taslak ? (kararYetkisi ? "Taslak (düzenlenebilir)" : "Taslak") : "Kayıt"}>
-        <form onSubmit={yeniKayit} className="form" noValidate>
+  const sekmeler: DetaySekmesi[] = [
+    {
+      id: "taslak",
+      ad: taslak ? "Taslak" : "Kayıt",
+      icerik: () => (
+        <Kart baslik={taslak ? (kararYetkisi ? "Taslak (düzenlenebilir)" : "Taslak") : "Kayıt"} className="bug-taslak-kart">
           {taslak && !kararYetkisi && (
             <p className="soluk kucuk" data-testid="bug-salt-okunur">
               Salt okunur: taslağı {izinRolleriMetni("bug.decide")} düzenler ve karara bağlar.
             </p>
           )}
-          <fieldset disabled={formKilitli} className="duz-fieldset">
-            <div className="alan">
-              <label htmlFor="bug-ozet">Özet</label>
-              <input
-                id="bug-ozet" disabled={formKilitli}
-                value={icerik.summary}
-                maxLength={OZET_AZAMI}
-                aria-describedby="bug-ozet-sayac"
-                onChange={(e) => alan("summary", e.target.value)}
-              />
-              <span id="bug-ozet-sayac" className={`kucuk ${icerik.summary.length > OZET_AZAMI ? "hata-metin" : "soluk"}`} data-testid="ozet-sayac">
-                {icerik.summary.length}/{OZET_AZAMI} karakter
-              </span>
-            </div>
-            <div className="alan">
-              <label htmlFor="bug-adimlar">Adımlar (her satır bir adım)</label>
-              <textarea id="bug-adimlar" disabled={formKilitli} rows={4} value={adimMetni} onChange={(e) => setAdimMetni(e.target.value)} />
-            </div>
-            <div className="iki-sutun">
+          {formKilitli ? (
+            ozetAlanlari
+          ) : (
+            <form onSubmit={(e) => e.preventDefault()} className="form bug-taslak-form" noValidate>
               <div className="alan">
-                <label htmlFor="bug-beklenen">Beklenen</label>
-                <textarea id="bug-beklenen" disabled={formKilitli} rows={2} value={icerik.expected} onChange={(e) => alan("expected", e.target.value)} />
+                <label htmlFor="bug-ozet">Özet</label>
+                <textarea
+                  id="bug-ozet"
+                  rows={2}
+                  className="kendiliginden-uzar"
+                  value={icerik.summary}
+                  maxLength={OZET_AZAMI}
+                  aria-describedby="bug-ozet-sayac"
+                  // Özet tek satırlık Jira alanı: satır sonu boşluğa çevrilir (alan yalnız görünümde sarar).
+                  onChange={(e) => alan("summary", e.target.value.replace(/\r?\n/g, " "))}
+                />
+                <span id="bug-ozet-sayac" className={`kucuk ${icerik.summary.length > OZET_AZAMI ? "hata-metin" : "soluk"}`} data-testid="ozet-sayac">
+                  {icerik.summary.length}/{OZET_AZAMI} karakter
+                </span>
               </div>
               <div className="alan">
-                <label htmlFor="bug-gerceklesen">Gerçekleşen</label>
-                <textarea id="bug-gerceklesen" disabled={formKilitli} rows={2} value={icerik.actual} onChange={(e) => alan("actual", e.target.value)} />
+                <label htmlFor="bug-adimlar">Adımlar (her satır bir adım)</label>
+                <textarea id="bug-adimlar" rows={4} className="kendiliginden-uzar" value={adimMetni} onChange={(e) => setAdimMetni(e.target.value)} />
               </div>
-            </div>
-            <div className="iki-sutun">
-              <div className="alan">
-                <label htmlFor="bug-ortam">Ortam</label>
-                <input id="bug-ortam" disabled={formKilitli} value={icerik.environment} onChange={(e) => alan("environment", e.target.value)} />
+              <div className="bug-alan-izgara">
+                <div className="alan">
+                  <label htmlFor="bug-beklenen">Beklenen</label>
+                  <textarea id="bug-beklenen" rows={2} className="kendiliginden-uzar" value={icerik.expected} onChange={(e) => alan("expected", e.target.value)} />
+                </div>
+                <div className="alan">
+                  <label htmlFor="bug-gerceklesen">Gerçekleşen</label>
+                  <textarea id="bug-gerceklesen" rows={2} className="kendiliginden-uzar" value={icerik.actual} onChange={(e) => alan("actual", e.target.value)} />
+                </div>
+                <div className="alan">
+                  <label htmlFor="bug-ortam">Ortam</label>
+                  <textarea id="bug-ortam" rows={2} className="kendiliginden-uzar" value={icerik.environment} onChange={(e) => alan("environment", e.target.value)} />
+                </div>
+                <div className="alan">
+                  <label htmlFor="bug-onem">Önem önerisi</label>
+                  <select
+                    id="bug-onem"
+                    value={icerik.severity_suggestion}
+                    onChange={(e) => alan("severity_suggestion", e.target.value as BugTaslakIcerik["severity_suggestion"])}
+                  >
+                    {Object.entries(SEVERITY).map(([k, etiket]) => (
+                      <option key={k} value={k}>
+                        {etiket}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
-              <div className="alan">
-                <label htmlFor="bug-onem">Önem önerisi</label>
-                <select
-                  id="bug-onem" disabled={formKilitli}
-                  value={icerik.severity_suggestion}
-                  onChange={(e) => alan("severity_suggestion", e.target.value as BugTaslakIcerik["severity_suggestion"])}
-                >
-                  {Object.entries(SEVERITY).map(([k, etiket]) => (
-                    <option key={k} value={k}>
-                      {etiket}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </fieldset>
+              {duzenlendi && (
+                <div className="satir-ogeler">
+                  <IslemDugmesi izin="bug.decide" tur="ikincil" kucuk calisiyor={islem.calisiyor} onClick={() => void kaydet()}>
+                    Değişiklikleri kaydet
+                  </IslemDugmesi>
+                  <span className="kucuk soluk">Kaydetmek onay değildir; Jira'ya yazmak için yukarıdaki karar alanını kullanın.</span>
+                </div>
+              )}
+            </form>
+          )}
           <MetaSatiri
             ogeler={[
               { etiket: "Story", deger: icerik.story_key ? <JiraAnahtari anahtar={icerik.story_key} url={storyUrl} /> : "—" },
@@ -640,116 +747,159 @@ export function BugTaslakDetay() {
               { etiket: "Etiketler", deger: icerik.labels.length ? <span className="mono">{icerik.labels.join(", ")}</span> : "—" },
             ]}
           />
-          {icerik.evidence.length > 0 && (
-            <section aria-label="Kanıt bağlantıları">
-              <h3 className="kanit-baslik">Kanıt</h3>
-              <ul className="duz-liste">
-                {icerik.evidence.map((e) => (
-                  <li key={`${e.tur}-${e.etiket}`}>
-                    <Baglanti href={e.url} yokNedeni={e.url?.startsWith("#") ? undefined : "bağlantı yok"}>
-                      {e.etiket}
-                    </Baglanti>
-                  </li>
-                ))}
-              </ul>
-            </section>
+          {!taslak && <p className="kucuk soluk">Bu taslak için karar verildi; içerik artık değiştirilemez.</p>}
+        </Kart>
+      ),
+    },
+    {
+      id: "mukerrer",
+      ad: "Olası mükerrerler",
+      sayi: mukerrerAramaDurumu(b) === "yapildi" ? b.mukerrer_adaylari.length : null,
+      dikkat: taslak && aramaYok,
+      icerik: () => (
+        <MukerrerKarti
+          b={b}
+          taslak={karar}
+          calisiyor={islem.calisiyor}
+          bagla={(k) => void bagla(k)}
+          aramayiYenile={() => void aramayiYenile()}
+        />
+      ),
+    },
+    {
+      id: "kanit",
+      ad: "Kanıt",
+      sayi: icerik.evidence.length,
+      icerik: () => (
+        <Kart baslik="Kanıt">
+          {icerik.evidence.length === 0 ? (
+            <BosDurum kip="sekme" baslik="Bu taslakta kanıt bağlantısı yok.">
+              {b.failure_id ? "Ekran görüntüsü, iz ve günlükler triage sonucunda." : null}
+            </BosDurum>
+          ) : (
+            <ul className="duz-liste" aria-label="Kanıt bağlantıları">
+              {icerik.evidence.map((e) => (
+                <li key={`${e.tur}-${e.etiket}`}>
+                  <Baglanti href={e.url} yokNedeni={e.url?.startsWith("#") ? undefined : "bağlantı yok"}>
+                    {e.etiket}
+                  </Baglanti>
+                </li>
+              ))}
+            </ul>
           )}
-
-          {duzenlendi && (
-            <p className="satir-ogeler">
-              <IslemDugmesi izin="bug.decide" tur="ikincil" kucuk calisiyor={islem.calisiyor} onClick={() => void kaydet()}>
-                Değişiklikleri kaydet
-              </IslemDugmesi>
-              <span className="kucuk soluk">Kaydetmek onay değildir; Jira'ya yazmak için aşağıdan karar verin.</span>
+          {b.failure_id && (
+            <p className="kucuk">
+              <IzinliLink to={`/hatalar/${encodeURIComponent(b.failure_id)}`}>Triage sonucunda tüm kanıtı aç</IzinliLink>
             </p>
           )}
-          {taslak && aramaYok && (
-            <Uyari baslik="Onaylamadan önce Jira'yı kontrol edin">
-              Bu taslak için mükerrer araması tamamlanmadı. Aynı hata Jira'da açık olabilir; önce benzer açık bug'ları
-              arayın, varsa "Mevcut kayda bağla" ile bağlayın. Demo sunumunda bu taslağı "Onayla ve Jira'da aç" ile
-              onaylamayın (mükerrer kayıt açılır).
-            </Uyari>
-          )}
-          {taslak && (
-            <div className="karar-paneli karar-paneli-uclu">
-              <div>
-                <h3>Yeni kayıt</h3>
-                <p className="soluk kucuk">Düzenlenmiş taslak onaylanan içerik hash'iyle Jira'ya Bug olarak yazılır; story ve teste bağlanır.</p>
-                <IslemDugmesi
-                  izin="bug.decide"
-                  type="submit"
-                  tur={kirma ? "ikincil" : "birincil"}
-                  calisiyor={islem.calisiyor}
-                  title={kirma ? "Kasıtlı kırma koşusu: gerçek hata değil; önerilen karar Reddet" : undefined}
-                >
-                  Onayla ve Jira'da aç
-                </IslemDugmesi>
-              </div>
-              <div>
-                <h3>Mevcut kayda bağla</h3>
-                <div className="alan alan-satir">
-                  <label htmlFor="bug-bagla">Jira anahtarı</label>
-                  <input
-                    id="bug-bagla"
-                    className="mono"
-                    value={baglanacak}
-                    onChange={(e) => setBaglanacak(e.target.value)}
-                    readOnly={!kararYetkisi}
-                    list="mukerrer-anahtarlar"
-                    placeholder="TPD-21"
-                  />
-                  <datalist id="mukerrer-anahtarlar">
-                    {b.mukerrer_adaylari.map((m) => (
-                      <option key={m.key} value={m.key} />
-                    ))}
-                  </datalist>
-                </div>
-                <IslemDugmesi izin="bug.decide" tur="ikincil" calisiyor={islem.calisiyor} onClick={() => void bagla(baglanacak)}>
-                  Mevcut kayda bağla
-                </IslemDugmesi>
-              </div>
-              <div>
-                <h3>
-                  Kayıt açma{" "}
-                  {kirma && (
-                    <Cip ton="uyari" title={KIRMA_ACIKLAMA}>
-                      Önerilen
-                    </Cip>
-                  )}
-                </h3>
-                <p className="soluk kucuk">Taslak hata değilse gerekçeyle reddedin; Jira'ya hiçbir şey yazılmaz.</p>
-                <div className="alan">
-                  <label htmlFor="bug-ret">Ret gerekçesi</label>
-                  <textarea
-                    id="bug-ret"
-                    rows={2}
-                    value={retGerekcesi}
-                    placeholder={kirma ? "ör. Kasıtlı kırma (BREAK_CAMPAIGN) koşusu; gerçek hata değil." : undefined}
-                    onChange={(e) => setRetGerekcesi(e.target.value)}
-                    readOnly={!kararYetkisi}
-                  />
-                </div>
-                <IslemDugmesi
-                  izin="bug.decide"
-                  tur="tehlike"
-                  calisiyor={islem.calisiyor}
-                  disabled={!retGerekcesi.trim()}
-                  title={retGerekcesi.trim() ? undefined : "Önce gerekçe yazın"}
-                  onClick={reddet}
-                >
-                  Taslağı reddet
-                </IslemDugmesi>
-              </div>
+        </Kart>
+      ),
+    },
+  ];
+
+  const yayinYinele = b.yayin_hatasi && b.durum !== "published";
+  const sayfaEylemleri =
+    yayinYinele || b.durum === "dismissed" ? (
+      <>
+        {yayinYinele && (
+          <IslemDugmesi izin="bug.decide" calisiyor={islem.calisiyor} onClick={() => void yayiniYinele()}>
+            Yayını yeniden dene
+          </IslemDugmesi>
+        )}
+        {b.durum === "dismissed" && (
+          <IslemDugmesi izin="bug.decide" tur="ikincil" calisiyor={islem.calisiyor} onClick={() => void taslagaAl()}>
+            Taslağa al
+          </IslemDugmesi>
+        )}
+      </>
+    ) : undefined;
+
+  return (
+    <DetaySayfasi
+      key={b.id}
+      sekmeEtiketi="Bug taslağı bölümleri"
+      ozet={
+        <OzetKarti
+          kirinti={[{ ad: "Bug taslakları", yol: "/bug-taslaklari" }, { ad: b.jira_key ?? b.link_key ?? (icerik.story_key ? `${icerik.story_key} taslağı` : "Taslak") }]}
+          baslik={b.icerik.summary}
+          rozetler={
+            <>
+              {b.durum === "published" ? <Cip ton={d.ton}>{d.etiket}</Cip> : <DurumCipi harita={BUG_DURUMU} deger={b.durum} />}
+              {kirma && <KirmaCipi />}
+              <ReplayRozeti mode={b.mode} degerlendirme={b.degerlendirme} />
+              {b.icerik.uretim === "sablon" && (
+                <Cip ton="notr" aciklama="Doğrulanmış kanıttan şablonla yazıldı; model çağrısı yok">
+                  Şablon
+                </Cip>
+              )}
+            </>
+          }
+          meta={
+            <MetaSatiri
+              ogeler={[
+                { etiket: "Kaynak", deger: KAYNAK[b.kaynak] },
+                ...(b.failure_id ? [{ deger: <IzinliLink to={`/hatalar/${encodeURIComponent(b.failure_id)}`}>Triage sonucu</IzinliLink> }] : []),
+                ...(icerik.story_key ? [{ etiket: "Story", deger: <JiraAnahtari anahtar={icerik.story_key} url={storyUrl} /> }] : []),
+                ...(b.onaylayan
+                  ? [
+                      {
+                        etiket: "Karar",
+                        deger: (
+                          <>
+                            <KisiAdi ad={b.onaylayan} />
+                            {b.onay_zamani && ` · ${tarih(b.onay_zamani)}`}
+                          </>
+                        ),
+                      },
+                    ]
+                  : []),
+              ]}
+            />
+          }
+          siradaki={siradakiAdim(b, kararYetkisi, oneri)}
+          eylemler={sayfaEylemleri}
+        />
+      }
+      ust={
+        <>
+          {kirma && (
+            <div data-testid="kirma-uyarisi">
+              <Uyari baslik={KIRMA_CIPI}>
+                {KIRMA_ACIKLAMA}{" "}
+                {taslak
+                  ? "Önerilen karar: gerekçeyle reddedin (Jira'ya hiçbir şey yazılmaz). \"Onayla ve Jira'da aç\" sahte bir Bug açar; AI önerisi bu bilgiyi bilmez."
+                  : "Demo sırasında bu taslağa dokunulmaz."}
+              </Uyari>
             </div>
+          )}
+          <YayinDurumu b={b} />
+          {karar && (
+            <section className="kart bug-karar-seridi" aria-labelledby="bug-karar-baslik" data-testid="bug-karar-seridi">
+              <div className="bug-karar-ust">
+                <h2 id="bug-karar-baslik">Karar</h2>
+                <p className="kucuk" data-testid="karar-onerisi">
+                  <strong>Önerilen:</strong> {oneri.metin}
+                  <span className="soluk"> · karar Test Uzmanının</span>
+                </p>
+              </div>
+              {aramaYok && (
+                <Uyari baslik="Onaylamadan önce Jira'yı kontrol edin">
+                  Bu taslak için mükerrer araması tamamlanmadı. Aynı hata Jira'da açık olabilir; önce benzer açık bug'ları
+                  arayın, varsa "Mevcut kayda bağla" ile bağlayın. Demo sunumunda bu taslağı "Onayla ve Jira'da aç" ile
+                  onaylamayın (mükerrer kayıt açılır).
+                </Uyari>
+              )}
+              <div className="karar-paneli karar-paneli-uclu">{sutunlar}</div>
+            </section>
           )}
           {(uyari || islem.hata) && (
             <AlanHatasi asistan={!uyari && islem.hata ? { hata: semaHatasiTurkce(islem.hata), kaynak: islem.hataNesnesi } : null}>
               {uyari ?? (islem.hata ? semaHatasiTurkce(islem.hata) : null)}
             </AlanHatasi>
           )}
-          {!taslak && <p className="kucuk soluk">Bu taslak için karar verildi; içerik artık değiştirilemez.</p>}
-        </form>
-      </Kart>
-    </>
+        </>
+      }
+      sekmeler={sekmeler}
+    />
   );
 }

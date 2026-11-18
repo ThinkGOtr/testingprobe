@@ -9,15 +9,18 @@ import { bazKaynagiUyarla, manuelBazUyarla } from "../api/uyumFaz5";
 import { useCaseKisitli, useIzin, useKisiAdi, useOturum } from "../auth";
 import { AcikSorularPaneli } from "../components/AcikSorular";
 import { BAZ_KAYNAGI } from "../components/BazDegerKarti";
-import { CASE_KARARLARI_ID, CaseDurumSeridi, useCaseListesineGit, yayinAcikMi } from "../components/CaseDurumSeridi";
-import { GORULDU_KURALI, goruntulemeAnahtari, goruntulenenKumesi, goruntulemeyiUnut, otomatikKodMetni } from "../components/CaseKarti";
+import { ACIK_SORULAR_ID, CASE_KARARLARI_ID, CaseDurumSeridi, DENETIM_ID, useCaseListesineGit, yayinAcikMi } from "../components/CaseDurumSeridi";
+import { AcMetinleri, caseCapasi, GORULDU_KURALI, goruntulemeAnahtari, goruntulenenKumesi, goruntulemeyiUnut, otomatikKodMetni } from "../components/CaseKarti";
 import { CaseListesi } from "../components/CaseListesi";
 import { DerinlestirmePaneli } from "../components/DerinlestirmePaneli";
 import { GherkinIndir } from "../components/GherkinIndir";
 import { DenetimPaneli, gonderBirincilMi, ReviewPaneli } from "../components/KalitePanelleri";
 import { BeklentiDogruluguMetrigi, KaliteSaglayici, kararTablolariYolu } from "../components/kalite/oracle";
 import { KapsamPaneli } from "../components/KapsamPaneli";
-import { Cip, HataKutusu, IslemDugmesi, Kart, Metrik, ReplayRozeti, SayfaBasligi, Uyari } from "../components/ui";
+import { BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, Metrik, ReplayRozeti, Uyari } from "../components/ui";
+import { DetaySayfasi, OzetKarti, type DetaySekmesi } from "../components/DetaySayfasi";
+import { MetaSatiri } from "../components/tasarim";
+import "../stiller/detay-case.css";
 import { HedefOlcer } from "../components/Grafikler";
 import { useGeciktirilmis, useVeri } from "../hooks";
 import { caseEski, dogrulamayiYay, gonderilmemisSoruSayisi } from "../lib/caseV3";
@@ -680,6 +683,7 @@ export function CaseReview() {
     void kapsam.yenile(sessizce);
     void review.yenile(sessizce);
     void denetim.yenile(sessizce);
+    void acikSoruOn.yenile(true);
   };
   const sessiz = useGeciktirilmis(() => {
     void caseler.yenile(true);
@@ -747,43 +751,150 @@ export function CaseReview() {
   const listeyeGit = useCaseListesineGit();
   // Açık soru paneli core listesini buraya bildirir (şerit + toplu karar uyarısı; UX4 Bulgu 2).
   const [acikSorular, setAcikSorular] = useState<AcikSorularYaniti | null>(null);
+  // Açık sorular sekmesi tembel çizilir: şerit, sekme sayısı ve toplu karar uyarısı paneli açılmadan da aynı
+  // core listesini görsün diye liste burada da okunur (panel açılınca kendi yüklemesi de buraya bildirir).
+  const acikSoruOn = useVeri(() => (analiz ? api.acikSorular(id).catch(yoksaNull) : Promise.resolve(null)), [id, analiz]);
+  useEffect(() => {
+    if (acikSoruOn.veri !== undefined) setAcikSorular(acikSoruOn.veri);
+  }, [acikSoruOn.veri]);
 
-  return (
+  const acMetinleri = useMemo(() => new Map((g?.kabul_kriterleri ?? []).map((a) => [a.ref, a.metin] as const)), [g]);
+  const acikSoruSayisi = acikSorular?.sorular?.length ?? null;
+  const caseVar = !!caseler.veri && liste.length > 0;
+  const gYolu = `/gereksinimler/${encodeURIComponent(id)}`;
+  // Tek "Sıradaki adım" (IA-08/IA-10): önce karar, sonra denetim, sonra yayın; ilgili sekmeye götürür.
+  const siradaki: { metin: string; sekme: string; git: string } | null = kisitli || !caseler.veri
+    ? null
+    : liste.length === 0
+      ? { metin: "Henüz case yok: gereksinim ekranından üretimi başlatın (Test Uzmanı).", sekme: "", git: "Gereksinime git" }
+      : kararBekleyen > 0
+        ? {
+            metin: [ozet.bekleyen > 0 && `${ozet.bekleyen} case Test Uzmanı kararı`, ozet.hazir > 0 && `${ozet.hazir} case Analist onayı`].filter(Boolean).join(", ") + " bekliyor.",
+            sekme: "kararlar",
+            git: "Kararlar",
+          }
+        : gonderBirincil
+          ? { metin: "Kararlar tamam: seti Agent Probe denetimine gönderin.", sekme: "denetim", git: "Denetim" }
+          : yayinAcikMi(denetim.veri)
+            ? { metin: "Kararlar tamam: onaylı case'leri yayına hazırlayın.", sekme: "", git: "Yayın önizleme" }
+            : { metin: "Yayın kapısı kapalı: Agent Probe denetim kararını inceleyin.", sekme: "denetim", git: "Denetim" };
+  const siradakiYol = siradaki ? (siradaki.git === "Yayın önizleme" ? yayinYolu : siradaki.git === "Gereksinime git" ? gYolu : `?sekme=${siradaki.sekme}`) : "";
+
+  const kararlarPaneli = (
     <>
-      <SayfaBasligi
-        ust={<Link to={`/gereksinimler/${encodeURIComponent(id)}`}>← {g?.jira_key ?? g?.baslik ?? "Gereksinim"}</Link>}
-        baslik="Case review"
-        aciklama={g ? `${g.jira_key ? `${g.jira_key} · ` : ""}${g.baslik}` : undefined}
-        eylemler={
-          <>
-            <GherkinIndir requirementId={id} anahtar={g?.jira_key ?? id} caseler={liste} />
-            <Link className="dugme dugme-ikincil" to={kararTablolariYolu(id)}>
-              Karar tabloları
-            </Link>
-            {kisitli ? null : yayinYetkili ? (
-              <Link className={`dugme ${yayinBirincil ? "dugme-birincil" : "dugme-ikincil"}`} to={yayinYolu}>
-                Yayın önizleme
-              </Link>
-            ) : (
-              <IslemDugmesi tur="ikincil" disabled title={ONIZLEME_YETKISI_YOK}>
-                Yayın önizleme
-              </IslemDugmesi>
-            )}
-          </>
-        }
-      />
+      {/* Durum şeridi ve derinleştirme "göster" bağlantılarının hedefi (A1). */}
+      <h2 id={CASE_KARARLARI_ID} className="bolum-basligi-case">
+        Case kararları
+      </h2>
+      {/* A2: süzgeç (URL ?filtre= / ?uretim= / ?hazirlik= / ?teknik=), toplu karar ve case kartları. */}
+      <KaliteSaglayici requirementId={id}>
+        <AcMetinleri.Provider value={acMetinleri}>
+        <CaseListesi
+          liste={liste}
+          kisitli={kisitli}
+          yukleniyor={caseler.yukleniyor && !caseler.veri}
+          hata={caseler.veri ? null : caseler.hata}
+          hataNesnesi={caseler.hataNesnesi}
+          yeniden={() => void caseler.yenile()}
+          yenile={() => void caseler.yenile(true)}
+          guncellendi={(t) => {
+            caseler.setVeri(liste.map((x) => (x.id === t.id ? t : x)));
+            // Karar ya da yeniden açma: "görüldü" kaydı CaseKarti'de silindi (sunucuda yeni eşik).
+            gorulmeDegisti();
+            // Karar/düzeltme kapsamı, hazır olma dağılımını ve setin kimliğini değiştirir.
+            paneller();
+          }}
+          uretimler={kapsam.veri?.uretimler}
+          varsayimDogrulandi={(onceki, yeni, varsayimlar) => {
+            // B2: aynı varsayıma dayanan diğer case'ler ve panel hemen "doğrulandı (#n)" der; ardından
+            // liste sunucudan sessizce yenilenir (HazirlikYonlendirme `yenile`).
+            caseler.setVeri(dogrulamayiYay(liste, onceki, yeni, varsayimlar));
+            goruntulemeyiUnut(yeni.id);
+            gorulmeDegisti();
+            paneller();
+          }}
+          topluAlani={
+            <>
+              {topluKarar && !kisitli && toplu.taslaklar.length > 0 && (
+                <TopluOnayCubugu
+                  karar={topluKarar}
+                  caseler={liste}
+                  gorulenler={gorulenler}
+                  secili={secili}
+                  setSecili={setSecili}
+                  gonderilmemisSoru={gonderilmemisSoruSayisi(acikSorular?.sorular)}
+                  bitti={(sonuc) => {
+                    setTopluSonuc(sonuc);
+                    // Karar verilen case'ler artık bu evrede değil: görüntüleme kaydı yeni karardan önce kaldı.
+                    const onaylanan = sonuc.cikti.yanit.sonuclar.filter((x) => x.durum === "onaylandi").map((x) => x.case_id);
+                    for (const cid of onaylanan) goruntulemeyiUnut(cid);
+                    gorulmeDegisti();
+                    // Başarılı, kısmi ya da hatalı: liste her durumda yenilenir.
+                    void caseler.yenile(true);
+                    void metrik.yenile(true);
+                    paneller();
+                    requestAnimationFrame(() => document.getElementById(TOPLU_SONUC_BASLIK_ID)?.focus());
+                  }}
+                />
+              )}
+              {topluKarar && topluSonuc && (
+                <TopluOnaySonucu
+                  sonuc={topluSonuc}
+                  kapat={() => {
+                    setTopluSonuc(null);
+                    // Odak body'ye düşmesin: varsa "Toplu kabul/onayla", yoksa filtre sekmesi.
+                    requestAnimationFrame(() => {
+                      const hedef =
+                        (document.querySelector('[data-toplu="tumu"]:not(:disabled)') as HTMLElement | null) ??
+                        (document.querySelector('[aria-label="Case filtresi"] [aria-pressed="true"]') as HTMLElement | null);
+                      hedef?.focus();
+                    });
+                  }}
+                />
+              )}
+            </>
+          }
+          secim={(c) =>
+            topluKarar && !kisitli && c.durum === TOPLU_DURUM[topluKarar]
+              ? {
+                  secili: secili.has(c.id),
+                  engel: secimEngeli(c),
+                  degistir: (v) =>
+                    setSecili((s) => {
+                      const y = new Set(s);
+                      if (v) y.add(c.id);
+                      else y.delete(c.id);
+                      return y;
+                    }),
+                }
+              : undefined
+          }
+          goruntulendi={gorulmeDegisti}
+        />
+        </AcMetinleri.Provider>
+      </KaliteSaglayici>
+    </>
+  );
 
-      {kisitli ? (
-        <Uyari ton="bilgi" baslik="Salt okunur görünüm">
-          Yalnız onaylı ve yayınlanmış case'ler gösterilir; karar geçmişi ve ölçümler bu rolde yer almaz.
-        </Uyari>
-      ) : (
-        <>
-          {caseler.veri && liste.length > 0 && (
-            <CaseDurumSeridi caseler={liste} denetim={denetim.veri} yayinYolu={yayinYolu} acikSorular={acikSorular?.sorular} />
-          )}
-
-          <Kart baslik="Özet" eylemler={aiOlculmedi ? <ReplayRozeti mode={mod} /> : undefined}>
+  const sekmeler: DetaySekmesi[] = kisitli
+    ? [{ id: "kararlar", ad: "Case'ler", sayi: caseler.veri ? liste.length : null, capalar: [CASE_KARARLARI_ID, ...liste.map((c) => caseCapasi(c.id))], icerik: kararlarPaneli }]
+    : [
+        {
+          id: "kararlar",
+          ad: "Kararlar",
+          sayi: caseler.veri ? kararBekleyen : null,
+          dikkat: kararBekleyen > 0,
+          // Kart çapaları (`#case-<id>`: kapsam matrisi, Test case'leri, Kule bağlantıları) da bu sekmeyi açar.
+          capalar: [CASE_KARARLARI_ID, ...liste.map((c) => caseCapasi(c.id))],
+          icerik: kararlarPaneli,
+        },
+        {
+          id: "olculer",
+          ad: "Özet ve ölçüler",
+          capalar: ["case-ozeti"],
+          icerik: () => (
+            <>
+          <Kart id="case-ozeti" baslik="Özet" eylemler={aiOlculmedi ? <ReplayRozeti mode={mod} /> : undefined}>
             <div className="metrik-izgara">
               <Metrik etiket="Üretilen" deger={ozet.uretilen} />
               <Metrik etiket="Onaya hazır" deger={ozet.hazir} />
@@ -881,6 +992,32 @@ export function CaseReview() {
             </p>
           </Kart>
 
+            </>
+          ),
+        },
+        ...(analiz
+          ? [
+              {
+                id: "kapsam",
+                ad: "Kapsam ve derinleştirme",
+                capalar: ["kapsam"],
+                icerik: () =>
+                  caseler.veri ? (
+                    <>
+          {analiz && caseler.veri && (
+            <KapsamPaneli
+              ozet={kapsam.veri}
+              yukleniyor={kapsam.yukleniyor}
+              hata={kapsam.hata}
+              hataKaynagi={kapsam.hataNesnesi}
+              yenile={() => void kapsam.yenile()}
+              caseSayisi={liste.length}
+              eskiSema={liste.length > 0 && liste.every(caseEski)}
+              baslangictaAcik={false}
+              filtreSec={(f) => listeyeGit(f)}
+            />
+          )}
+
           {/* 011 P5/P6: derinleştirme bitince case listesi, kapsam özeti, ölçümler, review ve denetim tazelenir;
               "göster" listeyi o üretimin case'lerine süzer (`?uretim=`, A2 süzgeci) ve listeye kaydırır. */}
           {analiz && caseler.veri && liste.length > 0 && (
@@ -896,25 +1033,34 @@ export function CaseReview() {
             />
           )}
 
-          {analiz && caseler.veri && (
-            <KapsamPaneli
-              ozet={kapsam.veri}
-              yukleniyor={kapsam.yukleniyor}
-              hata={kapsam.hata}
-              hataKaynagi={kapsam.hataNesnesi}
-              yenile={() => void kapsam.yenile()}
-              caseSayisi={liste.length}
-              eskiSema={liste.length > 0 && liste.every(caseEski)}
-              baslangictaAcik={false}
-              filtreSec={(f) => listeyeGit(f)}
-            />
-          )}
-
+                    </>
+                  ) : null,
+              },
+              {
+                id: "acik-sorular",
+                ad: "Açık sorular",
+                sayi: acikSoruSayisi,
+                capalar: [ACIK_SORULAR_ID],
+                icerik: () =>
+                  caseVar ? (
+                    <>
           {/* 011 K16: açık soruların PO'ya gönderimi ve yanıtları; gönderim/yanıt case listesini tazeler. */}
           {analiz && caseler.veri && liste.length > 0 && (
             <AcikSorularPaneli requirementId={id} tazele={() => void caseler.yenile(true)} caseler={liste} veriDegisti={setAcikSorular} />
           )}
 
+                    </>
+                  ) : (
+                    <BosDurum kip="sekme" baslik="Case yokken açık soru da yok.">Case üretildiğinde açık sorular ve PO yanıtları burada görünür.</BosDurum>
+                  ),
+              },
+              {
+                id: "denetim",
+                ad: "AI review ve denetim",
+                capalar: [DENETIM_ID, "review-bulgulari"],
+                icerik: () =>
+                  caseVar ? (
+                    <>
           {analiz && review.veri !== null && caseler.veri && liste.length > 0 && (
             <ReviewPaneli
               gorunum={review.veri}
@@ -942,99 +1088,83 @@ export function CaseReview() {
               yayinYolu={yayinYolu}
             />
           )}
-        </>
-      )}
+                    </>
+                  ) : (
+                    <BosDurum kip="sekme" baslik="Denetlenecek case yok.">AI review ve Agent Probe denetimi case üretildikten sonra çalışır.</BosDurum>
+                  ),
+              },
+            ]
+          : []),
+      ];
 
-      {/* Durum şeridi ve derinleştirme "göster" bağlantılarının hedefi (A1). */}
-      <h2 id={CASE_KARARLARI_ID} className="bolum-basligi-case">
-        Case kararları
-      </h2>
-
-      {/* A2: filtre sekmeleri (URL ?filtre= / ?uretim= / ?hazirlik= / ?teknik=), toplu karar ve case kartları. */}
-      <KaliteSaglayici requirementId={id}>
-        <CaseListesi
-          liste={liste}
-          kisitli={kisitli}
-          yukleniyor={caseler.yukleniyor && !caseler.veri}
-          hata={caseler.veri ? null : caseler.hata}
-          hataNesnesi={caseler.hataNesnesi}
-          yeniden={() => void caseler.yenile()}
-          yenile={() => void caseler.yenile(true)}
-          guncellendi={(t) => {
-            caseler.setVeri(liste.map((x) => (x.id === t.id ? t : x)));
-            // Karar ya da yeniden açma: "görüldü" kaydı CaseKarti'de silindi (sunucuda yeni eşik).
-            gorulmeDegisti();
-            // Karar/düzeltme kapsamı, hazır olma dağılımını ve setin kimliğini değiştirir.
-            paneller();
-          }}
-          uretimler={kapsam.veri?.uretimler}
-          varsayimDogrulandi={(onceki, yeni, varsayimlar) => {
-            // B2: aynı varsayıma dayanan diğer case'ler ve panel hemen "doğrulandı (#n)" der; ardından
-            // liste sunucudan sessizce yenilenir (HazirlikYonlendirme `yenile`).
-            caseler.setVeri(dogrulamayiYay(liste, onceki, yeni, varsayimlar));
-            goruntulemeyiUnut(yeni.id);
-            gorulmeDegisti();
-            paneller();
-          }}
-          topluAlani={
+  return (
+    <DetaySayfasi
+      key={id}
+      sekmeEtiketi="Case review bölümleri"
+      varsayilanSekme="kararlar"
+      ozet={
+        <OzetKarti
+          kirinti={[{ ad: "Gereksinimler", yol: "/gereksinimler" }, { ad: g?.jira_key ?? "Gereksinim", yol: gYolu }, { ad: "Case review" }]}
+          ust={<Link to={kararTablolariYolu(id)}>Karar tabloları</Link>}
+          kimlik={g?.jira_key}
+          baslik="Case review"
+          rozetler={
+            caseler.veri && !kisitli ? (
+              <>
+                <Cip ton={kararBekleyen > 0 ? "uyari" : "basari"}>{kararBekleyen > 0 ? `${kararBekleyen} karar bekliyor` : "Karar bekleyen yok"}</Cip>
+                {aiOlculmedi && <ReplayRozeti mode={mod} />}
+              </>
+            ) : undefined
+          }
+          meta={
+            g ? (
+              <MetaSatiri
+                ogeler={[
+                  { deger: <Link to={gYolu}>{g.baslik}</Link> },
+                  ...(caseler.veri ? [{ deger: `${liste.length} case` }, { deger: `${ozet.onay} onaylı` }] : []),
+                ]}
+              />
+            ) : undefined
+          }
+          siradaki={
+            siradaki && (
+              <>
+                {siradaki.metin}{" "}
+                <Link to={siradakiYol} className="ds-siradaki-git">
+                  {siradaki.git} →
+                </Link>
+              </>
+            )
+          }
+          eylemler={
             <>
-              {topluKarar && !kisitli && toplu.taslaklar.length > 0 && (
-                <TopluOnayCubugu
-                  karar={topluKarar}
-                  caseler={liste}
-                  gorulenler={gorulenler}
-                  secili={secili}
-                  setSecili={setSecili}
-                  gonderilmemisSoru={gonderilmemisSoruSayisi(acikSorular?.sorular)}
-                  bitti={(sonuc) => {
-                    setTopluSonuc(sonuc);
-                    // Karar verilen case'ler artık bu evrede değil: görüntüleme kaydı yeni karardan önce kaldı.
-                    const onaylanan = sonuc.cikti.yanit.sonuclar.filter((x) => x.durum === "onaylandi").map((x) => x.case_id);
-                    for (const cid of onaylanan) goruntulemeyiUnut(cid);
-                    gorulmeDegisti();
-                    // Başarılı, kısmi ya da hatalı: liste her durumda yenilenir.
-                    void caseler.yenile(true);
-                    void metrik.yenile(true);
-                    paneller();
-                    requestAnimationFrame(() => document.getElementById(TOPLU_SONUC_BASLIK_ID)?.focus());
-                  }}
-                />
-              )}
-              {topluKarar && topluSonuc && (
-                <TopluOnaySonucu
-                  sonuc={topluSonuc}
-                  kapat={() => {
-                    setTopluSonuc(null);
-                    // Odak body'ye düşmesin: varsa "Toplu kabul/onayla", yoksa filtre sekmesi.
-                    requestAnimationFrame(() => {
-                      const hedef =
-                        (document.querySelector('[data-toplu="tumu"]:not(:disabled)') as HTMLElement | null) ??
-                        (document.querySelector(".sekmeler .sekme.aktif") as HTMLElement | null);
-                      hedef?.focus();
-                    });
-                  }}
-                />
+              <GherkinIndir requirementId={id} anahtar={g?.jira_key ?? id} caseler={liste} />
+              {kisitli ? null : yayinYetkili ? (
+                <Link className={`dugme ${yayinBirincil ? "dugme-birincil" : "dugme-ikincil"}`} to={yayinYolu}>
+                  Yayın önizleme
+                </Link>
+              ) : (
+                <IslemDugmesi tur="ikincil" disabled title={ONIZLEME_YETKISI_YOK}>
+                  Yayın önizleme
+                </IslemDugmesi>
               )}
             </>
           }
-          secim={(c) =>
-            topluKarar && !kisitli && c.durum === TOPLU_DURUM[topluKarar]
-              ? {
-                  secili: secili.has(c.id),
-                  engel: secimEngeli(c),
-                  degistir: (v) =>
-                    setSecili((s) => {
-                      const y = new Set(s);
-                      if (v) y.add(c.id);
-                      else y.delete(c.id);
-                      return y;
-                    }),
-                }
-              : undefined
-          }
-          goruntulendi={gorulmeDegisti}
         />
-      </KaliteSaglayici>
-    </>
+      }
+      serit={
+        !kisitli && caseVar ? (
+          <CaseDurumSeridi caseler={liste} denetim={denetim.veri} yayinYolu={yayinYolu} acikSorular={acikSorular?.sorular} />
+        ) : undefined
+      }
+      ust={
+        kisitli ? (
+          <Uyari ton="bilgi" baslik="Salt okunur görünüm">
+            Yalnız onaylı ve yayınlanmış case'ler gösterilir; karar geçmişi ve ölçümler bu rolde yer almaz.
+          </Uyari>
+        ) : undefined
+      }
+      sekmeler={sekmeler}
+    />
   );
 }

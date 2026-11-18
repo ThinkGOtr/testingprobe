@@ -45,7 +45,7 @@ describe("case inceleme: Test Uzmanı kararı → Analist son onayı", () => {
     await oturumAc("analist");
     uygulama(CASELER);
     await screen.findAllByRole("article");
-    expect(screen.getByText(/Onaya hazır \(1\)/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Onaya hazır (1)" })).toBeInTheDocument();
     const k2 = kart(6);
     // Analist Test Uzmanı kararlarını veremez; yayın önizlemesini salt okunur görür (publish.preview).
     expect(within(kart(7)).getByRole("button", { name: "Kabul et" })).toBeDisabled();

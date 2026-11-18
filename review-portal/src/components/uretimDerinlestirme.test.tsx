@@ -324,7 +324,7 @@ describe("DerinlestirmePaneli", () => {
     const u = userEvent.setup();
     await oturumAc("testci");
     vi.spyOn(api, "derinlestirmeDurumu").mockResolvedValue({ durum: "tamam", tur: "negatif", teknik: null, uretim_no: 2, yeni_case_sayisi: 1, uyarilar: [], hata: null });
-    uygulama(`/gereksinimler/${V3_GEREKSINIM_ID}/caseler`);
+    uygulama(`/gereksinimler/${V3_GEREKSINIM_ID}/caseler?sekme=kapsam`);
     const dugme = await screen.findByRole("button", { name: "Üretim 2 ile eklenen 1 taslağı listede göster" }, { timeout: 3000 });
     await u.click(dugme);
     // Durum şeridindeki bağlantılar güncel aramayı taşır: URL'de uretim=2 var.
@@ -342,7 +342,7 @@ describe("DerinlestirmePaneli", () => {
 
   it("Case review sayfasında görünür (case'i olan gereksinim)", async () => {
     await oturumAc("testci");
-    uygulama(`/gereksinimler/${V3_GEREKSINIM_ID}/caseler`);
+    uygulama(`/gereksinimler/${V3_GEREKSINIM_ID}/caseler?sekme=kapsam`);
     expect(await screen.findByRole("button", { name: "Negatif kapsamı genişlet" })).toBeInTheDocument();
   });
 });

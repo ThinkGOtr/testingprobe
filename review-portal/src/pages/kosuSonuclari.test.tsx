@@ -10,6 +10,7 @@ import type { TestSonucu } from "../api/types";
 import { kosuDetayUyarla } from "../api/uyumDemoB";
 import { OturumProvider } from "../auth";
 import { BildirimProvider } from "../components/Bildirim";
+import { sekmeAc } from "../test/yardimci";
 import { adimHatali, CiAdimlari, ekTuru, githubYedekNotu, sonucFiltresiOku, sonuclariSuz, sonucSayaclari, TestAyrintisi, TestSonuclari } from "./KosuSonuclari";
 
 const RID = "9106b437-0770-4afb-9f58-c9d437cf659d";
@@ -203,15 +204,16 @@ describe("koşu detayı (canlı core şekli)", () => {
   it("GitHub koşusu: raporlar core'dan, CI işi GitHub'a; not yok", async () => {
     yapilandir({ mockZorunlu: false, mockOtomatik: false, yetenekKesfi: true });
     vi.stubGlobal("fetch", sahteCore({ [`/runs/${RID}`]: KOSU }));
-    uygulama(`/kosular/${RID}`);
+    uygulama(`/kosular/${RID}?sekme=raporlar`);
     const kart = await screen.findByRole("region", { name: "Raporlar ve bağlantılar" });
     expect(within(kart).getByRole("link", { name: /Playwright HTML raporu/ })).toHaveAttribute("href", KOSU.rapor_url);
     expect(within(kart).getByRole("link", { name: /JUnit XML/ })).toHaveAttribute("href", KOSU.junit_url);
     expect(within(kart).getByRole("link", { name: /Koşu günlüğü/ })).toHaveAttribute("href", KOSU.log_url);
     expect(within(kart).getByRole("link", { name: /CI işi/ })).toHaveAttribute("href", KOSU.ci_url);
     expect(within(kart).queryByText(/GitHub'daki artefakta gider/)).not.toBeInTheDocument();
-    // CI adımları: GitHub işleri ve ci-meta.json okunur halde.
-    const ci = screen.getByRole("region", { name: "CI adımları" });
+    // CI adımları (ayrı sekme): GitHub işleri ve ci-meta.json okunur halde.
+    await sekmeAc("CI ve platform");
+    const ci = await screen.findByRole("region", { name: "CI adımları" });
     expect(within(ci).getByRole("link", { name: /test-local/ })).toHaveAttribute("href", "https://github.com/j/2");
     expect(within(ci).getByText("1.64.1")).toBeInTheDocument();
   });
@@ -226,7 +228,7 @@ describe("koşu detayı (canlı core şekli)", () => {
       github_artefakt: { durum: "hata", hata: "artefakt açılamadı" },
     };
     vi.stubGlobal("fetch", sahteCore({ [`/runs/${RID}`]: kosu }));
-    uygulama(`/kosular/${RID}`);
+    uygulama(`/kosular/${RID}?sekme=raporlar`);
     const kart = await screen.findByRole("region", { name: "Raporlar ve bağlantılar" });
     expect(within(kart).getByRole("link", { name: /Playwright HTML raporu \(GitHub\)/ })).toHaveAttribute("href", kosu.rapor_url);
     expect(kart).toHaveTextContent("JUnit XML (GitHub artefaktında)");
@@ -239,7 +241,11 @@ describe("koşu detayı (canlı core şekli)", () => {
     const u = userEvent.setup();
     uygulama(`/kosular/${RID}`);
     const tablo = await screen.findByRole("region", { name: "Test sonuçları tablosu" });
-    expect(within(tablo).getAllByRole("row")).toHaveLength(3);
+    // Başarısız test varken varsayılan "Yalnız başarısızlar"; kapatınca hepsi görünür ve adrese t_basarisiz=0 yazılır.
+    expect(within(tablo).getAllByRole("row")).toHaveLength(2);
+    await u.click(screen.getByRole("checkbox", { name: /Yalnız\s+başarısızlar/ }));
+    expect(screen.getByTestId("konum")).toHaveTextContent("t_basarisiz=0");
+    expect(within(screen.getByRole("region", { name: "Test sonuçları tablosu" })).getAllByRole("row")).toHaveLength(3);
     await u.click(screen.getByRole("button", { name: "Başarısız (1)" }));
     expect(screen.getByTestId("konum")).toHaveTextContent("t_durum=failed");
     expect(within(screen.getByRole("region", { name: "Test sonuçları tablosu" })).getAllByRole("row")).toHaveLength(2);
@@ -262,12 +268,14 @@ describe("koşu detayı (canlı core şekli)", () => {
     yapilandir({ mockZorunlu: false, mockOtomatik: false, yetenekKesfi: true });
     vi.stubGlobal("fetch", sahteCore({ [`/runs/${RID}`]: { ...KOSU, sauce_durum: "error", sauce_neden: "oturum sınırı dolu" } }));
     const u = userEvent.setup();
-    uygulama(`/kosular/${RID}`);
+    uygulama(`/kosular/${RID}?sekme=ci`);
     const ci = await screen.findByRole("region", { name: "CI adımları" });
     expect(within(ci).getByText("geçti")).toBeInTheDocument();
     expect(within(ci).getByText("kaldı")).toBeInTheDocument();
     expect(within(ci).queryByText("success")).not.toBeInTheDocument();
-    expect(screen.getByText("Sauce koşmadı: oturum sınırı dolu")).toBeInTheDocument();
+    // DZ-08: uzun Sauce nedeni çip değil, özet kartının altında uyarı kutusu.
+    expect(screen.getByTestId("sauce-uyarisi")).toHaveTextContent(/Sauce koşmadı.*oturum sınırı dolu/);
+    await sekmeAc("Test sonuçları");
     const dugme = screen.getByRole("button", { name: /Sepet › sepete ekler/ });
     expect(dugme).not.toHaveAttribute("aria-controls");
     await u.click(dugme);
@@ -319,7 +327,7 @@ describe("koşu detayı (canlı core şekli)", () => {
       github_artefakt: { durum: "budandi", hata: null },
     };
     vi.stubGlobal("fetch", sahteCore({ [`/runs/${RID}`]: kosu }));
-    uygulama(`/kosular/${RID}`);
+    uygulama(`/kosular/${RID}?sekme=raporlar`);
     const kart = await screen.findByRole("region", { name: "Raporlar ve bağlantılar" });
     expect(within(kart).getByRole("link", { name: /Allure raporu \(GitHub artefaktı\)/ })).toHaveAttribute("href", kosu.allure_url);
     expect(within(kart).getByRole("link", { name: /JUnit XML \(GitHub artefaktında\)/ })).toHaveAttribute("href", KOSU.ci_url);
@@ -332,7 +340,7 @@ describe("koşu detayı (canlı core şekli)", () => {
     const allure = `/api/artifacts/runs/${RID}/src/e2e-app/target/allure-report/index.html`;
     const java = { ...KOSU, kaynak: "local", ci_url: null, platform: "android", allure_url: allure, allure_rapor: true, extent_url: extent };
     vi.stubGlobal("fetch", sahteCore({ [`/runs/${RID}`]: java }));
-    const { unmount } = uygulama(`/kosular/${RID}`);
+    const { unmount } = uygulama(`/kosular/${RID}?sekme=raporlar`);
     let kart = await screen.findByRole("region", { name: "Raporlar ve bağlantılar" });
     expect(within(kart).getByRole("link", { name: /Extent raporu/ })).toHaveAttribute("href", extent);
     expect(within(kart).getByRole("link", { name: /Allure raporu/ })).toHaveAttribute("href", allure);
@@ -341,7 +349,7 @@ describe("koşu detayı (canlı core şekli)", () => {
     // Web koşusu / eski core yanıtı: alan null ya da hiç yok → ne bağlantı ne "yok" metni.
     for (const kosu of [{ ...KOSU, extent_url: null }, KOSU]) {
       vi.stubGlobal("fetch", sahteCore({ [`/runs/${RID}`]: kosu }));
-      const r = uygulama(`/kosular/${RID}`);
+      const r = uygulama(`/kosular/${RID}?sekme=raporlar`);
       kart = await screen.findByRole("region", { name: "Raporlar ve bağlantılar" });
       expect(within(kart).getByRole("link", { name: /Allure ham sonuçları/ })).toBeInTheDocument();
       expect(within(kart).queryByText(/Extent/)).not.toBeInTheDocument();

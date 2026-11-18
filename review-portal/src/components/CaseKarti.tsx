@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode, type TextareaHTMLAttributes } from "react";
+import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode, type TextareaHTMLAttributes } from "react";
 import { api } from "../api/client";
 import { ApiError } from "../api/http";
 import { caseKarariVerilebilir, GECIS_YOK, type CaseKarari } from "../api/sozlesme/durumMakinesi";
@@ -324,6 +324,40 @@ export function caseCapasi(caseId: string): string {
   return `case-${caseId}`;
 }
 
+/**
+ * IA-09: gereksinimin kabul kriteri metinleri (ref → metin). Case review sağlar; kart AC çipinin yanında metni
+ * gösterir (reviewer "bu case AC'yi doğru sınıyor mu?" sorusunu gereksinim sayfasına gitmeden yanıtlar).
+ */
+export const AcMetinleri = createContext<ReadonlyMap<string, string>>(new Map());
+
+/** AC kimlik çipi; metni biliniyorsa erişilebilir ipucunda. */
+function AcCipi({ ac }: { ac: string }) {
+  const metin = useContext(AcMetinleri).get(ac);
+  return (
+    <Cip bicim="etiket" boyut="kucuk" className="mono" aciklama={metin}>
+      {ac}
+    </Cip>
+  );
+}
+
+/** Kartın başında AC'ler metinleriyle (IA-09); metni bilinmeyen AC yalnız kimlikle yazılır. */
+function AcSatiri({ refs }: { refs: readonly string[] }) {
+  const metinler = useContext(AcMetinleri);
+  if (refs.length === 0) return null;
+  return (
+    <ul className="case-ac-satiri" aria-label="Sınadığı kabul kriterleri" data-testid="case-ac-satiri">
+      {refs.map((a) => (
+        <li key={a}>
+          <Cip bicim="etiket" boyut="kucuk" className="mono">
+            {a}
+          </Cip>{" "}
+          <span className={metinler.has(a) ? undefined : "soluk"}>{metinler.get(a) ?? "metin gereksinim sayfasında"}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function CaseKarti({
   tc,
   guncellendi,
@@ -405,6 +439,9 @@ export function CaseKarti({
       ? `${tc.onay_engeli}. "Geri gönder" ile Test Uzmanına döndürün.`
       : undefined;
   const hataAyrik = hataListesi(islem.hata);
+  // Kararı bu kullanıcıda olan kart (Test Uzmanı taslakta, Analist onaya hazırda) ve karar gerektiren işaret
+  // (hazır değil / uyarı) taşıyan kart ayrıntıları açık gelir; diğerleri tek satır özet (DZ-20).
+  const ayrintiAcik = !kilitli && !kisitli && ((testci && tc.durum === "draft") || (onaylayici && tc.durum === "ready"));
 
   async function karar(fn: () => Promise<TestCase>) {
     // 012: sunucu kapı hatası (422 oracle_uyumsuz) verirse liste yenilenir; 409 aşağıdaki çakışma yoluna girer.
@@ -513,6 +550,15 @@ export function CaseKarti({
             {/* K22: başlıktaki gizli değer de `{veri:anahtar}` atfı olarak gelir; çip olarak gösterilir. */}
             <AtifliMetin metin={tc.icerik.title} veri={tc.veri} />
           </h3>
+          <AcSatiri refs={tc.icerik.acceptance_criteria_refs} />
+          {/* DZ-20: kart kompakt; ayrıntılar açılır. Bu kullanıcının kararını bekleyen kart açık gelir. */}
+          <details className="case-ayrinti" open={ayrintiAcik} data-testid="case-ayrinti">
+            <summary className="kucuk">
+              Ayrıntılar: {tc.icerik.steps.length} adım
+              {!eski && (tc.icerik.test_data?.length ?? 0) > 0 && ` · ${tc.icerik.test_data!.length} test verisi`}
+              {tc.icerik.preconditions.length > 0 && ` · ${tc.icerik.preconditions.length} ön koşul`}
+              {" · beklenen sonuç"}
+            </summary>
           {eski ? (
             <CaseOzellikleri tc={tc} uretimTuru={uretimTuru} />
           ) : (
@@ -585,6 +631,7 @@ export function CaseKarti({
             </div>
           )}
           <OracleAyrinti tc={tc} />
+          </details>
         </>
       )}
 
@@ -873,14 +920,14 @@ function AtifListesi({
         <li key={k.id}>
           {/* B7: PO'ya gönderilen soru PO'nun gördüğü kimlikle (CQ1); üretimdeki kimlik ipucunda. */}
           {"po_etiketi" in k && k.po_etiketi && !varsayim ? (
-            <span className="mono ac-ref" title={`Üretimdeki kimlik: ${k.id}`} data-testid="atif-kimlik">
+            <Cip bicim="etiket" boyut="kucuk" className="mono" title={`Üretimdeki kimlik: ${k.id}`} testId="atif-kimlik">
               {k.po_etiketi}
               <span className="gorunmez"> (üretimdeki kimlik: {k.id})</span>
-            </span>
+            </Cip>
           ) : (
-            <span className="mono ac-ref" data-testid="atif-kimlik">
+            <Cip bicim="etiket" boyut="kucuk" className="mono" testId="atif-kimlik">
               {k.id}
-            </span>
+            </Cip>
           )}{" "}
           {"owner" in k ? (
             <>
@@ -950,9 +997,7 @@ function CaseOzellikleri({ tc, uretimTuru, children }: { tc: TestCase; uretimTur
           <dt>Kabul kriterleri</dt>
           <dd className="satir-ogeler">
             {i.acceptance_criteria_refs.map((a) => (
-              <span key={a} className="mono ac-ref">
-                {a}
-              </span>
+              <AcCipi key={a} ac={a} />
             ))}
           </dd>
         </div>
@@ -1016,9 +1061,9 @@ function CaseV3Ozeti({
             <dt>Kapsadığı öğeler</dt>
             <dd className="satir-ogeler">
               {i.covers!.map((c) => (
-                <span key={c} className="mono ac-ref">
+                <Cip key={c} bicim="etiket" boyut="kucuk" className="mono">
                   {c}
-                </span>
+                </Cip>
               ))}
             </dd>
           </div>

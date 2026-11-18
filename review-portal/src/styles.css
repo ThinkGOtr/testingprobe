@@ -3010,17 +3010,14 @@ article.bulgu:is([data-durum="decided"], [data-durum="resolved"], [data-durum="s
     grid-template-columns: minmax(0, 1fr);
   }
 }
-/* Kaydırılan liste opak zemin alır: kaydırılmış öğeler kartın sınırını aşar (tablo sarıcıdaki axe notu). */
+/* Liste sayfayla kayar (ET-09: iç kaydırma yok; görüntü paneli yapışkan, stiller/detay-script.css). */
 .ajan-adimlar {
   list-style: none;
   padding: 0;
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  max-height: 440px;
-  overflow-y: auto;
-  background-color: var(--surface);
+  gap: var(--space-1);
 }
 .ajan-adim {
   width: 100%;
@@ -3706,12 +3703,6 @@ td .olculmedi {
   font-weight: 600;
 }
 .pr-govde p {
-  margin: 0.4rem 0;
-}
-.pr-govde-tablo {
-  overflow-x: auto;
-  white-space: pre;
-  font-size: var(--fs-sik);
   margin: 0.4rem 0;
 }
 .pr-ret .form-alan {
@@ -4413,34 +4404,6 @@ html:has(.sekmeler-yapiskan) {
   text-decoration: underline;
 }
 
-/* ---------------------------------------------------------------- triage ızgarası */
-
-/* Triage ızgarası (§5 görsel kapı: 1152 px'te sınıf + sinyaller + onarım kartı ilk ekranda). Sol sütunda
-   Sınıf ve altında öneri (onarım / bug taslağı / "Öneri üretilmedi"); sağda Eşleşen sinyaller tüm satırlara
-   yayılır. Öneri satırı 1fr: uzun sinyal kartının fazlası Sınıf satırını şişirmez (G6 boşluğu kalmaz).
-   Öneri tek kapta (.triage-oneri, #onarim çapası); kap boşsa (ortam sorunu) düz iki sütun kalır. DOM sırası değişmez; tek sütunda (≤960 px)
-   Sınıf → Sinyaller → Öneri. */
-@media (min-width: 961px) {
-  .iki-sutun.triage-izgara:has(> .triage-oneri:not(:empty)) {
-    grid-template-rows: auto 1fr;
-  }
-  .triage-izgara:has(> .triage-oneri:not(:empty)) > :nth-child(2) {
-    grid-column: 2;
-    grid-row: 1 / -1;
-  }
-  .triage-izgara > :not(:nth-child(2)) {
-    grid-column: 1;
-  }
-}
-.triage-izgara > *,
-.triage-oneri > * {
-  margin-top: 0;
-  margin-bottom: 0;
-}
-/* Öneri kabı (#onarim, asistan çapası) her zaman çizilir; öneri yokken ızgarada boş satır açmaz. */
-.triage-oneri:empty {
-  display: none;
-}
 
 /* Merge kapısı satırı ile "Merge et" düğmesi arasında nefes payı (kapı şeridine yapışmasın). */
 .merge-kapisi + .eylemler {

@@ -90,16 +90,19 @@ test("009: Kontrol Kulesi platform süzgeci adres çubuğunda; son koşular ve p
 test("009: triage sayfa kaynağı görüntüleyicisi (kaçışlı, sınırlı) ve kimlik onarım kartı (boş rol/ad satırı yok)", async ({ page }) => {
   const hatalar = konsolHatalariniTopla(page);
   await girisYap(page, "muhendis");
-  await page.goto("/kosular/run-110");
+  await page.goto("/kosular/run-110?sekme=ci");
   await expect(page.getByRole("list", { name: "Platform kontrolleri" })).toContainText("Yerel CI · Android");
+  await page.getByRole("tab", { name: /^Test sonuçları/ }).click();
   await page.getByRole("list", { name: "Triage kayıtları" }).getByRole("link", { name: "Triage sonucunu aç" }).click();
   await expect(page.getByTestId("triage-sinif")).toContainText("Android");
+  await page.getByRole("tab", { name: /^Kanıt/ }).click();
   const sk = page.getByTestId("sayfa-kaynagi");
   await sk.getByText("Sayfa kaynağını göster (XML)").click();
   const pre = sk.locator("pre.sayfa-kaynagi-xml");
   await expect(pre).toContainText('resource-id="login-button"');
   expect(await page.locator("hierarchy").count()).toBe(0);
   await expect(page.getByTestId("kanit-ekran").locator("img")).toBeVisible();
+  await page.getByRole("tab", { name: /^Onarım/ }).click();
   await expect(page.getByTestId("onarim-sayfa-kaynagi")).toContainText("Kimlikler.java");
   await expect(page.getByTestId("onarim-niyet")).toHaveCount(0);
   await page.screenshot({ path: `${DIZIN}/62-triage-sayfa-kaynagi.png`, fullPage: true });
@@ -115,9 +118,9 @@ const SAYFALAR: { yol: string; ad: string; hazir: (p: Page) => Promise<void> }[]
   { yol: "/kod", ad: "kod", hazir: (p) => expect(p.getByRole("group", { name: "Hedef platform" })).toBeVisible() },
   { yol: "/kod/scr-and", ad: "script-android", hazir: (p) => expect(p.getByRole("list", { name: "Ajan adımları" })).toBeVisible() },
   { yol: "/kontrol-kulesi?platform=android", ad: "kule-android", hazir: (p) => expect(p.getByRole("region", { name: "Platform dağılımı tablosu" })).toBeVisible() },
-  { yol: "/kosular/run-110", ad: "kosu-android", hazir: (p) => expect(p.getByRole("list", { name: "Platform kontrolleri" })).toBeVisible() },
+  { yol: "/kosular/run-110?sekme=ci", ad: "kosu-android", hazir: (p) => expect(p.getByRole("list", { name: "Platform kontrolleri" })).toBeVisible() },
   {
-    yol: "/hatalar/fail-5",
+    yol: "/hatalar/fail-5?sekme=kanit",
     ad: "triage-android",
     hazir: async (p) => {
       await p.getByTestId("sayfa-kaynagi").getByText("Sayfa kaynağını göster (XML)").click();

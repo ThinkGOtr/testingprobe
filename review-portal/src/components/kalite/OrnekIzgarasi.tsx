@@ -8,6 +8,7 @@ import type { KararTablosu, TabloOrnekleri } from "../../api/types";
 import { mantiksalMi, mantiksalOku } from "../../lib/ifadeAciklama";
 import { Cip, Uyari } from "../ui";
 import { degerMetni } from "./oracle";
+import { TabloSarici } from "../tasarim";
 
 const UYARI_TURU: Record<string, string> = {
   ortusme: "Satırlar örtüşüyor",
@@ -104,30 +105,33 @@ export function OrnekIzgarasi({ tablo, kriterler = null }: { tablo: KararTablosu
       ) : (
         <>
           {veri.ornekler.length > 0 && (
-            <div className="tablo-sarici" tabIndex={0} role="region" aria-label={`${t.ad}: sınır örnekleri`}>
-              <table className="tablo tablo-sik tablo-yigin kt-ornek-tablo">
-                <thead>
-                  <tr>
-                    {t.girdiler.map((g) => (
-                      <th key={g.ad} scope="col" className="mono">
-                        {g.ad}
-                      </th>
-                    ))}
-                    <th scope="col">Satır</th>
-                    {t.ciktilar.map((c) => (
-                      <th key={c.ad} scope="col" className="mono">
-                        {c.ad}
-                      </th>
-                    ))}
-                    <th scope="col">Story ne diyor</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {veri.ornekler.map((o, i) => {
-                    const e = esikSatiri(o.girdiler);
-                    const story = e !== null ? storyCumlesi(e, t.ac_refs, kriterler) : null;
-                    return (
-                    <tr key={i} className={[o.hata || !o.satir_id ? "oracle-farkli" : "", e !== null ? "kt-esik" : ""].filter(Boolean).join(" ") || undefined} data-esik={e !== null || undefined}>
+            <TabloSarici etiket={`${t.ad}: sınır örnekleri`} yogunluk="sik" darEkran="kaydir" tabloClassName="kt-ornek-tablo">
+              <thead>
+                <tr>
+                  {t.girdiler.map((g) => (
+                    <th key={g.ad} scope="col" className="mono">
+                      {g.ad}
+                    </th>
+                  ))}
+                  <th scope="col">Satır</th>
+                  {t.ciktilar.map((c) => (
+                    <th key={c.ad} scope="col" className="mono">
+                      {c.ad}
+                    </th>
+                  ))}
+                  <th scope="col">Story ne diyor</th>
+                </tr>
+              </thead>
+              <tbody>
+                {veri.ornekler.map((o, i) => {
+                  const e = esikSatiri(o.girdiler);
+                  const story = e !== null ? storyCumlesi(e, t.ac_refs, kriterler) : null;
+                  return (
+                    <tr
+                      key={i}
+                      className={[o.hata || !o.satir_id ? "oracle-farkli" : "", e !== null ? "kt-esik" : ""].filter(Boolean).join(" ") || undefined}
+                      data-esik={e !== null || undefined}
+                    >
                       {t.girdiler.map((g) => (
                         <td key={g.ad} className="mono" data-etiket={kirilabilir(g.ad)}>
                           {hucre(g.ad, o.girdiler[g.ad])}
@@ -153,11 +157,10 @@ export function OrnekIzgarasi({ tablo, kriterler = null }: { tablo: KararTablosu
                         {story ?? <span className="soluk">—</span>}
                       </td>
                     </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                  );
+                })}
+              </tbody>
+            </TabloSarici>
           )}
           {veri.uyarilar.length > 0 && (
             <ul className="duz-liste kt-ornek-uyari" data-testid="kt-ornek-uyari">

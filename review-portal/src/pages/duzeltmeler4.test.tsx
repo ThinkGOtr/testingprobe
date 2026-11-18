@@ -17,6 +17,7 @@ import { OturumProvider } from "../auth";
 import { BildirimProvider } from "../components/Bildirim";
 import { kosuKimligiMi } from "../lib/kapi";
 import { hatalariGrupla, nedenTemizle } from "./ScriptDetay";
+import { sekmeAc } from "../test/yardimci";
 
 const OPENAPI = {
   paths: Object.fromEntries(
@@ -139,9 +140,9 @@ describe("merge kapısı: core tek kaynak, zayıf test kabul isteyen uyarı", ()
     expect(kapi).toHaveTextContent("açık ✓");
     expect(kapi).not.toHaveTextContent("kapalı");
     const dugme = screen.getByRole("button", { name: "Merge et" });
-    expect(dugme).toBeDisabled();
+    expect(dugme).toHaveAttribute("aria-disabled", "true");
     await u.click(within(kapi).getByRole("checkbox", { name: /zayıf test olarak merge et/ }));
-    expect(dugme).toBeEnabled();
+    expect(dugme).not.toHaveAttribute("aria-disabled");
     await u.click(dugme);
     await waitFor(() => expect(cagrilar.some((c) => c.url === "/prs/3/merge")).toBe(true));
     const merge = cagrilar.find((c) => c.url === "/prs/3/merge")!;
@@ -176,7 +177,7 @@ describe("merge kapısı: core tek kaynak, zayıf test kabul isteyen uyarı", ()
     expect(kapi).toHaveTextContent("kapalı");
     expect(kapi).toHaveTextContent("Zorunlu kontrol 'local-ci': failed");
     expect(screen.queryByTestId("merge-uyarilari")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Merge et" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Merge et" })).toHaveAttribute("aria-disabled", "true");
   });
 });
 
@@ -194,7 +195,7 @@ describe("kırarak doğrulama ve koşu bağlantıları", () => {
       },
     });
     vi.stubGlobal("fetch", sahteCore("engineer", { [`/scripts/${SID}`]: s, "/scripts": [], "/cases": [] }));
-    const { container } = uygulama(`/kod/${SID}`);
+    const { container } = uygulama(`/kod/${SID}?sekme=kirarak-dogrula`);
     const zaman = await screen.findByRole("list", { name: "Kırarak doğrulama zaman çizelgesi" });
     const [, kirik] = within(zaman).getAllByRole("listitem");
     expect(kirik).not.toHaveTextContent("beklendiği gibi");
@@ -207,6 +208,8 @@ describe("kırarak doğrulama ve koşu bağlantıları", () => {
     // Sayfadaki her koşu bağlantısı açılabilir bir koşuya gider (UUID); cg- etiketleri düz metin.
     const kosuBaglantilari = [...container.querySelectorAll<HTMLAnchorElement>("a[href^='/kosular/']")];
     for (const a of kosuBaglantilari) expect(kosuKimligiMi(decodeURIComponent(a.getAttribute("href")!.slice("/kosular/".length)))).toBe(true);
+    expect(container.querySelector("a[href*='cg-']")).toBeNull();
+    await sekmeAc("Yerel kontrol");
     expect(container.querySelector("a[href*='cg-']")).toBeNull();
     expect(screen.getByText("cg-8908c645-local-check-515752")).toHaveAttribute("title", expect.stringMatching(/Toolchain koşu etiketi/));
   });
@@ -221,7 +224,7 @@ describe("kırarak doğrulama ve koşu bağlantıları", () => {
       },
     });
     vi.stubGlobal("fetch", sahteCore("engineer", { [`/scripts/${SID}`]: s, "/scripts": [], "/cases": [] }));
-    uygulama(`/kod/${SID}`);
+    uygulama(`/kod/${SID}?sekme=kirarak-dogrula`);
     const zaman = await screen.findByRole("list", { name: "Kırarak doğrulama zaman çizelgesi" });
     const [ilk, kirik] = within(zaman).getAllByRole("listitem");
     expect(kirik).toHaveTextContent("beklenmeyen sonuç");
@@ -242,7 +245,7 @@ describe("kırarak doğrulama ve koşu bağlantıları", () => {
       },
     });
     vi.stubGlobal("fetch", sahteCore("engineer", { [`/scripts/${SID}`]: s, "/scripts": [], "/cases": [] }));
-    uygulama(`/kod/${SID}`);
+    uygulama(`/kod/${SID}?sekme=kirarak-dogrula`);
     const zaman = await screen.findByRole("list", { name: "Kırarak doğrulama zaman çizelgesi" });
     const [, kirik] = within(zaman).getAllByRole("listitem");
     expect(kirik).toHaveTextContent("Kırmızı · beklendiği gibi");
@@ -272,7 +275,7 @@ describe("eşleme tablosu ve defect adayı", () => {
   it("parametresiz doğrulama 'Değer yok'; değer case cümlesinde vurgulanır; 'core bildirmedi' yok", async () => {
     yapilandir({ mockZorunlu: false, mockOtomatik: false, yetenekKesfi: true });
     vi.stubGlobal("fetch", sahteCore("engineer", { [`/scripts/${SID}`]: coreScript(), "/scripts": [], "/cases": [] }));
-    uygulama(`/kod/${SID}`);
+    uygulama(`/kod/${SID}?sekme=ajan`);
     const tablo = await screen.findByRole("region", { name: "Eşlenen adımlar tablosu" });
     expect(tablo).not.toHaveTextContent("core bildirmedi");
     const parametresiz = within(tablo).getByText("CheckoutPage.expectCheckoutEnabled()").closest("tr")!;
@@ -390,9 +393,11 @@ describe("Koşular: adlandırma ve bağlantılar", () => {
   it("detay: başlıkta tetik + kısa ad; JUnit XML bağlantısı; allure ham sonuçlar doğru adlandırılır", async () => {
     yapilandir({ mockZorunlu: false, mockOtomatik: false, yetenekKesfi: true });
     vi.stubGlobal("fetch", sahteCore("presenter", { [`/runs/${RID}`]: kosu }));
-    uygulama(`/kosular/${RID}`);
+    uygulama(`/kosular/${RID}?sekme=raporlar`);
     const baslik = await screen.findByRole("heading", { level: 1 });
-    expect(baslik).toHaveTextContent("PR koşusu 9106b437");
+    // Özet kartı: kısa koşu kimliği (tamamı ipucunda) + tetik adı; kırıntı "Koşular › Koşu 9106b437".
+    expect(baslik).toHaveTextContent(/9106b437.*PR koşusu/);
+    expect(screen.getByRole("navigation", { name: "Kırıntı" })).toHaveTextContent("Koşu 9106b437");
     const kart = screen.getByRole("region", { name: "Raporlar ve bağlantılar" });
     expect(within(kart).getByRole("link", { name: /JUnit XML/ })).toHaveAttribute("href", `/api/artifacts/runs/${RID}/src/e2e/results/junit.xml`);
     expect(within(kart).getByRole("link", { name: /Allure ham sonuçları \(JSON listesi\)/ })).toBeInTheDocument();

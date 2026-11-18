@@ -14,7 +14,7 @@ import type { CaseKapsamOzeti, TestCase, TestCaseIcerik } from "../api/types";
 import { caseIcerikUyarla, caseKapsamOzetiUyarla, caseUyarla, yayinOnizlemeUyarla } from "../api/uyum";
 import { OturumProvider } from "../auth";
 import { hataListesi, hazirlikSorunlari, tutarlilikSorunlari } from "../lib/caseV3";
-import { oturumAc, sar } from "../test/yardimci";
+import { oturumAc, sar, sekmeAc } from "../test/yardimci";
 import { BildirimProvider } from "./Bildirim";
 import { CaseKarti } from "./CaseKarti";
 import { KapsamPaneli } from "./KapsamPaneli";
@@ -360,7 +360,7 @@ describe("CaseKarti v3: düzeltme formu", () => {
 describe("Kapsam ve açık noktalar paneli", () => {
   it("case review sayfasında: oranlar, dağılımlar, açık soru, varsayım, kapsam matrisi, kapsanmayanlar, negatif kararlar", async () => {
     await oturumAc("analist");
-    uygulama(`/gereksinimler/${V3_GEREKSINIM_ID}/caseler`);
+    uygulama(`/gereksinimler/${V3_GEREKSINIM_ID}/caseler?sekme=kapsam`);
     const panel = within((await screen.findByRole("heading", { name: "Kapsam ve açık noktalar" })).closest("section")!);
     await panel.findByTestId("kapsam-oranlar");
     // 4 AC'nin 4'ü, 10 öğenin 8'i kapsanıyor; 6 geçersiz öğenin 6'sının kararı var.
@@ -407,9 +407,10 @@ describe("Kapsam ve açık noktalar paneli", () => {
   it("karar kapsamı değiştirir: case reddedilince panel yenilenir", async () => {
     await oturumAc("testci");
     const u = userEvent.setup();
-    uygulama(`/gereksinimler/${V3_GEREKSINIM_ID}/caseler`);
+    uygulama(`/gereksinimler/${V3_GEREKSINIM_ID}/caseler?sekme=kapsam`);
     const panel = within((await screen.findByRole("heading", { name: "Kapsam ve açık noktalar" })).closest("section")!);
     await panel.findByTestId("kapsam-oranlar");
+    await sekmeAc("Kararlar");
     const kart = within((await screen.findByRole("heading", { name: "Nottaki betik sipariş detayında çalıştırılmaz" })).closest("article")!);
     await u.click(kart.getByRole("button", { name: "Reddet" }));
     await u.selectOptions(kart.getByLabelText("Ret nedeni"), "out_of_scope");

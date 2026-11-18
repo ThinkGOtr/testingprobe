@@ -7,7 +7,9 @@ import { useIzin, useOturum, usePlatformlar } from "../auth";
 import { normalizeRol } from "../lib/yetki";
 import { useBildirim } from "../components/Bildirim";
 import { BosDurum, Cip, Baglanti, HataKutusu, KayitHatasi, IslemDugmesi, Kart, Metrik, SayfaBasligi, Uyari, Yukleniyor, IzinliLink } from "../components/ui";
-import { TabloSarici } from "../components/tasarim";
+import { Kimlik, KisaDeger, MetaSatiri, TabloSarici } from "../components/tasarim";
+import { DetaySayfasi, OzetKarti, type DetaySekmesi } from "../components/DetaySayfasi";
+import "../stiller/detay-kosu-hata.css";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { altTurEtiketi, HATA_SINIFI, KAYNAK, KOSU_DURUMU, TETIK } from "../lib/etiketler";
 import { sure, tarih } from "../lib/format";
@@ -643,48 +645,13 @@ export function KosuDetay() {
   const k = v.veri;
   if (!k) return null;
   const ghYedek = githubYedekNotu(k);
+  const hatalar = kosuHatalari(k);
+  const takilma = takilmaUyarisi(k);
+  const sauceUzun = k.sauce_durum === "error" || k.sauce_durum === "atlandi";
+  const kisa = kisaKosuAdi(k.id);
+  const ciVar = Boolean((k.adimlar && Object.keys(k.adimlar).length > 0) || k.github || k.log_url || (k.platform_kontrolleri ?? []).length > 0);
 
-  return (
-    <>
-      <SayfaBasligi
-        ust={<Link to="/kosular">← Koşular</Link>}
-        baslik={
-          <span title={`Koşu kimliği: ${k.id}`}>
-            {TETIK[k.tetik] ?? k.tetik} koşusu <span className="mono">{kisaKosuAdi(k.id)}</span>
-          </span>
-        }
-        aciklama={
-          <span className="satir-ogeler">
-            <DurumCipi d={k.durum} />
-            <Cip ton={TETIK_TONU[k.tetik] ?? "notr"}>
-              {TETIK[k.tetik] ?? k.tetik}
-              {k.pr_no !== null && ` #${k.pr_no}`}
-            </Cip>
-            <Cip ton="notr">{KAYNAK[k.kaynak] ?? k.kaynak}</Cip>
-            <PlatformRozeti platform={k.platform} />
-            <DepoCipi kaynak={k} />
-            <OrtamRozeti ortam={k.test_ortami} />
-            <EkilmisHataCipi kosu={k} />
-            {/* 011 §2.8: koşunun dili (core `dil` / `ortam.dil`); bilinmiyorsa çizilmez. */}
-            <DilRozeti dil={k.dil} platform={k.platform} />
-            <SauceCipi k={k} />
-            <span className="mono">{k.commit}</span>
-            <span className="soluk">{tarih(k.baslangic)}</span>
-          </span>
-        }
-      />
-      {takilmaUyarisi(k) && (
-        <Uyari baslik="Koşu takılmış olabilir">
-          <span data-testid="takilma-uyarisi">{takilmaUyarisi(k)}</span>. CI kuyruğunu ya da çalıştırıcıyı kontrol edin; core süre aşımında
-          koşuyu "Zaman aşımı" olarak kapatır.
-        </Uyari>
-      )}
-      {k.break_campaign && <Uyari>Bu koşuda kampanya kuralı koşunun bayisi için BREAK_CAMPAIGN ile bozuldu (kasıtlı kırma); başarısızlık beklenir.</Uyari>}
-      {k.saglik_hatasi && (
-        <Uyari ton="hata" baslik="Ortam sorunu">
-          Koşu öncesi sağlık yoklaması başarısız; Playwright başlatılmadı: {k.saglik_hatasi}
-        </Uyari>
-      )}
+  const raporlar = (
       <Kart baslik="Raporlar ve bağlantılar">
         {k.maskeli ? (
           <p className="soluk" data-testid="artefakt-maskeli">
@@ -748,19 +715,143 @@ export function KosuDetay() {
           </ul>
         )}
       </Kart>
-      <Kart>
-        <div className="metrik-izgara">
+  );
+
+  const sekmeler: DetaySekmesi[] = [
+    {
+      id: "sonuclar",
+      ad: "Test sonuçları",
+      sayi: k.toplam,
+      dikkat: k.basarisiz > 0,
+      icerik: () => (
+        <>
+          <HataListesi k={k} />
+          <TestSonuclari k={k} />
+        </>
+      ),
+    },
+    {
+      id: "ci",
+      ad: "CI ve platform",
+      icerik: () =>
+        ciVar ? (
+          <>
+            <PlatformKontrolleri k={k} />
+            <CiAdimlari k={k} />
+          </>
+        ) : (
+          <BosDurum kip="sekme" baslik="Bu koşuda CI adımı kaydı yok.">
+            Yerel ya da harici koşularda CI adımları raporlanmaz; ayrıntı için Raporlar sekmesindeki bağlantılara bakın.
+          </BosDurum>
+        ),
+    },
+    { id: "raporlar", ad: "Raporlar ve bağlantılar", icerik: raporlar },
+  ];
+
+  return (
+    <DetaySayfasi
+      key={k.id}
+      sekmeEtiketi="Koşu bölümleri"
+      ozet={
+        <OzetKarti
+          testId="kosu-ozet"
+          kirinti={[{ ad: "Koşular", yol: "/kosular" }, { ad: `Koşu ${kisa}` }]}
+          kimlik={<Kimlik deger={k.id} tur="kosu" kisaltUzunluk={8} kirp="bas" />}
+          baslik={`${TETIK[k.tetik] ?? k.tetik} koşusu`}
+          rozetler={
+            <>
+              <DurumCipi d={k.durum} />
+              <Cip ton={TETIK_TONU[k.tetik] ?? "notr"}>
+                {TETIK[k.tetik] ?? k.tetik}
+                {k.pr_no !== null && ` #${k.pr_no}`}
+              </Cip>
+              <Cip ton="notr">{KAYNAK[k.kaynak] ?? k.kaynak}</Cip>
+              <PlatformRozeti platform={k.platform} />
+              <DepoCipi kaynak={k} />
+              <OrtamRozeti ortam={k.test_ortami} />
+              <EkilmisHataCipi kosu={k} />
+              {/* 011 §2.8: koşunun dili (core `dil` / `ortam.dil`); bilinmiyorsa çizilmez. */}
+              <DilRozeti dil={k.dil} platform={k.platform} />
+              {/* DZ-08: uzun Sauce nedeni çip değil, özetin altında uyarı kutusu. */}
+              {!sauceUzun && <SauceCipi k={k} />}
+            </>
+          }
+          meta={
+            <MetaSatiri
+              ogeler={[
+                { etiket: "Commit", deger: k.commit ? <KisaDeger deger={k.commit} /> : null },
+                { etiket: "Süre", deger: k.sure_ms ? sure(k.sure_ms) : null },
+                { etiket: "Başlangıç", deger: tarih(k.baslangic) },
+              ]}
+            />
+          }
+          siradaki={<KosuSiradaki k={k} hatalar={hatalar} takilma={takilma} />}
+          eylemler={
+            k.script_id ? (
+              <IzinliLink className="dugme dugme-ikincil" to={`/kod/${encodeURIComponent(k.script_id)}`}>
+                Üretilen test
+              </IzinliLink>
+            ) : undefined
+          }
+        />
+      }
+      serit={
+        <div className="metrik-izgara kosu-metrikleri" aria-label="Koşu özeti">
           <Metrik etiket="Toplam" deger={k.toplam} />
           <Metrik etiket="Geçen" deger={k.gecen} ton={k.toplam > 0 && k.gecen === k.toplam ? "basari" : undefined} />
           <Metrik etiket="Başarısız" deger={k.basarisiz} ton={k.basarisiz > 0 ? "hata" : undefined} />
           <Metrik etiket="Flaky" deger={k.flaky} ton={k.flaky > 0 ? "uyari" : undefined} />
           <Metrik etiket="Süre" deger={sure(k.sure_ms)} />
         </div>
-      </Kart>
-      <HataListesi k={k} />
-      <PlatformKontrolleri k={k} />
-      <CiAdimlari k={k} />
-      <TestSonuclari k={k} />
-    </>
+      }
+      ust={
+        (takilma || k.break_campaign || k.saglik_hatasi || sauceUzun) && (
+          <>
+            {takilma && (
+              <Uyari baslik="Koşu takılmış olabilir">
+                <span data-testid="takilma-uyarisi">{takilma}</span>. CI kuyruğunu ya da çalıştırıcıyı kontrol edin; core süre aşımında
+                koşuyu "Zaman aşımı" olarak kapatır.
+              </Uyari>
+            )}
+            {k.break_campaign && <Uyari>Bu koşuda kampanya kuralı koşunun bayisi için BREAK_CAMPAIGN ile bozuldu (kasıtlı kırma); başarısızlık beklenir.</Uyari>}
+            {k.saglik_hatasi && (
+              <Uyari ton="hata" baslik="Ortam sorunu">
+                Koşu öncesi sağlık yoklaması başarısız; Playwright başlatılmadı: {k.saglik_hatasi}
+              </Uyari>
+            )}
+            {sauceUzun && (
+              <div data-testid="sauce-uyarisi">
+                <Uyari ton={k.sauce_durum === "error" ? "uyari" : "bilgi"} baslik={k.sauce_durum === "error" ? "Sauce koşmadı" : "Sauce atlandı"}>
+                  {k.sauce_neden ?? (k.sauce_durum === "error" ? "altyapı hatası" : "neden bildirilmedi")}
+                  {k.sauce_durum === "error" && ". CI işi bilerek yeşil biter; Sauce sonucu bu koşuda yok."}
+                </Uyari>
+              </div>
+            )}
+          </>
+        )
+      }
+      sekmeler={sekmeler}
+    />
   );
+}
+
+/** Koşunun tek "Sıradaki adım"ı: başarısızlıkta triage, sürüyorsa bekleme, yeşilse eylem yok. */
+function KosuSiradaki({ k, hatalar, takilma }: { k: KosuDetayTuru; hatalar: KosuHatasi[]; takilma: string | null }) {
+  if (takilma) return <>Koşu beklenenden uzun sürüyor; CI kuyruğunu ya da çalıştırıcıyı kontrol edin.</>;
+  if (k.durum === "queued" || k.durum === "running") return <>Koşu sürüyor; sonuçlar geldikçe bu sayfa kendiliğinden güncellenir.</>;
+  if (hatalar.length > 0) {
+    const ilk = hatalar[0];
+    return (
+      <>
+        {hatalar.length === 1 ? `Başarısız test triage'a düştü: ${ilk.test_adi}.` : `${hatalar.length} başarısızlık triage'a düştü.`}{" "}
+        <IzinliLink className="ds-siradaki-git" to={`/hatalar/${encodeURIComponent(ilk.id)}`}>
+          Triage sonucunu aç →
+        </IzinliLink>
+      </>
+    );
+  }
+  if (k.basarisiz > 0) return <>Başarısız testler sınıflandırılıyor; triage sonucu gelince burada bağlantısı görünür.</>;
+  if (k.durum === "error" || k.durum === "zaman_asimi") return <>Koşu tamamlanmadı{k.hata ? `: ${k.hata}` : ""}. CI işini ve günlüğü Raporlar sekmesinde inceleyin.</>;
+  if (k.durum === "passed") return <>Tüm testler geçti; bu koşu için eylem gerekmiyor.</>;
+  return <>Sonuçları Test sonuçları sekmesinde inceleyin.</>;
 }

@@ -114,7 +114,10 @@ describe("Bulgu 2: case'e bağlı olmayan açık soru", () => {
     const spy = vi.spyOn(api, "acikSorular").mockResolvedValue(yanit([soru({ kaynak_id: "Q9", metin: "Hiçbir case'e bağlı olmayan soru" })]));
     const u = userEvent.setup();
     uygulama(SAYFA);
-    expect(await screen.findByTestId("serit-acik-sorular", undefined, { timeout: 5000 })).toHaveTextContent("1 soru PO'ya gönderilmedi");
+    await screen.findByTestId("serit-acik-sorular", undefined, { timeout: 5000 });
+    // Core listesi gelince bağsız Q9 da sayılır: taslak case'in kendi gönderilmemiş sorusu + Q9 (eskiden test, core
+    // listesi panel açılınca geldiği için yalnız ilk değeri görüyordu; liste artık sayfa açılırken okunur).
+    await waitFor(() => expect(screen.getByTestId("serit-acik-sorular")).toHaveTextContent("2 soru PO'ya gönderilmedi"));
     await u.click(await screen.findByRole("button", { name: "Toplu kabul (1)" }));
     const teyit = screen.getByRole("group", { name: "Toplu kabul teyidi" });
     expect(within(teyit).getByTestId("toplu-onay-soru-uyarisi")).toHaveTextContent("PO'ya gönderilmemiş 1 açık soru var. Kabul engellenmez");

@@ -235,7 +235,7 @@ describe("bug taslağı: sıralama yapılamayınca ve özet sınırı", () => {
   it("sıralama yok: 'AI önerisi yok (REPLAY-MISS…)' + REPLAY-MISS rozeti; 'adaylar aynı hata değil' uydurulmaz", async () => {
     await oturumAc("testci");
     vi.spyOn(api, "bugTaslagi").mockResolvedValue(taslak());
-    uygulama("/bug-taslaklari/bx");
+    uygulama("/bug-taslaklari/bx?sekme=mukerrer");
     const o = await screen.findByTestId("mukerrer-onerisi");
     expect(o).toHaveTextContent("AI önerisi yok (REPLAY-MISS: kayıtlı sıralama yok)");
     expect(screen.queryByText(/adaylar aynı hata değil/)).toBeNull();
