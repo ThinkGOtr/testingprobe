@@ -67,8 +67,8 @@ GECTI = ("passed", "flaky")
 SCRIPT_ILK_REVIEW_BOZAR = frozenset({"degisiklik_istendi", "reddedildi", "kabul_yabanci_head"})
 KALDI = ("failed", "timedout")
 BAZ_YOK = (
-    "Manuel baz değer ölçülmedi (hiçbir story'de ölçüm yok; TP_MANUAL_BASELINE_S varsayılanı ölçüm "
-    "sayılmaz): kazanç oranı gösterilmez."
+    "Manuel baz değer ölçülmedi (hiçbir story'de ölçüm yok; yönetici ayarındaki varsayılan baz "
+    "değer ölçüm sayılmaz): kazanç oranı gösterilmez."
 )
 BAZ_HAZIRLIKSIZ = (
     "Manuel baz değer {n} story'de ölçüldü ({anahtarlar}) ama bu story'lerde AI ile üretilmiş case "
@@ -800,8 +800,8 @@ def ai_katkisi(session: Session) -> tuple[dict[str, Any], list[dict[str, Any]], 
         )
     if kapsam["varsayilan"]:
         uyarilar.append(
-            f"{kapsam['varsayilan']} story'de story'ye özel ölçüm yok; varsayılan "
-            "(TP_MANUAL_BASELINE_S) ölçüm sayılmadı: baz değer olarak gösterilmez, kazanca girmez."
+            f"{kapsam['varsayilan']} story'de story'ye özel ölçüm yok; varsayılan baz değer "
+            "(yönetici ayarı) ölçüm sayılmadı: baz değer olarak gösterilmez, kazanca girmez."
         )
     if kapsam["replay_haric"]:
         uyarilar.append(KAZANC_REPLAY.format(n=kapsam["replay_haric"]))

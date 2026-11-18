@@ -6118,3 +6118,44 @@ html {
     padding-bottom: calc(112px + env(safe-area-inset-bottom, 0px));
   }
 }
+
+/* ===== Şerit D (UX iş akışı: IA-13 Kod üretimi, IA-15 Koşular, IA-19 Kontrol Kulesi) — mevcut tokenlar, yeni renk yok ===== */
+.kod-grup-satiri th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-2);
+  background: var(--surface-2);
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+.kod-neden {
+  margin-top: 0.25rem;
+  overflow-wrap: anywhere;
+}
+.kod-dosya {
+  margin-top: 0.125rem;
+  overflow-wrap: anywhere;
+}
+.kod-pano-katli,
+.dil-kapalilar,
+.olculmeyenler {
+  margin: 0.5rem 0;
+}
+.kod-pano-katli > summary,
+.dil-kapalilar > summary,
+.olculmeyenler > summary {
+  cursor: pointer;
+  color: var(--text-2);
+}
+.kosu-basarisiz-ozet {
+  margin-top: 0.25rem;
+  overflow-wrap: anywhere;
+}
+.sayfalama {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  margin-top: 0.75rem;
+}

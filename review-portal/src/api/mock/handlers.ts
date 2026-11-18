@@ -1860,7 +1860,13 @@ function kodUret(govde: unknown): KodUretYaniti {
 function ozetKosu(k: KosuDetay): Kosu {
   const { sonuclar: _s, ...ozet } = k;
   void _s;
-  return ozet;
+  // UX IA-15: core `basarisiz_ozet` (ilk 3 başarısız test; ada göre sıralı).
+  const basarisiz_ozet = (k.sonuclar ?? [])
+    .filter((t) => t.durum === "failed")
+    .sort((a, b) => a.test_adi.localeCompare(b.test_adi))
+    .slice(0, 3)
+    .map((t) => ({ test_adi: t.test_adi, case_ref: null, failure_id: t.failure_id ?? null, sinif: t.triage_sinifi ?? null }));
+  return { ...ozet, basarisiz_ozet };
 }
 
 /** core `ci/api.ARTEFAKT_ALANLARI`: `run.artifacts` olmayan rolde null'lanan ham artefakt alanları. */
@@ -2846,8 +2852,12 @@ const ROTALAR: Rota[] = [
     (_m, q) => {
       const k = izinGerekli("run.read");
       const ortam = q.get("ortam");
+      // UX IA-15: core gibi `offset`/`limit` (varsayılan 50) ile sayfalanır.
+      const offset = Math.max(0, Number(q.get("offset") ?? 0) || 0);
+      const limit = Math.min(200, Math.max(1, Number(q.get("limit") ?? 50) || 50));
       return veri.kosular
         .filter((x) => !ortam || (ortam === "-" ? !x.test_ortami : x.test_ortami?.eid === ortam))
+        .slice(offset, offset + limit)
         .map((x) => kosuMaskele(ozetKosu(x), k));
     },
   ],

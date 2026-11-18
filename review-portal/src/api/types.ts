@@ -3147,3 +3147,20 @@ export interface IsYaniti {
   /** `POST /ci/trigger`: koşunun ortamı (ortam yoksa null). */
   test_ortami?: TestOrtami | null;
 }
+
+// ===== Şerit D (UX IA-15): koşu listesinde başarısız testlerin kısa özeti =====
+/** core `GET /runs` → `basarisiz_ozet[]`: ilk 3 başarısız testin adı, case kısaltması, triage kaydı ve sınıfı. */
+export interface BasarisizOzeti {
+  test_adi: string;
+  /** "TPD-1·C10"; test bir case'e bağlı değilse null. */
+  case_ref: string | null;
+  failure_id: string | null;
+  /** Triage sınıfı; triage henüz yoksa null. */
+  sinif: HataSinifi | null;
+}
+
+export interface Kosu {
+  /** Alan yoksa (eski core) liste satırında yalnız sayı gösterilir. */
+  basarisiz_ozet?: BasarisizOzeti[];
+}
+
