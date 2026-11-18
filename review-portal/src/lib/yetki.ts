@@ -143,6 +143,35 @@ export function izinVar(izinler: ReadonlySet<string>, ...istenen: Izin[]): boole
   return istenen.some((i) => izinler.has(i));
 }
 
+/**
+ * Kişi eşlemesinden (`/auth/me` → `kisiler`, değer "Ad · Rol etiketi") rolü taşıyan kişilerin adları.
+ * Ad yoksa (değer yalnız rol etiketi) kişi sayılmaz.
+ */
+export function rolKisileri(kisiler: Record<string, string> | null | undefined, rol: Rol): string[] {
+  const ekler = [ROL_ETIKETLERI[rol], ...(rol === "po" ? ["PO"] : [])].map((e) => ` · ${e}`);
+  const adlar = Object.values(kisiler ?? {})
+    .map((v) => {
+      const ek = ekler.find((e) => v.endsWith(e));
+      return ek ? v.slice(0, -ek.length).trim() : "";
+    })
+    .filter(Boolean);
+  return [...new Set(adlar)];
+}
+
+/**
+ * IA-10: rolün yapamadığı adım için tek satır "kimi bekliyoruz" metni:
+ * "Bu adım Analist rolünde: Cengizhan Gunaydin bekleniyor". Sistem Yöneticisi iş akışında karar
+ * vermediği için (başka rol de varsa) listelenmez; kişi bilinmiyorsa rolün kendisi beklenir.
+ */
+export function bekleyenRolMetni(istenen: readonly Izin[], kisiler?: Record<string, string> | null): string {
+  const tum = [...new Set(istenen.flatMap((i) => IZINLER[i] as readonly Rol[]))];
+  const roller = tum.length > 1 ? tum.filter((r) => r !== "admin") : tum;
+  const rolMetni = roller.map((r) => ROL_ETIKETLERI[r]).join(" / ");
+  const adlar = [...new Set(roller.flatMap((r) => rolKisileri(kisiler, r)))];
+  const kim = adlar.length === 0 ? rolMetni : adlar.length <= 3 ? adlar.join(", ") : `${adlar.slice(0, 3).join(", ")} ve ${adlar.length - 3} kişi daha`;
+  return `Bu adım ${rolMetni} rolünde: ${kim} bekleniyor`;
+}
+
 /** İzni taşıyan iş rollerinin etiketleri, okunur liste: "Analist ve Otomasyon Mühendisi". */
 export function izinRolleriMetni(...istenen: Izin[]): string {
   const ad = [...new Set(istenen.flatMap((i) => IZINLER[i]))].filter((r) => r !== "admin").map((r) => ROL_ETIKETLERI[r]);

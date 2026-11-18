@@ -149,9 +149,8 @@ describe("BulguKarti", () => {
   it("analist olmayan rolde karar düğmesi pasif ve nedenini söyler", async () => {
     await oturumAc("testci");
     sar(<BulguKarti bulgu={mockVerisi().bulgular.find((b) => b.id === "fnd-5")!} guncellendi={() => {}} />);
-    const d = await screen.findByRole("button", { name: "Kararı kaydet" });
-    await waitFor(() => expect(d).toHaveAttribute("title", "Bu işlem için gereken rol: Analist"));
-    expect(d).toBeDisabled();
+    expect(await screen.findByText("Bu adım Analist rolünde: Cengizhan Gunaydin bekleniyor")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Kararı kaydet" })).toBeNull();
   });
 });
 
@@ -243,8 +242,8 @@ describe("CaseKarti", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Taslağa al" })).toBeEnabled());
     for (const ad of ["Kabul et", "Düzelterek kabul", "Reddet"]) expect(screen.queryByRole("button", { name: ad })).toBeNull();
     // Son onay düğmeleri Test Uzmanında etkin değil.
-    if (durum === "ready") expect(screen.getByRole("button", { name: "Onayla" })).toBeDisabled();
-    else expect(screen.queryByRole("button", { name: "Onayla" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Onayla" })).toBeNull();
+    if (durum === "ready") expect(screen.getByText("Bu adım Analist rolünde: Cengizhan Gunaydin bekleniyor")).toBeInTheDocument();
     expect(spy).not.toHaveBeenCalled();
     expect(screen.getByTestId("case-karar-kilit")).toHaveTextContent("taslağa alın");
   });
@@ -260,10 +259,8 @@ describe("CaseKarti", () => {
   it("taslak case (Analist): Test Uzmanı kararları pasif ve nedenini söyler; son onay yok", async () => {
     await oturumAc("analist");
     sar(<CaseKarti tc={mockVerisi().caseler.find((c) => c.id === "case-1-7")!} guncellendi={() => {}} />);
-    const kabul = await screen.findByRole("button", { name: "Kabul et" });
-    await waitFor(() => expect(kabul).toBeDisabled());
-    expect(kabul).toHaveAttribute("data-yetkisiz", "true");
-    expect(screen.getByText("Bu işlem için gereken rol: Test Uzmanı")).toBeInTheDocument();
+    expect(await screen.findByText("Bu adım Test Uzmanı rolünde: Fatih Arslan bekleniyor")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Kabul et" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Onayla" })).toBeNull();
   });
 

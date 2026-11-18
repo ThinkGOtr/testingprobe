@@ -6118,3 +6118,18 @@ html {
     padding-bottom: calc(112px + env(safe-area-inset-bottom, 0px));
   }
 }
+
+/* ── Şerit C (UX iş akışı, ET-07/IA-10): kilitli düğme `aria-disabled` taşır (Tab sırasında kalır);
+   tür sınıflarının :hover kuralları yerel :disabled'ı dışladığı için kilitli görünüm hover'da da korunur.
+   Yetkisiz rolde düğme yerine tek satır "kimi bekliyoruz" (.bekleyen-rol). Yeni renk yok. */
+.dugme[aria-disabled="true"]:hover,
+.dugme[aria-disabled="true"]:active {
+  background: var(--surface-3);
+  color: var(--muted);
+  box-shadow: none;
+  transform: none;
+}
+.dugme-neden.bekleyen-rol {
+  font-size: 0.82rem;
+  max-width: 48ch;
+}

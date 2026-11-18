@@ -2,9 +2,9 @@ import { useEffect, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAtt
 import { Link, type LinkProps } from "react-router-dom";
 import { buFazdaYok, bulunamadi } from "../api/http";
 import type { CiktiModu, Degerlendirme } from "../api/types";
-import { useIzin, useRotaIzni } from "../auth";
+import { useIzin, useKisiler, useOturumYuklu, useRotaIzni } from "../auth";
 import { type Ton } from "../lib/etiketler";
-import { izinNedeni, type Izin } from "../lib/yetki";
+import { bekleyenRolMetni, type Izin } from "../lib/yetki";
 import { baglantiTuru } from "../lib/rotalar";
 import { hataGosterildi, hataTazele } from "../lib/sonHata";
 import { asistanaSor, useAsistanHazir } from "./asistan/kontrol";
@@ -333,47 +333,83 @@ function useOrtakNeden(sarici: RefObject<HTMLElement>, neden: string | undefined
 }
 
 /**
- * Rol farkındalıklı eylem düğmesi: yetkisiz rolde pasif ve nedenini söyler
- * (sunucu yine de her uçta rolü kontrol eder).
+ * Rol farkındalıklı eylem düğmesi (sunucu yine de her uçta rolü kontrol eder).
  *
- * Pasifken (`disabled` ya da yetkisiz rol) bir neden varsa, native `disabled` düğme odak almadığı ve
- * `title` klavyede okunmadığı için neden düğmenin dışında görünür yazılır (`.dugme-neden`) ve
- * `aria-describedby` ile düğmeye bağlanır. Çalışırken (`calisiyor`) yazılmaz. Aynı gruptaki eş metinli
- * nedenler bir kez yazılır (`useOrtakNeden`).
+ * - Yetkisiz rol (IA-10): düğme çizilmez; yerine tek satır "Bu adım <Rol> rolünde: <kişi> bekleniyor"
+ *   yazılır (`.bekleyen-rol`). Aynı gruptaki eş metinli satırlar bir kez yazılır (`useOrtakNeden`):
+ *   kilitli düğme yığını yerine "kimi bekliyoruz" bilgisi kalır.
+ * - Ön koşulla kilitli (`disabled`) ya da çalışırken (`calisiyor`) düğme (ET-07): yerel `disabled`
+ *   yerine `aria-disabled="true"`; Tab sırasında kalır, tıklama/gönderim engellenir, neden görünür
+ *   yazılır ve `aria-describedby` ile bağlanır (klavye ve ekran okuyucu nedeni duyar). Çalışırken
+ *   `aria-busy` taşır; odak düğmede kalır (odak `body`ye düşmez).
+ * - `nedenGizli`: neden ekranda başka yerde görünür yazılıysa düğme altına tekrar yazılmaz; neden
+ *   yine erişilebilir açıklama olarak bağlanır (görünmez metin).
  */
-export function IslemDugmesi({ izin, calisiyor, tur = "birincil", kucuk, disabled, children, title, className, nedenGizli, ...geri }: IslemDugmesiOzellikleri) {
+export function IslemDugmesi({ izin, calisiyor, tur = "birincil", kucuk, disabled, children, title, className, nedenGizli, onClick, ...geri }: IslemDugmesiOzellikleri) {
   const istenen: Izin[] = izin === undefined ? [] : typeof izin === "string" ? [izin] : [...izin];
   const izinli = useIzin(...istenen);
+  const kisiler = useKisiler();
   const nedenId = useId();
+  const oturumYuklu = useOturumYuklu();
   const yetkili = istenen.length === 0 || izinli;
-  const neden = !yetkili ? izinNedeni(...istenen) : title;
-  const nedenGorunur = (!nedenGizli || !yetkili) && !calisiyor && (!!disabled || !yetkili) && !!neden?.trim();
+  // Oturum henüz yüklenmediyse rol bilinmez: düğme kilitli çizilir (satıra dönmez, yanıp sönmez).
+  const rolBekleniyor = !yetkili && !oturumYuklu;
+  const kilitli = !!disabled || !!calisiyor || rolBekleniyor;
+  const neden = rolBekleniyor ? undefined : !yetkili ? bekleyenRolMetni(istenen, kisiler) : title;
+  const nedenVar = !calisiyor && (!!disabled || !yetkili) && !!neden?.trim();
+  const nedenGorunur = nedenVar && (!nedenGizli || !yetkili);
   const sariciRef = useRef<HTMLSpanElement>(null);
   const nedenSahibi = useOrtakNeden(sariciRef, nedenGorunur ? neden : undefined, nedenId);
   const nedenCiz = nedenGorunur && nedenSahibi === nedenId;
-  const tanim = [geri["aria-describedby"], nedenGorunur ? nedenSahibi : undefined].filter(Boolean).join(" ") || undefined;
-  const dugme = (
-    <button
-      type="button"
-      {...geri}
-      className={`dugme dugme-${tur}${kucuk ? " dugme-kucuk" : ""} ${className ?? ""}`}
-      disabled={disabled || !yetkili || calisiyor}
-      title={neden}
-      aria-describedby={tanim}
-      aria-busy={calisiyor || undefined}
-      data-yetkisiz={!yetkili || undefined}
-    >
-      {calisiyor && <span className="donen donen-kucuk" aria-hidden="true" />}
-      {children}
-    </button>
-  );
-  // Sarıcı her zaman çizilir (neden yokken `display: contents`): neden belirip kaybolurken düğme
-  // yeniden bağlanmaz (odak ve öğe kimliği korunur).
+  if (!yetkili && !rolBekleniyor) {
+    // Sarıcı korunur (grup içi ortak satır); düğme yok. Satırın eşi başka düğmede çizildiyse boş kalır.
+    return (
+      <span ref={sariciRef} id={geri.id} className={`dugme-neden-sarici${nedenCiz ? " neden-var" : ""}`} data-yetkisiz="true">
+        {nedenCiz && (
+          <span id={nedenId} className="dugme-neden bekleyen-rol" data-testid="bekleyen-rol">
+            {neden}
+          </span>
+        )}
+      </span>
+    );
+  }
+  const gizliNedenId = `${nedenId}-gizli`;
+  // `nedenGizli` + çağıranın görünür neden kimliği yoksa neden görünmez metinle bağlanır (ET-07).
+  const gizliNeden = nedenVar && !nedenGorunur && !geri["aria-describedby"];
+  const tanim =
+    [geri["aria-describedby"], nedenGorunur ? nedenSahibi : gizliNeden ? gizliNedenId : undefined].filter(Boolean).join(" ") || undefined;
   return (
+    // Sarıcı her zaman çizilir (neden yokken `display: contents`): neden belirip kaybolurken düğme
+    // yeniden bağlanmaz (odak ve öğe kimliği korunur).
     <span ref={sariciRef} className={`dugme-neden-sarici${nedenCiz ? " neden-var" : ""}`}>
-      {dugme}
+      <button
+        type="button"
+        {...geri}
+        className={`dugme dugme-${tur}${kucuk ? " dugme-kucuk" : ""} ${className ?? ""}`}
+        aria-disabled={kilitli || undefined}
+        onClick={(e) => {
+          // Kilitliyken tıklama ve (submit düğmesinde) örtük form gönderimi engellenir.
+          if (kilitli) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
+          onClick?.(e);
+        }}
+        title={neden}
+        aria-describedby={tanim}
+        aria-busy={calisiyor || undefined}
+      >
+        {calisiyor && <span className="donen donen-kucuk" aria-hidden="true" />}
+        {children}
+      </button>
       {nedenCiz && (
         <span id={nedenId} className="dugme-neden">
+          {neden}
+        </span>
+      )}
+      {gizliNeden && (
+        <span id={gizliNedenId} className="gorunmez">
           {neden}
         </span>
       )}

@@ -297,11 +297,11 @@ describe("rol kapıları ve durum geçişleri", () => {
     await oturumAc("po");
     uygulama();
     const t2 = await kart(MIN);
-    expect(within(t2).getByRole("button", { name: "Düzenle" })).toBeDisabled();
-    expect(within(t2).getByRole("button", { name: "PO onayına gönder" })).toBeDisabled();
-    expect(within(t2).getAllByText(/Bu işlem için gereken rol: Analist/).length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: "AI taslağı üret" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Boş tablo ekle" })).toBeDisabled();
+    expect(within(t2).queryByRole("button", { name: "Düzenle" })).toBeNull();
+    expect(within(t2).queryByRole("button", { name: "PO onayına gönder" })).toBeNull();
+    expect(within(t2).getAllByText("Bu adım Analist rolünde: Cengizhan Gunaydin bekleniyor").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "AI taslağı üret" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Boş tablo ekle" })).toBeNull();
   });
 
   it("gönder → geri çek → gönder → değişiklik iste (gerekçe) → gönder → PO onayı → yeniden aç", async () => {
@@ -313,7 +313,7 @@ describe("rol kapıları ve durum geçişleri", () => {
     await userEvent.click(within(t2).getByRole("button", { name: "PO onayına gönder" }));
     expect(await within(t2).findByText("PO onayı bekliyor")).toBeInTheDocument();
     expect(t2).toHaveClass("kapi-bekliyor");
-    expect(within(t2).getByRole("button", { name: "PO olarak onayla" })).toBeDisabled();
+    expect(within(t2).queryByRole("button", { name: "PO olarak onayla" })).toBeNull();
     expect(within(t2).queryByRole("button", { name: "Düzenle" })).toBeNull();
     await userEvent.click(within(t2).getByRole("button", { name: "Geri çek" }));
     expect(await within(t2).findByText("Taslak")).toBeInTheDocument();
@@ -324,7 +324,7 @@ describe("rol kapıları ve durum geçişleri", () => {
     await oturumAc("po");
     uygulama();
     t2 = await kart(MIN);
-    expect(within(t2).getByRole("button", { name: "Geri çek" })).toBeDisabled();
+    expect(within(t2).queryByRole("button", { name: "Geri çek" })).toBeNull();
     await userEvent.click(within(t2).getByRole("button", { name: "Değişiklik iste" }));
     const alan = within(t2).getByLabelText("Değişiklik gerekçesi");
     await waitFor(() => expect(alan).toHaveFocus());

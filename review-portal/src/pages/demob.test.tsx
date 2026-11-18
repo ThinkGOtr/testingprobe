@@ -208,9 +208,8 @@ describe("Kod üretimi: ekranlar (örnek veri)", () => {
   it("analist merge edemez (rol); düğme gerekçesi rolü söyler", async () => {
     await oturumAc("analist");
     uygulama("/kod/scr-2");
-    const d = await screen.findByRole("button", { name: "Merge et" });
-    expect(d).toBeDisabled();
-    expect(d).toHaveAttribute("title", expect.stringMatching(/gereken rol/i));
+    expect((await screen.findAllByText("Bu adım Otomasyon Mühendisi rolünde: Gokhan Sipahi bekleniyor")).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "Merge et" })).toBeNull();
   });
 
   it("liste: defect adayı rozeti ve onaylı case seçimiyle kod üretimi canlı adımlarla PR'a ulaşır", async () => {

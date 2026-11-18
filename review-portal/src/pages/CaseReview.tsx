@@ -1008,7 +1008,7 @@ export function CaseReview() {
                     // Odak body'ye düşmesin: varsa "Toplu kabul/onayla", yoksa filtre sekmesi.
                     requestAnimationFrame(() => {
                       const hedef =
-                        (document.querySelector('[data-toplu="tumu"]:not(:disabled)') as HTMLElement | null) ??
+                        (document.querySelector('[data-toplu="tumu"]:not(:disabled):not([aria-disabled="true"])') as HTMLElement | null) ??
                         (document.querySelector(".sekmeler .sekme.aktif") as HTMLElement | null);
                       hedef?.focus();
                     });

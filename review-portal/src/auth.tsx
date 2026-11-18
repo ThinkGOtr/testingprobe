@@ -144,6 +144,16 @@ export function useKisiAdi(): (ad: string | null | undefined) => string {
   return useCallback((ad: string | null | undefined) => kisiAdiCevir(kisiler, ad), [kisiler]);
 }
 
+/** Portal kullanıcılarının görünen adları (`/auth/me` → `kisiler`); sağlayıcı dışında boş. */
+export function useKisiler(): Record<string, string> | undefined {
+  return useContext(Baglam)?.kullanici?.kisiler;
+}
+
+/** Oturum (kullanıcı) yüklendi mi; sağlayıcı dışında ya da yüklenirken false. */
+export function useOturumYuklu(): boolean {
+  return !!useContext(Baglam)?.kullanici;
+}
+
 /** Oturumun etkin izinleri (`/auth/me` → `izinler`; yoksa katalogdan rolün izinleri). */
 export function useIzinler(): ReadonlySet<string> {
   // Sağlayıcı dışında (bileşen testleri) oturum yok: izin yok.

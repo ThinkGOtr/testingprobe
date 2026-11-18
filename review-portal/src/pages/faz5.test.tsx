@@ -203,7 +203,8 @@ describe("Gereksinim detayı: manuel baz değer", () => {
     await oturumAc("testci");
     uygulama("/gereksinimler/req-tpd-1");
     const kart = await screen.findByRole("region", { name: "Manuel baz değer" });
-    expect(within(kart).getByRole("button", { name: "Ölçüm gir" })).toBeDisabled();
+    expect(within(kart).queryByRole("button", { name: "Ölçüm gir" })).toBeNull();
+    expect(within(kart).getByTestId("bekleyen-rol")).toHaveTextContent(/^Bu adım Ürün Sahibi \(PO\) rolünde: Cengizhan Gunaydin bekleniyor$/);
     await expect(api.bazDegerKaydet("req-tpd-1", { deger_s: 60, not: "deneme" })).rejects.toMatchObject({ status: 403 });
     await oturumAc("po");
     await expect(api.bazDegerKaydet("req-tpd-1", { deger_s: 60, not: "PO ölçümü" })).resolves.toMatchObject({ kaynak: "olcum", giren: "po" });
