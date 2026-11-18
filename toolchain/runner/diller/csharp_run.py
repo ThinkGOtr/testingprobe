@@ -59,7 +59,7 @@ from runner.results import MAX_ERROR, MAX_FIELD, _clip, decide_status, failure_g
 from runner.run import testveri_env
 from toolchain_common import gitforge, proc, repos
 from toolchain_common.artifacts import KEEP_MARKER, atomic_write_json, run_dir
-from toolchain_common.settings import Settings
+from toolchain_common.settings import Settings, kosu_parola_env
 from worker.diller import csharp as csyol
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -251,6 +251,7 @@ def test_env(
 
     env = csyol.dotnet_env(home, pkgs, {k: os.environ[k] for k in PASS_ENV if k in os.environ})
     env.update(testveri_env())
+    env.update(kosu_parola_env(cfg))  # hesap başına parola (iskelet `Bayiler.Sec` okur)
     env.update(
         {
             "CI": "1",

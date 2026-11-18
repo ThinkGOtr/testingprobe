@@ -19,6 +19,7 @@ korunur) ve `call_id` idempotency'si için `PgCallLookup` kullanılır. Verilmez
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from collections.abc import Mapping
@@ -78,6 +79,8 @@ SECRET_ENV_VARS = (
     "DEMOAPP_RO_PASSWORD",
     "SEED_USER_PASSWORD",
 )
+# JSON `{"<kullanıcı>": "<parola>"}` taşıyan sırlar: her parola ayrı maskelenir (adı desene uymaz).
+SECRET_JSON_MAP_ENV_VARS = ("TP_RUN_DEALER_PASSWORDS",)
 # Listede olmayan ama adı sır olan değişkenler (ör. yeni `GITHUB_*TOKEN`, `JIRA_*_TOKEN`).
 # `_PATH`/`_ID` gibi sonekler eşleşmez (`GH_APP_PRIVATE_KEY_PATH` sır değil, yoldur).
 SECRET_ENV_NAME_RE = re.compile(
@@ -93,6 +96,16 @@ def known_secret_values(environ: Mapping[str, str] | None = None) -> list[str]:
         ad for ad in env if ad not in SECRET_ENV_VARS and SECRET_ENV_NAME_RE.match(ad)
     )
     out: list[str] = []
+    for ad in SECRET_JSON_MAP_ENV_VARS:
+        try:
+            harita = json.loads(env.get(ad, "") or "{}")
+        except ValueError:
+            harita = {}
+        if isinstance(harita, dict):
+            out += [
+                v for v in harita.values()
+                if isinstance(v, str) and len(v.strip()) >= SECRET_VALUE_MIN_LEN
+            ]  # fmt: skip
     for ad in adlar:
         deger = env.get(ad, "") or ""
         if not deger:

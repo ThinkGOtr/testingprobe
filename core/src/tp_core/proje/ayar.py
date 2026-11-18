@@ -124,6 +124,9 @@ _PROJE: frozenset[str] = frozenset(
         "TP_AGENT_DEALER",
         "TP_AGENT_DEALER_PASSWORD",
         "TP_PROBE_PASSWORD",
+        # Koşu hesabı başına parola (Home `tp.test_users.run_pool_passwords`, sır; JSON
+        # {"<kullanıcı>": "<parola>"}). Toolchain bloğu `run_dealer_passwords`.
+        "TP_RUN_DEALER_PASSWORDS",
         "VERIFY_AGENT_DEALER",
         "VERIFY_AGENT_DEALER_NAME",
         "VERIFY_BASE_URL",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 import logging
 import os
 from collections.abc import Mapping
@@ -10,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from toolchain_common.proje import ProjeBlogu, token_gonderilir_mi
+from toolchain_common.proje import ProjeBlogu, kosu_parolalari, token_gonderilir_mi
 
 log = logging.getLogger(__name__)
 
@@ -117,6 +118,10 @@ class Settings:
     # Ş1 py-guard (stdlib `ast` koruması) ve onu koşan python (3.10+).
     py_guard: Path = Path("/opt/e2e-python/py-guard/py_guard.py")
     py_guard_python: str = "/usr/bin/python3.12"
+    # Koşu hesabı başına parola (`TP_RUN_DEALER_PASSWORDS`; Home
+    # `tp.test_users.run_pool_passwords`). Yalnız girilen hesaplar; olmayan hesap iskeletin ortak
+    # (seed) parolasıyla girer. Sır: repr'de yok.
+    run_dealer_passwords: Mapping[str, str] = dataclasses.field(default_factory=dict, repr=False)
 
     @property
     def e2e_java_m2(self) -> Path:
@@ -212,6 +217,8 @@ def settings(proje: ProjeBlogu | Mapping[str, Any] | None = None) -> Settings:
         degisen["dil_kokleri"] = dict(blok.dil_kokleri)
     if blok.run_dealers is not None:
         degisen["run_dealers"] = tuple(blok.run_dealers)
+    if blok.run_dealer_passwords is not None:
+        degisen["run_dealer_passwords"] = dict(blok.run_dealer_passwords)
     if blok.app_paths is not None:
         degisen["app_paths"] = tuple(blok.app_paths)
     return dataclasses.replace(cfg, **degisen)
@@ -305,7 +312,32 @@ def _ortam_ayarlari() -> Settings:
             or f"{env('TP_E2E_PYTHON_DEPS', '/opt/e2e-python')}/py-guard/py_guard.py"
         ),
         py_guard_python=env("TP_PY_GUARD_PYTHON", "/usr/bin/python3.12"),
+        run_dealer_passwords=_kosu_parolalari_ortamdan(env("TP_RUN_DEALER_PASSWORDS", "")),
     )
+
+
+def _kosu_parolalari_ortamdan(ham: str) -> dict[str, str]:
+    """`TP_RUN_DEALER_PASSWORDS` (JSON nesne). Boş = {}; bozuksa {} + uyarı (değer loglanmaz):
+    hesaplar ortak parolayla girer."""
+    if not ham.strip():
+        return {}
+    try:
+        return kosu_parolalari(json.loads(ham))
+    except ValueError as exc:  # json.JSONDecodeError da ValueError
+        hata = "JSON değil" if isinstance(exc, json.JSONDecodeError) else str(exc)
+        log.warning("TP_RUN_DEALER_PASSWORDS yok sayıldı (%s); ortak parola kullanılır", hata)
+        return {}
+
+
+def kosu_parola_env(cfg: Settings) -> dict[str, str]:
+    """Test sürecine verilen koşu hesabı parolaları: `TP_RUN_DEALER_PASSWORDS` = JSON
+    `{"<kullanıcı>": "<parola>"}`, yalnız koşu hesaplarından (`run_dealers`) parolası girilenler.
+    Hiçbiri yoksa değişken verilmez (iskelet bugünkü ortak parolayla girer)."""
+    parolalar = getattr(cfg, "run_dealer_passwords", None) or {}
+    secili = {u: p for u in getattr(cfg, "run_dealers", ()) or () if (p := parolalar.get(u))}
+    if not secili:
+        return {}
+    return {"TP_RUN_DEALER_PASSWORDS": json.dumps(secili, ensure_ascii=False, sort_keys=True)}
 
 
 def github_kipi(cfg: Settings, env: Mapping[str, str] | None = None) -> bool:

@@ -42,7 +42,34 @@ export const DEALERS: readonly Dealer[] = [
 /** Doğrulama ajanının (playwright-mcp) bayisi; e2e testleri bu bayiyi kullanamaz ve sıfırlamaz. */
 export const AGENT_DEALER = "bayi3";
 
-/** Testin bayisi: `dealerUsername` verilmişse o, yoksa paralel işçinin bayisi. */
+/**
+ * Koşu hesabı başına parola: test-runner `TP_RUN_DEALER_PASSWORDS` = JSON {"<kullanıcı>": "<parola>"}
+ * verir (AI Probe › Test kullanıcıları; yalnız parolası girilen hesaplar). Değişken yoksa {}.
+ * Bozuk değer açık hatayla durur (değer iletiye yazılmaz).
+ */
+export function runPasswords(raw: string | undefined = process.env.TP_RUN_DEALER_PASSWORDS): Record<string, string> {
+  if (!raw || !raw.trim()) return {};
+  let v: unknown;
+  try {
+    v = JSON.parse(raw);
+  } catch {
+    throw new Error("TP_RUN_DEALER_PASSWORDS geçerli JSON değil");
+  }
+  if (typeof v !== "object" || v === null || Array.isArray(v)) {
+    throw new Error("TP_RUN_DEALER_PASSWORDS bir JSON nesnesi olmalı");
+  }
+  const out: Record<string, string> = {};
+  for (const [user, pw] of Object.entries(v)) if (typeof pw === "string" && pw) out[user] = pw;
+  return out;
+}
+
+/** Bayinin bu koşudaki parolası: koşu ortamında girilmişse o, yoksa seed (ortak) parolası. */
+export function withRunPassword(dealer: Dealer, passwords: Record<string, string> = runPasswords()): Dealer {
+  const pw = passwords[dealer.username];
+  return pw ? { ...dealer, password: pw } : dealer;
+}
+
+/** Testin bayisi: `dealerUsername` verilmişse o, yoksa paralel işçinin bayisi (parola koşu ortamından). */
 export function pickDealer(dealerUsername: string | undefined, parallelIndex: number): Dealer {
   if (dealerUsername !== undefined) {
     const pinned = DEALERS.find((d) => d.username === dealerUsername);
@@ -52,7 +79,7 @@ export function pickDealer(dealerUsername: string | undefined, parallelIndex: nu
         `dealerUsername '${dealerUsername}' bir e2e bayisi değil${reserved}; izinli: ${DEALERS.map((d) => d.username).join(", ")}`,
       );
     }
-    return pinned;
+    return withRunPassword(pinned);
   }
   const dealer = DEALERS[parallelIndex];
   if (!dealer) {
@@ -60,7 +87,7 @@ export function pickDealer(dealerUsername: string | undefined, parallelIndex: nu
       `En fazla ${DEALERS.length} paralel işçi desteklenir (bayi kullanıcısı sayısı); --workers değerini düşürün.`,
     );
   }
-  return dealer;
+  return withRunPassword(dealer);
 }
 
 const LOCK_POLL_MS = 25;

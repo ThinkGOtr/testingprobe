@@ -37,7 +37,9 @@ public class BayiBirimTesti {
   public void isciBayisiVeSabitleme() {
     assertEquals(Bayiler.sec(null, 0).kullaniciAdi(), "bayi1");
     assertEquals(Bayiler.sec(null, 1).kullaniciAdi(), "bayi2");
-    assertEquals(Bayiler.sec("bayi2", 0), Bayiler.E2E.get(1));
+    // Parola koşu ortamından gelebilir (TP_RUN_DEALER_PASSWORDS): kimlik ve ad seed listesindeki gibi.
+    assertEquals(Bayiler.sec("bayi2", 0).kullaniciAdi(), Bayiler.E2E.get(1).kullaniciAdi());
+    assertEquals(Bayiler.sec("bayi2", 0).ad(), Bayiler.E2E.get(1).ad());
     assertTrue(
         expectThrows(IllegalArgumentException.class, () -> Bayiler.sec(null, Bayiler.E2E.size()))
             .getMessage()
@@ -149,6 +151,21 @@ public class BayiBirimTesti {
           // stdin kapanana kadar bekle
         }
       }
+    }
+  }
+
+  @Test(groups = "birim")
+  public void kosuParolasi() {
+    assertTrue(Bayiler.kosuParolalari(null).isEmpty());
+    assertTrue(Bayiler.kosuParolalari(" ").isEmpty());
+    var p = Bayiler.kosuParolalari("{\"bayi2\": \"Ba\\\"yi2 \\u00f6zel!\", \"bos\": \"\"}");
+    assertEquals(p, java.util.Map.of("bayi2", "Ba\"yi2 özel!"));
+    Bayiler.BayiBilgisi b2 = Bayiler.E2E.get(1);
+    assertEquals(Bayiler.kosuParolasiyla(b2, p).parola(), "Ba\"yi2 özel!");
+    assertEquals(Bayiler.kosuParolasiyla(b2, p).ad(), b2.ad());
+    assertTrue(Bayiler.kosuParolasiyla(Bayiler.E2E.get(0), p) == Bayiler.E2E.get(0));
+    for (String bozuk : new String[] {"{x", "[\"a\"]", "{\"a\": 1}", "{\"a\": \"b\"} fazla"}) {
+      expectThrows(IllegalArgumentException.class, () -> Bayiler.kosuParolalari(bozuk));
     }
   }
 }

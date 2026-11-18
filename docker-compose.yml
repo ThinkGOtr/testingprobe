@@ -490,6 +490,9 @@ services:
       DEMOAPP_TEST_TOKEN: ${DEMOAPP_TEST_TOKEN:?make env çalıştırın}
       # Koşu bayileri ve koşu dizini temizliği (en yeni N koşu; kanıt koşuları gün / adet sınırı).
       TP_RUN_DEALERS: ${TP_RUN_DEALERS:-bayi1,bayi2}
+      # Koşu hesabı başına parola (Home `tp.test_users.run_pool_passwords`; JSON {"bayi1": "…"}).
+      # Boş = iskeletin ortak (seed) parolası. Runner yalnız koşu hesaplarınınkini test sürecine verir.
+      TP_RUN_DEALER_PASSWORDS: ${TP_RUN_DEALER_PASSWORDS:-}
       TP_RUNS_KEEP: ${TP_RUNS_KEEP:-50}
       TP_RUNS_KEEP_EVIDENCE_DAYS: ${TP_RUNS_KEEP_EVIDENCE_DAYS:-30}
       TP_RUNS_KEEP_EVIDENCE_MAX: ${TP_RUNS_KEEP_EVIDENCE_MAX:-200}
