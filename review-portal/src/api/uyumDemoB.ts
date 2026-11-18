@@ -14,7 +14,9 @@ import type {
   BreakAsamasi,
   BreakVerify,
   CheckDurumu,
+  DilEngeli,
   DilSecenegi,
+  EngelliAlgilanan,
   IsYaniti,
   KodDilleri,
   KurulumPr,
@@ -613,6 +615,9 @@ export function kodDilleriUyarla(govde: unknown, istenen: Platform): KodDilleri 
       kullanilabilir: durum === "acik" && s.kullanilabilir !== false,
       neden: metinYaDaNull(s.neden) ?? (durum === "yakinda" ? YAKINDA_NEDENI : null),
       kurulum: kurulumUyarla(s.kurulum),
+      // Ekran testi 2: engel türü ve açma yolu (eski core göndermez → alan yok).
+      ...(dilEngeliUyarla(s.engel) !== undefined ? { engel: dilEngeliUyarla(s.engel) } : {}),
+      ...(s.acma_yolu !== undefined ? { acma_yolu: metinYaDaNull(s.acma_yolu) } : {}),
     });
   }
   if (secenekler.length === 0) return null;
@@ -632,6 +637,29 @@ export function kodDilleriUyarla(govde: unknown, istenen: Platform): KodDilleri 
     secenekler,
     // MİM-B1: algılama yapılamadıysa (depo okunamadı) üst düzey neden; ekran "test bulunamadı" demez.
     neden: metinYaDaNull(govde.neden),
+    en_az: (Array.isArray(govde.en_az) ? (govde.en_az as unknown[]) : []).map((d) => dilUyarla(d)).filter((d): d is Dil => !!d),
+    ...(govde.engelli_algilanan !== undefined ? { engelli_algilanan: engelliAlgilananUyarla(govde.engelli_algilanan, platform) } : {}),
+  };
+}
+
+const DIL_ENGELLERI: readonly DilEngeli[] = ["yakinda", "liste", "depo", "yapilandirma"];
+
+/** undefined: alan yok (eski core); null: engel yok ya da tanınmayan değer. */
+function dilEngeliUyarla(v: unknown): DilEngeli | null | undefined {
+  if (v === undefined) return undefined;
+  return typeof v === "string" && (DIL_ENGELLERI as readonly string[]).includes(v) ? (v as DilEngeli) : null;
+}
+
+function engelliAlgilananUyarla(v: unknown, platform: Platform): EngelliAlgilanan | null {
+  if (!nesneMi(v)) return null;
+  const dil = dilUyarla(v.dil);
+  if (!dil || !gecerliCift(platform, dil)) return null;
+  return {
+    dil,
+    sayi: sayiYaDaNull(v.sayi) ?? 0,
+    en_az: v.en_az === true,
+    engel: dilEngeliUyarla(v.engel) ?? null,
+    neden: metinYaDaNull(v.neden),
   };
 }
 

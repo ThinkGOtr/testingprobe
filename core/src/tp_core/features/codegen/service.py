@@ -671,10 +671,51 @@ DEPO_OKUNAMADI = (
 )
 
 
-def _github_dil_engeli(platform: str, dil: str) -> str | None:
+# Kullanıcıya görünen engel metinleri iç ayar adı (TP_*) ya da iş akışı/check ayrıntısı taşımaz
+# (ekran testi 2 TP-3): açma yolu AI Probe'daki gerçek adlarla yazılır; ayrıntı günlüğe gider.
+PLATFORM_ADI: dict[str, str] = {
+    "web": "Web",
+    "android": "Android",
+    "ios": "iOS",
+    "windows": "Windows",
+}
+
+# Engel türleri (`/code/languages` → `secenekler[].engel`; portal ve asistan bağlamı okur).
+ENGEL_YAKINDA = "yakinda"  # değerlendirme kapısı kapalı (ürün kararı; projede açılamaz)
+ENGEL_LISTE = "liste"  # projenin platform test dilleri listesinde seçili değil
+ENGEL_DEPO = "depo"  # depoda dilin test projesi yok
+ENGEL_YAPILANDIRMA = "yapilandirma"  # dil listesi ayarı geçersiz
+
+
+def dil_listesi_yolu(platform: str) -> str:
+    """Projenin platform test dilleri ayarının AI Probe'daki yeri (Home'daki gerçek adlar)."""
+    ad = PLATFORM_ADI.get(platform, platform)
+    return f"AI Probe › Proje › Platform ayarları › {ad} › Test dilleri"
+
+
+def liste_engeli_metni(platform: str, dil: str) -> str:
+    etiket = platformlar.DIL_ETIKETI.get(dil, dil)
+    ad = PLATFORM_ADI.get(platform, platform)
+    return (
+        f"{etiket} bu projenin {ad} test dillerinde seçili değil. "
+        f"Açmak için {dil_listesi_yolu(platform)} bölümünde {etiket} seçeneğini işaretleyin"
+    )
+
+
+def _yapilandirma_engeli(platform: str, exc: Exception) -> tuple[str, str]:
+    log.warning("codegen: %s dil listesi geçersiz: %s", platform, exc)
+    return (
+        f"Yapılandırma hatası: {PLATFORM_ADI.get(platform, platform)} test dilleri ayarı geçersiz. "
+        f"{dil_listesi_yolu(platform)} bölümünü kontrol edip yeniden kaydedin",
+        ENGEL_YAPILANDIRMA,
+    )
+
+
+def _github_dil_engeli(platform: str, dil: str) -> tuple[str, str] | None:
     """K-T3: GitHub kipinde web + Java yalnız `java ∈ TP_WEB_DILLERI` iken üretilebilir (iş akışı
     `web-java` zorunlu check'i ve kardeş koşu buna bağlı). LocalForge'da repodaki dosyalar
-    belirler. Geçersiz değer yapılandırma hatasıdır (GitHubForge da kurulamaz)."""
+    belirler. Geçersiz değer yapılandırma hatasıdır (GitHubForge da kurulamaz). Dönüş:
+    (kullanıcı metni, engel türü)."""
     if get_settings().forge != "github" or dil == platformlar.varsayilan_dil(platform):
         return None
     if dil not in (platformlar.TS, platformlar.JAVA):
@@ -692,14 +733,10 @@ def _github_dil_engeli(platform: str, dil: str) -> str | None:
         try:
             etkin = etkin_dil_listesi(platform, {ad_env: ayar(ad_env) or ""})
         except ForgeValidationError as exc:
-            return f"Yapılandırma hatası: {exc}"
+            return _yapilandirma_engeli(platform, exc)
         if dil in etkin:
             return None
-        return (
-            f"GitHub kipinde {platformlar.DIL_ETIKETI.get(dil, dil)} hattı etkin değil "
-            f"({ad_env} {dil} içermiyor; {platformlar.gh_check_adi(platform, dil)} iş akışı "
-            "zorunlu check değil)"
-        )
+        return liste_engeli_metni(platform, dil), ENGEL_LISTE
     if platformlar.uygulama_mi(platform) or not platformlar.java_mi(dil):
         return None
 
@@ -712,13 +749,10 @@ def _github_dil_engeli(platform: str, dil: str) -> str | None:
     try:
         etkin = etkin_web_dilleri({WEB_DILLERI_ENV: ayar(WEB_DILLERI_ENV) or ""})
     except ForgeValidationError as exc:
-        return f"Yapılandırma hatası: {exc}"
+        return _yapilandirma_engeli(platform, exc)
     if platformlar.JAVA in etkin:
         return None
-    return (
-        f"GitHub kipinde Java web hattı etkin değil ({WEB_DILLERI_ENV} java içermiyor; "
-        "web-java iş akışı zorunlu check değil)"
-    )
+    return liste_engeli_metni(platform, platformlar.JAVA), ENGEL_LISTE
 
 
 def _proje_engeli(alg: dil_algila.Algilama, platform: str, dil: str) -> str | None:
@@ -726,6 +760,12 @@ def _proje_engeli(alg: dil_algila.Algilama, platform: str, dil: str) -> str | No
     bilinmiyorsa) None. Tam hat dili kendi test projesini ister; doğrulanmamış dil referans tablo
     için bir tam hat projesi ister (011 §2.3, §2.7). GitHub kipinde Java web ayrıca
     `TP_WEB_DILLERI`'ne bağlıdır (K-T3)."""
+    e = _proje_engeli_tur(alg, platform, dil)
+    return e[0] if e else None
+
+
+def _proje_engeli_tur(alg: dil_algila.Algilama, platform: str, dil: str) -> tuple[str, str] | None:
+    """`_proje_engeli` + engel türü (`ENGEL_LISTE` | `ENGEL_DEPO` | `ENGEL_YAPILANDIRMA`)."""
     github = _github_dil_engeli(platform, dil)
     if github:
         return github
@@ -735,27 +775,31 @@ def _proje_engeli(alg: dil_algila.Algilama, platform: str, dil: str) -> str | No
         # 014: yeni dil kendi test projesini ister (yoksa Ş5 kurulum PR'ı akışı bu nedeni okur).
         if alg.projeler.get(dil):
             return None
-        return (
+        metin = (
             f"Depoda {platformlar.DIL_ETIKETI.get(dil, dil)} test projesi "
             f"({proje_dosyasi(dil, platform)}) yok"
         )
+        if platformlar.etkin_hat(platform, dil) == "musteri_ci":
+            metin += "; Kod üretimi ekranındaki Kurulum PR'ı ile eklenir"
+        return metin, ENGEL_DEPO
     if platformlar.uygulama_mi(platform):
+        if alg.projeler.get(platformlar.JAVA):
+            return None
         return (
-            None
-            if alg.projeler.get(platformlar.JAVA)
-            else f"Depoda Java uygulama test projesi ({proje_dosyasi(platformlar.JAVA, platform)}) "
-            "yok"
+            f"Depoda Java uygulama test projesi ({proje_dosyasi(platformlar.JAVA, platform)}) yok",
+            ENGEL_DEPO,
         )
     if platformlar.tam_hat_mi(dil):
         if alg.projeler.get(dil):
             return None
         ad = "TypeScript" if dil == platformlar.TS else "Java web"
-        return f"Depoda {ad} test projesi ({proje_dosyasi(dil, platform)}) yok"
+        return f"Depoda {ad} test projesi ({proje_dosyasi(dil, platform)}) yok", ENGEL_DEPO
     if any(alg.projeler.get(d) for d in platformlar.TAM_HAT_DILLERI):
         return None
     return (
         f"Depoda referans alınacak tam hat test projesi ({proje_dosyasi(platformlar.TS)} ya da "
-        f"{proje_dosyasi(platformlar.JAVA)}) yok"
+        f"{proje_dosyasi(platformlar.JAVA)}) yok",
+        ENGEL_DEPO,
     )
 
 
@@ -974,9 +1018,10 @@ def dil_coz(platform: str, dil: str | None) -> tuple[str, str]:
     return platformlar.varsayilan_dil(platform), "varsayilan"
 
 
-def dil_secenekleri(platform: str | None) -> dict[str, Any]:
+def dil_secenekleri(platform: str | None, *, kurulum_ozeti: bool = True) -> dict[str, Any]:
     """`GET /code/languages?platform=<p>` (011 §2.3): algılanan dil, dosya sayıları ve platformun
-    dil seçenekleri (çatı, hat, kullanılabilirlik + neden)."""
+    dil seçenekleri (çatı, hat, kullanılabilirlik + neden). `kurulum_ozeti=False`: müşteri CI
+    kurulum özeti için ayrıca forge okunmaz (worker devrinden geldiyse yine eklenir)."""
     try:
         p = platformlar.gecerli(platform)
     except ValueError as exc:
@@ -984,12 +1029,23 @@ def dil_secenekleri(platform: str | None) -> dict[str, Any]:
     _platform_acik_mi(p)
     alg, kurulumlar = _algila_tam(p)
     algilanan, kaynak = alg.dil, alg.kaynak
-    if kaynak == "algilandi" and _secim_engeli(alg, p, algilanan) is not None:
-        algilanan, kaynak = platformlar.varsayilan_dil(p), "varsayilan"
+    # Ekran testi 2 TP-2: algılanan (en çok testi olan) dil seçilemiyorsa varsayılana düşülür ama
+    # neden ve sayı ayrıca döner; portal "test bulunamadı" demez, "en çok C# testi var (9) ama C#
+    # bu projede seçili değil" der.
+    engelli_algilanan: dict[str, Any] | None = None
     secenekler = []
     for d in platformlar.platform_dilleri(p):
         kapi = kapi_engeli(p, d)
-        neden = kapi or _proje_engeli(alg, p, d)
+        e = (kapi, ENGEL_YAKINDA) if kapi else _proje_engeli_tur(alg, p, d)
+        neden, engel = e if e else (None, None)
+        if kaynak == "algilandi" and d == algilanan and neden:
+            engelli_algilanan = {
+                "dil": d,
+                "sayi": int(alg.sayilar.get(d, 0)),
+                "en_az": d in alg.en_az,
+                "engel": engel,
+                "neden": neden,
+            }
         hat = platformlar.etkin_hat(p, d)
         secenekler.append(
             {
@@ -1003,15 +1059,25 @@ def dil_secenekleri(platform: str | None) -> dict[str, Any]:
                 "check": platformlar.check_adi(p, d),
                 # Ş5 kurulum PR'ı (müşteri CI; plan yoksa None). Entegrasyonda plan bağlanır.
                 "kurulum": (
-                    (kurulumlar.get(d) if kurulumlar is not None else _kurulum_ozeti(p, d))
+                    (
+                        kurulumlar.get(d)
+                        if kurulumlar is not None
+                        else (_kurulum_ozeti(p, d) if kurulum_ozeti else None)
+                    )
                     if hat == "musteri_ci"
                     else None
                 ),
                 # Depo okunamadıysa engellenmez ama "bilinmiyor" nedeni dürüstçe yazılır.
                 "kullanilabilir": neden is None,
                 "neden": neden or (DEPO_OKUNAMADI if alg.hata else None),
+                # Engel türü (kullanılabilirse null): yakinda | liste | depo | yapilandirma.
+                "engel": engel,
+                # Seçili değilse açma yeri (AI Probe'daki gerçek adlar); asistan bağlamı da okur.
+                "acma_yolu": dil_listesi_yolu(p) if engel == ENGEL_LISTE else None,
             }
         )
+    if engelli_algilanan is not None:
+        algilanan, kaynak = platformlar.varsayilan_dil(p), "varsayilan"
     return {
         "platform": p,
         "algilanan": algilanan,
@@ -1022,7 +1088,50 @@ def dil_secenekleri(platform: str | None) -> dict[str, Any]:
         # Okuma bütçesi bittiği için sayısı alt sınır olan diller ("en az N"; tur 3 Y-2).
         "en_az": [d for d in platformlar.platform_dilleri(p) if d in alg.en_az],
         "secenekler": secenekler,
+        # Algılanan dil seçilemediği için varsayılana düşüldüyse {dil, sayi, en_az, engel, neden}.
+        "engelli_algilanan": engelli_algilanan,
     }
+
+
+def dil_durumu_ozeti() -> list[dict[str, Any]]:
+    """Asistan ekran bağlamı (ekran testi 2 TP-5): projede açık her platformun dil seçenekleri,
+    kısa biçimde (durum, engel türü, kullanıcı metni, açma yolu). Kurulum özeti için forge ayrıca
+    okunmaz; okunamayan / kapalı platform atlanır. Yazma yok."""
+    out: list[dict[str, Any]] = []
+    for p in platformlar.PLATFORMLAR:
+        try:
+            v = dil_secenekleri(p, kurulum_ozeti=False)
+        except (PlatformKapali, GecersizDil):
+            continue
+        except Exception as exc:  # bağlam zenginleştirmesi cevabı düşürmez
+            log.warning("dil durumu özeti alınamadı: %s (%s)", p, type(exc).__name__)
+            continue
+        out.append(
+            {
+                "platform": p,
+                "algilanan": v["algilanan"],
+                "kaynak": v["kaynak"],
+                "sayilar": v["sayilar"],
+                "engelli_algilanan": v.get("engelli_algilanan"),
+                "secenekler": [
+                    {
+                        k: s.get(k)
+                        for k in ("dil", "etiket", "hat", "durum", "kullanilabilir", "engel")
+                    }
+                    | {
+                        "neden": s.get("neden"),
+                        "acma_yolu": s.get("acma_yolu"),
+                        **(
+                            {"kurulum_durumu": s["kurulum"].get("durum")}
+                            if isinstance(s.get("kurulum"), Mapping)
+                            else {}
+                        ),
+                    }
+                    for s in v["secenekler"]
+                ],
+            }
+        )
+    return out
 
 
 def _kurulum_ozeti(platform: str, dil: str) -> dict[str, Any] | None:

@@ -639,7 +639,9 @@ def test_code_languages_ve_generate_dil_dogrulamasi(
         service.platformlar,
         "cift_durumu",
         lambda p, d, *a, **k: (
-            "yakinda" if (p, d) in {("web", "csharp"), ("android", "kotlin")} else gercek(p, d, *a, **k)
+            "yakinda"
+            if (p, d) in {("web", "csharp"), ("android", "kotlin")}
+            else gercek(p, d, *a, **k)
         ),
     )
     r = api.get("/code/languages")
@@ -653,11 +655,14 @@ def test_code_languages_ve_generate_dil_dogrulamasi(
     assert secenek["ts"] == {
         "dil": "ts", "etiket": "TypeScript", "cati": "Playwright Test", "hat": "tam",
         "durum": "acik", "kirarak_dogrulama": True, "check": "local-ci", "kurulum": None,
-        "kullanilabilir": True, "neden": None,
+        "kullanilabilir": True, "neden": None, "engel": None, "acma_yolu": None,
     }  # fmt: skip
+    assert d["engelli_algilanan"] is None  # algılanan (ts) seçilebilir
     # Forge'da e2e-java yok: Java web seçilemez, neden Türkçe.
     assert secenek["java"]["kullanilabilir"] is False
     assert secenek["java"]["neden"] == "Depoda Java web test projesi (e2e-java/pom.xml) yok"
+    assert secenek["java"]["engel"] == "depo" and secenek["java"]["acma_yolu"] is None
+    assert secenek["csharp"]["engel"] == "yakinda"
     # 014 karar 3a: değerlendirilmemiş C#/Python "Yakında" (seçilemez); eklentiyle tam hat.
     assert secenek["csharp"]["hat"] == "tam"
     assert secenek["csharp"]["durum"] == "yakinda" and not secenek["csharp"]["kullanilabilir"]
@@ -1115,12 +1120,25 @@ def _projeli_algilama() -> dil_algila.Algilama:
 def test_github_kipinde_java_tp_web_dillerine_bagli(monkeypatch: pytest.MonkeyPatch) -> None:
     _github_kipi(monkeypatch, None)
     monkeypatch.setattr(service, "_algila", lambda _p: _projeli_algilama())
+    monkeypatch.setattr(service, "_algila_tam", lambda _p: (_projeli_algilama(), None))
     d = service.dil_secenekleri("web")
     java = next(x for x in d["secenekler"] if x["dil"] == "java")
-    assert java["kullanilabilir"] is False and "TP_WEB_DILLERI" in java["neden"]
-    # Algılanan dil üretilemiyorsa öneri varsayılana düşer.
+    assert java["kullanilabilir"] is False
+    # Ekran testi 2 TP-3: kullanıcı metninde iç ayar adı / iş akışı ayrıntısı yok; açma yolu
+    # AI Probe'daki gerçek adlarla.
+    assert "TP_" not in java["neden"] and "check" not in java["neden"]
+    assert java["neden"] == (
+        "Java bu projenin Web test dillerinde seçili değil. Açmak için AI Probe › Proje › "
+        "Platform ayarları › Web › Test dilleri bölümünde Java seçeneğini işaretleyin"
+    )
+    assert java["engel"] == "liste"
+    assert java["acma_yolu"] == "AI Probe › Proje › Platform ayarları › Web › Test dilleri"
+    # Algılanan dil üretilemiyorsa öneri varsayılana düşer; neden ve sayı ayrıca döner (TP-2).
     assert (d["algilanan"], d["kaynak"]) == ("ts", "varsayilan")
-    with pytest.raises(service.GecersizDil, match="TP_WEB_DILLERI") as exc:
+    assert d["engelli_algilanan"] == {
+        "dil": "java", "sayi": 5, "en_az": False, "engel": "liste", "neden": java["neden"],
+    }  # fmt: skip
+    with pytest.raises(service.GecersizDil, match="seçili değil") as exc:
         service.dil_coz("web", "java")
     assert exc.value.status_code == 422
     assert service.dil_coz("web", None) == ("ts", "varsayilan")
@@ -1130,14 +1148,34 @@ def test_github_kipinde_java_tp_web_dillerine_bagli(monkeypatch: pytest.MonkeyPa
     assert next(x for x in d["secenekler"] if x["dil"] == "java")["kullanilabilir"] is True
     assert service.dil_coz("web", "java") == ("java", "secildi")
 
+    assert service.dil_secenekleri("web")["engelli_algilanan"] is None
+
     _github_kipi(monkeypatch, "go")
-    with pytest.raises(service.GecersizDil, match="Yapılandırma hatası"):
+    with pytest.raises(service.GecersizDil, match="Yapılandırma hatası") as exc:
         service.dil_coz("web", "java")
+    assert "TP_" not in str(exc.value) and "Platform ayarları › Web" in str(exc.value)
     # 014: eklentili web C# tam hattır; TP_WEB_DILLERI'ne bağlıdır (bozuk liste = yapılandırma
     # hatası, kapı açık olsa da).
     monkeypatch.setattr(service.platformlar, "cift_durumu", lambda *a, **k: "acik")
     with pytest.raises(service.GecersizDil, match="Yapılandırma hatası"):
         service.dil_coz("web", "csharp")
+
+
+def test_dil_durumu_ozeti_asistan_baglami(monkeypatch: pytest.MonkeyPatch) -> None:
+    """TP-5: asistan ekran bağlamı için açık platformların kısa dil durumu (iç ad yok)."""
+    _github_kipi(monkeypatch, None)
+    monkeypatch.setattr(service, "_algila_tam", lambda _p: (_projeli_algilama(), None))
+    monkeypatch.setattr(
+        service, "_platform_acik_mi", lambda p: None if p == "web" else (_ for _ in ()).throw(
+            service.PlatformKapali("kapalı")
+        ),
+    )  # fmt: skip
+    ozet = service.dil_durumu_ozeti()
+    assert [o["platform"] for o in ozet] == ["web"]
+    java = next(x for x in ozet[0]["secenekler"] if x["dil"] == "java")
+    assert java["engel"] == "liste" and "Platform ayarları › Web › Test dilleri" in java["neden"]
+    assert ozet[0]["engelli_algilanan"]["dil"] == "java"
+    assert "TP_" not in str(ozet)
 
 
 def test_depo_okunamazsa_secenekler_bilinmiyor(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1181,10 +1219,17 @@ def test_ajan_tablo_dili_k_t5(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_code_languages_yalniz_code_generate(api: TestClient, codegen: Any, make_user: Any) -> None:
-    """K-T8 / GÜV-D2: `GET /code/languages` forge okur; yalnız `code.generate` (012: engineer)."""
+    """K-T8 / GÜV-D2: `GET /code/languages` forge okur; yalnız `code.generate` (012: engineer) ya da
+    `code.ci_setup` (ekran testi 2 TP-4: Sistem Yöneticisi kurulum PR'ına ulaşır)."""
     from .conftest import login
 
-    for rol, beklenen in (("analyst", 403), ("po", 403), ("admin", 403), ("engineer", 200)):
+    for rol, beklenen in (
+        ("analyst", 403),
+        ("po", 403),
+        ("tester", 403),
+        ("admin", 200),
+        ("engineer", 200),
+    ):
         login(api, make_user(rol))
         assert api.get("/code/languages").status_code == beklenen, rol
 

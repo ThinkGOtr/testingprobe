@@ -259,7 +259,7 @@ describe("/kod: pasif Java kartı", () => {
     );
     await oturumAc("muhendis");
     uygulama("/kod");
-    const neden = await screen.findByText(/Kullanılamıyor: Java web hattı bu kurulumda etkin değil/);
+    const neden = await screen.findByText(/Kullanılamıyor: Java bu projenin Web test dillerinde seçili değil/);
     expect(document.body.textContent).not.toContain("TP_WEB_DILLERI");
     expect(neden.closest("label")).toHaveAttribute("title", ham);
   });

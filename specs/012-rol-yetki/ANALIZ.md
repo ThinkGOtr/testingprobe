@@ -93,7 +93,7 @@ oturumu ve Jira PO kanalını kabul eder).
 | `case.approve` | analyst | `POST /cases/{id}/decision` karar ∈ `approve`, `send_back`; `POST /cases/bulk-decision` karar = `approve` (013 toplu son onay); `POST /requirements/{id}/review-complete` | yalnız `ready` case; `send_back` gerekçe ister |
 | `case.publish` | tester | `POST /publish` | onaylı + hash değişmemiş (mevcut kapı) |
 | `token.issue` | tester, developer | `POST /tokens` | yayın / IDE gönderim kanalı. K9 (2026-11-14): Developer yalnız `submit` kapsamı üretir; `publish` kapsamı ayrıca `case.publish` ister (403 + `authz.denied`). MCP araç izni: `get_requirement` `requirement.read`, `submit_draft_cases` `case.generate`, `publish_test_cases` `case.publish` |
-| `code.generate` | engineer | `POST /code/generate`, `GET /code/languages` | onaylı case (mevcut). `GET /code/languages` (011 üretim dili, K-T8) her çağrıda forge'u okur; yalnız üretimi başlatan role açık, portal 403'ü "dil seçici yok" sayar |
+| `code.generate` | engineer | `POST /code/generate`, `GET /code/languages` | onaylı case (mevcut). `GET /code/languages` (011 üretim dili, K-T8) her çağrıda forge'u okur; üretimi başlatan role ve `code.ci_setup` sahibine açık (`izinlerden_biri`; ekran testi 2 TP-4: Sistem Yöneticisi kurulum PR'ına Kod üretimi ekranından salt görüntüleme dil seçici + kurulum eylemiyle ulaşır), portal 403'ü "dil seçici yok" sayar |
 | `code.break_verify` | engineer | `POST /scripts/{id}/break-verify` | |
 | `code.review` | engineer | `POST /prs/{n}/review`, `POST /prs/{n}/update-branch` | |
 | `code.merge` | engineer | `POST /prs/{n}/merge` | yeşil CI + korumalı dal (mevcut merge kapısı); K3 |

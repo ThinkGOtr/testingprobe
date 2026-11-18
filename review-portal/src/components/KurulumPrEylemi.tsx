@@ -7,7 +7,8 @@
 import { useId, useState } from "react";
 import { api } from "../api/client";
 import { ApiError } from "../api/http";
-import type { KurulumPr, KurulumPrSonucu } from "../api/types";
+import type { DilSecenegi, KurulumPr, KurulumPrSonucu } from "../api/types";
+import type { Platform } from "../lib/platform";
 import { useIslem } from "../hooks";
 import {
   eksikZorunlular,
@@ -226,5 +227,53 @@ export function KurulumPrEylemi({
         </button>
       </div>
     </form>
+  );
+}
+
+/**
+ * Ekran testi 2 TP-1: müşteri CI dili (Android Kotlin, iOS Swift) projenin test dillerinde seçili değilken ya da
+ * depoda test projesi yokken de kurulum yolu görünür (kapı açıksa). Sıra: önce kurulum PR'ı (iş akışı + iskelet),
+ * birleşince dil Platform ayarları'nda seçilir. Dil seçiliyken iş akışı PR'larda zorunlu check olarak beklendiği
+ * için kurulum dil seçiminden önce yapılabilir ve yapılmalıdır.
+ */
+export function musteriCiKurulumAdimi(
+  s: Pick<DilSecenegi, "etiket" | "engel" | "acma_yolu" | "kurulum" | "neden">,
+  platform: KurulumPlatformu,
+): string {
+  const yol = s.acma_yolu ?? `AI Probe › Proje › Platform ayarları › ${platform === "ios" ? "iOS" : "Android"} › Test dilleri`;
+  const birlesti = s.kurulum?.durum === "birlesti";
+  const liste = s.engel === "liste" || /seçili değil|hattı etkin değil/i.test(s.neden ?? "");
+  if (liste && birlesti) return `Kurulum tamam. ${s.etiket} ile üretmek için ${yol} bölümünde ${s.etiket} seçeneğini işaretleyin.`;
+  if (liste)
+    return `${s.etiket} bu projede henüz seçili değil; kurulum dil seçilmeden önce yapılabilir. 1) Kurulum PR'ını açın ve GitHub'da birleştirin (CI iş akışı ve test iskeleti eklenir). 2) Sonra ${yol} bölümünde ${s.etiket} seçeneğini işaretleyin. Sıra önemlidir: dil seçilince bu dilin CI kontrolü PR'larda beklenir.`;
+  return `${s.etiket} depoda henüz kurulu değil. Kurulum PR'ı birleşince ${s.etiket} bu ekranda seçilebilir olur.`;
+}
+
+export function MusteriCiKurulumYolu({
+  platform,
+  secenekler,
+  seciliDil,
+  degisti,
+}: {
+  platform: Platform;
+  secenekler: readonly DilSecenegi[];
+  /** Seçili ve kullanılabilir dil kendi akışıyla (seçicinin altında) çizilir; burada tekrarlanmaz. */
+  seciliDil: string | null;
+  degisti?: () => void;
+}) {
+  if (platform !== "android" && platform !== "ios") return null;
+  const adaylar = secenekler.filter((s) => s.hat === "musteri_ci" && s.durum !== "yakinda" && !s.kullanilabilir && s.dil !== seciliDil && s.engel !== "yapilandirma");
+  if (adaylar.length === 0) return null;
+  return (
+    <>
+      {adaylar.map((s) => (
+        <div className="kurulum-pr-yolu" data-testid="kurulum-pr-yolu" data-dil={s.dil} key={s.dil}>
+          <Uyari ton="bilgi" baslik={`Müşteri CI kurulumu: ${s.etiket}`}>
+            <p className="kucuk">{musteriCiKurulumAdimi(s, platform)}</p>
+            <KurulumPrEylemi key={`${platform}/${s.dil}`} platform={platform} kurulum={s.kurulum} degisti={degisti ? () => degisti() : undefined} />
+          </Uyari>
+        </div>
+      ))}
+    </>
   );
 }

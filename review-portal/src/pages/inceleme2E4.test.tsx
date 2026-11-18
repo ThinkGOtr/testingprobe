@@ -76,7 +76,7 @@ describe("MİM-B1: dil algılanamadı (depo okunamadı)", () => {
     // 014: yalnız "Yakında" seçeneklerin (C#, Python) kendi nedeni görünür.
     const nedenler = within(grup).queryAllByTestId("secenek-neden");
     expect(nedenler).toHaveLength(2);
-    for (const n of nedenler) expect(n).toHaveTextContent(/^\. Yakında: Değerlendirme sürüyor$/);
+    for (const n of nedenler) expect(n).toHaveTextContent(/^\. Yakında: Değerlendirme sürüyor: bu dil ürün değerlendirmesi tamamlanınca açılır/);
     expect(grup).not.toHaveTextContent(DEPO_OKUNAMADI);
     // Açık seçenek seçilebilir; üretim engellenmez.
     await u.click(java);

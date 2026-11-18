@@ -1301,6 +1301,25 @@ export interface DilSecenegi {
    * kurulum PR'ı (kullanıcı kararı 1). Core göndermiyorsa null (gösterilmez).
    */
   kurulum?: KurulumPr | null;
+  /**
+   * Engel türü (ekran testi 2; eski core göndermez): `yakinda` değerlendirme kapısı, `liste` projenin
+   * platform test dillerinde seçili değil, `depo` depoda test projesi yok, `yapilandirma` liste ayarı geçersiz.
+   */
+  engel?: DilEngeli | null;
+  /** `liste` engelinde açma yeri (AI Probe › Proje › Platform ayarları › <Platform> › Test dilleri). */
+  acma_yolu?: string | null;
+}
+
+export type DilEngeli = "yakinda" | "liste" | "depo" | "yapilandirma";
+
+/** Algılanan (en çok testi olan) dil seçilemediği için varsayılana düşüldü (ekran testi 2 TP-2). */
+export interface EngelliAlgilanan {
+  dil: Dil;
+  sayi: number;
+  /** Sayı okuma bütçesi nedeniyle alt sınır ("en az N"). */
+  en_az?: boolean;
+  engel: DilEngeli | null;
+  neden: string | null;
 }
 
 /** 014 kurulum PR'ının durumu: `gerekli` (henüz açılmadı), `acik`, `birlesti`, `kapali`. */
@@ -1399,6 +1418,10 @@ export interface KodDilleri {
    * olur. null: algılama yapıldı (sonuçlu ya da sonuçsuz).
    */
   neden: string | null;
+  /** Okuma bütçesi bittiği için sayısı alt sınır olan diller. */
+  en_az?: Dil[];
+  /** Algılanan dil seçilemediyse (kaynak `varsayilan`) gerçekte algılanan dil, sayısı ve nedeni. */
+  engelli_algilanan?: EngelliAlgilanan | null;
 }
 
 // ---------------------------------------------------------------- Koşular
