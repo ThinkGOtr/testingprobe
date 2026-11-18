@@ -8,7 +8,7 @@ import { useKisiAdi, useOturum } from "../auth";
 import { BosDurum, Cip, HataKutusu, Kart, SayfaBasligi, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useVeri } from "../hooks";
 import { tarih } from "../lib/format";
-import { rolEtiketi } from "../lib/yetki";
+import { ROL_ETIKETLERI, rolEtiketi } from "../lib/yetki";
 
 /** Kuyruğu tazeleyen olaylar (karar, üretim, PR, triage, yayın). */
 export const ISLERIM_OLAYLARI = [
@@ -56,6 +56,60 @@ function OgeSatiri({ o }: { o: IsOgesi }) {
   );
 }
 
+/** Katlanan satır: aynı nedenle düşen öğeler (ör. 13 koşu "Testler koşmadı: CI ortam hatası"). */
+export interface KatliSatir {
+  neden: string;
+  ogeler: IsOgesi[];
+}
+
+/**
+ * Koşu grubunda aynı nedenle düşen öğeler tek satıra katlanır (≥2 öğe; ilk görünme sırası korunur).
+ * Koşu etiketi ("PR koşusu") ayırt edici olmadığından kuyruğu şişiriyordu; diğer türlerde etiket
+ * kaydın kendisidir, katlanmaz.
+ */
+export function nedeneGoreKatla(g: Pick<IsGrubu, "tur" | "ogeler">): (IsOgesi | KatliSatir)[] {
+  if (g.tur !== "run") return g.ogeler;
+  const kume = new Map<string, IsOgesi[]>();
+  for (const o of g.ogeler) {
+    const l = kume.get(o.neden);
+    if (l) l.push(o);
+    else kume.set(o.neden, [o]);
+  }
+  const out: (IsOgesi | KatliSatir)[] = [];
+  const yazildi = new Set<string>();
+  for (const o of g.ogeler) {
+    const l = kume.get(o.neden)!;
+    if (l.length < 2) out.push(o);
+    else if (!yazildi.has(o.neden)) {
+      yazildi.add(o.neden);
+      out.push({ neden: o.neden, ogeler: l });
+    }
+  }
+  return out;
+}
+
+function KatliSatiri({ k, tur }: { k: KatliSatir; tur: string }) {
+  const son = k.ogeler.find((o) => o.zaman)?.zaman;
+  const ad = tur === "run" ? "koşu" : "öğe";
+  return (
+    <li className="islerim-oge islerim-katli" data-testid="islerim-katli">
+      <details>
+        <summary>
+          <span className="islerim-oge-baslik">
+            {k.ogeler.length} {ad}: {k.neden}
+          </span>
+          {son && <span className="soluk kucuk"> · en son {tarih(son)}</span>}
+        </summary>
+        <ul className="duz-liste islerim-liste" aria-label={`${k.neden}: ${k.ogeler.length} ${ad}`}>
+          {k.ogeler.map((o) => (
+            <OgeSatiri key={`${o.tur}-${o.id}`} o={o} />
+          ))}
+        </ul>
+      </details>
+    </li>
+  );
+}
+
 function BenimGrubum({ g }: { g: IsGrubu }) {
   const kalan = g.oge_sayisi - g.ogeler.length;
   return (
@@ -71,18 +125,24 @@ function BenimGrubum({ g }: { g: IsGrubu }) {
         <strong>Sıradaki adım:</strong> {g.sonraki_adim}
       </p>
       <ul className="duz-liste islerim-liste" aria-label={g.baslik}>
-        {g.ogeler.map((o) => (
-          <OgeSatiri key={`${o.tur}-${o.id}`} o={o} />
-        ))}
+        {nedeneGoreKatla(g).map((o) =>
+          "id" in o ? <OgeSatiri key={`${o.tur}-${o.id}`} o={o} /> : <KatliSatiri key={`katli-${o.neden}`} k={o} tur={g.tur} />,
+        )}
       </ul>
       {kalan > 0 && <p className="soluk kucuk">ve {kalan} öğe daha (ilgili listede).</p>}
     </Kart>
   );
 }
 
+/** "Gokhan Sipahi (AI Probe) · Analist" → "Gokhan Sipahi (AI Probe)": rol zaten satırda yazılı (YD-05). */
+export function rolEkiniAt(ad: string): string {
+  for (const e of Object.values(ROL_ETIKETLERI)) if (ad.endsWith(` · ${e}`)) return ad.slice(0, -(e.length + 3)).trim() || ad;
+  return ad;
+}
+
 function EkipGrubu({ g }: { g: IsGrubu }) {
   const kisiAdi = useKisiAdi();
-  const kisiler = (g.kisiler ?? []).map((k) => kisiAdi(k)).filter(Boolean);
+  const kisiler = [...new Set((g.kisiler ?? []).map((k) => rolEkiniAt(kisiAdi(k))).filter(Boolean))];
   return (
     <li className="islerim-ekip-satiri">
       <div className="islerim-oge-govde">

@@ -7298,3 +7298,14 @@ code {
   outline-offset: 2px;
   border-radius: var(--radius-etiket);
 }
+
+/* İşlerim: aynı nedenle düşen koşular tek satıra katlanır (canlı detay YD notu). Yeni renk yok. */
+.islerim-katli {
+  display: block;
+}
+.islerim-katli > details > summary {
+  cursor: pointer;
+}
+.islerim-katli > details > .islerim-liste {
+  margin: var(--space-2) 0 0 var(--space-4);
+}

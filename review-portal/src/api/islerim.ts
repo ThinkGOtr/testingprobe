@@ -2,7 +2,7 @@
 //
 // Sözleşme (core `features/islerim/api.py`, `features/triage/api.py`):
 //   GET  /work-queue → {rol, rol_etiketi, toplam, ekip_toplam, benim: [Grup], ekip: [Grup + kisiler], menu: {rota: sayı}}
-//        Grup {anahtar, tur, rol, rol_etiketi, baslik, sonraki_adim, sayi, oge_sayisi, ogeler: [Oge]}
+//        Grup {anahtar, tur, rol, roller, rol_etiketi, baslik, sonraki_adim, sayi, oge_sayisi, ogeler: [Oge]}
 //        Oge  {id, tur, etiket, neden, rota, zaman, jira_key, sayi}
 //   GET  /locate?tur=&id= → {bulundu, ayni_proje, proje: {pid, name} | null}
 //   POST /failures/{id}/classify {sinif, gerekce} → triage kaydı + acilan_bug_draft_id
@@ -30,7 +30,11 @@ export interface IsOgesi {
 export interface IsGrubu {
   anahtar: string;
   tur: IsTuru;
+  /** Birincil rol (iş akışı sırasında ilk). */
   rol: string;
+  /** İşi yapabilen tüm roller (grubun izni taşıyanlar; YD-06). Yoksa `[rol]`. */
+  roller?: string[];
+  /** "Test Uzmanı ya da Otomasyon Mühendisi". */
   rol_etiketi: string;
   baslik: string;
   /** Bu gruptaki işler için sıradaki adım (kullanıcı eylemi). */
@@ -84,6 +88,7 @@ function grupUyarla(h: unknown): IsGrubu | null {
     anahtar: metin(h.anahtar),
     tur: metin(h.tur) as IsTuru,
     rol: metin(h.rol),
+    ...(Array.isArray(h.roller) ? { roller: h.roller.filter((r): r is string => typeof r === "string") } : {}),
     rol_etiketi: metin(h.rol_etiketi) || metin(h.rol),
     baslik: metin(h.baslik),
     sonraki_adim: metin(h.sonraki_adim),

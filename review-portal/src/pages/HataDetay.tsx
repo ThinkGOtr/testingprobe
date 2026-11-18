@@ -993,7 +993,9 @@ export function HataDetay() {
         // Karar alanı (IA-16): sınıfın gerekçesi, ortam notu ve sınıflandırma kartı (Belirsiz → karar formu, yetkili
         // rolde "Sınıfı düzelt", yetkisizde kimi beklediğimiz). İçerik yoksa kap gizlenir (.karar-yuvasi:empty).
         <section className="kart karar-yuvasi" aria-label="Triage kararı" data-testid="karar-yuvasi">
-          {h.gerekce && !(h.karar_kaynagi === "human") && <p className="karar-yuvasi-gerekce">{h.gerekce}</p>}
+          {/* Belirsiz (unknown) hatada gerekçe gösterilmez (YD-09): "neden sınıflandırılamadı" zaten sıradaki
+              adımda ve sınıflandırma kartının açıklamasında yazıyor; üçüncü kez tekrarlanmaz. */}
+          {h.gerekce && h.karar_kaynagi !== "human" && h.sinif !== "unknown" && <p className="karar-yuvasi-gerekce">{h.gerekce}</p>}
           {ortam && (
             <Uyari ton="bilgi" baslik="Ortam sorunu">
               Test koşmadan önce ortam sağlıksızdı ya da ağ hatası oluştu. Bu başarısızlık için onarım PR'ı ya da bug taslağı üretilmez.
@@ -1028,5 +1030,6 @@ function TriageSiradaki({ ortam, locator, bug, bugKisitli, beklenti }: { ortam: 
       </>
     );
   if (beklenti) return <>Case'in beklenen değeri düzeltilmeli (Analist). {onarimaGit}</>;
-  return <>Öneri üretilmedi; hatayı Test Uzmanı kanıta bakarak sınıflandırmalı.</>;
+  // `failure.classify`: Test Uzmanı ve Otomasyon Mühendisi (YD-06).
+  return <>Öneri üretilmedi; hatayı Test Uzmanı ya da Otomasyon Mühendisi kanıta bakarak sınıflandırmalı.</>;
 }
