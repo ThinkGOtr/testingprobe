@@ -198,7 +198,7 @@ export function TestCaseleri() {
                 />
                 Eski sürümleri göster
               </label>
-              {suzuldu && (
+              {suzuldu && liste.length > 0 && (
                 <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={suzgec.temizle}>
                   Süzgeci temizle
                 </button>

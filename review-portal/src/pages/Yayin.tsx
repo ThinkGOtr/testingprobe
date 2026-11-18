@@ -194,12 +194,9 @@ function YayinEkrani() {
               <TabloSarici etiket="Oluşturulacak kayıtlar tablosu">
                   <thead>
                     <tr>
-                      <th scope="col">
-                        <span className="gorunmez">Seç</span>
-                      </th>
+                      {/* ET-04: seçim kutusu özetin etiketidir (satır başına tek denetim; 390'da 44 px dokunma alanı). */}
                       <th scope="col">Özet</th>
-                      <th scope="col">Tür</th>
-                      <th scope="col">Bağlantı</th>
+                      <th scope="col">Tür · bağlantı</th>
                       <th scope="col">Etiketler</th>
                       <th scope="col" className="sayi">
                         Adım
@@ -212,24 +209,24 @@ function YayinEkrani() {
                       const i = ISLEM[k.islem];
                       return (
                         <tr key={k.case_id}>
-                          <td data-etiket="Seç">
-                            <input
-                              type="checkbox"
-                              aria-label={`${k.title} yayınla`}
-                              checked={secili.has(k.case_id)}
-                              disabled={k.islem !== "create"}
-                              onChange={() => degistir(k.case_id)}
-                            />
+                          <td className="sutun-metin yigin-baslik" data-etiket="Özet">
+                            <label className="yayin-secim">
+                              <input
+                                type="checkbox"
+                                aria-label={`${k.title} yayınla`}
+                                checked={secili.has(k.case_id)}
+                                disabled={k.islem !== "create"}
+                                onChange={() => degistir(k.case_id)}
+                              />
+                              <span>{k.summary}</span>
+                            </label>
                           </td>
-                          <td className="sutun-metin" data-etiket="Özet">{k.summary}</td>
-                          <td data-etiket="Tür">{k.issue_type}</td>
-                          <td className="kucuk" data-etiket="Bağlantı">
-                            {k.link.story_key ? (
-                              <>
+                          <td className="kucuk" data-etiket="Tür · bağlantı">
+                            {k.issue_type}
+                            {k.link.story_key && (
+                              <div className="soluk">
                                 {k.link.type} <span className="mono">{k.link.story_key}</span>
-                              </>
-                            ) : (
-                              "—"
+                              </div>
                             )}
                           </td>
                           <td data-etiket="Etiketler">

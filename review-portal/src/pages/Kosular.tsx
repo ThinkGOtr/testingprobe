@@ -72,7 +72,8 @@ function TakilmaCipi({ k }: { k: Pick<Kosu, "durum" | "baslangic"> }) {
 
 export function KosuTablosu({ kosular, kompakt }: { kosular: Kosu[]; kompakt?: boolean }) {
   return (
-    <TabloSarici etiket="Koşular tablosu" uzun={kosular.length > 15}>
+    // ET-03: satırın (390'da kartın) tamamı koşuyu açar; satır başına tek Tab durağı (ET-08).
+    <TabloSarici etiket="Koşular tablosu" uzun={kosular.length > 15} satirBaglanti>
         <thead>
           <tr>
             <th scope="col">Koşu</th>
@@ -90,8 +91,12 @@ export function KosuTablosu({ kosular, kompakt }: { kosular: Kosu[]; kompakt?: b
         <tbody>
           {kosular.map((k) => (
             <tr key={k.id}>
-              <td data-etiket="Koşu">
-                <Link to={`/kosular/${encodeURIComponent(k.id)}`} className="satir-baglanti mono" title={`Koşu kimliği: ${k.id}`}>
+              <td className="yigin-baslik" data-etiket="Koşu">
+                <Link
+                  to={`/kosular/${encodeURIComponent(k.id)}`}
+                  className="satir-baglanti mono"
+                  title={`Koşu kimliği: ${k.id}`}
+                >
                   {kisaKosuAdi(k.id)}
                 </Link>
                 {k.break_campaign && (

@@ -8,7 +8,8 @@ import { BUG_KISITLI_METNI, izinRolleriMetni } from "../lib/yetki";
 import type { BugTaslagi, BugTaslakIcerik, MukerrerAday, MukerrerArama } from "../api/types";
 import { useBildirim } from "../components/Bildirim";
 import { AlanHatasi, BosDurum, Cip, Baglanti, HataKutusu, KayitHatasi, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor, IzinliLink } from "../components/ui";
-import { MetaSatiri, TabloSarici } from "../components/tasarim";
+import { MetaSatiri, SegmentSecici, SuzgecCubugu, TabloSarici } from "../components/tasarim";
+import { useSorguSuzgeci } from "../lib/sorguDurumu";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { KisiAdi } from "../components/KisiAdi";
 import { BUG_DURUMU, SEVERITY, type Ton } from "../lib/etiketler";
@@ -99,11 +100,21 @@ function KirmaCipi() {
   );
 }
 
+/** IA-18 liste görünümü: karar bekleyen gerçek taslaklar önce; kasıtlı kırma taslakları ayrı. */
+type BugGorunumu = "bekleyen" | "kirma" | "tumu";
+
 export function BugTaslaklari() {
   const v = useVeri(() => api.bugTaslaklari(), []);
   const kirmaIds = useKirmaTaslaklari(v.veri);
   const sessiz = useGeciktirilmis(() => void v.yenile(true));
   useOlay(sessiz, ["bug.published", "bug.updated", "failure.classified", "finding.updated"]);
+  // Görünüm adreste (`?gorunum=kirma`); varsayılan "Karar bekleyen".
+  const suzgec = useSorguSuzgeci({ gorunum: "bekleyen" });
+  const gorunum = (["bekleyen", "kirma", "tumu"].includes(suzgec.deger.gorunum) ? suzgec.deger.gorunum : "bekleyen") as BugGorunumu;
+  const tum = v.veri ?? [];
+  const bekleyenler = tum.filter((b) => (b.durum === "draft" || b.durum === "approved") && !kirmaIds.has(b.id));
+  const kirmalar = tum.filter((b) => kirmaIds.has(b.id));
+  const liste = gorunum === "bekleyen" ? bekleyenler : gorunum === "kirma" ? kirmalar : tum;
   return (
     <>
       <SayfaBasligi baslik="Bug taslakları" aciklama="AI taslak hazırlar ve Jira'da olası mükerrerleri bulur; kayıt yalnızca testçi onayıyla açılır ya da bağlanır." />
@@ -112,61 +123,91 @@ export function BugTaslaklari() {
           <Yukleniyor />
         ) : v.hata && !v.veri ? (
           <HataKutusu hata={v.hata} kaynak={v.hataNesnesi} yenile={() => void v.yenile()} />
-        ) : (v.veri ?? []).length === 0 ? (
+        ) : tum.length === 0 ? (
           <BosDurum baslik="Bug taslağı yok." />
         ) : (
-          <TabloSarici etiket="Bug taslakları tablosu">
-              <thead>
-                <tr>
-                  <th scope="col">Özet</th>
-                  <th scope="col">Kaynak</th>
-                  <th scope="col">Story</th>
-                  <th scope="col">Önem</th>
-                  <th scope="col">Mükerrer adayı</th>
-                  <th scope="col">Durum</th>
-                  <th scope="col" className="sutun-ikincil">Oluşturma</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(v.veri ?? []).map((b) => {
-                  const d = durum(b);
-                  const yapilmadi = mukerrerAramaDurumu(b) !== "yapildi";
-                  return (
-                    <tr key={b.id}>
-                      <td className="sutun-metin" data-etiket="Özet">
-                        <Link to={`/bug-taslaklari/${encodeURIComponent(b.id)}`} className="satir-baglanti">
-                          {b.icerik.summary}
-                        </Link>{" "}
-                        <ReplayRozeti mode={b.mode} degerlendirme={b.degerlendirme} />
-                        {b.icerik.uretim === "sablon" && (
-                          <>
-                            {" "}
-                            <Cip ton="notr">Şablon</Cip>
-                          </>
-                        )}
-                        {kirmaIds.has(b.id) && (
-                          <span data-testid="kirma-cipi">
-                            {" "}
-                            <KirmaCipi />
-                          </span>
-                        )}
-                      </td>
-                      <td data-etiket="Kaynak">{KAYNAK[b.kaynak]}</td>
-                      <td className="sutun-kimlik" data-etiket="Story">{b.icerik.story_key ?? "—"}</td>
-                      <td data-etiket="Önem">{SEVERITY[b.icerik.severity_suggestion]}</td>
-                      <td className={yapilmadi ? "soluk" : "mono"} data-etiket="Mükerrer adayı">{aramaOzeti(b)}</td>
-                      <td className="sutun-durum" data-etiket="Durum">
-                        <Cip ton={d.ton}>{d.etiket}</Cip>
-                      </td>
-                      <td className="sutun-tarih sutun-ikincil" data-etiket="Oluşturma">{tarih(b.olusturma)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-          </TabloSarici>
+          <>
+            <SuzgecCubugu etiket="Bug taslağı süzgeci" sonuc={`${liste.length}/${tum.length} taslak`}>
+              <SegmentSecici<BugGorunumu>
+                etiket="Görünüm"
+                deger={gorunum}
+                degistir={(d) => suzgec.ayarla("gorunum", d)}
+                secenekler={[
+                  { deger: "bekleyen", ad: "Karar bekleyen", sayi: bekleyenler.length },
+                  ...(kirmalar.length ? [{ deger: "kirma" as const, ad: "Kasıtlı kırma", sayi: kirmalar.length }] : []),
+                  { deger: "tumu", ad: "Tümü", sayi: tum.length },
+                ]}
+              />
+            </SuzgecCubugu>
+            {liste.length === 0 ? (
+              <BosDurum baslik={gorunum === "bekleyen" ? "Karar bekleyen bug taslağı yok." : "Bu görünümde taslak yok."} kip="satir">
+                {gorunum === "bekleyen" && (
+                  <button type="button" className="dugme-metin" onClick={() => suzgec.ayarla("gorunum", "tumu")}>
+                    Tüm taslakları göster
+                  </button>
+                )}
+              </BosDurum>
+            ) : (
+              <BugTablosu liste={liste} kirmaIds={kirmaIds} />
+            )}
+          </>
         )}
       </Kart>
     </>
+  );
+}
+
+function BugTablosu({ liste, kirmaIds }: { liste: BugTaslagi[]; kirmaIds: Set<string> }) {
+  return (
+    <TabloSarici etiket="Bug taslakları tablosu" satirBaglanti uzun={liste.length > 15}>
+      <thead>
+        <tr>
+          <th scope="col">Özet</th>
+          <th scope="col">Kaynak</th>
+          <th scope="col">Story</th>
+          <th scope="col">Önem</th>
+          <th scope="col">Mükerrer adayı</th>
+          <th scope="col">Durum</th>
+          <th scope="col" className="sutun-ikincil">Oluşturma</th>
+        </tr>
+      </thead>
+      <tbody>
+        {liste.map((b) => {
+          const d = durum(b);
+          const yapilmadi = mukerrerAramaDurumu(b) !== "yapildi";
+          return (
+            <tr key={b.id}>
+              <td className="sutun-metin yigin-baslik" data-etiket="Özet">
+                <Link to={`/bug-taslaklari/${encodeURIComponent(b.id)}`} className="satir-baglanti">
+                  {b.icerik.summary}
+                </Link>{" "}
+                <ReplayRozeti mode={b.mode} degerlendirme={b.degerlendirme} />
+                {b.icerik.uretim === "sablon" && (
+                  <>
+                    {" "}
+                    <Cip ton="notr">Şablon</Cip>
+                  </>
+                )}
+                {kirmaIds.has(b.id) && (
+                  <span data-testid="kirma-cipi">
+                    {" "}
+                    <KirmaCipi />
+                  </span>
+                )}
+              </td>
+              <td data-etiket="Kaynak">{KAYNAK[b.kaynak]}</td>
+              <td className={b.icerik.story_key ? "sutun-kimlik" : "sutun-kimlik bos-yigin"} data-etiket="Story">{b.icerik.story_key ?? "—"}</td>
+              <td data-etiket="Önem">{SEVERITY[b.icerik.severity_suggestion]}</td>
+              <td className={yapilmadi ? "soluk" : "mono"} data-etiket="Mükerrer adayı">{aramaOzeti(b)}</td>
+              <td className="sutun-durum" data-etiket="Durum">
+                <Cip ton={d.ton}>{d.etiket}</Cip>
+              </td>
+              <td className="sutun-tarih sutun-ikincil" data-etiket="Oluşturma">{tarih(b.olusturma)}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </TabloSarici>
   );
 }
 
