@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from tp_core.auth.deps import DbSession
 from tp_core.auth.yetki import izin, izinli
@@ -22,9 +22,16 @@ Okur = Annotated[Principal, Depends(izin("dashboard.read"))]
 
 
 @router.get("/control-tower")
-def control_tower(session: DbSession, user: Okur) -> dict[str, Any]:
+def control_tower(
+    session: DbSession,
+    user: Okur,
+    ortam: Annotated[str | None, Query(pattern=r"^(-|[0-9a-f]{12})$")] = None,
+) -> dict[str, Any]:
     # Son koşulardaki artefakt/imzalı rapor bağlantıları yalnız `run.artifacts` sahibine döner.
-    return service.control_tower(session, artefakt=izinli(user.rol, "run.artifacts"))
+    # `ortam` (0048): koşu tabanlı göstergeler o test ortamının koşularından (`-` = ortamsız).
+    return service.control_tower(
+        session, artefakt=izinli(user.rol, "run.artifacts"), ortam=ortam
+    )
 
 
 @router.get("/control-tower/case-quality")

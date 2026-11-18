@@ -3086,3 +3086,42 @@ export interface HataAnalizi {
   case_id?: string | null;
   requirement_id?: string | null;
 }
+
+// ---------------------------------------------------------------- Test ortamları (dk/ortam)
+// `GET /environments`; koşu `test_ortami` (koşunun ayrıca taşıdığı ham `ortam` JSON alanıyla karıştırılmaz).
+
+export const ORTAM_TURLERI = ["dev", "test", "staging", "prod"] as const;
+export type OrtamTuru = (typeof ORTAM_TURLERI)[number];
+
+/** Koşunun koştuğu test ortamı (core `test_ortami`); `prod` ⇒ `canli: true`. */
+export interface TestOrtami {
+  eid: string;
+  ad: string;
+  tur: OrtamTuru;
+  canli: boolean;
+}
+
+export interface Ortam extends TestOrtami {
+  varsayilan: boolean;
+}
+
+/** `GET /environments`. Boş liste: projede ortam yok (ortam arayüzü gizlenir). */
+export interface Ortamlar {
+  ortamlar: Ortam[];
+  varsayilan_eid: string | null;
+}
+
+export interface Kosu {
+  /** `null`: ortamsız koşu (eski koşular); alan yoksa uyum katmanından geçmemiş nesne. */
+  test_ortami?: TestOrtami | null;
+}
+
+export interface KontrolKulesi {
+  /** `?ortam=` ile istendiyse core'un uyguladığı ortam kimliği; yoksa null. */
+  ortam_suzgeci?: string | null;
+}
+
+export interface IsYaniti {
+  /** `POST /ci/trigger`: koşunun ortamı (ortam yoksa null). */
+  test_ortami?: TestOrtami | null;
+}

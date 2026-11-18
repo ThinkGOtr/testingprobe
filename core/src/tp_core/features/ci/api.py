@@ -4,10 +4,16 @@
 |---|---|---|
 | POST | `/ci/trigger` `{tetik: deploy\\|nightly}` | `run.trigger_scheduled` — 202 `{job_id, run_id, …}` |
 | POST | `/ci/trigger` `{tetik: manual}` | `run.trigger_manual` — developer `TP_ORTAM=prod` iken 403 |
-| GET  | `/runs?tetik=&kaynak=&sonuc=&pr_no=&script_id=&depo=&limit=` | `run.read` |
+| GET  | `/environments` | `run.read` — projenin Home test ortamları ve varsayılanı (0048) |
+| GET  | `/runs?tetik=&kaynak=&sonuc=&pr_no=&script_id=&depo=&ortam=&limit=` | `run.read` |
 | GET  | `/runs/{id}` | `run.read` — testler, süreler, artefakt bağlantıları |
 | GET  | `/artifacts/runs/{run_id}/{yol}` | `run.artifacts` — oturumlu, yolu doğrulanmış artefakt |
 | GET  | `/artifacts/k/{imza}/runs/{run_id}/{yol}` | imzalı rapor bağlantısı (oturumsuz, süreli) |
+
+Test ortamı (0048): `/ci/trigger` gövdesinde `ortam` (Home ortam kimliği) verilmezse projenin
+varsayılan ortamı (yoksa ortamsız) seçilir; gece koşusu yalnız varsayılan ortamda koşar (`ortam`
+verilirse 422). Bilinmeyen ortam 422. Koşu kayıtları `test_ortami` taşır; `/runs?ortam=<eid>`
+(`-` = ortamsız) süzer.
 
 Maskeli görünüm (specs/012-rol-yetki §2): `run.artifacts` izni olmayan roller (auditor, viewer)
 koşu özetini görür; artefakt bağlantıları (imzalı rapor bağlantısı dahil) yanıttan çıkarılır. İmzalı
@@ -22,7 +28,7 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from tp_core.auth import yetki
 from tp_core.auth.deps import DbSession
@@ -30,6 +36,7 @@ from tp_core.auth.yetki import izin, izinlerden_biri
 from tp_core.config import get_settings
 from tp_core.features.ci import artifacts, service
 from tp_core.integrations.toolchain_blogu import ortam_gerekli
+from tp_core.proje import ortam as ortamlar
 from tp_core.proje import proje_icinde
 from tp_core.workflow.service import Principal
 
@@ -48,6 +55,8 @@ class TetikGirdisi(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     tetik: Literal["deploy", "nightly", "manual"]
+    # 0048: Home ortam kimliği (12 hex); verilmezse projenin varsayılan ortamı.
+    ortam: str | None = Field(default=None, pattern=r"^[0-9a-f]{12}$")
 
 
 class TetikYaniti(BaseModel):
@@ -57,6 +66,7 @@ class TetikYaniti(BaseModel):
     mesaj: str
     kaynak: str
     tetik: str
+    test_ortami: dict[str, Any] | None = None
 
 
 def tetik_izni(tetik: str) -> str:
@@ -73,11 +83,33 @@ def ci_trigger(
         raise yetki.reddet(session, user, izin_adi, "rol", request.url.path)
     if yetki.normalize_rol(user.rol) == yetki.DEVELOPER and get_settings().ortam == "prod":
         raise yetki.reddet(session, user, izin_adi, "prod_ortam", request.url.path)
-    ortam_gerekli()
+    if body.tetik == "nightly" and body.ortam:
+        raise HTTPException(422, "Gece koşusu yalnız projenin varsayılan ortamında koşar")
     try:
-        return service.trigger_manual(session, body.tetik, user.kullanici_adi)
+        test_ortami = ortamlar.sec(body.ortam)
+    except ortamlar.OrtamBulunamadi as exc:
+        raise HTTPException(422, str(exc)) from exc
+    with ortamlar.ortam_icinde(test_ortami):
+        # Ortamın adresleri (varsayılan dışı projede) ortam bağlamında denetlenir.
+        ortam_gerekli()
+    try:
+        return service.trigger_manual(session, body.tetik, user.kullanici_adi, test_ortami)
     except service.CiError as exc:
         raise HTTPException(422, str(exc)) from exc
+
+
+@router.get("/environments")
+def list_environments(_user: KosuOkur) -> dict[str, Any]:
+    """Projenin Home test ortamları (ada göre) ve varsayılan ortam. Home config'i yoksa boş."""
+    try:
+        liste = ortamlar.ortamlar()
+    except Exception:  # Home'suz/bağlamsız kurulum: ortam yok (bugünkü davranış)
+        liste = []
+    varsayilan = next((o for o in liste if o.varsayilan), None)
+    return {
+        "ortamlar": [{**o.ozet(), "varsayilan": o.varsayilan} for o in liste],
+        "varsayilan_eid": varsayilan.eid if varsayilan else None,
+    }
 
 
 @router.get("/runs")
@@ -92,6 +124,8 @@ def list_runs(
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     # 0046: koşunun deposu (`''` = varsayılan depo; ayrı platform deposunda `sahip/ad`).
     depo: Annotated[str | None, Query(max_length=201)] = None,
+    # 0048: test ortamı kimliği; `-` = ortamsız koşular.
+    ortam: Annotated[str | None, Query(pattern=r"^(-|[0-9a-f]{12})$")] = None,
 ) -> list[dict[str, Any]]:
     from tp_core.features.codegen import depo as depolar
 
@@ -105,6 +139,7 @@ def list_runs(
         pr_no=pr_no,
         script_id=script_id,
         depo=depo,
+        ortam=ortam,
         limit=limit,
         artefakt=yetki.izinli(user.rol, "run.artifacts"),
     )

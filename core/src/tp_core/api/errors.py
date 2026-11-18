@@ -129,6 +129,36 @@ class ProjeAyariEksik(WorkflowError):
     kod = PROJE_AYARI_EKSIK
 
 
+class OrtamAyariYok(ProjeAyariEksik):
+    """409: seçilen test ortamının etkin config'i Home'dan çözülemedi (koşu proje değerlerine —
+    başka ortamın adresine — düşmesin; `proje.ortam.gorunum`)."""
+
+
+CANLI_ENGEL = "canli_ortam"
+
+
+class CanliOrtamEngeli(KodluHata):
+    """409: Canlı (`prod`) ortamda veriyi değiştiren işlem kapalı (`proje.ortam.canli_engelle`).
+
+    Gövde: `{detail, kod: "cakisma", engel: "canli_ortam", islem, ortam: {eid, ad, tur, canli}}`
+    (genel `cakisma` kodu: asistan hata sözlüğü kapsar; ayrım `engel` alanındadır)."""
+
+    def __init__(self, islem: str, ortam: Mapping[str, Any]) -> None:
+        ad = ortam.get("ad") or ortam.get("eid")
+        super().__init__(
+            409,
+            "cakisma",
+            f"Canlı ortamda ({ad}) veriyi değiştiren işlemler kapalı: {islem}. Koşular yalnız "
+            "okuma amaçlıdır; bu işlem için Canlı olmayan bir ortamı varsayılan yapın.",
+            ek={"engel": CANLI_ENGEL, "islem": islem, "ortam": dict(ortam)},
+        )
+        self.islem = islem
+        self.ortam = dict(ortam)
+
+    def __str__(self) -> str:
+        return str(self.detail)
+
+
 def _hizmet_durumu_mu(exc: KodluHata) -> bool:
     return exc.status_code == 503 and exc.kod in HIZMET_DURUMU_KODLARI
 

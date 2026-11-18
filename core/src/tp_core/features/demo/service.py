@@ -487,8 +487,20 @@ def demo_kipi_gerekli() -> None:
         raise PermanentJobError(DEMO_KAPALI)
 
 
+def _canli_degil(islem: str) -> None:
+    """Derinlemesine savunma (işçi): varsayılan test ortamı Canlı ise iş kalıcı hatayla durur."""
+    from tp_core.api.errors import CanliOrtamEngeli
+    from tp_core.proje.ortam import canli_engelle
+
+    try:
+        canli_engelle(islem)
+    except CanliOrtamEngeli as exc:
+        raise PermanentJobError(str(exc)) from exc
+
+
 def run_break(ctx: JobContext, engine: Engine) -> dict[str, Any]:
     demo_kipi_gerekli()
+    _canli_degil("demo locator kırma")
     isteyen = str((ctx.yuk or {}).get("isteyen") or "system")
     forge = _forge()
     if not callable(getattr(forge, "merge_pr_detailed", None)):
@@ -677,6 +689,7 @@ def _otomasyon_demo_ayarlari() -> dict[str, Any]:
 
 def run_reset(ctx: JobContext, engine: Engine) -> dict[str, Any]:
     demo_kipi_gerekli()
+    _canli_degil("demo sıfırlama")
     isteyen = str((ctx.yuk or {}).get("isteyen") or "system")
     forge = _forge()
     yerel = _yerel_forge_mu(forge)

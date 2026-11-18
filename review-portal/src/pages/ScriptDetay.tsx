@@ -22,6 +22,8 @@ import { KurulumPrEylemi } from "../components/KurulumPrEylemi";
 import { DIL_CATISI, DIL_ETIKETI, gecerliDiller, KIRARAK_DOGRULANMADI, KIRARAK_DOGRULANMADI_ACIKLAMA, kontrolAdimiEtiketi, kontrolAdimlari, kontrolZinciri, kosuAraci, type Dil, type DilDurumu } from "../lib/dil";
 import { vurguDili } from "../lib/vurgula";
 import { useCapayaKaydir } from "../lib/capa";
+import { useOrtamlar } from "../components/Ortam";
+import { ortamMetni } from "../lib/ortam";
 
 const ASAMA_ADI = { baseline: "Bayraksız (yeşil olmalı)", broken: "BREAK_CAMPAIGN=1 (kırmızı olmalı)", restored: "Bayrak kaldırıldı (yeşil olmalı)" } as const;
 const SONUC = {
@@ -779,6 +781,8 @@ export function ScriptDetay() {
   const tumScriptler = useVeri(() => (veriAdayi ? api.scriptler().catch(() => null) : Promise.resolve(null)), [id, veriAdayi]);
   const islem = useIslem();
   const bildir = useBildirim();
+  // Varsayılan test ortamı canlıysa kırarak doğrulama kapalıdır (core 409 `canli_ortam`; burada önceden pasif).
+  const canliOrtam = useOrtamlar().varsayilan?.canli === true;
   const sessiz = useGeciktirilmis(() => void v.yenile(true), 300);
   // Uyarıların (zayıf test, kırma yapılmadı) açık kabulü: hangi head için verildiyse yalnız ona geçerli.
   const [kabulHead, setKabulHead] = useState<string | null>(null);
@@ -1110,13 +1114,15 @@ export function ScriptDetay() {
           <IslemDugmesi
             izin="code.break_verify"
             tur="ikincil"
-            disabled={!prAcik || defectAdayi || s.break_verify.durum === "running"}
+            disabled={!prAcik || defectAdayi || canliOrtam || s.break_verify.durum === "running"}
             calisiyor={s.break_verify.durum === "running"}
-            // Defect adayında "Kırarak doğrulama kapalı" kutusu nedeni zaten görünür yazar; düğmeye bağlanır.
-            nedenGizli={defectAdayi}
-            aria-describedby={defectAdayi ? "kirma-kapali-neden" : undefined}
+            // Defect adayında / canlı ortamda kutu nedeni zaten görünür yazar; düğmeye bağlanır.
+            nedenGizli={defectAdayi || canliOrtam}
+            aria-describedby={canliOrtam ? "kirma-canli-neden" : defectAdayi ? "kirma-kapali-neden" : undefined}
             title={
-              defectAdayi
+              canliOrtam
+                ? ortamMetni("canliKapali")
+                : defectAdayi
                 ? "Defect adayı: test zaten kırmızı (ürün hatası şüphesi). Kırarak doğrulama anlamsız; karar triage/bug taslağında."
                 : prAcik
                   ? undefined
@@ -1132,6 +1138,11 @@ export function ScriptDetay() {
         <p className="soluk kucuk">
           Koşunun bayisi için kampanya kuralı BREAK_CAMPAIGN ile bozulur (diğer bayiler ve ajan etkilenmez); test kırmızıya dönmezse "zayıf test" sayılır.
         </p>
+        {canliOrtam && !prBirlesti && (
+          <Uyari ton="uyari" baslik={ortamMetni("canliKapaliBaslik")} id="kirma-canli-neden">
+            <span data-testid="kirma-canli-ortam">{ortamMetni("canliKapali")}</span>
+          </Uyari>
+        )}
         {defectAdayi && (
           <Uyari ton="bilgi" baslik="Kırarak doğrulama kapalı" id="kirma-kapali-neden">
             Yerel kontrol bu testi assertion farkıyla kırmızı buldu (defect adayı). Uygulama zaten beklenenden farklı davranıyor; kırma

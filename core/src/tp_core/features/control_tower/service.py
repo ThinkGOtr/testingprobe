@@ -23,7 +23,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import and_, func, not_, or_, select
+from sqlalchemy import and_, func, not_, or_, select, true
 from sqlalchemy.orm import Session
 
 from tp_core.config import get_settings
@@ -118,19 +118,29 @@ def _oran(pay: int, payda: int) -> float | None:
 # ------------------------------------------------------------------------------ koşular
 
 
-def son_kosular(session: Session, n: int, *, artefakt: bool) -> list[dict[str, Any]]:
+def _ortam(ortam: str | None) -> Any:
+    """0048 test ortamı süzgeci (`None` = tüm ortamlar; `-` = ortamsız koşular)."""
+    return ci.ortam_kosulu(ortam) if ortam is not None else true()
+
+
+def son_kosular(
+    session: Session, n: int, *, artefakt: bool, ortam: str | None = None
+) -> list[dict[str, Any]]:
     runs = session.scalars(
-        select(Run).where(Run.tetik.in_(CI_TETIKLER)).order_by(Run.olusturma.desc()).limit(n)
+        select(Run)
+        .where(Run.tetik.in_(CI_TETIKLER), _ortam(ortam))
+        .order_by(Run.olusturma.desc())
+        .limit(n)
     ).all()
     return ci.serialize_runs(session, list(runs), artefakt=artefakt)
 
 
-def gecme_orani(session: Session, n: int) -> dict[str, Any]:
+def gecme_orani(session: Session, n: int, ortam: str | None = None) -> dict[str, Any]:
     # Pencere: son n tamamlanmış CI koşusu (kırma koşuları dahil sayılır, sonra ayıklanır) —
     # böylece "son 20" penceresi ve içinden kaçının hariç tutulduğu açıkça söylenebilir.
     pencere = session.execute(
         select(Run.id, Run.sonuc, _kirma_degil() & _demo_kirmasi_degil())
-        .where(Run.tetik.in_(CI_TETIKLER), Run.sonuc.in_(ci.BITMIS))
+        .where(Run.tetik.in_(CI_TETIKLER), Run.sonuc.in_(ci.BITMIS), _ortam(ortam))
         .order_by(Run.olusturma.desc())
         .limit(n)
     ).all()
@@ -177,7 +187,7 @@ def _iyelik(n: int) -> str:
     return bulunma_eki(n).removesuffix("nde").removesuffix("nda")
 
 
-def gunluk_gecme(session: Session, gun: int) -> list[dict[str, Any]]:
+def gunluk_gecme(session: Session, gun: int, ortam: str | None = None) -> list[dict[str, Any]]:
     tz = ci._istanbul()
     simdi = ci_services.now()
     bas = simdi - timedelta(days=gun)
@@ -189,6 +199,7 @@ def gunluk_gecme(session: Session, gun: int) -> list[dict[str, Any]]:
             Run.olusturma >= bas,
             _kirma_degil(),
             _demo_kirmasi_degil(),
+            _ortam(ortam),
         )
     ):
         g = zaman.astimezone(tz).date().isoformat()
@@ -201,12 +212,12 @@ def gunluk_gecme(session: Session, gun: int) -> list[dict[str, Any]]:
     ]
 
 
-def flaky(session: Session, gun: int) -> list[dict[str, Any]]:
+def flaky(session: Session, gun: int, ortam: str | None = None) -> list[dict[str, Any]]:
     bas = ci_services.now() - timedelta(days=gun)
     temel = (
         select(TestResult)
         .join(Run, Run.id == TestResult.run_id)
-        .where(TestResult.olusturma >= bas, _kirma_degil())
+        .where(TestResult.olusturma >= bas, _kirma_degil(), _ortam(ortam))
     ).subquery()
     out: dict[tuple[str, str], dict[str, Any]] = {}
     # (a) yeniden denemeyle geçen (Playwright `flaky`)
@@ -1016,13 +1027,15 @@ def kalite_hata_yakalama(session: Session) -> tuple[dict[str, Any] | None, str]:
 # ------------------------------------------------------------------------------ toplam
 
 
-def control_tower(session: Session, *, artefakt: bool) -> dict[str, Any]:
-    """`artefakt=False` (rolde `run.artifacts` yok) → `son_kosular` maskeli (bağlantısız)."""
+def control_tower(session: Session, *, artefakt: bool, ortam: str | None = None) -> dict[str, Any]:
+    """`artefakt=False` (rolde `run.artifacts` yok) → `son_kosular` maskeli (bağlantısız).
+    `ortam` (0048): koşu tabanlı göstergeler (son koşular, geçme oranı, günlük trend, flaky) yalnız
+    o test ortamının koşularından (`-` = ortamsız); diğer göstergeler proje genelidir."""
     n = _n("TP_CT_SON_KOSU", 20)
     gun = _n("TP_CT_FLAKY_GUN", 30)
     trend = _n("TP_CT_TREND_GUN", 14)
     katki, hazirlik, uyarilar = ai_katkisi(session)
-    kosular = son_kosular(session, n, artefakt=artefakt)
+    kosular = son_kosular(session, n, artefakt=artefakt, ortam=ortam)
     if not kosular:
         uyarilar.append("Henüz CI koşusu yok: geçme oranı, flaky ve son sonuçlar boş.")
     a = a11y(session)
@@ -1030,11 +1043,12 @@ def control_tower(session: Session, *, artefakt: bool) -> dict[str, Any]:
     yakalama, yakalama_kaynagi = kalite_hata_yakalama(session)
     return {
         "son_kosular": kosular,
-        "gecme_orani": gecme_orani(session, n),
+        "gecme_orani": gecme_orani(session, n, ortam),
         # Proje bir geçme hedefi tanımlamadı (§12'de yok); uydurulmaz.
         "gecme_hedefi": None,
-        "gunluk_gecme": gunluk_gecme(session, trend),
-        "flaky": flaky(session, gun),
+        "gunluk_gecme": gunluk_gecme(session, trend, ortam),
+        "flaky": flaky(session, gun, ortam),
+        "ortam_suzgeci": ortam,
         "karne": karne(session),
         "alan_karnesi": alan_karnesi(session),
         "ai_katkisi": katki,

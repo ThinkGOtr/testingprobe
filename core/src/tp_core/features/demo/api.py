@@ -81,6 +81,14 @@ def demo_yoneticisi(
     return user
 
 
+def canli_degil(islem: str) -> None:
+    """Demo kırma/sıfırlama uygulamanın verisini değiştirir: projenin varsayılan test ortamı
+    Canlı ise 409 (`proje.ortam.canli_engelle`)."""
+    from tp_core.proje.ortam import canli_engelle
+
+    canli_engelle(islem)
+
+
 DemoYoneticisi = Annotated[Principal, Depends(demo_yoneticisi)]
 BEKLEME_S = 20.0  # portal nginx /api/ zaman aşımı 30 sn
 
@@ -106,6 +114,8 @@ async def _calistir(istek: Any, user: Principal, response: Response) -> dict[str
 async def break_locator(
     user: DemoYoneticisi, response: Response, zorla: bool = False
 ) -> dict[str, Any]:
+    canli_degil("demo locator kırma")
+
     def istek(s: Any, u: Principal) -> dict[str, Any]:
         return service.request_break(s, u, zorla=zorla)
 
@@ -114,6 +124,7 @@ async def break_locator(
 
 @router.post("/demo/reset")
 async def reset(user: DemoYoneticisi, response: Response) -> dict[str, Any]:
+    canli_degil("demo sıfırlama")
     return await _calistir(service.request_reset, user, response)
 
 
@@ -121,7 +132,16 @@ async def reset(user: DemoYoneticisi, response: Response) -> dict[str, Any]:
 def status(_user: Okur) -> dict[str, Any]:
     with session_scope() as s:
         ayar = get_settings()
-        return {**service.durum(session=s), "demo_modu": ayar.demo_mode, "ortam": ayar.ortam}
+        from tp_core.proje.ortam import islem_ortami
+
+        o = islem_ortami()
+        return {
+            **service.durum(session=s),
+            "demo_modu": ayar.demo_mode,
+            "ortam": ayar.ortam,
+            # 0048: varsayılan test ortamı (Canlı ise kırma/sıfırlama kapalı).
+            "test_ortami": o.ozet() if o else None,
+        }
 
 
 class JiraDurumIstegi(BaseModel):

@@ -65,10 +65,15 @@ def toolchain_projesi(body: dict[str, Any], *, kosu: bool = True) -> dict[str, A
     """
     from tp_core.features.codegen import depo as depolar
 
+    from tp_core.proje.ortam import mevcut_ortam
+
     platform = depolar.uygulama_platformu(body.get("platform"))
     ayri = bool(depolar.depo_anahtari(platform)) if platform else False
     b = varsa()
-    if ayri or (b is not None and b.pid != varsayilan_pid()):
+    # Test ortamı bağlamında (koşu bir Home ortamında) blok varsayılan projede de gider: adres,
+    # test hesapları ve uygulama argümanları o ortamın etkin config'inden (`proje.ortam`).
+    ortam = mevcut_ortam()
+    if ortam is not None or ayri or (b is not None and b.pid != varsayilan_pid()):
         from tp_core.proje import istemciler
 
         blok = istemciler.toolchain_proje_blogu(platform)

@@ -131,6 +131,7 @@ _SIR_REF = re.compile(
     r"/versions/(?P<surum>latest|[0-9]{1,10})$"
 )
 _YASAK_KARAKTER = re.compile(r"[\x00\r\n]")
+_ORTAM_ID = re.compile(r"^[0-9a-f]{12}$")
 OZELLIKLER: tuple[str, ...] = ("web", "android", "ios", "windows", "ai_agent")
 KIPLER = frozenset({"token", "oauth", "app"})
 
@@ -425,6 +426,36 @@ class EtkinConfig:
         ham = self.proje.get("features") or {}
         return {o: ham.get(o) is True for o in OZELLIKLER}
 
+    @property
+    def ortamlar(self) -> list[dict[str, Any]]:
+        """Projenin test ortamları (Home `environments`: `{eid, name, type, is_default}`);
+        biçimi bozuk öğeler atlanır. Eski Home yanıtında alan yok → boş liste."""
+        out: list[dict[str, Any]] = []
+        ham = self.ham.get("environments")
+        if not isinstance(ham, list):
+            return out
+        for e in ham:
+            if not isinstance(e, Mapping):
+                continue
+            eid = e.get("eid")
+            if not isinstance(eid, str) or not _ORTAM_ID.match(eid):
+                continue
+            out.append(
+                {
+                    "eid": eid,
+                    "name": str(e.get("name") or eid),
+                    "type": str(e.get("type") or "test"),
+                    "is_default": e.get("is_default") is True,
+                }
+            )
+        return out
+
+    @property
+    def ortam(self) -> Mapping[str, Any]:
+        """Ortam düzeyi yanıtta (`?environment=`) ortamın kendisi; proje düzeyinde `{}`."""
+        o = self.ham.get("environment")
+        return o if isinstance(o, Mapping) else {}
+
     def baglanti(self, tur: str) -> Mapping[str, Any]:
         b = (self.ham.get("connections") or {}).get(tur)
         return b if isinstance(b, Mapping) else {}
@@ -451,11 +482,16 @@ class HomeConfigIstemcisi:
         audience: str | None = None,
         http: Http = urllib_http,
         zaman_asimi: float = ZAMAN_ASIMI_S,
+        ortam: str | None = None,
     ) -> None:
         if not base_url or not proje:
             raise ValueError("Home adresi ve proje gerekli")
+        if ortam is not None and not _ORTAM_ID.match(ortam):
+            raise ValueError("ortam kimliği 12 hex olmalı")
         self.base_url = base_url.rstrip("/")
         self.proje = proje
+        # Ortam düzeyi etkin config (`&environment=`; ortam başına ayrı ETag/önbellek).
+        self.ortam = ortam
         self.audience = (audience or self.base_url).rstrip("/")
         self._id_token = id_token
         self._http = http
@@ -466,7 +502,10 @@ class HomeConfigIstemcisi:
         basliklar = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
         if etag:
             basliklar["If-None-Match"] = etag
-        q = urllib.parse.urlencode({"project": self.proje})
+        sorgu = {"project": self.proje}
+        if self.ortam:
+            sorgu["environment"] = self.ortam
+        q = urllib.parse.urlencode(sorgu)
         r = self._http(
             "GET", f"{self.base_url}/v1/config/effective?{q}", basliklar, None, self._zaman_asimi
         )

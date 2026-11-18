@@ -18,6 +18,8 @@ import { checkEtiketi, PLATFORMLAR, PLATFORM_ETIKETI, platformaGoreSuz, platform
 import { EkilmisHataCipi } from "../components/kule/EkilmisHataCipi";
 import { SuzgecSecimi, suzgecSecenekleri } from "../components/Suzgec";
 import { DIL_ETIKETI, DILLER, type Dil } from "../lib/dil";
+import { OrtamRozeti, OrtamSecici, OrtamSuzgeci, suzgecOrtamlari, useOrtamlar } from "../components/Ortam";
+import { ortamMetni } from "../lib/ortam";
 
 const TETIK_TONU: Partial<Record<Tetik, "notr" | "bilgi" | "vurgu" | "uyari">> = {
   nightly: "notr",
@@ -105,6 +107,8 @@ export function KosuTablosu({ kosular, kompakt }: { kosular: Kosu[]; kompakt?: b
                 {k.pr_no !== null && <span className="mono"> #{k.pr_no}</span>}
                 {/* Platform deposu: koşu varsayılan dışı depoda koştuysa sahip/ad. */}
                 <DepoCipi kaynak={k} />
+                {/* Test ortamı (core `test_ortami`); ortamsız koşuda çizilmez. Canlı ortam uyarı tonunda. */}
+                <OrtamRozeti ortam={k.test_ortami} />
                 {k.platform && (
                   <>
                     {" "}
@@ -269,7 +273,15 @@ export function kosulariSuz(kosular: Kosu[], f: Filtre): Kosu[] {
 }
 
 export function Kosular() {
-  const v = useVeri(() => api.kosular(), []);
+  const [sorgu, setSorgu] = useSearchParams();
+  // Ortam süzgeci sunucudadır (`GET /runs?ortam=<eid>|-`).
+  const ortamSecimi = sorgu.get("ortam") ?? "";
+  const v = useVeri(() => api.kosular(ortamSecimi || undefined), [ortamSecimi]);
+  const ortam = useOrtamlar();
+  // Tetik ortamı: kullanıcı seçmediyse projenin varsayılanı (listede yoksa ilk ortam).
+  const [tetikOrtami, setTetikOrtami] = useState<string | null>(null);
+  const seciliTetikOrtami =
+    tetikOrtami && ortam.ortamlar.some((o) => o.eid === tetikOrtami) ? tetikOrtami : (ortam.varsayilan?.eid ?? ortam.ortamlar[0]?.eid ?? "");
   // Her düğmenin kendi meşgul durumu: biri koşarken diğeri "dönüyor" görünmez.
   const geceIslem = useIslem();
   const deployIslem = useIslem();
@@ -281,23 +293,22 @@ export function Kosular() {
   // Geliştirici prod ortamında manuel koşu başlatamaz (core 403): `/demo/status` → `ortam`.
   const { kullanici } = useOturum();
   const gelistirici = normalizeRol(kullanici?.rol) === "developer";
-  const [ortam, setOrtam] = useState<string | null>(null);
+  const [kurulumOrtami, setKurulumOrtami] = useState<string | null>(null);
   useEffect(() => {
     if (!gelistirici || !manuelTetik) return;
     let iptal = false;
     api
       .demoDurumu()
-      .then((d) => !iptal && setOrtam(d.ortam ?? null))
+      .then((d) => !iptal && setKurulumOrtami(d.ortam ?? null))
       .catch(() => undefined);
     return () => {
       iptal = true;
     };
   }, [gelistirici, manuelTetik]);
-  const manuelProdEngeli = gelistirici && ortam === "prod";
+  const manuelProdEngeli = gelistirici && kurulumOrtami === "prod";
   const bildir = useBildirim();
   const sessiz = useGeciktirilmis(() => void v.yenile(true));
   useOlay(sessiz, ["ci.status", "failure.classified"]);
-  const [sorgu, setSorgu] = useSearchParams();
   const acikPlatformlar = usePlatformlar();
   const [sonTetik, setSonTetik] = useState<string | null>(null);
   const filtre: Filtre = {
@@ -331,14 +342,20 @@ export function Kosular() {
   const kaynaklar = [...new Set(tum.map((k) => k.kaynak))];
   // TP-7: dil süzgeci yalnız dili bilinen koşu varsa (ya da adreste seçim varsa); seçenekler koşulardaki diller.
   const dilSecenekleri = suzgecSecenekleri(tum, (k) => k.dil, (d) => DIL_ETIKETI[d], { secili: filtre.dil, sira: DILLER });
+  // Ortam süzgeci: projede ortam varsa, koşulardan biri ortam taşıyorsa ya da adreste seçim varsa.
+  const ortamSuzgecVar = ortam.ortamlar.length > 0 || tum.some((k) => k.test_ortami) || !!ortamSecimi;
 
   const tetikle = async (tetik: "deploy" | "nightly" | "manual") => {
     const islemler = { deploy: deployIslem, nightly: geceIslem, manual: manuelIslem };
     for (const [t, i] of Object.entries(islemler)) if (t !== tetik) i.temizle();
-    const s = await islemler[tetik].calistir(() => api.ciTetikle(tetik));
+    // Ortam yalnız projede ortam varsa gönderilir. Gece koşusu her zaman varsayılan ortamda koşar
+    // (zamanlanmış koşuyla aynı): `ortam` yazılmaz, core varsayılanı kullanır.
+    const ortamEid = ortam.ortamlar.length > 0 && tetik !== "nightly" && seciliTetikOrtami ? seciliTetikOrtami : undefined;
+    const s = await islemler[tetik].calistir(() => (ortamEid === undefined ? api.ciTetikle(tetik) : api.ciTetikle(tetik, ortamEid)));
     if (s) {
+      const ortamEki = s.test_ortami ? ` (${ortamMetni("ortam")}: ${s.test_ortami.ad})` : "";
       bildir(s.mesaj ?? "Koşu tetiklendi.");
-      setSonTetik(s.mesaj ?? `${tetik === "deploy" ? "Deploy" : tetik === "manual" ? "Manuel" : "Gece"} koşusu tetiklendi.`);
+      setSonTetik(`${s.mesaj ?? `${tetik === "deploy" ? "Deploy" : tetik === "manual" ? "Manuel" : "Gece"} koşusu tetiklendi.`}${ortamEki}`);
       void v.yenile(true);
     }
   };
@@ -414,6 +431,9 @@ export function Kosular() {
           )}
         </ul>
       )}
+      {(zamanliTetik || manuelTetik) && (
+        <OrtamSecici ortamlar={ortam.ortamlar} deger={seciliTetikOrtami} degistir={setTetikOrtami} geceNotu={zamanliTetik} />
+      )}
       {tetikHatasi && <HataKutusu hata={tetikHatasi.hata!} kaynak={tetikHatasi.hataNesnesi} />}
       {sonTetik && !tetikHatasi && <Uyari ton="bilgi">{sonTetik}</Uyari>}
       {v.veri && <GeceOzeti kosular={v.veri} />}
@@ -422,7 +442,7 @@ export function Kosular() {
           <Yukleniyor />
         ) : v.hata && !v.veri ? (
           <HataKutusu hata={v.hata} kaynak={v.hataNesnesi} yenile={() => void v.yenile()} />
-        ) : tum.length === 0 ? (
+        ) : tum.length === 0 && !ortamSecimi ? (
           <BosDurum baslik="Henüz koşu yok." />
         ) : (
           <>
@@ -476,6 +496,9 @@ export function Kosular() {
                     ))}
                   </select>
                 </label>
+              )}
+              {ortamSuzgecVar && (
+                <OrtamSuzgeci ortamlar={suzgecOrtamlari(ortam.ortamlar, tum)} deger={ortamSecimi} degistir={(d) => ayarla("ortam", d)} />
               )}
               {kirmaVar && (
                 <label className="satir-ogeler">
@@ -641,6 +664,7 @@ export function KosuDetay() {
             <Cip ton="notr">{KAYNAK[k.kaynak] ?? k.kaynak}</Cip>
             <PlatformRozeti platform={k.platform} />
             <DepoCipi kaynak={k} />
+            <OrtamRozeti ortam={k.test_ortami} />
             <EkilmisHataCipi kosu={k} />
             {/* 011 §2.8: koşunun dili (core `dil` / `ortam.dil`); bilinmiyorsa çizilmez. */}
             <DilRozeti dil={k.dil} platform={k.platform} />

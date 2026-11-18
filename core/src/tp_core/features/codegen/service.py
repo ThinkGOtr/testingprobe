@@ -397,18 +397,24 @@ def _default_gateway(engine: Engine) -> ModelGateway:
     return build_gateway(PgCallRecorder(engine), engine=engine)
 
 
-def _default_browser() -> BrowserSession:
+def _sepeti_sifirla() -> None:
+    """Ajan bayisinin sepetini boşaltır; Canlı ortamda (sepet = gerçek veri) 409 ile durur."""
     from tp_core.features.codegen.browser import reset_agent_cart
+    from tp_core.proje.ortam import canli_engelle
 
+    canli_engelle("sepet sıfırlama (kod üretimi doğrulaması)")
     reset_agent_cart(AgentConfig.from_env())
+
+
+def _default_browser() -> BrowserSession:
+    _sepeti_sifirla()
     return McpBrowserSession(get_settings().playwright_mcp_url)
 
 
 def _default_app() -> BrowserSession:
-    from tp_core.features.codegen.browser import reset_agent_cart
     from tp_core.integrations.toolchain_blogu import app_mcp_basligi
 
-    reset_agent_cart(AgentConfig.from_env())
+    _sepeti_sifirla()
     # Projenin uygulama bloğu (X-TP-App): varsayılan dışı projede Bayi Portalı uygulaması koşmaz.
     return McpBrowserSession(get_settings().app_mcp_url, headers=app_mcp_basligi())
 
@@ -2457,7 +2463,9 @@ def _kosu_kaydet(
     Kayıt kod üretimini durdurmaz: hata denetime yazılır, `None` döner.
     """
     from tp_core.models import Run
+    from tp_core.proje.ortam import mevcut_ortam
 
+    test_ortami = mevcut_ortam()
     try:
         with session_scope() as s:
             sahip = s.get(Script, sid)
@@ -2484,6 +2492,10 @@ def _kosu_kaydet(
                     "depo": depo,
                 },
                 artefaktlar={},
+                # 0048: kod üretimi/kırarak doğrulama işin ortamında (varsayılan ortam) koşar.
+                ortam_eid=test_ortami.eid if test_ortami else None,
+                ortam_adi=test_ortami.ad if test_ortami else None,
+                ortam_turu=test_ortami.tur if test_ortami else None,
             )
             s.add(run)
             s.flush()
@@ -3684,6 +3696,11 @@ def start_break_verify(session: Session, sid: uuid.UUID, user: Principal) -> dic
     if not platformlar.kirarak_dogrulama_var_mi(sc.platform, platformlar.dil(sc.platform, sc.dil)):
         # 014 karar 2: müşteri CI hattında kırarak doğrulama yok ("kırarak doğrulanmadı" rozeti).
         raise WorkflowError("Bu hatta kırarak doğrulama yok (müşteri CI: kırarak doğrulanmadı)")
+    # Canlı ortam: kırarak doğrulama uygulamayı bilerek kırar (BREAK_CAMPAIGN / test verisi
+    # uçları) — sunucu tarafında kapalı (409, `proje.ortam.canli_engelle`).
+    from tp_core.proje.ortam import canli_engelle
+
+    canli_engelle("kırarak doğrulama")
     if cg.break_durum == "running":
         is_id = (sc.kirma_dogrulama or {}).get("job_id")
         if _job_bitti(session, is_id) is None:
@@ -3746,8 +3763,14 @@ def _simdi() -> str:
 
 
 def run_break_verify(ctx: JobContext, engine: Engine) -> dict[str, Any]:
+    from tp_core.proje.ortam import canli_engelle, islem_ortami, ortam_icinde
+
     try:
-        return _break_verify(ctx, engine)
+        ortam = islem_ortami()
+        # Derinlemesine savunma: iş kuyruğa girdikten sonra varsayılan ortam Canlı yapıldıysa.
+        canli_engelle("kırarak doğrulama", ortam)
+        with ortam_icinde(ortam):
+            return _break_verify(ctx, engine)
     except Exception as exc:
         sid = uuid.UUID(str((ctx.yuk or {})["script_id"]))
         with session_scope() as s:

@@ -54,6 +54,7 @@ import { checkPlatformu, platformUyarla } from "../lib/platform";
 import { ciftHati, DIL_CATISI, DIL_ETIKETI, dilDurumuUyarla, DILLER, dilKaynagiUyarla, dilUyarla, ESKI_DOGRULANMAMIS_DILLER, gecerliCift, hatMi, varsayilanDil, YAKINDA_NEDENI, type Dil, type Hat } from "../lib/dil";
 import type { AsistanKuleOlcumu, AsistanliKule, MaliyetGrubu } from "../components/asistan/OnerilerOlcumKarti";
 import { kosuHataAlanlari, kuleKaliteKaynaklari, kuleKaliteUyarla } from "./uyumKule";
+import { testOrtamiUyarla } from "./uyumOrtam";
 
 const nesne = (x: unknown): Ham => (nesneMi(x) ? x : {});
 const dizi = (x: unknown): Ham[] => (Array.isArray(x) ? x.filter(nesneMi) : []);
@@ -849,6 +850,8 @@ export function kosuUyarla(k: Ham): Kosu {
     commit: metin(k.commit).slice(0, 12),
     pr_no: sayiYaDaNull(k.pr_no),
     ...depoAlanlari(k, ortam),
+    // Test ortamı (core `test_ortami`); ham `ortam` JSON alanı ayrı bir şeydir.
+    test_ortami: testOrtamiUyarla(k.test_ortami),
     durum: KOSU_DURUMLARI.has(durum) ? durum : "error",
     baslangic: metin(ilk(k, "baslangic", "baslama", "olusturma")),
     sure_ms: sayiYaDaNull(ilk(k, "sure_ms", "duration_ms")),
@@ -1060,6 +1063,7 @@ export function kontrolKulesiUyarla(govde: unknown): KontrolKulesi & AsistanliKu
   const a = nesneMi(a11y) ? a11y : null;
   return {
     son_kosular: dizi(g.son_kosular).map(kosuUyarla),
+    ortam_suzgeci: metinYaDaNull(g.ortam_suzgeci),
     gecme_orani: {
       oran: typeof go === "number" ? go : sayiYaDaNull(goN.oran),
       toplam: sayi(goN.toplam),

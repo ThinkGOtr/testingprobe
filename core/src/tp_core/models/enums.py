@@ -42,6 +42,8 @@ DIL = frozenset({"ts", "java", "csharp", "python", "kotlin", "swift"})
 HAT = frozenset({"tam", "musteri_ci", "dogrulanmamis"})
 DIL_KAYNAGI = frozenset({"algilandi", "secildi", "varsayilan"})
 RUN_KAYNAK = frozenset({"local", "github", "sauce"})
+# Home proje ortamı türü (`prod` = Canlı); 0048 `run.ortam_turu`.
+ORTAM_TURU = frozenset({"dev", "test", "staging", "prod"})
 # CI ile ortak liste: .github/workflows/ci.yml `trigger` girdisi (workflow_dispatch → manual).
 RUN_TETIK = frozenset({"pr", "push", "nightly", "deploy", "break_verify", "local_check", "manual"})
 RUN_SONUC = frozenset({"queued", "running", "passed", "failed", "error"})

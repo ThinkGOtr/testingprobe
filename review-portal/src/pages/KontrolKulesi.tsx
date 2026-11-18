@@ -20,6 +20,8 @@ import type { Script } from "../api/types";
 import { PLATFORMLAR, PLATFORM_ETIKETI, platformaGoreSuz, platformSecimiOku, type Platform, type PlatformSecimi } from "../lib/platform";
 import { BeklentiDogruluguKarosu, HataYakalamaKarosu, OnayliUyumsuzKarti } from "../components/kule/KaliteKpilari";
 import { HataKosusuKarti } from "../components/kule/HataKosusuKarti";
+import { OrtamSuzgeci, suzgecOrtamlari, useOrtamlar } from "../components/Ortam";
+import { ortamMetni } from "../lib/ortam";
 
 /** Platform başına üretilen test sayıları (Kule "Platform dağılımı"; kapatılan kayıtlar sayılmaz). */
 export function platformDagilimi(scriptler: Script[]): { platform: Platform; toplam: number; pr_acik: number; birlesti: number; defect: number }[] {
@@ -87,7 +89,11 @@ function KpiBaslik({ ad, k, anahtar }: { ad: string; k: Kule; anahtar: KpiAnahta
 }
 
 export function KontrolKulesi() {
-  const v = useVeri(() => api.kontrolKulesi(), []);
+  const [sorgu, setSorgu] = useSearchParams();
+  // Ortam süzgeci sunucudadır (`GET /control-tower?ortam=<eid>`): koşu tabanlı ölçüler süzülür.
+  const ortamSecimi = sorgu.get("ortam") ?? "";
+  const v = useVeri(() => api.kontrolKulesi(ortamSecimi || undefined), [ortamSecimi]);
+  const ortam = useOrtamlar();
   // 009: platform süzgeci (adres çubuğunda ?platform=). Platform taşıyan veriler: son koşular ve üretilen testler.
   // `GET /scripts` `code.read` ister (Geliştirici, PO, Denetçi, Görüntüleyici'de yok): izinsiz rolde istenmez.
   const kodOkur = useIzin("code.read");
@@ -96,7 +102,12 @@ export function KontrolKulesi() {
   // söylenir; boş karne ise "veri yok" olarak kalır (yetkisizlikle karıştırılmaz).
   const gereksinimOkur = useIzin("requirement.read");
   const scriptler = useVeri(() => (kodOkur ? api.scriptler().catch(() => null) : Promise.resolve(null)), [kodOkur]);
-  const [sorgu, setSorgu] = useSearchParams();
+  const ortamDegistir = (d: string) => {
+    const y = new URLSearchParams(sorgu);
+    if (d) y.set("ortam", d);
+    else y.delete("ortam");
+    setSorgu(y, { replace: true });
+  };
   // Süzgeç projede açık platformları sunar (`/auth/me` → `ozellikler`); adresteki kapalı platform "Tümü" sayılır.
   const acikPlatformlar = usePlatformlar();
   const adrestekiSecim = platformSecimiOku(sorgu.get("platform"));
@@ -134,6 +145,7 @@ export function KontrolKulesi() {
   const defectAdayi = k.karne.reduce((a, s) => a + s.acik_defect_adayi, 0);
   const sonKosular = platformaGoreSuz(k.son_kosular, secim, (x) => x.platform);
   const platformsuzKosu = secim === "tumu" ? 0 : k.son_kosular.filter((x) => !x.platform).length;
+  const ortamSuzgecVar = ortam.ortamlar.length > 0 || k.son_kosular.some((x) => x.test_ortami) || !!ortamSecimi;
 
   return (
     <>
@@ -156,6 +168,12 @@ export function KontrolKulesi() {
               : `${PLATFORM_ETIKETI[secim]}: son koşular ve üretilen testler süzüldü. Geçme oranı, karne, AI katkısı ve erişilebilirlik çekirdekte platform ayrımı taşımaz; tüm platformlar içindir.`
           }
         />
+        {ortamSuzgecVar && (
+          <div className="filtre-cubugu" role="group" aria-label={ortamMetni("ortam")} data-testid="kule-ortam">
+            <OrtamSuzgeci ortamlar={suzgecOrtamlari(ortam.ortamlar, k.son_kosular)} deger={ortamSecimi} degistir={ortamDegistir} ortamsiz={false} />
+            {ortamSecimi && <span className="kucuk soluk">{ortamMetni("kuleIpucu")}</span>}
+          </div>
+        )}
       </div>
       {k.uyarilar.length > 0 && (
         <Uyari ton="bilgi">
