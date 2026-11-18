@@ -569,7 +569,7 @@ describe("Bug taslakları: kasıtlı kırma koşusu işareti", () => {
     await oturumAc("testci");
     uygulama("/bug-taslaklari/bug-1");
     const uyari = await screen.findByTestId("kirma-uyarisi");
-    expect(uyari).toHaveTextContent("Bu taslak bilerek bozulmuş");
+    expect(uyari).toHaveTextContent("uygulamanın bilerek bozulduğu koşudan geldi");
     expect(uyari).toHaveTextContent("gerçek hata değildir");
     expect(uyari).toHaveTextContent("Önerilen karar: gerekçeyle reddedin");
     const onayla = screen.getByRole("button", { name: "Onayla ve Jira'da aç" });

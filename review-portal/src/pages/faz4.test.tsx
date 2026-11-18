@@ -36,7 +36,7 @@ describe("triage ekranı", () => {
     uygulama("/hatalar/fail-2");
     const sinif = await screen.findByTestId("triage-sinif");
     expect(sinif).toHaveTextContent("Test bakımı");
-    expect(sinif).toHaveTextContent("Karar kaynağı: kural · test_maintenance/locator");
+    expect(sinif).toHaveTextContent("Karar kaynağı: otomatik kural (Test bakımı · locator değişikliği)");
     // Önerili hatada varsayılan sekme Onarım; kanıt ve sinyaller kendi sekmelerinde.
     await sekmeAc("Kanıt");
     // Kanıt: locator-probe (kapsam + DOM testId + commit eşleşmesi), aria parçası, sağlık.

@@ -7,7 +7,7 @@ import { ApiError } from "../api/http";
 import { useOlay } from "../api/events";
 import type { Bulgu, GereksinimDetay as Detay } from "../api/types";
 import { useIzin, useIzinler, useKisiler, useOturum, useOzellik } from "../auth";
-import { rolKisileri } from "../lib/yetki";
+import { ROL_ETIKETLERI, rolKisileri } from "../lib/yetki";
 import { AjanUrunuPaneli, useAjanTesti } from "../components/AjanUrunuPaneli";
 import { AkisAdimlari } from "../components/AkisAdimlari";
 import { BazDegerKarti } from "../components/BazDegerKarti";
@@ -204,7 +204,8 @@ export function GereksinimDetay() {
 
   const siradaki = gereksinimSiradakiAdim(g, { uretimHatasi, ajanBagli });
   // Kimi bekliyoruz (core `siradaki`, yoksa aynı tablo portalda: `siradakiAdim`).
-  const siradakiRol = siradakiAdim(g);
+  // Başarısız case üretimini Test Uzmanı yeniden dener (core `failed` → Analist yalnız denetim hatasında doğru).
+  const siradakiRol = uretimHatasi ? { rol: "tester" as const, rol_etiketi: ROL_ETIKETLERI.tester } : siradakiAdim(g);
   const S = GEREKSINIM_SEKMESI;
   const soruSayisi = g.on_inceleme?.questions.length ?? 0;
   const sekmeler: DetaySekmesi[] = [
