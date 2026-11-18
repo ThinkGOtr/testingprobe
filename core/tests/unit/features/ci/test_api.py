@@ -97,6 +97,26 @@ def test_runs_listesi_ve_detay(
     assert api.get(f"/runs/{uuid.uuid4()}").status_code == 404
 
 
+def test_runs_listesi_basarisiz_ozet_ve_sayfalama(
+    api: TestClient, make_user, engine: Engine, toolchain: FakeToolchain
+) -> None:
+    """UX IA-15: listede başarısız testlerin adı (ilk 3) ve `offset` ile sayfalama."""
+    rid = _kosu(engine)
+    login(api, make_user("viewer"))
+    liste = api.get("/runs").json()
+    k = next(x for x in liste if x["id"] == str(rid))
+    ozet = k["basarisiz_ozet"]
+    assert 1 <= len(ozet) <= 3 and len(ozet) == min(3, k["basarisiz"])
+    assert all(o["test_adi"] for o in ozet)
+    assert [o["test_adi"] for o in ozet] == sorted(o["test_adi"] for o in ozet)
+    for o in ozet:
+        assert set(o) == {"test_adi", "case_ref", "failure_id", "sinif"}
+    # Sayfalama: tek koşu var; ikinci sayfa boş, geçersiz offset 422.
+    assert [x["id"] for x in api.get("/runs", params={"offset": 0, "limit": 1}).json()] == [str(rid)]
+    assert api.get("/runs", params={"offset": 1}).json() == []
+    assert api.get("/runs", params={"offset": -1}).status_code == 422
+
+
 def test_artefakt_ucu_oturumlu_ve_yol_dogrulamali(
     api: TestClient, make_user, engine: Engine, artefakt_kok: Path
 ) -> None:

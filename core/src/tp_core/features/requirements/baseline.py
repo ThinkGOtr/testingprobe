@@ -42,10 +42,11 @@ KAYNAK_OLCUM = "olcum"
 KAYNAK_VARSAYILAN = "varsayilan"
 ETIKETLER = {KAYNAK_OLCUM: "ölçüm", KAYNAK_VARSAYILAN: "varsayılan", None: "ölçülmedi"}
 VARSAYILAN_NOTU = (
-    "TP_MANUAL_BASELINE_S (varsayılan; bu story için ölçüm girilmedi — story'ye özel değer değil)"
+    "Yönetici ayarındaki varsayılan baz değer (bu story için ölçüm girilmedi — story'ye özel "
+    "değer değil)"
 )
 # Portal/API bu satırı ölçüm yerine ikincil metin olarak gösterebilir.
-VARSAYILAN_ACIKLAMA = "ölçülmedi; varsayılan {sure} (TP_MANUAL_BASELINE_S), ölçüm değil"
+VARSAYILAN_ACIKLAMA = "ölçülmedi; varsayılan {sure} (yönetici ayarı), ölçüm değil"
 
 
 class BaselineError(ValueError):
@@ -324,8 +325,8 @@ def kapsam_metni(toplam: int, olcum: int, varsayilan: int, olculmedi: int) -> st
     parcalar = [f"{toplam} story'den {olcum}'{bulunma_eki(olcum)} ölçüm var"]
     if varsayilan:
         parcalar.append(
-            f"{varsayilan}'{bulunma_eki(varsayilan)} ölçüm yok (yalnız varsayılan "
-            "TP_MANUAL_BASELINE_S; ölçüm sayılmaz)"
+            f"{varsayilan}'{bulunma_eki(varsayilan)} ölçüm yok (yalnız yönetici ayarındaki "
+            "varsayılan baz değer; ölçüm sayılmaz)"
         )
     if olculmedi:
         parcalar.append(f"{olculmedi}'{bulunma_eki(olculmedi)} ölçülmedi")

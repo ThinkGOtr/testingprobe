@@ -345,7 +345,9 @@ describe("Kontrol Kulesi", () => {
     expect(ipuclari.length).toBeGreaterThanOrEqual(9);
     for (const i of ipuclari) expect(i.getAttribute("aria-label")).toMatch(/^Kaynak: /);
     expect(screen.getByRole("img", { name: /Kaynak: test_result \(JUnit XML\)/ })).toBeInTheDocument();
-    expect(screen.getByText("ölçülmüş baz yok")).toBeInTheDocument();
+    // IA-19: ölçülmeyen KPI kutu olarak çizilmez; adı ve nedeni "Ölçülmeyenler" satırında.
+    expect(screen.queryByTestId("hazirlik-kazanci")).toBeNull();
+    expect(screen.getByTestId("kule-olculmeyenler")).toHaveTextContent(/Hazırlık kazancı: hiçbir story'de manuel baz değer ölçülmedi/);
     expect(screen.getByText(/ölçülmüş manuel baz değer yok/)).toBeInTheDocument();
     // Tasarımda geçme oranı hedefi yok: hedef çizgisi uydurulmaz.
     expect(screen.queryByText(/Kesikli çizgi/)).not.toBeInTheDocument();
@@ -390,14 +392,16 @@ describe("Kontrol Kulesi: KPI şeridi (F4)", () => {
     await oturumAc("sunucu");
     uygulama("/kontrol-kulesi");
     const serit = await screen.findByTestId("kule-kpi");
-    for (const id of ["gecme-orani", "defect-adayi-ozet", "hazirlik-kazanci", "kazanc-kapsam"]) {
+    for (const id of ["gecme-orani", "defect-adayi-ozet"]) {
       expect(screen.getAllByTestId(id)).toHaveLength(1);
       expect(serit).toContainElement(screen.getByTestId(id));
     }
     expect(within(serit).getByRole("meter", { name: "Case kabul oranı" })).toBeInTheDocument();
     expect(screen.getAllByRole("meter", { name: "Case kabul oranı" })).toHaveLength(1);
-    expect(within(serit).getByText("Script ilk review başarısı")).toBeInTheDocument();
-    for (const ad of [/^Kaynak: test_result/, /1 − Σ/]) expect(within(serit).getAllByRole("img", { name: ad })).toHaveLength(1);
+    // Örnek veride review başarısı ölçülmedi: kutu yok, "Ölçülmeyenler" satırında.
+    expect(within(serit).queryByText("Script ilk review başarısı")).toBeNull();
+    expect(screen.getByTestId("kule-olculmeyenler")).toHaveTextContent("Script ilk review başarısı");
+    for (const ad of [/^Kaynak: test_result/]) expect(within(serit).getAllByRole("img", { name: ad })).toHaveLength(1);
     expect(serit).not.toHaveTextContent(/Maliyet|Bugün/);
     expect(screen.getAllByRole("heading", { name: "Geçme oranı" })).toHaveLength(1);
     expect(within(serit).queryByRole("heading")).toBeNull();
@@ -405,7 +409,9 @@ describe("Kontrol Kulesi: KPI şeridi (F4)", () => {
     expect(within(ai).getByText("Maliyet (toplam)")).toBeInTheDocument();
     expect(within(ai).queryByTestId("hazirlik-kazanci")).toBeNull();
     expect(within(screen.getByRole("region", { name: "Geçme oranı" })).queryByTestId("gecme-orani")).toBeNull();
-    expect(screen.getAllByText("ölçülmüş baz yok")).toHaveLength(1);
+    // IA-19: ölçülmemiş kazanç şeritte kutu değil, tek "Ölçülmeyenler" satırında.
+    expect(screen.queryByTestId("hazirlik-kazanci")).toBeNull();
+    expect(screen.getByTestId("kule-olculmeyenler")).toHaveTextContent(/Ölçülmeyenler \(\d\): .*Hazırlık kazancı/);
   });
 
   it("(i) kaynak ipucu klavye odağıyla açılır, Escape ile kapanır; ad ve rol aynı (1.4.13)", async () => {
@@ -494,12 +500,10 @@ describe("canlı derleme: core şekilli Demo-B yanıtları", () => {
       }),
     );
     uygulama("/kontrol-kulesi");
-    expect(await screen.findByTestId("gecme-orani")).toHaveTextContent("veri yok");
-    expect(screen.getByText("Erişilebilirlik taraması yapılmadı.")).toBeInTheDocument();
-    expect(screen.getByText(/henüz karar yok/)).toBeInTheDocument();
-    expect(screen.getByText("ölçülmüş baz yok")).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: "Kaynak: test_result (JUnit XML)" })).toBeInTheDocument();
-    expect(screen.getAllByRole("img", { name: /core bu ölçünün kaynağını bildirmedi/ }).length).toBeGreaterThan(0);
+    // IA-19 / IA-21: hiç verisi olmayan projede ölçü kutuları yerine tek "ilk adım" kartı.
+    expect(await screen.findByTestId("kule-bos")).toHaveTextContent(/İlk adım: Analist Jira'dan story çeker/);
+    expect(screen.getByRole("link", { name: "Gereksinimlere git" })).toHaveAttribute("href", "/gereksinimler");
+    expect(screen.queryByTestId("kule-kpi")).toBeNull();
     expect(screen.queryByText("ÖRNEK VERİ")).not.toBeInTheDocument();
     // Yüzde yalnızca tasarım hedeflerinde (Hedef ≥ %70 / %60) görünür; ölçüm yüzdesi uydurulmaz.
     expect(screen.queryAllByText(/%\d/).filter((e) => !/Hedef ≥/.test(e.textContent ?? ""))).toEqual([]);

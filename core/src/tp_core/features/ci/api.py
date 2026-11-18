@@ -5,7 +5,7 @@
 | POST | `/ci/trigger` `{tetik: deploy\\|nightly}` | `run.trigger_scheduled` — 202 `{job_id, run_id, …}` |
 | POST | `/ci/trigger` `{tetik: manual}` | `run.trigger_manual` — developer `TP_ORTAM=prod` iken 403 |
 | GET  | `/environments` | `run.read` — projenin Home test ortamları ve varsayılanı (0048) |
-| GET  | `/runs?tetik=&kaynak=&sonuc=&pr_no=&script_id=&depo=&ortam=&limit=` | `run.read` |
+| GET  | `/runs?tetik=&kaynak=&sonuc=&pr_no=&script_id=&depo=&ortam=&limit=&offset=` | `run.read` |
 | GET  | `/runs/{id}` | `run.read` — testler, süreler, artefakt bağlantıları |
 | GET  | `/artifacts/runs/{run_id}/{yol}` | `run.artifacts` — oturumlu, yolu doğrulanmış artefakt |
 | GET  | `/artifacts/k/{imza}/runs/{run_id}/{yol}` | imzalı rapor bağlantısı (oturumsuz, süreli) |
@@ -128,6 +128,8 @@ def list_runs(
     depo: Annotated[str | None, Query(max_length=201)] = None,
     # 0048: test ortamı kimliği; `-` = ortamsız koşular.
     ortam: Annotated[str | None, Query(pattern=r"^(-|[0-9a-f]{12})$")] = None,
+    # UX IA-15: sayfalama (en yeniden eskiye; sabitlenen kanıt yalnız ilk sayfada).
+    offset: Annotated[int, Query(ge=0, le=100_000)] = 0,
 ) -> list[dict[str, Any]]:
     from tp_core.features.codegen import depo as depolar
 
@@ -143,6 +145,7 @@ def list_runs(
         depo=depo,
         ortam=ortam,
         limit=limit,
+        offset=offset,
         artefakt=yetki.izinli(user.rol, "run.artifacts"),
     )
     return kosular

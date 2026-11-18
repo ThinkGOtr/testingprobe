@@ -1,7 +1,7 @@
 // Proje özellikleri (merkezi yapılandırma, `/auth/me` → `ozellikler`, `organizasyon`, `proje`): kapalı
 // platform seçicilerde sunulmaz, `ai_agent` kapalıysa Agent Probe bölümleri gizlenir, üst çubukta
 // "Organizasyon · Proje" görünür. Alan yoksa (varsayılan kip) davranış bugünküyle aynıdır.
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Rotalar } from "../App";
@@ -102,6 +102,10 @@ describe("Kontrol Kulesi: platform süzgeci", { timeout: 60000 }, () => {
     uygulama("/kontrol-kulesi");
     const grup = await screen.findByRole("group", { name: "Platform" }, T);
     expect(radyolar(grup)).toEqual(["tumu", "web", "ios"]);
+    // IA-19: ekilmiş hata koşusu formu Demo kontrolleri ekranında (Kule'de eylem yok).
+    expect(screen.queryByTestId("hk-platform-web")).toBeNull();
+    cleanup();
+    uygulama("/demo");
     await waitFor(() => expect(screen.getByTestId("hk-platform-web")).toBeInTheDocument(), T);
     expect(screen.queryByTestId("hk-platform-android")).toBeNull();
     expect(screen.queryByTestId("hk-platform-windows")).toBeNull();

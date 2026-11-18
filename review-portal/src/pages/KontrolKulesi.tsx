@@ -1,12 +1,12 @@
 import { type ReactNode } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
 import type { KontrolKulesi as Kule, KpiAnahtari } from "../api/types";
 import { HedefOlcer, OranSutunlari } from "../components/Grafikler";
 import { BosDurum, Cip, HataKutusu, Ilerleme, Kart, Metrik, Olculmedi, SayfaBasligi, Uyari, Yukleniyor, IzinliLink } from "../components/ui";
 import { useGeciktirilmis, useVeri } from "../hooks";
-import { useIzin, usePlatformlar } from "../auth";
+import { useDemoModu, useIzin, useIzinler, usePlatformlar } from "../auth";
 import { kazancOzeti, type KazancOzeti } from "../api/uyumFaz5";
 import { BAZ_KAYNAGI } from "../components/BazDegerKarti";
 import { dolar, sure, tarih, yuzde } from "../lib/format";
@@ -18,8 +18,8 @@ import { CaseKalitesiBolumu } from "../components/CaseKalitesi";
 import { PlatformSuzgeci } from "../components/Platform";
 import type { Script } from "../api/types";
 import { PLATFORMLAR, PLATFORM_ETIKETI, platformaGoreSuz, platformSecimiOku, type Platform, type PlatformSecimi } from "../lib/platform";
-import { BeklentiDogruluguKarosu, HataYakalamaKarosu, OnayliUyumsuzKarti } from "../components/kule/KaliteKpilari";
-import { HataKosusuKarti } from "../components/kule/HataKosusuKarti";
+import { BeklentiDogruluguKarosu, CEKIRDEK_BILDIRMIYOR, HataYakalamaKarosu, OnayliUyumsuzKarti } from "../components/kule/KaliteKpilari";
+import { izinVar } from "../lib/yetki";
 import { OrtamSuzgeci, suzgecOrtamlari, useOrtamlar } from "../components/Ortam";
 import { ortamMetni } from "../lib/ortam";
 
@@ -88,6 +88,36 @@ function KpiBaslik({ ad, k, anahtar }: { ad: string; k: Kule; anahtar: KpiAnahta
   );
 }
 
+/** UX IA-19: KPI şeridinde değeri olmayan ölçü (kutu yerine tek bilgi satırında toplanır). */
+export type OlculmeyenKpi = { ad: string; neden: string };
+
+/** Projede henüz hiç veri yok mu (story, koşu, hazırlık satırı yok): Kule tek bir "ilk adım" kartı gösterir. */
+export function kuleBosMu(k: Pick<Kule, "karne" | "son_kosular" | "hazirlik" | "gecme_orani">): boolean {
+  return k.karne.length === 0 && k.son_kosular.length === 0 && k.hazirlik.length === 0 && (k.gecme_orani.toplam ?? 0) === 0;
+}
+
+/** Ölçülmeyenler satırı ("Ölçülmeyenler (4): Geçme oranı, …") ve açılırda her birinin nedeni. */
+function OlculmeyenlerSatiri({ liste }: { liste: OlculmeyenKpi[] }) {
+  if (liste.length === 0) return null;
+  return (
+    <details className="olculmeyenler kucuk" data-testid="kule-olculmeyenler">
+      <summary>
+        Ölçülmeyenler ({liste.length}): {liste.map((o) => o.ad).join(", ")} — neden?
+      </summary>
+      <ul className="duz-liste">
+        {liste.map((o) => (
+          <li key={o.ad}>
+            <strong>{o.ad}:</strong> {o.neden}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+/** Son koşular kartında gösterilen satır sayısı (tümü Koşular ekranında). */
+export const KULE_SON_KOSU = 5;
+
 export function KontrolKulesi() {
   const [sorgu, setSorgu] = useSearchParams();
   // Ortam süzgeci sunucudadır (`GET /control-tower?ortam=<eid>`): koşu tabanlı ölçüler süzülür.
@@ -124,6 +154,10 @@ export function KontrolKulesi() {
   }, 500);
   useOlay(sessiz, ["ci.status", "failure.classified", "case.generated", "bug.published", "script.updated"]);
 
+  // IA-19: ekilmiş hata koşusu bir eylemdir; Kule'de yalnız Demo kontrolleri'ne bağlantı (demo kipi + yetki).
+  const izinler = useIzinler();
+  const demoModu = useDemoModu(izinVar(izinler, "demo.read", "demo.manage"));
+  const hataKosusuYetkili = useIzin("fault_run.manage");
   if (v.yukleniyor && !v.veri) return <Yukleniyor />;
   if (v.hata && !v.veri) return <HataKutusu hata={v.hata} kaynak={v.hataNesnesi} yenile={() => void v.yenile()} />;
   const k = v.veri;
@@ -146,6 +180,41 @@ export function KontrolKulesi() {
   const sonKosular = platformaGoreSuz(k.son_kosular, secim, (x) => x.platform);
   const platformsuzKosu = secim === "tumu" ? 0 : k.son_kosular.filter((x) => !x.platform).length;
   const ortamSuzgecVar = ortam.ortamlar.length > 0 || k.son_kosular.some((x) => x.test_ortami) || !!ortamSecimi;
+  // IA-19: değeri olmayan KPI kutusu çizilmez; adı ve nedeni tek "Ölçülmeyenler" satırında.
+  const b = k.beklenti_dogrulugu;
+  const h = k.hata_yakalama;
+  const olculmeyenler: OlculmeyenKpi[] = [];
+  if (k.gecme_orani.oran === null) olculmeyenler.push({ ad: "Geçme oranı", neden: k.gecme_orani.metin ?? "henüz sayılan CI koşusu yok (kasıtlı kırma koşuları sayılmaz)" });
+  if (ai.kabul_orani === null) olculmeyenler.push({ ad: "Case kabul oranı", neden: "henüz case kararı yok" });
+  if (ai.script_ilk_review === null) olculmeyenler.push({ ad: "Script ilk review başarısı", neden: "henüz birleşen ya da review edilen test kodu yok" });
+  if (kazanc.oran === null)
+    olculmeyenler.push({
+      ad: "Hazırlık kazancı",
+      neden: `${kazanc.replay_haric > 0 ? "REPLAY çıktılarında AI süresi ölçülmez" : bazOlculdu ? "ölçülmüş baz değeri olan story'de hazırlık süresi yok" : "hiçbir story'de manuel baz değer ölçülmedi"}. ${kazancKapsami}`.trim(),
+    });
+  if (!b || b.oran === null) olculmeyenler.push({ ad: "Beklenti doğruluğu", neden: b ? "onaylı karar tablosuyla karşılaştırılan case yok" : CEKIRDEK_BILDIRMIYOR });
+  if (!h || h.oran === null)
+    olculmeyenler.push({
+      ad: "Hata yakalama oranı",
+      neden: h === undefined ? CEKIRDEK_BILDIRMIYOR : h === null ? "henüz ekilmiş hata koşusu yok" : (h.kapsam?.not ?? "geçerli hata adımı yetersiz"),
+    });
+  const olculmedi = (ad: string) => olculmeyenler.some((o) => o.ad === ad);
+
+  if (kuleBosMu(k) && !ortamSecimi) {
+    return (
+      <>
+        <SayfaBasligi baslik="Kontrol Kulesi" aciklama="Kalite, flaky testler, karne ve AI katkısı tek ekranda." />
+        <Kart>
+          <BosDurum baslik="Proje henüz veri üretmedi.">
+            <span data-testid="kule-bos">
+              Ölçüler ilk story'nin case'leri ve koşuları oluşunca burada görünür. İlk adım: Analist Jira'dan story çeker.{" "}
+              <IzinliLink to="/gereksinimler">Gereksinimlere git</IzinliLink>
+            </span>
+          </BosDurum>
+        </Kart>
+      </>
+    );
+  }
 
   return (
     <>
@@ -190,10 +259,12 @@ export function KontrolKulesi() {
         öğeyle birlikte. Maliyet şeride girmez (AI katkısı kartında kalır). "Geçme oranı" h2 kartta tek.
       */}
       <div className="metrik-izgara kule-kpi" data-testid="kule-kpi">
-        <Metrik
-          etiket={<KpiBaslik ad="Geçme oranı" k={k} anahtar="gecme_orani" />}
-          deger={<span data-testid="gecme-orani">{k.gecme_orani.oran === null ? <Olculmedi metin="veri yok" /> : yuzde(k.gecme_orani.oran)}</span>}
-        />
+        {!olculmedi("Geçme oranı") && (
+          <Metrik
+            etiket={<KpiBaslik ad="Geçme oranı" k={k} anahtar="gecme_orani" />}
+            deger={<span data-testid="gecme-orani">{k.gecme_orani.oran === null ? <Olculmedi metin="veri yok" /> : yuzde(k.gecme_orani.oran)}</span>}
+          />
+        )}
         {/* DOM sırası "⚠ n açık defect adayı" okunur; etiket görsel olarak üstte (CSS order). */}
         <div className="metrik kule-kpi-defect" data-testid="defect-adayi-ozet">
           <div className={`metrik-deger${defectAdayi > 0 ? " kule-kpi-uyari" : ""}`}>
@@ -206,29 +277,41 @@ export function KontrolKulesi() {
             </div>
           )}
         </div>
-        <HedefOlcer
-          etiket="Case kabul oranı"
-          deger={ai.kabul_orani}
-          hedef={ai.kabul_hedefi}
-          bosMetin="henüz karar yok"
-          ek={<KaynakIpucu kaynak={k.kaynaklar.kabul_orani} />}
-        />
-        <HedefOlcer
-          etiket="Script ilk review başarısı"
-          deger={ai.script_ilk_review}
-          hedef={ai.script_hedefi}
-          bosMetin="henüz merge/review yok"
-          ek={<KaynakIpucu kaynak={k.kaynaklar.script_ilk_review} />}
-        />
-        <Metrik
-          etiket={<KpiBaslik ad="Hazırlık kazancı" k={k} anahtar="kazanc_orani" />}
-          deger={<span data-testid="hazirlik-kazanci">{kazanc.oran === null ? <Olculmedi metin={kazanc.replay_haric > 0 ? "REPLAY: hesaplanmaz" : bazOlculdu ? "hazırlık süresi yok" : "ölçülmüş baz yok"} /> : yuzde(kazanc.oran)}</span>}
-          alt={<span data-testid="kazanc-kapsam">{kazancKapsami}</span>}
-        />
-        {/* 012 §4.7: kalite KPI'ları (components/kule). Değer yoksa "ölçülmedi"; sıfır uydurulmaz. */}
-        <BeklentiDogruluguKarosu k={k} />
-        <HataYakalamaKarosu k={k} />
+        {!olculmedi("Case kabul oranı") && (
+          <HedefOlcer
+            etiket="Case kabul oranı"
+            deger={ai.kabul_orani}
+            hedef={ai.kabul_hedefi}
+            bosMetin="henüz karar yok"
+            ek={<KaynakIpucu kaynak={k.kaynaklar.kabul_orani} />}
+          />
+        )}
+        {!olculmedi("Script ilk review başarısı") && (
+          <HedefOlcer
+            etiket="Script ilk review başarısı"
+            deger={ai.script_ilk_review}
+            hedef={ai.script_hedefi}
+            bosMetin="henüz merge/review yok"
+            ek={<KaynakIpucu kaynak={k.kaynaklar.script_ilk_review} />}
+          />
+        )}
+        {!olculmedi("Hazırlık kazancı") && (
+          <Metrik
+            etiket={<KpiBaslik ad="Hazırlık kazancı" k={k} anahtar="kazanc_orani" />}
+            deger={<span data-testid="hazirlik-kazanci">{kazanc.oran === null ? <Olculmedi /> : yuzde(kazanc.oran)}</span>}
+            alt={<span data-testid="kazanc-kapsam">{kazancKapsami}</span>}
+          />
+        )}
+        {/* 012 §4.7: kalite KPI'ları (components/kule). Değer yoksa kutu yok; "Ölçülmeyenler" satırında. */}
+        {!olculmedi("Beklenti doğruluğu") && <BeklentiDogruluguKarosu k={k} />}
+        {!olculmedi("Hata yakalama oranı") && <HataYakalamaKarosu k={k} />}
       </div>
+      <OlculmeyenlerSatiri liste={olculmeyenler} />
+      {demoModu === true && hataKosusuYetkili && (
+        <p className="kucuk soluk" data-testid="kule-hata-kosusu-baglanti">
+          Ekilmiş hata koşusu (hata yakalama ölçümü) Demo kontrolleri ekranından başlatılır ve izlenir. <Link to="/demo">Demo kontrolleri →</Link>
+        </p>
+      )}
 
       <div className="kule-izgara">
         <Kart baslik="Geçme oranı" className="kule-oran">
@@ -369,8 +452,7 @@ export function KontrolKulesi() {
         {/* 012 §13.2: onaylı ama güncel tabloyla uyuşmayan case'ler (çekirdek anahtarı sunmuyorsa çizilmez). */}
         <OnayliUyumsuzKarti k={k} />
 
-        {/* 012 §4.6: ekilmiş hata koşusu (başlat, ilerleme, hata × platform tablosu, kaçan hatalar). */}
-        <HataKosusuKarti olcuDegisti={() => void v.yenile(true)} olculenKosuId={v.veri?.hata_yakalama?.son_kosu.id ?? null} />
+        {/* IA-19: ekilmiş hata koşusu (eylem + demo hata kataloğu) Demo kontrolleri ekranında. */}
       </div>
 
       {k.hazirlik.length > 0 && <HazirlikKarti k={k} kazanc={kazanc} />}
@@ -464,13 +546,21 @@ export function KontrolKulesi() {
 
       <PlatformDagilimiKarti scriptler={scriptler.veri ?? null} secim={secim} acik={acikPlatformlar} />
 
-      <Kart baslik="Son koşular" eylemler={<KaynakIpucu kaynak={k.kaynaklar.son_kosular} />}>
+      <Kart
+        baslik="Son koşular"
+        eylemler={
+          <>
+            <KaynakIpucu kaynak={k.kaynaklar.son_kosular} />
+            {sonKosular.length > KULE_SON_KOSU && <IzinliLink to="/kosular">Tümü ({sonKosular.length}) →</IzinliLink>}
+          </>
+        }
+      >
         {k.son_kosular.length === 0 ? (
           <BosDurum baslik="Henüz koşu yok." />
         ) : sonKosular.length === 0 ? (
           <BosDurum baslik={`${secim === "tumu" ? "" : `${PLATFORM_ETIKETI[secim]} için `}koşu yok.`} />
         ) : (
-          <KosuTablosu kosular={sonKosular} kompakt />
+          <KosuTablosu kosular={sonKosular.slice(0, KULE_SON_KOSU)} kompakt />
         )}
         {platformsuzKosu > 0 && (
           <p className="kucuk soluk" data-testid="platformsuz-kosu">
