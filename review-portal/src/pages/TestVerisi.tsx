@@ -16,6 +16,9 @@ import { GIZLI_DEGER } from "../components/VeriAtfi";
 import { useVeri } from "../hooks";
 import { CASE_DURUMU } from "../lib/etiketler";
 import { tarih, veriDegeriGoster } from "../lib/format";
+import { VeritabaniKaynaklari } from "./TestVerisiKaynaklari";
+
+export const KAYNAKTA_YOK_IPUCU = "Kaynağın son yenilemesinde dönmedi; silinmedi";
 
 /** Kataloğu düzenleme izni (K11; 012: `testdata.manage`). */
 export const TESTVERI_IZNI = "testdata.manage" satisfies Izin;
@@ -444,6 +447,8 @@ function KatalogKapsamNotu() {
 
 export function TestVerisiSayfasi() {
   const liste = useVeri(() => api.testVerileri(), []);
+  const kaynaklar = useVeri(() => api.testVerisiKaynaklari(), []);
+  const kaynakGrubu = useMemo(() => new Map((kaynaklar.veri ?? []).map((k) => [k.id, k.grup])), [kaynaklar.veri]);
   const kisiAdi = useKisiAdi();
   const bildir = useBildirim();
   const duzenleyebilir = useIzin(TESTVERI_IZNI);
@@ -565,7 +570,23 @@ export function TestVerisiSayfasi() {
                   <tbody>
                     {l.map((k) => (
                       <tr key={k.id} data-anahtar={k.anahtar}>
-                        <td className="mono" data-etiket="Anahtar">{k.anahtar}</td>
+                        <td data-etiket="Anahtar">
+                          <span className="mono">{k.anahtar}</span>
+                          {(k.kaynak_id || k.kaynakta_yok) && (
+                            <span className="satir-ogeler testveri-kaynak-rozetleri">
+                              {k.kaynak_id && (
+                                <Cip ton="bilgi" title="Veritabanı kaynağından gelir (yenilemede güncellenir)">
+                                  kaynak: {kaynakGrubu.get(k.kaynak_id) ?? "veritabanı"}
+                                </Cip>
+                              )}
+                              {k.kaynakta_yok && (
+                                <Cip ton="uyari" title={KAYNAKTA_YOK_IPUCU}>
+                                  Kaynakta yok
+                                </Cip>
+                              )}
+                            </span>
+                          )}
+                        </td>
                         <td data-etiket="Değer">
                           {k.gizli ? (
                             <span className="satir-ogeler">
@@ -648,6 +669,8 @@ export function TestVerisiSayfasi() {
           ))
         )}
       </Kart>
+
+      <VeritabaniKaynaklari kaynaklar={kaynaklar} duzenleyebilir={duzenleyebilir} katalogYenile={() => void liste.yenile(true)} />
     </>
   );
 }

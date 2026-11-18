@@ -1,0 +1,580 @@
+{
+  "bundle": "design-model",
+  "version": 1,
+  "date": "2026-11-19",
+  "model": "claude-sonnet-5-5",
+  "provider": "anthropic",
+  "mode": "live",
+  "passed": 1,
+  "total": 1,
+  "runs": 1,
+  "cases": [
+    {
+      "id": "katalog-genel-kargo",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "conditions": [
+          {
+            "id": "TCOND-1",
+            "ac_refs": [
+              "AC1"
+            ],
+            "statement": "Desi değeri D1 üst sınırına (5) kadar (sınır dahil) olan gönderide ücret D1 tarifesinin ücreti olan 95,00 TL'dir.",
+            "risk": "high",
+            "rationale": "Yanlış ücret doğrudan gelir kaybı veya müşteriye fazla tahsilat doğurur; ana kabul akışıdır."
+          },
+          {
+            "id": "TCOND-2",
+            "ac_refs": [
+              "AC2"
+            ],
+            "statement": "Desi değeri 5'ten büyük ve D2 üst sınırına (20) kadar (sınır dahil) olan gönderide ücret D2 tarifesinin ücreti olan 180,00 TL'dir.",
+            "risk": "high",
+            "rationale": "Tarife geçiş sınırında yanlış ücret para kaybına yol açar."
+          },
+          {
+            "id": "TCOND-3",
+            "ac_refs": [
+              "AC3"
+            ],
+            "statement": "Desi değeri D2 üst sınırını (20) aşan gönderi kabul edilmez ve \"Gönderi desi sınırını aşıyor\" uyarısı gösterilir.",
+            "risk": "high",
+            "rationale": "Sınırı aşan gönderinin kabulü operasyonel ve finansal hataya yol açar."
+          },
+          {
+            "id": "TCOND-4",
+            "ac_refs": [
+              "AC4"
+            ],
+            "statement": "Kurumsal tipteki müşterinin gönderisinde gişede ücret tahsil edilmez; özet ekranında \"Cari hesaba yazılacak\" yazar.",
+            "risk": "high",
+            "rationale": "Yanlış tahsilat veya cari kaydı para kaybı/mutabakat hatası doğurur."
+          },
+          {
+            "id": "TCOND-5",
+            "ac_refs": [
+              "AC1",
+              "AC2",
+              "AC3",
+              "AC4"
+            ],
+            "statement": "Müşteri tipi ve desi aralığının birleşiminde sonuç doğru belirlenir (kurumsal müşteride desi sınırını aşan gönderinin sonucu dahil).",
+            "risk": "medium",
+            "rationale": "Kurallar birleşince kaynak sonucu tanımlamayabilir; geçici çözüm vardır."
+          },
+          {
+            "id": "TCOND-6",
+            "ac_refs": [
+              "AC1",
+              "AC2",
+              "AC3"
+            ],
+            "statement": "Desi alanına geçersiz girdi (0, negatif, boş, sayısal olmayan) girildiğinde sistem ücret hesaplamaz; beklenen davranış kaynakta tanımsızdır.",
+            "risk": "medium",
+            "rationale": "Desi giriş alanında hatalı girdi sık görülür; yanlış ücret riski vardır ancak görevli düzeltebilir."
+          }
+        ],
+        "techniques": [
+          {
+            "condition_id": "TCOND-1",
+            "technique": "BVA",
+            "rationale": "Desi sıralı değerdir; 5 üst sınırı dahil."
+          },
+          {
+            "condition_id": "TCOND-2",
+            "technique": "BVA",
+            "rationale": "5 ve 20 sınırları var."
+          },
+          {
+            "condition_id": "TCOND-3",
+            "technique": "BVA",
+            "rationale": "20 üst sınırı ve aşan değer."
+          },
+          {
+            "condition_id": "TCOND-1",
+            "technique": "EP",
+            "rationale": "Desi aralıkları denklik sınıflarıdır."
+          },
+          {
+            "condition_id": "TCOND-2",
+            "technique": "EP",
+            "rationale": "D2 aralığı bir bölümdür."
+          },
+          {
+            "condition_id": "TCOND-3",
+            "technique": "EP",
+            "rationale": "Sınır aşan bölüm geçersizdir."
+          },
+          {
+            "condition_id": "TCOND-4",
+            "technique": "EP",
+            "rationale": "Müşteri tipi bireysel/kurumsal sınıflarıdır."
+          },
+          {
+            "condition_id": "TCOND-5",
+            "technique": "DT",
+            "rationale": "Sonuç müşteri tipi ve desi aralığına bağlıdır."
+          },
+          {
+            "condition_id": "TCOND-4",
+            "technique": "UC",
+            "rationale": "Kurumsal müşteri için gişe kabul akışı uçtan uca."
+          },
+          {
+            "condition_id": "TCOND-6",
+            "technique": "EG",
+            "rationale": "Sayısal giriş alanlarında 0, negatif, boş ve sayısal olmayan değerler tipik hata kaynağıdır."
+          }
+        ],
+        "coverage_items": [
+          {
+            "id": "EP-V1",
+            "ac_ref": "AC1",
+            "definition": "Desi D1 aralığında (0 < desi ≤ 5; alt sınır kaynakta belirtilmemiş)",
+            "valid": true
+          },
+          {
+            "id": "EP-V2",
+            "ac_ref": "AC2",
+            "definition": "Desi D2 aralığında (5 < desi ≤ 20)",
+            "valid": true
+          },
+          {
+            "id": "EP-I1",
+            "ac_ref": "AC3",
+            "definition": "Desi D2 üst sınırını aşıyor (desi > 20)",
+            "valid": false
+          },
+          {
+            "id": "EP-V3",
+            "ac_ref": "AC1",
+            "definition": "Müşteri tipi bireysel (BM-1001)",
+            "valid": true
+          },
+          {
+            "id": "EP-V4",
+            "ac_ref": "AC4",
+            "definition": "Müşteri tipi kurumsal (KM-2001)",
+            "valid": true
+          },
+          {
+            "id": "BV-1",
+            "ac_ref": "AC1",
+            "definition": "Desi 5 (D1 üst sınırı, dahil) → D1 ücreti 95,00 TL",
+            "valid": true
+          },
+          {
+            "id": "BV-2",
+            "ac_ref": "AC2",
+            "definition": "Desi 5 üstü en yakın değer; desi adımı kaynakta yok (tam sayı ise 6, ondalık ise 5,01) → D2 ücreti 180,00 TL",
+            "valid": true
+          },
+          {
+            "id": "BV-3",
+            "ac_ref": "AC2",
+            "definition": "Desi 20 (D2 üst sınırı, dahil) → D2 ücreti 180,00 TL",
+            "valid": true
+          },
+          {
+            "id": "BV-4",
+            "ac_ref": "AC3",
+            "definition": "Desi 20 üstü en yakın değer; adım kaynakta yok (tam sayı ise 21, ondalık ise 20,01) → reddedilir",
+            "valid": false
+          },
+          {
+            "id": "DT-R1",
+            "ac_ref": "AC1",
+            "definition": "Bireysel, desi D1 aralığında → ücret 95,00 TL tahsil edilir",
+            "valid": true
+          },
+          {
+            "id": "DT-R2",
+            "ac_ref": "AC2",
+            "definition": "Bireysel, desi D2 aralığında → ücret 180,00 TL tahsil edilir",
+            "valid": true
+          },
+          {
+            "id": "DT-R3",
+            "ac_ref": "AC3",
+            "definition": "Bireysel, desi 20'yi aşıyor → kabul edilmez, uyarı gösterilir",
+            "valid": false
+          },
+          {
+            "id": "DT-R4",
+            "ac_ref": "AC4",
+            "definition": "Kurumsal, desi D1 aralığında → ücret tahsil edilmez, \"Cari hesaba yazılacak\"",
+            "valid": true
+          },
+          {
+            "id": "DT-R5",
+            "ac_ref": "AC4",
+            "definition": "Kurumsal, desi D2 aralığında → ücret tahsil edilmez, \"Cari hesaba yazılacak\"",
+            "valid": true
+          },
+          {
+            "id": "DT-R6",
+            "ac_ref": "AC3",
+            "definition": "Kurumsal, desi 20'yi aşıyor → sonuç kaynakta tanımsız (AC3 ile AC4 çakışır)",
+            "valid": false
+          },
+          {
+            "id": "UC-MF",
+            "ac_ref": "AC1",
+            "definition": "Bireysel müşteri gönderisi: desi girilir, tarife ücreti gösterilir",
+            "valid": true
+          },
+          {
+            "id": "UC-AF1",
+            "ac_ref": "AC4",
+            "definition": "Kurumsal müşteri: ücret tahsil edilmez, özette \"Cari hesaba yazılacak\"",
+            "valid": true
+          },
+          {
+            "id": "UC-EF1",
+            "ac_ref": "AC3",
+            "definition": "Desi 20'yi aşar: kabul edilmez, \"Gönderi desi sınırını aşıyor\" uyarısı",
+            "valid": false
+          },
+          {
+            "id": "EG-1",
+            "ac_ref": null,
+            "definition": "Desi alanına 0, negatif, boş veya sayısal olmayan değer girilmesi; sonuç kaynakta tanımsız (Q3)",
+            "valid": false
+          }
+        ],
+        "partitions": [
+          {
+            "field": "Desi",
+            "item_id": "EP-V1",
+            "definition": "D1 aralığı (0 < desi ≤ 5)",
+            "representative": "3",
+            "valid": true
+          },
+          {
+            "field": "Desi",
+            "item_id": "EP-V2",
+            "definition": "D2 aralığı (5 < desi ≤ 20)",
+            "representative": "12",
+            "valid": true
+          },
+          {
+            "field": "Desi",
+            "item_id": "EP-I1",
+            "definition": "D2 üst sınırı aşıldı (desi > 20)",
+            "representative": "30",
+            "valid": false
+          },
+          {
+            "field": "Müşteri tipi",
+            "item_id": "EP-V3",
+            "definition": "Bireysel müşteri",
+            "representative": "BM-1001 (Deniz Kaya)",
+            "valid": true
+          },
+          {
+            "field": "Müşteri tipi",
+            "item_id": "EP-V4",
+            "definition": "Kurumsal müşteri",
+            "representative": "KM-2001 (Atlas Mobilya A.Ş.)",
+            "valid": true
+          }
+        ],
+        "boundaries": [
+          {
+            "field": "Desi",
+            "item_id": "BV-1",
+            "value": "5",
+            "side": "on",
+            "expected": "accept",
+            "inclusive_source": "AC1",
+            "question_ref": null
+          },
+          {
+            "field": "Desi",
+            "item_id": "BV-2",
+            "value": "5'ten hemen büyük (6 veya 5,01)",
+            "side": "above",
+            "expected": "accept",
+            "inclusive_source": "AC2",
+            "question_ref": "Q1"
+          },
+          {
+            "field": "Desi",
+            "item_id": "BV-3",
+            "value": "20",
+            "side": "on",
+            "expected": "accept",
+            "inclusive_source": "AC2",
+            "question_ref": null
+          },
+          {
+            "field": "Desi",
+            "item_id": "BV-4",
+            "value": "20'den hemen büyük (21 veya 20,01)",
+            "side": "above",
+            "expected": "reject",
+            "inclusive_source": "AC3",
+            "question_ref": "Q1"
+          }
+        ],
+        "decision_tables": [
+          {
+            "id": "DT1",
+            "conditions": [
+              "Müşteri tipi",
+              "Desi aralığı"
+            ],
+            "actions": [
+              "Ücret tahsil edilir (D1/D2 tutarı)",
+              "Kabul edilmez + uyarı",
+              "Ücret tahsil edilmez, \"Cari hesaba yazılacak\""
+            ],
+            "rules": [
+              {
+                "item_id": "DT-R1",
+                "condition_values": [
+                  {
+                    "condition": "Müşteri tipi",
+                    "value": "bireysel"
+                  },
+                  {
+                    "condition": "Desi aralığı",
+                    "value": "D1"
+                  }
+                ],
+                "actions": [
+                  "95,00 TL tahsil edilir"
+                ]
+              },
+              {
+                "item_id": "DT-R2",
+                "condition_values": [
+                  {
+                    "condition": "Müşteri tipi",
+                    "value": "bireysel"
+                  },
+                  {
+                    "condition": "Desi aralığı",
+                    "value": "D2"
+                  }
+                ],
+                "actions": [
+                  "180,00 TL tahsil edilir"
+                ]
+              },
+              {
+                "item_id": "DT-R3",
+                "condition_values": [
+                  {
+                    "condition": "Müşteri tipi",
+                    "value": "bireysel"
+                  },
+                  {
+                    "condition": "Desi aralığı",
+                    "value": "> D2"
+                  }
+                ],
+                "actions": [
+                  "Kabul edilmez",
+                  "\"Gönderi desi sınırını aşıyor\" uyarısı"
+                ]
+              },
+              {
+                "item_id": "DT-R4",
+                "condition_values": [
+                  {
+                    "condition": "Müşteri tipi",
+                    "value": "kurumsal"
+                  },
+                  {
+                    "condition": "Desi aralığı",
+                    "value": "D1"
+                  }
+                ],
+                "actions": [
+                  "Ücret tahsil edilmez",
+                  "\"Cari hesaba yazılacak\""
+                ]
+              },
+              {
+                "item_id": "DT-R5",
+                "condition_values": [
+                  {
+                    "condition": "Müşteri tipi",
+                    "value": "kurumsal"
+                  },
+                  {
+                    "condition": "Desi aralığı",
+                    "value": "D2"
+                  }
+                ],
+                "actions": [
+                  "Ücret tahsil edilmez",
+                  "\"Cari hesaba yazılacak\""
+                ]
+              },
+              {
+                "item_id": "DT-R6",
+                "condition_values": [
+                  {
+                    "condition": "Müşteri tipi",
+                    "value": "kurumsal"
+                  },
+                  {
+                    "condition": "Desi aralığı",
+                    "value": "> D2"
+                  }
+                ],
+                "actions": [
+                  "Sonuç tanımsız (Q2)"
+                ]
+              }
+            ],
+            "undefined_combinations": [
+              {
+                "description": "Müşteri tipi = kurumsal, Desi aralığı = > D2 (AC3 ret, AC4 cari hesap)",
+                "question_ref": "Q2"
+              }
+            ]
+          }
+        ],
+        "state_models": [],
+        "flows": [
+          {
+            "item_id": "UC-MF",
+            "kind": "MF",
+            "steps": [
+              "Gişe görevlisi giriş yapar",
+              "Bireysel müşterinin gönderisi için desi girilir",
+              "Ekran tarifeye göre ücreti gösterir"
+            ],
+            "condition": ""
+          },
+          {
+            "item_id": "UC-AF1",
+            "kind": "AF",
+            "steps": [
+              "Gişe görevlisi kurumsal müşteriyi seçer",
+              "Desi D2 sınırı içinde girilir",
+              "Ücret tahsil edilmez",
+              "Özet ekranında \"Cari hesaba yazılacak\" yazar"
+            ],
+            "condition": "Müşteri tipi kurumsal"
+          },
+          {
+            "item_id": "UC-EF1",
+            "kind": "EF",
+            "steps": [
+              "Desi 20'yi aşan değer girilir",
+              "Gönderi kabul edilmez",
+              "\"Gönderi desi sınırını aşıyor\" uyarısı gösterilir"
+            ],
+            "condition": "Desi D2 üst sınırını aşar"
+          }
+        ],
+        "pairwise": {
+          "parameters": [],
+          "constraints": []
+        },
+        "model_issues": [
+          {
+            "kind": "undefined_combination",
+            "detail": "Kurumsal müşteri + desi > 20 sonucu AC3 ve AC4 arasında tanımsız (Q2)."
+          },
+          {
+            "kind": "missing_boundary",
+            "detail": "D1 alt sınırı (0 ve altı) ve desi adımı/hassasiyeti kaynakta yok; alt sınır BVA öğesi üretilmedi (Q1, Q3)."
+          },
+          {
+            "kind": "other",
+            "detail": "Kurumsal müşteri için ücret tutarı özet ekranında gösterilir mi kaynakta yok."
+          }
+        ],
+        "open_questions": [
+          {
+            "id": "Q1",
+            "question": "Desi değeri tam sayı mı, ondalık mı kabul edilir? Ondalıksa kaç basamak (sınır komşu değerleri 6/5,01 ve 21/20,01 buna bağlı)?",
+            "owner": "PO"
+          },
+          {
+            "id": "Q2",
+            "question": "Kurumsal müşterinin desisi 20'yi aşarsa gönderi reddedilir mi, yoksa cari hesaba yazılır mı?",
+            "owner": "PO"
+          },
+          {
+            "id": "Q3",
+            "question": "Desi alanında 0, negatif, boş veya sayısal olmayan değer girilirse sistem ne yapar (mesaj/davranış)?",
+            "owner": "PO"
+          }
+        ],
+        "assumptions": [
+          {
+            "id": "A1",
+            "statement": "Müşteri tipi gönderi kabulünde müşteri numarasıyla (BM-1001, KM-2001) belirlenir ve gişe görevlisi gise.t1 ile giriş yapmıştır.",
+            "owner": "analyst"
+          }
+        ]
+      },
+      "mode": "live",
+      "error": null,
+      "cost_usd": 0.138575,
+      "sure_ms": 51353
+    }
+  ],
+  "tamamlandi": true,
+  "set_vaka_sayisi": 1,
+  "kosu_sayisi": 1,
+  "maliyet_usd": 0.138575,
+  "butce_usd": 8.0,
+  "calisma_alani_basligi": true,
+  "guardrails_version": 1,
+  "kayit_adaylari": null,
+  "cagri_kaydi": "design-model-v1-2026-11-19.calls.jsonl",
+  "cagri_sayisi": 2,
+  "cagri_defteri": "ai_call.jsonl",
+  "amac": "design_model",
+  "via_flow": false,
+  "output_check": true,
+  "icerik_hash": "sha256:9a33853603d4cd2464398e891b14079cd41e3f719667652c7cc197af61d3b839",
+  "olcumler": {
+    "amac": "design_model",
+    "output_check": true,
+    "vaka": 1,
+    "ilk_deneme_gecis": 0,
+    "ilk_deneme_gecis_orani": 0.0,
+    "kural_yeniden_isteme_orani": 1.0,
+    "sema_yeniden_isteme_orani": 0.0,
+    "duzelme_orani": 1.0,
+    "kalan_kural_ihlali": 0,
+    "ek_maliyet_usd": 0.065047,
+    "ek_maliyet_orani": 0.4694,
+    "ek_sure_ms": {
+      "p50": 24041.0,
+      "p95": 24041.0
+    },
+    "kural_turu_histogrami": {
+      "EG-1": 1
+    },
+    "ilk_deneme_maskeli_puanlama": 0,
+    "esikler": [
+      {
+        "ad": "ham_gecis_alt_siniri (bilgi)",
+        "deger": 0.0,
+        "esik": 0.7,
+        "gecti": false,
+        "bagliyici": false
+      }
+    ]
+  },
+  "dagilim": {
+    "maliyet_usd": {
+      "medyan": 0.138575,
+      "p90": 0.138575
+    },
+    "sure_ms": {
+      "medyan": 51353,
+      "p90": 51353
+    }
+  }
+}

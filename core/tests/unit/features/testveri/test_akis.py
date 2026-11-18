@@ -73,7 +73,7 @@ def test_case_uretimi_eslenir_hash_eslenmis_icerikten(
     assert c["veri"] == {
         "bayi.bayi1.kullanici_adi": {"deger": "bayi1", "gizli": False, "surum": 1, "var": True},
         "ortak.demo_parola": {"deger": None, "gizli": True, "surum": 1, "var": True},
-    }  # K18: `etiket.*` (ör. "Katalog") eşlenmez, metinde değer kalır
+    }  # K18: `etiket.*` (ör. "Katalog") eşlenmez (tek istisna grup), metinde değer kalır
     assert "Katalog" in str(c["icerik"]["steps"])
     # Çözüm bugünkü metne döner; veri_izi değer özetidir (gizli için de).
     with session_scope() as s:

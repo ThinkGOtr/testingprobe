@@ -11,8 +11,12 @@ Sözleşme:
 - Case içeriğinde yalnız şu alanlar eşlenir/çözülür: `preconditions[]`, `steps[].action`,
   `steps[].data`, `steps[].expected`, `expected_result` (başlıkta açık değer kalır; K22: gizli
   değer başlık dahil her metin alanında atfa döner, bkz. aşağı; çözüm yalnız bu alanlarda).
-- K18 (013 §9): `case_esle` yalnız `bayi.*`, `urun.*`, `kampanya.*`, `ortak.*` anahtarlarını eşler
-  (`etiket.*`, `ayar.*` katalogda kalır, eşlenmez). Tutar biçimli değerler (`… TL`, salt sayı)
+- K18 (013 §9; 2026-11-18 genelleştirme): `case_esle` katalogdaki TÜM grupları eşler (demo dışı
+  projelerin veritabanı kaynaklarından gelen gruplar dahil); tek istisna `ESLENMEYEN_GRUPLAR`
+  (`etiket.*`: arayüz etiketleri — "Sepete ekle", "Katalog" gibi metinler adım eyleminde arayüz
+  metnidir, test verisi değil; eşlenirse onaylı case metni ve REPLAY/review golden beyanları
+  bozulur). `ayar.*` eşlenir (golden'lar etkilenmez: ayar değerleri tutar biçimlidir ve tutar
+  kuralına tabidir). Tutar biçimli değerler (`… TL`, salt sayı)
   yalnız `steps[].data` ve `preconditions`'ta eşlenir: beklenen sonuçtaki hesaplanmış bir toplam
   tesadüfen kredi limitine eşit diye atfa dönmez.
 - QA #11: değerin tekilliği (belirsizlik) **tüm katalogla** sınanır, grup/tutar süzgeci sonra
@@ -49,8 +53,9 @@ ANAHTAR_DESEN = r"[a-z0-9_]+(?:\.[a-z0-9_]+){0,5}"
 ANAHTAR_RE = re.compile(rf"^{ANAHTAR_DESEN}$")
 ATIF_RE = re.compile(rf"\{{veri:({ANAHTAR_DESEN})\}}")
 MIN_DEGER = 3
-# K18: eşlemeye giren anahtar grupları (anahtarın ilk parçası).
-ESLENEN_GRUPLAR = frozenset({"bayi", "urun", "kampanya", "ortak"})
+# K18: eşlemeye GİRMEYEN anahtar grupları (anahtarın ilk parçası); diğer tüm gruplar eşlenir.
+# Yalnız arayüz etiketleri: test verisi değil, adımda arayüz metni (gerekçe modül belgesinde).
+ESLENMEYEN_GRUPLAR = frozenset({"etiket"})
 # Tutar biçimi: "1.250,00 TL", "500,00 TL", "750.00", "12" (isteğe bağlı eksi, " TL" son eki).
 TUTAR_RE = re.compile(r"^-?\d[\d.,]*(?: TL)?$")
 MASKE = "•••"
@@ -145,8 +150,8 @@ def _alanlari_donustur(
 
 
 def eslenebilir_mi(anahtar: str) -> bool:
-    """K18: yalnız bayi / ürün / kampanya / ortak grupları eşlenir."""
-    return anahtar.split(".", 1)[0] in ESLENEN_GRUPLAR
+    """K18: `ESLENMEYEN_GRUPLAR` (arayüz etiketleri) dışındaki tüm gruplar eşlenir."""
+    return anahtar.split(".", 1)[0] not in ESLENMEYEN_GRUPLAR
 
 
 def tutar_mi(deger: str) -> bool:

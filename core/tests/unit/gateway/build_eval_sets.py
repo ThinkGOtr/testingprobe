@@ -13,6 +13,7 @@ değişince set bayatlar). Canlı koşu: `python -m tp_core.gateway.eval_set --b
 from __future__ import annotations
 
 import json
+import sys
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -631,6 +632,103 @@ def _generation_messages(req: Any, data_block: str) -> list[ModelMessage]:
     )
 
 
+# ------------------------------------------------- demo dışı proje: katalogdan genel blok
+#
+# 2026-11-18 (test verisi kataloğu demo bağımsızlığı): demo dışı projede model girdisindeki test
+# verisi bloğu katalogdan GENEL biçimde kurulur (`testveri.service.genel_blok_satirlari`; kaynak
+# `testdata:katalog`). Kayıtlar, farklı şemalı sentetik bir PostgreSQL'den (yerel docker
+# `tp-dbtest-testveri`; tablolar `musteri`, `tarife`, `sube`, hassas kolon `sifre_hash` muhafızca
+# reddedildi) üç veritabanı kaynağının (`testveri.kaynak.db_calistirici` + `kayitlari_uret`)
+# çıktısıdır; elle eklenen bir kullanıcı adı ve gizli parola (sır: atıf) kaydıyla. Deterministik
+# olsun diye burada sabittir; mekanizmayı gerçek PostgreSQL'e karşı
+# `test_kaynak.test_gercek_db_sema_kesfi_ve_muhafiz` sınar.
+KATALOG_GENEL_KEY = "KATALOG-KARGO"
+KATALOG_GENEL_ID = "00000000-0000-4000-8000-0000000000e1"
+KATALOG_GENEL_KAYITLAR: list[tuple[str, str, str | None, bool]] = [
+    ("musteri.bm_1001.no", "musteri", "BM-1001", False),
+    ("musteri.bm_1001.ad_soyad", "musteri", "Deniz Kaya", False),
+    ("musteri.bm_1001.tip", "musteri", "bireysel", False),
+    ("musteri.bm_1002.no", "musteri", "BM-1002", False),
+    ("musteri.bm_1002.ad_soyad", "musteri", "Selin Arslan", False),
+    ("musteri.bm_1002.tip", "musteri", "bireysel", False),
+    ("musteri.km_2001.no", "musteri", "KM-2001", False),
+    ("musteri.km_2001.ad_soyad", "musteri", "Atlas Mobilya A.Ş.", False),
+    ("musteri.km_2001.tip", "musteri", "kurumsal", False),
+    ("tarife.d1.desi_ust_sinir", "tarife", "5", False),
+    ("tarife.d1.ucret", "tarife", "95,00 TL", False),
+    ("tarife.d2.desi_ust_sinir", "tarife", "20", False),
+    ("tarife.d2.ucret", "tarife", "180,00 TL", False),
+    ("sube.ank_02", "sube", "Çankaya Şubesi", False),
+    ("sube.ist_01", "sube", "Kadıköy Şubesi", False),
+    ("kullanici.gise1.kullanici_adi", "kullanici", "gise.t1", False),
+    ("kullanici.gise1.parola", "kullanici", None, True),
+]
+KATALOG_GENEL_STORY: dict[str, Any] = {
+    "summary": "Şube gişesinde gönderi kabulünde kargo ücretinin desiye göre belirlenmesi",
+    "description": "Kargo şubesindeki gişe görevlisi, müşterinin gönderisini kabul ederken "
+    "desi değerini girer; ekran tarifeye göre ücreti gösterir.",
+    "acs": [
+        "AC1: Desi değeri D1 tarifesinin desi üst sınırına kadar (sınır dahil) olan gönderide "
+        "ücret D1 tarifesinin ücretidir.",
+        "AC2: Desi değeri D1 tarifesinin üst sınırından büyük ve D2 tarifesinin desi üst "
+        "sınırına kadar (sınır dahil) olan gönderide ücret D2 tarifesinin ücretidir.",
+        "AC3: Desi değeri D2 tarifesinin desi üst sınırını aşan gönderi kabul edilmez ve "
+        '"Gönderi desi sınırını aşıyor" uyarısı gösterilir.',
+        "AC4: Kurumsal tipteki müşterinin gönderisinde gişede ücret tahsil edilmez; özet "
+        'ekranında "Cari hesaba yazılacak" yazar.',
+    ],
+}
+# Demo uygulamasının verisi bu projenin girdisinde yoktur; çıktıda görünmesi sızıntıdır.
+DEMO_SIZINTISI = ["bayi1", "bayi2", "Merkez Bayi", "P-001", "Demo123!", "Portakal Gazozu"]
+
+
+def katalog_genel_blogu() -> str:
+    from tp_core.features.cases import testdata
+    from tp_core.features.testveri.service import genel_blok_satirlari
+    from tp_core.gateway import wrap_untrusted
+
+    return wrap_untrusted(
+        genel_blok_satirlari(KATALOG_GENEL_KAYITLAR), source=testdata.KAYNAK_GENEL, kind="data"
+    )
+
+
+def _katalog_genel_req() -> Any:
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        id=KATALOG_GENEL_ID,
+        jira_key=None,
+        baslik=KATALOG_GENEL_STORY["summary"],
+        aciklama=KATALOG_GENEL_STORY["description"],
+        kabul_kriterleri=list(KATALOG_GENEL_STORY["acs"]),
+        po_cevaplari=[],
+        uretim_secenekleri=None,
+    )
+
+
+def katalog_genel_uretim_vakasi() -> dict[str, Any]:
+    acs = list(KATALOG_GENEL_STORY["acs"])
+    return {
+        "id": "katalog-genel-kargo",
+        "description": f"{KATALOG_GENEL_KEY} (demo dışı proje; test verisi bloğu katalogdan genel "
+        "biçimde, kayıtlar sentetik PostgreSQL kaynaklarından): tarife ücretleri ve sınırlar "
+        "bloktan",
+        "replay_key": {"name": KATALOG_GENEL_KEY, "jira_key": KATALOG_GENEL_ID},
+        "messages": _msgs(_generation_messages(_katalog_genel_req(), katalog_genel_blogu())),
+        "expect": {
+            "ac_coverage": _refs(acs),
+            "ready_ac_coverage": _refs(acs),
+            "min_cases": len(acs),
+            "max_cases": MAX_CASES,
+            # Ücretler ve sınırlar yalnız test verisi bloğunda: model bloğu okuyabilmeli.
+            "contains": ["95,00 TL", "180,00 TL"],
+            "not_contains_any": [*FABRICATION_COMMON, *DEMO_SIZINTISI],
+            "techniques_include": ["BVA"],
+            "source_grounded": True,
+        },
+    }
+
+
 def case_generation_cases() -> list[dict[str, Any]]:
     """Adım 4 (§12): 5 story × 3 koşu. PO onaylı (son hal) belgeler golden girdi beyanlarından;
     girdi üretimin `generation_messages` kurucusuyla (story bloğu + test verisi + test seviyesi).
@@ -1007,6 +1105,51 @@ def design_model_cases() -> list[dict[str, Any]]:
             },
         }
     )
+    return out
+
+
+def katalog_genel_tasarim_vakasi() -> dict[str, Any]:
+    kg_acs = list(KATALOG_GENEL_STORY["acs"])
+    return {
+        "id": "katalog-genel-kargo",
+        "description": f"{KATALOG_GENEL_KEY} (demo dışı proje; test verisi bloğu katalogdan "
+        "genel biçimde): tarife sınırları ve ücretleri bloktan",
+        "replay_key": {"name": KATALOG_GENEL_KEY, "jira_key": KATALOG_GENEL_ID},
+        "messages": _msgs(_model_messages(_katalog_genel_req(), katalog_genel_blogu())),
+        "expect": {
+            "ac_coverage": _refs(kg_acs),
+            "min_conditions": len(kg_acs),
+            "contains": ["95,00 TL", "180,00 TL"],
+            "not_contains_any": [*FABRICATION_COMMON, *DEMO_SIZINTISI],
+            "techniques_include": ["BVA"],
+            "source_grounded": True,
+        },
+    }
+
+
+def katalog_genel_kural_kopyasi(hedef: Path) -> list[Path]:
+    """Demo dışı katalog bloğu vakalarının canlı koşusu için `rules/` kopyası: `case-generation` ve
+    `design-model` setleri yalnız `katalog-genel-kargo` vakasıyla (aynı set başlığı / koşu sayısı).
+    Vakalar ana setlere girmez (REPLAY golden'ı yok; ana setin yapı testleri golden ister).
+    Koşu: `scripts/eval-live.sh --rules-dir <hedef> --bundle case-generation --bundle
+    design-model` (sonuçlar `<hedef>/evaluation/results/`; depoya `-katalog-genel-` adıyla)."""
+    import shutil
+
+    if hedef.exists():
+        shutil.rmtree(hedef)
+    shutil.copytree(RULES, hedef, ignore=shutil.ignore_patterns("results"))
+    setler = build_sets()
+    vakalar = {
+        "case-generation": katalog_genel_uretim_vakasi(),
+        "design-model": katalog_genel_tasarim_vakasi(),
+    }
+    out = []
+    for bundle, vaka in vakalar.items():
+        data = {k: v for k, v in setler[bundle].items() if k != "holdout_cases"}
+        data["cases"] = [vaka]
+        path = hedef / EVAL_DIR / f"{bundle}.json"
+        path.write_text(dump(data), encoding="utf-8")
+        out.append(path)
     return out
 
 
@@ -2164,5 +2307,9 @@ def write_sets(rules_dir: Path = RULES) -> list[Path]:
 
 
 if __name__ == "__main__":  # pragma: no cover
-    for p in write_sets():
-        print(p)
+    if len(sys.argv) == 3 and sys.argv[1] == "--katalog-genel":
+        for p in katalog_genel_kural_kopyasi(Path(sys.argv[2])):
+            print(p)
+    else:
+        for p in write_sets():
+            print(p)

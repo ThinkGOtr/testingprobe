@@ -28,7 +28,10 @@ import {
   kodUretimIsiUyarla,
   otomasyonAyarlariUyarla,
   surumlerUyarla,
+  kaynakIsiUyarla,
   testVerileriUyarla,
+  testVerisiKaynagiUyarla,
+  testVerisiKaynaklariUyarla,
   testVerisiUyarla,
   topluKararUyarla,
 } from "./uyumOtomasyon";
@@ -88,6 +91,10 @@ import type {
   TestVerisi,
   TestVerisiGirdisi,
   TestVerisiGuncelleme,
+  TestVerisiKaynagi,
+  TestVerisiKaynakGirdisi,
+  TestVerisiKaynakGuncelleme,
+  KaynakIsi,
   TestVerisiSurumu,
   TopluKararYaniti,
 } from "./types";
@@ -147,6 +154,12 @@ function detayUyarla(ham: Record<string, unknown>): GereksinimDetay {
 const GEREKSINIM_KAYNAGI = ["GET", "/requirements"] as const;
 export const HATA_BULUNAMADI = "Hata kaydı bulunamadı: bağlantı geçersiz ya da kayıt silinmiş.";
 const nesne = (x: unknown) => (x && typeof x === "object" ? (x as Record<string, unknown>) : {});
+/** 202 iş yanıtının kimliği (`job_id`). */
+const kimlikAl = (x: unknown): string => {
+  const j = nesne(x).job_id ?? nesne(x).id;
+  if (typeof j !== "string" || !j) throw new ApiError(500, "Sunucudan beklenmeyen yanıt (iş kimliği yok).");
+  return j;
+};
 /** Case işlemleri case listesine bağlıdır: liste çekirdekten geliyorsa işlem örnek veriye düşmez. */
 const CASE_KAYNAGI = ["GET", "/cases"] as const;
 /** Script işlemleri (kırarak doğrula, merge) script listesine bağlıdır (gerçek script örnek veriye düşmez). */
@@ -161,6 +174,8 @@ export function prDepoSorgusu(depo: string | null | undefined): { depo?: string 
 const HATA_KAYNAGI = ["GET", "/failures/1"] as const;
 /** Test verisi işlemleri katalog listesine bağlıdır. */
 const TESTVERI_KAYNAGI = ["GET", "/test-data"] as const;
+/** Test verisi kaynağı işlemleri kaynak listesine bağlıdır. */
+const TESTVERI_KAYNAK_LISTESI = ["GET", "/test-data-sources"] as const;
 /** Bug kararı taslak listesine bağlıdır. */
 const BUG_KAYNAGI = ["GET", "/bug-drafts"] as const;
 
@@ -553,6 +568,30 @@ export const api = {
     istek<unknown>("DELETE", `/test-data/${yol(id)}`, { sorgu: { beklenen_surum }, kaynak: TESTVERI_KAYNAGI }),
   testVerisiGecmisi: async (id: string): Promise<TestVerisiSurumu[]> =>
     surumlerUyarla(await istek<unknown>("GET", `/test-data/${yol(id)}/history`, { kaynak: TESTVERI_KAYNAGI })),
+  /** Veritabanı kaynakları (SELECT → katalog kayıtları); okuma `case.read`, gerisi `testdata.manage`. */
+  testVerisiKaynaklari: async (): Promise<TestVerisiKaynagi[]> =>
+    testVerisiKaynaklariUyarla(await istek<unknown>("GET", "/test-data-sources")),
+  /** 409: grup zaten var; 422: tanım/sorgu muhafızı reddi (`detail` Türkçe). */
+  testVerisiKaynagiEkle: async (g: TestVerisiKaynakGirdisi): Promise<TestVerisiKaynagi> =>
+    testVerisiKaynagiUyarla(nesne(await istek<unknown>("POST", "/test-data-sources", { govde: g, kaynak: TESTVERI_KAYNAK_LISTESI }))),
+  /** Grup değişmez; 409 sürüm uyuşmazlığı, 422 "Değişiklik yok". */
+  testVerisiKaynagiGuncelle: async (id: string, g: TestVerisiKaynakGuncelleme): Promise<TestVerisiKaynagi> =>
+    testVerisiKaynagiUyarla(
+      nesne(await istek<unknown>("PUT", `/test-data-sources/${yol(id)}`, { govde: g, kaynak: TESTVERI_KAYNAK_LISTESI })),
+    ),
+  /** Kaynağın katalog kayıtları silinmez (elle girilmiş kayıt olur). */
+  testVerisiKaynagiSil: (id: string, beklenen_surum: number) =>
+    istek<unknown>("DELETE", `/test-data-sources/${yol(id)}`, { sorgu: { beklenen_surum }, kaynak: TESTVERI_KAYNAK_LISTESI }),
+  /** Kaydedilmemiş tanımı worker'da çalıştırır (202); sonuç `testVerisiKaynakIsi` ile izlenir. */
+  testVerisiKaynagiOnizle: async (g: TestVerisiKaynakGirdisi): Promise<string> =>
+    kimlikAl(await istek<unknown>("POST", "/test-data-sources/preview", { govde: g, kaynak: TESTVERI_KAYNAK_LISTESI })),
+  /** `kaynak_id` yoksa tüm kaynaklar yenilenir (202). */
+  testVerisiKaynaklariniYenile: async (kaynak_id?: string): Promise<string> =>
+    kimlikAl(
+      await istek<unknown>("POST", "/test-data-sources/refresh", { govde: kaynak_id ? { kaynak_id } : {}, kaynak: TESTVERI_KAYNAK_LISTESI }),
+    ),
+  testVerisiKaynakIsi: async (jobId: string): Promise<KaynakIsi> =>
+    kaynakIsiUyarla(nesne(await istek<unknown>("GET", `/test-data-sources/jobs/${yol(jobId)}`, { kaynak: TESTVERI_KAYNAK_LISTESI }))),
 
   // Otomasyon ayarları ve Jira tetiği (013 §3.1, §3.4)
   otomasyonAyarlari: async (): Promise<OtomasyonAyarlari> => otomasyonAyarlariUyarla(await istek<unknown>("GET", "/automation-settings")),
