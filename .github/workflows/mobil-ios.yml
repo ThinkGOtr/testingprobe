@@ -168,16 +168,22 @@ jobs:
           # `sdk == --sdk` ile arar; en yeni çalışma zamanı SDK'dan farklıysa (ör. 27.2.1 / 27.2)
           # oluşturulan simülatörü bulamaz. Eşleşen yoksa en yenisi.
           sdkver="$(xcrun --sdk iphonesimulator --show-sdk-version)"
-          read -r rt_id rt_ver < <(xcrun simctl list runtimes -j | jq -r --arg sdk "$sdkver" '
+          # Aynı sürümde cihaza özel çalışma zamanları da olabiliyor (ör. iOS-27-2-iPhone19-4 yalnız
+          # "iPhone Duo"yu destekler; "last" onu seçiyor, tip seçimi iPhone-Duo'ya düşüyor ve build-wda
+          # simülatörü bulamıyordu): SIM_DEVICE_TYPE'ı destekleyen, yoksa en çok iPhone tipi olan seçilir.
+          read -r rt_id rt_ver < <(xcrun simctl list runtimes -j | jq -r --arg sdk "$sdkver" --arg ad "$SIM_DEVICE_TYPE" '
             [.runtimes[] | select(.platform == "iOS" and .isAvailable)]
             | sort_by(.version | split(".") | map(tonumber))
-            | ((map(select(.version == $sdk)) | last) // last)
+            | (map(select(.version == $sdk)) | if length > 0 then . else null end) as $esit
+            | (if $esit then $esit else (last as $l | map(select(.version == $l.version))) end)
+            | sort_by([([.supportedDeviceTypes[] | select(.name == $ad)] | length > 0),
+                       ([.supportedDeviceTypes[] | select(.productFamily == "iPhone")] | length)])
+            | last
             | "\(.identifier) \(.version)"')
           [ -n "${rt_id:-}" ] || { echo "::error::Kurulu iOS simülatör çalışma zamanı yok"; exit 1; }
-          # Cihaz tipi: SIM_DEVICE_TYPE destekleniyorsa o; yoksa imajda bu çalışma zamanında hazır
-          # kurulu bir "iPhone N" simülatörünün tipi (≥16'nın en küçüğü, yoksa en büyüğü). Desteklenen
-          # tip listesinden "ilk iPhone" seçmek bazı imajlarda iPhone-Duo veriyordu; build-wda o
-          # simülatörü bulamıyordu.
+          # Cihaz tipi: SIM_DEVICE_TYPE destekleniyorsa o; yoksa bu çalışma zamanında hazır kurulu bir
+          # "iPhone N" simülatörünün tipi, o da yoksa desteklenen "iPhone N" tipi (≥16'nın en küçüğü,
+          # yoksa en büyüğü).
           echo "Desteklenen iPhone tipleri:"
           xcrun simctl list runtimes -j | jq -r --arg id "$rt_id" '.runtimes[] | select(.identifier == $id)
             | .supportedDeviceTypes[] | select(.productFamily == "iPhone") | "  \(.name) · \(.identifier)"'
@@ -188,6 +194,13 @@ jobs:
             dt="$(xcrun simctl list devices -j | jq -r --arg id "$rt_id" '
               [(.devices[$id] // [])[] | select(.isAvailable and (.name | test("^iPhone [0-9]+$")))
                | {n: (.name | ltrimstr("iPhone ") | tonumber), t: .deviceTypeIdentifier}]
+              | sort_by(.n) | ((map(select(.n >= 16)) | first) // last) | .t // empty')"
+          fi
+          if [ -z "$dt" ]; then
+            dt="$(xcrun simctl list runtimes -j | jq -r --arg id "$rt_id" '
+              [.runtimes[] | select(.identifier == $id) | .supportedDeviceTypes[]
+               | select(.name | test("^iPhone [0-9]+$"))
+               | {n: (.name | ltrimstr("iPhone ") | tonumber), t: .identifier}]
               | sort_by(.n) | ((map(select(.n >= 16)) | first) // last) | .t // empty')"
           fi
           [ -n "$dt" ] || { echo "::error::Uygun iPhone cihaz tipi bulunamadı ($rt_id)"; exit 1; }
