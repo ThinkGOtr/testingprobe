@@ -79,7 +79,8 @@ describe("oturum ve yönlendirme", () => {
     await oturumAc("analist");
     uygulama("/claude-code");
     const d = await screen.findByRole("button", { name: "8 saatlik token oluştur" });
-    expect(d).toBeDisabled();
+    // EylemCubugu: kilitli düğme aria-disabled (ET-07).
+    expect(d).toHaveAttribute("aria-disabled", "true");
     expect(d).toHaveAccessibleDescription("Bu işlem için gereken rol: Test Uzmanı / Geliştirici");
   });
 

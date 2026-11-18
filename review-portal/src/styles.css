@@ -3846,28 +3846,7 @@ td .olculmedi {
   font-weight: 600;
 }
 /* Tür metni tür renginde hap (sistem nötr, insan yeşil, AI ve AI + insan mor). */
-.yh-tur {
-  display: inline-flex;
-  align-items: center;
-  font-weight: 600;
-  font-size: var(--fs-hap);
-  padding: 1px var(--space-2);
-  border-radius: var(--radius-hap);
-  border: 1px solid color-mix(in srgb, var(--notr) 30%, transparent);
-  background: var(--notr-bg);
-  color: var(--notr);
-  white-space: nowrap;
-}
-.yh-adim[data-tur="insan"] .yh-tur {
-  border-color: color-mix(in srgb, var(--ok) 30%, transparent);
-  background: var(--ok-bg);
-  color: var(--ok);
-}
-.yh-adim:is([data-tur="ai"], [data-tur="ai_insan"]) .yh-tur {
-  border-color: color-mix(in srgb, var(--vurgu) 30%, transparent);
-  background: var(--vurgu-bg);
-  color: var(--vurgu);
-}
+/* Adım türü çipi: ortak Cip (YolHaritasi TUR_TONU); yerel hap kopyası kaldırıldı. */
 .yh-kanit {
   margin: var(--space-0) 0 0;
   font-size: var(--fs-ikincil);
@@ -6954,4 +6933,20 @@ code {
 }
 .kod-tablosu .kod-grup-satiri th {
   font-size: var(--fs-ikincil);
+}
+
+/* Otomasyon (IA-25): kart başı tek cümle etki (durum çipi başlıkta), ayrıntı "Nasıl çalışır?" açılırında. */
+.otomasyon-etki {
+  margin: 0 0 var(--space-2);
+  font-weight: var(--fw-vurgu);
+}
+.otomasyon-ayrinti {
+  margin-bottom: var(--space-3);
+}
+.otomasyon-ayrinti > summary {
+  cursor: pointer;
+  color: var(--text-2);
+}
+.otomasyon-ayrinti > p {
+  margin: var(--space-2) 0 0;
 }

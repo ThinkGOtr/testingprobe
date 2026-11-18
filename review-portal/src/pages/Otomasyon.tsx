@@ -13,6 +13,7 @@ import { useBildirim } from "../components/Bildirim";
 import { AlanHatasi, BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { useIslem, useVeri } from "../hooks";
 import { tarih } from "../lib/format";
+import { EylemCubugu, MetaIzgara, TabloSarici } from "../components/tasarim";
 
 /** Ayarları değiştirme izni (Y3; 012 kataloğu). */
 export const OTOMASYON_IZNI = "automation.manage" satisfies Izin;
@@ -120,11 +121,18 @@ function OtomatikKodKarti({
       baslik="Onay sonrası otomatik kod üretimi"
       eylemler={<Cip ton={ayar.acik ? "basari" : "notr"}>{ayar.acik ? "açık" : "kapalı"}</Cip>}
     >
-      <p className="soluk kucuk">
-        Case onaylanınca (tek tek ya da toplu) Web testi için kod üretimi hemen kuyruğa alınır; başlatan "otomasyon", tetikleyen onaylayan
-        analisttir. Android, iOS ve Windows cihaz gerektirdiği için kendiliğinden başlamaz. <Link to="/kod">Kod üretimi</Link> ekranındaki
-        düğme her durumda kalır.
+      {/* IA-25: kart başı = durum + tek cümle etki; ayrıntı açılır bölümde. */}
+      <p className="otomasyon-etki" data-testid="otokod-etki">
+        {ayar.acik ? "Onaylanan case'in Web testi kendiliğinden üretilir." : "Kod, Kod üretimi ekranından elle üretilir."}
       </p>
+      <details className="otomasyon-ayrinti">
+        <summary className="kucuk">Nasıl çalışır?</summary>
+        <p className="soluk kucuk">
+          Case onaylanınca (tek tek ya da toplu) Web testi için kod üretimi hemen kuyruğa alınır; başlatan "otomasyon", tetikleyen onaylayan
+          analisttir. Android, iOS ve Windows cihaz gerektirdiği için kendiliğinden başlamaz. <Link to="/kod">Kod üretimi</Link> ekranındaki
+          düğme her durumda kalır.
+        </p>
+      </details>
       {replay && (
         <Uyari ton="uyari" baslik="REPLAY kipi">
           <span data-testid="replay-otokod-uyarisi">{REPLAY_OTOKOD_UYARISI}</span>
@@ -141,11 +149,11 @@ function OtomatikKodKarti({
           </div>
         </fieldset>
         {islem.hata && <AlanHatasi asistan={{ hata: islem.hata, kaynak: islem.hataNesnesi }}>{islem.hata}</AlanHatasi>}
-        <div className="eylemler">
+        <EylemCubugu>
           <IslemDugmesi izin={OTOMASYON_IZNI} type="submit" kucuk calisiyor={islem.calisiyor} disabled={!degisti} title={!degisti ? "Değişiklik yok." : undefined}>
             Kaydet
           </IslemDugmesi>
-        </div>
+        </EylemCubugu>
       </form>
       <SonGuncelleme kim={ayar.guncelleyen} ne={ayar.guncelleme} />
     </Kart>
@@ -211,17 +219,30 @@ function JiraTetikKarti({
 
   return (
     <Kart baslik="Jira durum tetiği" eylemler={<Cip ton={ayar.acik ? "basari" : "notr"}>{ayar.acik ? "açık" : "kapalı"}</Cip>}>
-      <p className="soluk kucuk">
-        Worker Jira'yı aralıklarla sorgular; bu duruma giren story çekilir ve ön incelemeye girer. PO kapısı korunur: PO onayı gelince
-        (otomatik case açıksa) case üretimi kendiliğinden başlar.
+      <p className="otomasyon-etki" data-testid="jira-tetik-etki">
+        {ayar.acik ? (
+          <>
+            Jira'da <span className="mono">"{ayar.durum}"</span> durumuna giren story her {ayar.aralik_s} sn'de çekilir ve ön incelemeye girer.
+          </>
+        ) : (
+          "Story'ler Gereksinimler ekranından elle çekilir."
+        )}
       </p>
+      {/* Jira'ya yazım notu görünür kalır (dış sisteme etki); kapsam ayrıntısı açılırda. */}
       <p className="kucuk" data-testid="jira-yazim-notu">
         <strong>Jira'ya yazım:</strong> {JIRA_YAZIM_METNI}
       </p>
-      <p className="soluk kucuk" data-testid="tetik-kapsam-notu">
-        Tetik açılınca (ve ilk turda) o anda bu durumda bekleyen story'ler yalnız işaretlenir, tetiklenmez; yalnız sonradan bu duruma giren
-        story'ler tetiklenir. Tur başına en çok {TUR_BASINA_EN_COK} story tetiklenir, kalanlar sonraki tura kalır.
-      </p>
+      <details className="otomasyon-ayrinti">
+        <summary className="kucuk">Nasıl çalışır?</summary>
+        <p className="soluk kucuk">
+          Worker Jira'yı aralıklarla sorgular; bu duruma giren story çekilir ve ön incelemeye girer. PO kapısı korunur: PO onayı gelince
+          (otomatik case açıksa) case üretimi kendiliğinden başlar.
+        </p>
+        <p className="soluk kucuk" data-testid="tetik-kapsam-notu">
+          Tetik açılınca (ve ilk turda) o anda bu durumda bekleyen story'ler yalnız işaretlenir, tetiklenmez; yalnız sonradan bu duruma giren
+          story'ler tetiklenir. Tur başına en çok {TUR_BASINA_EN_COK} story tetiklenir, kalanlar sonraki tura kalır.
+        </p>
+      </details>
       <form onSubmit={(e) => void kaydet(e)} noValidate>
         {/* Denetimler ayrıca kendi `disabled` özniteliğini taşır: fieldset pasifliği DOM `disabled` özelliğine
             yansımaz; yetkisiz rolde tüm alanlar (durum alanıyla) aynı biçimde pasif görünür ve okunur. */}
@@ -286,11 +307,11 @@ function JiraTetikKarti({
         </fieldset>
         {uyari && <AlanHatasi>{uyari}</AlanHatasi>}
         {islem.hata && <AlanHatasi asistan={{ hata: islem.hata, kaynak: islem.hataNesnesi }}>{islem.hata}</AlanHatasi>}
-        <div className="eylemler">
+        <EylemCubugu>
           <IslemDugmesi izin={OTOMASYON_IZNI} type="submit" kucuk calisiyor={islem.calisiyor} disabled={!degisti} title={!degisti ? "Değişiklik yok." : undefined}>
             Kaydet
           </IslemDugmesi>
-        </div>
+        </EylemCubugu>
       </form>
       <SonGuncelleme kim={ayar.guncelleyen} ne={ayar.guncelleme} />
     </Kart>
@@ -326,9 +347,7 @@ function TurSonuclari({ sonuclar, gereksinimler }: { sonuclar: JiraTetikTurSonuc
         </div>
       )}
       {gorunen.length > 0 && (
-        <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Son tur story sonuçları">
-          <table className="tablo tablo-sik" data-testid="jira-tetik-sonuclar">
-            <caption className="gorunmez">Son tur story sonuçları</caption>
+        <TabloSarici etiket="Son tur story sonuçları" yogunluk="sik" testId="jira-tetik-sonuclar">
             <thead>
               <tr>
                 <th scope="col">Story</th>
@@ -341,19 +360,20 @@ function TurSonuclari({ sonuclar, gereksinimler }: { sonuclar: JiraTetikTurSonuc
                 const e = turSonucuEtiketi(r.sonuc);
                 return (
                   <tr key={`${r.jira_key}-${i}`}>
-                    <td>
+                    <td className="sutun-kimlik" data-etiket="Story">
                       <StoryBaglantisi jiraKey={r.jira_key} gereksinimler={gereksinimler} />
                     </td>
-                    <td>
+                    <td className="sutun-durum" data-etiket="Sonuç">
                       <Cip ton={e.ton}>{e.etiket}</Cip>
                     </td>
-                    <td className="kucuk">{r.neden ?? <span className="soluk">—</span>}</td>
+                    <td className="sutun-metin kucuk" data-etiket="Neden">
+                      {r.neden ?? <span className="soluk">—</span>}
+                    </td>
                   </tr>
                 );
               })}
             </tbody>
-          </table>
-        </div>
+        </TabloSarici>
       )}
     </>
   );
@@ -384,22 +404,23 @@ function JiraTetikDurumKarti({
         <Yukleniyor />
       ) : (
         <>
-          <dl className="tanim-izgara" data-testid="jira-tetik-son-tur">
-            <dt>Durum</dt>
-            <dd>
-              <Cip ton={d.acik ? "basari" : "notr"}>{d.acik ? "açık" : "kapalı"}</Cip> <span className="mono">"{d.durum}"</span> · her {d.aralik_s} sn
-            </dd>
-            <dt>Son tur</dt>
-            <dd>{d.son_tur ? tarih(d.son_tur.zaman) : "Henüz tur yok."}</dd>
-            {d.son_tur && (
-              <>
-                <dt>Bulunan / tetiklenen</dt>
-                <dd>
-                  {d.son_tur.bulunan} / {d.son_tur.tetiklenen}
-                </dd>
-              </>
-            )}
-          </dl>
+          <div data-testid="jira-tetik-son-tur">
+            <MetaIzgara
+              etiket="Jira tetiği son tur özeti"
+              ogeler={[
+                {
+                  etiket: "Durum",
+                  deger: (
+                    <>
+                      <Cip ton={d.acik ? "basari" : "notr"}>{d.acik ? "açık" : "kapalı"}</Cip> <span className="mono">"{d.durum}"</span> · her {d.aralik_s} sn
+                    </>
+                  ),
+                },
+                { etiket: "Son tur", deger: d.son_tur ? tarih(d.son_tur.zaman) : "Henüz tur yok." },
+                ...(d.son_tur ? [{ etiket: "Bulunan / tetiklenen", deger: `${d.son_tur.bulunan} / ${d.son_tur.tetiklenen}` }] : []),
+              ]}
+            />
+          </div>
           {d.son_tur?.hata && (
             <Uyari ton="hata" baslik="Son turda hata">
               {d.son_tur.hata}
@@ -420,7 +441,11 @@ function JiraTetikDurumKarti({
           )}
           <h3 className="kucuk">Story başına son tetik sonucu</h3>
           {d.son_tetiklenenler.length === 0 ? (
-            <BosDurum baslik="Henüz tetik sonucu yok." />
+            <BosDurum kip="satir" baslik="Henüz tetik sonucu yok.">
+              {d.acik
+                ? `Jira'da "${d.durum}" durumuna yeni giren story ilk turda burada görünür.`
+                : "Tetik kapalı; açılınca duruma giren story'lerin sonucu burada görünür."}
+            </BosDurum>
           ) : (
             <ul className="duz-liste" aria-label="Story başına son tetik sonucu" data-testid="son-tetik-sonuclari">
               {d.son_tetiklenenler.map((s, i) => (
