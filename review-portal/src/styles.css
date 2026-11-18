@@ -6170,3 +6170,21 @@ html {
   font-weight: 600;
   white-space: nowrap;
 }
+/* Denetim olayı (IA-12): okunur etiket + ikinci satırda olay kodu. */
+.denetim-olay-etiketi,
+.denetim-olay-kodu {
+  display: block;
+}
+/* Teknik ayrıntı açılırı (IA-12): kullanıcı cümlesinin altında ham hata/komut metni. */
+.teknik-ayrinti {
+  font-size: 0.82rem;
+}
+.teknik-ayrinti > summary {
+  cursor: pointer;
+}
+.teknik-ayrinti code {
+  display: block;
+  margin-top: 4px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

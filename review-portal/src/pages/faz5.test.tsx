@@ -337,7 +337,7 @@ describe("demo yol haritası: türetme", () => {
     expect(sirada).toMatchObject({ hal: "suruyor", kanit: expect.stringMatching(/Sauce job'u sırada\/sürüyor/) });
     const ghAtlandi = yerelGirdi.kosular.map((k) => ({ ...k, kaynak: "github" as const, sauce_durum: "atlandi" as const, sauce_neden: "SAUCE_TETIKLER: push yok" }));
     const atlandi = demoAdimlari({ ...yerelGirdi, kosular: ghAtlandi })[8];
-    expect(atlandi).toMatchObject({ hal: "yedek", kanit: expect.stringMatching(/Sauce bu tetiklerde atlandı \(SAUCE_TETIKLER: push yok\)/) });
+    expect(atlandi).toMatchObject({ hal: "yedek", kanit: expect.stringMatching(/Sauce bu tetiklerde atlandı \(bu koşu türünde Sauce çalıştırılmıyor \(proje ayarı: push yok\)\)/) });
     // GitHub koşusu bitti ama Sauce sonucu yazılmadı: yine "kimlik yok" denmez.
     const ghBos = yerelGirdi.kosular.map((k) => ({ ...k, kaynak: "github" as const, durum: "passed" as const, sauce_durum: null }));
     for (const x of [sirada, atlandi, demoAdimlari({ ...yerelGirdi, kosular: ghBos })[8]]) expect(x.kanit).not.toMatch(/kimliği yok/);

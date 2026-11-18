@@ -105,7 +105,7 @@ export function BugTaslaklari() {
   useOlay(sessiz, ["bug.published", "bug.updated", "failure.classified", "finding.updated"]);
   return (
     <>
-      <SayfaBasligi baslik="Bug taslakları" aciklama="AI taslak hazırlar ve Jira'da olası mükerrerleri bulur; kayıt yalnızca testçi onayıyla açılır ya da bağlanır." />
+      <SayfaBasligi baslik="Bug taslakları" aciklama="AI taslak hazırlar ve Jira'da olası mükerrerleri bulur; kayıt yalnızca Test Uzmanı onayıyla açılır ya da bağlanır." />
       <Kart>
         {v.yukleniyor && !v.veri ? (
           <Yukleniyor />
@@ -278,7 +278,7 @@ function MukerrerKarti({
           {(a?.mode === "replay_miss" || a?.ai_onerisi_yok || b.mukerrer_adaylari.every((m) => !m.gerekce && !m.olasilik)) && (
             <Uyari ton="uyari" baslik="Mükerrer sıralaması yapılamadı">
               {a?.mode === "replay_miss" ? "REPLAY-MISS: bu aday kümesi için kayıtlı model sıralaması yok. " : ""}
-              Adaylar Jira aramasının sırasıyla, AI gerekçesi olmadan gösteriliyor; karar yine testçinin.
+              Adaylar Jira aramasının sırasıyla, AI gerekçesi olmadan gösteriliyor; karar yine Test Uzmanının.
             </Uyari>
           )}
           {a?.oneri ? (
@@ -290,12 +290,12 @@ function MukerrerKarti({
                   a.neden
                   ? "yeni kayıt aç"
                   : "yeni kayıt aç (adaylar aynı hata değil)"}
-              <span className="soluk"> · karar testçinin</span>
+              <span className="soluk"> · karar Test Uzmanının</span>
               {a.neden && <span className="soluk"> · {a.neden}</span>}
             </p>
           ) : a?.ai_onerisi_yok ? (
             <p className="kucuk" data-testid="mukerrer-onerisi">
-              <strong>AI önerisi yok</strong> ({a.ai_onerisi_yok})<span className="soluk"> · karar testçinin</span>
+              <strong>AI önerisi yok</strong> ({a.ai_onerisi_yok})<span className="soluk"> · karar Test Uzmanının</span>
             </p>
           ) : null}
           <ul className="mukerrer-liste" aria-label="Mükerrer adayları">

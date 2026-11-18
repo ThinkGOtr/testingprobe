@@ -81,7 +81,7 @@ export function denetimSeritDurumu(g: CaseDenetimGorunumu | null | undefined): {
   if (k?.karar) return { metin: DENETIM_KARARI[k.karar]?.etiket ?? k.karar, ton: k.karar === "KABUL" ? "basari" : k.karar === "ENGELLE" ? "hata" : "uyari" };
   const son = g.denetim;
   if (son && son.durum === "hata" && son.guncel !== false) return { metin: "yapılamadı", ton: "hata" };
-  if (son && son.guncel === false) return { metin: "karar bayat", ton: "uyari" };
+  if (son && son.guncel === false) return { metin: "karar güncel değil (case'ler değişti)", ton: "uyari" };
   return { metin: "karar yok", ton: "uyari" };
 }
 

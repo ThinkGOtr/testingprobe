@@ -1146,7 +1146,7 @@ export function ScriptDetay() {
         {defectAdayi && (
           <Uyari ton="bilgi" baslik="Kırarak doğrulama kapalı" id="kirma-kapali-neden">
             Yerel kontrol bu testi assertion farkıyla kırmızı buldu (defect adayı). Uygulama zaten beklenenden farklı davranıyor; kırma
-            kanıt üretmez. Hata triage'a gitti; bug taslağı ve testçi kararı triage sayfasında.
+            kanıt üretmez. Hata triage'a gitti; bug taslağı ve Test Uzmanı kararı triage sayfasında.
           </Uyari>
         )}
         <KirmaZaman bv={s.break_verify} uygulanmaz={defectAdayi} />

@@ -7,6 +7,7 @@ import { type Ton } from "../lib/etiketler";
 import { bekleyenRolMetni, type Izin } from "../lib/yetki";
 import { baglantiTuru } from "../lib/rotalar";
 import { hataGosterildi, hataTazele } from "../lib/sonHata";
+import { teknikMetniCevir } from "../lib/kullaniciMetni";
 import { asistanaSor, useAsistanHazir } from "./asistan/kontrol";
 import { Ikon } from "./Ikon";
 
@@ -169,9 +170,17 @@ export function HataKutusu({
   }
   // Yalnız metin canlı bölgededir (AlanHatasi ile aynı desen): düğmeler kardeş öğedir; kayıt
   // yazıldıktan sonra beliren "Asistana sor" duyuruya eklenmez, ikinci değişiklik yaratmaz.
+  // IA-12: bilinen teknik hata (ör. forge deposu yok) kullanıcı cümlesine çevrilir; ham metin "Ayrıntı"da.
+  const cevrilen = teknikMetniCevir(hata);
   return (
     <div className="uyari-kutusu uyari-hata">
-      <span role="alert">{hata}</span>
+      <span role="alert">{cevrilen ?? hata}</span>
+      {cevrilen && (
+        <details className="teknik-ayrinti">
+          <summary>Ayrıntı</summary>
+          <code>{hata}</code>
+        </details>
+      )}
       {yenile && !bulunamadi(kaynak) && (
         <button type="button" className="dugme dugme-ikincil dugme-kucuk" onClick={yenile}>
           Tekrar dene

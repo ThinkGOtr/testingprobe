@@ -1,3 +1,4 @@
+import { nesneEtiketi, olayEtiketi } from "../lib/kullaniciMetni";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import { hataMesaji, ortamAdlariniGizle } from "../api/http";
@@ -97,7 +98,7 @@ export function Denetim() {
     const q = ara.trim().toLocaleLowerCase("tr-TR");
     const l = [...(v.veri?.olaylar ?? []), ...ekOlaylar];
     return q
-      ? l.filter((o) => `${o.aktor} ${kisiAdi(o.aktor)} ${o.eylem} ${o.nesne} ${o.ozet}`.toLocaleLowerCase("tr-TR").includes(q))
+      ? l.filter((o) => `${o.aktor} ${kisiAdi(o.aktor)} ${o.eylem} ${olayEtiketi(o.eylem)} ${o.nesne} ${nesneEtiketi(o.nesne)} ${o.ozet}`.toLocaleLowerCase("tr-TR").includes(q))
       : l;
   }, [v.veri, ekOlaylar, ara, kisiAdi]);
   const yuklenen = (v.veri?.olaylar.length ?? 0) + ekOlaylar.length;
@@ -175,8 +176,14 @@ export function Denetim() {
                         <td className="sayi mono" data-etiket="#">{o.sira}</td>
                         <td className="tek-satir" data-etiket="Zaman">{tarih(o.zaman)}</td>
                         <td className="tek-satir" data-etiket="Aktör" title={kisiAdi(o.aktor) !== o.aktor ? o.aktor : undefined}>{kisiAdi(o.aktor)}</td>
-                        <td className="mono" data-etiket="Eylem">{o.eylem}</td>
-                        <td className="mono" data-etiket="Nesne">{o.nesne}</td>
+                        {/* IA-12: okunur etiket önde, olay kodu ikinci satırda (aranabilir, kopyalanabilir). */}
+                        <td data-etiket="Eylem">
+                          <span className="denetim-olay-etiketi">{olayEtiketi(o.eylem)}</span>
+                          <span className="mono kucuk soluk denetim-olay-kodu">{o.eylem}</span>
+                        </td>
+                        <td data-etiket="Nesne" title={nesneEtiketi(o.nesne) !== o.nesne ? o.nesne : undefined}>
+                          {nesneEtiketi(o.nesne)}
+                        </td>
                         <td className="denetim-ozet-hucre" data-etiket="Özet">
                           <OzetHucresi ozet={o.ozet} />
                         </td>
