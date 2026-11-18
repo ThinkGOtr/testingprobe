@@ -237,6 +237,29 @@ export function KayitHatasi({
 }
 
 /** `isaretli`: başlık kendi işaretiyle başlıyor (ör. "✓ Zincir doğrulandı"); maske ikonu çizilmez, işaret iki kez görünmez. */
+/**
+ * ET-16: sayfa açılışında var olan kalıcı durum kutuları (`Uyari ton="hata"`) `role=alert` değil `note`
+ * olur; açılışta ekran okuyucu üst üste kesintili uyarı okumaz. `alert` yalnız kullanıcı eyleminden
+ * (tıklama/tuş) sonra beliren kutuda. Kabuk her rota değişiminde `sayfaAcildi()` çağırır; Kabuk dışında
+ * (bileşen testleri, giriş ekranı) davranış eskisi gibidir (her zaman `alert`).
+ */
+let sayfaAcilisi: number | null = null;
+let sonEtkilesim = 0;
+if (typeof document !== "undefined") {
+  const kaydet = () => {
+    sonEtkilesim = Date.now();
+  };
+  document.addEventListener("pointerdown", kaydet, true);
+  document.addEventListener("keydown", kaydet, true);
+}
+export function sayfaAcildi(): void {
+  sayfaAcilisi = Date.now();
+}
+/** Şu an belirecek hata kutusu duyurulmalı mı (açılıştan sonra kullanıcı etkileşimi oldu mu)? */
+export function eylemSonrasiMi(): boolean {
+  return sayfaAcilisi === null || sonEtkilesim > sayfaAcilisi;
+}
+
 export function Uyari({
   ton = "uyari",
   children,
@@ -251,8 +274,9 @@ export function Uyari({
   /** Kutu bir düğmenin görünür pasiflik nedeniyse (`aria-describedby` hedefi). */
   id?: string;
 }) {
+  const [rol] = useState<"alert" | "note">(() => (ton === "hata" && eylemSonrasiMi() ? "alert" : "note"));
   return (
-    <div id={id} className={`uyari-kutusu uyari-${ton}${isaretli ? " uyari-isaretli" : ""}`} role={ton === "hata" ? "alert" : "note"}>
+    <div id={id} className={`uyari-kutusu uyari-${ton}${isaretli ? " uyari-isaretli" : ""}`} role={ton === "hata" ? rol : "note"}>
       {baslik && <strong>{baslik}</strong>}
       <div>{children}</div>
     </div>

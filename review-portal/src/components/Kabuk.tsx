@@ -13,6 +13,7 @@ import { Ikon, type IkonAdi } from "./Ikon";
 import { KabukDurumuSaglayici, useKabukDurumu } from "./KabukDurumu";
 import { AiprobeDegistirici, useCikis } from "./AiprobeDegistirici";
 import { useBildirim } from "./Bildirim";
+import { sayfaAcildi } from "./ui";
 import { RolSecici } from "./RolSecici";
 import { ProjeRolYok, ProjeSaglayici, ProjeSecici, useProjeDurumu } from "./ProjeSecici";
 import { useKimlikKipi, useKimlikServisiErisilemez } from "../lib/kimlikKipi";
@@ -275,6 +276,14 @@ function KabukIcerik() {
       if (sayi > 0) bildir("Oturum yenilendi; kaydedilmemiş form verileriniz geri yüklendi.", "bilgi");
     });
   }, [konum.pathname, konum.search, kullaniciId, kip.kip, bildir]);
+
+  // ET-16: rota değişimi = sayfa açılışı; açılışta var olan hata kutuları duyurulmaz (ui.tsx `Uyari`).
+  // Çizim sırasında işaretlenir: sayfa bileşenleri Kabuk'tan sonra çizilir, efektten önce.
+  const acilanYol = useRef<string | null>(null);
+  if (acilanYol.current !== konum.pathname) {
+    acilanYol.current = konum.pathname;
+    sayfaAcildi();
+  }
 
   // Öneri kartındaki "Git" çapası (`#bulgular` vb.): hedef bölüme kaydırır.
   useCapayaKaydir();
