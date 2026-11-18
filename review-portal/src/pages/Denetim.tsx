@@ -179,10 +179,10 @@ export function Denetim() {
                       <tr key={o.id} className={dg && !dg.gecerli && dg.ilk_kirik_id === o.id ? "satir-hata" : undefined}>
                         <td className="sayi mono" data-etiket="#">{o.sira}</td>
                         <td className="sutun-tarih" data-etiket="Zaman">{tarih(o.zaman)}</td>
-                        <td data-etiket="Aktör" title={kisiAdi(o.aktor) !== o.aktor ? o.aktor : undefined}>{kisiAdi(o.aktor)}</td>
+                        <td className="denetim-aktor" data-etiket="Aktör" title={kisiAdi(o.aktor) !== o.aktor ? o.aktor : undefined}>{kisiAdi(o.aktor)}</td>
                         <td className="sutun-kimlik" data-etiket="Eylem">{o.eylem}</td>
                         <td className="mono" data-etiket="Nesne">{o.nesne}</td>
-                        <td className="denetim-ozet-hucre sutun-metin sutun-genis" data-etiket="Özet">
+                        <td className="denetim-ozet-hucre sutun-metin" data-etiket="Özet">
                           <OzetHucresi ozet={o.ozet} />
                         </td>
                         <td className="sutun-kimlik" data-etiket="Hash" title={`prev ${o.prev_hash}\nhash ${o.hash}`}>

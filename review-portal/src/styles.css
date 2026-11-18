@@ -6802,3 +6802,12 @@ code {
 .tablo td code {
   overflow-wrap: break-word;
 }
+/* Denetim Aktör: ad tek satır, rol gerekirse ikinci satıra iner (DZ-02). */
+.tablo td.denetim-aktor {
+  min-width: 11rem;
+}
+/* Metin sütunundaki ikincil teknik değer (Kod üretimi dosya yolu): sütun min-width'li olduğu için sarabilir. */
+.tablo td.sutun-metin .mono {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}

@@ -53,6 +53,69 @@ neden metnini düğmenin erişilebilir açıklamasıyla (`toHaveAccessibleDescri
   yüzden Google Fonts ya da CDN kullanılmaz. `data:` font da kullanılmaz: `vite.config.ts` woff2
   dosyalarını gömmez. Kapı: `grep -c 'data:font' dist/assets/*.css` = 0.
 
+## Tasarım sistemi kullanımı (UX-T)
+
+Kaynak: `aip-review/tp-ux-denetim/sistem.md` §2–§4. Bileşenler `src/components/tasarim.tsx` (+ `ui.tsx`
+genişletmeleri, `Ipucu.tsx`), CSS `src/styles.css` sonundaki "UX-T" bloğu. Renk eklenmez; yalnız mevcut belirteçler.
+Yeni ekran kodu sabit px/rem yazmaz, aşağıdaki değişkenleri kullanır.
+
+**Ölçekler** (`:root`)
+- Yazı (8 basamak, rem): `--fs-hap` 0.75 (hap/çip, th, sayaç — taban, altına inilmez) · `--fs-sik` 0.8125 (veri atfı,
+  küçük düğme, tablo mono) · `--fs-ikincil` 0.875 (`.kucuk`, meta, dt) · `--fs-tablo` 0.9 (tablo gövdesi, h4) ·
+  `--fs-h3` 0.95 · `--fs-govde` 1 · `--fs-h2` 1.05 (kart başlığı; şeritli kartta da aynı) · `--fs-h1` 1.6.
+  h1–h4 global tanımlı (tarayıcı varsayılanı sızmaz); bileşen başlık boyutunu ezmez. Bileşen içinde boyut rem; em
+  yalnız düz metindeki `code`. Özel (ölçek dışı, bilinçli): marka 1.25, giriş 1.5, KPI 1.9rem.
+- Kalınlık: 400 gövde · 600 vurgu/etiket/hap · 700 başlık · 800 yalnız h1 (`--fw-*`). 450/500/550/650 kullanılmaz.
+- Boşluk: `--space-0` 2 (hap dikey dolgusu) · `--space-1` 4 · `--space-2` 8 · `--space-3` 12 · `--space-4` 16 ·
+  `--space-5` 24 · `--space-6` 32 · `--kart-ic` 20 (kart dolgusu; şerit başlık `calc(-1 * var(--kart-ic))`). Dönüşüm:
+  6 → öğe içi `--space-1`, öğeler arası `--space-2`; 10 → `--space-2`/`--space-3`; 14 → `--space-3`; 18 → `--space-4`.
+- Kırılım (4): ≤640 telefon (tablo yığını, dokunma 44 px) · ≤860 menü kapanır · ≤1279 dar masaüstü · ≥1440 geniş
+  (`--kirilim-*` belge değişkenleri; `@media` değişken okuyamaz, değer aynen yazılır). Bileşen içi eşik: `@container`.
+- Köşe: `--radius-etiket` 6 (etiket çip, kimlik) · `--radius-sm` 8 · `--radius-kontrol` 10 · `--radius` 12 · `--radius-hap`.
+- Dokunma: `--dokunma` 44 px; ≤640'ta düğme/sekme/summary/satır bağlantısı/onay kutusu etiketi en az bu yükseklikte.
+
+**Tablo kuralı** — her tablo `TabloSarici` ile (elle `div.tablo-sarici` yazılmaz):
+```tsx
+<TabloSarici etiket="Koşular tablosu" darEkran="yigin" /* | "kaydir" */ yogunluk="normal" /* | "sik" */ uzun={satir > 15}>
+  <thead>…</thead><tbody><tr><td className="sutun-metin" data-etiket="Başlık">…</td>…</tr></tbody>
+</TabloSarici>
+```
+- `darEkran="yigin"`: kayıt tablosu (satır = kayıt) ≤640'ta "etiket: değer" kartı; her `td` `data-etiket` taşır.
+  `"kaydir"`: matris tablo (karar tablosu, sürüm × ölçüt) kendi içinde kayar, ilk sütun yapışkan.
+- `yogunluk`: `th` ve `td` yatay dolgusu her zaman eşit (12, ≤1279'da 8). `sik` = kart içi/detay tabloları.
+- `uzun`: sarıcı ≥641 px'te en çok 70vh, kendi içinde kayar; başlık satırı yapışkan. Klavye odağı satırı vurgular.
+- Sütun türü = hücre sınıfı: `sutun-kimlik` (mono, tek satır; uzunsa `Kimlik`/`KisaDeger`) · `sutun-durum` (çipler;
+  tek çip sarılmaz, çok çip satır içinde sarar) · `sutun-sayi` (sağa, tabular) · `sutun-tarih` (tek satır) ·
+  `sutun-metin` (min 14rem, sarar; içindeki mono yol da sarar) · `sutun-zengin` (adım/veri/beklenen: min 12rem, asla
+  mono, çip hücre içinde sarar) · `sutun-eylem` (yatay kayan tabloda sağa yapışık) · `sutun-ikincil` (641–1279'da gizli).
+- Uzun değer: metin ve çip sarılır, kesilmez (`<Cip sar>`); tek teknik belirteç (sha/uuid/yol) `Kimlik` ile
+  kısaltılır, tam değer ipucu + kopyala. **Yasak:** hücre içinde `nowrap` + yüzdeli `max-width` +
+  `overflow-wrap: anywhere` birlikte (min-content sıfırlanır → taşma ya da 53 px sütun, DZ-01/02). `anywhere` yalnız
+  min-width'li (metin/zengin) sütunda.
+
+**Bileşen API'leri**
+- `Cip({ ton, bicim?: "hap"|"etiket"|"duz", boyut?: "normal"|"kucuk", sar?, aciklama?, title?, className?, testId? })` —
+  `aciklama` erişilebilir ipucu (yeni kodda `title` yerine). Yerel hap kopyası (`.yh-tur`, `.ac-ref`…) yazılmaz.
+- `DurumCipi({ harita, deger, aciklama? })` — `lib/etiketler.ts` haritası (CASE_DURUMU, SCRIPT_DURUMU…); bilinmeyen nötr.
+- `Kimlik({ deger, tur?: "jira"|"ac"|"kosu"|"case"|"sha"|"uuid"|"yol"|"diger", kisaltUzunluk?, kirp?, kopyala? })`,
+  `KisaDeger({ deger, uzunluk=7, kopyala=true })`, `KopyalaDugmesi({ deger })`, `kisalt(deger, n, kirp)`.
+- `Ipucu({ metin, children })` — title-only açıklamanın yerine (ET-06): odak/dokunma/fare ile açılır, Esc kapatır;
+  kapalıyken `aria-description`, açıkken `role=tooltip`. Balon yalnız açıkken DOM'da.
+- `MetaIzgara({ ogeler: {etiket, deger, genis?}[], duzen?: "yan"|"ust", yogun?, etiket? })` — "etiket: değer" (dl);
+  boş değer "—"; ≤640'ta tek sütun. `MetaSatiri({ ogeler: {etiket?, deger}[] })` — 2–4 kısa bilgi, "·" ayraçlı.
+- `SuzgecCubugu({ etiket, sonuc?, children })` — süzgeç denetimleri + sağda `role=status` sonuç ("12/41 test").
+  `SegmentSecici({ etiket, secenekler: {deger, ad, sayi?, pasif?}[], deger, degistir })` — `aria-pressed`, `.sekme`
+  görünümü; gezinme sekmesi değildir (o DetaySayfasi `Sekmeler`). Çok seçenek: mevcut `SuzgecSecimi`.
+- `EylemCubugu({ hiza?: "bas"|"son", etiket?, children })` — `.eylemler` sınıfını korur; içindeki kilitli
+  `IslemDugmesi` `disabled` yerine `aria-disabled` (Tab sırasında kalır, nedeni okunur, tıklama engellenir; ET-07).
+  Tek düğmede `<IslemDugmesi odaklanabilir>`. Dışarıda varsayılan yerel `disabled` (geriye uyum; testlerde
+  `toBeDisabled` yerine `toHaveAttribute("aria-disabled", "true")`).
+- `BosDurum({ baslik, children?, kip?: "bolum"|"sekme"|"satir", eylem? })` — tek boş durum; `eylem` sonraki adım
+  yuvası. Satır içi "X yok." paragrafı yerine `kip="satir"`.
+- `TabloSarici({ etiket, darEkran?, yogunluk?, uzun?, className?, tabloClassName?, testId?, children })`.
+- DetaySayfasi (DS-1) ile: `OzetKarti` yuvaları `kimlik` → `Kimlik`, `rozetler` → `DurumCipi`, `meta` → `MetaSatiri`,
+  `eylemler` → `EylemCubugu hiza="son"`; sayı rozeti `Sayac`.
+
 ## API sözleşmesi
 
 - `src/api/client.ts`: MIMARI-SOZLESME §5'teki her uç için türlü istemci.
