@@ -40,11 +40,15 @@ def kopya(tmp_path: Path) -> Path:
     for ad in ("verify-and-map.json", "verify-and-map-app.json"):
         shutil.copy(RULES / "evaluation" / ad, hedef / "evaluation" / ad)
     shutil.copy(RULES / dk.DILLER_FILE, hedef / dk.DILLER_FILE)
-    # Kanıt akışı testleri kanıtsız "yakında" çiftlerden başlar: gerçek tablodaki kısmi kanıt
-    # (canlı eval raporu; kopyada results/ boş) temizlenir. Gerçek tablo ayrıca denetlenir.
-    # Satır biçimi (`p/d: {hat: …, durum: yakinda, kanit: {…}}`) ve baştaki açıklama korunur.
+    # Kanıt akışı testleri kanıtsız "yakında" çiftlerden başlar: gerçek tablodaki kanıt (canlı
+    # eval raporu + kabul; kopyada results/ boş) temizlenir, kanıtla açılmış çift yakinda'ya döner.
+    # Gerçek tablo ayrıca denetlenir. Satır biçimi ve baştaki açıklama korunur; `devralindi` kalır.
     path = hedef / dk.DILLER_FILE
-    metin = re.sub(r"(durum: yakinda), kanit: \{[^}]*\}", r"\1", path.read_text(encoding="utf-8"))
+    metin = re.sub(
+        r"durum: (?:yakinda|acik), kanit: \{[^}]*\}",
+        "durum: yakinda",
+        path.read_text(encoding="utf-8"),
+    )
     path.write_text(metin, encoding="utf-8")
     return hedef
 
@@ -94,14 +98,21 @@ def test_depodaki_dil_kapisi_gecerli_ve_check_gecer() -> None:
     assert dk.main(["--rules-dir", str(RULES), "--check"]) == 0
 
 
+# 2026-11-18 kabul koşusu (yalıtılmış yığın, dil kabul şeridi tam-hat): eval + kabul kanıtıyla
+# açılan tam hat çiftleri.
+KABULLE_ACILAN = {("web", "python"), ("web", "csharp"), ("android", "python"), ("ios", "python")}
+
+
 def test_depoda_ts_java_devralindi_acik_digerleri_yakinda() -> None:
-    """Kullanıcı kararı 3: ts/java devralındı-açık; web C#/Python dahil değerlendirilmemiş her
-    çift `yakinda` (seçilemez)."""
+    """Kullanıcı kararı 3: ts/java devralındı-açık; yeni dillerden yalnız eval + kabul kanıtı
+    tam olanlar açık; kalan her çift `yakinda` (seçilemez)."""
     sts = dk.durumlar(RULES)
     acik = {c for c, s in sts.items() if s.kullanilabilir}
-    assert acik == set(dk.DEVRALINABILIR)
-    assert all(sts[c].devralindi for c in acik)
-    for cift in (("web", "python"), ("web", "csharp")):
+    assert acik == set(dk.DEVRALINABILIR) | KABULLE_ACILAN
+    assert all(sts[c].devralindi for c in dk.DEVRALINABILIR)
+    for cift in KABULLE_ACILAN:
+        assert all(sts[cift].kanit.get(a) for a in ("eval", "tarih", "kabul"))
+    for cift in (("windows", "python"), ("windows", "csharp"), ("android", "kotlin")):
         assert sts[cift].durum == "yakinda"
         assert not dk.kullanilabilir_mi(RULES, *cift)
         assert sts[cift].neden == dk.YAKINDA_NEDENI
@@ -262,7 +273,7 @@ def test_kabul_cli(kopya: Path) -> None:
 def test_evaluation_dil_filtresi(capsys: pytest.CaptureFixture[str]) -> None:
     assert evaluation.main(["--rules-dir", str(RULES), "--dil", "python"]) == 0
     out = capsys.readouterr().out
-    assert "dil web/python\ttam\tyakinda" in out
+    assert "dil web/python\ttam\tacik" in out and "dil windows/python\ttam\tyakinda" in out
     assert "verify-and-map@v" in out and "verify-and-map-app@v" in out
     assert "triage@" not in out
 

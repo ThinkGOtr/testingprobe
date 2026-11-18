@@ -333,10 +333,18 @@ vakaları; paketi `evaluated` yapmaz, çiftin TÜM vakaları geçerse kanıt yaz
 `make dil-kapisi A=--check` (rapor güncel prompt sürümünde değilse kanıt bayattır). Home kopyası:
 `make dil-kapisi A=--json`.
 
+Kabul koşusu yalıtılmış yığında (`COMPOSE_PROJECT_NAME=tp-kabul-<şerit>`, `TP_FORGE=local`,
+`TP_DEMO_MODE=1`) TP'nin kendi akışıyla yapılır: codegen → PR → `local-ci-<p>-<d>` yeşil → kırarak
+doğrulama yeşil → kırmızı → yeşil. Kapı `yakinda` çiftte üretimi reddettiği için bu yığında
+`TP_DIL_KABUL_KIPI=<p>/<d>,…` verilir: yalnız eval kanıtlı tam hat çiftini, yalnız yerel forge +
+demo kipi + prod olmayan ortamda üretime açar; `diller.yaml`'ı ve Home kopyasını değiştirmez.
+
 Durum (2026-11-18 canlı `--dil` koşuları, Sonnet): web/python, web/csharp, android/python,
-ios/python, android/kotlin, ios/swift çiftlerinin tüm vakaları geçti; `eval` kanıtı yazıldı, çiftler
-kabul kanıtı (`--kabul`) beklediği için `yakinda`. windows/python ve windows/csharp kanıtsız: Windows
-Appium'u (GCP `tp-windows`) bu koşuda kapalıydı.
+ios/python, android/kotlin, ios/swift çiftlerinin tüm vakaları geçti; `eval` kanıtı yazıldı.
+web/python, web/csharp, android/python ve ios/python yalıtılmış yığında kabul koşusunu geçti
+(TPD-1 C2: PR + `local-ci-<p>-<d>` yeşil, kırarak doğrulama yeşil → kırmızı → yeşil) → `acik`.
+android/kotlin ve ios/swift müşteri CI kabulünü (GitHub run) bekliyor. windows/python ve
+windows/csharp kanıtsız: Windows Appium'u (GCP `tp-windows`) bu koşuda kapalıydı.
 
 ### Canlı değerlendirmeyi koşturmak (`make eval-live`)
 

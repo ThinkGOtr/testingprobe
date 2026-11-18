@@ -626,8 +626,20 @@ def test_0021_backfill_ve_geri_alma(db: Any) -> None:
 
 
 def test_code_languages_ve_generate_dil_dogrulamasi(
-    api: TestClient, codegen: Any, hazir: dict[str, Any], muhendis: Any
+    api: TestClient,
+    codegen: Any,
+    hazir: dict[str, Any],
+    muhendis: Any,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # Kapı kapalı web çifti örneği: web C# 2026-11-18 kabulüyle açıldı; kapının "Yakında" yolu
+    # (seçilemez + 422) diller.yaml'dan bağımsız denetlenir.
+    gercek = service.platformlar.cift_durumu
+    monkeypatch.setattr(
+        service.platformlar,
+        "cift_durumu",
+        lambda p, d, *a, **k: "yakinda" if (p, d) == ("web", "csharp") else gercek(p, d, *a, **k),
+    )
     r = api.get("/code/languages")
     assert r.status_code == 200, r.text
     d = r.json()
@@ -1139,7 +1151,8 @@ def test_depo_okunamazsa_secenekler_bilinmiyor(monkeypatch: pytest.MonkeyPatch) 
     d = service.dil_secenekleri("web")
     assert d["kaynak"] == "varsayilan" and "Dil algılanamadı" in d["neden"]
     acik = [x for x in d["secenekler"] if x["durum"] == "acik"]
-    assert [x["dil"] for x in acik] == ["ts", "java"]
+    # ts/java devralındı; C#/Python 2026-11-18 kabulüyle açık (rules/diller.yaml).
+    assert [x["dil"] for x in acik] == ["ts", "java", "csharp", "python"]
     assert all(x["kullanilabilir"] for x in acik)
     assert all(x["neden"] == service.DEPO_OKUNAMADI for x in acik)
     # 014: kapı kapalı diller depo okunamasa da "Yakında" (değerlendirme sürüyor).
