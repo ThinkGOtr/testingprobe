@@ -189,15 +189,14 @@ describe("Ekilmiş hata koşusu kartı: form ve rol kapısı", () => {
     sar(<HataKosusuKarti />);
     const k = await kart();
     await within(k).findByRole("group", { name: "Kod hatası (5)" });
-    const dugme = within(k).getByRole("button", { name: "Koşuyu başlat" });
+    const dugme = within(k).queryByRole("button", { name: "Koşuyu başlat" });
     if (yetkili) {
       expect(dugme).toBeEnabled();
       expect(within(k).getByRole("checkbox", { name: "Android" })).toBeEnabled();
       expect(k.querySelector(".dugme-neden")).toBeNull();
     } else {
-      expect(dugme).toBeDisabled();
-      expect(dugme).toHaveAccessibleDescription("Bu işlem için gereken rol: Sistem Yöneticisi / Otomasyon Mühendisi");
-      expect(within(k).getByText("Bu işlem için gereken rol: Sistem Yöneticisi / Otomasyon Mühendisi")).toHaveClass("dugme-neden");
+      expect(dugme).toBeNull();
+      expect(within(k).getByText("Bu adım Otomasyon Mühendisi rolünde: Gokhan Sipahi bekleniyor")).toHaveClass("dugme-neden");
       for (const c of within(k).getAllByRole("checkbox")) expect(c).toBeDisabled();
     }
     expect(await within(k).findByTestId("hk-sonuc")).toBeInTheDocument();
@@ -501,8 +500,8 @@ describe("Ekilmiş hata koşusu kartı: başlat → ilerleme → bitiş, 409, ip
     await oturumAc("analist");
     sar(<HataKosusuKarti />);
     const ilerleme = within(await screen.findByTestId("hk-ilerleme"));
-    expect(ilerleme.getByRole("button", { name: "İptal et" })).toBeDisabled();
-    expect(ilerleme.getByRole("button", { name: "İptal et" })).toHaveAccessibleDescription("Bu işlem için gereken rol: Sistem Yöneticisi / Otomasyon Mühendisi");
+    expect(ilerleme.queryByRole("button", { name: "İptal et" })).toBeNull();
+    expect(ilerleme.getByText("Bu adım Otomasyon Mühendisi rolünde: Gokhan Sipahi bekleniyor")).toBeInTheDocument();
   });
 });
 

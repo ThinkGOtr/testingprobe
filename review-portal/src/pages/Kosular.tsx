@@ -1,3 +1,4 @@
+import { teknikMetniCevir } from "../lib/kullaniciMetni";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
@@ -295,7 +296,12 @@ export function SauceCipi({ k }: { k: Pick<Kosu, "kaynak" | "durum" | "sauce_dur
     case "error":
       return <Cip ton="uyari" className="cip-uzun">Sauce koşmadı: {k.sauce_neden ?? "altyapı hatası"}</Cip>;
     case "atlandi":
-      return <Cip ton="notr" className="cip-uzun">Sauce atlandı: {k.sauce_neden ?? "neden bildirilmedi"}</Cip>;
+      // IA-12: iç ayar adı (SAUCE_TETIKLER=…) kullanıcı cümlesine çevrilir; ham neden title'da.
+      return (
+        <Cip ton="notr" className="cip-uzun" title={k.sauce_neden ?? undefined}>
+          Sauce atlandı: {teknikMetniCevir(k.sauce_neden) ?? k.sauce_neden ?? "neden bildirilmedi"}
+        </Cip>
+      );
   }
   if (k.kaynak === "github" && (k.durum === "queued" || k.durum === "running")) return <Cip ton="bilgi">Sauce: sırada/sürüyor</Cip>;
   return null;

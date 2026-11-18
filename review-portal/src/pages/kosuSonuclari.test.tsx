@@ -280,7 +280,10 @@ describe("koşu detayı (canlı core şekli)", () => {
     const metin = (k: Parameters<typeof SauceCipi>[0]["k"]) => render(<>{SauceCipi({ k })}</>).container.textContent;
     expect(metin({ ...temel, sauce_durum: "passed" })).toBe("Sauce: geçti");
     expect(metin({ ...temel, sauce_durum: "failed" })).toBe("Sauce: kırmızı");
-    expect(metin({ ...temel, sauce_durum: "atlandi" })).toBe("Sauce atlandı: SAUCE_TETIKLER");
+    expect(metin({ ...temel, sauce_durum: "atlandi" })).toBe("Sauce atlandı: bu koşu türünde Sauce çalıştırılmıyor (proje ayarı)");
+    expect(metin({ ...temel, sauce_durum: "atlandi", sauce_neden: "SAUCE_TETIKLER=push,deploy,nightly" })).toBe(
+      "Sauce atlandı: bu koşu türünde Sauce çalıştırılmıyor (proje ayarı: yalnız main'e push, deploy sonrası, gece koşularında)",
+    );
     expect(metin({ ...temel, durum: "queued", sauce_durum: null })).toBe("Sauce: sırada/sürüyor");
     expect(metin({ ...temel, sauce_durum: null })).toBe("");
     expect(metin({ ...temel, kaynak: "local", durum: "running", sauce_durum: null })).toBe("");

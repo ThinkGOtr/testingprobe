@@ -497,7 +497,7 @@ describe("Otomasyon sayfası", () => {
     const kod = await screen.findByRole("switch", { name: "Onaylanan case için kodu otomatik üret" });
     expect(kod).toBeDisabled();
     expect(screen.getByLabelText("Sorgu aralığı (saniye)")).toBeDisabled();
-    for (const d of screen.getAllByRole("button", { name: "Kaydet" })) expect(d).toBeDisabled();
+    expect(screen.queryAllByRole("button", { name: "Kaydet" })).toHaveLength(0);
     expect(screen.getByText(/Bu ayarları Analist ve Otomasyon Mühendisi değiştirir/)).toBeInTheDocument();
   });
 });

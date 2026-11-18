@@ -468,7 +468,9 @@ describe("yayın önizleme: hazır olmayan onaylı case", () => {
     expect(satir.getByText("Yayınlanamaz: hazır değil")).toBeInTheDocument();
     expect(satir.getByTestId("yayin-engel-nedeni")).toHaveTextContent("Case hazır değil (varsayıma bağlı); yalnız hazır case yayınlanır.");
     expect(satir.getByRole("checkbox")).toBeDisabled();
-    expect(screen.getByRole("button", { name: /Seçilenleri yayınla \(0\)/ })).toBeDisabled();
+    // Analist yayınlayamaz: düğme yerine Test Uzmanı beklenir (IA-10).
+    expect(screen.queryByRole("button", { name: /Seçilenleri yayınla/ })).toBeNull();
+    expect(screen.getByText("Bu adım Test Uzmanı rolünde: Fatih Arslan bekleniyor")).toBeInTheDocument();
   });
 
   it("uyarlama: neden metni ve yeni işlem değerleri korunur; bilinmeyen işlem güvenli tarafa düşer", () => {

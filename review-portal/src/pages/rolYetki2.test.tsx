@@ -386,9 +386,8 @@ describe("PO geri çevirme (T04, serbest metin)", () => {
     bekleyen();
     await oturumAc("analist");
     uygulama("/gereksinimler/req-ft-1");
-    const d = await screen.findByRole("button", { name: "Geri çevir" });
-    expect(d).toBeDisabled();
-    expect(d).toHaveAccessibleDescription("Bu işlem için gereken rol: Ürün Sahibi (PO)");
+    expect((await screen.findAllByText("Bu adım Ürün Sahibi (PO) rolünde: Cengizhan Gunaydin bekleniyor")).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "Geri çevir" })).toBeNull();
   });
 });
 

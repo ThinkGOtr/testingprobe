@@ -3,7 +3,7 @@
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import type { AjanUrunu } from "../api/types";
-import { BosDurum, Cip, HataKutusu, Kart, SayfaBasligi, Yukleniyor } from "../components/ui";
+import { BosDurum, Cip, HataKutusu, Kart, SayfaBasligi, SonrakiAdim, Yukleniyor } from "../components/ui";
 import { useVeri } from "../hooks";
 import { SIMULASYON_ACIKLAMASI } from "../lib/ajanProbe";
 
@@ -38,7 +38,9 @@ export function AjanUrunleri() {
       ) : (
         <Kart baslik={`Ürünler (${urunler.length})`}>
           {urunler.length === 0 ? (
-            <BosDurum baslik="Agent Probe'da hazır ajan ürünü yok." />
+            <BosDurum baslik="Agent Probe'da hazır ajan ürünü yok.">
+              <SonrakiAdim metin="Ajan ürünü Agent Probe'da tanımlanınca burada listelenir; gereksinime bağlamayı Analist gereksinim ekranından yapar." />
+            </BosDurum>
           ) : (
             <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Ajan ürünleri tablosu">
               <table className="tablo">

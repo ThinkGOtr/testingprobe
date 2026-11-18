@@ -933,33 +933,34 @@ test("pasiflik nedeni yerleşimi (review 3): neden kendi düğmesinin altında, 
       return { sol: Math.min(...s.map((x) => x.left)), sag: Math.max(...s.map((x) => x.right)), satir: new Set(s.map((x) => Math.round(x.top))).size };
     });
 
-  // Case review, analist, 1440: karar verilmiş case satırında neden paragrafın değil 'Taslağa al' düğmesinin altında
-  // (Taslağa al Test Uzmanı kararıdır; Analistte pasif ve gerekçeli). Script detayında da Analist merge edemez.
+  // Case review, analist, 1440: 'Taslağa al' Test Uzmanı kararıdır; Analistte düğme yerine "kimi bekliyoruz"
+  // satırı çizilir (IA-10) ve satır kendi grubunun içinde kalır. Script detayında da Analist merge edemez.
   await page.setViewportSize({ width: 1440, height: 900 });
   await girisYap(page, "analist");
   await page.goto("/gereksinimler/req-tpd-1/caseler");
   const satir = page.locator(".satir-ogeler:has(> .neden-var)").first();
   await expect(satir).toBeVisible();
   await fontlariBekle(page);
-  const yenidenAc = await kutu(satir.getByRole("button", { name: "Taslağa al" }));
-  const nedenK = await kutu(satir.locator(".dugme-neden"));
-  expect(nedenK.x).toBeGreaterThanOrEqual(yenidenAc.x - 1);
-  expect(nedenK.y).toBeGreaterThanOrEqual(yenidenAc.y + yenidenAc.height - 1);
+  await expect(satir.getByRole("button", { name: "Taslağa al" })).toHaveCount(0);
+  const bekleyen = satir.locator(".bekleyen-rol");
+  await expect(bekleyen).toHaveText(/^Bu adım Test Uzmanı rolünde: .+ bekleniyor$/);
+  const satirK = await kutu(satir);
+  const bekleyenK = await metinKenari(bekleyen);
+  expect(bekleyenK.sag).toBeLessThanOrEqual(satirK.x + satirK.width + 1);
   // Analist yayın önizlemesini salt okunur görür (publish.preview): başlıkta bağlantı, neden yok.
   const yayin = page.locator(".sayfa-basligi .eylemler");
   await expect(yayin.getByRole("link", { name: "Yayın önizleme" })).toBeVisible();
   await expect(yayin.locator(".dugme-neden")).toHaveCount(0);
 
-  // Script detay, analist: sola yaslı merge grubunda neden metni düğmenin sol kenarından başlar; komşu kart başlıkları aynı hizada.
+  // Script detay, analist: merge grubunda düğme yok, tek "kimi bekliyoruz" satırı; komşu kart başlıkları aynı hizada.
   for (const g of [1440, 1152]) {
     await page.setViewportSize({ width: g, height: 900 });
     await page.goto("/kod/scr-2");
     const pr = page.getByRole("region", { name: "Pull request" });
     await expect(pr).toBeVisible();
     await fontlariBekle(page);
-    const merge = pr.locator(".eylemler:has(> .neden-var)").first();
-    const ilkDugme = await kutu(merge.locator("button").first());
-    expect((await metinKenari(merge.locator(".dugme-neden"))).sol).toBeGreaterThanOrEqual(ilkDugme.x - 1);
+    await expect(pr.getByRole("button", { name: "Merge et" })).toHaveCount(0);
+    await expect(pr.locator(".bekleyen-rol").first()).toHaveText(/^Bu adım Otomasyon Mühendisi rolünde: .+ bekleniyor$/);
     const h2a = await kutu(pr.getByRole("heading", { name: "Pull request" }));
     const h2b = await kutu(page.getByRole("region", { name: "Kırarak doğrula" }).getByRole("heading", { name: "Kırarak doğrula" }));
     expect(Math.abs(h2a.y + h2a.height / 2 - (h2b.y + h2b.height / 2))).toBeLessThanOrEqual(1);

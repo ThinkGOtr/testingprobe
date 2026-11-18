@@ -67,7 +67,8 @@ describe("case üretimi hata ile bitti: yeniden denenir, denetim yeniden başlat
     expect(dugme).toBeEnabled();
     expect(dugme).toHaveAttribute("title", expect.stringMatching(/sunucuda yeniden doğrulanır/));
     // "Yeniden kontrol et" Analist işidir: Test Uzmanında pasif ve gereken rolü söyler.
-    expect(screen.getByRole("button", { name: "Yeniden kontrol et" })).toHaveAttribute("title", "Bu işlem için gereken rol: Analist");
+    expect(screen.queryByRole("button", { name: "Yeniden kontrol et" })).toBeNull();
+    expect(screen.getAllByText("Bu adım Analist rolünde: Cengizhan Gunaydin bekleniyor").length).toBeGreaterThan(0);
     await u.click(dugme);
     // Üretim formunun kipi açıkça gönderilir (011 K1; varsayılan iki tur → önce tasarım modeli).
     await waitFor(() => expect(spy).toHaveBeenCalledWith("req-tpd-1", "iki_tur"));

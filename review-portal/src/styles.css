@@ -6158,4 +6158,72 @@ html {
   justify-content: flex-end;
   flex-wrap: wrap;
   margin-top: 0.75rem;
+/* ── Şerit C (UX iş akışı, ET-07/IA-10): kilitli düğme `aria-disabled` taşır (Tab sırasında kalır);
+   tür sınıflarının :hover kuralları yerel :disabled'ı dışladığı için kilitli görünüm hover'da da korunur.
+   Yetkisiz rolde düğme yerine tek satır "kimi bekliyoruz" (.bekleyen-rol). Yeni renk yok. */
+.dugme[aria-disabled="true"]:hover,
+.dugme[aria-disabled="true"]:active {
+  background: var(--surface-3);
+  color: var(--muted);
+  box-shadow: none;
+  transform: none;
+}
+.dugme-neden.bekleyen-rol {
+  font-size: 0.82rem;
+  max-width: 48ch;
+}
+/* Kırıntı gezinme (IA-22): "Gereksinimler › TPD-1 › Case review"; mevcut tonlar. */
+.kirinti ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.kirinti li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.kirinti li + li::before {
+  content: "›";
+  color: var(--muted);
+}
+.ust-baglanti .kirinti a {
+  padding: 2px 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.kirinti [aria-current="page"] {
+  color: var(--text-2);
+  font-weight: 600;
+}
+/* Boş durum sonraki adım (IA-21): ne olacak + kim + bağlantı. */
+.sonraki-adim-baglanti {
+  font-weight: 600;
+  white-space: nowrap;
+}
+/* Denetim olayı (IA-12): okunur etiket + ikinci satırda olay kodu. */
+.denetim-olay-etiketi,
+.denetim-olay-kodu {
+  display: block;
+}
+/* Teknik ayrıntı açılırı (IA-12): kullanıcı cümlesinin altında ham hata/komut metni. */
+.teknik-ayrinti {
+  font-size: 0.82rem;
+}
+.teknik-ayrinti > summary {
+  cursor: pointer;
+}
+.teknik-ayrinti code {
+  display: block;
+  margin-top: 4px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }

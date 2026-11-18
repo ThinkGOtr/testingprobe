@@ -92,7 +92,7 @@ describe("yol haritası: kasıtlı kırma taslağı adım 13'ü bekletmez", () =
     expect(kirmaTaslagiMi(buglar[3], hatalar, kampanya)).toBe(true);
     const a13 = demoAdimlari({ ...TAM, bugTaslaklari: [...buglar, bug("b9", { durum: "draft", karar: null })] })[12];
     expect(a13.hal).toBe("suruyor");
-    expect(a13.ipucu).toBe("Kalan taslaklara testçi kararı verin (onayla / bağla / reddet).");
+    expect(a13.ipucu).toBe("Kalan taslaklara Test Uzmanı kararı verin (onayla / bağla / reddet).");
     const ilk = demoAdimlari({ ...TAM, bugTaslaklari: [bug("b1", { failure_id: "f3", durum: "draft", karar: null })] })[12];
     expect(ilk.ipucu).toMatch(/F2 ve C3 taslakları/);
   });

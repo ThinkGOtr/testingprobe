@@ -78,9 +78,8 @@ describe("oturum ve yönlendirme", () => {
   it("Analist Claude Code ekranını görür; token oluşturma Test Uzmanı ve Geliştiriciye ait (token.issue)", async () => {
     await oturumAc("analist");
     uygulama("/claude-code");
-    const d = await screen.findByRole("button", { name: "8 saatlik token oluştur" });
-    expect(d).toBeDisabled();
-    expect(d).toHaveAccessibleDescription("Bu işlem için gereken rol: Test Uzmanı / Geliştirici");
+    expect(await screen.findByText("Bu adım Test Uzmanı / Geliştirici rolünde: Fatih Arslan bekleniyor")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "8 saatlik token oluştur" })).toBeNull();
   });
 
   it("çıkış oturumu kapatır", async () => {
@@ -262,9 +261,8 @@ describe("ekranlar", () => {
     g.po = { durum: "pending", onaylayan: null, zaman: null, kanal: "portal" };
     await oturumAc("analist");
     uygulama("/gereksinimler/req-ft-1");
-    const d = await screen.findByRole("button", { name: "PO olarak onayla" });
-    await waitFor(() => expect(d).toBeDisabled());
-    expect(d).toHaveAttribute("title", "Bu işlem için gereken rol: Ürün Sahibi (PO)");
+    expect((await screen.findAllByText("Bu adım Ürün Sahibi (PO) rolünde: Cengizhan Gunaydin bekleniyor")).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "PO olarak onayla" })).toBeNull();
     expect(screen.queryByTestId("po-onay-ipucu")).toBeNull();
   });
 

@@ -7,7 +7,7 @@ import { useBugKisitli, useIzin } from "../auth";
 import { BUG_KISITLI_METNI, izinRolleriMetni } from "../lib/yetki";
 import type { BugTaslagi, BugTaslakIcerik, MukerrerAday, MukerrerArama } from "../api/types";
 import { useBildirim } from "../components/Bildirim";
-import { AlanHatasi, BosDurum, Cip, Baglanti, HataKutusu, KayitHatasi, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor, IzinliLink } from "../components/ui";
+import { AlanHatasi, BosDurum, Cip, Baglanti, HataKutusu, KayitHatasi, IslemDugmesi, Kart, Kirinti, ReplayRozeti, SayfaBasligi, SonrakiAdim, Uyari, Yukleniyor, IzinliLink } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { KisiAdi } from "../components/KisiAdi";
 import { BUG_DURUMU, SEVERITY, type Ton } from "../lib/etiketler";
@@ -105,14 +105,19 @@ export function BugTaslaklari() {
   useOlay(sessiz, ["bug.published", "bug.updated", "failure.classified", "finding.updated"]);
   return (
     <>
-      <SayfaBasligi baslik="Bug taslakları" aciklama="AI taslak hazırlar ve Jira'da olası mükerrerleri bulur; kayıt yalnızca testçi onayıyla açılır ya da bağlanır." />
+      <SayfaBasligi baslik="Bug taslakları" aciklama="AI taslak hazırlar ve Jira'da olası mükerrerleri bulur; kayıt yalnızca Test Uzmanı onayıyla açılır ya da bağlanır." />
       <Kart>
         {v.yukleniyor && !v.veri ? (
           <Yukleniyor />
         ) : v.hata && !v.veri ? (
           <HataKutusu hata={v.hata} kaynak={v.hataNesnesi} yenile={() => void v.yenile()} />
         ) : (v.veri ?? []).length === 0 ? (
-          <BosDurum baslik="Bug taslağı yok." />
+          <BosDurum baslik="Bug taslağı yok.">
+            <SonrakiAdim
+              metin="Ürün hatası adayı triage'da bulununca burada taslak oluşur; kayıt açma ya da bağlama kararını Test Uzmanı verir."
+              baglanti={{ to: "/kosular?durum=failed", ad: "Son başarısız koşular" }}
+            />
+          </BosDurum>
         ) : (
           <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Bug taslakları tablosu">
             <table className="tablo tablo-yigin">
@@ -278,7 +283,7 @@ function MukerrerKarti({
           {(a?.mode === "replay_miss" || a?.ai_onerisi_yok || b.mukerrer_adaylari.every((m) => !m.gerekce && !m.olasilik)) && (
             <Uyari ton="uyari" baslik="Mükerrer sıralaması yapılamadı">
               {a?.mode === "replay_miss" ? "REPLAY-MISS: bu aday kümesi için kayıtlı model sıralaması yok. " : ""}
-              Adaylar Jira aramasının sırasıyla, AI gerekçesi olmadan gösteriliyor; karar yine testçinin.
+              Adaylar Jira aramasının sırasıyla, AI gerekçesi olmadan gösteriliyor; karar yine Test Uzmanının.
             </Uyari>
           )}
           {a?.oneri ? (
@@ -290,12 +295,12 @@ function MukerrerKarti({
                   a.neden
                   ? "yeni kayıt aç"
                   : "yeni kayıt aç (adaylar aynı hata değil)"}
-              <span className="soluk"> · karar testçinin</span>
+              <span className="soluk"> · karar Test Uzmanının</span>
               {a.neden && <span className="soluk"> · {a.neden}</span>}
             </p>
           ) : a?.ai_onerisi_yok ? (
             <p className="kucuk" data-testid="mukerrer-onerisi">
-              <strong>AI önerisi yok</strong> ({a.ai_onerisi_yok})<span className="soluk"> · karar testçinin</span>
+              <strong>AI önerisi yok</strong> ({a.ai_onerisi_yok})<span className="soluk"> · karar Test Uzmanının</span>
             </p>
           ) : null}
           <ul className="mukerrer-liste" aria-label="Mükerrer adayları">
@@ -522,7 +527,8 @@ export function BugTaslakDetay() {
   return (
     <>
       <SayfaBasligi
-        ust={<Link to="/bug-taslaklari">← Bug taslakları</Link>}
+        ust={<Kirinti ogeler={[{ ad: "Bug taslakları", to: "/bug-taslaklari" }, { ad: b.icerik.story_key ? `${b.icerik.story_key} bug taslağı` : "Bug taslağı" }]} />}
+        sekme={`${b.icerik.story_key ? `${b.icerik.story_key} ` : ""}Bug taslağı`}
         baslik={b.icerik.summary}
         aciklama={
           <span className="satir-ogeler">

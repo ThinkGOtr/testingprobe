@@ -118,16 +118,12 @@ test("asistan paneli: açılır, sekmeler, dürüst rozetler, bağlam çipi rota
 
 test('"? Bu ne?": pasif (disabled) düğme seçilir, nedeni sorulur; Esc önce kipten çıkar; "Git" iç rotaya götürür', async ({ page }) => {
   const hatalar = konsolHatalariniTopla(page);
-  // Sunucu: script detayında "Merge et" pasif (yalnız mühendis) ve "Git: Kod üretimi" açabildiği ekran
-  // (Kod üretimi listesi yalnız mühendis + sunucuya açık).
-  await girisYap(page, "sunucu");
-  await page.goto("/kod/scr-2");
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText(/7 adet kampanyalı/);
-
-  // Analist için mühendis düğmesi pasif ve nedenini title'da söyler (S1 vakası).
-  const merge = page.getByRole("button", { name: "Merge et" });
+  // Rolün yapamadığı eylem artık düğme değil "kimi bekliyoruz" satırıdır (IA-10). Kilitli (aria-disabled,
+  // ET-07) düğme örneği: defect adayı script'te "Kırarak doğrula" (Otomasyon Mühendisi).
+  await girisYap(page, "muhendis");
+  await page.goto("/kod/scr-3");
+  const merge = page.getByRole("button", { name: "Kırarak doğrula", exact: true });
   await expect(merge).toBeDisabled();
-  await expect(merge).toHaveAttribute("title", "Bu işlem için gereken rol: Otomasyon Mühendisi");
   await merge.scrollIntoViewIfNeeded();
 
   const p = await paneliAc(page);
@@ -145,13 +141,14 @@ test('"? Bu ne?": pasif (disabled) düğme seçilir, nedeni sorulur; Esc önce k
 
   // Kipte disabled düğmeye tıklanır: tarayıcı disabled öğeye olay göndermese de bindirme
   // elementsFromPoint ile altındaki düğmeyi bulur.
-  await buNe.click();
+  // Konum kip açılmadan alınır (bindirme açıkken içerik erişilebilirlik ağacında gizlenebilir).
   const kutu = await merge.boundingBox();
-  expect(kutu, "Merge et görünür alanda olmalı").not.toBeNull();
+  expect(kutu, "Kırarak doğrula görünür alanda olmalı").not.toBeNull();
+  await buNe.click();
   await page.mouse.move(kutu!.x + kutu!.width / 2, kutu!.y + kutu!.height / 2);
   await page.mouse.click(kutu!.x + kutu!.width / 2, kutu!.y + kutu!.height / 2);
   await expect(page.getByTestId("asistan-bune-bindirme")).toHaveCount(0);
-  await expect(p.getByLabel("Soruya eklenecek bağlam").getByText("Seçili: Merge et")).toBeVisible();
+  await expect(p.getByLabel("Soruya eklenecek bağlam").getByText("Seçili: Kırarak doğrula")).toBeVisible();
   await page.screenshot({ path: `${EKRAN_DIZINI}/02-bu-ne-secili.png` });
 
   // Soru gönderilir; cevap kartı (mock örneği) gelir, seçili çip tüketilir.
@@ -161,7 +158,7 @@ test('"? Bu ne?": pasif (disabled) düğme seçilir, nedeni sorulur; Esc önce k
   const kart = await sonCevap(p);
   await expect(kart.getByText(/ÖRNEK VERİ — hazırlanmış örnek cevap/)).toBeVisible();
   await expect(kart.getByText("Bilgi amaçlıdır; kararı ilgili ekranda verin.")).toBeVisible();
-  await expect(p.getByText("Seçili: Merge et")).toHaveCount(0);
+  await expect(p.getByText("Seçili: Kırarak doğrula")).toHaveCount(0);
   await expect(page.getByText(SAHTE_CANLI)).toHaveCount(0);
   // Doğrulanmamış kaynak satırı (docs/DEMO-AKISI.md) biçimle işaretli; satır soldurulmaz → kart AA'da ihlalsiz.
   const dogrulanmamis = kart.locator(".soluk-kaynak");

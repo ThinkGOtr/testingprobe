@@ -168,6 +168,8 @@ describe("mock: review (P8) ve denetim (P9) akışı", () => {
 
   it("durum şeridi: sayılar ve bölüm bağlantıları; tek birincil eylem", async () => {
     await uret();
+    // Denetime gönderen Analist (IA-10: Test Uzmanında düğme çizilmez, kimi beklediğimiz yazılır).
+    await oturumAc("analist");
     const u = userEvent.setup();
     uygulama(`/gereksinimler/${RID}/caseler`);
     const serit = await screen.findByRole("navigation", { name: "Case review durumu" });

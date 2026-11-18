@@ -248,7 +248,7 @@ export function CaseKalitesiIcerik({ k, baslikId }: { k: Veri; baslikId: string 
       </div>
 
       <div className="ck-izgara">
-        <Panel baslik="Case seti review (P8)" kaynak={ky.review} testId="ck-review">
+        <Panel baslik="Case seti AI incelemesi" kaynak={ky.review} testId="ck-review">
           <p className="ck-ozet">
             Ortalama{" "}
             <strong data-testid="review-ortalama">
@@ -266,7 +266,7 @@ export function CaseKalitesiIcerik({ k, baslikId }: { k: Veri; baslikId: string 
           </p>
         </Panel>
 
-        <Panel baslik="Agent Probe denetimi (P9)" kaynak={ky.denetim} testId="ck-denetim">
+        <Panel baslik="Agent Probe denetimi" kaynak={ky.denetim} testId="ck-denetim">
           <p className="ck-ozet">
             <strong>{k.denetim.n}</strong> denetim
             <span className="soluk">

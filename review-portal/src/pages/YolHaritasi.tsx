@@ -136,7 +136,7 @@ function DurumSeridi({ v }: { v: Yuklenen }) {
           <span>{m.metin}</span>
         </p>
         <p className="soluk kucuk">
-          {m.kaynak === "cekirdek" ? "Çekirdek bildirdi (/demo/status)." : m.kaynak === "gozlem" ? "Çekirdek kipi bildirmiyor; ekrandaki çıktılardan gözlendi." : "Henüz gözlenecek çıktı yok."}
+          {m.kaynak === "cekirdek" ? "Sunucu bildirdi." : m.kaynak === "gozlem" ? "Çekirdek kipi bildirmiyor; ekrandaki çıktılardan gözlendi." : "Henüz gözlenecek çıktı yok."}
         </p>
         {m.replay_miss > 0 && (
           <p className="kucuk">
@@ -223,7 +223,7 @@ export function YolHaritasi() {
         baslik="Demo yol haritası"
         aciklama={
           <>
-            Ana senaryo <span className="mono">f2-kod-hatasi</span>: {DEMO_STORY} story'si 14 adımda ve locator kırılma yolu. Her adım gerçek
+            Ana senaryo (kod hatası): {DEMO_STORY} story'si 14 adımda ve locator kırılma yolu. Her adım gerçek
             durumdan okunur; kanıt yoksa “bekliyor” yazar.
           </>
         }
@@ -249,8 +249,12 @@ export function YolHaritasi() {
       )}
       {!y.gereksinim && (
         <Uyari ton="bilgi" baslik={`${DEMO_STORY} henüz yok`}>
-          Analist Gereksinimler ekranında “Jira'dan çek” ile story'leri çeker. Sunum öncesi: <span className="mono">make reset</span> → Demo-A →{" "}
-          <span className="mono">make demo-check</span> (çıkış 0).
+          Analist Gereksinimler ekranında “Jira'dan çek” ile story'leri çeker. Sunum öncesi demo ortamı sıfırlanır ve demo kontrolü
+          hatasız geçmelidir (Sistem Yöneticisi).
+          <details className="teknik-ayrinti">
+            <summary>Ayrıntı</summary>
+            <code>make reset → Demo-A → make demo-check (çıkış 0)</code>
+          </details>
         </Uyari>
       )}
 
