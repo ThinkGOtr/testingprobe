@@ -1,0 +1,502 @@
+{
+  "bundle": "consistency-check",
+  "version": 5,
+  "date": "2026-11-18",
+  "model": "claude-sonnet-5-5",
+  "provider": "anthropic",
+  "mode": "live",
+  "passed": 6,
+  "total": 6,
+  "runs": 1,
+  "cases": [
+    {
+      "id": "tpd-1-tur-1",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "findings": [
+          {
+            "id": "F1",
+            "type": "internal_contradiction",
+            "doc_ref": "AC3 ↔ AC6",
+            "claim": "AC3 'Tüm siparişlerde' minimum 500,00 TL şartı koyuyor; AC6 kampanyalı siparişlerde minimum tutar aranmaz diyor.",
+            "observed": "İki kriter kampanyalı siparişler için çelişiyor.",
+            "evidence": [],
+            "severity": "blocking",
+            "suggested_doc_text": "AC3: Kampanyasız siparişlerde minimum sipariş tutarı 750,00 TL'dir; altında \"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir ve onay butonu pasif olur."
+          },
+          {
+            "id": "F2",
+            "type": "doc_vs_data",
+            "doc_ref": "AC3",
+            "claim": "Minimum sipariş tutarı 500,00 TL ve uyarı metni 'Minimum sipariş tutarı 500,00 TL'.",
+            "observed": "ayar tablosunda min_siparis_tutari 750.00; uyarı metni bu değerden üretilir (750,00 TL).",
+            "evidence": [
+              {
+                "kind": "data",
+                "query": "SELECT anahtar, deger FROM ayar WHERE anahtar = 'min_siparis_tutari'",
+                "result_digest": "min_siparis_tutari=750.00"
+              },
+              {
+                "kind": "code",
+                "repo": "demo-app",
+                "path": "api/src/demoapp_api/pricing.py",
+                "line": 59,
+                "snippet": "    return f\"Minimum sipariş tutarı {format_tl(min_tutar)}\""
+              }
+            ],
+            "severity": "blocking",
+            "suggested_doc_text": "AC3: Kampanyasız siparişlerde minimum sipariş tutarı 750,00 TL'dir (indirim sonrası toplam, 750,00 TL dahil); altında \"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir ve onay butonu pasif olur."
+          },
+          {
+            "id": "F3",
+            "type": "doc_vs_code",
+            "doc_ref": "AC2",
+            "claim": "Her 6 adet alımda 1 bedava; 7 adette 1 bedava (6 öde, 1 bedava üstüne).",
+            "observed": "Kod adet // 6 hesaplıyor: 6 adette zaten 1 bedava (belgeye göre ilk fayda 7 adette), 12 adette 2, 13 adette 2. Belgenin '6 al 1 bedava' okumasına göre fayda 7 adette başlar, 6 adette 0 olmalı. Kod ile ilk fark 6 adette.",
+            "evidence": [
+              {
+                "kind": "code",
+                "repo": "demo-app",
+                "path": "api/src/demoapp_api/campaign.py",
+                "line": 23,
+                "snippet": "    return adet // 6"
+              }
+            ],
+            "severity": "blocking",
+            "suggested_doc_text": "AC2: \"6 al 1 bedava\" kampanyasında kampanyalı üründen her 6 adet alımda 1 adet bedava verilir (6 adette 1 bedava, 7 adette 1 bedava, 12 adette 2 bedava); bedava adet adet/6 işleminin tam kısmıdır."
+          },
+          {
+            "id": "F4",
+            "type": "missing_in_code",
+            "doc_ref": "AC4",
+            "claim": "Sipariş tutarı kredi limitini aşarsa 'Kredi limiti aşıldı' uyarısı gösterilir ve sipariş onaylanamaz.",
+            "observed": "Kodda kredi limiti kontrolü ve 'Kredi limiti aşıldı' mesajı yok; kredi_limiti yalnızca modelde/seed'de tanımlı. onaylanabilir yalnızca boş sepet ve minimum uyarısına bakıyor.",
+            "evidence": [
+              {
+                "kind": "code",
+                "repo": "demo-app",
+                "path": "api/src/demoapp_api/pricing.py",
+                "line": 106,
+                "snippet": "        onaylanabilir=not bos and not uyarilar,"
+              }
+            ],
+            "severity": "blocking",
+            "suggested_doc_text": null
+          },
+          {
+            "id": "F5",
+            "type": "missing_in_doc",
+            "doc_ref": "AC6",
+            "claim": "Kampanyalı siparişte minimum aranmaz.",
+            "observed": "Kod 'kampanyalı' ürün sepette var olduğunda (bedava adet 0 olsa bile) muafiyet veriyor; belge muafiyet için bedava indirimin uygulanmasını mı yoksa kampanyalı ürün bulunmasını mı kastettiğini belirtmiyor.",
+            "evidence": [
+              {
+                "kind": "code",
+                "repo": "demo-app",
+                "path": "api/src/demoapp_api/pricing.py",
+                "line": 94,
+                "snippet": "    min_aranir = not any(s.kampanyali for s in satirlar)  # kampanyalı siparişte aranmaz"
+              }
+            ],
+            "severity": "warning",
+            "suggested_doc_text": "AC6: Sepette kampanyalı ürün bulunan siparişlerde (bedava adet oluşmasa da) minimum sipariş tutarı şartı aranmaz."
+          }
+        ],
+        "notes": "Kredi limiti, bedava adet formülü ve minimum tutar karşılaştırıldı. Not: sipariş onayı/geçmişi (AC1, AC5) ayrıca doğrulanmadı."
+      },
+      "mode": "live",
+      "error": null,
+      "cost_usd": 0.079914,
+      "sure_ms": 21095
+    },
+    {
+      "id": "serbest-tur-1",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "findings": [
+          {
+            "id": "F1",
+            "type": "doc_vs_code",
+            "doc_ref": "AC2",
+            "claim": "Kaldırma sonrası kampanya indirimi her 7 adette 1 bedava kuralıyla yeniden hesaplanır.",
+            "observed": "Kod 'her 6 adette 1 bedava' uygular (adet // 6). Kampanya adı '6 al 1 bedava'. Belgedeki 7'nin sıradan iş anlamı '6 al, 1 bedava' (7. adet bedava) olabilir, ancak 'her 7 adette 1 bedava' ifadesi 7 adette 1, 14 adette 2 bedava anlamına gelir. Kod 6 adette 1 bedava verir, yani ilk ayrışma 6 adettedir (belge 0, kod 1); 12 adette de farklı (belge 1, kod 2). Belge 7 adet için sonuç olarak uyuşur, ancak 14 adette kod 2 verir, 7 adette-1 mantığıyla çakışır; 6 ve 12 adette ayrışır.",
+            "evidence": [
+              {
+                "kind": "code",
+                "repo": "demo-app",
+                "path": "api/src/demoapp_api/campaign.py",
+                "line": 23,
+                "snippet": "    return adet // 6"
+              },
+              {
+                "kind": "code",
+                "repo": "demo-app",
+                "path": "api/src/demoapp_api/campaign.py",
+                "line": 16,
+                "snippet": "KAMPANYA_ADI = \"6 al 1 bedava\""
+              }
+            ],
+            "severity": "blocking",
+            "suggested_doc_text": "AC2: Kaldırma sonrası kampanya indirimi \"6 al 1 bedava\" kuralıyla (kampanyalı üründe her 6 adette 1 bedava, adet // 6) yeniden hesaplanır."
+          },
+          {
+            "id": "F2",
+            "type": "doc_vs_data",
+            "doc_ref": "AC3",
+            "claim": "Sepet tutarı 500,00 TL altına düşerse minimum tutar uyarısı gösterilir.",
+            "observed": "Minimum sipariş tutarı ayar tablosunda 750,00 TL; kod uyarıyı toplam 750,00 TL altında verir (ör. 600,00 TL'de belge uyarı istemez, kod uyarır). README de 500'ün eski değer olduğunu belirtiyor.",
+            "evidence": [
+              {
+                "kind": "data",
+                "query": "SELECT anahtar, deger FROM ayar",
+                "result_digest": "min_siparis_tutari=750.00"
+              },
+              {
+                "kind": "code",
+                "repo": "demo-app",
+                "path": "api/src/demoapp_api/pricing.py",
+                "line": 97,
+                "snippet": "        uyarilar.append(Uyari(UYARI_MIN_SIPARIS, min_siparis_mesaji(min_tutar)))"
+              }
+            ],
+            "severity": "blocking",
+            "suggested_doc_text": "AC3: Sepet tutarı (indirim sonrası toplam) 750,00 TL altına düşerse \"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir; tam 750,00 TL'de uyarı gösterilmez."
+          },
+          {
+            "id": "F3",
+            "type": "missing_in_doc",
+            "doc_ref": "AC3",
+            "claim": "AC3 minimum tutar uyarısını koşulsuz tanımlar.",
+            "observed": "Kod, sepette kampanyalı ürün satırı varsa minimum tutar uyarısı üretmez (min_aranir = not any(kampanyali)); belge bu muafiyeti belirtmiyor. Kampanyalı ürün kaldırılınca muafiyet de değişir.",
+            "evidence": [
+              {
+                "kind": "code",
+                "repo": "demo-app",
+                "path": "api/src/demoapp_api/pricing.py",
+                "line": 94,
+                "snippet": "    min_aranir = not any(s.kampanyali for s in satirlar)  # kampanyalı siparişte aranmaz"
+              }
+            ],
+            "severity": "blocking",
+            "suggested_doc_text": "AC3: Sepette kampanyalı ürün yoksa ve sepet tutarı (indirim sonrası) 750,00 TL altındaysa minimum tutar uyarısı gösterilir; sepette kampanyalı ürün varsa minimum tutar aranmaz."
+          },
+          {
+            "id": "F4",
+            "type": "ambiguous",
+            "doc_ref": "AC1",
+            "claim": "Sepet sayacı azalır.",
+            "observed": "Sayaç adet_toplam (satırlardaki toplam adet) değerini gösterir; satır kaldırılınca sayaç satırın adedi kadar azalır, 1 azalmaz. Belge 'azalır' miktarını belirtmiyor.",
+            "evidence": [
+              {
+                "kind": "code",
+                "repo": "demo-app",
+                "path": "api/src/demoapp_api/pricing.py",
+                "line": 100,
+                "snippet": "        adet_toplam=sum(s.adet for s in satirlar),"
+              }
+            ],
+            "severity": "warning",
+            "suggested_doc_text": "AC1: Satırdaki \"Kaldır\" butonuna basıldığında ürün satırı (tüm adetleri) sepetten çıkar ve sepet sayacı o satırın adedi kadar azalır."
+          }
+        ],
+        "notes": "Kaldırma API'si (DELETE /cart/lines/{urun_kod}) sepeti yeniden hesaplıyor. F1'de kod \"6 al 1 bedava\" (adet // 6) uyguluyor, belge ise \"7 adette 1\" diyor; README'de 7 adette 1 bedava kuralının eski story metni olduğu belirtiliyor. 'Kaldır' butonu web, mobil ve masaüstü arayüzlerinde mevcut."
+      },
+      "mode": "live",
+      "error": null,
+      "cost_usd": 0.099449,
+      "sure_ms": 23214
+    },
+    {
+      "id": "tpd-4-tutarli",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "findings": [],
+        "notes": "AC1 ve AC2 kodla uyumlu. POST /auth/login geçerli bilgilerle oturum çerezi verip bayi adını döndürüyor (main.py:275-300). Hatalı parolada ve bilinmeyen kullanıcıda 401 ile tam olarak \"Kullanıcı adı veya parola hatalı\" dönüyor (main.py:45, 281, 283), oturum açılmıyor. Ürün kataloğunun açılmasını ise arayüz tarafında doğrulamadım. Çelişki, veri uyuşmazlığı veya belgede eksik bir kural bulmadım."
+      },
+      "mode": "live",
+      "error": null,
+      "cost_usd": 0.04611,
+      "sure_ms": 7006
+    },
+    {
+      "id": "tpd-1-tur-1-mysql",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "findings": [
+          {
+            "id": "F1",
+            "type": "doc_vs_code",
+            "doc_ref": "AC2",
+            "claim": "6 al 1 bedava: 6 adet ücretli alımda 1 bedava gelir, yani fayda 7 adette başlar (6 adette bedava yok).",
+            "observed": "Kod adet // 6 hesaplar: 6 adette 1 bedava (belge: 0), 7 adette 1 (uyumlu), 12 adette 2 (belge: 1; 13'te 2). İlk ayrışan girdi 6 adettir. Belgenin 'her 6 adet alımda 1' ifadesi ile '7 adette 1' örneği de kendi içinde belirsizdir.",
+            "evidence": [
+              {
+                "kind": "code",
+                "repo": "demo-app",
+                "path": "api/src/demoapp_api/campaign.py",
+                "line": 23,
+                "snippet": "    return adet // 6"
+              }
+            ],
+            "severity": "blocking",
+            "suggested_doc_text": "AC2: \"6 al 1 bedava\" kampanyasında kampanyalı üründen 6 adet ücretli alımın üzerine 1 adet bedava verilir (6 adette bedava yok, 7 adette 1 bedava, 13 adette 2 bedava)."
+          },
+          {
+            "id": "F2",
+            "type": "doc_vs_data",
+            "doc_ref": "AC3",
+            "claim": "Minimum sipariş tutarı 500,00 TL ve uyarı metni 'Minimum sipariş tutarı 500,00 TL'.",
+            "observed": "ayar tablosunda min_siparis_tutari=750.00; uyarı metni bu değerden üretilir ('Minimum sipariş tutarı 750,00 TL').",
+            "evidence": [
+              {
+                "kind": "data",
+                "query": "SELECT anahtar, deger FROM ayar",
+                "result_digest": "min_siparis_tutari=750.00"
+              },
+              {
+                "kind": "code",
+                "repo": "demo-app",
+                "path": "api/src/demoapp_api/pricing.py",
+                "line": 59,
+                "snippet": "    return f\"Minimum sipariş tutarı {format_tl(min_tutar)}\""
+              }
+            ],
+            "severity": "blocking",
+            "suggested_doc_text": "AC3: Kampanyasız siparişlerde minimum sipariş tutarı 750,00 TL'dir (indirim sonrası toplam, sınır dahil); altında \"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir ve onay butonu pasif olur."
+          },
+          {
+            "id": "F3",
+            "type": "internal_contradiction",
+            "doc_ref": "AC3 ↔ AC6",
+            "claim": "AC3 'Tüm siparişlerde' minimum tutar şartı koyar; AC6 kampanyalı siparişlerde şart aranmaz der.",
+            "observed": "İki kriter kampanyalı siparişler için çelişiyor. Kod kampanyalı sepeti muaf tutar (AC6 ile uyumlu).",
+            "evidence": [
+              {
+                "kind": "code",
+                "repo": "demo-app",
+                "path": "api/src/demoapp_api/pricing.py",
+                "line": 94,
+                "snippet": "    min_aranir = not any(s.kampanyali for s in satirlar)  # kampanyalı siparişte aranmaz"
+              }
+            ],
+            "severity": "blocking",
+            "suggested_doc_text": "AC3: Kampanyasız siparişlerde minimum sipariş tutarı 750,00 TL'dir; altında \"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir ve onay butonu pasif olur."
+          },
+          {
+            "id": "F4",
+            "type": "missing_in_code",
+            "doc_ref": "AC4",
+            "claim": "Sipariş tutarı bayinin kredi limitini aşarsa 'Kredi limiti aşıldı' uyarısı gösterilir ve sipariş onaylanamaz.",
+            "observed": "Kodda kredi limiti kontrolü ve 'Kredi limiti aşıldı' mesajı yok. kredi_limiti yalnızca modelde ve seed'de geçer. sepet_hesapla onaylanabilir'i yalnızca boş sepet ve minimum uyarısına göre belirler.",
+            "evidence": [
+              {
+                "kind": "code",
+                "repo": "demo-app",
+                "path": "api/src/demoapp_api/pricing.py",
+                "line": 106,
+                "snippet": "        onaylanabilir=not bos and not uyarilar,"
+              }
+            ],
+            "severity": "blocking",
+            "suggested_doc_text": null
+          }
+        ],
+        "notes": "AC1 ve AC5 için kod incelenmedi; bulgu yok. README, mevcut min. tutarın 750,00 TL olduğunu ve story'deki 500 değerinin eski olduğunu belirtiyor. Belge içinde yönlendirme amaçlı talimat bulunmadı."
+      },
+      "mode": "live",
+      "error": null,
+      "cost_usd": 0.061148,
+      "sure_ms": 17856
+    },
+    {
+      "id": "serbest-tur-1-mysql",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "findings": [
+          {
+            "id": "F1",
+            "type": "doc_vs_code",
+            "doc_ref": "AC2",
+            "claim": "Kaldırma sonrası kampanya indirimi her 7 adette 1 bedava kuralıyla yeniden hesaplanır.",
+            "observed": "Kod 'her 6 adette 1 bedava' uygular (adet // 6). 6 adette bedava 1 (belge: 0), 12 adette 2 (belge: 1); ilk ayrışma 6 adettedir. Belgedeki 7 ile 'buy 6 get 1 free' (6 öde + 1 bedava = 7. adette fayda başlar) okuması da olası, ancak kod 6. adette bedava verir. Kampanya adı da '6 al 1 bedava'.",
+            "evidence": [
+              {
+                "kind": "code",
+                "repo": "demo-app",
+                "path": "api/src/demoapp_api/campaign.py",
+                "line": 23,
+                "snippet": "    return adet // 6"
+              },
+              {
+                "kind": "code",
+                "repo": "demo-app",
+                "path": "api/src/demoapp_api/campaign.py",
+                "line": 16,
+                "snippet": "KAMPANYA_ADI = \"6 al 1 bedava\""
+              }
+            ],
+            "severity": "blocking",
+            "suggested_doc_text": "AC2: Kaldırma sonrası kampanya indirimi \"6 al 1 bedava\" kuralıyla (kampanyalı ürün satırında her 6 adette 1 bedava) yeniden hesaplanır."
+          },
+          {
+            "id": "F2",
+            "type": "doc_vs_data",
+            "doc_ref": "AC3",
+            "claim": "Sepet tutarı 500,00 TL altına düşerse minimum tutar uyarısı gösterilir.",
+            "observed": "Minimum sipariş tutarı ayar tablosunda 750,00 TL; uyarı toplam < 750,00 TL olduğunda çıkar (sınır dahil, 750,00 TL'de uyarı yok). Ayrıca kampanyalı ürün içeren sepette minimum aranmaz ve uyarı çıkmaz; belge bunu belirtmiyor. Uyarı toplam (indirim sonrası) üzerinden hesaplanır.",
+            "evidence": [
+              {
+                "kind": "data",
+                "query": "SELECT anahtar, deger FROM ayar",
+                "result_digest": "min_siparis_tutari=750.00"
+              },
+              {
+                "kind": "code",
+                "repo": "demo-app",
+                "path": "api/src/demoapp_api/pricing.py",
+                "line": 94,
+                "snippet": "    min_aranir = not any(s.kampanyali for s in satirlar)  # kampanyalı siparişte aranmaz"
+              },
+              {
+                "kind": "code",
+                "repo": "demo-app",
+                "path": "api/src/demoapp_api/faults.py",
+                "line": 153,
+                "snippet": "    return toplam > min_tutar if hata == MIN_SIPARIS_HARIC else toplam >= min_tutar"
+              }
+            ],
+            "severity": "blocking",
+            "suggested_doc_text": "AC3: Kampanyalı ürün içermeyen sepette indirim sonrası toplam 750,00 TL altına düşerse (750,00 TL dahil değil, yeterli) minimum tutar uyarısı gösterilir; kampanyalı ürün içeren sepette minimum tutar aranmaz ve uyarı gösterilmez."
+          }
+        ],
+        "notes": "AC1 (Kaldır butonu, sepet sayacı) kodda mevcut; web/src/pages/CartPage.tsx'te buton var. Belgedeki 500 TL ve 7 adet değerleri kodla/veriyle uyuşmuyor."
+      },
+      "mode": "live",
+      "error": null,
+      "cost_usd": 0.083038,
+      "sure_ms": 15443
+    },
+    {
+      "id": "tpd-1-tur-1-oracle",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "findings": [
+          {
+            "id": "F1",
+            "type": "internal_contradiction",
+            "doc_ref": "AC3 ↔ AC6",
+            "claim": "AC3 'Tüm siparişlerde' minimum tutar 500,00 TL şartı koyar; AC6 kampanyalı siparişlerde min. tutar aranmaz der.",
+            "observed": "AC3 kapsamı 'tüm siparişler' iken AC6 kampanyalı siparişleri muaf tutuyor; kod da kampanyalı sepeti muaf tutuyor.",
+            "evidence": [
+              {
+                "kind": "code",
+                "repo": "demo-app",
+                "path": "api/src/demoapp_api/pricing.py",
+                "line": 94,
+                "snippet": "    min_aranir = not any(s.kampanyali for s in satirlar)  # kampanyalı siparişte aranmaz"
+              }
+            ],
+            "severity": "blocking",
+            "suggested_doc_text": "AC3: Kampanyasız siparişlerde minimum sipariş tutarı 750,00 TL'dir; altında \"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir ve onay butonu pasif olur."
+          },
+          {
+            "id": "F2",
+            "type": "doc_vs_data",
+            "doc_ref": "AC3",
+            "claim": "Minimum sipariş tutarı 500,00 TL.",
+            "observed": "ayar tablosunda min_siparis_tutari=750.00; uyarı mesajı bu değerden üretilir ('Minimum sipariş tutarı 750,00 TL').",
+            "evidence": [
+              {
+                "kind": "data",
+                "query": "SELECT anahtar, deger FROM ayar",
+                "result_digest": "min_siparis_tutari=750.00"
+              },
+              {
+                "kind": "code",
+                "repo": "demo-app",
+                "path": "api/src/demoapp_api/pricing.py",
+                "line": 59,
+                "snippet": "    return f\"Minimum sipariş tutarı {format_tl(min_tutar)}\""
+              }
+            ],
+            "severity": "blocking",
+            "suggested_doc_text": "AC3: Kampanyasız siparişlerde minimum sipariş tutarı 750,00 TL'dir (sınır dahil); altında \"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir ve onay butonu pasif olur."
+          },
+          {
+            "id": "F3",
+            "type": "doc_vs_code",
+            "doc_ref": "AC2",
+            "claim": "Her 6 adet alımda 1 bedava; 7 adette 1 bedava.",
+            "observed": "Kod adet // 6 hesaplar: 6 adette 1 bedava, 12'de 2. 'N al M bedava'da bedava adet ücretli 6'nın üstüne gelir, yani ilk fayda 7 adette başlamalı; kod 6 adette zaten 1 bedava veriyor (6 adet = 5 ücretli + 1 bedava). Belgedeki 7 örneği ile 6 adet sınırı çelişiyor.",
+            "evidence": [
+              {
+                "kind": "code",
+                "repo": "demo-app",
+                "path": "api/src/demoapp_api/campaign.py",
+                "line": 23,
+                "snippet": "    return adet // 6"
+              }
+            ],
+            "severity": "blocking",
+            "suggested_doc_text": "AC2: \"6 al 1 bedava\" kampanyasında kampanyalı üründen her 6 adet alımda 1 adet bedava verilir; 6 adette 1 bedava, 12 adette 2 bedava verilir (bedava adet = adet / 6, tam bölüm)."
+          },
+          {
+            "id": "F4",
+            "type": "missing_in_code",
+            "doc_ref": "AC4",
+            "claim": "Sipariş tutarı kredi limitini aşarsa 'Kredi limiti aşıldı' uyarısı gösterilir ve sipariş onaylanamaz.",
+            "observed": "Kodda kredi limiti kontrolü ve 'Kredi limiti aşıldı' mesajı yok; kredi_limiti yalnızca model/seed/test verisinde geçer, sepet hesabında onaylanabilir yalnızca minimum tutara bağlı.",
+            "evidence": [
+              {
+                "kind": "code",
+                "repo": "demo-app",
+                "path": "api/src/demoapp_api/pricing.py",
+                "line": 106,
+                "snippet": "        onaylanabilir=not bos and not uyarilar,"
+              }
+            ],
+            "severity": "blocking",
+            "suggested_doc_text": null
+          }
+        ],
+        "notes": "AC1 ve AC5 için ayrıca bulgu üretilmedi. AC2'nin 7 adet örneği ile kodun 6 adet sınırı arasındaki fark ayrıca yorum belirsizliği taşıyor."
+      },
+      "mode": "live",
+      "error": null,
+      "cost_usd": 0.079317,
+      "sure_ms": 18828
+    }
+  ],
+  "tamamlandi": true,
+  "set_vaka_sayisi": 6,
+  "kosu_sayisi": 6,
+  "maliyet_usd": 0.448976,
+  "butce_usd": 2.5,
+  "calisma_alani_basligi": true,
+  "guardrails_version": 1,
+  "kayit_adaylari": null,
+  "cagri_kaydi": "consistency-check-v5-2026-11-18.calls.jsonl",
+  "cagri_sayisi": 27,
+  "cagri_defteri": "exports/eval-live/ai_call.jsonl",
+  "amac": "consistency_check",
+  "via_flow": false,
+  "output_check": true,
+  "icerik_hash": null,
+  "olcumler": null,
+  "dagilim": {
+    "maliyet_usd": {
+      "medyan": 0.079317,
+      "p90": 0.099449
+    },
+    "sure_ms": {
+      "medyan": 17856,
+      "p90": 23214
+    }
+  }
+}

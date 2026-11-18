@@ -1,0 +1,207 @@
+{
+  "bundle": "consistency-check",
+  "version": 4,
+  "date": "2026-11-18",
+  "model": "claude-sonnet-5-5",
+  "provider": "anthropic",
+  "mode": "live",
+  "passed": 2,
+  "total": 3,
+  "runs": 1,
+  "cases": [
+    {
+      "id": "tpd-1-tur-1",
+      "ok": false,
+      "failures": [
+        "AC2 için bulgu yok"
+      ],
+      "output": {
+        "findings": [
+          {
+            "id": "F1",
+            "type": "internal_contradiction",
+            "doc_ref": "AC3 ↔ AC6",
+            "claim": "AC3 'tüm siparişlerde' minimum 500,00 TL şartı koyuyor; AC6 kampanyalı siparişlerde minimum tutar aranmaz diyor.",
+            "observed": "İki kriter kampanyalı siparişler için çelişiyor. Kod AC6'yı uyguluyor: kampanyalı sepette minimum aranmaz, AC3'ün 'tüm siparişler' ifadesi yanlış.",
+            "evidence": [
+              {
+                "kind": "code",
+                "repo": "demo-app",
+                "path": "api/src/demoapp_api/pricing.py",
+                "line": 94,
+                "snippet": "    min_aranir = not any(s.kampanyali for s in satirlar)  # kampanyalı siparişte aranmaz"
+              }
+            ],
+            "severity": "blocking",
+            "suggested_doc_text": "AC3: Kampanyasız siparişlerde minimum sipariş tutarı 750,00 TL'dir (sınır dahil); altında \"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir ve onay butonu pasif olur."
+          },
+          {
+            "id": "F2",
+            "type": "doc_vs_data",
+            "doc_ref": "AC3",
+            "claim": "Minimum sipariş tutarı 500,00 TL ve uyarı metni 'Minimum sipariş tutarı 500,00 TL'.",
+            "observed": "ayar tablosunda min_siparis_tutari 750.00. Uyarı metni bu değerden üretilir (500 değil 750,00 TL).",
+            "evidence": [
+              {
+                "kind": "data",
+                "query": "SELECT anahtar, deger FROM ayar",
+                "result_digest": "min_siparis_tutari=750.00"
+              },
+              {
+                "kind": "code",
+                "repo": "demo-app",
+                "path": "api/src/demoapp_api/pricing.py",
+                "line": 59,
+                "snippet": "    return f\"Minimum sipariş tutarı {format_tl(min_tutar)}\""
+              }
+            ],
+            "severity": "blocking",
+            "suggested_doc_text": "AC3: Kampanyasız siparişlerde minimum sipariş tutarı 750,00 TL'dir (sınır dahil); altında \"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir ve onay butonu pasif olur."
+          },
+          {
+            "id": "F3",
+            "type": "missing_in_code",
+            "doc_ref": "AC4",
+            "claim": "Sipariş tutarı kredi limitini aşarsa 'Kredi limiti aşıldı' uyarısı gösterilir ve sipariş onaylanamaz.",
+            "observed": "Sipariş oluşturmada kredi limiti kontrolü yok; yalnızca boş sepet ve onaylanabilir (minimum tutar) kontrolü var. kredi_limiti sadece model/seed'de tanımlı, 'Kredi limiti aşıldı' mesajı kodda yok. Limiti aşan sipariş kabul edilir.",
+            "evidence": [
+              {
+                "kind": "code",
+                "repo": "demo-app",
+                "path": "api/src/demoapp_api/main.py",
+                "line": 417,
+                "snippet": "    if not h.onaylanabilir:"
+              },
+              {
+                "kind": "code",
+                "repo": "demo-app",
+                "path": "api/src/demoapp_api/pricing.py",
+                "line": 106,
+                "snippet": "        onaylanabilir=not bos and not uyarilar,"
+              }
+            ],
+            "severity": "blocking",
+            "suggested_doc_text": null
+          }
+        ],
+        "notes": "AC2 (6 al 1 bedava, adet // 6, 7 adette 1 bedava) kodla uyumlu. AC1 ve AC5 için çelişki bulunmadı; derinlemesine doğrulanmadı. AC4 için 'Kredi limiti aşıldı' metni depoda aranmadı; yalnızca 'kredi' ve 'limit' aramaları ile /orders akışı incelendi."
+      },
+      "mode": "live",
+      "error": null,
+      "cost_usd": 0.103703,
+      "sure_ms": 18897
+    },
+    {
+      "id": "serbest-tur-1",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "findings": [
+          {
+            "id": "F1",
+            "type": "doc_vs_code",
+            "doc_ref": "AC2",
+            "claim": "Kampanya indirimi her 7 adette 1 bedava kuralıyla hesaplanır.",
+            "observed": "Kod kampanyayı '6 al 1 bedava' olarak uygular: bedava adet = adet // 6.",
+            "evidence": [
+              {
+                "kind": "code",
+                "repo": "demo-app",
+                "path": "api/src/demoapp_api/campaign.py",
+                "line": 23,
+                "snippet": "    return adet // 6"
+              },
+              {
+                "kind": "code",
+                "repo": "demo-app",
+                "path": "api/src/demoapp_api/campaign.py",
+                "line": 16,
+                "snippet": "KAMPANYA_ADI = \"6 al 1 bedava\""
+              }
+            ],
+            "severity": "blocking",
+            "suggested_doc_text": "AC2: Kaldırma sonrası kampanya indirimi \"6 al 1 bedava\" kuralıyla (her 6 adette 1 bedava) yeniden hesaplanır."
+          },
+          {
+            "id": "F2",
+            "type": "doc_vs_data",
+            "doc_ref": "AC3",
+            "claim": "Sepet tutarı 500,00 TL altına düşerse minimum tutar uyarısı gösterilir.",
+            "observed": "Minimum sipariş tutarı ayar tablosunda 750,00 TL; uyarı toplam 750,00 TL altındaysa çıkar.",
+            "evidence": [
+              {
+                "kind": "data",
+                "query": "SELECT anahtar, deger FROM ayar WHERE anahtar = 'min_siparis_tutari'",
+                "result_digest": "min_siparis_tutari=750.00"
+              }
+            ],
+            "severity": "blocking",
+            "suggested_doc_text": "AC3: Kampanyasız sepette indirim sonrası toplam 750,00 TL altına düşerse minimum tutar uyarısı gösterilir."
+          },
+          {
+            "id": "F3",
+            "type": "missing_in_doc",
+            "doc_ref": "AC3",
+            "claim": "AC3 minimum tutar uyarısını koşulsuz belirtiyor.",
+            "observed": "Sepette kampanyalı ürün varsa minimum tutar aranmaz ve uyarı gösterilmez; kontrol indirim sonrası toplam üzerinden yapılır, tutar eşitse yeterli sayılır (>=).",
+            "evidence": [
+              {
+                "kind": "code",
+                "repo": "demo-app",
+                "path": "api/src/demoapp_api/pricing.py",
+                "line": 94,
+                "snippet": "    min_aranir = not any(s.kampanyali for s in satirlar)  # kampanyalı siparişte aranmaz"
+              }
+            ],
+            "severity": "blocking",
+            "suggested_doc_text": "AC3: Sepette kampanyalı ürün yoksa ve indirim sonrası toplam 750,00 TL altındaysa minimum tutar uyarısı gösterilir; kampanyalı ürün içeren sepette minimum tutar aranmaz."
+          }
+        ],
+        "notes": "AC1 (Kaldır butonu) web, mobil ve masaüstü arayüzlerinde mevcut; sayaç davranışı ayrıca doğrulanmadı. Boş sepette uyarı gösterilmez (kodda bos kontrolü var); dokümanda belirtilmemiş, küçük bir ek not olabilir."
+      },
+      "mode": "live",
+      "error": null,
+      "cost_usd": 0.050397,
+      "sure_ms": 13446
+    },
+    {
+      "id": "tpd-4-tutarli",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "findings": [],
+        "notes": "AC1 ve AC2 kodla uyumlu. POST /auth/login geçerli kimlik bilgisiyle oturum çerezi açıyor (main.py:284-300). Hatalı parolada ve bilinmeyen kullanıcıda 401 ve \"Kullanıcı adı veya parola hatalı\" mesajı dönüyor (main.py:45, 281, 283). AC2'deki mesaj metni birebir aynı. \"Ürün kataloğu açılır\" davranışı arayüz tarafında; API tarafında yalnızca oturum açılıyor, bunu ayrıca doğrulamadım. Belgedeki iddialarla çelişen bir kod ya da veri bulgusu yok."
+      },
+      "mode": "live",
+      "error": null,
+      "cost_usd": 0.046198,
+      "sure_ms": 10098
+    }
+  ],
+  "tamamlandi": true,
+  "set_vaka_sayisi": 3,
+  "kosu_sayisi": 3,
+  "maliyet_usd": 0.200298,
+  "butce_usd": 2.0,
+  "calisma_alani_basligi": true,
+  "guardrails_version": 1,
+  "kayit_adaylari": null,
+  "cagri_kaydi": "consistency-check-v4-2026-11-18.calls.jsonl",
+  "cagri_sayisi": 12,
+  "cagri_defteri": "exports/eval-live/ai_call.jsonl",
+  "amac": "consistency_check",
+  "via_flow": false,
+  "output_check": true,
+  "icerik_hash": null,
+  "olcumler": null,
+  "dagilim": {
+    "maliyet_usd": {
+      "medyan": 0.050397,
+      "p90": 0.103703
+    },
+    "sure_ms": {
+      "medyan": 13446,
+      "p90": 18897
+    }
+  }
+}

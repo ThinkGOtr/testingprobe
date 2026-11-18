@@ -89,7 +89,7 @@ class EvidenceVerifier:
         if not isinstance(query, str) or not isinstance(digest, str) or not digest.strip():
             return False, "eksik kanıt alanı"
         try:
-            vq = validate_select(query, kanit=True)
+            vq = validate_select(query, kanit=True, lehce=_lehce(self.db))
             res = self.db.query(vq.sql)
         except QueryRejected as exc:
             return False, f"sorgu reddedildi: {exc}"
@@ -126,3 +126,9 @@ class EvidenceVerifier:
             ok = ok and gecti
             checks.append({"index": i, "kind": kind, "ok": gecti, "neden": neden})
         return Verification(ok, checks)
+
+
+def _lehce(db: object) -> str:
+    """Veritabanının sqlglot lehçesi (sahte/eski nesnelerde PostgreSQL)."""
+    lehce = getattr(db, "lehce", None)
+    return lehce if isinstance(lehce, str) else "postgres"

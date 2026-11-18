@@ -1,8 +1,10 @@
 """Veri araçları: `db_schema` ve `db_query` (TEKNIK-TASARIM §8.2b "Erişim").
 
-- Bağlantı `DEMOAPP_RO_DATABASE_URL` (rol `demoapp_ro`: yalnızca izinli tablo/kolonlarda SELECT).
-- Her sorgu `sqlguard.validate_select`'ten geçer; çalıştırılan metin ayrıştırılmış ağaçtan üretilir.
-- İşlem salt okunurdur (`read_only`), `statement_timeout` 5 sn; en fazla 100 satır döner.
+- Bağlantı `DEMOAPP_RO_DATABASE_URL` ya da `TP_RO_DB_*` (PostgreSQL, MySQL/MariaDB, SQL Server,
+  Oracle; `tp_core.veri.ro_baglanti`). Rol yalnızca izinli tablo/kolonlarda SELECT yetkilidir.
+- Her sorgu hedef lehçede `sqlguard.validate_select`'ten geçer; çalıştırılan metin ayrıştırılmış
+  ağaçtan üretilir.
+- İşlem salt okunurdur (türüne göre), sorgu zaman aşımı 5 sn; en fazla 100 satır döner.
 - Modele giden sonuç PII maskelemesinden geçer (Constitution VII) ve güvenilmeyen veri bloğuna
   sarılır (§5, `gateway.wrap_tool_result`).
 
@@ -17,16 +19,17 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
-
-import psycopg
 
 from tp_core.features.requirements.sqlguard import ALLOWED_COLUMNS, validate_select
 from tp_core.gateway import PiiMasker, digest_matches, result_digest, wrap_tool_result
 from tp_core.gateway.evidence import canonical_cell
 from tp_core.gateway.masking import MaskingSession
+from tp_core.veri import ro_baglanti
+from tp_core.veri.ro_baglanti import BaglantiTanimi
 
 MAX_ROWS = 100
 STATEMENT_TIMEOUT_MS = 5000
@@ -58,81 +61,101 @@ class QueryResult:
     truncated: bool
 
 
-def _conninfo(url: str) -> str:
-    for onek in ("postgresql+psycopg://", "postgresql+psycopg2://", "postgres://"):
-        if url.startswith(onek):
-            return "postgresql://" + url[len(onek) :]
-    return url
-
-
 class DemoDb:
-    """Test edilen uygulamanın salt okuma veritabanı."""
+    """Test edilen uygulamanın salt okuma veritabanı (PostgreSQL, MySQL/MariaDB, SQL Server,
+    Oracle; bağlantı ve oturum güvencesi `tp_core.veri.ro_baglanti`).
 
-    def __init__(self, url: str | None, *, connect_timeout_s: int = 3) -> None:
+    `url`: bağlantı dizesi (`DEMOAPP_RO_DATABASE_URL`; tür önekten) ya da çözülmüş
+    `BaglantiTanimi` (ayrı alanlar `TP_RO_DB_*`). None → "yapılandırılmamış" hatası."""
+
+    def __init__(self, url: str | BaglantiTanimi | None, *, connect_timeout_s: int = 3) -> None:
         self.url = url
         self.connect_timeout_s = connect_timeout_s
+        self._tanim: BaglantiTanimi | None = None
+        self._tanim_hatasi: str | None = None
+        if isinstance(url, BaglantiTanimi):
+            self._tanim = url
+        elif url:
+            try:
+                self._tanim = ro_baglanti.url_coz(url)
+            except ro_baglanti.BaglantiHatasi as exc:
+                self._tanim_hatasi = str(exc)
 
-    def _connect(self) -> psycopg.Connection:
-        if not self.url:
-            raise DataToolError(
-                "Veri erişimi yapılandırılmamış (DEMOAPP_RO_DATABASE_URL tanımlı değil)"
-            )
-        try:
-            conn = psycopg.connect(
-                _conninfo(self.url), connect_timeout=self.connect_timeout_s, autocommit=False
-            )
-        except psycopg.Error as exc:
-            raise DataToolError(f"Veritabanına bağlanılamadı: {_ilk_satir(exc)}") from exc
-        conn.read_only = True
-        return conn
+    @classmethod
+    def yapilandirma_hatasi(cls, mesaj: str) -> DemoDb:
+        """Geçersiz yapılandırma: her çağrı bu (maskeli) metinle `DataToolError` verir."""
+        db = cls(None)
+        db._tanim_hatasi = mesaj
+        return db
 
-    def query(self, sql: str) -> QueryResult:
-        vq = validate_select(sql)
-        conn = self._connect()
+    @property
+    def tanim(self) -> BaglantiTanimi | None:
+        return self._tanim
+
+    @property
+    def tur(self) -> str:
+        """Veritabanı türü (`postgresql`, `mysql`, `mssql`, `oracle`); yapılandırılmamışsa PG."""
+        return self._tanim.tur if self._tanim is not None else "postgresql"
+
+    @property
+    def lehce(self) -> str:
+        """sqlglot lehçesi (sorgu muhafızı ve prompt'taki hedef lehçe bilgisi)."""
+        return ro_baglanti.SQLGLOT_LEHCE[self.tur]
+
+    @contextmanager
+    def _oturum(self) -> Iterator[ro_baglanti.RoOturum]:
+        if self._tanim is None:
+            raise DataToolError(self._tanim_hatasi or ro_baglanti.YAPILANDIRMA_YOK)
         try:
-            with conn.cursor() as cur:
-                cur.execute(f"SET LOCAL statement_timeout = {int(STATEMENT_TIMEOUT_MS)}")
-                cur.execute(vq.sql)  # parametresiz: metin olduğu gibi gider (% işlenmez)
-                kolonlar = [d.name for d in cur.description or []]
-                satirlar = [tuple(r) for r in cur.fetchmany(MAX_ROWS + 1)]
-        except psycopg.errors.QueryCanceled as exc:
-            raise DataToolError("Sorgu zaman aşımına uğradı (5 sn)") from exc
-        except psycopg.errors.InsufficientPrivilege as exc:
-            raise DataToolError(f"Yetki yok: {_ilk_satir(exc)}") from exc
-        except psycopg.Error as exc:
-            raise DataToolError(f"Sorgu hatası: {_ilk_satir(exc)}") from exc
-        finally:
-            conn.rollback()
-            conn.close()
+            with ro_baglanti.oturum(
+                self._tanim,
+                connect_timeout_s=self.connect_timeout_s,
+                timeout_ms=int(STATEMENT_TIMEOUT_MS),
+            ) as o:
+                yield o
+        except ro_baglanti.BaglantiHatasi as exc:
+            raise DataToolError(str(exc)) from exc
+
+    def query(self, sql: str, *, kaynak_lehce: str | None = None) -> QueryResult:
+        """Muhafızdan geçen tek SELECT'i çalıştırır. `kaynak_lehce="postgres"`: TP'nin sabit
+        (PostgreSQL ile yazılmış) sorgusu; önce hedef lehçeye çevrilir."""
+        if kaynak_lehce == "postgres" and self._tanim is not None:
+            sql = ro_baglanti.sabit_sql(sql, self.tur)
+        vq = validate_select(sql, lehce=self.lehce)
+        with self._oturum() as o:
+            try:
+                kolonlar, satirlar = o.calistir(vq.sql, en_fazla=MAX_ROWS + 1)
+            except ro_baglanti.SorguHatasi as exc:
+                if exc.tur == ro_baglanti.ZAMAN:
+                    sure = int(STATEMENT_TIMEOUT_MS) / 1000
+                    raise DataToolError(f"Sorgu zaman aşımına uğradı ({sure:g} sn)") from exc
+                if exc.tur == ro_baglanti.YETKI:
+                    raise DataToolError(f"Yetki yok: {exc}") from exc
+                raise DataToolError(f"Sorgu hatası: {exc}") from exc
         return QueryResult(vq.sql, kolonlar, satirlar[:MAX_ROWS], len(satirlar) > MAX_ROWS)
 
     def schema(self) -> dict[str, list[tuple[str, str]]]:
-        """İzinli tablo/kolonlar ve türleri (izin listesine süzülmüş information_schema)."""
-        conn = self._connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT table_name, column_name, data_type FROM information_schema.columns "
-                    "WHERE table_schema = 'public' AND table_name = ANY(%s) "
-                    "ORDER BY table_name, ordinal_position",
-                    (sorted(ALLOWED_COLUMNS),),
-                )
-                rows = cur.fetchall()
-        except psycopg.Error as exc:
-            raise DataToolError(f"Şema okunamadı: {_ilk_satir(exc)}") from exc
-        finally:
-            conn.rollback()
-            conn.close()
-        out: dict[str, list[tuple[str, str]]] = {t: [] for t in sorted(ALLOWED_COLUMNS)}
-        for tablo, kolon, tur in rows:
+        """İzinli tablo/kolonlar ve türleri (izin listesine süzülmüş information_schema; Oracle
+        `ALL_TAB_COLUMNS`)."""
+        tablolar = sorted(ALLOWED_COLUMNS)
+        with self._oturum() as o:
+            try:
+                _, ham = o.calistir(ro_baglanti.sema_sorgusu(self.tur, tablolar))
+            except ro_baglanti.SorguHatasi as exc:
+                raise DataToolError(f"Şema okunamadı: {exc}") from exc
+        out: dict[str, list[tuple[str, str]]] = {t: [] for t in tablolar}
+        for tablo, kolon, tur in ro_baglanti.sema_satirlari(self.tur, ham):
             if kolon in ALLOWED_COLUMNS.get(tablo, frozenset()):
                 out[tablo].append((kolon, tur))
         return out
 
 
-def _ilk_satir(exc: BaseException) -> str:
-    metin = str(exc).strip()
-    return metin.splitlines()[0][:200] if metin else type(exc).__name__
+def sql_lehcesi_satiri(db: Any) -> str:
+    """`SQL lehçesi: MySQL / MariaDB (mysql)` — sahte/eski nesnelerde PostgreSQL."""
+    tur = getattr(db, "tur", None)
+    if tur not in ro_baglanti.SQLGLOT_LEHCE:
+        tur = "postgresql"
+    return f"SQL lehçesi: {ro_baglanti.ETIKETLER[tur]} ({ro_baglanti.SQLGLOT_LEHCE[tur]})"
 
 
 class DataTools:
@@ -160,7 +183,9 @@ class DataTools:
 
     def db_schema(self, _args: dict[str, Any]) -> str:
         sema = self.db.schema()
-        satirlar = [
+        # İlk satır hedef SQL lehçesi (prompt: sorgular bu lehçede yazılır).
+        satirlar = [sql_lehcesi_satiri(self.db)]
+        satirlar += [
             f"{t}({', '.join(f'{k} {tur}' for k, tur in kolonlar)})" for t, kolonlar in sema.items()
         ]
         return wrap_tool_result("db_schema", "\n".join(satirlar))

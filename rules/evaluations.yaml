@@ -42,11 +42,20 @@ bundles:
       guardrails_version: 1
       calls: evaluation/results/requirement-review-v3-2026-11-01.calls.jsonl
   consistency-check:
-    version: 4
-    status: pending
-    note: 'Golden çıktıları elle hazırlandı; araç adımları demo-app kaynağına karşı denetlenir. Değerlendirme
-      seti: rules/evaluation/consistency-check.json (ajan; araç ortamı `consistency`, kanıt yeniden doğrulanır).
-      Canlı değerlendirme yapılmadı; onaylı istisna yok.'
+    version: 5
+    status: evaluated
+    note: 'Canlı değerlendirme 2026-11-18, claude-sonnet-5-5 (anthropic), 6/6 vaka geçti: evaluation/results/consistency-check-v5-2026-11-18.json.
+      v5: hedef SQL lehçesi (çoklu DB; lehçe vakaları `consistency:<tür>`, MySQL 8.4 + Oracle 23ai Free), sayısal
+      kuralda örnek + sınır değerleriyle hesaplayarak karşılaştırma ve kuralın olağan iş anlamı. Önceki denemeler:
+      -deneme0 3/6 (yalnız lehçe talimatı), -deneme1 4/6 (sınır değerleri); v4 taban PostgreSQL 2/3
+      (consistency-check-v4-2026-11-18.json). Hepsinde kalan TPD-1 AC2 kod bulgusuydu.'
+    evaluation:
+      date: '2026-11-18'
+      model: claude-sonnet-5-5
+      provider: anthropic
+      results: evaluation/results/consistency-check-v5-2026-11-18.json
+      guardrails_version: 1
+      calls: evaluation/results/consistency-check-v5-2026-11-18.calls.jsonl
   case-generation:
     version: 4
     status: pending

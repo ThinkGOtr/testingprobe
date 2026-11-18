@@ -1,8 +1,10 @@
 """`db_query` için SQL koruması (TEKNIK-TASARIM §8.2b, Constitution: "Genel amaçlı SQL çalıştıran
 araç kullanılmaz").
 
-Sorgu `sqlglot` ile Postgres lehçesinde ayrıştırılır; çalıştırılan metin ayrıştırılmış ağaçtan
-yeniden üretilir (yorumlar ve ikinci ifadeler gitmez). Kabul kuralları (izin listesi):
+Sorgu `sqlglot` ile hedef veritabanının lehçesinde ayrıştırılır (`lehce`: `postgres` varsayılan,
+`mysql`, `tsql`, `oracle`; çoklu DB sözleşmesi); çalıştırılan metin ayrıştırılmış ağaçtan aynı
+lehçede yeniden üretilir (yorumlar — MySQL `/*! … */` çalıştırılabilir yorumları dahil — ve ikinci
+ifadeler gitmez). Kabul kuralları (izin listesi, her lehçede aynı):
 
 - Tam olarak **bir** ifade ve kökü `SELECT` (UNION/INTERSECT/EXCEPT, DML, DDL, komut yok).
 - `WITH` (CTE) yok — DML içeren CTE dahil hiçbir CTE kabul edilmez.
@@ -11,7 +13,10 @@ yeniden üretilir (yorumlar ve ikinci ifadeler gitmez). Kabul kuralları (izin l
   `pg_sleep`, `pg_read_file`, `dblink`, `set_config`, `current_setting`, tablo fonksiyonları vb.
   bilinmeyen her fonksiyon (`Anonymous`) reddedilir.
 - Tablolar yalnızca `ALLOWED_COLUMNS` anahtarları (`urun`, `kampanya`, `ayar`, `bayi`); şema
-  yalnızca `public` (ya da hiç), katalog yok. FROM/JOIN kaynakları yalnızca düz tablo: alt sorgu,
+  yalnızca lehçenin varsayılanı (PostgreSQL `public`, SQL Server `dbo`; MySQL/Oracle'da şema
+  niteleyicisi yok — başka veritabanı/sahip okunamaz) ya da hiç, katalog yok; Oracle veritabanı
+  bağlantısı (`urun@uzak`) yok. Oturum değişkenleri (`@@version`, `@a := …`) yok. FROM/JOIN
+  kaynakları yalnızca düz tablo: alt sorgu,
   `LATERAL`, `VALUES`, `UNNEST`, tablo fonksiyonu, `TABLESAMPLE` yok; pencere (`OVER`/`WINDOW`) yok.
 - Tablo takma adında kolon listesi yok (`bayi AS b(id, kullanici_adi, ad, …)` kolonları konumla
   yeniden adlandırır: `b.ad` parola_hash'i okurdu); tablo takma adı bir kolon adını gölgeleyemez
@@ -106,7 +111,17 @@ _FORBIDDEN_NODES: tuple[type[exp.Expression], ...] = (
     exp.CTE,
     exp.Placeholder,
     exp.Parameter,
+    exp.SessionParameter,
+    exp.PropertyEQ,
 )
+
+# Lehçe → tablo adında izinli şema niteleyicisi (yoksa niteleyici kabul edilmez).
+LEHCE_SEMALARI: dict[str, frozenset[str]] = {
+    "postgres": frozenset({"public"}),
+    "tsql": frozenset({"dbo"}),
+    "mysql": frozenset(),
+    "oracle": frozenset(),
+}
 
 
 # Kanıt sorgusunda izinli projeksiyon biçimleri (bkz. modül belgesi).
@@ -146,16 +161,23 @@ class ValidatedQuery:
     tables: tuple[str, ...]
 
 
-def validate_select(sql: str, *, kanit: bool = False) -> ValidatedQuery:
-    """Sorguyu izin listesine göre doğrular. `kanit=True`: kanıt sorgusu kuralları da uygulanır."""
+def validate_select(sql: str, *, kanit: bool = False, lehce: str = "postgres") -> ValidatedQuery:
+    """Sorguyu izin listesine göre doğrular. `kanit=True`: kanıt sorgusu kuralları da uygulanır.
+
+    `lehce`: hedef veritabanının sqlglot lehçesi (`postgres`, `mysql`, `tsql`, `oracle`);
+    ayrıştırma ve çalıştırılacak metnin üretimi bu lehçededir."""
+    if lehce not in LEHCE_SEMALARI:
+        raise QueryRejected(f"Desteklenmeyen SQL lehçesi: {lehce}")
     if not isinstance(sql, str) or not sql.strip():
         raise QueryRejected("Sorgu boş")
     if len(sql) > MAX_SQL_LEN:
         raise QueryRejected(f"Sorgu çok uzun (en fazla {MAX_SQL_LEN} karakter)")
     try:
-        ifadeler = [s for s in sqlglot.parse(sql, read="postgres") if s is not None]
+        ifadeler = [s for s in sqlglot.parse(sql, read=lehce) if s is not None]
     except (ParseError, sqlglot.errors.TokenError) as exc:
-        raise QueryRejected(f"Sorgu ayrıştırılamadı: {str(exc).splitlines()[0][:200]}") from exc
+        raise QueryRejected(
+            f"Sorgu ayrıştırılamadı (SQL lehçesi: {lehce}): {str(exc).splitlines()[0][:200]}"
+        ) from exc
     if len(ifadeler) != 1:
         raise QueryRejected("Tek bir SELECT ifadesi gönderin")
     kok = ifadeler[0]
@@ -202,7 +224,7 @@ def validate_select(sql: str, *, kanit: bool = False) -> ValidatedQuery:
             tablo = kaynak.this
             if not isinstance(tablo, exp.Table):
                 raise QueryRejected("FROM/JOIN yalnızca izinli tabloları okuyabilir")
-            ad = _tablo_adi(tablo)
+            ad = _tablo_adi(tablo, lehce)
             tablolar.append(ad)
             takma_ad = tablo.args.get("alias")
             if takma_ad is not None and takma_ad.args.get("columns"):
@@ -217,7 +239,7 @@ def validate_select(sql: str, *, kanit: bool = False) -> ValidatedQuery:
         kapsamlar[id(s)] = kapsam
     for tablo in kok.find_all(exp.Table):
         # Kapsam dışında kalan tablo (ör. bir ifadenin içinde) olamaz; yine de adı denetlenir.
-        _tablo_adi(tablo)
+        _tablo_adi(tablo, lehce)
 
     if not tablolar:
         raise QueryRejected("Sorgu en az bir izinli tabloyu okumalı (FROM gerekli)")
@@ -258,19 +280,17 @@ def validate_select(sql: str, *, kanit: bool = False) -> ValidatedQuery:
     if kanit:
         _kanit_kurallari(kok)
 
-    return ValidatedQuery(
-        kok.sql(dialect="postgres", comments=False), tuple(dict.fromkeys(tablolar))
-    )
+    return ValidatedQuery(kok.sql(dialect=lehce, comments=False), tuple(dict.fromkeys(tablolar)))
 
 
-def _tablo_adi(tablo: exp.Table) -> str:
+def _tablo_adi(tablo: exp.Table, lehce: str = "postgres") -> str:
     if not isinstance(tablo.this, exp.Identifier):
         raise QueryRejected("FROM'da tablo fonksiyonu kullanılamaz")
     ad = tablo.name.lower()
     if tablo.args.get("catalog") is not None:
         raise QueryRejected("Katalog belirtilemez")
     sema = tablo.args.get("db")
-    if sema is not None and sema.name.lower() != "public":
+    if sema is not None and sema.name.lower() not in LEHCE_SEMALARI.get(lehce, frozenset()):
         raise QueryRejected(f"İzin verilmeyen şema: {sema.name}")
     if ad not in ALLOWED_COLUMNS:
         raise QueryRejected(

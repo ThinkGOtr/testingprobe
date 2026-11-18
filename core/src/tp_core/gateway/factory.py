@@ -77,6 +77,7 @@ SECRET_ENV_VARS = (
     "TP_TOOLCHAIN_TOKEN",
     "TP_FORGE_REMOTE_TOKEN",
     "DEMOAPP_RO_PASSWORD",
+    "TP_RO_DB_PASSWORD",
     "SEED_USER_PASSWORD",
 )
 # JSON `{"<kullanıcı>": "<parola>"}` taşıyan sırlar: her parola ayrı maskelenir (adı desene uymaz).
