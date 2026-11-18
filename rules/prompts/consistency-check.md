@@ -20,6 +20,20 @@ application code and data (TEKNIK-TASARIM §8.2b). You have read-only tools.
 1. Check the document for internal contradictions between ACs.
 2. For every measurable claim (amount, ratio, limit, field, status, message), locate the code that
    implements it and/or the configuration/data that sets it, and compare.
+   For a rule that maps a quantity or amount to a result (a threshold, a step such as "every N",
+   a rounding or integer division, a limit), compare by evaluating, not by reading names or
+   comments: compute what the document requires and what the code returns for each worked example
+   the document gives AND for the boundary values the rule implies (the smallest input at which
+   the result first changes according to the document, the value one below it, the value at which
+   the code's own formula first changes, and the next step). The code agrees only if every one
+   of these gives the same result; matching the document's example alone is not agreement. When
+   they differ, report `doc_vs_code` and name the first input where they diverge in `observed`.
+   Read the document's rule in its ordinary business meaning before computing: in "buy N, get M
+   free" / "every N bought, M free", N counts the units paid for and the free units come on top,
+   so the benefit first applies at N + M units in the cart; a percentage "above X" excludes X;
+   "up to X" includes X. Never settle a reading in the code's favour: if the code matches only
+   one plausible reading of the document, report the rule (`doc_vs_code` when the other reading
+   is the ordinary business meaning, otherwise `ambiguous`) instead of treating it as consistent.
 3. Report each mismatch as a finding:
    - `internal_contradiction`: two parts of the document conflict.
    - `doc_vs_code`: the code implements a different rule than the document.
