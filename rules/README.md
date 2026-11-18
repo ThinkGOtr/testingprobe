@@ -344,7 +344,9 @@ ios/python, android/kotlin, ios/swift çiftlerinin tüm vakaları geçti; `eval`
 web/python, web/csharp, android/python ve ios/python yalıtılmış yığında kabul koşusunu geçti
 (TPD-1 C2: PR + `local-ci-<p>-<d>` yeşil, kırarak doğrulama yeşil → kırmızı → yeşil) → `acik`.
 android/kotlin ve ios/swift müşteri CI kabulünü geçti (demo deposu PR #52 / #55, TP'nin ürettiği
-testler GitHub Actions'ta yeşil) → `acik`. windows/python ve windows/csharp: 2026-11-18 `--dil` koşusu GCP `tp-windows` Appium'uyla geçti (`eval` kanıtı).
+testler GitHub Actions'ta yeşil) → `acik`. windows/python ve windows/csharp: `--dil` koşusu GCP `tp-windows` Appium'uyla geçti (`eval`),
+tp-demo'da yalıtılmış yığında kabul koşusunu geçti (TPD-1 C2: PR + `local-ci-windows-<d>` yeşil, kırarak
+doğrulama yeşil → kırmızı → yeşil) → `acik`. `yakinda` çift kalmadı.
 
 ### Canlı değerlendirmeyi koşturmak (`make eval-live`)
 
