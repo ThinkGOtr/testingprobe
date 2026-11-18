@@ -98,7 +98,7 @@ describe("tutarlılık kartı: doküman son hâle geçtikten sonra", () => {
     const g = gereksinim("req-tpd-3");
     g.durum = "pending_po";
     g.kontrol_turu = 2;
-    uygulama("/gereksinimler/req-tpd-3");
+    uygulama("/gereksinimler/req-tpd-3?sekme=tutarlilik");
     const kart = await screen.findByRole("region", { name: /Tutarlılık bulguları/ });
     expect(await within(kart).findByTestId("son-hal-durumu")).toHaveTextContent("✓ Doküman son hâl · PO teyidi bekliyor");
     expect(within(kart).getByTestId("son-hal-notu")).toHaveTextContent("karar gerekmez");
@@ -111,7 +111,7 @@ describe("tutarlılık kartı: doküman son hâle geçtikten sonra", () => {
     await oturumAc("analist");
     const g = gereksinim("req-tpd-3");
     g.durum = "findings_open";
-    uygulama("/gereksinimler/req-tpd-3");
+    uygulama("/gereksinimler/req-tpd-3?sekme=tutarlilik");
     const kart = await screen.findByRole("region", { name: /Tutarlılık bulguları/ });
     expect(await within(kart).findByRole("button", { name: /Düzeltmeleri Jira'ya yaz|Son hâl olarak onayla/ })).toBeInTheDocument();
     expect(within(kart).queryByTestId("son-hal-durumu")).toBeNull();
@@ -124,7 +124,7 @@ describe("PO kartı: insan kapısı metni", () => {
     const g = gereksinim("req-tpd-3");
     g.durum = "po_approved";
     g.po = { ...g.po, durum: "approved", onaylayan: "po@sim.local", kanal: "jira", onaylanan_hash: g.icerik_hash };
-    uygulama("/gereksinimler/req-tpd-3");
+    uygulama("/gereksinimler/req-tpd-3?sekme=po-teyidi");
     expect(await screen.findByTestId("po-kapisi")).toHaveTextContent("✓ İnsan kapısı geçildi");
   });
 
@@ -132,7 +132,7 @@ describe("PO kartı: insan kapısı metni", () => {
     await oturumAc("analist");
     const g = gereksinim("req-tpd-3");
     g.po = { ...g.po, durum: "pending", kanal: "jira" };
-    uygulama("/gereksinimler/req-tpd-3");
+    uygulama("/gereksinimler/req-tpd-3?sekme=po-teyidi");
     expect(await screen.findByTestId("po-kapisi")).toHaveTextContent("PO teyidi olmadan case üretimine geçilmez");
   });
 });
@@ -157,7 +157,7 @@ describe("bulgu kararı yalnızca findings_open iken", () => {
 
   it("detay ekranı (TPD-3, PO teyidinde): açık uyarıda karar formu gösterilmez", async () => {
     await oturumAc("analist");
-    uygulama("/gereksinimler/req-tpd-3");
+    uygulama("/gereksinimler/req-tpd-3?sekme=tutarlilik");
     expect(await screen.findByTestId("bulgu-salt-okunur")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Kararı kaydet" })).toBeNull();
   });
@@ -228,7 +228,7 @@ describe("PO cevapları", () => {
     g.po_cevaplari = [
       { id: "10031", yazar: "po@sim.local", metin: "Q1: kampanyalı siparişte minimum aranmaz. Onaylıyorum.", zaman: "2026-10-30T10:00:00Z", url: "http://127.0.0.1:8090/browse/TPD-1" },
     ];
-    uygulama("/gereksinimler/req-tpd-1");
+    uygulama("/gereksinimler/req-tpd-1?sekme=po-teyidi");
     const cevaplar = await screen.findByTestId("po-cevaplari");
     expect(within(cevaplar).getByText(/minimum aranmaz\. Onaylıyorum\./)).toBeInTheDocument();
     expect(within(cevaplar).getByText("po@sim.local")).toBeInTheDocument();
@@ -239,7 +239,7 @@ describe("PO cevapları", () => {
 
   it("PO henüz onaylamadıysa 'Cevap bekleniyor' kalır", async () => {
     await oturumAc("analist");
-    uygulama("/gereksinimler/req-tpd-3");
+    uygulama("/gereksinimler/req-tpd-3?sekme=po-teyidi");
     expect((await screen.findAllByText("Cevap bekleniyor")).length).toBeGreaterThan(0);
   });
 });

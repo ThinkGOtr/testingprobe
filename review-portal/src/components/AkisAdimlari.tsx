@@ -1,12 +1,24 @@
+import { useEffect, useRef } from "react";
 import { adimAdi } from "../lib/akis";
 import { AKIS_ADIMLARI } from "../lib/etiketler";
 
 const TUR_ETIKETI = { sistem: "Sistem", ai: "AI adımı", insan: "İnsan kapısı", ai_insan: "AI + insan kapısı" } as const;
 
-/** 14 adımlı akış göstergesi (TEKNIK-TASARIM §2). `adim` = güncel adım (1–14). */
-export function AkisAdimlari({ adim, kaynak = "jira" }: { adim: number; kaynak?: "jira" | "free_text" }) {
+/**
+ * 14 adımlı akış göstergesi (TEKNIK-TASARIM §2). `adim` = güncel adım (1–14).
+ * `kompakt` (detay sayfası şeridi, DS-1): kartsız ince şerit; dar kapta satıra sarmak yerine yatay kayar
+ * (kaydırılabilir bölge klavyeyle odaklanır), şimdiki adım görünür alana getirilir.
+ */
+export function AkisAdimlari({ adim, kaynak = "jira", kompakt }: { adim: number; kaynak?: "jira" | "free_text"; kompakt?: boolean }) {
+  const ref = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const kap = ref.current;
+    const el = kap?.querySelector<HTMLElement>('[aria-current="step"]');
+    if (!kompakt || !kap || !el || kap.scrollWidth <= kap.clientWidth) return;
+    kap.scrollLeft = Math.max(0, el.offsetLeft - kap.clientWidth / 2 + el.offsetWidth / 2);
+  }, [adim, kompakt]);
   return (
-    <nav aria-label="14 adımlı akıştaki ilerleme" className="akis">
+    <nav ref={ref} aria-label="14 adımlı akıştaki ilerleme" className={kompakt ? "akis akis-kompakt" : "akis"} tabIndex={kompakt ? 0 : undefined}>
       <ol>
         {AKIS_ADIMLARI.map((a, i) => {
           const no = i + 1;

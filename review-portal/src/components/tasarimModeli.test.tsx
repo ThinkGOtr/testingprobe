@@ -138,6 +138,15 @@ describe("tasarım modeli tabloları", () => {
     expect(within(screen.getByTestId("model-teknikler")).getByText("Sıralı tutar, eşik var")).toBeInTheDocument();
     expect(within(screen.getByTestId("model-bolumler")).getByText("150,00 TL")).toBeInTheDocument();
     expect(within(screen.getByTestId("model-sinirlar")).getByText("kabul")).toBeInTheDocument();
+    // DS-1: bölümler alt sekmelerde; varsayılan "Koşullar", diğer paneller DOM'da gizli.
+    const liste = screen.getByRole("tablist", { name: "Tasarım modeli bölümleri" });
+    expect(within(liste).getByRole("tab", { name: /Koşullar/ })).toHaveAttribute("aria-selected", "true");
+    // Ana bölümler boşken de sekme kalır (boş durum); seyrek bölümler (durum modeli, pairwise) yoksa sekme de yok.
+    expect(within(liste).getByRole("tab", { name: /Akışlar/ })).toBeInTheDocument();
+    expect(within(liste).queryByRole("tab", { name: /Durum modeli/ })).not.toBeInTheDocument();
+    expect(within(liste).queryByRole("tab", { name: /Pairwise/ })).not.toBeInTheDocument();
+    await userEvent.setup().click(within(liste).getByRole("tab", { name: /Karar tablosu/ }));
+    expect(within(liste).getByRole("tab", { name: /Karar tablosu/ })).toHaveAttribute("aria-selected", "true");
     const dt = screen.getByTestId("model-karar-tablosu");
     expect(within(dt).getByRole("columnheader", { name: "Kampanyalı" })).toBeInTheDocument();
     expect(within(dt).getByText("Uyarı göster")).toBeInTheDocument();

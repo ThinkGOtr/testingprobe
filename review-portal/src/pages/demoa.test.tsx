@@ -13,7 +13,7 @@ import { OturumProvider } from "../auth";
 import { BildirimProvider } from "../components/Bildirim";
 import { goruntulenenleriSifirla } from "../components/CaseKarti";
 import { gozlemciKur } from "../test/gorunurluk";
-import { oturumAc } from "../test/yardimci";
+import { oturumAc, sekmeAc } from "../test/yardimci";
 
 function uygulama(yol: string) {
   return render(
@@ -70,12 +70,13 @@ describe("gereksinim detayı", () => {
     await oturumAc("analist");
     const g = mockVerisi().gereksinimler.find((x) => x.id === "req-tpd-1")!;
     g.po.onaylanan_hash = "sha256:0123456789abcdef0123";
-    uygulama("/gereksinimler/req-tpd-1");
+    uygulama("/gereksinimler/req-tpd-1?sekme=po-teyidi");
     expect(await screen.findByText("po@sim.local")).toBeInTheDocument();
     expect(screen.getByText("sha256:0123456789ab…")).toBeInTheDocument();
     // İçerik onaydan sonra değişti (hash farklı): yeniden PO teyidi gerektiği söylenir.
     expect(screen.getByText(/yeniden PO teyidi gerekir/)).toBeInTheDocument();
-    const once = screen.getAllByRole("article").length;
+    await sekmeAc("Tutarlılık");
+    const once = (await screen.findAllByRole("article")).length;
     mockVerisi().bulgular.push({ ...mockVerisi().bulgular.find((x) => x.requirement_id === "req-tpd-1")!, id: "fnd-yeni", ozet: "SSE ile gelen bulgu" });
     await act(async () => {
       mockOlayYayinla({ type: "finding.verified", id: "fnd-yeni", data: { requirement_id: "req-tpd-1" } });
@@ -91,20 +92,20 @@ describe("PO teyidi insan kapısı şeridi", () => {
     const g = mockVerisi().gereksinimler.find((x) => x.id === "req-tpd-1")!;
     g.po = { ...g.po, durum: "approved" };
     g.po.onaylanan_hash = g.icerik_hash ?? null;
-    const { unmount } = uygulama("/gereksinimler/req-tpd-1");
+    const { unmount } = uygulama("/gereksinimler/req-tpd-1?sekme=po-teyidi");
     const kart = await screen.findByRole("region", { name: "PO teyidi" });
     expect(kart).toHaveClass("insan-kapisi", "kapi-gecti");
     expect(kart).not.toHaveClass("kapi-bekliyor");
     unmount();
 
     g.po.onaylanan_hash = "sha256:0123456789abcdef0123";
-    const ikinci = uygulama("/gereksinimler/req-tpd-1");
+    const ikinci = uygulama("/gereksinimler/req-tpd-1?sekme=po-teyidi");
     await screen.findByText(/yeniden PO teyidi gerekir/);
     expect(screen.getByRole("region", { name: "PO teyidi" })).toHaveClass("kapi-bekliyor");
     ikinci.unmount();
 
     const bekleyen = mockVerisi().gereksinimler.find((x) => x.po.durum !== "approved")!;
-    uygulama(`/gereksinimler/${bekleyen.id}`);
+    uygulama(`/gereksinimler/${bekleyen.id}?sekme=po-teyidi`);
     const k3 = await screen.findByRole("region", { name: "PO teyidi" });
     expect(k3).toHaveClass("kapi-bekliyor");
     expect(k3).not.toHaveClass("kapi-gecti");

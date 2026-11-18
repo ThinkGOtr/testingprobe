@@ -548,7 +548,8 @@ export function CaseKarti({
                     <td data-etiket="Adım">
                       <AtifliMetin metin={s.action} veri={tc.veri} />
                     </td>
-                    <td className={`mono${s.data ? "" : " bos-hucre"}`} data-etiket="Veri">
+                    {/* TS-01: veri hücresi insan dili metin + atıf çipi taşır; mono değil (anahtar çipte mono). */}
+                    <td className={s.data ? undefined : "bos-hucre"} data-etiket="Veri">
                       {s.data ? <AtifliMetin metin={s.data} veri={tc.veri} /> : "—"}
                     </td>
                     <td className={s.expected ? undefined : "bos-hucre"} data-etiket="Beklenen">

@@ -105,7 +105,14 @@
   --radius-sm: 8px;
   --radius-kontrol: 10px; /* düğme ve giriş */
   --radius-hap: 999px;
+  /* Aralık ölçeği (DS-1): 4 / 8 / 12 / 16 / 24 / 32. Yeni düzen kuralları yalnız bunları kullanır. */
+  --space-1: 4px;
   --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --kart-ic: 20px; /* kart iç boşluğu (.kart ve detay özet kartı aynı) */
 
   /* ---- ikonlar: yalnız maske olarak kullanılır (content: "" + mask-image; renk currentColor).
      data: SVG'de renk siyah = maske. */
@@ -1113,7 +1120,7 @@ button.atla {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 20px;
+  padding: var(--kart-ic);
   margin-bottom: 16px;
   box-shadow: var(--kart-golge);
   min-width: 0;
@@ -4308,122 +4315,6 @@ details.soluk > summary {
   gap: 6px;
 }
 
-/* ---------------------------------------------------------------- gereksinim detayı: bölüm gezgini */
-
-/* Gereksinim detayı bölüm gezgini (§5, F4) üç aralıkta: ≤860 px gizli (display: none; akışta yer kaplamaz,
-   erişilebilirlik ağacında yok), 861–1279 px yatay şerit (aşağıda), ≥1280 px içeriğin sağında yapışkan
-   sütun. Sütunun yapışma payı:
-   üst çubuk 56 px + 16 px = 72 px; html scroll-padding-top (72 px) ile aynı — ÖRNEK VERİ bandı
-   yapışkan değil, toplama girmez. Kart başlıkları gezginin bağlantı hedefidir. */
-.bolum-gezgini {
-  display: none;
-}
-@media (min-width: 1280px) {
-  .bolum-duzen {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 184px;
-    column-gap: 24px;
-    align-items: start;
-  }
-  .bolum-govde {
-    grid-column: 1;
-    grid-row: 1;
-    min-width: 0;
-  }
-  .bolum-gezgini {
-    grid-column: 2;
-    grid-row: 1;
-    position: sticky;
-    top: 72px;
-    max-height: calc(100vh - 88px);
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 4px 0;
-    border-left: 1px solid var(--border-soft);
-    font-size: 0.85rem;
-  }
-  .bolum-gezgini a {
-    display: block;
-    margin-left: -1px;
-    padding: 6px 12px;
-    border-left: 2px solid transparent;
-    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-    color: var(--text-2);
-    font-weight: 500;
-    line-height: 1.35;
-    text-decoration: none;
-  }
-  .bolum-gezgini a:hover {
-    color: var(--text);
-    border-left-color: var(--accent);
-    background: var(--accent-soft);
-  }
-}
-
-/* 861–1279 px (kenar çubuklu düzen, ör. 1152 px sunum makinesi): sağ sütun içeriği ~650 px'e daraltıp
-   tabloları keseceği için yapışkan sütun yerine başlığın altında yatay bağlantı şeridi. Şerit yapışkan
-   (üst çubuğun altında; uzun sayfada kaydırınca kaybolmaz), zemini yapışkan case sekmeleriyle aynı kalıpta
-   (yalnız yapışınca). Case review'un yapışkan sekmeleri bu sayfada yok, çakışmaz. Şerit .icerik iç
-   boşluğu kadar iki yana uzar; çapa kaydırma payı üst çubuk + şerit + 16 px. */
-@media (min-width: 861px) and (max-width: 1279px) {
-  .bolum-gezgini {
-    position: sticky;
-    top: 56px;
-    z-index: 10;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin: -8px -28px 8px;
-    padding: 8px 28px;
-    font-size: 0.85rem;
-    background: var(--ust-cubuk-bg);
-    -webkit-backdrop-filter: blur(16px);
-    backdrop-filter: blur(16px);
-  }
-  .bolum-gezgini a {
-    padding: 4px 12px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-hap);
-    background: var(--surface);
-    color: var(--text-2);
-    font-weight: 500;
-    text-decoration: none;
-  }
-  .bolum-gezgini a:hover {
-    color: var(--text);
-    border-color: var(--accent);
-    background: var(--accent-soft);
-  }
-  @supports (container-type: scroll-state) {
-    .bolum-gezgini {
-      container-type: scroll-state;
-      background: none;
-      -webkit-backdrop-filter: none;
-      backdrop-filter: none;
-    }
-    .bolum-gezgini::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      z-index: -1;
-      pointer-events: none;
-    }
-    @container scroll-state(stuck: top) {
-      .bolum-gezgini::before {
-        background: var(--ust-cubuk-bg);
-        -webkit-backdrop-filter: blur(16px);
-        backdrop-filter: blur(16px);
-        box-shadow: 0 1px 0 var(--border-soft);
-      }
-    }
-  }
-  html:has(.bolum-gezgini) {
-    scroll-padding-top: 120px;
-  }
-}
-
 /* ---------------------------------------------------------------- case review sekmeleri, yayın bağlantısı */
 
 /* Case filtresi sekmeleri yapışkan (§5, F4): üst çubuğun (56 px, z-index 20) hemen altında, onun altında
@@ -5607,14 +5498,15 @@ td > .satir-baglanti + .cip,
   border-radius: 6px;
   background: var(--accent-soft);
   color: var(--text);
-  font-size: 0.85em;
+  font-size: 0.8125rem; /* TS-02: rem — em zinciri (td.mono 0.85em × 0.85em × 0.92em) 8,7 px'e düşüyordu */
   line-height: 1.5;
   overflow-wrap: anywhere;
   vertical-align: baseline;
 }
 .veri-atif-anahtar {
   color: var(--text-2);
-  font-size: 0.92em;
+  font-size: 0.75rem; /* §3.4 alt sınır */
+  overflow-wrap: anywhere;
 }
 .veri-atif-deger {
   font-weight: 600;
@@ -6117,4 +6009,327 @@ html {
   body:has(.asistan-baslatici-kap) .icerik {
     padding-bottom: calc(112px + env(safe-area-inset-bottom, 0px));
   }
+}
+
+/* ---------------------------------------------------------------- detay sayfa iskeleti (DS-1) */
+
+/* components/DetaySayfasi.tsx: özet kartı → (şerit) → (üst alan) → ana sekmeler → tek nefesli panel.
+   Ölçüler --space-* ölçeğinden; renkler yalnız mevcut token'lar. Ana sekme şeridi alt çizgili (aktif =
+   indigo alt çizgi + --text), alt düzey mevcut .sekme hap segmentidir. */
+.ds-sayfa {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+.ds-sayfa > .kart,
+.ds-sayfa .ds-panel > .kart,
+.ds-sayfa .ds-panel > * > .kart {
+  margin-bottom: 0;
+}
+
+/* Özet kartı: sol gövde (başlık, rozetler, sıradaki adım), sağda eylemler; dar kapta yığılır. */
+.ds-ozet {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-4) var(--space-5);
+  align-items: start;
+  padding: var(--kart-ic);
+  container: ds-ozet / inline-size;
+}
+.ds-ozet-govde {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.ds-ozet .ust-baglanti {
+  margin-bottom: 0;
+}
+.ds-ozet-baslik {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.ds-ozet-satir {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  align-items: center;
+}
+.ds-ozet .ds-siradaki {
+  color: var(--text);
+  margin: var(--space-1) 0 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  max-width: 80ch;
+}
+.ds-siradaki-git {
+  white-space: nowrap;
+  font-weight: 600;
+}
+.ds-ozet-eylemler {
+  max-width: 28rem;
+}
+@media (max-width: 960px) {
+  .ds-ozet {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ds-ozet-eylemler {
+    max-width: none;
+  }
+}
+
+/* Şerit (ör. kompakt akış adımları): kartsız ince yüzey. */
+.ds-serit {
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--kart-golge);
+}
+.ds-ust {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.ds-ust > * {
+  margin: 0;
+}
+
+/* Sekmeler */
+.ds-sekmeler {
+  min-width: 0;
+}
+.ds-sekme-serit {
+  border-bottom: 1px solid var(--border);
+  margin-bottom: var(--space-4);
+}
+.ds-sekme-liste {
+  /* position: relative — sekme içindeki görsel gizli metinler (position: absolute) kaydırma kabının
+     dışına taşıp sayfayı yatay kaydırmasın. */
+  position: relative;
+  display: flex;
+  gap: var(--space-1);
+  overflow-x: auto;
+  scrollbar-width: thin;
+  /* Odak halkası kesilmesin: liste içinde 3 px pay. */
+  padding: 3px 3px 0;
+  margin: -3px -3px 0;
+}
+.ds-sekme {
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  margin-bottom: -1px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.ds-sekme:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+.ds-sekme[aria-selected="true"] {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+.ds-sekme:focus-visible,
+.ds-sekmeler-alt .sekme:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.ds-sayi {
+  display: inline-block;
+  min-width: 1.6em;
+  padding: 0 6px;
+  border-radius: var(--radius-hap);
+  background: var(--surface-3);
+  color: var(--text-2);
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.6;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.ds-sekme[aria-selected="true"] .ds-sayi {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.ds-sayi-dikkat,
+.ds-sekme[aria-selected="true"] .ds-sayi-dikkat {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+.ds-sekmeler-alt .sekme .ds-sayi {
+  margin-left: var(--space-1);
+}
+.sekme.aktif .ds-sayi {
+  background: transparent;
+  color: inherit;
+}
+.ds-panel {
+  min-width: 0;
+}
+.ds-panel:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 4px;
+}
+/* Panelde birden çok kart: tutarlı aralık. */
+.ds-sekmeler-ana > .ds-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.ds-sekmeler-ana > .ds-panel[hidden] {
+  display: none;
+}
+.ds-sekmeler-ana > .ds-panel .kart {
+  margin-bottom: 0;
+}
+.ds-sekmeler-ana > .ds-panel .kart + .kart {
+  margin-top: 0;
+}
+.bos-durum-sekme {
+  text-align: left;
+  padding: var(--kart-ic);
+}
+.bos-durum-sekme > p,
+.bos-durum-sekme > div {
+  margin-inline: 0;
+}
+/* Detay sekmesi içindeki yapışkan süzgeç (ör. case filtresi) ana sekme şeridiyle aynı yere (top: 56px)
+   yapışıp onu örtmesin: sekme panelinde akışta kalır. */
+.ds-panel .sekmeler-yapiskan {
+  position: static;
+}
+
+/* Alt düzey (kart içi segment): mevcut .sekme hapları, şerit yatay kayar. */
+.ds-sekmeler-alt .ds-sekme-serit {
+  border-bottom: none;
+  margin-bottom: var(--space-4);
+}
+.ds-sekmeler-alt .ds-sekme-liste {
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: 3px;
+  margin: -3px;
+}
+@media (max-width: 640px) {
+  .ds-sekmeler-alt .ds-sekme-liste {
+    flex-wrap: nowrap;
+  }
+}
+.ds-sekmeler-alt .sekme {
+  white-space: nowrap;
+  flex: none;
+}
+
+/* Ana sekme şeridi yapışkan (≥641 px): üst çubuğun (56 px) altında, zemini yalnız yapışınca. */
+@media (min-width: 641px) {
+  .ds-sekme-serit-yapiskan {
+    position: sticky;
+    top: 56px;
+    z-index: 10;
+    background: var(--ust-cubuk-bg);
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+  }
+  /* Destekleyen tarayıcıda zemin yalnız yapışınca (.sekmeler-yapiskan ile aynı kalıp). */
+  @supports (container-type: scroll-state) {
+    .ds-sekme-serit-yapiskan {
+      container-type: scroll-state;
+      background: none;
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+    .ds-sekme-serit-yapiskan::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      pointer-events: none;
+    }
+    @container scroll-state(stuck: top) {
+      .ds-sekme-serit-yapiskan::before {
+        background: var(--ust-cubuk-bg);
+        -webkit-backdrop-filter: blur(16px);
+        backdrop-filter: blur(16px);
+      }
+    }
+  }
+  html:has(.ds-sekme-serit-yapiskan) {
+    scroll-padding-top: 120px;
+  }
+}
+
+/* Kompakt akış şeridi: 14 adım tek satır; dar kapta satıra sarmak yerine kendi içinde yatay kayar. */
+.akis-kompakt {
+  position: relative;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  padding-bottom: 2px;
+}
+.akis-kompakt:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+.akis-kompakt .akis-lejant {
+  margin-top: var(--space-2);
+  /* Şerit yatay kaysa da lejant yerinde kalır. */
+  position: sticky;
+  left: 0;
+  width: max-content;
+  max-width: 100%;
+}
+@container akis (width < 57.5rem) {
+  .akis-kompakt ol {
+    grid-template-columns: repeat(14, minmax(4.5rem, 1fr));
+    min-width: max-content;
+  }
+  .akis-kompakt .akis-adim:nth-child(8)::before {
+    display: block;
+  }
+}
+@container akis (width <= 31rem) {
+  .akis-kompakt ol {
+    grid-template-columns: repeat(14, minmax(4.5rem, 1fr));
+  }
+}
+
+/* Model alt sekmeleri: bölüm yığınları arasında tutarlı aralık; sekmede ayrı bölüm başlığı yok (sekme adı). */
+.model-tablolari .model-bolum {
+  margin: 0;
+}
+.model-bolum-yigin {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+/* Tablo hücresindeki test verisi çipi (TS-01, ör. "ortak.demo_parola ••• (gizli)"): hücrenin nowrap'ını miras
+   almaz; anahtar ve değer çip içinde alt alta sarılır. Anahtar yalnız gerekirse herhangi bir noktada
+   bölünür, gizli değer bölünmez. Çip yandaki sütuna taşmaz. */
+.tablo td .veri-atif,
+.tablo td .veri-atif .mono {
+  white-space: normal;
+}
+.tablo td .veri-atif > * {
+  min-width: 0;
+  max-width: 100%;
+}
+.veri-atif-gizli .veri-atif-deger {
+  white-space: nowrap;
 }

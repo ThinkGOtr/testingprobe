@@ -142,7 +142,7 @@ describe("bug taslağı: kısıtlı rol ve salt okunur form", () => {
     const bulgu = v.bulgular.find((b) => b.bug_draft_id && b.karar && v.bugTaslaklari.find((t) => t.id === b.bug_draft_id)?.durum !== "published")!;
     expect(bulgu).toBeTruthy();
     await oturumAc("gelistirici");
-    uygulama(`/gereksinimler/${bulgu.requirement_id}`);
+    uygulama(`/gereksinimler/${bulgu.requirement_id}?sekme=tutarlilik`);
     const notlar = await screen.findAllByTestId("bug-taslagi-kisitli");
     expect(notlar[0]).toHaveTextContent("Bu rol yayınlanmamış bug taslaklarını göremez.");
     expect(screen.queryByRole("link", { name: "Bug taslağına git" })).toBeNull();
@@ -279,7 +279,7 @@ describe("tutarlılık kartı: güncelliğini yitirmiş bulgular ayrı", () => {
       return undefined;
     });
     await oturumAc("analist");
-    uygulama(`/gereksinimler/${g.id}`);
+    uygulama(`/gereksinimler/${g.id}?sekme=tutarlilik`);
     const eski = await screen.findByTestId("eskimis-bulgular");
     expect(within(eski).getByText(/Güncelliğini yitirmiş bulgular \(1\)/)).toBeInTheDocument();
     expect(within(eski).getByText("Engelleyiciydi")).toBeInTheDocument();
