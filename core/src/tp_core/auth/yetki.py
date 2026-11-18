@@ -89,6 +89,10 @@ IZINLER: Final[dict[str, frozenset[str]]] = {
     "code.review": _r(ENGINEER),
     "code.merge": _r(ENGINEER),
     "code.repair": _r(ENGINEER),
+    # 014 müşteri CI kurulum PR'ı: müşteri deposuna iş akışı + iskelet yazan tek seferlik
+    # entegrasyon kurulumu. Kod hattının sahibi Otomasyon Mühendisi; Sistem Yöneticisi de açabilir
+    # (demo/hata koşusu gibi kurulum işleri). PR'ı müşteri GitHub'da birleştirir (TP merge etmez).
+    "code.ci_setup": _r(ADMIN, ENGINEER),
     "run.trigger_scheduled": _r(ENGINEER),
     "run.trigger_manual": _r(ENGINEER, DEVELOPER),
     "bug.decide": _r(TESTER),

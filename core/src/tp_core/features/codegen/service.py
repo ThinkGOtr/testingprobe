@@ -1029,17 +1029,20 @@ def _kurulum_ozeti(platform: str, dil: str) -> dict[str, Any] | None:
     """Ş5 `musteri_ci.portal_kurulum`: depo dosya listesinden kurulum önizlemesi (yazma yok;
     iskelet dil şeridinden, `musteri_ci.dil_kancalari`). Uygulamaya özgü parametreler (test
     paketi, Xcode projesi …) bilinmediğinden plan "parametre gerekli" eksiklerini de gösterir;
-    kurulum PR'ını açan uç parametreleri alır. Depo okunamazsa None (portal göstermez)."""
+    kurulum PR'ını açan uç (`POST /code/ci-setup`, `kurulum_pr`) parametreleri alır. Depo okunamazsa
+    None (portal göstermez)."""
     try:
         from tp_core.features import musteri_ci as mci
+        from tp_core.features.codegen.kurulum_pr import mevcut_pr, taban_dal
         from tp_core.features.musteri_ci.dil_kancalari import varsayilan_iskelet
 
         forge = _forge(platform)
-        ana_dal = depolar.ana_dal(platform)
+        ana_dal = taban_dal(platform, forge)  # PR'ın tabanı (kurulum ucuyla aynı)
         dosyalar = forge.list_files(ref=forge.head_sha(ana_dal))
         params = mci.KurulumParametreleri(platform=platform, dil=dil, varsayilan_dal=ana_dal)
         plan = mci.kurulum_plani(params, dosyalar, iskelet=varsayilan_iskelet(params, _rules_dir()))
-        return mci.portal_kurulum(plan)
+        # Açık kurulum PR'ı varsa (idempotent gösterim) portal "açık" + bağlantı gösterir.
+        return mci.portal_kurulum(plan, mevcut_pr(forge, platform, dil))
     except Exception:
         log.warning("kurulum önizlemesi hesaplanamadı: %s/%s", platform, dil, exc_info=True)
         return None
