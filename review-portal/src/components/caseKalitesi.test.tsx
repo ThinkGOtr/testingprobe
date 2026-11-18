@@ -61,7 +61,7 @@ describe("Case kalitesi bölümü", () => {
     expect(within(dagilim).getAllByRole("listitem")).toHaveLength(4);
     expect(within(dagilim).getByText("70–84").closest("li")).toHaveTextContent("3 (%50)");
 
-    const denetim = within(bolum).getByRole("region", { name: /Agent Probe denetimi \(P9\)/ });
+    const denetim = within(bolum).getByRole("region", { name: /^Agent Probe denetimi/ });
     expect(within(denetim).getByTestId("denetim-kod").textContent).toContain("Engelle1");
     expect(within(denetim).getByTestId("denetim-model").textContent).toContain("Engelle0");
     expect(denetim).toHaveTextContent("1 bekliyor · 1 hata");
