@@ -245,8 +245,10 @@ describe("Kontrol Kulesi: kazanç yalnızca ölçülmüş story'lerde", () => {
   it("ölçüm yokken 'ölçülmüş baz yok'; TPD-1'e ölçüm girilince kazanç + kapsam metni + story tablosu", async () => {
     await oturumAc("sunucu");
     const ilk = uygulama("/kontrol-kulesi");
-    expect(await screen.findByTestId("hazirlik-kazanci")).toHaveTextContent("ölçülmüş baz yok");
-    expect(screen.getByTestId("kazanc-kapsam")).toHaveTextContent(/Kazanç hesaplanmaz/);
+    // IA-19: ölçülmeyen kazanç kutu değil, "Ölçülmeyenler" satırında (neden + kapsam metni).
+    const olculmeyen = await screen.findByTestId("kule-olculmeyenler");
+    expect(olculmeyen).toHaveTextContent(/Hazırlık kazancı: hiçbir story'de manuel baz değer ölçülmedi\. .*Kazanç hesaplanmaz/);
+    expect(screen.queryByTestId("hazirlik-kazanci")).toBeNull();
     ilk.unmount();
 
     await oturumAc("po");
@@ -255,9 +257,8 @@ describe("Kontrol Kulesi: kazanç yalnızca ölçülmüş story'lerde", () => {
     uygulama("/kontrol-kulesi");
     // Örnek veri REPLAY: ölçüm girilse de başlık yüzdesi gösterilmez (verimlilik iddiası değil);
     // story oranı tabloda "(REPLAY: yalnız review)" etiketiyle kalır.
-    const kazanc = await screen.findByTestId("hazirlik-kazanci");
-    expect(kazanc).toHaveTextContent("REPLAY: hesaplanmaz");
-    expect(screen.getByTestId("kazanc-kapsam")).toHaveTextContent(/Kazanç hesaplanmaz \(REPLAY\)/);
+    const kazanc = await screen.findByTestId("kule-olculmeyenler");
+    expect(kazanc).toHaveTextContent(/Hazırlık kazancı: REPLAY çıktılarında AI süresi ölçülmez\. .*Kazanç hesaplanmaz \(REPLAY\)/);
     const satir = screen.getByTestId("hazirlik-TPD-1");
     expect(satir).toHaveTextContent("1 sa 00 dk");
     expect(satir).toHaveTextContent("Ölçüm");

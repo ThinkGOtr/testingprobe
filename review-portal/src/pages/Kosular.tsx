@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
-import type { HataSinifi, Kosu, KosuDetay as KosuDetayTuru, KosuHatasi, KosuKaynagi, Tetik } from "../api/types";
+import type { BasarisizOzeti, HataSinifi, Kosu, KosuDetay as KosuDetayTuru, KosuHatasi, KosuKaynagi, Tetik } from "../api/types";
 import { useIzin, useOturum, usePlatformlar } from "../auth";
 import { normalizeRol } from "../lib/yetki";
 import { useBildirim } from "../components/Bildirim";
@@ -131,6 +131,7 @@ export function KosuTablosu({ kosular, kompakt }: { kosular: Kosu[]; kompakt?: b
                     {k.flaky} flaky
                   </Cip>
                 )}
+                <BasarisizOzetSatiri k={k} />
               </td>
               <td className="sayi mono" data-etiket="Geçen / toplam">
                 {k.gecen}/{k.toplam}
@@ -144,6 +145,55 @@ export function KosuTablosu({ kosular, kompakt }: { kosular: Kosu[]; kompakt?: b
     </TabloSarici>
   );
 }
+
+/** Başarısız testin kısa adı: case kısaltması varsa o ("TPD-1·C10"), yoksa test adının son parçası. */
+export function basarisizAdi(o: BasarisizOzeti): string {
+  if (o.case_ref) return o.case_ref;
+  const parca = o.test_adi.split(" › ").pop() ?? o.test_adi;
+  return parca.length > 60 ? `${parca.slice(0, 59)}…` : parca;
+}
+
+/**
+ * UX IA-15: listede "ne kırıldı" — "1 başarısız: TPD-1·C10 (Belirsiz) [Triage]". Hata/zaman aşımında
+ * testler koşmadıysa nedeni (CI başlamadı / sağlık yoklaması) tek satır. Core alanı yoksa sayıyla yetinilir.
+ */
+export function BasarisizOzetSatiri({ k }: { k: Pick<Kosu, "durum" | "basarisiz" | "basarisiz_ozet" | "saglik_hatasi" | "toplam"> & { hata?: string | null } }) {
+  if ((k.durum === "error" || k.durum === "zaman_asimi") && k.toplam === 0) {
+    const neden = k.saglik_hatasi ?? (k.durum === "zaman_asimi" ? "koşu beklenen sürede bitmedi" : null);
+    return (
+      <div className="kucuk kosu-basarisiz-ozet" data-testid="kosu-basarisiz-ozet">
+        Testler koşmadı{neden ? `: ${neden}` : "; ayrıntı koşu sayfasında"}
+      </div>
+    );
+  }
+  const ozet = k.basarisiz_ozet ?? [];
+  if (k.basarisiz === 0 || ozet.length === 0) return null;
+  const kalan = k.basarisiz - ozet.length;
+  return (
+    <div className="kucuk kosu-basarisiz-ozet" data-testid="kosu-basarisiz-ozet">
+      {k.basarisiz} başarısız:{" "}
+      {ozet.map((o, i) => (
+        <span key={`${o.test_adi}-${i}`} title={o.test_adi}>
+          {i > 0 && ", "}
+          {basarisizAdi(o)}
+          {o.sinif && ` (${HATA_SINIFI[o.sinif]?.etiket ?? o.sinif})`}
+          {o.failure_id && (
+            <>
+              {" "}
+              <IzinliLink to={`/hatalar/${encodeURIComponent(o.failure_id)}`} aria-label={`${basarisizAdi(o)} triage sonucu`}>
+                Triage
+              </IzinliLink>
+            </>
+          )}
+        </span>
+      ))}
+      {kalan > 0 && ` ve ${kalan} test daha`}
+    </div>
+  );
+}
+
+/** Koşu listesinin sayfa boyu (core `GET /runs?offset=&limit=`). */
+export const KOSU_SAYFA = 50;
 
 /** Platform bazlı gece koşusu özeti satırı: platformun en son gece koşusu ve deposu. */
 export type GeceSatiri = { platform: Platform; kosu: Kosu };
@@ -275,7 +325,30 @@ export function Kosular() {
   const [sorgu, setSorgu] = useSearchParams();
   // Ortam süzgeci sunucudadır (`GET /runs?ortam=<eid>|-`).
   const ortamSecimi = sorgu.get("ortam") ?? "";
-  const v = useVeri(() => api.kosular(ortamSecimi || undefined), [ortamSecimi]);
+  // UX IA-15: sayfalama — ilk sayfa canlı yenilenir, "Daha eski koşular" sonraki sayfaları ekler.
+  const v = useVeri(() => api.kosuSayfasi({ ortam: ortamSecimi || undefined, offset: 0, limit: KOSU_SAYFA }), [ortamSecimi]);
+  const [ekSayfalar, setEkSayfalar] = useState<Kosu[][]>([]);
+  const [sayfaYukleniyor, setSayfaYukleniyor] = useState(false);
+  const [sayfaHatasi, setSayfaHatasi] = useState<string | null>(null);
+  useEffect(() => {
+    setEkSayfalar([]);
+    setSayfaHatasi(null);
+  }, [ortamSecimi]);
+  const sonSayfa = ekSayfalar.length ? ekSayfalar[ekSayfalar.length - 1] : (v.veri ?? []);
+  // Sabitlenen kanıt (`sabit`) ilk sayfayı sayfa boyunun üstüne çıkarabilir: tam sayfa geldiyse devamı olabilir.
+  const dahaVar = !!v.veri && sonSayfa.length >= KOSU_SAYFA;
+  const dahaEskiYukle = async () => {
+    setSayfaYukleniyor(true);
+    setSayfaHatasi(null);
+    try {
+      const yeni = await api.kosuSayfasi({ ortam: ortamSecimi || undefined, offset: (ekSayfalar.length + 1) * KOSU_SAYFA, limit: KOSU_SAYFA });
+      setEkSayfalar((s) => [...s, yeni]);
+    } catch (e) {
+      setSayfaHatasi(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSayfaYukleniyor(false);
+    }
+  };
   const ortam = useOrtamlar();
   // Tetik ortamı: kullanıcı seçmediyse projenin varsayılanı (listede yoksa ilk ortam).
   const [tetikOrtami, setTetikOrtami] = useState<string | null>(null);
@@ -314,7 +387,8 @@ export function Kosular() {
     tetik: (sorgu.get("tetik") ?? "") as Filtre["tetik"],
     kaynak: (sorgu.get("kaynak") ?? "") as Filtre["kaynak"],
     durum: (sorgu.get("durum") ?? "") as Filtre["durum"],
-    kirma: sorgu.get("kirma") !== "0",
+    // IA-15: kasıtlı kırma koşuları varsayılan gizli (normal sonuçlarla karışmasın); `?kirma=1` gösterir.
+    kirma: sorgu.get("kirma") === "1",
     platform: (() => {
       const p = platformSecimiOku(sorgu.get("platform"));
       return p === "tumu" ? "" : p;
@@ -327,7 +401,16 @@ export function Kosular() {
     else y.delete(anahtar);
     setSorgu(y, { replace: true });
   };
-  const tum = v.veri ?? [];
+  const tum = useMemo(() => {
+    const gorulen = new Set<string>();
+    return [...(v.veri ?? []), ...ekSayfalar.flat()].filter((k) => (gorulen.has(k.id) ? false : (gorulen.add(k.id), true)));
+  }, [v.veri, ekSayfalar]);
+  const suzgecVar = ["tetik", "kaynak", "durum", "dil", "platform", "ortam", "kirma"].some((a) => sorgu.has(a));
+  const suzgecleriTemizle = () => {
+    const y = new URLSearchParams(sorgu);
+    for (const a of ["tetik", "kaynak", "durum", "dil", "platform", "ortam", "kirma"]) y.delete(a);
+    setSorgu(y, { replace: true });
+  };
   const suzulen = useMemo(
     () => kosulariSuz(tum, filtre),
     [tum, filtre.tetik, filtre.kaynak, filtre.durum, filtre.kirma, filtre.platform, filtre.dil],
@@ -442,7 +525,9 @@ export function Kosular() {
         ) : v.hata && !v.veri ? (
           <HataKutusu hata={v.hata} kaynak={v.hataNesnesi} yenile={() => void v.yenile()} />
         ) : tum.length === 0 && !ortamSecimi ? (
-          <BosDurum baslik="Henüz koşu yok." />
+          <BosDurum baslik="Henüz koşu yok.">
+            İlk koşu, üretilen bir test main'e birleşince CI'da başlar (Otomasyon Mühendisi). <IzinliLink to="/kod">Kod üretimine git</IzinliLink>
+          </BosDurum>
         ) : (
           <>
             <div className="filtre-cubugu" role="group" aria-label="Koşu süzgeci">
@@ -502,15 +587,38 @@ export function Kosular() {
               {kirmaVar && (
                 <label className="satir-ogeler">
                   <span>
-                    <input type="checkbox" checked={filtre.kirma} onChange={(e) => ayarla("kirma", e.target.checked ? "" : "0")} /> Kasıtlı kırma koşuları
+                    <input type="checkbox" checked={filtre.kirma} onChange={(e) => ayarla("kirma", e.target.checked ? "1" : "")} /> Kasıtlı kırma koşularını göster
                   </span>
                 </label>
               )}
+              {suzgecVar && (
+                <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={suzgecleriTemizle}>
+                  Süzgeçleri temizle
+                </button>
+              )}
               <span className="soluk kucuk" role="status">
-                {suzulen.length}/{tum.length} koşu
+                {suzulen.length}/{tum.length} koşu{dahaVar ? " (daha eskileri var)" : ""}
               </span>
             </div>
-            {suzulen.length ? <KosuTablosu kosular={suzulen} /> : <BosDurum baslik="Süzgece uyan koşu yok." />}
+            {suzulen.length ? (
+              <KosuTablosu kosular={suzulen} />
+            ) : (
+              <BosDurum baslik="Süzgece uyan koşu yok.">
+                {suzgecVar && (
+                  <button type="button" className="dugme-metin" onClick={suzgecleriTemizle}>
+                    Süzgeçleri temizle
+                  </button>
+                )}
+              </BosDurum>
+            )}
+            {(dahaVar || sayfaHatasi) && (
+              <div className="sayfalama" data-testid="kosu-sayfalama">
+                {sayfaHatasi && <span className="hata-metin kucuk">{sayfaHatasi}</span>}
+                <button type="button" className="dugme dugme-ikincil dugme-kucuk" disabled={sayfaYukleniyor} aria-busy={sayfaYukleniyor} onClick={() => void dahaEskiYukle()}>
+                  {sayfaYukleniyor ? "Yükleniyor…" : `Daha eski ${KOSU_SAYFA} koşu`}
+                </button>
+              </div>
+            )}
           </>
         )}
       </Kart>

@@ -129,8 +129,8 @@ def test_olcum_varsayilan_olculmedi_ve_kazanc(
     assert api.delete(f"/requirements/{dort_story['TPD-2']}/baseline").status_code == 200
     ai = _kule(engine)["ai_katkisi"]
     assert ai["baz_kapsami"]["metin"] == (
-        "4 story'den 1'inde ölçüm var, 3'ünde ölçüm yok (yalnız varsayılan TP_MANUAL_BASELINE_S; "
-        "ölçüm sayılmaz)"
+        "4 story'den 1'inde ölçüm var, 3'ünde ölçüm yok (yalnız yönetici ayarındaki "
+        "varsayılan baz değer; ölçüm sayılmaz)"
     )
 
 
