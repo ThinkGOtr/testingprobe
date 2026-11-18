@@ -51,7 +51,8 @@ TEST_SONUC = frozenset({"passed", "failed", "flaky", "skipped", "timedout"})
 FAILURE_SINIF = frozenset(
     {"environment", "flaky", "test_maintenance", "product_defect", "test_data", "unknown"}
 )
-KARAR_KAYNAGI = frozenset({"rule", "llm"})
+# 0049: `human` — Test Uzmanı / Otomasyon Mühendisi sınıflandırması (IA-16).
+KARAR_KAYNAGI = frozenset({"rule", "llm", "human"})
 ONERI_TURU = frozenset({"locator_fix", "bug_draft", "none"})
 ONERI_DURUMU = frozenset({"none", "proposed", "pr_open", "merged", "rejected"})
 BUG_KARAR = frozenset({"new", "link"})
