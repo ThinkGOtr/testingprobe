@@ -304,9 +304,11 @@ describe("ekranlar", () => {
   it("kod üretimi detayı canlı agent.step olayını ekler", async () => {
     await oturumAc("muhendis");
     uygulama("/kod/scr-2");
-    expect(await screen.findByText("Test hata yakalıyor ✓")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Merge et" })).toBeEnabled();
+    await sekmeAc("Kırarak doğrula");
+    expect(screen.getByText("Test hata yakalıyor ✓")).toBeInTheDocument();
+    await sekmeAc("Ajan adımları");
     expect(screen.getAllByRole("img", { name: /ekran görüntüsü/ })).toHaveLength(1);
-    expect(screen.getByRole("button", { name: "Merge et" })).toBeEnabled();
     // Olay yolu abonelikten önce yayınlanan olayı kaçırır: önce bağlantının kurulmasını bekle.
     expect(await screen.findByText("Olaylar: örnek veri")).toBeInTheDocument();
     await act(async () => {
@@ -324,8 +326,10 @@ describe("ekranlar", () => {
     const u = userEvent.setup();
     uygulama("/hatalar/fail-2");
     expect(await screen.findByText("Test bakımı")).toBeInTheDocument();
-    expect(screen.getByText("getByTestId('add-to-cart') 0 eleman döndürdü")).toBeInTheDocument();
-    expect(screen.getByText('"cart-add"')).toBeInTheDocument();
+    await sekmeAc("Sinyaller");
+    expect(await screen.findByText("getByTestId('add-to-cart') 0 eleman döndürdü")).toBeInTheDocument();
+    await sekmeAc("Onarım");
+    expect(await screen.findByText('"cart-add"')).toBeInTheDocument();
     expect(screen.queryByText(/%\s*\d|güven(:|i\s*%)/i)).toBeNull();
     await u.click(screen.getByRole("button", { name: "Onarım PR'ı aç" }));
     expect(await screen.findByText("PR açık")).toBeInTheDocument();
@@ -334,10 +338,11 @@ describe("ekranlar", () => {
   it("bug taslağı: mükerrer adayıyla bağlanır", async () => {
     await oturumAc("testci");
     const u = userEvent.setup();
-    uygulama("/bug-taslaklari/bug-1");
+    uygulama("/bug-taslaklari/bug-1?sekme=mukerrer");
     expect(await screen.findByText("TPD-5")).toBeInTheDocument();
     expect(screen.getByLabelText("Jira anahtarı")).toHaveValue("TPD-5");
     // Artifact sunucusu yok: kanıtlar tıklanamaz metin (ölü bağlantı yok)
+    await sekmeAc("Kanıt");
     expect(screen.getByText("Playwright trace (run-107)").closest("a")).toBeNull();
     await u.click(screen.getByRole("button", { name: "Mevcut kayda bağla" }));
     expect(await screen.findByText("Bağlandı: TPD-5")).toBeInTheDocument();
@@ -349,8 +354,8 @@ describe("ekranlar", () => {
     const u = userEvent.setup();
     uygulama("/bug-taslaklari/bug-1");
     const dugme = await screen.findByRole("button", { name: "Taslağı reddet" });
-    // Ret gerekçesi zorunlu (core 422): yazılmadan düğme kapalı.
-    expect(dugme).toBeDisabled();
+    // Ret gerekçesi zorunlu (core 422): yazılmadan düğme kapalı (EylemCubugu: aria-disabled, nedeni okunur).
+    expect(dugme).toHaveAttribute("aria-disabled", "true");
     await u.type(screen.getByLabelText("Ret gerekçesi"), "Kasıtlı kırma koşusu; ürün hatası değil");
     await waitFor(() => expect(dugme).toBeEnabled());
     mockVerisi().bugTaslaklari.find((b) => b.id === "bug-1")!.icerik.actual = "Triage yeniden çalıştı: indirim 5,00 TL";
@@ -417,10 +422,11 @@ describe("ekranlar", () => {
   it("örnek veride koşu detayı ayrıntısı dolu: denemeler, adım ağacı, ekran görüntüsü eki, CI adımları; Sauce çipi run-108'de", async () => {
     await oturumAc("analist");
     const u = userEvent.setup();
-    uygulama("/kosular/run-107");
+    uygulama("/kosular/run-107?sekme=ci");
     const ci = await screen.findByRole("region", { name: "CI adımları" });
     expect(within(ci).getByRole("list", { name: "Yerel CI adımları" })).toHaveTextContent("1 test başarısız (TPD-1 C2)");
-    const tablo = screen.getByRole("region", { name: "Test sonuçları tablosu" });
+    await sekmeAc("Test sonuçları");
+    const tablo = await screen.findByRole("region", { name: "Test sonuçları tablosu" });
     await u.click(within(tablo).getAllByRole("button")[0]);
     const ayrinti = screen.getByRole("region", { name: /^Test ayrıntısı: TPD-1 C2 · / });
     expect(within(ayrinti).getByText("Deneme 1")).toBeInTheDocument();
@@ -430,7 +436,8 @@ describe("ekranlar", () => {
     expect(within(ayrinti).getByText("trace (dosya sunulmuyor)")).toBeInTheDocument();
     cleanup();
     uygulama("/kosular/run-108");
-    expect(await screen.findByText("Sauce koşmadı: oturum sınırı dolu")).toBeInTheDocument();
+    // DZ-08: uzun Sauce nedeni özet kartının altında uyarı kutusunda.
+    expect(await screen.findByTestId("sauce-uyarisi")).toHaveTextContent(/Sauce koşmadı.*oturum sınırı dolu/);
   });
 
   it("bilinmeyen sayfa", async () => {

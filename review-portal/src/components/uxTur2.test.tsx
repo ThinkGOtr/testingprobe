@@ -24,7 +24,7 @@ import {
   tutarlilikSorunlari,
 } from "../lib/caseV3";
 import { CASE_TEKNIGI } from "../lib/etiketler";
-import { oturumAc, sar } from "../test/yardimci";
+import { oturumAc, sar, sekmeAc } from "../test/yardimci";
 import { AcikSorularPaneli, panelSayimi, PoYanitiMetni, PoyaGonderEylemi } from "./AcikSorular";
 import { BildirimProvider } from "./Bildirim";
 import { CaseDurumSeridi, acikSoruSeritDurumu } from "./CaseDurumSeridi";
@@ -138,7 +138,8 @@ describe("B2: doğrulanan varsayım diğer case'lere ve panele yansır", () => {
     await u.click(within(screen.getByTestId("varsayim-dogrulama-onayi")).getByRole("button", { name: "Evet, doğrulandı — kabul et" }));
     await waitFor(() => expect(kart("case-v3-6").getByTestId("hazirlik-yonlendirme-metin")).toHaveTextContent(/^A1, #2 numaralı case'te doğrulandı/));
     expect(within(kart("case-v3-6").getByTestId("case-varsayimlar")).getByTestId("varsayim-dogrulandi")).toHaveTextContent("✓ Doğrulandı (#2)");
-    const panel = within(screen.getByRole("region", { name: "Açık sorular ve PO yanıtları" }));
+    await sekmeAc("Açık sorular");
+    const panel = within(await screen.findByRole("region", { name: "Açık sorular ve PO yanıtları" }));
     const a1 = (await panel.findAllByTestId("acik-soru-satiri")).find((s) => s.textContent?.includes("250 karakter sınırı"))!;
     await waitFor(() => expect(within(a1).getByTestId("varsayim-dogrulandi")).toHaveTextContent("✓ Doğrulandı (#2)"));
     expect(within(a1).queryByText("PO'ya gönderilmedi")).not.toBeInTheDocument();

@@ -379,7 +379,7 @@ export const ORACLE_DURUMU: Record<OracleGorunumu, { etiket: string; ton: Ton; a
     ton: "uyari",
     aciklama: "Case metninden tabloyla karşılaştırılacak değer çıkarılamadı. Uyuşmazlık değildir; değerleri elle doğrulayın.",
   },
-  tablo_yok: { etiket: "Tablo yok", ton: "notr", aciklama: "Bu case'in kabul kriterlerini kapsayan onaylı karar tablosu yok." },
+  tablo_yok: { etiket: "Karar tablosu yok", ton: "notr", aciklama: "Bu case'in kabul kriterlerini kapsayan onaylı karar tablosu yok: beklenen değer bağımsız kontrol edilmedi." },
   suruyor: { etiket: "Kontrol sürüyor", ton: "notr", aciklama: "Kapsayan onaylı tablo var; beklenen sonuç kontrolü henüz bitmedi." },
 };
 

@@ -209,8 +209,8 @@ describe("gece koşusu: platform bazlı", () => {
 describe("ekranlar (mock)", () => {
   it("Script detayı: Android script'inde depo çipi (başlık + PR kartı)", async () => {
     await oturumAc("muhendis");
-    uygulama("/kod/scr-and");
-    await screen.findByRole("list", { name: "Ajan adımları" });
+    uygulama("/kod/scr-and?sekme=pr");
+    await screen.findByRole("heading", { name: "Pull request" });
     const cipler = screen.getAllByTestId("depo-cipi");
     expect(cipler.length).toBeGreaterThanOrEqual(2);
     cipler.forEach((c) => expect(c).toHaveTextContent(ANDROID_DEPOSU));
@@ -218,8 +218,8 @@ describe("ekranlar (mock)", () => {
 
   it("web script'inde depo çipi yok", async () => {
     await oturumAc("muhendis");
-    uygulama("/kod/scr-2");
-    await screen.findByRole("heading", { name: "Ajan adımları (Playwright MCP)" });
+    uygulama("/kod/scr-2?sekme=pr");
+    await screen.findByRole("heading", { name: "Pull request" });
     expect(screen.queryByTestId("depo-cipi")).toBeNull();
   });
 

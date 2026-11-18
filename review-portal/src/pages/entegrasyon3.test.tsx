@@ -72,7 +72,7 @@ describe("case metrik uyarıları", () => {
         uyarilar: ["Manuel baz değer girilmedi (TP_MANUAL_BASELINE_S): Demo-A kazanç gösterilemez."],
       } as CaseMetrikleri;
     });
-    uygulama(`/gereksinimler/${g.id}/caseler`);
+    uygulama(`/gereksinimler/${g.id}/caseler?sekme=olculer`);
     const liste = await screen.findByTestId("metrik-uyarilari");
     expect(liste).toHaveTextContent("Manuel baz değer girilmedi");
   });

@@ -545,7 +545,7 @@ describe("Case review: REPLAY'de kazanç yüzdesi yok", () => {
       manuel_baz_kaynagi: "olcum",
       manuel_baz: { deger_s: 1800, kaynak: "olcum", giren: "analist", zaman: "2026-10-30T10:00:00Z", not: null },
     } as typeof m);
-    uygulama("/gereksinimler/req-tpd-1/caseler");
+    uygulama("/gereksinimler/req-tpd-1/caseler?sekme=olculer");
     const ozet = await screen.findByRole("region", { name: "Özet" });
     expect(await within(ozet).findByTestId("case-baz")).toHaveTextContent("Ölçüm");
     expect(within(ozet).getByTestId("case-kazanc")).toHaveTextContent("—");
@@ -578,11 +578,13 @@ describe("Bug taslakları: kasıtlı kırma koşusu işareti", () => {
     expect(screen.getByRole("heading", { name: /Kayıt açma/ })).toHaveTextContent("Önerilen");
   });
 
-  it("detay: kırma koşusundan gelmeyen taslakta uyarı yok, 'Onayla ve Jira'da aç' birincil", async () => {
+  it("detay: kırma koşusundan gelmeyen taslakta uyarı yok; önerilen karar (AI: TPD-5'e bağla) birincil, 'Onayla ve Jira'da aç' ikincil", async () => {
     await oturumAc("testci");
     uygulama("/bug-taslaklari/bug-4");
-    const onayla = await screen.findByRole("button", { name: "Onayla ve Jira'da aç" });
-    await waitFor(() => expect(onayla.className).toContain("dugme-birincil"));
+    const bagla = await screen.findByRole("button", { name: "Mevcut kayda bağla" });
+    await waitFor(() => expect(bagla.className).toContain("dugme-birincil"));
+    expect(screen.getByRole("button", { name: "Onayla ve Jira'da aç" }).className).toContain("dugme-ikincil");
+    expect(screen.getByTestId("karar-onerisi")).toHaveTextContent("Mevcut kayda bağla (TPD-5)");
     expect(screen.queryByTestId("kirma-uyarisi")).toBeNull();
   });
 

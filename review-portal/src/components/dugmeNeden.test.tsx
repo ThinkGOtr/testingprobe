@@ -240,9 +240,9 @@ describe("ekranlarda görünür neden", () => {
 
   it("Script detay (defect adayı): kutu nedeni zaten yazdığı için 'Kırarak doğrula' yanında tekrar yok", async () => {
     await oturumAc("muhendis");
-    uygulama("/kod/scr-3");
+    uygulama("/kod/scr-3?sekme=kirarak-dogrula");
     const d = await screen.findByRole("button", { name: "Kırarak doğrula" });
-    expect(d).toBeDisabled();
+    expect(d).toHaveAttribute("aria-disabled", "true");
     expect(d).toHaveAttribute("title", expect.stringMatching(/^Defect adayı/));
     // Görünür "Kırarak doğrulama kapalı" kutusu düğmeye bağlı.
     expect(d).toHaveAttribute("aria-describedby", "kirma-kapali-neden");
@@ -252,7 +252,7 @@ describe("ekranlarda görünür neden", () => {
 
   it("Script detay (defect adayı, analist): kutu bağlı kalır, rol nedeni de görünür yazılır", async () => {
     await oturumAc("analist");
-    uygulama("/kod/scr-3");
+    uygulama("/kod/scr-3?sekme=kirarak-dogrula");
     expect(await screen.findAllByText(/^Bu adım Otomasyon Mühendisi rolünde: Gokhan Sipahi bekleniyor$/)).not.toHaveLength(0);
     expect(screen.queryByRole("button", { name: "Kırarak doğrula" })).toBeNull();
   });

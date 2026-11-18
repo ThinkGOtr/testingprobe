@@ -115,6 +115,9 @@ Yeni ekran kodu sabit px/rem yazmaz, aşağıdaki değişkenleri kullanır.
 - `TabloSarici({ etiket, darEkran?, yogunluk?, uzun?, className?, tabloClassName?, testId?, children })`.
 - DetaySayfasi (DS-1) ile: `OzetKarti` yuvaları `kimlik` → `Kimlik`, `rozetler` → `DurumCipi`, `meta` → `MetaSatiri`,
   `eylemler` → `EylemCubugu hiza="son"`; sayı rozeti `Sayac`.
+- Kırıntı (IA-22): `OzetKarti kirinti={[{ ad: "Gereksinimler", yol: "/gereksinimler" }, { ad: "TPD-1", yol }, { ad: "Case review" }]}`
+  (son halka `aria-current="page"`); `ust` yalnız ilgili sayfa bağlantıları. `eylemler` OzetKarti içinde kendiliğinden
+  `EylemCubugu hiza="son"`a sarılır (kilitli düğme aria-disabled). Sayfaya özgü CSS `src/stiller/detay-*.css`.
 
 ## API sözleşmesi
 

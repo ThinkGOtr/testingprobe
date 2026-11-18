@@ -33,8 +33,12 @@ const SIRALAMALAR: { deger: Siralama; etiket: string }[] = [
   { deger: "ad", etiket: "Ada göre" },
 ];
 
-/** Adres çubuğu: ?t_durum=&t_ara=&t_dosya=&t_sirala=&t_basarisiz=1 (Koşular süzgeciyle aynı desen). */
-export function sonucFiltresiOku(sorgu: URLSearchParams): SonucFiltresi {
+/**
+ * Adres çubuğu: ?t_durum=&t_ara=&t_dosya=&t_sirala=&t_basarisiz=1 (Koşular süzgeciyle aynı desen).
+ * `basarisizVarsayilan`: adreste `t_basarisiz` yokken "Yalnız başarısızlar" açık mı (başarısız test olan koşuda
+ * önce kırılanlar görünür; kullanıcı kapatınca `t_basarisiz=0` yazılır).
+ */
+export function sonucFiltresiOku(sorgu: URLSearchParams, basarisizVarsayilan = false): SonucFiltresi {
   const durum = sorgu.get("t_durum") ?? "";
   const sirala = sorgu.get("t_sirala") ?? "";
   return {
@@ -42,7 +46,7 @@ export function sonucFiltresiOku(sorgu: URLSearchParams): SonucFiltresi {
     ara: sorgu.get("t_ara") ?? "",
     dosya: sorgu.get("t_dosya") ?? "",
     sirala: sirala === "ad" || sirala === "sure" ? sirala : "durum",
-    yalnizBasarisiz: sorgu.get("t_basarisiz") === "1",
+    yalnizBasarisiz: sorgu.get("t_basarisiz") === "1" || (sorgu.get("t_basarisiz") === null && basarisizVarsayilan),
   };
 }
 
@@ -269,7 +273,8 @@ function SinifCipi({ s }: { s: TestSonucu }) {
 
 export function TestSonuclari({ k }: { k: KosuDetay }) {
   const [sorgu, setSorgu] = useSearchParams();
-  const f = sonucFiltresiOku(sorgu);
+  const basarisizVar = k.sonuclar.some((s) => s.durum === "failed");
+  const f = sonucFiltresiOku(sorgu, basarisizVar);
   const [acik, setAcik] = useState<Set<string>>(() => new Set());
   const ayarla = (anahtar: string, deger: string) => {
     const y = new URLSearchParams(sorgu);
@@ -346,7 +351,7 @@ export function TestSonuclari({ k }: { k: KosuDetay }) {
         </label>
         <label className="satir-ogeler">
           <span>
-            <input type="checkbox" checked={f.yalnizBasarisiz} onChange={(e) => ayarla("t_basarisiz", e.target.checked ? "1" : "")} /> Yalnız
+            <input type="checkbox" checked={f.yalnizBasarisiz} onChange={(e) => ayarla("t_basarisiz", e.target.checked === basarisizVar ? "" : e.target.checked ? "1" : "0")} /> Yalnız
             başarısızlar
           </span>
         </label>

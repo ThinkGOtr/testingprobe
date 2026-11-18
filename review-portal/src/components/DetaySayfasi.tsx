@@ -18,7 +18,9 @@
 // sonra `hidden` ile saklanır (form ve düzenleyici durumu sekme değişince kaybolmaz).
 // Ölçüler styles.css'teki --space-* ölçeğinden (8/12/16/24/32); renkler yalnız mevcut token'lar.
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { EylemCubugu } from "./tasarim";
+import { dugumMetni, useSekmeBasligi } from "./ui";
 
 /** Bir sekmenin tanımı (ana ya da alt düzey). */
 export interface DetaySekmesi {
@@ -206,11 +208,40 @@ export function Sekmeler({
   );
 }
 
+/** Kırıntının bir halkası: `yol` verilirse bağlantı; son halka (bulunulan sayfa) yolsuz yazılır. */
+export interface KirintiHalkasi {
+  ad: ReactNode;
+  yol?: string | null;
+}
+
 /**
- * Detay sayfasının üst kartı: geri bağlantısı, kimlik + başlık (h1), durum rozetleri, meta satırı,
- * "Sıradaki adım" (tek satır) ve sağda birincil eylemler. ≤960 px'te eylemler başlığın altına yığılır (sağa yaslı kalır).
+ * Kırıntı gezinme (IA-22): `Gereksinimler › TPD-1 › Case review`. Bütün detay sayfaları aynı biçimi kullanır
+ * (eski "← Liste" geri bağlantılarının yerine). Son halka `aria-current="page"`; yolsuz ara halka düz metin.
+ */
+export function Kirinti({ halkalar, testId = "kirinti" }: { halkalar: readonly KirintiHalkasi[]; testId?: string }) {
+  return (
+    <nav className="ds-kirinti" aria-label="Kırıntı" data-testid={testId}>
+      <ol>
+        {halkalar.map((h, i) => {
+          const son = i === halkalar.length - 1;
+          return (
+            <li key={i} aria-current={son ? "page" : undefined}>
+              {h.yol && !son ? <Link to={h.yol}>{h.ad}</Link> : <span>{h.ad}</span>}
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
+  );
+}
+
+/**
+ * Detay sayfasının üst kartı: kırıntı (+ ilgili sayfa bağlantıları), kimlik + başlık (h1), durum rozetleri, meta
+ * satırı, tek "Sıradaki adım" ve sağda eylemler (EylemCubugu: kilitli düğme aria-disabled, nedeni okunur). ≤960 px'te
+ * eylemler başlığın altına yığılır (sağa yaslı kalır).
  */
 export function OzetKarti({
+  kirinti,
   ust,
   kimlik,
   baslik,
@@ -218,28 +249,39 @@ export function OzetKarti({
   meta,
   siradaki,
   eylemler,
+  sekme,
   testId = "ozet-karti",
 }: {
-  /** Başlığın üstündeki bağlantılar (← liste, ilgili sayfalar). */
+  /** Kırıntı halkaları (IA-22); son halka bu sayfa. */
+  kirinti?: readonly KirintiHalkasi[];
+  /** Kırıntının sağında ilgili sayfa bağlantıları (ör. Karar tabloları). Kırıntı yoksa geri bağlantısı. */
   ust?: ReactNode;
   /** Kısa kimlik (ör. Jira anahtarı TPD-1, case #3); tek aralıklı yazılır. */
   kimlik?: ReactNode;
   baslik: ReactNode;
-  /** Durum çipleri. */
+  /** Durum çipleri (DurumCipi / Cip). */
   rozetler?: ReactNode;
-  /** İkincil bilgiler (kaynak, dış bağlantı, tarih). */
+  /** İkincil bilgiler (kaynak, dış bağlantı, tarih) — MetaSatiri ya da "·" ayraçlı span'ler. */
   meta?: ReactNode;
   /** "Sıradaki adım" metni (tek satır; bağlantı içerebilir). */
   siradaki?: ReactNode;
   eylemler?: ReactNode;
+  /** Tarayıcı sekmesi başlığındaki sayfa adı (IA-11); verilmezse h1'in düz metni (kimlik + başlık). */
+  sekme?: string;
   testId?: string;
 }) {
+  useSekmeBasligi(sekme ?? `${kimlik ? `${dugumMetni(kimlik)} ` : ""}${dugumMetni(baslik)}`);
   return (
     // `sayfa-basligi`: eylem grubu ve pasiflik nedeni yerleşimi sayfa başlığıyla aynı kurallardan (sağa yaslı,
     // neden düğmenin altında; styles.css ".sayfa-basligi > .eylemler").
     <header className="kart ds-ozet sayfa-basligi" data-testid={testId}>
       <div className="ds-ozet-govde">
-        {ust && <div className="ust-baglanti">{ust}</div>}
+        {(kirinti || ust) && (
+          <div className="ds-ozet-ust">
+            {kirinti && <Kirinti halkalar={kirinti} />}
+            {ust && <div className="ust-baglanti">{ust}</div>}
+          </div>
+        )}
         <h1 className="ds-ozet-baslik">
           {kimlik && <span className="mono baslik-anahtar">{kimlik}</span>} {baslik}
         </h1>
@@ -255,7 +297,11 @@ export function OzetKarti({
           </p>
         )}
       </div>
-      {eylemler && <div className="eylemler ds-ozet-eylemler">{eylemler}</div>}
+      {eylemler && (
+        <EylemCubugu hiza="son" etiket="Sayfa eylemleri" className="ds-ozet-eylemler">
+          {eylemler}
+        </EylemCubugu>
+      )}
     </header>
   );
 }

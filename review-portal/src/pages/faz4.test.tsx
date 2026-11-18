@@ -8,7 +8,7 @@ import { Rotalar } from "../App";
 import { ayar, mockVerisi } from "../api/mock/handlers";
 import { OturumProvider } from "../auth";
 import { BildirimProvider } from "../components/Bildirim";
-import { oturumAc } from "../test/yardimci";
+import { oturumAc, sekmeAc } from "../test/yardimci";
 import { demoOlayMetni, kirmaKosusu } from "./DemoKontrolleri";
 import { kararKaynagiMetni, onarimAsamalari } from "./HataDetay";
 import { kosuHatalari } from "./Kosular";
@@ -37,6 +37,8 @@ describe("triage ekranı", () => {
     const sinif = await screen.findByTestId("triage-sinif");
     expect(sinif).toHaveTextContent("Test bakımı");
     expect(sinif).toHaveTextContent("Karar kaynağı: kural · test_maintenance/locator");
+    // Önerili hatada varsayılan sekme Onarım; kanıt ve sinyaller kendi sekmelerinde.
+    await sekmeAc("Kanıt");
     // Kanıt: locator-probe (kapsam + DOM testId + commit eşleşmesi), aria parçası, sağlık.
     const probe = screen.getByRole("region", { name: "Locator yoklaması (locator-probe)" });
     expect(probe).toHaveTextContent("product-card-P-001");
@@ -45,9 +47,11 @@ describe("triage ekranı", () => {
     expect(screen.getByRole("region", { name: /Aria snapshot/ })).toHaveTextContent('button "Sepete ekle"');
     expect(screen.getByRole("region", { name: /Sağlık yoklaması/ })).toHaveTextContent("başarılı");
     // Sinyal kanıtı görünür.
-    expect(within(screen.getByRole("list", { name: "Eşleşen sinyaller" })).getByText(/matches=1 · test_id=cart-add/)).toBeInTheDocument();
+    await sekmeAc("Sinyaller");
+    expect(within(await screen.findByRole("list", { name: "Eşleşen sinyaller" })).getByText(/matches=1 · test_id=cart-add/)).toBeInTheDocument();
     // Öneri: yalnızca testId; kapsam değişmez.
-    expect(screen.getByLabelText("Locator değişikliği")).toHaveTextContent('addToCart.testId"add-to-cart"→yeni değer"cart-add"');
+    await sekmeAc("Onarım");
+    expect(await screen.findByLabelText("Locator değişikliği")).toHaveTextContent('addToCart.testId"add-to-cart"→yeni değer"cart-add"');
     expect(screen.getByText("product-card-")).toBeInTheDocument();
 
     await u.click(screen.getByRole("button", { name: "Onarım PR'ı aç" }));
@@ -71,11 +75,10 @@ describe("triage ekranı", () => {
     expect(screen.getByRole("region", { name: /Sağlık yoklaması/ })).toHaveTextContent("bağlantı reddedildi");
     expect(screen.queryByRole("button", { name: "Onarım PR'ı aç" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Bug taslağına git" })).toBeNull();
-    // #onarim çapası (asistan "Git") her durumda var; öneri yokken hiç düğüm taşımaz ki CSS
-    // `.triage-oneri:empty` tutsun ve ızgarada boş satır açılmasın (boşluk/yorum düğümü :empty'yi bozar).
-    const kap = document.getElementById("onarim");
-    expect(kap).not.toBeNull();
-    expect(kap!.childNodes.length).toBe(0);
+    // #onarim çapası (asistan "Git") Onarım sekmesinde her durumda var; ortam sorununda boş durum sonraki adımı söyler.
+    await sekmeAc("Onarım");
+    await waitFor(() => expect(document.getElementById("onarim")).not.toBeNull());
+    expect(document.getElementById("onarim")).toHaveTextContent("Ortam sorunu için onarım ya da bug taslağı üretilmez.");
   });
 
   it("ürün hatası (C3 defect adayı): bug taslağına bağlantı, kural kararı model rozeti taşımaz", async () => {
@@ -111,7 +114,7 @@ describe("bug taslağı kararı (testçi)", () => {
   it("C3 taslağı: TPD-5 yüksek olasılık + AI gerekçesi, REPLAY yanında 'canlı değerlendirme bekliyor'; bağla → Jira bağlantısı", async () => {
     await oturumAc("testci");
     const u = userEvent.setup();
-    uygulama("/bug-taslaklari/bug-4");
+    uygulama("/bug-taslaklari/bug-4?sekme=mukerrer");
     const liste = await screen.findByRole("list", { name: "Mükerrer adayları" });
     const tpd5 = within(liste).getAllByRole("listitem")[0];
     expect(tpd5).toHaveTextContent("yüksek olasılık");
@@ -129,8 +132,9 @@ describe("bug taslağı kararı (testçi)", () => {
   it("kırma taslağı (bug-1): AI önerisi yeni kayıt; düzenle + kaydet, sonra yeni kayıt → yeni Jira anahtarı", async () => {
     await oturumAc("testci");
     const u = userEvent.setup();
-    uygulama("/bug-taslaklari/bug-1");
+    uygulama("/bug-taslaklari/bug-1?sekme=mukerrer");
     expect(await screen.findByTestId("mukerrer-onerisi")).toHaveTextContent("yeni kayıt aç");
+    await sekmeAc("Taslak");
     const ozet = screen.getByLabelText("Özet");
     await u.clear(ozet);
     await u.type(ozet, "Sepet: 7 adette bedava verilmiyor (kırma koşusu)");
@@ -143,11 +147,12 @@ describe("bug taslağı kararı (testçi)", () => {
     expect(within(sonuc).getByRole("link")).toHaveAttribute("href", expect.stringMatching(/^http:\/\/127\.0\.0\.1:8090\/browse\/TPD-\d+$/));
   });
 
-  it("karar düğmeleri yalnızca testçide etkin", async () => {
+  it("karar düğmeleri yalnızca testçide: başka rolde karar alanı yok, sıradaki adım kararın kimde olduğunu söyler (IA-10)", async () => {
     await oturumAc("muhendis");
-    uygulama("/bug-taslaklari/bug-4");
-    expect((await screen.findAllByText("Bu adım Test Uzmanı rolünde: Fatih Arslan bekleniyor")).length).toBeGreaterThan(0);
+    uygulama("/bug-taslaklari/bug-4?sekme=mukerrer");
+    expect(await screen.findByTestId("siradaki-adim")).toHaveTextContent(/karar verecek.*Bu ekranda sizin eyleminiz yok/);
     expect(screen.queryByRole("button", { name: "Onayla ve Jira'da aç" })).toBeNull();
+    expect(await screen.findByRole("list", { name: "Mükerrer adayları" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "TPD-5 kaydına bağla" })).toBeNull();
   });
 });
@@ -172,9 +177,13 @@ describe("koşu detayı → triage", () => {
 describe("kod üretimi: defect adayı", () => {
   it("Kırarak doğrula kapalı ve triage bağlantısı var", async () => {
     await oturumAc("muhendis");
-    uygulama("/kod/scr-3");
+    uygulama("/kod/scr-3?sekme=kirarak-dogrula");
     expect(await screen.findByText("Kırarak doğrulama kapalı")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Kırarak doğrula" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Kırarak doğrula" })).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByTestId("kirma-durum")).toHaveTextContent("Uygulanmaz: defect adayı");
+    // Sıradaki adım triage'a götürür (Test Uzmanı); PR sekmesi de bağlantıyı verir.
+    expect(within(screen.getByTestId("siradaki-adim")).getByRole("link", { name: /Triage/ })).toHaveAttribute("href", "/hatalar/fail-4");
+    await sekmeAc("Pull request");
     expect(screen.getByRole("link", { name: "Triage sonucu ve bug taslağı" })).toHaveAttribute("href", "/hatalar/fail-4");
   });
 });

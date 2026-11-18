@@ -120,7 +120,7 @@ describe("case review", () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const u = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     uygulama("/gereksinimler/req-tpd-1/caseler");
-    await screen.findByRole("heading", { name: "Case review", level: 1 });
+    await screen.findByRole("heading", { level: 1, name: /Case review/ });
     // K13: gözlenen (karar bekleyen) kartlar görünür olur, 3 sn dolar.
     await waitFor(() => expect(g.gozlenenler().length).toBe(2));
     for (const el of g.gozlenenler()) g.goster(el);
@@ -150,14 +150,14 @@ describe("case review", () => {
     await oturumAc("testci");
     const u = userEvent.setup();
     uygulama("/gereksinimler/req-tpd-1/caseler");
-    await screen.findByText("Reddedilen (2)");
+    await screen.findByRole("button", { name: "Reddedilen (2)" });
     const red = screen.getAllByRole("article").find((a) => within(a).queryByText("Reddedildi"))!;
     expect(within(red).queryByRole("button", { name: "Kabul et" })).toBeNull();
     await u.click(within(red).getByRole("button", { name: "Taslağa al" }));
     await waitFor(() => expect(within(red).getByRole("button", { name: "Kabul et" })).toBeEnabled());
     expect(mockVerisi().caseler.find((c) => c.id === "case-1-6")).toMatchObject({ durum: "draft" });
     expect(within(red).getByText(/taslağa alındı \(önceki karar: ret\)/)).toBeInTheDocument();
-    expect(screen.getByText("Reddedilen (1)")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reddedilen (1)" })).toBeInTheDocument();
     // Yayınlanmış case için yeniden açma yok (son durum).
     const yayinda = screen.getAllByRole("article").find((a) => within(a).queryByText("TPD-9"))!;
     expect(within(yayinda).queryByRole("button", { name: "Taslağa al" })).toBeNull();
@@ -165,7 +165,7 @@ describe("case review", () => {
 
   it("özet: AI + review süresi ve ölçülen case sayısı", async () => {
     await oturumAc("analist");
-    uygulama("/gereksinimler/req-tpd-1/caseler");
+    uygulama("/gereksinimler/req-tpd-1/caseler?sekme=olculer");
     expect(await screen.findByText("AI + review")).toBeInTheDocument();
     expect(await screen.findByText(/8 case · ort\./)).toBeInTheDocument();
     // Çekirdek ölçümü geldiğinde kabul oranı ilk karara göre etiketlenir.

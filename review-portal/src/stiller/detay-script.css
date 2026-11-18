@@ -1,0 +1,43 @@
+/* Script detayı (/kod/:id) — DetaySayfasi iskeleti (FAZ 2). Yalnız ölçek değişkenleri ve mevcut renk belirteçleri. */
+
+/* ET-09: ajan adımları listesi sayfayla kayar (iç kaydırma yok); ≥961 px'te görüntü paneli yapışkan kalır:
+   üst çubuk (56) + sekme şeridi + boşluk kadar aşağıda. */
+.ajan {
+  align-items: start;
+}
+@media (min-width: 961px) {
+  .ajan-ekran {
+    position: sticky;
+    top: calc(56px + 3rem + var(--space-3));
+  }
+}
+.ajan-adim[aria-current="step"] {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+/* IA-14: kırarak doğrulamanın durumu tek satır, açık metin. */
+.kirma-durum {
+  margin: 0 0 var(--space-2);
+}
+
+/* IA-14: hepsi yeşil check'ler tek satır; ayrıntı açılır. */
+.check-ozeti {
+  margin: var(--space-2) 0;
+}
+.check-ozeti summary {
+  cursor: pointer;
+}
+.check-ozeti .kontrol-liste {
+  margin-top: var(--space-2);
+}
+
+/* DZ-03 / TS-09: PR açıklamasında uzun değer kartı taşırmaz; Markdown tablosu gerçek tablo. */
+.pr-govde code {
+  overflow-wrap: anywhere;
+}
+.pr-govde .pr-govde-tablo {
+  margin: var(--space-2) 0;
+}
+.pr-govde .kimlik-sarici {
+  white-space: nowrap;
+}

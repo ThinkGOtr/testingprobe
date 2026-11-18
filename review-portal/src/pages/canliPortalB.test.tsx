@@ -156,9 +156,11 @@ describe("bug taslağı: kısıtlı rol ve salt okunur form", () => {
     await oturumAc("sunucu");
     uygulama(`/bug-taslaklari/${taslak.id}`);
     expect(await screen.findByTestId("bug-salt-okunur")).toBeInTheDocument();
-    expect(screen.getByLabelText("Özet")).toBeDisabled();
-    expect(screen.getByLabelText("Beklenen")).toBeDisabled();
-    expect(screen.getByLabelText("Ret gerekçesi")).toHaveAttribute("readonly");
+    // IA-17: salt okunur rolde alanlar form değil tanım listesi; karar alanı yok, sıradaki adım kararın kimde olduğunu söyler.
+    expect(screen.getByLabelText("Taslak alanları").tagName).toBe("DL");
+    expect(screen.queryByRole("textbox", { name: "Özet" })).toBeNull();
+    expect(screen.queryByLabelText("Ret gerekçesi")).toBeNull();
+    expect(screen.getByTestId("siradaki-adim")).toHaveTextContent("karar verecek");
   });
 
   it("Test Uzmanı taslak formunu düzenleyebilir", async () => {

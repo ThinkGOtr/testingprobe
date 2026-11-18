@@ -12,6 +12,7 @@ import { surumKumeleri, varsayilanSurum, type CaseSurumu } from "../lib/durumMod
 import { PoyaGonderEylemi } from "./AcikSorular";
 import { CaseKarti, type CaseSecimi } from "./CaseKarti";
 import { BosDurum, HataKutusu, Kart, Yukleniyor } from "./ui";
+import { SegmentSecici, SuzgecCubugu } from "./tasarim";
 
 /** 012: `bekleyen` Test Uzmanı kararı bekleyen taslak, `hazir` Analist son onayı bekleyen (onaya hazır). */
 export type CaseFiltresi = "hepsi" | "bekleyen" | "hazir" | "onayli" | "reddedilen" | "hazir-degil";
@@ -133,18 +134,19 @@ export function CaseListesi({
   const gorunen = useMemo(() => taban.filter((c) => filtreUygula(c, s.filtre)), [taban, s.filtre]);
   const suzgec = suzgecMetni(s);
   const say = (f: CaseFiltresi) => taban.filter((c) => filtreUygula(c, f)).length;
-  const sekmeler: [CaseFiltresi, string][] = [
-    ["hepsi", `Hepsi (${taban.length})`],
-    ["bekleyen", `Karar bekleyen (${say("bekleyen")})`],
-    ["hazir", `Onaya hazır (${say("hazir")})`],
-    ["hazir-degil", `Hazır değil (${say("hazir-degil")})`],
-    ["onayli", `Onaylı (${say("onayli")})`],
-    ["reddedilen", `Reddedilen (${say("reddedilen")})`],
+  const secenekler: { deger: CaseFiltresi; ad: string; sayi: number }[] = [
+    { deger: "hepsi", ad: "Hepsi", sayi: taban.length },
+    { deger: "bekleyen", ad: "Karar bekleyen", sayi: say("bekleyen") },
+    { deger: "hazir", ad: "Onaya hazır", sayi: say("hazir") },
+    { deger: "hazir-degil", ad: "Hazır değil", sayi: say("hazir-degil") },
+    { deger: "onayli", ad: "Onaylı", sayi: say("onayli") },
+    { deger: "reddedilen", ad: "Reddedilen", sayi: say("reddedilen") },
   ];
 
   return (
     <div className="case-liste-alani">
-      {/* Geliştirici kısıtlı görünümü (012): yalnız onaylı/yayınlanmış case gelir; durum filtresi anlamsız. */}
+      {/* Geliştirici kısıtlı görünümü (012): yalnız onaylı/yayınlanmış case gelir; durum filtresi anlamsız.
+          Süzgeç detay sekmesinin içinde akışta durur (ana sekme şeridiyle üst üste yapışmaz). */}
       {surumVar && (
         <div className="sekmeler" role="group" aria-label="Case sürümü" data-testid="case-surum-secici">
           {(
@@ -160,13 +162,9 @@ export function CaseListesi({
         </div>
       )}
       {!kisitli && (
-        <div className="sekmeler sekmeler-yapiskan" role="group" aria-label="Case filtresi">
-          {sekmeler.map(([k, etiket]) => (
-            <button key={k} type="button" className={`sekme${s.filtre === k ? " aktif" : ""}`} aria-pressed={s.filtre === k} onClick={() => s.filtreSec(k)}>
-              {etiket}
-            </button>
-          ))}
-        </div>
+        <SuzgecCubugu etiket="Case süzgeci" sonuc={surumListesi.length > 0 ? `${gorunen.length}/${surumListesi.length} case` : undefined} className="case-suzgec-cubugu">
+          <SegmentSecici etiket="Case filtresi" secenekler={secenekler} deger={s.filtre} degistir={s.filtreSec} />
+        </SuzgecCubugu>
       )}
       <div role="status" aria-live="polite" className="case-suzgec-kap">
         {suzgec && (

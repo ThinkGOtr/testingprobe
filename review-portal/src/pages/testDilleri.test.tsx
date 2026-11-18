@@ -11,7 +11,7 @@ import { OturumProvider } from "../auth";
 import { BildirimProvider } from "../components/Bildirim";
 import { kodDilleriUyarla, kurulumUyarla, musteriCiUyarla, scriptUyarla } from "../api/uyumDemoB";
 import { mergeOnayNotu, mergeUyarilari, mergeEngelleri } from "../lib/kapi";
-import { oturumAc } from "../test/yardimci";
+import { oturumAc, sekmeAc } from "../test/yardimci";
 
 function uygulama(yol: string) {
   return render(
@@ -174,7 +174,7 @@ describe("Script detayı: müşteri CI (014)", () => {
   it("Kotlin: rozetler, statik koruma + GitHub Actions check kartı, kırarak doğrulama yerine not, merge kapısı uyarısız", async () => {
     await oturumAc("muhendis");
     ayar.senaryolar.add("diller-acik");
-    uygulama("/kod/scr-kt");
+    uygulama("/kod/scr-kt?sekme=kontrol");
     const kart = await screen.findByTestId("musteri-ci-karti");
     expect(screen.getByTestId("kirarak-dogrulanmadi-rozeti")).toHaveTextContent("Kırarak doğrulanmadı");
     expect(screen.getAllByTestId("dil-rozeti")[0]).toHaveTextContent("Dil: Kotlin (Espresso (AndroidX Test))");
@@ -187,24 +187,30 @@ describe("Script detayı: müşteri CI (014)", () => {
     expect(within(check).getByRole("link", { name: /koşu/ })).toHaveAttribute("href", expect.stringContaining("/actions/runs/1180042"));
     expect(screen.getByTestId("kurulum-pr")).toHaveTextContent("Kotlin kurulumu tamam (kurulum PR'ı #40 birleşti).");
     expect(screen.queryByRole("heading", { name: "Yerel kontrol" })).toBeNull();
+    expect(screen.getByRole("tab", { name: "Müşteri CI" })).toBeInTheDocument();
+    await sekmeAc("Kırarak doğrula");
     expect(screen.getByTestId("kirarak-dogrulanmadi")).toHaveTextContent("kırarak doğrulama yapılmaz");
     expect(screen.queryByRole("button", { name: "Kırarak doğrula" })).toBeNull();
+    await sekmeAc("Pull request");
     expect(screen.queryByTestId("merge-uyarilari")).toBeNull();
     expect(screen.getByRole("button", { name: "Merge et" })).toBeEnabled();
+    await sekmeAc("Kod");
     expect([...document.querySelectorAll(".kod .tk-ek")].map((e) => e.textContent)).toEqual(expect.arrayContaining(["@RunWith", "@Test"]));
   });
 
   it("Swift: kurulum PR'ı açık (elle adım: UI test hedefi), check koşuyor, merge kapısı müşteri CI'ı bekler", async () => {
     await oturumAc("muhendis");
     ayar.senaryolar.add("diller-acik");
-    uygulama("/kod/scr-sw");
+    uygulama("/kod/scr-sw?sekme=kontrol");
     const kurulum = await screen.findByTestId("kurulum-pr");
     expect(kurulum).toHaveAttribute("data-durum", "acik");
     expect(within(kurulum).getByRole("list", { name: "Elle yapılacak adımlar" })).toHaveTextContent("UI Testing Bundle");
     expect(within(kurulum).getByRole("link", { name: /#41/ })).toBeInTheDocument();
     expect(screen.getByTestId("musteri-ci-check")).toHaveAttribute("data-durum", "kosuyor");
+    await sekmeAc("Pull request");
     await waitFor(() => expect(screen.getByTestId("merge-kapisi")).toHaveTextContent("Müşteri CI sonucu bekleniyor (zorunlu check: mobil-ios-swift)."));
-    expect(screen.getByRole("button", { name: "Merge et" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Merge et" })).toHaveAttribute("aria-disabled", "true");
+    await sekmeAc("Kod");
     expect(document.querySelector(".kod .tk-ek")).toHaveTextContent("@MainActor");
   });
 });

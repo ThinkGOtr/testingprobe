@@ -13,7 +13,7 @@ import { PlatformRozeti, PlatformSecici, PlatformSuzgeci } from "../components/P
 import { SayfaKaynagiGoruntuleyici } from "../components/SayfaKaynagi";
 import { hataAnaliziUyarla } from "../api/uyumTriage";
 import { kosuDetayUyarla, kosuUyarla, scriptUyarla } from "../api/uyumDemoB";
-import { oturumAc } from "../test/yardimci";
+import { oturumAc, sekmeAc } from "../test/yardimci";
 import { kanitTuru, onarimAsamalari, uygulamaKanitlari } from "./HataDetay";
 import { platformDagilimi } from "./KontrolKulesi";
 import { kosulariSuz } from "./Kosular";
@@ -150,7 +150,7 @@ describe("Script detayı (uygulama)", () => {
   it("app_* adımları Türkçe adla, dikey ekran çerçevesi; PR check'i 'Yerel CI · Android'", async () => {
     await oturumAc("muhendis");
     const u = userEvent.setup();
-    uygulama("/kod/scr-and");
+    uygulama("/kod/scr-and?sekme=ajan");
     const adimlar = await screen.findByRole("list", { name: "Ajan adımları" });
     expect(within(adimlar).getAllByRole("button")[0]).toHaveTextContent("Uygulamayı başlat");
     expect(adimlar).toHaveTextContent("Ekranı oku");
@@ -160,6 +160,7 @@ describe("Script detayı (uygulama)", () => {
     expect(sekil).toHaveClass("ajan-ekran-dikey");
     expect(sekil).toHaveTextContent("Uygulamayı başlat (app_launch)");
     expect(screen.getByRole("heading", { name: "Ajan adımları (Appium · app-mcp)" })).toBeInTheDocument();
+    await sekmeAc("Pull request");
     const checks = screen.getAllByRole("list", { name: "PR check'leri" })[0];
     expect(checks).toHaveTextContent("Yerel CI · Android (local-ci-android)");
     expect(screen.getAllByTestId("platform-rozeti")[0]).toHaveTextContent("Android");
@@ -167,9 +168,10 @@ describe("Script detayı (uygulama)", () => {
 
   it("web script'i değişmez: Playwright MCP başlığı, local-ci 'Yerel CI · Web'", async () => {
     await oturumAc("muhendis");
-    uygulama("/kod/scr-2");
+    uygulama("/kod/scr-2?sekme=ajan");
     expect(await screen.findByRole("heading", { name: "Ajan adımları (Playwright MCP)" })).toBeInTheDocument();
     expect(document.querySelector("figure.ajan-ekran")).not.toHaveClass("ajan-ekran-dikey");
+    await sekmeAc("Pull request");
     expect(screen.getAllByRole("list", { name: "PR check'leri" })[0]).toHaveTextContent("Yerel CI · Web (local-ci)");
   });
 });
@@ -178,7 +180,7 @@ describe("Triage (uygulama): sayfa kaynağı ve kimlik onarımı", () => {
   it("sayfa kaynağı açılınca kaçışlı metin olarak görünür; onarım kartında boş rol/ad satırı yok", async () => {
     await oturumAc("muhendis");
     const u = userEvent.setup();
-    uygulama("/hatalar/fail-5");
+    uygulama("/hatalar/fail-5?sekme=kanit");
     expect(await screen.findByTestId("triage-sinif")).toHaveTextContent("Platform: Android");
     const sk = screen.getByTestId("sayfa-kaynagi");
     await u.click(within(sk).getByText("Sayfa kaynağını göster (XML)"));
@@ -187,7 +189,8 @@ describe("Triage (uygulama): sayfa kaynağı ve kimlik onarımı", () => {
     // XML yorumlanmaz: <hierarchy> eleman olarak DOM'a girmez.
     expect(document.querySelector("hierarchy")).toBeNull();
     expect(screen.getByTestId("kanit-ekran").querySelector("img")).toHaveAttribute("alt", "Hata anı ekran görüntüsü (Android)");
-    expect(screen.getByTestId("onarim-sayfa-kaynagi")).toHaveTextContent("Kimlikler.java");
+    await sekmeAc("Onarım");
+    expect(await screen.findByTestId("onarim-sayfa-kaynagi")).toHaveTextContent("Kimlikler.java");
     expect(screen.queryByTestId("onarim-niyet")).toBeNull();
     expect(screen.getByRole("heading", { name: /Locator onarım önerisi/ })).toHaveTextContent("Android");
     expect(screen.getByLabelText("Locator değişikliği")).toHaveTextContent('Giris.GIRIS_YAP (kimlik)"login-submit"→yeni değer"login-button"');
@@ -221,10 +224,11 @@ describe("Koşular ve Kontrol Kulesi", () => {
   it("koşu detayı: platform rozeti, platform kontrolleri, triage satırında rozet", async () => {
     await oturumAc("muhendis");
     uygulama("/kosular/run-110");
+    expect(within(await screen.findByRole("list", { name: "Triage kayıtları" })).getByTestId("platform-rozeti")).toHaveTextContent("Android");
+    await sekmeAc("CI ve platform");
     const liste = await screen.findByRole("list", { name: "Platform kontrolleri" });
     expect(liste).toHaveTextContent("Yerel CI · Android");
     expect(liste).toHaveTextContent("kırmızı");
-    expect(within(screen.getByRole("list", { name: "Triage kayıtları" })).getByTestId("platform-rozeti")).toHaveTextContent("Android");
   });
 
   it("koşu süzgeci: platform seçimi platformsuz koşuyu dışarıda bırakır", () => {

@@ -14,7 +14,7 @@ import { mockOlayYayinla } from "../../api/mock/olaylar";
 import { OturumProvider } from "../../auth";
 import { BildirimProvider } from "../../components/Bildirim";
 import { t2Duzelt, t2Taslak } from "../../test/kaliteYardimci";
-import { oturumAc } from "../../test/yardimci";
+import { oturumAc, sekmeAc } from "../../test/yardimci";
 
 const REQ = "req-tpd-1";
 const YOL = `/gereksinimler/${REQ}/karar-tablolari`;
@@ -61,13 +61,14 @@ describe("liste", () => {
     expect(within(satirlar).getByRole("columnheader", { name: "indirim" })).toBeInTheDocument();
     expect(within(satirlar).getByText("adet >= 7")).toBeInTheDocument();
     // İlişkiler bölümü.
+    await sekmeAc("İlişkiler");
     const iliskiler = screen.getByTestId("iliskiler");
     expect(within(iliskiler).getAllByTestId("iliski-kart")).toHaveLength(1);
     expect(screen.getByRole("link", { name: "Case review" })).toHaveAttribute("href", `/gereksinimler/${REQ}/caseler`);
     const kirinti = within(screen.getByRole("navigation", { name: "Kırıntı" }));
     expect(kirinti.getByRole("link", { name: "TPD-1" })).toHaveAttribute("href", `/gereksinimler/${REQ}`);
     expect(kirinti.getByRole("link", { name: "Gereksinimler" })).toHaveAttribute("href", "/gereksinimler");
-    expect(kirinti.getByText("Karar tabloları")).toHaveAttribute("aria-current", "page");
+    expect(kirinti.getByText("Karar tabloları").closest("[aria-current]")).toHaveAttribute("aria-current", "page");
   });
 
   it("u2 N8, N13, N18, N19: satır anlamı iş dilinde, hücrelerde Türkçe; PO ızgarada 750'deki AI sınır hatasını story cümlesiyle görür", async () => {
@@ -131,7 +132,7 @@ describe("liste", () => {
     vi.spyOn(api, "gereksinim").mockRejectedValue(new Error("ağ hatası"));
     uygulama();
     expect(await screen.findByTestId("gereksinim-hata")).toHaveTextContent("Gereksinim okunamadı");
-    await waitFor(() => expect(screen.getByRole("button", { name: "AI taslağı üret" })).toBeDisabled());
+    await waitFor(() => expect(screen.getByRole("button", { name: "AI taslağı üret" })).toHaveAttribute("aria-disabled", "true"));
     const t2 = await kart(MIN);
     expect(within(t2).getByRole("button", { name: "Düzenle" })).toBeDisabled();
   });
@@ -483,6 +484,7 @@ describe("AI taslağı", () => {
     expect(await kart(/T3 · Kampanya/)).toBeInTheDocument();
     expect(await kart(/T4 · Minimum/)).toBeInTheDocument();
     expect(screen.getByText("Yerini yenisi alan tablolar (2)")).toBeInTheDocument();
+    await sekmeAc("İlişkiler");
     expect(screen.getByText("Yerini yenisi alan ilişkiler (1)")).toBeInTheDocument();
   });
 
@@ -515,9 +517,9 @@ describe("AI taslağı", () => {
     await oturumAc("analist");
     uygulama("/gereksinimler/req-tpd-3/karar-tablolari");
     const d = await screen.findByRole("button", { name: "AI taslağı üret" });
-    await waitFor(() => expect(d).toBeDisabled());
+    await waitFor(() => expect(d).toHaveAttribute("aria-disabled", "true"));
     expect(screen.getAllByText("Karar tablosu için gereksinim PO onaylı olmalı.").length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: "Boş tablo ekle" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Boş tablo ekle" })).toHaveAttribute("aria-disabled", "true");
     expect(screen.getByText("Bu gereksinim için karar tablosu yok.")).toBeInTheDocument();
   });
 });
@@ -527,7 +529,7 @@ describe("ilişkiler", () => {
     await oturumAc("analist");
     // Örnek veride taslak ilişki yok (golden'da yalnız I1): elle eklenir.
     await api.iliskiEkle(REQ, { icerik: YEDI_ARTIS_ILISKISI, karar_tablosu_id: "kt-1" });
-    uygulama();
+    uygulama(`${YOL}?sekme=iliskiler`);
     const r = (await screen.findAllByTestId("iliski-kart")).find((x) => within(x).queryByText("Taslak"))!;
     await userEvent.click(within(r).getByRole("button", { name: "Düzenle" }));
     const form = within(r).getByTestId("iliski-duzenleyici");
@@ -549,7 +551,7 @@ describe("ilişkiler", () => {
 
   it("Ek case türet: onaylı ilişki + seçili kaynaklar → türetilen bağlantılı, atlananlar nedenli; ikinci kez 'zaten türetildi'", async () => {
     await oturumAc("testci"); // 012 rol modeli: türetme `case.generate` (Test Uzmanı)
-    uygulama();
+    uygulama(`${YOL}?sekme=iliskiler`);
     const bolum = await screen.findByTestId("ek-case-turet");
     const turet = vi.spyOn(api, "ekCaseTuret");
     await waitFor(() => expect(within(bolum).getAllByRole("checkbox").length).toBeGreaterThan(0));
@@ -582,7 +584,7 @@ describe("ilişkiler", () => {
     await oturumAc("testci"); // 012 rol modeli: türetme `case.generate` (Test Uzmanı)
     const r = kalite().iliskiler.find((x) => x.id === "mi-1")!;
     r.durum = "draft";
-    uygulama();
+    uygulama(`${YOL}?sekme=iliskiler`);
     const bolum = await screen.findByTestId("ek-case-turet");
     expect(within(bolum).getByRole("button", { name: "Ek case türet" })).toBeDisabled();
     expect(within(bolum).getByText("Önce bir ilişkiyi PO onayına gönderip onaylatın.")).toHaveClass("dugme-neden");
@@ -643,7 +645,7 @@ describe("çekirdek sözleşmesi: son taslak, elle ilişki, örnekle dene (kayde
 
   it("Yeni ilişki: form odak alır, tabloya bağlanarak oluşturulur", async () => {
     await oturumAc("analist");
-    uygulama();
+    uygulama(`${YOL}?sekme=iliskiler`);
     const bolum = await screen.findByTestId("iliskiler");
     await userEvent.click(within(bolum).getByRole("button", { name: "Yeni ilişki" }));
     const form = within(bolum).getByRole("form", { name: "Yeni ilişki" });

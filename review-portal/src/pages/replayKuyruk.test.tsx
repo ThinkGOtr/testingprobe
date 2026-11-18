@@ -39,7 +39,7 @@ describe("kod üretimi: koşarken REPLAY etiketi", () => {
     const s = mockVerisi().scriptler.find((x) => x.id === "scr-2")!;
     s.mode = "replay";
     await oturumAc("muhendis");
-    uygulama("/kod/scr-2");
+    uygulama("/kod/scr-2?sekme=ajan");
     const bant = await screen.findByTestId("replay-bandi");
     expect(bant).toHaveTextContent("koşturuldu.");
     expect(screen.queryByText("Adımlar geliyor")).toBeNull();

@@ -160,8 +160,8 @@ describe("Hatalar kuyruğu ve sınıflandırma (IA-16)", () => {
 
   it("iç terimler: 'LLM yorumu' yok, sinyal kodları Teknik ayrıntı'da", async () => {
     await oturumAc("muhendis");
-    uygulama("/hatalar/fail-2");
-    await screen.findByText("Teknik ayrıntı");
+    uygulama("/hatalar/fail-2?sekme=teknik");
+    expect(await screen.findByText("Sinyal kodları")).toBeInTheDocument();
     expect(screen.queryByText("LLM yorumu")).toBeNull();
     expect(screen.queryByText(/^imza:/)).toBeNull();
   });

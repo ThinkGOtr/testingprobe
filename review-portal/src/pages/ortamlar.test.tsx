@@ -207,11 +207,11 @@ describe("canlı ortam koruması", () => {
   it("varsayılan ortam canlıysa kırarak doğrulama pasif ve nedeni yazılı", async () => {
     ortamlariKur(CANLI);
     await oturumAc("muhendis");
-    uygulama("/kod/scr-2");
+    uygulama("/kod/scr-2?sekme=kirarak-dogrula");
     expect(await screen.findByTestId("kirma-canli-ortam")).toHaveTextContent(ortamMetni("canliKapali"));
     const kart = document.getElementById("kirarak-dogrula")!;
     const dugme = within(kart).getByRole("button", { name: /doğrula$/ });
-    expect(dugme).toBeDisabled();
+    expect(dugme).toHaveAttribute("aria-disabled", "true");
     expect(dugme).toHaveAttribute("title", ortamMetni("canliKapali"));
   });
 
@@ -222,7 +222,7 @@ describe("canlı ortam koruması", () => {
       new ApiError(409, "Canlı ortamda kırarak doğrulama kapalı", { kod: "cakisma", govde: { engel: "canli_ortam" } }),
     );
     const u = userEvent.setup();
-    uygulama("/kod/scr-2");
+    uygulama("/kod/scr-2?sekme=kirarak-dogrula");
     await screen.findByRole("heading", { level: 1 });
     const kart = await waitFor(() => document.getElementById("kirarak-dogrula")!);
     expect(screen.queryByTestId("kirma-canli-ortam")).toBeNull();

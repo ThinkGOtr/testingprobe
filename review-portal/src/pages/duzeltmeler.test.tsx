@@ -121,7 +121,7 @@ describe("kabul kriteri eksik story (TPD-2): ön inceleme açık, case üretimi 
     g.po = { durum: "approved", onaylayan: "po", zaman: "2026-10-30T10:00:00Z", kanal: "jira" };
     uygulama("/gereksinimler/req-tpd-2");
     const dugme = await screen.findByRole("button", { name: "Tasarım modelini üret (iki tur)" });
-    expect(dugme).toBeDisabled();
+    expect(dugme).toHaveAttribute("aria-disabled", "true");
     expect(dugme).toHaveAttribute("title", AC_YOK_CASE_URETILEMEZ);
   });
 
@@ -189,7 +189,7 @@ describe("case review özeti: ölçülmeyen süre '0 ms' değil '—'", () => {
   it("hiç review süresi ölçülmediyse Review süresi '—' ve 'henüz ölçülmedi'", async () => {
     await oturumAc("analist");
     for (const c of mockVerisi().caseler) if (c.requirement_id === "req-tpd-1") c.review_sure_ms = null;
-    uygulama("/gereksinimler/req-tpd-1/caseler");
+    uygulama("/gereksinimler/req-tpd-1/caseler?sekme=olculer");
     const etiket = await screen.findByText("Review süresi");
     const kutu = etiket.closest(".metrik") as HTMLElement;
     await waitFor(() => expect(within(kutu).getByText("henüz ölçülmedi")).toBeInTheDocument());

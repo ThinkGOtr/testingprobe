@@ -12,7 +12,7 @@ import { kaliteVerisi } from "../../api/mock/kalite";
 import type { CaseOracle, KararTablosu, TestCase } from "../../api/types";
 import { OturumProvider } from "../../auth";
 import { t2Onayla } from "../../test/kaliteYardimci";
-import { oturumAc } from "../../test/yardimci";
+import { oturumAc, sekmeAc } from "../../test/yardimci";
 import { BildirimProvider } from "../Bildirim";
 import { goruntulenenleriSifirla } from "../CaseKarti";
 import {
@@ -203,14 +203,15 @@ describe("case review: kontrol çipi, karşılaştırma ve metrik", () => {
     expect(within(tablo).getAllByRole("row").length).toBeGreaterThan(2);
     expect(within(tablo).getAllByText("Aynı ✓").length).toBeGreaterThan(0);
     expect(within(ayrinti).getByRole("link", { name: "Karar tablolarını aç" })).toHaveAttribute("href", `/gereksinimler/${REQ}/karar-tablolari#tablo-kt-1`);
-    expect(within(await kart(C6_BASLIK)).getByText("Tablo yok")).toBeInTheDocument();
-    // AC6 case'i (C9) yalnız T2 kapsar; T2 başlangıçta PO onayı bekliyor → "Tablo yok". Kontrol edilemeyen case yok.
+    expect(within(await kart(C6_BASLIK)).getByText("Karar tablosu yok")).toBeInTheDocument();
+    // AC6 case'i (C9) yalnız T2 kapsar; T2 başlangıçta PO onayı bekliyor → "Karar tablosu yok". Kontrol edilemeyen case yok.
     const cipler = (await screen.findAllByTestId("oracle-cip")).map((x) => x.textContent);
     expect(cipler).not.toContain("Kontrol edilemedi");
-    expect(within(await kart(/^Kampanyalı siparişte minimum/)).getByText("Tablo yok")).toBeInTheDocument();
+    expect(within(await kart(/^Kampanyalı siparişte minimum/)).getByText("Karar tablosu yok")).toBeInTheDocument();
     // Uyumlu / tablo yok case'lerinde onay açık.
     expect(within(await kart(C6_BASLIK)).getByRole("button", { name: "Kabul et" })).toBeEnabled();
-    // Özet kartı: beklenti doğruluğu "3/3" (C10, C2'nin tekrarı), n = payda.
+    // Özet kartı ("Özet ve ölçüler" sekmesi): beklenti doğruluğu "3/3" (C10, C2'nin tekrarı), n = payda.
+    await sekmeAc("Özet ve ölçüler");
     expect(await screen.findByTestId("beklenti-dogrulugu")).toHaveTextContent("%100");
     expect(screen.getByTestId("beklenti-n")).toHaveTextContent("n = 3 case · 1 tekrar");
     // Başlıktan karar tablolarına bağlantı (Yayın önizleme yerinde kalır).
@@ -220,7 +221,7 @@ describe("case review: kontrol çipi, karşılaştırma ve metrik", () => {
 
   it("beklenti doğruluğu ölçülmeyen gereksinimde 'ölçülmedi'", async () => {
     await oturumAc("testci");
-    uygulama("/gereksinimler/req-tpd-3/caseler");
+    uygulama("/gereksinimler/req-tpd-3/caseler?sekme=olculer");
     await waitFor(() => expect(screen.getByTestId("beklenti-dogrulugu")).toHaveTextContent("ölçülmedi"));
   });
 
@@ -433,8 +434,8 @@ describe("yüksek riskli uyuşmazlık: kapı ve istisna", () => {
     await oturumAc("testci");
     uygulama(`/gereksinimler/${REQ}/caseler`);
     const c = await kart(C6_BASLIK);
-    await within(c).findByText("Tablo yok");
-    // Ekran açıkken tablo arka planda onaylandı ve kontrol bitti (olay kaçmış gibi): ekran hâlâ "Tablo yok".
+    await within(c).findByText("Karar tablosu yok");
+    // Ekran açıkken tablo arka planda onaylandı ve kontrol bitti (olay kaçmış gibi): ekran hâlâ "Karar tablosu yok".
     const caselerSpy = vi.spyOn(api, "caseler");
     await minSiparisOnayla();
     await oturumAc("testci");
@@ -556,7 +557,7 @@ describe("düzeltme formu: önerilen içerik ön kontrolü", () => {
     const spy = vi.spyOn(api, "caseOracleKontrol");
     uygulama(`/gereksinimler/${REQ}/caseler`);
     const c = await kart(C6_BASLIK);
-    await within(c).findByText("Tablo yok");
+    await within(c).findByText("Karar tablosu yok");
     await userEvent.click(within(c).getByRole("button", { name: "Düzelterek kabul" }));
     await userEvent.type(within(c).getByLabelText("Başlık"), " x");
     await userEvent.click(within(c).getByRole("button", { name: "Düzelterek kabul et" }));

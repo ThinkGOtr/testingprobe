@@ -19,7 +19,7 @@ import { BulguKarti } from "../components/BulguKarti";
 import { goruntulenenleriSifirla } from "../components/CaseKarti";
 import { adimAdi } from "../lib/akis";
 import { ORNEK_SERBEST_GEREKSINIM } from "../lib/ornekGereksinim";
-import { oturumAc, sar } from "../test/yardimci";
+import { oturumAc, sar, sekmeAc } from "../test/yardimci";
 import { aiModu, caseBazi, caseKazanci, caseOzeti } from "./CaseReview";
 import { bosBulguMetni } from "./GereksinimDetay";
 
@@ -266,7 +266,7 @@ describe("case ölçümleri", () => {
   it("hiç karar yokken kabul oranı '—' ve 'henüz karar yok'; hedefin altında denmez", async () => {
     await oturumAc("analist");
     vi.spyOn(api, "caseMetrikleri").mockResolvedValue(metrik());
-    uygulama("/gereksinimler/req-tpd-1/caseler");
+    uygulama("/gereksinimler/req-tpd-1/caseler?sekme=olculer");
     expect(await screen.findByText(/henüz karar yok/)).toBeInTheDocument();
     expect(screen.queryByText(/hedefin altında/)).toBeNull();
     expect(caseOzeti([], metrik()).kabulOrani).toBeNull();
@@ -276,7 +276,7 @@ describe("case ölçümleri", () => {
   it("REPLAY üretiminde AI süresi/maliyeti '0 ms / $0,00' değil 'REPLAY — ölçülmedi'", async () => {
     await oturumAc("analist");
     vi.spyOn(api, "caseMetrikleri").mockResolvedValue(metrik({ karar_verilen: 5, kabul: 4, kabul_orani: 0.8, review_sure_ms: 369_000, ort_review_sure_ms: 73_800 }));
-    uygulama("/gereksinimler/req-tpd-1/caseler");
+    uygulama("/gereksinimler/req-tpd-1/caseler?sekme=olculer");
     const ozet = await screen.findByRole("region", { name: "Özet" });
     expect(await within(ozet).findAllByText("REPLAY — ölçülmedi")).toHaveLength(2);
     expect(within(ozet).queryByText("0 ms")).toBeNull();
@@ -284,6 +284,8 @@ describe("case ölçümleri", () => {
     expect(within(ozet).getAllByText("6 dk 09 sn").length).toBeGreaterThan(0);
     expect(within(ozet).getByText(/yalnız review; AI süresi REPLAY'de ölçülmedi/)).toBeInTheDocument();
     // Case kartlarında da (case mode=replay)
+    await sekmeAc("Kararlar");
+    expect(await screen.findAllByText(/AI: REPLAY — ölçülmedi/)).not.toHaveLength(0);
     expect(screen.getAllByText(/AI: REPLAY — ölçülmedi/).length).toBeGreaterThan(0);
     expect(screen.queryByText(/^AI 0 ms/)).toBeNull();
   });
@@ -301,7 +303,7 @@ describe("case ölçümleri", () => {
         manuel_baz: { deger_s: 1800, deger_ms: 1_800_000, kaynak: "olcum", giren: "analist", zaman: "2026-10-30T10:00:00Z", not: "F0 kronometre" },
       }),
     );
-    uygulama("/gereksinimler/req-tpd-1/caseler");
+    uygulama("/gereksinimler/req-tpd-1/caseler?sekme=olculer");
     const ozet = await screen.findByRole("region", { name: "Özet" });
     expect(await within(ozet).findByText("30 dk 00 sn")).toBeInTheDocument();
     expect(within(ozet).getByTestId("case-baz")).toHaveTextContent("Ölçüm");
@@ -328,7 +330,7 @@ describe("case ölçümleri", () => {
         manuel_baz: { deger_s: 2700, deger_ms: 2_700_000, kaynak: "varsayilan", giren: null, zaman: null, not: "TP_MANUAL_BASELINE_S" },
       }),
     );
-    uygulama("/gereksinimler/req-tpd-1/caseler");
+    uygulama("/gereksinimler/req-tpd-1/caseler?sekme=olculer");
     const ozet = await screen.findByRole("region", { name: "Özet" });
     // Ölçüm verisi özet kartından sonra gelebilir (yük altında): metin gelene dek beklenir.
     await waitFor(() => expect(within(ozet).getByTestId("case-baz")).toHaveTextContent("45 dk 00 sn"));
@@ -349,7 +351,7 @@ describe("case ölçümleri", () => {
     vi.spyOn(api, "caseMetrikleri").mockResolvedValue(
       metrik({ karar_verilen: 5, bekleyen: 0, review_sure_ms: 45, ort_review_sure_ms: 9, manuel_baz_ms: 2_700_000, manuel_baz_kaynagi: "olcum" }),
     );
-    uygulama("/gereksinimler/req-tpd-1/caseler");
+    uygulama("/gereksinimler/req-tpd-1/caseler?sekme=olculer");
     const ozet = await screen.findByRole("region", { name: "Özet" });
     expect(await within(ozet).findByTestId("case-kazanc")).toHaveTextContent("—");
     // "—" yükleme sırasında da görünür; metrik gelene kadar bekle (yük altında yarış).
@@ -386,7 +388,7 @@ describe("case ölçümleri", () => {
   it("canlı üretimde ölçülen süre ve maliyet gösterilir", async () => {
     await oturumAc("analist");
     vi.spyOn(api, "caseMetrikleri").mockResolvedValue(metrik({ ai_cagri_modlari: { live: 1 }, ai_sure_ms: 6_800, maliyet_usd: 0.42 }));
-    uygulama("/gereksinimler/req-tpd-1/caseler");
+    uygulama("/gereksinimler/req-tpd-1/caseler?sekme=olculer");
     const ozet = await screen.findByRole("region", { name: "Özet" });
     expect((await within(ozet).findAllByText("6,8 sn")).length).toBeGreaterThan(0);
     expect(within(ozet).queryByText("REPLAY — ölçülmedi")).toBeNull();

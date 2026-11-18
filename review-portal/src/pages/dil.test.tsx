@@ -13,7 +13,7 @@ import { DilRozeti } from "../components/Dil";
 import { kodDilleriUyarla, kosuUyarla, scriptUyarla, yerelKontrolUyarla } from "../api/uyumDemoB";
 import type { KodDilleri } from "../api/types";
 import { SCRIPT_DURUMU } from "../lib/etiketler";
-import { oturumAc } from "../test/yardimci";
+import { oturumAc, sekmeAc } from "../test/yardimci";
 import { indirmeAdi, kontrolSatirlari } from "./ScriptDetay";
 import { DOGRULANMAMIS_UYARISI } from "./Kod";
 
@@ -310,20 +310,23 @@ describe("Script detayı: dil", () => {
     expect(bant).toHaveTextContent("Doğrulanmamış kod: Python (pytest + pytest-playwright)");
     expect(bant).toHaveTextContent("Bu kod derlenmedi ve koşulmadı; PR açılmadı ve merge edilemez.");
     expect(screen.getByText("Doğrulanmamış", { selector: ".cip" })).toBeInTheDocument();
+    // Kod sekmesi varsayılan (sıradaki adım: kodu indir / yeniden üret); Python sözdizimiyle (dekoratör) renklendirilir.
+    expect(screen.getByRole("heading", { name: "Üretilen test dosyası (doğrulanmamış)" })).toBeInTheDocument();
+    expect(document.querySelector(".kod .tk-ek")).toHaveTextContent("@pytest.mark.uretilen");
+    await sekmeAc("Pull request");
     expect(screen.getByText("Python için PR, kırarak doğrulama ve merge yok.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Merge et" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "Kırarak doğrula" })).toBeNull();
     expect(screen.queryByTestId("merge-kapisi")).toBeNull();
+    await sekmeAc("Yerel kontrol");
     expect(screen.getByText("Python için yerel kontrol yok.")).toBeInTheDocument();
+    await sekmeAc("Ajan adımları");
     // Doğrulama satırları "yerel kontrolde koşulur" demez: bu dilde koşu yok.
     const esleme = screen.getByRole("region", { name: "Eşlenen adımlar tablosu" });
     expect(esleme).not.toHaveTextContent("yerel kontrolde koşulur");
     expect(within(esleme).getAllByText("koşulmadı (doğrulanmamış dil)").length).toBeGreaterThan(0);
     // Ajan ve araç platforma bağlı: web → Playwright MCP (dil ne olursa olsun).
     expect(screen.getByRole("heading", { name: "Ajan adımları (Playwright MCP)" })).toBeInTheDocument();
-    // Kod Python sözdizimiyle (dekoratör) renklendirilir.
-    expect(screen.getByRole("heading", { name: "Üretilen test dosyası (doğrulanmamış)" })).toBeInTheDocument();
-    expect(document.querySelector(".kod .tk-ek")).toHaveTextContent("@pytest.mark.uretilen");
     await u.click(within(bant).getByRole("button", { name: "Kodu indir" }));
     expect(tikla).toHaveBeenCalledTimes(1);
     expect(olustur).toHaveBeenCalledWith(expect.any(Blob));
@@ -348,18 +351,21 @@ describe("Script detayı: dil", () => {
 
   it("web + Java script: dil rozeti, Java kontrol adımları, Java sözdizimi; karar kartları var", async () => {
     await oturumAc("muhendis");
-    uygulama("/kod/scr-java");
+    uygulama("/kod/scr-java?sekme=ajan");
     expect(await screen.findByRole("heading", { name: "Ajan adımları (Playwright MCP)" })).toBeInTheDocument();
     expect(screen.getAllByTestId("dil-rozeti")[0]).toHaveTextContent("Dil: Java (Playwright for Java + TestNG)");
+    await sekmeAc("Yerel kontrol");
     const liste = screen.getByRole("list", { name: "Yerel kontrol adımları" });
     const satirlar = within(liste).getAllByRole("listitem").map((li) => li.textContent?.replace(/\s+/g, " ").trim());
     expect(satirlar.slice(0, 3)).toEqual(["✓ pom kilidi: geçti", "✓ Java AST koruması: geçti", "✓ derleme: geçti"]);
     expect(satirlar[3]).toContain("Playwright (Java) --repeat-each=3");
-    expect(screen.getByRole("list", { name: "PR check'leri" })).toHaveTextContent("Yerel CI · Web · Java (local-ci-web-java)");
     expect(screen.getByTestId("yerel-sinif")).toHaveTextContent("pom kilidi · Java AST koruması · derleme · Playwright (Java) (repeat-each) geçti.");
     expect(screen.getByTestId("yerel-sinif")).not.toHaveTextContent("tsc");
+    await sekmeAc("Pull request");
+    expect(screen.getByRole("list", { name: "PR check'leri" })).toHaveTextContent("Yerel CI · Web · Java (local-ci-web-java)");
     expect(screen.getByRole("button", { name: "Merge et" })).toBeInTheDocument();
     expect(screen.queryByTestId("dogrulanmamis-bandi")).toBeNull();
+    await sekmeAc("Kod");
     expect([...document.querySelectorAll(".kod .tk-ek")].map((e) => e.textContent)).toEqual(expect.arrayContaining(["@Bayi", "@Test"]));
   });
 });

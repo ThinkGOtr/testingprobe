@@ -1,0 +1,92 @@
+/* Koşu ve triage (hata) detayları — DetaySayfasi iskeleti (FAZ 2). Yalnız ölçek değişkenleri, mevcut renk belirteçleri. */
+
+/* Koşu: metrik şeridi (ds-serit) kartsız ince yüzeyde; şerit içi dolguyu metrik kutuları zaten taşır. */
+.ds-serit > .kosu-metrikleri {
+  margin: 0;
+}
+
+/* Triage karar alanı (IA-16 yuvası): özet kartının altında, sekmelerden önce. */
+.karar-yuvasi {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--kart-ic);
+}
+.karar-yuvasi > * {
+  margin: 0;
+}
+.karar-yuvasi-gerekce {
+  max-width: 80ch;
+}
+/* Sınıflandırma kartı (IA-16) yuvanın içinde: iç içe kart çerçevesi çizilmez (yuva zaten kart). */
+.karar-yuvasi .kart {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+}
+
+/* DZ-10: hata mesajı tam genişlik; yığın izi girintisi korunur (pre + yatay kaydırma), anahtar açıkken sarar. */
+.kanit-hata {
+  min-width: 0;
+  margin-bottom: var(--space-4);
+}
+.kanit-hata-ust {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+.kanit-hata-ust > .kanit-baslik {
+  margin: 0;
+}
+.kanit-sar {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--fs-ikincil);
+}
+.hata-mesaji.kanit-hata-metni {
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: auto;
+  max-width: 100%;
+}
+.hata-mesaji.kanit-hata-metni.kanit-sar-acik {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* Kanıt kartı içindeki küçük ızgara: tek öğe kaldıysa tam genişlik (sağda boş sütun kalmaz). */
+.kanit-izgara > section:only-child {
+  grid-column: 1 / -1;
+}
+.kanit-izgara:empty {
+  display: none;
+}
+/* Öneri kartının eylem satırı metinden ayrı (DZ-10). */
+.triage-oneri .kart > .eylem-cubugu {
+  margin-top: var(--space-3);
+}
+.triage-oneri {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.triage-oneri > * {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+.karar-yuvasi:empty {
+  display: none;
+}
+/* Özet kartı meta satırı: kopyala düğmeli kimlik (≤640'ta 44 px dokunma) komşularıyla aynı hizada. */
+.ds-ozet[data-testid="kosu-ozet"] .meta-satiri,
+.ds-ozet[data-testid="triage-ozet"] .meta-satiri {
+  align-items: center;
+}
+.ds-ozet[data-testid="kosu-ozet"] .meta-satiri-oge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}

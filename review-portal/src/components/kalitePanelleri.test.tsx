@@ -9,7 +9,7 @@ import { KAYNAK } from "../api/mock/fixtures";
 import { ayar, bekleyenMockIs, mockVerisi } from "../api/mock/handlers";
 import type { CaseDenetimGorunumu, CaseReviewGorunumu } from "../api/types";
 import { OturumProvider } from "../auth";
-import { oturumAc, sar } from "../test/yardimci";
+import { oturumAc, sar, sekmeAc } from "../test/yardimci";
 import { BildirimProvider } from "./Bildirim";
 import { DenetimOzeti, DenetimPaneli, gonderBirincilMi, ReviewPaneli } from "./KalitePanelleri";
 
@@ -136,7 +136,7 @@ describe("mock: review (P8) ve denetim (P9) akışı", () => {
     const c = mockVerisi().caseler.find((x) => x.requirement_id === RID)!;
     await ikiAdimOnay([c.id]);
     const u = userEvent.setup();
-    uygulama(`/gereksinimler/${RID}/caseler`);
+    uygulama(`/gereksinimler/${RID}/caseler?sekme=denetim`);
     expect(await screen.findByTestId("review-skor")).toHaveTextContent("11/12");
     // Review paneli özet satırına daralmış başlar; ayrıntı aria-expanded düğmeyle açılır.
     const reviewKart = within(document.getElementById("review-bulgulari")!);
@@ -183,14 +183,16 @@ describe("mock: review (P8) ve denetim (P9) akışı", () => {
     expect(within(serit).getByTestId("serit-yayin")).toHaveTextContent("Yayın: kapalı");
     expect(within(serit).getByTestId("serit-yayin")).toHaveAttribute("href", `/gereksinimler/${RID}/yayin`);
     expect(document.getElementById("case-kararlari")).not.toBeNull();
-    // Karar bekleyen varken ne gönder ne yayın birincil.
-    expect(screen.getByRole("button", { name: "Agent Probe'a gönder" })).toHaveClass("dugme-ikincil");
+    // Karar bekleyen varken ne gönder ne yayın birincil (gönder düğmesi "AI review ve denetim" sekmesinde).
+    await sekmeAc("AI review");
+    expect(await screen.findByRole("button", { name: "Agent Probe'a gönder" })).toHaveClass("dugme-ikincil");
     expect(screen.getByRole("link", { name: "Yayın önizleme" })).toHaveClass("dugme-ikincil");
 
     // Hepsi onaylandı: gönder birincil olur, yayın önizleme ikincil kalır (sayfada tek birincil).
     await ikiAdimOnay(mockVerisi().caseler.filter((x) => x.requirement_id === RID).map((c) => c.id));
     await u.click(within(serit).getByTestId("serit-bekleyen"));
     await waitFor(() => expect(screen.getByTestId("serit-bekleyen")).toHaveTextContent("Karar bekleyen yok"), { timeout: 3000 });
+    await sekmeAc("AI review");
     await waitFor(() => expect(screen.getByRole("button", { name: "Agent Probe'a gönder" })).toHaveClass("dugme-birincil"));
     expect(screen.getByRole("link", { name: "Yayın önizleme" })).toHaveClass("dugme-ikincil");
   });
