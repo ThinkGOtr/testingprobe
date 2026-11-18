@@ -16,15 +16,17 @@ public class KlavyeBirimTesti {
   @Test(groups = "birim")
   public void klavyeninUstundenKenarBoslugundaYukariSurukler() {
     // Katalog kabı (iPhone 16, iOS 27, 393x852): y=155..764; sayı klavyesi öğesi y=567'de, görünen
-    // cam kabı y=550'de başlar → sürükleme 550'nin üstünde kalmalı.
+    // cam kabı y=550'de başlar → sürükleme kabın üst bölümünde, klavyeden uzakta.
     int[] c = Klavye.surukleme(new Rectangle(0, 155, 609, 393), 567);
-    assertEquals(c, new int[] {4, 495, 455});
+    assertEquals(c, new int[] {4, 251, 211});
+    // Bayat çerçeve (y=764) okunsa da nokta aynı kalır: tuşlara düşmez.
+    assertEquals(Klavye.surukleme(new Rectangle(0, 155, 609, 393), 764), new int[] {4, 251, 211});
   }
 
   @Test(groups = "birim")
   public void kabinAltiKlavyedenYukaridaysaKabaGoreHesaplar() {
     int[] c = Klavye.surukleme(new Rectangle(10, 100, 300, 200), 700);
-    assertEquals(c, new int[] {14, 328, 288});
+    assertEquals(c, new int[] {14, 196, 156});
   }
 
   @Test(groups = "birim")

@@ -44,6 +44,14 @@ public final class Klavye {
    */
   private static final int PAY = 72;
 
+  /**
+   * Sürükleme kabın ÜST bölümünde başlar (kap üstünden en çok bu kadar aşağıda): klavye çerçevesi
+   * açılış animasyonunda bayat okunabiliyor (oturmuş görünen y=764, gerçekte 550); yalnız çerçeveye
+   * göre hesaplanan nokta tuşlara düşüp karakter ekliyordu ("bayi1" → "bayi1q", adet 1 → 14). Kabın
+   * üst bölümü telefonda klavyenin hiçbir zaman örtmediği yerdir.
+   */
+  private static final int UST_BOSLUK = 96;
+
   private Klavye() {}
 
   /** Klavye açıksa kapatır; kapatılamazsa sessizce geçer (sonraki dokunma kendi beklemesini yapar). */
@@ -143,7 +151,7 @@ public final class Klavye {
    * üstünde kalan bölümü sürüklemeye yetmiyorsa null. Saf hesap (birim testli).
    */
   public static int[] surukleme(Rectangle kap, int klavyeUst) {
-    int alt = Math.min(kap.getY() + kap.getHeight(), klavyeUst) - PAY;
+    int alt = Math.min(kap.getY() + UST_BOSLUK, Math.min(kap.getY() + kap.getHeight(), klavyeUst) - PAY);
     int ust = alt - MESAFE;
     if (kap.getWidth() <= 2 * KENAR || ust <= kap.getY()) {
       return null;

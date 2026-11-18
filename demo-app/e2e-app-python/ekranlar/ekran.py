@@ -30,6 +30,9 @@ _KENAR = 4
 # şeridi ~44 pt üstünden başlar; 16 pt sürüklemeyi klavyeye düşürüyordu.
 _KLAVYE_MESAFE = 40
 _KLAVYE_PAY = 72
+# Sürükleme kabın üst bölümünde başlar (Java Klavye.UST_BOSLUK): bayat klavye çerçevesi (y=764,
+# gerçekte 550) yalnız çerçeveye göre hesaplanan noktayı tuşlara düşürüyordu ("bayi1" → "bayi1q").
+_KLAVYE_UST_BOSLUK = 96
 
 
 def _id(spec: Mapping[str, str]) -> str:
@@ -44,7 +47,7 @@ def _klavye_suruklemesi(kap: Mapping[str, int], klavye_ust: int) -> tuple[int, i
     """iOS klavye kapatma çizgisi (Java `Klavye.surukleme`, saf hesap): (x, başlangıç y, bitiş y).
     Sürükleme kabın KLAVYENİN ÜSTÜNDE kalan bölümünde yapılır (klavye tuşlarına dokunmaz); o bölüm
     yetmiyorsa None."""
-    alt = min(kap["y"] + kap["height"], klavye_ust) - _KLAVYE_PAY
+    alt = min(kap["y"] + _KLAVYE_UST_BOSLUK, min(kap["y"] + kap["height"], klavye_ust) - _KLAVYE_PAY)
     ust = alt - _KLAVYE_MESAFE
     if kap["width"] <= 2 * _KENAR or ust <= kap["y"]:
         return None

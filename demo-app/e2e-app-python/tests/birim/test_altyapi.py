@@ -87,10 +87,10 @@ def test_ios_klavye_suruklemesi_klavyenin_ustunde() -> None:
     from ekranlar.ekran import _klavye_suruklemesi
 
     kap = {"x": 0, "y": 100, "width": 390, "height": 700}  # klavyenin altına uzanan kap
-    assert _klavye_suruklemesi(kap, 500) == (4, 428, 388)
+    assert _klavye_suruklemesi(kap, 500) == (4, 196, 156)
     # Kap klavyeden önce bitiyorsa kabın altından.
     assert _klavye_suruklemesi({"x": 10, "y": 100, "width": 300, "height": 200}, 500) == (
-        14, 228, 188,
+        14, 196, 156,
     )
     # Klavye üstünde yer yok / dar kap: sürükleme yok.
     assert _klavye_suruklemesi(kap, 150) is None
