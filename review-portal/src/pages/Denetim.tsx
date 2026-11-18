@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import { hataMesaji, ortamAdlariniGizle } from "../api/http";
 import type { DenetimOlayi } from "../api/types";
-import { BosDurum, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
+import { BosDurum, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, SonrakiAdim, Uyari, Yukleniyor } from "../components/ui";
 import { useIzin, useKisiAdi } from "../auth";
 import { useVeri } from "../hooks";
 import { kisaHash, tarih } from "../lib/format";
@@ -153,7 +153,9 @@ export function Denetim() {
             }
           >
             {olaylar.length === 0 ? (
-              <BosDurum baslik="Olay yok." />
+              <BosDurum baslik={ara ? "Aramaya uyan olay yok." : "Olay yok."}>
+                {!ara && <SonrakiAdim metin="Portalda yapılan her işlem (giriş, karar, yayın, koşu) burada zincirli olarak kaydedilir." />}
+              </BosDurum>
             ) : (
               <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Denetim olayları tablosu">
                 <table className="tablo tablo-sik tablo-yigin">

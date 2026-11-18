@@ -7,7 +7,7 @@ import { useBugKisitli, useIzin } from "../auth";
 import { BUG_KISITLI_METNI, izinRolleriMetni } from "../lib/yetki";
 import type { BugTaslagi, BugTaslakIcerik, MukerrerAday, MukerrerArama } from "../api/types";
 import { useBildirim } from "../components/Bildirim";
-import { AlanHatasi, BosDurum, Cip, Baglanti, HataKutusu, KayitHatasi, IslemDugmesi, Kart, Kirinti, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor, IzinliLink } from "../components/ui";
+import { AlanHatasi, BosDurum, Cip, Baglanti, HataKutusu, KayitHatasi, IslemDugmesi, Kart, Kirinti, ReplayRozeti, SayfaBasligi, SonrakiAdim, Uyari, Yukleniyor, IzinliLink } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { KisiAdi } from "../components/KisiAdi";
 import { BUG_DURUMU, SEVERITY, type Ton } from "../lib/etiketler";
@@ -112,7 +112,12 @@ export function BugTaslaklari() {
         ) : v.hata && !v.veri ? (
           <HataKutusu hata={v.hata} kaynak={v.hataNesnesi} yenile={() => void v.yenile()} />
         ) : (v.veri ?? []).length === 0 ? (
-          <BosDurum baslik="Bug taslağı yok." />
+          <BosDurum baslik="Bug taslağı yok.">
+            <SonrakiAdim
+              metin="Ürün hatası adayı triage'da bulununca burada taslak oluşur; kayıt açma ya da bağlama kararını Test Uzmanı verir."
+              baglanti={{ to: "/kosular?durum=failed", ad: "Son başarısız koşular" }}
+            />
+          </BosDurum>
         ) : (
           <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Bug taslakları tablosu">
             <table className="tablo tablo-yigin">

@@ -108,3 +108,14 @@ describe("Kod üretimi ve Koşular izin tablosuna göre", () => {
     expect(varsayilanSayfa("tester", (_m, yol) => yol !== "/requirements")).toBe("/caseler");
   });
 });
+
+describe("Öncelik sütunu (IA-22)", () => {
+  it("v3 case önceliği ve eski case riski tek kavramda: P1 ≈ yüksek, P3 ≈ düşük; ikisi de yoksa boş", async () => {
+    const { caseOnceligi } = await import("./TestCaseleri");
+    const icerik = (x: object) => ({ icerik: { title: "t", type: "positive", acceptance_criteria_refs: [], preconditions: [], steps: [], expected_result: "", tags: [], ...x } }) as never;
+    expect(caseOnceligi(icerik({ priority: "P1" }))).toBe("high");
+    expect(caseOnceligi(icerik({ priority: "P3" }))).toBe("low");
+    expect(caseOnceligi(icerik({ risk: "medium" }))).toBe("medium");
+    expect(caseOnceligi(icerik({}))).toBeUndefined();
+  });
+});

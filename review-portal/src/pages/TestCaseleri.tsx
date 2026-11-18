@@ -10,11 +10,21 @@ import { DepoCipi } from "../components/Depo";
 import { BosDurum, Cip, DisBaglanti, HataKutusu, IzinliLink, Kart, SayfaBasligi, Yukleniyor } from "../components/ui";
 import { useIzin } from "../auth";
 import { useGeciktirilmis, useVeri } from "../hooks";
-import { CASE_DURUMU, CASE_TURU, RISK, SCRIPT_DURUMU } from "../lib/etiketler";
+import { CASE_DURUMU, CASE_ONCELIGI, CASE_TURU, RISK, SCRIPT_DURUMU } from "../lib/etiketler";
 import { guvenliDisAdres, tarih } from "../lib/format";
 
 const TURLER = ["positive", "negative", "boundary"] as const;
 const RISKLER = ["high", "medium", "low"] as const;
+/**
+ * IA-22: v3 case'te risk alanı yok, öncelik (P1–P3) var; eski (v2) case'te risk var. Sütun ve süzgeç ikisini
+ * tek "Öncelik" kavramında birleştirir: P1 ≈ yüksek risk, P2 ≈ orta, P3 ≈ düşük.
+ */
+const ONCELIK_RISKI = { P1: "high", P2: "medium", P3: "low" } as const;
+export function caseOnceligi(c: Pick<TestCase, "icerik">): (typeof RISKLER)[number] | undefined {
+  const p = c.icerik.priority as keyof typeof ONCELIK_RISKI | undefined;
+  return (p && ONCELIK_RISKI[p]) || c.icerik.risk;
+}
+const ONCELIK_SECENEGI: Record<(typeof RISKLER)[number], string> = { high: "P1 · yüksek", medium: "P2 · orta", low: "P3 · düşük" };
 const BOS_FILTRE = { ara: "", durum: "", tur: "", risk: "", gereksinim: "" };
 
 /**
@@ -73,7 +83,7 @@ export function TestCaseleri() {
         (c) =>
           (!filtre.durum || c.durum === filtre.durum) &&
           (!filtre.tur || c.icerik.type === filtre.tur) &&
-          (!filtre.risk || c.icerik.risk === filtre.risk) &&
+          (!filtre.risk || caseOnceligi(c) === filtre.risk) &&
           (!filtre.gereksinim || c.requirement_id === filtre.gereksinim) &&
           (!q ||
             [c.icerik.title, c.jira_key, c.jira_test_key, gMap.get(c.requirement_id)?.baslik, ...c.icerik.tags]
@@ -158,12 +168,12 @@ export function TestCaseleri() {
                 </select>
               </label>
               <label>
-                Risk
+                Öncelik
                 <select value={filtre.risk} onChange={(e) => ayarla("risk", e.target.value)}>
                   <option value="">Tümü</option>
                   {RISKLER.map((r) => (
                     <option key={r} value={r}>
-                      {RISK[r].etiket}
+                      {ONCELIK_SECENEGI[r]}
                     </option>
                   ))}
                 </select>
@@ -207,7 +217,7 @@ export function TestCaseleri() {
                       </th>
                       <th scope="col">Başlık</th>
                       <th scope="col">Tür</th>
-                      <th scope="col">Risk</th>
+                      <th scope="col">Öncelik</th>
                       <th scope="col">Durum</th>
                       <th scope="col">Jira Test</th>
                       <th scope="col">Otomasyon</th>
@@ -279,6 +289,7 @@ function OtomasyonHucresi({ scriptler, sinirda }: { scriptler: Script[] | null; 
 
 function CaseSatiri({ c, g, scriptler, sinirda }: { c: TestCase; g: Gereksinim | undefined; scriptler: Script[] | null; sinirda: boolean }) {
   const durum = CASE_DURUMU[c.durum];
+  const oncelik = c.icerik.priority ? CASE_ONCELIGI[c.icerik.priority] : undefined;
   const risk = c.icerik.risk ? RISK[c.icerik.risk] : undefined;
   const gYolu = `/gereksinimler/${encodeURIComponent(c.requirement_id)}`;
   const testAdresi = guvenliDisAdres(c.jira_test_url);
@@ -299,7 +310,19 @@ function CaseSatiri({ c, g, scriptler, sinirda }: { c: TestCase; g: Gereksinim |
         {c.kanal === "ide" && <span className="soluk"> · IDE kanalı</span>}
       </td>
       <td data-etiket="Tür">{CASE_TURU[c.icerik.type] ?? c.icerik.type}</td>
-      <td data-etiket="Risk">{risk ? <Cip ton={risk.ton}>{risk.etiket}</Cip> : c.icerik.risk}</td>
+      <td data-etiket="Öncelik">
+        {oncelik ? (
+          <Cip ton={oncelik.ton} title={oncelik.aciklama}>
+            {oncelik.etiket}
+          </Cip>
+        ) : risk ? (
+          <Cip ton={risk.ton} title="Eski case: risk düzeyi">
+            {risk.etiket}
+          </Cip>
+        ) : (
+          "—"
+        )}
+      </td>
       <td data-etiket="Durum">
         <Cip ton={durum.ton}>{durum.etiket}</Cip>
       </td>
