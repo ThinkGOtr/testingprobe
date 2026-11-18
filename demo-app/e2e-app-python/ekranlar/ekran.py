@@ -13,6 +13,7 @@ görünmedi: kimlik 'x'" / "kimlik 'kapsayıcı' içinde 'aranan'"); beklenti sa
 from __future__ import annotations
 
 import re
+import time
 from collections.abc import Mapping
 from typing import Any
 
@@ -168,23 +169,46 @@ class Ekran:
                 # uygulamanın `keyboardDismissMode="on-drag"` yolu (Klavye.java notu).
                 # Sürükleme klavyenin üstünde kalır (Java Klavye.iosSurukleyerekKapat): kabın 3/4'ünden
                 # başlayan genel kaydırma klavye tuşlarına basar, klavye açık kalır.
-                klavye = self._d.find_elements("class name", "XCUIElementTypeKeyboard")
-                if not klavye:
-                    return
-                ust = klavye[0].rect["y"]
-                for k in self._d.find_elements("class name", "XCUIElementTypeScrollView"):
-                    cizgi = _klavye_suruklemesi(k.rect, ust)
-                    if cizgi is not None:
-                        x, bas, son = cizgi
-                        self._d.execute_script(
-                            "mobile: dragFromToForDuration",
-                            {"duration": 0.2, "fromX": x, "fromY": bas, "toX": x, "toY": son},
-                        )
+                # Klavyenin üst kenarı açılış animasyonu oturunca okunur (Java Klavye.oturmusKlavyeUst):
+                # erken okunan çerçeve (ör. y=764, oturunca 567) sürüklemeyi tuşlara düşürür.
+                for _ in range(3):
+                    ust = self._oturmus_klavye_ust()
+                    if ust is None or not self._klavye_surukle(ust):
+                        return
+                    if self._oturmus_klavye_ust() is None or (
+                        hasattr(self._d, "is_keyboard_shown") and not self._d.is_keyboard_shown()
+                    ):
                         return
                 return
             self._d.hide_keyboard()
         except WebDriverException:
             pass  # sonraki eylemin beklemesi (ve kaydırma) devralır
+
+    def _oturmus_klavye_ust(self) -> int | None:
+        """Klavye çerçevesinin üst kenarı, art arda iki okumada aynı kalınca; klavye yoksa None."""
+        onceki: int | None = None
+        for _ in range(12):
+            klavye = self._d.find_elements("class name", "XCUIElementTypeKeyboard")
+            if not klavye:
+                return None
+            ust = klavye[0].rect["y"]
+            if onceki is not None and onceki == ust:
+                return ust
+            onceki = ust
+            time.sleep(0.15)
+        return onceki
+
+    def _klavye_surukle(self, ust: int) -> bool:
+        for k in self._d.find_elements("class name", "XCUIElementTypeScrollView"):
+            cizgi = _klavye_suruklemesi(k.rect, ust)
+            if cizgi is not None:
+                x, bas, son = cizgi
+                self._d.execute_script(
+                    "mobile: dragFromToForDuration",
+                    {"duration": 0.2, "fromX": x, "fromY": bas, "toX": x, "toY": son},
+                )
+                return True
+        return False
 
     # ------------------------------------------------------------------ metin
 
