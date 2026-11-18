@@ -576,6 +576,7 @@ export function kurulumPrSonucuUyarla(x: unknown): KurulumPrSonucu {
     dosyalar: dizgeler(g.dosyalar),
     eksikler: dizgeler(g.eksikler),
     elle_adimlar: dizgeler(g.elle_adimlar),
+    engeller: dizgeler(g.engeller),
     hazir: g.hazir !== false,
     kurulum: kurulumUyarla(g.kurulum),
     mesaj: metinYaDaNull(g.mesaj),

@@ -1395,6 +1395,8 @@ export interface KurulumPrSonucu {
   dosyalar: string[];
   eksikler: string[];
   elle_adimlar: string[];
+  /** TP3-3: PR'ı engelleyen eksikler (parametre hatası, bulunamayan Xcode projesi); `hazir` false. */
+  engeller: string[];
   hazir: boolean;
   kurulum: KurulumPr | null;
   mesaj: string | null;
@@ -1869,6 +1871,8 @@ export interface DemoDurumu {
    * kapalı (core kırma/sıfırlama uçlarında 403 verir). Core vermezse `undefined` (bilinmiyor).
    */
   demo_modu?: boolean | null;
+  /** TP3-1: seçili proje demo projesi mi (`false`: demo öğeleri gizli; core başka projede 200 döner). */
+  demo_projesi?: boolean;
   /** Kurulum ortamı (core `TP_ORTAM`: dev | test | staging | prod); core vermezse yok. */
   ortam?: string | null;
   forge: {

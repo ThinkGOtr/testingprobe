@@ -224,6 +224,7 @@ export function mockSifirla(): void {
   demoKirik = false;
   mockOrtam.ortam = "dev";
   mockOrtam.demoModu = true;
+  mockOrtam.demoProjesi = true;
   mockTestOrtamlari.ortamlar = [];
   mockTestOrtamlari.varsayilan_eid = null;
   ayar.senaryolar.clear();
@@ -289,7 +290,7 @@ function izinGerekli(...izinler: [Izin, ...Izin[]]): Kullanici {
 }
 
 /** Örnek veride kurulum ayarları (core `TP_ORTAM`, `TP_DEMO_MODE`); testler değiştirebilir. */
-export const mockOrtam = { ortam: "dev", demoModu: true };
+export const mockOrtam = { ortam: "dev", demoModu: true, demoProjesi: true };
 
 /** Projenin test ortamları (`GET /environments`); varsayılan boş = ortamsız proje. Testler değiştirebilir. */
 export const mockTestOrtamlari: { ortamlar: Ortam[]; varsayilan_eid: string | null } = { ortamlar: [], varsayilan_eid: null };
@@ -2988,8 +2989,11 @@ const ROTALAR: Rota[] = [
     /^\/demo\/status$/,
     () => {
       girisGerekli();
+      // TP3-1: demo projesi olmayan projede core 200 + "demo yok" döner (404 değil).
+      if (!mockOrtam.demoProjesi) return { demo_modu: false, demo_projesi: false, ortam: mockOrtam.ortam };
       return {
         demo_modu: mockOrtam.demoModu,
+        demo_projesi: true,
         ortam: mockOrtam.ortam,
         forge: { main: demoKirik ? "d3b1c0ffee42" : "9c41e2b07a11", testid: demoKirik ? "cart-add" : "add-to-cart", baseline: "9c41e2b07a11", main_baseline_mi: !demoKirik },
         uygulama: { sha: demoKirik ? "d3b1c0ffee42" : "9c41e2b07a11", kaynak: "build.json", main_ile_eslesiyor: true, neden: null },

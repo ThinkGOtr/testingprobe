@@ -171,8 +171,9 @@ def _plan_ozeti(plan: Any) -> dict[str, Any]:
         "dal": plan.dal,
         "baslik": plan.baslik,
         "hazir": plan.hazir,
+        "engeller": list(plan.engeller),
         "dosyalar": sorted(plan.dosyalar),
-        "eksikler": [e.aciklama for e in plan.eksikler],
+        "eksikler": list(plan.depo_eksikleri),
         "elle_adimlar": list(plan.elle_adimlar),
     }
 
@@ -255,7 +256,8 @@ def calistir(ctx: JobContext, engine: Engine) -> dict[str, Any]:
         **{k: v for k, v in sonuc.items() if k != "onaylayan"},
         "taban": taban,
         "baslik": plan.baslik,
-        "eksikler": [e.aciklama for e in plan.eksikler],
+        "eksikler": list(plan.depo_eksikleri),
+        "engeller": list(plan.engeller),
         "hazir": plan.hazir,
         "kurulum": kurulum,
     }

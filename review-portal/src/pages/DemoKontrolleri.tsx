@@ -1069,7 +1069,12 @@ export function DemoKontrolleri() {
           </>
         }
       />
-      {durum?.demo_modu === false ? (
+      {durum?.demo_projesi === false ? (
+        // TP3-1: demo yalnız varsayılan (demo-app) projesinde; başka projede kontroller gösterilmez.
+        <Uyari ton="bilgi" baslik="Bu projede demo yok">
+          Demo kontrolleri yalnız demo projesinde çalışır. Bu proje için kırılma, sıfırlama ve Jira durum taşıma kullanılmaz.
+        </Uyari>
+      ) : durum?.demo_modu === false ? (
         // core TP_DEMO_MODE=0: kırma/sıfırlama uçları 403 döner; kontroller gösterilmez (ANALIZ 012 §6).
         <Uyari ton="bilgi" baslik="Demo kontrolleri kapalı">
           Bu kurulumda demo kipi kapalı (<span className="mono">TP_DEMO_MODE=0</span>

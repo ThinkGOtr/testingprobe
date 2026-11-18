@@ -121,6 +121,17 @@ describe("demo kontrolleri: ekran demo.read, eylemler admin + engineer, yalnız 
     expect(screen.queryByRole("button", { name: "Demo'yu sıfırla" })).toBeNull();
   });
 
+  it("TP3-1: demo projesi olmayan projede 'Bu projede demo yok'; menüde demo öğeleri yok", async () => {
+    mockOrtam.demoProjesi = false;
+    await oturumAc("sunucu");
+    uygulama("/demo");
+    expect(await screen.findByText("Bu projede demo yok")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Demo'yu sıfırla" })).toBeNull();
+    const menu = screen.getByRole("navigation", { name: "Ana menü" });
+    await waitFor(() => expect(within(menu).queryByRole("link", { name: /Demo kontrolleri/ })).toBeNull());
+    expect(within(menu).queryByRole("link", { name: /Demo yol haritası/ })).toBeNull();
+  });
+
   it("demo kipinde Sistem Yöneticisi kontrolleri görür", async () => {
     await oturumAc("sunucu");
     uygulama("/demo");
