@@ -31,4 +31,4 @@ ciftler:
   windows/python: {hat: tam, durum: yakinda}
   windows/csharp: {hat: tam, durum: yakinda}
   android/kotlin: {hat: musteri_ci, durum: acik, kanit: {eval: evaluation/results/verify-and-map-app-v2-kotlin-2026-11-18.json, tarih: '2026-11-18', kabul: 'https://github.com/ThinkGOtr/testingprobe-demo-app/actions/runs/44249351066'}}
-  ios/swift: {hat: musteri_ci, durum: yakinda, kanit: {eval: evaluation/results/verify-and-map-app-v2-swift-2026-11-18.json, tarih: '2026-11-18'}}
+  ios/swift: {hat: musteri_ci, durum: acik, kanit: {eval: evaluation/results/verify-and-map-app-v2-swift-2026-11-18.json, tarih: '2026-11-18', kabul: 'https://github.com/ThinkGOtr/testingprobe-demo-app/actions/runs/44249183429'}}

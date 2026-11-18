@@ -343,8 +343,8 @@ Durum (2026-11-18 canlı `--dil` koşuları, Sonnet): web/python, web/csharp, an
 ios/python, android/kotlin, ios/swift çiftlerinin tüm vakaları geçti; `eval` kanıtı yazıldı.
 web/python, web/csharp, android/python ve ios/python yalıtılmış yığında kabul koşusunu geçti
 (TPD-1 C2: PR + `local-ci-<p>-<d>` yeşil, kırarak doğrulama yeşil → kırmızı → yeşil) → `acik`.
-android/kotlin ve ios/swift müşteri CI kabulünü (GitHub run) bekliyor. windows/python ve
-windows/csharp kanıtsız: Windows Appium'u (GCP `tp-windows`) bu koşuda kapalıydı.
+android/kotlin ve ios/swift müşteri CI kabulünü geçti (demo deposu PR #52 / #55, TP'nin ürettiği
+testler GitHub Actions'ta yeşil) → `acik`. windows/python ve windows/csharp kanıtsız: Windows Appium'u (GCP `tp-windows`) bu koşuda kapalıydı.
 
 ### Canlı değerlendirmeyi koşturmak (`make eval-live`)
 

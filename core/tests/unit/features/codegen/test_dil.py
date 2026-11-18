@@ -638,7 +638,9 @@ def test_code_languages_ve_generate_dil_dogrulamasi(
     monkeypatch.setattr(
         service.platformlar,
         "cift_durumu",
-        lambda p, d, *a, **k: "yakinda" if (p, d) == ("web", "csharp") else gercek(p, d, *a, **k),
+        lambda p, d, *a, **k: (
+            "yakinda" if (p, d) in {("web", "csharp"), ("android", "kotlin")} else gercek(p, d, *a, **k)
+        ),
     )
     r = api.get("/code/languages")
     assert r.status_code == 200, r.text

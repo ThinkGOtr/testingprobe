@@ -99,8 +99,15 @@ def test_depodaki_dil_kapisi_gecerli_ve_check_gecer() -> None:
 
 
 # 2026-11-18 kabul koşusu (yalıtılmış yığın, dil kabul şeridi tam-hat): eval + kabul kanıtıyla
-# açılan tam hat çiftleri.
-KABULLE_ACILAN = {("web", "python"), ("web", "csharp"), ("android", "python"), ("ios", "python")}
+# açılan tam hat çiftleri + müşteri CI kabulü (demo PR #52 / #55, yeşil GitHub run) ile açılan android/kotlin, ios/swift.
+KABULLE_ACILAN = {
+    ("web", "python"),
+    ("web", "csharp"),
+    ("android", "python"),
+    ("ios", "python"),
+    ("android", "kotlin"),
+    ("ios", "swift"),
+}
 
 
 def test_depoda_ts_java_devralindi_acik_digerleri_yakinda() -> None:
@@ -112,7 +119,7 @@ def test_depoda_ts_java_devralindi_acik_digerleri_yakinda() -> None:
     assert all(sts[c].devralindi for c in dk.DEVRALINABILIR)
     for cift in KABULLE_ACILAN:
         assert all(sts[cift].kanit.get(a) for a in ("eval", "tarih", "kabul"))
-    for cift in (("windows", "python"), ("windows", "csharp"), ("android", "kotlin")):
+    for cift in (("windows", "python"), ("windows", "csharp")):
         assert sts[cift].durum == "yakinda"
         assert not dk.kullanilabilir_mi(RULES, *cift)
         assert sts[cift].neden == dk.YAKINDA_NEDENI
@@ -131,7 +138,8 @@ def test_home_ozeti_bicimi() -> None:
     oz = dk.home_ozeti(RULES)
     assert oz["version"] == 1 and oz["kaynak"] == "rules/diller.yaml"
     assert oz["platformlar"]["web"]["ts"] == {"durum": "acik", "hat": "tam"}
-    assert oz["platformlar"]["ios"]["swift"] == {"durum": "yakinda", "hat": "musteri_ci"}
+    assert oz["platformlar"]["ios"]["swift"] == {"durum": "acik", "hat": "musteri_ci"}
+    assert oz["platformlar"]["windows"]["python"] == {"durum": "yakinda", "hat": "tam"}
     assert set(oz["platformlar"]) == set(dk.PLATFORMLAR)
 
 
