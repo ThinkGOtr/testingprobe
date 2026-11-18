@@ -436,13 +436,20 @@ _ORA_YETKI = ("ORA-01031", "ORA-00942", "ORA-01720")
 
 
 def _ora_ondalik(cursor: Any, meta: Any) -> Any:
-    """NUMBER → Decimal (float yerine; özet karşılaştırması hassas kalsın)."""
+    """Ölçekli NUMBER → ölçeğe yuvarlanmış Decimal (float değil; NUMBER sondaki sıfırları
+    saklamaz, `750` yerine diğer lehçelerdeki gibi `750.00` — özet karşılaştırması tutarlı)."""
     import decimal
 
     import oracledb
 
-    if meta.type_code is oracledb.DB_TYPE_NUMBER and (meta.scale or 0) > 0:
-        return cursor.var(decimal.Decimal, arraysize=cursor.arraysize)
+    olcek = meta.scale or 0
+    if meta.type_code is oracledb.DB_TYPE_NUMBER and olcek > 0:
+        birim = decimal.Decimal(1).scaleb(-olcek)
+        return cursor.var(
+            decimal.Decimal,
+            arraysize=cursor.arraysize,
+            outconverter=lambda v: v.quantize(birim) if v is not None else v,
+        )
     return None
 
 

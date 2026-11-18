@@ -47,7 +47,12 @@ bundles:
     note: 'v5: hedef SQL lehçesi (çoklu DB: PostgreSQL, MySQL/MariaDB, SQL Server, Oracle; `db_schema` ilk
       satırı). Golden çıktıları elle hazırlandı; araç adımları demo-app kaynağına karşı denetlenir. Değerlendirme
       seti: rules/evaluation/consistency-check.json (ajan; araç ortamı `consistency`, lehçe vakaları
-      `consistency:<tür>`; kanıt yeniden doğrulanır). Canlı değerlendirme bekliyor.'
+      `consistency:<tür>`; kanıt yeniden doğrulanır). Canlı koşu 2026-11-18 (Sonnet 5.5): 3/6
+      (evaluation/results/consistency-check-v5-2026-11-18.json). Lehçe vakalarında (MySQL 8.4, Oracle
+      23ai Free) tüm veri kanıtları o veritabanında yeniden doğrulandı; kalan 3 vakanın üçü de TPD-1
+      "AC2 için bulgu yok" (kod kanıtı, lehçeden bağımsız). Aynı gün v4 taban koşusu PostgreSQL üzerinde aynı hatayı
+      verdi (2/3, consistency-check-v4-2026-11-18.json): v5 değişikliği gerilemesiz, AC2 açığı öncesinden.
+      Canlı değerlendirme bekliyor.'
   case-generation:
     version: 4
     status: pending

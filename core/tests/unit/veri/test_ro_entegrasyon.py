@@ -258,3 +258,40 @@ def test_dogrulayici_mysql(mysql_sunucu: Sunucu) -> None:
     assert ok, neden
     bozuk, _ = v.check_data({"query": GOLDEN_SQL, "result_digest": "min_siparis_tutari=500.00"})
     assert not bozuk
+
+
+# ------------------------------------------------------------------ Oracle (hazır sunucu)
+#
+# Oracle imajı ağır olduğundan kabı test açmaz: `TP_DBTEST_ORACLE_URL` hazır bir demo veritabanını
+# (demo-app tohumu; salt okuma kullanıcısı, izin listesi görünümleri + eş anlamlılar) gösterir.
+
+
+@pytest.fixture
+def oracle_url() -> str:
+    url = os.environ.get("TP_DBTEST_ORACLE_URL", "")
+    if not url:
+        pytest.skip("TP_DBTEST_ORACLE_URL tanımlı değil (hazır Oracle demo veritabanı)")
+    return url
+
+
+def test_oracle_golden_sema_ve_sabit_sql(oracle_url: str, pg_sunucu: Sunucu) -> None:
+    db = DemoDb(oracle_url)
+    assert db.tur == "oracle"
+    res = db.query(GOLDEN_SQL)
+    assert res.columns == ["anahtar", "deger"]
+    assert res.rows == [("min_siparis_tutari", "750.00")]
+    sema = db.schema()
+    assert {k for k, _ in sema["urun"]} == {"id", "kod", "ad", "fiyat", "sira", "aktif"}
+    assert "parola_hash" not in {k for k, _ in sema["bayi"]}
+    # Sabit SQL (WHERE aktif → = 1) ve NUMBER ölçeği: blok PostgreSQL'dekiyle aynı.
+    pg = DemoDb(pg_sunucu.ro_url)
+    metinler = [
+        testdata.build_text(lambda sql, d=d: d.query(sql, kaynak_lehce="postgres").rows)
+        for d in (pg, db)
+    ]
+    assert metinler[1] == metinler[0]
+
+
+def test_oracle_oturum_salt_okuma(oracle_url: str) -> None:
+    with rb.oturum(rb.url_coz(oracle_url)) as o, pytest.raises(rb.SorguHatasi):
+        o.calistir("INSERT INTO ayar (anahtar, deger, aciklama) VALUES ('x', '1', '')")
