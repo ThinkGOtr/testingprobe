@@ -1171,11 +1171,16 @@ def test_dil_durumu_ozeti_asistan_baglami(monkeypatch: pytest.MonkeyPatch) -> No
         ),
     )  # fmt: skip
     ozet = service.dil_durumu_ozeti()
-    assert [o["platform"] for o in ozet] == ["web"]
-    java = next(x for x in ozet[0]["secenekler"] if x["dil"] == "java")
-    assert java["engel"] == "liste" and "Platform ayarları › Web › Test dilleri" in java["neden"]
-    assert ozet[0]["engelli_algilanan"]["dil"] == "java"
+    assert [o["platform"] for o in ozet] == ["Web"]
+    java = next(x for x in ozet[0]["secenekler"] if x["dil"].startswith("Java"))
+    assert not java["secilebilir"] and "Platform ayarları › Web › Test dilleri" in java["neden"]
+    assert ozet[0]["en_cok_testi_olan_ama_secilemeyen_dil"]["dil"].startswith("Java")
     assert "TP_" not in str(ozet)
+    # TP3-4: iç alan adları ve değer kodları bağlama girmez (model cevaba aktarıyordu).
+    metin = str(ozet)
+    for ic in ("'hat'", "musteri_ci", "'engel'", "'kaynak'", "algilandi", "'liste'"):
+        assert ic not in metin
+    assert all("calistirma" in x for x in ozet[0]["secenekler"])
 
 
 def test_depo_okunamazsa_secenekler_bilinmiyor(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1284,3 +1289,14 @@ def test_enum_kumeleri_platform_modulu_ile_ayni() -> None:
     assert frozenset(p.PLATFORMLAR) == enums.PLATFORM
     assert frozenset(p.TUM_DILLER) == enums.DIL
     assert frozenset(c.hat for c in p.CATILAR.values()) <= enums.HAT
+
+
+def test_tp3_4_musteri_ci_hatti_kullanici_teriminde() -> None:
+    s = service._kullanici_secenegi(
+        {"dil": "kotlin", "etiket": "Kotlin", "hat": "musteri_ci", "durum": "acik",
+         "kullanilabilir": False, "neden": "seçili değil", "acma_yolu": None,
+         "kurulum": {"durum": "gerekli"}}
+    )  # fmt: skip
+    assert s["calistirma"].startswith("Müşterinin kendi CI hattında")
+    assert s["kurulum"] == "kurulum PR'ı gerekli (henüz açılmadı)"
+    assert "musteri_ci" not in str(s) and "hat" not in s

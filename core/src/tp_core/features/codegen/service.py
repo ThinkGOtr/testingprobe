@@ -1099,10 +1099,52 @@ def dil_secenekleri(platform: str | None, *, kurulum_ozeti: bool = True) -> dict
     }
 
 
+# TP3-4: asistan bağlamına iç alan adları/değer kodları (hat: musteri_ci, engel: liste, kaynak:
+# algilandi …) gitmez; model bunları cevaba olduğu gibi aktarıyordu. Kullanıcı terimleri:
+HAT_METNI: dict[str, str] = {
+    "tam": "Testing Probe derler, koşar ve kırarak doğrular",
+    "musteri_ci": "Müşterinin kendi CI hattında (GitHub Actions) koşar; Testing Probe kırarak "
+    "doğrulamaz",
+    "dogrulanmamis": "Doğrulanmamış dil: Testing Probe derlemez ve koşmaz",
+}
+DIL_KAYNAGI_METNI: dict[str, str] = {
+    "algilandi": "depodaki testlerden algılandı",
+    "secildi": "proje ayarında seçildi",
+    "varsayilan": "varsayılan dil (algılanamadı)",
+}
+PLATFORM_METNI: dict[str, str] = {
+    "web": "Web",
+    "android": "Android",
+    "ios": "iOS",
+    "windows": "Windows",
+}
+KURULUM_DURUMU_METNI: dict[str, str] = {
+    "gerekli": "kurulum PR'ı gerekli (henüz açılmadı)",
+    "acik": "kurulum PR'ı açık, birleşmesi bekleniyor",
+    "birlesti": "kurulum tamam (PR birleşti)",
+    "kapali": "kurulum PR'ı kapatıldı; yeniden açılmalı",
+}
+
+
+def _kullanici_secenegi(s: Mapping[str, Any]) -> dict[str, Any]:
+    kurulum = s.get("kurulum")
+    out: dict[str, Any] = {
+        "dil": s.get("etiket") or s.get("dil"),
+        "calistirma": HAT_METNI.get(str(s.get("hat")), "bilinmiyor"),
+        "secilebilir": bool(s.get("kullanilabilir")),
+        "durum": "yakında (değerlendirme sürüyor)" if s.get("durum") == "yakinda" else "açık",
+        "neden": s.get("neden"),
+        "acma_yolu": s.get("acma_yolu"),
+    }
+    if isinstance(kurulum, Mapping):
+        out["kurulum"] = KURULUM_DURUMU_METNI.get(str(kurulum.get("durum")), "bilinmiyor")
+    return out
+
+
 def dil_durumu_ozeti() -> list[dict[str, Any]]:
     """Asistan ekran bağlamı (ekran testi 2 TP-5): projede açık her platformun dil seçenekleri,
-    kısa biçimde (durum, engel türü, kullanıcı metni, açma yolu). Kurulum özeti için forge ayrıca
-    okunmaz; okunamayan / kapalı platform atlanır. Yazma yok."""
+    kısa biçimde ve KULLANICI TERİMLERİYLE (TP3-4: iç alan adı/kod yok). Kurulum özeti için forge
+    ayrıca okunmaz; okunamayan / kapalı platform atlanır. Yazma yok."""
     out: list[dict[str, Any]] = []
     for p in platformlar.PLATFORMLAR:
         try:
@@ -1112,29 +1154,28 @@ def dil_durumu_ozeti() -> list[dict[str, Any]]:
         except Exception as exc:  # bağlam zenginleştirmesi cevabı düşürmez
             log.warning("dil durumu özeti alınamadı: %s (%s)", p, type(exc).__name__)
             continue
+        etiket = platformlar.DIL_ETIKETI
+        ea = v.get("engelli_algilanan")
         out.append(
             {
-                "platform": p,
-                "algilanan": v["algilanan"],
-                "kaynak": v["kaynak"],
-                "sayilar": v["sayilar"],
-                "engelli_algilanan": v.get("engelli_algilanan"),
-                "secenekler": [
+                "platform": PLATFORM_METNI.get(p, p),
+                "varsayilan_dil": etiket.get(v["algilanan"], v["algilanan"]),
+                "dil_nereden": DIL_KAYNAGI_METNI.get(str(v["kaynak"]), str(v["kaynak"])),
+                "depodaki_test_sayilari": {
+                    etiket.get(d, d): n for d, n in (v.get("sayilar") or {}).items()
+                },
+                **(
                     {
-                        k: s.get(k)
-                        for k in ("dil", "etiket", "hat", "durum", "kullanilabilir", "engel")
+                        "en_cok_testi_olan_ama_secilemeyen_dil": {
+                            "dil": etiket.get(ea["dil"], ea["dil"]),
+                            "test_sayisi": ea.get("sayi"),
+                            "neden": ea.get("neden"),
+                        }
                     }
-                    | {
-                        "neden": s.get("neden"),
-                        "acma_yolu": s.get("acma_yolu"),
-                        **(
-                            {"kurulum_durumu": s["kurulum"].get("durum")}
-                            if isinstance(s.get("kurulum"), Mapping)
-                            else {}
-                        ),
-                    }
-                    for s in v["secenekler"]
-                ],
+                    if isinstance(ea, Mapping)
+                    else {}
+                ),
+                "secenekler": [_kullanici_secenegi(s) for s in v["secenekler"]],
             }
         )
     return out
