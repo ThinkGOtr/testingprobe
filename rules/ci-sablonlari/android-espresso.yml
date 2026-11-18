@@ -12,6 +12,9 @@
 #   `android { testBuildType "tpTest" }`): debug derlemesi React Native/Expo'da Metro ister, R8'li
 #   release test APK'sını bozar (androidx.tracing). Expo/RN projesinde bu tür bir config plugin ile
 #   eklenir (prebuild sonrası); kurulum PR'ı bunu elle adım olarak listeler.
+# - İsteğe bağlı hazırlık: `TP_HAZIRLIK_BETIGI` doluysa (müşterinin betiği, depo kökünden `bash`)
+#   derlemeden önce koşar: yerel projeyi üretme (Expo/RN prebuild), test arka ucunu başlatma,
+#   test argümanları. `TP_NODE_SURUMU` doluysa önce Node kurulur.
 name: __TP_IS_ADI__
 
 on:
@@ -36,6 +39,8 @@ env:
   TP_GRADLE_MODULU: "__TP_GRADLE_MODULU__"
   TP_TEST_PAKETI: "__TP_TEST_PAKETI__"
   TP_EMULATOR_API: "__TP_EMULATOR_API__"
+  TP_HAZIRLIK_BETIGI: "__TP_HAZIRLIK_BETIGI__"
+  TP_NODE_SURUMU: "__TP_NODE_SURUMU__"
   TP_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
 jobs:
@@ -58,6 +63,7 @@ jobs:
             app:
               - '__TP_IZLENEN_YOL__'
               - '.github/workflows/__TP_IS_ADI__.yml'
+              - '.github/tp/**'
       - name: Karar
         id: decide
         env:
@@ -105,7 +111,31 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-          cache: gradle
+
+      - name: Node (hazırlık betiği için; isteğe bağlı)
+        if: env.RUN_TESTS == 'true' && env.TP_NODE_SURUMU != ''
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.TP_NODE_SURUMU }}
+
+      - name: Hazırlık (müşterinin betiği; isteğe bağlı)
+        id: hazirlik
+        if: env.RUN_TESTS == 'true' && env.TP_HAZIRLIK_BETIGI != ''
+        run: |
+          set -o pipefail
+          bash "$TP_HAZIRLIK_BETIGI" 2>&1 | tee -a "$TP_RESULTS/derleme.log"
+
+      # Gradle önbelleği hazırlıktan SONRA: yerel proje hazırlık betiğinde üretilebilir (Expo/RN
+      # prebuild); setup-java `cache: gradle` checkout anında Gradle dosyası bulamazsa düşer.
+      - name: Gradle önbelleği
+        if: env.RUN_TESTS == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: tp-gradle-${{ runner.os }}-${{ hashFiles(format('{0}/**/*.gradle*', env.TP_UYGULAMA_KOKU), format('{0}/**/gradle-wrapper.properties', env.TP_UYGULAMA_KOKU)) }}
+          restore-keys: tp-gradle-${{ runner.os }}-
 
       - name: Derle (uygulama + androidTest APK)
         id: derle

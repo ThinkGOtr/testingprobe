@@ -40,12 +40,23 @@ class KurulumOnayiYok(PermissionError):
 class KurulumParametreleri:
     """Şablon parametreleri. Android: `gradle_modulu`, `test_paketi`; iOS: `xcode_proje`
     (`.xcodeproj` ya da `.xcworkspace` yolu), `sema` (scheme), `ui_test_hedefi`, `runs_on`,
-    `simulator`. `varsayilan_dal`: iş akışının PR tetiği."""
+    `simulator`, `yapilandirma` (ör. `Release`; boşsa şemanın test yapılandırması).
+    `varsayilan_dal`: iş akışının PR tetiği.
+
+    İsteğe bağlı (iki platform): `hazirlik_betigi` — derlemeden önce depo kökünden `bash` ile
+    koşulan, müşteriye ait betik (ör. Expo/RN `expo prebuild`, test arka ucunu başlatma, test
+    argümanları). Verilirse yerel proje (gradlew / .xcworkspace) depoda aranmaz: betik üretir.
+    `node_surumu`: verilirse iş akışı Node kurar (betik npm/npx kullanıyorsa). `izlenen_kok`: PR'da
+    değişince testleri koşturan dizin (boşsa `uygulama_koku`; üretilen proje depoda değilse
+    uygulamanın kaynak kökü verilmelidir, yoksa iş akışı her PR'da no-op kalır)."""
 
     platform: str
     dil: str
     varsayilan_dal: str = "main"
     uygulama_koku: str = "."  # Gradle/Xcode projesinin depo içi kökü
+    hazirlik_betigi: str = ""  # ör. ".github/tp/hazirlik.sh" (müşterinin; isteğe bağlı)
+    node_surumu: str = ""  # ör. "22" (isteğe bağlı)
+    izlenen_kok: str = ""  # boşsa uygulama_koku
     # Android
     gradle_modulu: str = "app"
     test_paketi: str = ""  # ör. "com.acme.bayi.tp"
@@ -56,6 +67,7 @@ class KurulumParametreleri:
     ui_test_hedefi: str = ""
     runs_on: str = "macos-15"
     simulator: str = "iPhone 16"
+    yapilandirma: str = ""  # ör. "Release" (React Native: Debug Metro ister)
 
 
 @dataclass(frozen=True)
@@ -92,6 +104,8 @@ _PAKET_RE = re.compile(r"[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+")
 _AD_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9 _.-]{0,99}")
 _RUNNER_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 _SIM_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9 ()._-]{0,63}")
+_BETIK_RE = re.compile(r"[A-Za-z0-9_.][A-Za-z0-9._/-]{0,199}")  # .github/tp/… olabilir
+_NODE_RE = re.compile(r"[0-9]{1,2}(?:\.[0-9]{1,3}){0,2}")
 _YER_TUTUCU_RE = re.compile(r"__TP_[A-Z_]+__")
 EMULATOR_API_ARALIGI = (24, 40)
 UI_TEST_URUN_TURU = "com.apple.product-type.bundle.ui-testing"
@@ -121,6 +135,17 @@ def parametre_hatalari(p: KurulumParametreleri) -> list[str]:
         h.append(f"varsayılan dal geçersiz: {dal!r}")
     if not _yol_gecerli(p.uygulama_koku, nokta=True):
         h.append(f"uygulama kökü geçersiz: {p.uygulama_koku!r}")
+    if p.hazirlik_betigi and not (
+        isinstance(p.hazirlik_betigi, str)
+        and _BETIK_RE.fullmatch(p.hazirlik_betigi)
+        and all(s not in ("", ".", "..") for s in p.hazirlik_betigi.split("/"))
+        and p.hazirlik_betigi.endswith(".sh")
+    ):
+        h.append(f"hazırlık betiği geçersiz (depo içi .sh yolu): {p.hazirlik_betigi!r}")
+    if p.node_surumu and not (isinstance(p.node_surumu, str) and _NODE_RE.fullmatch(p.node_surumu)):
+        h.append(f"Node sürümü geçersiz: {p.node_surumu!r}")
+    if p.izlenen_kok and not _yol_gecerli(p.izlenen_kok, nokta=True):
+        h.append(f"izlenen kök geçersiz: {p.izlenen_kok!r}")
     if p.platform == "android":
         if not (isinstance(p.gradle_modulu, str) and _MODUL_RE.fullmatch(p.gradle_modulu)):
             h.append(f"Gradle modülü geçersiz: {p.gradle_modulu!r}")
@@ -141,6 +166,10 @@ def parametre_hatalari(p: KurulumParametreleri) -> list[str]:
             h.append(f"runs-on geçersiz: {p.runs_on!r}")
         if not (isinstance(p.simulator, str) and _SIM_RE.fullmatch(p.simulator)):
             h.append(f"simülatör adı geçersiz: {p.simulator!r}")
+        if p.yapilandirma and not (
+            isinstance(p.yapilandirma, str) and _AD_RE.fullmatch(p.yapilandirma)
+        ):
+            h.append(f"yapılandırma geçersiz: {p.yapilandirma!r}")
     return h
 
 
@@ -176,7 +205,9 @@ def sablon_degerleri(h: MusteriCiHedefi, p: KurulumParametreleri) -> dict[str, s
         "__TP_IS_ADI__": h.is_adi,
         "__TP_VARSAYILAN_DAL__": p.varsayilan_dal,
         "__TP_UYGULAMA_KOKU__": p.uygulama_koku,
-        "__TP_IZLENEN_YOL__": _izlenen_yol(p.uygulama_koku),
+        "__TP_IZLENEN_YOL__": _izlenen_yol(p.izlenen_kok or p.uygulama_koku),
+        "__TP_HAZIRLIK_BETIGI__": p.hazirlik_betigi,
+        "__TP_NODE_SURUMU__": p.node_surumu,
     }
     if h.platform == "android":
         d |= {
@@ -194,6 +225,7 @@ def sablon_degerleri(h: MusteriCiHedefi, p: KurulumParametreleri) -> dict[str, s
             "__TP_UI_TEST_HEDEFI__": p.ui_test_hedefi,
             "__TP_RUNS_ON__": p.runs_on,
             "__TP_SIMULATOR__": p.simulator,
+            "__TP_YAPILANDIRMA__": p.yapilandirma,
         }
     return d
 
@@ -288,6 +320,21 @@ def eksikleri_bul(
                 KurulumEksigi("iskelet", f"Test iskeleti/kütüphane dosyası yok ({y}).", True, y)
             )
     if any(e.kod == PARAMETRE_EKSIGI for e in out):
+        return out
+    if p.hazirlik_betigi:
+        # Yerel proje (gradlew / Xcode projesi, UI test hedefi) hazırlık betiğinde üretilir
+        # (ör. Expo prebuild + config plugin): depoda aranmaz; betiğin kendisi müşterinindir.
+        if p.hazirlik_betigi not in dosyalar:
+            out.append(
+                KurulumEksigi(
+                    "hazirlik_betigi",
+                    f"Hazırlık betiği yok ({p.hazirlik_betigi}): iş akışı derlemeden önce bu "
+                    "betiği koşar (yerel projeyi üretir, test arka ucunu başlatır). Betik "
+                    "uygulamaya özgüdür; TP eklemez.",
+                    otomatik=False,
+                    yol=p.hazirlik_betigi,
+                )
+            )
         return out
     if h.platform == "android":
         gradlew = _kok_ici(p.uygulama_koku, "gradlew")

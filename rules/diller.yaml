@@ -30,5 +30,5 @@ ciftler:
   ios/python: {hat: tam, durum: acik, kanit: {eval: evaluation/results/verify-and-map-app-v2-python-2026-11-18.json, tarih: '2026-11-18', kabul: 'tp-kabul-tamhat 2026-11-18 (dk/tam-hat 4e28654, yerel forge, simülatör TP iPhone iOS 18.5): script 87a0a5e3 PR#4 head bd01ac49 local-ci-ios-python run 5a44e624 (7/7 yeşil; ilk head 3ca0b7c8''de ce630cd5 elle yazılmış test_kampanyasiz_urunde_bedava_yok iOS klavye hatasıyla kırmızıydı, 4e28654 ile düzeltildi); kırarak doğrulama d461127f yeşil → 7e936429 kırmızı (cart-line-free beklenen 1 görülen 0) → 77373885 yeşil'}}
   windows/python: {hat: tam, durum: yakinda}
   windows/csharp: {hat: tam, durum: yakinda}
-  android/kotlin: {hat: musteri_ci, durum: yakinda, kanit: {eval: evaluation/results/verify-and-map-app-v2-kotlin-2026-11-18.json, tarih: '2026-11-18'}}
+  android/kotlin: {hat: musteri_ci, durum: acik, kanit: {eval: evaluation/results/verify-and-map-app-v2-kotlin-2026-11-18.json, tarih: '2026-11-18', kabul: 'https://github.com/ThinkGOtr/testingprobe-demo-app/actions/runs/44249351066'}}
   ios/swift: {hat: musteri_ci, durum: yakinda, kanit: {eval: evaluation/results/verify-and-map-app-v2-swift-2026-11-18.json, tarih: '2026-11-18'}}

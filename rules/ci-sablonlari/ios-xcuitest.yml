@@ -11,6 +11,9 @@
 # - Kırarak doğrulama YOKTUR ("kırarak doğrulanmadı").
 # - Sonuç her durumda `tp-results` artefaktına yüklenir (ci-meta.json, junit/, ekler/, derleme.log);
 #   xcresult → JUnit dönüşümü `.github/tp/xcresult_junit.py` (bağımlılıksız Python).
+# - İsteğe bağlı hazırlık: `TP_HAZIRLIK_BETIGI` doluysa (müşterinin betiği, depo kökünden `bash`)
+#   derlemeden önce koşar: yerel projeyi üretme (Expo/RN prebuild), test arka ucunu başlatma,
+#   test argümanları. `TP_NODE_SURUMU` doluysa önce Node kurulur.
 name: __TP_IS_ADI__
 
 on:
@@ -37,6 +40,9 @@ env:
   TP_SEMA: "__TP_SEMA__"
   TP_UI_TEST_HEDEFI: "__TP_UI_TEST_HEDEFI__"
   TP_SIMULATOR: "__TP_SIMULATOR__"
+  TP_HAZIRLIK_BETIGI: "__TP_HAZIRLIK_BETIGI__"
+  TP_NODE_SURUMU: "__TP_NODE_SURUMU__"
+  TP_YAPILANDIRMA: "__TP_YAPILANDIRMA__"
   TP_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
 jobs:
@@ -59,6 +65,7 @@ jobs:
             app:
               - '__TP_IZLENEN_YOL__'
               - '.github/workflows/__TP_IS_ADI__.yml'
+              - '.github/tp/**'
               - '.github/tp/**'
       - name: Karar
         id: decide
@@ -96,6 +103,19 @@ jobs:
           mkdir -p "$RUNNER_TEMP/tp-results/junit" "$RUNNER_TEMP/tp-results/ekler"
           xcodebuild -version
 
+      - name: Node (hazırlık betiği için; isteğe bağlı)
+        if: env.RUN_TESTS == 'true' && env.TP_NODE_SURUMU != ''
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.TP_NODE_SURUMU }}
+
+      - name: Hazırlık (müşterinin betiği; isteğe bağlı)
+        id: hazirlik
+        if: env.RUN_TESTS == 'true' && env.TP_HAZIRLIK_BETIGI != ''
+        run: |
+          set -o pipefail
+          bash "$TP_HAZIRLIK_BETIGI" 2>&1 | tee -a "$TP_RESULTS/derleme.log"
+
       - name: Simülatör
         if: env.RUN_TESTS == 'true'
         run: |
@@ -121,9 +141,11 @@ jobs:
         working-directory: __TP_UYGULAMA_KOKU__
         run: |
           set -o pipefail
+          yap=()
+          if [ -n "$TP_YAPILANDIRMA" ]; then yap=(-configuration "$TP_YAPILANDIRMA"); fi
           xcodebuild test \
             "$TP_XCODE_BAYRAGI" "$TP_XCODE_PROJE" \
-            -scheme "$TP_SEMA" \
+            -scheme "$TP_SEMA" ${yap[@]+"${yap[@]}"} \
             -destination "id=$TP_UDID" \
             -only-testing:"$TP_UI_TEST_HEDEFI" \
             -resultBundlePath "$TP_XCRESULT" \
