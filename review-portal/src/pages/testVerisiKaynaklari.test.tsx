@@ -158,6 +158,8 @@ describe("Test verisi: veritabanı kaynakları", () => {
   });
 
   it("tümünü yenile: iş yoklanır, düğmeler pasif, özet görünür; kaynak ve katalog yeniden yüklenir", async () => {
+    // Ara durumu yük altında da gözlemlemek için yoklama aralığı bu testte daha uzun.
+    kaynakIsAyari.aralikMs = 400;
     await oturumAc("muhendis");
     const cagrilar = izle();
     uygulama();
@@ -167,11 +169,12 @@ describe("Test verisi: veritabanı kaynakları", () => {
     const listeOnce = cagrilar.filter((c) => c.method === "GET" && c.path === "/test-data").length;
 
     await u.click(within(bolum()).getByRole("button", { name: "Tümünü yenile" }));
+    // İş sürerken (ilk yoklama "calisiyor"): düğmeler pasif ve ilerleme satırı görünür (aynı anda).
     expect(within(bolum()).getByRole("button", { name: "bayi kaynağını yenile" })).toBeDisabled();
     expect(screen.getByTestId("kaynak-yenileme-durumu")).toHaveTextContent("Tüm kaynaklar yenileniyor");
 
     const durum = screen.getByTestId("kaynak-yenileme-durumu");
-    await waitFor(() => expect(durum).toHaveTextContent("Yenileme tamamlandı"));
+    await waitFor(() => expect(durum).toHaveTextContent("Yenileme tamamlandı"), { timeout: 3000 });
     // bayi: kullanici_adi ×2 aynı, bayi1.ad aynı, bayi2.ad + bayi1.kredi_limiti yeni; urun: p_001.kod + p_002 ×3 yeni; kampanya: kod yeni.
     expect(durum).toHaveTextContent("7 yeni · 0 güncellendi · 0 kaynakta yok");
     expect(durum).toHaveTextContent("bayi: 2 satır · 2 yeni");
