@@ -2,6 +2,17 @@
 # test-local job'unun ortak imajı. Etiket .playwright-version'dan türetilir; kullanıldığı her yerde
 # digest ile sabitlenir (repo değişkeni TP_TOOLCHAIN_IMAGE = ghcr.io/thinkgotr/tp-toolchain@sha256:…).
 #
+# Her mimari KENDİ yerel runner'ında derlenir (amd64: ubuntu-24.04, arm64: ubuntu-24.04-arm) ve
+# Dockerfile'daki ağsız dumanlar (Java + Playwright tarayıcısı dahil) o mimaride gerçekten koşar.
+# QEMU emülasyonu kullanılmaz: arm64 Chromium, qemu-user altında sayfa açarken "Target crashed"
+# ile çöküyordu (13 Kasım'dan beri, IsinmaTest.tarayiciCevrimdisiAcilir); bu imajın değil
+# emülasyonun hatasıdır ve gerçek arm64'te duman zorunlu kalır. Platform imajları digest ile
+# gönderilir, `merge` job'u çok mimarili listeyi etiketler.
+#
+# Gönderim YALNIZCA main'de (push ya da main'de workflow_dispatch). PR ve main dışı dalda
+# workflow_dispatch: iki mimari derlenir + dumanlar koşar, ghcr'ye hiçbir şey gönderilmez
+# (sürüm etiketi ezilmez).
+#
 # packages: write YALNIZCA bu workflow'dadır. AI bağımlılığı yoktur (Constitution II).
 name: build-toolchain
 
@@ -31,13 +42,15 @@ env:
   IMAGE: ghcr.io/thinkgotr/tp-toolchain
 
 jobs:
-  build:
-    name: build-toolchain
+  hazirlik:
+    name: sürüm ve hedefler
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    permissions:
-      contents: read
-      packages: write
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      push: ${{ steps.v.outputs.push }}
+      tags: ${{ steps.v.outputs.tags }}
+      matrix: ${{ steps.v.outputs.matrix }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -48,6 +61,7 @@ jobs:
         id: v
         env:
           EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
         run: |
           set -euo pipefail
           version="$(tr -d '[:space:]' < .playwright-version)"
@@ -55,37 +69,53 @@ jobs:
             echo "::error file=.playwright-version::Geçersiz sürüm: '$version'"
             exit 1
           fi
+          amd64='{"platform":"linux/amd64","arch":"amd64","runner":"ubuntu-24.04"}'
+          arm64='{"platform":"linux/arm64","arch":"arm64","runner":"ubuntu-24.04-arm"}'
           if [ "$EVENT" = "pull_request" ]; then
-            push=false; platforms=linux/amd64
+            push=false; matrix="[$amd64]"
+          elif [ "$REF" = "refs/heads/main" ]; then
+            push=true; matrix="[$amd64,$arm64]"
           else
-            push=true; platforms=linux/amd64,linux/arm64
+            # main dışı dalda elle koşu: iki mimari doğrulanır, gönderilmez.
+            push=false; matrix="[$amd64,$arm64]"
           fi
           short="${GITHUB_SHA::12}"
           {
             echo "version=$version"
             echo "push=$push"
-            echo "platforms=$platforms"
-            echo "tags=$IMAGE:$version,$IMAGE:$version-$short"
+            echo "matrix={\"include\":$matrix}"
+            echo "tags=$IMAGE:$version $IMAGE:$version-$short"
           } >> "$GITHUB_OUTPUT"
 
-      - name: QEMU
-        if: steps.v.outputs.push == 'true'
-        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+  build:
+    name: build-toolchain (${{ matrix.arch }})
+    needs: hazirlik
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.hazirlik.outputs.matrix) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          platforms: arm64
+          persist-credentials: false
 
       - name: Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: GHCR girişi
-        if: steps.v.outputs.push == 'true'
+        if: needs.hazirlik.outputs.push == 'true'
         uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Derle ve gönder
+      - name: Derle (ve digest ile gönder)
         id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -93,38 +123,115 @@ jobs:
           file: toolchain/Dockerfile
           # CI imajı: MCP sunucusu yok (Constitution II); playwright-mcp `mcp` hedefi yerelde derlenir.
           target: ci
-          platforms: ${{ steps.v.outputs.platforms }}
-          push: ${{ steps.v.outputs.push == 'true' }}
-          tags: ${{ steps.v.outputs.tags }}
+          platforms: ${{ matrix.platform }}
+          # Gönderimde etiketsiz, yalnız digest (etiketleri `merge` koyar); aksi halde yalnız derleme.
+          outputs: ${{ needs.hazirlik.outputs.push == 'true' && format('type=image,name={0},push-by-digest=true,name-canonical=true,push=true', env.IMAGE) || 'type=cacheonly' }}
           build-args: |
-            PLAYWRIGHT_VERSION=${{ steps.v.outputs.version }}
+            PLAYWRIGHT_VERSION=${{ needs.hazirlik.outputs.version }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=${{ steps.v.outputs.version }}
-            io.testingprobe.playwright-version=${{ steps.v.outputs.version }}
-          cache-from: type=gha,scope=tp-toolchain
-          cache-to: type=gha,mode=max,scope=tp-toolchain
-          provenance: ${{ steps.v.outputs.push == 'true' }}
-          sbom: ${{ steps.v.outputs.push == 'true' }}
+            org.opencontainers.image.version=${{ needs.hazirlik.outputs.version }}
+            io.testingprobe.playwright-version=${{ needs.hazirlik.outputs.version }}
+          cache-from: type=gha,scope=tp-toolchain-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=tp-toolchain-${{ matrix.arch }}
+          provenance: ${{ needs.hazirlik.outputs.push == 'true' }}
+          sbom: ${{ needs.hazirlik.outputs.push == 'true' }}
+
+      - name: Digest'i dışa aktar
+        if: needs.hazirlik.outputs.push == 'true'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$DIGEST" | grep -Eq '^sha256:[0-9a-f]{64}$'
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
+
+      - name: Digest artefaktı
+        if: needs.hazirlik.outputs.push == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digest-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: build-toolchain (çok mimarili liste)
+    needs: [hazirlik, build]
+    if: needs.hazirlik.outputs.push == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Digest'leri indir
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digest-*
+          merge-multiple: true
+
+      - name: Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: GHCR girişi
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Listeyi oluştur ve etiketle
+        id: liste
+        env:
+          TAGS: ${{ needs.hazirlik.outputs.tags }}
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          set -euo pipefail
+          sayi="$(find . -maxdepth 1 -type f | wc -l)"
+          if [ "$sayi" -ne 2 ]; then
+            echo "::error::Beklenen 2 platform digest'i (amd64+arm64), bulunan: $sayi"
+            exit 1
+          fi
+          args=()
+          for t in $TAGS; do args+=(-t "$t"); done
+          for d in *; do args+=("$IMAGE@sha256:$d"); done
+          docker buildx imagetools create "${args[@]}"
+          first="${TAGS%% *}"
+          docker buildx imagetools inspect "$first"
+          digest="$(docker buildx imagetools inspect "$first" --format '{{json .Manifest}}' | jq -r .digest)"
+          printf '%s' "$digest" | grep -Eq '^sha256:[0-9a-f]{64}$'
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
       - name: Digest
         env:
-          DIGEST: ${{ steps.build.outputs.digest }}
-          PUSHED: ${{ steps.v.outputs.push }}
-          VERSION: ${{ steps.v.outputs.version }}
+          DIGEST: ${{ steps.liste.outputs.digest }}
+          VERSION: ${{ needs.hazirlik.outputs.version }}
         run: |
           {
             echo "### Toolchain imajı (Playwright $VERSION)"
-            if [ "$PUSHED" = "true" ]; then
-              echo "Gönderildi. CI'da kullanmak için repo değişkeni:"
-              echo
-              echo '```'
-              echo "TP_TOOLCHAIN_IMAGE=$IMAGE@$DIGEST"
-              echo '```'
-              echo
-              echo "\`gh variable set TP_TOOLCHAIN_IMAGE --body '$IMAGE@$DIGEST'\`"
-            else
-              echo "PR doğrulaması: derlendi, gönderilmedi (digest: \`$DIGEST\`)."
-            fi
+            echo "Gönderildi (linux/amd64 + linux/arm64, yerel runner'larda dumanlı). CI'da kullanmak için repo değişkeni:"
+            echo
+            echo '```'
+            echo "TP_TOOLCHAIN_IMAGE=$IMAGE@$DIGEST"
+            echo '```'
+            echo
+            echo "\`gh variable set TP_TOOLCHAIN_IMAGE --body '$IMAGE@$DIGEST'\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  ozet:
+    name: build-toolchain (özet)
+    needs: [hazirlik, build]
+    if: needs.hazirlik.outputs.push != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Özet
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref_name }}
+        run: |
+          echo "Doğrulama koşusu ($EVENT, $REF): derlendi + dumanlar geçti, ghcr'ye gönderilmedi." >> "$GITHUB_STEP_SUMMARY"
