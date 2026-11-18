@@ -370,7 +370,7 @@ def test_api_yetki(api: TestClient, make_user: Any) -> None:
     assert api.post("/test-data-sources", json=govde).status_code == 403
     assert api.post("/test-data-sources/refresh", json={}).status_code == 403
     assert api.post("/test-data-sources/preview", json=govde).status_code == 403
-    assert api.get(f"/test-data-sources/jobs/{uuid.uuid4()}").status_code == 403
+    assert api.get(f"/test-data-sources/jobs/{uuid.uuid4()}").status_code == 404
 
 
 def test_onizleme_hatasi_sonucta(
@@ -532,3 +532,15 @@ def test_demo_disi_projede_tohum_yok(engine: Engine, iki_proje: tuple[str, str])
         on_worker_start(c)
     with proje_icinde(b, kaynak="test"), session_scope() as s:
         assert not service.anahtarlar(s) and not kaynak.etkin_kaynaklar(s)
+
+
+def test_katalog_genel_eval_vakalari(tmp_path: Any) -> None:
+    """Demo dışı canlı değerlendirme vakaları (ayrı kural kopyası; ana setlere girmez)."""
+    from tests.unit.gateway import build_eval_sets as b
+
+    blok = b.katalog_genel_blogu()
+    assert "testdata:katalog" in blok and "- tarife.d1.ucret = 95,00 TL" in blok
+    assert "{veri:kullanici.gise1.parola} (gizli)" in blok
+    assert not any(d in blok for d in b.DEMO_SIZINTISI)
+    yollar = b.katalog_genel_kural_kopyasi(tmp_path / "rules")
+    assert [p.name for p in yollar] == ["case-generation.json", "design-model.json"]

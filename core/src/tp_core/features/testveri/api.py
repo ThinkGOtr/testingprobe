@@ -13,7 +13,7 @@
 | DELETE | `/test-data-sources/{id}?beklenen_surum=` | `testdata.manage` (kayıtlar kalır) |
 | POST | `/test-data-sources/preview` | `testdata.manage` — 202 `{job_id}` (ilk 20 satır; worker) |
 | POST | `/test-data-sources/refresh` | `testdata.manage` — 202 `{job_id}`; gövde `{kaynak_id?}` |
-| GET | `/test-data-sources/jobs/{job_id}` | `testdata.manage` — `{id, tur, durum, sonuc, hata}` |
+| GET | `/test-data-sources/jobs/{job_id}` | `case.read` — `{id, tur, durum, sonuc, hata}` |
 
 Gizli kayıtta değer hiçbir yanıtta dönmez; `sir_tanimli` döner. PUT'ta `aciklama: ""` (ya da
 açıkça `null`) açıklamayı temizler. DELETE 409 gövdesi: `{detail, kod: "cakisma", kullanan:
@@ -173,5 +173,5 @@ def kaynak_yenile(body: YenileGirdisi, session: DbSession, user: Duzenleyen) -> 
 
 
 @router.get("/test-data-sources/jobs/{job_id}")
-def kaynak_isi(job_id: uuid.UUID, session: DbSession, _user: Duzenleyen) -> dict[str, Any]:
+def kaynak_isi(job_id: uuid.UUID, session: DbSession, _user: Okur) -> dict[str, Any]:
     return kaynak.is_durumu(session, job_id)

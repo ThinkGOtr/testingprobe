@@ -57,6 +57,7 @@ PLAN_KAPSAMLI: frozenset[str] = frozenset(
         "review",
         "case_goruntuleme",
         "case_uretim",
+        "test_verisi_kaynagi",
         "tasarim_modeli",
         "case_set_review",
         "case_set_audit",

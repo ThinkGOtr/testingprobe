@@ -1,0 +1,1503 @@
+{
+  "bundle": "case-generation",
+  "version": 4,
+  "date": "2026-11-19",
+  "model": "claude-sonnet-5-5",
+  "provider": "anthropic",
+  "mode": "live",
+  "passed": 3,
+  "total": 3,
+  "runs": 3,
+  "cases": [
+    {
+      "id": "katalog-genel-kargo#k1",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "open_questions": [
+          {
+            "id": "Q1",
+            "question": "AC4: Kurumsal müşterinin gönderisi desi tarifesine göre hesaplanıp özet ekranında ücret tutarı da gösterilir mi, yoksa yalnızca \"Cari hesaba yazılacak\" mı yazar? Ayrıca kurumsal müşterinin D2 üst sınırını aşan gönderisi AC3'teki gibi reddedilir mi?",
+            "owner": "PO"
+          },
+          {
+            "id": "Q2",
+            "question": "Desi değeri için geçerli aralık ve hassasiyet nedir (0 veya negatif değer, ondalıklı desi, boş değer girilirse sonuç ne olur)?",
+            "owner": "PO"
+          }
+        ],
+        "assumptions": [],
+        "coverage_items": [
+          {
+            "id": "EP-V1",
+            "ac_ref": "AC1",
+            "definition": "Desi D1 aralığında (üst sınır 5 dahil): ücret 95,00 TL",
+            "valid": true
+          },
+          {
+            "id": "EP-V2",
+            "ac_ref": "AC2",
+            "definition": "Desi 5'ten büyük ve 20'ye kadar (dahil): ücret 180,00 TL",
+            "valid": true
+          },
+          {
+            "id": "EP-I1",
+            "ac_ref": "AC3",
+            "definition": "Desi 20'yi aşıyor: gönderi kabul edilmez, \"Gönderi desi sınırını aşıyor\" uyarısı",
+            "valid": false
+          },
+          {
+            "id": "EP-V3",
+            "ac_ref": "AC4",
+            "definition": "Kurumsal tipteki müşteri (KM-2001): gişede ücret tahsil edilmez, özet ekranında \"Cari hesaba yazılacak\"",
+            "valid": true
+          },
+          {
+            "id": "BV-1",
+            "ac_ref": "AC1",
+            "definition": "Desi 5 (D1 üst sınırı, dahil): D1 ücreti 95,00 TL",
+            "valid": true
+          },
+          {
+            "id": "BV-2",
+            "ac_ref": "AC2",
+            "definition": "Desi 6 (D1 sınırının hemen üstü; tam sayı adım varsayımı yok, adım Q2'ye bağlı): D2 ücreti 180,00 TL",
+            "valid": true
+          },
+          {
+            "id": "BV-3",
+            "ac_ref": "AC2",
+            "definition": "Desi 20 (D2 üst sınırı, dahil): D2 ücreti 180,00 TL",
+            "valid": true
+          },
+          {
+            "id": "BV-4",
+            "ac_ref": "AC3",
+            "definition": "Desi 21 (D2 sınırının hemen üstü): reddedilir, uyarı gösterilir",
+            "valid": false
+          },
+          {
+            "id": "EG-1",
+            "ac_ref": "AC4",
+            "definition": "Kurumsal müşteri için desi tarifesi tutarının tahsil edilmemesi; ücret tahsilatı yapılmaması ve özet metni (tutar gösterimi Q1)",
+            "valid": false
+          }
+        ],
+        "negative_coverage": [
+          {
+            "item": "EP-I1",
+            "decision": "covered_by",
+            "rationale": "BV-4 case'i desi 21 ile aynı reddi sınar."
+          },
+          {
+            "item": "BV-4",
+            "decision": "tested",
+            "rationale": "D2 sınırını aşan değerin kabul edilmemesi P1 sınırı; case var."
+          },
+          {
+            "item": "EG-1",
+            "decision": "out_of_scope",
+            "rationale": "Kurumsal müşteride tutar gösterimi ve sınır aşımı sonucu kaynakta yok (Q1); ayrı case yazılmadı, EP-V3 case'i tahsil edilmemesini sınar."
+          }
+        ],
+        "not_covered": [
+          {
+            "item": "AC4",
+            "reason": "Kurumsal müşteride tutar gösterimi ve D2 sınırını aşan gönderi sonucu kaynakta belirtilmemiş.",
+            "question_ref": "Q1"
+          },
+          {
+            "item": "AC3",
+            "reason": "Geçersiz desi girdileri (0, negatif, ondalık, boş) için sonuç kaynakta yok.",
+            "question_ref": "Q2"
+          }
+        ],
+        "observations": [],
+        "automation_open_points": [
+          "Gişe ekranındaki desi alanı, müşteri seçimi ve özet ekranı kontrollerinin etiketleri ve seçicileri girdide verilmemiş.",
+          "Gişe kullanıcısı gise.t1 parolası gizli veri olarak katalogdan alınır."
+        ],
+        "config_matrix": {
+          "parameters": [],
+          "constraints": []
+        },
+        "testability_gaps": [],
+        "cases": [
+          {
+            "title": "Desi 5 (D1 üst sınırı) girildiğinde ücret 95,00 TL gösterilir",
+            "type": "boundary",
+            "technique": [
+              "BVA",
+              "EP"
+            ],
+            "covers": [
+              "BV-1",
+              "EP-V1"
+            ],
+            "priority": "P2",
+            "priority_rationale": "Geçerli sınır değerin yanlış reddi/ücreti yalnızca tam sınırdaki gönderileri etkiler, düzeltme yolu var.",
+            "acceptance_criteria_refs": [
+              "AC1"
+            ],
+            "platform": null,
+            "test_level": "SYSTEM",
+            "verification_point": "UI",
+            "requires_real_device": false,
+            "standard_refs": [],
+            "readiness": "ready",
+            "assumption_refs": [],
+            "open_question_refs": [],
+            "preconditions": [
+              "Gişe görevlisi gise.t1 ile Çankaya Şubesi'nde oturum açmıştır",
+              "Müşteri BM-1001 (bireysel) ile gönderi kabulü başlatılmıştır"
+            ],
+            "test_data": [
+              {
+                "name": "desi",
+                "value": "5",
+                "class": "BV-1",
+                "synthetic": true,
+                "is_attack_payload": false
+              },
+              {
+                "name": "musteri",
+                "value": "BM-1001",
+                "class": "EP-V1",
+                "synthetic": true,
+                "is_attack_payload": false
+              }
+            ],
+            "steps": [
+              {
+                "id": "S1",
+                "action": "Müşteri olarak BM-1001 seçilir",
+                "data": "BM-1001",
+                "expected": "Müşteri bireysel tipte seçilir"
+              },
+              {
+                "id": "S2",
+                "action": "Desi değeri girilir",
+                "data": "5",
+                "expected": "Ekran ücreti 95,00 TL gösterir"
+              }
+            ],
+            "expected_result": "Desi 5 için ücret D1 tarifesi ücreti olan 95,00 TL gösterilir.",
+            "teardown": [
+              "Kabul işlemi tamamlanmadan iptal edilir"
+            ],
+            "tags": [
+              "AI-generated",
+              "smoke"
+            ]
+          },
+          {
+            "title": "Desi 6 girildiğinde ücret D2 tarifesi 180,00 TL gösterilir",
+            "type": "boundary",
+            "technique": [
+              "BVA"
+            ],
+            "covers": [
+              "BV-2"
+            ],
+            "priority": "P1",
+            "priority_rationale": "D1 sınırının üstünde D1 ücretinin uygulanması işletmenin eksik tahsilat yapıp para kaybetmesine yol açar.",
+            "acceptance_criteria_refs": [
+              "AC2"
+            ],
+            "platform": null,
+            "test_level": "SYSTEM",
+            "verification_point": "UI",
+            "requires_real_device": false,
+            "standard_refs": [],
+            "readiness": "ready",
+            "assumption_refs": [],
+            "open_question_refs": [],
+            "preconditions": [
+              "Gişe görevlisi gise.t1 ile oturum açmıştır",
+              "Müşteri BM-1002 (bireysel) ile gönderi kabulü başlatılmıştır"
+            ],
+            "test_data": [
+              {
+                "name": "desi",
+                "value": "6",
+                "class": "BV-2",
+                "synthetic": true,
+                "is_attack_payload": false
+              }
+            ],
+            "steps": [
+              {
+                "id": "S1",
+                "action": "Müşteri olarak BM-1002 seçilir",
+                "data": "BM-1002",
+                "expected": "Müşteri seçilir"
+              },
+              {
+                "id": "S2",
+                "action": "Desi değeri girilir",
+                "data": "6",
+                "expected": "Ekran ücreti 180,00 TL gösterir"
+              }
+            ],
+            "expected_result": "Desi 6 için ücret D2 tarifesi ücreti olan 180,00 TL gösterilir.",
+            "teardown": [
+              "Kabul işlemi tamamlanmadan iptal edilir"
+            ],
+            "tags": [
+              "AI-generated"
+            ]
+          },
+          {
+            "title": "Desi 20 (D2 üst sınırı) girildiğinde ücret 180,00 TL gösterilir",
+            "type": "boundary",
+            "technique": [
+              "BVA",
+              "EP"
+            ],
+            "covers": [
+              "BV-3",
+              "EP-V2"
+            ],
+            "priority": "P2",
+            "priority_rationale": "Geçerli sınırın yanlış reddi yalnızca tam sınırdaki gönderileri engeller, çözüm yolu var.",
+            "acceptance_criteria_refs": [
+              "AC2"
+            ],
+            "platform": null,
+            "test_level": "SYSTEM",
+            "verification_point": "UI",
+            "requires_real_device": false,
+            "standard_refs": [],
+            "readiness": "ready",
+            "assumption_refs": [],
+            "open_question_refs": [],
+            "preconditions": [
+              "Gişe görevlisi gise.t1 ile oturum açmıştır",
+              "Müşteri BM-1001 (bireysel) ile gönderi kabulü başlatılmıştır"
+            ],
+            "test_data": [
+              {
+                "name": "desi",
+                "value": "20",
+                "class": "BV-3",
+                "synthetic": true,
+                "is_attack_payload": false
+              }
+            ],
+            "steps": [
+              {
+                "id": "S1",
+                "action": "Müşteri olarak BM-1001 seçilir",
+                "data": "BM-1001",
+                "expected": "Müşteri seçilir"
+              },
+              {
+                "id": "S2",
+                "action": "Desi değeri girilir",
+                "data": "20",
+                "expected": "Ekran ücreti 180,00 TL gösterir, gönderi kabul edilebilir durumdadır"
+              }
+            ],
+            "expected_result": "Desi 20 için ücret 180,00 TL gösterilir ve gönderi reddedilmez.",
+            "teardown": [
+              "Kabul işlemi tamamlanmadan iptal edilir"
+            ],
+            "tags": [
+              "AI-generated"
+            ]
+          },
+          {
+            "title": "Desi 21 girildiğinde gönderi kabul edilmez ve uyarı gösterilir",
+            "type": "negative",
+            "technique": [
+              "BVA",
+              "EP"
+            ],
+            "covers": [
+              "BV-4",
+              "EP-I1"
+            ],
+            "priority": "P1",
+            "priority_rationale": "Limiti aşan gönderinin kabul edilmesi tarifede karşılığı olmayan gönderiyi ücretlendirerek para kaybettirir.",
+            "acceptance_criteria_refs": [
+              "AC3"
+            ],
+            "platform": null,
+            "test_level": "SYSTEM",
+            "verification_point": "UI",
+            "requires_real_device": false,
+            "standard_refs": [],
+            "readiness": "ready",
+            "assumption_refs": [],
+            "open_question_refs": [],
+            "preconditions": [
+              "Gişe görevlisi gise.t1 ile oturum açmıştır",
+              "Müşteri BM-1001 (bireysel) ile gönderi kabulü başlatılmıştır"
+            ],
+            "test_data": [
+              {
+                "name": "desi",
+                "value": "21",
+                "class": "BV-4",
+                "synthetic": true,
+                "is_attack_payload": false
+              }
+            ],
+            "steps": [
+              {
+                "id": "S1",
+                "action": "Müşteri olarak BM-1001 seçilir",
+                "data": "BM-1001",
+                "expected": "Müşteri seçilir"
+              },
+              {
+                "id": "S2",
+                "action": "Desi değeri girilir",
+                "data": "21",
+                "expected": "\"Gönderi desi sınırını aşıyor\" uyarısı gösterilir"
+              },
+              {
+                "id": "S3",
+                "action": "Gönderi kabulünün tamamlanması denenir",
+                "data": null,
+                "expected": "Gönderi kabul edilmez"
+              }
+            ],
+            "expected_result": "Desi 21 için \"Gönderi desi sınırını aşıyor\" uyarısı gösterilir ve gönderi kabul edilmez.",
+            "teardown": [],
+            "tags": [
+              "AI-generated"
+            ]
+          },
+          {
+            "title": "Kurumsal müşteride ücret tahsil edilmez, özette Cari hesaba yazılacak yazar",
+            "type": "positive",
+            "technique": [
+              "EP"
+            ],
+            "covers": [
+              "EP-V3"
+            ],
+            "priority": "P1",
+            "priority_rationale": "Kurumsal müşteriden gişede yanlışlıkla tahsilat yapılması para akışını bozar, cari hesap kaydı kaçar.",
+            "acceptance_criteria_refs": [
+              "AC4"
+            ],
+            "platform": null,
+            "test_level": "SYSTEM",
+            "verification_point": "UI",
+            "requires_real_device": false,
+            "standard_refs": [],
+            "readiness": "ready",
+            "assumption_refs": [],
+            "open_question_refs": [],
+            "preconditions": [
+              "Gişe görevlisi gise.t1 ile oturum açmıştır",
+              "Müşteri KM-2001 (kurumsal) ile gönderi kabulü başlatılmıştır"
+            ],
+            "test_data": [
+              {
+                "name": "musteri",
+                "value": "KM-2001",
+                "class": "EP-V3",
+                "synthetic": true,
+                "is_attack_payload": false
+              },
+              {
+                "name": "desi",
+                "value": "5",
+                "class": "EP-V3",
+                "synthetic": true,
+                "is_attack_payload": false
+              }
+            ],
+            "steps": [
+              {
+                "id": "S1",
+                "action": "Müşteri olarak KM-2001 seçilir",
+                "data": "KM-2001",
+                "expected": "Müşteri kurumsal tipte seçilir"
+              },
+              {
+                "id": "S2",
+                "action": "Desi değeri girilir",
+                "data": "5",
+                "expected": "Gişede ücret tahsilatı istenmez"
+              },
+              {
+                "id": "S3",
+                "action": "Özet ekranı açılır",
+                "data": null,
+                "expected": "Özet ekranında \"Cari hesaba yazılacak\" yazar"
+              }
+            ],
+            "expected_result": "Gişede ücret tahsil edilmez; özet ekranında \"Cari hesaba yazılacak\" yazar.",
+            "teardown": [
+              "Kabul işlemi tamamlanmadan iptal edilir"
+            ],
+            "tags": [
+              "AI-generated"
+            ]
+          }
+        ]
+      },
+      "mode": "live",
+      "error": null,
+      "cost_usd": 0.081811,
+      "sure_ms": 26004
+    },
+    {
+      "id": "katalog-genel-kargo#k2",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "open_questions": [
+          {
+            "id": "Q1",
+            "question": "AC4: Kurumsal müşterinin gönderisinde ücret gişede tahsil edilmiyor; özet ekranında D1/D2 tarife ücreti de gösterilir mi, yoksa yalnızca \"Cari hesaba yazılacak\" mı yazar? Ayrıca kurumsal müşteri için desi sınırı aşımı (AC3) uygulanır mı?",
+            "owner": "PO"
+          },
+          {
+            "id": "Q2",
+            "question": "Desi değeri için geçerli aralık ve hassasiyet (ondalık desi, 0 veya negatif değer, boş giriş) kaynakta belirtilmemiş; bu girişlerde sistem nasıl davranır?",
+            "owner": "PO"
+          }
+        ],
+        "assumptions": [],
+        "coverage_items": [
+          {
+            "id": "EP-V1",
+            "ac_ref": "AC1",
+            "definition": "Bireysel müşteri, desi D1 aralığında (en fazla 5): ücret D1 tarifesi 95,00 TL",
+            "valid": true
+          },
+          {
+            "id": "EP-V2",
+            "ac_ref": "AC2",
+            "definition": "Bireysel müşteri, desi 5'ten büyük ve en fazla 20: ücret D2 tarifesi 180,00 TL",
+            "valid": true
+          },
+          {
+            "id": "EP-I1",
+            "ac_ref": "AC3",
+            "definition": "Desi 20'yi aşıyor: gönderi kabul edilmez, uyarı gösterilir",
+            "valid": false
+          },
+          {
+            "id": "EP-V3",
+            "ac_ref": "AC4",
+            "definition": "Kurumsal tipteki müşteri (KM-2001): ücret tahsil edilmez, özet ekranında \"Cari hesaba yazılacak\" yazar",
+            "valid": true
+          },
+          {
+            "id": "BV-1",
+            "ac_ref": "AC1",
+            "definition": "Desi 5 (D1 üst sınırı, dahil): D1 ücreti 95,00 TL",
+            "valid": true
+          },
+          {
+            "id": "BV-2",
+            "ac_ref": "AC2",
+            "definition": "Desi 6 (D1 sınırının hemen üstü; adım 1 desi varsayımsız kaynak yok, tam sayı desi ile en yakın değer): D2 ücreti 180,00 TL. Ondalık desi için Q2",
+            "valid": true
+          },
+          {
+            "id": "BV-3",
+            "ac_ref": "AC2",
+            "definition": "Desi 20 (D2 üst sınırı, dahil): D2 ücreti 180,00 TL",
+            "valid": true
+          },
+          {
+            "id": "BV-4",
+            "ac_ref": "AC3",
+            "definition": "Desi 21 (D2 sınırının hemen üstü; tam sayı desi, ondalık için Q2): kabul edilmez, uyarı",
+            "valid": false
+          }
+        ],
+        "negative_coverage": [
+          {
+            "item": "EP-I1",
+            "decision": "covered_by",
+            "rationale": "Sınır değer 21 ile çalıştırılan BV-4 case'i aynı reddi doğrular."
+          },
+          {
+            "item": "BV-4",
+            "decision": "tested",
+            "rationale": "Gönderi limiti aşımı AC3'te açıkça tanımlı; sınır case'i yazıldı."
+          }
+        ],
+        "not_covered": [
+          {
+            "item": "AC4",
+            "reason": "Kurumsal müşteride özette tarife ücretinin gösterilip gösterilmediği ve desi aşımı davranışı kaynakta yok; yalnızca \"Cari hesaba yazılacak\" yazması ve tahsil edilmemesi case'lenir.",
+            "question_ref": "Q1"
+          },
+          {
+            "item": "AC3",
+            "reason": "Geçersiz/ondalık/boş desi girişlerinin sonucu kaynakta yok.",
+            "question_ref": "Q2"
+          }
+        ],
+        "observations": [],
+        "automation_open_points": [
+          "Desi giriş alanı, kaydet/devam butonu ve özet ekranının etiketleri ile kararlı seçiciler girdide verilmedi.",
+          "Gişe oturum açma ekranı ve gönderi kabul ekranına gidiş yolu belirtilmedi.",
+          "Uyarının gösterildiği kontrol (mesaj alanı) belirtilmedi."
+        ],
+        "config_matrix": {
+          "parameters": [],
+          "constraints": []
+        },
+        "testability_gaps": [],
+        "cases": [
+          {
+            "title": "Desi 5 (D1 üst sınırı) bireysel müşteri gönderisinde ücret 95,00 TL gösterilir",
+            "type": "boundary",
+            "technique": [
+              "BVA",
+              "EP"
+            ],
+            "covers": [
+              "BV-1",
+              "EP-V1"
+            ],
+            "priority": "P1",
+            "priority_rationale": "Sınır dahil kuralı yanlışsa D2 ücreti yerine yanlış tarife uygulanıp ücret hatalı hesaplanır; para etkisi ve ana akış kritik.",
+            "acceptance_criteria_refs": [
+              "AC1"
+            ],
+            "platform": null,
+            "test_level": "SYSTEM",
+            "verification_point": "UI",
+            "requires_real_device": false,
+            "standard_refs": [],
+            "readiness": "ready",
+            "assumption_refs": [],
+            "open_question_refs": [],
+            "preconditions": [
+              "Gişe görevlisi gise.t1 ile oturum açmıştır (Çankaya Şubesi)",
+              "Müşteri BM-1001 bireysel tiptedir"
+            ],
+            "test_data": [
+              {
+                "name": "musteri",
+                "value": "BM-1001 (bireysel)",
+                "class": "EP-V1",
+                "synthetic": true,
+                "is_attack_payload": false
+              },
+              {
+                "name": "desi",
+                "value": "5",
+                "class": "BV-1",
+                "synthetic": true,
+                "is_attack_payload": false
+              }
+            ],
+            "steps": [
+              {
+                "id": "S1",
+                "action": "Gönderi kabul işlemini başlatıp müşteri olarak BM-1001'i seç",
+                "data": "BM-1001",
+                "expected": "Müşteri seçilir"
+              },
+              {
+                "id": "S2",
+                "action": "Desi değerini gir",
+                "data": "5",
+                "expected": "Desi kabul edilir"
+              },
+              {
+                "id": "S3",
+                "action": "Ücret bilgisini kontrol et",
+                "data": null,
+                "expected": "Ücret 95,00 TL olarak gösterilir"
+              }
+            ],
+            "expected_result": "Desi 5 için D1 tarifesi ücreti 95,00 TL gösterilir.",
+            "teardown": [
+              "Kabul işlemi tamamlanmadıysa iptal et"
+            ],
+            "tags": [
+              "AI-generated",
+              "smoke"
+            ]
+          },
+          {
+            "title": "Desi 6 (D1 sınırı üstü) bireysel müşteri gönderisinde ücret 180,00 TL gösterilir",
+            "type": "boundary",
+            "technique": [
+              "BVA",
+              "EP"
+            ],
+            "covers": [
+              "BV-2",
+              "EP-V2"
+            ],
+            "priority": "P1",
+            "priority_rationale": "Sınırın üstündeki değer D1 ücretiyle (95,00 TL) hesaplanırsa işletme eksik ücret tahsil eder; para kaybı.",
+            "acceptance_criteria_refs": [
+              "AC2"
+            ],
+            "platform": null,
+            "test_level": "SYSTEM",
+            "verification_point": "UI",
+            "requires_real_device": false,
+            "standard_refs": [],
+            "readiness": "ready",
+            "assumption_refs": [],
+            "open_question_refs": [],
+            "preconditions": [
+              "Gişe görevlisi gise.t1 ile oturum açmıştır",
+              "Müşteri BM-1001 bireysel tiptedir"
+            ],
+            "test_data": [
+              {
+                "name": "musteri",
+                "value": "BM-1001 (bireysel)",
+                "class": "EP-V2",
+                "synthetic": true,
+                "is_attack_payload": false
+              },
+              {
+                "name": "desi",
+                "value": "6",
+                "class": "BV-2",
+                "synthetic": true,
+                "is_attack_payload": false
+              }
+            ],
+            "steps": [
+              {
+                "id": "S1",
+                "action": "Gönderi kabul işlemini başlatıp müşteri olarak BM-1001'i seç",
+                "data": "BM-1001",
+                "expected": "Müşteri seçilir"
+              },
+              {
+                "id": "S2",
+                "action": "Desi değerini gir",
+                "data": "6",
+                "expected": "Desi kabul edilir"
+              },
+              {
+                "id": "S3",
+                "action": "Ücret bilgisini kontrol et",
+                "data": null,
+                "expected": "Ücret 180,00 TL olarak gösterilir"
+              }
+            ],
+            "expected_result": "Desi 6 için D2 tarifesi ücreti 180,00 TL gösterilir.",
+            "teardown": [
+              "Kabul işlemi tamamlanmadıysa iptal et"
+            ],
+            "tags": [
+              "AI-generated"
+            ]
+          },
+          {
+            "title": "Desi 20 (D2 üst sınırı) bireysel müşteri gönderisinde ücret 180,00 TL gösterilir",
+            "type": "boundary",
+            "technique": [
+              "BVA"
+            ],
+            "covers": [
+              "BV-3"
+            ],
+            "priority": "P2",
+            "priority_rationale": "Geçerli sınır değerin yanlışlıkla reddedilmesi yalnızca tam sınırdaki kullanıcıları etkiler; para kaybı doğurmaz.",
+            "acceptance_criteria_refs": [
+              "AC2"
+            ],
+            "platform": null,
+            "test_level": "SYSTEM",
+            "verification_point": "UI",
+            "requires_real_device": false,
+            "standard_refs": [],
+            "readiness": "ready",
+            "assumption_refs": [],
+            "open_question_refs": [],
+            "preconditions": [
+              "Gişe görevlisi gise.t1 ile oturum açmıştır",
+              "Müşteri BM-1002 bireysel tiptedir"
+            ],
+            "test_data": [
+              {
+                "name": "musteri",
+                "value": "BM-1002 (bireysel)",
+                "class": "BV-3",
+                "synthetic": true,
+                "is_attack_payload": false
+              },
+              {
+                "name": "desi",
+                "value": "20",
+                "class": "BV-3",
+                "synthetic": true,
+                "is_attack_payload": false
+              }
+            ],
+            "steps": [
+              {
+                "id": "S1",
+                "action": "Gönderi kabul işlemini başlatıp müşteri olarak BM-1002'yi seç",
+                "data": "BM-1002",
+                "expected": "Müşteri seçilir"
+              },
+              {
+                "id": "S2",
+                "action": "Desi değerini gir",
+                "data": "20",
+                "expected": "Desi kabul edilir"
+              },
+              {
+                "id": "S3",
+                "action": "Ücret bilgisini kontrol et",
+                "data": null,
+                "expected": "Ücret 180,00 TL olarak gösterilir"
+              }
+            ],
+            "expected_result": "Desi 20 kabul edilir ve D2 ücreti 180,00 TL gösterilir.",
+            "teardown": [
+              "Kabul işlemi tamamlanmadıysa iptal et"
+            ],
+            "tags": [
+              "AI-generated"
+            ]
+          },
+          {
+            "title": "Desi 21 (D2 sınırı üstü) gönderi kabul edilmez, uyarı gösterilir",
+            "type": "negative",
+            "technique": [
+              "BVA",
+              "EP"
+            ],
+            "covers": [
+              "BV-4",
+              "EP-I1"
+            ],
+            "priority": "P1",
+            "priority_rationale": "Limit aşan gönderinin kabul edilmesi, tarifenin kapsamadığı gönderiyi ücret karşılığı olmadan işleme sokar; para kaybı ve ana akış kuralı.",
+            "acceptance_criteria_refs": [
+              "AC3"
+            ],
+            "platform": null,
+            "test_level": "SYSTEM",
+            "verification_point": "UI",
+            "requires_real_device": false,
+            "standard_refs": [],
+            "readiness": "ready",
+            "assumption_refs": [],
+            "open_question_refs": [],
+            "preconditions": [
+              "Gişe görevlisi gise.t1 ile oturum açmıştır",
+              "Müşteri BM-1001 bireysel tiptedir"
+            ],
+            "test_data": [
+              {
+                "name": "musteri",
+                "value": "BM-1001 (bireysel)",
+                "class": "EP-I1",
+                "synthetic": true,
+                "is_attack_payload": false
+              },
+              {
+                "name": "desi",
+                "value": "21",
+                "class": "BV-4",
+                "synthetic": true,
+                "is_attack_payload": false
+              }
+            ],
+            "steps": [
+              {
+                "id": "S1",
+                "action": "Gönderi kabul işlemini başlatıp müşteri olarak BM-1001'i seç",
+                "data": "BM-1001",
+                "expected": "Müşteri seçilir"
+              },
+              {
+                "id": "S2",
+                "action": "Desi değerini gir ve gönderiyi kabul etmeyi dene",
+                "data": "21",
+                "expected": "\"Gönderi desi sınırını aşıyor\" uyarısı gösterilir"
+              },
+              {
+                "id": "S3",
+                "action": "Gönderinin kabul edilip edilmediğini kontrol et",
+                "data": null,
+                "expected": "Gönderi kabul edilmez"
+              }
+            ],
+            "expected_result": "Desi 21 için \"Gönderi desi sınırını aşıyor\" uyarısı gösterilir ve gönderi kabul edilmez.",
+            "teardown": [],
+            "tags": [
+              "AI-generated"
+            ]
+          },
+          {
+            "title": "Kurumsal müşteri gönderisinde ücret tahsil edilmez, özette \"Cari hesaba yazılacak\" yazar",
+            "type": "positive",
+            "technique": [
+              "EP"
+            ],
+            "covers": [
+              "EP-V3"
+            ],
+            "priority": "P1",
+            "priority_rationale": "Kurumsal müşteriden gişede yanlışlıkla tahsilat yapılması veya cari yazımının atlanması para akışını bozar.",
+            "acceptance_criteria_refs": [
+              "AC4"
+            ],
+            "platform": null,
+            "test_level": "SYSTEM",
+            "verification_point": "UI",
+            "requires_real_device": false,
+            "standard_refs": [],
+            "readiness": "ready",
+            "assumption_refs": [],
+            "open_question_refs": [],
+            "preconditions": [
+              "Gişe görevlisi gise.t1 ile oturum açmıştır",
+              "Müşteri KM-2001 kurumsal tiptedir"
+            ],
+            "test_data": [
+              {
+                "name": "musteri",
+                "value": "KM-2001 (kurumsal)",
+                "class": "EP-V3",
+                "synthetic": true,
+                "is_attack_payload": false
+              },
+              {
+                "name": "desi",
+                "value": "5",
+                "class": "EP-V3",
+                "synthetic": true,
+                "is_attack_payload": false
+              }
+            ],
+            "steps": [
+              {
+                "id": "S1",
+                "action": "Gönderi kabul işlemini başlatıp müşteri olarak KM-2001'i seç",
+                "data": "KM-2001",
+                "expected": "Müşteri seçilir"
+              },
+              {
+                "id": "S2",
+                "action": "Desi değerini gir",
+                "data": "5",
+                "expected": "Desi kabul edilir"
+              },
+              {
+                "id": "S3",
+                "action": "Özet ekranını aç",
+                "data": null,
+                "expected": "Özet ekranında \"Cari hesaba yazılacak\" yazar ve gişede ücret tahsil edilmez"
+              }
+            ],
+            "expected_result": "Gişede ücret tahsil edilmez; özet ekranında \"Cari hesaba yazılacak\" yazar.",
+            "teardown": [
+              "Kabul işlemi tamamlanmadıysa iptal et"
+            ],
+            "tags": [
+              "AI-generated"
+            ]
+          }
+        ]
+      },
+      "mode": "live",
+      "error": null,
+      "cost_usd": 0.053251,
+      "sure_ms": 27399
+    },
+    {
+      "id": "katalog-genel-kargo#k3",
+      "ok": true,
+      "failures": [],
+      "output": {
+        "open_questions": [
+          {
+            "id": "Q1",
+            "question": "AC4: Kurumsal müşterinin gönderisinde desi D2 üst sınırını (20) aşarsa kabul reddi (AC3) mi uygulanır, yoksa kurumsal müşteri için sınır dışı gönderi kabul edilir mi?",
+            "owner": "PO"
+          },
+          {
+            "id": "Q2",
+            "question": "AC4: Kurumsal müşteri için özet ekranında D1/D2 tarife ücreti de gösterilir mi, yoksa yalnızca \"Cari hesaba yazılacak\" mı yazar?",
+            "owner": "PO"
+          }
+        ],
+        "assumptions": [],
+        "coverage_items": [
+          {
+            "id": "EP-V1",
+            "ac_ref": "AC1",
+            "definition": "Desi 1-5 aralığı (D1 bölümü): ücret 95,00 TL",
+            "valid": true
+          },
+          {
+            "id": "EP-V2",
+            "ac_ref": "AC2",
+            "definition": "Desi 5'ten büyük ve 20'ye kadar (D2 bölümü): ücret 180,00 TL",
+            "valid": true
+          },
+          {
+            "id": "EP-I1",
+            "ac_ref": "AC3",
+            "definition": "Desi 20'den büyük: gönderi kabul edilmez, uyarı gösterilir",
+            "valid": false
+          },
+          {
+            "id": "BV-1",
+            "ac_ref": "AC1",
+            "definition": "Desi 5 (D1 üst sınırı, dahil): ücret 95,00 TL",
+            "valid": true
+          },
+          {
+            "id": "BV-2",
+            "ac_ref": "AC2",
+            "definition": "Desi 5'in hemen üstü (5,01; desi adımı kaynakta yok, ondalık girişe bağlı): D2 ücreti 180,00 TL",
+            "valid": true
+          },
+          {
+            "id": "BV-3",
+            "ac_ref": "AC2",
+            "definition": "Desi 20 (D2 üst sınırı, dahil): ücret 180,00 TL",
+            "valid": true
+          },
+          {
+            "id": "BV-4",
+            "ac_ref": "AC3",
+            "definition": "Desi 20'nin hemen üstü (21; en yakın tam değer): reddedilir",
+            "valid": false
+          },
+          {
+            "id": "EP-V3",
+            "ac_ref": "AC4",
+            "definition": "Kurumsal müşteri, sınır içi desi: ücret tahsil edilmez, özet \"Cari hesaba yazılacak\"; sınır aşımı sonucu Q1, özet ücret gösterimi Q2",
+            "valid": true
+          },
+          {
+            "id": "UC-MF",
+            "ac_ref": "AC4",
+            "definition": "Ana akış: gişe görevlisi kurumsal müşterinin sınır içi gönderisini kabul eder, özet ekranında \"Cari hesaba yazılacak\" görür",
+            "valid": true
+          }
+        ],
+        "negative_coverage": [
+          {
+            "item": "EP-I1",
+            "decision": "covered_by",
+            "rationale": "BV-4 case'i desi 20'den büyük bölümü de çalıştırır."
+          },
+          {
+            "item": "BV-4",
+            "decision": "tested",
+            "rationale": "Sınırı aşan gönderinin kabulü engellenmeli; case yazıldı."
+          }
+        ],
+        "not_covered": [
+          {
+            "item": "AC4",
+            "reason": "Kurumsal müşteride desi sınırı aşımı sonucu kaynakta yok.",
+            "question_ref": "Q1"
+          },
+          {
+            "item": "AC4",
+            "reason": "Kurumsal özet ekranında tarife ücretinin gösterilip gösterilmediği kaynakta yok; case bunu doğrulamaz.",
+            "question_ref": "Q2"
+          }
+        ],
+        "observations": [],
+        "automation_open_points": [
+          "Gişe ekranındaki desi giriş alanı, hesaplama/kabul butonu ve özet ekranı etiketleri girdide yok; kararlı seçici ve araç belirtilmemiş.",
+          "Müşteri seçiminin ekranda nasıl yapıldığı (müşteri no ile arama vb.) girdide yok.",
+          "Desi alanının ondalık değer kabul edip etmediği bilinmiyor (BV-2 için)."
+        ],
+        "config_matrix": {
+          "parameters": [],
+          "constraints": []
+        },
+        "testability_gaps": [],
+        "cases": [
+          {
+            "title": "Desi 5 (D1 üst sınırı) bireysel müşteride ücret 95,00 TL gösterilir",
+            "type": "boundary",
+            "technique": [
+              "BVA",
+              "EP"
+            ],
+            "covers": [
+              "BV-1",
+              "EP-V1"
+            ],
+            "priority": "P2",
+            "priority_rationale": "Sınırdaki geçerli değerin yanlış ücretlenmesi yalnızca bu desideki gönderileri etkiler ve düzeltilebilir; orta olasılık.",
+            "acceptance_criteria_refs": [
+              "AC1"
+            ],
+            "platform": null,
+            "test_level": "SYSTEM",
+            "verification_point": "UI",
+            "requires_real_device": false,
+            "standard_refs": [],
+            "readiness": "ready",
+            "assumption_refs": [],
+            "open_question_refs": [],
+            "preconditions": [
+              "Gişe görevlisi gise.t1 ile oturum açmış, Çankaya Şubesi gişesinde",
+              "Müşteri BM-1001 (bireysel)"
+            ],
+            "test_data": [
+              {
+                "name": "desi",
+                "value": "5",
+                "class": "BV-1",
+                "synthetic": true,
+                "is_attack_payload": false
+              },
+              {
+                "name": "musteri",
+                "value": "BM-1001",
+                "class": null,
+                "synthetic": true,
+                "is_attack_payload": false
+              }
+            ],
+            "steps": [
+              {
+                "id": "S1",
+                "action": "Gönderi kabulünde müşteri olarak BM-1001 seçilir",
+                "data": "BM-1001",
+                "expected": "Müşteri bireysel olarak seçilir"
+              },
+              {
+                "id": "S2",
+                "action": "Desi değeri girilir",
+                "data": "5",
+                "expected": "Ücret 95,00 TL gösterilir"
+              }
+            ],
+            "expected_result": "Desi 5 için ücret D1 tarifesi olan 95,00 TL gösterilir.",
+            "teardown": [],
+            "tags": [
+              "AI-generated"
+            ]
+          },
+          {
+            "title": "Desi 5'in üstünde (5,01) ücret D2 tarifesi 180,00 TL gösterilir",
+            "type": "boundary",
+            "technique": [
+              "BVA",
+              "EP"
+            ],
+            "covers": [
+              "BV-2",
+              "EP-V2"
+            ],
+            "priority": "P1",
+            "priority_rationale": "D1 sınırını aşan gönderinin D1 ücretiyle alınması kasada eksik tahsilatla para kaybettirir.",
+            "acceptance_criteria_refs": [
+              "AC2"
+            ],
+            "platform": null,
+            "test_level": "SYSTEM",
+            "verification_point": "UI",
+            "requires_real_device": false,
+            "standard_refs": [],
+            "readiness": "ready",
+            "assumption_refs": [],
+            "open_question_refs": [],
+            "preconditions": [
+              "Gişe görevlisi gise.t1 ile oturum açmış",
+              "Müşteri BM-1001 (bireysel)",
+              "Desi alanı ondalık değer kabul eder (aksi halde bkz. automation_open_points)"
+            ],
+            "test_data": [
+              {
+                "name": "desi",
+                "value": "5,01",
+                "class": "BV-2",
+                "synthetic": true,
+                "is_attack_payload": false
+              }
+            ],
+            "steps": [
+              {
+                "id": "S1",
+                "action": "Gönderi kabulünde müşteri olarak BM-1001 seçilir",
+                "data": "BM-1001",
+                "expected": "Müşteri seçilir"
+              },
+              {
+                "id": "S2",
+                "action": "Desi değeri girilir",
+                "data": "5,01",
+                "expected": "Ücret 180,00 TL gösterilir"
+              }
+            ],
+            "expected_result": "Desi 5'ten büyük olduğu için ücret D2 tarifesi olan 180,00 TL gösterilir.",
+            "teardown": [],
+            "tags": [
+              "AI-generated"
+            ]
+          },
+          {
+            "title": "Desi 20 (D2 üst sınırı) bireysel müşteride ücret 180,00 TL gösterilir",
+            "type": "boundary",
+            "technique": [
+              "BVA"
+            ],
+            "covers": [
+              "BV-3"
+            ],
+            "priority": "P2",
+            "priority_rationale": "Geçerli sınır değerin yanlışlıkla reddedilmesi yalnızca tam sınırdaki kullanıcıları bloke eder.",
+            "acceptance_criteria_refs": [
+              "AC2"
+            ],
+            "platform": null,
+            "test_level": "SYSTEM",
+            "verification_point": "UI",
+            "requires_real_device": false,
+            "standard_refs": [],
+            "readiness": "ready",
+            "assumption_refs": [],
+            "open_question_refs": [],
+            "preconditions": [
+              "Gişe görevlisi gise.t1 ile oturum açmış",
+              "Müşteri BM-1002 (bireysel)"
+            ],
+            "test_data": [
+              {
+                "name": "desi",
+                "value": "20",
+                "class": "BV-3",
+                "synthetic": true,
+                "is_attack_payload": false
+              }
+            ],
+            "steps": [
+              {
+                "id": "S1",
+                "action": "Gönderi kabulünde müşteri olarak BM-1002 seçilir",
+                "data": "BM-1002",
+                "expected": "Müşteri seçilir"
+              },
+              {
+                "id": "S2",
+                "action": "Desi değeri girilir",
+                "data": "20",
+                "expected": "Ücret 180,00 TL gösterilir; gönderi reddedilmez"
+              }
+            ],
+            "expected_result": "Desi 20 kabul edilir ve ücret 180,00 TL gösterilir.",
+            "teardown": [],
+            "tags": [
+              "AI-generated"
+            ]
+          },
+          {
+            "title": "Desi 21 (D2 sınırı aşımı) reddedilir, \"Gönderi desi sınırını aşıyor\" uyarısı çıkar",
+            "type": "negative",
+            "technique": [
+              "BVA",
+              "EP"
+            ],
+            "covers": [
+              "BV-4",
+              "EP-I1"
+            ],
+            "priority": "P1",
+            "priority_rationale": "Sınırı aşan gönderinin kabul edilmesi tarifede karşılığı olmayan gönderiyi ücretsiz/eksik ücretle geçirir; para kaybı.",
+            "acceptance_criteria_refs": [
+              "AC3"
+            ],
+            "platform": null,
+            "test_level": "SYSTEM",
+            "verification_point": "UI",
+            "requires_real_device": false,
+            "standard_refs": [],
+            "readiness": "ready",
+            "assumption_refs": [],
+            "open_question_refs": [],
+            "preconditions": [
+              "Gişe görevlisi gise.t1 ile oturum açmış",
+              "Müşteri BM-1001 (bireysel)"
+            ],
+            "test_data": [
+              {
+                "name": "desi",
+                "value": "21",
+                "class": "BV-4",
+                "synthetic": true,
+                "is_attack_payload": false
+              }
+            ],
+            "steps": [
+              {
+                "id": "S1",
+                "action": "Gönderi kabulünde müşteri olarak BM-1001 seçilir",
+                "data": "BM-1001",
+                "expected": "Müşteri seçilir"
+              },
+              {
+                "id": "S2",
+                "action": "Desi değeri girilir",
+                "data": "21",
+                "expected": "\"Gönderi desi sınırını aşıyor\" uyarısı gösterilir"
+              },
+              {
+                "id": "S3",
+                "action": "Gönderiyi kabul etmeye çalışılır",
+                "data": null,
+                "expected": "Gönderi kabul edilmez"
+              }
+            ],
+            "expected_result": "Gönderi kabul edilmez ve \"Gönderi desi sınırını aşıyor\" uyarısı gösterilir.",
+            "teardown": [],
+            "tags": [
+              "AI-generated"
+            ]
+          },
+          {
+            "title": "Kurumsal müşteride ücret tahsil edilmez, özet \"Cari hesaba yazılacak\" der",
+            "type": "positive",
+            "technique": [
+              "EP",
+              "UC"
+            ],
+            "covers": [
+              "EP-V3",
+              "UC-MF"
+            ],
+            "priority": "P1",
+            "priority_rationale": "Kurumsal gönderide gişede ücret tahsil edilirse müşteri çift ücretlendirilir veya kasa hatası oluşur; ücretlendirme ana akışı.",
+            "acceptance_criteria_refs": [
+              "AC4"
+            ],
+            "platform": null,
+            "test_level": "SYSTEM",
+            "verification_point": "UI",
+            "requires_real_device": false,
+            "standard_refs": [],
+            "readiness": "ready",
+            "assumption_refs": [],
+            "open_question_refs": [],
+            "preconditions": [
+              "Gişe görevlisi gise.t1 ile oturum açmış",
+              "Müşteri KM-2001 (kurumsal)"
+            ],
+            "test_data": [
+              {
+                "name": "desi",
+                "value": "10",
+                "class": "EP-V3",
+                "synthetic": true,
+                "is_attack_payload": false
+              },
+              {
+                "name": "musteri",
+                "value": "KM-2001",
+                "class": "EP-V3",
+                "synthetic": true,
+                "is_attack_payload": false
+              }
+            ],
+            "steps": [
+              {
+                "id": "S1",
+                "action": "Gönderi kabulünde müşteri olarak KM-2001 seçilir",
+                "data": "KM-2001",
+                "expected": "Müşteri kurumsal olarak seçilir"
+              },
+              {
+                "id": "S2",
+                "action": "Desi değeri girilir",
+                "data": "10",
+                "expected": "Gönderi sınır içinde kabul edilir"
+              },
+              {
+                "id": "S3",
+                "action": "Özet ekranı açılır",
+                "data": null,
+                "expected": "Özet ekranında \"Cari hesaba yazılacak\" yazar"
+              },
+              {
+                "id": "S4",
+                "action": "Gişede tahsilat durumu kontrol edilir",
+                "data": null,
+                "expected": "Gişede ücret tahsil edilmez"
+              }
+            ],
+            "expected_result": "Kurumsal müşteri için gişede ücret tahsil edilmez; özet ekranında \"Cari hesaba yazılacak\" yazar.",
+            "teardown": [],
+            "tags": [
+              "AI-generated",
+              "smoke"
+            ]
+          }
+        ]
+      },
+      "mode": "live",
+      "error": null,
+      "cost_usd": 0.106062,
+      "sure_ms": 45478
+    }
+  ],
+  "tamamlandi": true,
+  "set_vaka_sayisi": 1,
+  "kosu_sayisi": 3,
+  "maliyet_usd": 0.241124,
+  "butce_usd": 8.0,
+  "calisma_alani_basligi": true,
+  "guardrails_version": 1,
+  "kayit_adaylari": null,
+  "cagri_kaydi": "case-generation-v4-2026-11-19.calls.jsonl",
+  "cagri_sayisi": 4,
+  "cagri_defteri": "ai_call.jsonl",
+  "amac": "case_generation",
+  "via_flow": false,
+  "output_check": true,
+  "icerik_hash": "sha256:24187888a5f2eb5eae40ce0c1b24af4ab83a33d2399de87e45134e1a55bb58f0",
+  "olcumler": {
+    "amac": "case_generation",
+    "output_check": true,
+    "vaka": 3,
+    "ilk_deneme_gecis": 2,
+    "ilk_deneme_gecis_orani": 0.6667,
+    "kural_yeniden_isteme_orani": 0.3333,
+    "sema_yeniden_isteme_orani": 0.0,
+    "duzelme_orani": 1.0,
+    "kalan_kural_ihlali": 0,
+    "ek_maliyet_usd": 0.058061,
+    "ek_maliyet_orani": 0.2408,
+    "ek_sure_ms": {
+      "p50": 20572.0,
+      "p95": 20572.0
+    },
+    "kural_turu_histogrami": {
+      "covers": 1
+    },
+    "ilk_deneme_maskeli_puanlama": 0,
+    "esikler": [
+      {
+        "ad": "ham_gecis_alt_siniri",
+        "deger": 0.6667,
+        "esik": 0.6,
+        "gecti": true,
+        "bagliyici": true
+      }
+    ]
+  },
+  "dagilim": {
+    "toplam": {
+      "kosu": 3,
+      "readiness": {
+        "ready": 15
+      },
+      "technique": {
+        "BVA": 12,
+        "EP": 12,
+        "UC": 1
+      },
+      "priority": {
+        "P1": 10,
+        "P2": 5
+      },
+      "case": 15,
+      "coverage_items": 26,
+      "covered_items": 25,
+      "not_covered": 6,
+      "open_questions": 6,
+      "yetim_soru": 0,
+      "tekrar": 0,
+      "tekrar_orani": 0.0,
+      "p1_orani": 0.6667,
+      "sepet_okunamadi": 0
+    },
+    "kosular": {
+      "katalog-genel-kargo#k1": {
+        "case": 5,
+        "tekrar": 0,
+        "tekrar_ciftleri": [],
+        "readiness": {
+          "ready": 5
+        },
+        "technique": {
+          "BVA": 4,
+          "EP": 4
+        },
+        "priority": {
+          "P1": 3,
+          "P2": 2
+        },
+        "p1_orani": 0.6,
+        "coverage_items": 9,
+        "covered_items": 8,
+        "invalid_items": 3,
+        "not_covered": 2,
+        "open_questions": 2,
+        "yetim_soru": 0,
+        "assumptions": 0,
+        "observations": 0
+      },
+      "katalog-genel-kargo#k2": {
+        "case": 5,
+        "tekrar": 0,
+        "tekrar_ciftleri": [],
+        "readiness": {
+          "ready": 5
+        },
+        "technique": {
+          "BVA": 4,
+          "EP": 4
+        },
+        "priority": {
+          "P1": 4,
+          "P2": 1
+        },
+        "p1_orani": 0.8,
+        "coverage_items": 8,
+        "covered_items": 8,
+        "invalid_items": 2,
+        "not_covered": 2,
+        "open_questions": 2,
+        "yetim_soru": 0,
+        "assumptions": 0,
+        "observations": 0
+      },
+      "katalog-genel-kargo#k3": {
+        "case": 5,
+        "tekrar": 0,
+        "tekrar_ciftleri": [],
+        "readiness": {
+          "ready": 5
+        },
+        "technique": {
+          "BVA": 4,
+          "EP": 4,
+          "UC": 1
+        },
+        "priority": {
+          "P1": 3,
+          "P2": 2
+        },
+        "p1_orani": 0.6,
+        "coverage_items": 9,
+        "covered_items": 9,
+        "invalid_items": 2,
+        "not_covered": 2,
+        "open_questions": 2,
+        "yetim_soru": 0,
+        "assumptions": 0,
+        "observations": 0
+      }
+    },
+    "uydurma": [],
+    "readiness_ihlali": [],
+    "sepet_okunamadi": []
+  }
+}

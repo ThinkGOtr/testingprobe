@@ -576,7 +576,7 @@ export function TestVerisiSayfasi() {
                             <span className="satir-ogeler testveri-kaynak-rozetleri">
                               {k.kaynak_id && (
                                 <Cip ton="bilgi" title="Veritabanı kaynağından gelir (yenilemede güncellenir)">
-                                  kaynak: {kaynakGrubu.get(k.kaynak_id) ?? "silinmiş"}
+                                  kaynak: {kaynakGrubu.get(k.kaynak_id) ?? "veritabanı"}
                                 </Cip>
                               )}
                               {k.kaynakta_yok && (
