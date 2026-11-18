@@ -300,8 +300,6 @@ def _enqueue(
         raise CiError("pr tetiği için pr_number gerekli")
     sha = validate_sha(sha)
     test_ortami = _kosu_ortami_sec(ortam)
-    if test_ortami is not None and trigger == "break_verify":
-        ortamlar.canli_engelle("kırarak doğrulama", test_ortami)
     platform, depo = _kosu_hedefi(session, script_id, platform, depo)
     ref = ref or depolar.ana_dal(platform, depo)
     if not REF_RE.fullmatch(ref) or ".." in ref:

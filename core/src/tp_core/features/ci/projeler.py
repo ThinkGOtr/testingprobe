@@ -64,7 +64,6 @@ def toolchain_projesi(body: dict[str, Any], *, kosu: bool = True) -> dict[str, A
     toolchain koşuyu/sembol tablosunu o deponun aynasında yapar.
     """
     from tp_core.features.codegen import depo as depolar
-
     from tp_core.proje.ortam import mevcut_ortam
 
     platform = depolar.uygulama_platformu(body.get("platform"))

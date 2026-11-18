@@ -55,6 +55,8 @@ class SahteHome:
     projeler: dict[str, dict[str, Any]] = field(default_factory=dict)
     proje_durum: dict[str, int] = field(default_factory=dict)
     erisim_projeleri: list[str] = field(default_factory=list)
+    # Test ortamları: (pid, eid) → ortam düzeyi yanıt (`?environment=`); yoksa 404.
+    ortamlar: dict[tuple[str, str], dict[str, Any]] = field(default_factory=dict)
 
     def __call__(
         self, yontem: str, url: str, basliklar: Mapping[str, str], govde: bytes | None, _t: float
@@ -78,6 +80,14 @@ class SahteHome:
             raise y.Ulasilamaz("bağlantı reddedildi")
         if u.path == "/v1/config/effective":
             pid = parse_qs(u.query).get("project", [""])[0]
+            eid = parse_qs(u.query).get("environment", [""])[0]
+            if eid:
+                oy = self.ortamlar.get((pid, eid))
+                if oy is None:
+                    return y.HttpYanit(404, {}, b"{}")
+                if basliklar.get("If-None-Match") == str(oy.get("etag")):
+                    return y.HttpYanit(304, {}, b"")
+                return y.HttpYanit(200, {"etag": str(oy.get("etag"))}, json.dumps(oy).encode())
             yanit = self.projeler.get(pid, self.yanit)
             durum = self.proje_durum.get(pid, self.durum)
             etag = str(yanit.get("etag"))

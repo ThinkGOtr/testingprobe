@@ -29,9 +29,7 @@ def control_tower(
 ) -> dict[str, Any]:
     # Son koşulardaki artefakt/imzalı rapor bağlantıları yalnız `run.artifacts` sahibine döner.
     # `ortam` (0048): koşu tabanlı göstergeler o test ortamının koşularından (`-` = ortamsız).
-    return service.control_tower(
-        session, artefakt=izinli(user.rol, "run.artifacts"), ortam=ortam
-    )
+    return service.control_tower(session, artefakt=izinli(user.rol, "run.artifacts"), ortam=ortam)
 
 
 @router.get("/control-tower/case-quality")
