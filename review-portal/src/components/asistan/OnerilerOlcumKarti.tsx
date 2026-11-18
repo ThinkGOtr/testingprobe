@@ -6,6 +6,7 @@
 // Maliyet K5'e uyar (ölçülmemiş sayı söylenmez): diğer AI işleri AI katkısı kartıyla aynı kuralla
 // REPLAY'de "REPLAY — ölçülmedi"; asistanın hiç model çağrısı yoksa "$0,00" yerine "çağrı yok";
 // maliyet verilmediyse (null) "ölçülmedi".
+import { TabloSarici } from "../tasarim";
 import { KaynakIpucu } from "../KaynakIpucu";
 import type { ReactNode } from "react";
 import type { KontrolKulesi } from "../../api/types";
@@ -111,8 +112,8 @@ export function OnerilerOlcumKarti({ kule }: { kule: AsistanliKule }) {
           Kural başına sayılar, öneri kartlarında “Neden? Sor”, “Faydalı”, “Gizle” ya da “Yaptım” kullanıldıkça burada görünür.
         </BosDurum>
       ) : (
-        <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Öneri kuralı ölçümleri">
-          <table className="tablo tablo-sik" data-testid="oneri-olcum-tablosu">
+        /* Matris (kural × etkileşim): dar ekranda kayar, ilk sütun (kural) yapışkan. */
+        <TabloSarici etiket="Öneri kuralı ölçümleri" darEkran="kaydir" yogunluk="sik" testId="oneri-olcum-tablosu">
             <thead>
               <tr>
                 <th scope="col">Kural</th>
@@ -147,8 +148,7 @@ export function OnerilerOlcumKarti({ kule }: { kule: AsistanliKule }) {
                 </tr>
               ))}
             </tbody>
-          </table>
-        </div>
+        </TabloSarici>
       )}
       <p className="kucuk soluk">
         Son {o.saklama_gun} gün · kural başına toplam; kişi bazlı rapor ve gösterim sayısı tutulmaz.

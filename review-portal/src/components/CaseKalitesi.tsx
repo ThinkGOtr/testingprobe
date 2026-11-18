@@ -5,6 +5,7 @@
 // Grafik dili (§4.13, Grafikler.tsx ile aynı): tek seri, --chart-bar ince yatay çubuk, değer her satırda
 // metin olarak yazılı (renk ya da çubuk boyu tek başına anlam taşımaz); kararlar renkle değil etiketle
 // ayrılır. Hedefler ekip hedefidir, eşik/kapı gibi davranılmaz (kırmızı/yeşil yok).
+import { TabloSarici } from "./tasarim";
 import { useId, type ReactNode } from "react";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
@@ -399,8 +400,8 @@ function SurumTablosu({ k }: { k: Veri }) {
       <h3 className="ck-panel-baslik">
         Prompt sürümüne göre <KaynakIpucu kaynak={k.kaynaklar.surumler} />
       </h3>
-      <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Prompt sürümüne göre case kalitesi tablosu">
-        <table className="tablo tablo-sik" data-testid="case-kalitesi-surumler">
+      {/* Matris (sürüm × ölçüt): dar ekranda kendi içinde kayar, ilk sütun (sürüm) yapışkan. */}
+      <TabloSarici etiket="Prompt sürümüne göre case kalitesi tablosu" darEkran="kaydir" yogunluk="sik" testId="case-kalitesi-surumler">
           <caption className="gorunmez">Prompt sürümüne göre case kalitesi</caption>
           <thead>
             <tr>
@@ -452,8 +453,7 @@ function SurumTablosu({ k }: { k: Veri }) {
               </tr>
             ))}
           </tbody>
-        </table>
-      </div>
+      </TabloSarici>
       <p className="kucuk soluk">Kabul / Düzeltme / Engelle: Agent Probe denetiminin kod kararı. “—”: ölçülmedi.</p>
     </div>
   );

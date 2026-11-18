@@ -368,8 +368,12 @@ describe("ekranlar", () => {
     await oturumAc("sunucu");
     uygulama("/kontrol-kulesi");
     expect(await screen.findByRole("meter", { name: "Case kabul oranı" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Flaky testler" })).toBeInTheDocument();
+    // IA-19: bölüm sekmeleri (Özet · Hatalar · Kalite · Hız ve maliyet); varsayılan Özet.
+    expect(screen.getByRole("tab", { name: /^Özet/ })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("heading", { name: /Karne/ })).toBeInTheDocument();
+    await sekmeAc("Hatalar");
+    expect(screen.getByRole("heading", { name: "Flaky testler" })).toBeInTheDocument();
+    await sekmeAc("Kalite");
     expect(screen.getByRole("heading", { name: "Erişilebilirlik" })).toBeInTheDocument();
     // POST /demo/break-locator ve /demo/reset core'da yok (Faz 4/5): sahnede 404 vermesin diye çizilmez.
     expect(screen.queryByRole("button", { name: "Demoyu sıfırla" })).toBeNull();

@@ -118,7 +118,8 @@ describe("kart kalıbı (.tablo-yigin) tabloları", () => {
       const sariciler = kaynak.match(/<TabloSarici\b[^>]*>/g) ?? [];
       expect(tablolar.length + sariciler.length).toBeGreaterThan(0);
       for (const t of tablolar) expect(t).toContain("tablo-yigin");
-      for (const t of sariciler) expect(t).not.toContain('darEkran="kaydir"');
+      // Matris tablolar (satır = ölçü/platform, sütun = sayı) bilinçli olarak kayar + ilk sütun yapışkan (UX ET-08/IA-19).
+      for (const t of sariciler) if (!/etiket="Platform dağılımı tablosu"/.test(t)) expect(t).not.toContain('darEkran="kaydir"');
       const hucreler = kaynak.match(/<td\b[^>]*>/g) ?? [];
       expect(hucreler.length).toBeGreaterThan(0);
       for (const h of hucreler) expect(h).toContain("data-etiket=");

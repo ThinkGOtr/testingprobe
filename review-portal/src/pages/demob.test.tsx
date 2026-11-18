@@ -1,7 +1,7 @@
 // Demo-B ekranları: Kod üretimi (eşleme, yerel kontrol / defect adayı, PR check'leri, merge kapısı,
 // kırarak doğrulama), Koşular (süzgeç, raporlar), Kontrol Kulesi (KPI kaynağı, "ölçülmedi"), rol bazlı
 // açılış ve core şekilli yanıtların uyarlanması (canlı derleme, örnek veri yok).
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -11,7 +11,7 @@ import { ayar, mockVerisi } from "../api/mock/handlers";
 import { OturumProvider, varsayilanSayfa } from "../auth";
 import { BildirimProvider } from "../components/Bildirim";
 import { mergeEngelleri, mergeOnayNotu, mergeUyarilari } from "../lib/kapi";
-import { oturumAc } from "../test/yardimci";
+import { oturumAc, sekmeAc } from "../test/yardimci";
 import { kosulariSuz } from "./Kosular";
 import { BirlesmisPrCi } from "./ScriptDetay";
 
@@ -371,19 +371,28 @@ describe("Kontrol Kulesi", () => {
 });
 
 describe("Kontrol Kulesi: günlük geçme oranı grafiği", () => {
-  it("grafik kabı adlı group; her odak durağı (sütun) role=img ve 'gün: oran' adı taşır", async () => {
+  it("grafik kabı adlı group; her sütun role=img ve 'gün: oran' adı taşır; tek Tab durağı (ET-08)", async () => {
     await oturumAc("sunucu");
     uygulama("/kontrol-kulesi");
-    const grafik = await screen.findByRole("group", { name: /Ayrıntılar aşağıdaki tabloda\./ });
+    const grafik = await screen.findByRole("group", { name: /ayrıntılar aşağıdaki tabloda\./i });
     // Kap img olsaydı alt öğeler sunumsal olur, odak durakları adsız kalırdı (4.1.2).
     expect(grafik).not.toHaveAttribute("role", "img");
-    const duraklar = [...grafik.querySelectorAll<SVGElement>('[tabindex="0"]')];
-    expect(duraklar.length).toBeGreaterThan(0);
-    for (const d of duraklar) {
+    const sutunlar = [...grafik.querySelectorAll<SVGElement>("[tabindex]")];
+    expect(sutunlar.length).toBeGreaterThan(0);
+    for (const d of sutunlar) {
       expect(d).toHaveAttribute("role", "img");
       expect(d).toHaveAccessibleName(/^\S.*: %?\d/);
     }
-    expect(within(grafik).getAllByRole("img")).toHaveLength(duraklar.length);
+    expect(within(grafik).getAllByRole("img")).toHaveLength(sutunlar.length);
+    // Gezinen tabindex: yalnız bir sütun Tab durağı; ← ile önceki sütuna geçer.
+    const duraklar = sutunlar.filter((d) => d.getAttribute("tabindex") === "0");
+    expect(duraklar).toHaveLength(1);
+    if (sutunlar.length > 1) {
+      duraklar[0].focus();
+      fireEvent.keyDown(duraklar[0], { key: "Home" });
+      expect(sutunlar[0]).toHaveAttribute("tabindex", "0");
+      expect(document.activeElement).toBe(sutunlar[0]);
+    }
   });
 });
 
@@ -405,9 +414,12 @@ describe("Kontrol Kulesi: KPI şeridi (F4)", () => {
     expect(serit).not.toHaveTextContent(/Maliyet|Bugün/);
     expect(screen.getAllByRole("heading", { name: "Geçme oranı" })).toHaveLength(1);
     expect(within(serit).queryByRole("heading")).toBeNull();
+    // IA-19: AI katkısı "Hız ve maliyet" bölüm sekmesinde.
+    await sekmeAc("Hız ve maliyet");
     const ai = screen.getByRole("region", { name: "AI katkısı" });
     expect(within(ai).getByText("Maliyet (toplam)")).toBeInTheDocument();
     expect(within(ai).queryByTestId("hazirlik-kazanci")).toBeNull();
+    await sekmeAc("Özet");
     expect(within(screen.getByRole("region", { name: "Geçme oranı" })).queryByTestId("gecme-orani")).toBeNull();
     // IA-19: ölçülmemiş kazanç şeritte kutu değil, tek "Ölçülmeyenler" satırında.
     expect(screen.queryByTestId("hazirlik-kazanci")).toBeNull();

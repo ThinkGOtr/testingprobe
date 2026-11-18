@@ -6852,3 +6852,57 @@ code {
   flex-wrap: wrap;
   margin-top: var(--space-3);
 }
+
+/* ===== Şerit pano (UX: Kontrol Kulesi IA-19/ET-08, Kod üretimi IA-13/DZ-06, Yol haritası, Otomasyon,
+   Claude Code) — yalnız ölçek değişkenleri ve mevcut renk belirteçleri ===== */
+
+/* Kule KPI şeridi: en çok 6 karar göstergesi (ölçülmeyenler kutu değil, tek satır). Öğe sayısı veriye göre
+   1–6 değişir; sütunlar eşit ve sarar (≥11rem), öğeler subgrid (etiket · değer · çubuk/alt · hedef aynı
+   çizgide). Çift sınıf: genel :has(5/6/7 öğe) kurallarının özgüllüğünü geçer. */
+.metrik-izgara.kule-kpi.kule-kpi {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+}
+.metrik-izgara.kule-kpi.kule-kpi > * {
+  display: grid;
+  grid-column: auto;
+  grid-row: span 4;
+  grid-template-rows: subgrid;
+  row-gap: var(--space-0);
+  align-content: start;
+}
+@media (max-width: 640px) {
+  .metrik-izgara.kule-kpi.kule-kpi {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+/* Ölçülmeyenler satırı şeridin hemen altında, sekmelerden önce (tek bilgi satırı). */
+.kule-kpi + .olculmeyenler {
+  margin-top: calc(-1 * var(--space-2));
+}
+/* Kule bölüm sekmeleri: şerit sayfa akışında, paneller kart aralığıyla. */
+.kule-bolumler {
+  margin-top: var(--space-4);
+}
+
+/* Grafik okunurluğu: sütun üstünde değer, sağda ızgara etiketi; tablo alternatifi açılır. */
+.grafik-deger {
+  fill: var(--text-2);
+  font-size: var(--fs-sik);
+  font-weight: var(--fw-vurgu);
+  font-family: var(--font);
+  font-variant-numeric: tabular-nums;
+}
+.grafik-eksen-y {
+  font-size: var(--fs-hap);
+}
+.grafik-tablo {
+  margin-top: var(--space-2);
+}
+.grafik-tablo > summary {
+  cursor: pointer;
+  color: var(--text-2);
+}
+.grafik-tablo > .tablo {
+  margin-top: var(--space-2);
+}
