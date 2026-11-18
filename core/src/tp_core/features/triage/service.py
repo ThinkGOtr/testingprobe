@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -2247,6 +2248,28 @@ def _onarim_gorunumu(session: Session, f: Failure) -> dict[str, Any] | None:
     return dict(sonuc) if isinstance(sonuc, Mapping) else None
 
 
+def _kullanici_terimi(metin: str | None) -> str | None:
+    """Kayıtlı gerekçedeki eski rol adı ("testçi", TP UX YD-09) kullanıcı diline çevrilir.
+
+    Eski REPLAY-MISS yedeği "hatayı testçi sınıflandırmalıdır" diyordu; sınıflandırma izni Test
+    Uzmanı ve Otomasyon Mühendisinde (`failure.classify`). Yalnız gösterim; kayıt değişmez.
+    """
+    if not metin:
+        return metin
+    metin = metin.replace("hatayı testçi sınıflandırmalıdır", _SINIFLANDIRAN_METNI)
+    return re.sub(
+        r"\btestçi(nin|ye|yi|de)?\b",
+        lambda m: "Test Uzmanı" + _EK.get(m.group(1) or "", ""),
+        metin,
+    )
+
+
+_EK = {"nin": "nın", "ye": "na", "yi": "nı", "de": "nda"}
+
+
+_SINIFLANDIRAN_METNI = "hatayı Test Uzmanı ya da Otomasyon Mühendisi sınıflandırmalıdır"
+
+
 def serialize(
     session: Session,
     f: Failure,
@@ -2360,7 +2383,7 @@ def serialize(
         "eslesen_sinyaller": f.eslesen_sinyaller or [],
         "karar_kaynagi": f.karar_kaynagi,
         "kural": ek.kural if ek else None,
-        "gerekce": f.gerekce,
+        "gerekce": _kullanici_terimi(f.gerekce),
         "llm_yorumu": (ek.llm or {}).get("rationale") if ek and ek.llm else None,
         "oneri": oneri,
         "oneri_turu": f.oneri_turu,

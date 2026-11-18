@@ -5,7 +5,7 @@
   "output": {
     "class": "unknown",
     "sub_type": null,
-    "rationale": "Bu hata için kayıtlı model çıktısı yok (REPLAY-MISS); canlı model gerekir. AI sınıflandırması yapılmadı; hatayı testçi sınıflandırmalıdır.",
+    "rationale": "Bu hata için kayıtlı model çıktısı yok (REPLAY-MISS); canlı model gerekir. AI sınıflandırması yapılmadı; hatayı Test Uzmanı ya da Otomasyon Mühendisi sınıflandırmalıdır.",
     "signals": [
       "REPLAY-MISS: bu girdi için kayıtlı triage çıktısı yok"
     ]

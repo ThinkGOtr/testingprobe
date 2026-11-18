@@ -5,6 +5,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
 import type { HataAnalizi, HataSinifi } from "../api/types";
+import { SegmentSecici, SuzgecCubugu } from "../components/tasarim";
 import { BosDurum, Cip, HataKutusu, Kart, SayfaBasligi, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useVeri } from "../hooks";
 import { HATA_SINIFI } from "../lib/etiketler";
@@ -45,20 +46,15 @@ export function Hatalar() {
         baslik="Hatalar"
         aciklama="Koşulardaki kırmızı testlerin triage sonuçları. Sınıflandırılmamış hatayı Test Uzmanı ya da Otomasyon Mühendisi sınıflandırır; ürün hatası bug taslağına, test bakımı onarıma gider."
       />
-      <div className="sekmeler" role="group" aria-label="Hata sınıfı">
-        {SEKMELER.map((s) => (
-          <button
-            key={s.anahtar}
-            type="button"
-            className={`sekme${sekme === s.anahtar ? " aktif" : ""}`}
-            aria-pressed={sekme === s.anahtar}
-            onClick={() => setP(s.anahtar === "unknown" ? {} : { sinif: s.anahtar }, { replace: true })}
-          >
-            {s.etiket}
-            {v.veri ? ` (${hataSuz(liste, s.anahtar).length})` : ""}
-          </button>
-        ))}
-      </div>
+      {/* Ortak süzgeç (YD-12, UX-T): SuzgecCubugu + SegmentSecici; sağda görünen kayıt sayısı. */}
+      <SuzgecCubugu etiket="Hata süzgeci" sonuc={v.veri ? `${gorunen.length} hata` : undefined}>
+        <SegmentSecici<HataSinifi | "hepsi">
+          etiket="Hata sınıfı"
+          secenekler={SEKMELER.map((s) => ({ deger: s.anahtar, ad: s.etiket, sayi: v.veri ? hataSuz(liste, s.anahtar).length : null }))}
+          deger={sekme}
+          degistir={(d) => setP(d === "unknown" ? {} : { sinif: d }, { replace: true })}
+        />
+      </SuzgecCubugu>
       <Kart>
         {v.yukleniyor && !v.veri ? (
           <Yukleniyor />

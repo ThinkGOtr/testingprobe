@@ -1,10 +1,11 @@
 // Örnek veri: İşlerim (`GET /work-queue`), kayıt yeri (`GET /locate`) ve insan sınıflandırması
 // (`POST /failures/:id/classify`). Core `features/islerim/service.py` kaynaklarının sadeleştirilmiş
-// karşılığıdır (aynı grup anahtarları ve roller); örnek veri tek projelidir.
+// karşılığıdır (aynı grup anahtarları, izinler ve roller); örnek veri tek projelidir. Grup bir izinle
+// tanımlanır; izni taşıyan her rolün "benim" işidir (YD-06: sınıflandırma Test Uzmanı + Otomasyon Müh.).
 import { ApiError } from "../http";
-import type { HataAnalizi, Kullanici } from "../types";
+import type { HataAnalizi, Kullanici, Rol } from "../types";
 import type { Izin } from "../../lib/yetki";
-import { izinVar, normalizeRol, ROL_ETIKETLERI, rolIzinleri } from "../../lib/yetki";
+import { IZINLER, izinVar, normalizeRol, ROL_ETIKETLERI, rolIzinleri } from "../../lib/yetki";
 import type { MockVeri } from "./fixtures";
 import { INSAN_SINIFLARI, type IsGrubu, type IsOgesi, type IsTuru } from "../islerim";
 
@@ -29,8 +30,43 @@ const TUR_ROTASI: Record<IsTuru, string> = {
 
 type HamGrup = Omit<IsGrubu, "sayi" | "oge_sayisi" | "rol_etiketi">;
 
-function grup(anahtar: string, tur: IsTuru, rol: string, baslik: string, sonraki_adim: string, ogeler: IsOgesi[]): HamGrup {
-  return { anahtar, tur, rol, baslik, sonraki_adim, ogeler };
+/** Core `islerim.ROL_SIRASI`: iş akışı sırası; Sistem Yöneticisi başka rol varsa listelenmez. */
+const ROL_SIRASI: Rol[] = ["analyst", "po", "tester", "engineer", "developer", "admin", "auditor", "viewer"];
+function izinRolleri(izin: Izin): Rol[] {
+  const r = IZINLER[izin] as readonly Rol[];
+  const sirali = ROL_SIRASI.filter((x) => r.includes(x));
+  const isci = sirali.filter((x) => x !== "admin");
+  return isci.length ? isci : sirali;
+}
+/** "Test Uzmanı ya da Otomasyon Mühendisi" (core `roller_etiketi`). */
+export function rollerEtiketi(roller: readonly string[]): string {
+  const ad = roller.map((r) => ROL_ETIKETLERI[r as Rol] ?? r);
+  return ad.length <= 1 ? ad.join("") : `${ad.slice(0, -1).join(", ")} ya da ${ad[ad.length - 1]}`;
+}
+
+function grup(anahtar: string, tur: IsTuru, izin: Izin, baslik: string, sonraki_adim: string, ogeler: IsOgesi[]): HamGrup {
+  const roller = izinRolleri(izin);
+  return { anahtar, tur, rol: roller[0], roller, baslik, sonraki_adim, ogeler };
+}
+
+type MockKosu = MockVeri["kosular"][number];
+/** Core `kosu_kapsami`: PR koşusu PR numarasıyla, diğerleri dal/depo ile (örnek veride ref yok → depo). */
+const kosuKapsami = (k: MockKosu) => (k.pr_no ? `pr:${k.pr_no}` : `dal:${k.depo ?? ""}`);
+/**
+ * Core `gecersiz_kalan` (CL-06): yalnız SON durumu kırmızı olan koşu bekleyen iştir. Aynı kapsamda (aynı
+ * script ya da tüm takım) daha yeni yeşil koşu eski kırmızıyı düşürür; CI ortam hatasını (`error`) aynı
+ * kaynakta herhangi bir daha yeni yeşil koşu düşürür.
+ */
+export function gecersizKalan(kirmizi: MockKosu, kosular: readonly MockKosu[]): boolean {
+  return kosular.some(
+    (y) =>
+      y.durum === "passed" &&
+      y.tetik !== "break_verify" &&
+      y.tetik !== "local_check" &&
+      y.baslangic > kirmizi.baslangic &&
+      ((kirmizi.durum === "error" && y.kaynak === kirmizi.kaynak) ||
+        (kosuKapsami(y) === kosuKapsami(kirmizi) && (y.script_id == null || y.script_id === kirmizi.script_id))),
+  );
 }
 
 function kaynaklar(v: MockVeri): HamGrup[] {
@@ -57,7 +93,8 @@ function kaynaklar(v: MockVeri): HamGrup[] {
   const hataOge = (h: HataAnalizi, neden: string): IsOgesi => ({
     id: h.id,
     tur: "failure",
-    etiket: h.test_adi,
+    // Core `hata_basligi`: koşu düzeyindeki hatada (test yok) başlık koşudan üretilir (CL-06).
+    etiket: h.test_adi && !h.test_adi.startsWith("(koşu:") ? h.test_adi : `Koşu ${h.run_id.slice(0, 8)} · test sonucu yok`,
     neden,
     rota: `/hatalar/${h.id}`,
     zaman: h.zaman,
@@ -65,43 +102,44 @@ function kaynaklar(v: MockVeri): HamGrup[] {
     sayi: 1,
   });
   return [
-    grup("on_inceleme", "requirement", "analyst", "Ön inceleme bekleyen gereksinim", "Gereksinimi açın, ön incelemeyi başlatın",
+    grup("on_inceleme", "requirement", "requirement.review", "Ön inceleme bekleyen gereksinim", "Gereksinimi açın, ön incelemeyi başlatın",
       req(["new"]).map((g) => reqOge(g, g.ac_missing ? "Kabul kriteri yok: PO'ya sorun" : "İncelemeye alınmalı (ön inceleme + tutarlılık denetimi)"))),
-    grup("bulgu_karari", "requirement", "analyst", "Bulgu kararı bekleyen", "Tutarlılık bulgularına karar verin",
+    grup("bulgu_karari", "requirement", "requirement.review", "Bulgu kararı bekleyen", "Tutarlılık bulgularına karar verin",
       req(["findings_open"]).map((g) => reqOge(g, "Tutarlılık bulguları analist kararı bekliyor"))),
-    grup("po_gonder", "requirement", "analyst", "PO onayına gönderilecek", "Doküman son hal: PO teyidi için gönderin",
+    grup("po_gonder", "requirement", "requirement.review", "PO onayına gönderilecek", "Doküman son hal: PO teyidi için gönderin",
       req(["doc_final"]).map((g) => reqOge(g, "Doküman son hal; PO onayına gönderilmeli"))),
-    grup("po_teyidi", "requirement", "po", "PO teyidi bekleyen", "Jira story'sini inceleyip onay etiketini ekleyin (serbest metinde portalda onaylayın)",
+    grup("po_teyidi", "requirement", "requirement.po_approve_free_text", "PO teyidi bekleyen", "Jira story'sini inceleyip onay etiketini ekleyin (serbest metinde portalda onaylayın)",
       req(["pending_po"]).map((g) => reqOge(g, g.kaynak === "jira" ? "Jira'da onay etiketi bekleniyor" : "Serbest metin: portalda onaylayın"))),
-    grup("case_uretimi", "requirement", "tester", "Case üretimi bekleyen", "Tasarım modelini üretin ya da kararını verin",
+    grup("case_uretimi", "requirement", "case.generate", "Case üretimi bekleyen", "Tasarım modelini üretin ya da kararını verin",
       req(["po_approved", "model_ready"]).map((g) => reqOge(g, "PO onayladı; case üretimi başlatılmalı"))),
-    grup("case_karari", "case", "tester", "Case kararı bekleyen", "Case review'da kabul / düzelterek kabul / ret kararı verin",
+    grup("case_karari", "case", "case.decide", "Case kararı bekleyen", "Case review'da kabul / düzelterek kabul / ret kararı verin",
       caseGrubu("draft", (n) => `${n} case Test Uzmanı kararı bekliyor`)),
-    grup("case_son_onay", "case", "analyst", "Son onay bekleyen case", "Case review'da onaylayın ya da gerekçeyle geri gönderin",
+    grup("case_son_onay", "case", "case.approve", "Son onay bekleyen case", "Case review'da onaylayın ya da gerekçeyle geri gönderin",
       caseGrubu("ready", (n) => `${n} case Analist son onayı bekliyor`)),
-    grup("case_yayini", "case", "tester", "Yayın bekleyen onaylı case", "Yayın önizlemesinden Jira'ya yayınlayın",
+    grup("case_yayini", "case", "case.publish", "Yayın bekleyen onaylı case", "Yayın önizlemesinden Jira'ya yayınlayın",
       caseGrubu("approved", (n) => `${n} onaylı case yayın bekliyor`)),
-    grup("kod_insana", "script", "engineer", "Kod üretiminde insana düşen", "Script'i açın; engeli giderin ya da yeniden üretin",
+    grup("kod_insana", "script", "code.generate", "Kod üretiminde insana düşen", "Script'i açın; engeli giderin ya da yeniden üretin",
       v.scriptler.filter((s) => s.durum === "blocked").map((s) => ({
         id: s.id, tur: "script" as const, etiket: `${s.requirement_key ?? "—"} · ${s.baslik}`,
         neden: s.engel?.neden ?? "Üretim insana düştü; engel incelenmeli", rota: `/kod/${s.id}`, zaman: null, jira_key: s.requirement_key, sayi: 1,
       }))),
-    grup("acik_pr", "script", "engineer", "Açık PR", "PR'ı inceleyin, kırarak doğrulayın ve birleştirin",
+    grup("acik_pr", "script", "code.merge", "Açık PR", "PR'ı inceleyin, kırarak doğrulayın ve birleştirin",
       v.scriptler.filter((s) => s.durum === "pr_open").map((s) => ({
         id: s.id, tur: "script" as const, etiket: `${s.requirement_key ?? "—"} · ${s.baslik}`,
         neden: s.pr ? `PR #${s.pr.number} açık: kırarak doğrulama ve birleştirme kararı` : "PR açık", rota: `/kod/${s.id}`, zaman: null, jira_key: s.requirement_key, sayi: 1,
       }))),
-    grup("siniflandirma", "failure", "tester", "Sınıflandırma bekleyen hata", "Hatayı açın; ürün hatası, test bakımı, veri ya da ortam olarak sınıflandırın",
-      v.hatalar.filter((h) => h.sinif === "unknown").map((h) => hataOge(h, h.mode === "replay_miss" ? "REPLAY-MISS: AI yorumu alınamadı; sınıfı siz belirleyin" : "Kural eşleşmedi, AI sınıflandıramadı; sınıfı siz belirleyin"))),
-    grup("test_bakimi", "failure", "engineer", "Test bakımı / ortam hatası", "Hatayı açın; otomatik onarımı başlatın ya da ortamı inceleyin",
+    grup("siniflandirma", "failure", "failure.classify", "Sınıflandırma bekleyen hata", "Hatayı açın; ürün hatası, test bakımı, veri ya da ortam olarak sınıflandırın",
+      // Hatalar listesinin "Sınıflandırılmamış" sekmesiyle aynı tanım (kasıtlı kırma hariç, tekilleştirme yok).
+      v.hatalar.filter((h) => h.sinif === "unknown" && !h.kirma).map((h) => hataOge(h, h.mode === "replay_miss" ? "REPLAY-MISS: AI yorumu alınamadı; sınıfı siz belirleyin" : "Kural eşleşmedi, AI sınıflandıramadı; sınıfı siz belirleyin"))),
+    grup("test_bakimi", "failure", "code.repair", "Test bakımı / ortam hatası", "Hatayı açın; otomatik onarımı başlatın ya da ortamı inceleyin",
       v.hatalar.filter((h) => ["test_maintenance", "flaky", "environment"].includes(h.sinif) && h.alt_tur !== "beklenti" && h.oneri?.tur !== "bug_draft").map((h) => hataOge(h, "İnceleyin"))),
-    grup("bug_karari", "bug_draft", "tester", "Bug taslağı kararı", "Taslağı açın: yeni kayıt, mevcut kayda bağla ya da reddet",
+    grup("bug_karari", "bug_draft", "bug.decide", "Bug taslağı kararı", "Taslağı açın: yeni kayıt, mevcut kayda bağla ya da reddet",
       v.bugTaslaklari.filter((b) => b.durum === "draft" || b.durum === "approved").map((b) => ({
         id: b.id, tur: "bug_draft" as const, etiket: b.icerik.summary, neden: b.durum === "draft" ? "Bug taslağı kararı bekleniyor (yeni / bağla / kapat)" : "Onaylı; Jira'ya yayın bekleniyor",
         rota: `/bug-taslaklari/${b.id}`, zaman: null, jira_key: null, sayi: 1,
       }))),
-    grup("kosu_hatasi", "run", "engineer", "Başarısız ya da hatalı koşu", "Koşuyu açın; kırmızı testlerin triage sonucuna ya da CI günlüğüne bakın",
-      v.kosular.filter((k) => (k.durum === "failed" || k.durum === "error") && k.tetik !== "break_verify").slice(0, 5).map((k) => ({
+    grup("kosu_hatasi", "run", "run.trigger_scheduled", "Başarısız ya da hatalı koşu", "Koşuyu açın; kırmızı testlerin triage sonucuna ya da CI günlüğüne bakın",
+      v.kosular.filter((k) => (k.durum === "failed" || k.durum === "error") && k.tetik !== "break_verify" && !gecersizKalan(k, v.kosular)).slice(0, 20).map((k) => ({
         id: k.id, tur: "run" as const, etiket: `${k.tetik} koşusu`, neden: k.durum === "error" ? "Testler koşmadı: CI ortam hatası" : "Kırmızı test var: triage sonucunu inceleyin",
         rota: `/kosular/${k.id}`, zaman: k.baslangic, jira_key: null, sayi: 1,
       }))),
@@ -113,17 +151,19 @@ export function isKuyruguHesapla(v: MockVeri, rolHam: string) {
   const izinler = new Set<string>(rolIzinleri(rol));
   const tam = (g: HamGrup, ust: number): IsGrubu => ({
     ...g,
-    rol_etiketi: ROL_ETIKETLERI[g.rol as keyof typeof ROL_ETIKETLERI] ?? g.rol,
+    rol_etiketi: rollerEtiketi(g.roller ?? [g.rol]),
     sayi: g.ogeler.reduce((t, o) => t + o.sayi, 0),
     oge_sayisi: g.ogeler.length,
     ogeler: izinVar(izinler, TUR_IZNI[g.tur]) ? g.ogeler.slice(0, ust) : [],
   });
   const dolu = kaynaklar(v).filter((g) => g.ogeler.length > 0);
-  const benim = dolu.filter((g) => g.rol === rol).map((g) => tam(g, 20));
-  const ekip = dolu.filter((g) => g.rol !== rol).map((g) => ({ ...tam(g, 5), kisiler: [] as string[] }));
+  const benimMi = (g: HamGrup) => (g.roller ?? [g.rol]).includes(rol);
+  const benim = dolu.filter(benimMi).map((g) => tam(g, 20));
+  const ekip = dolu.filter((g) => !benimMi(g)).map((g) => ({ ...tam(g, 5), kisiler: [] as string[] }));
   const menu: Record<string, number> = { "/islerim": 0, ...Object.fromEntries(Object.values(TUR_ROTASI).map((r) => [r, 0])) };
   for (const g of benim) {
-    menu[TUR_ROTASI[g.tur]] += g.sayi;
+    // Hatalar rozeti yalnız varsayılan sekme (Sınıflandırılmamış): rozet = listedeki sayı (core ROZET_GRUPLARI).
+    if (g.tur !== "failure" || g.anahtar === "siniflandirma") menu[TUR_ROTASI[g.tur]] += g.sayi;
     menu["/islerim"] += g.sayi;
   }
   return {
