@@ -369,7 +369,7 @@ export function Kod() {
         ) : (
           /* ≤ 640 px'te satırlar kart olur (`tablo-yigin`): başlık ve dosya yolu kesilmez, sayfa yatay kaymaz.
              1024 px'te Oluşturma gizlenir, Eylem sağa yapışır (DZ-06). */
-          <TabloSarici etiket="Üretilen testler tablosu" className="kod-tablosu">
+          <TabloSarici etiket="Üretilen testler tablosu" className="kod-tablosu" satirBaglanti>
               <thead>
                 <tr>
                   <th scope="col">Test</th>

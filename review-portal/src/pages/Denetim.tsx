@@ -4,13 +4,17 @@ import { api } from "../api/client";
 import { hataMesaji, ortamAdlariniGizle } from "../api/http";
 import type { DenetimOlayi } from "../api/types";
 import { BosDurum, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, SonrakiAdim, Uyari, Yukleniyor } from "../components/ui";
-import { EylemCubugu, Kimlik, TabloSarici } from "../components/tasarim";
+import { EylemCubugu, Kimlik, Sayfalama, SuzgecCubugu, TabloSarici } from "../components/tasarim";
+import { useSayfalama, useSorguSuzgeci } from "../lib/sorguDurumu";
 import { useIzin, useKisiAdi } from "../auth";
 import { useVeri } from "../hooks";
 import { kisaHash, tarih } from "../lib/format";
 
 /** Özet sütununda gösterilen en çok karakter (tamamı ipucunda ve satır ayrıntısında). */
 export const OZET_KISA_SINIR = 140;
+
+/** Bir sayfada gösterilen olay (DZ-20: 100 olay 390 px'te 55k px, ET-08: 126 Tab durağı). */
+export const DENETIM_SAYFA = 25;
 
 function degerMetni(v: unknown): string {
   if (v === null || v === undefined) return "—";
@@ -42,6 +46,17 @@ export function okunurOzet(ozet: string): { kisa: string; tam: string } {
     return { kisa: kisalt(ortamAdlariniGizle(kisa)), tam };
   }
   return { kisa: kisalt(temiz), tam: temiz };
+}
+
+/** "case.decision" dar sütunda harf ortasından değil noktadan sarar. */
+function noktadaKir(m: string) {
+  return m.split(".").map((p, i) => (
+    <span key={i}>
+      {i > 0 && "."}
+      {i > 0 && <wbr />}
+      {p}
+    </span>
+  ));
 }
 
 function kisalt(m: string): string {
@@ -93,7 +108,9 @@ export function Denetim() {
       setEkYukleniyor(false);
     }
   }
-  const [ara, setAra] = useState("");
+  // Arama ve sayfa adreste (`?ara=…&sayfa=2`): paylaşılan bağlantı aynı görünümü açar.
+  const suzgec = useSorguSuzgeci({ ara: "" });
+  const ara = suzgec.deger.ara;
   const kisiAdi = useKisiAdi();
   const olaylar = useMemo(() => {
     const q = ara.trim().toLocaleLowerCase("tr-TR");
@@ -105,6 +122,7 @@ export function Denetim() {
   const yuklenen = (v.veri?.olaylar.length ?? 0) + ekOlaylar.length;
   const sayac = ara.trim() ? `${olaylar.length}/${yuklenen}` : `${yuklenen}${sonraki ? "+" : ""}`;
   const dg = v.veri?.dogrulama;
+  const sayfalama = useSayfalama(olaylar, DENETIM_SAYFA);
 
   return (
     <>
@@ -145,70 +163,76 @@ export function Denetim() {
           ) : dogrulayabilir ? (
             <Uyari ton="bilgi">Zincir doğrulaması yapılmadı.</Uyari>
           ) : null}
-          <Kart
-            baslik={tumu ? `Olaylar (${sayac})` : `Olaylarınız (${sayac})`}
-            eylemler={
-              <div className="alan alan-satir">
-                <label htmlFor="denetim-ara" className="gorunmez">
-                  Olay ara
-                </label>
-                <input id="denetim-ara" type="search" placeholder="Aktör, eylem, nesne ara" value={ara} onChange={(e) => setAra(e.target.value)} />
-              </div>
-            }
-          >
+          <Kart baslik={tumu ? `Olaylar (${sayac})` : `Olaylarınız (${sayac})`}>
+            <SuzgecCubugu etiket="Olay süzgeci" sonuc={ara.trim() ? `${olaylar.length}/${yuklenen} olay` : `${yuklenen}${sonraki ? "+" : ""} olay`}>
+              <label htmlFor="denetim-ara">
+                Ara
+                <input id="denetim-ara" type="search" placeholder="Aktör, eylem, nesne ara" value={ara} onChange={(e) => suzgec.ayarla("ara", e.target.value)} />
+              </label>
+            </SuzgecCubugu>
             {olaylar.length === 0 ? (
               <BosDurum baslik={ara ? "Aramaya uyan olay yok." : "Olay yok."}>
                 {ara ? "Aramayı temizleyin." : <SonrakiAdim metin="Portalda yapılan her işlem (giriş, karar, yayın, koşu) burada zincirli olarak kaydedilir." />}
               </BosDurum>
             ) : (
-              <TabloSarici etiket="Denetim olayları tablosu" yogunluk="sik" uzun>
+              <div id="denetim-olaylari">
+                <TabloSarici etiket="Denetim olayları tablosu" yogunluk="sik" uzun={sayfalama.gorunen.length > 15}>
                   <thead>
                     <tr>
-                      <th scope="col" className="sayi">
-                        #
+                      <th scope="col">
+                        # <span className="soluk">· hash</span>
                       </th>
                       <th scope="col">Zaman</th>
                       <th scope="col">Aktör</th>
-                      <th scope="col">Eylem</th>
-                      <th scope="col">Nesne</th>
+                      <th scope="col">
+                        Eylem <span className="soluk">· nesne</span>
+                      </th>
                       <th scope="col">Özet</th>
-                      <th scope="col">Hash</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {olaylar.map((o) => (
+                    {sayfalama.gorunen.map((o) => (
                       <tr key={o.id} className={dg && !dg.gecerli && dg.ilk_kirik_id === o.id ? "satir-hata" : undefined}>
-                        <td className="sayi mono" data-etiket="#">{o.sira}</td>
+                        {/* Sıra ve zincir hash'i tek sütunda: 1024 px'te Hash sütunu yatay kaydırmada kalıyordu (DZ-02). */}
+                        <td className="sutun-kimlik" data-etiket="# · hash" title={`prev ${o.prev_hash}\nhash ${o.hash}`}>
+                          <span className="denetim-sira">
+                            <span className="denetim-sira-no mono">{o.sira}</span>
+                            {o.hash ? <Kimlik deger={o.hash.replace(/^sha256:/, "")} tur="sha" kisaltUzunluk={10} kirp="bas" kopyala /> : <span className="bos-hucre">—</span>}
+                          </span>
+                        </td>
                         <td className="sutun-tarih" data-etiket="Zaman">{tarih(o.zaman)}</td>
                         <td className="denetim-aktor" data-etiket="Aktör" title={kisiAdi(o.aktor) !== o.aktor ? o.aktor : undefined}>{kisiAdi(o.aktor)}</td>
-                        {/* IA-12: okunur etiket önde, olay kodu ikinci satırda (aranabilir, kopyalanabilir). */}
-                        <td className="sutun-kimlik" data-etiket="Eylem">
+                        {/* Eylem ve nesne tek sütunda (1024 px'te 6 sütun sığmıyordu); IA-12: okunur etiket önde, olay kodu
+                            ikinci satırda (aranabilir, kopyalanabilir). */}
+                        <td className="denetim-eylem" data-etiket="Eylem · nesne">
                           <span className="denetim-olay-etiketi">{olayEtiketi(o.eylem)}</span>
-                          <span className="mono kucuk soluk denetim-olay-kodu">{o.eylem}</span>
-                        </td>
-                        <td data-etiket="Nesne" title={nesneEtiketi(o.nesne) !== o.nesne ? o.nesne : undefined}>
-                          {nesneEtiketi(o.nesne)}
+                          <span className="mono kucuk soluk denetim-olay-kodu">{noktadaKir(o.eylem)}</span>
+                          {o.nesne && (
+                            <div className="soluk kucuk" title={nesneEtiketi(o.nesne) !== o.nesne ? o.nesne : undefined}>
+                              {nesneEtiketi(o.nesne)}
+                            </div>
+                          )}
                         </td>
                         <td className="denetim-ozet-hucre sutun-metin" data-etiket="Özet">
                           <OzetHucresi ozet={o.ozet} />
                         </td>
-                        <td className="sutun-kimlik" data-etiket="Hash" title={`prev ${o.prev_hash}\nhash ${o.hash}`}>
-                          {o.hash ? <Kimlik deger={o.hash.replace(/^sha256:/, "")} tur="sha" kisaltUzunluk={10} kirp="bas" kopyala /> : "—"}
-                        </td>
                       </tr>
                     ))}
                   </tbody>
-              </TabloSarici>
-            )}
-            {sonraki && (
-              <div className="eylemler" data-testid="denetim-daha-fazla">
-                <button type="button" className="dugme dugme-ikincil dugme-kucuk" onClick={() => void dahaFazla()} disabled={ekYukleniyor} aria-busy={ekYukleniyor || undefined}>
-                  {ekYukleniyor && <span className="donen donen-kucuk" aria-hidden="true" />}
-                  Daha eski olayları yükle
-                </button>
-                <span className="soluk kucuk">{yuklenen} olay yüklendi; arama yalnız yüklenen olaylarda yapılır.</span>
+                </TabloSarici>
               </div>
             )}
+            <Sayfalama {...sayfalama} birim="olay" hedefId="denetim-olaylari">
+              {sonraki && sayfalama.sayfa === sayfalama.sayfaSayisi && (
+                <span className="satir-ogeler" data-testid="denetim-daha-fazla">
+                  <button type="button" className="dugme dugme-ikincil dugme-kucuk" onClick={() => void dahaFazla()} disabled={ekYukleniyor} aria-busy={ekYukleniyor || undefined}>
+                    {ekYukleniyor && <span className="donen donen-kucuk" aria-hidden="true" />}
+                    Daha eski olayları yükle
+                  </button>
+                  <span className="soluk kucuk">{yuklenen} olay yüklendi; arama yalnız yüklenen olaylarda yapılır.</span>
+                </span>
+              )}
+            </Sayfalama>
             {ekHata && <HataKutusu hata={ekHata} yenile={() => void dahaFazla()} />}
           </Kart>
         </>

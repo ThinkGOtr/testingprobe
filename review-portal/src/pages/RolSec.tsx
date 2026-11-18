@@ -19,6 +19,18 @@ import { rolEtiketi } from "../lib/yetki";
 import { aiprobeGirisAdresi, guvenliDevam, useKimlikKipi } from "../lib/kimlikKipi";
 import { MarkaBasligi } from "./AiprobeGiris";
 
+/** IA-23: rol kartında rolün işi (iç hesap adı yerine); kişi adı listenin üstünde bir kez yazılır. */
+export const ROL_ISI: Record<string, string> = {
+  admin: "Proje, kullanıcı ve demo ayarları; tüm denetim kaydı",
+  auditor: "Denetim kaydı ve zincir doğrulaması (salt okunur)",
+  analyst: "Ön inceleme, bulgu kararı, case son onayı",
+  po: "Gereksinim teyidi ve kapsam kararları",
+  tester: "Case review, Jira'ya yayın, bug taslağı kararı",
+  engineer: "Test kodu üretimi, PR review ve merge, koşular",
+  developer: "Koşu sonuçları ve hata ayrıntıları",
+  viewer: "Kontrol Kulesi ve raporlar (salt okunur)",
+};
+
 type Durum =
   | { tur: "yukleniyor" }
   | { tur: "hazir"; veri: AiprobeHesaplari }
@@ -115,6 +127,11 @@ export function RolSec() {
                 ? "Parola girmeden diğer rol hesabınıza geçersiniz. Bundan sonraki kararlar seçtiğiniz rol adına kaydedilir."
                 : "AI Probe hesabınız birden çok Testing Probe rolüne bağlı. Bu oturumda hangi rolle çalışacağınızı seçin; kararlar seçtiğiniz rol adına kaydedilir."}
             </p>
+            {durum.veri.hesaplar[0]?.gorunen_ad && (
+              <p className="kucuk" data-testid="rol-sec-kisi">
+                <strong>{durum.veri.hesaplar[0].gorunen_ad.split(" · ")[0]}</strong>
+              </p>
+            )}
             {durum.veri.hesaplar.length === 0 ? (
               <p className="alan-hata" role="alert">
                 Bu AI Probe hesabına bağlı kullanılabilir rol hesabı yok.
@@ -134,8 +151,10 @@ export function RolSec() {
                         onClick={() => void sec(h)}
                       >
                         <span className="rol-secenek-rol">{rolEtiketi(h.rol)}</span>
-                        <span className="rol-secenek-ad">{h.gorunen_ad}</span>
-                        <span className="rol-secenek-not">{aktif ? "Şu anki rolünüz" : h.kullanici_adi}</span>
+                        {ROL_ISI[h.rol] && <span className="rol-secenek-ad">{ROL_ISI[h.rol]}</span>}
+                        <span className="rol-secenek-not">
+                          {aktif ? "Şu anki rolünüz" : <span className="gorunmez">Hesap {h.kullanici_adi}</span>}
+                        </span>
                       </button>
                     </li>
                   );

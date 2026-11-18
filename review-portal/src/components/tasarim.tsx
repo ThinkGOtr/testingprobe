@@ -256,6 +256,7 @@ export function TabloSarici({
   darEkran = "yigin",
   yogunluk = "normal",
   uzun,
+  satirBaglanti,
   className,
   tabloClassName,
   testId,
@@ -265,16 +266,108 @@ export function TabloSarici({
   darEkran?: "yigin" | "kaydir";
   yogunluk?: "normal" | "sik";
   uzun?: boolean;
+  /**
+   * Satırın tamamı tıklanır (ET-03): satırdaki `.satir-baglanti` bağlantısının tıklama alanı satırı (yığın
+   * kipinde kartı) kaplar; satır başına tek Tab durağı o bağlantıdır (ET-08). Satırdaki diğer bağlantı ve
+   * düğmeler (PR, Triage, kopyala) üstte kalır ve ayrı ayrı tıklanır.
+   */
+  satirBaglanti?: boolean;
   className?: string;
   tabloClassName?: string;
   testId?: string;
   children: ReactNode;
 }) {
   const sarici = ["tablo-sarici", uzun && "tablo-sarici-uzun", className].filter(Boolean).join(" ");
-  const tablo = ["tablo", yogunluk === "sik" && "tablo-sik", darEkran === "yigin" ? "tablo-yigin" : "tablo-matris", tabloClassName].filter(Boolean).join(" ");
+  const tablo = [
+    "tablo",
+    yogunluk === "sik" && "tablo-sik",
+    darEkran === "yigin" ? "tablo-yigin" : "tablo-matris",
+    satirBaglanti && "tablo-satir-baglantili",
+    tabloClassName,
+  ]
+    .filter(Boolean)
+    .join(" ");
   return (
     <div className={sarici} tabIndex={0} role="region" aria-label={etiket} data-testid={testId}>
       <table className={tablo}>{children}</table>
     </div>
+  );
+}
+
+// ------------------------------------------------------------------ Sayfalama
+
+/**
+ * Liste sayfalaması (DZ-20, ET-08): "41–60 / 132 olay" + Önceki / sayfa no / Sonraki. Durum adreste
+ * (`useSayfalama`, `?sayfa=`). Tek sayfalık listede çizilmez. Sayfa değişince odak tablonun başına
+ * taşınmaz; liste başı `hedefId` verilirse oraya kaydırılır (klavye kullanıcısı yeni sayfanın başından okur).
+ */
+export function Sayfalama({
+  sayfa,
+  sayfaSayisi,
+  toplam,
+  boyut,
+  git,
+  birim = "kayıt",
+  hedefId,
+  children,
+}: {
+  sayfa: number;
+  sayfaSayisi: number;
+  toplam: number;
+  boyut: number;
+  git: (n: number) => void;
+  birim?: string;
+  hedefId?: string;
+  /** Sayfalamanın yanında ek eylem (ör. "Daha eski olayları yükle"). */
+  children?: ReactNode;
+}) {
+  if (sayfaSayisi <= 1 && !children) return null;
+  const bas = toplam === 0 ? 0 : (sayfa - 1) * boyut + 1;
+  const son = Math.min(sayfa * boyut, toplam);
+  const gec = (n: number) => {
+    git(n);
+    if (hedefId) document.getElementById(hedefId)?.scrollIntoView({ block: "start" });
+  };
+  // En çok 7 numara: ilk, son, geçerli ±1 ve aralarda "…".
+  const numaralar: (number | "…")[] = [];
+  for (let n = 1; n <= sayfaSayisi; n++) {
+    if (n === 1 || n === sayfaSayisi || Math.abs(n - sayfa) <= 1) numaralar.push(n);
+    else if (numaralar[numaralar.length - 1] !== "…") numaralar.push("…");
+  }
+  return (
+    <nav className="sayfalama sayfalama-cubugu" aria-label="Sayfalar" data-testid="sayfalama">
+      <span className="sayfalama-ozet" aria-live="polite">
+        {bas}–{son} / {toplam} {birim}
+      </span>
+      {sayfaSayisi > 1 && (
+        <span className="sayfalama-dugmeler">
+          <button type="button" className="dugme dugme-ikincil dugme-kucuk" disabled={sayfa <= 1} onClick={() => gec(sayfa - 1)}>
+            <span aria-hidden="true">‹</span> Önceki
+          </button>
+          {numaralar.map((n, i) =>
+            n === "…" ? (
+              <span key={`a${i}`} className="sayfalama-ara" aria-hidden="true">
+                …
+              </span>
+            ) : (
+              <button
+                key={n}
+                type="button"
+                className="dugme dugme-hayalet dugme-kucuk sayfalama-no"
+                aria-current={n === sayfa ? "page" : undefined}
+                aria-label={`Sayfa ${n}`}
+                onClick={() => gec(n)}
+              >
+                {n}
+              </button>
+            ),
+          )}
+          <button type="button" className="dugme dugme-ikincil dugme-kucuk" disabled={sayfa >= sayfaSayisi} onClick={() => gec(sayfa + 1)}>
+            Sonraki <span aria-hidden="true">›</span>
+          </button>
+        </span>
+      )}
+      {children}
+    </nav>
   );
 }

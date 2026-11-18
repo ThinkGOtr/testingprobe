@@ -7,6 +7,8 @@ import type { Gereksinim } from "../api/types";
 import { useBildirim } from "../components/Bildirim";
 import { OtomatikAkisRozeti } from "../components/OtomatikAkisRozeti";
 import { AlanHatasi, BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, SayfaIciOnay, Yukleniyor } from "../components/ui";
+import { EylemCubugu, SuzgecCubugu, TabloSarici } from "../components/tasarim";
+import { useSorguSuzgeci } from "../lib/sorguDurumu";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { adimAdi, akisAdimi } from "../lib/akis";
 import { akisKanitlari, guncelAdim, type SonrakiGirdi } from "../lib/yolHaritasi";
@@ -25,20 +27,24 @@ export function Gereksinimler() {
   const kanit = useVeri(() => (tamamVar ? akisKanitlari(undefined, izinler) : Promise.resolve(null)), [tamamVar, izinler]);
   const [formAcik, setFormAcik] = useState(false);
   const [cekOnay, setCekOnay] = useState(false);
-  const [filtre, setFiltre] = useState("");
+  // Arama ve sıralama adreste (`?ara=…&sirala=cekim-azalan`).
+  const suzgec = useSorguSuzgeci({ ara: "", sirala: "" });
+  const filtre = suzgec.deger.ara;
   const cek = useIslem();
   const bildir = useBildirim();
   const sessizYenile = useGeciktirilmis(() => void yenile(true));
   useOlay(sessizYenile, ["requirement.updated", "case.generated"]);
 
-  const [siralama, setSiralama] = useState<Siralama | null>(null);
+  const siralama = siralamaOku(suzgec.deger.sirala);
   const liste = useMemo(() => {
     const q = filtre.trim().toLocaleLowerCase("tr-TR");
     const suzulmus = !veri || !q ? (veri ?? []) : veri.filter((g) => `${g.jira_key ?? ""} ${g.baslik}`.toLocaleLowerCase("tr-TR").includes(q));
     return siralama ? gereksinimSirala(suzulmus, siralama) : suzulmus;
   }, [veri, filtre, siralama]);
-  const sirala = (alan: SiralamaAlani) =>
-    setSiralama((s) => (s?.alan === alan ? { alan, yon: s.yon === "artan" ? "azalan" : "artan" } : { alan, yon: "artan" }));
+  const sirala = (alan: SiralamaAlani) => {
+    const y: Siralama = siralama?.alan === alan ? { alan, yon: siralama.yon === "artan" ? "azalan" : "artan" } : { alan, yon: "artan" };
+    suzgec.ayarla("sirala", `${y.alan}-${y.yon}`);
+  };
   const baslikOz = (alan: SiralamaAlani) => ({ alan, siralama, sirala });
 
   return (
@@ -47,10 +53,10 @@ export function Gereksinimler() {
         baslik="Gereksinimler"
         aciklama="Jira story'leri ve serbest metin gereksinimler. Her biri 14 adımlı akışta ilerler; insan kapıları atlanamaz."
         eylemler={
-          <>
+          // Liste kalıbı: birincil eylem ilk (story'ler Jira'dan gelir), serbest metin ikincil yol.
+          <EylemCubugu hiza="son">
             <IslemDugmesi
               izin="requirement.import"
-              tur="ikincil"
               calisiyor={cek.calisiyor}
               onClick={() => setCekOnay(true)}
               aria-expanded={cekOnay}
@@ -58,10 +64,10 @@ export function Gereksinimler() {
             >
               Jira'dan çek
             </IslemDugmesi>
-            <IslemDugmesi izin="requirement.import" onClick={() => setFormAcik((a) => !a)} aria-expanded={formAcik} aria-controls="serbest-metin">
+            <IslemDugmesi izin="requirement.import" tur="ikincil" onClick={() => setFormAcik((a) => !a)} aria-expanded={formAcik} aria-controls="serbest-metin">
               {formAcik ? "Formu kapat" : "Serbest metin gereksinim"}
             </IslemDugmesi>
-          </>
+          </EylemCubugu>
         }
       />
       {cekOnay && (
@@ -89,17 +95,20 @@ export function Gereksinimler() {
       {cek.hata && <HataKutusu hata={cek.hata} kaynak={cek.hataNesnesi} />}
       {formAcik && <SerbestMetinFormu kapat={() => setFormAcik(false)} />}
 
-      <Kart
-        baslik="Gereksinim listesi"
-        eylemler={
-          <div className="alan alan-satir">
-            <label htmlFor="gereksinim-ara" className="gorunmez">
-              Gereksinim ara
+      <Kart baslik="Gereksinim listesi">
+        {veri && veri.length > 0 && (
+          <SuzgecCubugu etiket="Gereksinim süzgeci" sonuc={filtre ? `${liste.length}/${veri.length} gereksinim` : `${veri.length} gereksinim`}>
+            <label htmlFor="gereksinim-ara">
+              Ara
+              <input id="gereksinim-ara" type="search" placeholder="Anahtar veya başlık ara" value={filtre} onChange={(e) => suzgec.ayarla("ara", e.target.value)} />
             </label>
-            <input id="gereksinim-ara" type="search" placeholder="Anahtar veya başlık ara" value={filtre} onChange={(e) => setFiltre(e.target.value)} />
-          </div>
-        }
-      >
+            {suzgec.suzuldu && (
+              <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={suzgec.temizle}>
+                Süzgeci temizle
+              </button>
+            )}
+          </SuzgecCubugu>
+        )}
         {/* Veri gelmeden boş durum gösterilmez (duzen notu: ilk yüklemede "Henüz gereksinim yok" görünüyordu). */}
         {hata && !veri ? (
           <HataKutusu hata={hata} kaynak={hataNesnesi} yenile={() => void yenile()} />
@@ -110,8 +119,7 @@ export function Gereksinimler() {
             {!filtre && "Jira'dan çekin veya serbest metin gereksinim ekleyin."}
           </BosDurum>
         ) : (
-          <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Gereksinimler tablosu">
-            <table className="tablo tablo-yigin">
+          <TabloSarici etiket="Gereksinimler tablosu" satirBaglanti uzun={liste.length > 15} tabloClassName="gereksinim-tablosu">
               <thead>
                 <tr>
                   <SiralanabilirBaslik {...baslikOz("anahtar")}>Anahtar</SiralanabilirBaslik>
@@ -127,7 +135,9 @@ export function Gereksinimler() {
                     <wbr />
                     toplam, güncel)
                   </SiralanabilirBaslik>
-                  <SiralanabilirBaslik {...baslikOz("cekim")}>Çekim</SiralanabilirBaslik>
+                  <SiralanabilirBaslik {...baslikOz("cekim")} className="sutun-ikincil">
+                    Çekim
+                  </SiralanabilirBaslik>
                 </tr>
               </thead>
               <tbody>
@@ -135,12 +145,17 @@ export function Gereksinimler() {
                   <GereksinimSatiri key={g.id} g={g} kanit={kanit.veri ?? null} />
                 ))}
               </tbody>
-            </table>
-          </div>
+          </TabloSarici>
         )}
       </Kart>
     </>
   );
+}
+
+/** Adresteki sıralama (`cekim-azalan`) → Siralama; tanınmazsa null (veri sırası). */
+export function siralamaOku(d: string): Siralama | null {
+  const m = /^(anahtar|baslik|durum|adim|po|bulgu|case|cekim)-(artan|azalan)$/.exec(d);
+  return m ? { alan: m[1] as SiralamaAlani, yon: m[2] as Siralama["yon"] } : null;
 }
 
 export type SiralamaAlani = "anahtar" | "baslik" | "durum" | "adim" | "po" | "bulgu" | "case" | "cekim";
@@ -251,13 +266,13 @@ function GereksinimSatiri({ g, kanit }: { g: Gereksinim; kanit: Omit<SonrakiGird
           </Cip>
         )}
       </td>
-      <td data-etiket="Başlık">
+      <td className="sutun-metin yigin-baslik" data-etiket="Başlık">
         <Link to={`/gereksinimler/${encodeURIComponent(g.id)}`} className="satir-baglanti">
           {g.baslik}
         </Link>
         {g.ac_missing && <span className="soluk"> · kabul kriteri yok</span>}
       </td>
-      <td data-etiket="Durum">
+      <td className="sutun-durum" data-etiket="Durum">
         <Cip ton={d.ton}>{d.etiket}</Cip>
         {tur > 1 && (
           <span className="soluk kucuk" data-testid="gereksinim-tur" title="Akış turu: içerik değişip PO teyidi yenilendikçe artar">
@@ -271,7 +286,7 @@ function GereksinimSatiri({ g, kanit }: { g: Gereksinim; kanit: Omit<SonrakiGird
           </div>
         )}
       </td>
-      <td data-etiket="Sıradaki" data-testid="gereksinim-siradaki">
+      <td className="sutun-metin" data-etiket="Sıradaki" data-testid="gereksinim-siradaki">
         {g.durum === "done" ? (
           // `done`: gereksinim makinesi bitti; sonraki adımlar (kod, CI, triage) kanıtlardan okunur.
           <span>{akisTamam ? "Akış tamam" : adimAdi(adim, g.kaynak)}</span>
@@ -282,8 +297,8 @@ function GereksinimSatiri({ g, kanit }: { g: Gereksinim; kanit: Omit<SonrakiGird
           ({Math.min(g.durum === "done" ? adim : sira.adim_no, AKIS_ADIMLARI.length)}/{AKIS_ADIMLARI.length})
         </span>
       </td>
-      <td data-etiket="PO">{PO_ETIKET[g.po.durum]}</td>
-      <td className="sayi" data-etiket="Açık bulgu">
+      <td className={g.po.durum === "not_requested" ? "bos-yigin" : undefined} data-etiket="PO">{PO_ETIKET[g.po.durum]}</td>
+      <td className={g.sayaclar.bulgu_acik ? "sayi" : "sayi bos-yigin"} data-etiket="Açık bulgu">
         {!g.sayaclar.bulgu_acik ? (
           "—"
         ) : g.durum === "findings_open" || g.durum === "in_review" ? (
@@ -294,7 +309,7 @@ function GereksinimSatiri({ g, kanit }: { g: Gereksinim; kanit: Omit<SonrakiGird
           </span>
         )}
       </td>
-      <td className="sayi" data-etiket="Case (onaylı)">
+      <td className={g.sayaclar.case_toplam || onceki ? "sayi" : "sayi bos-yigin"} data-etiket="Case (onaylı)">
         {g.sayaclar.case_toplam ? `${g.sayaclar.case_onayli}/${g.sayaclar.case_toplam}` : "—"}
         {onceki && (
           <div className="soluk kucuk" data-testid="gereksinim-onceki-tur">
@@ -302,7 +317,7 @@ function GereksinimSatiri({ g, kanit }: { g: Gereksinim; kanit: Omit<SonrakiGird
           </div>
         )}
       </td>
-      <td className="tek-satir" data-etiket="Çekim">{tarih(g.cekim_zamani)}</td>
+      <td className="sutun-tarih sutun-ikincil" data-etiket="Çekim">{tarih(g.cekim_zamani)}</td>
     </tr>
   );
 }

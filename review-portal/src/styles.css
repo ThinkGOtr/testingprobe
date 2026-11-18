@@ -7143,3 +7143,219 @@ code {
 .otomasyon-ayrinti > p {
   margin: var(--space-2) 0 0;
 }
+
+/* ===== UX liste şeridi (dk/ux-liste): liste sayfası kalıbı, satır bağlantısı, sayfalama, kabuk — yeni renk yok ===== */
+
+/* ---- Liste sayfası kalıbı: SayfaBasligi (h1 + açıklama + EylemCubugu, birincil ilk) → Kart → SuzgecCubugu
+   (arama, süzgeçler, sağda sonuç sayısı) → tablo → Sayfalama. Süzgeç alanları etiket üstte, aynı tabanda. */
+.suzgec-cubugu label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--fs-ikincil);
+  color: var(--text-2);
+}
+.suzgec-cubugu label:has(> input[type="checkbox"]) {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 36px;
+}
+.suzgec-cubugu select {
+  min-width: 9rem;
+  max-width: 20rem;
+}
+.suzgec-cubugu input[type="search"] {
+  width: 18rem;
+  max-width: 100%;
+}
+.suzgec-cubugu .segment-secici {
+  align-self: flex-end;
+}
+.kart > .suzgec-cubugu:first-child {
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-soft);
+}
+@media (max-width: 640px) {
+  .suzgec-cubugu,
+  .suzgec-cubugu-denetimler,
+  .suzgec-cubugu label:not(:has(> input[type="checkbox"])),
+  .suzgec-cubugu input[type="search"],
+  .suzgec-cubugu select {
+    width: 100%;
+    max-width: none;
+  }
+  /* Sayfa eylemleri dar ekranda başlığın altında sola yaslı (zikzak yok), birincil ilk. */
+  .sayfa-basligi > .eylemler {
+    margin-left: 0;
+    justify-content: flex-start;
+  }
+}
+
+/* ---- Satırın tamamı tıklanır (ET-03, TabloSarici satirBaglanti): satır bağlantısının ::after'ı satırı kaplar.
+   Hücreler konumlanmaz (yığın kipindeki td position: relative ezilir); satırdaki diğer etkileşimli öğeler üstte. */
+.tablo-satir-baglantili tbody tr {
+  position: relative;
+  cursor: pointer;
+}
+.tablo.tablo-satir-baglantili tbody td {
+  position: static;
+}
+.tablo-satir-baglantili .satir-baglanti::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+.tablo-satir-baglantili tbody :is(a, button, summary, input, select, textarea, label, .ipucu, .kimlik-sarici):not(.satir-baglanti) {
+  position: relative;
+  z-index: 1;
+}
+.tablo-satir-baglantili .satir-baglanti:focus-visible {
+  outline: none;
+}
+/* Kod üretimi: grup başlık satırı (Dikkat gerekenler / Süren / Birleşenler) bağlantı değil. */
+.tablo-satir-baglantili tbody tr.kod-grup-satiri {
+  cursor: default;
+}
+.tablo-satir-baglantili .satir-baglanti:focus-visible::after {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+  border-radius: var(--radius-sm);
+}
+.tablo-satir-baglantili tbody tr:hover .satir-baglanti {
+  text-decoration: underline;
+}
+/* Yığın kartının başlık hücresi (kaydın adı): etiketsiz, tam genişlik, kartın ilk satırı. */
+@media (max-width: 640px) {
+  .tablo-yigin td.yigin-baslik::before {
+    display: none;
+  }
+  .tablo-yigin td.yigin-baslik {
+    font-size: var(--fs-govde);
+  }
+  /* Satır bağlantılı liste kartında ikincil sütunlar (Kaynak, Commit, tarih) gizli: ayrıntı bir dokunuş ötede;
+     kart kısa kalır (IA-15 "mobilde iki satırlık kart", DZ-20). */
+  .tablo-yigin.tablo-satir-baglantili td.sutun-ikincil {
+    display: none !important;
+  }
+  /* Yığın kartında boş değer satırı yer kaplamaz (— yazan etiketli satırlar kartı uzatıyordu). */
+  .tablo-yigin td.bos-yigin {
+    display: none !important;
+  }
+}
+
+/* ---- Sayfalama (DZ-20, ET-08). */
+.sayfalama-cubugu {
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+.sayfalama-ozet {
+  color: var(--muted);
+  font-size: var(--fs-ikincil);
+  font-variant-numeric: tabular-nums;
+}
+.sayfalama-dugmeler {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+.sayfalama-no {
+  min-width: 2.25rem;
+  justify-content: center;
+  font-variant-numeric: tabular-nums;
+}
+.sayfalama-no[aria-current="page"] {
+  border-color: var(--accent-solid);
+  color: var(--accent);
+  font-weight: var(--fw-baslik, 700);
+}
+.sayfalama-ara {
+  color: var(--muted);
+  padding-inline: var(--space-1);
+}
+
+/* ---- Denetim: sıra + hash tek sütunda (DZ-02 / 1024'te Hash sütunu kaydırmada kalıyordu). */
+.denetim-sira {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0);
+  align-items: flex-start;
+}
+.denetim-sira > .denetim-sira-no {
+  font-weight: 600;
+}
+
+.tablo td.denetim-eylem .mono {
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+/* 641–1279 px'te (yan menü + FAB oluğu: tablo ≈ 640 px) liste tablolarının metin sütunları daha dar başlar,
+   Denetim aktörü sarabilir; tablo sarıcıda kaymadan sığar. Otomasyon çipleri hücre içinde sarar. */
+@media (min-width: 641px) and (max-width: 1279px) {
+  .tablo-satir-baglantili td.sutun-metin,
+  .tablo td.denetim-ozet-hucre {
+    min-width: 11rem;
+  }
+  .tablo td.denetim-aktor {
+    min-width: 7rem;
+  }
+  /* Uzun durum çipi ("Case review aşamasında") dar masaüstünde iki satıra sarabilir. */
+  .gereksinim-tablosu td.sutun-durum .cip {
+    white-space: normal;
+  }
+}
+.tablo .otomasyon-liste > li {
+  flex-wrap: wrap;
+}
+/* Test case'leri "Case" hücresi: story anahtarı ve sıra no dar sütunda alt alta sarabilir. */
+.tablo td.sutun-kimlik:has(> a + .mono) {
+  white-space: normal;
+}
+
+/* ---- Yayın: seçim kutusu özetin etiketi (ET-04): satır başına tek denetim, 390'da 44 px dokunma alanı. */
+.yayin-secim {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  cursor: pointer;
+}
+.yayin-secim > input {
+  margin-top: 0.2em;
+  flex: none;
+}
+.yayin-secim:has(> input:disabled) {
+  cursor: default;
+}
+
+/* ---- Kabuk: 390'da marka (DZ-13). Kalan alan "TP"ye de yetmiyorsa yalnız işaret kalır; harf kırpılmaz
+   ("T." görünmez). Erişilebilir ad tam kalır. */
+@media (max-width: 860px) {
+  .ust-cubuk .marka > span:last-child {
+    text-overflow: clip;
+  }
+}
+@container marka (max-width: 64px) {
+  .marka-kisa {
+    display: none;
+  }
+}
+
+/* ---- Asistan paneli (DZ-11, ET-15): içerik yalnız ≥1600 px'te panel kadar daralır (itme kipi); 1440'ta
+   içerik 1144 → 724 px'e inip tablolar dar düzene düşüyordu. 861–1599 px'te panel içeriğin üstünde çekmecedir
+   (odak örtülürse Esc paneli kapatır, AsistanPaneli). */
+@media (min-width: 1440px) and (max-width: 1599px) {
+  body:has(.asistan-panel:not(.asistan-panel-modal)) .icerik {
+    padding-right: 76px;
+    max-width: 1320px;
+  }
+  body:has(.asistan-panel:not(.asistan-panel-modal)) .asistan-bune-ipucu {
+    right: 16px;
+  }
+}
+/* Panel başlığına programatik odak (tabindex=-1) dar ekranda da görünür (ET-15). */
+.asistan-panel h2[tabindex]:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-etiket);
+}

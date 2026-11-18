@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
@@ -9,6 +9,8 @@ import { PlatformRozeti } from "../components/Platform";
 import { DepoCipi } from "../components/Depo";
 import { BosDurum, Cip, DisBaglanti, HataKutusu, IzinliLink, Kart, SayfaBasligi, Yukleniyor } from "../components/ui";
 import { useIzin } from "../auth";
+import { Sayfalama, SuzgecCubugu, TabloSarici } from "../components/tasarim";
+import { useSayfalama, useSorguSuzgeci } from "../lib/sorguDurumu";
 import { useGeciktirilmis, useVeri } from "../hooks";
 import { CASE_DURUMU, CASE_ONCELIGI, CASE_TURU, RISK, SCRIPT_DURUMU } from "../lib/etiketler";
 import { guvenliDisAdres, tarih } from "../lib/format";
@@ -25,7 +27,9 @@ export function caseOnceligi(c: Pick<TestCase, "icerik">): (typeof RISKLER)[numb
   return (p && ONCELIK_RISKI[p]) || c.icerik.risk;
 }
 const ONCELIK_SECENEGI: Record<(typeof RISKLER)[number], string> = { high: "P1 · yüksek", medium: "P2 · orta", low: "P3 · düşük" };
-const BOS_FILTRE = { ara: "", durum: "", tur: "", risk: "", gereksinim: "" };
+const BOS_FILTRE = { ara: "", durum: "", tur: "", risk: "", gereksinim: "", eskiler: "" };
+/** Bir sayfadaki case (core en yeni 200'ü verir; 390 px'te 200 kart ~40k px olurdu). */
+export const CASE_SAYFA = 50;
 
 /**
  * Case'in otomasyon durumu: kapatılmamış script'leri (platform + dil, durum, PR). Veri `GET /scripts`
@@ -54,8 +58,10 @@ export function TestCaseleri() {
   // 012: script listesi `code.read` ister; izni olmayan rolde (PO, developer) istenmez, sütun "—" der.
   const kodOkur = useIzin("code.read");
   const scriptler = useVeri(() => (kodOkur ? api.scriptListesi() : Promise.resolve(null)), [kodOkur]);
-  const [filtre, setFiltre] = useState(BOS_FILTRE);
-  const [eskiler, setEskiler] = useState(false);
+  // Süzgeçler adreste (`?gereksinim=…&durum=approved&sayfa=2`): case review'dan geri dönünce görünüm korunur.
+  const suzgec = useSorguSuzgeci(BOS_FILTRE);
+  const filtre = suzgec.deger;
+  const eskiler = filtre.eskiler === "1";
   const sessizYenile = useGeciktirilmis(() => {
     void caseler.yenile(true);
     void gereksinimler.yenile(true);
@@ -99,8 +105,12 @@ export function TestCaseleri() {
       );
   }, [guncel, filtre, gMap]);
 
-  const ayarla = (alan: keyof typeof BOS_FILTRE, deger: string) => setFiltre((f) => ({ ...f, [alan]: deger }));
-  const suzuldu = Object.values(filtre).some(Boolean);
+  const ayarla = suzgec.ayarla;
+  const suzuldu = suzgec.suzuldu;
+  const sayfalama = useSayfalama(liste, CASE_SAYFA);
+  // IA-22: risk alanı dolu case yoksa (v3 case'lerde risk yok) Risk sütunu ve süzgeci çizilmez.
+  // Öncelik verisi (v3 priority ya da eski risk) olan case yoksa çip, sütun başlığı eki ve süzgeç çizilmez.
+  const riskVar = useMemo(() => guncel.some((c) => !!caseOnceligi(c)), [guncel]);
   const sayilar = useMemo(() => {
     const s: Partial<Record<CaseDurumu, number>> = {};
     for (const c of guncel) s[c.durum] = (s[c.durum] ?? 0) + 1;
@@ -124,7 +134,15 @@ export function TestCaseleri() {
           </BosDurum>
         ) : (
           <>
-            <div className="filtre-cubugu" role="group" aria-label="Test case süzgeci">
+            <SuzgecCubugu
+              etiket="Test case süzgeci"
+              sonuc={
+                <span data-testid="case-sayisi">
+                  {suzuldu ? `${liste.length} / ${guncel.length} case` : `${guncel.length} case`}
+                  {CASE_DURUMLARI.filter((d) => sayilar[d]).map((d) => ` · ${sayilar[d]} ${CASE_DURUMU[d].etiket.toLocaleLowerCase("tr-TR")}`)}
+                </span>
+              }
+            >
               <label>
                 Ara
                 <input
@@ -167,33 +185,36 @@ export function TestCaseleri() {
                   ))}
                 </select>
               </label>
-              <label>
-                Öncelik
-                <select value={filtre.risk} onChange={(e) => ayarla("risk", e.target.value)}>
-                  <option value="">Tümü</option>
-                  {RISKLER.map((r) => (
-                    <option key={r} value={r}>
-                      {ONCELIK_SECENEGI[r]}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {(riskVar || filtre.risk) && (
+                <label>
+                  Öncelik
+                  <select value={filtre.risk} onChange={(e) => ayarla("risk", e.target.value)}>
+                    <option value="">Tümü</option>
+                    {RISKLER.map((r) => (
+                      <option key={r} value={r}>
+                        {ONCELIK_SECENEGI[r]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label className="filtre-onay">
                 <input
                   type="checkbox"
                   checked={eskiler}
                   onChange={(e) => {
-                    setEskiler(e.target.checked);
                     if (!e.target.checked && filtre.durum === "superseded") ayarla("durum", "");
+                    ayarla("eskiler", e.target.checked ? "1" : "");
                   }}
                 />
                 Eski sürümleri göster
               </label>
-              <span role="status" data-testid="case-sayisi">
-                {suzuldu ? `${liste.length} / ${guncel.length} case` : `${guncel.length} case`}
-                {CASE_DURUMLARI.filter((d) => sayilar[d]).map((d) => ` · ${sayilar[d]} ${CASE_DURUMU[d].etiket.toLocaleLowerCase("tr-TR")}`)}
-              </span>
-            </div>
+              {suzuldu && liste.length > 0 && (
+                <button type="button" className="dugme dugme-hayalet dugme-kucuk" onClick={suzgec.temizle}>
+                  Süzgeci temizle
+                </button>
+              )}
+            </SuzgecCubugu>
             {/* Dokunmatik ekranda title görünmez: sınır bilgisi listenin üstünde bir kez yazılır. */}
             {listeSinirda && (
               <p className="kucuk soluk" data-testid="otomasyon-sinir-notu">
@@ -202,34 +223,46 @@ export function TestCaseleri() {
             )}
             {liste.length === 0 ? (
               <BosDurum baslik="Süzgece uyan test case'i yok.">
-                <button type="button" className="dugme dugme-ikincil dugme-kucuk" onClick={() => setFiltre(BOS_FILTRE)}>
+                <button type="button" className="dugme dugme-ikincil dugme-kucuk" onClick={suzgec.temizle}>
                   Süzgeci temizle
                 </button>
               </BosDurum>
             ) : (
-              <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Test case'leri tablosu">
-                <table className="tablo tablo-yigin">
+              <div id="case-listesi">
+                <TabloSarici etiket="Test case'leri tablosu" satirBaglanti uzun={sayfalama.gorunen.length > 15}>
                   <thead>
                     <tr>
-                      <th scope="col">Story</th>
-                      <th scope="col" className="sayi">
-                        No
-                      </th>
+                      <th scope="col">Case</th>
                       <th scope="col">Başlık</th>
-                      <th scope="col">Tür</th>
-                      <th scope="col">Öncelik</th>
-                      <th scope="col">Durum</th>
+                      <th scope="col" className="sutun-ikincil">
+                        Tür
+                      </th>
+                      {/* Öncelik (P1–P3 ya da eski case'te risk), durumla aynı sütunda (1024 px'te ayrı sütun sığmıyordu);
+                          öncelik verisi olan case yoksa hiç yok (IA-22). */}
+                      <th scope="col">
+                        Durum{riskVar && <span className="soluk"> · öncelik</span>}
+                      </th>
                       <th scope="col">Jira Test</th>
                       <th scope="col">Otomasyon</th>
-                      <th scope="col">Son karar</th>
+                      <th scope="col" className="sutun-ikincil">
+                        Son karar
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
-                    {liste.map((c) => (
-                      <CaseSatiri key={c.id} c={c} g={gMap.get(c.requirement_id)} scriptler={otomasyon ? (otomasyon.get(c.id) ?? []) : null} sinirda={listeSinirda} />
+                    {sayfalama.gorunen.map((c) => (
+                      <CaseSatiri
+                        key={c.id}
+                        c={c}
+                        g={gMap.get(c.requirement_id)}
+                        scriptler={otomasyon ? (otomasyon.get(c.id) ?? []) : null}
+                        sinirda={listeSinirda}
+                        riskVar={riskVar}
+                      />
                     ))}
                   </tbody>
-                </table>
+                </TabloSarici>
+                <Sayfalama {...sayfalama} birim="case" hedefId="case-listesi" />
               </div>
             )}
           </>
@@ -287,7 +320,7 @@ function OtomasyonHucresi({ scriptler, sinirda }: { scriptler: Script[] | null; 
   );
 }
 
-function CaseSatiri({ c, g, scriptler, sinirda }: { c: TestCase; g: Gereksinim | undefined; scriptler: Script[] | null; sinirda: boolean }) {
+function CaseSatiri({ c, g, scriptler, sinirda, riskVar }: { c: TestCase; g: Gereksinim | undefined; scriptler: Script[] | null; sinirda: boolean; riskVar: boolean }) {
   const durum = CASE_DURUMU[c.durum];
   const oncelik = c.icerik.priority ? CASE_ONCELIGI[c.icerik.priority] : undefined;
   const risk = c.icerik.risk ? RISK[c.icerik.risk] : undefined;
@@ -295,44 +328,46 @@ function CaseSatiri({ c, g, scriptler, sinirda }: { c: TestCase; g: Gereksinim |
   const testAdresi = guvenliDisAdres(c.jira_test_url);
   return (
     <tr>
-      <td className="tek-satir" data-etiket="Story">
+      {/* Story ve sıra no tek sütunda ("TPD-1 · #3"): 1024 px'te 9 sütun 246 px kaydırıyordu. */}
+      <td className="sutun-kimlik" data-etiket="Case">
+        {/* Serbest metin gereksinimin uzun başlığı sütunu genişletmesin: "Serbest metin", başlık ipucunda. */}
         <Link to={gYolu} title={g?.baslik}>
-          {g?.jira_key ?? c.jira_key ?? g?.baslik ?? "Serbest metin"}
+          {g?.jira_key ?? c.jira_key ?? "Serbest metin"}
         </Link>
+        <span className="mono soluk"> #{c.sira_no}</span>
       </td>
-      <td className="sayi mono" data-etiket="No">
-        #{c.sira_no}
-      </td>
-      <td data-etiket="Başlık">
+      <td className="sutun-metin yigin-baslik" data-etiket="Başlık">
         <Link to={`${gYolu}/caseler#${encodeURIComponent(caseCapasi(c.id))}`} className="satir-baglanti">
           {c.icerik.title}
         </Link>
         {c.kanal === "ide" && <span className="soluk"> · IDE kanalı</span>}
       </td>
-      <td data-etiket="Tür">{CASE_TURU[c.icerik.type] ?? c.icerik.type}</td>
-      <td data-etiket="Öncelik">
-        {oncelik ? (
-          <Cip ton={oncelik.ton} title={oncelik.aciklama}>
-            {oncelik.etiket}
-          </Cip>
-        ) : risk ? (
-          <Cip ton={risk.ton} title="Eski case: risk düzeyi">
-            {risk.etiket}
-          </Cip>
-        ) : (
-          "—"
-        )}
-      </td>
-      <td data-etiket="Durum">
+      <td className="sutun-ikincil" data-etiket="Tür">{CASE_TURU[c.icerik.type] ?? c.icerik.type}</td>
+      <td className="sutun-durum" data-etiket={riskVar ? "Durum · öncelik" : "Durum"}>
         <Cip ton={durum.ton}>{durum.etiket}</Cip>
+        {riskVar && oncelik ? (
+          <>
+            {" "}
+            <Cip ton={oncelik.ton} title={oncelik.aciklama}>
+              {oncelik.etiket}
+            </Cip>
+          </>
+        ) : riskVar && risk ? (
+          <>
+            {" "}
+            <Cip ton={risk.ton} title="Eski case: risk düzeyi">
+              {risk.etiket}
+            </Cip>
+          </>
+        ) : null}
       </td>
-      <td className="mono" data-etiket="Jira Test">
+      <td className={c.jira_test_key ? "mono" : "mono bos-yigin"} data-etiket="Jira Test">
         {!c.jira_test_key ? "—" : testAdresi ? <DisBaglanti href={testAdresi}>{c.jira_test_key}</DisBaglanti> : c.jira_test_key}
       </td>
       <td data-etiket="Otomasyon">
         <OtomasyonHucresi scriptler={scriptler} sinirda={sinirda} />
       </td>
-      <td className="tek-satir" data-etiket="Son karar">
+      <td className="sutun-tarih sutun-ikincil" data-etiket="Son karar">
         {c.karar_zamani ? tarih(c.karar_zamani) : "—"}
       </td>
     </tr>

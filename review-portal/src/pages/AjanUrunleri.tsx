@@ -5,6 +5,7 @@ import { api } from "../api/client";
 import type { AjanUrunu } from "../api/types";
 import { BosDurum, Cip, HataKutusu, Kart, SayfaBasligi, SonrakiAdim, Yukleniyor } from "../components/ui";
 import { useVeri } from "../hooks";
+import { TabloSarici } from "../components/tasarim";
 import { SIMULASYON_ACIKLAMASI } from "../lib/ajanProbe";
 
 export function AjanUrunleri() {
@@ -42,8 +43,7 @@ export function AjanUrunleri() {
               <SonrakiAdim metin="Ajan ürünü Agent Probe'da tanımlanınca burada listelenir; gereksinime bağlamayı Analist gereksinim ekranından yapar." />
             </BosDurum>
           ) : (
-            <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Ajan ürünleri tablosu">
-              <table className="tablo">
+            <TabloSarici etiket="Ajan ürünleri tablosu">
                 <thead>
                   <tr>
                     <th scope="col">Ürün</th>
@@ -55,17 +55,22 @@ export function AjanUrunleri() {
                 <tbody>
                   {urunler.map((u) => (
                     <tr key={u.kod}>
-                      <td>{u.ad}</td>
-                      <td className="mono">{u.kod}</td>
-                      <td>{u.aciklama}</td>
-                      <td>
+                      <td className="yigin-baslik" data-etiket="Ürün">
+                        <strong>{u.ad}</strong>
+                      </td>
+                      <td className="sutun-kimlik" data-etiket="Kod">
+                        {u.kod}
+                      </td>
+                      <td className="sutun-metin" data-etiket="Açıklama">
+                        {u.aciklama}
+                      </td>
+                      <td data-etiket="Bağlı gereksinim">
                         <BagliGereksinimler u={u} />
                       </td>
                     </tr>
                   ))}
                 </tbody>
-              </table>
-            </div>
+            </TabloSarici>
           )}
           <p className="soluk kucuk">Bir gereksinimi ajan ürününe bağlamak için gereksinim detayındaki "Ürün AI ajanı" bölümünü kullanın.</p>
         </Kart>

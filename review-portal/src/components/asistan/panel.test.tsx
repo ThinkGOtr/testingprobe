@@ -601,8 +601,16 @@ describe("Asistana sor ve son hata", () => {
     hataKaydet(yuklemeHatasi);
     const casusYukleme = vi.spyOn(api, "gereksinim").mockRejectedValue(yuklemeHatasi);
     uygulama("/gereksinimler/boyle-bir-gereksinim-yok");
-    // Canlı bölge yalnız metindir; düğme kutuda kardeş öğedir.
-    const kutu = (await screen.findByRole("alert", {}, { timeout: 5000 })).parentElement!;
+    // Metin kutuda tek öğedir; düğme kardeş öğedir. ET-16: sayfa açılışındaki hata `alert` değil `note`.
+    const kutu = await waitFor(
+      () => {
+        const k = document.querySelector<HTMLElement>(".uyari-kutusu.uyari-hata");
+        expect(k).not.toBeNull();
+        expect(k!.querySelector('[role="note"]')).not.toBeNull();
+        return k!;
+      },
+      { timeout: 5000 },
+    );
     // Düğme son hata kaydı yazılınca çizilir (yük altında alarmdan bir tik sonra): beklenir.
     await u.click(await within(kutu).findByRole("button", { name: "Asistana sor" }));
     expect(within(panel()).getByLabelText("Sorunuz")).toHaveValue("Bu hata ne demek, ne yapmalıyım?");
