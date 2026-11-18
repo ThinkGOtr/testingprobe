@@ -8,6 +8,7 @@ import { useIzin } from "../auth";
 import { useBildirim } from "../components/Bildirim";
 import { DenetimOzeti } from "../components/KalitePanelleri";
 import { Baglanti, BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, Uyari, Yukleniyor, IzinliLink } from "../components/ui";
+import { Kimlik, TabloSarici } from "../components/tasarim";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { durumKodunuCevir, type Ton } from "../lib/etiketler";
 import { hataMetniniAyikla, yayinlanamazOnekiz } from "../lib/kalite";
@@ -190,8 +191,7 @@ function YayinEkrani() {
             {kalemler.length === 0 ? (
               <BosDurum baslik="Yayınlanacak case yok." />
             ) : (
-              <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Oluşturulacak kayıtlar tablosu">
-                <table className="tablo">
+              <TabloSarici etiket="Oluşturulacak kayıtlar tablosu">
                   <thead>
                     <tr>
                       <th scope="col">
@@ -212,7 +212,7 @@ function YayinEkrani() {
                       const i = ISLEM[k.islem];
                       return (
                         <tr key={k.case_id}>
-                          <td>
+                          <td data-etiket="Seç">
                             <input
                               type="checkbox"
                               aria-label={`${k.title} yayınla`}
@@ -221,9 +221,9 @@ function YayinEkrani() {
                               onChange={() => degistir(k.case_id)}
                             />
                           </td>
-                          <td>{k.summary}</td>
-                          <td>{k.issue_type}</td>
-                          <td className="kucuk">
+                          <td className="sutun-metin" data-etiket="Özet">{k.summary}</td>
+                          <td data-etiket="Tür">{k.issue_type}</td>
+                          <td className="kucuk" data-etiket="Bağlantı">
                             {k.link.story_key ? (
                               <>
                                 {k.link.type} <span className="mono">{k.link.story_key}</span>
@@ -232,9 +232,24 @@ function YayinEkrani() {
                               "—"
                             )}
                           </td>
-                          <td className="kucuk mono">{k.labels.join(", ")}</td>
-                          <td className="sayi">{k.adim_sayisi}</td>
-                          <td>
+                          <td data-etiket="Etiketler">
+                            {k.labels.length === 0 ? (
+                              "—"
+                            ) : (
+                              <ul className="cip-listesi" aria-label="Etiketler">
+                                {k.labels.map((e) => (
+                                  <li key={e}>
+                                    <Cip bicim="etiket" boyut="kucuk" className="mono">
+                                      {/* Uzun (uuid'li) etiket kısaltılır; tam değer ipucunda (DZ-05). */}
+                                      {e.length > 24 ? <Kimlik deger={e} tur="uuid" kisaltUzunluk={16} /> : e}
+                                    </Cip>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </td>
+                          <td className="sutun-sayi" data-etiket="Adım">{k.adim_sayisi}</td>
+                          <td data-etiket="İşlem">
                             <Cip ton={i.ton}>{i.etiket}</Cip>
                             {(k.neden || k.islem === "blocked_not_ready") && (
                               <span className="yayin-neden soluk kucuk" data-testid="yayin-engel-nedeni">
@@ -255,8 +270,7 @@ function YayinEkrani() {
                       );
                     })}
                   </tbody>
-                </table>
-              </div>
+              </TabloSarici>
             )}
           </Kart>
         </>

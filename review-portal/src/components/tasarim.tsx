@@ -1,0 +1,280 @@
+// Ortak tasarım sistemi bileşenleri (UX-T, aip-review/tp-ux-denetim/sistem.md §2/§4). Kullanım kuralları:
+// review-portal/README.md "Tasarım sistemi kullanımı". Yeni renk yok; yalnız mevcut belirteçler.
+import { useState, type ReactNode } from "react";
+import { type Ton } from "../lib/etiketler";
+import { Ipucu } from "./Ipucu";
+import { Cip, OdaklanabilirKilitBaglami } from "./ui";
+
+export { OdaklanabilirKilitBaglami };
+
+// ------------------------------------------------------------------ Kimlik / KisaDeger
+
+export type KimlikTuru = "jira" | "ac" | "kosu" | "case" | "sha" | "uuid" | "yol" | "diger";
+
+/** Değeri kısaltır: `orta` → baş…son, `bas` → baştan, `son` → sondan. Kısa değer aynen döner. */
+export function kisalt(deger: string, uzunluk: number, kirp: "orta" | "bas" | "son" = "orta"): string {
+  if (deger.length <= uzunluk + 1) return deger;
+  if (kirp === "bas") return `${deger.slice(0, uzunluk)}…`;
+  if (kirp === "son") return `…${deger.slice(-uzunluk)}`;
+  const bas = Math.ceil(uzunluk * 0.6);
+  return `${deger.slice(0, bas)}…${deger.slice(-(uzunluk - bas))}`;
+}
+
+const VARSAYILAN_UZUNLUK: Partial<Record<KimlikTuru, number>> = { sha: 7, uuid: 8, yol: 40 };
+
+/**
+ * Kimlik (TS-08/09): mono, tek satır. Uzun teknik değer (sha, uuid, yol) kısaltılır; tam değer klavyeyle ve
+ * dokunarak açılan ipucunda (`Ipucu`) ve ekran okuyucuda okunur; `kopyala` ile panoya alınır.
+ * `href` verilirse kimlik bağlantıdır (`baglanti` çağıranın Link/Baglanti öğesi; burada çizilmez).
+ */
+export function Kimlik({
+  deger,
+  tur = "diger",
+  kisaltUzunluk,
+  kirp = tur === "yol" ? "bas" : "orta",
+  kopyala = false,
+  className,
+  testId,
+}: {
+  deger: string;
+  tur?: KimlikTuru;
+  /** Görünen en çok karakter; verilmezse türün varsayılanı (sha 7, uuid 8, yol 40), diğerleri kısaltılmaz. */
+  kisaltUzunluk?: number;
+  kirp?: "orta" | "bas" | "son";
+  kopyala?: boolean;
+  className?: string;
+  testId?: string;
+}) {
+  const uzunluk = kisaltUzunluk ?? VARSAYILAN_UZUNLUK[tur];
+  const gorunen = uzunluk ? kisalt(deger, uzunluk, tur === "yol" ? "son" : kirp) : deger;
+  const kisaldi = gorunen !== deger;
+  const govde = (
+    <span className={`kimlik kimlik-${tur} mono${className ? ` ${className}` : ""}`} data-testid={testId} data-deger={kisaldi ? deger : undefined}>
+      {gorunen}
+    </span>
+  );
+  return (
+    <span className="kimlik-sarici">
+      {kisaldi ? <Ipucu metin={deger}>{govde}</Ipucu> : govde}
+      {kopyala && <KopyalaDugmesi deger={deger} />}
+    </span>
+  );
+}
+
+/** Uzun teknik değer (sha, uuid, run id, dosya yolu): `Kimlik`in kısaltan kısayolu. */
+export function KisaDeger({ deger, uzunluk = 7, kopyala = true, kirp = "orta" }: { deger: string; uzunluk?: number; kopyala?: boolean; kirp?: "orta" | "bas" | "son" }) {
+  return <Kimlik deger={deger} tur="sha" kisaltUzunluk={uzunluk} kopyala={kopyala} kirp={kirp} />;
+}
+
+export function KopyalaDugmesi({ deger, etiket = "Kopyala" }: { deger: string; etiket?: string }) {
+  const [durum, setDurum] = useState<"bos" | "tamam" | "hata">("bos");
+  return (
+    <button
+      type="button"
+      className="kopyala-dugmesi"
+      aria-label={`${etiket}: ${deger}`}
+      onClick={() => {
+        const yaz = navigator.clipboard?.writeText(deger);
+        if (!yaz) return setDurum("hata");
+        yaz.then(
+          () => setDurum("tamam"),
+          () => setDurum("hata"),
+        );
+        window.setTimeout(() => setDurum("bos"), 2000);
+      }}
+    >
+      <span aria-hidden="true">{durum === "tamam" ? "✓" : "⧉"}</span>
+      <span className="gorunmez" role="status">
+        {durum === "tamam" ? "Kopyalandı" : durum === "hata" ? "Kopyalanamadı" : ""}
+      </span>
+    </button>
+  );
+}
+
+// ------------------------------------------------------------------ DurumCipi
+
+/**
+ * Durum çipi (TS-07): `lib/etiketler.ts` haritasından etiket + ton. Bilinmeyen değer nötr ve aynen yazılır.
+ * `aciklama` verilirse erişilebilir ipucu (yalnız `title` değil, ET-06).
+ */
+export function DurumCipi<K extends string>({
+  harita,
+  deger,
+  aciklama,
+}: {
+  harita: Partial<Record<K, { etiket: string; ton: Ton }>> | Record<string, { etiket: string; ton: Ton }>;
+  deger: K | string;
+  aciklama?: string;
+}) {
+  const d = (harita as Record<string, { etiket: string; ton: Ton } | undefined>)[deger] ?? { etiket: deger, ton: "notr" as Ton };
+  return (
+    <Cip ton={d.ton} aciklama={aciklama}>
+      {d.etiket}
+    </Cip>
+  );
+}
+
+// ------------------------------------------------------------------ MetaIzgara / MetaSatiri
+
+export interface MetaOgesi {
+  etiket: ReactNode;
+  deger: ReactNode;
+  /** Izgarada iki sütunu da kaplar (uzun değer). */
+  genis?: boolean;
+}
+
+/**
+ * "Etiket: değer" ızgarası (TS-05). `duzen="yan"`: dt solda (max-content), dd sağda; `duzen="ust"`: çok sütun,
+ * dt değerin üstünde. ≤640 px'te `yan` da üst düzene iner. Boş değer "—" (soluk).
+ */
+export function MetaIzgara({ ogeler, duzen = "yan", yogun, className, etiket }: { ogeler: MetaOgesi[]; duzen?: "yan" | "ust"; yogun?: boolean; className?: string; etiket?: string }) {
+  return (
+    <dl className={`meta-izgara meta-izgara-${duzen}${yogun ? " meta-izgara-yogun" : ""}${className ? ` ${className}` : ""}`} aria-label={etiket}>
+      {ogeler.map((o, i) => (
+        <div key={i} className={o.genis ? "meta-oge meta-oge-genis" : "meta-oge"}>
+          <dt>{o.etiket}</dt>
+          <dd>{bosMu(o.deger) ? <span className="bos-hucre">—</span> : o.deger}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/** Satır içi meta (2–4 kısa bilgi): "Etiket değer · Etiket değer"; sarar. Daha çoğu ya da uzun değer → MetaIzgara. */
+export function MetaSatiri({ ogeler, className }: { ogeler: { etiket?: ReactNode; deger: ReactNode }[]; className?: string }) {
+  const dolu = ogeler.filter((o) => !bosMu(o.deger));
+  return (
+    <p className={`meta-satiri${className ? ` ${className}` : ""}`}>
+      {dolu.map((o, i) => (
+        <span key={i} className="meta-satiri-oge">
+          {o.etiket && <span className="meta-satiri-etiket">{o.etiket}</span>}
+          {o.etiket && " "}
+          {o.deger}
+        </span>
+      ))}
+    </p>
+  );
+}
+
+function bosMu(d: ReactNode): boolean {
+  return d === null || d === undefined || d === false || (typeof d === "string" && d.trim() === "");
+}
+
+// ------------------------------------------------------------------ SuzgecCubugu / SegmentSecici
+
+/**
+ * Süzgeç çubuğu (TS-06): süzgeç denetimlerini (SegmentSecici, SuzgecSecimi, arama, sıralama) tek satırda toplar;
+ * `sonuc` ("12 / 41 test") sağda, canlı bölgede okunur.
+ */
+export function SuzgecCubugu({ etiket, sonuc, children, className }: { etiket: string; sonuc?: ReactNode; children: ReactNode; className?: string }) {
+  return (
+    <div className={`suzgec-cubugu${className ? ` ${className}` : ""}`} role="group" aria-label={etiket}>
+      <div className="suzgec-cubugu-denetimler">{children}</div>
+      {sonuc !== undefined && (
+        <span className="suzgec-sonuc" role="status">
+          {sonuc}
+        </span>
+      )}
+    </div>
+  );
+}
+
+export interface SegmentSecenegi<D extends string> {
+  deger: D;
+  ad: ReactNode;
+  sayi?: number | null;
+  pasif?: boolean;
+}
+
+/** Az seçenekli süzgeç (hap düğmeler, `aria-pressed`). Gezinme sekmesi değildir (o, DetaySayfasi `Sekmeler`). */
+export function SegmentSecici<D extends string>({
+  etiket,
+  secenekler,
+  deger,
+  degistir,
+}: {
+  etiket: string;
+  secenekler: SegmentSecenegi<D>[];
+  deger: D;
+  degistir: (d: D) => void;
+}) {
+  return (
+    <div className="segment-secici" role="group" aria-label={etiket}>
+      {secenekler.map((s) => (
+        <button
+          key={s.deger}
+          type="button"
+          className="sekme"
+          aria-pressed={s.deger === deger}
+          disabled={s.pasif}
+          onClick={() => degistir(s.deger)}
+        >
+          {s.ad}
+          {s.sayi != null && " "}
+          {s.sayi != null && (
+            <span className="ds-sayi">
+              <span className="gorunmez">(</span>
+              {s.sayi}
+              <span className="gorunmez">)</span>
+            </span>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ EylemCubugu
+
+/**
+ * Eylem çubuğu (TS-17): `hiza="son"` sayfa/özet kartı eylemleri (sağda), `hiza="bas"` kart içi karar eylemleri
+ * (solda). Birincil eylem ilk çocuk. Sınıf `.eylemler` korunur (IslemDugmesi ortak neden gruplaması buna bağlı).
+ */
+export function EylemCubugu({ hiza = "bas", etiket, children, className, testId }: { hiza?: "bas" | "son"; etiket?: string; children: ReactNode; className?: string; testId?: string }) {
+  return (
+    <OdaklanabilirKilitBaglami.Provider value={true}>
+      <div className={`eylemler eylem-cubugu eylem-cubugu-${hiza}${className ? ` ${className}` : ""}`} role={etiket ? "group" : undefined} aria-label={etiket} data-testid={testId}>
+        {children}
+      </div>
+    </OdaklanabilirKilitBaglami.Provider>
+  );
+}
+
+// ------------------------------------------------------------------ TabloSarici
+
+/**
+ * Tablo standardı (sistem.md §4): sarıcı kendi içinde yatay kayar (odaklanabilir bölge), sayfa kaymaz.
+ * - `darEkran="yigin"` (kayıt tablosu: satır = bir kayıt) → ≤640 px'te "etiket: değer" kartı; hücreler `data-etiket` taşır.
+ * - `darEkran="kaydir"` (matris tablo: karar tablosu, sürüm × ölçüt) → kayar, ilk sütun yapışkan.
+ * - `yogunluk="sik"`: kart içi/detay tabloları; `th` ve `td` yatay dolgusu her yoğunlukta eşit.
+ * - `uzun`: uzun liste (≥ ~20 satır) — sarıcı en çok görünüm yüksekliğinin %70'i kadar, kendi içinde dikey kayar,
+ *   başlık satırı yapışkan (ET-02).
+ * Sütun türleri hücre sınıfıyla: `sutun-kimlik | sutun-durum | sutun-sayi | sutun-tarih | sutun-metin | sutun-zengin | sutun-eylem`.
+ */
+export function TabloSarici({
+  etiket,
+  darEkran = "yigin",
+  yogunluk = "normal",
+  uzun,
+  className,
+  tabloClassName,
+  testId,
+  children,
+}: {
+  etiket: string;
+  darEkran?: "yigin" | "kaydir";
+  yogunluk?: "normal" | "sik";
+  uzun?: boolean;
+  className?: string;
+  tabloClassName?: string;
+  testId?: string;
+  children: ReactNode;
+}) {
+  const sarici = ["tablo-sarici", uzun && "tablo-sarici-uzun", className].filter(Boolean).join(" ");
+  const tablo = ["tablo", yogunluk === "sik" && "tablo-sik", darEkran === "yigin" ? "tablo-yigin" : "tablo-matris", tabloClassName].filter(Boolean).join(" ");
+  return (
+    <div className={sarici} tabIndex={0} role="region" aria-label={etiket} data-testid={testId}>
+      <table className={tablo}>{children}</table>
+    </div>
+  );
+}

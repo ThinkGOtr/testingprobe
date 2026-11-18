@@ -7,6 +7,7 @@ import { useIzin, useOturum, usePlatformlar } from "../auth";
 import { normalizeRol } from "../lib/yetki";
 import { useBildirim } from "../components/Bildirim";
 import { BosDurum, Cip, Baglanti, HataKutusu, KayitHatasi, IslemDugmesi, Kart, Metrik, SayfaBasligi, Uyari, Yukleniyor, IzinliLink } from "../components/ui";
+import { TabloSarici } from "../components/tasarim";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { altTurEtiketi, HATA_SINIFI, KAYNAK, KOSU_DURUMU, TETIK } from "../lib/etiketler";
 import { sure, tarih } from "../lib/format";
@@ -71,18 +72,17 @@ function TakilmaCipi({ k }: { k: Pick<Kosu, "durum" | "baslangic"> }) {
 
 export function KosuTablosu({ kosular, kompakt }: { kosular: Kosu[]; kompakt?: boolean }) {
   return (
-    <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Koşular tablosu">
-      <table className="tablo tablo-yigin">
+    <TabloSarici etiket="Koşular tablosu" uzun={kosular.length > 15}>
         <thead>
           <tr>
             <th scope="col">Koşu</th>
             <th scope="col">Tetik</th>
-            {!kompakt && <th scope="col">Kaynak</th>}
+            {!kompakt && <th scope="col" className="sutun-ikincil">Kaynak</th>}
             <th scope="col">Durum</th>
             <th scope="col" className="sayi">
               Geçen / toplam
             </th>
-            {!kompakt && <th scope="col">Commit</th>}
+            {!kompakt && <th scope="col" className="sutun-ikincil">Commit</th>}
             <th scope="col">Başlangıç</th>
             {!kompakt && <th scope="col">Süre</th>}
           </tr>
@@ -119,11 +119,11 @@ export function KosuTablosu({ kosular, kompakt }: { kosular: Kosu[]; kompakt?: b
                 )}
               </td>
               {!kompakt && (
-                <td data-etiket="Kaynak">
+                <td className="sutun-ikincil" data-etiket="Kaynak">
                   <Cip ton="notr">{KAYNAK[k.kaynak] ?? k.kaynak}</Cip>
                 </td>
               )}
-              <td data-etiket="Durum">
+              <td className="sutun-durum" data-etiket="Durum">
                 <DurumCipi d={k.durum} />
                 <TakilmaCipi k={k} />
                 {k.flaky > 0 && (
@@ -135,14 +135,13 @@ export function KosuTablosu({ kosular, kompakt }: { kosular: Kosu[]; kompakt?: b
               <td className="sayi mono" data-etiket="Geçen / toplam">
                 {k.gecen}/{k.toplam}
               </td>
-              {!kompakt && <td className="mono" data-etiket="Commit">{k.commit}</td>}
-              <td className="tek-satir" data-etiket="Başlangıç">{tarih(k.baslangic)}</td>
-              {!kompakt && <td className="tek-satir" data-etiket="Süre">{sure(k.sure_ms)}</td>}
+              {!kompakt && <td className="sutun-kimlik sutun-ikincil" data-etiket="Commit">{k.commit}</td>}
+              <td className="sutun-tarih" data-etiket="Başlangıç">{tarih(k.baslangic)}</td>
+              {!kompakt && <td className="sutun-tarih" data-etiket="Süre">{sure(k.sure_ms)}</td>}
             </tr>
           ))}
         </tbody>
-      </table>
-    </div>
+    </TabloSarici>
   );
 }
 

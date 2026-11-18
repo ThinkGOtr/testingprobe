@@ -3,6 +3,7 @@ import { api } from "../api/client";
 import { hataMesaji, ortamAdlariniGizle } from "../api/http";
 import type { DenetimOlayi } from "../api/types";
 import { BosDurum, HataKutusu, IslemDugmesi, Kart, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
+import { EylemCubugu, Kimlik, TabloSarici } from "../components/tasarim";
 import { useIzin, useKisiAdi } from "../auth";
 import { useVeri } from "../hooks";
 import { kisaHash, tarih } from "../lib/format";
@@ -115,9 +116,12 @@ export function Denetim() {
         }
         eylemler={
           dogrulayabilir && (
-            <IslemDugmesi izin="audit.verify" tur="ikincil" calisiyor={v.yukleniyor} onClick={() => void v.yenile()}>
-              Zinciri yeniden doğrula
-            </IslemDugmesi>
+            // ET-07: doğrulama sürerken düğme odakta kalır (aria-disabled + aria-busy), odak body'ye düşmez.
+            <EylemCubugu hiza="son">
+              <IslemDugmesi izin="audit.verify" tur="ikincil" calisiyor={v.yukleniyor} onClick={() => void v.yenile()}>
+                Zinciri yeniden doğrula
+              </IslemDugmesi>
+            </EylemCubugu>
           )
         }
       />
@@ -152,10 +156,11 @@ export function Denetim() {
             }
           >
             {olaylar.length === 0 ? (
-              <BosDurum baslik="Olay yok." />
+              <BosDurum baslik="Olay yok.">
+                {ara ? "Aramayla eşleşen olay yok; aramayı temizleyin." : "Portalda bir işlem yapıldıkça (çekim, üretim, onay) olaylar burada zincire eklenir."}
+              </BosDurum>
             ) : (
-              <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Denetim olayları tablosu">
-                <table className="tablo tablo-sik tablo-yigin">
+              <TabloSarici etiket="Denetim olayları tablosu" yogunluk="sik" uzun>
                   <thead>
                     <tr>
                       <th scope="col" className="sayi">
@@ -173,21 +178,20 @@ export function Denetim() {
                     {olaylar.map((o) => (
                       <tr key={o.id} className={dg && !dg.gecerli && dg.ilk_kirik_id === o.id ? "satir-hata" : undefined}>
                         <td className="sayi mono" data-etiket="#">{o.sira}</td>
-                        <td className="tek-satir" data-etiket="Zaman">{tarih(o.zaman)}</td>
-                        <td className="tek-satir" data-etiket="Aktör" title={kisiAdi(o.aktor) !== o.aktor ? o.aktor : undefined}>{kisiAdi(o.aktor)}</td>
-                        <td className="mono" data-etiket="Eylem">{o.eylem}</td>
+                        <td className="sutun-tarih" data-etiket="Zaman">{tarih(o.zaman)}</td>
+                        <td className="denetim-aktor" data-etiket="Aktör" title={kisiAdi(o.aktor) !== o.aktor ? o.aktor : undefined}>{kisiAdi(o.aktor)}</td>
+                        <td className="sutun-kimlik" data-etiket="Eylem">{o.eylem}</td>
                         <td className="mono" data-etiket="Nesne">{o.nesne}</td>
-                        <td className="denetim-ozet-hucre" data-etiket="Özet">
+                        <td className="denetim-ozet-hucre sutun-metin" data-etiket="Özet">
                           <OzetHucresi ozet={o.ozet} />
                         </td>
-                        <td className="mono kucuk" data-etiket="Hash" title={`prev ${o.prev_hash}\nhash ${o.hash}`}>
-                          {kisaHash(o.hash)}
+                        <td className="sutun-kimlik" data-etiket="Hash" title={`prev ${o.prev_hash}\nhash ${o.hash}`}>
+                          {o.hash ? <Kimlik deger={o.hash.replace(/^sha256:/, "")} tur="sha" kisaltUzunluk={10} kirp="bas" kopyala /> : "—"}
                         </td>
                       </tr>
                     ))}
                   </tbody>
-                </table>
-              </div>
+              </TabloSarici>
             )}
             {sonraki && (
               <div className="eylemler" data-testid="denetim-daha-fazla">

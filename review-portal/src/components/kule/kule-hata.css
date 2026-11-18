@@ -14,7 +14,7 @@
   display: grid;
   grid-row: span 4;
   grid-template-rows: subgrid;
-  row-gap: 2px;
+  row-gap: var(--space-0);
   align-content: start;
 }
 .metrik-izgara.kule-kpi:has(> :nth-child(7):last-child) > :last-child {
@@ -39,7 +39,7 @@
   grid-column: 1 / -1;
 }
 .hk-kart h3 {
-  font-size: 0.95rem;
+  font-size: var(--fs-h3);
   margin: 0;
 }
 .hk-aciklama {
@@ -49,22 +49,22 @@
 
 /* ---- başlatma formu */
 .hk-form {
-  margin-top: 12px;
-  padding: 14px 16px;
+  margin-top: var(--space-3);
+  padding: 14px var(--space-4);
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 }
 .hk-grup {
   min-width: 0;
-  margin: 0 0 12px;
+  margin: 0 0 var(--space-3);
   padding: 0;
   border: 0;
 }
 .hk-grup > legend {
   padding: 0;
   margin-bottom: 6px;
-  font-size: 0.75rem;
+  font-size: var(--fs-hap);
   font-weight: 700;
   color: var(--text-2);
 }
@@ -76,7 +76,7 @@
 .hk-secenek {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   min-height: 24px;
   cursor: pointer;
 }
@@ -87,7 +87,7 @@
 .hk-turler {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0 24px;
+  gap: 0 var(--space-5);
 }
 @media (max-width: 860px) {
   .hk-turler {
@@ -99,10 +99,10 @@
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .hk-secenek-alt {
-  margin-left: 24px;
+  margin-left: var(--space-5);
   color: var(--text-2);
   overflow-wrap: anywhere;
 }
@@ -117,8 +117,8 @@
 
 /* ---- süren koşu */
 .hk-ilerleme {
-  margin-top: 12px;
-  padding: 12px 14px;
+  margin-top: var(--space-3);
+  padding: var(--space-3) 14px;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-left: 3px solid var(--accent);
@@ -129,11 +129,11 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px 16px;
+  gap: var(--space-2) var(--space-4);
   margin-bottom: 10px;
 }
 .hk-ilerleme-not {
-  margin: 8px 0 0;
+  margin: var(--space-2) 0 0;
   color: var(--text-2);
 }
 
@@ -146,8 +146,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 4px 12px;
-  margin-bottom: 8px;
+  gap: var(--space-1) var(--space-3);
+  margin-bottom: var(--space-2);
 }
 .hk-sonuc-kunye {
   color: var(--text-2);
@@ -161,14 +161,14 @@
 /* Satır başlığı (hata adı): sütun başlığı gibi küçük ve soluk değil; gövde metni. */
 .hk-tablo tbody th,
 .hk-tablo tfoot th {
-  font-size: 0.9rem;
+  font-size: var(--fs-tablo);
   font-weight: 600;
   letter-spacing: 0;
   color: var(--text);
   background: var(--surface);
   white-space: normal;
   min-width: 190px;
-  padding: 12px 14px;
+  padding: var(--space-3) 14px;
 }
 .hk-tablo tbody tr:last-child th {
   border-bottom: 1px solid var(--border-soft);
@@ -185,7 +185,7 @@
 }
 .hk-tablo tfoot th,
 .hk-tablo tfoot td {
-  padding: 12px 14px;
+  padding: var(--space-3) 14px;
   background: var(--surface-2);
   border-bottom: 0;
 }
@@ -201,10 +201,10 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 10px;
+  gap: var(--space-1) 10px;
 }
 .hk-neden {
-  margin-top: 4px;
+  margin-top: var(--space-1);
   color: var(--text-2);
   white-space: normal;
 }
@@ -212,20 +212,20 @@
   color: var(--muted);
 }
 .hk-testler {
-  margin-top: 4px;
-  font-size: 0.85rem;
+  margin-top: var(--space-1);
+  font-size: var(--fs-ikincil);
 }
 .hk-testler > summary {
   cursor: pointer;
   color: var(--text-2);
 }
 .hk-testler > ul {
-  margin: 4px 0 0;
+  margin: var(--space-1) 0 0;
   padding-left: 1.1rem;
 }
 .hk-not {
   max-width: 96ch;
-  margin-top: 8px;
+  margin-top: var(--space-2);
   color: var(--text-2);
 }
 .hk-not strong {
@@ -234,8 +234,8 @@
 
 /* ---- kaçan hatalar: yapılacak iş; kırmızı sol şerit + ✗ işareti + başlık metni (renk tek gösterge değil) */
 .hk-kacanlar {
-  margin-top: 16px;
-  padding: 12px 14px;
+  margin-top: var(--space-4);
+  padding: var(--space-3) 14px;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -252,12 +252,12 @@
   margin: 10px 0 0;
   padding: 0;
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 /* ---- geçmiş */
 .hk-gecmis > h3 {
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
 }
 .hk-gecmis tr[data-gosterilen] > td:first-child {
   box-shadow: inset 3px 0 0 var(--accent);
@@ -267,12 +267,12 @@
 /* KPI karosunda n satırı ayrı satır (oranın güvenilirliği). */
 .kule-kpi .kule-n {
   display: block;
-  margin-top: 2px;
+  margin-top: var(--space-0);
 }
 /* Uzun koşu onayı */
 .hk-onay {
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
   max-width: 96ch;
 }
 .hk-onay:focus-visible,
@@ -282,32 +282,32 @@
   outline-offset: 2px;
 }
 .hk-sure {
-  margin: 8px 0 0;
+  margin: var(--space-2) 0 0;
   color: var(--text-2);
 }
 .hk-kapsam,
 .hk-suite {
   max-width: 96ch;
-  margin: 0 0 8px;
+  margin: 0 0 var(--space-2);
   color: var(--text-2);
 }
 .hk-suite {
-  margin-top: 4px;
+  margin-top: var(--space-1);
 }
 .hk-tablo tfoot .hk-oran-ai th {
   color: var(--text);
 }
 /* Kural × hata dağılımı */
 .hk-kural-dagilim {
-  margin-top: 16px;
+  margin-top: var(--space-4);
 }
 .hk-kural-dagilim > p {
-  margin: 4px 0 8px;
+  margin: var(--space-1) 0 var(--space-2);
   color: var(--text-2);
   max-width: 96ch;
 }
 .hk-kural-dagilim tbody th {
-  font-size: 0.85rem;
+  font-size: var(--fs-ikincil);
   font-weight: 600;
   letter-spacing: 0;
   color: var(--text);
@@ -317,13 +317,13 @@
 /* Kaçan hata: kural, ayırt edici girdi, case isteği */
 .hk-kacan-liste > li + li {
   border-top: 1px solid var(--border-soft);
-  padding-top: 8px;
+  padding-top: var(--space-2);
 }
 .hk-kacan-ayrinti {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
-  gap: 4px 12px;
-  margin: 8px 0 0;
+  gap: var(--space-1) var(--space-3);
+  margin: var(--space-2) 0 0;
 }
 .hk-kacan-ayrinti dt {
   color: var(--text-2);
@@ -339,18 +339,18 @@
     grid-template-columns: minmax(0, 1fr);
   }
   .hk-kacan-ayrinti dd + dt {
-    margin-top: 4px;
+    margin-top: var(--space-1);
   }
 }
 .hk-istek {
-  margin-top: 8px;
-  padding: 8px 10px;
+  margin-top: var(--space-2);
+  padding: var(--space-2) 10px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 }
 .hk-kacanlar .hk-istek p {
-  margin: 0 0 8px;
+  margin: 0 0 var(--space-2);
   color: var(--text);
   overflow-wrap: anywhere;
 }
