@@ -59,7 +59,7 @@ from runner.results import MAX_ERROR, MAX_FIELD, _clip, decide_status, failure_g
 from runner.run import testveri_env
 from toolchain_common import gitforge, proc, repos
 from toolchain_common.artifacts import KEEP_MARKER, atomic_write_json, run_dir
-from toolchain_common.settings import Settings, kosu_parola_env
+from toolchain_common.settings import Settings, kosu_parola_env, ortam_env
 from worker.diller import csharp as csyol
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -262,6 +262,7 @@ def test_env(
             "BREAK_CAMPAIGN": "1" if req.break_campaign else "",
             "TP_FAULT": req.fault or "",
             "TP_RUN_ID": req.run_id,
+            **ortam_env(cfg),
         }
     )
     if platform == WEB:

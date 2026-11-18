@@ -80,6 +80,16 @@ class CheckBusy(RuntimeError):
     """Başka bir kontrol sürüyor ve bekleme süresi doldu."""
 
 
+class CanliOrtamReddi(RuntimeError):
+    """Canlı (`prod`) test ortamında uygulamayı bozan kontrol (kırma kampanyası / ekilmiş hata)."""
+
+
+CANLI_RED = (
+    "Canlı ortamda ({ad}) kırarak doğrulama ve ekilmiş hata koşusu kapalı: uygulamanın verisi "
+    "değiştirilmez."
+)
+
+
 class ChecksNotIsolated(RuntimeError):
     """`checks/` ayrı volume değil ve `TP_CHECKS_REQUIRE_MOUNT=1`: kapı dosyası yazılmaz."""
 
@@ -344,6 +354,8 @@ def _call_runner(
 def execute(
     cfg: Settings, req: CheckRequest, *, runner_client: httpx.Client | None = None
 ) -> dict[str, Any]:
+    if req.breaks_app and cfg.canli:
+        raise CanliOrtamReddi(CANLI_RED.format(ad=cfg.ortam_adi or cfg.ortam_eid))
     head = repos.locate(cfg, req.sha, fetch=True)
     base = (
         repos.locate(cfg, req.base_sha, fetch=True, prefer=head.repo).sha if req.base_sha else None

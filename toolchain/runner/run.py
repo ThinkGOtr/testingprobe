@@ -55,7 +55,7 @@ import httpx
 from runner.results import decide_status, failure_groups, failures_of, summarize
 from toolchain_common import gitforge, proc, repos, runlock
 from toolchain_common.artifacts import KEEP_MARKER, atomic_write_json, ensure_inside, run_dir
-from toolchain_common.settings import Settings, kosu_parola_env
+from toolchain_common.settings import Settings, kosu_parola_env, ortam_env
 from toolchain_common.validation import RUN_ID_RE
 
 # Tek koşu: aynı bayi kullanıcılarıyla eşzamanlı iki koşu birbirinin verisini sıfırlar.
@@ -162,6 +162,7 @@ def playwright_env(cfg: Settings, req: RunRequest) -> dict[str, str]:
             "BREAK_CAMPAIGN": "1" if req.break_campaign else "",
             "TP_FAULT": req.fault or "",
             "TP_RUN_ID": req.run_id,
+            **ortam_env(cfg),
         }
     )
     return env
@@ -396,6 +397,9 @@ def prune_runs(cfg: Settings, current: str) -> dict[str, Any]:
 
 
 def execute(cfg: Settings, req: RunRequest, *, http: httpx.Client | None = None) -> dict[str, Any]:
+    if req.breaks_app and cfg.canli:
+        ne = "Ekilmiş hata koşusu" if req.fault else "Kırarak doğrulama"
+        raise RunRejected(f"{ne} Canlı ortamda ({cfg.ortam_adi or cfg.ortam_eid}) kapalı.")
     if req.breaks_app and not cfg.demoapp_test_token:
         ne = "Ekilmiş hata koşusu" if req.fault else "Kırarak doğrulama"
         raise RunRejected(f"{ne} için DEMOAPP_TEST_TOKEN gerekir (test-runner ortamı).")
