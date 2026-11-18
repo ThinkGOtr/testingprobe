@@ -34,9 +34,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    sayi = op.get_bind().execute(
-        sa.text("SELECT count(*) FROM failure WHERE karar_kaynagi = 'human'")
-    ).scalar_one()
+    sayi = (
+        op.get_bind()
+        .execute(sa.text("SELECT count(*) FROM failure WHERE karar_kaynagi = 'human'"))
+        .scalar_one()
+    )
     if sayi:
         raise RuntimeError(
             f"0049 geri alınamaz: {sayi} başarısızlık insan kararıyla sınıflandı (ileri-düzeltme)"
