@@ -284,6 +284,7 @@ export function useDemoModu(etkin = true): boolean | null | undefined {
 
 /** Ekranın core'daki veri ucu (canlı derlemede ekran ancak uç varsa açılış sayfası olur). */
 const EKRAN_UCU: Record<string, readonly [string, string]> = {
+  "/islerim": ["GET", "/work-queue"],
   "/kod": ["GET", "/scripts"],
   "/kosular": ["GET", "/runs"],
   "/kontrol-kulesi": ["GET", "/control-tower"],
@@ -298,10 +299,11 @@ const EKRAN_UCU: Record<string, readonly [string, string]> = {
 const ROL_SAYFALARI: Record<Rol, string[]> = {
   admin: ["/yol-haritasi", "/kontrol-kulesi", "/kosular"],
   auditor: ["/denetim", "/kontrol-kulesi"],
-  analyst: ["/gereksinimler", "/caseler"],
-  po: ["/gereksinimler"],
-  tester: ["/gereksinimler", "/caseler", "/bug-taslaklari", "/kosular"],
-  engineer: ["/kod", "/kosular", "/gereksinimler"],
+  // TP UX IA-01: insan kapısı olan rollerin açılışı İşlerim (rolün kuyruğu); core ucu yoksa sonraki ekran.
+  analyst: ["/islerim", "/gereksinimler", "/caseler"],
+  po: ["/islerim", "/gereksinimler"],
+  tester: ["/islerim", "/gereksinimler", "/caseler", "/bug-taslaklari", "/kosular"],
+  engineer: ["/islerim", "/kod", "/kosular", "/gereksinimler"],
   developer: ["/kosular", "/gereksinimler"],
   viewer: ["/kontrol-kulesi", "/kosular"],
 };

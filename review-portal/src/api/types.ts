@@ -1725,7 +1725,8 @@ export interface HataAnalizi {
   sinif: HataSinifi;
   alt_tur: string | null;
   eslesen_sinyaller: EslesenSinyal[];
-  karar_kaynagi: "rule" | "llm";
+  /** `human`: Test Uzmanı / Otomasyon Mühendisi sınıflandırdı (IA-16, `POST /failures/{id}/classify`). */
+  karar_kaynagi: "rule" | "llm" | "human";
   /** Eşleşen kuralın adı (ör. "product_defect", "test_maintenance/locator"); yoksa null. */
   kural?: string | null;
   /** Kuralın/LLM'in Türkçe gerekçesi (core `failure.gerekce`); yoksa null. */
@@ -1751,6 +1752,8 @@ export interface HataAnalizi {
    * kaynağı varsa uygulama testi olduğu bilinir ama hangi platform olduğu uydurulmaz). Bilinmiyorsa null.
    */
   platform?: Platform | null;
+  /** Kasıtlı kırma (kırarak doğrulama) kırmızısı; hata kuyruğuna girmez (core `kirma`). */
+  kirma?: boolean;
 }
 
 // ---------------------------------------------------------------- Bug taslakları

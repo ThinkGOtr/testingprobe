@@ -1,3 +1,4 @@
+import { BaskaProjedeKayit } from "../components/BaskaProjedeKayit";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api } from "../api/client";
@@ -147,7 +148,7 @@ function YayinEkrani() {
           {onizleme.hata}
         </Uyari>
       ) : onizleme.hata && !o ? (
-        <HataKutusu hata={onizleme.hata} kaynak={onizleme.hataNesnesi} yenile={() => void onizleme.yenile()} />
+        <BaskaProjedeKayit tur="requirement" id={id} hata={onizleme.hataNesnesi} ad="Gereksinim" liste={["/gereksinimler", "Gereksinimler"]} yedek={<HataKutusu hata={onizleme.hata} kaynak={onizleme.hataNesnesi} yenile={() => void onizleme.yenile()} />} />
       ) : o ? (
         <>
           <DenetimOzeti gorunum={denetim.veri} reviewYolu={`/gereksinimler/${encodeURIComponent(id)}/caseler`} />

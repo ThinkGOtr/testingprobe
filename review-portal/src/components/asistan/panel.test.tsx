@@ -596,6 +596,10 @@ describe("Asistana sor ve son hata", () => {
   it("gerçek sayfa: yükleme hatasında HataKutusu 'Asistana sor' gösterir (kaynak=hataNesnesi)", async () => {
     await oturumAc("analist");
     const u = userEvent.setup();
+    // TP UX IA-05: 404 "başka projede mi?" görünümüne gider; yükleme hatası (5xx) HataKutusu'nu gösterir.
+    const yuklemeHatasi = new ApiError(500, "Sunucu hatası", { method: "GET", yol: "/requirements/:id" });
+    hataKaydet(yuklemeHatasi);
+    const casusYukleme = vi.spyOn(api, "gereksinim").mockRejectedValue(yuklemeHatasi);
     uygulama("/gereksinimler/boyle-bir-gereksinim-yok");
     // Canlı bölge yalnız metindir; düğme kutuda kardeş öğedir.
     const kutu = (await screen.findByRole("alert", {}, { timeout: 5000 })).parentElement!;
@@ -603,6 +607,7 @@ describe("Asistana sor ve son hata", () => {
     await u.click(await within(kutu).findByRole("button", { name: "Asistana sor" }));
     expect(within(panel()).getByLabelText("Sorunuz")).toHaveValue("Bu hata ne demek, ne yapmalıyım?");
     expect(within(panel()).getByText(/Son hata:/)).toBeInTheDocument();
+    casusYukleme.mockRestore();
   });
 
   it("karar ekranlarının satır içi 409 uyarısında 'Asistana sor' (AsistanaSorDugmesi)", async () => {

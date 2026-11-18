@@ -437,8 +437,10 @@ describe("Kontrol Kulesi: KPI şeridi (F4)", () => {
 describe("rol bazlı açılış", () => {
   it("varsayilanSayfa: sistem yöneticisi → Demo yol haritası, Otomasyon Mühendisi → Kod üretimi; uç yoksa sıradaki ekran", () => {
     expect(varsayilanSayfa("admin")).toBe("/yol-haritasi");
-    expect(varsayilanSayfa("engineer")).toBe("/kod");
-    expect(varsayilanSayfa("tester")).toBe("/gereksinimler");
+    // TP UX IA-01: insan kapısı olan rollerin açılışı İşlerim; core ucu yoksa eski sıra.
+    expect(varsayilanSayfa("engineer")).toBe("/islerim");
+    expect(varsayilanSayfa("engineer", (_m, y) => y !== "/work-queue")).toBe("/kod");
+    expect(varsayilanSayfa("tester")).toBe("/islerim");
     expect(varsayilanSayfa("auditor")).toBe("/denetim");
     expect(varsayilanSayfa("viewer")).toBe("/kontrol-kulesi");
     expect(varsayilanSayfa("developer")).toBe("/kosular");

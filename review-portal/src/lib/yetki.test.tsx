@@ -178,7 +178,7 @@ describe("menü: yalnız izinli ekranlar (ANALIZ §4.2)", () => {
     await oturumAc("izleyici");
     uygulama("/kontrol-kulesi");
     const menu = await screen.findByRole("navigation", { name: "Ana menü" });
-    await waitFor(() => expect(within(menu).getAllByRole("link").map((a) => a.querySelector("span")?.textContent)).toEqual(["Koşular", "Kontrol Kulesi"]));
+    await waitFor(() => expect(within(menu).getAllByRole("link").map((a) => a.querySelector("span")?.textContent)).toEqual(["İşlerim", "Koşular", "Kontrol Kulesi"]));
     // Canlı olay göstergesi yok (events.read yok).
     expect(screen.queryByText("Olaylar: örnek veri")).toBeNull();
   });
@@ -197,7 +197,7 @@ describe("menü: yalnız izinli ekranlar (ANALIZ §4.2)", () => {
     try {
       uygulama("/kontrol-kulesi");
       const menu = await screen.findByRole("navigation", { name: "Ana menü" });
-      await waitFor(() => expect(within(menu).getAllByRole("link").map((a) => a.querySelector("span")?.textContent)).toEqual(["Koşular", "Kontrol Kulesi"]));
+      await waitFor(() => expect(within(menu).getAllByRole("link").map((a) => a.querySelector("span")?.textContent)).toEqual(["İşlerim", "Koşular", "Kontrol Kulesi"]));
     } finally {
       api.me = me;
     }

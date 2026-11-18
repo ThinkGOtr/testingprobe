@@ -88,7 +88,8 @@ describe("triage ekranı", () => {
   });
 
   it("karar kaynağı metni ve onarım aşamaları (bilinmeyen = bekliyor, uydurma yeşil yok)", () => {
-    expect(kararKaynagiMetni({ karar_kaynagi: "llm", kural: null })).toBe("Karar kaynağı: LLM (kural eşleşmedi)");
+    expect(kararKaynagiMetni({ karar_kaynagi: "llm", kural: null })).toBe("Karar kaynağı: AI (kural eşleşmedi)");
+    expect(kararKaynagiMetni({ karar_kaynagi: "human", kural: null })).toBe("Karar kaynağı: insan sınıflandırması");
     expect(kararKaynagiMetni({ karar_kaynagi: "rule", kural: null })).toBe("Karar kaynağı: deterministik kural");
     const a = onarimAsamalari({
       tur: "locator_fix",

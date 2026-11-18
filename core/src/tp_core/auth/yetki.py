@@ -96,6 +96,9 @@ IZINLER: Final[dict[str, frozenset[str]]] = {
     "run.trigger_scheduled": _r(ENGINEER),
     "run.trigger_manual": _r(ENGINEER, DEVELOPER),
     "bug.decide": _r(TESTER),
+    # TP UX IA-16: kuralın/AI'ın sınıflandıramadığı hatayı insan sınıflandırır (Test Uzmanı ürün
+    # hatası/veri; Otomasyon Mühendisi bakım/ortam). `karar_kaynagi = human`, denetim kaydı.
+    "failure.classify": _r(TESTER, ENGINEER),
     "demo.manage": _r(ADMIN, ENGINEER),
     "audit.verify": _r(ADMIN, AUDITOR),
     # 013 sprint otomasyonu: otomasyon ayarları ve test verisi kataloğu (specs/013 Y3, K11).

@@ -140,7 +140,9 @@ def _metinler(*parcalar: Any) -> Iterator[str]:
 
 # Asistan bağlamı dışındaki portal ekranları: AI Probe rol seçici (specs/010-aiprobe-sso; oturum
 # öncesi/geçiş ekranı, Kabuk ve asistan yok). `rotalar.json`'a girmez (asistan bağlantı vermez).
-ASISTAN_DISI = frozenset({"/rol-sec"})
+# TP UX IA-01/IA-16 (2026-11-18): İşlerim ve Hatalar kuyruğu — rules/assistant/rotalar.json
+# güncellenene kadar asistan bağlamı dışında (rules/ bu şeritte değiştirilmedi).
+ASISTAN_DISI = frozenset({"/rol-sec", "/islerim", "/hatalar"})
 
 
 def _app_rotalari() -> set[str]:

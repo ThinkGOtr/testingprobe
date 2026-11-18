@@ -1,4 +1,5 @@
 import { teknikMetniCevir } from "../lib/kullaniciMetni";
+import { BaskaProjedeKayit } from "../components/BaskaProjedeKayit";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
@@ -754,7 +755,7 @@ export function KosuDetay() {
   useOlay(sessiz, ["ci.status", "failure.classified"], id);
 
   if (v.yukleniyor && !v.veri) return <Yukleniyor />;
-  if (v.hata && !v.veri) return <KayitHatasi ad="Koşu" ust={<Link to="/kosular">← Koşular</Link>} hata={v.hata} kaynak={v.hataNesnesi} yenile={() => void v.yenile()} />;
+  if (v.hata && !v.veri) return <BaskaProjedeKayit tur="run" id={id} hata={v.hataNesnesi} ad="Koşu" liste={["/kosular", "Koşular"]} yedek={<KayitHatasi ad="Koşu" ust={<Link to="/kosular">← Koşular</Link>} hata={v.hata} kaynak={v.hataNesnesi} yenile={() => void v.yenile()} />} />;
   const k = v.veri;
   if (!k) return null;
   const ghYedek = githubYedekNotu(k);

@@ -6227,3 +6227,81 @@ html {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+/* ------------------------------------------------------------------ TP UX şerit A (İşlerim, Hatalar, IA-05)
+   Yalnız yerleşim; renkler mevcut çip/kart değişkenlerinden. */
+.menu-sayac {
+  margin-left: auto;
+  padding: 0 7px;
+  min-width: 1.6em;
+  justify-content: center;
+}
+.islerim-bolum {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.islerim-bolum-baslik {
+  font-size: 1rem;
+  margin: 0;
+}
+.islerim-sonraki {
+  margin: 0 0 8px;
+}
+.islerim-liste {
+  display: grid;
+  gap: 0;
+}
+.islerim-oge,
+.islerim-ekip-satiri {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+.islerim-oge:first-child,
+.islerim-ekip-satiri:first-child {
+  border-top: 0;
+}
+.islerim-oge-govde {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.islerim-oge-baslik {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.islerim-ekip-ogeleri {
+  margin: 4px 0 0;
+  display: grid;
+  gap: 2px;
+}
+.siniflandirma-formu .secenek-satiri {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 4px 0;
+}
+.siniflandirma-duzelt,
+.teknik-ayrinti {
+  margin: 8px 0;
+}
+.siniflandirma-duzelt > summary,
+.teknik-ayrinti > summary {
+  cursor: pointer;
+}
+.teknik-ayrinti dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  margin: 8px 0 0;
+}
+.teknik-ayrinti dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.sonraki-adim-satiri {
+  margin: 0 0 12px;
+}

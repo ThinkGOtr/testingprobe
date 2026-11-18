@@ -17,6 +17,8 @@ import { GereksinimDetay } from "./pages/GereksinimDetay";
 import { Gereksinimler } from "./pages/Gereksinimler";
 import { Giris } from "./pages/Giris";
 import { HataDetay } from "./pages/HataDetay";
+import { Hatalar } from "./pages/Hatalar";
+import { Islerim } from "./pages/Islerim";
 import { Kod } from "./pages/Kod";
 import { KontrolKulesi } from "./pages/KontrolKulesi";
 import { KosuDetay, Kosular } from "./pages/Kosular";
@@ -102,6 +104,8 @@ export function Rotalar() {
         }
       >
         <Route index element={<AnaSayfa />} />
+        <Route path="islerim" element={<Korumali yol="/islerim"><Islerim /></Korumali>} />
+        <Route path="hatalar" element={<Korumali yol="/hatalar"><Hatalar /></Korumali>} />
         <Route path="gereksinimler" element={<Korumali yol="/gereksinimler"><Gereksinimler /></Korumali>} />
         <Route path="gereksinimler/:id" element={<Korumali yol="/gereksinimler/:id"><GereksinimDetay /></Korumali>} />
         <Route path="gereksinimler/:id/caseler" element={<Korumali yol="/gereksinimler/:id/caseler"><CaseReview /></Korumali>} />

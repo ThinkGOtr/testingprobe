@@ -1,13 +1,16 @@
+import { BaskaProjedeKayit } from "../components/BaskaProjedeKayit";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { ARIA_KAYNAKLARI } from "../api/uyumTriage";
 import { useOlay } from "../api/events";
-import { useBugKisitli } from "../auth";
+import { useBugKisitli, useIzin } from "../auth";
 import { BUG_KISITLI_METNI } from "../lib/yetki";
 import type { BugTaslagi, HataAnalizi, LocatorOnarimi, LocatorProbeSonucu, SaglikSonucu, SaglikUcu, TriageKaniti } from "../api/types";
 import { useBildirim } from "../components/Bildirim";
 import { Baglanti, BosDurum, Cip, HataKutusu, KayitHatasi, IslemDugmesi, Kart, ReplayRozeti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
+import { useState } from "react";
+import { INSAN_SINIFLARI, islerimApi } from "../api/islerim";
 import { altTurEtiketi, HATA_SINIFI, sinyalBasligi, TRIAGE_ALT_TUR, type Ton } from "../lib/etiketler";
 import { tarih } from "../lib/format";
 import { kisaKosuAdi } from "./Kosular";
@@ -36,9 +39,10 @@ const SHA_ESLESMESI: Record<NonNullable<LocatorProbeSonucu["sha_eslesmesi"]>, { 
   dogrulanamadi: { etiket: "commit doğrulanamadı", ton: "uyari" },
 };
 
-/** Karar kaynağı: deterministik kural (adıyla) ya da LLM yorumu (yalnızca kural eşleşmediyse). */
+/** Karar kaynağı: deterministik kural (adıyla), AI yorumu (yalnızca kural eşleşmediyse) ya da insan (IA-16). */
 export function kararKaynagiMetni(h: Pick<HataAnalizi, "karar_kaynagi" | "kural">): string {
-  if (h.karar_kaynagi === "llm") return "Karar kaynağı: LLM (kural eşleşmedi)";
+  if (h.karar_kaynagi === "human") return "Karar kaynağı: insan sınıflandırması";
+  if (h.karar_kaynagi === "llm") return "Karar kaynağı: AI (kural eşleşmedi)";
   return h.kural ? `Karar kaynağı: kural · ${h.kural}` : "Karar kaynağı: deterministik kural";
 }
 
@@ -73,7 +77,7 @@ export function onarimAsamalari(o: LocatorOnarimi): Asama[] {
     o.aria_dogrulama?.eslesti === true ? "tamam" : o.aria_dogrulama?.eslesti === false ? "hata" : "bekliyor";
   return [
     {
-      ad: app ? "Öneri (LLM'siz: hata anı sayfa kaynağından okunan kimlik)" : "Öneri (LLM'siz: DOM'dan okunan testId)",
+      ad: app ? "Öneri (AI'sız: hata anı sayfa kaynağından okunan kimlik)" : "Öneri (AI'sız: DOM'dan okunan testId)",
       durum: oneriVar ? "tamam" : o.durum === "failed" ? "hata" : "bekliyor",
       ayrinti: oneriVar ? `${o.eski_test_id} → ${o.yeni_test_id}` : "öneri üretilmedi",
     },
@@ -673,6 +677,136 @@ function KanitKarti({
   );
 }
 
+/** Sinyal kodları ve hata imzası: geliştirici/destek içindir, kullanıcı metninde gösterilmez (IA-12). */
+function TeknikAyrinti({ h }: { h: HataAnalizi }) {
+  if (!h.hata_imzasi && h.eslesen_sinyaller.length === 0 && !h.kural) return null;
+  return (
+    <details className="teknik-ayrinti">
+      <summary>Teknik ayrıntı</summary>
+      <dl className="kucuk">
+        {h.kural && (
+          <>
+            <dt>Kural</dt>
+            <dd className="mono">{h.kural}</dd>
+          </>
+        )}
+        {h.hata_imzasi && (
+          <>
+            <dt>Hata imzası</dt>
+            <dd className="mono">{h.hata_imzasi}</dd>
+          </>
+        )}
+        {h.eslesen_sinyaller.length > 0 && (
+          <>
+            <dt>Sinyal kodları</dt>
+            <dd className="mono">{h.eslesen_sinyaller.map((sg) => `${sg.kod}${sg.kaynak ? ` · ${sg.kaynak}` : ""}`).join(", ")}</dd>
+          </>
+        )}
+      </dl>
+    </details>
+  );
+}
+
+const SINIF_ACIKLAMASI: Record<(typeof INSAN_SINIFLARI)[number], string> = {
+  product_defect: "Uygulama yanlış davranıyor: bug taslağı açılır, Test Uzmanı karar verir.",
+  test_maintenance: "Test güncel değil (locator, adım): Otomasyon Mühendisinin onarım kuyruğuna gider.",
+  test_data: "Test verisi yanlış ya da eksik: test verisi kataloğu düzeltilir.",
+  flaky: "Kararsız test: aynı kodda bazen geçiyor; Otomasyon Mühendisi takip eder.",
+  environment: "Ortam sorunu (ağ, servis, cihaz): onarım ya da bug açılmaz.",
+};
+
+/**
+ * IA-16 karar kartı: kural ya da AI sınıflandıramadıysa ("Belirsiz", REPLAY-MISS) yetkili rol (Test Uzmanı,
+ * Otomasyon Mühendisi) sınıfı gerekçeyle belirler; yetkisiz rolde tek satır "kimi bekliyoruz". Sınıflandırılmış
+ * hatada yetkili rol sınıfı "Sınıfı düzelt" açılırından değiştirebilir (onarım PR'ı / bug taslağı yoksa).
+ */
+export function SiniflandirmaKarti({ h, guncellendi }: { h: HataAnalizi; guncellendi: (h: HataAnalizi) => void }) {
+  const yetkili = useIzin("failure.classify");
+  const bildir = useBildirim();
+  const islem = useIslem();
+  const [sinif, setSinif] = useState<(typeof INSAN_SINIFLARI)[number] | "">("");
+  const [gerekce, setGerekce] = useState("");
+  const [acilan, setAcilan] = useState<string | null>(null);
+  const [duzeltAcik, setDuzeltAcik] = useState(false);
+  const belirsiz = h.sinif === "unknown";
+  const kilitli = h.oneri?.tur === "bug_draft" || (h.oneri?.tur === "locator_fix" && (h.oneri.durum === "pr_open" || h.oneri.durum === "merged"));
+  if (!belirsiz && (!yetkili || kilitli)) {
+    return h.karar_kaynagi === "human" && h.gerekce ? (
+      <p className="kucuk" data-testid="insan-karari">
+        <strong>İnsan sınıflandırması:</strong> {h.gerekce}
+      </p>
+    ) : null;
+  }
+  if (belirsiz && !yetkili) {
+    return (
+      <p className="sonraki-adim-satiri" role="note" data-testid="siniflandirma-bekleniyor">
+        Bu adım Test Uzmanı'nda: sınıflandırma bekleniyor (Otomasyon Mühendisi de sınıflandırabilir).
+      </p>
+    );
+  }
+  const form = (
+    <form
+      className="form siniflandirma-formu"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        if (!sinif || !gerekce.trim()) return;
+        const s = await islem.calistir(() => islerimApi.hataSiniflandir(h.id, { sinif, gerekce: gerekce.trim() }));
+        if (!s) return;
+        setAcilan(s.bugTaslagiId);
+        setGerekce("");
+        setSinif("");
+        guncellendi(s.hata);
+        bildir(s.bugTaslagiId ? "Ürün hatası olarak sınıflandırıldı; bug taslağı açıldı." : `Sınıf kaydedildi: ${HATA_SINIFI[s.hata.sinif]?.etiket ?? s.hata.sinif}.`);
+      }}
+    >
+      <fieldset className="alan">
+        <legend>Bu hata ne?</legend>
+        {INSAN_SINIFLARI.map((k) => (
+          <label key={k} className="secenek-satiri">
+            <input type="radio" name={`sinif-${h.id}`} value={k} checked={sinif === k} onChange={() => setSinif(k)} />
+            <span>
+              <strong>{HATA_SINIFI[k].etiket}</strong> <span className="soluk kucuk">— {SINIF_ACIKLAMASI[k]}</span>
+            </span>
+          </label>
+        ))}
+      </fieldset>
+      <div className="alan">
+        <label htmlFor={`sinif-gerekce-${h.id}`}>Gerekçe (denetim kaydına yazılır)</label>
+        <textarea id={`sinif-gerekce-${h.id}`} rows={2} value={gerekce} maxLength={2000} onChange={(e) => setGerekce(e.target.value)} required />
+      </div>
+      {islem.hata && <HataKutusu hata={islem.hata} kaynak={islem.hataNesnesi} />}
+      <div className="eylemler">
+        <IslemDugmesi izin="failure.classify" type="submit" calisiyor={islem.calisiyor} disabled={!sinif || !gerekce.trim()}>
+          Sınıfı kaydet
+        </IslemDugmesi>
+      </div>
+    </form>
+  );
+  return (
+    <div data-testid="siniflandirma-karti">
+      {acilan && (
+        <Uyari ton="bilgi" baslik="Bug taslağı açıldı">
+          <Link to={`/bug-taslaklari/${encodeURIComponent(acilan)}`}>Bug taslağına git</Link>
+        </Uyari>
+      )}
+      {belirsiz ? (
+        <Kart baslik="Karar: bu hatayı sınıflandırın">
+          <p className="soluk kucuk">
+            Kural eşleşmedi ve AI sınıflandıramadı{h.mode === "replay_miss" ? " (REPLAY-MISS: kayıtlı AI yanıtı yok)" : ""}. Sınıfı siz belirleyin;
+            hata ilgili kuyruğa düşer.
+          </p>
+          {form}
+        </Kart>
+      ) : (
+        <details className="siniflandirma-duzelt" onToggle={(e) => setDuzeltAcik((e.currentTarget as HTMLDetailsElement).open)}>
+          <summary>Sınıfı düzelt</summary>
+          {duzeltAcik && form}
+        </details>
+      )}
+    </div>
+  );
+}
+
 export function HataDetay() {
   const { id = "" } = useParams();
   const v = useVeri(() => api.hata(id), [id]);
@@ -681,7 +815,7 @@ export function HataDetay() {
   useOlay(sessiz, ["failure.classified", "failure.updated", "ci.status", "pr.opened", "pr.merged"], id);
 
   if (v.yukleniyor && !v.veri) return <Yukleniyor />;
-  if (v.hata && !v.veri) return <KayitHatasi ad="Hata kaydı" hata={v.hata} kaynak={v.hataNesnesi} yenile={() => void v.yenile()} />;
+  if (v.hata && !v.veri) return <BaskaProjedeKayit tur="failure" id={id} hata={v.hataNesnesi} ad="Hata kaydı" liste={["/hatalar", "Hatalar"]} yedek={<KayitHatasi ad="Hata kaydı" hata={v.hata} kaynak={v.hataNesnesi} yenile={() => void v.yenile()} />} />;
   const h = v.veri;
   if (!h) return null;
   const s = HATA_SINIFI[h.sinif] ?? { etiket: h.sinif, ton: "notr" as const };
@@ -694,6 +828,7 @@ export function HataDetay() {
         baslik="Triage sonucu"
         aciklama={h.test_adi}
       />
+      <SiniflandirmaKarti h={h} guncellendi={(y) => v.setVeri(y)} />
       {/* Triage ızgarası (§5 görsel kapı, 1152 px): solda Sınıf + öneri, sağda iki satıra yayılan sinyaller.
           DOM sırası Sınıf → Sinyaller → Öneri olarak kalır; yerleşim yalnız CSS ızgarasıyla. */}
       <div className="iki-sutun triage-izgara">
@@ -706,7 +841,7 @@ export function HataDetay() {
             <PlatformRozeti platform={h.platform} />
           </p>
           <p className="soluk kucuk">
-            Önce kural seti uygulanır; LLM yalnızca hiçbir kural eşleşmezse devreye girer ve ortam kararını ezemez. Sayısal güven yerine
+            Önce kural seti uygulanır; AI yalnızca hiçbir kural eşleşmezse devreye girer ve ortam kararını ezemez. Sayısal güven yerine
             eşleşen sinyaller gösterilir.
           </p>
           {ortam && (
@@ -717,7 +852,6 @@ export function HataDetay() {
           {h.gerekce && <p className="kucuk">{h.gerekce}</p>}
           {/* Kanıt kartı tam hata metnini gösteriyorsa burada tekrar edilmez. */}
           {h.hata_mesaji && !h.kanit?.hata_mesaji && <pre className="hata-mesaji">{h.hata_mesaji}</pre>}
-          {h.hata_imzasi && <p className="kucuk mono soluk">imza: {h.hata_imzasi}</p>}
           <p className="kucuk soluk">
             {tarih(h.zaman)}
             {h.script_id && (
@@ -752,10 +886,6 @@ export function HataDetay() {
                         )}
                       </div>
                       {ayrinti && <div className="kucuk">{ayrinti}</div>}
-                      <div className="kucuk soluk mono">
-                        {sg.kod}
-                        {sg.kaynak && ` · ${sg.kaynak}`}
-                      </div>
                       {sg.kanit && (
                         <pre className="kod-blok sinyal-kanit" tabIndex={0}>
                           {sg.kanit}
@@ -768,10 +898,11 @@ export function HataDetay() {
             </ul>
           )}
           {h.llm_yorumu && (
-            <Uyari ton="bilgi" baslik="LLM yorumu">
+            <Uyari ton="bilgi" baslik="AI yorumu">
               {h.llm_yorumu}
             </Uyari>
           )}
+          <TeknikAyrinti h={h} />
         </Kart>
 
         {/* Öneri kartındaki "Git" çapası (#onarim): onarım/öneri bölümü her durumda bu kapta. Izgaranın üçüncü
@@ -781,7 +912,7 @@ export function HataDetay() {
           {!ortam && h.oneri?.tur === "bug_draft" && (
             <Kart baslik="Öneri">
               <p>
-                Ürün hatası adayı: bug taslağı hazırlandı ve Jira'da mükerrer araması yapıldı. Kayıt yalnızca testçi onayıyla açılır.{" "}
+                Ürün hatası adayı: bug taslağı hazırlandı ve Jira'da mükerrer araması yapıldı. Kayıt yalnızca Test Uzmanı onayıyla açılır.{" "}
                 {!bugKisitli && (
                   <Link className="dugme dugme-birincil dugme-kucuk" to={`/bug-taslaklari/${encodeURIComponent(h.oneri.bug_draft_id)}`}>
                     Bug taslağına git

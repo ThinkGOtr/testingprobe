@@ -256,7 +256,8 @@ describe("yardımcılar", () => {
     expect(projeHedefYolu("/kosular")).toBe("/kosular");
     expect(projeHedefYolu("/gereksinimler/r1/caseler")).toBe("/gereksinimler");
     expect(projeHedefYolu("/kod/s1")).toBe("/kod");
-    expect(projeHedefYolu("/hatalar/h1")).toBe("/");
+    // TP UX IA-16: /hatalar artık liste ekranı (Hatalar kuyruğu).
+    expect(projeHedefYolu("/hatalar/h1")).toBe("/hatalar");
   });
 
   it("rol etiketi: sunucu etiketi (dil) → portal kataloğu → kod", () => {
