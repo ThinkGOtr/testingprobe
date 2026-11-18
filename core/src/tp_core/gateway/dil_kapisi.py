@@ -230,6 +230,56 @@ def kullanilabilir_mi(rules_dir: Path, platform: str, dil: str) -> bool:
     return st is not None and st.kullanilabilir
 
 
+KABUL_KIPI_ENV = "TP_DIL_KABUL_KIPI"
+
+
+def kabul_kipi_ciftleri(deger: str | None) -> frozenset[tuple[str, str]]:
+    """`TP_DIL_KABUL_KIPI=web/python,android/python` → çift kümesi (bozuk öğe yok sayılır)."""
+    out: set[tuple[str, str]] = set()
+    for parca in (deger or "").split(","):
+        try:
+            out.add(_cift(parca.strip(), KABUL_KIPI_ENV))
+        except GatewayConfigError:
+            continue
+    return frozenset(out)
+
+
+def kabul_kipinde_acik_mi(
+    rules_dir: Path,
+    platform: str,
+    dil: str,
+    *,
+    kip_degeri: str | None,
+    forge: str | None,
+    ortam: str | None,
+    demo_mode: bool,
+) -> bool:
+    """Kabul koşusu kipi (TASARIM §2.3 "kabul betiği"): `yakinda` çiftin kabul kanıtı ancak TP'nin
+    kendi akışı (codegen → PR → local-ci → kırarak doğrulama) koşularak üretilebilir; kapı ise
+    `yakinda` çiftte üretimi reddeder (422). Bu kip, YALNIZ yalıtılmış kabul yığınında çifti
+    üretim için açar. Dar koşullar (hepsi gerekli):
+
+    - çift `TP_DIL_KABUL_KIPI` listesinde;
+    - yerel forge (`TP_FORGE=local`), demo kipi açık, `TP_ORTAM` prod değil;
+    - çift `tam` hatta (kırarak doğrulama var; müşteri CI'ın kabulü GitHub run'dır), `yakinda`
+      ve geçerli bir değerlendirme kanıtı (`eval` + `tarih`) taşıyor.
+
+    `diller.yaml`'ı değiştirmez; Home kopyası (`home_ozeti`) ve `--check` bu kipi görmez."""
+    if (platform, dil) not in kabul_kipi_ciftleri(kip_degeri):
+        return False
+    if (forge or "local").strip().lower() != "local" or not demo_mode:
+        return False
+    if (ortam or "dev").strip().lower() == "prod":
+        return False
+    try:
+        st = durum(rules_dir, platform, dil)
+    except GatewayConfigError:
+        return False
+    if st is None or st.hat != "tam" or st.durum != "yakinda" or not isinstance(st.kanit, Mapping):
+        return False
+    return bool(st.kanit.get("eval")) and _tarih_mi(st.kanit.get("tarih"))
+
+
 def home_ozeti(rules_dir: Path) -> dict[str, Any]:
     """Home türetilmiş kopyası (`settings/product_info/tp_languages.json`, Ş6).
 

@@ -79,6 +79,10 @@ x-core-env: &core-env
   # Ortam ve demo kipi (specs/012-rol-yetki): prod + demo kipi birlikte verilirse çekirdek başlamaz.
   TP_ORTAM: ${TP_ORTAM:-dev}
   TP_DEMO_MODE: ${TP_DEMO_MODE:-0}
+  # YALNIZ yalıtılmış kabul yığını (014 dil kabulü): `yakinda` + eval kanıtlı tam hat çiftlerini
+  # üretime açar (ör. web/python,android/python). Yerel forge + demo kipi + prod değil şart;
+  # diller.yaml'ı değiştirmez (dil_kapisi.kabul_kipinde_acik_mi). Boş = kapalı.
+  TP_DIL_KABUL_KIPI: ${TP_DIL_KABUL_KIPI:-}
   XRAY_BASE_URL: ${XRAY_BASE_URL:-http://jira-sim:8090/xray}
   TP_FORGE: ${TP_FORGE:-local}
   TP_FORGE_PATH: /forge/demo-app.git

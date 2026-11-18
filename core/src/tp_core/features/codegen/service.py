@@ -909,11 +909,37 @@ def _algila_dogrudan(platform: str) -> dil_algila.Algilama:
     return dil_algila.algila(forge, ref, platform, uygulama_koku=app_root(platform))
 
 
+def _kabul_kipinde(platform: str, dil: str) -> bool:
+    """Kabul kipi (`TP_DIL_KABUL_KIPI`) bu çifti açıyor mu? Değişken yoksa hiçbir şey okunmaz."""
+    import os
+
+    deger = os.environ.get("TP_DIL_KABUL_KIPI")
+    if not deger:
+        return False
+    from tp_core.gateway import dil_kapisi
+    from tp_core.gateway.config import find_rules_dir
+
+    s = get_settings()
+    acik = dil_kapisi.kabul_kipinde_acik_mi(
+        find_rules_dir(),
+        platform,
+        dil,
+        kip_degeri=deger,
+        forge=ayar("TP_FORGE"),
+        ortam=s.ortam,
+        demo_mode=s.demo_mode,
+    )
+    if acik:
+        log.warning("dil kapısı KABUL KİPİNDE açık: %s/%s (TP_DIL_KABUL_KIPI)", platform, dil)
+    return acik
+
+
 def kapi_engeli(platform: str, dil: str) -> str | None:
     """014 değerlendirme kapısı (plan.md §1.1, karar 3–4): çift `rules/diller.yaml`'da `acik`
     değilse ya da çekirdek dil eklentisi yüklü değilse "Değerlendirme sürüyor" (seçilemez, 422).
-    Env'de dil açık olsa bile geçerlidir."""
-    if platformlar.cift_durumu(platform, dil) != "acik":
+    Env'de dil açık olsa bile geçerlidir. Tek istisna yalıtılmış kabul yığınının kabul kipidir
+    (`dil_kapisi.kabul_kipinde_acik_mi`: yerel forge + demo kipi + eval kanıtlı tam hat çifti)."""
+    if platformlar.cift_durumu(platform, dil) != "acik" and not _kabul_kipinde(platform, dil):
         return platformlar.YAKINDA_NEDENI
     if (
         dil not in (platformlar.TS, platformlar.JAVA)

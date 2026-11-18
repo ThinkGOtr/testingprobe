@@ -365,3 +365,40 @@ def test_dil_kanitlari_yalniz_tum_vakalari_gecen_cift(kopya: Path) -> None:
     run.report = _rapor(kopya, {"p1": True, "p2": True})
     _dil_kanitlari(kopya, data, run, BUGUN, satirlar.append)
     assert dk.durum(kopya, "web", "python").kanit["tarih"] == "2026-11-20"
+
+
+# --- Kabul kipi (yalıtılmış kabul yığını) ----------------------------------------------------
+
+
+def _kip(rules: Path, platform: str = "web", dil: str = "python", **over) -> bool:
+    arg = {"kip_degeri": "web/python, android/python", "forge": "local", "ortam": "dev",
+           "demo_mode": True, **over}  # fmt: skip
+    return dk.kabul_kipinde_acik_mi(rules, platform, dil, **arg)
+
+
+def test_kabul_kipi_yalniz_eval_kanitli_tam_hat_ciftini_acar(kopya: Path) -> None:
+    assert dk.kabul_kipi_ciftleri("web/python, bozuk, ios/swift,") == {
+        ("web", "python"),
+        ("ios", "swift"),
+    }
+    assert not _kip(kopya)  # kanıtsız yakinda çift: kip açmaz
+    _ciftleri_yaz(
+        kopya,
+        web__python={"hat": "tam", "durum": "yakinda",
+                     "kanit": {"eval": "x.json", "tarih": "2026-11-18"}},
+        android__kotlin={"hat": "musteri_ci", "durum": "yakinda",
+                         "kanit": {"eval": "y.json", "tarih": "2026-11-18"}},
+    )  # fmt: skip
+    assert _kip(kopya)
+    # Kapı dosyası ve Home kopyası değişmez: çift hâlâ yakinda.
+    assert not dk.kullanilabilir_mi(kopya, "web", "python")
+    assert dk.home_ozeti(kopya)["platformlar"]["web"]["python"]["durum"] == "yakinda"
+    # Dar koşullar: liste dışı, GitHub forge, demo kipi kapalı, prod, müşteri CI hattı.
+    assert not _kip(kopya, kip_degeri="android/python")
+    assert not _kip(kopya, kip_degeri=None)
+    assert not _kip(kopya, forge="github")
+    assert not _kip(kopya, demo_mode=False)
+    assert not _kip(kopya, ortam="prod")
+    assert not _kip(kopya, "android", "kotlin", kip_degeri="android/kotlin")
+    # Zaten açık çift kip gerektirmez (ve kip onu "açık" saymaz).
+    assert not _kip(kopya, "web", "ts", kip_degeri="web/ts")
