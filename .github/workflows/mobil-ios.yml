@@ -66,7 +66,9 @@ env:
   UV_VERSION: "0.8.24"
   APP_BUNDLE: demo-app/mobile/build/BayiSiparis.app
   SIM_NAME: TP iPhone
-  # Tercih edilen cihaz tipi; çalışma zamanı desteklemiyorsa ilk desteklenen iPhone seçilir.
+  # Tercih edilen cihaz tipi; çalışma zamanı desteklemiyorsa 16'dan büyük/eşit en küçük "iPhone N"
+  # (yoksa en büyüğü). "İlk desteklenen iPhone" bazı imajlarda iPhone-Duo gibi bir tip çıkarıyor,
+  # build-wda onu cihaz listesinde bulamıyordu.
   SIM_DEVICE_TYPE: iPhone 16
   # Boş = runner'daki en yeni kararlı Xcode (Expo SDK 58 / RN 0.88 yeni Xcode ister).
   XCODE_APP: ""
@@ -176,7 +178,11 @@ jobs:
           dt="$(xcrun simctl list runtimes -j | jq -r --arg id "$rt_id" --arg ad "$SIM_DEVICE_TYPE" '
             [.runtimes[] | select(.identifier == $id) | .supportedDeviceTypes[]
              | select(.productFamily == "iPhone")] as $t
-            | (($t | map(select(.name == $ad)) | first) // ($t | first)) | .identifier')"
+            | ($t | map(select(.name | test("^iPhone [0-9]+$")))
+                 | sort_by(.name | ltrimstr("iPhone ") | tonumber)) as $n
+            | (($t | map(select(.name == $ad)) | first)
+               // ($n | map(select((.name | ltrimstr("iPhone ") | tonumber) >= 16)) | first)
+               // ($n | last) // ($t | first)) | .identifier')"
           udid="$(xcrun simctl create "$SIM_NAME" "$dt" "$rt_id")"
           xcrun simctl boot "$udid"
           xcrun simctl bootstatus "$udid" -b
