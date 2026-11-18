@@ -20,7 +20,7 @@
 #   DEMOAPP_TEST_TOKEN — ya da yalnızca sepet yalıtımı: TP_E2E_NO_RESET=1
 #   BREAK_CAMPAIGN=1 (bayi kapsamlı kırılma; bkz. break-verify-csharp.sh) · TP_FAULT=<kod>
 #   PLAYWRIGHT_BROWSERS_PATH  Chromium önbelleği (test sırasında indirme yok)
-#   TP_CS_ARACLAR_DLL   derlenmiş cs-araclar (CsAraclar.dll); yoksa toolchain/cs-araclar'dan `dotnet run`
+#   TP_CS_ARACLAR_DLL   derlenmiş cs-araclar (cs-araclar.dll); yoksa toolchain/cs-araclar'dan `dotnet run`
 #   TP_E2E_CSHARP_DEPS  güvenilir kopyalar dizini (varsayılan: <repo>/toolchain/e2e-csharp-deps/web);
 #                       proje dosyaları bayt eşit olmalı. CI=true iken dizin yoksa betik HATA ile durur.
 #   SKIP_BIRIM=1     birim adımını atla (break-verify-csharp.sh tekrar koşularında)

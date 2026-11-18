@@ -217,7 +217,7 @@ jobs:
         run: |
           set -euo pipefail
           dotnet build toolchain/cs-araclar/src/CsAraclar -c Release -nologo -o tp-cs-araclar
-          echo "TP_CS_ARACLAR_DLL=$PWD/tp-cs-araclar/CsAraclar.dll" >> "$GITHUB_ENV"
+          echo "TP_CS_ARACLAR_DLL=$PWD/tp-cs-araclar/cs-araclar.dll" >> "$GITHUB_ENV"
 
       # Test uçlarının (/test/*) sırrı koşu başına üretilir; API (github-demo-serve.sh ortamından) ve
       # C# testleri (DEMOAPP_TEST_TOKEN ortamı) aynı değeri alır. /test/* doğrudan API'ye gider.
