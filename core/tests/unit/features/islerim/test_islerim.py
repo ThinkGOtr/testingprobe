@@ -286,3 +286,48 @@ def test_ekip_kisileri_tekil(client: TestClient, make_user: MakeUser, engine: En
     assert a2.kullanici_adi not in son_onay["kisiler"]
     me = client.get("/auth/me").json()
     assert me["kisiler"][a2.kullanici_adi] == me["kisiler"][a1.kullanici_adi]
+
+
+def test_yeni_yesil_kosu_eski_kirmiziyi_dusurur(
+    client: TestClient, make_user: MakeUser, engine: Engine
+) -> None:
+    """CL-06: yalnız SON durumu kırmızı olan koşu bekleyen iştir. Aynı dal için daha yeni yeşil
+    koşu eski kırmızıyı düşürür; CI ortam hatasını aynı kaynakta herhangi bir yeni yeşil düşürür;
+    başka PR'ın yeşili düşürmez. Koşu düzeyindeki hata başlığı koşudan üretilir."""
+    from datetime import UTC, datetime, timedelta
+
+    simdi = datetime.now(UTC)
+    once = simdi - timedelta(days=2)
+    k = {
+        ad: uuid.uuid4()
+        for ad in ("gece_kirmizi", "gece_yesil", "ortam", "pr5", "pr6_yesil", "dal_b")
+    }
+    with Session(engine) as s, proje_icinde(PID, kaynak="test"):
+        for ad, tetik, sonuc, zaman, pr, ref, kaynak in (
+            ("gece_kirmizi", "nightly", "failed", once, None, "main", "github"),
+            ("gece_yesil", "nightly", "passed", simdi, None, "main", "github"),
+            ("ortam", "push", "error", once, None, "dev", "github"),
+            ("pr5", "pr", "failed", once, 5, None, "github"),
+            ("pr6_yesil", "pr", "passed", simdi, 6, None, "local"),
+            ("dal_b", "push", "failed", once, None, "ozellik-b", "local"),
+        ):
+            s.add(Run(id=k[ad], tetik=tetik, sonuc=sonuc, olusturma=zaman, pr_no=pr,
+                      kaynak=kaynak, ortam={"ref": ref} if ref else {}))  # fmt: skip
+        s.flush()
+        fid = uuid.uuid4()
+        s.add(Failure(id=fid, run_id=k["dal_b"], test_adi="(koşu: test sonucu yok)",
+                      hata_imzasi="imza-kosu", sinif="environment"))  # fmt: skip
+        s.commit()
+    _giris(client, make_user("engineer"))
+    y = client.get("/work-queue").json()
+    kosu = _grup(y, "benim", "kosu_hatasi")
+    assert kosu
+    idler = {o["id"] for o in kosu["ogeler"]}
+    assert str(k["gece_kirmizi"]) not in idler
+    assert str(k["ortam"]) not in idler
+    assert {str(k["pr5"]), str(k["dal_b"])} <= idler
+    assert y["menu"]["/kosular"] == kosu["sayi"] == 2
+    bakim = _grup(y, "benim", "test_bakimi")
+    assert bakim
+    oge = next(o for o in bakim["ogeler"] if o["id"] == str(fid))
+    assert oge["etiket"] == f"Push koşusu {str(k['dal_b'])[:8]} · test sonucu yok"

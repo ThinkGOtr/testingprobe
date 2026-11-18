@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Rotalar } from "../App";
 import { ApiError } from "../api/http";
 import { islerimApi, isKuyruguUyarla, kayitYeriUyarla } from "../api/islerim";
-import { isKuyruguHesapla } from "../api/mock/islerim";
+import { gecersizKalan, isKuyruguHesapla } from "../api/mock/islerim";
 import { mockVerisi } from "../api/mock/handlers";
 import type { HataAnalizi } from "../api/types";
 import { OturumProvider } from "../auth";
@@ -114,6 +114,28 @@ describe("canlı detay YD-05/YD-06: izinle grup, rozet = liste, koşu katlama, k
     expect(k[0]).toEqual({ neden: "CI", ogeler: [ogeler[0], ogeler[2], ogeler[3]] });
     expect(k[1]).toBe(ogeler[1]);
     expect(nedeneGoreKatla({ tur: "failure", ogeler })).toHaveLength(4);
+  });
+
+  it("CL-06: daha yeni yeşil koşu aynı kapsamdaki eski kırmızıyı düşürür; ortam hatasını aynı kaynaktaki herhangi bir yeşil", () => {
+    const ornek = mockVerisi().kosular[0];
+    const k = (id: string, o: Partial<typeof ornek>) => ({ ...ornek, id, script_id: null, pr_no: null, depo: "", ...o });
+    const kirmizi = k("r1", { durum: "failed", tetik: "nightly", baslangic: "2026-11-14T00:00:00Z" });
+    const yesil = k("r2", { durum: "passed", tetik: "nightly", baslangic: "2026-11-18T00:00:00Z" });
+    expect(gecersizKalan(kirmizi, [kirmizi, yesil])).toBe(true);
+    expect(gecersizKalan(yesil, [kirmizi, yesil])).toBe(false);
+    const pr5 = k("r3", { durum: "failed", tetik: "pr", pr_no: 5, baslangic: "2026-11-14T00:00:00Z" });
+    const pr6 = k("r4", { durum: "passed", tetik: "pr", pr_no: 6, baslangic: "2026-11-18T00:00:00Z" });
+    expect(gecersizKalan(pr5, [pr5, pr6])).toBe(false);
+    const ortam = k("r5", { durum: "error", tetik: "pr", pr_no: 5, baslangic: "2026-11-14T00:00:00Z" });
+    expect(gecersizKalan(ortam, [ortam, pr6])).toBe(pr6.kaynak === ortam.kaynak);
+    // Kuyruk: yeni yeşil eklenince eski kırmızı düşer, rozet de iner.
+    const v = mockVerisi();
+    const once = isKuyruguHesapla(v, "engineer").menu["/kosular"];
+    const kirmizilar = v.kosular.filter((x) => x.durum === "failed" || x.durum === "error");
+    if (kirmizilar.length) {
+      v.kosular.unshift(...kirmizilar.map((x, i) => ({ ...x, id: `yesil-${i}`, durum: "passed" as const, baslangic: "2099-01-01T00:00:00Z" })));
+      expect(isKuyruguHesapla(v, "engineer").menu["/kosular"]).toBeLessThan(once);
+    }
   });
 
   it("ekip kişi adında rol eki yazılmaz", () => {

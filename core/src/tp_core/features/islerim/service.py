@@ -304,7 +304,7 @@ def _hata_grubu(
     if tekillestir:
         kosullar.append(Run.tetik.notin_(("break_verify",)))
     q = (
-        select(Failure)
+        select(Failure, Run)
         .outerjoin(FailureEk, FailureEk.failure_id == Failure.id)
         .join(Run, Run.id == Failure.run_id)
         .where(*kosullar)
@@ -312,7 +312,7 @@ def _hata_grubu(
         .limit(HATA_TARAMA)
     )
     gorulen: set[tuple[str, str]] = set()
-    for f in s.scalars(q):
+    for f, run in s.execute(q).all():
         k = (f.test_adi, f.sinif)
         if tekillestir and k in gorulen:
             continue
@@ -321,13 +321,25 @@ def _hata_grubu(
             Oge(
                 str(f.id),
                 "failure",
-                _kirp(f.test_adi, 80),
+                hata_basligi(f, run),
                 neden(f),
                 f"/hatalar/{f.id}",
                 f.olusturma,
             )
         )
     return g
+
+
+def hata_basligi(f: Failure, run: Run | None) -> str:
+    """Öğe başlığı: test adı. Koşu düzeyindeki hatada test yoktur (triage yer tutucusu
+    "(koşu: test sonucu yok)"); başlık koşudan üretilir: "Gece koşusu 4cd1d9ba · test sonucu yok"
+    (CL-06)."""
+    ad = (f.test_adi or "").strip()
+    if ad and not ad.startswith("(koşu:"):
+        return _kirp(ad, 80)
+    if run is None:
+        return "Koşu hatası · test sonucu yok"
+    return f"{_kosu_adi(run)} koşusu {str(run.id)[:8]} · test sonucu yok"
 
 
 def _belirsiz_neden(f: Failure) -> str:
@@ -346,7 +358,46 @@ def _bakim_neden(f: Failure) -> str:
     }.get(f.sinif, "İnceleyin")
 
 
+TETIK_ADI = {"pr": "PR", "push": "Push", "nightly": "Gece", "deploy": "Dağıtım", "manual": "Elle"}
+
+
+def _kosu_adi(r: Run) -> str:
+    return TETIK_ADI.get(r.tetik, r.tetik) + (f" #{r.pr_no}" if r.pr_no else "")
+
+
+def kosu_kapsami(r: Run) -> tuple[str, str]:
+    """Bir koşunun "aynı iş" kapsamı (CL-06): PR koşusu PR numarasıyla; diğerleri (push, gece,
+    dağıtım, elle) dal/ref ile (`ortam.ref`, yoksa varsayılan dal "")."""
+    if r.pr_no:
+        return ("pr", str(r.pr_no))
+    ref = r.ortam.get("ref") if isinstance(r.ortam, dict) else None
+    return ("dal", str(ref or ""))
+
+
+def gecersiz_kalan(kirmizi: Run, yesiller: Iterable[Run]) -> bool:
+    """Kırmızı koşu daha yeni bir yeşil koşuyla geçersiz kaldı mı (artık "bekleyen" iş değil)?
+
+    - Aynı kapsamda (`kosu_kapsami`) ve aynı script'te ya da tüm takımda (script yok) daha yeni
+      başarılı koşu varsa: son durum yeşil.
+    - "Testler koşmadı" (`error`, CI ortam hatası): aynı kaynakta (ör. GitHub) daha yeni herhangi
+      bir başarılı koşu ortamın yeniden çalıştığını gösterir.
+    """
+    kapsam = kosu_kapsami(kirmizi)
+    for y in yesiller:
+        if y.olusturma <= kirmizi.olusturma:
+            continue
+        if kirmizi.sonuc == "error" and y.kaynak == kirmizi.kaynak:
+            return True
+        if kosu_kapsami(y) == kapsam and (y.script_id is None or y.script_id == kirmizi.script_id):
+            return True
+    return False
+
+
 def _kosu_grubu(s: Session) -> Grup:
+    """Son 7 günün başarısız (`failed`) ya da hatalı (`error`) koşuları; kırarak doğrulama ve
+    yerel kontrol hariç. Yalnız SON durumu kırmızı olanlar bekleyen iştir: aynı kapsam için daha
+    yeni yeşil koşu varsa eski kırmızı düşer (`gecersiz_kalan`, CL-06). Sayı taranan tüm kırmızı
+    koşulardır; öğe listesi `OGE_UST` ile kırpılır."""
     g = Grup(
         "kosu_hatasi",
         "run",
@@ -355,26 +406,39 @@ def _kosu_grubu(s: Session) -> Grup:
         "Koşuyu açın; kırmızı testlerin triage sonucuna ya da CI günlüğüne bakın",
     )
     sinir = datetime.now(UTC) - timedelta(days=KOSU_GUN)
-    q = (
-        select(Run)
-        .where(
-            Run.sonuc.in_(("failed", "error")),
-            Run.tetik.notin_(("break_verify", "local_check")),
-            Run.olusturma >= sinir,
+    haric = ("break_verify", "local_check")
+    kirmizilar = list(
+        s.scalars(
+            select(Run)
+            .where(
+                Run.sonuc.in_(("failed", "error")),
+                Run.tetik.notin_(haric),
+                Run.olusturma >= sinir,
+            )
+            .order_by(Run.olusturma.desc(), Run.id)
+            .limit(HATA_TARAMA)
         )
-        .order_by(Run.olusturma.desc(), Run.id)
-        .limit(OGE_UST)
     )
-    tetik = {"pr": "PR", "push": "Push", "nightly": "Gece", "deploy": "Dağıtım", "manual": "Elle"}
-    for r in s.scalars(q):
-        ad = tetik.get(r.tetik, r.tetik) + (f" #{r.pr_no}" if r.pr_no else "")
+    if not kirmizilar:
+        return g
+    en_eski = min(r.olusturma for r in kirmizilar)
+    yesiller = list(
+        s.scalars(
+            select(Run).where(
+                Run.sonuc == "passed", Run.tetik.notin_(haric), Run.olusturma > en_eski
+            )
+        )
+    )
+    for r in kirmizilar:
+        if gecersiz_kalan(r, yesiller):
+            continue
         neden = (
             "Testler koşmadı: CI ortam hatası"
             if r.sonuc == "error"
             else "Kırmızı test var: triage sonucunu inceleyin"
         )
         g.ogeler.append(
-            Oge(str(r.id), "run", f"{ad} koşusu", neden, f"/kosular/{r.id}", r.olusturma)
+            Oge(str(r.id), "run", f"{_kosu_adi(r)} koşusu", neden, f"/kosular/{r.id}", r.olusturma)
         )
     return g
 

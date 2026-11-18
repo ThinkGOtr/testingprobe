@@ -49,6 +49,26 @@ function grup(anahtar: string, tur: IsTuru, izin: Izin, baslik: string, sonraki_
   return { anahtar, tur, rol: roller[0], roller, baslik, sonraki_adim, ogeler };
 }
 
+type MockKosu = MockVeri["kosular"][number];
+/** Core `kosu_kapsami`: PR koşusu PR numarasıyla, diğerleri dal/depo ile (örnek veride ref yok → depo). */
+const kosuKapsami = (k: MockKosu) => (k.pr_no ? `pr:${k.pr_no}` : `dal:${k.depo ?? ""}`);
+/**
+ * Core `gecersiz_kalan` (CL-06): yalnız SON durumu kırmızı olan koşu bekleyen iştir. Aynı kapsamda (aynı
+ * script ya da tüm takım) daha yeni yeşil koşu eski kırmızıyı düşürür; CI ortam hatasını (`error`) aynı
+ * kaynakta herhangi bir daha yeni yeşil koşu düşürür.
+ */
+export function gecersizKalan(kirmizi: MockKosu, kosular: readonly MockKosu[]): boolean {
+  return kosular.some(
+    (y) =>
+      y.durum === "passed" &&
+      y.tetik !== "break_verify" &&
+      y.tetik !== "local_check" &&
+      y.baslangic > kirmizi.baslangic &&
+      ((kirmizi.durum === "error" && y.kaynak === kirmizi.kaynak) ||
+        (kosuKapsami(y) === kosuKapsami(kirmizi) && (y.script_id == null || y.script_id === kirmizi.script_id))),
+  );
+}
+
 function kaynaklar(v: MockVeri): HamGrup[] {
   const req = (durumlar: string[]) => v.gereksinimler.filter((g) => durumlar.includes(g.durum));
   const reqOge = (g: MockVeri["gereksinimler"][number], neden: string): IsOgesi => ({
@@ -73,7 +93,8 @@ function kaynaklar(v: MockVeri): HamGrup[] {
   const hataOge = (h: HataAnalizi, neden: string): IsOgesi => ({
     id: h.id,
     tur: "failure",
-    etiket: h.test_adi,
+    // Core `hata_basligi`: koşu düzeyindeki hatada (test yok) başlık koşudan üretilir (CL-06).
+    etiket: h.test_adi && !h.test_adi.startsWith("(koşu:") ? h.test_adi : `Koşu ${h.run_id.slice(0, 8)} · test sonucu yok`,
     neden,
     rota: `/hatalar/${h.id}`,
     zaman: h.zaman,
@@ -118,7 +139,7 @@ function kaynaklar(v: MockVeri): HamGrup[] {
         rota: `/bug-taslaklari/${b.id}`, zaman: null, jira_key: null, sayi: 1,
       }))),
     grup("kosu_hatasi", "run", "run.trigger_scheduled", "Başarısız ya da hatalı koşu", "Koşuyu açın; kırmızı testlerin triage sonucuna ya da CI günlüğüne bakın",
-      v.kosular.filter((k) => (k.durum === "failed" || k.durum === "error") && k.tetik !== "break_verify").slice(0, 20).map((k) => ({
+      v.kosular.filter((k) => (k.durum === "failed" || k.durum === "error") && k.tetik !== "break_verify" && !gecersizKalan(k, v.kosular)).slice(0, 20).map((k) => ({
         id: k.id, tur: "run" as const, etiket: `${k.tetik} koşusu`, neden: k.durum === "error" ? "Testler koşmadı: CI ortam hatası" : "Kırmızı test var: triage sonucunu inceleyin",
         rota: `/kosular/${k.id}`, zaman: k.baslangic, jira_key: null, sayi: 1,
       }))),
