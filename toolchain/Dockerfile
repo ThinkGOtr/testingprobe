@@ -130,7 +130,9 @@ RUN for d in web windows; do \
         "$(ls /build/e2e-csharp-deps/$d/*.csproj)" || exit 1; \
     done \
  && rm -rf /build/e2e-csharp-deps/*/obj \
- && chmod -R a-w /build/e2e-csharp/nuget
+ && chmod -R a+rX,a-w /build/e2e-csharp/nuget \
+ && find /build/e2e-csharp/nuget -type f -perm -u=x ! -perm -o=x -exec echo "yalnız sahibi çalıştırır: {}" \; \
+      -exec false {} +
 # Çalışma zamanı SDK'sı (derleme + dotnet test); belgeler/örnekler atılır.
 RUN cp -a /usr/share/dotnet /build/dotnet
 # ==== dil-csharp (Ş2) sonu ====
@@ -271,7 +273,8 @@ ENV DOTNET_CLI_TELEMETRY_OPTOUT=1 \
 # C# duman testi, AĞSIZ: güvenilir web projesi çevrimdışı kilitli restore + derleme
 # (worker/diller/csharp.py ile aynı bayraklar) ve cs-araclar açılışı. Paket eksikse imaj derlenmez.
 # `COPY --chmod=444 <dizin>/` hedef dizinleri de 444 yaratır: worker kullanıcısı (root değil)
-# kopyalayamaz. Dizinler a+rx yapılır ve duman denetler.
+# kopyalayamaz. Dizinler a+rx yapılır ve duman denetler. (NuGet paket ikilileri, ör. AspectInjector,
+# 0754 açılır; dil-csharp aşaması `a+rX` ile herkese çalıştırılabilir yapar.)
 RUN --network=none chmod 0555 /opt/e2e-csharp /opt/e2e-csharp/web /opt/e2e-csharp/windows \
  && find /opt/e2e-csharp /opt/cs-araclar -type d ! -perm -o=rx -exec echo "erişilemez dizin: {}" \; \
       -exec false {} + \
