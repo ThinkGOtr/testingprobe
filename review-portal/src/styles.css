@@ -6104,8 +6104,10 @@ html {
   .ds-ozet > .ds-ozet-eylemler > .neden-var {
     align-items: flex-start;
   }
-  .ds-ozet > .ds-ozet-eylemler > .neden-var > .dugme-neden {
+  /* Özgül seçici: sayfa başlığının -8 px gap telafisi (sağa yaslı düzen içindir) burada sol kenarı kaydırmasın. */
+  .ds-ozet.sayfa-basligi > .ds-ozet-eylemler.eylemler > .dugme-neden-sarici.neden-var > .dugme-neden {
     text-align: start;
+    margin-left: 0;
   }
 }
 

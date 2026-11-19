@@ -1131,7 +1131,7 @@ test("Faz 4 locator yolu: sunucu kırar → CI kırmızı → triage → mühend
 
   await girisYap(page, "muhendis");
   await page.goto("/hatalar/fail-2");
-  await expect(page.getByTestId("triage-sinif")).toContainText("Karar kaynağı: kural");
+  await expect(page.getByTestId("triage-sinif")).toContainText("Karar kaynağı: otomatik kural");
   await page.getByRole("tab", { name: /^Kanıt/ }).click();
   await expect(page.getByRole("region", { name: "Locator yoklaması (locator-probe)" })).toContainText("commit eşleşiyor");
   await page.getByRole("tab", { name: /^Onarım/ }).click();
