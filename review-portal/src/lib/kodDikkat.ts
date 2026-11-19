@@ -3,6 +3,7 @@
 // `mode`, `failure_id`); burada yalnız kullanıcı diline çevrilir ve gruplanır.
 import type { Script } from "../api/types";
 import { ENGEL_TURU } from "./kapi";
+import { tekrarsizAyrinti } from "./etiketler";
 
 export type ScriptGrubu = "dikkat" | "suren" | "birlesen";
 
@@ -30,9 +31,11 @@ export function ilkCumle(metin: string | null | undefined): string | null {
 export function dikkatNedeni(s: Script, veriDegisti = false): DikkatNedeni | null {
   const scriptYolu = `/kod/${encodeURIComponent(s.id)}`;
   if (defectMi(s)) {
+    const metin = "Defect adayı: test, onaylı case'in beklenen değerinde kırmızı (hata büyük olasılıkla üründe)";
     return {
-      metin: "Defect adayı: test, onaylı case'in beklenen değerinde kırmızı (hata büyük olasılıkla üründe)",
-      ayrinti: ilkCumle(s.engel?.neden),
+      metin,
+      // CL-07: ayrıntı başlığı tekrar ediyorsa ("Defect adayı: …") ve iç kod (S4:, REPLAY-MISS:) taşıyorsa ayıklanır.
+      ayrinti: tekrarsizAyrinti(metin, ilkCumle(s.engel?.neden)),
       eylem: s.failure_id
         ? { tur: "baglanti", etiket: "Triage sonucunu aç", yol: `/hatalar/${encodeURIComponent(s.failure_id)}` }
         : { tur: "baglanti", etiket: "Script'i aç", yol: scriptYolu },
@@ -44,9 +47,10 @@ export function dikkatNedeni(s: Script, veriDegisti = false): DikkatNedeni | nul
     const onEk = s.durum === "blocked" ? "İnsana düştü" : "Üretim başarısız";
     // Ortam ve REPLAY-MISS: kod tarafında düzeltilecek bir şey yok, yeniden üretim doğru eylemdir.
     const yenidenUret = tur === "environment" || tur === "replay_miss" || tur === "agent_error" || tur === "flaky";
+    const metin = `${onEk}: ${tur === "replay_miss" ? "kayıtlı model çıktısı yok, canlı model gerekir" : ad.charAt(0).toLocaleLowerCase("tr-TR") + ad.slice(1)}`;
     return {
-      metin: `${onEk}: ${tur === "replay_miss" ? "kayıtlı model çıktısı yok, canlı model gerekir" : ad.charAt(0).toLocaleLowerCase("tr-TR") + ad.slice(1)}`,
-      ayrinti: ilkCumle(s.engel?.neden ?? s.hata),
+      metin,
+      ayrinti: tekrarsizAyrinti(metin, ilkCumle(s.engel?.neden ?? s.hata)),
       eylem: yenidenUret
         ? { tur: "yeniden_uret", etiket: "Yeniden üret" }
         : tur === "missing_method" || tur === "unknown_method"
@@ -55,7 +59,7 @@ export function dikkatNedeni(s: Script, veriDegisti = false): DikkatNedeni | nul
     };
   }
   if (s.mode === "replay_miss" && s.durum !== "merged" && s.durum !== "closed") {
-    return { metin: "REPLAY-MISS: kayıtlı model çıktısı yok, canlı model gerekir", ayrinti: null, eylem: { tur: "yeniden_uret", etiket: "Yeniden üret" } };
+    return { metin: "Kayıtlı model çıktısı yok: canlı model gerekir", ayrinti: null, eylem: { tur: "yeniden_uret", etiket: "Yeniden üret" } };
   }
   if (s.durum === "unverified") {
     return { metin: "Doğrulanmamış dil: kod derlenmedi ve koşulmadı, PR açılmaz", ayrinti: null, eylem: { tur: "baglanti", etiket: "Kodu indir (script'i aç)", yol: scriptYolu } };

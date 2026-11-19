@@ -6,6 +6,7 @@
 // Maliyet K5'e uyar (ölçülmemiş sayı söylenmez): diğer AI işleri AI katkısı kartıyla aynı kuralla
 // REPLAY'de "REPLAY — ölçülmedi"; asistanın hiç model çağrısı yoksa "$0,00" yerine "çağrı yok";
 // maliyet verilmediyse (null) "ölçülmedi".
+import { modelCagriAmaci } from "../../lib/etiketler";
 import { TabloSarici } from "../tasarim";
 import { KaynakIpucu } from "../KaynakIpucu";
 import type { ReactNode } from "react";
@@ -89,7 +90,7 @@ export function OnerilerOlcumKarti({ kule }: { kule: AsistanliKule }) {
         <Metrik
           etiket="Asistan maliyeti (toplam)"
           deger={<span data-testid="asistan-maliyet">{asistanMaliyeti(as, as.maliyet_usd)}</span>}
-          alt={`${as.cagri} model çağrısı${as.amaclar.length ? ` · ${as.amaclar.join(", ")}` : ""}`}
+          alt={`${as.cagri} model çağrısı${as.amaclar.length ? ` · ${as.amaclar.map(modelCagriAmaci).join(", ")}` : ""}`}
         />
         <Metrik
           etiket="Asistan bugün"

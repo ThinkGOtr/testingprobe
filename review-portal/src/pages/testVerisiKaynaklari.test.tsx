@@ -62,7 +62,7 @@ describe("Test verisi: veritabanı kaynakları", () => {
     expect(urun).toHaveTextContent("kod, ad, fiyat (tutar)");
     expect(urun).toHaveTextContent("Henüz yenilenmedi");
     // ayar: tek değer kolonu, alan boş → anahtar `ayar.<anahtar>`.
-    expect(kaynakOgesi("ayar")).toHaveTextContent("deger→(anahtar)");
+    expect(kaynakOgesi("ayar")).toHaveTextContent("deger → anahtarın değeri");
     expect(within(urun).getByText("2", { selector: "dd" })).toBeInTheDocument(); // urun.p_001.ad + fiyat
     expect(within(bolum()).getByRole("button", { name: "Kaynak ekle" })).toBeInTheDocument();
 
@@ -199,6 +199,7 @@ describe("Test verisi: veritabanı kaynakları", () => {
     uygulama();
     const u = userEvent.setup();
     await waitFor(() => expect(kaynakOgesi("kampanya")).not.toBeNull());
+    await u.click(within(bolum()).getByRole("button", { name: "İşlemler: kampanya kaynağı" }));
     await u.click(within(bolum()).getByRole("button", { name: "kampanya kaynağını sil" }));
     const onay = screen.getByRole("group", { name: "kampanya kaynağı silme onayı" });
     expect(onay).toHaveTextContent("1 katalog kaydı silinmez");
@@ -213,6 +214,7 @@ describe("Test verisi: veritabanı kaynakları", () => {
     const u = userEvent.setup();
     await waitFor(() => expect(kaynakOgesi("ayar")).not.toBeNull());
     // Form sürüm 1'i taşır; araya başka biri girer (sürüm 2).
+    await u.click(within(bolum()).getByRole("button", { name: "İşlemler: ayar kaynağı" }));
     await u.click(within(bolum()).getByRole("button", { name: "ayar kaynağını düzenle" }));
     expect(screen.getByLabelText("Kaynak grubu")).toHaveAttribute("readonly");
     expect(screen.getByLabelText("Kaynak grubu")).toHaveValue("ayar");

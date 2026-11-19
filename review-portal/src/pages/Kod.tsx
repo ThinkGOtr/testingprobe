@@ -184,6 +184,8 @@ export function Kod() {
       <Kart
         baslik="Kodu üretilecek onaylı case'ler"
         eylemler={
+          // CL-09: boş kuyrukta kilitli "kod üret (0)" düğmesi gösterilmez (boş durum sonraki adımı söylüyor).
+          !kuyrukBos && (
           <IslemDugmesi
             izin="code.generate"
             disabled={platformYok || seciliAdaylar.length === 0 || !!dilEngeli}
@@ -209,6 +211,7 @@ export function Kod() {
                 (390 px'te düğme adı kısa kalır, sayfa yatay kaymaz). */}
             {seciliDil && (elleGecerli || dogrulanmamis || musteriCi) && ` · ${DIL_ETIKETI[seciliDil]}`}
           </IslemDugmesi>
+          )
         }
       >
         {platformYok ? (

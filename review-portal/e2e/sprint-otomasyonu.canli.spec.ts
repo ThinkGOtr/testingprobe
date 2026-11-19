@@ -137,6 +137,7 @@ test("3b. K10: katalog değeri onaydan sonra değişince onaylı case uyarır", 
 }) => {
   await giris(page, "analist");
   await page.goto("/test-verisi");
+  await page.getByRole("button", { name: "İşlemler: bayi.bayi1.ad" }).click();
   await page.getByRole("button", { name: "bayi.bayi1.ad düzenle" }).click();
   const deger = page.getByLabel("Değer", { exact: true });
   const eski = await deger.inputValue();
@@ -158,6 +159,7 @@ test("3b. K10: katalog değeri onaydan sonra değişince onaylı case uyarır", 
   });
   // Geri al: katalog eski değerine döner.
   await page.goto("/test-verisi");
+  await page.getByRole("button", { name: "İşlemler: bayi.bayi1.ad" }).click();
   await page.getByRole("button", { name: "bayi.bayi1.ad düzenle" }).click();
   await page.getByLabel("Değer", { exact: true }).fill(eski);
   await page

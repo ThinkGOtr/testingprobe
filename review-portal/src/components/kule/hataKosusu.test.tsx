@@ -146,7 +146,7 @@ describe("Ekilmiş hata koşusu kartı: form ve rol kapısı", () => {
     expect(within(veri).getAllByRole("checkbox")).toHaveLength(4);
     for (const c of [...within(kod).getAllByRole("checkbox"), ...within(veri).getAllByRole("checkbox")]) expect(c).toBeChecked();
     expect(within(kod).getByRole("checkbox", { name: "Kampanyada en çok 1 bedava" })).toHaveAccessibleDescription(
-      /Ayırt edici girdi 14 adet.*min\(1, adet \/\/ 6\).*Yakalaması beklenen kural: Kampanya \(çoklu bedava adet\)\..*kampanya_tek_bedava/,
+      /Ayırt edici girdi 14 adet.*min\(1, adet \/\/ 6\).*Yakalaması beklenen kural: Kampanya \(çoklu bedava adet\)\.$/,
     );
     // Aritmetik açık: hata + çerçeve koşuları (temel, kapanış) = platform başına koşu; toplam ve web süresi.
     expect(within(k).getByTestId("hk-tahmin")).toHaveTextContent(
@@ -212,7 +212,7 @@ describe("Ekilmiş hata koşusu kartı: sonuç tablosu, kaçan hatalar, geçmiş
     expect(tablo.getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Hata", "Web", "Android"]);
     // Temel + dokuz hata + kapanış + üç oran satırı (AI, el yazısı, tüm testler).
     expect(tablo.getAllByRole("rowheader")).toHaveLength(14);
-    expect(tablo.getByRole("rowheader", { name: /Kampanyada en çok 1 bedava.*Kod hatası.*kampanya_tek_bedava/ })).toBeInTheDocument();
+    expect(tablo.getByRole("rowheader", { name: /^Kampanyada en çok 1 bedava\s*Kod hatası$/ })).toBeInTheDocument();
 
     expect(hucre("web", "kampanya_bedava_yok")).toHaveTextContent("✓ yakalandı");
     expect(hucre("web", "kampanya_tek_bedava")).toHaveTextContent("✗ kaçtı");

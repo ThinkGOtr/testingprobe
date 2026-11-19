@@ -8,7 +8,7 @@ import type { HataAnalizi, HataSinifi } from "../api/types";
 import { SegmentSecici, SuzgecCubugu } from "../components/tasarim";
 import { BosDurum, Cip, HataKutusu, Kart, SayfaBasligi, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useVeri } from "../hooks";
-import { HATA_SINIFI } from "../lib/etiketler";
+import { HATA_SINIFI, testAdiGoster } from "../lib/etiketler";
 import { tarih } from "../lib/format";
 import { kisaKosuAdi } from "./Kosular";
 
@@ -84,7 +84,7 @@ export function Hatalar() {
                     <tr key={h.id}>
                       <td data-etiket="Test">
                         <Link to={`/hatalar/${encodeURIComponent(h.id)}`} className="satir-baglanti">
-                          {h.test_adi}
+                          {testAdiGoster(h.test_adi)}
                         </Link>
                         {h.kirma && <span className="soluk kucuk"> · kasıtlı kırma</span>}
                       </td>

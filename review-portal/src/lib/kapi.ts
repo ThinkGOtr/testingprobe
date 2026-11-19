@@ -146,7 +146,7 @@ export const ENGEL_TURU: Record<string, string> = {
   unknown_method: "Eşlemedeki metot sembol tablosunda yok / imza uymuyor",
   unsourced_value: "Beklenen değer onaylı case metninde yok",
   unverified_step: "Adım uygulamada doğrulanamadı",
-  replay_miss: "REPLAY-MISS: kayıtlı doğrulama yok",
+  replay_miss: "Kayıtlı doğrulama yok (canlı model gerekir)",
   agent_error: "Ajan / model geçidi hatası",
   defect_candidate: "Defect adayı (assertion kırmızı)",
   locator: "Locator / eşleme hatası (düzeltme turundan sonra da)",

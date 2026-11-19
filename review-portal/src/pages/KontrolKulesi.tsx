@@ -23,6 +23,7 @@ import { izinVar } from "../lib/yetki";
 import { OrtamSuzgeci, suzgecOrtamlari, useOrtamlar } from "../components/Ortam";
 import { ortamMetni } from "../lib/ortam";
 import { TabloSarici } from "../components/tasarim";
+import { testAdiGoster } from "../lib/etiketler";
 import { Sekmeler, useSekmeSecimi, type DetaySekmesi } from "../components/DetaySayfasi";
 
 /** IA-19: Kule bölüm sekmeleri (`?bolum=`); eski çapalar ilgili sekmeyi açar. */
@@ -246,6 +247,10 @@ export function KontrolKulesi() {
           {k.gecme_orani.test && k.gecme_orani.test.toplam > 0 && (
             <p className="kucuk">
               Test bazında: {k.gecme_orani.test.oran === null ? "—" : yuzde(k.gecme_orani.test.oran)} ({k.gecme_orani.test.gecen}/{k.gecme_orani.test.toplam})
+              {/* CL-09: iki oran neden farklı — koşu bazı testleri hiç koşmayan (hata/zaman aşımı) koşuları da sayar. */}
+              {k.gecme_orani.birim === "kosu" && k.gecme_orani.test.oran !== k.gecme_orani.oran && (
+                <span className="soluk"> · yalnız koşan testler; testleri hiç koşmayan (hata, zaman aşımı) koşular koşu bazında başarısız sayılır</span>
+              )}
             </p>
           )}
           {k.gunluk_gecme.length > 0 && (
@@ -359,7 +364,7 @@ export function KontrolKulesi() {
             <ul className="duz-liste">
               {k.flaky.map((f) => (
                 <li key={f.test_adi}>
-                  <div>{f.test_adi}</div>
+                  <div>{testAdiGoster(f.test_adi)}</div>
                   <div className="kucuk soluk">
                     {f.neden === "retry" ? "Yeniden denemeyle geçti" : "Aynı commit'te sonuç değişti"} · {f.sayi} kez
                     {f.son_gorulme && ` · son ${tarih(f.son_gorulme)}`}

@@ -48,7 +48,7 @@ describe("OnerilerOlcumKarti", () => {
 
     expect(screen.getByRole("heading", { name: "Öneriler ve asistan" })).toBeInTheDocument();
     expect(screen.getByTestId("asistan-maliyet").textContent).toMatch(/0[.,]20/);
-    expect(screen.getByText(/3 model çağrısı · assistant, assistant_deep/)).toBeInTheDocument();
+    expect(screen.getByText(/3 model çağrısı · soru-cevap, derin yanıt/)).toBeInTheDocument();
     expect(screen.getByTestId("oneri-toplam-neden")).toHaveTextContent("3");
     expect(screen.getByTestId("oneri-toplam-geri-bildirim")).toHaveTextContent("2 / 2 / 1");
     expect(screen.getByTestId("oneri-olcum-kaynak")).toHaveAttribute("aria-label", "Kaynak: ai_call.maliyet …");

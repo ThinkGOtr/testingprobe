@@ -406,12 +406,14 @@ describe("Test verisi düzeltmeleri", () => {
     expect(not).toHaveTextContent("Etiket ve ayar grupları case'e otomatik atfedilmez");
     await waitFor(() => expect(not).toHaveTextContent("Şu anki kip: REPLAY"));
 
-    await u.click(await screen.findByRole("button", { name: "urun.p_001.fiyat düzenle" }));
+    await u.click(await screen.findByRole("button", { name: "İşlemler: urun.p_001.fiyat" }));
+    await u.click(screen.getByRole("button", { name: "urun.p_001.fiyat düzenle" }));
     await u.clear(screen.getByLabelText("Açıklama"));
     await u.click(screen.getByRole("button", { name: "Kaydet" }));
     await waitFor(() => expect(cagrilar.find((c) => c.method === "PUT")?.govde).toMatchObject({ aciklama: "" }));
     await waitFor(() => expect(document.querySelector('tr[data-anahtar="urun.p_001.fiyat"]')).toHaveTextContent("s2"));
 
+    await u.click(screen.getByRole("button", { name: "İşlemler: kampanya.k6_1.ad" }));
     await u.click(screen.getByRole("button", { name: "kampanya.k6_1.ad sil" }));
     const satir = document.querySelector('tr[data-anahtar="kampanya.k6_1.ad"]') as HTMLElement;
     expect(within(satir).getByRole("button", { name: "Vazgeç" })).toHaveFocus();

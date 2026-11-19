@@ -8,6 +8,7 @@ import { useKisiAdi, useOturum } from "../auth";
 import { BosDurum, Cip, HataKutusu, Kart, SayfaBasligi, Yukleniyor } from "../components/ui";
 import { useGeciktirilmis, useVeri } from "../hooks";
 import { tarih } from "../lib/format";
+import { icTerimleriAyikla, testAdiGoster } from "../lib/etiketler";
 import { ROL_ETIKETLERI, rolEtiketi } from "../lib/yetki";
 
 /** Kuyruğu tazeleyen olaylar (karar, üretim, PR, triage, yayın). */
@@ -42,14 +43,15 @@ function OgeSatiri({ o }: { o: IsOgesi }) {
     <li className="islerim-oge">
       <div className="islerim-oge-govde">
         <Link to={o.rota} className="islerim-oge-baslik">
-          {o.etiket}
+          {testAdiGoster(o.etiket)}
         </Link>
         <span className="soluk kucuk">
-          {o.neden}
+          {/* CL-07: iç kodlar (S4:, REPLAY-MISS:, @tp-…) gösterimde ayıklanır. */}
+          {icTerimleriAyikla(o.neden)}
           {o.zaman && <> · {tarih(o.zaman)}</>}
         </span>
       </div>
-      <Link to={o.rota} className="dugme dugme-ikincil dugme-kucuk" aria-label={`${o.etiket}: aç`}>
+      <Link to={o.rota} className="dugme dugme-ikincil dugme-kucuk" aria-label={`${testAdiGoster(o.etiket)}: aç`}>
         Aç →
       </Link>
     </li>
@@ -96,11 +98,11 @@ function KatliSatiri({ k, tur }: { k: KatliSatir; tur: string }) {
       <details>
         <summary>
           <span className="islerim-oge-baslik">
-            {k.ogeler.length} {ad}: {k.neden}
+            {k.ogeler.length} {ad}: {icTerimleriAyikla(k.neden)}
           </span>
           {son && <span className="soluk kucuk"> · en son {tarih(son)}</span>}
         </summary>
-        <ul className="duz-liste islerim-liste" aria-label={`${k.neden}: ${k.ogeler.length} ${ad}`}>
+        <ul className="duz-liste islerim-liste" aria-label={`${icTerimleriAyikla(k.neden)}: ${k.ogeler.length} ${ad}`}>
           {k.ogeler.map((o) => (
             <OgeSatiri key={`${o.tur}-${o.id}`} o={o} />
           ))}
@@ -156,7 +158,7 @@ function EkipGrubu({ g }: { g: IsGrubu }) {
           <ul className="duz-liste islerim-ekip-ogeleri" aria-label={`${g.baslik}: öğeler`}>
             {g.ogeler.map((o) => (
               <li key={`${o.tur}-${o.id}`}>
-                <Link to={o.rota}>{o.etiket}</Link> <span className="soluk kucuk">· {o.neden}</span>
+                <Link to={o.rota}>{testAdiGoster(o.etiket)}</Link> <span className="soluk kucuk">· {icTerimleriAyikla(o.neden)}</span>
               </li>
             ))}
           </ul>

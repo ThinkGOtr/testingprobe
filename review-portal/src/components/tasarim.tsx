@@ -1,6 +1,6 @@
 // Ortak tasarım sistemi bileşenleri (UX-T, aip-review/tp-ux-denetim/sistem.md §2/§4). Kullanım kuralları:
 // review-portal/README.md "Tasarım sistemi kullanımı". Yeni renk yok; yalnız mevcut belirteçler.
-import { useState, type ReactNode } from "react";
+import { useId, useRef, useState, type ReactNode } from "react";
 import { type Ton } from "../lib/etiketler";
 import { Ipucu } from "./Ipucu";
 import { Cip, OdaklanabilirKilitBaglami } from "./ui";
@@ -294,6 +294,78 @@ export function TabloSarici({
   );
 }
 
+// ------------------------------------------------------------------ Satır eylemleri (CL-02/CL-03)
+
+export type SatirEylemi = { ad: string; erisilebilirAd?: string; sec: () => void; tur?: "ikincil" | "hayalet" | "tehlike"; pasif?: boolean };
+
+/**
+ * Tablo satırının eylemleri tek Tab durağında (CL-03, ET-08): "İşlemler" açılır düğmesi (disclosure,
+ * `aria-expanded`) eylemleri satır içinde tek grup olarak açar; Esc kapatır ve odak düğmeye döner. Eylem
+ * seçilince grup kapanır, odak düğmeye döner, sonra eylem çalışır (açılan form/onay odağı geri bu düğmeye verir).
+ * Eylem sütunu dar kalır (`sutun-eylem`): 1024 px'te gizli sütun bırakmaz (CL-02).
+ */
+export function SatirEylemleri({ etiket, eylemler }: { etiket: string; eylemler: SatirEylemi[] }) {
+  const [acik, setAcik] = useState(false);
+  const dugme = useRef<HTMLButtonElement>(null);
+  const id = useId();
+  if (eylemler.length === 0) return null;
+  // Tek eylem açılır gerektirmez: düğme doğrudan çizilir (yine tek durak).
+  if (eylemler.length === 1) {
+    const e = eylemler[0];
+    return (
+      <div className="satir-eylemleri">
+        <button type="button" className={`dugme dugme-${e.tur ?? "ikincil"} dugme-kucuk`} aria-label={e.erisilebilirAd} disabled={e.pasif} onClick={e.sec}>
+          {e.ad}
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div
+      className="satir-eylemleri"
+      onKeyDown={(e) => {
+        if (e.key === "Escape" && acik) {
+          e.stopPropagation();
+          setAcik(false);
+          dugme.current?.focus();
+        }
+      }}
+    >
+      <button
+        ref={dugme}
+        type="button"
+        className="dugme dugme-hayalet dugme-kucuk satir-eylemleri-dugme"
+        aria-expanded={acik}
+        aria-controls={acik ? id : undefined}
+        aria-label={`İşlemler: ${etiket}`}
+        onClick={() => setAcik((a) => !a)}
+      >
+        İşlemler <span aria-hidden="true">{acik ? "▴" : "▾"}</span>
+      </button>
+      {acik && (
+        <div id={id} className="satir-eylemleri-liste" role="group" aria-label={`${etiket} işlemleri`}>
+          {eylemler.map((e) => (
+            <button
+              key={e.ad}
+              type="button"
+              className={`dugme dugme-${e.tur ?? "ikincil"} dugme-kucuk`}
+              aria-label={e.erisilebilirAd}
+              disabled={e.pasif}
+              onClick={() => {
+                setAcik(false);
+                dugme.current?.focus();
+                e.sec();
+              }}
+            >
+              {e.ad}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ------------------------------------------------------------------ Sayfalama
 
 /**
@@ -326,7 +398,7 @@ export function Sayfalama({
   const son = Math.min(sayfa * boyut, toplam);
   const gec = (n: number) => {
     git(n);
-    if (hedefId) document.getElementById(hedefId)?.scrollIntoView({ block: "start" });
+    if (hedefId) document.getElementById(hedefId)?.scrollIntoView?.({ block: "start" });
   };
   // En çok 7 numara: ilk, son, geçerli ±1 ve aralarda "…".
   const numaralar: (number | "…")[] = [];

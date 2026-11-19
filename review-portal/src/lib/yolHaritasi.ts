@@ -15,7 +15,7 @@ import type {
   TestCase,
 } from "../api/types";
 import { api } from "../api/client";
-import { AKIS_ADIMLARI } from "./etiketler";
+import { AKIS_ADIMLARI, testAdiGoster } from "./etiketler";
 import { kipDugmeMetni, VARSAYILAN_URETIM_KIPI } from "./uretimSecenekleri";
 
 export const DEMO_STORY = "TPD-1";
@@ -435,7 +435,7 @@ export function sonrakiAdimlar(x: SonrakiGirdi): YolAdimi[] {
   const a12 = urunHatasi
     ? adim(12, {
         hal: "tamam",
-        kanit: `${urunHatasi.test_adi.slice(0, 80)} → ürün hatası (${urunHatasi.karar_kaynagi === "rule" ? "kural" : "LLM"})`,
+        kanit: `${testAdiGoster(urunHatasi.test_adi).slice(0, 80)} → ürün hatası (${urunHatasi.karar_kaynagi === "rule" ? "kural" : "LLM"})`,
         baglanti: { yol: `/hatalar/${kodla(urunHatasi.id)}`, etiket: "Triage" },
         mode: urunHatasi.mode,
       })

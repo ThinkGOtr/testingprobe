@@ -12,7 +12,7 @@ import type { HataKatalogOgesi, HataKosusu, HataKosusuAdimi, HataKosusuDetay, Ha
 import { hataKosusuSuruyorMu, kaynakBilgisiVar, kaynakOrani, yakalamaOrani } from "../../api/uyumKule";
 import { useIzin, usePlatformlar } from "../../auth";
 import { useGeciktirilmis, useVeri } from "../../hooks";
-import { ekilmisHataAdi, HATA_ADIM_SONUCU, HATA_KOSUSU_DURUMU, HATA_TURU } from "../../lib/etiketler";
+import { ekilmisHataAdi, HATA_ADIM_SONUCU, HATA_KOSUSU_DURUMU, HATA_TURU, icTerimleriAyikla } from "../../lib/etiketler";
 import { sure, tarih, yuzde } from "../../lib/format";
 import { PLATFORMLAR, PLATFORM_ETIKETI, uygulamaPlatformuMu, type Platform } from "../../lib/platform";
 import { KisiAdi } from "../KisiAdi";
@@ -289,8 +289,9 @@ export function HataKosusuKarti({ olcuDegisti, olculenKosuId = null }: { olcuDeg
                           <span>{h.ad}</span>
                         </label>
                         <div className="hk-secenek-alt kucuk" id={`hk-hata-${h.kod}`}>
-                          {h.aciklama}
-                          {h.yakalayan_kural ? ` Yakalaması beklenen kural: ${h.yakalayan_kural}.` : ""} <span className="mono">{h.kod}</span>
+                          {/* CL-07: katalog kodu (kampanya_bedava_yok) ve BREAK_CAMPAIGN gösterilmez. */}
+                          {icTerimleriAyikla(h.aciklama)}
+                          {h.yakalayan_kural ? ` Yakalaması beklenen kural: ${h.yakalayan_kural}.` : ""}
                         </div>
                       </li>
                     ))}
@@ -898,10 +899,7 @@ function Sonuc({
                 <tr key={kod} data-testid={`hk-satir-${kod}`}>
                   <th scope="row">
                     <span className="hk-hata-adi">{ad}</span>
-                    <span className="hk-hata-kunye kucuk">
-                      {oge ? `${HATA_TURU[oge.tur]} · ` : ""}
-                      <span className="mono">{kod}</span>
-                    </span>
+                    {oge && <span className="hk-hata-kunye kucuk">{HATA_TURU[oge.tur]}</span>}
                   </th>
                   {kosu.platformlar.map((p) => (
                     <td key={p} data-testid={`hk-hucre-${p}-${kod}`}>
