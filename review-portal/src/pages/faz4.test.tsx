@@ -36,7 +36,7 @@ describe("triage ekranı", () => {
     uygulama("/hatalar/fail-2");
     const sinif = await screen.findByTestId("triage-sinif");
     expect(sinif).toHaveTextContent("Test bakımı");
-    expect(sinif).toHaveTextContent("Karar kaynağı: kural · test_maintenance/locator");
+    expect(sinif).toHaveTextContent("Karar kaynağı: otomatik kural (Test bakımı · locator değişikliği)");
     // Önerili hatada varsayılan sekme Onarım; kanıt ve sinyaller kendi sekmelerinde.
     await sekmeAc("Kanıt");
     // Kanıt: locator-probe (kapsam + DOM testId + commit eşleşmesi), aria parçası, sağlık.
@@ -93,7 +93,11 @@ describe("triage ekranı", () => {
   it("karar kaynağı metni ve onarım aşamaları (bilinmeyen = bekliyor, uydurma yeşil yok)", () => {
     expect(kararKaynagiMetni({ karar_kaynagi: "llm", kural: null })).toBe("Karar kaynağı: AI (kural eşleşmedi)");
     expect(kararKaynagiMetni({ karar_kaynagi: "human", kural: null })).toBe("Karar kaynağı: insan sınıflandırması");
-    expect(kararKaynagiMetni({ karar_kaynagi: "rule", kural: null })).toBe("Karar kaynağı: deterministik kural");
+    expect(kararKaynagiMetni({ karar_kaynagi: "rule", kural: null })).toBe("Karar kaynağı: otomatik kural");
+    // YD-07: iç kural kodu kullanıcıya sınıf adıyla; ham kod yalnız teknik görünümde.
+    expect(kararKaynagiMetni({ karar_kaynagi: "rule", kural: "product_defect" })).toBe("Karar kaynağı: otomatik kural (Ürün hatası)");
+    expect(kararKaynagiMetni({ karar_kaynagi: "rule", kural: "test_maintenance/locator" })).toBe("Karar kaynağı: otomatik kural (Test bakımı · locator değişikliği)");
+    expect(kararKaynagiMetni({ karar_kaynagi: "rule", kural: "product_defect" }, { teknik: true })).toContain("· product_defect");
     const a = onarimAsamalari({
       tur: "locator_fix",
       dosya: "x",

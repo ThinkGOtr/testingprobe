@@ -1511,6 +1511,17 @@ td .cip:has(+ .cip) {
   padding-left: 1.25rem;
   margin: 6px 0;
 }
+/* YD-12: madde imisiz liste (.duz-liste) ikonla aynı satırdan, ek sol boşluk olmadan başlar. */
+.uyari-kutusu .duz-liste {
+  padding-left: 0;
+  margin: 0;
+}
+.uyari-kutusu .duz-liste > li:first-child {
+  padding-top: 0;
+}
+.uyari-kutusu .duz-liste > li:last-child {
+  padding-bottom: 0;
+}
 .uyari-kutusu .soluk {
   color: var(--text-2);
 }
@@ -4233,6 +4244,22 @@ details.soluk > summary {
 .kart-baslik:has(> .eylemler > .neden-var > .dugme-kucuk) > h2 {
   padding-top: max(0px, calc((30px - 1lh) / 2));
 }
+/* YD-01 / CL-01: grupta düğme yoksa (yetkisiz rol: yalnız "Bu adım <Rol> rolünde: … bekleniyor" notu) yukarıdaki
+   contain: inline-size nedenin içsel genişliğini sıfırlar, grup (ızgara `auto` sütunu / flex öğesi) 0 px'e ezilir ve
+   metin harf harf dikey akar. Düğmesiz grupta not grubun kendi genişliğini belirler: içsel genişlik sayılır, en az
+   16rem (dar kapta kabın tamamı), en çok 48ch; boş eş sarıcılar (aynı not başka sarıcıda çizildi) yer tutmaz. */
+.eylemler:not(:has(button, a[href], input, select, textarea)) > .dugme-neden-sarici:not(.neden-var) {
+  display: none;
+}
+/* Seçici bilerek özgül: sayfa başlığının -8 px gap telafisi ve kart başlığı kuralları bu durumu ezmesin. */
+.eylemler:not(:has(button, a[href], input, select, textarea)) > .dugme-neden-sarici.neden-var[data-yetkisiz] > .dugme-neden.bekleyen-rol {
+  order: 0;
+  flex: 0 1 auto;
+  min-width: min(16rem, 100%);
+  max-width: 48ch;
+  margin: 0;
+  contain: none;
+}
 /* Tam genişlik (blok) düğme kalıplarında neden de düğmeyle aynı genişlikte kalır. */
 @media (max-width: 640px) {
   .dugme-neden {
@@ -6057,6 +6084,32 @@ html {
     max-width: none;
   }
 }
+/* YD-01: eylem grubunda düğme yoksa (yalnız "kimi bekliyoruz" notu) grup sağ sütuna sıkışmaz; gövdenin altında
+   tam genişlik satıra iner ve sola yaslanır (Sıradaki adım satırıyla aynı hizada). */
+.ds-ozet.sayfa-basligi > .ds-ozet-eylemler.eylemler:not(:has(button, a[href], input, select, textarea)) {
+  grid-column: 1 / -1;
+  max-width: none;
+  margin-left: 0;
+  justify-content: flex-start;
+}
+.ds-ozet > .ds-ozet-eylemler:not(:has(button, a[href], input, select, textarea)) > .neden-var > .dugme-neden {
+  text-align: start;
+}
+/* DZ-21: yığılmış özet kartında (≤960) eylemler sola yaslı tek akış: sağa yaslı notlar ile sola yaslı düğme
+   sarıcıları arasında zikzak oluşmaz; neden metni düğmesinin altında soldan başlar. */
+@media (max-width: 960px) {
+  .ds-ozet.sayfa-basligi > .ds-ozet-eylemler.eylemler {
+    justify-content: flex-start;
+  }
+  .ds-ozet > .ds-ozet-eylemler > .neden-var {
+    align-items: flex-start;
+  }
+  /* Özgül seçici: sayfa başlığının -8 px gap telafisi (sağa yaslı düzen içindir) burada sol kenarı kaydırmasın. */
+  .ds-ozet.sayfa-basligi > .ds-ozet-eylemler.eylemler > .dugme-neden-sarici.neden-var > .dugme-neden {
+    text-align: start;
+    margin-left: 0;
+  }
+}
 
 /* Şerit (ör. kompakt akış adımları): kartsız ince yüzey. */
 .ds-serit {
@@ -7297,4 +7350,15 @@ code {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
   border-radius: var(--radius-etiket);
+}
+
+/* İşlerim: aynı nedenle düşen koşular tek satıra katlanır (canlı detay YD notu). Yeni renk yok. */
+.islerim-katli {
+  display: block;
+}
+.islerim-katli > details > summary {
+  cursor: pointer;
+}
+.islerim-katli > details > .islerim-liste {
+  margin: var(--space-2) 0 0 var(--space-4);
 }

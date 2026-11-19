@@ -3950,7 +3950,7 @@ def merge_kabul_gerekceleri(sc: Script, cg: ScriptCodegen) -> list[str]:
     bv = cg.break_durum
     if bv == "weak" or sc.zayif_test:
         return [
-            "Zayıf test: BREAK_CAMPAIGN ile kırılan uygulamada da yeşil kaldı (açık kabul gerekir)."
+            "Zayıf test: kampanya kuralı bilerek bozulan uygulamada da yeşil kaldı (açık kabul gerekir)."
         ]
     if bv == "failed":
         return ["Kırarak doğrulama tamamlanamadı: testin hata yakaladığına dair kanıt yok."]

@@ -145,7 +145,19 @@ export function useOturum(): OturumBaglami {
  */
 export function kisiAdiCevir(kisiler: Record<string, string> | undefined, ad: string | null | undefined): string {
   if (!ad) return "";
-  return kisiler?.[ad] ?? kisiler?.[ad.trim().toLowerCase()] ?? ad;
+  const bulunan = kisiler?.[ad] ?? kisiler?.[ad.trim().toLowerCase()];
+  if (bulunan) return bulunan;
+  // YD-07: AI Probe'un rol başına açtığı iç hesap adı ("gokhan.sipahi-engineer", "ayse-tester-1a2b") eşlemede yoksa
+  // kullanıcı kimliği gösterilmez: yerel kısımdan okunur ad üretilir ("Gokhan Sipahi").
+  const ic = /^([a-z0-9][a-z0-9._]*)-(analyst|po|tester|engineer|admin|auditor|viewer|developer)(?:-[0-9a-f]{4})?$/i.exec(ad.trim());
+  if (ic) {
+    return ic[1]
+      .split(/[._]+/)
+      .filter(Boolean)
+      .map((p) => p.charAt(0).toLocaleUpperCase("tr") + p.slice(1))
+      .join(" ");
+  }
+  return ad;
 }
 
 export function useKisiAdi(): (ad: string | null | undefined) => string {

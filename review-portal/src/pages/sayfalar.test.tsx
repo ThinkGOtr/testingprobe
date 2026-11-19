@@ -416,7 +416,7 @@ describe("ekranlar", () => {
     const liste = screen.getByRole("list", { name: "Triage kayıtları" });
     expect(liste).toHaveTextContent("Ürün hatası · assertion");
     expect(within(liste).getByRole("link", { name: "Triage sonucunu aç" })).toHaveAttribute("href", "/hatalar/fail-1");
-    await waitFor(() => expect(screen.getByText(/BREAK_CAMPAIGN ile bozuldu \(kasıtlı kırma\)/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/bilerek bozuldu \(kasıtlı kırma\)/)).toBeInTheDocument());
   });
 
   it("örnek veride koşu detayı ayrıntısı dolu: denemeler, adım ağacı, ekran görüntüsü eki, CI adımları; Sauce çipi run-108'de", async () => {

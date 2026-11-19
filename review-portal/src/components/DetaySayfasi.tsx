@@ -20,7 +20,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { EylemCubugu } from "./tasarim";
-import { dugumMetni, useSekmeBasligi } from "./ui";
+import { BekleyenRolNotuBaglami, dugumMetni, useSekmeBasligi } from "./ui";
 
 /** Bir sekmenin tanımı (ana ya da alt düzey). */
 export interface DetaySekmesi {
@@ -249,6 +249,7 @@ export function OzetKarti({
   meta,
   siradaki,
   eylemler,
+  rolNotlari = true,
   sekme,
   testId = "ozet-karti",
 }: {
@@ -266,6 +267,11 @@ export function OzetKarti({
   /** "Sıradaki adım" metni (tek satır; bağlantı içerebilir). */
   siradaki?: ReactNode;
   eylemler?: ReactNode;
+  /**
+   * Yetkisiz düğmelerin "Bu adım <Rol> rolünde: … bekleniyor" notları eylem alanında çizilsin mi (YD-05). Sıradaki adım
+   * satırı kimi beklediğimizi zaten söylüyorsa `false`: not tek yerde kalır, eylem alanında yalnız düğmeler olur.
+   */
+  rolNotlari?: boolean;
   /** Tarayıcı sekmesi başlığındaki sayfa adı (IA-11); verilmezse h1'in düz metni (kimlik + başlık). */
   sekme?: string;
   testId?: string;
@@ -303,9 +309,11 @@ export function OzetKarti({
         )}
       </div>
       {eylemler && (
-        <EylemCubugu hiza="son" etiket="Sayfa eylemleri" className="ds-ozet-eylemler">
-          {eylemler}
-        </EylemCubugu>
+        <BekleyenRolNotuBaglami.Provider value={rolNotlari}>
+          <EylemCubugu hiza="son" etiket="Sayfa eylemleri" className="ds-ozet-eylemler">
+            {eylemler}
+          </EylemCubugu>
+        </BekleyenRolNotuBaglami.Provider>
       )}
     </header>
   );

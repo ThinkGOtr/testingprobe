@@ -90,3 +90,12 @@
   align-items: center;
   gap: var(--space-1);
 }
+
+/* YD-12: koşu detayı test süzgeci. Durum seçici kendi satırında; Ara · Dosya · Sırala · "Yalnız başarısızlar" ikinci
+   satırda birlikte durur ("Sırala" tek başına alt satıra düşmez); onay kutusu alanların tabanına hizalı. */
+.kosu-sonuc-suzgeci .suzgec-cubugu-denetimler > .segment-secici {
+  flex-basis: 100%;
+}
+.kosu-sonuc-suzgeci .suzgec-cubugu-denetimler {
+  flex: 1 1 auto;
+}

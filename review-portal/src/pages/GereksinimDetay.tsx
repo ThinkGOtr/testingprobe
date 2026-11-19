@@ -6,7 +6,8 @@ import { api } from "../api/client";
 import { ApiError } from "../api/http";
 import { useOlay } from "../api/events";
 import type { Bulgu, GereksinimDetay as Detay } from "../api/types";
-import { useIzin, useIzinler, useOturum, useOzellik } from "../auth";
+import { useIzin, useIzinler, useKisiler, useOturum, useOzellik } from "../auth";
+import { ROL_ETIKETLERI, rolKisileri } from "../lib/yetki";
 import { AjanUrunuPaneli, useAjanTesti } from "../components/AjanUrunuPaneli";
 import { AkisAdimlari } from "../components/AkisAdimlari";
 import { BazDegerKarti } from "../components/BazDegerKarti";
@@ -23,7 +24,7 @@ import { akisKanitlari, guncelAdim } from "../lib/yolHaritasi";
 import { AC_EKSIK, gereksinimDurumu, SORU_TURU } from "../lib/etiketler";
 import { AJAN_URUNU_NEDENI } from "../lib/ajanProbe";
 import { tarih } from "../lib/format";
-import { tasarimModeliBayat, tumCaseSayisi, varsayilanSekme } from "../lib/durumModeli";
+import { siradakiAdim, tasarimModeliBayat, tumCaseSayisi, varsayilanSekme } from "../lib/durumModeli";
 import { dokumanBloklari } from "../lib/dokuman";
 import type { UretimKipi } from "../api/tasarimModeliTipleri";
 import { MODEL_ASAMASI, TASARIM_MODELI_BOLUMU, TasarimModeliPaneli } from "../components/TasarimModeliPaneli";
@@ -95,6 +96,15 @@ export function GereksinimDetay() {
   // IA-06/07: varsayılan sekme rol ve model bayatlığına göre; model yalnız model aşamasında okunur (bayatlık
   // yalnız orada varsayılan sekmeyi değiştirir). `GET …/design-model` `case.analysis_read` ister.
   const rol = useOturum().kullanici?.rol ?? null;
+  const kisiler = useKisiler();
+  // YD-05: "Analist bekleniyor: Ayşe Kaya, Mehmet Demir." — kişi listesi tekil (görünen ad); oturumun rolü bu adımın
+  // rolüyse "Sıra sizde".
+  const siradakiBekleyen = (siraRol: NonNullable<Detay["siradaki"]>["rol"], etiket: string): string => {
+    if (siraRol && siraRol === rol) return `Sıra sizde (${etiket}).`;
+    const adlar = siraRol ? rolKisileri(kisiler, siraRol) : [];
+    const kim = adlar.length === 0 ? "" : adlar.length <= 3 ? `: ${adlar.join(", ")}` : `: ${adlar.slice(0, 3).join(", ")} ve ${adlar.length - 3} kişi daha`;
+    return `${etiket} bekleniyor${kim}.`;
+  };
   const modelOkunur = useIzin("case.analysis_read");
   const modelOkunacak = !!detay.veri && MODEL_ASAMASI.has(detay.veri.durum);
   const modelVeri = useVeri(
@@ -193,6 +203,9 @@ export function GereksinimDetay() {
   );
 
   const siradaki = gereksinimSiradakiAdim(g, { uretimHatasi, ajanBagli });
+  // Kimi bekliyoruz (core `siradaki`, yoksa aynı tablo portalda: `siradakiAdim`).
+  // Başarısız case üretimini Test Uzmanı yeniden dener (core `failed` → Analist yalnız denetim hatasında doğru).
+  const siradakiRol = uretimHatasi ? { rol: "tester" as const, rol_etiketi: ROL_ETIKETLERI.tester } : siradakiAdim(g);
   const S = GEREKSINIM_SEKMESI;
   const soruSayisi = g.on_inceleme?.questions.length ?? 0;
   const sekmeler: DetaySekmesi[] = [
@@ -553,9 +566,9 @@ export function GereksinimDetay() {
           siradaki={
             <>
               {siradaki.metin}{" "}
-              {g.siradaki?.rol && (
+              {siradakiRol.rol && (
                 <span className="soluk" data-testid="siradaki-rol">
-                  {g.siradaki.rol_etiketi} bekleniyor.{" "}
+                  {siradakiBekleyen(siradakiRol.rol, siradakiRol.rol_etiketi)}{" "}
                 </span>
               )}
               <Link to={`?sekme=${siradaki.sekme}`} className="ds-siradaki-git">
@@ -563,6 +576,8 @@ export function GereksinimDetay() {
               </Link>
             </>
           }
+          // YD-05: kimi beklediğimiz yalnız Sıradaki adım satırında (rol + kişiler, tek ad); eylem alanında yalnız düğmeler.
+          rolNotlari={false}
           eylemler={
             <>
               <IslemDugmesi

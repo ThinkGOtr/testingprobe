@@ -1,15 +1,22 @@
 """İşlerim (TP UX denetimi IA-01/IA-02): rolün iş kuyruğu ve ekipte bekleyenler.
 
 Kaynak, durum makinelerinin insan kapılarıdır (asistanın `probe_my_queue` sayımıyla aynı kapı
-sözlüğü: `features/assistant/tools/probe.py` `*_KAPILARI`). Her **kaynak** bir rolün kapısıdır
-(tür, sorgu, başlık, sıradaki adım); çağıranın rolüne düşenler `benim`, diğer rollerinkiler
-`ekip` grubunda döner. Sistem işleri (denetim sürüyor, üretim kuyrukta) kuyruğa girmez.
+sözlüğü: `features/assistant/tools/probe.py` `*_KAPILARI`). Her **kaynak** bir kapıdır (tür, sorgu,
+başlık, sıradaki adım) ve kapıdaki kararın **izniyle** tanımlanır (`yetki.IZINLER`): izni taşıyan
+her rol için `benim` (ör. sınıflandırma `failure.classify` → Test Uzmanı ve Otomasyon Mühendisi,
+TP UX YD-06), izni olmayan roller için `ekip` grubunda döner. Sistem işleri (denetim sürüyor,
+üretim kuyrukta) kuyruğa girmez.
 
 - Case kararları gereksinim başına tek öğedir ("TPD-1 · 3 case karar bekliyor"); gereksinimin
   önceki (PO onayı yenilenmiş) içeriğine ait case'ler sayılmaz (`old_content_case_ids`).
 - Kasıtlı kırma (`failure_ek.kirma`) ve kırarak doğrulama koşuları kuyruğa girmez.
-- Aynı testin tekrarlayan hataları (aynı test adı + sınıf) tek öğedir (en yenisi).
-- `menu`: rota → çağıranın bekleyen iş sayısı (portal menü rozeti; 0 ise rozet yok).
+- Aynı testin tekrarlayan hataları (aynı test adı + sınıf) tek öğedir (en yenisi). İstisna
+  sınıflandırma: her hata ayrı sınıflandırılır; grup Hatalar listesinin "Sınıflandırılmamış"
+  sekmesiyle aynı tanımdır (sınıf `unknown`, kasıtlı kırma hariç; tekilleştirme yok).
+- `menu`: rota → çağıranın bekleyen iş sayısı (portal menü rozeti; 0 ise rozet yok). `/hatalar`
+  rozeti yalnız sınıflandırma grubudur: rozet = Hatalar sayfasının varsayılan sekmesindeki sayı.
+- `kisiler`: rolün kişileri, aynı kişinin birden çok hesabı bir kez (görünen ad önceliği; bkz.
+  `auth.display.ayni_kisi_adlari`).
 
 Yalnız SELECT; proje kapsamı ORM filtresinden gelir.
 """
@@ -25,8 +32,10 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from tp_core.auth import yetki
+from tp_core.auth.display import ayni_kisi_adlari, configured_names
 from tp_core.models import AppUser, BugDraft, Failure, Requirement, Run, Script, TestCase
 from tp_core.models.codegen_feature import ScriptCodegen
+from tp_core.models.identity import KimlikBagi
 from tp_core.models.triage_feature import FailureEk
 
 OGE_UST = 20
@@ -54,6 +63,36 @@ TUR_ROTASI: dict[str, str] = {
     "bug_draft": "/bug-taslaklari",
 }
 MENU_ROTALARI = ("/islerim", *dict.fromkeys(TUR_ROTASI.values()))
+# Menü rozetine katkı: tür rotası yerine yalnız bu grupların sayısı (rozet = o sayfanın varsayılan
+# görünümündeki sayı). `failure` türünde Hatalar sayfası "Sınıflandırılmamış" sekmesiyle açılır.
+ROZET_GRUPLARI: dict[str, frozenset[str]] = {"failure": frozenset({"siniflandirma"})}
+# Rol sırası (grubun birincil rolü ve etiket sırası): iş akışı sırası.
+ROL_SIRASI = (
+    yetki.ANALYST,
+    yetki.PO,
+    yetki.TESTER,
+    yetki.ENGINEER,
+    yetki.DEVELOPER,
+    yetki.ADMIN,
+    yetki.AUDITOR,
+    yetki.VIEWER,
+)
+
+
+def izin_rolleri(izin: str) -> tuple[str, ...]:
+    """Kapıdaki kararı verebilen roller (iş akışı sırasıyla). Sistem Yöneticisi iş akışında karar
+    vermez: izin başka role de açıksa listelenmez."""
+    roller = yetki.roller_icin(izin)
+    sirali = tuple(r for r in ROL_SIRASI if r in roller)
+    return tuple(r for r in sirali if r != yetki.ADMIN) or sirali
+
+
+def roller_etiketi(roller: Iterable[str]) -> str:
+    """ "Test Uzmanı ya da Otomasyon Mühendisi"."""
+    adlar = [yetki.ROL_ETIKETLERI.get(r, r) for r in roller]
+    if len(adlar) <= 1:
+        return "".join(adlar)
+    return f"{', '.join(adlar[:-1])} ya da {adlar[-1]}"
 
 
 @dataclass
@@ -84,10 +123,20 @@ class Oge:
 class Grup:
     anahtar: str
     tur: str
-    rol: str
+    izin: str
     baslik: str
     sonraki_adim: str
     ogeler: list[Oge] = field(default_factory=list)
+
+    @property
+    def roller(self) -> tuple[str, ...]:
+        """Grubun işini yapabilen roller (izni taşıyanlar)."""
+        return izin_rolleri(self.izin)
+
+    @property
+    def rol(self) -> str:
+        """Birincil rol (iş akışı sırasında ilk)."""
+        return self.roller[0]
 
     @property
     def sayi(self) -> int:
@@ -98,7 +147,8 @@ class Grup:
             "anahtar": self.anahtar,
             "tur": self.tur,
             "rol": self.rol,
-            "rol_etiketi": yetki.ROL_ETIKETLERI.get(self.rol, self.rol),
+            "roller": list(self.roller),
+            "rol_etiketi": roller_etiketi(self.roller),
             "baslik": self.baslik,
             "sonraki_adim": self.sonraki_adim,
             "sayi": self.sayi,
@@ -132,14 +182,14 @@ def _gereksinimler(s: Session, durumlar: Iterable[str]) -> list[Requirement]:
 def _req_grubu(
     s: Session,
     anahtar: str,
-    rol: str,
+    izin: str,
     durumlar: tuple[str, ...],
     baslik: str,
     sonraki: str,
     neden: Callable[[Requirement], str],
     suzgec: Callable[[Requirement], bool] = lambda _r: True,
 ) -> Grup:
-    g = Grup(anahtar, "requirement", rol, baslik, sonraki)
+    g = Grup(anahtar, "requirement", izin, baslik, sonraki)
     for r in _gereksinimler(s, durumlar):
         if suzgec(r):
             g.ogeler.append(
@@ -157,12 +207,12 @@ def _req_grubu(
 
 
 def _case_grubu(
-    s: Session, anahtar: str, rol: str, durum: str, baslik: str, sonraki: str, neden: str
+    s: Session, anahtar: str, izin: str, durum: str, baslik: str, sonraki: str, neden: str
 ) -> Grup:
     """Gereksinim başına tek öğe; önceki içeriğe ait case'ler sayılmaz."""
     from tp_core.features.cases.service import old_content_case_ids
 
-    g = Grup(anahtar, "case", rol, baslik, sonraki)
+    g = Grup(anahtar, "case", izin, baslik, sonraki)
     satirlar = s.execute(
         select(TestCase.id, TestCase.requirement_id, TestCase.olusturma)
         .where(TestCase.durum == durum)
@@ -196,9 +246,15 @@ def _case_grubu(
 
 
 def _script_grubu(
-    s: Session, anahtar: str, durum: str, baslik: str, sonraki: str, varsayilan_neden: str
+    s: Session,
+    anahtar: str,
+    izin: str,
+    durum: str,
+    baslik: str,
+    sonraki: str,
+    varsayilan_neden: str,
 ) -> Grup:
-    g = Grup(anahtar, "script", yetki.ENGINEER, baslik, sonraki)
+    g = Grup(anahtar, "script", izin, baslik, sonraki)
     q = (
         select(Script, ScriptCodegen)
         .outerjoin(ScriptCodegen, ScriptCodegen.script_id == Script.id)
@@ -233,42 +289,57 @@ def _script_grubu(
 def _hata_grubu(
     s: Session,
     anahtar: str,
-    rol: str,
+    izin: str,
     baslik: str,
     sonraki: str,
     kosul: Any,
     neden: Callable[[Failure], str],
+    *,
+    tekillestir: bool = True,
 ) -> Grup:
-    g = Grup(anahtar, "failure", rol, baslik, sonraki)
+    """`tekillestir=False` (sınıflandırma): her hata ayrı öğe ve kırarak doğrulama koşusunun
+    kasıtlı olmayan kırmızısı da girer; Hatalar listesinin süzgeciyle birebir aynı tanım."""
+    g = Grup(anahtar, "failure", izin, baslik, sonraki)
+    kosullar = [kosul, or_(FailureEk.kirma.is_(None), FailureEk.kirma.is_(False))]
+    if tekillestir:
+        kosullar.append(Run.tetik.notin_(("break_verify",)))
     q = (
-        select(Failure)
+        select(Failure, Run)
         .outerjoin(FailureEk, FailureEk.failure_id == Failure.id)
         .join(Run, Run.id == Failure.run_id)
-        .where(
-            kosul,
-            or_(FailureEk.kirma.is_(None), FailureEk.kirma.is_(False)),
-            Run.tetik.notin_(("break_verify",)),
-        )
+        .where(*kosullar)
         .order_by(Failure.olusturma.desc(), Failure.id)
         .limit(HATA_TARAMA)
     )
     gorulen: set[tuple[str, str]] = set()
-    for f in s.scalars(q):
+    for f, run in s.execute(q).all():
         k = (f.test_adi, f.sinif)
-        if k in gorulen:
+        if tekillestir and k in gorulen:
             continue
         gorulen.add(k)
         g.ogeler.append(
             Oge(
                 str(f.id),
                 "failure",
-                _kirp(f.test_adi, 80),
+                hata_basligi(f, run),
                 neden(f),
                 f"/hatalar/{f.id}",
                 f.olusturma,
             )
         )
     return g
+
+
+def hata_basligi(f: Failure, run: Run | None) -> str:
+    """Öğe başlığı: test adı. Koşu düzeyindeki hatada test yoktur (triage yer tutucusu
+    "(koşu: test sonucu yok)"); başlık koşudan üretilir: "Gece koşusu 4cd1d9ba · test sonucu yok"
+    (CL-06)."""
+    ad = (f.test_adi or "").strip()
+    if ad and not ad.startswith("(koşu:"):
+        return _kirp(ad, 80)
+    if run is None:
+        return "Koşu hatası · test sonucu yok"
+    return f"{_kosu_adi(run)} koşusu {str(run.id)[:8]} · test sonucu yok"
 
 
 def _belirsiz_neden(f: Failure) -> str:
@@ -287,35 +358,87 @@ def _bakim_neden(f: Failure) -> str:
     }.get(f.sinif, "İnceleyin")
 
 
+TETIK_ADI = {"pr": "PR", "push": "Push", "nightly": "Gece", "deploy": "Dağıtım", "manual": "Elle"}
+
+
+def _kosu_adi(r: Run) -> str:
+    return TETIK_ADI.get(r.tetik, r.tetik) + (f" #{r.pr_no}" if r.pr_no else "")
+
+
+def kosu_kapsami(r: Run) -> tuple[str, str]:
+    """Bir koşunun "aynı iş" kapsamı (CL-06): PR koşusu PR numarasıyla; diğerleri (push, gece,
+    dağıtım, elle) dal/ref ile (`ortam.ref`, yoksa varsayılan dal "")."""
+    if r.pr_no:
+        return ("pr", str(r.pr_no))
+    ref = r.ortam.get("ref") if isinstance(r.ortam, dict) else None
+    return ("dal", str(ref or ""))
+
+
+def gecersiz_kalan(kirmizi: Run, yesiller: Iterable[Run]) -> bool:
+    """Kırmızı koşu daha yeni bir yeşil koşuyla geçersiz kaldı mı (artık "bekleyen" iş değil)?
+
+    - Aynı kapsamda (`kosu_kapsami`) ve aynı script'te ya da tüm takımda (script yok) daha yeni
+      başarılı koşu varsa: son durum yeşil.
+    - "Testler koşmadı" (`error`, CI ortam hatası): aynı kaynakta (ör. GitHub) daha yeni herhangi
+      bir başarılı koşu ortamın yeniden çalıştığını gösterir.
+    """
+    kapsam = kosu_kapsami(kirmizi)
+    for y in yesiller:
+        if y.olusturma <= kirmizi.olusturma:
+            continue
+        if kirmizi.sonuc == "error" and y.kaynak == kirmizi.kaynak:
+            return True
+        if kosu_kapsami(y) == kapsam and (y.script_id is None or y.script_id == kirmizi.script_id):
+            return True
+    return False
+
+
 def _kosu_grubu(s: Session) -> Grup:
+    """Son 7 günün başarısız (`failed`) ya da hatalı (`error`) koşuları; kırarak doğrulama ve
+    yerel kontrol hariç. Yalnız SON durumu kırmızı olanlar bekleyen iştir: aynı kapsam için daha
+    yeni yeşil koşu varsa eski kırmızı düşer (`gecersiz_kalan`, CL-06). Sayı taranan tüm kırmızı
+    koşulardır; öğe listesi `OGE_UST` ile kırpılır."""
     g = Grup(
         "kosu_hatasi",
         "run",
-        yetki.ENGINEER,
+        "run.trigger_scheduled",
         "Başarısız ya da hatalı koşu",
         "Koşuyu açın; kırmızı testlerin triage sonucuna ya da CI günlüğüne bakın",
     )
     sinir = datetime.now(UTC) - timedelta(days=KOSU_GUN)
-    q = (
-        select(Run)
-        .where(
-            Run.sonuc.in_(("failed", "error")),
-            Run.tetik.notin_(("break_verify", "local_check")),
-            Run.olusturma >= sinir,
+    haric = ("break_verify", "local_check")
+    kirmizilar = list(
+        s.scalars(
+            select(Run)
+            .where(
+                Run.sonuc.in_(("failed", "error")),
+                Run.tetik.notin_(haric),
+                Run.olusturma >= sinir,
+            )
+            .order_by(Run.olusturma.desc(), Run.id)
+            .limit(HATA_TARAMA)
         )
-        .order_by(Run.olusturma.desc(), Run.id)
-        .limit(OGE_UST)
     )
-    tetik = {"pr": "PR", "push": "Push", "nightly": "Gece", "deploy": "Dağıtım", "manual": "Elle"}
-    for r in s.scalars(q):
-        ad = tetik.get(r.tetik, r.tetik) + (f" #{r.pr_no}" if r.pr_no else "")
+    if not kirmizilar:
+        return g
+    en_eski = min(r.olusturma for r in kirmizilar)
+    yesiller = list(
+        s.scalars(
+            select(Run).where(
+                Run.sonuc == "passed", Run.tetik.notin_(haric), Run.olusturma > en_eski
+            )
+        )
+    )
+    for r in kirmizilar:
+        if gecersiz_kalan(r, yesiller):
+            continue
         neden = (
             "Testler koşmadı: CI ortam hatası"
             if r.sonuc == "error"
             else "Kırmızı test var: triage sonucunu inceleyin"
         )
         g.ogeler.append(
-            Oge(str(r.id), "run", f"{ad} koşusu", neden, f"/kosular/{r.id}", r.olusturma)
+            Oge(str(r.id), "run", f"{_kosu_adi(r)} koşusu", neden, f"/kosular/{r.id}", r.olusturma)
         )
     return g
 
@@ -329,7 +452,7 @@ def kaynaklar(s: Session) -> list[Grup]:
         _req_grubu(
             s,
             "on_inceleme",
-            yetki.ANALYST,
+            "requirement.review",
             ("new",),
             "Ön inceleme bekleyen gereksinim",
             "Gereksinimi açın, ön incelemeyi başlatın",
@@ -338,7 +461,7 @@ def kaynaklar(s: Session) -> list[Grup]:
         _req_grubu(
             s,
             "bulgu_karari",
-            yetki.ANALYST,
+            "requirement.review",
             ("findings_open",),
             "Bulgu kararı bekleyen",
             "Tutarlılık bulgularına karar verin (düzelt / kod hatası / bilinçli fark)",
@@ -347,7 +470,7 @@ def kaynaklar(s: Session) -> list[Grup]:
         _req_grubu(
             s,
             "po_gonder",
-            yetki.ANALYST,
+            "requirement.review",
             ("doc_final",),
             "PO onayına gönderilecek",
             "Doküman son hal: PO teyidi için gönderin",
@@ -356,7 +479,7 @@ def kaynaklar(s: Session) -> list[Grup]:
         _req_grubu(
             s,
             "gereksinim_hata",
-            yetki.ANALYST,
+            "requirement.review",
             ("failed",),
             "Son işlemi başarısız gereksinim",
             "Hatanın nedenine bakıp yeniden deneyin",
@@ -365,7 +488,7 @@ def kaynaklar(s: Session) -> list[Grup]:
         _req_grubu(
             s,
             "po_teyidi",
-            yetki.PO,
+            "requirement.po_approve_free_text",
             ("pending_po",),
             "PO teyidi bekleyen",
             "Jira story'sini inceleyip onay etiketini ekleyin (serbest metinde portalda onaylayın)",
@@ -378,7 +501,7 @@ def kaynaklar(s: Session) -> list[Grup]:
         _req_grubu(
             s,
             "case_uretimi",
-            yetki.TESTER,
+            "case.generate",
             ("po_approved", "model_ready"),
             "Case üretimi bekleyen",
             "Tasarım modelini üretin ya da kararını verin",
@@ -387,7 +510,7 @@ def kaynaklar(s: Session) -> list[Grup]:
         _case_grubu(
             s,
             "case_karari",
-            yetki.TESTER,
+            "case.decide",
             "draft",
             "Case kararı bekleyen",
             "Case review'da kabul / düzelterek kabul / ret kararı verin",
@@ -396,7 +519,7 @@ def kaynaklar(s: Session) -> list[Grup]:
         _case_grubu(
             s,
             "case_son_onay",
-            yetki.ANALYST,
+            "case.approve",
             "ready",
             "Son onay bekleyen case",
             "Case review'da onaylayın ya da gerekçeyle geri gönderin",
@@ -405,7 +528,7 @@ def kaynaklar(s: Session) -> list[Grup]:
         _case_grubu(
             s,
             "case_yayini",
-            yetki.TESTER,
+            "case.publish",
             "approved",
             "Yayın bekleyen onaylı case",
             "Yayın önizlemesinden Jira'ya yayınlayın",
@@ -414,6 +537,7 @@ def kaynaklar(s: Session) -> list[Grup]:
         _script_grubu(
             s,
             "kod_insana",
+            "code.generate",
             "blocked",
             "Kod üretiminde insana düşen",
             "Script'i açın; engeli giderin (ör. page object'e metot ekleyin) ya da yeniden üretin",
@@ -422,6 +546,7 @@ def kaynaklar(s: Session) -> list[Grup]:
         _script_grubu(
             s,
             "acik_pr",
+            "code.merge",
             "pr_open",
             "Açık PR",
             "PR'ı inceleyin, kırarak doğrulayın ve birleştirin",
@@ -430,6 +555,7 @@ def kaynaklar(s: Session) -> list[Grup]:
         _script_grubu(
             s,
             "kod_hata",
+            "code.generate",
             "failed",
             "Başarısız kod üretimi",
             "Nedenine bakıp yeniden üretin",
@@ -438,16 +564,17 @@ def kaynaklar(s: Session) -> list[Grup]:
         _hata_grubu(
             s,
             "siniflandirma",
-            yetki.TESTER,
+            "failure.classify",
             "Sınıflandırma bekleyen hata",
             "Hatayı açın; ürün hatası, test bakımı, veri ya da ortam olarak sınıflandırın",
             Failure.sinif == "unknown",
             _belirsiz_neden,
+            tekillestir=False,
         ),
         _hata_grubu(
             s,
             "urun_hatasi",
-            yetki.TESTER,
+            "bug.decide",
             "Bug taslağı açılmamış ürün hatası",
             "Hatayı açın; bug taslağı oluşturun",
             and_(
@@ -460,7 +587,9 @@ def kaynaklar(s: Session) -> list[Grup]:
         _hata_grubu(
             s,
             "test_verisi",
-            yetki.TESTER,
+            # Katalog izni (`testdata.manage`) Analist/Otomasyon Müh.'de de var; kuyruğun sahibi
+            # triage sonrası case'i düzelten roldür.
+            "case.decide",
             "Test verisi sorunu",
             "Test verisi kataloğunu düzeltin ya da veri sahibine iletin",
             and_(Failure.sinif == "test_data", Failure.oneri_durumu.in_(("none", "proposed"))),
@@ -469,7 +598,7 @@ def kaynaklar(s: Session) -> list[Grup]:
         _hata_grubu(
             s,
             "test_bakimi",
-            yetki.ENGINEER,
+            "code.repair",
             "Test bakımı / ortam hatası",
             "Hatayı açın; otomatik onarımı başlatın ya da ortamı inceleyin",
             and_(
@@ -482,7 +611,7 @@ def kaynaklar(s: Session) -> list[Grup]:
         _hata_grubu(
             s,
             "beklenti_uyusmazligi",
-            yetki.TESTER,
+            "case.decide",
             "Beklentisi uyuşmayan case",
             "Case beklentisini onaylı karar tablosuna göre düzeltin",
             and_(
@@ -503,7 +632,7 @@ def _bug_grubu(s: Session) -> Grup:
     g = Grup(
         "bug_karari",
         "bug_draft",
-        yetki.TESTER,
+        "bug.decide",
         "Bug taslağı kararı",
         "Taslağı açın: yeni kayıt, mevcut kayda bağla ya da reddet",
     )
@@ -528,25 +657,50 @@ def _bug_grubu(s: Session) -> Grup:
 
 
 def _kisiler(s: Session) -> dict[str, list[str]]:
+    """Rol → kişilerin kullanıcı adları (en çok `KISI_UST`). Aynı kişinin aynı roldeki birden çok
+    hesabı (ör. iki AI Probe girişi: "Gokhan Sipahi" ve "gokhansipahi LNU") bir kez yazılır; o
+    kişinin görünen adı en iyi olan hesabı seçilir (YD-05, `ayni_kisi_adlari`)."""
+    satirlar = s.execute(
+        select(
+            AppUser.kullanici_adi,
+            AppUser.rol,
+            AppUser.ad_soyad,
+            AppUser.ad_kaynak,
+            KimlikBagi.external_uid,
+        )
+        .outerjoin(KimlikBagi, KimlikBagi.app_user_id == AppUser.id)
+        .order_by(AppUser.kullanici_adi)
+    ).all()
+    kisi = ayni_kisi_adlari(satirlar, configured_names())
     out: dict[str, list[str]] = {}
-    for ad, rol in s.execute(
-        select(AppUser.kullanici_adi, AppUser.rol).order_by(AppUser.kullanici_adi)
-    ):
+    gorulen: dict[str, set[str]] = {}
+    for ad, rol, *_ in satirlar:
         rol = yetki.normalize_rol(rol)
+        anahtar, _gorunen, temsilci = kisi[ad]
+        if anahtar in gorulen.setdefault(rol, set()):
+            continue
+        gorulen[rol].add(anahtar)
         if len(out.setdefault(rol, [])) < KISI_UST:
-            out[rol].append(ad)
+            out[rol].append(temsilci)
     return out
+
+
+def _grup_kisileri(kisiler: dict[str, list[str]], g: Grup) -> list[str]:
+    return list(dict.fromkeys(k for r in g.roller for k in kisiler.get(r, [])))[:KISI_UST]
 
 
 def is_kuyrugu(s: Session, rol: str) -> dict[str, Any]:
     rol = yetki.normalize_rol(rol)
     gruplar = [g for g in kaynaklar(s) if g.ogeler]
-    benim = [g for g in gruplar if g.rol == rol]
-    ekip = [g for g in gruplar if g.rol != rol]
+    # İzni taşıyan her rolün işi (YD-06): sınıflandırma Test Uzmanının da Otomasyon Müh.'nin de.
+    benim = [g for g in gruplar if rol in g.roller]
+    ekip = [g for g in gruplar if rol not in g.roller]
     kisiler = _kisiler(s)
     menu: dict[str, int] = dict.fromkeys(MENU_ROTALARI, 0)
     for g in benim:
-        menu[TUR_ROTASI[g.tur]] += g.sayi
+        rozet = ROZET_GRUPLARI.get(g.tur)
+        if rozet is None or g.anahtar in rozet:
+            menu[TUR_ROTASI[g.tur]] += g.sayi
         menu["/islerim"] += g.sayi
 
     def ayrinti(g: Grup) -> bool:
@@ -559,7 +713,8 @@ def is_kuyrugu(s: Session, rol: str) -> dict[str, Any]:
         "ekip_toplam": sum(g.sayi for g in ekip),
         "benim": [g.json(OGE_UST, ayrinti(g)) for g in benim],
         "ekip": [
-            {**g.json(EKIP_OGE_UST, ayrinti(g)), "kisiler": kisiler.get(g.rol, [])} for g in ekip
+            {**g.json(EKIP_OGE_UST, ayrinti(g)), "kisiler": _grup_kisileri(kisiler, g)}
+            for g in ekip
         ],
         "menu": menu,
     }

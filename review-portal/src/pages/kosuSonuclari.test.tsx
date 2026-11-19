@@ -438,7 +438,8 @@ describe("koşu detayı (canlı core şekli)", () => {
     );
     uygulama("/kosular/0000");
     expect(await screen.findByRole("heading", { level: 1, name: "Koşu bulunamadı" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "← Koşular" })).toHaveAttribute("href", "/kosular");
+    // YD-11: hap bağlantı yerine kırıntı.
+    expect(within(screen.getByTestId("kirinti")).getByRole("link", { name: "Koşular" })).toHaveAttribute("href", "/kosular");
     expect(screen.queryByRole("button", { name: "Tekrar dene" })).not.toBeInTheDocument();
   });
 });

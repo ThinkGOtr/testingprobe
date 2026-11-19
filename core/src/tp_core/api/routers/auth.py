@@ -21,6 +21,7 @@ from tp_core.auth.client_ip import client_address
 from tp_core.auth.deps import Codec, CurrentUser, DbSession, session_codec
 from tp_core.auth.display import (
     ROL_ETIKETI,
+    ayni_kisi_adlari,
     configured_names,
     display_name,
     kaynakli_ad,
@@ -40,6 +41,7 @@ from tp_core.auth.sessions import (
 from tp_core.auth.yetki import rol_izinleri
 from tp_core.config import get_settings
 from tp_core.models import AppUser, Oturum
+from tp_core.models.identity import KimlikBagi
 from tp_core.models.tp_proje import TpProje
 from tp_core.workflow.service import Principal
 
@@ -72,9 +74,10 @@ class Me(BaseModel):
 
 
 def me_of(session: Session, user_id: uuid.UUID, kullanici_adi: str, rol: str) -> Me:
-    kullanicilar = session.execute(
-        select(AppUser.kullanici_adi, AppUser.rol, AppUser.ad_soyad, AppUser.ad_kaynak)
+    kimlikli = session.execute(
+        select(AppUser.id, AppUser.kullanici_adi, AppUser.rol, AppUser.ad_soyad, AppUser.ad_kaynak)
     ).all()
+    kullanicilar = [(k, r, a, ak) for _id, k, r, a, ak in kimlikli]
     # Yapılandırılmış adlar önce gelir; JIT (AI Probe) hesaplarında ad veritabanındadır ve
     # gösterimde "(AI Probe)" ile işaretlenir (kişinin kendi AI Probe hesabından, doğrulanmamış).
     names = configured_names()
@@ -87,6 +90,15 @@ def me_of(session: Session, user_id: uuid.UUID, kullanici_adi: str, rol: str) ->
             names[anahtar] = kaynakli_ad(ad_soyad, ad_kaynak) or ad_soyad
             if k == kullanici_adi:
                 kaynak = ad_kaynak
+    # Aynı kişinin birden çok hesabı (ör. iki AI Probe girişi) tek adla görünür (TP UX YD-05):
+    # "kimi bekliyoruz" listesi aynı kişiyi iki farklı adla iki kez yazmaz.
+    bagli = dict(session.execute(select(KimlikBagi.app_user_id, KimlikBagi.external_uid)).all())
+    kisi = ayni_kisi_adlari(
+        ((k, r, a, ak, bagli.get(uid)) for uid, k, r, a, ak in kimlikli), configured_names()
+    )
+    for k, (_kok, tercih, temsilci) in kisi.items():
+        if temsilci != k:
+            names[k.strip().lower()] = tercih
     anahtar = kullanici_adi.strip().lower()
     return Me(
         id=user_id,

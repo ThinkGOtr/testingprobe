@@ -15,7 +15,8 @@ import { caseCapasi } from "../components/CaseKarti";
 import "../stiller/detay-script.css";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { useIzin } from "../auth";
-import { SCRIPT_DURUMU, scriptIsareti, scriptUretiliyor, type Ton } from "../lib/etiketler";
+import { KisiAdi } from "../components/KisiAdi";
+import { BULGU_KARARI, SCRIPT_DURUMU, scriptIsareti, scriptUretiliyor, type Ton } from "../lib/etiketler";
 import { ENGEL_TURU, kosuKimligiMi, mergeEngelleri, mergeOnayNotu, mergeUyarilari, RET_NEDENI, YEREL_SINIF } from "../lib/kapi";
 import { saat, tarih } from "../lib/format";
 import { PlatformRozeti } from "../components/Platform";
@@ -638,10 +639,15 @@ export function BirlesmisPrCi({ pr }: { pr: PullRequest }) {
 /** Core gerekçesindeki teknik önekleri ve sondaki noktayı temizler ("Yerel CI başarısız: run — X." → "X"). */
 export function nedenTemizle(n: string | null | undefined): string | null {
   if (!n) return null;
-  return n
-    .replace(/^Yerel CI başarısız:\s*run\s*—\s*/i, "Yerel kontrol: ")
-    .replace(/^Yerel CI/i, "Yerel kontrol")
-    .replace(/[.\s]+$/, "");
+  return (
+    n
+      .replace(/^Yerel CI başarısız:\s*run\s*—\s*/i, "Yerel kontrol: ")
+      .replace(/^Yerel CI/i, "Yerel kontrol")
+      // YD-07: iç adım/bulgu kodları kullanıcı diline: "S4:" → "Adım 4:", "F4: code_defect" → "F4: kod/veri hatalı".
+      .replace(/(^|\s)S(\d+):\s*/g, "$1Adım $2: ")
+      .replace(/\b(code_defect|fix_doc|accept_difference)\b/g, (k) => BULGU_KARARI[k as keyof typeof BULGU_KARARI].toLocaleLowerCase("tr"))
+      .replace(/[.\s]+$/, "")
+  );
 }
 
 function kirmaNedeni(n: string | null | undefined): string {
@@ -977,7 +983,12 @@ export function ScriptDetay() {
             sekme: "kontrol",
           }
         : s.engel
-          ? { metin: `İnsana düştü (${ENGEL_TURU[s.engel.tur] ?? s.engel.tur}): Otomasyon Mühendisi düzeltip yeniden üretecek.`, sekme: "kontrol" }
+          ? {
+              metin: `İnsana düştü (${ENGEL_TURU[s.engel.tur] ?? s.engel.tur}): Otomasyon Mühendisi düzeltip yeniden üretecek.`,
+              // YD-08: yerel kontrol hiç koşmadıysa o sekme boş ("Yerel kontrol yapılmadı"); engelin izi ajan adımlarında
+              // (yoksa üretilen kodda) olduğu için içerikli sekme açılır.
+              sekme: s.yerel_kontrol || musteriCi ? "kontrol" : s.adimlar.length > 0 ? "ajan" : "kod",
+            }
           : prAcik && s.pr?.dal?.geride
             ? { metin: "Dal main'in gerisinde: önce dalı güncelleyin — Otomasyon Mühendisi.", sekme: "pr" }
             : s.break_verify.durum === "running"
@@ -1152,7 +1163,12 @@ export function ScriptDetay() {
           <div className="merge-kapisi kapi-gecti" data-testid="merge-kapisi">
             <div className="kucuk ok-metin">
               <strong>✓ Birleştirildi</strong>
-              {s.pr.merge_eden && ` — ${s.pr.merge_eden}`}
+              {s.pr.merge_eden && (
+                <>
+                  {" — "}
+                  <KisiAdi ad={s.pr.merge_eden} />
+                </>
+              )}
               {s.pr.merge_zamani && `, ${tarih(s.pr.merge_zamani)}`}
               {s.pr.merge_sha && (
                 <>

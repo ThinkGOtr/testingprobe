@@ -133,6 +133,24 @@ export function ekTuru(e: Ek): "resim" | "video" | "iz" | "diger" {
   return "diger";
 }
 
+/** Ekin hangi denemeden geldiği: `deneme` alanı, yoksa Playwright `-retryN` dizini. */
+function ekDenemesi(e: Ek): string | null {
+  if (typeof e.deneme === "number") return `${e.deneme + 1}. deneme`;
+  // HataDetay.denemeEtiketi ile aynı kural (Playwright `-retryN` dizini).
+  const m = e.url?.match(/-retry(\d+)(?:\/|$)/);
+  return m ? `${Number(m[1]) + 1}. deneme` : e.url ? "1. deneme" : null;
+}
+
+/**
+ * YD-12: satırdaki kısa ek bağlantısı. Birden çok denemenin ekleri varsa ad tek başına tekrar eder ("screenshot trace
+ * screenshot trace"); deneme numarası eklenir ("screenshot · 2. deneme").
+ */
+export function ekKisaEtiketi(e: Ek, tum: readonly Ek[]): string {
+  const denemeler = new Set(tum.map(ekDenemesi));
+  const d = ekDenemesi(e);
+  return denemeler.size > 1 && d ? `${e.ad} · ${d}` : e.ad;
+}
+
 function Ekler({ ekler }: { ekler: Ek[] }) {
   if (ekler.length === 0) return null;
   return (
@@ -304,7 +322,7 @@ export function TestSonuclari({ k }: { k: KosuDetay }) {
     <Kart baslik="Test sonuçları">
       <SuzgecCubugu
         etiket="Test sonucu süzgeci"
-        className="filtre-cubugu"
+        className="filtre-cubugu kosu-sonuc-suzgeci"
         sonuc={
           <>
             {suzulen.length}/{k.sonuclar.length} test
@@ -349,7 +367,7 @@ export function TestSonuclari({ k }: { k: KosuDetay }) {
             ))}
           </select>
         </label>
-        <label className="satir-ogeler">
+        <label className="filtre-onay">
           <span>
             <input type="checkbox" checked={f.yalnizBasarisiz} onChange={(e) => ayarla("t_basarisiz", e.target.checked === basarisizVar ? "" : e.target.checked ? "1" : "0")} /> Yalnız
             başarısızlar
@@ -388,7 +406,7 @@ export function TestSonuclari({ k }: { k: KosuDetay }) {
                           <div className="satir-ogeler kucuk">
                             {s.ekler.map((e, i) => (
                               <Baglanti key={`${e.ad}-${i}`} href={e.url}>
-                                {e.ad}
+                                {ekKisaEtiketi(e, s.ekler!)}
                               </Baglanti>
                             ))}
                           </div>

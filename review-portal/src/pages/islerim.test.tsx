@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Rotalar } from "../App";
 import { ApiError } from "../api/http";
 import { islerimApi, isKuyruguUyarla, kayitYeriUyarla } from "../api/islerim";
-import { isKuyruguHesapla } from "../api/mock/islerim";
+import { gecersizKalan, isKuyruguHesapla } from "../api/mock/islerim";
 import { mockVerisi } from "../api/mock/handlers";
 import type { HataAnalizi } from "../api/types";
 import { OturumProvider } from "../auth";
@@ -15,6 +15,8 @@ import { BildirimProvider } from "../components/Bildirim";
 import { BaskaProjedeKayit } from "../components/BaskaProjedeKayit";
 import { oturumAc, sar } from "../test/yardimci";
 import { hataSuz } from "./Hatalar";
+import { nedeneGoreKatla, rolEkiniAt } from "./Islerim";
+import type { IsOgesi } from "../api/islerim";
 
 function uygulama(yol: string) {
   return render(
@@ -86,6 +88,63 @@ describe("İşlerim uyarlayıcı ve örnek veri hesabı", () => {
   });
 });
 
+describe("canlı detay YD-05/YD-06: izinle grup, rozet = liste, koşu katlama, kişi adı", () => {
+  it("sınıflandırma izni olan her rolün işi (Test Uzmanı + Otomasyon Mühendisi); Hatalar rozeti = Sınıflandırılmamış sayısı", () => {
+    belirsizHata("fail-yd06-a");
+    belirsizHata("fail-yd06-b");
+    const v = mockVerisi();
+    const liste = hataSuz(v.hatalar, "unknown").length;
+    for (const rol of ["tester", "engineer"]) {
+      const k = isKuyruguHesapla(v, rol);
+      const g = k.benim.find((x) => x.anahtar === "siniflandirma");
+      expect(g?.rol_etiketi).toBe("Test Uzmanı ya da Otomasyon Mühendisi");
+      expect(g?.sayi).toBe(liste);
+      expect(k.menu["/hatalar"]).toBe(liste);
+      expect(k.ekip.find((x) => x.anahtar === "siniflandirma")).toBeUndefined();
+    }
+    const analist = isKuyruguHesapla(v, "analyst");
+    expect(analist.ekip.find((x) => x.anahtar === "siniflandirma")?.rol_etiketi).toBe("Test Uzmanı ya da Otomasyon Mühendisi");
+  });
+
+  it("aynı nedenle düşen koşular tek satıra katlanır; tekil neden ve koşu dışı tür katlanmaz", () => {
+    const o = (id: string, neden: string): IsOgesi => ({ id, tur: "run", etiket: "PR koşusu", neden, rota: `/kosular/${id}`, zaman: null, jira_key: null, sayi: 1 });
+    const ogeler = [o("r1", "CI"), o("r2", "Kırmızı"), o("r3", "CI"), o("r4", "CI")];
+    const k = nedeneGoreKatla({ tur: "run", ogeler });
+    expect(k).toHaveLength(2);
+    expect(k[0]).toEqual({ neden: "CI", ogeler: [ogeler[0], ogeler[2], ogeler[3]] });
+    expect(k[1]).toBe(ogeler[1]);
+    expect(nedeneGoreKatla({ tur: "failure", ogeler })).toHaveLength(4);
+  });
+
+  it("CL-06: daha yeni yeşil koşu aynı kapsamdaki eski kırmızıyı düşürür; ortam hatasını aynı kaynaktaki herhangi bir yeşil", () => {
+    const ornek = mockVerisi().kosular[0];
+    const k = (id: string, o: Partial<typeof ornek>) => ({ ...ornek, id, script_id: null, pr_no: null, depo: "", ...o });
+    const kirmizi = k("r1", { durum: "failed", tetik: "nightly", baslangic: "2026-11-14T00:00:00Z" });
+    const yesil = k("r2", { durum: "passed", tetik: "nightly", baslangic: "2026-11-18T00:00:00Z" });
+    expect(gecersizKalan(kirmizi, [kirmizi, yesil])).toBe(true);
+    expect(gecersizKalan(yesil, [kirmizi, yesil])).toBe(false);
+    const pr5 = k("r3", { durum: "failed", tetik: "pr", pr_no: 5, baslangic: "2026-11-14T00:00:00Z" });
+    const pr6 = k("r4", { durum: "passed", tetik: "pr", pr_no: 6, baslangic: "2026-11-18T00:00:00Z" });
+    expect(gecersizKalan(pr5, [pr5, pr6])).toBe(false);
+    const ortam = k("r5", { durum: "error", tetik: "pr", pr_no: 5, baslangic: "2026-11-14T00:00:00Z" });
+    expect(gecersizKalan(ortam, [ortam, pr6])).toBe(pr6.kaynak === ortam.kaynak);
+    // Kuyruk: yeni yeşil eklenince eski kırmızı düşer, rozet de iner.
+    const v = mockVerisi();
+    const once = isKuyruguHesapla(v, "engineer").menu["/kosular"];
+    const kirmizilar = v.kosular.filter((x) => x.durum === "failed" || x.durum === "error");
+    if (kirmizilar.length) {
+      v.kosular.unshift(...kirmizilar.map((x, i) => ({ ...x, id: `yesil-${i}`, durum: "passed" as const, baslangic: "2099-01-01T00:00:00Z" })));
+      expect(isKuyruguHesapla(v, "engineer").menu["/kosular"]).toBeLessThan(once);
+    }
+  });
+
+  it("ekip kişi adında rol eki yazılmaz", () => {
+    expect(rolEkiniAt("Gokhan Sipahi (AI Probe) · Analist")).toBe("Gokhan Sipahi (AI Probe)");
+    expect(rolEkiniAt("Ayşe · Ürün Sahibi (PO)")).toBe("Ayşe");
+    expect(rolEkiniAt("Analist")).toBe("Analist");
+  });
+});
+
 describe("İşlerim sayfası ve menü", () => {
   it("Test Uzmanı açılışta İşlerim'e düşer; sıradaki adım, bağlantı ve ekipte bekleyenler görünür", async () => {
     belirsizHata();
@@ -148,6 +207,25 @@ describe("Hatalar kuyruğu ve sınıflandırma (IA-16)", () => {
     expect(h.sinif).toBe("product_defect");
     expect(h.karar_kaynagi).toBe("human");
     expect(mockVerisi().denetim.some((d) => d.eylem === "failure.classified")).toBe(true);
+  });
+
+  it("YD-09: Belirsiz hatada gerekçe paragrafı tekrarlanmaz; sıradaki adım iki rolü de söyler", async () => {
+    const h = belirsizHata();
+    h.gerekce = "Bu hata için kayıtlı model çıktısı yok (REPLAY-MISS); hatayı Test Uzmanı sınıflandırmalıdır.";
+    await oturumAc("muhendis");
+    uygulama("/hatalar/fail-belirsiz");
+    await screen.findByTestId("siniflandirma-karti");
+    expect(document.querySelector(".karar-yuvasi-gerekce")).toBeNull();
+    expect(screen.getByTestId("siradaki-adim")).toHaveTextContent("Test Uzmanı ya da Otomasyon Mühendisi");
+  });
+
+  it("Hatalar süzgeci ortak SuzgecCubugu + SegmentSecici; sonuç sayısı görünür", async () => {
+    belirsizHata();
+    await oturumAc("testci");
+    uygulama("/hatalar");
+    const cubuk = await screen.findByRole("group", { name: "Hata süzgeci" });
+    expect(within(cubuk).getByRole("group", { name: "Hata sınıfı" })).toBeInTheDocument();
+    expect(await within(cubuk).findByRole("status")).toHaveTextContent("1 hata");
   });
 
   it("yetkisiz rol tek satırda kimi beklediğimizi görür", async () => {

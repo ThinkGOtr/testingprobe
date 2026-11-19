@@ -138,14 +138,15 @@ describe("Kod üretimi: ekranlar (örnek veri)", () => {
     const kapi = screen.getByTestId("merge-kapisi");
     expect(kapi).toHaveTextContent("açık ✓");
     // Mock core gibi `merge_kabul_gerekli` gönderir; portal metni aynen gösterir.
-    expect(screen.getByTestId("merge-uyarilari")).toHaveTextContent("Zayıf test: BREAK_CAMPAIGN ile kırılan uygulamada da yeşil kaldı (açık kabul gerekir).");
+    expect(screen.getByTestId("merge-uyarilari")).toHaveTextContent("Zayıf test: kampanya kuralı bilerek bozulan uygulamada da yeşil kaldı (açık kabul gerekir).");
     const dugme = screen.getByRole("button", { name: "Merge et" });
     expect(dugme).toHaveAttribute("aria-disabled", "true");
     expect(dugme).toHaveAttribute("title", "Önce uyarıyı kabul edin");
     await u.click(screen.getByRole("checkbox", { name: /zayıf test olarak merge et/ }));
     expect(dugme).not.toHaveAttribute("aria-disabled");
     await u.click(dugme);
-    await waitFor(() => expect(screen.getByTestId("merge-kapisi")).toHaveTextContent("✓ Birleştirildi — muhendis"));
+    // YD-07: kullanıcı kimliği değil görünen ad.
+    await waitFor(() => expect(screen.getByTestId("merge-kapisi")).toHaveTextContent(/✓ Birleştirildi — (?!muhendis)\S/));
     expect(screen.getByTestId("merge-kapisi")).toHaveTextContent(/merge commit \w{7}/);
     expect(screen.getByTestId("merge-kapisi")).not.toHaveTextContent("kapalı");
     expect(screen.queryByRole("button", { name: "Merge et" })).not.toBeInTheDocument();
@@ -161,7 +162,7 @@ describe("Kod üretimi: ekranlar (örnek veri)", () => {
     s.merge_engelleri = ["PR merge edilebilir durumda değil (durum: merged)"];
     uygulama("/kod/scr-2");
     const kapi = await screen.findByTestId("merge-kapisi");
-    expect(kapi).toHaveTextContent("✓ Birleştirildi — muhendis");
+    expect(kapi).toHaveTextContent(/✓ Birleştirildi — (?!muhendis)\S/);
     expect(kapi).toHaveTextContent("merge commit 5b06333");
     expect(kapi).toHaveClass("kapi-gecti");
     expect(kapi).not.toHaveClass("kapi-bekliyor");

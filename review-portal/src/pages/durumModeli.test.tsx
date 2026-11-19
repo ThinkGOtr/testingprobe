@@ -61,7 +61,9 @@ describe("lib/durumModeli", () => {
     const k = surumKumeleri([c("a", true), c("b", true), c("x", false, "superseded")]);
     expect([k.guncel.length, k.onceki.length]).toEqual([0, 2]);
     expect(varsayilanSurum(k)).toBe("onceki");
-    expect(surumDurumCumlesi(g("new"), k)).toMatch(/Bu 2 case gereksinimin önceki sürümüne ait.*Sıradaki adım: Ön inceleme · Analist\./);
+    expect(surumDurumCumlesi(g("new"), k)).toMatch(/^Bu 2 case gereksinimin önceki sürümüne ait/);
+    // YD-03: sıradaki adım durum kutusunda tekrarlanmaz (özet kartının "Sıradaki adım" satırında tek kez).
+    expect(surumDurumCumlesi(g("new"), k)).not.toMatch(/Sıradaki adım/);
     const k2 = surumKumeleri([c("a", true), c("b", false, "draft")]);
     expect(varsayilanSurum(k2)).toBe("guncel");
     expect(surumDurumCumlesi(g("cases_ready"), k2)).toMatch(/^1 case gereksinimin önceki sürümüne ait/);

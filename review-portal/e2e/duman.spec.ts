@@ -987,27 +987,32 @@ test("pasiflik nedeni yerleşimi (review 3): neden kendi düğmesinin altında, 
     await expect(pr.locator(".bekleyen-rol").first()).toHaveText(/^Bu adım Otomasyon Mühendisi rolünde: .+ bekleniyor$/);
   }
 
-  // TPD-1, analist: başlık sarınca (1024 / 390) eylem grubu sağa yaslı, neden metni son düğmenin sağ kenarında biter.
+  // TPD-1, analist: 1024'te özet kartı iki sütun (eylemler sağda, son düğme kartın sağ kenarında); ≤960 yığılınca
+  // (390) DZ-21: eylemler sola yaslı tek akış, ilk düğme başlıkla aynı sol kenarda, nedenler de soldan başlar (zikzak yok).
   await page.context().clearCookies();
   await girisYap(page, "analist");
   for (const g of [1024, 390]) {
     await page.setViewportSize({ width: g, height: 900 });
     await page.goto("/gereksinimler/req-tpd-1");
     const baslik = page.locator(".sayfa-basligi");
-    await expect(baslik.locator(".dugme-neden").first()).toBeVisible();
+    await expect(baslik.locator(".eylemler .dugme").first()).toBeVisible();
     await fontlariBekle(page);
-    // DS-1: başlık artık özet kartı (iç boşluklu): kenar, kartın içerik kutusunun sağ kenarıdır.
     const kart = await kutu(baslik);
     const ic = await baslik.evaluate((e) => {
       const c = getComputedStyle(e);
-      return parseFloat(c.paddingRight) + parseFloat(c.borderRightWidth);
+      return { sag: parseFloat(c.paddingRight) + parseFloat(c.borderRightWidth), sol: parseFloat(c.paddingLeft) + parseFloat(c.borderLeftWidth) };
     });
-    const kap = { ...kart, width: kart.width - ic };
-    const son = await kutu(baslik.locator(".eylemler .dugme").last());
-    expect(Math.abs(son.x + son.width - (kap.x + kap.width))).toBeLessThanOrEqual(1);
-    for (const n of await baslik.locator(".dugme-neden").all()) {
-      const k = await metinKenari(n);
-      expect(Math.abs(k.sag - (kap.x + kap.width))).toBeLessThanOrEqual(1);
+    if (g > 960) {
+      const son = await kutu(baslik.locator(".eylemler .dugme").last());
+      expect(Math.abs(son.x + son.width - (kart.x + kart.width - ic.sag))).toBeLessThanOrEqual(1);
+    } else {
+      const ilk = await kutu(baslik.locator(".eylemler .dugme").first());
+      expect(Math.abs(ilk.x - (kart.x + ic.sol))).toBeLessThanOrEqual(1);
+      for (const n of await baslik.locator(".eylemler .dugme-neden").all()) {
+        const k = await metinKenari(n);
+        expect(k.sol).toBeGreaterThanOrEqual(kart.x + ic.sol - 1);
+        expect(k.sag).toBeLessThanOrEqual(kart.x + kart.width - ic.sag + 1);
+      }
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(g);
   }
@@ -1126,7 +1131,7 @@ test("Faz 4 locator yolu: sunucu kırar → CI kırmızı → triage → mühend
 
   await girisYap(page, "muhendis");
   await page.goto("/hatalar/fail-2");
-  await expect(page.getByTestId("triage-sinif")).toContainText("Karar kaynağı: kural");
+  await expect(page.getByTestId("triage-sinif")).toContainText("Karar kaynağı: otomatik kural");
   await page.getByRole("tab", { name: /^Kanıt/ }).click();
   await expect(page.getByRole("region", { name: "Locator yoklaması (locator-probe)" })).toContainText("commit eşleşiyor");
   await page.getByRole("tab", { name: /^Onarım/ }).click();
@@ -1444,4 +1449,47 @@ test("011 tur 2: dil algılanamadı, dil çakışması ve Otomasyon sütunu list
     await expect(page.getByRole("heading", { name: "Oturum aç" })).toBeVisible();
   }
   expect(hatalar).toEqual([]);
+});
+
+// YD-01 / CL-01 regresyonu (geometri): düğmesi olmayan rolde eylem grubunda yalnız "Bu adım <Rol> rolünde: … bekleniyor"
+// notu kalınca not 0–8 px genişliğe eziliyor, metin harf harf dikey akıyordu. Her rol × detay/liste sayfası × genişlikte
+// görünür her pasiflik/rol notu okunur genişlikte (≥ 120 px ya da kabının tamamı) ve makul yükseklikte kalmalı.
+test("düğmesiz eylem grubunda 'kimi bekliyoruz' notu ezilmez (her rol, 1440/960/390)", async ({ page }) => {
+  test.setTimeout(600_000);
+  const yollar = [
+    "/gereksinimler",
+    "/gereksinimler/req-tpd-1",
+    "/gereksinimler/req-ft-1",
+    "/gereksinimler/req-tpd-1/caseler",
+    "/gereksinimler/req-tpd-1/karar-tablolari",
+    "/kod/scr-2",
+    "/kod/scr-3",
+    "/kosular/run-107",
+    "/hatalar/fail-2",
+    "/hatalar/fail-1",
+    "/bug-taslaklari/bug-1",
+  ];
+  const ezikler: string[] = [];
+  for (const rol of ["muhendis", "sunucu", "po", "testci", "denetci", "gelistirici", "izleyici", "analist"]) {
+    await girisYap(page, rol);
+    for (const yol of yollar) {
+      for (const genislik of [1440, 960, 390]) {
+        await page.setViewportSize({ width: genislik, height: 900 });
+        await page.goto(yol);
+        await expect(page.getByRole("heading", { level: 1 }).or(page.getByText("Bu ekran için yetkiniz yok.")).first()).toBeVisible();
+        await expect(page.getByRole("status").filter({ hasText: "Yükleniyor" })).toHaveCount(0);
+        const kotu = await page.evaluate(() =>
+          [...document.querySelectorAll<HTMLElement>(".dugme-neden")]
+            .filter((e) => e.offsetParent !== null && (e.textContent ?? "").trim().length > 20)
+            .map((e) => ({ r: e.getBoundingClientRect(), kap: e.parentElement!.closest(".eylemler, .satir-ogeler, .kart")?.getBoundingClientRect(), t: e.textContent!.trim().slice(0, 40) }))
+            .filter(({ r, kap }) => (r.width < 120 && (!kap || r.width < kap.width - 1)) || r.height > 160)
+            .map(({ r, t }) => `${Math.round(r.width)}×${Math.round(r.height)} "${t}"`),
+        );
+        for (const k of kotu) ezikler.push(`${rol} ${yol} @${genislik}: ${k}`);
+      }
+    }
+    await page.getByRole("button", { name: "Çıkış" }).click();
+    await expect(page.getByRole("heading", { name: "Oturum aç" })).toBeVisible();
+  }
+  expect(ezikler).toEqual([]);
 });
