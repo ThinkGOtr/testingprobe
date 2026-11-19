@@ -10,6 +10,8 @@ Model çıktısı üzerinde deterministik düzeltmeler (XI, VIII'e kayıtlı —
 - `evidence` yalnızca koşunun artefaktlarından gelir; modelin verdiği ve bağlamda olmayan her
   bağlantı atılır (URL uydurulamaz).
 - `story_key` / `test_case_key` bağlamdan yazılır; `labels` her zaman `AI-generated` içerir.
+- `environment` iç terimlerden arındırılır (`ortam_metni`): model bağlamındaki
+  "Kampanya kırılması (BREAK_CAMPAIGN): kapalı" satırı taslağa ortam değişkeni adıyla geçmez.
 """
 
 from __future__ import annotations
@@ -115,6 +117,41 @@ def _severity(ctx: BugContext) -> str:
     return "major"
 
 
+# Ortam metnindeki iç terimler (ortam değişkeni adı) → kullanıcı dili. Sıra önemli: önce tam ifade.
+_ORTAM_IC_TERIMLER: tuple[tuple[re.Pattern[str], str], ...] = (
+    (
+        re.compile(
+            r"kampanya\s+kırılması\s*\(\s*BREAK_CAMPAIGN(?:=1)?\s*\)\s*:?\s*kapalı", re.IGNORECASE
+        ),
+        "kasıtlı kırma yok (normal koşu)",
+    ),
+    (
+        re.compile(
+            r"kampanya\s+kırılması\s*\(\s*BREAK_CAMPAIGN(?:=1)?\s*\)\s*:?\s*açık", re.IGNORECASE
+        ),
+        "kampanya kuralı kasıtlı kırılmış (kırarak doğrula koşusu)",
+    ),
+    (
+        re.compile(r"\bBREAK_CAMPAIGN(?:=1)?\s*:?\s*kapalı", re.IGNORECASE),
+        "kasıtlı kırma yok (normal koşu)",
+    ),
+    (
+        re.compile(r"\bBREAK_CAMPAIGN(?:=1)?\s*:?\s*açık", re.IGNORECASE),
+        "kampanya kuralı kasıtlı kırılmış (kırarak doğrula koşusu)",
+    ),
+    (re.compile(r"\s*\(\s*BREAK_CAMPAIGN(?:=1)?\s*\)"), ""),
+    (re.compile(r"\bBREAK_CAMPAIGN(?:=1)?\b"), "kasıtlı kırma"),
+)
+
+
+def ortam_metni(metin: str) -> str:
+    """Ortam metnindeki iç terimleri (ör. `BREAK_CAMPAIGN`) kullanıcı diline çevirir."""
+    out = metin
+    for desen, yerine in _ORTAM_IC_TERIMLER:
+        out = desen.sub(yerine, out)
+    return out
+
+
 def _environment(ctx: BugContext) -> str:
     if ctx.kaynak == "finding":
         return "Doküman tutarlılık denetimi (kod/veri, salt okuma) · yerel demo ortamı"
@@ -123,7 +160,7 @@ def _environment(ctx: BugContext) -> str:
         parcalar.append(f"commit {ctx.commit[:12]}")
     parcalar.append("Chromium (Playwright)")
     if ctx.kirma:
-        parcalar.append("BREAK_CAMPAIGN açık (kırarak doğrula koşusu)")
+        parcalar.append("kampanya kuralı kasıtlı kırılmış (kırarak doğrula koşusu)")
     return " · ".join(parcalar)
 
 
@@ -218,7 +255,7 @@ def normalize_legacy(eski: Mapping[str, Any], ctx: BugContext) -> dict[str, Any]
         "steps": _numarala([str(a) for a in eski.get("steps") or []] or ["Bulguyu inceleyin"]),
         "expected": str(eski.get("expected") or ctx.belge_metni or ctx.iddia or "-"),
         "actual": str(eski.get("actual") or ctx.gozlem or "-"),
-        "environment": str(eski.get("environment") or _environment(ctx)),
+        "environment": ortam_metni(str(eski.get("environment") or _environment(ctx))),
         "evidence": kanitlar or list(ctx.kanitlar),
         "story_key": ctx.story_key or eski.get("story_key"),
         "test_case_key": eski.get("test_case_key"),
@@ -278,6 +315,9 @@ def apply_guards(
         duzelt("labels", "AI-generated etiketi zorunlu", [AI_LABEL, *etiketler])
     if out.get("severity_suggestion") not in SEVERITY_PRIORITY:
         duzelt("severity_suggestion", "geçersiz önem önerisi", sablon["severity_suggestion"])
+    if isinstance(out.get("environment"), str):
+        # Sessiz dil düzeltmesi (anlam değişmez): iç terim düzeltme listesine girmez.
+        out["environment"] = ortam_metni(out["environment"])
     if not isinstance(out.get("summary"), str) or not out["summary"].strip():
         duzelt("summary", "özet boş", sablon["summary"])
     else:

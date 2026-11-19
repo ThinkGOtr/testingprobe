@@ -208,14 +208,15 @@ export function SegmentSecici<D extends string>({
           aria-pressed={s.deger === deger}
           disabled={s.pasif}
           onClick={() => degistir(s.deger)}
+          // Erişilebilir ad "Reddedilen (1)": sayı rozeti (inline-flex, içinde gizli parantezler) Chromium'da adın
+          // içine boşluk katıyordu ("Reddedilen ( 1 )"); ad motordan bağımsız olarak açıkça verilir.
+          aria-label={s.sayi != null && typeof s.ad === "string" ? `${s.ad} (${s.sayi})` : undefined}
         >
           {s.ad}
           {s.sayi != null && " "}
           {s.sayi != null && (
-            <span className="ds-sayi">
-              <span className="gorunmez">(</span>
+            <span className="ds-sayi" aria-hidden="true">
               {s.sayi}
-              <span className="gorunmez">)</span>
             </span>
           )}
         </button>

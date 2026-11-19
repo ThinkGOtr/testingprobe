@@ -4,7 +4,7 @@ import type { KosuDetay, PwAdimi, TestDenemesi, TestSonucu } from "../api/types"
 import { projeBasliklari } from "../api/http";
 import { Baglanti, BosDurum, Cip, DisBaglanti, Kart, IzinliLink } from "../components/ui";
 import { SegmentSecici, SuzgecCubugu, TabloSarici } from "../components/tasarim";
-import { altTurEtiketi, HATA_SINIFI, KOSU_DURUMU } from "../lib/etiketler";
+import { altTurEtiketi, HATA_SINIFI, KOSU_DURUMU, testAdiGoster } from "../lib/etiketler";
 import { sure } from "../lib/format";
 
 /**
@@ -264,7 +264,7 @@ export function TestAyrintisi({ s }: { s: TestSonucu }) {
   const denemeEki = (n: number) => ekler.filter((e) => e.deneme === n);
   const sahipsiz = ekler.filter((e) => e.deneme === null || e.deneme === undefined || !denemeler.some((d) => d.deneme === e.deneme));
   return (
-    <div className="test-ayrinti" role="region" aria-label={`Test ayrıntısı: ${s.test_adi}`}>
+    <div className="test-ayrinti" role="region" aria-label={`Test ayrıntısı: ${testAdiGoster(s.test_adi)}`}>
       {dosya && <p className="kucuk mono">{dosya}</p>}
       {denemeler.length === 0 && s.hata_mesaji && <pre className="hata-mesaji">{s.hata_mesaji}</pre>}
       {denemeler.map((d) => (
@@ -399,7 +399,7 @@ export function TestSonuclari({ k }: { k: KosuDetay }) {
                       <td className="yigin-baslik">
                         <button type="button" className="dugme-metin" aria-expanded={ac} aria-controls={ac ? panel : undefined} onClick={() => degistir(s.id)}>
                           <span aria-hidden="true">{ac ? "▾" : "▸"} </span>
-                          {s.test_adi}
+                          <span title={s.test_adi}>{testAdiGoster(s.test_adi)}</span>
                         </button>
                         {!ac && s.hata_mesaji && <pre className="hata-mesaji hata-mesaji-kisa">{s.hata_mesaji}</pre>}
                         {!ac && s.ekler && s.ekler.length > 0 && (

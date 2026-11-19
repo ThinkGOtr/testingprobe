@@ -24,6 +24,11 @@ describe("CL-07 okunur metin", () => {
     );
     expect(icTerimleriAyikla("Kampanya bozulur (BREAK_CAMPAIGN ile aynı etki)")).toBe("Kampanya bozulur (kasıtlı kırma ile aynı etki)");
     expect(icTerimleriAyikla("jira-sim kaydı")).toBe("Jira simülatörü kaydı");
+    // Bug taslağı ortamı (eski kayıtlar; core artık üretimde çeviriyor).
+    expect(icTerimleriAyikla("Yerel demo ortamı (demo-app main); kampanya kırılması (BREAK_CAMPAIGN) kapalı")).toBe(
+      "Yerel demo ortamı (demo-app main); kasıtlı kırma yok (normal koşu)",
+    );
+    expect(icTerimleriAyikla("Kampanya kırılması (BREAK_CAMPAIGN): açık")).toBe("Kampanya kuralı kasıtlı kırılmış (kırarak doğrula koşusu)");
     // Case kimliği ve S harfi geçen olağan metin dokunulmaz.
     expect(icTerimleriAyikla("TPD-1·C3 Sepet S2 boyutu")).toBe("TPD-1·C3 Sepet S2 boyutu");
   });

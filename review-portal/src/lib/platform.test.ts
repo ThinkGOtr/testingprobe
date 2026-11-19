@@ -48,7 +48,11 @@ describe("platform yardımcıları", () => {
     expect(aracEtiketi("app_select_option")).toBe("Seç");
     expect(aracEtiketi("app_wait_for")).toBe("Bekle");
     expect(aracEtiketi("app_generate_locator")).toBe("Locator üret");
-    expect(aracEtiketi("browser_click")).toBe("browser_click");
+    expect(aracEtiketi("browser_click")).toBe("Tıkla");
+    expect(aracEtiketi("browser_navigate")).toBe("Sayfaya git");
+    expect(aracEtiketi("browser_type")).toBe("Yaz");
+    expect(aracEtiketi("browser_yeni_arac")).toBe("Tarayıcı işlemi");
+    expect(aracEtiketi("ozel")).toBe("ozel");
   });
 
   it("dikey ekran yalnız telefon; uygulama platformu web dışı", () => {

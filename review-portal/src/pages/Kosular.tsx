@@ -716,7 +716,7 @@ function HataListesi({ k }: { k: KosuDetayTuru }) {
             <PlatformRozeti platform={k.platform} />
             {/* 011 §2.8: koşunun dili (core `dil` / `ortam.dil`); bilinmiyorsa çizilmez. */}
             <DilRozeti dil={k.dil} platform={k.platform} />
-            <span>{h.test_adi}</span>
+            <span title={h.test_adi}>{testAdiGoster(h.test_adi)}</span>
             {h.ozet && <span className="kucuk soluk">{h.ozet}</span>}
             <IzinliLink to={`/hatalar/${encodeURIComponent(h.id)}`}>Triage sonucunu aç</IzinliLink>
           </li>
@@ -1003,7 +1003,7 @@ function KosuSiradaki({ k, hatalar, takilma }: { k: KosuDetayTuru; hatalar: Kosu
     const ilk = hatalar[0];
     return (
       <>
-        {hatalar.length === 1 ? `Başarısız test triage'a düştü: ${ilk.test_adi}.` : `${hatalar.length} başarısızlık triage'a düştü.`}{" "}
+        {hatalar.length === 1 ? `Başarısız test triage'a düştü: ${testAdiGoster(ilk.test_adi)}.` : `${hatalar.length} başarısızlık triage'a düştü.`}{" "}
         <IzinliLink className="ds-siradaki-git" to={`/hatalar/${encodeURIComponent(ilk.id)}`}>
           Triage sonucunu aç →
         </IzinliLink>

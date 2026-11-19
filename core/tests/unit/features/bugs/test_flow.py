@@ -255,7 +255,8 @@ def test_replay_kirma_kosusu(engine: Engine, bug_replay_gateway: Any) -> None:
     b, ek = _draft(did)
     assert ek.hazirlik_hatasi is None, ek.hazirlik_hatasi
     assert b.uretim_modu == "replay" and ek.dup_uretim_modu == "replay"
-    assert "BREAK_CAMPAIGN" in b.icerik["environment"]
+    assert "kasıtlı kırılmış" in b.icerik["environment"]
+    assert "BREAK_CAMPAIGN" not in b.icerik["environment"]
     assert b.mukerrer_adaylari[0]["key"] == "TPD-5"
     assert b.mukerrer_adaylari[0]["likelihood"] == "medium"
     assert ek.oneri["recommendation"] == "new"

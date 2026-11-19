@@ -6,6 +6,9 @@
 2. .github/golden-drift/drift_sources.py — CI'daki golden-drift işi (anayasa II: ajan bağımlılığı
    yok) tp_core'u kuramadığı için üç küçük kuralı kopyalar. Kopyalar tp_core.gateway ile eşit
    olmalı.
+3. review-portal/src/api/sozlesme/denetim-olaylari.json — core'un denetim zincirine yazdığı olay
+   kodları (kaynaktan AST ile toplanır); portal her kodun okunur etiketi olduğunu denetler
+   (yeniden üretmek: review-portal içinde `npm run sozlesme:denetim`).
 """
 
 from __future__ import annotations
@@ -47,6 +50,30 @@ def test_portal_durum_disa_aktarimi_machines_ile_ayni() -> None:
         "review-portal/src/api/sozlesme/durum-makineleri.json çekirdek MACHINES'ten farklı; "
         "review-portal içinde `npm run sozlesme:durumlar` çalıştırın ve "
         "portal birliklerini güncelleyin"
+    )
+
+
+DENETIM_EXPORT = REPO / "review-portal" / "src" / "api" / "sozlesme" / "denetim-olaylari.json"
+DENETIM_SCRIPT = REPO / "review-portal" / "scripts" / "denetim_olaylari.py"
+
+
+@pytest.mark.skipif(not DENETIM_SCRIPT.exists(), reason="review-portal yok")
+def test_portal_denetim_olaylari_guncel() -> None:
+    import tp_core
+
+    spec = importlib.util.spec_from_file_location("denetim_olaylari_parity", DENETIM_SCRIPT)
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    kodlar, cozulemeyen = mod.topla(Path(tp_core.__file__).parent)
+    assert not cozulemeyen, (
+        "çözülemeyen denetim olayı çağrıları; review-portal/scripts/denetim_olaylari.py "
+        f"kurallarına ekleyin: {cozulemeyen}"
+    )
+    assert json.loads(DENETIM_EXPORT.read_text(encoding="utf-8")) == kodlar, (
+        "review-portal/src/api/sozlesme/denetim-olaylari.json güncel değil; review-portal içinde "
+        "`npm run sozlesme:denetim` çalıştırın ve yeni kodlara Denetim etiketi ekleyin "
+        "(src/lib/kullaniciMetni.ts OLAY_ETIKETI)"
     )
 
 

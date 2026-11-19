@@ -12,7 +12,7 @@ import type { HataKatalogOgesi, HataKosusu, HataKosusuAdimi, HataKosusuDetay, Ha
 import { hataKosusuSuruyorMu, kaynakBilgisiVar, kaynakOrani, yakalamaOrani } from "../../api/uyumKule";
 import { useIzin, usePlatformlar } from "../../auth";
 import { useGeciktirilmis, useVeri } from "../../hooks";
-import { ekilmisHataAdi, HATA_ADIM_SONUCU, HATA_KOSUSU_DURUMU, HATA_TURU, icTerimleriAyikla } from "../../lib/etiketler";
+import { ekilmisHataAdi, HATA_ADIM_SONUCU, HATA_KOSUSU_DURUMU, HATA_TURU, icTerimleriAyikla, testAdiGoster } from "../../lib/etiketler";
 import { sure, tarih, yuzde } from "../../lib/format";
 import { PLATFORMLAR, PLATFORM_ETIKETI, uygulamaPlatformuMu, type Platform } from "../../lib/platform";
 import { KisiAdi } from "../KisiAdi";
@@ -543,7 +543,7 @@ function Hucre({ a, ad, platform }: { a: HataKosusuAdimi | undefined; ad: string
             <ul>
               {a.kiran_testler.map((t) => (
                 <li key={t.test}>
-                  {t.test}
+                  <span title={t.test}>{testAdiGoster(t.test)}</span>
                   {t.kaynak && (
                     <>
                       {" "}

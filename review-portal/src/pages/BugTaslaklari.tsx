@@ -16,7 +16,7 @@ import { DetaySayfasi, OzetKarti, type DetaySekmesi } from "../components/DetayS
 import "../stiller/detay-bug-karar.css";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { KisiAdi } from "../components/KisiAdi";
-import { BUG_DURUMU, SEVERITY, type Ton } from "../lib/etiketler";
+import { BUG_DURUMU, icTerimleriAyikla, SEVERITY, type Ton } from "../lib/etiketler";
 import { tarih } from "../lib/format";
 import { kirmaTaslagiMi } from "../lib/yolHaritasi";
 
@@ -731,7 +731,8 @@ export function BugTaslakDetay() {
         },
         { etiket: "Beklenen", deger: <AtifliMetin metin={icerik.expected} veri={bugVeriAtiflari(icerik.expected)} />, genis: true },
         { etiket: "Gerçekleşen", deger: <AtifliMetin metin={icerik.actual} veri={bugVeriAtiflari(icerik.actual)} />, genis: true },
-        { etiket: "Ortam", deger: icerik.environment, genis: true },
+        // Eski kayıtlar: core artık üretimde çevirir (`ortam_metni`); önceki taslaklarda iç terim gösterimde ayıklanır.
+        { etiket: "Ortam", deger: icTerimleriAyikla(icerik.environment), genis: true },
         { etiket: "Önem önerisi", deger: SEVERITY[icerik.severity_suggestion] },
       ]}
     />

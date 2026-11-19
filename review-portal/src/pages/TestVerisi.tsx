@@ -314,7 +314,7 @@ function GecmisCekmecesi({ kayit, kapat }: { kayit: TestVerisi; kapat: () => voi
                     {s.sir_adi && (
                       <>
                         {" "}
-                        · sır <span className="mono">{s.sir_adi}</span>
+                        · sır adı: <span className="mono">{s.sir_adi}</span>
                       </>
                     )}
                   </>
@@ -595,7 +595,11 @@ export function TestVerisiSayfasi() {
                               <Cip ton={k.sir_tanimli ? "basari" : "hata"} title={k.sir_adi ? `Ortam sırrı: ${k.sir_adi}` : undefined}>
                                 {k.sir_tanimli ? "sır tanımlı" : "sır tanımsız"}
                               </Cip>
-                              {k.sir_adi && <span className="mono soluk kucuk">{k.sir_adi}</span>}
+                              {k.sir_adi && (
+                                <span className="soluk kucuk">
+                                  sır adı: <span className="mono">{k.sir_adi}</span>
+                                </span>
+                              )}
                             </span>
                           ) : (
                             <span className="mono" title={k.deger ?? undefined}>{k.deger != null ? veriDegeriGoster(k.anahtar, k.deger) : "—"}</span>

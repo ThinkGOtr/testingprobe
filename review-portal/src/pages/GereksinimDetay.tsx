@@ -445,9 +445,11 @@ export function GereksinimDetay() {
               </p>
               {sonHalSonrasi && (
                 <p className="kucuk" data-testid="son-hal-notu">
+                  {/* Serbest metinde Jira yok: düzeltmeler dokümana uygulanır. */}
+                  {g.kaynak === "jira" ? "Düzeltmeler Jira'ya yazıldı" : "Düzeltmeler dokümana uygulandı"}
                   {guncelEngelleyici === 0
-                    ? "Düzeltmeler Jira'ya yazıldı ve son kontrol turunda güncel engelleyici bulgu kalmadı. Aşağıdaki kartlar bu turun kaydıdır; karar gerekmez."
-                    : "Düzeltmeler Jira'ya yazıldı. Aşağıdaki kartlar bu turun kaydıdır; karar gerekmez."}
+                    ? " ve son kontrol turunda güncel engelleyici bulgu kalmadı. Aşağıdaki kartlar bu turun kaydıdır; karar gerekmez."
+                    : ". Aşağıdaki kartlar bu turun kaydıdır; karar gerekmez."}
                   {eskimisBulgular.length > 0 && " Güncelliğini yitirmiş bulgular ayrıca listelenir."}
                 </p>
               )}

@@ -13,6 +13,7 @@
     "e2e": "playwright test",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p e2e/tsconfig.json",
     "sozlesme:durumlar": "uv run --quiet --project ../core python scripts/durum_makineleri.py > src/api/sozlesme/durum-makineleri.json",
+    "sozlesme:denetim": "uv run --quiet --project ../core python scripts/denetim_olaylari.py > src/api/sozlesme/denetim-olaylari.json",
     "sozlesme:golden": "python3 -I scripts/golden_esitle.py > src/api/mock/golden/kaynaklar.json"
   },
   "dependencies": {

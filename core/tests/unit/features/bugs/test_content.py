@@ -350,3 +350,16 @@ def test_gizli_test_verisi_taslakta_maskelenir_model_girdisinde_kalir() -> None:
     assert any("Demo123!" in str(k) for k in ctx.sources())
     # Gizli değer bilinmiyorsa içerik değişmez.
     assert content.template_draft(_ctx()) == content.template_draft(_ctx(gizli_degerler=[]))
+
+
+def test_ortam_metni_ic_terim_ayiklar() -> None:
+    """Canlı UX: model bağlamındaki `Kampanya kırılması (BREAK_CAMPAIGN): kapalı` taslağa sızmaz."""
+    from tp_core.features.bugs.content import ortam_metni
+
+    assert (
+        ortam_metni("Yerel demo ortamı (demo-app main); kampanya kırılması (BREAK_CAMPAIGN) kapalı")
+        == "Yerel demo ortamı (demo-app main); kasıtlı kırma yok (normal koşu)"
+    )
+    assert "BREAK_CAMPAIGN" not in ortam_metni("Kampanya kırılması (BREAK_CAMPAIGN): açık")
+    assert ortam_metni("BREAK_CAMPAIGN=1 ile koşu") == "kasıtlı kırma ile koşu"
+    assert ortam_metni("Chromium (Playwright)") == "Chromium (Playwright)"

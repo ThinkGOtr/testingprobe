@@ -14,7 +14,7 @@ import { DetaySayfasi, OzetKarti, type DetaySekmesi } from "../components/DetayS
 import "../stiller/detay-kosu-hata.css";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { INSAN_SINIFLARI, islerimApi } from "../api/islerim";
-import { altTurEtiketi, HATA_SINIFI, sinyalBasligi, TRIAGE_ALT_TUR, type Ton } from "../lib/etiketler";
+import { altTurEtiketi, HATA_SINIFI, sinyalBasligi, testAdiGoster, TRIAGE_ALT_TUR, type Ton } from "../lib/etiketler";
 import { tarih } from "../lib/format";
 import { kisaKosuAdi } from "./Kosular";
 import { PlatformRozeti } from "../components/Platform";
@@ -317,7 +317,7 @@ function OnarimKarti({ o, hataId, yenile }: { o: LocatorOnarimi; hataId: string;
                 <Cip ton={t.durum === "passed" ? "basari" : t.durum === "failed" ? "hata" : "notr"}>
                   {t.durum === "passed" ? "geçti" : t.durum === "failed" ? "kırmızı" : "bekliyor"}
                 </Cip>
-                <span>{t.test_adi}</span>
+                <span title={t.test_adi}>{testAdiGoster(t.test_adi)}</span>
               </li>
             ))}
           </ul>
@@ -859,7 +859,7 @@ export function HataDetay() {
             ) : h.script_id ? (
               <Link to={`/kod/${encodeURIComponent(h.script_id)}`}>Script ve bağlı case'i aç</Link>
             ) : h.run_id ? (
-              <Link to={`/kosular/${encodeURIComponent(h.run_id)}`}>Koşuyu aç ({h.test_adi})</Link>
+              <Link to={`/kosular/${encodeURIComponent(h.run_id)}`}>Koşuyu aç ({testAdiGoster(h.test_adi)})</Link>
             ) : null}
           </Uyari>
         </div>
@@ -986,7 +986,7 @@ export function HataDetay() {
           kirinti={[{ ad: "Hatalar", yol: "/hatalar" }, { ad: testKisaAdi(h.test_adi) }]}
           // YD-12: sekme başlığı kısa test adı ("TPD-1 C10 · Triage"); uzun ad ve @etiketler sekmede okunmaz.
           sekme={`${testKisaAdi(h.test_adi)} · Triage`}
-          baslik={h.test_adi}
+          baslik={testAdiGoster(h.test_adi)}
           rozetler={
             <span className="satir-ogeler" data-testid="triage-sinif">
               <DurumCipi harita={HATA_SINIFI} deger={h.sinif} />

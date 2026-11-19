@@ -16,7 +16,7 @@ import "../stiller/detay-script.css";
 import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
 import { useIzin } from "../auth";
 import { KisiAdi } from "../components/KisiAdi";
-import { BULGU_KARARI, SCRIPT_DURUMU, scriptIsareti, scriptUretiliyor, type Ton } from "../lib/etiketler";
+import { BULGU_KARARI, SCRIPT_DURUMU, scriptIsareti, scriptUretiliyor, testAdiGoster, type Ton } from "../lib/etiketler";
 import { ENGEL_TURU, kosuKimligiMi, mergeEngelleri, mergeOnayNotu, mergeUyarilari, RET_NEDENI, YEREL_SINIF } from "../lib/kapi";
 import { saat, tarih } from "../lib/format";
 import { PlatformRozeti } from "../components/Platform";
@@ -175,9 +175,11 @@ export function AjanAdimlari({ adimlar, canli, platform = null }: { adimlar: Aja
                 {a.step_id && <span title="Case adımı referansı"> · case {a.step_id}</span>}
               </span>
               <span>{a.aciklama}</span>
-              <span className="kucuk mono">
-                {a.po && a.method ? `${a.po}.${a.method}(${a.args.map((x) => JSON.stringify(x)).join(", ")})` : aracEtiketi(a.arac)}
-              </span>
+              {a.po && a.method ? (
+                <span className="kucuk mono" title={`Araç: ${a.arac}`}>{`${a.po}.${a.method}(${a.args.map((x) => JSON.stringify(x)).join(", ")})`}</span>
+              ) : (
+                <span className="kucuk" title={`Araç: ${a.arac}`}>{aracEtiketi(a.arac)}</span>
+              )}
               {a.verified !== null && (
                 <span className={`kucuk ${a.verified ? "ok-metin" : "hata-metin"}`}>{a.verified ? "✓ snapshot'ta doğrulandı" : "✗ doğrulanamadı"}</span>
               )}
@@ -212,15 +214,11 @@ export function AjanAdimlari({ adimlar, canli, platform = null }: { adimlar: Aja
   );
 }
 
-/** Aracın Türkçe adı; ham araç adı (app_click …) yanında eş genişlikli yazıyla. */
+/** Aracın Türkçe adı; ham araç adı (browser_click, app_click …) ipucunda. */
 function AracAdi({ arac }: { arac: string }) {
   const ad = aracEtiketi(arac);
   if (ad === arac) return <>{arac}</>;
-  return (
-    <>
-      {ad} <span className="mono">({arac})</span>
-    </>
-  );
+  return <span title={`Araç: ${arac}`}>{ad}</span>;
 }
 
 const DEGER = (x: unknown) => JSON.stringify(x);
@@ -413,7 +411,7 @@ export function YerelKontrolKarti({
           {hatalariGrupla(yk.basarisiz).map(({ hata: h, adet }, i) => (
             <li key={i}>
               <div>
-                {h.test_adi}
+                {testAdiGoster(h.test_adi)}
                 {adet > 1 && (
                   <span className="soluk kucuk">
                     {" "}

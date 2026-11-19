@@ -6910,9 +6910,8 @@ code {
   font-weight: 600;
   white-space: nowrap;
 }
-/* Denetim olayı (IA-12): okunur etiket + ikinci satırda olay kodu. */
-.denetim-olay-etiketi,
-.denetim-olay-kodu {
+/* Denetim olayı (IA-12): okunur etiket (ham olay kodu ipucunda). */
+.denetim-olay-etiketi {
   display: block;
 }
 /* Teknik ayrıntı açılırı (IA-12): kullanıcı cümlesinin altında ham hata/komut metni. */

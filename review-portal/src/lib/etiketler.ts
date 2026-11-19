@@ -454,6 +454,11 @@ const IC_TERIMLER: [RegExp, string][] = [
   [/(^|[;—–:]\s*|\.\s+)S\d{1,2}\s*[:—–]\s*/g, "$1"],
   [/\bREPLAY-MISS\s*:\s*/g, ""],
   [/\s*@tp-[\w-]+/g, ""],
+  // Bug taslağı ortamı (eski kayıtlar; core artık `ortam_metni` ile üretimde çeviriyor).
+  [/kampanya\s+kırılması\s*\(\s*BREAK_CAMPAIGN(?:=1)?\s*\)\s*:?\s*kapalı/giu, "kasıtlı kırma yok (normal koşu)"],
+  [/kampanya\s+kırılması\s*\(\s*BREAK_CAMPAIGN(?:=1)?\s*\)\s*:?\s*açık/giu, "kampanya kuralı kasıtlı kırılmış (kırarak doğrula koşusu)"],
+  [/\bBREAK_CAMPAIGN(?:=1)?\s*:?\s*kapalı/gu, "kasıtlı kırma yok (normal koşu)"],
+  [/\bBREAK_CAMPAIGN(?:=1)?\s*:?\s*açık/gu, "kampanya kuralı kasıtlı kırılmış (kırarak doğrula koşusu)"],
   [/\bBREAK_CAMPAIGN(?:=1)?\b/g, "kasıtlı kırma"],
   [/\bjira-sim\b/g, "Jira simülatörü"],
   [/\bTP_FORGE=local\b/g, "yerel kod deposu kipi"],

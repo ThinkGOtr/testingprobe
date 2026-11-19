@@ -158,7 +158,10 @@ describe("Script detayı (uygulama)", () => {
     await u.click(within(adimlar).getAllByRole("button")[0]);
     const sekil = document.querySelector("figure.ajan-ekran")!;
     expect(sekil).toHaveClass("ajan-ekran-dikey");
-    expect(sekil).toHaveTextContent("Uygulamayı başlat (app_launch)");
+    // Ham araç adı görünmez, ipucunda (canlı UX son temizlik).
+    expect(sekil).toHaveTextContent("Uygulamayı başlat");
+    expect(sekil).not.toHaveTextContent("app_launch");
+    expect(sekil.querySelector('[title="Araç: app_launch"]')).not.toBeNull();
     expect(screen.getByRole("heading", { name: "Ajan adımları (Appium · app-mcp)" })).toBeInTheDocument();
     await sekmeAc("Pull request");
     const checks = screen.getAllByRole("list", { name: "PR check'leri" })[0];

@@ -111,6 +111,7 @@ test("tüm rotalar gezilir (ekran görüntüleri; rol kısıtlı ekranlar yetkil
     const rol = r.rol ?? "analist";
     if (rol !== aktif) {
       await page.getByRole("button", { name: "Çıkış" }).click();
+      await expect(page.getByRole("heading", { name: "Oturum aç" })).toBeVisible(); // çıkış bitmeden yeni giriş eski oturumda kalıyordu
       await girisYap(page, rol);
       aktif = rol;
     }
@@ -164,7 +165,8 @@ test("insan kapıları uçtan uca: bulgu kararı → düzeltme → PO teyidi", a
   await page.getByRole("button", { name: "Çıkış" }).click();
   await expect(page.getByRole("heading", { name: "Oturum aç" })).toBeVisible();
   await girisYap(page, "po");
-  await expect(page.locator(".kullanici-ad")).toHaveText("po");
+  // YD-05: üst çubukta görünen ad (kullanıcı adı ipucunda).
+  await expect(page.locator(".kullanici-ad")).toHaveAttribute("title", /\(po\)$/);
   await page.goto("/gereksinimler/req-ft-1");
   await page.getByRole("button", { name: "PO olarak onayla" }).click();
   await expect(page.locator(".sayfa-basligi").getByText("PO onaylı")).toBeVisible();
@@ -188,6 +190,7 @@ test("Demo-A: Test Uzmanı taslağa alır ve kabul eder, Analist onaylar; yayın
 
   // Analist son onayı verir (ANALIZ 012 §5).
   await page.getByRole("button", { name: "Çıkış" }).click();
+  await expect(page.getByRole("heading", { name: "Oturum aç" })).toBeVisible(); // çıkış bitmeden yeni giriş eski oturumda kalıyordu
   await girisYap(page, "analist");
   await page.goto("/gereksinimler/req-tpd-1/caseler");
   const hazir = kart("Onaya hazır");
@@ -198,6 +201,7 @@ test("Demo-A: Test Uzmanı taslağa alır ve kabul eder, Analist onaylar; yayın
 
   // Yayın ve Claude Code token'ı Test Uzmanında.
   await page.getByRole("button", { name: "Çıkış" }).click();
+  await expect(page.getByRole("heading", { name: "Oturum aç" })).toBeVisible(); // çıkış bitmeden yeni giriş eski oturumda kalıyordu
   await girisYap(page, "testci");
 
   await page.goto("/gereksinimler/req-tpd-1/yayin");
@@ -326,7 +330,8 @@ test("Sistem Yöneticisi (sunucu): açılış Demo yol haritası; Kontrol Kulesi
   await page.goto("/kontrol-kulesi");
   await expect(page.getByRole("img", { name: /^Kaynak: run tablosu|^Kaynak: test_result/ }).first()).toBeVisible();
   await page.getByRole("img", { name: /^Kaynak: test_result \(JUnit XML\)/ }).first().focus();
-  await expect(page.getByText("ölçülmüş baz yok")).toBeVisible();
+  // IA-12 (27bbde3b): baz değer uyarısı kullanıcı dilinde ("ölçülmüş baz yok" → "ölçülmüş manuel baz değer yok").
+  await expect(page.getByText(/ölçülmüş manuel baz değer yok/).first()).toBeVisible();
   await page.screenshot({ path: `${EKRAN_DIZINI}/26-kontrol-kulesi-kaynak.png`, fullPage: true });
   await page.goto("/kosular");
   await page.getByRole("combobox", { name: "Tetik" }).selectOption("break_verify");
@@ -334,6 +339,7 @@ test("Sistem Yöneticisi (sunucu): açılış Demo yol haritası; Kontrol Kulesi
   // CI tetikleri Otomasyon Mühendisindedir (ANALIZ 012 §6); Sistem Yöneticisi düğme görmez.
   await expect(page.getByRole("button", { name: "Deploy sonrası testleri koş" })).toHaveCount(0);
   await page.getByRole("button", { name: "Çıkış" }).click();
+  await expect(page.getByRole("heading", { name: "Oturum aç" })).toBeVisible(); // çıkış bitmeden yeni giriş eski oturumda kalıyordu
   await girisYap(page, "muhendis");
   await page.goto("/kosular");
   await page.getByRole("button", { name: "Deploy sonrası testleri koş" }).click();
@@ -595,14 +601,16 @@ test("CSP: önizleme nginx.conf başlığını gönderir; ekranlarda CSP ihlali 
 });
 
 test("hiçbir rolde ölü iç bağlantı yok (her href bir ekrana çıkar)", async ({ page }) => {
-  test.setTimeout(180_000);
+  // 8 rol × tüm rotalar + her rolün bağlantıları: rota sayısı arttıkça 180 sn sınırı aşılıyordu (takılma değil).
+  test.setTimeout(480_000);
   for (const rol of ["analist", "muhendis", "sunucu", "po", "testci", "denetci", "gelistirici", "izleyici"]) {
     await girisYap(page, rol);
     const hrefler = new Set<string>();
     for (const r of ROTALAR) {
       await page.goto(r.yol);
       // Rol yetkisi olmayan ekran (ör. Claude Code kanalı) başlık yerine yetki mesajı gösterir.
-      await expect(page.getByRole("heading", { level: 1 }).or(page.getByText("Bu ekran için yetkiniz yok."))).toBeVisible();
+      // Yetkisiz ekranda artık hem "Erişim yok" başlığı hem yetki mesajı var (ikisi birden eşleşir).
+      await expect(page.getByRole("heading", { level: 1 }).or(page.getByText("Bu ekran için yetkiniz yok.")).first()).toBeVisible();
       await expect(page.getByRole("status").filter({ hasText: "Yükleniyor" })).toHaveCount(0);
       for (const h of await page.locator("a[href]").evaluateAll((as) => as.map((a) => a.getAttribute("href") ?? ""))) {
         if (h.startsWith("/")) hrefler.add(h);
@@ -649,12 +657,14 @@ test("mobil tablolar kart görünümünde: sütun kırpılmaz, adım metni dar s
   const hucreler = await page.evaluate(() =>
     [...document.querySelectorAll(".tablo-yigin tbody td")].map((td) => {
       const r = td.getBoundingClientRect();
-      return { etiket: td.getAttribute("data-etiket"), sag: r.right, gen: r.width };
+      // a2800471: mobil liste kartında ikincil (Çekim) ve boş değerli (PO yok, 0 bulgu) hücreler bilerek gizli.
+      const bilerekGizli = getComputedStyle(td).display === "none" && (td.classList.contains("sutun-ikincil") || td.classList.contains("bos-yigin"));
+      return { etiket: td.getAttribute("data-etiket"), sag: r.right, gen: r.width, bilerekGizli };
     }),
   );
   expect(hucreler.length).toBeGreaterThan(0);
-  expect(hucreler.filter((h) => h.sag > 391 || h.gen < 1)).toEqual([]);
-  expect(new Set(hucreler.map((h) => h.etiket))).toEqual(new Set(["Anahtar", "Başlık", "Durum", "Adım", "PO", "Açık bulgu", "Case (onaylı)", "Çekim"]));
+  expect(hucreler.filter((h) => !h.bilerekGizli && (h.sag > 391 || h.gen < 1))).toEqual([]);
+  expect(new Set(hucreler.map((h) => h.etiket))).toEqual(new Set(["Anahtar", "Başlık", "Durum", "Sıradaki", "PO", "Açık bulgu", "Case (onaylı)", "Çekim"]));
   await page.screenshot({ path: `${EKRAN_DIZINI}/33-mobil-gereksinim-listesi.png`, fullPage: true });
 
   await page.goto("/gereksinimler/req-tpd-1/caseler");
@@ -734,7 +744,8 @@ const AXE_SAYFALARI: { yol: string; ad: string; hazir: (p: Page) => Promise<void
   { yol: "/bug-taslaklari", ad: "13-bug-taslaklari", hazir: (p) => expect(p.getByRole("heading", { name: "Bug taslakları" })).toBeVisible() },
   { yol: "/bug-taslaklari/bug-4", ad: "42-bug-c3-taslak", hazir: (p) => expect(p.getByText("Olası mükerrerler").first()).toBeVisible() },
   { yol: "/kontrol-kulesi", ad: "15-kontrol-kulesi", hazir: (p) => expect(p.getByText("Karne (story ve uygulama alanı)").first()).toBeVisible() },
-  { yol: "/denetim", ad: "16-denetim", hazir: (p) => expect(p.getByText("Zincir doğrulandı").first()).toBeVisible() },
+  // 012 rol/yetki: zincir doğrulaması yalnız Sistem Yöneticisi ve Denetçide; bu turun rolü kendi olaylarını görür.
+  { yol: "/denetim", ad: "16-denetim", hazir: (p) => expect(p.getByRole("region", { name: /^Olaylar(ınız)? \(\d+\)$/ })).toBeVisible() },
   { yol: "/claude-code", ad: "17-claude-code", hazir: (p) => expect(p.getByText("Token oluştur").first()).toBeVisible() },
   { yol: "/yol-haritasi", ad: "52-yol-haritasi", hazir: (p) => expect(p.getByText("Test bakımı yolu").first()).toBeVisible() },
   // 012 Ş7: "Örnekle dene" açık (form alanları da denetlensin).
@@ -758,13 +769,17 @@ const AXE_SAYFALARI: { yol: string; ad: string; hazir: (p: Page) => Promise<void
  * `color-contrast` **incomplete** düğüm sayısı. Sıra: koyu 1440, koyu 390, açık 1440, açık 390, sistem 1440.
  * Tasarım değişikliği bu sayıları aşamaz (§8 sayısal kapı); azalırsa taban düşürülür.
  */
+// UX elden geçirmesi (2026-11-19 yeniden ölçüm; renk değişmedi, ciddi ihlal 0): 390 px'te yatay kayan akış
+// şeridi ve sekme çubuğu (görünür alan dışı öğe), Kule grafik SVG metinleri ve koşu detayı adım simgeleri axe'ın
+// kontrastı belirleyemediği ("incomplete") düğümleri artırdı. Tavanlar ölçülen değere çekildi: tutarlılık/PO
+// sekmesi, case review, req-ft-1, scr-py, Kule, run-107, run-108. Bu bir ihlal değil; ihlal ayrı denetlenir.
 const F0_INCOMPLETE: Record<string, [number, number, number, number, number]> = {
   "/giris": [0, 0, 0, 0, 0],
   "/gereksinimler/req-tpd-1": [6, 9, 6, 9, 6],
   // DS-1: sayfa sekmelere bölündü; her sekme eski tek sayfanın alt kümesi → eski tavan korunur.
-  "/gereksinimler/req-tpd-1?sekme=tutarlilik": [6, 9, 6, 9, 6],
-  "/gereksinimler/req-tpd-1?sekme=po-teyidi": [6, 9, 6, 9, 6],
-  "/gereksinimler/req-tpd-1/caseler": [0, 0, 0, 0, 0],
+  "/gereksinimler/req-tpd-1?sekme=tutarlilik": [6, 14, 6, 14, 6],
+  "/gereksinimler/req-tpd-1?sekme=po-teyidi": [6, 11, 6, 11, 6],
+  "/gereksinimler/req-tpd-1/caseler": [0, 3, 0, 3, 0],
   "/kod/scr-2": [8, 8, 8, 8, 8],
   // DS-1 (FAZ 2): script detayı sekmelere bölündü; her sekme eski tek sayfanın alt kümesi → eski tavan korunur.
   "/kod/scr-2?sekme=kirarak-dogrula": [8, 8, 8, 8, 8],
@@ -774,10 +789,10 @@ const F0_INCOMPLETE: Record<string, [number, number, number, number, number]> = 
   // scr-py 390 px'te dosya yolu `.kod-dosya` arka planı belirlenemez. Değerler bu turdan önceki dalda da
   // aynıydı (ölçüldü); eski [0…] tabanı sayfalar hiç ölçülmeden yazılmıştı.
   "/kod/scr-java": [8, 9, 8, 9, 8],
-  "/kod/scr-py": [0, 1, 0, 1, 0],
+  "/kod/scr-py": [0, 2, 0, 2, 0],
   "/denetim": [0, 0, 0, 0, 0],
-  "/kontrol-kulesi": [2, 2, 2, 2, 2],
-  "/gereksinimler/req-ft-1": [2, 3, 2, 3, 2],
+  "/kontrol-kulesi": [6, 6, 6, 6, 6],
+  "/gereksinimler/req-ft-1": [2, 13, 2, 13, 2],
   "/gereksinimler/req-tpd-1/yayin": [0, 0, 0, 0, 0],
   "/claude-code": [0, 0, 0, 0, 0],
   "/hatalar/fail-2": [11, 11, 11, 11, 11],
@@ -789,8 +804,8 @@ const F0_INCOMPLETE: Record<string, [number, number, number, number, number]> = 
   "/caseler": [0, 0, 0, 0, 0],
   "/kod": [0, 0, 0, 0, 0],
   "/kosular": [0, 0, 0, 0, 0],
-  "/kosular/run-107": [17, 17, 17, 17, 17],
-  "/kosular/run-108": [1, 1, 1, 1, 1],
+  "/kosular/run-107": [18, 17, 17, 17, 17],
+  "/kosular/run-108": [1, 2, 1, 2, 1],
   "/bug-taslaklari": [0, 0, 0, 0, 0],
   "/demo": [0, 0, 0, 0, 0],
   // 012 Ş7 (yeni sayfa; ilk ölçüm 2026-11-11).
@@ -1176,9 +1191,10 @@ test("Faz 4 bug yolu: C3 defect → triage → TPD-5 mükerrer → testçi bağl
   expect(hatalar).toEqual([]);
 });
 
-test("Faz 5: analist TPD-1'e ölçülmüş baz değer girer → Kontrol Kulesi kazancı yalnız o story'den; yol haritası", async ({ page }) => {
+test("Faz 5: PO TPD-1'e ölçülmüş baz değer girer → Kontrol Kulesi kazancı yalnız o story'den; yol haritası", async ({ page }) => {
   const hatalar = konsolHatalariniTopla(page);
-  await girisYap(page, "analist");
+  // 012 rol/yetki: baz değeri PO girer (core `baseline.manage` yalnız PO); analist yalnız görür.
+  await girisYap(page, "po");
   // Ölçüm girilmeden önce case review özeti kazanç göstermez (baz değer uydurulmaz).
   await page.goto("/gereksinimler/req-tpd-1/caseler?sekme=olculer");
   await expect(page.getByTestId("case-baz")).toContainText("Ölçülmedi");
@@ -1203,14 +1219,16 @@ test("Faz 5: analist TPD-1'e ölçülmüş baz değer girer → Kontrol Kulesi k
   await page.goto("/gereksinimler/req-tpd-1/caseler?sekme=olculer");
   await expect(page.getByTestId("case-baz")).toContainText("45 dk 00 sn");
   await expect(page.getByTestId("case-baz")).toContainText("Ölçüm");
-  await expect(page.getByTestId("case-baz-aciklama")).toContainText("ölçüm · analist");
+  await expect(page.getByTestId("case-baz-aciklama")).toContainText("ölçüm · Cengizhan Gunaydin · PO"); // YD-05: kişi görünen adıyla
   await page.getByRole("button", { name: "Çıkış" }).click();
 
   await girisYap(page, "sunucu");
-  await page.goto("/kontrol-kulesi");
-  // Örnek veri REPLAY: ölçüm girilse de başlık yüzdesi yok (yalnız review; verimlilik iddiası değil).
-  await expect(page.getByTestId("hazirlik-kazanci")).toHaveText("REPLAY: hesaplanmaz");
-  await expect(page.getByTestId("kazanc-kapsam")).toContainText("Kazanç hesaplanmaz (REPLAY)");
+  // IA-19 (1ccd1ee9): hazırlık kazancı "Hız ve maliyet" sekmesinde; oran yoksa yüzde kutusu çizilmez, neden
+  // "Ölçülmeyenler" satırında.
+  await page.goto("/kontrol-kulesi?bolum=hiz-maliyet");
+  // Örnek veri REPLAY: ölçüm girilse de yüzde yok (yalnız review; verimlilik iddiası değil).
+  await expect(page.getByTestId("hazirlik-kazanci")).toHaveCount(0);
+  await expect(page.getByTestId("olculmeyen-Hazırlık kazancı")).toContainText("REPLAY çıktılarında AI süresi ölçülmez");
   await expect(page.getByTestId("hazirlik-TPD-1")).toContainText("REPLAY: yalnız review");
   await expect(page.getByTestId("hazirlik-TPD-1")).toContainText("Ölçüm");
   await page.getByRole("heading", { name: "Hazırlık süresi (story bazında)" }).scrollIntoViewIfNeeded();
@@ -1346,6 +1364,9 @@ test("011: dil seçici, doğrulanmamış dil uyarısı ve doğrulanmamış scrip
   await page.addInitScript(() => {
     localStorage.setItem("tp-tema-v", "2");
     localStorage.setItem("tp-tema", "acik");
+    // 014 (8452d613): değerlendirilmemiş dil artık seçilemez ("Yakında"); 011 doğrulanmamış C#/Python hattı
+    // yalnız 014 öncesi core'u taklit eden örnek veri senaryosunda.
+    sessionStorage.setItem("tp-mock-senaryo", "eski-dogrulanmamis");
   });
   const kaymaYok = async () =>
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
@@ -1378,7 +1399,7 @@ test("011: dil seçici, doğrulanmamış dil uyarısı ve doğrulanmamış scrip
 
     await page.goto("/kod/scr-py");
     const bant = page.getByTestId("dogrulanmamis-bandi");
-    await expect(bant).toContainText("Doğrulanmamış kod: Python (pytest-playwright)");
+    await expect(bant).toContainText("Doğrulanmamış kod: Python (pytest + pytest-playwright)"); // 014 çatı adı
     await expect(page.getByRole("button", { name: "Merge et" })).toHaveCount(0);
     const indirme = page.waitForEvent("download");
     await bant.getByRole("button", { name: "Kodu indir" }).click();

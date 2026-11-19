@@ -63,17 +63,6 @@ export function okunurOzet(ozet: string): { kisa: string; tam: string } {
   return { kisa: kisalt(temiz), tam: temiz };
 }
 
-/** "case.decision" dar sütunda harf ortasından değil noktadan sarar. */
-function noktadaKir(m: string) {
-  return m.split(".").map((p, i) => (
-    <span key={i}>
-      {i > 0 && "."}
-      {i > 0 && <wbr />}
-      {p}
-    </span>
-  ));
-}
-
 function kisalt(m: string): string {
   return m.length > OZET_KISA_SINIR ? `${m.slice(0, OZET_KISA_SINIR - 1)}…` : m;
 }
@@ -219,11 +208,10 @@ export function Denetim() {
                         </td>
                         <td className="sutun-tarih" data-etiket="Zaman">{tarih(o.zaman)}</td>
                         <td className="denetim-aktor" data-etiket="Aktör" title={kisiAdi(o.aktor) !== o.aktor ? o.aktor : undefined}>{kisiAdi(o.aktor)}</td>
-                        {/* Eylem ve nesne tek sütunda (1024 px'te 6 sütun sığmıyordu); IA-12: okunur etiket önde, olay kodu
-                            ikinci satırda (aranabilir, kopyalanabilir). */}
+                        {/* Eylem ve nesne tek sütunda (1024 px'te 6 sütun sığmıyordu); IA-12: okunur etiket görünür, ham olay
+                            kodu ipucunda (aranabilir; ham kayıt "Ayrıntı" açılırında). */}
                         <td className="denetim-eylem" data-etiket="Eylem · nesne">
-                          <span className="denetim-olay-etiketi">{olayEtiketi(o.eylem)}</span>
-                          <span className="mono kucuk soluk denetim-olay-kodu">{noktadaKir(o.eylem)}</span>
+                          <span className="denetim-olay-etiketi" title={`Olay kodu: ${o.eylem}`}>{olayEtiketi(o.eylem)}</span>
                           {o.nesne && (
                             <div className="soluk kucuk" title={nesneEtiketi(o.nesne) !== o.nesne ? o.nesne : undefined}>
                               {nesneEtiketi(o.nesne)}

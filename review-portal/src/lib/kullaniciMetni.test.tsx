@@ -20,7 +20,9 @@ describe("kullanıcı metni (IA-12)", () => {
   it("denetim olayları ve nesneleri okunur", () => {
     expect(olayEtiketi("auth.role_switch")).toBe("Rol değiştirildi");
     expect(olayEtiketi("ai_call.recorded")).toBe("AI çağrısı kaydedildi");
-    expect(olayEtiketi("codegen.pr_sync_failed")).toBe("Kod üretimi: pr sync başarısız");
+    expect(olayEtiketi("codegen.pr_sync_failed")).toBe("PR eşitlenemedi");
+    // Haritada olmayan (gelecekteki) kod yine alan + fiilden kurulur.
+    expect(olayEtiketi("codegen.yeni_sey_failed")).toBe("Kod üretimi: yeni sey başarısız");
     expect(nesneEtiketi("app_user:9c1c2d3e-0000-4000-8000-000000000000")).toBe("Kullanıcı 9c1c2d3e…");
     expect(nesneEtiketi("requirement:TPD-1")).toBe("Gereksinim TPD-1");
     expect(nesneEtiketi("bilinmeyen:x")).toBe("bilinmeyen:x");

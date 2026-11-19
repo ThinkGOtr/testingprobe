@@ -235,6 +235,17 @@ describe("koşu detayı (canlı core şekli)", () => {
     expect(kart).toHaveTextContent("Raporlar portala alınamadı (artefakt açılamadı); bağlantılar GitHub'daki artefakta gider.");
   });
 
+  it("test adındaki Playwright etiketi (@tp-uretilen) detay tablosunda gösterilmez; ham ad ipucunda", async () => {
+    yapilandir({ mockZorunlu: false, mockOtomatik: false, yetenekKesfi: true });
+    const etiketli = { ...KOSU, sonuclar: KOSU.sonuclar.map((x) => (x.id === "r1" ? { ...x, test_adi: "Sepet › sepete ekler @tp-uretilen" } : x)) };
+    vi.stubGlobal("fetch", sahteCore({ [`/runs/${RID}`]: etiketli }));
+    uygulama(`/kosular/${RID}`);
+    const tablo = await screen.findByRole("region", { name: "Test sonuçları tablosu" });
+    expect(tablo).toHaveTextContent("Sepet › sepete ekler");
+    expect(tablo).not.toHaveTextContent("@tp-uretilen");
+    expect(within(tablo).getByTitle("Sepet › sepete ekler @tp-uretilen")).toBeInTheDocument();
+  });
+
   it("süzgeç adres çubuğuna yazılır; satır açılınca adımlar, stack, ekler ve çıktı görünür", async () => {
     yapilandir({ mockZorunlu: false, mockOtomatik: false, yetenekKesfi: true });
     vi.stubGlobal("fetch", sahteCore({ [`/runs/${RID}`]: KOSU }));

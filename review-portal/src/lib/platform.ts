@@ -102,9 +102,53 @@ export const UYGULAMA_ARACI: Record<string, string> = {
   app_screenshot: "Ekran görüntüsü",
 };
 
-/** Ajan aracının görünen adı: bilinen `app_*` araçları Türkçe, diğerleri (browser_*) ham ad. */
+/** Playwright MCP tarayıcı araçlarının (`browser_*`) okunur adları (Script › Ajan adımları). */
+export const TARAYICI_ARACI: Record<string, string> = {
+  browser_navigate: "Sayfaya git",
+  browser_navigate_back: "Geri git",
+  browser_snapshot: "Sayfayı oku",
+  browser_click: "Tıkla",
+  browser_type: "Yaz",
+  browser_fill_form: "Formu doldur",
+  browser_select_option: "Seç",
+  browser_press_key: "Tuşa bas",
+  browser_hover: "Üzerine gel",
+  browser_drag: "Sürükle",
+  browser_drop: "Bırak",
+  browser_file_upload: "Dosya yükle",
+  browser_handle_dialog: "İletişim kutusunu yanıtla",
+  browser_wait_for: "Bekle",
+  browser_generate_locator: "Locator üret",
+  browser_find: "Öğe bul",
+  browser_take_screenshot: "Ekran görüntüsü",
+  browser_evaluate: "Sayfada betik çalıştır",
+  browser_run_code: "Kod çalıştır",
+  browser_run_code_unsafe: "Kod çalıştır",
+  browser_verify_element_visible: "Öğe görünür mü doğrula",
+  browser_verify_text_visible: "Metin görünür mü doğrula",
+  browser_verify_list_visible: "Liste görünür mü doğrula",
+  browser_verify_value: "Değeri doğrula",
+  browser_console_messages: "Konsol iletilerini oku",
+  browser_network_requests: "Ağ isteklerini oku",
+  browser_network_request: "Ağ isteğini oku",
+  browser_tabs: "Sekmeler",
+  browser_resize: "Pencereyi boyutlandır",
+  browser_emulate_media: "Ortam öykünmesi",
+  browser_pdf_save: "PDF kaydet",
+  browser_close: "Tarayıcıyı kapat",
+  browser_install: "Tarayıcıyı kur",
+};
+
+/**
+ * Ajan aracının görünen adı: bilinen `app_*` / `browser_*` araçları Türkçe; tanınmayan araç ham ad yerine
+ * genel bir etiketle gösterilir (ham ad çağıranın ipucunda, `title`).
+ */
 export function aracEtiketi(arac: string): string {
-  return UYGULAMA_ARACI[arac] ?? arac;
+  const ad = UYGULAMA_ARACI[arac] ?? TARAYICI_ARACI[arac];
+  if (ad) return ad;
+  if (arac.startsWith("browser_")) return "Tarayıcı işlemi";
+  if (arac.startsWith("app_")) return "Uygulama işlemi";
+  return arac;
 }
 
 /** Süzgeç seçimi: "tumu" ya da bir platform. Adres çubuğunda `?platform=`. */
