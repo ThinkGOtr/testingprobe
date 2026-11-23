@@ -43,6 +43,9 @@ public final class Ayarlar {
   /** Ekilmiş hata kodunun biçimi (web: fixtures.ts FAULT_PATTERN; toolchain `fault`). */
   static final Pattern HATA_KODU = Pattern.compile("^[a-z0-9_]{1,40}$");
 
+  /** Yerel dosya olmayan uygulama başvurusu: Sauce storage ya da http(s)/sauce-storage URL'si. */
+  static final Pattern UZAK_UYGULAMA = Pattern.compile("^(storage:|sauce-storage:|https?://)");
+
   private final UnaryOperator<String> ozellik;
   private final UnaryOperator<String> ortam;
 
@@ -103,7 +106,17 @@ public final class Ayarlar {
     return deger("app.path")
         .map(
             p -> {
-              Path yol = Path.of(p);
+              // Uzak depo başvurusu (Sauce storage: "storage:filename=…", "storage:<id>") ya da URL dosya
+              // yolu değildir: olduğu gibi geçer (Windows'ta Path.of ':' karakterini reddeder).
+              if (UZAK_UYGULAMA.matcher(p).find()) {
+                return p;
+              }
+              Path yol;
+              try {
+                yol = Path.of(p);
+              } catch (java.nio.file.InvalidPathException e) {
+                return p;
+              }
               return !yol.isAbsolute() && java.nio.file.Files.exists(yol) ? yol.toAbsolutePath().normalize().toString() : p;
             });
   }

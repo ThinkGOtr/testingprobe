@@ -53,6 +53,14 @@ public class SauceLabsBirimTesti {
   }
 
   @Test(groups = "birim")
+  public void sauceStorageBasvurusuDosyaYoluSayilmaz() {
+    // Windows'ta Path.of("storage:…") InvalidPathException atar; uzak başvuru olduğu gibi geçmeli.
+    for (String v : new String[] {"storage:filename=bayi.apk", "storage:0123-abcd", "https://ornek.test/a.apk"}) {
+      assertEquals(Ayarlar.haritadan(Map.of("app.path", v), Map.of()).appPath().orElseThrow(), v);
+    }
+  }
+
+  @Test(groups = "birim")
   public void uygulaSauceOptionsEkler() {
     Ayarlar a = Ayarlar.haritadan(Map.of("app.path", "storage:filename=bayi.apk", "device.name", "Google Pixel 9 Emulator"), Map.of());
     BaseOptions<?> o = SurucuFabrikasi.secenekler(Platform.ANDROID, a);
