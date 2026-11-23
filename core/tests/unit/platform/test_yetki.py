@@ -51,6 +51,11 @@ ISTISNA: frozenset[tuple[str, str]] = frozenset(
         ("GET", "/admin/kimlik-bagi/hesaplar"),
         ("PUT", "/admin/kimlik-bagi"),
         ("DELETE", "/admin/kimlik-bagi/{app_user_id}"),
+        # Home "Sıfırla": yalnız aiprobe-home servis kimliği (admin_demo.py, home_servisi).
+        ("GET", "/admin/demo-sifirla"),
+        ("GET", "/admin/demo-sifirla/onizleme"),
+        ("GET", "/admin/demo-sifirla/{islem_id}"),
+        ("POST", "/admin/demo-sifirla"),
         ("POST", "/mcp"),
         ("GET", "/mcp"),
         ("GET", "/artifacts/k/{token}/runs/{run_id}/{yol:path}"),

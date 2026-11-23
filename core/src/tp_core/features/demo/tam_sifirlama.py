@@ -68,11 +68,11 @@ OTOMASYON_HEDEF: dict[str, dict[str, Any]] = {
 }
 
 # Proje kapsamlı silinen tablolar (sıra FK gereği). CASCADE'le gidenler de sonda doğrudan
-# temizlenir (bağsız kalmış satır olmasın). Hepsinde `tp_app` DELETE yetkisi var (0052).
+# temizlenir (bağsız kalmış satır olmasın). Hepsinde `tp_app` DELETE yetkisi var; hata_kosusu
+# yalnız `tp_demo_hata_kosusu_sil` işleviyle (0052).
 SILME_SIRASI: tuple[str, ...] = (
     "bug_draft",
     "run",
-    "hata_kosusu",
     "script",
     "requirement",
     "test_case",
@@ -95,7 +95,6 @@ SILME_SIRASI: tuple[str, ...] = (
     "failure_ek",
     "bug_draft_ek",
     "ajan_urunu_baglantisi",
-    "hata_kosusu_adim",
     "pull_request",
     "external_ref",
     "ci_tetik",
@@ -104,6 +103,8 @@ SILME_SIRASI: tuple[str, ...] = (
 # Silme sonrası sıfır olması gereken tablolar (CASCADE'le gidenler dahil; yetkisiz olanlar da).
 BOS_OLMALI: tuple[str, ...] = (
     *SILME_SIRASI,
+    "hata_kosusu",
+    "hata_kosusu_adim",
     "karar_tablosu",
     "metamorfik_iliski",
     "metamorfik_turetme",
@@ -637,6 +638,8 @@ def _sil_tek_islem(engine: Engine, pid: str) -> dict[str, Any]:
         )
         for tablo in SILME_SIRASI:
             conn.execute(text(f"DELETE FROM {tablo} WHERE project_id = :pid"), {"pid": pid})
+        # `tp_app` hata_kosusu'nu silemez (0034); dar SECURITY DEFINER işlevi (0052).
+        conn.execute(text("SELECT tp_demo_hata_kosusu_sil(:pid)"), {"pid": pid})
         conn.execute(
             text("DELETE FROM otomasyon_ayari WHERE project_id = :pid AND anahtar = :a"),
             {"pid": pid, "a": "jira_tetik.taban"},
