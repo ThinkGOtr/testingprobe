@@ -146,3 +146,30 @@ describe("/demo sayfası onarım sonrası", () => {
     expect(screen.queryByTestId("onarildi")).toBeNull();
   });
 });
+
+describe("/demo durum kartı GitHub App kipinde", () => {
+  it("kod deposu arka planda okunurken bekler, sonuç gelince testId/locator satırları ve 'main ile eşleşiyor' çipi çizilir", async () => {
+    await oturumAc("sunucu");
+    const BEKLIYOR: DemoDurumu = {
+      ...ONARILDI,
+      forge: { hata: "Kod deposu arka plan servisinde okunuyor; birkaç saniye sonra yenilenir.", bekliyor: true },
+      locator_durumu: null,
+      uygulama: { sha: "94683fc00000" },
+    };
+    const HAZIR: DemoDurumu = {
+      ...ONARILDI,
+      locator_durumu: "baseline",
+      forge: { main: "94683fc00000", testid: "add-to-cart" },
+      uygulama: { sha: "94683fc00000", main_ile_eslesiyor: true },
+    };
+    const durum = vi.spyOn(api, "demoDurumu").mockResolvedValueOnce(BEKLIYOR).mockResolvedValue(HAZIR);
+    vi.spyOn(api, "kosular").mockResolvedValue([]);
+    uygulama("/demo");
+    expect(await screen.findByText(/arka plan servisinde okunuyor/)).toBeInTheDocument();
+    expect(screen.queryByText("main ile eşleşiyor")).toBeNull();
+    expect(await screen.findByText("main ile eşleşiyor", {}, { timeout: 6000 })).toBeInTheDocument();
+    expect(screen.getByText("Sepete ekle testId")).toBeInTheDocument();
+    expect(screen.getByText("Locator durumu")).toBeInTheDocument();
+    expect(durum.mock.calls.length).toBeGreaterThanOrEqual(2);
+  }, 10000);
+});

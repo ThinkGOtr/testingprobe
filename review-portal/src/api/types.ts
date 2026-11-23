@@ -1993,6 +1993,8 @@ export interface DemoDurumu {
     baseline?: string | null;
     main_baseline_mi?: boolean;
     hata?: string;
+    /** GitHub App kipinde forge arka plan işiyle okunuyor; sonuç henüz yok (portal kısa süre sonra yeniden okur). */
+    bekliyor?: boolean;
   };
   /** Core açıkça verirse locator senaryosunun durumu (yoksa portal forge + koşulardan türetir). */
   locator_durumu?: "baseline" | "kirik" | "onarildi" | null;

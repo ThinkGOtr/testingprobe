@@ -979,12 +979,19 @@ export function JiraDurumKarti() {
   );
 }
 
+const DURUM_YENIDEN_MS = 4000;
+const DURUM_YENIDEN_AZAMI = 5;
+
 /** `/demo/status` (salt okuma): sayfa açılışında ve her demo olayında yenilenir. */
 function useDemoDurumu(): DemoDurumu | null {
   const [d, setD] = useState<DemoDurumu | null>(null);
+  const [yeniden, setYeniden] = useState(0);
   const yukle = useCallback(async () => {
     try {
-      setD(await api.demoDurumu(true));
+      const y = await api.demoDurumu(true);
+      setD(y);
+      // GitHub App kipinde kod deposu arka plan işiyle okunur; sonuç gelmediyse kısa süre sonra yeniden oku.
+      setYeniden((n) => (y.forge?.bekliyor ? n + 1 : 0));
     } catch {
       /* durum ucu yoksa kartlar durumsuz çalışır */
     }
@@ -992,6 +999,11 @@ function useDemoDurumu(): DemoDurumu | null {
   useEffect(() => {
     void yukle();
   }, [yukle]);
+  useEffect(() => {
+    if (yeniden === 0 || yeniden > DURUM_YENIDEN_AZAMI) return;
+    const t = window.setTimeout(() => void yukle(), DURUM_YENIDEN_MS);
+    return () => window.clearTimeout(t);
+  }, [yeniden, yukle]);
   useOlay(() => void yukle(), ["demo.updated"]);
   return d;
 }

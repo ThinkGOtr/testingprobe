@@ -799,3 +799,78 @@ def test_durum_forge_bolumu_onbellekte_bayatken_arka_planda_yenilenir(
         assert len(cagri) == 4
     finally:
         service.durum_onbellegini_temizle()
+
+
+def test_durum_github_app_kipinde_forge_bolumu_worker_isiyle_okunur(
+    engine: Engine, ortam: Ortam, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Canlı (2026-11-23): GitHub App kipinde core-api forge kuramaz (kurulum token'ı yalnız
+    core-worker'da) → Demo durumu "okunamıyor" diyordu; testId/locator satırları ve "main ile
+    eşleşiyor" çipi çizilmiyordu. Artık forge bölümü `demo.durum_oku` işiyle worker'da okunur."""
+    monkeypatch.setattr(service, "_worker_durumlu", lambda: True)
+    monkeypatch.setattr(service, "DURUM_BEKLEME_S", 0.2)
+    service.durum_onbellegini_temizle()
+    try:
+        # Worker henüz koşmadı: forge "bekliyor" (geçici, önbelleğe yazılmaz), uygulama yerelden.
+        d = service.durum()
+        assert d["forge"].get("bekliyor") is True and d["forge"]["hata"]
+        assert d["uygulama"]["sha"] == ortam.calisan_sha
+        assert "_gecici" not in d
+        assert d["locator_demo"]["kip"] == "github"
+
+        sonuclar = run_jobs(engine)
+        assert sonuclar, "demo.durum_oku işi kuyrukta olmalı"
+        with engine.connect() as c:
+            assert (
+                c.execute(
+                    text("SELECT count(*) FROM job WHERE tur = :t AND durum = 'done'"),
+                    {"t": service.DURUM_JOB},
+                ).scalar_one()
+                == 1
+            )
+
+        # Aynı dilimde aynı iş (idempotent): worker sonucu döner.
+        d = service.durum()
+        assert d["forge"]["main"] == ortam.forge.head_sha("main")
+        assert d["forge"]["testid"] == "add-to-cart"
+        assert d["locator_durumu"] == service._forge_bolumu(ortam.forge)["locator_durumu"]
+        assert d["uygulama"]["main_ile_eslesiyor"] is True
+    finally:
+        service.durum_onbellegini_temizle()
+
+
+def test_durum_oku_isi_kayitli_ve_forge_hatasi_isi_dusurmez() -> None:
+    from tp_core.integrations.forge import ForgeValidationError
+
+    assert service.DURUM_JOB in REGISTRY
+
+    def kurulamaz() -> Any:
+        raise ForgeValidationError("GitHub kimliği yok")
+
+    service.set_factories(forge=kurulamaz, calisan=lambda: web.CalisanUygulama(None, "dosya"))
+    try:
+        out = service.run_durum_oku(None)  # type: ignore[arg-type]
+    finally:
+        service.reset_factories()
+    assert "GitHub kimliği yok" in out["forge"]["hata"]
+
+
+def test_durum_worker_sonucu_yoksa_gecici_bolum_onbellege_yazilmaz(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sonuc: list[dict[str, Any]] = [
+        {"forge": {"hata": "x", "bekliyor": True}, "uygulama": {}, "_gecici": True},
+        {"forge": {"main": "sha1"}, "uygulama": {}},
+    ]
+    monkeypatch.setattr(service, "_worker_forge_bolumu", lambda: sonuc.pop(0))
+    monkeypatch.setenv("TP_DEMO_DURUM_ONBELLEK_S", "30")
+    service.durum_onbellegini_temizle()
+    try:
+        ilk = service._forge_bolumu_onbellekli(service._WORKER_FORGE)
+        assert ilk["forge"]["bekliyor"] is True and "_gecici" not in ilk
+        assert service._FORGE_ONBELLEK["deger"] is None
+        assert service._forge_bolumu_onbellekli(service._WORKER_FORGE)["forge"]["main"] == "sha1"
+        assert service._FORGE_ONBELLEK["deger"]["forge"]["main"] == "sha1"
+        assert service._forge_bolumu_onbellekli(service._WORKER_FORGE)["forge"]["main"] == "sha1"
+    finally:
+        service.durum_onbellegini_temizle()

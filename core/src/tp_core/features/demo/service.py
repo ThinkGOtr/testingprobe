@@ -73,6 +73,14 @@ log = logging.getLogger(__name__)
 BREAK_JOB = "demo.break_locator"
 RESET_JOB = "demo.reset"
 AWAIT_JOB = "demo.await_web"
+# GitHub App kipinde core-api forge'u kuramaz (kurulum token'ı yalnız core-worker'da): durum
+# ekranının forge bölümü (main sha, testid, locator evresi, uygulama eşleşmesi) bu işle
+# worker'da okunur.
+DURUM_JOB = "demo.durum_oku"
+DURUM_DILIM_S = 20  # aynı dilimde tek iş (sayfa yenilemeleri işi çoğaltmaz)
+DURUM_BEKLEME_S = 12.0  # portal nginx /api/ zaman aşımı 30 sn; GitHub okumaları 3-8 sn
+DURUM_YOKLAMA_S = 0.25
+DURUM_SURUYOR = "Kod deposu arka plan servisinde okunuyor; birkaç saniye sonra yenilenir."
 POLL_ENV = "TP_DEMO_WEB_POLL_S"
 WAIT_ENV = "TP_DEMO_WEB_WAIT_S"
 # Uygulama hedef commit'i zaten yansıtsa da bu süre boyunca uygulanmamış yenileme isteği beklenir
@@ -871,10 +879,95 @@ def _forge_bolumu(forge: Any) -> dict[str, Any]:
     return out
 
 
+class _WorkerForge:
+    """İşaret: forge bölümü bu süreçte değil `demo.durum_oku` işiyle core-worker'da okunur."""
+
+
+_WORKER_FORGE = _WorkerForge()
+# Worker sonucu henüz yoksa dönen geçici bölüm bu anahtarı taşır: önbelleğe yazılmaz.
+_GECICI = "_gecici"
+
+
+def _worker_durumlu() -> bool:
+    """Bu süreç forge'u kendisi kuramıyor mu: GitHub App kipi + bağlantı token'ı alamayan süreç
+    (core-api). Test fabrikası verilmişse her zaman doğrudan yol (codegen `_worker_algilamali`)."""
+    if _factories.get("forge") is not None:
+        return False
+    from tp_core.home_config import baglanti
+    from tp_core.integrations import proje_ortami
+
+    if baglanti.yetkili_surec():
+        return False
+    try:
+        return proje_ortami.baglanti_kipi("github") == "app"
+    except Exception:  # config okunamadı: doğrudan yol kendi hatasını raporlar
+        log.warning("demo durumu: bağlantı kipi okunamadı", exc_info=True)
+        return False
+
+
+def _worker_forge_bolumu() -> dict[str, Any]:
+    """`demo.durum_oku` işini (dilim başına tekil) kuyruğa alır, en çok `DURUM_BEKLEME_S` bekler.
+    Sonuç yoksa forge bölümü `bekliyor` (geçici; önbelleğe yazılmaz), uygulama yerelden okunur."""
+    from tp_core.db import get_engine
+    from tp_core.features.publish.service import job_status
+
+    dilim = int(time.time() // DURUM_DILIM_S)
+    durum_, sonuc, hata = "queued", None, None
+    try:
+        with session_scope() as s:
+            job_id = enqueue(
+                s.connection(),
+                DURUM_JOB,
+                {},
+                idempotency_key=f"{DURUM_JOB}:{dilim}",
+                max_deneme=1,
+                zaman_asimi_s=120,
+            )
+        engine = get_engine()
+        bitis = time.monotonic() + DURUM_BEKLEME_S
+        while True:
+            durum_, sonuc, hata = job_status(engine, job_id)
+            if durum_ in ("done", "failed", "cancelled") or time.monotonic() >= bitis:
+                break
+            time.sleep(DURUM_YOKLAMA_S)
+    except Exception as exc:
+        log.warning("demo durum işi kuyruğa alınamadı: %s", exc)
+        return _gecici_bolum(f"Kod deposu okuma işi kuyruğa alınamadı ({type(exc).__name__})")
+    if durum_ == "done" and isinstance(sonuc, Mapping) and isinstance(sonuc.get("forge"), Mapping):
+        return dict(sonuc)
+    if durum_ in ("failed", "cancelled"):
+        log.warning("demo durum işi %s: %s", durum_, hata)
+        return _gecici_bolum(f"Kod deposu okunamadı (arka plan işi: {durum_})")
+    return _gecici_bolum(DURUM_SURUYOR, bekliyor=True)
+
+
+def _gecici_bolum(neden: str, *, bekliyor: bool = False) -> dict[str, Any]:
+    forge: dict[str, Any] = {"hata": neden}
+    if bekliyor:
+        forge["bekliyor"] = True
+    return {"forge": forge, "uygulama": _calisan().as_dict(), _GECICI: True}
+
+
+def run_durum_oku(ctx: JobContext) -> dict[str, Any]:
+    """`demo.durum_oku` (core-worker): durum ekranının forge bölümü. Hata işi düşürmez: forge
+    okunamazsa `forge.hata` dolu döner."""
+    try:
+        forge: Any = _forge()
+    except ForgeError as exc:
+        forge = _ForgeYok(str(exc))
+    return _forge_bolumu(forge)
+
+
+def _bolum_hesapla(forge: Any) -> dict[str, Any]:
+    return _worker_forge_bolumu() if forge is _WORKER_FORGE else _forge_bolumu(forge)
+
+
 def _forge_bolumu_onbellekli(forge: Any) -> dict[str, Any]:
     ttl = durum_onbellek_s()
     if ttl <= 0:
-        return _forge_bolumu(forge)
+        out = _bolum_hesapla(forge)
+        out.pop(_GECICI, None)
+        return out
     simdi = time.monotonic()
     with _FORGE_KILIT:
         zaman, deger = _FORGE_ONBELLEK["zaman"], _FORGE_ONBELLEK["deger"]
@@ -890,7 +983,9 @@ def _forge_bolumu_onbellekli(forge: Any) -> dict[str, Any]:
                 target=baglamla(_arka_planda_yenile), args=(forge,), daemon=True
             ).start()
         return dict(deger)
-    yeni = _forge_bolumu(forge)
+    yeni = _bolum_hesapla(forge)
+    if yeni.pop(_GECICI, False):
+        return yeni
     with _FORGE_KILIT:
         _FORGE_ONBELLEK.update(zaman=time.monotonic(), deger=yeni)
     return dict(yeni)
@@ -898,7 +993,9 @@ def _forge_bolumu_onbellekli(forge: Any) -> dict[str, Any]:
 
 def _arka_planda_yenile(forge: Any) -> None:
     try:
-        yeni = _forge_bolumu(forge)
+        yeni = _bolum_hesapla(forge)
+        if yeni.pop(_GECICI, False):
+            return  # worker sonucu yok: bayat değer kalır, sonraki istek yeniden dener
         with _FORGE_KILIT:
             _FORGE_ONBELLEK.update(zaman=time.monotonic(), deger=yeni)
     except Exception:
@@ -912,7 +1009,11 @@ def durum(forge: Any | None = None, session: Session | None = None) -> dict[str,
     out: dict[str, Any] = {"forge": {}, "uygulama": {}, "web_yenileme_istegi": None}
     # Önbellek yalnız varsayılan forge'da (API ucu); verilen forge (test, iş) her zaman taze okur.
     onbellekli = forge is None and _factories.get("forge") is None
-    if forge is None:
+    if forge is None and _worker_durumlu():
+        # GitHub App kipi (Config R1): kurulum token'ı yalnız core-worker'da → forge bölümü
+        # `demo.durum_oku` işiyle okunur (core-api forge kuramaz; eskiden "okunamıyor" dönerdi).
+        forge = _WORKER_FORGE
+    elif forge is None:
         try:
             forge = _forge()
         except ForgeError as exc:
@@ -921,7 +1022,7 @@ def durum(forge: Any | None = None, session: Session | None = None) -> dict[str,
             forge = _ForgeYok(str(exc))
             onbellekli = False
     out["degerlendirme"] = degerlendirme_durumu()
-    yerel = _yerel_forge_mu(forge)
+    yerel = forge is not _WORKER_FORGE and _yerel_forge_mu(forge)
     out["locator_demo"] = (
         {"destekleniyor": True, "neden": None}
         if yerel
@@ -936,7 +1037,12 @@ def durum(forge: Any | None = None, session: Session | None = None) -> dict[str,
             out["onarim_on_kosulu"] = onarim_on_kosulu(session)
         except Exception as exc:  # durum ucu yine yanıt verir
             out["onarim_on_kosulu"] = {"hazir": None, "hata": str(exc)[:200]}
-    out.update(_forge_bolumu_onbellekli(forge) if onbellekli else _forge_bolumu(forge))
+    if onbellekli:
+        out.update(_forge_bolumu_onbellekli(forge))
+    else:
+        bolum = _bolum_hesapla(forge)
+        bolum.pop(_GECICI, None)
+        out.update(bolum)
     out["web_yenileme_istegi"] = web.bekleyen_istek()
     return out
 

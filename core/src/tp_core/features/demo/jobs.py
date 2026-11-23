@@ -3,6 +3,8 @@
 - `demo.break_locator`: kırılma PR'ı demo-admin bypass'ıyla merge + uygulama yenileme isteği.
 - `demo.reset`: main → demo-baseline, PR kapatma, uygulama yenileme, jira-sim sıfırlama.
 - `demo.await_web`: çalışan uygulama main'i yansıtınca push CI (kendini yeniden planlar).
+- `demo.durum_oku`: GitHub App kipinde `GET /demo/status`'un forge bölümü (kurulum token'ı yalnız
+  core-worker'da; API işi kuyruğa alıp sonucu bekler).
 - `demo.tam_sifirla`: Home "Sıfırla" düğmesinin tam sıfırlaması (`tam_sifirlama.py`).
 """
 
@@ -30,6 +32,11 @@ def reset(ctx: JobContext) -> dict[str, Any]:
 @job_handler(service.AWAIT_JOB, max_deneme=1, zaman_asimi_s=60)
 def await_web(ctx: JobContext) -> dict[str, Any]:
     return service.run_await_web(ctx, get_engine())
+
+
+@job_handler(service.DURUM_JOB, max_deneme=1, zaman_asimi_s=120)
+def durum_oku(ctx: JobContext) -> dict[str, Any]:
+    return service.run_durum_oku(ctx)
 
 
 def on_worker_start(conn: Connection) -> None:
