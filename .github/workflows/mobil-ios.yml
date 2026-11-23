@@ -254,11 +254,13 @@ jobs:
           export APPIUM_HOME="$GITHUB_WORKSPACE/tools/appium"
           nohup tools/appium/node_modules/.bin/appium --address 127.0.0.1 --port 4723 \
             --log-no-colors --log-timestamp > tp-logs/appium.log 2>&1 &
-          for _ in $(seq 1 30); do
-            curl -fsS -m 2 http://127.0.0.1:4723/status >/dev/null 2>&1 && { echo "Appium hazır"; exit 0; }
-            sleep 1
+          # macOS runner'da soğuk disk: Node + xcuitest sürücüsünün yüklenmesi 90 sn'yi bulabiliyor.
+          bitis=$((SECONDS + 180))
+          while [ "$SECONDS" -lt "$bitis" ]; do
+            curl -fsS -m 2 http://127.0.0.1:4723/status >/dev/null 2>&1 && { echo "Appium hazır (${SECONDS} sn)"; exit 0; }
+            sleep 2
           done
-          echo "::error::Appium 30 sn içinde hazır olmadı"
+          echo "::error::Appium 180 sn içinde hazır olmadı"
           tail -n 100 tp-logs/appium.log
           exit 1
 
