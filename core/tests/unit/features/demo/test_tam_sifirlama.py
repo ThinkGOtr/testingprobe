@@ -338,6 +338,7 @@ def test_api_yalniz_home_servis_kimligi(db: Any, iki_proje: tuple[str, str], dem
                                         monkeypatch: pytest.MonkeyPatch) -> None:  # fmt: skip
     from tp_core.api.main import create_app as tp_app
     from tp_core.auth import aiprobe
+    from tp_core.db import get_engine as get_engine_
 
     monkeypatch.setenv("TP_AUTH_MODE", "aiprobe")
     monkeypatch.setenv("AIPROBE_HOME_SA", "home@sa.iam")
@@ -370,6 +371,17 @@ def test_api_yalniz_home_servis_kimligi(db: Any, iki_proje: tuple[str, str], dem
         assert r.json()["islem"]["id"] == iid
         assert c.get(f"/admin/demo-sifirla/{iid}", headers=h).json()["islem"]["id"] == iid
         assert c.get("/admin/demo-sifirla/yok", headers=h).status_code == 404
+        assert c.post(f"/admin/demo-sifirla/{iid}/kontrol").status_code == 401
+        r = c.post(f"/admin/demo-sifirla/{iid}/kontrol", headers=h)
+        assert r.status_code == 409 and r.json()["kod"] == "suruyor"  # sıfırlama sürüyor
+        assert c.post("/admin/demo-sifirla/yok/kontrol", headers=h).status_code == 404
+        with get_engine_().begin() as conn:
+            conn.execute(
+                text("UPDATE demo_sifirlama SET durum = 'tamam' WHERE id = :i"), {"i": iid}
+            )
+        r = c.post(f"/admin/demo-sifirla/{iid}/kontrol", headers=h)
+        assert r.status_code == 202, r.text
+        assert r.json()["islem"]["yeniden_kontrol"]["durum"] == "kuyrukta"
         assert c.get("/admin/demo-sifirla", params={"project_id": a},
                      headers=h).json()["islem"]["id"] == iid  # fmt: skip
     assert eski is not None
@@ -430,3 +442,131 @@ def test_is_baska_workerca_dusurulduyse_durur(
         JobContext(job_id, ts.TAM_JOB, {"islem_id": islem["id"], "project_id": a}, 1, 1), engine
     )
     assert sonuc["durum"] == "durduruldu" and cagrildi == []
+
+
+# ------------------------------------------------------------- "Yeniden kontrol et" (salt okuma)
+
+
+def _kontrol_isleri(engine: Engine) -> list[Any]:
+    with engine.connect() as c:
+        return list(
+            c.execute(
+                text("SELECT id, yuk, project_id FROM job WHERE tur = :t ORDER BY olusturma"),
+                {"t": ts.KONTROL_JOB},
+            ).all()
+        )
+
+
+def test_yeniden_kontrol_salt_okuma_ve_kurallar(
+    engine: Engine, iki_proje: tuple[str, str], demo_kipi: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+
+    a, _ = iki_proje
+    cagrilar: list[dict[str, Any]] = []
+
+    def dogrulama(_e: Engine, b: dict[str, Any]) -> tuple[str, Any]:
+        cagrilar.append(dict(b))
+        ilk = len(cagrilar) == 1
+        b["kontrol"] = [
+            {"kod": "tp_bos", "durum": "tamam" if ilk else "hata", "ayrinti": "x"},
+            {"kod": "ci_baseline", "durum": "bilgi", "ayrinti": "Baseline push CI: passed"},
+        ]
+        return "Demoya hazır", None
+
+    monkeypatch.setattr(ts, "adim_jira", lambda _e, _b: ("ok", None))
+    monkeypatch.setattr(ts, "adim_github", lambda _e, b: ("ok", None))
+    monkeypatch.setattr(ts, "adim_dogrulama", dogrulama)
+
+    class F:
+        def head_sha(self, ref: str) -> str:
+            return "abc123" if ref == "main" else "x"
+
+    ts.set_factories(kancalar=lambda pid: [], forge=F)
+    islem = ts.istek(engine, a, _aktor())
+    iid = uuid.UUID(islem["id"])
+    with pytest.raises(ts.IstekReddi) as e:  # sıfırlama sürerken yeniden kontrol yok
+        ts.kontrol_istek(engine, iid)
+    assert e.value.kod == "suruyor"
+    with pytest.raises(ts.IstekReddi) as e:
+        ts.kontrol_istek(engine, uuid.uuid4())
+    assert e.value.kod == "bulunamadi"
+    son = _calistir(engine, islem)
+    assert son["durum"] == "tamam" and son["hazir"] is True and son["yeniden_kontrol"] is None
+
+    g = ts.kontrol_istek(engine, iid)
+    assert g["yeniden_kontrol"]["durum"] == "kuyrukta"
+    ts.kontrol_istek(engine, iid)  # süren yeniden kontrol varken yenisi açılmaz
+    isler = _kontrol_isleri(engine)
+    assert len(isler) == 1 and isler[0].project_id is None
+    assert isler[0].yuk == {"islem_id": str(iid), "project_id": a}
+
+    with engine.begin() as c:
+        c.execute(text("UPDATE job SET durum = 'running' WHERE id = :j"), {"j": isler[0].id})
+    sonuc = ts.run_kontrol(JobContext(isler[0].id, ts.KONTROL_JOB, isler[0].yuk, 1, 1), engine)
+    b = cagrilar[-1]
+    assert b["web_bekle_s"] == 0.0 and b["main_sha"] == "abc123" and b["pid"] == a
+    assert b["baslangic"] == datetime.fromisoformat(son["adimlar"][0]["baslangic"])
+    assert sonuc["hazir"] is False and sonuc["kontrol"][0]["durum"] == "hata"
+    with engine.begin() as c:
+        c.execute(
+            text("UPDATE job SET durum = 'done', sonuc = CAST(:s AS jsonb) WHERE id = :j"),
+            {"j": isler[0].id, "s": json.dumps(sonuc)},
+        )
+    sonra = ts.oku(engine, iid)
+    yk = sonra["yeniden_kontrol"]
+    assert yk["durum"] == "tamam" and yk["hazir"] is False and yk["bitis"] == sonuc["zaman"]
+    assert [k["kod"] for k in yk["kontrol"]] == ["tp_bos", "ci_baseline"]
+    # Salt okuma: işlemin kendi sonucu ve kontrol listesi değişmez.
+    assert {k: sonra[k] for k in ("durum", "hazir", "kontrol", "adimlar", "bitis")} == {
+        k: son[k] for k in ("durum", "hazir", "kontrol", "adimlar", "bitis")
+    }
+    assert ts.son(engine, a)["yeniden_kontrol"]["durum"] == "tamam"
+    ts.kontrol_istek(engine, iid)  # bitmiş yeniden kontrolden sonra yenisi açılır
+    assert len(_kontrol_isleri(engine)) == 2
+
+    yeni = ts.istek(engine, a, _aktor())  # daha yeni sıfırlama → eski işlem yeniden kontrol edilmez
+    with engine.begin() as c:
+        c.execute(
+            text("UPDATE demo_sifirlama SET durum = 'tamam' WHERE id = :i"), {"i": yeni["id"]}
+        )
+    with pytest.raises(ts.IstekReddi) as e:
+        ts.kontrol_istek(engine, iid)
+    assert e.value.kod == "eski_islem"
+
+
+def test_yeniden_kontrol_isi_dusunce_hata_gorunur(
+    engine: Engine, iki_proje: tuple[str, str], demo_kipi: None
+) -> None:
+    a, _ = iki_proje
+    islem = ts.istek(engine, a, _aktor())
+    with engine.begin() as c:
+        c.execute(
+            text("UPDATE demo_sifirlama SET durum = 'tamam' WHERE id = :i"), {"i": islem["id"]}
+        )
+    iid = uuid.UUID(islem["id"])
+    ts.kontrol_istek(engine, iid)
+    with engine.begin() as c:
+        c.execute(
+            text("UPDATE job SET durum = 'failed', son_hata = 'zaman aşımı' WHERE tur = :t"),
+            {"t": ts.KONTROL_JOB},
+        )
+    yk = ts.oku(engine, iid)["yeniden_kontrol"]
+    assert yk == {**yk, "durum": "hata", "hazir": False, "kontrol": [], "hata": "zaman aşımı"}
+
+
+def test_web_kontrolu_yeniden_kontrolde_beklemez() -> None:
+    def uyku(_s: float) -> None:
+        raise AssertionError("yeniden kontrol beklememeli")
+
+    ts.set_factories(
+        forge=lambda: object(),
+        uyku=uyku,
+        web_izleyici=lambda: {"calisiyor": True, "ayrinti": "canlı"},
+        calisan=lambda: type("C", (), {"sha": None})(),
+    )
+    try:
+        out = {k["kod"]: k["durum"] for k in ts.kontrol_web(None, "abc", 0.0)}  # type: ignore[arg-type]
+    finally:
+        ts.reset_factories()
+    assert out == {"web_izleyici": "tamam", "uygulama_main": "hata"}

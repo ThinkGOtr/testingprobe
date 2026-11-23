@@ -22,6 +22,11 @@ başlangıcına döndürür. Adımlar (sıra güvenlik gereği; `ADIMLAR`):
 5. `dogrulama` — "Demoya hazır" kontrol listesi (salt okuma); çalışan demo-app-web'in main'e
    eşitlenmesi (host izleyicisi `demo-web-sync --watch`) en çok `WEB_BEKLE_ENV` sn beklenir.
 
+"Yeniden kontrol et" (`kontrol_istek` → `demo.tam_kontrol` işi): son işlemin kontrol listesini şu
+anki durumla yeniden hesaplar (yalnız 5. adım; salt okuma: hiçbir şeyi silmez/değiştirmez, web
+eşitlenmesi beklenmez). Sonuç işin `job.sonuc`'unda; işlem görünümünde `yeniden_kontrol` olarak
+döner (şema değişmez).
+
 İşlem durumu `demo_sifirlama` tablosunda (kurulum geneli; sıfırlanan verinin parçası değil).
 İş `demo.tam_sifirla` kurulum işidir (NULL projeli → projenin işleri silinirken kendisi
 silinmez) ve uzun şeritte koşar (aynı anda CI/kod üretimi koşmaz). Her adım idempotenttir:
@@ -50,6 +55,10 @@ from tp_core.workflow.jobs import JobContext, enqueue, idempotency_lock
 log = logging.getLogger(__name__)
 
 TAM_JOB = "demo.tam_sifirla"
+KONTROL_JOB = "demo.tam_kontrol"
+# job.durum → yeniden kontrol durumu (işlem durumlarıyla aynı sözcükler).
+KONTROL_DURUMLARI = {"queued": "kuyrukta", "retry": "kuyrukta", "running": "calisiyor",
+                     "done": "tamam", "failed": "hata", "cancelled": "hata"}  # fmt: skip
 ADIMLAR: tuple[str, ...] = ("otomasyon", "tp_veri", "jira", "github", "dogrulama")
 # Hatası sonraki adımları durdurmayan adımlar (birbirinden bağımsız dış sistemler).
 BAGIMSIZ_ADIMLAR = frozenset({"jira", "github"})
@@ -239,10 +248,44 @@ def gorunum(row: Any) -> dict[str, Any]:
     }
 
 
+def yeniden_kontrol(conn: Connection, row: Any) -> dict[str, Any] | None:
+    """İşlemin son "Yeniden kontrol et" işi (yoksa None): durum + bitince kontrol listesi."""
+    j = conn.execute(
+        text(
+            "SELECT durum, sonuc, son_hata, olusturma, bitis FROM job WHERE project_id IS NULL "
+            "AND tur = :t AND yuk ->> 'islem_id' = :id AND olusturma >= :o "
+            "ORDER BY olusturma DESC LIMIT 1"
+        ),
+        {"t": KONTROL_JOB, "id": str(row.id), "o": row.olusturma},
+    ).first()
+    if j is None:
+        return None
+    durum = KONTROL_DURUMLARI.get(j.durum, "hata")
+    sonuc = j.sonuc if isinstance(j.sonuc, dict) else {}
+    kontrol = [k for k in (sonuc.get("kontrol") or []) if isinstance(k, dict)]
+    if durum == "tamam" and not kontrol:
+        durum = "hata"  # iş bitti ama liste yok (atlandı) — kullanıcıya hata olarak görünür
+    return {
+        "durum": durum,
+        "olusturma": _iso(j.olusturma),
+        "bitis": sonuc.get("zaman") or _iso(j.bitis),
+        "hazir": durum == "tamam" and not any(k.get("durum") == "hata" for k in kontrol),
+        "kontrol": kontrol if durum == "tamam" else [],
+        "hata": (str(j.son_hata or sonuc.get("neden") or "Yeniden kontrol tamamlanamadı")[:500]
+                 if durum == "hata" else None),
+    }  # fmt: skip
+
+
+def _tam_gorunum(conn: Connection, row: Any) -> dict[str, Any]:
+    out = gorunum(row)
+    out["yeniden_kontrol"] = yeniden_kontrol(conn, row)
+    return out
+
+
 def oku(engine: Engine, islem_id: uuid.UUID) -> dict[str, Any] | None:
     with engine.connect() as conn:
         row = _satir(conn, islem_id)
-    return gorunum(row) if row is not None else None
+        return _tam_gorunum(conn, row) if row is not None else None
 
 
 def son(engine: Engine, project_id: str) -> dict[str, Any] | None:
@@ -255,7 +298,7 @@ def son(engine: Engine, project_id: str) -> dict[str, Any] | None:
             {"pid": project_id},
         ).scalar()
         row = _satir(conn, sid) if sid else None
-    return gorunum(row) if row is not None else None
+        return _tam_gorunum(conn, row) if row is not None else None
 
 
 def _guncelle(engine: Engine, islem_id: uuid.UUID, **alan: Any) -> None:
@@ -370,6 +413,40 @@ def istek(engine: Engine, project_id: str, aktor: Mapping[str, Any]) -> dict[str
         row = _satir(conn, islem_id)
     service.durum_onbellegini_temizle()
     return gorunum(row)
+
+
+def kontrol_istek(engine: Engine, islem_id: uuid.UUID) -> dict[str, Any]:
+    """ "Yeniden kontrol et": projenin SON, bitmiş işleminin kontrol listesini şu anki durumla
+    yeniden hesaplayan `demo.tam_kontrol` işini kuyruğa alır (salt okuma). Süren yeniden kontrol
+    varsa yenisi açılmaz. Ret: `IstekReddi` (404 bulunamadi, 409 suruyor / eski_islem)."""
+    with engine.begin() as conn:
+        row = _satir(conn, islem_id)
+        if row is None:
+            raise IstekReddi(404, "bulunamadi", "İşlem bulunamadı")
+        demo_projesi_denetimi(row.project_id)
+        idempotency_lock(conn, f"{KONTROL_JOB}:{row.project_id}", project_id=None)
+        g = gorunum(row)
+        if g["durum"] not in ("tamam", "hata"):
+            raise IstekReddi(409, "suruyor", "Sıfırlama sürüyor; bitince kontrol edilebilir", g)
+        son_id = conn.execute(
+            text(
+                "SELECT id FROM demo_sifirlama WHERE project_id = :pid "
+                "ORDER BY olusturma DESC LIMIT 1"
+            ),
+            {"pid": row.project_id},
+        ).scalar()
+        if son_id != row.id:
+            raise IstekReddi(409, "eski_islem", "Bu proje için daha yeni bir sıfırlama var")
+        mevcut = yeniden_kontrol(conn, row)
+        if mevcut is None or mevcut["durum"] in ("tamam", "hata"):
+            enqueue(
+                conn,
+                KONTROL_JOB,
+                {"islem_id": str(row.id), "project_id": row.project_id},
+                project_id=None,
+                max_deneme=1,
+            )
+        return _tam_gorunum(conn, row)
 
 
 def onizleme(engine: Engine, project_id: str) -> dict[str, Any]:
@@ -525,6 +602,57 @@ def _bitir_hata(
             project_id=pid,
         )  # fmt: skip
     return {"durum": "hata", "adim": adim["kod"], "hata": metin}
+
+
+def _kontrol_baslangici(row: Any) -> datetime:
+    """Sıfırlamanın başladığı an (ilk adımın başlangıcı; yoksa işlemin açılışı): "eski koşu",
+    "başarısız iş" ve baseline CI koşusu bu andan önce/sonra diye ayrılır."""
+    for a in row.adimlar or []:
+        try:
+            if a.get("baslangic"):
+                return datetime.fromisoformat(str(a["baslangic"]))
+        except ValueError:
+            continue
+    return row.olusturma
+
+
+def _main_sha() -> str | None:
+    try:
+        return str(_forge().head_sha("main") or "") or None
+    except Exception:
+        log.exception("demo yeniden kontrol: main okunamadı")
+        return None
+
+
+def run_kontrol(ctx: JobContext, engine: Engine) -> dict[str, Any]:
+    """`demo.tam_kontrol` (core-worker): "Demoya hazır" listesini şu anki durumla yeniden
+    hesaplar. Salt okuma: hiçbir adım koşmaz, işlem kaydına yazılmaz; sonuç `job.sonuc`'ta."""
+    yuk = dict(ctx.yuk or {})
+    islem_id = uuid.UUID(str(yuk["islem_id"]))
+    pid = str(yuk["project_id"])
+    with engine.connect() as conn:
+        row = _satir(conn, islem_id)
+    if row is None or row.project_id != pid:
+        return {"durum": "atlandi", "neden": "işlem kaydı yok"}
+    with proje_icinde(pid, kaynak="is"):
+        try:
+            demo_projesi_denetimi(pid)
+        except IstekReddi as exc:
+            raise TamSifirlamaHatasi(exc.mesaj) from exc
+        baglam: dict[str, Any] = {
+            "pid": pid,
+            "baslangic": _kontrol_baslangici(row),
+            "main_sha": _main_sha(),
+            "web_bekle_s": 0.0,  # yeniden kontrol beklemez: şu anki durum
+        }
+        ozet, _ = adim_dogrulama(engine, baglam)
+    kontrol = baglam.get("kontrol") or []
+    return {
+        "kontrol": kontrol,
+        "hazir": not any(k["durum"] == "hata" for k in kontrol),
+        "ozet": ozet,
+        "zaman": _iso(_simdi()),
+    }
 
 
 # ------------------------------------------------------------------------- 1. otomasyon
@@ -959,10 +1087,13 @@ def _calisan() -> Any:
     return web.calisan_uygulama()
 
 
-def kontrol_web(engine: Engine, main_sha: str | None) -> list[dict[str, str]]:
+def kontrol_web(
+    engine: Engine, main_sha: str | None, bekle_s: float | None = None
+) -> list[dict[str, str]]:
     """Host izleyicisi (`demo-web-sync --watch`) çalışıyor mu ve çalışan demo-app-web main'i
     yansıtıyor mu? Eşitlenme en çok `WEB_BEKLE_ENV` sn beklenir; izleyici bu sürenin ilk
-    `IZLEYICI_TOLERANS_S` saniyesinde de canlı görünmezse (durmuş) beklemeden sonuçlanır."""
+    `IZLEYICI_TOLERANS_S` saniyesinde de canlı görünmezse (durmuş) beklemeden sonuçlanır.
+    `bekle_s=0` (yeniden kontrol): beklenmez, şu anki durum okunur."""
     from tp_core.features.demo import web
 
     out: list[dict[str, str]] = []
@@ -974,7 +1105,7 @@ def kontrol_web(engine: Engine, main_sha: str | None) -> list[dict[str, str]]:
         return out
     forge = _forge()
     basla = time.monotonic()
-    bitis = basla + _ortam_s(WEB_BEKLE_ENV, 600)
+    bitis = basla + (_ortam_s(WEB_BEKLE_ENV, 600) if bekle_s is None else max(bekle_s, 0.0))
     while True:
         iz = _izleyici()
         calisan = _calisan()
@@ -1033,7 +1164,10 @@ def adim_dogrulama(engine: Engine, baglam: dict[str, Any]) -> tuple[str, Any]:
     kontrol += _guvenli("jira_durumlar", lambda: kontrol_jira(pid))
     kontrol += _guvenli("jira_po", lambda: kontrol_jira_po(pid))
     kontrol += _guvenli("github_main", lambda: kontrol_github(engine))
-    kontrol += _guvenli("web_izleyici", lambda: kontrol_web(engine, baglam.get("main_sha")))
+    kontrol += _guvenli(
+        "web_izleyici",
+        lambda: kontrol_web(engine, baglam.get("main_sha"), baglam.get("web_bekle_s")),
+    )
     kontrol += _guvenli("ci_baseline", lambda: kontrol_ci(engine, pid, bas))
     kontrol += _guvenli("replay_strict", kontrol_replay)
     baglam["kontrol"] = kontrol

@@ -9,7 +9,9 @@ yalnız demo projesini (varsayılan proje + `TP_DEMO_MODE=1`) kabul eder.
 - `POST /admin/demo-sifirla {project_id, aktor}` → 202 `{islem}`; 409 `suruyor` (+ `islem`),
   `demo_isi_suruyor`, `demo_proje_degil`; 404 `proje_yok`
 - `GET  /admin/demo-sifirla?project_id=` → `{islem}` (son işlem ya da null)
-- `GET  /admin/demo-sifirla/{id}` → `{islem}`
+- `GET  /admin/demo-sifirla/{id}` → `{islem}` (`islem.yeniden_kontrol`: son yeniden kontrol | null)
+- `POST /admin/demo-sifirla/{id}/kontrol` → 202 `{islem}`: "Demoya hazır" listesini şu anki durumla
+  yeniden hesaplayan salt okuma işi; 409 `suruyor` / `eski_islem`, 404 `bulunamadi`
 """
 
 from __future__ import annotations
@@ -76,13 +78,25 @@ def son(_home: HomeServisi, project_id: Annotated[str, Query(max_length=64)]) ->
     return {"islem": tam_sifirlama.son(get_engine(), _pid(project_id))}
 
 
-@router.get("/{islem_id}")
-def oku(islem_id: str, _home: HomeServisi) -> dict[str, Any]:
+def _kimlik(islem_id: str) -> uuid.UUID:
     try:
-        kimlik = uuid.UUID(islem_id)
+        return uuid.UUID(islem_id)
     except ValueError as exc:
         raise KodluHata(404, "bulunamadi", "İşlem bulunamadı") from exc
-    islem = tam_sifirlama.oku(get_engine(), kimlik)
+
+
+@router.post("/{islem_id}/kontrol", status_code=202)
+def yeniden_kontrol(islem_id: str, _home: HomeServisi) -> JSONResponse:
+    try:
+        islem = tam_sifirlama.kontrol_istek(get_engine(), _kimlik(islem_id))
+    except tam_sifirlama.IstekReddi as exc:
+        raise _red(exc) from exc
+    return JSONResponse({"islem": islem}, status_code=202)
+
+
+@router.get("/{islem_id}")
+def oku(islem_id: str, _home: HomeServisi) -> dict[str, Any]:
+    islem = tam_sifirlama.oku(get_engine(), _kimlik(islem_id))
     if islem is None:
         raise KodluHata(404, "bulunamadi", "İşlem bulunamadı")
     return {"islem": islem}

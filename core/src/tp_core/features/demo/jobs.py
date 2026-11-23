@@ -6,6 +6,8 @@
 - `demo.durum_oku`: GitHub App kipinde `GET /demo/status`'un forge bölümü (kurulum token'ı yalnız
   core-worker'da; API işi kuyruğa alıp sonucu bekler).
 - `demo.tam_sifirla`: Home "Sıfırla" düğmesinin tam sıfırlaması (`tam_sifirlama.py`).
+- `demo.tam_kontrol`: Home "Yeniden kontrol et" — son sıfırlamanın "Demoya hazır" listesini şu
+  anki durumla yeniden hesaplar (salt okuma; GitHub App token'ı yalnız worker'da).
 """
 
 from __future__ import annotations
@@ -55,3 +57,9 @@ def on_worker_start(conn: Connection) -> None:
 def tam_sifirla(ctx: JobContext) -> dict[str, Any]:
     """Home "Sıfırla" düğmesi: demo projesinin tam sıfırlaması (kurulum işi; uzun şerit)."""
     return tam_sifirlama.run(ctx, get_engine())
+
+
+@job_handler(tam_sifirlama.KONTROL_JOB, max_deneme=1, zaman_asimi_s=300, kurulum=True)
+def tam_kontrol(ctx: JobContext) -> dict[str, Any]:
+    """Home "Yeniden kontrol et": "Demoya hazır" listesi (salt okuma; kurulum işi)."""
+    return tam_sifirlama.run_kontrol(ctx, get_engine())
