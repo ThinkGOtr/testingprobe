@@ -245,12 +245,25 @@ jobs:
           path: ${{ env.WDA_DD }}/Build/Products
           key: ${{ steps.surum.outputs.anahtar }}
 
+      # Appium 3 + sürücüler (tools/appium kilit dosyası): soğuk macOS diskinde npm ci ~6,5 dk sürüyordu.
+      - name: Appium modülleri önbelleği
+        id: appium-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: tools/appium/node_modules
+          key: appium-nm-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/appium/package-lock.json') }}
+
       # Paralel hazırlık: (a) simülatör oluştur + aç, (b) demo uygulaması (API + web), (c) Appium kur
       # (+ ıskada WDA derle). Her arka plan işinin çıkış kodu beklenir; biri düşerse adım düşer ve
       # günlüğün sonu yazılır (sessiz hata yok). Test uçlarının (/test/*) sırrı koşu başına üretilir.
       - name: Hazırlık (paralel — simülatör, demo uygulaması, Appium + WDA)
         env:
           WDA_ISABET: ${{ steps.wda-cache.outputs.cache-hit }}
+          APPIUM_ISABET: ${{ steps.appium-cache.outputs.cache-hit }}
+          # Paralel yük altında (simülatör açılışı + npm + soğuk disk) API'nin ilk açılışı 180 sn'yi
+          # aşabiliyor (koşu 45212830817: "API 180 sn içinde hazır olmadı"). Süre iş yüküne göre:
+          # sıralı akışta ~7 dk süren hazırlık paralelde aynı kaynakları paylaşır.
+          TP_SERVE_READY_TIMEOUT: "600"
         run: |
           set -uo pipefail
           mkdir -p tp-logs
@@ -271,17 +284,21 @@ jobs:
             nohup bash scripts/github-demo-serve.sh > tp-logs/serve.log 2>&1 &
           p_serve=$!
           (
-            for _ in $(seq 1 120); do
+            for _ in $(seq 1 450); do
               curl -fsS "http://127.0.0.1:8081/api/health" >/dev/null 2>&1 && exit 0
               kill -0 "$p_serve" 2>/dev/null || { echo "demo-serve süreci erken sonlandı"; exit 1; }
               sleep 2
             done
-            echo "demo uygulaması 240 sn içinde hazır olmadı"; exit 1
+            echo "demo uygulaması 900 sn içinde hazır olmadı"; exit 1
           ) > tp-logs/demo-hazir.log 2>&1 &
           p_demo=$!
           (
             set -euo pipefail
-            (cd tools/appium && npm ci --no-audit --no-fund --loglevel=error)
+            if [ "${APPIUM_ISABET:-}" = "true" ] && [ -x tools/appium/node_modules/.bin/appium ]; then
+              echo "Appium modülleri önbellekten"
+            else
+              (cd tools/appium && npm ci --no-audit --no-fund --loglevel=error)
+            fi
             if [ "${WDA_ISABET:-}" = "true" ] && ls "$WDA_DD"/Build/Products/*.xctestrun >/dev/null 2>&1; then
               echo "WDA önbellekten (derleme yok)"
             else
