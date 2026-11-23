@@ -542,3 +542,16 @@ def create_link(store: Store, body: dict[str, Any]) -> None:
         )
         for k in (inward, outward):
             state["issues"][k]["updated"] = now_jira()
+
+
+def delete_link(store: Store, link_id: str) -> None:
+    """``DELETE /issueLink/{id}``: bağlantıyı iki kayıttan da kaldırır (yoksa 404)."""
+    with store.tx() as state:
+        kalan = [lk for lk in state["links"] if str(lk["id"]) != str(link_id)]
+        if len(kalan) == len(state["links"]):
+            raise SimError(404, [f"No issue link with id '{link_id}' exists."])
+        silinen = next(lk for lk in state["links"] if str(lk["id"]) == str(link_id))
+        state["links"] = kalan
+        for k in (silinen["inward"], silinen["outward"]):
+            if k in state["issues"]:
+                state["issues"][k]["updated"] = now_jira()

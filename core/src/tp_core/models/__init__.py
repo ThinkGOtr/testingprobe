@@ -59,7 +59,7 @@ from tp_core.models.requirements import (
     case_id,
 )
 from tp_core.models.system import AiCall, AuditEvent, Job, ToolCall, WorkflowInstance
-from tp_core.models.tp_proje import ProjeSayac, TpProje
+from tp_core.models.tp_proje import DemoSifirlama, ProjeSayac, TpProje
 from tp_core.proje import orm as _proje_orm
 
 # Merkezî proje filtresi `Session` sınıfına bağlanır: `new_session()` ve doğrudan
@@ -116,6 +116,7 @@ __all__ = [
     "BugDraft",
     "CaseOracleKontrol",
     "ConsistencyFinding",
+    "DemoSifirlama",
     "ExternalRef",
     "Failure",
     "HataKosusu",

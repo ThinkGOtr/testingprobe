@@ -1,0 +1,19 @@
+# tp-vm: demo-app-web izleyicisi (Locator kır / Demo'yu sıfırla / Home "Sıfırla" sonrası çalışan
+# demo-app-web'i GitHub main'den yeniden derler). bin/up.sh kurar ve (yeniden) başlatır; yalnız
+# TP_DEMO_MODE=1 iken. Kalp atışı: /forge/demo-web-sync.alive (TP "Demoya hazır" listesi okur).
+# Eski tp-demo sunucusundaki karşılığı: deploy/gcp/tp-demo-web-sync.service.
+[Unit]
+Description=Testing Probe demo-app-web izleyicisi (demo-web-sync --watch)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=__KOK__
+Environment=HOME=/root
+ExecStart=/usr/bin/make demo-web-sync A=--watch
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

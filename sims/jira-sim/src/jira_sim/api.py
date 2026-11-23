@@ -19,6 +19,7 @@ from jira_sim.ops import (
     create_link,
     delete_comment,
     delete_issue,
+    delete_link,
     history_json,
     issue_json,
     issuetype_json,
@@ -371,6 +372,23 @@ async def issue_link(request: Request, store: StoreDep, user: Writer) -> Respons
     body = _dict_body(await json_body(request))
     create_link(store, body)
     return Response(status_code=201)
+
+
+@router.delete("/issueLink/{link_id}", status_code=204)
+def issue_link_delete(store: StoreDep, user: Writer, link_id: str) -> Response:
+    delete_link(store, link_id)
+    return Response(status_code=204)
+
+
+@router.get("/mypermissions")
+def my_permissions(user: Reader, permissions: Annotated[str, Query()] = "") -> dict[str, Any]:
+    """Gerçek Jira biçimi; simülatörde yazma kullanıcısının her izni vardır."""
+    adlar = [p.strip() for p in permissions.split(",") if p.strip()]
+    return {
+        "permissions": {
+            ad: {"key": ad, "havePermission": bool(USERS[user]["can_write"])} for ad in adlar
+        }
+    }
 
 
 def error_response(exc: SimError) -> JSONResponse:

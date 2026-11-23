@@ -1058,6 +1058,30 @@ class RestJira:
     def delete_issue(self, key: str) -> None:
         self._call("DELETE", f"/issue/{self._key(key)}", write=True)
 
+    def delete_issue_link(self, link_id: str) -> None:
+        """İş bağlantısını (issue link) kaldırır (iki kayıttan da düşer)."""
+        self._call("DELETE", f"/issueLink/{quote(str(link_id), safe='')}", write=True)
+
+    def issue_links(self, key: str) -> list[dict[str, Any]]:
+        """Kaydın iş bağlantıları (`id`, `type`, `inwardIssue`/`outwardIssue`)."""
+        return list(self.raw_fields(key, ("issuelinks",)).get("issuelinks") or [])
+
+    def has_permission(self, project: str, permission: str) -> bool | None:
+        """Yazma kimliğinin projede `permission` izni var mı (ör. `DELETE_ISSUES`); okunamazsa
+        None (çağıran denemeyle öğrenir)."""
+        try:
+            page = self._call(
+                "GET",
+                "/mypermissions",
+                write=True,
+                params={"projectKey": project, "permissions": permission},
+            )
+        except JiraError:
+            return None
+        izin = ((page or {}).get("permissions") or {}).get(permission) or {}
+        deger = izin.get("havePermission")
+        return deger if isinstance(deger, bool) else None
+
     def close(self) -> None:
         self._http.close()
 

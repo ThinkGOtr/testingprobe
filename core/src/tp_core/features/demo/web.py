@@ -290,3 +290,48 @@ def uygulanmamis_istek(sha: str, en_erken: datetime) -> dict[str, Any] | None:
     if istek.get("istek_id") and istek.get("istek_id") == uygulanan_istek_id():
         return None
     return istek
+
+
+# ------------------------------------------------------------- host izleyicisi (demo-web-sync)
+
+IZLEYICI_FILE_ENV = "TP_DEMO_WEB_IZLEYICI_FILE"
+VARSAYILAN_IZLEYICI_FILE = "/forge/demo-web-sync.alive"
+IZLEYICI_ESIK_S = 120.0
+
+
+def izleyici_dosyasi() -> Path:
+    return Path(_ortam(IZLEYICI_FILE_ENV, VARSAYILAN_IZLEYICI_FILE))
+
+
+def izleyici_durumu(simdi: float | None = None) -> dict[str, Any]:
+    """Host'taki `scripts/demo-web-sync.sh --watch` (tp-vm: `tp-demo-web-sync.service`) canlı mı?
+
+    İzleyici her turda (en sık 30 sn'de bir) forge volume'üne epoch saniyesini yazar
+    (`/forge/demo-web-sync.alive`). `IZLEYICI_ESIK_S`'den eskiyse ya da dosya yoksa çalışmıyor
+    sayılır: kırma/sıfırlama sonrası çalışan demo-app-web yeniden derlenmez."""
+    import time
+
+    try:
+        ham = izleyici_dosyasi().read_text(encoding="utf-8")[:64].strip()
+        zaman = float(ham.split()[0])
+    except (OSError, ValueError, IndexError):
+        return {
+            "calisiyor": False,
+            "yas_s": None,
+            "ayrinti": "demo-web-sync izleyicisi çalışmıyor (kalp atışı yok): çalışan demo "
+            "uygulaması kırma/sıfırlama sonrası yeniden derlenmez. tp-vm: "
+            "`systemctl status tp-demo-web-sync`",
+        }
+    yas = max(0.0, (time.time() if simdi is None else simdi) - zaman)
+    if yas > IZLEYICI_ESIK_S:
+        return {
+            "calisiyor": False,
+            "yas_s": round(yas),
+            "ayrinti": f"demo-web-sync izleyicisinin son kalp atışı {round(yas)} sn önce: "
+            "izleyici durmuş görünüyor (tp-vm: `systemctl status tp-demo-web-sync`)",
+        }
+    return {
+        "calisiyor": True,
+        "yas_s": round(yas),
+        "ayrinti": f"demo-web-sync izleyicisi çalışıyor (son kalp atışı {round(yas)} sn önce)",
+    }

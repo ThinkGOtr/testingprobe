@@ -220,6 +220,15 @@ def _is_iste(session: Session, tur: str, user: Principal, eylem: str) -> dict[st
         ),
         {"a": BREAK_JOB, "b": RESET_JOB},
     ).first()
+    if suren is None:
+        # Home "Sıfırla" (demo.tam_sifirla, kurulum işi: NULL projeli) sürerken de açılmaz.
+        suren = session.execute(
+            text(
+                "SELECT id FROM job WHERE project_id IS NULL AND tur = :c "
+                "AND durum IN ('queued', 'retry', 'running') LIMIT 1"
+            ),
+            {"c": "demo.tam_sifirla"},
+        ).first()
     if suren is not None:
         raise DemoRejected("Başka bir demo kırılması/sıfırlaması sürüyor; bitince yeniden deneyin.")
     job_id = enqueue(
