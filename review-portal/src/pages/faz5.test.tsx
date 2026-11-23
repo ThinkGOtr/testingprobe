@@ -339,6 +339,26 @@ describe("demo yol haritası: türetme", () => {
     const ghAtlandi = yerelGirdi.kosular.map((k) => ({ ...k, kaynak: "github" as const, sauce_durum: "atlandi" as const, sauce_neden: "SAUCE_TETIKLER: push yok" }));
     const atlandi = demoAdimlari({ ...yerelGirdi, kosular: ghAtlandi })[8];
     expect(atlandi).toMatchObject({ hal: "yedek", kanit: expect.stringMatching(/Sauce bu tetiklerde atlandı \(bu koşu türünde Sauce çalıştırılmıyor \(proje ayarı: push yok\)\)/) });
+    expect(atlandi.ipucu).toMatch(/Sauce Labs turunu başlat/);
+    // Elle Sauce Labs turu (tetik `sauce`; push/gece/deploy Sauce kullanmaz): geçen tur adım 9'u
+    // tamamlar; süren tur "sürüyor", kırmızı tur "engel". Story merge'ünden önceki tur sayılmaz.
+    const tur = (durum: "passed" | "failed" | "running", baslangic = "2026-12-02T00:00:00Z") => ({
+      ...ghAtlandi[0],
+      id: `sauce-${durum}`,
+      tetik: "sauce" as const,
+      durum,
+      baslangic,
+    });
+    expect(demoAdimlari({ ...yerelGirdi, kosular: [...ghAtlandi, tur("passed")] })[8]).toMatchObject({
+      hal: "tamam",
+      kanit: expect.stringMatching(/Sauce Labs turu geçti: web \(Windows 11 · Chromium ve Edge\), Android emülatör, iOS simülatör/),
+      baglanti: { yol: "/kosular/sauce-passed" },
+    });
+    expect(demoAdimlari({ ...yerelGirdi, kosular: [...ghAtlandi, tur("running")] })[8].hal).toBe("suruyor");
+    expect(demoAdimlari({ ...yerelGirdi, kosular: [...ghAtlandi, tur("failed")] })[8].hal).toBe("engel");
+    expect(demoAdimlari({ ...yerelGirdi, kosular: [...ghAtlandi, tur("passed", "2026-11-01T00:00:00Z")] })[8].hal).toBe("yedek");
+    // Sauce turu adım 8'in (CI tetikleri) sayımına girmez.
+    expect(demoAdimlari({ ...yerelGirdi, kosular: [...ghAtlandi, tur("passed")] })[7].kanit).not.toMatch(/sauce/i);
     // GitHub koşusu bitti ama Sauce sonucu yazılmadı: yine "kimlik yok" denmez.
     const ghBos = yerelGirdi.kosular.map((k) => ({ ...k, kaynak: "github" as const, durum: "passed" as const, sauce_durum: null }));
     for (const x of [sirada, atlandi, demoAdimlari({ ...yerelGirdi, kosular: ghBos })[8]]) expect(x.kanit).not.toMatch(/kimliği yok/);

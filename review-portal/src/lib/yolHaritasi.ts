@@ -347,8 +347,39 @@ export function sonrakiAdimlar(x: SonrakiGirdi): YolAdimi[] {
   const sauceSirada = ghCi.filter((k) => !k.sauce_durum && (k.durum === "queued" || k.durum === "running"));
   const sauceAtlandi = ghCi.length > 0 && ghCi.every((k) => k.sauce_durum === "atlandi");
   const bitenGh = ghCi.filter((k) => ["passed", "failed"].includes(k.durum));
-  const a9 =
-    sauce.length > 0
+  // Elle Sauce Labs turu (Koşular › "Sauce Labs turunu başlat", tetik `sauce`): push/gece/deploy Sauce'u
+  // kullanmadığından demo'da adım 9'u bu tur tamamlar. Story'nin ilk merge'ünden sonra başlayan turlar sayılır.
+  const turlar = x.kosular.filter((k) => k.tetik === "sauce" && storyKosusuMu(k, ss));
+  const gecenTur = enYeni(
+    turlar.filter((k) => k.durum === "passed"),
+    (k) => k.baslangic,
+  );
+  const surenTur = turlar.find((k) => k.durum === "queued" || k.durum === "running");
+  const kirmiziTur = enYeni(
+    turlar.filter((k) => k.durum !== "queued" && k.durum !== "running"),
+    (k) => k.baslangic,
+  );
+  const SAUCE_DUGMESI = "Otomasyon Mühendisi: Koşular → \"Sauce Labs turunu başlat\" (web Chromium + Edge, Android, iOS).";
+  const a9 = gecenTur
+    ? adim(9, {
+        hal: "tamam",
+        kanit: "Sauce Labs turu geçti: web (Windows 11 · Chromium ve Edge), Android emülatör, iOS simülatör.",
+        baglanti: { yol: `/kosular/${kodla(gecenTur.id)}`, etiket: "Sauce turunu aç" },
+      })
+    : surenTur
+      ? adim(9, {
+          hal: "suruyor",
+          kanit: "Sauce Labs turu sürüyor (derleme + Sauce oturumları).",
+          baglanti: { yol: `/kosular/${kodla(surenTur.id)}`, etiket: "Sauce turunu aç" },
+        })
+      : kirmiziTur
+        ? adim(9, {
+            hal: "engel",
+            kanit: `Son Sauce Labs turu ${kirmiziTur.durum === "failed" ? "kırmızı" : "tamamlanamadı"}${kirmiziTur.sauce_neden ? ` (${kirmiziTur.sauce_neden})` : ""}.`,
+            ipucu: "Koşu detayındaki \"Sauce Labs turu\" tablosunda platform satırına bakın; düzeltince turu yeniden başlatın.",
+            baglanti: { yol: `/kosular/${kodla(kirmiziTur.id)}`, etiket: "Sauce turunu aç" },
+          })
+    : sauce.length > 0
       ? adim(9, {
           hal: "tamam",
           kanit: `${sauce.length} koşu Sauce Labs'ta da koştu${sauceKirmizi ? ` (${sauceKirmizi} kırmızı)` : ""}.`,
@@ -373,7 +404,7 @@ export function sonrakiAdimlar(x: SonrakiGirdi): YolAdimi[] {
             ? adim(9, {
                 hal: "yedek",
                 kanit: `Sauce bu tetiklerde atlandı (${sauceNedenMetni(ghCi.find((k) => k.sauce_neden)?.sauce_neden)}) — testler yerel Chromium job'unda koştu.`,
-                ipucu: "Sahnede açıkça söyleyin: Sauce bu koşularda proje ayarı gereği bilerek atlandı.",
+                ipucu: `Sauce push/gece/deploy koşularında bilerek kullanılmaz. ${SAUCE_DUGMESI}`,
                 baglanti: { yol: "/kosular", etiket: "Koşular" },
               })
             : bitenGh.length > 0
