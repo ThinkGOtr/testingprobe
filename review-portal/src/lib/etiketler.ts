@@ -267,6 +267,7 @@ export const TETIK: Record<Tetik, string> = {
   break_verify: "Kırarak doğrula",
   local_check: "Yerel kontrol",
   manual: "Elle",
+  sauce: "Sauce Labs",
 };
 export const KAYNAK: Record<KosuKaynagi, string> = { local: "Yerel Chromium", github: "GitHub Actions", sauce: "Sauce Labs" };
 

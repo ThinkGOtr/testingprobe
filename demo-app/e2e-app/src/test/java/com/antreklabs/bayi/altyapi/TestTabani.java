@@ -82,6 +82,11 @@ public abstract class TestTabani implements IHookable {
     return t != null && Arrays.asList(t.groups()).contains(grup);
   }
 
+  /** Sauce iş adı / oturum kaydı: {@code Sınıf.metot}. */
+  private String isAdi() {
+    return getClass().getSimpleName() + "." + metotAdi;
+  }
+
   /** Hazırlık → test → kapanış. */
   @Override
   public void run(IHookCallBack geriCagri, ITestResult sonuc) {
@@ -130,7 +135,7 @@ public abstract class TestTabani implements IHookable {
       veri.sepetiBosalt(bayi);
     }
 
-    surucu = SurucuFabrikasi.olustur(platform, ayarlar);
+    surucu = SurucuFabrikasi.olustur(platform, ayarlar, isAdi());
     oturum = new UygulamaOturumu(surucu, new Bekle(surucu, ayarlar.bekleme()));
 
     if (getClass().isAnnotationPresent(OturumAcik.class)) {
@@ -152,6 +157,10 @@ public abstract class TestTabani implements IHookable {
     } finally {
       try {
         if (surucu != null) {
+          if (SauceLabs.sauceAdresi(ayarlar.appiumUrl())) {
+            // Sauce işi: sonuç (passed/failed) + oturum kaydı (iş/video bağlantısı özet betiğinde).
+            SauceLabs.ortamdan().bitir(surucu, isAdi(), !basarisiz);
+          }
           try {
             surucu.quit();
           } catch (WebDriverException e) {

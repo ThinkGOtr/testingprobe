@@ -103,7 +103,7 @@ describe("ci.yml Sauce → sauce.json", () => {
     const s = step("Sauce özeti ve sauce.json");
     assert.match(s, /if: always\(\)/);
     assert.match(s, /bash scripts\/github-sauce-summary\.sh --out tp-sauce/);
-    assert.match(s, /--skipped "Sauce kimliği/);
+    assert.match(s, /--skipped "\$SKIP_REASON"/);
     assert.match(s, /--report demo-app\/results\/sauce\/saucectl-report\.json/);
     assert.match(s, /--exit-code "\$\{SAUCE_EXIT:-\}"/);
     const up = step("Sauce artefaktları");

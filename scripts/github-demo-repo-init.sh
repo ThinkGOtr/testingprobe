@@ -20,6 +20,8 @@
 #   .github/workflows/break-verify.yml  elle "kırarak doğrula" kanıtı (zorunlu değil)
 #   .github/workflows/{mobil-android,mobil-ios,masaustu-windows}.yml  uygulama e2e (009; Java +
 #                              Appium; platform etkinse mobil-android / masaustu-windows zorunlu check)
+#   .github/workflows/sauce-demo.yml  Sauce Labs elle turu (yalnız workflow_dispatch tetik=sauce; TP
+#                              Koşular › "Sauce Labs turunu başlat"): web + Android + iOS duman seti
 #   .github/workflows/web-java.yml  web e2e Java hattı (011; Playwright for Java + TestNG; check
 #                              `web-java`, TP_WEB_DILLERI java içerince zorunlu)
 #   toolchain/java-araclar/    üretilen Java test koruması (guard; web-java ve run-java-checks.sh)
@@ -28,7 +30,8 @@
 #   .github/CODEOWNERS         /demo-app/e2e/pages/, tests/generated/, kalite kapısı yapılandırması,
 #                              /.github/, /toolchain/ast-guard/, /scripts/github-*.sh → @<codeowner>
 #   .github/dependabot.yml     Action SHA'ları + ast-guard bağımlılıkları (PR açar, merge etmez)
-#   scripts/github-{ast-guard-mode,ci-results,demo-serve,sauce-summary,break-verify-result}.sh
+#   scripts/github-{ast-guard-mode,ci-results,demo-serve,sauce-summary,sauce-kota,break-verify-result}.sh,
+#   scripts/github-sauce-tur-ozeti.py
 #   toolchain/ast-guard/       AST koruması (CI'da taban daldan çalışır); monorepo ci.yml'yi sınayan
 #                              test/ci-workflow.test.ts hariç
 #   toolchain/security/no-mcp-in-image.sh   (toolchain imajı yolu; Constitution II)
@@ -52,7 +55,7 @@ CALLER_PWD="$PWD"  # lib.sh depo köküne geçer; göreli --out çağıranın di
 # shellcheck source=scripts/lib.sh
 . "$(dirname "$0")/lib.sh"
 
-usage() { sed -n '2,49p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,52p' "$0" | sed 's/^# \{0,1\}//'; }
 
 REPO="${GITHUB_REPO:-ThinkGOtr/testingprobe-demo-app}"
 OUT=""
@@ -116,7 +119,8 @@ copy_tracked demo-app toolchain/ast-guard toolchain/security/no-mcp-in-image.sh 
   .github/workflows/masaustu-windows.yml tools/appium/package.json tools/appium/package-lock.json \
   .github/workflows/web-java.yml toolchain/java-araclar toolchain/e2e-java-deps \
   scripts/github-ast-guard-mode.sh scripts/github-ci-results.sh scripts/github-demo-serve.sh \
-  scripts/github-sauce-summary.sh scripts/github-break-verify-result.sh
+  scripts/github-sauce-summary.sh scripts/github-break-verify-result.sh \
+  .github/workflows/sauce-demo.yml scripts/github-sauce-tur-ozeti.py scripts/github-sauce-kota.sh
 [ -f "$DEST/demo-app/web/Dockerfile" ] || die "demo-app/web/Dockerfile kopyalanmadı"
 [ -f "$DEST/demo-app/e2e/pages/catalog/locators.ts" ] || die "demo-app/e2e/pages/catalog/locators.ts yok"
 # Java web hattı (011): e2e-java gönderiliyorsa web-java iş akışı, java-araclar (guard) ve güvenilir

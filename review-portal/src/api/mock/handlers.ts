@@ -2067,9 +2067,23 @@ function prDaliGuncelle(no: number, depo = ""): IsYaniti {
   return { job_id: `job-dal-${no}`, durum: "queued", mesaj: "Dal güncellemesi kuyruğa alındı." };
 }
 
+/** Mock elle Sauce turu: dört satır, her biri Sauce iş sayfası bağlantısıyla (core sauce.json biçimi). */
+function saucePlatformlariYaz(k: KosuDetay): void {
+  const is = (n: number) => `https://app.eu-central-1.saucelabs.com/tests/${String(n).padStart(32, "0")}`;
+  k.sauce_platformlari = [
+    { platform: "web", etiket: "Windows 11 · Chromium", durum: "passed", neden: null, toplam: 3, gecen: 3, basarisiz: 0, isler: [{ ad: "Windows-11-Chromium", url: is(1), durum: "passed" }] },
+    { platform: "web", etiket: "Windows 11 · Edge", durum: "passed", neden: null, toplam: 1, gecen: 1, basarisiz: 0, isler: [{ ad: "Windows-11-Edge", url: is(2), durum: "passed" }] },
+    { platform: "android", etiket: "Android · emülatör", durum: "passed", neden: null, toplam: 2, gecen: 2, basarisiz: 0, isler: [{ ad: "GirisTesti.dogruBilgilerleGiris", url: is(3), durum: "passed" }, { ad: "SiparisTesti.siparisOnayVeGecmis", url: is(4), durum: "passed" }] },
+    { platform: "ios", etiket: "iOS · simülatör", durum: "passed", neden: null, toplam: 2, gecen: 2, basarisiz: 0, isler: [{ ad: "GirisTesti.dogruBilgilerleGiris", url: is(5), durum: "passed" }, { ad: "SiparisTesti.siparisOnayVeGecmis", url: is(6), durum: "passed" }] },
+  ];
+  k.sauce_durum = "passed";
+  k.sauce_url = is(1);
+}
+
 function ciTetikle(govde: unknown): IsYaniti {
   const tetik = ((govde ?? {}) as { tetik?: string }).tetik;
-  if (tetik !== "deploy" && tetik !== "nightly" && tetik !== "manual") throw new ApiError(422, "tetik deploy, nightly veya manual olmalı.");
+  if (tetik !== "deploy" && tetik !== "nightly" && tetik !== "manual" && tetik !== "sauce")
+    throw new ApiError(422, "tetik deploy, nightly, manual veya sauce olmalı.");
   // core: deploy/nightly `run.trigger_scheduled` (engineer); manual `run.trigger_manual` (engineer, developer).
   const kullanici = izinGerekli(tetik === "manual" ? "run.trigger_manual" : "run.trigger_scheduled");
   if (tetik === "manual" && kullanici.rol === "developer" && mockOrtam.ortam === "prod") {
@@ -2083,18 +2097,34 @@ function ciTetikle(govde: unknown): IsYaniti {
     if (!o) throw new ApiError(422, "Bilinmeyen test ortamı.");
     testOrtami = testOrtamiOzeti(o);
   }
-  const k = kosuOlustur(tetik, "local", false, null);
-  k.test_ortami = testOrtami;
-  denetimEkle("ci.trigger", k.id, tetik === "deploy" ? "Deploy tetiklendi (repository_dispatch)" : tetik === "manual" ? "Manuel koşu başlatıldı" : "Gece koşusu tetiklendi");
+  const k = kosuOlustur(tetik, tetik === "sauce" ? "github" : "local", false, null);
+  k.test_ortami = tetik === "sauce" ? null : testOrtami;
+  denetimEkle(
+    "ci.trigger",
+    k.id,
+    tetik === "deploy"
+      ? "Deploy tetiklendi (repository_dispatch)"
+      : tetik === "manual"
+        ? "Manuel koşu başlatıldı"
+        : tetik === "sauce"
+          ? "Sauce Labs turu başlatıldı"
+          : "Gece koşusu tetiklendi",
+  );
   kaydet();
   arkaPlan([
     () => {
       k.durum = "running";
       mockOlayYayinla({ type: "ci.status", id: k.id, data: { durum: "running" } });
     },
-    () => kosuBitir(k, true, TEST_C1),
+    () => {
+      kosuBitir(k, true, TEST_C1);
+      if (tetik === "sauce") saucePlatformlariYaz(k);
+    },
   ]);
-  return { ...is("queued", `${tetik === "deploy" ? "Deploy" : tetik === "manual" ? "Manuel" : "Gece"} koşusu sıraya alındı (${k.id}).`), test_ortami: testOrtami };
+  return {
+    ...is("queued", `${tetik === "deploy" ? "Deploy" : tetik === "manual" ? "Manuel" : tetik === "sauce" ? "Sauce Labs" : "Gece"} koşusu sıraya alındı (${k.id}).`),
+    test_ortami: testOrtami,
+  };
 }
 
 /**

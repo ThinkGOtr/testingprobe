@@ -30,6 +30,7 @@ import type {
   Kosu,
   KosuAdimi,
   KosuDetay,
+  SaucePlatformu,
   KosuKaynagi,
   PrCheck,
   PullRequest,
@@ -740,7 +741,7 @@ export function scriptListesiUyarla(govde: unknown, dahaFazla: boolean | null = 
 
 // ------------------------------------------------------------------ Koşular
 
-const TETIKLER = new Set<Tetik>(["pr", "push", "nightly", "deploy", "break_verify", "local_check", "manual"]);
+const TETIKLER = new Set<Tetik>(["pr", "push", "nightly", "deploy", "break_verify", "local_check", "manual", "sauce"]);
 const KAYNAKLAR = new Set<KosuKaynagi>(["local", "github", "sauce"]);
 const SAUCE_DURUMLARI = new Set(["passed", "failed", "error", "atlandi"]);
 const KOSU_DURUMLARI = new Set<Kosu["durum"]>(["queued", "running", "passed", "failed", "error", "zaman_asimi"]);
@@ -1001,7 +1002,41 @@ export function kosuDetayUyarla(k: Ham): KosuDetay {
     adimlar: kosuAdimlari(k.adimlar),
     github: githubBilgisi(k.github),
     platform_kontrolleri: platformKontrolleri(k),
+    sauce_platformlari: saucePlatformlari(nesne(k.sauce).platformlar),
   };
+}
+
+const SAUCE_PLATFORMLARI = new Set(["web", "android", "ios"]);
+/** Sauce iş sayfası: yalnız https://app.<bölge>.saucelabs.com/tests/<kimlik> (core SAUCE_URL_RE'nin alt kümesi). */
+const SAUCE_IS_RE = /^https:\/\/app\.([a-z0-9-]+\.)*saucelabs\.com\/tests\/[A-Za-z0-9]+$/;
+
+/** core `sauce.platformlar[]` → satırlar; bilinmeyen platform/geçersiz bağlantı atlanır. Yoksa null. */
+export function saucePlatformlari(x: unknown): SaucePlatformu[] | null {
+  if (!Array.isArray(x)) return null;
+  const out = x.filter(nesneMi).flatMap((p): SaucePlatformu[] => {
+    const platform = metin(p.platform);
+    if (!SAUCE_PLATFORMLARI.has(platform)) return [];
+    const durum = metin(p.durum);
+    return [
+      {
+        platform: platform as SaucePlatformu["platform"],
+        etiket: metin(p.etiket, platform),
+        durum: (SAUCE_DURUMLARI.has(durum) ? durum : "error") as SaucePlatformu["durum"],
+        neden: metinYaDaNull(p.neden),
+        toplam: sayiYaDaNull(p.toplam) ?? 0,
+        gecen: sayiYaDaNull(p.gecen) ?? 0,
+        basarisiz: sayiYaDaNull(p.basarisiz) ?? 0,
+        isler: dizi(p.isler)
+          .filter((i) => SAUCE_IS_RE.test(metin(i.url)))
+          .map((i) => ({
+            ad: metinYaDaNull(i.ad),
+            url: metin(i.url),
+            durum: metin(i.durum) === "passed" || metin(i.durum) === "failed" ? (metin(i.durum) as "passed" | "failed") : null,
+          })),
+      },
+    ];
+  });
+  return out.length ? out : null;
 }
 
 // ------------------------------------------------------------------ Kontrol Kulesi

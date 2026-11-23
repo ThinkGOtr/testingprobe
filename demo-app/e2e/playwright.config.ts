@@ -64,6 +64,11 @@ export default defineConfig({
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
     },
+    // Microsoft Edge (kurulu kanal) yalnız istenince: Sauce elle turunun "Windows 11 · Edge" satırı
+    // (.sauce/duman.yml, TP_PW_EDGE=1). Yerel/CI koşuları Edge kurulu olmayan runner'da bu projeyi görmez.
+    ...(process.env.TP_PW_EDGE === "1"
+      ? [{ name: "msedge", use: { ...devices["Desktop Edge"], channel: "msedge" } }]
+      : []),
   ],
   webServer: externalServer
     ? undefined

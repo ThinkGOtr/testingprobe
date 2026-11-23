@@ -74,6 +74,8 @@ IZINLI_IS_AKISLARI = frozenset(
         "mobil-ios.yml",
         "masaustu-windows.yml",
         "web-java.yml",
+        # Elle Sauce Labs turu (`service.SAUCE_IS_AKISI`; web + Android + iOS duman seti).
+        "sauce-demo.yml",
         # 014: (platform, dil) iş akışları (`platform.CATILAR` `gh_is_akisi`; Ş5 müşteri CI dahil).
         *(
             f"{c.gh_is_akisi}.yml"

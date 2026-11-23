@@ -29,7 +29,8 @@ from tp_core.models.delivery import TestResult
 from tp_core.models.requirements import EMPTY_LIST, EMPTY_OBJ
 
 # `manual`: portaldan elle koşu (specs/012-rol-yetki `run.trigger_manual`; 0021).
-CI_TETIK = frozenset({"pr", "push", "nightly", "deploy", "manual"})
+# `sauce`: elle Sauce Labs turu (yalnız GitHub kipi; `sauce-demo.yml`; 0051).
+CI_TETIK = frozenset({"pr", "push", "nightly", "deploy", "manual", "sauce"})
 CI_KAYNAK = frozenset({"local", "github"})
 
 

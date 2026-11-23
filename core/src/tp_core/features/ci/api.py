@@ -4,6 +4,7 @@
 |---|---|---|
 | POST | `/ci/trigger` `{tetik: deploy\\|nightly}` | `run.trigger_scheduled` — 202 `{job_id, run_id, …}` |
 | POST | `/ci/trigger` `{tetik: manual}` | `run.trigger_manual` — developer `TP_ORTAM=prod` iken 403 |
+| POST | `/ci/trigger` `{tetik: sauce}` | `run.trigger_scheduled` — elle Sauce Labs turu (yalnız GitHub kipi; `ortam` verilmez) |
 | GET  | `/environments` | `run.read` — projenin Home test ortamları ve varsayılanı (0048) |
 | GET  | `/runs?tetik=&kaynak=&sonuc=&pr_no=&script_id=&depo=&ortam=&limit=&offset=` | `run.read` |
 | GET  | `/runs/{id}` | `run.read` — testler, süreler, artefakt bağlantıları |
@@ -48,13 +49,16 @@ Tetikler = Annotated[
     Principal, Depends(izinlerden_biri("run.trigger_scheduled", "run.trigger_manual"))
 ]
 
-TetikSec = Literal["pr", "push", "nightly", "deploy", "break_verify", "local_check", "manual"]
+TetikSec = Literal[
+    "pr", "push", "nightly", "deploy", "break_verify", "local_check", "manual", "sauce"
+]
 
 
 class TetikGirdisi(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    tetik: Literal["deploy", "nightly", "manual"]
+    # sauce: elle Sauce Labs turu (yalnız GitHub kipi; `run.trigger_scheduled`).
+    tetik: Literal["deploy", "nightly", "manual", "sauce"]
     # 0048: Home ortam kimliği (12 hex); verilmezse projenin varsayılan ortamı.
     ortam: str | None = Field(default=None, pattern=r"^[0-9a-f]{12}$")
 
@@ -85,6 +89,10 @@ def ci_trigger(
         raise yetki.reddet(session, user, izin_adi, "prod_ortam", request.url.path)
     if body.tetik == "nightly" and body.ortam:
         raise HTTPException(422, "Gece koşusu yalnız projenin varsayılan ortamında koşar")
+    if body.tetik == "sauce" and body.ortam:
+        raise HTTPException(
+            422, "Sauce Labs turu test ortamı seçmez: uygulama CI runner'ında başlatılır"
+        )
     try:
         test_ortami = ortamlar.sec(body.ortam)
     except ortamlar.OrtamBulunamadi as exc:

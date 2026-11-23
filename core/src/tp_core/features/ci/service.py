@@ -123,10 +123,20 @@ GITHUB_OLAY = {
     "deploy": ("repository_dispatch",),
     # Elle koşu (specs/012-rol-yetki: `run.trigger_manual`) ci.yml workflow_dispatch `tetik=manual`.
     "manual": ("workflow_dispatch",),
+    # Elle Sauce Labs turu: kendi iş akışı (`SAUCE_IS_AKISI`) workflow_dispatch `tetik=sauce`.
+    "sauce": ("workflow_dispatch",),
 }
 # Kullanıcının portaldan başlattığı tetikler (`POST /ci/trigger`); koşu `run.tetik`'ine aynen
 # yazılır (`manual` deploy gibi main'in head'inde koşar).
-ELLE_TETIKLER = ("deploy", "nightly", "manual")
+ELLE_TETIKLER = ("deploy", "nightly", "manual", "sauce")
+# Elle Sauce Labs turu (Koşular › "Sauce Labs turunu başlat"): demo deposunun ayrı iş akışı; web
+# (Windows 11 · Chromium / Edge) + Android emülatör + iOS simülatör duman seti Sauce'ta. Push, gece
+# ve deploy koşuları Sauce'u kullanmaz (deneme hesabı dakikası). Sonuç `sauce` işinin
+# `sauce-results` artefaktında (sauce.json + junit.xml + ci-meta.json).
+SAUCE_TETIK = "sauce"
+SAUCE_IS_AKISI = "sauce-demo.yml"
+SAUCE_CHECK = "sauce"
+SAUCE_PLATFORMLARI = ("web", "android", "ios")
 GITHUB_SONUC = {
     "success": "passed",
     "failure": "failed",
@@ -561,6 +571,8 @@ def gh_is_akisi(run: Run) -> dict[str, str]:
     `workflow_dispatch` ile aynı dosyaya gider), web + Java `web-java.yml` (011 §2.8)."""
     from tp_core.integrations.forge import GITHUB_PLATFORM_WORKFLOWS, WEB_JAVA_WORKFLOW
 
+    if run.tetik == SAUCE_TETIK:
+        return {"workflow": SAUCE_IS_AKISI}
     p = kosu_platformu(run)
     if (ad := _yeni_dil_is_adi(run)) is not None:
         return {"workflow": f"{ad}.yml"}
@@ -582,6 +594,8 @@ def gh_sonuc_artefakti(run: Run) -> str:
     (.github/CI.md "Uygulama iş akışları"; web + Java'da `web-java-results`)."""
     from tp_core.integrations.forge import GITHUB_PLATFORM_CHECKS, WEB_JAVA_CHECK
 
+    if run.tetik == SAUCE_TETIK:
+        return SAUCE_ARTIFACT
     p = kosu_platformu(run)
     if (ad := _yeni_dil_is_adi(run)) is not None:
         return f"{ad}-results"
@@ -601,6 +615,8 @@ def gh_check_adi(run: Run) -> str:
         WEB_JAVA_CHECK,
     )
 
+    if run.tetik == SAUCE_TETIK:
+        return SAUCE_CHECK
     p = kosu_platformu(run)
     if (ad := _yeni_dil_is_adi(run)) is not None:
         return ad
@@ -638,10 +654,23 @@ def trigger_manual(
     API'dedir (`run.trigger_scheduled` / `run.trigger_manual`).
     """
     if tetik not in ELLE_TETIKLER:
-        raise CiError("tetik yalnızca deploy | nightly | manual olabilir")
-    # 0048: `ortam` verilmezse projenin varsayılan ortamı (yoksa ortamsız).
-    test_ortami = _kosu_ortami_sec(ortam)
-    sonuc = _enqueue(session, None, tetik, isteyen=isteyen, dispatch=True, ortam=test_ortami)
+        raise CiError("tetik yalnızca deploy | nightly | manual | sauce olabilir")
+    if tetik == SAUCE_TETIK and _kaynak() != "github":
+        raise CiError(
+            "Sauce Labs turu yalnız GitHub kipinde koşar (demo deposunun sauce-demo iş akışı)"
+        )
+    # 0048: `ortam` verilmezse projenin varsayılan ortamı (yoksa ortamsız). Sauce turu uygulamayı
+    # runner'da kendisi başlatır: Home ortamı yoktur. Dil sabit `ts` (dil kardeşi dağıtılmaz).
+    test_ortami = None if tetik == SAUCE_TETIK else _kosu_ortami_sec(ortam)
+    sonuc = _enqueue(
+        session,
+        None,
+        tetik,
+        isteyen=isteyen,
+        dispatch=True,
+        ortam=test_ortami,
+        **({"dil": platformlar.TS} if tetik == SAUCE_TETIK else {}),
+    )
     # 0046: elle gece koşusu da ayrı platform depolarında ayrı tetiklenir (aynı işlemde).
     platform_kosulari: list[dict[str, Any]] = []
     if tetik == "nightly":
@@ -679,6 +708,12 @@ def trigger_manual(
             "repository_dispatch (deploy)" if tetik == "deploy" else f"workflow_dispatch ({tetik})"
         )
         mesaj = f"GitHub Actions tetikleniyor: {olay}; sonuç GitHub API'den alınacak."
+        if tetik == SAUCE_TETIK:
+            mesaj = (
+                "Sauce Labs turu başlatıldı: web (Windows 11 · Chromium ve Edge), Android emülatör "
+                "ve iOS simülatörde kısa duman testleri. Sonuç ve Sauce video bağlantıları koşu "
+                "bitince bu listede görünür."
+            )
         durum = "queued"
     else:
         mesaj = f"Yerel CI ({tetik}) main üzerinde kuyruğa alındı."
@@ -1728,7 +1763,13 @@ def _sauce_bilgisi(
                     urls.extend(_urlleri_topla(veri))
         except GitHubCiError as exc:
             log.warning("sauce artefaktı okunamadı: %s", exc)
-    urls = sorted({u for u in urls if SAUCE_URL_RE.fullmatch(u)})[:20]
+    platformlar = sauce_platformlari(ozet.get("platformlar"))
+    urls.extend(i["url"] for p in platformlar for i in p["isler"])
+    # Önce özetin ilk iş bağlantısı (elle turda ilk platformun ilk işi), sonra sıralı kalanlar.
+    ilk = ozet.get("job_url") if isinstance(ozet.get("job_url"), str) else None
+    urls = sorted({u for u in urls if SAUCE_URL_RE.fullmatch(u)})[:40]
+    if ilk in urls:
+        urls = [ilk, *(u for u in urls if u != ilk)]
     if is_ is None and not urls and not ozet:
         return None
     durum = ozet.get("durum")
@@ -1737,9 +1778,63 @@ def _sauce_bilgisi(
         "urls": urls,
         "is_sonucu": (is_ or {}).get("conclusion"),
         "is_url": (is_ or {}).get("html_url"),
-        "durum": durum if durum in ("passed", "failed", "error", "atlandi") else None,
+        "durum": durum if durum in SAUCE_DURUMLARI else None,
         "neden": temiz(ozet.get("neden"), 300) if ozet.get("neden") else None,
+        # Elle Sauce turu (sauce-demo.yml): platform satırları (web Chromium/Edge, Android, iOS).
+        **({"platformlar": platformlar} if platformlar else {}),
     }
+
+
+SAUCE_DURUMLARI = ("passed", "failed", "error", "atlandi")
+SAUCE_ETIKET_RE = re.compile(r"^[^\x00-\x1f<>]{1,60}$")
+
+
+def sauce_platformlari(ham: Any) -> list[dict[str, Any]]:
+    """`sauce.json` `platformlar[]` (scripts/github-sauce-tur-ozeti.py) → doğrulanmış satırlar.
+
+    Güvenilmeyen CI çıktısıdır: platform yalnız web | android | ios, etiket kısa düz metin, durum
+    bilinen küme, sayılar negatif olmayan tamsayı, iş bağlantıları yalnız `SAUCE_URL_RE`. En çok 8
+    satır, satır başına 20 iş."""
+    if not isinstance(ham, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for p in ham[:8]:
+        if not isinstance(p, Mapping) or p.get("platform") not in SAUCE_PLATFORMLARI:
+            continue
+        etiket = temiz(p.get("etiket"), 60) if isinstance(p.get("etiket"), str) else None
+        if not etiket or not SAUCE_ETIKET_RE.fullmatch(etiket):
+            etiket = str(p["platform"])
+        durum = p.get("durum") if p.get("durum") in SAUCE_DURUMLARI else "error"
+        sayilar = {
+            k: v if isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= 10_000 else 0
+            for k in ("toplam", "gecen", "basarisiz", "atlanan")
+            for v in (p.get(k),)
+        }
+        isler = []
+        for i in (p.get("isler") or [])[:20] if isinstance(p.get("isler"), list) else []:
+            if not isinstance(i, Mapping):
+                continue
+            url = i.get("url")
+            if not isinstance(url, str) or not SAUCE_URL_RE.fullmatch(url):
+                continue
+            isler.append(
+                {
+                    "ad": temiz(i.get("ad"), 120) if isinstance(i.get("ad"), str) else None,
+                    "url": url,
+                    "durum": i.get("durum") if i.get("durum") in ("passed", "failed") else None,
+                }
+            )
+        out.append(
+            {
+                "platform": p["platform"],
+                "etiket": etiket,
+                "durum": durum,
+                "neden": temiz(p.get("neden"), 300) if isinstance(p.get("neden"), str) else None,
+                **sayilar,
+                "isler": isler,
+            }
+        )
+    return out
 
 
 def _urlleri_topla(veri: Any, derinlik: int = 0) -> list[str]:

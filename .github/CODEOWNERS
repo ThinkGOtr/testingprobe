@@ -40,3 +40,4 @@
 
 # Ruleset betiği.
 /scripts/github-*.sh        @gokhansipahi
+/scripts/github-*.py        @gokhansipahi

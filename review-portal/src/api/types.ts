@@ -1543,7 +1543,8 @@ export interface KodDilleri {
 // ---------------------------------------------------------------- Koşular
 
 /** core `run.tetik` (enums.RUN_TETIK; CI workflow `trigger` girdisiyle ortak liste). */
-export type Tetik = "pr" | "push" | "nightly" | "deploy" | "break_verify" | "local_check" | "manual";
+/** `sauce`: Koşular › "Sauce Labs turunu başlat" (web Chromium/Edge + Android + iOS duman seti Sauce'ta). */
+export type Tetik = "pr" | "push" | "nightly" | "deploy" | "break_verify" | "local_check" | "manual" | "sauce";
 export type KosuKaynagi = "local" | "github" | "sauce";
 
 export interface Kosu {
@@ -1670,8 +1671,24 @@ export interface KosuHatasi {
   ozet: string | null;
 }
 
+/** Elle Sauce turunun bir satırı (core `artefaktlar.sauce.platformlar[]`, sauce.json). */
+export interface SaucePlatformu {
+  platform: "web" | "android" | "ios";
+  /** Görünen ad: "Windows 11 · Chromium", "Windows 11 · Edge", "Android · emülatör", "iOS · simülatör". */
+  etiket: string;
+  durum: "passed" | "failed" | "error" | "atlandi";
+  neden: string | null;
+  toplam: number;
+  gecen: number;
+  basarisiz: number;
+  /** Sauce iş sayfaları (video + log); ad = test ya da suite adı. */
+  isler: { ad: string | null; url: string; durum: "passed" | "failed" | null }[];
+}
+
 export interface KosuDetay extends Kosu {
   sonuclar: TestSonucu[];
+  /** Elle Sauce turu: platform satırları (yoksa yok/boş). */
+  sauce_platformlari?: SaucePlatformu[] | null;
   /** Triage kayıtları (core göndermiyorsa sonuçlardaki `failure_id`'lerden türetilir). */
   hatalar?: KosuHatasi[];
   /** Koşu günlüğü (test-runner stdout) ve core'un koşu uyarıları. */

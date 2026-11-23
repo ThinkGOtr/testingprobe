@@ -98,6 +98,14 @@ Raporlama hatası testi ya da koşuyu düşürmez: uyarı günlüğe yazılır, 
 | `bayi.kilit.ms` | `BAYI_KILIT_MS` | `40000` | bayi kilidi bekleme |
 | `kimlik.android` / `.ios` / `.windows` | `KIMLIK_*` | plan §2.2 | `id` \| `erisilebilirlik` \| `uiautomator` (yalnız Android) |
 
+**Sauce Labs sanal cihazı** (elle Sauce turu, `.github/workflows/sauce-demo.yml`): `APPIUM_URL`
+`https://ondemand.<bölge>.saucelabs.com:443/wd/hub` olunca `altyapi/SauceLabs.java` oturuma
+`sauce:options` ekler — kimlik yalnız ortamdan (`SAUCE_USERNAME`, `SAUCE_ACCESS_KEY`; günlüğe yazılmaz),
+`SAUCE_TUNNEL_NAME`, `SAUCE_BUILD`, `SAUCE_APPIUM_VERSION` (varsayılan `latest`); iş adı
+`Sınıf.metot`. Test bitince iş sonucu (`sauce:job-result`) yazılır ve oturum kimliği
+`SAUCE_OTURUM_DOSYASI`'na (JSON satırı) eklenir. Uygulama `APP_PATH=storage:<id>`, cihaz
+`DEVICE_NAME` + `PLATFORM_VERSION`.
+
 ## Altyapı kuralları
 
 - **Kimlik → seçici yalnızca `Kimlik.bul(id)`** (plan §2.2): Android `AppiumBy.id` (RN testID →

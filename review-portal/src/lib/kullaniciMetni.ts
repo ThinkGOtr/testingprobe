@@ -18,6 +18,7 @@ const TETIK_ADI: Record<string, string> = {
   nightly: "gece",
   pr: "PR",
   manual: "elle",
+  sauce: "Sauce Labs turu",
 };
 
 /** "SAUCE_TETIKLER=push,deploy,nightly" → "Bu koşu türünde Sauce çalıştırılmıyor (Sauce yalnız şu tetiklerde: …)". */

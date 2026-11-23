@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
-import type { BasarisizOzeti, HataSinifi, Kosu, KosuDetay as KosuDetayTuru, KosuHatasi, KosuKaynagi, Tetik } from "../api/types";
+import type { BasarisizOzeti, HataSinifi, Kosu, KosuDetay as KosuDetayTuru, KosuHatasi, KosuKaynagi, SaucePlatformu, Tetik } from "../api/types";
 import { useIzin, useOturum, usePlatformlar } from "../auth";
 import { normalizeRol } from "../lib/yetki";
 import { useBildirim } from "../components/Bildirim";
@@ -315,6 +315,8 @@ export const ARTEFAKT_MASKELI = "Ham artefaktlar bu rolde görünmez";
 export const MANUEL_PROD_ENGELI = "Geliştirici prod ortamında manuel koşu başlatamaz (üretim ortamı).";
 const DEPLOY_ACIKLAMASI =
   "Müşterinin deploy hattının yükleme bitince göndereceği sinyali taklit eder ve testleri koşturur; uygulamayı hiçbir yere yüklemez.";
+export const SAUCE_ACIKLAMASI =
+  "Kısa duman testlerini (giriş, sepete ekleme, sipariş) Sauce Labs bulutunda koşturur: web (Windows 11 · Chromium ve Edge), Android emülatör ve iOS simülatör. Sonuç ve her platformun Sauce video bağlantısı koşu bitince görünür (yaklaşık 15–25 dk). Push, gece ve deploy koşuları Sauce'u kullanmaz.";
 
 /**
  * Koşunun Sauce Labs durumu (GitHub kipinde Sauce, koşunun içindeki bir job'dur: `sauce_durum`).
@@ -398,6 +400,7 @@ export function Kosular() {
   const geceIslem = useIslem();
   const deployIslem = useIslem();
   const manuelIslem = useIslem();
+  const sauceIslem = useIslem();
   // core: deploy/nightly `run.trigger_scheduled` (Otomasyon Mühendisi); manual `run.trigger_manual`
   // (Otomasyon Mühendisi, Geliştirici; developer prod'da 403 → core'un mesajı gösterilir).
   const zamanliTetik = useIzin("run.trigger_scheduled");
@@ -470,21 +473,25 @@ export function Kosular() {
   // Ortam süzgeci: projede ortam varsa, koşulardan biri ortam taşıyorsa ya da adreste seçim varsa.
   const ortamSuzgecVar = ortam.ortamlar.length > 0 || tum.some((k) => k.test_ortami) || !!ortamSecimi;
 
-  const tetikle = async (tetik: "deploy" | "nightly" | "manual") => {
-    const islemler = { deploy: deployIslem, nightly: geceIslem, manual: manuelIslem };
+  const tetikle = async (tetik: "deploy" | "nightly" | "manual" | "sauce") => {
+    const islemler = { deploy: deployIslem, nightly: geceIslem, manual: manuelIslem, sauce: sauceIslem };
     for (const [t, i] of Object.entries(islemler)) if (t !== tetik) i.temizle();
     // Ortam yalnız projede ortam varsa gönderilir. Gece koşusu her zaman varsayılan ortamda koşar
-    // (zamanlanmış koşuyla aynı): `ortam` yazılmaz, core varsayılanı kullanır.
-    const ortamEid = ortam.ortamlar.length > 0 && tetik !== "nightly" && seciliTetikOrtami ? seciliTetikOrtami : undefined;
+    // (zamanlanmış koşuyla aynı): `ortam` yazılmaz, core varsayılanı kullanır. Sauce turu ortam
+    // seçmez (uygulama CI runner'ında başlar).
+    const ortamEid =
+      ortam.ortamlar.length > 0 && tetik !== "nightly" && tetik !== "sauce" && seciliTetikOrtami ? seciliTetikOrtami : undefined;
     const s = await islemler[tetik].calistir(() => (ortamEid === undefined ? api.ciTetikle(tetik) : api.ciTetikle(tetik, ortamEid)));
     if (s) {
       const ortamEki = s.test_ortami ? ` (${ortamMetni("ortam")}: ${s.test_ortami.ad})` : "";
       bildir(s.mesaj ?? "Koşu tetiklendi.");
-      setSonTetik(`${s.mesaj ?? `${tetik === "deploy" ? "Deploy" : tetik === "manual" ? "Manuel" : "Gece"} koşusu tetiklendi.`}${ortamEki}`);
+      setSonTetik(
+        `${s.mesaj ?? `${tetik === "deploy" ? "Deploy" : tetik === "manual" ? "Manuel" : tetik === "sauce" ? "Sauce Labs" : "Gece"} koşusu tetiklendi.`}${ortamEki}`,
+      );
       void v.yenile(true);
     }
   };
-  const tetikHatasi = [geceIslem, deployIslem, manuelIslem].find((i) => i.hata);
+  const tetikHatasi = [geceIslem, deployIslem, manuelIslem, sauceIslem].find((i) => i.hata);
 
   return (
     <>
@@ -533,6 +540,20 @@ export function Kosular() {
                   Deploy sonrası testleri koş
                 </IslemDugmesi>
               )}
+              {zamanliTetik && (
+                <IslemDugmesi
+                  izin="run.trigger_scheduled"
+                  tur="ikincil"
+                  calisiyor={sauceIslem.calisiyor}
+                  title={SAUCE_ACIKLAMASI}
+                  aria-describedby="kosular-sauce-aciklama"
+                  nedenGizli
+                  data-testid="sauce-turu-dugmesi"
+                  onClick={() => tetikle("sauce")}
+                >
+                  Sauce Labs turunu başlat
+                </IslemDugmesi>
+              )}
             </>
           )
         }
@@ -552,6 +573,11 @@ export function Kosular() {
           {zamanliTetik && (
             <li id="kosular-deploy-aciklama">
               <strong>Deploy sonrası testleri koş:</strong> {DEPLOY_ACIKLAMASI}
+            </li>
+          )}
+          {zamanliTetik && (
+            <li id="kosular-sauce-aciklama">
+              <strong>Sauce Labs turunu başlat:</strong> {SAUCE_ACIKLAMASI}
             </li>
           )}
         </ul>
@@ -757,6 +783,86 @@ function PlatformKontrolleri({ k }: { k: KosuDetayTuru }) {
   );
 }
 
+const SAUCE_PLATFORM_DURUMU: Record<SaucePlatformu["durum"], { etiket: string; ton: "basari" | "hata" | "uyari" | "notr" }> = {
+  passed: { etiket: "Geçti", ton: "basari" },
+  failed: { etiket: "Kırmızı", ton: "hata" },
+  error: { etiket: "Koşmadı", ton: "uyari" },
+  atlandi: { etiket: "Atlandı", ton: "notr" },
+};
+
+/**
+ * Elle Sauce turu (tetik `sauce`): platform başına satır — etiket, durum, geçen/toplam ve Sauce iş
+ * sayfaları (video + log). Sauce iş sayfası Sauce hesabıyla açılır.
+ */
+export function SauceTuru({ k }: { k: Pick<KosuDetayTuru, "sauce_platformlari" | "tetik" | "durum"> }) {
+  const pl = k.sauce_platformlari ?? [];
+  if (pl.length === 0) {
+    if (k.tetik !== "sauce") return null;
+    return (
+      <Kart baslik="Sauce Labs turu">
+        <p className="kucuk soluk" data-testid="sauce-turu-bos">
+          {k.durum === "queued" || k.durum === "running"
+            ? "Tur sürüyor: uygulama derlemeleri ve Sauce oturumları bitince platform sonuçları ve video bağlantıları burada görünür."
+            : "Bu turun platform sonuçları okunamadı; ayrıntı için CI işine bakın."}
+        </p>
+      </Kart>
+    );
+  }
+  return (
+    <Kart baslik="Sauce Labs turu">
+      <p className="kucuk soluk">Her satır Sauce Labs'te ayrı bir ortamdır. Bağlantılar Sauce iş sayfasını açar (video, ekran görüntüleri ve günlük).</p>
+      <div className="tablo-sarici" tabIndex={0} role="region" aria-label="Sauce Labs turu platformları">
+        <table className="tablo tablo-yigin" data-testid="sauce-turu">
+          <thead>
+            <tr>
+              <th scope="col">Platform</th>
+              <th scope="col">Durum</th>
+              <th scope="col" className="sayi">
+                Geçen / toplam
+              </th>
+              <th scope="col">Video ve kayıt</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pl.map((p) => {
+              const d = SAUCE_PLATFORM_DURUMU[p.durum];
+              return (
+                <tr key={`${p.platform}-${p.etiket}`} data-platform={p.platform}>
+                  <td data-etiket="Platform">
+                    <strong>{p.etiket}</strong>
+                  </td>
+                  <td data-etiket="Durum">
+                    <Cip ton={d.ton} title={p.neden ?? undefined}>
+                      {d.etiket}
+                    </Cip>
+                    {p.neden && p.durum !== "passed" && <div className="kucuk soluk">{p.neden}</div>}
+                  </td>
+                  <td className="sayi mono" data-etiket="Geçen / toplam">
+                    {p.gecen}/{p.toplam}
+                  </td>
+                  <td data-etiket="Video ve kayıt">
+                    {p.isler.length === 0 ? (
+                      <span className="soluk">—</span>
+                    ) : (
+                      <ul className="duz-liste">
+                        {p.isler.map((i, n) => (
+                          <li key={i.url}>
+                            <Baglanti href={i.url}>{`Video${p.isler.length > 1 ? ` ${n + 1}` : ""}${i.ad ? ` · ${i.ad}` : ""}`}</Baglanti>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Kart>
+  );
+}
+
 const githubaGider = (u: string | null | undefined) => Boolean(u && /^https:\/\/github\.com\//.test(u));
 
 /**
@@ -874,6 +980,7 @@ export function KosuDetay() {
       dikkat: k.basarisiz > 0,
       icerik: () => (
         <>
+          <SauceTuru k={k} />
           <HataListesi k={k} />
           <TestSonuclari k={k} />
         </>
@@ -983,7 +1090,10 @@ export function KosuDetay() {
                 <Uyari ton={k.sauce_durum === "error" ? "uyari" : "bilgi"} baslik={k.sauce_durum === "error" ? "Sauce koşmadı" : "Sauce atlandı"}>
                   {/* YD-07: "SAUCE_TETIKLER=…" gibi iç ayar adı kullanıcı cümlesine çevrilir; ham metin Teknik ayrıntı'da. */}
                   <KullaniciMetni ham={k.sauce_neden} yedek={k.sauce_durum === "error" ? "altyapı hatası" : "neden bildirilmedi"} />
-                  {k.sauce_durum === "error" && ". CI işi bilerek yeşil biter; Sauce sonucu bu koşuda yok."}
+                  {k.sauce_durum === "error" &&
+                    (k.tetik === "sauce"
+                      ? ". Koşmayan platformlar Sauce Labs turu tablosunda (Test sonuçları sekmesi)."
+                      : ". CI işi bilerek yeşil biter; Sauce sonucu bu koşuda yok.")}
                 </Uyari>
               </div>
             )}

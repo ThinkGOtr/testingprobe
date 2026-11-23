@@ -358,7 +358,14 @@ def _bakim_neden(f: Failure) -> str:
     }.get(f.sinif, "İnceleyin")
 
 
-TETIK_ADI = {"pr": "PR", "push": "Push", "nightly": "Gece", "deploy": "Dağıtım", "manual": "Elle"}
+TETIK_ADI = {
+    "pr": "PR",
+    "push": "Push",
+    "nightly": "Gece",
+    "deploy": "Dağıtım",
+    "manual": "Elle",
+    "sauce": "Sauce Labs",
+}
 
 
 def _kosu_adi(r: Run) -> str:

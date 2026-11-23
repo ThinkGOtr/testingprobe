@@ -118,7 +118,18 @@ public final class SurucuFabrikasi {
 
   /** Yeni Appium oturumu açar; örtük bekleme kapalıdır (yalnızca açık beklemeler, bkz. {@link Bekle}). */
   public static AppiumDriver olustur(Platform platform, Ayarlar ayarlar) {
+    return olustur(platform, ayarlar, null);
+  }
+
+  /**
+   * {@link #olustur(Platform, Ayarlar)}; Appium adresi Sauce Labs ise ({@link SauceLabs}) oturuma
+   * {@code sauce:options} (kimlik, tünel, derleme, iş adı = {@code isAdi}) eklenir.
+   */
+  public static AppiumDriver olustur(Platform platform, Ayarlar ayarlar, String isAdi) {
     BaseOptions<?> secenek = secenekler(platform, ayarlar);
+    if (SauceLabs.sauceAdresi(ayarlar.appiumUrl())) {
+      SauceLabs.ortamdan().uygula(secenek, isAdi);
+    }
     URL adres = adres(ayarlar.appiumUrl());
     AppiumDriver surucu;
     switch (platform) {

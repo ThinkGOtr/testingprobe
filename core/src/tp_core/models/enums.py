@@ -45,7 +45,10 @@ RUN_KAYNAK = frozenset({"local", "github", "sauce"})
 # Home proje ortamı türü (`prod` = Canlı); 0048 `run.ortam_turu`.
 ORTAM_TURU = frozenset({"dev", "test", "staging", "prod"})
 # CI ile ortak liste: .github/workflows/ci.yml `trigger` girdisi (workflow_dispatch → manual).
-RUN_TETIK = frozenset({"pr", "push", "nightly", "deploy", "break_verify", "local_check", "manual"})
+# `sauce`: Koşular › "Sauce Labs turunu başlat" (demo deposu `sauce-demo.yml`; 0051).
+RUN_TETIK = frozenset(
+    {"pr", "push", "nightly", "deploy", "break_verify", "local_check", "manual", "sauce"}
+)
 RUN_SONUC = frozenset({"queued", "running", "passed", "failed", "error"})
 TEST_SONUC = frozenset({"passed", "failed", "flaky", "skipped", "timedout"})
 FAILURE_SINIF = frozenset(

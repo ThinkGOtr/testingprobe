@@ -1,0 +1,627 @@
+# Sauce Labs ELLE TURU — AI'sız (Constitution II). TP Koşular › "Sauce Labs turunu başlat".
+#
+# Tek tetik: çekirdeğin `workflow_dispatch`'i (`tetik=sauce`, `istek_id=<run_id>`). PR, push, gece ve
+# deploy koşuları bu iş akışını ÇALIŞTIRMAZ (Sauce deneme hesabı dakikası korunur; ci.yml'deki `sauce`
+# job'u da yalnız SAUCE_TETIKLER'deki tetiklerde koşar, varsayılanı `sauce` = hiçbir ci.yml tetiği).
+#
+# Tur (kısa DUMAN seti; ayrıntı .sauce/duman.yml ve aşağıdaki SAUCE_MOBIL_TESTLER):
+#   web     Windows 11 · Chromium (giriş, sepete ekleme, sipariş) + Windows 11 · Edge (sipariş) —
+#           saucectl Playwright; yeni tarayıcı/OS satırı = .sauce/duman.yml'de yeni suite
+#   android Sauce Android emülatörü — Java + Appium testleri runner'da, oturum Sauce'ta
+#   ios     Sauce iOS simülatörü — aynı Java testleri
+# Uygulama (API + web) her platform işinde runner'da ayrı örnek olarak çalışır (platformlar veri
+# paylaşmaz); Sauce tarafı ona Sauce Connect tüneliyle `http://tp-demo.test:8081` adresinden ulaşır
+# (ad runner'da /etc/hosts ile 127.0.0.1; mobil derlemeye EXPO_PUBLIC_API_URL_* ile gömülür).
+#
+# Sonuç: `sauce` işi `sauce-results` artefaktına sauce.json (platformlar[], Sauce iş/video
+# bağlantıları, kota) + junit.xml + ci-meta.json yazar (çekirdek `_sauce_bilgisi`). Herhangi bir
+# platform kırmızıysa ya da koşmadıysa iş (ve koşu) kırmızıdır. Kalan dakika turdan önce ve sonra
+# Sauce REST'ten okunur (scripts/github-sauce-kota.sh; yalnız sayısal alanlar).
+name: sauce-demo
+run-name: >-
+  ${{ format('sauce-demo {0} [{1}]', inputs.tetik || 'sauce', inputs.istek_id || 'elle') }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      tetik:
+        description: "Tetik türü (yalnız sauce)"
+        type: choice
+        options: [sauce]
+        default: sauce
+      istek_id:
+        description: "Çekirdeğin istek kimliği (koşu adında görünür; [A-Za-z0-9._-], ≤64)"
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+# Tek tur aynı anda: ikinci tur ilki bitene kadar bekler (dakika ve eşzamanlılık sınırı).
+concurrency:
+  group: sauce-demo
+  cancel-in-progress: false
+
+env:
+  APP_ROOT: demo-app
+  NODE_VERSION: "22"
+  JAVA_VERSION: "17"
+  UV_VERSION: "0.8.24"
+  SAUCECTL_VERSION: v0.216.4
+  # saucectl / Sauce Connect / REST bölgesi: us-west-1 | eu-central-1 | us-east-4 (repo değişkeni)
+  SAUCE_REGION: ${{ vars.SAUCE_REGION || 'eu-central-1' }}
+  APP_HOST: tp-demo.test
+  APP_PORT: "8081"
+  # Mobil derlemeye gömülen API adresi (tünel üzerinden runner'daki uygulama; vite /api vekili).
+  MOBIL_API_URL: http://tp-demo.test:8081/api
+  # Mobil duman seti (surefire -Dtest): giriş + sipariş (sipariş testi sepete ekleme ve onayı içerir).
+  SAUCE_MOBIL_TESTLER: "GirisTesti#dogruBilgilerleGiris,SiparisTesti#siparisOnayVeGecmis"
+  TP_ISTEK_ID: ${{ inputs.istek_id || '' }}
+  TP_TRIGGER: ${{ inputs.tetik || 'sauce' }}
+
+jobs:
+  hazirlik:
+    name: hazirlik
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      enabled: ${{ steps.karar.outputs.enabled }}
+      reason: ${{ steps.karar.outputs.reason }}
+      kota: ${{ steps.kota.outputs.kota }}
+    env:
+      SAUCE_USERNAME: ${{ secrets.SAUCE_USERNAME }}
+      SAUCE_ACCESS_KEY: ${{ secrets.SAUCE_ACCESS_KEY }}
+      SAUCE_TETIKLER: ${{ vars.SAUCE_TETIKLER }}
+    steps:
+      - name: Karar
+        id: karar
+        run: |
+          set -euo pipefail
+          if [ -n "$TP_ISTEK_ID" ] && ! [[ "$TP_ISTEK_ID" =~ ^[A-Za-z0-9._-]{1,64}$ ]]; then
+            echo "::error::istek_id biçimi geçersiz ([A-Za-z0-9._-], en çok 64 karakter)"
+            exit 1
+          fi
+          tetikler=",${SAUCE_TETIKLER:-sauce},"
+          if [ "${tetikler#*,sauce,}" = "$tetikler" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "reason=Sauce turu kapalı (SAUCE_TETIKLER=${SAUCE_TETIKLER:-}; 'sauce' içermiyor)" >> "$GITHUB_OUTPUT"
+          elif [ -z "$SAUCE_USERNAME" ] || [ -z "$SAUCE_ACCESS_KEY" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "reason=Sauce kimliği (SAUCE_USERNAME / SAUCE_ACCESS_KEY secret'ları) tanımlı değil" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout (kota betiği)
+        if: steps.karar.outputs.enabled == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+
+      - name: Kalan Sauce dakikası (önce)
+        if: steps.karar.outputs.enabled == 'true'
+        id: kota
+        run: |
+          set -euo pipefail
+          k="$(bash scripts/github-sauce-kota.sh --region "$SAUCE_REGION")"
+          echo "kota=$k" >> "$GITHUB_OUTPUT"
+          echo "Sauce kota (önce): $k"
+          echo "Sauce kota (önce): \`$k\`" >> "$GITHUB_STEP_SUMMARY"
+
+  # ------------------------------------------------------------------ derlemeler (Sauce dakikası yok)
+  derle-android:
+    name: derle-android
+    needs: hazirlik
+    if: needs.hazirlik.outputs.enabled == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: APK önbelleği
+        id: onbellek
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: demo-app/mobile/build/bayi-siparis.apk
+          key: sauce-apk-v1-${{ hashFiles('demo-app/mobile/**') }}-${{ env.MOBIL_API_URL }}
+
+      - name: Java kurulumu
+        if: steps.onbellek.outputs.cache-hit != 'true'
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Node kurulumu
+        if: steps.onbellek.outputs.cache-hit != 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: demo-app/mobile/package-lock.json
+
+      # Sauce Android emülatörleri x86_64 ("ARM" adlı cihazlar hariç).
+      - name: APK derle (x86_64, API → tünel)
+        if: steps.onbellek.outputs.cache-hit != 'true'
+        env:
+          ANDROID_ABI: x86_64
+          TEMIZ: "1"
+          EXPO_PUBLIC_API_URL_ANDROID: ${{ env.MOBIL_API_URL }}
+        run: |
+          set -euo pipefail
+          echo "ANDROID_HOME=${ANDROID_HOME:?runner imajında ANDROID_HOME yok}"
+          bash demo-app/mobile/scripts/derle-android.sh
+
+      - name: APK artefaktı
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sauce-uygulama-android
+          retention-days: 1
+          if-no-files-found: error
+          path: demo-app/mobile/build/bayi-siparis.apk
+
+  derle-ios:
+    name: derle-ios
+    needs: hazirlik
+    if: needs.hazirlik.outputs.enabled == 'true'
+    # mobil-ios.yml ile aynı imaj (Expo SDK 58 / RN 0.88 yeni Xcode ister).
+    runs-on: xcode-27
+    timeout-minutes: 75
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: .app önbelleği
+        id: onbellek
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: demo-app/mobile/build/BayiSiparis-sim.zip
+          key: sauce-ios-v1-${{ hashFiles('demo-app/mobile/**') }}-${{ env.MOBIL_API_URL }}
+
+      - name: Xcode seçimi
+        if: steps.onbellek.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          xcode="$(find /Applications -maxdepth 1 -name 'Xcode_*.app' -type d \
+            | grep -viE 'beta|release_candidate|_rc' | sort -V | tail -n 1)"
+          [ -d "$xcode" ] || { echo "::error::Xcode bulunamadı"; exit 1; }
+          sudo xcode-select -s "$xcode/Contents/Developer"
+          xcodebuild -version
+
+      - name: Node kurulumu
+        if: steps.onbellek.outputs.cache-hit != 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: demo-app/mobile/package-lock.json
+
+      # Sauce iOS simülatör ana makineleri hem Apple silicon hem Intel olabilir: evrensel simülatör
+      # derlemesi (arm64 + x86_64). Sauce .app'i zip olarak ister.
+      - name: .app derle (simülatör, evrensel) ve zip
+        if: steps.onbellek.outputs.cache-hit != 'true'
+        env:
+          IOS_ARCHS: arm64 x86_64
+          TEMIZ: "1"
+          EXPO_PUBLIC_API_URL_IOS: ${{ env.MOBIL_API_URL }}
+        run: |
+          set -euo pipefail
+          bash demo-app/mobile/scripts/derle-ios.sh
+          cd demo-app/mobile/build
+          ditto -c -k --sequesterRsrc --keepParent BayiSiparis.app BayiSiparis-sim.zip
+
+      # Uyum: .app'in en düşük iOS sürümü Sauce'taki simülatör sürümünden (SAUCE_IOS_SURUM) büyük olmamalı.
+      - name: Dağıtım hedefi (MinimumOSVersion)
+        run: |
+          set -euo pipefail
+          d="$(mktemp -d)"
+          ditto -x -k demo-app/mobile/build/BayiSiparis-sim.zip "$d"
+          min="$(/usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$d/BayiSiparis.app/Info.plist")"
+          mim="$(lipo -archs "$d/BayiSiparis.app/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$d/BayiSiparis.app/Info.plist")")"
+          echo "MinimumOSVersion=$min · mimari: $mim"
+          echo "iOS .app: MinimumOSVersion \`$min\`, mimari \`$mim\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: .app artefaktı
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sauce-uygulama-ios
+          retention-days: 1
+          if-no-files-found: error
+          path: demo-app/mobile/build/BayiSiparis-sim.zip
+
+  # ------------------------------------------------------------------ Sauce: web
+  sauce-web:
+    name: sauce-web
+    needs: hazirlik
+    if: needs.hazirlik.outputs.enabled == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      SAUCE_USERNAME: ${{ secrets.SAUCE_USERNAME }}
+      SAUCE_ACCESS_KEY: ${{ secrets.SAUCE_ACCESS_KEY }}
+      TP_TESTVERI_DEMO_PAROLA: ${{ secrets.TP_TESTVERI_DEMO_PAROLA }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Node kurulumu
+        id: node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: demo-app/web/package-lock.json
+
+      - name: uv kurulumu
+        id: uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: demo-app/api/uv.lock
+
+      - name: Uygulamayı runner'da başlat
+        id: app
+        run: |
+          set -euo pipefail
+          echo "127.0.0.1 $APP_HOST" | sudo tee -a /etc/hosts >/dev/null
+          token="$(openssl rand -hex 24)"
+          echo "::add-mask::$token"
+          echo "DEMOAPP_TEST_TOKEN=$token" >> "$GITHUB_ENV"
+          mkdir -p results/sauce
+          PORT="$APP_PORT" TP_ALLOWED_HOSTS="$APP_HOST" DEMOAPP_TEST_TOKEN="$token" \
+            nohup bash scripts/github-demo-serve.sh > results/sauce/serve.log 2>&1 &
+          for _ in $(seq 1 90); do
+            curl -fsS "http://$APP_HOST:$APP_PORT/api/health" >/dev/null 2>&1 && exit 0
+            sleep 2
+          done
+          echo "::error::Uygulama 180 sn içinde hazır olmadı"; tail -n 100 results/sauce/serve.log; exit 1
+
+      - name: Tünel adı
+        id: tunel
+        run: echo "ad=tp-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-web" >> "$GITHUB_OUTPUT"
+
+      - name: Sauce Connect tüneli
+        id: tunnel
+        uses: saucelabs/sauce-connect-action@fc54c8b087f2b4b6d4ccc42a2d4bbc64795dfde2 # v3.0.0
+        with:
+          username: ${{ secrets.SAUCE_USERNAME }}
+          accessKey: ${{ secrets.SAUCE_ACCESS_KEY }}
+          region: ${{ env.SAUCE_REGION }}
+          tunnelName: ${{ steps.tunel.outputs.ad }}
+          proxyLocalhost: allow
+
+      - name: saucectl kurulumu
+        id: saucectl
+        uses: saucelabs/saucectl-run-action@283660aa934c02723c497efa151d582a3acc5801 # v4.5.0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          saucectl-version: ${{ env.SAUCECTL_VERSION }}
+          skip-run: "true"
+
+      - name: Sauce'ta Playwright (duman satırları)
+        id: run
+        working-directory: demo-app
+        env:
+          TUNNEL: ${{ steps.tunel.outputs.ad }}
+          BUILD: ${{ github.event.repository.name }}-${{ github.run_number }}-sauce
+        run: |
+          set -euo pipefail
+          bitis=$((SECONDS + 10 * 60))
+          while :; do
+            rc=0
+            saucectl run --config .sauce/duman.yml --region "$SAUCE_REGION" \
+              --tunnel-name "$TUNNEL" --tunnel-timeout 2m --build "$BUILD" \
+              -e "BASE_URL=http://$APP_HOST:$APP_PORT" -e "TP_EXTERNAL_SERVER=1" \
+              -e "DEMOAPP_TEST_TOKEN=$DEMOAPP_TEST_TOKEN" \
+              -e "TP_TESTVERI_DEMO_PAROLA=$TP_TESTVERI_DEMO_PAROLA" \
+              -e "TP_SAUCE=1" -e "TP_TRIGGER=$TP_TRIGGER" \
+              2>&1 | tee ../results/sauce/saucectl.log || rc=${PIPESTATUS[0]}
+            if [ "$rc" = 0 ] || ! grep -q "concurrent session limit" ../results/sauce/saucectl.log \
+              || [ "$SECONDS" -ge "$bitis" ]; then
+              break
+            fi
+            echo "::notice::Sauce eşzamanlı oturum sınırı dolu; 30 sn sonra yeniden"
+            sleep 30
+          done
+          echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
+
+      - name: Platform özeti
+        if: always()
+        env:
+          SAUCE_EXIT: ${{ steps.run.outputs.exit_code }}
+          ALTYAPI: >-
+            ${{ steps.node.outcome == 'failure' && 'Node kurulumu ' || '' }}${{ steps.uv.outcome == 'failure' && 'uv kurulumu ' || '' }}${{ steps.app.outcome == 'failure' && 'uygulama başlatma ' || '' }}${{ steps.tunnel.outcome == 'failure' && 'Sauce Connect tüneli ' || '' }}${{ steps.saucectl.outcome == 'failure' && 'saucectl kurulumu' || '' }}
+        run: |
+          set -euo pipefail
+          neden=""
+          [ -z "$(echo "$ALTYAPI" | xargs)" ] || neden="başarısız altyapı adımı: $(echo "$ALTYAPI" | xargs)"
+          python3 scripts/github-sauce-tur-ozeti.py web --out tp-sauce/web \
+            --report demo-app/results/sauce/saucectl-report.json \
+            --junit demo-app/results/sauce/saucectl-junit.xml --log results/sauce/saucectl.log \
+            --suite Windows-11-Chromium --suite Windows-11-Edge \
+            --exit-code "${SAUCE_EXIT:-1}" --region "$SAUCE_REGION" --neden-altyapi "$neden"
+          cp results/sauce/saucectl.log results/sauce/serve.log tp-sauce/web/ 2>/dev/null || true
+          find tp-sauce -type l -delete
+          for s in "${DEMOAPP_TEST_TOKEN:-}" "${SAUCE_ACCESS_KEY:-}"; do
+            [ -n "$s" ] || continue
+            { grep -rlF -- "$s" tp-sauce || true; } | while read -r f; do
+              python3 -c 'import sys,pathlib;p=pathlib.Path(sys.argv[1]);p.write_text(p.read_text(errors="replace").replace(sys.argv[2],"***"))' "$f" "$s"
+            done
+          done
+
+      - name: Platform artefaktı
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sauce-platform-web
+          retention-days: 14
+          if-no-files-found: warn
+          path: tp-sauce/web/
+
+  # ------------------------------------------------------------------ Sauce: Android + iOS
+  sauce-mobil:
+    name: sauce-${{ matrix.platform }}
+    needs: [hazirlik, derle-android, derle-ios]
+    # Bir platformun derlemesi düşse de diğeri koşar (adımda derleme sonucu denetlenir).
+    if: always() && needs.hazirlik.outputs.enabled == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: android
+            etiket: "Android · emülatör"
+            dosya: bayi-siparis.apk
+            cihaz: Google Pixel 9 Emulator
+            surum: "16.0"
+          - platform: ios
+            etiket: "iOS · simülatör"
+            dosya: BayiSiparis-sim.zip
+            cihaz: iPhone 16 Pro Max Simulator
+            surum: "27.0"
+    env:
+      SAUCE_USERNAME: ${{ secrets.SAUCE_USERNAME }}
+      SAUCE_ACCESS_KEY: ${{ secrets.SAUCE_ACCESS_KEY }}
+      DERLEME: ${{ matrix.platform == 'android' && needs.derle-android.result || needs.derle-ios.result }}
+      CI: "true"
+    steps:
+      - name: Derleme var mı?
+        id: derleme
+        run: |
+          if [ "$DERLEME" = "success" ]; then echo "ok=true" >> "$GITHUB_OUTPUT"
+          else echo "ok=false" >> "$GITHUB_OUTPUT"; echo "::error::${{ matrix.platform }} derlemesi: $DERLEME"; fi
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Uygulama derlemesi
+        if: steps.derleme.outputs.ok == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sauce-uygulama-${{ matrix.platform }}
+          path: tp-uygulama
+
+      - name: Java kurulumu
+        if: steps.derleme.outputs.ok == 'true'
+        id: java
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+          cache-dependency-path: demo-app/e2e-app/pom.xml
+
+      - name: Node kurulumu
+        if: steps.derleme.outputs.ok == 'true'
+        id: node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: demo-app/web/package-lock.json
+
+      - name: uv kurulumu
+        if: steps.derleme.outputs.ok == 'true'
+        id: uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: demo-app/api/uv.lock
+
+      - name: Uygulamayı runner'da başlat
+        if: steps.derleme.outputs.ok == 'true'
+        id: app
+        run: |
+          set -euo pipefail
+          echo "127.0.0.1 $APP_HOST" | sudo tee -a /etc/hosts >/dev/null
+          token="$(openssl rand -hex 24)"
+          echo "::add-mask::$token"
+          echo "DEMOAPP_TEST_TOKEN=$token" >> "$GITHUB_ENV"
+          echo "DEMO_API_URL=http://127.0.0.1:18000" >> "$GITHUB_ENV"
+          mkdir -p tp-logs
+          PORT="$APP_PORT" DEMO_API_PORT=18000 TP_ALLOWED_HOSTS="$APP_HOST" DEMOAPP_TEST_TOKEN="$token" \
+            nohup bash scripts/github-demo-serve.sh > tp-logs/serve.log 2>&1 &
+          for _ in $(seq 1 90); do
+            curl -fsS "http://$APP_HOST:$APP_PORT/api/health" >/dev/null 2>&1 && exit 0
+            sleep 2
+          done
+          echo "::error::Uygulama 180 sn içinde hazır olmadı"; tail -n 100 tp-logs/serve.log; exit 1
+
+      - name: Tünel adı
+        id: tunel
+        run: echo "ad=tp-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${{ matrix.platform }}" >> "$GITHUB_OUTPUT"
+
+      - name: Sauce Connect tüneli
+        if: steps.app.outcome == 'success'
+        id: tunnel
+        uses: saucelabs/sauce-connect-action@fc54c8b087f2b4b6d4ccc42a2d4bbc64795dfde2 # v3.0.0
+        with:
+          username: ${{ secrets.SAUCE_USERNAME }}
+          accessKey: ${{ secrets.SAUCE_ACCESS_KEY }}
+          region: ${{ env.SAUCE_REGION }}
+          tunnelName: ${{ steps.tunel.outputs.ad }}
+          proxyLocalhost: allow
+
+      # Kimlik netrc ile stdin'den (komut satırında görünmez). Yanıttan yalnız depo kimliği alınır.
+      - name: Derlemeyi Sauce storage'a yükle
+        if: steps.tunnel.outcome == 'success'
+        id: yukle
+        env:
+          DOSYA: tp-uygulama/${{ matrix.dosya }}
+          AD: tp-${{ github.run_id }}-${{ matrix.dosya }}
+        run: |
+          set -euo pipefail
+          host="api.$SAUCE_REGION.saucelabs.com"
+          yanit="$(printf 'machine %s login %s password %s\n' "$host" "$SAUCE_USERNAME" "$SAUCE_ACCESS_KEY" \
+            | curl -fsS -m 300 --netrc-file /dev/stdin -F "payload=@$DOSYA" -F "name=$AD" \
+              "https://$host/v1/storage/upload")"
+          id="$(jq -r '.item.id // empty' <<<"$yanit")"
+          [[ "$id" =~ ^[A-Za-z0-9-]{8,64}$ ]] || { echo "::error::Sauce storage yüklemesi kimlik döndürmedi"; exit 1; }
+          echo "app=storage:$id" >> "$GITHUB_OUTPUT"
+          echo "Sauce storage: $AD → $id"
+
+      - name: Sauce'ta Appium testleri
+        if: steps.yukle.outcome == 'success'
+        id: tests
+        env:
+          APPIUM_URL: https://ondemand.${{ env.SAUCE_REGION }}.saucelabs.com:443/wd/hub
+          APP_PATH: ${{ steps.yukle.outputs.app }}
+          DEVICE_NAME: ${{ matrix.cihaz }}
+          PLATFORM_VERSION: ${{ matrix.surum }}
+          SAUCE_TUNNEL_NAME: ${{ steps.tunel.outputs.ad }}
+          SAUCE_BUILD: ${{ github.event.repository.name }}-${{ github.run_number }}-sauce
+          SAUCE_OTURUM_DOSYASI: ${{ github.workspace }}/tp-sauce/oturumlar.jsonl
+          SKIP_BIRIM: "1"
+          # Sauce sanal cihazında ilk açılış yavaştır: bekleme üst sınırı yerel CI'dan uzun.
+          BEKLEME_MS: "20000"
+        run: |
+          set -euo pipefail
+          mkdir -p tp-sauce tp-logs
+          bash demo-app/ci/run-app-checks.sh ${{ matrix.platform }} "-Dtest=$SAUCE_MOBIL_TESTLER" \
+            2>&1 | tee tp-logs/run-app-checks.log
+
+      - name: Platform özeti
+        if: always()
+        env:
+          OUTCOME: ${{ steps.tests.outcome }}
+          ALTYAPI: >-
+            ${{ steps.derleme.outputs.ok != 'true' && 'uygulama derlemesi ' || '' }}${{ steps.app.outcome == 'failure' && 'uygulama başlatma ' || '' }}${{ steps.tunnel.outcome == 'failure' && 'Sauce Connect tüneli ' || '' }}${{ steps.yukle.outcome == 'failure' && 'Sauce storage yüklemesi' || '' }}
+        run: |
+          set -euo pipefail
+          neden=""
+          [ -z "$(echo "$ALTYAPI" | xargs)" ] || neden="başarısız altyapı adımı: $(echo "$ALTYAPI" | xargs)"
+          case "$OUTCOME" in success) rc=0 ;; failure) rc=1 ;; *) rc="" ;; esac
+          python3 scripts/github-sauce-tur-ozeti.py mobil --out tp-sauce/${{ matrix.platform }} \
+            --platform ${{ matrix.platform }} --etiket "${{ matrix.etiket }}" \
+            --surefire demo-app/e2e-app/target/surefire-reports --oturumlar tp-sauce/oturumlar.jsonl \
+            --exit-code "$rc" --region "$SAUCE_REGION" --neden-altyapi "$neden"
+          mkdir -p tp-sauce/${{ matrix.platform }}/logs
+          cp tp-logs/*.log tp-sauce/${{ matrix.platform }}/logs/ 2>/dev/null || true
+          [ -d demo-app/e2e-app/target/kanit ] && cp -R demo-app/e2e-app/target/kanit tp-sauce/${{ matrix.platform }}/kanit || true
+          find tp-sauce -type l -delete
+          for s in "${DEMOAPP_TEST_TOKEN:-}" "${SAUCE_ACCESS_KEY:-}"; do
+            [ -n "$s" ] || continue
+            { grep -rlF -- "$s" tp-sauce || true; } | while read -r f; do
+              python3 -c 'import sys,pathlib;p=pathlib.Path(sys.argv[1]);p.write_text(p.read_text(errors="replace").replace(sys.argv[2],"***"))' "$f" "$s"
+            done
+          done
+
+      - name: Platform artefaktı
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sauce-platform-${{ matrix.platform }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: tp-sauce/${{ matrix.platform }}/
+
+  # ------------------------------------------------------------------ toplama (çekirdeğin okuduğu iş)
+  sauce:
+    name: sauce
+    needs: [hazirlik, sauce-web, sauce-mobil]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      SAUCE_USERNAME: ${{ secrets.SAUCE_USERNAME }}
+      SAUCE_ACCESS_KEY: ${{ secrets.SAUCE_ACCESS_KEY }}
+      ENABLED: ${{ needs.hazirlik.outputs.enabled }}
+      SKIP_REASON: ${{ needs.hazirlik.outputs.reason }}
+      KOTA_ONCE: ${{ needs.hazirlik.outputs.kota }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+
+      - name: Platform sonuçları
+        if: env.ENABLED == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: sauce-platform-*
+          path: tp-platform
+
+      - name: Kalan Sauce dakikası (sonra)
+        if: env.ENABLED == 'true'
+        id: kota
+        run: |
+          set -euo pipefail
+          # Sauce kullanım kaydı işler kapandıktan biraz sonra güncellenir.
+          sleep 20
+          k="$(bash scripts/github-sauce-kota.sh --region "$SAUCE_REGION")"
+          echo "kota=$k" >> "$GITHUB_OUTPUT"
+          echo "Sauce kota (sonra): $k"
+
+      - name: sauce.json
+        id: ozet
+        env:
+          KOTA_SONRA: ${{ steps.kota.outputs.kota }}
+        run: |
+          set -euo pipefail
+          if [ "$ENABLED" != "true" ]; then
+            python3 scripts/github-sauce-tur-ozeti.py atla --out tp-sauce --neden "${SKIP_REASON:-Sauce turu koşmadı}"
+          else
+            girdiler=()
+            for d in tp-platform/sauce-platform-*; do [ -d "$d" ] && girdiler+=(--girdi "$d"); done
+            python3 scripts/github-sauce-tur-ozeti.py topla --out tp-sauce "${girdiler[@]}" \
+              --beklenen web,android,ios --kota-once "${KOTA_ONCE:-}" --kota-sonra "${KOTA_SONRA:-}"
+          fi
+
+      - name: Sauce artefaktları
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          # Çekirdek bu adla arar: sauce-results (kökte sauce.json, junit.xml, ci-meta.json).
+          name: sauce-results
+          retention-days: 14
+          if-no-files-found: warn
+          path: tp-sauce/
+
+      - name: Sauce sonucu
+        if: always()
+        run: |
+          set -euo pipefail
+          durum="$(jq -r '.durum // "error"' tp-sauce/sauce.json 2>/dev/null || echo error)"
+          neden="$(jq -r '.neden // ""' tp-sauce/sauce.json 2>/dev/null || true)"
+          case "$durum" in
+            passed) echo "Sauce turu: tüm platformlar geçti" ;;
+            atlandi) echo "::notice title=Sauce turu atlandı::$neden" ;;
+            failed) echo "::error title=Sauce turu kırmızı::$neden"; exit 1 ;;
+            *) echo "::error title=Sauce turu tamamlanamadı::$neden"; exit 1 ;;
+          esac

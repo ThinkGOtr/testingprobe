@@ -1,0 +1,88 @@
+# saucectl — Sauce Labs ELLE TURU web satırları (TP Koşular › "Sauce Labs turunu başlat";
+# .github/workflows/sauce-demo.yml `sauce-web` işi). Deneme hesabının dakikası kısıtlı: tüm test
+# kümesi değil, kısa DUMAN seti (giriş, sepete ekleme, sipariş onayı) koşar.
+#
+# Her `suites` öğesi TP'de ayrı bir satırdır. Etiket suite adından türetilir
+# (scripts/github-sauce-tur-ozeti.py): "<İşletim-sistemi>-<Tarayıcı>" → "Windows 11 · Edge".
+# Yeni tarayıcı/OS satırı = yeni suite (ad aynı biçimde).
+#
+# Uygulama Sauce VM'inde değil, CI runner'ında çalışır; tarayıcı ona Sauce Connect tüneliyle ulaşır.
+# Tünel adı, bölge, BASE_URL CI'da komut satırından verilir (--tunnel-name, --region, -e).
+apiVersion: v1alpha
+kind: playwright
+
+sauce:
+  region: eu-central-1        # CI'da --region ile ezilir (repo değişkeni SAUCE_REGION)
+  concurrency: 2
+  retries: 0
+  sauceignore: .sauce/.sauceignore
+  metadata:
+    tags:
+      - testing-probe
+      - demo-app
+      - sauce-tur
+
+# config.yml ile aynı sürüm (Sauce'un desteklediği en yeni Playwright).
+playwright:
+  version: 1.61.1
+  configFile: playwright.config.ts
+
+rootDir: e2e
+
+npm:
+  packages:
+    allure-playwright: 3.14.0
+    "@axe-core/playwright": 4.14.0
+
+env:
+  CI: "true"
+  TP_EXTERNAL_SERVER: "1"
+
+defaults:
+  timeout: 10m
+
+suites:
+  # Windows 11 · Chromium — giriş, sepete ekleme (AC1), sipariş onayı + geçmiş.
+  - name: "Windows-11-Chromium"
+    platformName: "Windows 11"
+    screenResolution: "1920x1080"
+    testMatch: ["tests/(login|cart|order)\\.spec\\.ts"]
+    params:
+      browserName: chromium
+      project: chromium
+      headless: true
+      grep: "doğru bilgilerle giriş yapılır ve katalog açılır|AC1: Sepete ekle ürünü sepete ekler|onaylanan sipariş numarasıyla gösterilir"
+      retries: 0
+      workers: 1
+  # Windows 11 · Microsoft Edge (kurulu kanal; playwright.config.ts `msedge` projesi TP_PW_EDGE=1 ile).
+  # Dakika için tek test: sipariş onayı (girişli oturum + sepete ekleme + onay + geçmiş).
+  - name: "Windows-11-Edge"
+    platformName: "Windows 11"
+    screenResolution: "1920x1080"
+    testMatch: ["tests/order\\.spec\\.ts"]
+    env:
+      TP_PW_EDGE: "1"
+    params:
+      browserName: chromium
+      project: msedge
+      headless: true
+      grep: "onaylanan sipariş numarasıyla gösterilir"
+      retries: 0
+      workers: 1
+
+artifacts:
+  download:
+    when: always
+    match:
+      - "*"
+    directory: results/sauce/artifacts
+
+reporters:
+  spotlight:
+    enabled: true
+  junit:
+    enabled: true
+    filename: results/sauce/saucectl-junit.xml
+  json:
+    enabled: true
+    filename: results/sauce/saucectl-report.json

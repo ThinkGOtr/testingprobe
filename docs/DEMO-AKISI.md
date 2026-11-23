@@ -97,10 +97,11 @@ make security-check # Özet: 10/10
   Bir merge main'i ilerletir; ürün kalan PR dallarını günceller, CI yeniden koşar (~1,5 dk) ve
   ruleset önceki onayları düşürür → kalan PR'lar **yeniden onaylanır**. Sahnede yalnızca C2'yi
   merge edin; C1/C5'i sunumdan önce merge etmiş olun.
-- **Sauce süresi:** Sauce hesabı tek eşzamanlı oturum; push koşusundaki Sauce adımı ~11 dk sürer ve
-  ürün push koşusunun bitmesini bekler. Sunum için demo reposunda
-  `gh variable set SAUCE_TETIKLER --repo ThinkGOtr/testingprobe-demo-app --body deploy,nightly`
-  (Sauce'u "Deploy sonrası testleri koş" ve gece koşusunda gösterin); sunumdan sonra değişkeni silin.
+- **Sauce Labs:** push, gece ve deploy koşuları Sauce'u kullanmaz (demo deposu `SAUCE_TETIKLER=sauce`;
+  deneme hesabı dakikası sınırlı). Sauce'u göstermek için Otomasyon Mühendisi Koşular ekranında
+  **"Sauce Labs turunu başlat"** düğmesine basar: web (Windows 11 · Chromium ve Edge), Android
+  emülatör ve iOS simülatörde kısa duman seti (`.github/workflows/sauce-demo.yml`). Sonuç ve
+  platform başına Sauce video bağlantıları koşu detayının "Sauce Labs turu" tablosunda görünür.
 
 ### 1.3 Tarayıcı ve oturumlar
 

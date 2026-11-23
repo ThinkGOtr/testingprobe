@@ -120,6 +120,31 @@ Sonuçlar `scripts/github-ci-results.sh` ile toplanır (aşağıda "Artefakt sö
   ve `durum: atlandi` kaydı yükler (çekirdek "Sauce koşmadı" ile "Sauce kırmızı"yı ayırır).
 - Testler `testMatch` ile `e2e/tests/**/*.spec.ts`; üretilen `tests/generated/**` açıkça listelidir.
 - Eşzamanlılık 1 (hesap 1–2 oturum).
+- **Tetikler:** `SAUCE_TETIKLER` (repo değişkeni, virgülle) bu job'un hangi ci.yml tetiklerinde Sauce'a
+  çıkacağını söyler; **varsayılan `sauce`** = hiçbiri (pr, push, nightly, deploy, manual Sauce
+  kullanmaz). Sauce yalnız aşağıdaki elle turda koşar (deneme hesabı dakikası korunur).
+
+### Sauce Labs elle turu (`sauce-demo.yml`)
+
+TP Koşular › **"Sauce Labs turunu başlat"** (`POST /ci/trigger {tetik: sauce}`, izin
+`run.trigger_scheduled`) → `workflow_dispatch` `tetik=sauce`, `istek_id=<run_id>`. Başka tetik yoktur.
+Tek tur aynı anda (`concurrency: sauce-demo`); `SAUCE_TETIKLER` `sauce` içermiyorsa ya da kimlik yoksa
+tur `atlandi` yazar.
+
+| Job | İş |
+|---|---|
+| `hazirlik` | istek kimliği, kapı, **kalan Sauce dakikası** (`scripts/github-sauce-kota.sh`; yalnız sayısal alanlar) |
+| `derle-android` / `derle-ios` | APK (x86_64) ve simülatör `.app` (arm64 + x86_64, zip); API adresi `http://tp-demo.test:8081/api` gömülür; önbellekli |
+| `sauce-web` | `saucectl` `.sauce/duman.yml`: `Windows-11-Chromium` (giriş, sepete ekleme, sipariş) + `Windows-11-Edge` (sipariş; Playwright `msedge` kanalı, `TP_PW_EDGE=1`) |
+| `sauce-android` / `sauce-ios` | Java + Appium testleri runner'da (`run-app-checks.sh -Dtest=…`), oturum Sauce sanal cihazında (`SauceLabs.java`: `sauce:options`, iş sonucu, oturum kaydı); derleme Sauce storage'a yüklenir |
+| `sauce` | `scripts/github-sauce-tur-ozeti.py topla` → `sauce-results/{sauce.json, junit.xml, ci-meta.json}`; kalan dakika (sonra); bir platform kırmızı/koşmadıysa iş kırmızı |
+
+Her platform işi uygulamayı kendi runner'ında ayrı örnek olarak başlatır ve kendi Sauce Connect
+tünelini açar (`tp-<run>-<deneme>-<platform>`). `sauce.json` (schema 2) `platformlar[]`: `{platform,
+etiket, durum, neden, toplam, gecen, basarisiz, atlanan, isler[{ad, url, durum}]}`; çekirdek
+`_sauce_bilgisi` bunu `run.artefaktlar.sauce.platformlar`'a doğrulayarak yazar, portal koşu detayında
+"Sauce Labs turu" tablosunu çizer. Yeni web tarayıcı/OS satırı: `.sauce/duman.yml`'e
+`<OS>-<Tarayıcı>` adlı suite + iş akışında `--suite` (etiket addan türetilir: "Windows 11 · Edge").
 
 ## Çekirdek bağlantısı (tetik ve koşu bulma)
 
