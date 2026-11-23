@@ -227,7 +227,7 @@ def is_kayitlarini_sil(engine: Engine, saklama: timedelta = IS_KAYDI_SAKLAMA) ->
         )
 
 
-@job_handler(TEMIZLIK_IS_TURU, max_deneme=1, zaman_asimi_s=300)
+@job_handler(TEMIZLIK_IS_TURU, max_deneme=1, zaman_asimi_s=300, periyodik=True)
 def temizlik(_ctx: JobContext) -> dict[str, Any]:
     engine = get_engine()
     try:

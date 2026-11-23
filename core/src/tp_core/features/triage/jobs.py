@@ -36,7 +36,7 @@ def triage_classify(ctx: JobContext) -> dict[str, Any]:
     return service.classify_run(get_engine(), _run_id(ctx), son_deneme=ctx.son_deneme)
 
 
-@job_handler(service.JOB_SWEEP, max_deneme=1, zaman_asimi_s=120)
+@job_handler(service.JOB_SWEEP, max_deneme=1, zaman_asimi_s=120, periyodik=True)
 def triage_sweep(_ctx: JobContext) -> dict[str, Any]:
     engine = get_engine()
     try:

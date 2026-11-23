@@ -110,7 +110,7 @@ job_handler(flow.JOB_PO_REQUEST, max_deneme=5, backoff_s=5.0, zaman_asimi_s=120)
 )
 
 
-@job_handler(flow.JOB_PO_POLL, max_deneme=1, zaman_asimi_s=120)
+@job_handler(flow.JOB_PO_POLL, max_deneme=1, zaman_asimi_s=120, periyodik=True)
 def po_poll(_ctx: JobContext) -> dict[str, Any]:
     engine = get_engine()
     try:
@@ -133,7 +133,7 @@ def _tetik_zincirini_koru(engine: Any) -> None:
         flow.log.warning("Jira tetiği zinciri denetlenemedi", exc_info=True)
 
 
-@job_handler(jira_tetik.JOB_JIRA_TETIK, max_deneme=1, zaman_asimi_s=120)
+@job_handler(jira_tetik.JOB_JIRA_TETIK, max_deneme=1, zaman_asimi_s=120, periyodik=True)
 def jira_tetik_turu(_ctx: JobContext) -> dict[str, Any]:
     engine = get_engine()
     try:

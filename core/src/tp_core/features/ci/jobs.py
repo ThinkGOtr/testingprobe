@@ -67,7 +67,7 @@ def ci_github_poll(ctx: JobContext) -> dict[str, Any]:
         raise
 
 
-@job_handler(service.JOB_NIGHTLY, max_deneme=3, backoff_s=60.0, zaman_asimi_s=120)
+@job_handler(service.JOB_NIGHTLY, max_deneme=3, backoff_s=60.0, zaman_asimi_s=120, periyodik=True)
 def ci_nightly(ctx: JobContext) -> dict[str, Any]:
     tarih = str((ctx.yuk or {}).get("tarih") or "")
     if not tarih:
@@ -75,7 +75,9 @@ def ci_nightly(ctx: JobContext) -> dict[str, Any]:
     return service.nightly_job(get_engine(), tarih)
 
 
-@job_handler(service.JOB_ZAMAN_ASIMI, max_deneme=2, backoff_s=60.0, zaman_asimi_s=120)
+@job_handler(
+    service.JOB_ZAMAN_ASIMI, max_deneme=2, backoff_s=60.0, zaman_asimi_s=120, periyodik=True
+)
 def ci_zaman_asimi(ctx: JobContext) -> dict[str, Any]:
     """Sırada / sürüyor kalan koşuları zaman aşımıyla kapatır; sonraki taramayı planlar."""
     engine = get_engine()

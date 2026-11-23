@@ -133,6 +133,9 @@ class HandlerSpec:
     zaman_asimi_s: int = DEFAULT_ZAMAN_ASIMI_S
     serit: str = GENEL_SERIT
     kurulum: bool = False  # kurulum geneli iş: NULL projeli, bağlamsız koşar
+    # Kendini yeniden kuyruğa koyan zamanlanmış iş: projesi pasifse (`tp_proje.aktif=false`)
+    # işleyici çağrılmaz, iş "atlandı" biter ve zincir kendini yeniden kurmaz.
+    periyodik: bool = False
 
     def backoff(self, deneme: int) -> float:
         return min(self.backoff_s * (2 ** max(deneme - 1, 0)), self.max_backoff_s)
@@ -151,6 +154,7 @@ def job_handler(
     registry: dict[str, HandlerSpec] | None = None,
     serit: str = GENEL_SERIT,
     kurulum: bool = False,
+    periyodik: bool = False,
 ) -> Callable[[Handler], Handler]:
     """İşleyici kaydı. `kurulum=True`: proje geneli olmayan bakım işi (`job.project_id` NULL,
     işleyici bağlamsız koşar; ör. artefakt temizliği, asistan paket yenileme)."""
@@ -167,7 +171,15 @@ def job_handler(
         if mevcut is not None and mevcut.fn is not fn:
             raise ValueError(f"iş türü iki kez kaydedildi: {tur}")
         hedef[tur] = HandlerSpec(
-            tur, fn, max_deneme, backoff_s, max_backoff_s, zaman_asimi_s, serit, kurulum
+            tur,
+            fn,
+            max_deneme,
+            backoff_s,
+            max_backoff_s,
+            zaman_asimi_s,
+            serit,
+            kurulum,
+            periyodik,
         )
         return fn
 
@@ -735,12 +747,30 @@ def _isleyici_cagir(spec: HandlerSpec, ctx: JobContext) -> Any:
         return spec.fn(ctx)
 
 
+def _proje_aktif(pid: str) -> bool:
+    """`tp_proje.aktif`; satır yoksa ya da okunamazsa True (iş eskisi gibi koşar)."""
+    from tp_core.db import get_engine
+
+    try:
+        with get_engine().connect() as conn:
+            deger = conn.execute(
+                text("SELECT aktif FROM tp_proje WHERE pid = :pid"), {"pid": pid}
+            ).scalar()
+    except Exception:
+        return True
+    return deger is not False
+
+
 def execute(job: ClaimedJob, registry: Mapping[str, HandlerSpec] | None = None) -> Sonuc:
     """Sahiplenilmiş işi kendi projesinin bağlamında yürütür; sonucu döndürür (DB'ye dokunmaz)."""
     kayit = REGISTRY if registry is None else registry
     spec = kayit.get(job.tur)
     if spec is None:
         return Sonuc("failed", 1, f"bilinmeyen iş türü: {job.tur}")
+    if spec.periyodik and job.project_id is not None and not _proje_aktif(job.project_id):
+        # Pasif projenin zamanlanmış zinciri burada biter (Home artık bu projeyi tanımıyor:
+        # her turda 404 üretiyordu). Proje yeniden etkinleşince açılış kancaları yeniden kurar.
+        return Sonuc("done", 0, deger={"durum": "atlandi", "neden": "proje pasif"})
     max_deneme = job.max_deneme or spec.max_deneme
     ctx = JobContext(
         job.id, job.tur, job.yuk, job.deneme, max_deneme, job.workflow_id, job.project_id
