@@ -46,33 +46,37 @@ public final class Kaydirma {
     return "new UiScrollable(new UiSelector().scrollable(true)).scrollIntoView(" + hedef + ")";
   }
 
-  /** Kimliği (kapsayıcı içinde) görünür alana getirmeyi bir kez dener. */
-  public static void getir(WebDriver surucu, String kapsayici, String id) {
+  /**
+   * Kimliği (kapsayıcı içinde) görünür alana getirmeyi bir kez dener. Dönüş: iOS'ta bir sürükleme
+   * yapıldıysa true (içerik hareket etti; bekleme penceresi uzatılabilir — {@code Ekran.gorunurBekle}).
+   */
+  public static boolean getir(WebDriver surucu, String kapsayici, String id) {
     try {
       switch (Kimlik.platform()) {
         case ANDROID:
           surucu.findElements(
               AppiumBy.androidUIAutomator(androidKaydirmaIfadesi(Kimlik.etkinStrateji(), kapsayici, id)));
-          return;
+          return false;
         case IOS:
           SearchContext kok = surucu;
           if (kapsayici != null) {
             List<WebElement> k = surucu.findElements(Kimlik.bul(kapsayici));
             if (k.isEmpty()) {
-              return;
+              return false;
             }
             kok = k.get(0);
           }
           List<WebElement> l = kok.findElements(Kimlik.bul(id));
           if (!l.isEmpty() && !l.get(0).isDisplayed()) {
-            iosSurukle(surucu, l.get(0).getRect());
+            return iosSurukle(surucu, l.get(0).getRect());
           }
-          return;
+          return false;
         default:
-          return;
+          return false;
       }
     } catch (WebDriverException e) {
       // kaydırılabilir kap yok / öğe kayboldu: bekleme döngüsü yeniden dener
+      return false;
     }
   }
 
@@ -80,7 +84,7 @@ public final class Kaydirma {
   private static final int KENAR = 4;
 
   /** iOS: hedefe doğru, görünür en yüksek kaydırma kabında bir sürükleme. */
-  private static void iosSurukle(WebDriver surucu, Rectangle hedef) {
+  private static boolean iosSurukle(WebDriver surucu, Rectangle hedef) {
     Rectangle kap = null;
     for (WebElement k : surucu.findElements(By.className("XCUIElementTypeScrollView"))) {
       Rectangle r = k.getRect();
@@ -94,7 +98,9 @@ public final class Kaydirma {
           .executeScript(
               "mobile: dragFromToForDuration",
               Map.of("duration", 0.2, "fromX", c[0], "fromY", c[1], "toX", c[0], "toY", c[2]));
+      return true;
     }
+    return false;
   }
 
   /**

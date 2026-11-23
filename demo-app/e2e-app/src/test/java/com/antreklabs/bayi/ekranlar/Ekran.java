@@ -79,9 +79,22 @@ public abstract class Ekran {
     if (e != null) {
       return e;
     }
-    Kaydirma.getir(surucu(), kapsayici, kimlik);
+    if (Kaydirma.getir(surucu(), kapsayici, kimlik)) {
+      kaydirildi = true;
+    }
     return ilkGorunur(kapsayici, kimlik);
   }
+
+  /** Son bekleme penceresinde kaydırma (iOS sürükleme) yapıldı mı ({@link #gorunurBekle}). */
+  private boolean kaydirildi;
+
+  /**
+   * Kaydırma ilerlerken verilen ek bekleme penceresi sayısı. Yavaş sürücüde (CI macOS runner'ında
+   * her WDA çağrısı 1–2 sn; bir kaydırma denemesi ~6 sn) 10 sn'lik pencereye tek sürükleme sığıyor,
+   * ekran dışındaki öğe (ör. 4. ürünün adet alanı) kaydırma sürerken zaman aşımına düşüyordu
+   * (koşu 45220671545). Pencere yalnız o pencerede gerçekten kaydırıldıysa yenilenir (sınırlı).
+   */
+  static final int KAYDIRMA_EK_PENCERE = 3;
 
   private static String ad(String kapsayici, String kimlik) {
     return kapsayici == null ? "'" + kimlik + "'" : "'" + kapsayici + "' içinde '" + kimlik + "'";
@@ -94,7 +107,16 @@ public abstract class Ekran {
 
   /** Kapsayıcı (ör. ürün kartı) içindeki öğe görünür olana kadar bekler. */
   protected final WebElement gorunurBekle(String kapsayici, String kimlik) {
-    return bekle().kosul("öğe görünmedi: kimlik " + ad(kapsayici, kimlik), s -> hemenBul(kapsayici, kimlik));
+    for (int pencere = 0; ; pencere++) {
+      kaydirildi = false;
+      try {
+        return bekle().kosul("öğe görünmedi: kimlik " + ad(kapsayici, kimlik), s -> hemenBul(kapsayici, kimlik));
+      } catch (org.openqa.selenium.TimeoutException t) {
+        if (!kaydirildi || pencere >= KAYDIRMA_EK_PENCERE) {
+          throw t;
+        }
+      }
+    }
   }
 
   /** İki öğeden biri görünene kadar bekler (web: {@code expect(a.or(b)).toBeVisible()}). */
