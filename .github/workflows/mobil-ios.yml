@@ -381,6 +381,8 @@ jobs:
         run: |
           set -euo pipefail
           # Duman kapsamı (yalnız elle tetik, `kapsam=duman`): giriş, sepete ekleme, sipariş.
+          # macOS /bin/bash 3.2'de `set -u` altında boş dizi "${kapsam[@]}" "unbound variable" verir
+          # (tam kapsamda dizi boştur; koşu 45225507374) → ${kapsam[@]+...} kalıbı.
           kapsam=()
           if [ "$KAPSAM" = "duman" ]; then kapsam=("-Dtest=$DUMAN_TESTLER"); fi
           echo "Kapsam: $KAPSAM"
@@ -388,7 +390,7 @@ jobs:
           IOS_HEADLESS=1 WDA_DERIVED_DATA="$WDA_DD" \
             bash demo-app/ci/run-app-checks.sh ios "-Dapp.path=$GITHUB_WORKSPACE/$APP_BUNDLE" \
             "-Ddevice.udid=$SIM_UDID" "-Ddevice.name=$SIM_NAME" "-Dplatform.version=$SIM_IOS" \
-            "${kapsam[@]}" 2>&1 | tee tp-logs/run-app-checks.log
+            ${kapsam[@]+"${kapsam[@]}"} 2>&1 | tee tp-logs/run-app-checks.log
 
       # --- Sonuçlar (mobil-android ile aynı düzen) ----------------------------------------------
       - name: Sonuçları topla

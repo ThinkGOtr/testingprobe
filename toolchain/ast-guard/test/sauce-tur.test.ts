@@ -174,6 +174,9 @@ describe("mobil-ios.yml: duman kapsamı ve hızlandırma", () => {
     icerir("KAPSAM: ${{ (github.event_name == 'workflow_dispatch' && inputs.tetik == 'manual' && inputs.kapsam == 'duman') && 'duman' || 'tam' }}");
     icerir('if [ "$KAPSAM" = "duman" ]; then kapsam=("-Dtest=$DUMAN_TESTLER"); fi');
     icerir("format('mobil-ios {0}{2} [{1}]'");
+    // bash 3.2 + set -u: boş dizi açılımı güvenli kalıpla.
+    icerir('${kapsam[@]+"${kapsam[@]}"}');
+    assert.ok(!ios.includes('"${kapsam[@]}" 2>&1'), "çıplak boş dizi açılımı yok");
   });
 
   it("WDA önbellek anahtarı Xcode + xcuitest + WDA + iOS çalışma zamanı; ıskada derleme", () => {
