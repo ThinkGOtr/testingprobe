@@ -179,10 +179,10 @@ def _case(jira_key: str, sira_no: int) -> dict[str, Any]:
     return load_golden("case_generation", jira_key)["output"]["cases"][sira_no - 1]
 
 
-# Doğrulama ajanı kaydı olan case'ler: TPD-1 C1–C10 ve TPD-4 C1–C2. TPD-1 C11–C15 (011 K17 sınır
-# case'leri) sona eklendi; tarayıcı kaydı yok, kod üretimi onlarda dürüst REPLAY-MISS olur
-# (demo/prova kod üretimi C1, C2, C3, C5 ile çalışır).
-VERIFY_KAYITLI = {"TPD-1": 10, "TPD-4": 2}
+# Doğrulama ajanı kaydı olan case'ler: TPD-1 C1–C15 ve TPD-4 C1–C2. TPD-1 C11–C15 (011 K17 sınır
+# case'leri) 2026-11-23'te record_verify_goldens ile kaydedildi (önceden kayıt yoktu ve kod
+# üretimi onlarda REPLAY-MISS oluyordu; canlı demo TPD-1'in 15 case'inin tamamına kod üretebilir).
+VERIFY_KAYITLI = {"TPD-1": 15, "TPD-4": 2}
 
 
 def test_every_golden_case_has_a_verify_and_map_golden() -> None:

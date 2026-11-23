@@ -36,6 +36,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from tp_core.features.codegen.browser import MAX_TOOL_CALLS
 from tp_core.gateway import (
     VERIFY_AGENT_DEALER,
     VERIFY_BASE_URL,
@@ -184,6 +185,9 @@ class Call:
     # (oturuma özgü; kayıt anında çözülür, REPLAY'de yeniden) ve sonuç bu testId'yi göstermelidir.
     locate: Hedef | None = None
     expect_test_id: str | None = None
+    # Araç bütçesi (MAX_TOOL_CALLS) aşılırsa plandan çıkarılabilen çağrı (bekleme, yalnız
+    # doğrulamada kullanılan eleman locator'ı). Eylemde kullanılan locator'lar hiç çıkarılmaz.
+    optional: bool = False
 
 
 @dataclass
@@ -205,6 +209,8 @@ def plan_for(case: dict[str, Any], app: str) -> Plan:
     plan = Plan()
     located: set[str] = set()
     last_product: str | None = None
+    adds = [(step["id"], code) for step in case["steps"] for code, _ in _cart_lines(step)]
+    last_add = adds[-1] if adds else ("", "")
     for step in case["steps"]:
         action = step["action"]
         if action == "Giriş sayfasını aç":
@@ -254,14 +260,16 @@ def plan_for(case: dict[str, Any], app: str) -> Plan:
                         expect_test_id=f"qty-input-{code}",
                     )
                     located.add(f"qty-input-{code}")
-                if "add-to-cart" not in located:
+                if card not in located:
+                    # Sonuç kart kapsamlıdır (`product-card-<kod>` + `add-to-cart`): kartın
+                    # kimliği de eylemden önce doğrulanmış olur (her ürün kartı ayrı).
                     plan.add(
                         "browser_generate_locator",
                         {"element": f'{code} kartında button "Sepete ekle" (catalog.addToCart)'},
                         locate=Hedef("button", "Sepete ekle", f"paragraph: {code}"),
                         expect_test_id="add-to-cart",
                     )
-                    located.add("add-to-cart")
+                    located.add(card)
                 plan.add(
                     "browser_type",
                     {
@@ -274,9 +282,18 @@ def plan_for(case: dict[str, Any], app: str) -> Plan:
                     "browser_click",
                     {"element": f"{code} kartında Sepete ekle", "target": tid(card, "add-to-cart")},
                 )
-                plan.add("browser_wait_for", {"text": f"{qty} adet sepete eklendi."})
                 last_product = code
-            plan.add("browser_snapshot", tag="catalog", product=last_product)
+                if (step["id"], code) == last_add:
+                    plan.add(
+                        "browser_wait_for",
+                        {"text": f"{qty} adet sepete eklendi."},
+                        optional=len(adds) > 1,
+                    )
+            if step["id"] == last_add[0]:
+                # Çok ürünlü sepette ara eklemelerden sonra bekleme/snapshot yoktur: ajanın araç
+                # bütçesi (`MAX_TOOL_CALLS` = 25) 3 ürünlü case'e ancak böyle yeter. Son eklemenin
+                # durumu beklenir; snapshot sepet sayacıyla tüm eklemeleri birlikte gösterir.
+                plan.add("browser_snapshot", tag=f"catalog@{step['id']}", product=last_product)
             if "sayacı" in step["expected"] and "nav-cart" not in located:
                 # Sayaç (nav.cartCount) etkileşimsiz bir alt elemandır; generate_locator onu en
                 # yakın etkileşimli ataya (nav.cart bağlantısı) çevirir. Doğrulanan bağlantıdır;
@@ -298,6 +315,7 @@ def plan_for(case: dict[str, Any], app: str) -> Plan:
                     {"element": "alert: minimum sipariş uyarısı (cart.minOrderWarning)"},
                     locate=Hedef("alert"),
                     expect_test_id="min-order-warning",
+                    optional=True,
                 )
         elif "Siparişi onayla" in action:
             plan.add(
@@ -320,7 +338,29 @@ def plan_for(case: dict[str, Any], app: str) -> Plan:
             plan.add("browser_snapshot", tag="history")
         else:
             raise SystemExit(f"plan yok: {action!r}")
-    return plan
+    return within_budget(plan)
+
+
+def within_budget(plan: Plan, budget: int = MAX_TOOL_CALLS) -> Plan:
+    """Ajanın araç bütçesine (TEKNIK-TASARIM §8.4: case başına en çok 25 araç çağrısı) sığdırır:
+    bütçe aşılıyorsa isteğe bağlı çağrılar sondan başlayarak çıkarılır; yine sığmazsa kayıt durur
+    (canlı ajan da bu case'i bütçede bitiremezdi). Bütçeye sığan planlar olduğu gibi kalır."""
+    calls = list(plan.calls)
+    for i in range(len(calls) - 1, -1, -1):
+        if len(calls) <= budget:
+            break
+        if calls[i].optional:
+            del calls[i]
+    if len(calls) > budget:
+        raise SystemExit(f"plan araç bütçesini aşıyor: {len(calls)} > {budget}")
+    return Plan(calls)
+
+
+def _single_product(case: dict[str, Any]) -> str | None:
+    """Sepette tek ürün varsa onun kodu; çok ürünlü sepette satır gözlemi (`_observed_cart` ilk
+    satırı okur) ürüne bağlanamaz → None (kanıt yalnız toplamları yazar)."""
+    codes = {code for step in case["steps"] for code, _ in _cart_lines(step)}
+    return next(iter(codes)) if len(codes) == 1 else None
 
 
 def _first_product(case: dict[str, Any]) -> str | None:
@@ -464,7 +504,7 @@ def defect_candidate(case: dict[str, Any], pages: dict[str, Page]) -> dict[str, 
             return {
                 "step_id": step["id"],
                 "beklenen": diff,
-                "kayittaki_gozlem": _cart_evidence(cart, _first_product(case)),
+                "kayittaki_gozlem": _cart_evidence(cart, _single_product(case)),
             }
     return None
 
@@ -475,23 +515,106 @@ def build_output(
     """Elle hazırlanmış eşleme: case'in eylem/veri alanlarından; evidence_ref gözlemden.
 
     `previous` (aynı adlı eski golden) varsa eşleme ve beklentiler ondan korunur; yalnızca
-    evidence_ref gözlemle güncellenir. Yoksa (yeni senaryo case'i) `expects` verilir."""
-    first = _first_product(case)
+    evidence_ref gözlemle güncellenir. Yoksa (yeni case: ör. 011 K17 sınır case'leri C11–C15)
+    beklentiler ve eksik metotlar case'in beklenen metninden deterministik kurulur
+    (`default_expects`)."""
+    first = _single_product(case)
     cart = _observed_cart(pages["cart"]) if "cart" in pages else {}
     mapping = []
     base = (previous or {}).get("step_mapping") or []
     by_id = {m["step_id"]: m for m in base}
+    if previous is None:
+        expects, missing = default_expects(case, cart)
+    else:
+        expects = previous.get("expects") or []
+        missing = previous.get("missing_methods") or []
+    unverified = {e["step_id"] for e in missing}
     for step in case["steps"]:
         sid = step["id"]
         m = dict(by_id.get(sid) or _default_mapping(step))
+        if previous is None and sid in unverified:
+            # Eksik metot bildirilen adım doğrulanmış sayılmaz (TPD-1-C7 ile aynı biçim).
+            m["verified"], m["evidence_ref"] = False, None
         if m["verified"]:
             m["evidence_ref"] = _evidence(step, m, pages, cart, first)
         mapping.append(m)
-    return {
-        "step_mapping": mapping,
-        "expects": (previous or {}).get("expects") or [],
-        "missing_methods": (previous or {}).get("missing_methods") or [],
-    }
+    return {"step_mapping": mapping, "expects": expects, "missing_methods": missing}
+
+
+_LINE = re.compile(
+    r"(P-\d{3}) satırında adet (\d+), bedava adet (\d+); ara toplam ([\d.]+,\d{2} TL), "
+    r"indirim ([\d.]+,\d{2} TL), toplam ([\d.]+,\d{2} TL)"
+)
+_MIN_WARNING = re.compile(r'"(Minimum sipariş tutarı [\d.]+,\d{2} TL)" uyarısı görünür')
+_EQUAL_TOTAL = re.compile(r"^Toplam ([\d.]+,\d{2} TL) ")
+CREDIT_WARNING = '"Kredi limiti aşıldı" uyarısı görünür'
+
+
+def default_expects(
+    case: dict[str, Any], cart: dict[str, str]
+) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    """Yeni case'in beklentileri (elle hazırlanmış eşleme kuralı; mevcut golden'larla aynı desen).
+
+    Yalnız sepet adımının ("Üst menüden sepete git") beklenen metni okunur; her değer o metinde
+    birebir geçer (`codegen.checks` kaynak kuralı):
+
+    - satır özeti (`P-001 satırında adet n, bedava adet k; ara toplam …, indirim …, toplam …`) →
+      `expectLineQuantity` / `expectFreeQuantity` / `expectSubtotal` / `expectDiscount` /
+      `expectTotal` (TPD-1-C2 deseni);
+    - `"Minimum sipariş tutarı … TL" uyarısı görünür` → `expectMinOrderWarning`; `… butonu
+      pasif` → `expectCheckoutDisabled` (TPD-1-C5);
+    - `Toplam … TL … eşittir` + `minimum sipariş uyarısı … görünmez` + `… butonu aktif` →
+      `expectTotal` / `expectNoMinOrderWarning` / `expectCheckoutEnabled` (TPD-1-C6);
+    - `"Kredi limiti aşıldı" uyarısı görünür`: page object'te kredi limiti doğrulaması yoktur →
+      eşleme uydurulmaz, adım `missing_methods` (TPD-1-C7 deseni; gerekçede kayıttaki gözlem).
+    """
+    expects: list[dict[str, Any]] = []
+    missing: list[dict[str, str]] = []
+
+    def add(method: str, *args: Any) -> None:
+        expects.append({"po": "CartPage", "method": method, "args": list(args)})
+
+    for step in case["steps"]:
+        if step["action"] != "Üst menüden sepete git":
+            continue
+        text = step["expected"]
+        if CREDIT_WARNING in text:
+            missing.append(
+                {
+                    "step_id": step["id"],
+                    "reason": (
+                        "Page object'te kredi limiti uyarısı için expect metodu yok (CartPage'de "
+                        '"Kredi limiti aşıldı" doğrulaması bulunmuyor); eşleme uydurulmadı. '
+                        f'Kayıttaki gözlem — {_cart_evidence(cart, None)}; "Kredi limiti aşıldı" '
+                        "uyarısı görülmedi. Bilinen kod hatası (TPD-1 tutarlılık bulgusu F4: "
+                        "code_defect)"
+                    ),
+                }
+            )
+            continue
+        line = _LINE.search(text)
+        if line:
+            code, qty, free, sub, disc, total = line.groups()
+            add("expectLineQuantity", code, int(qty))
+            add("expectFreeQuantity", code, int(free))
+            add("expectSubtotal", sub)
+            add("expectDiscount", disc)
+            add("expectTotal", total)
+        warning = _MIN_WARNING.search(text)
+        if warning:
+            add("expectMinOrderWarning", warning.group(1))
+        equal = _EQUAL_TOTAL.search(text)
+        if equal and "eşittir" in text:
+            add("expectTotal", equal.group(1))
+        if "minimum sipariş uyarısı görünmez" in text:
+            add("expectNoMinOrderWarning")
+        if '"Siparişi onayla" butonu pasif' in text:
+            add("expectCheckoutDisabled")
+        elif '"Siparişi onayla" butonu aktif' in text:
+            add("expectCheckoutEnabled")
+    if not expects and not missing:
+        raise SystemExit(f"beklenti kurulamadı: {case['title']!r} (desen yok; elle hazırlayın)")
+    return expects, missing
 
 
 def _default_mapping(step: dict[str, Any]) -> dict[str, Any]:
@@ -546,11 +669,19 @@ def _evidence(
             "eşleme argümanıdır)"
         )
     if method == "addToCart":
-        page = pages.get("catalog")
+        own = pages.get(f"catalog@{step['id']}")
+        page = own or pages.get("catalog")
         count = page.find(r'link "Sepet \d+ ürün"') if page else []
         status = [x for x in (page.find(r"status") if page else []) if "eklendi" in x]
         shown = count[0].removeprefix("link ") if count else "?"
         stat = status[0].split(": ", 1)[-1] if status else "?"
+        if own is None:
+            # Ara ekleme adımı: kendi gözlemi yok; son ekleme adımından sonraki snapshot'ın sayacı
+            # bu eklemeyi de içerir (plan_for).
+            return (
+                f'button "Sepete ekle" (product-card-{m["args"][0]}) tıklandı; ara snapshot yok — '
+                f"son ekleme adımından sonra sepet bağlantısı {shown}"
+            )
         return (
             f'button "Sepete ekle" (product-card-{m["args"][0]}) → status "{stat}"; '
             f"sepet bağlantısı {shown}"
@@ -613,7 +744,13 @@ def record_case(
             # Ajanın bulduğu eleman (rol, ad, ref) o snapshot'ın özetinde görünür.
             idx, page = last_snapshot
             _, line = page.locate(call.locate)
-            if line not in steps[idx]["result_summary"]:
+            summary_items = steps[idx]["result_summary"].split(" | ")
+            if line not in summary_items:
+                # Kapsamlı hedef (başka ürün kartı): özet kartın kapsam satırını da taşımalı ki
+                # REPLAY'deki gibi rol/ad + kapsamla aynı ref bulunsun (snapshot_refs.locate_line).
+                kapsam = call.locate.kapsam
+                if kapsam and kapsam not in summary_items:
+                    steps[idx]["result_summary"] += f" | {kapsam}"
                 steps[idx]["result_summary"] += f" | {line}"
         if call.tool == "browser_snapshot":
             page = parse_page(text)
@@ -621,6 +758,8 @@ def record_case(
             last_snapshot = (len(steps), page)
             if call.tag:
                 pages[call.tag] = page
+                if call.tag.startswith("catalog@"):
+                    pages["catalog"] = page  # son katalog gözlemi (sayaç)
         else:
             summary = summarize_action(text)
             if call.tool == "browser_click" and call.args.get("target") == tid("login-submit"):

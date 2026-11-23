@@ -89,7 +89,9 @@ def _session(page: ShiftedPage) -> Session:
 def test_every_verify_golden_is_checked() -> None:
     assert "f2-kod-hatasi/TPD-1-C3" in GOLDENS and "TPD-1-C5" in GOLDENS
     assert {"f2-kod-hatasi/TPD-1-C2", "f2-kod-hatasi/TPD-1-C4"} <= set(GOLDENS)
-    assert len(GOLDENS) == 15
+    # TPD-1 C1–C15 + TPD-4 C1–C2 + senaryo C2/C3/C4/C11/C12.
+    assert {"TPD-1-C13", "TPD-1-C15", "f2-kod-hatasi/TPD-1-C11"} <= set(GOLDENS)
+    assert len(GOLDENS) == 22
 
 
 @pytest.mark.parametrize("name", sorted(GOLDENS))

@@ -54,10 +54,11 @@ MAIN_PATH_GOLDENS = {
     "consistency_check/golden/TPD-1.json",
     f"consistency_check/golden/{SCENARIO}/TPD-1-r2.json",
     f"case_generation/golden/{SCENARIO}/TPD-1.json",
-    *(f"verify_and_map/golden/TPD-1-C{n}.json" for n in (1, 5, 6, 7, 8, 9, 10)),
-    # Senaryoda C2 (7 adet = eşik, boundary), C3 (6 adette bedava yok) ve C4 (5 adet, positive)
-    # ana golden'dan ayrışır (case metni/türü); tarayıcı kayıtları senaryo dizinindedir.
-    *(f"verify_and_map/golden/{SCENARIO}/TPD-1-C{n}.json" for n in (2, 3, 4)),
+    *(f"verify_and_map/golden/TPD-1-C{n}.json" for n in (1, 5, 6, 7, 8, 9, 10, 13, 14, 15)),
+    # Senaryoda C2 (7 adet = eşik, boundary), C3 (6 adette bedava yok), C4 (5 adet, positive) ve
+    # C11/C12 (ikinci eşik 13/14 adet) ana golden'dan ayrışır (case metni/türü); tarayıcı kayıtları
+    # senaryo dizinindedir.
+    *(f"verify_and_map/golden/{SCENARIO}/TPD-1-C{n}.json" for n in (2, 3, 4, 11, 12)),
     "bug_draft/golden/f2-kampanya/HATA.json",
     "dup_rank/golden/f2-kampanya/HATA.json",
     "bug_draft/golden/f4-kredi-limiti/HATA.json",
@@ -182,9 +183,9 @@ def test_main_rehearsal_path_runs_without_replay_miss_in_strict_mode(
     assert len(cases) == 15  # 011 K17: C11–C15 sınır case'leri sona eklendi (sıra korunur)
     assert cases[2]["title"] == di.C3_TITLE
 
-    # Demo-B: doğrulama ajanı kaydı olan C1–C10 (sahnede C1, C2, C3, C5; hepsi hazır). C11–C15'in
-    # tarayıcı kaydı yok; prova kod üretimini onlarla çalıştırmaz.
-    for n, case in enumerate(cases[:10], start=1):
+    # Demo-B: 15 case'in hepsinin doğrulama ajanı kaydı var (sahnede C1, C2, C3, C5; canlı demo
+    # hepsine kod üretebilir — C11–C15 011 K17 sınır case'leri, 2026-11-23 kaydı).
+    for n, case in enumerate(cases, start=1):
         result, _calls, _streamed = _run_verify(gw, gw.rules_dir, case, n)
         assert result.mode == "replay", case["title"]
 
