@@ -1,0 +1,362 @@
+{
+  "kind": "agent",
+  "purpose": "verify_and_map",
+  "golden": "TPD-1-C13",
+  "note": "Adlandırılmış golden kayıt (REPLAY-MISS yedeği). Model çıktısı (step_mapping/expects/missing_methods) elle hazırlandı (canlı model çıktısı değil; ai_call.model = golden-elle). Tarayıcı adımları demo-app'in güncel kaynağına (e2e webServer yolu) karşı Playwright MCP 1.64.1 (compose yığını: playwright-mcp + demo-app-web/demo-app-api) (--isolated, --caps=testing) ile koşturulup kaydedildi (core/tests/unit/gateway/record_verify_goldens.py); yerel kök http://demo-app-web:8080 ile değiştirildi. Ajan tarayıcısı doğrulama bayisiyle (bayi3) girer; case'teki giriş verisi eşleme argümanıdır. Locator doğrulaması: eylemde kullanılan her locator ilk kullanımından önce doğrulanır — eleman son snapshot'ta sembol tablosundaki rol/adla bulunur, browser_generate_locator o snapshot ref'iyle çağrılır ve dönen getByTestId page object'in testId'siyle karşılaştırılır; eylemler testId seçicisiyle yapılır. Snapshot ref'leri oturuma özgüdür ve aynı yörüngede bile koşudan koşuya kayabilir: kayıttaki ref yalnızca o kaydın gözlemidir; adımın `hedef` alanı (rol/ad/kapsam) REPLAY'de ref'in canlı son snapshot'tan yeniden çözülmesi içindir (gateway.snapshot_refs). evidence_ref'teki 'kayıttaki not' değerleri kayıt anındaki sayfadandır; REPLAY koşusunda yeniden ölçülmez. Canlı modelle yeniden kaydedilmeli (TP_MODEL_MODE=record). Girdi beyanı (input_match) eşleşirse mod REPLAY (köken golden_matched), eşleşmezse REPLAY-MISS.",
+  "input_match": {
+    "sources": [
+      "case:TPD-1-C13"
+    ],
+    "case_text": "Başlık: Kampanyasız siparişte toplam 749,00 TL iken minimum tutar uyarısı gösterilir ve onay pasif olur\nTür: boundary\nKabul kriterleri: AC3\nÖn koşullar:\n- Sepet boş\n- Sepette kampanyalı ürün yok\nAdımlar:\nS1: Giriş sayfasını aç\n  Veri: (yok)\n  Beklenen: Giriş formu görüntülenir\nS2: Bayi kullanıcısıyla giriş yap\n  Veri: bayi1 / Demo123!\n  Beklenen: Katalog sayfası \"Merkez Bayi\" oturumuyla görüntülenir\nS3: \"Şeftalili Soğuk Çay 1L\" (P-004) kartında adedi 21 yapıp \"Sepete ekle\" butonuna bas\n  Veri: P-004 × 21\n  Beklenen: Ürün sepete eklenir\nS4: \"Limonata 330ml\" (P-002) kartında adedi 1 yapıp \"Sepete ekle\" butonuna bas\n  Veri: P-002 × 1\n  Beklenen: Ürün sepete eklenir\nS5: \"Maden Suyu 200ml\" (P-003) kartında adedi 13 yapıp \"Sepete ekle\" butonuna bas\n  Veri: P-003 × 13\n  Beklenen: Sepet sayacı 35 olur\nS6: Üst menüden sepete git\n  Veri: (yok)\n  Beklenen: Sepet tutarı minimum sipariş tutarının (750,00 TL) hemen altındadır; \"Minimum sipariş tutarı 750,00 TL\" uyarısı görünür ve \"Siparişi onayla\" butonu pasiftir\nBeklenen sonuç: Sepet tutarı minimum sipariş tutarının (750,00 TL) hemen altındayken \"Minimum sipariş tutarı 750,00 TL\" uyarısı gösterilir ve onay butonu pasif olur\nEtiketler: AI-generated"
+  },
+  "case": {
+    "jira_key": "TPD-1",
+    "sira_no": 13,
+    "title": "Kampanyasız siparişte toplam 749,00 TL iken minimum tutar uyarısı gösterilir ve onay pasif olur",
+    "case_golden": "TPD-1"
+  },
+  "steps": [
+    {
+      "tool": "browser_navigate",
+      "args": {
+        "url": "http://demo-app-web:8080/giris"
+      },
+      "result_summary": "await page.goto('http://demo-app-web:8080/giris'); · URL /giris",
+      "allowed": true
+    },
+    {
+      "tool": "browser_snapshot",
+      "args": {},
+      "result_summary": "URL /giris | heading \"Bayi girişi\" [level=1] | textbox \"Kullanıcı adı\" [ref=e16] | textbox \"Parola\" [ref=e19] | button \"Giriş yap\" [disabled] [ref=e20]",
+      "allowed": true
+    },
+    {
+      "tool": "browser_generate_locator",
+      "args": {
+        "element": "textbox \"Kullanıcı adı\" (login.username)",
+        "target": "e16"
+      },
+      "result_summary": "getByTestId('login-username')",
+      "allowed": true,
+      "hedef": {
+        "rol": "textbox",
+        "ad": "Kullanıcı adı"
+      }
+    },
+    {
+      "tool": "browser_generate_locator",
+      "args": {
+        "element": "textbox \"Parola\" (login.password)",
+        "target": "e19"
+      },
+      "result_summary": "getByTestId('login-password')",
+      "allowed": true,
+      "hedef": {
+        "rol": "textbox",
+        "ad": "Parola"
+      }
+    },
+    {
+      "tool": "browser_generate_locator",
+      "args": {
+        "element": "button \"Giriş yap\" (login.submit)",
+        "target": "e20"
+      },
+      "result_summary": "getByTestId('login-submit')",
+      "allowed": true,
+      "hedef": {
+        "rol": "button",
+        "ad": "Giriş yap"
+      }
+    },
+    {
+      "tool": "browser_type",
+      "args": {
+        "element": "Kullanıcı adı",
+        "target": "[data-testid=\"login-username\"]",
+        "text": "bayi3"
+      },
+      "result_summary": "await page.locator('[data-testid=\"login-username\"]').fill('bayi3');",
+      "allowed": true
+    },
+    {
+      "tool": "browser_type",
+      "args": {
+        "element": "Parola",
+        "target": "[data-testid=\"login-password\"]",
+        "text": "Demo123!"
+      },
+      "result_summary": "await page.locator('[data-testid=\"login-password\"]').fill('Demo123!');",
+      "allowed": true
+    },
+    {
+      "tool": "browser_click",
+      "args": {
+        "element": "Giriş yap",
+        "target": "[data-testid=\"login-submit\"]"
+      },
+      "result_summary": "await page.locator('[data-testid=\"login-submit\"]').click(); · URL /katalog",
+      "allowed": true
+    },
+    {
+      "tool": "browser_snapshot",
+      "args": {},
+      "result_summary": "URL /katalog | heading \"Ürün kataloğu\" [level=1] | link \"Sepet 0 ürün\" [ref=e33] | generic: Doğrulama Bayi | paragraph: P-004 | heading \"Şeftalili Soğuk Çay 1L\" [level=2] | paragraph: 30,00 TL | spinbutton \"Adet\" [ref=e95]: \"1\" | button \"Sepete ekle\" [ref=e96] | status | paragraph: P-002 | spinbutton \"Adet\" [ref=e69]: \"1\" | button \"Sepete ekle\" [ref=e70] | paragraph: P-003 | spinbutton \"Adet\" [ref=e82]: \"1\" | button \"Sepete ekle\" [ref=e83]",
+      "allowed": true
+    },
+    {
+      "tool": "browser_generate_locator",
+      "args": {
+        "element": "P-004 kartında spinbutton \"Adet\" (catalog.quantityInput)",
+        "target": "e95"
+      },
+      "result_summary": "getByTestId('qty-input-P-004')",
+      "allowed": true,
+      "hedef": {
+        "rol": "spinbutton",
+        "ad": "Adet",
+        "kapsam": "paragraph: P-004"
+      }
+    },
+    {
+      "tool": "browser_generate_locator",
+      "args": {
+        "element": "P-004 kartında button \"Sepete ekle\" (catalog.addToCart)",
+        "target": "e96"
+      },
+      "result_summary": "getByTestId('product-card-P-004').getByTestId('add-to-cart')",
+      "allowed": true,
+      "hedef": {
+        "rol": "button",
+        "ad": "Sepete ekle",
+        "kapsam": "paragraph: P-004"
+      }
+    },
+    {
+      "tool": "browser_type",
+      "args": {
+        "element": "P-004 adet",
+        "target": "[data-testid=\"product-card-P-004\"] [data-testid=\"qty-input-P-004\"]",
+        "text": "21"
+      },
+      "result_summary": "await page.locator('[data-testid=\"product-card-P-004\"] [data-testid=\"qty-input-P-004\"]').fill('21');",
+      "allowed": true
+    },
+    {
+      "tool": "browser_click",
+      "args": {
+        "element": "P-004 kartında Sepete ekle",
+        "target": "[data-testid=\"product-card-P-004\"] [data-testid=\"add-to-cart\"]"
+      },
+      "result_summary": "await page.locator('[data-testid=\"product-card-P-004\"] [data-testid=\"add-to-cart\"]').click(); · URL /katalog",
+      "allowed": true
+    },
+    {
+      "tool": "browser_generate_locator",
+      "args": {
+        "element": "P-002 kartında spinbutton \"Adet\" (catalog.quantityInput)",
+        "target": "e69"
+      },
+      "result_summary": "getByTestId('qty-input-P-002')",
+      "allowed": true,
+      "hedef": {
+        "rol": "spinbutton",
+        "ad": "Adet",
+        "kapsam": "paragraph: P-002"
+      }
+    },
+    {
+      "tool": "browser_generate_locator",
+      "args": {
+        "element": "P-002 kartında button \"Sepete ekle\" (catalog.addToCart)",
+        "target": "e70"
+      },
+      "result_summary": "getByTestId('product-card-P-002').getByTestId('add-to-cart')",
+      "allowed": true,
+      "hedef": {
+        "rol": "button",
+        "ad": "Sepete ekle",
+        "kapsam": "paragraph: P-002"
+      }
+    },
+    {
+      "tool": "browser_type",
+      "args": {
+        "element": "P-002 adet",
+        "target": "[data-testid=\"product-card-P-002\"] [data-testid=\"qty-input-P-002\"]",
+        "text": "1"
+      },
+      "result_summary": "await page.locator('[data-testid=\"product-card-P-002\"] [data-testid=\"qty-input-P-002\"]').fill('1');",
+      "allowed": true
+    },
+    {
+      "tool": "browser_click",
+      "args": {
+        "element": "P-002 kartında Sepete ekle",
+        "target": "[data-testid=\"product-card-P-002\"] [data-testid=\"add-to-cart\"]"
+      },
+      "result_summary": "await page.locator('[data-testid=\"product-card-P-002\"] [data-testid=\"add-to-cart\"]').click(); · URL /katalog",
+      "allowed": true
+    },
+    {
+      "tool": "browser_generate_locator",
+      "args": {
+        "element": "P-003 kartında spinbutton \"Adet\" (catalog.quantityInput)",
+        "target": "e82"
+      },
+      "result_summary": "getByTestId('qty-input-P-003')",
+      "allowed": true,
+      "hedef": {
+        "rol": "spinbutton",
+        "ad": "Adet",
+        "kapsam": "paragraph: P-003"
+      }
+    },
+    {
+      "tool": "browser_generate_locator",
+      "args": {
+        "element": "P-003 kartında button \"Sepete ekle\" (catalog.addToCart)",
+        "target": "e83"
+      },
+      "result_summary": "getByTestId('product-card-P-003').getByTestId('add-to-cart')",
+      "allowed": true,
+      "hedef": {
+        "rol": "button",
+        "ad": "Sepete ekle",
+        "kapsam": "paragraph: P-003"
+      }
+    },
+    {
+      "tool": "browser_type",
+      "args": {
+        "element": "P-003 adet",
+        "target": "[data-testid=\"product-card-P-003\"] [data-testid=\"qty-input-P-003\"]",
+        "text": "13"
+      },
+      "result_summary": "await page.locator('[data-testid=\"product-card-P-003\"] [data-testid=\"qty-input-P-003\"]').fill('13');",
+      "allowed": true
+    },
+    {
+      "tool": "browser_click",
+      "args": {
+        "element": "P-003 kartında Sepete ekle",
+        "target": "[data-testid=\"product-card-P-003\"] [data-testid=\"add-to-cart\"]"
+      },
+      "result_summary": "await page.locator('[data-testid=\"product-card-P-003\"] [data-testid=\"add-to-cart\"]').click(); · URL /katalog",
+      "allowed": true
+    },
+    {
+      "tool": "browser_snapshot",
+      "args": {},
+      "result_summary": "URL /katalog | heading \"Ürün kataloğu\" [level=1] | link \"Sepet 35 ürün\" [ref=e101] | generic: Doğrulama Bayi | paragraph: P-003 | heading \"Maden Suyu 200ml\" [level=2] | paragraph: 8,00 TL | spinbutton \"Adet\" [ref=e82]: \"13\" | button \"Sepete ekle\" [ref=e83] | status: 13 adet sepete eklendi.",
+      "allowed": true
+    },
+    {
+      "tool": "browser_generate_locator",
+      "args": {
+        "element": "link \"Sepet\" (nav.cart; sayaç içinde)",
+        "target": "e101"
+      },
+      "result_summary": "getByTestId('nav-cart')",
+      "allowed": true,
+      "hedef": {
+        "rol": "link",
+        "ad": "Sepet"
+      }
+    },
+    {
+      "tool": "browser_click",
+      "args": {
+        "element": "Sepet",
+        "target": "[data-testid=\"nav-cart\"]"
+      },
+      "result_summary": "await page.locator('[data-testid=\"nav-cart\"]').click(); · URL /sepet",
+      "allowed": true
+    },
+    {
+      "tool": "browser_snapshot",
+      "args": {},
+      "result_summary": "URL /sepet | heading \"Sepetim\" [level=1] | link \"Sepet 35 ürün\" [ref=e101] | generic: Doğrulama Bayi | rowheader \"Limonata 330ml P-002\" | cell \"15,00 TL\" | cell \"1\" | cell \"0\" | cell \"15,00 TL\" | rowheader \"Maden Suyu 200ml P-003\" | cell \"8,00 TL\" | cell \"13\" | cell \"0\" | cell \"104,00 TL\" | rowheader \"Şeftalili Soğuk Çay 1L P-004\" | cell \"30,00 TL\" | cell \"21\" | cell \"0\" | cell \"630,00 TL\" | term: Ara toplam | definition: 749,00 TL | term: Kampanya indirimi | definition: 0,00 TL | term: Genel to",
+      "allowed": true
+    }
+  ],
+  "output": {
+    "step_mapping": [
+      {
+        "step_id": "S1",
+        "po": "LoginPage",
+        "method": "goto",
+        "args": [],
+        "verified": true,
+        "evidence_ref": "Giriş formu (textbox \"Kullanıcı adı\", \"Parola\", button \"Giriş yap\") · /giris"
+      },
+      {
+        "step_id": "S2",
+        "po": "LoginPage",
+        "method": "login",
+        "args": [
+          "bayi1",
+          "Demo123!"
+        ],
+        "verified": true,
+        "evidence_ref": "button \"Giriş yap\" → /katalog; oturum \"Doğrulama Bayi\" (doğrulama bayisi bayi3; case'in bayisi bayi1 eşleme argümanıdır)"
+      },
+      {
+        "step_id": "S3",
+        "po": "CatalogPage",
+        "method": "addToCart",
+        "args": [
+          "P-004",
+          21
+        ],
+        "verified": true,
+        "evidence_ref": "button \"Sepete ekle\" (product-card-P-004) tıklandı; ara snapshot yok — son ekleme adımından sonra sepet bağlantısı \"Sepet 35 ürün\""
+      },
+      {
+        "step_id": "S4",
+        "po": "CatalogPage",
+        "method": "addToCart",
+        "args": [
+          "P-002",
+          1
+        ],
+        "verified": true,
+        "evidence_ref": "button \"Sepete ekle\" (product-card-P-002) tıklandı; ara snapshot yok — son ekleme adımından sonra sepet bağlantısı \"Sepet 35 ürün\""
+      },
+      {
+        "step_id": "S5",
+        "po": "CatalogPage",
+        "method": "addToCart",
+        "args": [
+          "P-003",
+          13
+        ],
+        "verified": true,
+        "evidence_ref": "button \"Sepete ekle\" (product-card-P-003) → status \"13 adet sepete eklendi.\"; sepet bağlantısı \"Sepet 35 ürün\""
+      },
+      {
+        "step_id": "S6",
+        "po": "CatalogPage",
+        "method": "openCart",
+        "args": [],
+        "verified": true,
+        "evidence_ref": "link \"Sepet\" → /sepet; kayıttaki not — gözlenen: ara toplam 749,00 TL; indirim 0,00 TL; toplam 749,00 TL; uyarı \"Minimum sipariş tutarı 750,00 TL\"; \"Siparişi onayla\" pasif"
+      }
+    ],
+    "expects": [
+      {
+        "po": "CartPage",
+        "method": "expectMinOrderWarning",
+        "args": [
+          "Minimum sipariş tutarı 750,00 TL"
+        ]
+      },
+      {
+        "po": "CartPage",
+        "method": "expectCheckoutDisabled",
+        "args": []
+      }
+    ],
+    "missing_methods": []
+  }
+}

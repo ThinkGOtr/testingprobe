@@ -164,11 +164,12 @@ CASE_TEXT_FIELDS = (
 # AC2'nin case'leri (7 / 6 / 5 / 7 adet; ikinci eşik C11/C12): senaryo belgesinde bedava eşiği
 # 6|7, ana belgede 5|6.
 AC2_CASES = (2, 3, 4, 10, 11, 12)
-# Doğrulama ajanı kaydı olan case'ler (C11–C15, 011 K17 sınır case'leri: kayıt yok).
-KAYITLI = 10
+# Doğrulama ajanı kaydı olan case'ler (C1–C15; C11–C15 011 K17 sınır case'leri, 2026-11-23 kaydı).
+KAYITLI = 15
 # Senaryoda case metni ayrışan ve kendi doğrulama kaydı olan case'ler: C3 (6 adette bedava yok),
-# C2 (7 adet = eşik: boundary) ve C4 (5 adet = bölüm içi: positive) — C2/C4'te yalnız tür farklı.
-SENARYO_KAYITLI = (2, 3, 4)
+# C2 (7 adet = eşik: boundary) ve C4 (5 adet = bölüm içi: positive) — C2/C4'te yalnız tür farklı;
+# C11/C12 (ikinci eşik: 13/14 adet).
+SENARYO_KAYITLI = (2, 3, 4, 11, 12)
 
 
 def test_scenario_cases_differ_from_the_main_golden_only_in_the_ac2_boundary() -> None:
@@ -340,7 +341,13 @@ def _assert_locators_verified_from_snapshot_refs(steps: list[dict[str, Any]]) ->
                 got[-1] == c or (c.endswith("-") and got[-1].startswith(c)) for c in candidates
             ), (role, name, got, candidates)
             assert all(_known_test_id(i) for i in got), got
-            assert got[-1] not in acted, f"{got[-1]} doğrulanmadan önce kullanılmış"
+            if len(got) > 1 and got[0] not in verified_ids:
+                # Kart kapsamlı zincir (çok ürünlü sepet): ortak `add-to-cart` önceki kartta
+                # doğrulanıp kullanılmış olabilir; yeni olan kartın kimliğidir ve o kullanılmamış
+                # olmalı.
+                assert got[0] not in acted, f"{got[0]} doğrulanmadan önce kullanılmış"
+            else:
+                assert got[-1] not in acted, f"{got[-1]} doğrulanmadan önce kullanılmış"
             verified_ids.update(got)
             verified += 1
     assert verified >= 1, "hiç locator doğrulanmamış"

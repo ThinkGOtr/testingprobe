@@ -19,19 +19,22 @@ def _numbered(cases):
 def test_code_defect_path_has_the_six_no_free_defect_candidate() -> None:
     r = evaluate("TPD-1", _numbered(SCENARIO))
     assert r.ok
-    assert [(c.sira_no, c.golden) for c in r.defect_candidates] == [(3, "f2-kod-hatasi/TPD-1-C3")]
+    # C3 (6 adette bedava yok) ve C11 (13 adette ikinci bedava yok): `adet // 6` ikisinde de
+    # assertion'da kırmızı. C11 kaydı 2026-11-23 (011 K17 sınır case'i; aynı kampanya hatası).
+    assert [(c.sira_no, c.golden) for c in r.defect_candidates] == [
+        (3, "f2-kod-hatasi/TPD-1-C3"),
+        (11, "f2-kod-hatasi/TPD-1-C11"),
+    ]
     assert r.defect_candidates[0].title.startswith("6 adet kampanyalı üründe bedava ürün verilmez")
-    # C1–C10 REPLAY (MISS yok); C11–C15 (011 K17 sınır case'leri) doğrulama kaydı yok → dürüst
-    # REPLAY-MISS, kontrolün sonucunu değiştirmez (karar defect adayına göre).
-    assert all(c.golden for c in r.cases if c.sira_no <= 10)
-    assert [c.sira_no for c in r.cases if not c.golden] == [11, 12, 13, 14, 15]
+    # 15 case'in hepsi REPLAY (MISS yok).
+    assert all(c.golden for c in r.cases)
     assert "TAMAM" in r.report()
 
 
 def test_default_fix_doc_path_fails_with_the_presenter_hint() -> None:
     r = evaluate("TPD-1", _numbered(MAIN))
     assert not r.ok and r.defect_candidates == []
-    assert all(c.golden for c in r.cases if c.sira_no <= 10)
+    assert all(c.golden for c in r.cases)
     report = r.report()
     assert "HATA" in report and HINT in report and "Kod hatalı" in report
 
@@ -40,8 +43,11 @@ def test_edited_boundary_case_is_not_counted() -> None:
     cases = json.loads(json.dumps(SCENARIO))
     cases[2]["expected_result"] += " (düzenlendi)"
     r = evaluate("TPD-1", _numbered(cases))
-    assert not r.ok
     assert next(c for c in r.cases if c.sira_no == 3).golden is None
+    assert [c.sira_no for c in r.defect_candidates] == [11]  # yalnız C11 kalır
+    cases[10]["expected_result"] += " (düzenlendi)"
+    r = evaluate("TPD-1", _numbered(cases))
+    assert not r.ok
 
 
 def test_no_approved_cases_fails(monkeypatch, capsys) -> None:
@@ -63,6 +69,8 @@ def test_decision_reads_the_structured_field_not_the_evidence_text(tmp_path) -> 
 
     rules = tmp_path / "rules"
     shutil.copytree(find_rules_dir(), rules)
+    # C11'in (13 adet) kendi defect adayı beyanı var; bu test C3'ün beyanını sınar.
+    (rules / "replay" / "verify_and_map" / "golden" / "f2-kod-hatasi" / "TPD-1-C11.json").unlink()
     path = rules / "replay" / "verify_and_map" / "golden" / "f2-kod-hatasi" / "TPD-1-C3.json"
     golden = json.loads(path.read_text(encoding="utf-8"))
     assert golden["defect_adayi"]["step_id"] == "S4"
