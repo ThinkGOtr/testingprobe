@@ -51,11 +51,14 @@ log = logging.getLogger(__name__)
 
 TAM_JOB = "demo.tam_sifirla"
 ADIMLAR: tuple[str, ...] = ("otomasyon", "tp_veri", "jira", "github", "dogrulama")
+# Hatası sonraki adımları durdurmayan adımlar (birbirinden bağımsız dış sistemler).
+BAGIMSIZ_ADIMLAR = frozenset({"jira", "github"})
 AKTOR = "demo-sifirlama"
 AUDIT_ISTENDI = "demo.tam_sifirlama.istendi"
 AUDIT_TAMAM = "demo.tam_sifirlama.tamam"
 AUDIT_HATA = "demo.tam_sifirlama.hata"
 BEKLE_ENV = "TP_DEMO_SIFIRLA_IS_BEKLE_S"  # koşan proje işinin bitmesi için (varsayılan 120)
+IZLEYICI_TOLERANS_S = 60.0  # izleyici kalp atışının gecikebileceği süre (derleme sürerken)
 WEB_BEKLE_ENV = "TP_DEMO_SIFIRLA_WEB_BEKLE_S"  # demo-app-web'in main'e eşitlenmesi (varsayılan 600)
 
 # Otomasyon demo değerleri (CANLI-DEMO-SENARYOSU-v2 B0.4 #5, EK-A A.7).
@@ -65,7 +68,7 @@ OTOMASYON_HEDEF: dict[str, dict[str, Any]] = {
 }
 
 # Proje kapsamlı silinen tablolar (sıra FK gereği). CASCADE'le gidenler de sonda doğrudan
-# temizlenir (bağsız kalmış satır olmasın). Hepsinde `tp_app` DELETE yetkisi var (0051).
+# temizlenir (bağsız kalmış satır olmasın). Hepsinde `tp_app` DELETE yetkisi var (0052).
 SILME_SIRASI: tuple[str, ...] = (
     "bug_draft",
     "run",
@@ -374,6 +377,7 @@ def onizleme(engine: Engine, project_id: str) -> dict[str, Any]:
     with engine.connect() as conn:
         if not _proje_kayitli(conn, project_id):
             raise IstekReddi(404, "proje_yok", "Proje bu Testing Probe kurulumunda yok")
+        demo_projesi_denetimi(project_id)
         tp = {ad: _say(conn, tablo, project_id) for ad, tablo in SAYIMLAR.items()}
         tp["is"] = _say(conn, "job", project_id)
         ad = conn.execute(
@@ -444,7 +448,13 @@ def run(ctx: JobContext, engine: Engine) -> dict[str, Any]:
             demo_projesi_denetimi(pid)
         except IstekReddi as exc:
             return _bitir_hata(engine, islem_id, pid, adimlar, adimlar[0], exc.mesaj)
+        hatali: list[dict[str, Any]] = []
         for adim in adimlar:
+            if not _is_hala_bizde(engine, ctx.job_id):
+                # İş başka bir worker'ca düşürüldü (nabız kaybı/zaman aşımı): bu iş parçacığı
+                # durur; yeni sıfırlama güvenle başlatılabilir (iki sıfırlama eşzamanlı koşmaz).
+                log.warning("demo tam sıfırlama: iş artık bu worker'da değil, duruluyor")
+                return {"durum": "durduruldu", "adim": adim["kod"]}
             adim.update(durum="calisiyor", baslangic=_iso(_simdi()), hata=None, ozet=None)
             _guncelle(engine, islem_id, adimlar=adimlar)
             try:
@@ -453,10 +463,26 @@ def run(ctx: JobContext, engine: Engine) -> dict[str, Any]:
                 log.exception("demo tam sıfırlama: %s adımı başarısız", adim["kod"])
                 metin = str(exc) if isinstance(exc, TamSifirlamaHatasi) else (
                     f"{type(exc).__name__}: {exc}")  # fmt: skip
-                return _bitir_hata(engine, islem_id, pid, adimlar, adim, metin[:1000])
+                if adim["kod"] not in BAGIMSIZ_ADIMLAR:
+                    return _bitir_hata(engine, islem_id, pid, adimlar, adim, metin[:1000])
+                # Jira ile GitHub birbirinden bağımsız: biri düşse de diğeri ve doğrulama koşar;
+                # işlem sonda "hata" biter (yeniden deneme yalnız eksik kalanı yapar).
+                adim.update(durum="hata", hata=metin[:1000], bitis=_iso(_simdi()))
+                _guncelle(engine, islem_id, adimlar=adimlar)
+                hatali.append(adim)
+                continue
             adim.update(durum="tamam", ozet=ozet, ayrinti=ayrinti, bitis=_iso(_simdi()))
             _guncelle(engine, islem_id, adimlar=adimlar)
     kontrol = baglam.get("kontrol") or []
+    if hatali:
+        _guncelle(engine, islem_id, kontrol=kontrol)
+        ilk = hatali[0]
+        metin = "; ".join(f"{a['kod']}: {a['hata']}" for a in hatali)
+        ilk_hata = ilk["hata"]
+        sonuc = _bitir_hata(engine, islem_id, pid, adimlar, ilk, metin[:1000])
+        ilk["hata"] = ilk_hata
+        _guncelle(engine, islem_id, adimlar=adimlar)
+        return sonuc
     hazir = not any(k["durum"] == "hata" for k in kontrol)
     _guncelle(
         engine, islem_id, durum="tamam", hazir=hazir, kontrol=kontrol, bitis=_simdi(),
@@ -471,6 +497,14 @@ def run(ctx: JobContext, engine: Engine) -> dict[str, Any]:
             project_id=pid,
         )  # fmt: skip
     return {"durum": "tamam", "hazir": hazir}
+
+
+def _is_hala_bizde(engine: Engine, job_id: uuid.UUID) -> bool:
+    with engine.connect() as conn:
+        durum = conn.execute(
+            text("SELECT durum FROM job WHERE id = :j AND project_id IS NULL"), {"j": job_id}
+        ).scalar()
+    return durum in (None, "running")  # None: satır yok (test/elle çağrı) → engelleme
 
 
 def _bitir_hata(
@@ -550,57 +584,74 @@ def adim_otomasyon(engine: Engine, baglam: dict[str, Any]) -> tuple[str, Any]:
 
 def proje_verisini_sil(engine: Engine, pid: str) -> dict[str, Any]:
     """YALNIZ `pid` projesinin iş verisini siler (tek işlem). Koşan proje işi varsa bekler; süre
-    dolarsa `TamSifirlamaHatasi`. Dönen: silmeden önceki sayımlar."""
+    dolarsa `TamSifirlamaHatasi` (hiçbir şey silinmez, iptaller de geri alınır). Dönen: silmeden
+    önceki sayımlar."""
     bitis = time.monotonic() + _ortam_s(BEKLE_ENV, 120)
     while True:
-        with engine.begin() as conn:
-            # Bekleyen işler iptal: satır kilidi `claim`'in bunları almasını da önler.
-            conn.execute(
-                text(
-                    "UPDATE job SET durum = 'cancelled', guncelleme = now(), bitis = now() "
-                    "WHERE project_id = :pid AND durum IN ('queued', 'retry')"
-                ),
-                {"pid": pid},
-            )
-            kosan = list(
-                conn.execute(
-                    text("SELECT tur FROM job WHERE project_id = :pid AND durum = 'running'"),
-                    {"pid": pid},
-                ).scalars()
-            )
-            if not kosan:
-                once = {ad: _say(conn, tablo, pid) for ad, tablo in SAYIMLAR.items()}
-                once["is"] = _say(conn, "job", pid)
-                conn.execute(
-                    text(
-                        "UPDATE script SET failure_id = NULL "
-                        "WHERE project_id = :pid AND failure_id IS NOT NULL"
-                    ),
-                    {"pid": pid},
-                )
-                for tablo in SILME_SIRASI:
-                    conn.execute(text(f"DELETE FROM {tablo} WHERE project_id = :pid"), {"pid": pid})
-                conn.execute(
-                    text("DELETE FROM otomasyon_ayari WHERE project_id = :pid AND anahtar = :a"),
-                    {"pid": pid, "a": "jira_tetik.taban"},
-                )
-                conn.execute(
-                    text("DELETE FROM job WHERE project_id = :pid AND durum <> 'running'"),
-                    {"pid": pid},
-                )
-                kalan = {t: n for t in BOS_OLMALI if (n := _say(conn, t, pid))}
-                if kalan:
-                    raise TamSifirlamaHatasi(
-                        "Proje verisi tam silinemedi (işlem geri alındı): "
-                        + ", ".join(f"{t}={n}" for t, n in kalan.items())
-                    )
-                return once
+        try:
+            return _sil_tek_islem(engine, pid)
+        except _IsSuruyor as exc:
+            kosan = exc.turler
         if time.monotonic() >= bitis:
             raise TamSifirlamaHatasi(
-                "Projede süren iş var (" + ", ".join(sorted(set(kosan))) + "); bitince yeniden "
-                "deneyin"
+                "Projede süren iş var (" + ", ".join(sorted(set(kosan))) + "); hiçbir şey "
+                "silinmedi, bitince yeniden deneyin"
             )
         _uyku(3.0)
+
+
+class _IsSuruyor(Exception):
+    def __init__(self, turler: list[str]) -> None:
+        super().__init__("süren iş")
+        self.turler = turler
+
+
+def _sil_tek_islem(engine: Engine, pid: str) -> dict[str, Any]:
+    """Tek işlem: bekleyen işleri iptal eder (satır kilidi `claim`'in onları almasını önler);
+    koşan iş varsa `_IsSuruyor` ile işlemi GERİ ALIR (iptaller de geri alınır: periyodik işler
+    yaşamaya devam eder), yoksa siler."""
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE job SET durum = 'cancelled', guncelleme = now(), bitis = now() "
+                "WHERE project_id = :pid AND durum IN ('queued', 'retry')"
+            ),
+            {"pid": pid},
+        )
+        kosan = list(
+            conn.execute(
+                text("SELECT tur FROM job WHERE project_id = :pid AND durum = 'running'"),
+                {"pid": pid},
+            ).scalars()
+        )
+        if kosan:
+            raise _IsSuruyor(kosan)  # işlem geri alınır
+        once = {ad: _say(conn, tablo, pid) for ad, tablo in SAYIMLAR.items()}
+        once["is"] = _say(conn, "job", pid)
+        conn.execute(
+            text(
+                "UPDATE script SET failure_id = NULL "
+                "WHERE project_id = :pid AND failure_id IS NOT NULL"
+            ),
+            {"pid": pid},
+        )
+        for tablo in SILME_SIRASI:
+            conn.execute(text(f"DELETE FROM {tablo} WHERE project_id = :pid"), {"pid": pid})
+        conn.execute(
+            text("DELETE FROM otomasyon_ayari WHERE project_id = :pid AND anahtar = :a"),
+            {"pid": pid, "a": "jira_tetik.taban"},
+        )
+        conn.execute(
+            text("DELETE FROM job WHERE project_id = :pid AND durum <> 'running'"),
+            {"pid": pid},
+        )
+        kalan = {t: n for t in BOS_OLMALI if (n := _say(conn, t, pid))}
+        if kalan:
+            raise TamSifirlamaHatasi(
+                "Proje verisi tam silinemedi (işlem geri alındı): "
+                + ", ".join(f"{t}={n}" for t, n in kalan.items())
+            )
+        return once
 
 
 def proje_kancalarini_kos(pid: str) -> list[str]:
@@ -658,7 +709,10 @@ def adim_jira(engine: Engine, baglam: dict[str, Any]) -> tuple[str, Any]:
     from tp_core.integrations import jira_demo_sifirla as jds
 
     proje = _jira_projesi(baglam["pid"])
-    sonuc = jds.sifirla(_jira(), proje)
+    try:
+        sonuc = jds.sifirla(_jira(), proje)
+    except jds.GuvenlikReddi as exc:
+        raise TamSifirlamaHatasi(str(exc)) from exc
     if sonuc.hatalar:
         raise TamSifirlamaHatasi(
             f"Jira ({proje}) kısmen sıfırlandı; hatalar: " + " | ".join(sonuc.hatalar[:8])
@@ -904,24 +958,31 @@ def _calisan() -> Any:
 
 def kontrol_web(engine: Engine, main_sha: str | None) -> list[dict[str, str]]:
     """Host izleyicisi (`demo-web-sync --watch`) çalışıyor mu ve çalışan demo-app-web main'i
-    yansıtıyor mu? İzleyici canlıysa eşitlenmesi en çok `WEB_BEKLE_ENV` sn beklenir."""
+    yansıtıyor mu? Eşitlenme en çok `WEB_BEKLE_ENV` sn beklenir; izleyici bu sürenin ilk
+    `IZLEYICI_TOLERANS_S` saniyesinde de canlı görünmezse (durmuş) beklemeden sonuçlanır."""
     from tp_core.features.demo import web
 
     out: list[dict[str, str]] = []
-    iz = _izleyici()
-    canli = bool(iz.get("calisiyor"))
-    out.append(_k("web_izleyici", "tamam" if canli else "hata", str(iz.get("ayrinti") or "")))
     if not main_sha:
+        iz = _izleyici()
+        out.append(_k("web_izleyici", "tamam" if iz.get("calisiyor") else "hata",
+                      str(iz.get("ayrinti") or "")))  # fmt: skip
         out.append(_k("uygulama_main", "hata", "main sha bilinmiyor"))
         return out
     forge = _forge()
-    bitis = time.monotonic() + (_ortam_s(WEB_BEKLE_ENV, 600) if canli else 0)
+    basla = time.monotonic()
+    bitis = basla + _ortam_s(WEB_BEKLE_ENV, 600)
     while True:
+        iz = _izleyici()
         calisan = _calisan()
         eslesiyor, neden = web.uygulama_eslesiyor(forge, main_sha, calisan.sha)
-        if eslesiyor or time.monotonic() >= bitis:
+        simdi = time.monotonic()
+        olu = not iz.get("calisiyor") and simdi - basla >= IZLEYICI_TOLERANS_S
+        if eslesiyor or olu or simdi >= bitis:
             break
         _uyku(5.0)
+    out.append(_k("web_izleyici", "tamam" if iz.get("calisiyor") else "hata",
+                  str(iz.get("ayrinti") or "")))  # fmt: skip
     sha = (calisan.sha or "?")[:12]
     if eslesiyor:
         out.append(_k("uygulama_main", "tamam", f"Çalışan demo uygulaması ({sha}) main "

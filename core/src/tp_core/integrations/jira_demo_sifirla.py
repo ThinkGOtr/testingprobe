@@ -20,6 +20,8 @@ durdurmaz; hatalar listelenir ve adım hata sayılır. `dogrula` aynı hedefi sa
 
 from __future__ import annotations
 
+import os
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -45,6 +47,48 @@ HEDEF_DURUMLAR: dict[int, str] = {
 TOHUM_SAYISI = jira_seed.SEED_ISSUE_COUNT
 MAX_ADIM = 3
 MAX_KAYIT = 2000
+# Yanlış projeye yönelmiş yapılandırmada toplu silmeyi durduran sınırlar (derinlemesine savunma).
+IZINLI_PROJE_ENV = (
+    "TP_DEMO_JIRA_PROJE"  # TPD dışında izin verilecek demo Jira projesi (isteğe bağlı)
+)
+SILME_UST_SINIRI = 300
+_PROJE_ANAHTARI = re.compile(r"^[A-Z][A-Z0-9_]{1,9}$")
+
+
+class GuvenlikReddi(JiraError):
+    """Demo Jira projesi doğrulanamadı: hiçbir şey yazılmadı."""
+
+
+def izinli_projeler() -> frozenset[str]:
+    ek = (os.environ.get(IZINLI_PROJE_ENV) or "").strip().upper()
+    return frozenset({"TPD", *([ek] if ek else [])})
+
+
+def guvenlik_denetimi(jira: RestJira, proje: str) -> None:
+    """Yazmadan ÖNCE: proje anahtarı izinli demo projesi mi ve projede demo tohumu (TPD-1..4
+    özetleri `DEMO_STORIES` ile aynı ya da `tp-demo` etiketli) var mı? Değilse `GuvenlikReddi`:
+    yanlış yapılandırma başka bir Jira projesinin kayıtlarını sildirmesin."""
+    if not _PROJE_ANAHTARI.fullmatch(proje or "") or proje not in izinli_projeler():
+        raise GuvenlikReddi(
+            f"Jira projesi '{proje}' demo projesi değil (izinli: "
+            f"{', '.join(sorted(izinli_projeler()))}); Jira'ya hiçbir şey yazılmadı"
+        )
+    uymayan = []
+    for story in jira_seed.DEMO_STORIES:
+        key = f"{proje}-{story.number}"
+        try:
+            f = jira.raw_fields(key, ("summary", "labels"))
+        except JiraNotFound:
+            f = {}
+        ozet = str(f.get("summary") or "").strip()
+        etiketler = [str(e) for e in f.get("labels") or []]
+        if ozet != story.summary.strip() and jira_seed.DEMO_LABEL not in etiketler:
+            uymayan.append(key)
+    if uymayan:
+        raise GuvenlikReddi(
+            f"{proje} demo tohumunu taşımıyor (özeti farklı/eksik: {', '.join(uymayan)}); "
+            "Jira'ya hiçbir şey yazılmadı"
+        )
 
 
 def _norm(deger: Any) -> str:
@@ -146,12 +190,18 @@ def _kapat(jira: RestJira, key: str, sonuc: JiraSonucu) -> None:
 
 def _fazlalari_temizle(jira: RestJira, proje: str, sonuc: JiraSonucu) -> None:
     sonuc.silme_izni = jira.has_permission(proje, "DELETE_ISSUES")
-    for key in fazla_kayitlar(jira, proje):
+    hedefler = fazla_kayitlar(jira, proje)
+    if len(hedefler) > SILME_UST_SINIRI:
+        raise GuvenlikReddi(
+            f"{proje}'de {len(hedefler)} silinecek kayıt var (sınır {SILME_UST_SINIRI}): "
+            "beklenmeyen durum, hiçbir kayıt silinmedi — Jira projesini elle denetleyin"
+        )
+    for key in hedefler:
         if sonuc.silme_izni is False:
             _kapat(jira, key, sonuc)
             continue
         try:
-            jira.delete_issue(key)
+            jira.delete_issue(key, alt_gorevlerle=True)
             sonuc.silinen.append(key)
         except JiraNotFound:
             continue  # bu arada silinmiş
@@ -251,6 +301,7 @@ def _durumlari_tasi(jira: RestJira, proje: str, sonuc: JiraSonucu) -> None:
 def sifirla(jira: RestJira, proje: str) -> JiraSonucu:
     """Jira demo projesini başlangıca döndürür (yazar). Sıra: fazla kayıtlar → bağlantılar →
     içerik/etiket/yorum (`jira_seed`) → kalan ürün etiketleri → durumlar."""
+    guvenlik_denetimi(jira, proje)
     sonuc = JiraSonucu(proje=proje)
     _fazlalari_temizle(jira, proje, sonuc)
     _baglantilari_kaldir(jira, proje, sonuc)

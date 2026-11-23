@@ -44,7 +44,7 @@ DEMO_SIFIRLAMA_DURUMLARI = ("kuyrukta", "calisiyor", "tamam", "hata")
 
 
 class DemoSifirlama(Base):
-    """Home "Sıfırla" düğmesinin işlem kaydı (migrasyon 0051; `features/demo/tam_sifirlama.py`).
+    """Home "Sıfırla" düğmesinin işlem kaydı (migrasyon 0052; `features/demo/tam_sifirlama.py`).
 
     Kurulum geneli tablodur (proje filtresine girmez; `project_id` sıfırlanan projedir). Yalnız
     ham SQL ile okunur/yazılır; model şema karşılaştırması içindir."""

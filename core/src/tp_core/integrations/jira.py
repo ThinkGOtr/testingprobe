@@ -1055,8 +1055,14 @@ class RestJira:
             "DELETE", f"/issue/{self._key(key)}/comment/{quote(comment_id, safe='')}", write=True
         )
 
-    def delete_issue(self, key: str) -> None:
-        self._call("DELETE", f"/issue/{self._key(key)}", write=True)
+    def delete_issue(self, key: str, *, alt_gorevlerle: bool = False) -> None:
+        """Kaydı siler; `alt_gorevlerle` alt görevleriyle birlikte (`deleteSubtasks=true`)."""
+        self._call(
+            "DELETE",
+            f"/issue/{self._key(key)}",
+            write=True,
+            params={"deleteSubtasks": "true"} if alt_gorevlerle else None,
+        )
 
     def delete_issue_link(self, link_id: str) -> None:
         """İş bağlantısını (issue link) kaldırır (iki kayıttan da düşer)."""

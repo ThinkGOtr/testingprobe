@@ -219,3 +219,33 @@ def test_yasak_etiket_siniflandirmasi() -> None:
     assert jds.yasak_etiket("tp-po-approved")
     assert jds.yasak_etiket("AI-generated")
     assert not jds.yasak_etiket("musteri-isi")
+
+
+def test_guvenlik_denetimi_yanlis_projede_hicbir_sey_yazmaz(sim: TestClient) -> None:
+    fazla = _prova(sim)
+    jira, t = _jira(sim)
+    with pytest.raises(jds.GuvenlikReddi, match="demo projesi değil"):
+        jds.sifirla(jira, "MNT")
+    with pytest.raises(jds.GuvenlikReddi, match="demo projesi değil"):
+        jds.sifirla(jira, 'TPD" OR project = "X')
+    # İzinli anahtar ama tohum yok (özetler farklı ve tp-demo etiketi yok) → reddedilir.
+    for n in range(1, 5):
+        r = sim.put(f"/rest/api/3/issue/TPD-{n}", json={"fields": {"summary": f"baska {n}"},
+                    "update": {"labels": [{"remove": "tp-demo"}]}}, auth=WRITER)  # fmt: skip
+        assert r.status_code == 204, r.text
+    t.yazmalar.clear()
+    with pytest.raises(jds.GuvenlikReddi, match="demo tohumunu taşımıyor"):
+        jds.sifirla(jira, "TPD")
+    assert t.yazmalar == []
+    for key in fazla:
+        assert sim.get(f"/rest/api/3/issue/{key}", auth=WRITER).status_code == 200
+
+
+def test_ust_sinir_asilinca_silmez(sim: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    fazla = _prova(sim)
+    monkeypatch.setattr(jds, "SILME_UST_SINIRI", 2)
+    jira, _ = _jira(sim)
+    with pytest.raises(jds.GuvenlikReddi, match="sınır"):
+        jds.sifirla(jira, "TPD")
+    for key in fazla:
+        assert sim.get(f"/rest/api/3/issue/{key}", auth=WRITER).status_code == 200

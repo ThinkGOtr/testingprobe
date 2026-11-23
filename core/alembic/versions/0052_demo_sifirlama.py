@@ -8,8 +8,8 @@ silme için eksik DELETE yetkisi.
   ikisini de siler (diğer iş tabloları ya zaten yetkili ya da `requirement`/`test_case`/`run`
   üzerinden CASCADE ile gider). Append-only tablolara (denetim, model çağrıları, review) dokunulmaz.
 
-Revision ID: 0051
-Revises: 0050
+Revision ID: 0052
+Revises: 0051
 Create Date: 2026-11-23
 """
 
@@ -17,8 +17,8 @@ from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "0051"
-down_revision: str | None = "0050"
+revision: str = "0052"
+down_revision: str | None = "0051"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

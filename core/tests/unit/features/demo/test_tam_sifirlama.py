@@ -160,7 +160,8 @@ def test_kosan_is_varsa_bekler_sure_dolunca_hicbir_sey_silmez(
     with engine.connect() as c:
         durumlar = set(c.execute(text("SELECT durum FROM job WHERE project_id = :p"),
                                  {"p": a}).scalars())  # fmt: skip
-    assert durumlar == {"running", "cancelled"}  # bekleyen iş claim edilmesin diye iptal
+    # Süre dolunca iptaller de geri alınır: periyodik/bekleyen işler yaşamaya devam eder.
+    assert durumlar == {"running", "queued"}
 
 
 # ------------------------------------------------------------------------- istek / işlem
@@ -290,14 +291,27 @@ def test_adim_hatasi_kalinan_adimi_gosterir_ve_yeniden_denenebilir(
     def patla(_e: Engine, _b: dict[str, Any]) -> tuple[str, Any]:
         raise ts.TamSifirlamaHatasi("Jira erişilemedi")
 
+    def github(_e: Engine, _b: dict[str, Any]) -> tuple[str, Any]:
+        return "main zaten demo-baseline ağacında", None
+
+    def dogrulama(_e: Engine, b: dict[str, Any]) -> tuple[str, Any]:
+        b["kontrol"] = [{"kod": "jira_durumlar", "durum": "hata", "ayrinti": "x"}]
+        return "Demoya hazır DEĞİL", None
+
     monkeypatch.setattr(ts, "adim_jira", patla)
+    monkeypatch.setattr(ts, "adim_github", github)
+    monkeypatch.setattr(ts, "adim_dogrulama", dogrulama)
     ts.set_factories(kancalar=lambda pid: [])
     islem = ts.istek(engine, a, _aktor())
     son = _calistir(engine, islem)
-    assert son["durum"] == "hata" and son["hata"] == "Jira erişilemedi"
+    assert son["durum"] == "hata" and "Jira erişilemedi" in son["hata"]
     durumlar = {x["kod"]: x["durum"] for x in son["adimlar"]}
+    # Jira ile GitHub bağımsız: Jira düşse de GitHub ve doğrulama koşar; işlem "hata" biter.
     assert durumlar == {"otomasyon": "tamam", "tp_veri": "tamam", "jira": "hata",
-                        "github": "bekliyor", "dogrulama": "bekliyor"}  # fmt: skip
+                        "github": "tamam", "dogrulama": "tamam"}  # fmt: skip
+    assert son["kontrol"] and son["hazir"] is False
+    jira_adim = next(x for x in son["adimlar"] if x["kod"] == "jira")
+    assert jira_adim["hata"] == "Jira erişilemedi"
     assert ts.istek(engine, a, _aktor())["id"] != islem["id"]  # yeniden denenir
 
 
@@ -381,3 +395,38 @@ def test_demo_web_sync_izleyicisi_kalp_atisi_yazar_ve_tp_vmde_kurulur() -> None:
     assert "tp-demo-web-sync.service" in up and "TP_DEMO_MODE" in up
     birim = (kok / "deploy" / "aiprobe" / "tp-demo-web-sync.service").read_text()
     assert "demo-web-sync A=--watch" in birim and "Restart=always" in birim
+
+
+def test_tp_veri_hatasi_sonraki_adimlari_durdurur(
+    engine: Engine, iki_proje: tuple[str, str], demo_kipi: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    a, _ = iki_proje
+
+    def patla(_e: Engine, _b: dict[str, Any]) -> tuple[str, Any]:
+        raise ts.TamSifirlamaHatasi("süren iş var")
+
+    cagrildi: list[str] = []
+    monkeypatch.setattr(ts, "adim_tp_veri", patla)
+    monkeypatch.setattr(ts, "adim_jira", lambda *_: cagrildi.append("jira") or ("", None))
+    islem = ts.istek(engine, a, _aktor())
+    son = _calistir(engine, islem)
+    assert son["durum"] == "hata" and cagrildi == []
+    assert [x["durum"] for x in son["adimlar"]][1:] == ["hata", "bekliyor", "bekliyor", "bekliyor"]
+
+
+def test_is_baska_workerca_dusurulduyse_durur(
+    engine: Engine, iki_proje: tuple[str, str], demo_kipi: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    a, _ = iki_proje
+    cagrildi: list[str] = []
+    monkeypatch.setattr(ts, "adim_otomasyon", lambda *_: cagrildi.append("o") or ("", None))
+    islem = ts.istek(engine, a, _aktor())
+    with engine.connect() as c:
+        job_id = c.execute(text("SELECT job_id FROM demo_sifirlama WHERE id = :i"),
+                           {"i": islem["id"]}).scalar_one()  # fmt: skip
+    with engine.begin() as c:
+        c.execute(text("UPDATE job SET durum = 'failed' WHERE id = :j"), {"j": job_id})
+    sonuc = ts.run(
+        JobContext(job_id, ts.TAM_JOB, {"islem_id": islem["id"], "project_id": a}, 1, 1), engine
+    )
+    assert sonuc["durum"] == "durduruldu" and cagrildi == []

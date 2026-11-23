@@ -300,21 +300,18 @@ case "$MODE" in
   watch)
     echo "demo-app-web yenileme istekleri izleniyor (Ctrl-C ile çıkış)..."
     ulasilamadi=0
-    son_nabiz=0
+    # Kalp atışı ayrı arka plan döngüsünde (derleme dakikalar sürse de kesilmez): core "Demoya
+    # hazır" listesinde izleyicinin çalıştığını /forge/demo-web-sync.alive'dan okur
+    # (features/demo/web.py:izleyici_durumu). İzleyici çıkınca döngü de durdurulur.
+    (
+      while :; do
+        "${DEMO_EXEC[@]}" sh -c 'umask 022; date +%s > /forge/demo-web-sync.alive.tmp && mv -f /forge/demo-web-sync.alive.tmp /forge/demo-web-sync.alive' >/dev/null 2>&1 || true
+        sleep "${TP_DEMO_SYNC_NABIZ_S:-30}"
+      done
+    ) &
+    NABIZ_PID=$!
+    trap 'kill "$NABIZ_PID" 2>/dev/null || true; kilit_birak' EXIT
     while :; do
-      # Kalp atışı (en sık TP_DEMO_SYNC_NABIZ_S'de bir): core "Demoya hazır" listesinde izleyicinin
-      # çalıştığını /forge/demo-web-sync.alive'dan okur (features/demo/web.py:izleyici_durumu).
-      simdi_s=$(date +%s)
-      if [ $(( simdi_s - son_nabiz )) -ge "${TP_DEMO_SYNC_NABIZ_S:-30}" ]; then
-        if "${DEMO_EXEC[@]}" sh -c 'umask 022; date +%s > /forge/demo-web-sync.alive.tmp && mv -f /forge/demo-web-sync.alive.tmp /forge/demo-web-sync.alive' >/dev/null 2>&1; then
-          son_nabiz=$simdi_s
-        fi
-      fi
-      # Tek bir geçici hata (docker build, arşiv, yeniden oluşturma) sunum boyunca açık izleyiciyi
-      # öldürmesin: sync_once alt kabukta koşar, hata mesajı zaten stderr'e yazılır. Kilit
-      # meşgulse (make demo-break/demo-reset'in --wait'i derliyor) bir sonraki turda bakılır.
-      # core-worker'a ulaşılamıyorsa (make demo-prova / make reset / make up yeniden oluşturuyor,
-      # çökme sonrası yeniden başlıyor) izleyici çıkmaz: bir kez uyarır, gelince bildirir.
       rc=0
       sync_kilitli || rc=$?
       if [ "$rc" = "$RC_GECICI" ]; then

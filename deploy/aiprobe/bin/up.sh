@@ -56,7 +56,8 @@ make up
 # Demo kipi: çalışan demo-app-web'i main'e eşitleyen host izleyicisi (systemd). Kırma/sıfırlama
 # sonrası yenileme isteğini bu uygular; yoksa triage locator kuralı ve onarım yolu çalışan
 # uygulamada eşleşme bulamaz. Hata açılışı durdurmaz (izleyici "Demoya hazır" listesinde görünür).
-if grep -Eq '^[[:space:]]*(export[[:space:]]+)?TP_DEMO_MODE=['"'"'"]?1' .env && command -v systemctl >/dev/null 2>&1; then
+if grep -Eiq '^[[:space:]]*(export[[:space:]]+)?TP_DEMO_MODE=['"'"'"]?(1|true|yes|on)['"'"'"]?[[:space:]]*$' .env \
+  && command -v systemctl >/dev/null 2>&1; then
   kok="$(pwd -L)"
   if sed "s#__KOK__#${kok}#" deploy/aiprobe/tp-demo-web-sync.service \
       > /etc/systemd/system/tp-demo-web-sync.service.tmp \
@@ -67,4 +68,7 @@ if grep -Eq '^[[:space:]]*(export[[:space:]]+)?TP_DEMO_MODE=['"'"'"]?1' .env && 
   else
     echo "UYARI: demo-web-sync izleyicisi kurulamadı (systemctl status tp-demo-web-sync)" >&2
   fi
+elif command -v systemctl >/dev/null 2>&1 && [ -f /etc/systemd/system/tp-demo-web-sync.service ]; then
+  # Demo kipi kapatıldı: izleyici durdurulur (demo yazmaları yapılmaz).
+  systemctl disable --now tp-demo-web-sync.service >/dev/null 2>&1 || true
 fi
