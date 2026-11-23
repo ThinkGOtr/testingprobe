@@ -379,7 +379,9 @@ def test_api_yalniz_home_servis_kimligi(db: Any, iki_proje: tuple[str, str], dem
             conn.execute(
                 text("UPDATE demo_sifirlama SET durum = 'tamam' WHERE id = :i"), {"i": iid}
             )
-        r = c.post(f"/admin/demo-sifirla/{iid}/kontrol", headers=h)
+        r = c.post(f"/admin/demo-sifirla/{iid}/kontrol", headers=h, json={"project_id": "zz"})
+        assert r.status_code == 404
+        r = c.post(f"/admin/demo-sifirla/{iid}/kontrol", headers=h, json={"project_id": a})
         assert r.status_code == 202, r.text
         assert r.json()["islem"]["yeniden_kontrol"]["durum"] == "kuyrukta"
         assert c.get("/admin/demo-sifirla", params={"project_id": a},
@@ -494,7 +496,10 @@ def test_yeniden_kontrol_salt_okuma_ve_kurallar(
     son = _calistir(engine, islem)
     assert son["durum"] == "tamam" and son["hazir"] is True and son["yeniden_kontrol"] is None
 
-    g = ts.kontrol_istek(engine, iid)
+    with pytest.raises(ts.IstekReddi) as e:  # başka projenin kimliğiyle: iş açılmaz
+        ts.kontrol_istek(engine, iid, "baska-proje")
+    assert e.value.kod == "bulunamadi" and not _kontrol_isleri(engine)
+    g = ts.kontrol_istek(engine, iid, a)
     assert g["yeniden_kontrol"]["durum"] == "kuyrukta"
     ts.kontrol_istek(engine, iid)  # süren yeniden kontrol varken yenisi açılmaz
     isler = _kontrol_isleri(engine)

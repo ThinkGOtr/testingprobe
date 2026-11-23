@@ -415,13 +415,15 @@ def istek(engine: Engine, project_id: str, aktor: Mapping[str, Any]) -> dict[str
     return gorunum(row)
 
 
-def kontrol_istek(engine: Engine, islem_id: uuid.UUID) -> dict[str, Any]:
+def kontrol_istek(
+    engine: Engine, islem_id: uuid.UUID, project_id: str | None = None
+) -> dict[str, Any]:
     """ "Yeniden kontrol et": projenin SON, bitmiş işleminin kontrol listesini şu anki durumla
     yeniden hesaplayan `demo.tam_kontrol` işini kuyruğa alır (salt okuma). Süren yeniden kontrol
     varsa yenisi açılmaz. Ret: `IstekReddi` (404 bulunamadi, 409 suruyor / eski_islem)."""
     with engine.begin() as conn:
         row = _satir(conn, islem_id)
-        if row is None:
+        if row is None or (project_id is not None and row.project_id != project_id):
             raise IstekReddi(404, "bulunamadi", "İşlem bulunamadı")
         demo_projesi_denetimi(row.project_id)
         idempotency_lock(conn, f"{KONTROL_JOB}:{row.project_id}", project_id=None)

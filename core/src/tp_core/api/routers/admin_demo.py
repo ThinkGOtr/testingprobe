@@ -85,10 +85,17 @@ def _kimlik(islem_id: str) -> uuid.UUID:
         raise KodluHata(404, "bulunamadi", "İşlem bulunamadı") from exc
 
 
+class KontrolIstegi(BaseModel):
+    project_id: str | None = Field(default=None, max_length=64)
+
+
 @router.post("/{islem_id}/kontrol", status_code=202)
-def yeniden_kontrol(islem_id: str, _home: HomeServisi) -> JSONResponse:
+def yeniden_kontrol(
+    islem_id: str, _home: HomeServisi, body: KontrolIstegi | None = None
+) -> JSONResponse:
+    pid = _pid(body.project_id) if body and body.project_id is not None else None
     try:
-        islem = tam_sifirlama.kontrol_istek(get_engine(), _kimlik(islem_id))
+        islem = tam_sifirlama.kontrol_istek(get_engine(), _kimlik(islem_id), pid)
     except tam_sifirlama.IstekReddi as exc:
         raise _red(exc) from exc
     return JSONResponse({"islem": islem}, status_code=202)
