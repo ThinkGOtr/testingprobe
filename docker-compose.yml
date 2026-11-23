@@ -340,6 +340,15 @@ services:
       TP_JIRA_MENTIONS_VIEWER: ${TP_JIRA_MENTIONS_VIEWER:-}
       # Tutarlılık denetiminin veri araçları (salt okuma rolü; core-api demoapp'e hiç bağlanmaz).
       DEMOAPP_RO_DATABASE_URL: postgresql+psycopg://demoapp_ro:${DEMOAPP_RO_PASSWORD:?}@postgres:5432/demoapp?require_auth=scram-sha-256
+      # Çoklu DB ayrı alanları (Home `env.db.*`; açılış betiği .env'e yazar). Home kipinde Home bu
+      # alanları veriyorsa yukarıdaki bağlantı dizesinin önüne geçer (settings._kur); boşsa dize
+      # yedek kalır. Sunucu Home'dan değişip parola gelmezse parola A1 ile düşer (BAGLI_SIRLAR).
+      TP_RO_DB_TYPE: ${TP_RO_DB_TYPE:-}
+      TP_RO_DB_HOST: ${TP_RO_DB_HOST:-}
+      TP_RO_DB_PORT_NO: ${TP_RO_DB_PORT_NO:-}
+      TP_RO_DB_NAME: ${TP_RO_DB_NAME:-}
+      TP_RO_DB_USER: ${TP_RO_DB_USER:-}
+      TP_RO_DB_PASSWORD: ${TP_RO_DB_PASSWORD:-}
       # Kod üretimi doğrulama ajanı (Faz 3): ajanın bayisi (e2e bayileriyle çakışmaz) ve uygulama kökü.
       # Ajan sepeti her doğrulamadan önce uygulamanın herkese açık API'siyle (core-net) boşaltılır.
       TP_AGENT_DEALER: ${TP_AGENT_DEALER:-bayi3}

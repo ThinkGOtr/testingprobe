@@ -267,6 +267,33 @@ def _ham(ad: str, pid: str | None) -> str | None:
     return None
 
 
+def home_kaynakli_mi(ad: str, *, pid: str | None = None) -> bool:
+    """Etkin değer (boş olmayan) Home'dan mı geliyor: ortam düzeyi config ya da projenin Home
+    görünümü. Test üst katmanı (`_UST`) ve süreç ortamı (`os.environ`; env kipi, Deployment
+    `.env`'i) Home sayılmaz. Ortamın A1 ile kaldırdığı ad → False."""
+    p = _pid(pid)
+    with _KILIT:
+        ust = _UST.get(p)
+        if ust is not None and ad in ust:
+            return False
+        cozucu = _COZUCU
+    bulundu, deger = _ortam_degeri(ad, p)
+    if bulundu:
+        return bool((deger or "").strip())
+    if cozucu is not None:
+        harita = cozucu(p)
+        if harita is not None and ad in harita:
+            return bool((harita[ad] or "").strip())
+    return False
+
+
+def ortamda_kaldirildi_mi(ad: str, *, pid: str | None = None) -> bool:
+    """Test ortamı bağlamında ortamın bu adı A1 (hedefi ortamdan gelen bağlı sır) ya da
+    `env_unset` ile kaldırıp kaldırmadığı. Ortam bağlamı yoksa False."""
+    bulundu, deger = _ortam_degeri(ad, _pid(pid))
+    return bulundu and deger is None
+
+
 def ayar(ad: str, varsayilan: str | None = None, *, pid: str | None = None) -> str | None:
     deger = _ham(ad, pid)
     return varsayilan if deger is None else deger

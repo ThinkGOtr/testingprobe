@@ -9,7 +9,7 @@ from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from tp_core.proje import varsa, varsayilan_pid
-from tp_core.proje.ayar import PROJE_ANAHTARLARI, ayar, surum
+from tp_core.proje.ayar import PROJE_ANAHTARLARI, ayar, home_kaynakli_mi, surum
 from tp_core.veri.ro_baglanti import BaglantiTanimi, cozumle
 
 PO_PENDING_LABEL = "tp-po-pending"
@@ -88,6 +88,15 @@ def _kur() -> RequirementsSettings:
         if isinstance(ad, str) and ad in PROJE_ANAHTARLARI:
             deger = ayar(ad)
             degerler[ad] = alan.default if deger is None else deger
+    # Home kipi: veritabanı ayrı alanları (`env.db.*`) Home'dan geliyorsa, Home'un kendisi
+    # vermediği bağlantı dizesi (Deployment'ın sabit `DEMOAPP_RO_DATABASE_URL`'i) onların önüne
+    # geçmez. Home bu alanları vermiyorsa bağlantı dizesi bugünkü gibi yedek kalır.
+    if (
+        degerler.get("DEMOAPP_RO_DATABASE_URL")
+        and home_kaynakli_mi("TP_RO_DB_TYPE")
+        and not home_kaynakli_mi("DEMOAPP_RO_DATABASE_URL")
+    ):
+        degerler["DEMOAPP_RO_DATABASE_URL"] = None
     return RequirementsSettings(**degerler)
 
 

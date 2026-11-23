@@ -11,7 +11,9 @@ Desteklenen türler ve sürücüler (core imajında derleme gerektirmez):
 
 Tanım çözümü (`cozumle`) tek yerdedir: `DEMOAPP_RO_DATABASE_URL` doluysa ondan (tür önekten
 çıkar; bugünkü kurulumlar değişmeden çalışır), değilse ayrı alanlardan (`TP_RO_DB_TYPE`, `_HOST`,
-`_PORT`, `_NAME`, `_USER`, `_PASSWORD`). Parola hiçbir zaman `repr`/log/hata metnine girmez.
+`_PORT`, `_NAME`, `_USER`, `_PASSWORD`). İstisna (Home kipi): ayrı alanlar Home'dan geliyor ve
+dize Home'dan gelmiyorsa Deployment dizesi yok sayılır (`requirements.settings._kur`). Parola
+hiçbir zaman `repr`/log/hata metnine girmez.
 
 Güvenlik iki katmandır; bu modül birinci katmanı (oturum) uygular, ikincisi (sorgu muhafızı:
 tek SELECT, izin listesi) `features.requirements.sqlguard`'dadır ve hedef lehçede ayrıştırır:

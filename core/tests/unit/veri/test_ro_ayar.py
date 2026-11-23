@@ -117,3 +117,91 @@ def test_eksik_ayri_alan_yapilandirma_hatasi(ayarla: Any) -> None:
     with pytest.raises(DataToolError, match="TP_RO_DB_NAME") as ei:
         services.demo_db().query("SELECT kod FROM urun")
     assert "x-Gizli" not in str(ei.value)
+
+
+# ------------------------------------------------- Home kipi: Home alanları > Deployment dizesi
+
+DEPLOYMENT_URL = "postgresql+psycopg://demoapp_ro:dep-Gizli@postgres:5432/demoapp"
+
+
+@pytest.fixture
+def home_gorunumu(monkeypatch: pytest.MonkeyPatch) -> Any:
+    """`proje.ayar` Home kaynağına bağlı (sahte görünüm); Deployment dizesi ve Home'un parolası
+    süreç ortamında (compose → core-worker)."""
+    from tp_core.proje import ayar as proje_ayar
+    from tp_core.proje import proje_icinde, varsayilan_pid
+
+    for k in BOS:
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("DEMOAPP_RO_DATABASE_URL", DEPLOYMENT_URL)
+    gorunum: dict[str, str] = {}
+    proje_ayar.kaynak_bagla(lambda pid: gorunum, lambda pid: "etag-" + str(sorted(gorunum)))
+    get_requirements_settings.cache_clear()
+    try:
+        with proje_icinde(varsayilan_pid()):
+            yield gorunum
+    finally:
+        proje_ayar._kaynak_coz()
+        get_requirements_settings.cache_clear()
+
+
+def test_home_ayri_alanlari_deployment_dizesinin_onune_gecer(
+    home_gorunumu: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home_gorunumu.update(
+        TP_RO_DB_TYPE="postgresql",
+        TP_RO_DB_HOST="home-db",
+        TP_RO_DB_PORT_NO="5433",
+        TP_RO_DB_NAME="musteri",
+        TP_RO_DB_USER="home_ro",
+    )
+    monkeypatch.setenv("TP_RO_DB_PASSWORD", "Home-Gizli-7")  # sır: süreç ortamından
+    db = services.demo_db()
+    t = db.tanim
+    assert t is not None and t.ham_url is None
+    assert (t.host, t.port, t.veritabani, t.kullanici, t.parola) == (
+        "home-db",
+        5433,
+        "musteri",
+        "home_ro",
+        "Home-Gizli-7",
+    )
+    assert testdata.demo_db_query() is not None
+
+
+def test_home_alan_vermiyorsa_deployment_dizesi_yedek(home_gorunumu: dict[str, str]) -> None:
+    home_gorunumu.update(JIRA_PROJECT="TPD")
+    t = services.demo_db().tanim
+    assert t is not None and t.host == "postgres" and t.kullanici == "demoapp_ro"
+
+
+def test_home_bos_tur_dizeyi_ezmez(home_gorunumu: dict[str, str]) -> None:
+    home_gorunumu.update(TP_RO_DB_TYPE="", TP_RO_DB_HOST="home-db")
+    t = services.demo_db().tanim
+    assert t is not None and t.host == "postgres"
+
+
+def test_home_dizesi_de_verirse_dize_kazanir(home_gorunumu: dict[str, str]) -> None:
+    home_gorunumu.update(
+        DEMOAPP_RO_DATABASE_URL="postgresql://u:p@home-url-db/demo",
+        TP_RO_DB_TYPE="mysql",
+        TP_RO_DB_HOST="mysql1",
+        TP_RO_DB_NAME="demo",
+        TP_RO_DB_USER="ro",
+    )
+    t = services.demo_db().tanim
+    assert t is not None and t.host == "home-url-db"
+
+
+def test_env_kipinde_alanlar_dizeyi_ezmez(monkeypatch: pytest.MonkeyPatch) -> None:
+    """env kipi (Home kaynağı yok): süreç ortamındaki ayrı alanlar Home sayılmaz; dize kazanır."""
+    for k in BOS:
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("DEMOAPP_RO_DATABASE_URL", DEPLOYMENT_URL)
+    monkeypatch.setenv("TP_RO_DB_TYPE", "mysql")
+    monkeypatch.setenv("TP_RO_DB_HOST", "mysql1")
+    get_requirements_settings.cache_clear()
+    try:
+        assert services.demo_db().tur == "postgresql"
+    finally:
+        get_requirements_settings.cache_clear()

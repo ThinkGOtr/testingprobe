@@ -168,3 +168,36 @@ def test_env_kipinde_ortam_yok(monkeypatch: pytest.MonkeyPatch) -> None:
         assert ortam.varsayilan_ortam() is None
         assert ortam.islem_ortami() is None
         ortam.canli_engelle("demo sıfırlama")
+
+
+def test_toolchain_blogu_cozulemeyen_parola_runner_parolasini_ezmez(home: SahteHome) -> None:
+    """Ortam adresi değiştirmiyor ve parolaları kaldırmıyor; parolalar bu süreçte (core-worker)
+    çözülemiyor → alanlar bloğa hiç konmaz, toolchain/test-runner kendi env parolalarını kullanır.
+    Eski davranış boş `{}`/"" gönderip runner'ın koşu parolalarını eziyordu."""
+    home.ortamlar[(A, E1)] = _ortam_yaniti(
+        E1, "Staging", "staging", {"TP_PROBE_USER": "stg-kullanici"}, {}
+    )
+    os.environ.pop("TP_PROBE_PASSWORD", None)
+    os.environ.pop("TP_RUN_DEALER_PASSWORDS", None)
+    with proje_icinde(A), ortam.ortam_icinde(ortam.ortam_bul(E1)):
+        assert not ayar.ortamda_kaldirildi_mi("TP_RUN_DEALER_PASSWORDS")
+        blok = toolchain_projesi({"sha": "x"})["proje"]
+    assert blok["ortam"]["eid"] == E1
+    assert "run_dealer_passwords" not in blok
+    assert "probe_password" not in blok
+
+
+def test_toolchain_blogu_ortam_kosu_parolalari_gider(home: SahteHome) -> None:
+    """Ortam kendi koşu parolalarını (Home sırrı) veriyorsa blokta gider."""
+    ref2 = REF.replace("jira-token", "kosu-parolalari")
+    home.sirlar[ref2] = '{"bayi1": "kosu-1", "bayi2": "kosu-2"}'
+    home.ortamlar[(A, E1)] = _ortam_yaniti(
+        E1, "Staging", "staging",
+        {"BASE_URL": "https://staging.example.test"},
+        {"TP_PROBE_PASSWORD": REF, "TP_RUN_DEALER_PASSWORDS": ref2},
+    )  # fmt: skip
+    with proje_icinde(A), ortam.ortam_icinde(ortam.ortam_bul(E1)):
+        assert ayar.ortamda_kaldirildi_mi("TP_RUN_DEALER_PASSWORDS") is False
+        blok = toolchain_projesi({"sha": "x"})["proje"]
+    assert blok["run_dealer_passwords"] == {"bayi1": "kosu-1", "bayi2": "kosu-2"}
+    assert blok["probe_password"] == "gizli-deger"

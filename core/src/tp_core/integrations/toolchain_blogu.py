@@ -146,17 +146,23 @@ def proje_blogu(pid: str | None = None, platform: str | None = None) -> dict[str
 def _ortam_alanlari(blok: dict[str, Any], p: str) -> None:
     """Test ortamı bağlamında (`proje.ortam.ortam_icinde`) bloğa ortam kimliği eklenir; toolchain
     Canlı (`tur=prod`) ortamda uygulamanın test verisi uçlarını (DEMOAPP_TEST_TOKEN) ve kırma
-    koşularını kapatır. Ortam parolayı (A1 ile) kaldırdıysa toolchain env parolasına düşmesin
-    diye boş parola gider (Deployment parolası ortamın adresine gönderilmez)."""
+    koşularını kapatır. Ortam parolayı (A1 / `env_unset` ile) **kaldırdıysa** toolchain env
+    parolasına düşmesin diye boş parola gider (Deployment parolası ortamın adresine gönderilmez).
+
+    Parola yalnız bu süreçte çözülemiyorsa (ör. `TP_PROBE_PASSWORD`/`TP_RUN_DEALER_PASSWORDS`
+    core-worker'a verilmez, yalnız toolchain/test-runner'da durur) alan bloğa konmaz: boş değer
+    runner'ın kendi (aynı adrese ait) parolalarını ezerdi."""
     from tp_core.proje.ortam import mevcut_ortam
 
     o = mevcut_ortam()
     if o is None or o.pid != p:
         return
     blok["ortam"] = {"eid": o.eid, "ad": o.ad, "tur": o.tur}
-    if "probe_password" not in blok and _ayar.sir("TP_PROBE_PASSWORD", pid=p) is None:
+    if "probe_password" not in blok and _ayar.ortamda_kaldirildi_mi("TP_PROBE_PASSWORD", pid=p):
         blok["probe_password"] = ""
-    if "run_dealer_passwords" not in blok and _ayar.sir("TP_RUN_DEALER_PASSWORDS", pid=p) is None:
+    if "run_dealer_passwords" not in blok and _ayar.ortamda_kaldirildi_mi(
+        "TP_RUN_DEALER_PASSWORDS", pid=p
+    ):
         blok["run_dealer_passwords"] = {}
 
 
