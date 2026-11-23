@@ -22,8 +22,11 @@ import org.openqa.selenium.remote.RemoteWebDriver;
  * ({@code .github/workflows/sauce-demo.yml}). Testler runner'da koşar, Appium oturumu Sauce'tadır.
  *
  * <p>Etkin: {@code appium.url} {@code *.saucelabs.com} ise. Kimlik ({@code SAUCE_USERNAME} /
- * {@code SAUCE_ACCESS_KEY}) yalnız ortamdan okunur, günlüğe yazılmaz. Diğer ortam değişkenleri:
- * {@code SAUCE_TUNNEL_NAME}, {@code SAUCE_BUILD}, {@code SAUCE_APPIUM_VERSION} (varsayılan latest),
+ * {@code SAUCE_ACCESS_KEY}) yalnız ortamdan okunur ve YETENEKLERE (capabilities) KONMAZ: Selenium
+ * oturum hatasında yetenekleri (kısaltılmış değerlerle) istisna mesajına yazar; GitHub maskesi
+ * kısaltılmış değeri tanımaz (canlı tur 45191577699). Kimlik HTTP Basic başlığıyla gider
+ * ({@link #istemci}). Diğer ortam değişkenleri: {@code SAUCE_TUNNEL_NAME}, {@code SAUCE_BUILD},
+ * {@code SAUCE_APPIUM_VERSION} (yoksa gönderilmez: Sauce'un cihaz için önerdiği sürüm),
  * {@code SAUCE_OTURUM_DOSYASI} (test → oturum kimliği kaydı; özet betiği Sauce iş bağlantısını bundan
  * kurar).
  *
@@ -80,9 +83,7 @@ public final class SauceLabs {
    */
   public Map<String, Object> secenekler(String isAdi) {
     Map<String, Object> s = new LinkedHashMap<>();
-    s.put("username", deger("SAUCE_USERNAME").orElseThrow(() -> eksik("SAUCE_USERNAME")));
-    s.put("accessKey", deger("SAUCE_ACCESS_KEY").orElseThrow(() -> eksik("SAUCE_ACCESS_KEY")));
-    s.put("appiumVersion", deger("SAUCE_APPIUM_VERSION").orElse("latest"));
+    deger("SAUCE_APPIUM_VERSION").ifPresent(v -> s.put("appiumVersion", v));
     deger("SAUCE_TUNNEL_NAME").ifPresent(t -> s.put("tunnelName", guvenliAd(t)));
     deger("SAUCE_BUILD").ifPresent(b -> s.put("build", guvenliAd(b)));
     if (isAdi != null && !isAdi.isBlank()) {
@@ -90,6 +91,30 @@ public final class SauceLabs {
     }
     s.put("tags", java.util.List.of("testing-probe", "demo-app", "sauce-tur"));
     return s;
+  }
+
+  /**
+   * Sauce uç noktasına Basic kimlikle giden istemci yapılandırması (kimlik yeteneklerde değil). Kimlik
+   * eksikse açıklayıcı hata: oturum Sauce'a kimliksiz gitmez.
+   */
+  public io.appium.java_client.AppiumClientConfig istemci(java.net.URL adres) {
+    String kullanici = deger("SAUCE_USERNAME").orElseThrow(() -> eksik("SAUCE_USERNAME"));
+    String anahtar = deger("SAUCE_ACCESS_KEY").orElseThrow(() -> eksik("SAUCE_ACCESS_KEY"));
+    // Basic başlığı her isteğe baştan eklenir (JDK Authenticator yalnız 401 meydan okumasına yanıt verir).
+    String basic =
+        "Basic "
+            + java.util.Base64.getEncoder()
+                .encodeToString((kullanici + ":" + anahtar).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    org.openqa.selenium.remote.http.Filter kimlik =
+        next ->
+            req -> {
+              req.setHeader("Authorization", basic);
+              return next.execute(req);
+            };
+    io.appium.java_client.AppiumClientConfig c =
+        io.appium.java_client.AppiumClientConfig.defaultConfig().baseUrl(adres).readTimeout(java.time.Duration.ofMinutes(5));
+    return c.withFilter(c.filter().andThen(kimlik))
+        .authenticateAs(new org.openqa.selenium.UsernameAndPassword(kullanici, anahtar));
   }
 
   /** Seçeneklere Sauce ayarlarını ekler. */

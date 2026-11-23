@@ -36,20 +36,34 @@ public class SauceLabsBirimTesti {
                 "SAUCE_TUNNEL_NAME", "tp-1-1-android",
                 "SAUCE_BUILD", "demo-12-sauce"));
     Map<String, Object> o = s.secenekler("GirisTesti.dogruBilgilerleGiris");
-    assertEquals(o.get("username"), "kullanici");
-    assertEquals(o.get("accessKey"), "anahtar");
+    // Kimlik yeteneklerde YOK (oturum hatası yetenekleri günlüğe yazar); Basic başlıkla gider.
+    assertFalse(o.containsKey("username"));
+    assertFalse(o.containsKey("accessKey"));
+    assertFalse(o.toString().contains("anahtar"));
     assertEquals(o.get("tunnelName"), "tp-1-1-android");
     assertEquals(o.get("build"), "demo-12-sauce");
     assertEquals(o.get("name"), "GirisTesti.dogruBilgilerleGiris");
-    assertEquals(o.get("appiumVersion"), "latest");
+    assertFalse(o.containsKey("appiumVersion"), "sürüm verilmezse Sauce'un önerdiği sürüm");
+    assertEquals(
+        SauceLabs.haritadan(Map.of("SAUCE_APPIUM_VERSION", "3.8.0")).secenekler("x").get("appiumVersion"), "3.8.0");
   }
 
   @Test(groups = "birim")
-  public void kimlikYoksaOturumAcilmaz() {
-    assertThrows(IllegalArgumentException.class, () -> SauceLabs.haritadan(Map.of()).secenekler("x"));
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> SauceLabs.haritadan(Map.of("SAUCE_USERNAME", "k")).secenekler("x"));
+  public void kimlikYoksaOturumAcilmaz() throws Exception {
+    java.net.URL u = new java.net.URI("https://ondemand.eu-central-1.saucelabs.com:443/wd/hub").toURL();
+    assertThrows(IllegalArgumentException.class, () -> SauceLabs.haritadan(Map.of()).istemci(u));
+    assertThrows(IllegalArgumentException.class, () -> SauceLabs.haritadan(Map.of("SAUCE_USERNAME", "k")).istemci(u));
+    // Kimlik istemci yapılandırmasında (Basic), URL'de değil.
+    io.appium.java_client.AppiumClientConfig c =
+        SauceLabs.haritadan(Map.of("SAUCE_USERNAME", "k", "SAUCE_ACCESS_KEY", "gizli")).istemci(u);
+    assertEquals(c.baseUrl().toString(), u.toString());
+    assertTrue(c.credentials() instanceof org.openqa.selenium.UsernameAndPassword);
+    // Filtre Basic başlığını baştan ekler.
+    org.openqa.selenium.remote.http.HttpRequest[] giden = new org.openqa.selenium.remote.http.HttpRequest[1];
+    c.filter()
+        .andFinally(r -> { giden[0] = r; return new org.openqa.selenium.remote.http.HttpResponse(); })
+        .execute(new org.openqa.selenium.remote.http.HttpRequest(org.openqa.selenium.remote.http.HttpMethod.POST, "/session"));
+    assertEquals(giden[0].getHeader("Authorization"), "Basic " + java.util.Base64.getEncoder().encodeToString("k:gizli".getBytes(java.nio.charset.StandardCharsets.UTF_8)));
   }
 
   @Test(groups = "birim")
@@ -67,7 +81,7 @@ public class SauceLabsBirimTesti {
     SauceLabs.haritadan(Map.of("SAUCE_USERNAME", "k", "SAUCE_ACCESS_KEY", "a")).uygula(o, "Ad \"tırnak\"");
     @SuppressWarnings("unchecked")
     Map<String, Object> so = (Map<String, Object>) o.getCapability("sauce:options");
-    assertEquals(so.get("username"), "k");
+    assertFalse(o.toString().contains("accessKey"));
     assertEquals(so.get("name"), "Ad _t_rnak_");
     assertEquals(o.getCapability("appium:app"), "storage:filename=bayi.apk");
   }

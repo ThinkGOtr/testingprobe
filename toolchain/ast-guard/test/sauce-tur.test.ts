@@ -56,6 +56,11 @@ describe("sauce-demo.yml: yalnız elle tur", () => {
     assert.ok(!/curl[^\n]*-u /.test(wf), "curl -u kullanılmaz");
     assert.match(wf, /--netrc-file \/dev\/stdin/);
     assert.equal((wf.match(/for s in "\$\{DEMOAPP_TEST_TOKEN:-\}" "\$\{SAUCE_ACCESS_KEY:-\}"/g) ?? []).length, 2);
+    // Kısaltılmış değer (yetenek dökümü) için önek maskesi de var; kimlik yeteneklere konmaz (SauceLabs.java).
+    assert.equal((wf.match(/o="\$\{s:0:12\}"/g) ?? []).length, 2);
+    const sauceJava = readFileSync(join(REPO_ROOT, "demo-app", "e2e-app", "src", "test", "java", "com", "antreklabs", "bayi", "altyapi", "SauceLabs.java"), "utf8");
+    assert.ok(!/put\("accessKey"|put\("username"/.test(sauceJava), "kimlik sauce:options'a konmaz");
+    assert.match(wf, /name: Appium sürümü \(Sauce önerisi\)/);
   });
 
   it("ci.yml Sauce job'u varsayılan olarak hiçbir ci tetiğinde koşmaz", () => {
@@ -67,6 +72,8 @@ describe("sauce-demo.yml: yalnız elle tur", () => {
     const adlar = [...duman.matchAll(/- name: "([^"]+)"/g)].map((m) => m[1]);
     assert.deepEqual(adlar, ["Windows-11-Chromium", "Windows-11-Edge"]);
     assert.match(duman, /TP_PW_EDGE: "1"[\s\S]*project: msedge/);
+    // Satırlar aynı runner uygulamasını ve bayiyi paylaşır: eşzamanlı koşu veri çakışması yapar.
+    assert.match(duman, /\n {2}concurrency: 1\n/);
     for (const a of adlar) assert.match(wf, new RegExp(`--suite ${a}`));
   });
 });

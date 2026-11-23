@@ -127,11 +127,20 @@ public final class SurucuFabrikasi {
    */
   public static AppiumDriver olustur(Platform platform, Ayarlar ayarlar, String isAdi) {
     BaseOptions<?> secenek = secenekler(platform, ayarlar);
-    if (SauceLabs.sauceAdresi(ayarlar.appiumUrl())) {
-      SauceLabs.ortamdan().uygula(secenek, isAdi);
-    }
     URL adres = adres(ayarlar.appiumUrl());
     AppiumDriver surucu;
+    if (SauceLabs.sauceAdresi(ayarlar.appiumUrl())) {
+      // Sauce: kimlik Basic başlıkta (yeteneklerde değil; bkz. SauceLabs).
+      SauceLabs sauce = SauceLabs.ortamdan();
+      sauce.uygula(secenek, isAdi);
+      io.appium.java_client.AppiumClientConfig istemci = sauce.istemci(adres);
+      surucu =
+          platform == Platform.IOS
+              ? new IOSDriver(istemci, secenek)
+              : new AndroidDriver(istemci, secenek);
+      surucu.manage().timeouts().implicitlyWait(Duration.ZERO);
+      return surucu;
+    }
     switch (platform) {
       case ANDROID:
         surucu = new AndroidDriver(adres, secenek);

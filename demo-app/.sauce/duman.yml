@@ -13,7 +13,11 @@ kind: playwright
 
 sauce:
   region: eu-central-1        # CI'da --region ile ezilir (repo değişkeni SAUCE_REGION)
-  concurrency: 2
+  # 1: satırlar SIRAYLA koşar. İki satır aynı runner uygulamasına (tek API/veritabanı) ve aynı bayiye
+  # gider; bayi kilidi her Sauce VM'inin kendi diskindedir, VM'ler arası paylaşılmaz. Eşzamanlı koşuda
+  # Edge'in sipariş testi Chromium'un sepetini kirletiyordu (canlı tur 45191577699: sepet 38, toplam
+  # 1.065,00 TL). Sıralı koşu Sauce dakikasını artırmaz, yalnız ~1 dk duvar süresi ekler.
+  concurrency: 1
   retries: 0
   sauceignore: .sauce/.sauceignore
   metadata:

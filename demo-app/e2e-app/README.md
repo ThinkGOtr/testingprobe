@@ -100,8 +100,9 @@ Raporlama hatası testi ya da koşuyu düşürmez: uyarı günlüğe yazılır, 
 
 **Sauce Labs sanal cihazı** (elle Sauce turu, `.github/workflows/sauce-demo.yml`): `APPIUM_URL`
 `https://ondemand.<bölge>.saucelabs.com:443/wd/hub` olunca `altyapi/SauceLabs.java` oturuma
-`sauce:options` ekler — kimlik yalnız ortamdan (`SAUCE_USERNAME`, `SAUCE_ACCESS_KEY`; günlüğe yazılmaz),
-`SAUCE_TUNNEL_NAME`, `SAUCE_BUILD`, `SAUCE_APPIUM_VERSION` (varsayılan `latest`); iş adı
+`sauce:options` ekler (`SAUCE_TUNNEL_NAME`, `SAUCE_BUILD`, `SAUCE_APPIUM_VERSION` — yoksa gönderilmez);
+kimlik (`SAUCE_USERNAME`, `SAUCE_ACCESS_KEY`) yalnız ortamdan okunur ve yeteneklere KONMAZ, HTTP Basic
+başlığıyla gider (oturum hatası yetenekleri kısaltılmış değerle günlüğe yazar, maske tanımaz); iş adı
 `Sınıf.metot`. Test bitince iş sonucu (`sauce:job-result`) yazılır ve oturum kimliği
 `SAUCE_OTURUM_DOSYASI`'na (JSON satırı) eklenir. Uygulama `APP_PATH=storage:<id>`, cihaz
 `DEVICE_NAME` + `PLATFORM_VERSION`.
