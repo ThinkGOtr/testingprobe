@@ -1516,6 +1516,27 @@ def test_jit_adi_aiprobe_kaynakli(client: TestClient, home: SahteHome, engine: E
     assert me["kisiler"][me["kullanici_adi"]] == "Ayşe Yılmaz (AI Probe) · Test Uzmanı"
 
 
+def test_giriste_ad_aiprobeden_tazelenir(
+    client: TestClient, home: SahteHome, engine: Engine
+) -> None:
+    """Bağlı hesabın adı AI Probe'dan geliyorsa her girişte güncel adla tazelenir; TP'de elle
+    verilmiş ad ve boş ad değiştirilmez."""
+    _giris(client, home, ["tester"])
+    _giris(client, home, ["tester"], name="Ayşe Kaya")
+    with engine.connect() as c:
+        assert c.execute(text("SELECT ad_soyad FROM app_user")).scalar_one() == "Ayşe Kaya"
+        eylemler = c.execute(text("SELECT eylem FROM audit_event")).scalars().all()
+    assert "auth.ad_tazelendi" in eylemler
+    _giris(client, home, ["tester"], name="")
+    with engine.connect() as c:
+        assert c.execute(text("SELECT ad_soyad FROM app_user")).scalar_one() == "Ayşe Kaya"
+    with engine.begin() as c:
+        c.execute(text("UPDATE app_user SET ad_soyad = 'Elle Ad', ad_kaynak = NULL"))
+    _giris(client, home, ["tester"], name="Başka Ad")
+    with engine.connect() as c:
+        assert c.execute(text("SELECT ad_soyad FROM app_user")).scalar_one() == "Elle Ad"
+
+
 def test_me_products_bos_liste_erisim_olarak_korunur(
     client: TestClient, home: SahteHome, engine: Engine
 ) -> None:

@@ -14,6 +14,7 @@
   "asistan.denetim",
   "asistan.denetim_calismiyor",
   "asistan.supheli",
+  "auth.ad_tazelendi",
   "auth.aiprobe_degraded_timeout",
   "auth.aiprobe_rejected",
   "auth.aiprobe_revoked",

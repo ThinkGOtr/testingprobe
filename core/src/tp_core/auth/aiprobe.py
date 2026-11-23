@@ -1226,13 +1226,38 @@ def jit_hesaplar(session: Session, devir: DevirYaniti, roller: Iterable[str]) ->
     session.execute(
         text("SELECT pg_advisory_xact_lock(hashtext(:u))"), {"u": f"tp-jit:{devir.uid}"}
     )
-    mevcut = {h.rol for h in bagli_hesaplar(session, devir.uid)}
+    hesaplar = bagli_hesaplar(session, devir.uid)
+    ad_tazele(session, hesaplar, devir.name)
+    mevcut = {h.rol for h in hesaplar}
     yeni: list[AppUser] = []
     for rol in roller:
         if rol in mevcut:
             continue
         yeni.append(jit_hesap(session, devir.uid, devir.email, devir.name, rol))
     return yeni
+
+
+def ad_tazele(session: Session, hesaplar: Iterable[AppUser], ad: str | None) -> list[AppUser]:
+    """Girişte/devirde kişinin AI Probe'daki adı değiştiyse, adı AI Probe'dan gelen bağlı
+    hesapların `ad_soyad`'ını günceller (adı TP'de elle verilmiş hesaplara dokunmaz; boş ad
+    mevcut adı silmez). Değişen hesaplar döner; her biri denetime yazılır."""
+    yeni_ad = (ad or "").strip()[:120]
+    if not yeni_ad:
+        return []
+    degisen: list[AppUser] = []
+    for h in hesaplar:
+        if h.ad_kaynak != AD_KAYNAGI or h.ad_soyad == yeni_ad:
+            continue
+        onceki = h.ad_soyad
+        h.ad_soyad = yeni_ad
+        degisen.append(h)
+        audit_on_commit(
+            session, h.kullanici_adi, "auth.ad_tazelendi", f"app_user:{h.id}",
+            {"onceki": onceki, "yeni": yeni_ad, "kaynak": AD_KAYNAGI},
+        )  # fmt: skip
+    if degisen:
+        session.flush()
+    return degisen
 
 
 def jit_hesap(session: Session, uid: str, email: str, ad: str, rol: str) -> AppUser:

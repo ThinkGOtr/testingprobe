@@ -43,6 +43,7 @@ const OLAY_ETIKETI: Record<string, string> = {
   "auth.role_switch": "Rol değiştirildi",
   "auth.proje_degisti": "Proje değiştirildi",
   "auth.jit_user": "Kullanıcı ilk girişte oluşturuldu",
+  "auth.ad_tazelendi": "Kullanıcı adı AI Probe'dan güncellendi",
   "auth.aiprobe_rejected": "AI Probe oturumu reddedildi",
   "auth.aiprobe_revoked": "AI Probe oturumu iptal edildi",
   "auth.aiprobe_degraded_timeout": "AI Probe kimlik servisi yanıt vermedi",
