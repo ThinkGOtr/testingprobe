@@ -4,6 +4,7 @@ koşu (dil kardeşi yok), `sauce-results` artefaktından JUnit + platform satır
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 
 import httpx
@@ -69,11 +70,12 @@ class SauceGitHub(FakeGitHub):
 
     def handler(self, req: httpx.Request) -> httpx.Response:
         p = req.url.path
-        if "/actions/workflows/sauce-demo.yml/" in p:
+        m = re.search(r"/actions/workflows/([a-z0-9-]+\.yml)/", p)
+        if m and m.group(1) != "ci.yml":
             self.sauce_istekleri.append(p)
             req = httpx.Request(
                 req.method,
-                req.url.copy_with(path=p.replace("sauce-demo.yml", "ci.yml")),
+                req.url.copy_with(path=p.replace(m.group(1), "ci.yml")),
                 headers=req.headers,
                 content=req.content,
             )
@@ -204,3 +206,47 @@ def test_api_tetik_izni() -> None:
     assert api.tetik_izni("sauce") == "run.trigger_scheduled"
     assert api.tetik_izni("manual") == "run.trigger_manual"
     assert REPO  # aynı sahte depo
+
+
+def test_ios_duman_kosusu_mobil_ios_kapsam_duman(engine, sgh: SauceGitHub) -> None:
+    """Koşular › "iOS duman koşusu başlat": elle iOS koşusu, mobil-ios.yml `kapsam=duman`."""
+    with Session(engine) as s, s.begin():
+        sonuc = service.trigger_manual(s, "manual", "muhendis", platform="ios", kapsam="duman")
+    rid = sonuc["run_id"]
+    assert sonuc["kapsam"] == "duman" and "iOS duman koşusu" in sonuc["mesaj"]
+    run_jobs(engine)
+    assert sgh.dispatchler == [
+        (
+            "workflow_dispatch",
+            {"ref": "main", "inputs": {"tetik": "manual", "istek_id": str(rid), "kapsam": "duman"}},
+        )
+    ]
+    assert any("mobil-ios.yml/dispatches" in p for p in sgh.sauce_istekleri)
+    with Session(engine) as s:
+        o = s.get(Run, rid).ortam or {}
+    assert o.get("platform") == "ios" and o.get("kapsam") == "duman"
+
+
+def test_elle_web_kosusu_kapsam_gondermez(engine, sgh: SauceGitHub) -> None:
+    with Session(engine) as s, s.begin():
+        rid = service.trigger_manual(s, "manual", "muhendis")["run_id"]
+    run_jobs(engine)
+    assert sgh.dispatchler == [
+        ("workflow_dispatch", {"ref": "main", "inputs": {"tetik": "manual", "istek_id": str(rid)}})
+    ]
+
+
+@pytest.mark.parametrize(
+    ("tetik", "platform", "kapsam"),
+    [
+        ("nightly", "ios", "duman"),  # gece her zaman tam
+        ("deploy", "ios", "duman"),
+        ("manual", "android", "duman"),  # yalnız iOS
+        ("manual", None, "duman"),
+        ("manual", "ios", None),  # platform tek başına yok
+        ("manual", "ios", "tam"),
+    ],
+)
+def test_duman_kapsami_yalniz_elle_ios(engine, sgh: SauceGitHub, tetik, platform, kapsam) -> None:
+    with Session(engine) as s, s.begin(), pytest.raises(service.CiError):
+        service.trigger_manual(s, tetik, "muhendis", platform=platform, kapsam=kapsam)

@@ -442,8 +442,14 @@ export const api = {
    * `ortam`: test ortamı kimliği (`GET /environments`). Verilmezse gövdeye hiç yazılmaz ve core projenin
    * varsayılan ortamını kullanır (ortamı olmayan projede istek eskisiyle birebir).
    */
-  ciTetikle: async (tetik: "deploy" | "nightly" | "manual" | "sauce", ortam?: string | null): Promise<IsYaniti> => {
-    const y = await istek<IsYaniti>("POST", "/ci/trigger", { govde: ortam === undefined ? { tetik } : { tetik, ortam } });
+  ciTetikle: async (
+    tetik: "deploy" | "nightly" | "manual" | "sauce",
+    ortam?: string | null,
+    /** iOS duman koşusu: `{platform: "ios", kapsam: "duman"}` (yalnız `manual`). */
+    secenek?: { platform: "ios"; kapsam: "duman" },
+  ): Promise<IsYaniti> => {
+    const govde = { tetik, ...(ortam === undefined ? {} : { ortam }), ...(secenek ?? {}) };
+    const y = await istek<IsYaniti>("POST", "/ci/trigger", { govde });
     if (y && typeof y === "object" && "test_ortami" in y) return { ...y, test_ortami: testOrtamiUyarla((y as { test_ortami?: unknown }).test_ortami) };
     return y;
   },

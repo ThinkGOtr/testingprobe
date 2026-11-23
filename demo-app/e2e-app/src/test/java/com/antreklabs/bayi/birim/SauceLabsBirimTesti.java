@@ -67,6 +67,16 @@ public class SauceLabsBirimTesti {
   }
 
   @Test(groups = "birim")
+  public void iosHazirWdaTuretilmisVeri() {
+    BaseOptions<?> yok = SurucuFabrikasi.secenekler(Platform.IOS, Ayarlar.haritadan(Map.of("app.id", "x"), Map.of()));
+    assertEquals(yok.getCapability("appium:usePrebuiltWDA"), null);
+    BaseOptions<?> var =
+        SurucuFabrikasi.secenekler(Platform.IOS, Ayarlar.haritadan(Map.of("app.id", "x"), Map.of("WDA_DERIVED_DATA", "/tmp/wda")));
+    assertEquals(var.getCapability("appium:usePrebuiltWDA"), true);
+    assertEquals(var.getCapability("appium:derivedDataPath"), "/tmp/wda");
+  }
+
+  @Test(groups = "birim")
   public void sauceStorageBasvurusuDosyaYoluSayilmaz() {
     // Windows'ta Path.of("storage:…") InvalidPathException atar; uzak başvuru olduğu gibi geçmeli.
     for (String v : new String[] {"storage:filename=bayi.apk", "storage:0123-abcd", "https://ornek.test/a.apk"}) {

@@ -164,3 +164,28 @@ describe("github-sauce-tur-ozeti.py", () => {
     assert.deepEqual(s["platformlar"], []);
   });
 });
+
+describe("mobil-ios.yml: duman kapsamı ve hızlandırma", () => {
+  const ios = readFileSync(join(REPO_ROOT, ".github", "workflows", "mobil-ios.yml"), "utf8");
+  const icerir = (parca: string): void => assert.ok(ios.includes(parca), parca);
+
+  it("duman yalnız elle tetikte; PR/gece/deploy tam kapsam; koşu adı [istek_id] ile biter", () => {
+    icerir("options: [tam, duman]");
+    icerir("KAPSAM: ${{ (github.event_name == 'workflow_dispatch' && inputs.tetik == 'manual' && inputs.kapsam == 'duman') && 'duman' || 'tam' }}");
+    icerir('if [ "$KAPSAM" = "duman" ]; then kapsam=("-Dtest=$DUMAN_TESTLER"); fi');
+    icerir("format('mobil-ios {0}{2} [{1}]'");
+  });
+
+  it("WDA önbellek anahtarı Xcode + xcuitest + WDA + iOS çalışma zamanı; ıskada derleme", () => {
+    icerir("anahtar=wda-v1-${xc}-xcuitest${surucu}-wda${wda}-ios${rt_ver}-${RUNNER_ARCH}");
+    icerir("xcodebuild build-for-testing");
+    icerir('"appium:usePrebuiltWDA": true, "appium:derivedDataPath": $dd');
+    icerir('WDA_DERIVED_DATA="$WDA_DD"');
+  });
+
+  it("paralel hazırlıkta her arka plan işinin çıkış kodu beklenir", () => {
+    for (const p of ["p_sim=$!", "p_demo=$!", "p_wda=$!"]) icerir(p);
+    icerir('if wait "$pid"; then');
+    icerir("::error::Hazırlık düştü");
+  });
+});

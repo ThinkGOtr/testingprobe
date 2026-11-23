@@ -107,3 +107,15 @@ describe("Koşular › Sauce Labs turunu başlat", () => {
     expect(screen.queryByRole("button", { name: "Sauce Labs turunu başlat" })).toBeNull();
   });
 });
+
+describe("Koşular › iOS duman koşusu başlat", () => {
+  it("manuel tetik izniyle görünür; gövde {tetik: manual, platform: ios, kapsam: duman}", async () => {
+    await oturumAc("gelistirici");
+    uygulama("/kosular");
+    const d = await screen.findByRole("button", { name: "iOS duman koşusu başlat" });
+    expect(d).toHaveAttribute("aria-describedby", "kosular-ios-duman-aciklama");
+    expect(screen.getByText(/yalnız üç duman testini koşturur/)).toBeInTheDocument();
+    fireEvent.click(d);
+    await waitFor(() => expect(screen.getAllByText(/iOS duman koşusu sıraya alındı/).length).toBeGreaterThan(0));
+  });
+});

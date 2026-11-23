@@ -315,6 +315,8 @@ export const ARTEFAKT_MASKELI = "Ham artefaktlar bu rolde görünmez";
 export const MANUEL_PROD_ENGELI = "Geliştirici prod ortamında manuel koşu başlatamaz (üretim ortamı).";
 const DEPLOY_ACIKLAMASI =
   "Müşterinin deploy hattının yükleme bitince göndereceği sinyali taklit eder ve testleri koşturur; uygulamayı hiçbir yere yüklemez.";
+export const IOS_DUMAN_ACIKLAMASI =
+  "iOS simülatöründe (GitHub mobil-ios) yalnız üç duman testini koşturur: giriş, sepete ekleme, sipariş. Tam iOS paketinden çok daha kısadır; Sauce Labs kullanmaz. Gece ve PR koşuları tam kapsamda kalır.";
 export const SAUCE_ACIKLAMASI =
   "Kısa duman testlerini (giriş, sepete ekleme, sipariş) Sauce Labs bulutunda koşturur: web (Windows 11 · Chromium ve Edge), Android emülatör ve iOS simülatör. Sonuç ve her platformun Sauce video bağlantısı koşu bitince görünür (mobil derlemeler önbellekteyse yaklaşık 10–15 dk; uygulama değiştiyse derleme nedeniyle daha uzun). Sauce deneme hesabından tur başına yaklaşık 5 dk düşer. Push, gece ve deploy koşuları Sauce'u kullanmaz.";
 
@@ -401,6 +403,7 @@ export function Kosular() {
   const deployIslem = useIslem();
   const manuelIslem = useIslem();
   const sauceIslem = useIslem();
+  const iosDumanIslem = useIslem();
   // core: deploy/nightly `run.trigger_scheduled` (Otomasyon Mühendisi); manual `run.trigger_manual`
   // (Otomasyon Mühendisi, Geliştirici; developer prod'da 403 → core'un mesajı gösterilir).
   const zamanliTetik = useIzin("run.trigger_scheduled");
@@ -473,7 +476,17 @@ export function Kosular() {
   // Ortam süzgeci: projede ortam varsa, koşulardan biri ortam taşıyorsa ya da adreste seçim varsa.
   const ortamSuzgecVar = ortam.ortamlar.length > 0 || tum.some((k) => k.test_ortami) || !!ortamSecimi;
 
+  const iosDumanBaslat = async () => {
+    for (const i of [deployIslem, geceIslem, manuelIslem, sauceIslem]) i.temizle();
+    const s = await iosDumanIslem.calistir(() => api.ciTetikle("manual", undefined, { platform: "ios", kapsam: "duman" }));
+    if (s) {
+      bildir(s.mesaj ?? "iOS duman koşusu başlatıldı.");
+      setSonTetik(s.mesaj ?? "iOS duman koşusu başlatıldı.");
+      void v.yenile(true);
+    }
+  };
   const tetikle = async (tetik: "deploy" | "nightly" | "manual" | "sauce") => {
+    iosDumanIslem.temizle();
     const islemler = { deploy: deployIslem, nightly: geceIslem, manual: manuelIslem, sauce: sauceIslem };
     for (const [t, i] of Object.entries(islemler)) if (t !== tetik) i.temizle();
     // Ortam yalnız projede ortam varsa gönderilir. Gece koşusu her zaman varsayılan ortamda koşar
@@ -491,7 +504,7 @@ export function Kosular() {
       void v.yenile(true);
     }
   };
-  const tetikHatasi = [geceIslem, deployIslem, manuelIslem, sauceIslem].find((i) => i.hata);
+  const tetikHatasi = [geceIslem, deployIslem, manuelIslem, sauceIslem, iosDumanIslem].find((i) => i.hata);
 
   return (
     <>
@@ -526,6 +539,21 @@ export function Kosular() {
                   onClick={() => tetikle("manual")}
                 >
                   Manuel koşu başlat
+                </IslemDugmesi>
+              )}
+              {manuelTetik && (
+                <IslemDugmesi
+                  izin="run.trigger_manual"
+                  tur="ikincil"
+                  calisiyor={iosDumanIslem.calisiyor}
+                  disabled={manuelProdEngeli}
+                  title={manuelProdEngeli ? MANUEL_PROD_ENGELI : IOS_DUMAN_ACIKLAMASI}
+                  aria-describedby="kosular-ios-duman-aciklama"
+                  nedenGizli={!manuelProdEngeli}
+                  data-testid="ios-duman-dugmesi"
+                  onClick={() => void iosDumanBaslat()}
+                >
+                  iOS duman koşusu başlat
                 </IslemDugmesi>
               )}
               {zamanliTetik && (
@@ -568,6 +596,11 @@ export function Kosular() {
           {manuelTetik && (
             <li id="kosular-manuel-aciklama">
               <strong>Manuel koşu başlat:</strong> {MANUEL_ACIKLAMASI}
+            </li>
+          )}
+          {manuelTetik && (
+            <li id="kosular-ios-duman-aciklama">
+              <strong>iOS duman koşusu başlat:</strong> {IOS_DUMAN_ACIKLAMASI}
             </li>
           )}
           {zamanliTetik && (

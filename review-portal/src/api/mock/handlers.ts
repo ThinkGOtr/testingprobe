@@ -2084,6 +2084,10 @@ function ciTetikle(govde: unknown): IsYaniti {
   const tetik = ((govde ?? {}) as { tetik?: string }).tetik;
   if (tetik !== "deploy" && tetik !== "nightly" && tetik !== "manual" && tetik !== "sauce")
     throw new ApiError(422, "tetik deploy, nightly, manual veya sauce olmalı.");
+  const { platform, kapsam } = (govde ?? {}) as { platform?: string; kapsam?: string };
+  if ((platform || kapsam) && !(tetik === "manual" && platform === "ios" && kapsam === "duman"))
+    throw new ApiError(422, "duman kapsamı yalnız elle (manual) iOS koşusunda kullanılır");
+  const iosDuman = kapsam === "duman";
   // core: deploy/nightly `run.trigger_scheduled` (engineer); manual `run.trigger_manual` (engineer, developer).
   const kullanici = izinGerekli(tetik === "manual" ? "run.trigger_manual" : "run.trigger_scheduled");
   if (tetik === "manual" && kullanici.rol === "developer" && mockOrtam.ortam === "prod") {
@@ -2097,8 +2101,9 @@ function ciTetikle(govde: unknown): IsYaniti {
     if (!o) throw new ApiError(422, "Bilinmeyen test ortamı.");
     testOrtami = testOrtamiOzeti(o);
   }
-  const k = kosuOlustur(tetik, tetik === "sauce" ? "github" : "local", false, null);
-  k.test_ortami = tetik === "sauce" ? null : testOrtami;
+  const k = kosuOlustur(tetik, tetik === "sauce" || iosDuman ? "github" : "local", false, null);
+  k.test_ortami = tetik === "sauce" || iosDuman ? null : testOrtami;
+  if (iosDuman) k.platform = "ios";
   denetimEkle(
     "ci.trigger",
     k.id,
@@ -2122,7 +2127,10 @@ function ciTetikle(govde: unknown): IsYaniti {
     },
   ]);
   return {
-    ...is("queued", `${tetik === "deploy" ? "Deploy" : tetik === "manual" ? "Manuel" : tetik === "sauce" ? "Sauce Labs" : "Gece"} koşusu sıraya alındı (${k.id}).`),
+    ...is(
+      "queued",
+      `${iosDuman ? "iOS duman" : tetik === "deploy" ? "Deploy" : tetik === "manual" ? "Manuel" : tetik === "sauce" ? "Sauce Labs" : "Gece"} koşusu sıraya alındı (${k.id}).`,
+    ),
     test_ortami: testOrtami,
   };
 }

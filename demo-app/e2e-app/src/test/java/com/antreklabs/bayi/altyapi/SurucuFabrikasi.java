@@ -79,6 +79,13 @@ public final class SurucuFabrikasi {
     a.deviceName().ifPresent(o::setDeviceName);
     a.udid().ifPresent(o::setUdid);
     a.platformVersion().ifPresent(o::setPlatformVersion);
+    // CI önbelleğindeki hazır WDA (mobil-ios.yml): derleme yerine test-without-building.
+    a.wdaTuretilmisVeri()
+        .ifPresent(
+            d -> {
+              o.setDerivedDataPath(d);
+              o.setUsePrebuiltWda(true);
+            });
     if (a.appPath().isPresent()) {
       o.setApp(a.appPath().get());
     } else {

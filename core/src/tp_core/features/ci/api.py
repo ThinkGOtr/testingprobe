@@ -4,6 +4,7 @@
 |---|---|---|
 | POST | `/ci/trigger` `{tetik: deploy\\|nightly}` | `run.trigger_scheduled` — 202 `{job_id, run_id, …}` |
 | POST | `/ci/trigger` `{tetik: manual}` | `run.trigger_manual` — developer `TP_ORTAM=prod` iken 403 |
+| POST | `/ci/trigger` `{tetik: manual, platform: ios, kapsam: duman}` | `run.trigger_manual` — iOS duman koşusu (`mobil-ios.yml` `kapsam=duman`; yalnız GitHub kipi) |
 | POST | `/ci/trigger` `{tetik: sauce}` | `run.trigger_scheduled` — elle Sauce Labs turu (yalnız GitHub kipi; `ortam` verilmez) |
 | GET  | `/environments` | `run.read` — projenin Home test ortamları ve varsayılanı (0048) |
 | GET  | `/runs?tetik=&kaynak=&sonuc=&pr_no=&script_id=&depo=&ortam=&limit=&offset=` | `run.read` |
@@ -59,6 +60,9 @@ class TetikGirdisi(BaseModel):
 
     # sauce: elle Sauce Labs turu (yalnız GitHub kipi; `run.trigger_scheduled`).
     tetik: Literal["deploy", "nightly", "manual", "sauce"]
+    # iOS duman koşusu: {tetik: manual, platform: ios, kapsam: duman} (mobil-ios.yml kapsam=duman).
+    platform: Literal["ios"] | None = None
+    kapsam: Literal["duman"] | None = None
     # 0048: Home ortam kimliği (12 hex); verilmezse projenin varsayılan ortamı.
     ortam: str | None = Field(default=None, pattern=r"^[0-9a-f]{12}$")
 
@@ -89,6 +93,10 @@ def ci_trigger(
         raise yetki.reddet(session, user, izin_adi, "prod_ortam", request.url.path)
     if body.tetik == "nightly" and body.ortam:
         raise HTTPException(422, "Gece koşusu yalnız projenin varsayılan ortamında koşar")
+    if (body.kapsam or body.platform) and body.ortam:
+        raise HTTPException(
+            422, "iOS duman koşusu test ortamı seçmez: uygulama CI runner'ında başlatılır"
+        )
     if body.tetik == "sauce" and body.ortam:
         raise HTTPException(
             422, "Sauce Labs turu test ortamı seçmez: uygulama CI runner'ında başlatılır"
@@ -102,7 +110,9 @@ def ci_trigger(
         ortam_gerekli()
     try:
         # Ortamsız (proje ayarları) çağrı eski imzayla aynı kalır.
-        ek = {} if test_ortami is None else {"ortam": test_ortami}
+        ek: dict[str, Any] = {} if test_ortami is None else {"ortam": test_ortami}
+        if body.platform or body.kapsam:
+            ek |= {"platform": body.platform, "kapsam": body.kapsam}
         return service.trigger_manual(session, body.tetik, user.kullanici_adi, **ek)
     except service.CiError as exc:
         raise HTTPException(422, str(exc)) from exc

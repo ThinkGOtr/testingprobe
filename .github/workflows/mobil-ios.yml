@@ -19,7 +19,7 @@
 name: mobil-ios
 run-name: >-
   ${{ github.event_name == 'workflow_dispatch'
-      && format('mobil-ios {0} [{1}]', inputs.tetik, inputs.istek_id || 'elle')
+      && format('mobil-ios {0}{2} [{1}]', inputs.tetik, inputs.istek_id || 'elle', (inputs.tetik == 'manual' && inputs.kapsam == 'duman') && ' duman' || '')
     || github.event.pull_request.title || 'mobil-ios' }}
 
 on:
@@ -51,6 +51,11 @@ on:
         type: string
         required: false
         default: ""
+      kapsam:
+        description: "tam: tüm testler · duman: giriş, sepete ekleme, sipariş (yalnız tetik=manual)"
+        type: choice
+        options: [tam, duman]
+        default: tam
 
 permissions:
   contents: read
@@ -72,6 +77,11 @@ env:
   # Boş = runner'daki en yeni kararlı Xcode (Expo SDK 58 / RN 0.88 yeni Xcode ister).
   XCODE_APP: ""
   TP_ISTEK_ID: ${{ inputs.istek_id || '' }}
+  # Kapsam: duman yalnız elle tetikte (PR, gece, deploy her zaman tam).
+  KAPSAM: ${{ (github.event_name == 'workflow_dispatch' && inputs.tetik == 'manual' && inputs.kapsam == 'duman') && 'duman' || 'tam' }}
+  DUMAN_TESTLER: "GirisTesti#dogruBilgilerleGiris,SepetTesti#sepeteEkleSayaciArtirir,SiparisTesti#siparisOnayVeGecmis"
+  # Hazır WebDriverAgent türetilmiş verisi (önbellek; bkz. "WDA önbelleği").
+  WDA_DD: ${{ github.workspace }}/tp-wda
 
 jobs:
   mobil-ios:
@@ -161,7 +171,8 @@ jobs:
           bash demo-app/mobile/scripts/derle-ios.sh
           test -d "$APP_BUNDLE"
 
-      - name: Simülatör oluştur ve aç
+      - name: Simülatör seçimi ve sürümler
+        id: surum
         run: |
           set -euo pipefail
           # Çalışma zamanı Xcode'un simülatör SDK'sıyla aynı sürümden seçilir: build-wda cihazı
@@ -204,49 +215,100 @@ jobs:
               | sort_by(.n) | ((map(select(.n >= 16)) | first) // last) | .t // empty')"
           fi
           [ -n "$dt" ] || { echo "::error::Uygun iPhone cihaz tipi bulunamadı ($rt_id)"; exit 1; }
-          udid="$(xcrun simctl create "$SIM_NAME" "$dt" "$rt_id")"
-          xcrun simctl boot "$udid"
-          xcrun simctl bootstatus "$udid" -b
-          echo "SIM_UDID=$udid" >> "$GITHUB_ENV"
-          echo "SIM_IOS=$rt_ver" >> "$GITHUB_ENV"
-          echo "Simülatör: $SIM_NAME ($udid) · $dt · iOS $rt_ver"
+          {
+            echo "SIM_RT=$rt_id"
+            echo "SIM_DT=$dt"
+            echo "SIM_IOS=$rt_ver"
+          } >> "$GITHUB_ENV"
+          # WDA önbellek anahtarı: Xcode derlemesi + xcuitest sürücüsü + WDA + iOS çalışma zamanı.
+          xc="$(xcodebuild -version | tr '\n' ' ' | sed -E 's/.*Build version ([A-Za-z0-9]+).*/\1/')"
+          surucu="$(jq -r '.packages["node_modules/appium-xcuitest-driver"].version // "yok"' tools/appium/package-lock.json)"
+          wda="$(jq -r '[.packages | to_entries[] | select(.key | endswith("/appium-webdriveragent")) | .value.version][0] // "yok"' tools/appium/package-lock.json)"
+          echo "anahtar=wda-v1-${xc}-xcuitest${surucu}-wda${wda}-ios${rt_ver}-${RUNNER_ARCH}" >> "$GITHUB_OUTPUT"
+          echo "Simülatör: $dt · iOS $rt_ver ($rt_id) · Xcode $xc · xcuitest $surucu · WDA $wda"
 
-      - name: Demo uygulamasını başlat
+      # Hazır WebDriverAgent (xcodebuild build-for-testing, genel simülatör hedefi) önbelleği. Iskada
+      # aşağıdaki hazırlık adımı WDA'yı derler; isabette derleme atlanır ve oturumlar
+      # `usePrebuiltWDA` + `derivedDataPath` ile test-without-building kullanır.
+      - name: WDA önbelleği
+        id: wda-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.WDA_DD }}/Build/Products
+          key: ${{ steps.surum.outputs.anahtar }}
+
+      # Paralel hazırlık: (a) simülatör oluştur + aç, (b) demo uygulaması (API + web), (c) Appium kur
+      # (+ ıskada WDA derle). Her arka plan işinin çıkış kodu beklenir; biri düşerse adım düşer ve
+      # günlüğün sonu yazılır (sessiz hata yok). Test uçlarının (/test/*) sırrı koşu başına üretilir.
+      - name: Hazırlık (paralel — simülatör, demo uygulaması, Appium + WDA)
+        env:
+          WDA_ISABET: ${{ steps.wda-cache.outputs.cache-hit }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          mkdir -p tp-logs
           token="$(openssl rand -hex 24)"
           echo "::add-mask::$token"
           echo "DEMOAPP_TEST_TOKEN=$token" >> "$GITHUB_ENV"
           echo "DEMO_API_URL=http://127.0.0.1:18000" >> "$GITHUB_ENV"
-          mkdir -p tp-logs
+          bas=$SECONDS
+          (
+            set -euo pipefail
+            udid="$(xcrun simctl create "$SIM_NAME" "$SIM_DT" "$SIM_RT")"
+            echo "$udid" > tp-logs/sim-udid
+            xcrun simctl boot "$udid"
+            xcrun simctl bootstatus "$udid" -b
+          ) > tp-logs/simulator.log 2>&1 &
+          p_sim=$!
           PORT=8081 DEMO_API_PORT=18000 DEMOAPP_TEST_TOKEN="$token" \
             nohup bash scripts/github-demo-serve.sh > tp-logs/serve.log 2>&1 &
-          for _ in $(seq 1 90); do
-            if curl -fsS "http://127.0.0.1:8081/api/health" >/dev/null 2>&1; then
-              echo "Uygulama hazır: http://127.0.0.1:8081"
-              exit 0
+          p_serve=$!
+          (
+            for _ in $(seq 1 120); do
+              curl -fsS "http://127.0.0.1:8081/api/health" >/dev/null 2>&1 && exit 0
+              kill -0 "$p_serve" 2>/dev/null || { echo "demo-serve süreci erken sonlandı"; exit 1; }
+              sleep 2
+            done
+            echo "demo uygulaması 240 sn içinde hazır olmadı"; exit 1
+          ) > tp-logs/demo-hazir.log 2>&1 &
+          p_demo=$!
+          (
+            set -euo pipefail
+            (cd tools/appium && npm ci --no-audit --no-fund --loglevel=error)
+            if [ "${WDA_ISABET:-}" = "true" ] && ls "$WDA_DD"/Build/Products/*.xctestrun >/dev/null 2>&1; then
+              echo "WDA önbellekten (derleme yok)"
+            else
+              wda=""
+              for d in tools/appium/node_modules/appium-xcuitest-driver/node_modules/appium-webdriveragent \
+                       tools/appium/node_modules/appium-webdriveragent; do
+                [ -d "$d/WebDriverAgent.xcodeproj" ] && { wda="$d"; break; }
+              done
+              [ -n "$wda" ] || { echo "WebDriverAgent projesi bulunamadı"; exit 1; }
+              xcodebuild build-for-testing -project "$wda/WebDriverAgent.xcodeproj" -scheme WebDriverAgentRunner \
+                -destination 'generic/platform=iOS Simulator' -derivedDataPath "$WDA_DD" \
+                CODE_SIGNING_ALLOWED=NO -quiet
+              ls "$WDA_DD"/Build/Products/*.xctestrun
             fi
-            sleep 2
+          ) > tp-logs/appium-wda.log 2>&1 &
+          p_wda=$!
+          hata=0
+          for is in "simülatör:$p_sim:simulator" "demo uygulaması:$p_demo:demo-hazir" "Appium + WDA:$p_wda:appium-wda"; do
+            ad="${is%%:*}"; kalan="${is#*:}"; pid="${kalan%%:*}"; gunluk="${kalan#*:}"
+            if wait "$pid"; then
+              echo "✓ $ad ($((SECONDS - bas)) sn)"
+            else
+              rc=$?
+              echo "::error::Hazırlık düştü: $ad (çıkış $rc)"
+              tail -n 60 "tp-logs/$gunluk.log"
+              hata=1
+            fi
           done
-          echo "::error::Demo uygulaması 180 sn içinde hazır olmadı"
-          tail -n 100 tp-logs/serve.log
-          exit 1
-
-      # xcuitest ilk oturumda WDA'yı derler (dakikalar); oturum açılışı zaman aşımına düşmesin diye
-      # önceden derlenir (scripts/cihaz/wda.sh ile aynı komut). xcuitest 12.x build-wda betiği
-      # başarıda da ≠0 çıkabilir: başarı xcodebuild'in satırından ölçülür.
-      - name: Appium kur ve WebDriverAgent derle
-        timeout-minutes: 30
-        run: |
-          set -euo pipefail
-          (cd tools/appium && npm ci --no-audit --no-fund --loglevel=error)
-          export APPIUM_HOME="$GITHUB_WORKSPACE/tools/appium"
-          mkdir -p tp-logs
-          sdk="$(sed -E 's/^([0-9]+\.[0-9]+).*/\1/' <<<"$SIM_IOS")"
-          tools/appium/node_modules/.bin/appium driver run xcuitest build-wda \
-            --name "$SIM_NAME" --sdk "$sdk" > tp-logs/wda-derleme.log 2>&1 || true
-          grep -q '\*\* TEST BUILD SUCCEEDED \*\*' tp-logs/wda-derleme.log || {
-            echo "::error::WebDriverAgent derlenemedi"; tail -n 80 tp-logs/wda-derleme.log; exit 1; }
+          if [ "$hata" != 0 ]; then
+            tail -n 60 tp-logs/serve.log
+            exit 1
+          fi
+          udid="$(cat tp-logs/sim-udid)"
+          echo "SIM_UDID=$udid" >> "$GITHUB_ENV"
+          echo "Hazırlık tamam ($((SECONDS - bas)) sn): simülatör $udid · iOS $SIM_IOS · uygulama http://127.0.0.1:8081"
 
       - name: Appium başlat
         run: |
@@ -272,10 +334,11 @@ jobs:
         timeout-minutes: 20
         run: |
           set -uo pipefail
-          govde="$(jq -n --arg udid "$SIM_UDID" --arg app "$GITHUB_WORKSPACE/$APP_BUNDLE" '
+          govde="$(jq -n --arg udid "$SIM_UDID" --arg app "$GITHUB_WORKSPACE/$APP_BUNDLE" --arg dd "$WDA_DD" '
             {capabilities: {alwaysMatch: {platformName: "iOS", "appium:automationName": "XCUITest",
               "appium:udid": $udid, "appium:app": $app, "appium:wdaLaunchTimeout": 300000,
-              "appium:wdaStartupRetries": 3, "appium:newCommandTimeout": 60}}}')"
+              "appium:wdaStartupRetries": 3, "appium:newCommandTimeout": 60,
+              "appium:usePrebuiltWDA": true, "appium:derivedDataPath": $dd}}}')"
           yanit="$(curl -sS -m 900 -H 'Content-Type: application/json' -d "$govde" \
             http://127.0.0.1:4723/session)" || true
           sid="$(jq -r '.value.sessionId // empty' <<<"$yanit" 2>/dev/null || true)"
@@ -291,9 +354,14 @@ jobs:
         timeout-minutes: 60
         run: |
           set -euo pipefail
-          bash demo-app/ci/run-app-checks.sh ios "-Dapp.path=$GITHUB_WORKSPACE/$APP_BUNDLE" \
+          # Duman kapsamı (yalnız elle tetik, `kapsam=duman`): giriş, sepete ekleme, sipariş.
+          kapsam=()
+          if [ "$KAPSAM" = "duman" ]; then kapsam=("-Dtest=$DUMAN_TESTLER"); fi
+          echo "Kapsam: $KAPSAM"
+          WDA_DERIVED_DATA="$WDA_DD" \
+            bash demo-app/ci/run-app-checks.sh ios "-Dapp.path=$GITHUB_WORKSPACE/$APP_BUNDLE" \
             "-Ddevice.udid=$SIM_UDID" "-Ddevice.name=$SIM_NAME" "-Dplatform.version=$SIM_IOS" \
-            2>&1 | tee tp-logs/run-app-checks.log
+            "${kapsam[@]}" 2>&1 | tee tp-logs/run-app-checks.log
 
       # --- Sonuçlar (mobil-android ile aynı düzen) ----------------------------------------------
       - name: Sonuçları topla

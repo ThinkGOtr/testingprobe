@@ -644,8 +644,20 @@ def check_body_platformu(platform: str, dil: str | None = None) -> dict[str, Any
     return {}
 
 
+# iOS duman koşusu (Koşular › "iOS duman koşusu başlat"): elle tetik, mobil-ios.yml `kapsam=duman`
+# (giriş, sepete ekleme, sipariş). PR, gece ve deploy koşuları her zaman tam kapsamdır.
+DUMAN_KAPSAMI = "duman"
+DUMAN_PLATFORMLARI = ("ios",)
+
+
 def trigger_manual(
-    session: Session, tetik: str, isteyen: str, ortam: Any = _ORTAM_SEC
+    session: Session,
+    tetik: str,
+    isteyen: str,
+    ortam: Any = _ORTAM_SEC,
+    *,
+    platform: str | None = None,
+    kapsam: str | None = None,
 ) -> dict[str, Any]:
     """Portal düğmesi (`POST /ci/trigger`): deploy | nightly | manual, main'in o anki head'inde.
 
@@ -659,9 +671,18 @@ def trigger_manual(
         raise CiError(
             "Sauce Labs turu yalnız GitHub kipinde koşar (demo deposunun sauce-demo iş akışı)"
         )
+    if kapsam is not None and (
+        kapsam != DUMAN_KAPSAMI or tetik != "manual" or platform not in DUMAN_PLATFORMLARI
+    ):
+        raise CiError("duman kapsamı yalnız elle (manual) iOS koşusunda kullanılır")
+    if platform is not None and (kapsam is None or tetik != "manual"):
+        raise CiError("platform seçimi yalnız iOS duman koşusunda")
+    if kapsam is not None and _kaynak() != "github":
+        raise CiError("iOS duman koşusu yalnız GitHub kipinde koşar (mobil-ios iş akışı)")
     # 0048: `ortam` verilmezse projenin varsayılan ortamı (yoksa ortamsız). Sauce turu uygulamayı
     # runner'da kendisi başlatır: Home ortamı yoktur. Dil sabit `ts` (dil kardeşi dağıtılmaz).
-    test_ortami = None if tetik == SAUCE_TETIK else _kosu_ortami_sec(ortam)
+    # iOS duman koşusu da uygulamayı runner'da başlatır (Home ortamı yok).
+    test_ortami = None if tetik == SAUCE_TETIK or kapsam else _kosu_ortami_sec(ortam)
     sonuc = _enqueue(
         session,
         None,
@@ -670,7 +691,13 @@ def trigger_manual(
         dispatch=True,
         ortam=test_ortami,
         **({"dil": platformlar.TS} if tetik == SAUCE_TETIK else {}),
+        **({"platform": platform} if platform else {}),
     )
+    if kapsam and sonuc["yeni"] and sonuc["run_id"]:
+        kosu = session.get(Run, sonuc["run_id"])
+        if kosu is not None:
+            kosu.ortam = {**(kosu.ortam or {}), "kapsam": kapsam}
+            session.flush()
     # 0046: elle gece koşusu da ayrı platform depolarında ayrı tetiklenir (aynı işlemde).
     platform_kosulari: list[dict[str, Any]] = []
     if tetik == "nightly":
@@ -708,6 +735,11 @@ def trigger_manual(
             "repository_dispatch (deploy)" if tetik == "deploy" else f"workflow_dispatch ({tetik})"
         )
         mesaj = f"GitHub Actions tetikleniyor: {olay}; sonuç GitHub API'den alınacak."
+        if kapsam:
+            mesaj = (
+                "iOS duman koşusu başlatıldı (giriş, sepete ekleme, sipariş; GitHub mobil-ios). "
+                "Sonuç koşu bitince bu listede görünür."
+            )
         if tetik == SAUCE_TETIK:
             mesaj = (
                 "Sauce Labs turu başlatıldı: web (Windows 11 · Chromium ve Edge), Android emülatör "
@@ -727,6 +759,7 @@ def trigger_manual(
         "tetik": tetik,
         "test_ortami": test_ortami.ozet() if test_ortami else None,
         **({"platform_kosulari": platform_kosulari} if platform_kosulari else {}),
+        **({"platform": platform, "kapsam": kapsam} if kapsam else {}),
     }
 
 
@@ -1598,6 +1631,7 @@ def _dispatch(engine: Engine, run_id: uuid.UUID) -> None:
         )
         isteyen = str((run.ortam or {}).get("isteyen") or "system")
         is_akisi = gh_is_akisi(run)
+        kapsam = (run.ortam or {}).get("kapsam")
         # 0046: dispatch koşunun deposuna (platform deposunun gece koşusu o deponun iş akışı).
         gh_depo, gh_platform = kosu_deposu(run), kosu_platformu(run)
     # (2) API çağrısı: işlem dışında; `intent` kalıcı.
@@ -1610,7 +1644,10 @@ def _dispatch(engine: Engine, run_id: uuid.UUID) -> None:
             # `workflow_dispatch` ile gider: `repository_dispatch` depo geneli olaydır ve `ci.yml`
             # koşusunu ikinci kez tetiklerdi. `istek_id` koşu adına `[<run_id>]` olarak girer
             # (ci.yml `run-name`): aynı anda bekleyen elle/gece koşuları `_aday_sec`'te karışmaz.
-            gh.workflow_dispatch(hedef_ref, {"tetik": tetik, "istek_id": str(run_id)}, **is_akisi)
+            girdiler = {"tetik": tetik, "istek_id": str(run_id)}
+            if kapsam == DUMAN_KAPSAMI:
+                girdiler["kapsam"] = kapsam  # yalnız mobil-ios.yml tanır (trigger_manual denetler)
+            gh.workflow_dispatch(hedef_ref, girdiler, **is_akisi)
     except Exception as exc:
         # Yanıt okunamadıysa (zaman aşımı/bağlantı koptu) istek GitHub'a ulaşmış olabilir: `hata`
         # yazılmaz → sonraki deneme önce koşuyu arar (kör tekrar yok).
