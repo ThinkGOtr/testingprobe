@@ -46,7 +46,8 @@ export default defineConfig({
     ["list"],
     ["junit", { outputFile: "results/junit.xml" }],
     ["json", { outputFile: "results/results.json" }],
-    ["allure-playwright", { resultsDir: "results/allure-results" }],
+    // Sauce elle turu (.sauce/duman.yml, TP_SAUCE_DUMAN=1): Allure paketi Sauce VM'ine kurulmaz.
+    ...(process.env.TP_SAUCE_DUMAN === "1" ? [] : [["allure-playwright", { resultsDir: "results/allure-results" }] as const]),
     ["html", { outputFolder: "results/html", open: "never" }],
   ],
   use: {

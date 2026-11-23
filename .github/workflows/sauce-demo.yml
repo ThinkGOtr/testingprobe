@@ -56,6 +56,8 @@ env:
   # Mobil derlemeye gömülen API adresi (tünel üzerinden runner'daki uygulama; vite /api vekili).
   MOBIL_API_URL: http://tp-demo.test:8081/api
   # Mobil duman seti (surefire -Dtest): giriş + sipariş (sipariş testi sepete ekleme ve onayı içerir).
+  # Sauce iOS simülatör sürümü (sauce-mobil matrisiyle aynı; derle-ios MinimumOSVersion denetimi).
+  SAUCE_IOS_SURUM: "27.0"
   SAUCE_MOBIL_TESTLER: "GirisTesti#dogruBilgilerleGiris,SiparisTesti#siparisOnayVeGecmis"
   TP_ISTEK_ID: ${{ inputs.istek_id || '' }}
   TP_TRIGGER: ${{ inputs.tetik || 'sauce' }}
@@ -225,8 +227,12 @@ jobs:
           ditto -x -k demo-app/mobile/build/BayiSiparis-sim.zip "$d"
           min="$(/usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$d/BayiSiparis.app/Info.plist")"
           mim="$(lipo -archs "$d/BayiSiparis.app/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$d/BayiSiparis.app/Info.plist")")"
-          echo "MinimumOSVersion=$min · mimari: $mim"
-          echo "iOS .app: MinimumOSVersion \`$min\`, mimari \`$mim\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "MinimumOSVersion=$min · mimari: $mim · Sauce simülatörü: iOS $SAUCE_IOS_SURUM"
+          echo "iOS .app: MinimumOSVersion \`$min\`, mimari \`$mim\` (Sauce: iOS $SAUCE_IOS_SURUM)" >> "$GITHUB_STEP_SUMMARY"
+          # Uyumsuz derleme Sauce'a yüklenip oturum (dakika) harcamasın.
+          if [ "$(printf '%s\n%s\n' "$min" "$SAUCE_IOS_SURUM" | sort -V | tail -n 1)" != "$SAUCE_IOS_SURUM" ]; then
+            echo "::error::.app en düşük iOS $min > Sauce simülatörü $SAUCE_IOS_SURUM"; exit 1
+          fi
 
       - name: .app artefaktı
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -327,7 +333,10 @@ jobs:
               -e "TP_TESTVERI_DEMO_PAROLA=$TP_TESTVERI_DEMO_PAROLA" \
               -e "TP_SAUCE=1" -e "TP_TRIGGER=$TP_TRIGGER" \
               2>&1 | tee ../results/sauce/saucectl.log || rc=${PIPESTATUS[0]}
+            # Yeniden deneme yalnız HİÇ Sauce işi oluşmadıysa (koşmuş suite'i tekrar koşturup dakika
+            # harcamaz).
             if [ "$rc" = 0 ] || ! grep -q "concurrent session limit" ../results/sauce/saucectl.log \
+              || grep -Eq 'saucelabs\.com/tests/[A-Za-z0-9]+' ../results/sauce/saucectl.log \
               || [ "$SECONDS" -ge "$bitis" ]; then
               break
             fi
@@ -353,7 +362,7 @@ jobs:
             --exit-code "${SAUCE_EXIT:-1}" --region "$SAUCE_REGION" --neden-altyapi "$neden"
           cp results/sauce/saucectl.log results/sauce/serve.log tp-sauce/web/ 2>/dev/null || true
           find tp-sauce -type l -delete
-          for s in "${DEMOAPP_TEST_TOKEN:-}" "${SAUCE_ACCESS_KEY:-}"; do
+          for s in "${DEMOAPP_TEST_TOKEN:-}" "${SAUCE_ACCESS_KEY:-}" "${TP_TESTVERI_DEMO_PAROLA:-}"; do
             [ -n "$s" ] || continue
             { grep -rlF -- "$s" tp-sauce || true; } | while read -r f; do
               python3 -c 'import sys,pathlib;p=pathlib.Path(sys.argv[1]);p.write_text(p.read_text(errors="replace").replace(sys.argv[2],"***"))' "$f" "$s"
@@ -390,10 +399,13 @@ jobs:
             etiket: "iOS · simülatör"
             dosya: BayiSiparis-sim.zip
             cihaz: iPhone 16 Pro Max Simulator
+            # = env.SAUCE_IOS_SURUM (matris env okuyamaz)
             surum: "27.0"
     env:
       SAUCE_USERNAME: ${{ secrets.SAUCE_USERNAME }}
       SAUCE_ACCESS_KEY: ${{ secrets.SAUCE_ACCESS_KEY }}
+      # Yalnız artefakt maskelemesi için (mobil testler parolayı Bayiler.java seed'inden alır).
+      TP_TESTVERI_DEMO_PAROLA: ${{ secrets.TP_TESTVERI_DEMO_PAROLA }}
       DERLEME: ${{ matrix.platform == 'android' && needs.derle-android.result || needs.derle-ios.result }}
       CI: "true"
     steps:
@@ -534,7 +546,7 @@ jobs:
           cp tp-logs/*.log tp-sauce/${{ matrix.platform }}/logs/ 2>/dev/null || true
           [ -d demo-app/e2e-app/target/kanit ] && cp -R demo-app/e2e-app/target/kanit tp-sauce/${{ matrix.platform }}/kanit || true
           find tp-sauce -type l -delete
-          for s in "${DEMOAPP_TEST_TOKEN:-}" "${SAUCE_ACCESS_KEY:-}"; do
+          for s in "${DEMOAPP_TEST_TOKEN:-}" "${SAUCE_ACCESS_KEY:-}" "${TP_TESTVERI_DEMO_PAROLA:-}"; do
             [ -n "$s" ] || continue
             { grep -rlF -- "$s" tp-sauce || true; } | while read -r f; do
               python3 -c 'import sys,pathlib;p=pathlib.Path(sys.argv[1]);p.write_text(p.read_text(errors="replace").replace(sys.argv[2],"***"))' "$f" "$s"
@@ -561,6 +573,7 @@ jobs:
       SAUCE_USERNAME: ${{ secrets.SAUCE_USERNAME }}
       SAUCE_ACCESS_KEY: ${{ secrets.SAUCE_ACCESS_KEY }}
       ENABLED: ${{ needs.hazirlik.outputs.enabled }}
+      HAZIRLIK: ${{ needs.hazirlik.result }}
       SKIP_REASON: ${{ needs.hazirlik.outputs.reason }}
       KOTA_ONCE: ${{ needs.hazirlik.outputs.kota }}
     steps:
@@ -594,7 +607,10 @@ jobs:
           KOTA_SONRA: ${{ steps.kota.outputs.kota }}
         run: |
           set -euo pipefail
-          if [ "$ENABLED" != "true" ]; then
+          if [ "$HAZIRLIK" != "success" ]; then
+            # Hazırlık düştü (ör. geçersiz istek kimliği): "atlandı" değil, hata.
+            python3 scripts/github-sauce-tur-ozeti.py topla --out tp-sauce --beklenen web,android,ios
+          elif [ "$ENABLED" != "true" ]; then
             python3 scripts/github-sauce-tur-ozeti.py atla --out tp-sauce --neden "${SKIP_REASON:-Sauce turu koşmadı}"
           else
             girdiler=()

@@ -49,6 +49,7 @@ describe("sauce-demo.yml: yalnız elle tur", () => {
     assert.match(wf, /\n {2}sauce:\n {4}name: sauce\n/);
     assert.match(wf, /name: sauce-results\n/);
     assert.match(wf, /--beklenen web,android,ios/);
+    assert.match(wf, /if \[ "\$HAZIRLIK" != "success" \]/, "hazırlık düşerse atlandı değil hata");
   });
 
   it("kimlik komut satırında değil (netrc stdin); artefaktta token ve anahtar maskelenir", () => {
@@ -96,7 +97,8 @@ describe("github-sauce-tur-ozeti.py", () => {
     assert.deepEqual(
       p.map((x) => [x["etiket"], x["durum"], x["toplam"], x["gecen"]]),
       [
-        ["Windows 11 · Chromium", "failed", 2, 2],
+        // saucectl'in tek çıkış kodu (1) Edge'e aittir; Chromium kendi kanıtıyla geçti.
+        ["Windows 11 · Chromium", "passed", 2, 2],
         ["Windows 11 · Edge", "failed", 1, 0],
       ],
     );

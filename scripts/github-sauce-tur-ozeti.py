@@ -120,11 +120,15 @@ def _isler_raporundan(rapor: Path) -> list[dict]:
 
 
 def _durum(isler_durumlari: list[str | None], sayi: dict[str, int], exit_code: str | None) -> str:
+    """Satırın kendi kanıtı (Sauce iş durumu, JUnit) önceliklidir: saucectl'in TEK çıkış kodu tüm
+    suite'lere aittir, bir suite'in kırmızısı ötekini kırmızıya boyamamalı."""
     if sayi["basarisiz"] > 0:
         return "failed"
     kotu = [d for d in isler_durumlari if d and d.lower() not in ("passed", "complete", "completed")]
     if kotu:
         return "failed"
+    if sayi["toplam"] > 0 and any(d for d in isler_durumlari):
+        return "passed"
     if exit_code not in (None, "", "0"):
         return "failed" if sayi["toplam"] > 0 else "error"
     if sayi["toplam"] == 0:

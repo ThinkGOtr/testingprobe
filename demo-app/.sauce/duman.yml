@@ -29,14 +29,13 @@ playwright:
 
 rootDir: e2e
 
-npm:
-  packages:
-    allure-playwright: 3.14.0
-    "@axe-core/playwright": 4.14.0
+# npm paketi YOK: duman setinde axe kullanılmaz, Allure raporlayıcısı TP_SAUCE_DUMAN=1 iken kapalıdır
+# (playwright.config.ts) — her Sauce VM'inde paket kurulumu dakika harcamasın.
 
 env:
   CI: "true"
   TP_EXTERNAL_SERVER: "1"
+  TP_SAUCE_DUMAN: "1"
 
 defaults:
   timeout: 10m
