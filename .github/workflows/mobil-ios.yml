@@ -154,12 +154,20 @@ jobs:
           cache-dependency-glob: demo-app/api/uv.lock
 
       # Plan §5: derlenmiş .app önbelleği — yalnız uygulama kaynağı değişince yeniden derlenir.
+      # Anahtar derlemeden ÖNCE bir kez hesaplanır: `key:` içindeki hashFiles kaydetme (post) adımında
+      # yeniden değerlendirilir ve derlemenin bıraktığı node_modules/ios ağacında 120 sn sınırını
+      # aşıyordu ("hashFiles … couldn't finish within 120 seconds"; koşu 45196846287 testler yeşilken
+      # kırmızı bitti).
+      - name: .app önbellek anahtarı
+        id: app-key
+        run: echo "k=ios-app-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('demo-app/mobile/**', '!demo-app/mobile/build/**') }}" >> "$GITHUB_OUTPUT"
+
       - name: .app önbelleği
         id: app-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: demo-app/mobile/build/BayiSiparis.app
-          key: ios-app-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('demo-app/mobile/**', '!demo-app/mobile/build/**') }}
+          key: ${{ steps.app-key.outputs.k }}
 
       - name: .app derle (simülatör)
         if: steps.app-cache.outputs.cache-hit != 'true'

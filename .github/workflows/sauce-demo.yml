@@ -125,12 +125,17 @@ jobs:
         with:
           persist-credentials: false
 
+      # Anahtar derlemeden önce bir kez (post adımında hashFiles node_modules'la 120 sn'yi aşıyordu).
+      - name: APK önbellek anahtarı
+        id: anahtar
+        run: echo "k=sauce-apk-v1-${{ hashFiles('demo-app/mobile/**') }}" >> "$GITHUB_OUTPUT"
+
       - name: APK önbelleği
         id: onbellek
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: demo-app/mobile/build/bayi-siparis.apk
-          key: sauce-apk-v1-${{ hashFiles('demo-app/mobile/**') }}-${{ env.MOBIL_API_URL }}
+          key: ${{ steps.anahtar.outputs.k }}-${{ env.MOBIL_API_URL }}
 
       - name: Java kurulumu
         if: steps.onbellek.outputs.cache-hit != 'true'
@@ -180,12 +185,16 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: .app önbellek anahtarı
+        id: anahtar
+        run: echo "k=sauce-ios-v1-${{ hashFiles('demo-app/mobile/**') }}" >> "$GITHUB_OUTPUT"
+
       - name: .app önbelleği
         id: onbellek
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: demo-app/mobile/build/BayiSiparis-sim.zip
-          key: sauce-ios-v1-${{ hashFiles('demo-app/mobile/**') }}-${{ env.MOBIL_API_URL }}
+          key: ${{ steps.anahtar.outputs.k }}-${{ env.MOBIL_API_URL }}
 
       - name: Xcode seçimi
         if: steps.onbellek.outputs.cache-hit != 'true'
