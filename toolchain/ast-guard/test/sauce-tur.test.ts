@@ -186,6 +186,52 @@ describe("mobil-ios.yml: duman kapsamı ve hızlandırma", () => {
     icerir('WDA_DERIVED_DATA="$WDA_DD"');
   });
 
+  it("Testler adımı iki kipte de (tam / duman) bash ile koşar; macOS bash 3.2 + set -u dahil", () => {
+    // Adımın `run:` gövdesi çıkarılır; run-app-checks.sh yerine argümanları yazan saplama konur.
+    const bas = ios.indexOf("      - name: Testler (simülatörde)");
+    const run = ios.indexOf("        run: |\n", bas) + "        run: |\n".length;
+    const son = ios.indexOf("\n      # --- Sonuçlar", run);
+    const govde = ios
+      .slice(run, son)
+      .split("\n")
+      .map((l) => l.slice(10))
+      .join("\n")
+      .replace("bash demo-app/ci/run-app-checks.sh", "bash ./saplama.sh");
+    assert.ok(govde.includes("set -euo pipefail"));
+    assert.ok(govde.includes("bash ./saplama.sh"), "run-app-checks.sh çağrısı bulunamadı");
+    const dir = tmp("ios-test-adimi-");
+    writeTree(dir, {
+      "adim.sh": govde,
+      "saplama.sh": 'printf "<%s>" "$@"; printf "\\n"\n',
+      "tp-logs/.keep": "",
+    });
+    const kabuklar = ["/bin/bash", "bash"].filter((k, i, a) => a.indexOf(k) === i);
+    for (const kabuk of kabuklar) {
+      for (const kapsam of ["tam", "duman"]) {
+        const r = spawnSync(kabuk, ["-e", "adim.sh"], {
+          cwd: dir,
+          encoding: "utf8",
+          env: {
+            PATH: process.env["PATH"] ?? "/usr/bin:/bin",
+            KAPSAM: kapsam,
+            DUMAN_TESTLER: "A#a,B#b",
+            WDA_DD: "/tmp/wda",
+            GITHUB_WORKSPACE: dir,
+            APP_BUNDLE: "app.app",
+            SIM_UDID: "U",
+            SIM_NAME: "TP iPhone",
+            SIM_IOS: "27.2",
+          },
+        });
+        assert.equal(r.status, 0, `${kabuk} ${kapsam}: ${r.stderr}`);
+        const satir = readFileSync(join(dir, "tp-logs", "run-app-checks.log"), "utf8");
+        assert.match(satir, /<ios><-Dapp\.path=.*app\.app><-Ddevice\.udid=U><-Ddevice\.name=TP iPhone><-Dplatform\.version=27\.2>/);
+        if (kapsam === "duman") assert.match(satir, /<-Dtest=A#a,B#b>/, kabuk);
+        else assert.ok(!satir.includes("-Dtest="), `${kabuk}: tam kapsamda -Dtest yok`);
+      }
+    }
+  });
+
   it("paralel hazırlıkta her arka plan işinin çıkış kodu beklenir", () => {
     for (const p of ["p_sim=$!", "p_demo=$!", "p_wda=$!"]) icerir(p);
     icerir('if wait "$pid"; then');
