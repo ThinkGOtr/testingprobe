@@ -131,6 +131,7 @@ def test_sauce_turu_kendi_is_akisina_dispatch_ve_alim(engine, sgh: SauceGitHub) 
     assert run.tetik == "sauce" and run.github_run_id == "901"
     sauce = run.artefaktlar["sauce"]
     assert sauce["url"] == JOB_A and sauce["durum"] == "failed"
+    assert not any("results.json" in u for u in run.artefaktlar["uyarilar"])
     pl = sauce["platformlar"]
     assert [(p["platform"], p["etiket"], p["durum"]) for p in pl] == [
         ("web", "Windows 11 · Edge", "passed"),

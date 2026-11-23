@@ -2147,7 +2147,13 @@ def github_ingest(session: Session, run: Run, wr: Mapping[str, Any]) -> str:
             for t in ayr.testler:
                 for e in t.ekler:
                     e["yol"] = f"{ek_onek}/{e['yol']}"
-        uyarilar.extend(ayr.uyarilar)
+        # Sauce turu yalnız JUnit üretir (Playwright JSON'u Sauce VM'inde kalır): eksik JSON uyarısı
+        # kullanıcıya gösterilmez.
+        uyarilar.extend(
+            u
+            for u in ayr.uyarilar
+            if not (run.tetik == SAUCE_TETIK and u.startswith("JSON rapor (results.json)"))
+        )
     if wr.get("head_sha") and SHA_RE.fullmatch(str(wr["head_sha"])):
         run.commit = str(wr["head_sha"])
     sayac = record_results(session, run, ayr) if ayr is not None else sayilar([])
