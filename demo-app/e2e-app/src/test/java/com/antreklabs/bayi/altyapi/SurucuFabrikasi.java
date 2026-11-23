@@ -79,6 +79,9 @@ public final class SurucuFabrikasi {
     a.deviceName().ifPresent(o::setDeviceName);
     a.udid().ifPresent(o::setUdid);
     a.platformVersion().ifPresent(o::setPlatformVersion);
+    if (a.iosEkransiz()) {
+      o.setIsHeadless(true);
+    }
     // CI önbelleğindeki hazır WDA (mobil-ios.yml): derleme yerine test-without-building.
     a.wdaTuretilmisVeri()
         .ifPresent(

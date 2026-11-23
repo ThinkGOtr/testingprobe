@@ -39,7 +39,8 @@ public final class Ayarlar {
           Map.entry("kimlik.android", "KIMLIK_ANDROID"),
           Map.entry("kimlik.ios", "KIMLIK_IOS"),
           Map.entry("kimlik.windows", "KIMLIK_WINDOWS"),
-          Map.entry("wda.derived.data", "WDA_DERIVED_DATA"));
+          Map.entry("wda.derived.data", "WDA_DERIVED_DATA"),
+          Map.entry("ios.headless", "IOS_HEADLESS"));
 
   /** Ekilmiş hata kodunun biçimi (web: fixtures.ts FAULT_PATTERN; toolchain `fault`). */
   static final Pattern HATA_KODU = Pattern.compile("^[a-z0-9_]{1,40}$");
@@ -158,6 +159,14 @@ public final class Ayarlar {
    */
   public Optional<String> wdaTuretilmisVeri() {
     return deger("wda.derived.data");
+  }
+
+  /**
+   * iOS: simülatör arayüzü (Simulator/DeviceHub uygulaması) açılmaz ({@code isHeadless}). CI'da
+   * ekransız runner'da her oturumun ilk açılışında ~3 dk sürüyordu; yerelde varsayılan kapalı.
+   */
+  public boolean iosEkransiz() {
+    return "1".equals(deger("ios.headless", ""));
   }
 
   /** Platform sürümü (iOS simülatör seçimi için yararlı). */

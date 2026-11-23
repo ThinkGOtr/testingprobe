@@ -363,7 +363,8 @@ jobs:
             {capabilities: {alwaysMatch: {platformName: "iOS", "appium:automationName": "XCUITest",
               "appium:udid": $udid, "appium:app": $app, "appium:wdaLaunchTimeout": 300000,
               "appium:wdaStartupRetries": 3, "appium:newCommandTimeout": 60,
-              "appium:usePrebuiltWDA": true, "appium:derivedDataPath": $dd}}}')"
+              "appium:usePrebuiltWDA": true, "appium:derivedDataPath": $dd,
+              "appium:isHeadless": true}}}')"
           yanit="$(curl -sS -m 900 -H 'Content-Type: application/json' -d "$govde" \
             http://127.0.0.1:4723/session)" || true
           sid="$(jq -r '.value.sessionId // empty' <<<"$yanit" 2>/dev/null || true)"
@@ -383,7 +384,8 @@ jobs:
           kapsam=()
           if [ "$KAPSAM" = "duman" ]; then kapsam=("-Dtest=$DUMAN_TESTLER"); fi
           echo "Kapsam: $KAPSAM"
-          WDA_DERIVED_DATA="$WDA_DD" \
+          # Ekransız runner: simülatör arayüzü açılmaz (ısıtma oturumunda ~3 dk "Starting UI client").
+          IOS_HEADLESS=1 WDA_DERIVED_DATA="$WDA_DD" \
             bash demo-app/ci/run-app-checks.sh ios "-Dapp.path=$GITHUB_WORKSPACE/$APP_BUNDLE" \
             "-Ddevice.udid=$SIM_UDID" "-Ddevice.name=$SIM_NAME" "-Dplatform.version=$SIM_IOS" \
             "${kapsam[@]}" 2>&1 | tee tp-logs/run-app-checks.log

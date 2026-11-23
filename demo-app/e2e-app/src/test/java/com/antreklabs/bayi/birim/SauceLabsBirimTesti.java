@@ -74,6 +74,10 @@ public class SauceLabsBirimTesti {
         SurucuFabrikasi.secenekler(Platform.IOS, Ayarlar.haritadan(Map.of("app.id", "x"), Map.of("WDA_DERIVED_DATA", "/tmp/wda")));
     assertEquals(var.getCapability("appium:usePrebuiltWDA"), true);
     assertEquals(var.getCapability("appium:derivedDataPath"), "/tmp/wda");
+    assertEquals(yok.getCapability("appium:isHeadless"), null);
+    BaseOptions<?> ekransiz =
+        SurucuFabrikasi.secenekler(Platform.IOS, Ayarlar.haritadan(Map.of("app.id", "x"), Map.of("IOS_HEADLESS", "1")));
+    assertEquals(ekransiz.getCapability("appium:isHeadless"), true);
   }
 
   @Test(groups = "birim")
