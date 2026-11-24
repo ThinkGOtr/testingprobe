@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { BILINEN_OLAYLAR, CORE_OLAYLARI, DINLENEN_OLAYLAR, olayEslesir, olayiAyristir, olayKonulari, OlayYolu, type OlayKaynagi } from "./events";
 import { mockOlayYayinla } from "./mock/olaylar";
+import sseOlaylari from "./sozlesme/sse-olaylari.json";
 import type { PortalOlayi } from "./types";
 
 class SahteKaynak implements OlayKaynagi {
@@ -268,6 +269,44 @@ describe("OlayYolu session.ended", () => {
     } finally {
       http.yetkisizOlunca(null);
     }
+  });
+});
+
+describe("core'un yayımladığı tüm SSE olayları (sozlesme/sse-olaylari.json)", () => {
+  it("kaynaktan türetilen her olay adı EventSource'a kayıtlı (listede yoksa teslim edilmez)", () => {
+    expect(sseOlaylari.length).toBeGreaterThanOrEqual(40);
+    const eksik = sseOlaylari.filter((ad) => !DINLENEN_OLAYLAR.includes(ad));
+    expect(eksik, "events.tsx BILINEN_OLAYLAR/CORE_OLAYLARI'na ekleyin").toEqual([]);
+  });
+
+  it("case.review ve case.audit (core zarfı) gerçek SSE yolunda case review ekranının süzgecine ulaşır", () => {
+    vi.useFakeTimers();
+    SahteKaynak.hepsi = [];
+    const y = new OlayYolu({ kaynakUret: (u) => new SahteKaynak(u) });
+    const gelen: PortalOlayi[] = [];
+    // CaseReview.tsx aboneliği: konu listesi + gereksinim kimliği eşlemesi.
+    const konular = new Set(["case.generated", "case.updated", "requirement.updated", "publish.updated", "case.review", "case.audit"]);
+    y.abone((o) => {
+      if (olayEslesir(o, konular) && o.data.requirement_id === "req-1") gelen.push(o);
+    });
+    y.baslat();
+    const k = SahteKaynak.hepsi[0];
+    k.ac();
+    k.gonder("case.review", { data: { requirement_id: "req-1", durum: "tamamlandi", skor: 11 }, ts: "t1" });
+    k.gonder("case.audit", { data: { requirement_id: "req-1", durum: "tamamlandi", karar: "KABUL" }, ts: "t2" });
+    k.gonder("case.audit", { data: { requirement_id: "req-2", durum: "tamamlandi", karar: "RET" }, ts: "t3" });
+    expect(gelen.map((o) => [o.type, o.data.durum])).toEqual([
+      ["case.review", "tamamlandi"],
+      ["case.audit", "tamamlandi"],
+    ]);
+    y.durdur();
+    vi.useRealTimers();
+  });
+
+  it("po.rejected gereksinim, oracle.onayli_uyumsuz case, repair.requested hata ekranını yeniler", () => {
+    expect(olayKonulari({ type: "po.rejected", data: {} })).toContain("requirement.updated");
+    expect(olayKonulari({ type: "oracle.onayli_uyumsuz", data: {} })).toContain("case.updated");
+    expect(olayKonulari({ type: "repair.requested", data: {} })).toContain("failure.updated");
   });
 });
 

@@ -11,6 +11,11 @@ export const OTURUM_BITTI = "session.ended";
 export type BaglantiDurumu = "baglaniyor" | "bagli" | "yeniden" | "mock" | "kapali";
 
 /**
+ * Core'un yayımladığı her adlı olay buradaki listelerde olmalı: EventSource adlı olayı yalnızca
+ * `addEventListener(ad)` kaydı varsa teslim eder, listede olmayan olay sessizce kaybolur.
+ * Kaynaktan türetilen tam liste `sozlesme/sse-olaylari.json`'dadır (`npm run sozlesme:sse`);
+ * events.test.ts her adın dinlendiğini denetler.
+ *
  * Özellik şeritlerinin yayımladığı ayrıntılı olay adları (Demo-A: gereksinim, bulgu doğrulama, PO
  * onayı, case üretimi, yayın) ve mock arka ucun aynı adları. EventSource joker kabul etmez; `publish.*`
  * ailesi burada tek tek sayılır (yeni bir alt ad eklenirse buraya da eklenmeli).
@@ -75,6 +80,17 @@ export const BILINEN_OLAYLAR = [
   // 012 Ş7 (test kalite doğrulama, ANALIZ §6): beklenen sonuç kontrolü bitti
   // `{case_id, requirement_id, icerik_hash, sonuc}`; case ekranı yenilenir.
   "oracle.checked",
+  // 012 Ş7: onaylı case'in beklenen sonucu uyumsuz çıktı `{case_id, requirement_id, …}`.
+  "oracle.onayli_uyumsuz",
+  // 011 D: case seti review'u (P8) ve Agent Probe denetimi (P9) bitti/hata
+  // `{requirement_id, durum, skor|karar}`. Case review ekranı "Review çalışıyor…" ve
+  // "Agent Probe'a gönder" bekleyişinden bu olaylarla çıkar (2026-11-24 canlı: listede yokken
+  // EventSource teslim etmiyordu, ekran yenilemeye kadar takılı kalıyordu).
+  "case.review",
+  "case.audit",
+  // PO reddi `{requirement_id, …}` ve onarım isteği `{failure_id, …}`.
+  "po.rejected",
+  "repair.requested",
 ] as const;
 
 /** Ayrıntılı olayın ek konuları (sayfalar konuya abone olur, olay adına değil). */
@@ -94,6 +110,8 @@ const EK_KONULAR: Record<string, string[]> = {
   "bug.published": ["bug.updated"],
   // 012 Ş7: kontrol sonucu case kartındaki çipi değiştirir.
   "oracle.checked": ["case.updated"],
+  "oracle.onayli_uyumsuz": ["case.updated"],
+  "po.rejected": ["requirement.updated"],
 };
 
 /** Ailenin her olayı aynı konuya gider (repair.* → failure.updated, bug.* → bug.updated, demo.* → demo.updated). */

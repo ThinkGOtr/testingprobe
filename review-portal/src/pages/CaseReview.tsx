@@ -22,7 +22,7 @@ import { DetaySayfasi, OzetKarti, type DetaySekmesi } from "../components/DetayS
 import { MetaSatiri } from "../components/tasarim";
 import "../stiller/detay-case.css";
 import { HedefOlcer } from "../components/Grafikler";
-import { useGeciktirilmis, useVeri } from "../hooks";
+import { useGeciktirilmis, useGuvenlikYoklamasi, useVeri } from "../hooks";
 import { caseEski, dogrulamayiYay, gonderilmemisSoruSayisi } from "../lib/caseV3";
 import { dolar, sure, yuzde } from "../lib/format";
 import { siradakiAdim, siradakiMetni, surumDurumCumlesi, surumKumeleri, varsayilanSurum, type CaseSurumu } from "../lib/durumModeli";
@@ -696,6 +696,9 @@ export function CaseReview() {
     if (typeof o.data.requirement_id === "string" && o.data.requirement_id !== id) return;
     sessiz();
   }, ["case.generated", "case.updated", "requirement.updated", "publish.updated", "case.review", "case.audit"]);
+  // Review (P8) / denetim (P9) sürerken güvenlik yoklaması: bitiş `case.review` / `case.audit`
+  // olayıyla gelir; olay kaçarsa panel "çalışıyor…"da kalmasın.
+  useGuvenlikYoklamasi(!!(review.veri?.calisiyor || denetim.veri?.calisiyor), sessiz);
 
   const liste = caseler.veri ?? [];
   // `#case-<id>` (ek case türetme sonucu, Kule bağlantıları): liste yüklenince o karta kaydır ve odakla.

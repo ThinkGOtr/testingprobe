@@ -138,3 +138,24 @@ export function useGeciktirilmis(fn: () => void, ms = 250): () => void {
     zaman.current = setTimeout(() => fnRef.current(), ms);
   }, [ms]);
 }
+
+/** Güvenlik yoklamasının varsayılan aralığı (ms): asıl güncelleme SSE olayıyladır. */
+export const GUVENLIK_YOKLAMA_MS = 15000;
+
+/**
+ * Bir iş sürerken (`etkin`) seyrek güvenlik yoklaması: asıl güncelleme SSE olayıyla gelir; olay
+ * kaçarsa (bağlantı kopması, kayıtsız ad) ekran sonsuza dek "çalışıyor…"da kalmaz. Sekme
+ * gizliyken yoklanmaz; `etkin` false olunca durur.
+ */
+export function useGuvenlikYoklamasi(etkin: boolean, fn: () => void, ms = GUVENLIK_YOKLAMA_MS): void {
+  const fnRef = useRef(fn);
+  fnRef.current = fn;
+  useEffect(() => {
+    if (!etkin) return;
+    const t = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      fnRef.current();
+    }, ms);
+    return () => clearInterval(t);
+  }, [etkin, ms]);
+}

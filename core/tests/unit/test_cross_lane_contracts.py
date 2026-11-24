@@ -9,6 +9,9 @@
 3. review-portal/src/api/sozlesme/denetim-olaylari.json — core'un denetim zincirine yazdığı olay
    kodları (kaynaktan AST ile toplanır); portal her kodun okunur etiketi olduğunu denetler
    (yeniden üretmek: review-portal içinde `npm run sozlesme:denetim`).
+4. review-portal/src/api/sozlesme/sse-olaylari.json — core'un SSE olay yoluna (`publish_tx`)
+   yayımladığı olay adları (kaynaktan AST ile); portal her adın EventSource'a kayıtlı olduğunu
+   denetler, kayıtsız ad tarayıcıya hiç ulaşmaz (yeniden üretmek: `npm run sozlesme:sse`).
 """
 
 from __future__ import annotations
@@ -75,6 +78,56 @@ def test_portal_denetim_olaylari_guncel() -> None:
         "`npm run sozlesme:denetim` çalıştırın ve yeni kodlara Denetim etiketi ekleyin "
         "(src/lib/kullaniciMetni.ts OLAY_ETIKETI)"
     )
+
+
+SSE_EXPORT = REPO / "review-portal" / "src" / "api" / "sozlesme" / "sse-olaylari.json"
+SSE_SCRIPT = REPO / "review-portal" / "scripts" / "sse_olaylari.py"
+
+
+def _sse_modulu() -> ModuleType:
+    spec = importlib.util.spec_from_file_location("sse_olaylari_parity", SSE_SCRIPT)
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+@pytest.mark.skipif(not SSE_SCRIPT.exists(), reason="review-portal yok")
+def test_portal_sse_olaylari_guncel() -> None:
+    import tp_core
+
+    adlar, cozulemeyen = _sse_modulu().topla(Path(tp_core.__file__).parent)
+    assert not cozulemeyen, (
+        "çözülemeyen SSE olayı yayınları; review-portal/scripts/sse_olaylari.py kurallarına "
+        f"ekleyin: {cozulemeyen}"
+    )
+    # 2026-11-24 canlı: bu iki olay portalda kayıtsızdı (ekran yenilemeye kadar takılı kaldı).
+    assert {"case.review", "case.audit"} <= set(adlar)
+    assert json.loads(SSE_EXPORT.read_text(encoding="utf-8")) == adlar, (
+        "review-portal/src/api/sozlesme/sse-olaylari.json güncel değil; review-portal içinde "
+        "`npm run sozlesme:sse` çalıştırın ve yeni adı src/api/events.tsx BILINEN_OLAYLAR'a "
+        "ekleyin (EventSource kayıtsız adlı olayı teslim etmez)"
+    )
+
+
+@pytest.mark.skipif(not SSE_SCRIPT.exists(), reason="review-portal yok")
+def test_sse_toplayici_sarmalayici_ve_sabitleri_cozer(tmp_path: Path) -> None:
+    (tmp_path / "a.py").write_text(
+        "from typing import Final\n"
+        "OLAY: Final = 'x.bitti'\n"
+        "def _olay(s, ad, veri):\n    publish_tx(s, ad, veri)\n"
+        "def _hata(s, *, olay):\n    publish_tx(s, olay, {})\n"
+        "def f(s):\n    _olay(s, 'x.basladi', {})\n    _hata(s, olay='x.hata')\n"
+        "    publish_tx(s, OLAY, {})\n    publish_tx(s, 'x.a' if s else 'x.b', {})\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "b.py").write_text(
+        "def g(s, ad):\n    publish_tx(s, ad + '.z', {})\n", encoding="utf-8"
+    )
+    mod = _sse_modulu()
+    adlar, cozulemeyen = mod.topla(tmp_path)
+    assert {"x.bitti", "x.basladi", "x.hata", "x.a", "x.b"} <= set(adlar)
+    assert cozulemeyen == ["b.py:2 publish_tx(ad + '.z')"]
 
 
 @pytest.fixture(scope="module")
