@@ -76,3 +76,47 @@ describe("kırma sonrası demo uygulaması yeniden kurulumu", () => {
     expect(screen.queryByTestId("web-kuruluyor")).toBeNull();
   });
 });
+
+// "Demo durumu" kartı da aynı kuralı uygular: normal yeniden kurulumda teknik yönerge yerine nötr metin.
+describe("Demo durumu kartı: çalışan uygulama main'den geride", () => {
+  const YONERGE = "Demo uygulaması forge main'den yeniden derlenmeli: host'ta `scripts/demo-web-sync.sh` çalıştırın.";
+  function durumlu(onceMs: number | null, izleyici?: DemoDurumu["web_izleyici"]): DemoDurumu {
+    const d = kirik(onceMs ?? 0, izleyici);
+    d.uygulama = { sha: "94683fc000001111", main_ile_eslesiyor: false, neden: "uygulama kodu farklı (web)", yonerge: YONERGE };
+    if (onceMs === null) d.web_yenileme_istegi = null;
+    return d;
+  }
+  async function ac(d: DemoDurumu) {
+    await oturumAc("sunucu");
+    vi.spyOn(api, "demoDurumu").mockResolvedValue(d);
+    vi.spyOn(api, "kosular").mockResolvedValue([]);
+    uygulama("/demo");
+    await screen.findByText("Çalışan uygulama");
+  }
+
+  it("izleyici canlı, 1 dk: nötr metin; neden ve yönerge yok; çip rengi aynı", async () => {
+    await ac(durumlu(60_000, { calisiyor: true, yas_s: 5 }));
+    expect(await screen.findByTestId("durum-web-kuruluyor")).toHaveTextContent("Demo uygulaması yeniden kuruluyor (yaklaşık 3 dk)");
+    expect(screen.queryAllByText(/demo-web-sync\.sh/)).toHaveLength(0);
+    expect(screen.queryByText("uygulama kodu farklı (web)")).toBeNull();
+    expect(screen.getByText("main ile eşleşmiyor")).toBeInTheDocument();
+  });
+
+  it("10 dk aşıldı: yönerge", async () => {
+    await ac(durumlu(11 * 60_000, { calisiyor: true, yas_s: 5 }));
+    expect((await screen.findAllByText(/demo-web-sync\.sh/)).length).toBeGreaterThan(0);
+    expect(screen.queryByTestId("durum-web-kuruluyor")).toBeNull();
+  });
+
+  it("kalp atışı yok: süre içinde olsa da yönerge", async () => {
+    await ac(durumlu(30_000, { calisiyor: false, yas_s: null }));
+    expect((await screen.findAllByText(/demo-web-sync\.sh/)).length).toBeGreaterThan(0);
+    expect(screen.queryByTestId("durum-web-kuruluyor")).toBeNull();
+  });
+
+  it("yenileme isteği yok: yönerge (beklenen yeniden kurulum yok)", async () => {
+    await ac(durumlu(null, { calisiyor: true, yas_s: 5 }));
+    expect((await screen.findAllByText(/demo-web-sync\.sh/)).length).toBeGreaterThan(0);
+    expect(screen.queryByTestId("durum-web-kuruluyor")).toBeNull();
+  });
+});

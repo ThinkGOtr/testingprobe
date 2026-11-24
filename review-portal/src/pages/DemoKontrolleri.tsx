@@ -1038,7 +1038,33 @@ export function forgeHatasiMetni(ham: string): string {
   return teknikMetniCevir(ham) ?? icTerimleriAyikla(ham.replace(/^forge\s+/i, "Kod deposu "));
 }
 
+/**
+ * Çalışan uygulama main'den geride ama bu normal yeniden kurulum mu? Son yenileme isteği
+ * `WEB_BEKLEME_ZAMAN_ASIMI_MS` içinde yazıldıysa ve host izleyicisinin kalp atışı yok DEĞİLSE
+ * (taze ya da core bildirmiyor; Locator kartıyla aynı kural) yeniden kurulum sürüyor sayılır.
+ * İstek zamanı bilinmiyorsa, süre aşıldıysa ya da kalp atışı yoksa false (yönerge gösterilir).
+ */
+export function webYenidenKuruluyor(d: DemoDurumu | null, simdi: number = Date.now()): boolean {
+  if (!d || d.uygulama?.main_ile_eslesiyor !== false) return false;
+  if (d.web_izleyici?.calisiyor === false) return false;
+  const i = d.web_yenileme_istegi;
+  if (!i || typeof i !== "object") return false;
+  const zaman = (i as Record<string, unknown>).zaman;
+  if (typeof zaman !== "string") return false;
+  const basladi = Date.parse(zaman);
+  if (Number.isNaN(basladi)) return false;
+  return simdi - basladi < WEB_BEKLEME_ZAMAN_ASIMI_MS;
+}
+
 function DurumKarti({ d }: { d: DemoDurumu | null }) {
+  const [, setTik] = useState(0);
+  const kuruluyor = webYenidenKuruluyor(d);
+  // Nötr metin gösterilirken süre dolunca yönergeye geçilsin (olay gelmese de).
+  useEffect(() => {
+    if (!kuruluyor) return;
+    const t = window.setInterval(() => setTik((n) => n + 1), 15_000);
+    return () => window.clearInterval(t);
+  }, [kuruluyor]);
   if (!d) return null;
   const u = d.uygulama ?? {};
   const f = d.forge ?? {};
@@ -1090,8 +1116,16 @@ function DurumKarti({ d }: { d: DemoDurumu | null }) {
           {u.main_ile_eslesiyor === false && <Cip ton="hata">main ile eşleşmiyor</Cip>}
         </dd>
       </dl>
-      {u.neden && u.main_ile_eslesiyor === false && <p className="kucuk">{u.neden}</p>}
-      {u.yonerge && <Uyari ton="uyari">{u.yonerge}</Uyari>}
+      {kuruluyor ? (
+        <p className="kucuk" role="status" data-testid="durum-web-kuruluyor">
+          Demo uygulaması yeniden kuruluyor (yaklaşık 3 dk).
+        </p>
+      ) : (
+        <>
+          {u.neden && u.main_ile_eslesiyor === false && <p className="kucuk">{u.neden}</p>}
+          {u.yonerge && <Uyari ton="uyari">{u.yonerge}</Uyari>}
+        </>
+      )}
     </Kart>
   );
 }
