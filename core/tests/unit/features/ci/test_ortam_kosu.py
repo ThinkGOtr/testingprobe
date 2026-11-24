@@ -39,7 +39,12 @@ def ortamlar(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         CANLI: {"BASE_URL": "https://canli.example.test"},
     }
     monkeypatch.setattr(ortam, "ortamlar", liste)
-    monkeypatch.setattr(durum, "ortam_gorunumu", lambda pid, eid: (gorunumler[eid], frozenset()))
+    # Canlı Deployment parolasını A1/env_unset ile KALDIRIR (473de3ee: boş parola yalnız
+    # açık kaldırmada gider; tanımsız ad runner'ın kendi parolasına bırakılır).
+    kaldirilan = {STG: frozenset(), CANLI: frozenset({"TP_PROBE_PASSWORD"})}
+    monkeypatch.setattr(
+        durum, "ortam_gorunumu", lambda pid, eid: (gorunumler[eid], kaldirilan[eid])
+    )
     return durumu
 
 
