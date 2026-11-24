@@ -575,3 +575,43 @@ def test_web_kontrolu_yeniden_kontrolde_beklemez() -> None:
     finally:
         ts.reset_factories()
     assert out == {"web_izleyici": "tamam", "uygulama_main": "hata"}
+
+
+# ------------------------------------------------------------- Baseline CI satırı (canlı demo)
+
+
+def test_ci_ayrintisi_bitince_sure_tahmini_yerine_olculen_sure() -> None:
+    gecti = ts.ci_ayrintisi("passed", 554.4)
+    assert gecti == "Baseline push CI geçti (9 dk 14 sn) — 'kırma ön koşulu' sağlandı"
+    assert "≈" not in gecti and "16–20" not in gecti
+    assert ts.ci_ayrintisi("passed", None) == "Baseline push CI geçti — 'kırma ön koşulu' sağlandı"
+    kirmizi = ts.ci_ayrintisi("failed", 300)
+    assert kirmizi.startswith("Baseline push CI: failed (5 dk)") and "sağlanmadı" in kirmizi
+    assert "≈" not in kirmizi
+    for surer in ("queued", "running"):
+        m = ts.ci_ayrintisi(surer, None)
+        beklenen = "yeşil olunca 'kırma ön koşulu' sağlanır (≈9–10 dk)"
+        assert m == f"Baseline push CI: {surer} — {beklenen}"
+
+
+def test_kontrol_ci_olculen_sure_run_kaydindan(engine: Engine, iki_proje: tuple[str, str]) -> None:
+    from datetime import timedelta
+
+    a, _ = iki_proje
+    bas = datetime.now(UTC) - timedelta(minutes=30)
+    with engine.begin() as c:
+        c.execute(
+            text(
+                "INSERT INTO run (id, project_id, tetik, sonuc, baslama, bitis) "
+                "VALUES (:i, :p, 'push', 'passed', :b, :s)"
+            ),
+            {"i": uuid.uuid4(), "p": a, "b": bas, "s": bas + timedelta(seconds=554)},
+        )
+    k = ts.kontrol_ci(engine, a, bas - timedelta(minutes=1))
+    assert k == [
+        {
+            "kod": "ci_baseline",
+            "durum": "bilgi",
+            "ayrinti": "Baseline push CI geçti (9 dk 14 sn) — 'kırma ön koşulu' sağlandı",
+        }
+    ]

@@ -5,12 +5,13 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it } from "vitest";
 import { Rotalar } from "../App";
+import type { BugTaslagi } from "../api/types";
 import { ayar, mockVerisi } from "../api/mock/handlers";
 import { OturumProvider } from "../auth";
 import { BildirimProvider } from "../components/Bildirim";
 import { oturumAc, sekmeAc } from "../test/yardimci";
 import { demoOlayMetni, kirmaKosusu } from "./DemoKontrolleri";
-import { kararKaynagiMetni, onarimAsamalari } from "./HataDetay";
+import { bugSiradakiMetni, kararKaynagiMetni, onarimAsamalari } from "./HataDetay";
 import { kosuHatalari } from "./Kosular";
 
 function uygulama(yol: string) {
@@ -88,6 +89,18 @@ describe("triage ekranı", () => {
     expect(screen.queryByText("REPLAY")).toBeNull();
     expect(screen.getByRole("link", { name: "Bug taslağına git" })).toHaveAttribute("href", "/bug-taslaklari/bug-4");
     expect(screen.getByRole("link", { name: "Üretilen test" })).toHaveAttribute("href", "/kod/scr-3");
+  });
+
+  it("triage sıradaki adımı bug kararını izler: karar verildiyse 'kararı verin' denmez (canlı demo C3 → TPD-5)", () => {
+    const t = (durum: BugTaslagi["durum"], ek: Partial<BugTaslagi> = {}) => bugSiradakiMetni({ durum, sonuc_metni: null, yayin_hatasi: null, ...ek });
+    expect(bugSiradakiMetni(null)).toBe("Bug taslağını inceleyip kararı verin (Test Uzmanı).");
+    expect(t("draft")).toBe("Bug taslağını inceleyip kararı verin (Test Uzmanı).");
+    expect(t("published", { sonuc_metni: "Mevcut kayda bağlandı: TPD-5" })).toBe("Bug kararı verildi — Mevcut kayda bağlandı: TPD-5. Bu hata için bekleyen adım yok.");
+    expect(t("published")).toBe("Bug kararı verildi. Bu hata için bekleyen adım yok.");
+    expect(t("dismissed", { sonuc_metni: "Test Uzmanı taslağı reddetti (Jira kaydı açılmadı)" })).toBe("Bug taslağı reddedildi; Jira kaydı açılmadı. Bu hata için bekleyen adım yok.");
+    expect(t("approved")).toBe("Bug kararı verildi; Jira yayını sürüyor.");
+    expect(t("approved", { yayin_hatasi: "403" })).toMatch(/Jira yayını başarısız/);
+    for (const d of ["published", "dismissed", "approved"] as const) expect(t(d)).not.toMatch(/kararı verin/);
   });
 
   it("karar kaynağı metni ve onarım aşamaları (bilinmeyen = bekliyor, uydurma yeşil yok)", () => {

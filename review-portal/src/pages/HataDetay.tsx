@@ -1030,6 +1030,35 @@ export function HataDetay() {
   );
 }
 
+/**
+ * Bug taslağı önerili triage'da "Sıradaki adım": karar verilmişse (bağlandı / açıldı / reddedildi)
+ * artık "kararı verin" denmez; sonuç ve kalan iş (varsa) yazılır. Taslak yüklenmediyse karar bekleniyor sayılır.
+ */
+export function bugSiradakiMetni(
+  b: Pick<BugTaslagi, "durum" | "sonuc_metni" | "yayin_hatasi"> | null,
+): string {
+  if (!b || b.durum === "draft") return "Bug taslağını inceleyip kararı verin (Test Uzmanı).";
+  const sonuc = b.sonuc_metni?.replace(/\.$/, "");
+  if (b.durum === "published") return `Bug kararı verildi${sonuc ? ` — ${sonuc}` : ""}. Bu hata için bekleyen adım yok.`;
+  if (b.durum === "dismissed") return "Bug taslağı reddedildi; Jira kaydı açılmadı. Bu hata için bekleyen adım yok.";
+  // approved: karar verildi, Jira yayını kuyrukta / sürüyor ya da başarısız.
+  return b.yayin_hatasi
+    ? "Bug kararı verildi ama Jira yayını başarısız; taslaktan yeniden deneyin (Test Uzmanı)."
+    : "Bug kararı verildi; Jira yayını sürüyor.";
+}
+
+function BugSiradaki({ id }: { id: string }) {
+  const v = useVeri(() => api.bugTaslagi(id), [id]);
+  return (
+    <>
+      {bugSiradakiMetni(v.veri ?? null)}{" "}
+      <Link to={`/bug-taslaklari/${encodeURIComponent(id)}`} className="ds-siradaki-git">
+        Bug taslağı →
+      </Link>
+    </>
+  );
+}
+
 /** Triage'ın tek "Sıradaki adım"ı (öneriye göre). */
 function TriageSiradaki({ ortam, locator, bug, bugKisitli, beklenti }: { ortam: boolean; locator: boolean; bug: string | null; bugKisitli: boolean; beklenti: boolean }) {
   const onarimaGit = (
@@ -1039,17 +1068,7 @@ function TriageSiradaki({ ortam, locator, bug, bugKisitli, beklenti }: { ortam: 
   );
   if (ortam) return <>Ortam sorunu: ortamı düzeltip koşuyu yeniden çalıştırın; onarım ya da bug taslağı üretilmez.</>;
   if (locator) return <>Önerilen locator onarımını inceleyin (Otomasyon Mühendisi). {onarimaGit}</>;
-  if (bug)
-    return bugKisitli ? (
-      <>Ürün hatası adayı; bug kararını Test Uzmanı verir.</>
-    ) : (
-      <>
-        Bug taslağını inceleyip kararı verin (Test Uzmanı).{" "}
-        <Link to={`/bug-taslaklari/${encodeURIComponent(bug)}`} className="ds-siradaki-git">
-          Bug taslağı →
-        </Link>
-      </>
-    );
+  if (bug) return bugKisitli ? <>Ürün hatası adayı; bug kararını Test Uzmanı verir.</> : <BugSiradaki id={bug} />;
   if (beklenti) return <>Case'in beklenen değeri düzeltilmeli (Analist). {onarimaGit}</>;
   // `failure.classify`: Test Uzmanı ve Otomasyon Mühendisi (YD-06).
   return <>Öneri üretilmedi; hatayı Test Uzmanı ya da Otomasyon Mühendisi kanıta bakarak sınıflandırmalı.</>;

@@ -97,6 +97,21 @@ describe("yol haritası: kasıtlı kırma taslağı adım 13'ü bekletmez", () =
     expect(ilk.ipucu).toMatch(/F2 ve C3 taslakları/);
   });
 
+  it("reddedilmiş kasıtlı kırma taslağı 'bilerek açık' denmez; adım 13 tamam kalır (canlı demo 13. adım)", () => {
+    const reddedilmis = [...buglar.slice(0, 3), bug("bk", { failure_id: "fk", durum: "dismissed", karar: "dismiss" })];
+    const a13 = demoAdimlari({ ...TAM, bugTaslaklari: reddedilmis })[12];
+    expect(a13.hal).toBe("tamam");
+    expect(a13.kanit).toBe("3 taslak · 3 karar verildi · 1 kasıtlı kırma taslağı (reddedildi, beklenen, sayılmaz)");
+    expect(a13.kanit).not.toMatch(/bilerek açık/);
+    expect(a13.ipucu).toBeNull();
+  });
+
+  it("ret de karardır: yalnız reddedilmiş gerçek taslak adım 13'ü bekletmez", () => {
+    const a13 = demoAdimlari({ ...TAM, bugTaslaklari: [bug("b1", { failure_id: "f3", durum: "dismissed", karar: "dismiss" })] })[12];
+    expect(a13.hal).toBe("tamam");
+    expect(a13.kanit).toBe("1 taslak · 1 karar verildi");
+  });
+
   it("tamamlanmış akış 14/14 (Sauce yerine yerel yedek dahil): ilk tamamlanmamış adım yok", () => {
     const a = demoAdimlari(TAM);
     expect(a.filter((x) => x.hal !== "tamam" && x.hal !== "yedek")).toEqual([]);

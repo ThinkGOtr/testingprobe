@@ -242,6 +242,29 @@ def test_algila_csharp_csproj_ister() -> None:
     assert a.sayilar["csharp"] == 2 and a.dil == "csharp"
 
 
+def test_algila_csharp_python_uretilen_ve_birim_haric() -> None:
+    """Demo ekran testi: örnek üretilen test (`Tests/Generated`, `tests/generated`) ve harness birim
+    testleri (`Birim/`, `birim/`) web C# / Python sayısına girmez (Java `uretilen/` + `birim/` ile
+    aynı ilke); yoksa "Depoda en çok C# testi var (9)" diye TypeScript projesi yanlış yönlenir."""
+    depo = _depo(
+        **{
+            "e2e-csharp/E2e.csproj": '<PackageReference Include="Microsoft.Playwright.NUnit" />',
+            "e2e-csharp/Tests/SepetTests.cs": "",
+            "e2e-csharp/Tests/Generated/TPD1WebC2_0a1b2c3dTests.cs": "",
+            "e2e-csharp/Birim/AyarlarTests.cs": "",
+            "e2e-csharp/Birim/SurumTests.cs": "",
+            "e2e-python/pyproject.toml": "dependencies = ['pytest-playwright']\n",
+            "e2e-python/tests/test_sepet.py": "",
+            "e2e-python/tests/generated/test_tpd_1_c3_0a1b2c3d.py": "",
+            "e2e-python/tests/birim/test_altyapi.py": "",
+            "e2e-python/tests/birim/test_kimlikler.py": "",
+        }
+    )
+    a = dil_algila.algila(SahteForge(depo), "main", "web", uygulama_koku="")
+    assert a.sayilar == {"ts": 2, "java": 0, "csharp": 1, "python": 1}
+    assert (a.dil, a.kaynak) == ("ts", "algilandi")
+
+
 def test_algila_uygulama_koku_ve_uygulama_platformu() -> None:
     depo = {
         f"demo-app/{k}": v

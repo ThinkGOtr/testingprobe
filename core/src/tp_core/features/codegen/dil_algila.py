@@ -13,6 +13,9 @@ ve derleme çıktısı dizinleri (`node_modules`, `.venv`, `bin`, `obj`, `target
 | `csharp` | Playwright'a başvuran bir `*.csproj`'un dizini altında `*Tests.cs` / `*Test.cs` |
 | `python` | Playwright'a başvuran proje dosyasının dizini altında `test_*.py` / `*_test.py` |
 
+C# / Python'da `Birim/` / `birim/` (harness birim testleri) ve `Generated/` / `generated/` (aracın
+ürettikleri) altı sayılmaz (dil eklentisinin `test_dosyasi_mi` kuralı).
+
 Java test kalıbı: `*Test.java`, `*Testi.java`, `*Tests.java`, `*IT.java`; algılama sinyali olarak
 `*Test.kt` de. `<e2e-java>/src/test/**` her zaman sayılır; başka bir `src/test/**` ağacı (ör. kökte
 standart Maven / Gradle) yalnız Playwright for Java'ya **bağımlı** `pom.xml` / `build.gradle(.kts)`
@@ -468,14 +471,26 @@ def _java_diger_say(
     return n, sayim.en_az
 
 
+def _elle_yazilmis(yol: str, haric_dizinler: Sequence[str]) -> bool:
+    """Aracın ürettiği (`Generated/`, `generated/`) ve tarayıcısız birim testi (`Birim/`, `birim/`)
+    dizinlerinin altında değil mi? Dil eklentisinin `test_dosyasi_mi` kuralı (tek kaynak:
+    `diller/csharp.py` `CS_HARIC_DIZINLER`, `diller/python.py` `HARIC_DIZINLER`); Java'daki
+    `JAVA_HARIC_DIZINLER` ile aynı ilke. Aksi halde örnek üretilen test + harness birim testleri
+    web C# / Python sayısını şişirir ve en çok testi olan dil yanlış görünür."""
+    return not any(p in haric_dizinler for p in yol.split("/")[:-1])
+
+
 def _csharp_say(
     forge: Any, sha: str, dosyalar: Sequence[str], haric: Sequence[str], butce: _Butce
 ) -> int:
+    from tp_core.features.codegen.diller.csharp import CS_HARIC_DIZINLER
+
     testler = [
         y
         for y in dosyalar
         if _CS_TEST_RE.fullmatch(posixpath.basename(y))
         and _izlenir(y, haric)
+        and _elle_yazilmis(y, CS_HARIC_DIZINLER)
         and not _taban_adi_mi(y)
     ]
     if not testler:
@@ -497,8 +512,14 @@ def _python_say(
     haric: Sequence[str],
     butce: _Butce,
 ) -> int:
+    from tp_core.features.codegen.diller.python import HARIC_DIZINLER as PY_HARIC_DIZINLER
+
     testler = [
-        y for y in dosyalar if _PY_TEST_RE.fullmatch(posixpath.basename(y)) and _izlenir(y, haric)
+        y
+        for y in dosyalar
+        if _PY_TEST_RE.fullmatch(posixpath.basename(y))
+        and _izlenir(y, haric)
+        and _elle_yazilmis(y, PY_HARIC_DIZINLER)
     ]
     if not testler:
         return 0

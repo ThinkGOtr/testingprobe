@@ -1129,19 +1129,39 @@ def kontrol_web(
     return out
 
 
+CI_TAHMINI = "≈9–10 dk"  # ölçülen baseline push CI süresi (canlı demo 2026-11-24: 9 dk 14 sn)
+
+
+def ci_ayrintisi(sonuc: str, sure_s: float | None) -> str:
+    """Baseline push CI satırı: bitmişse sonuç + ölçülen süre, sürüyorsa tahmini süre.
+    (Canlı demo: koşu geçtikten sonra da "(≈16–20 dk)" yazıyordu.)"""
+    from tp_core.features.requirements.baseline import sure_metni
+
+    sure = f" ({sure_metni(round(sure_s))})" if sure_s is not None and sure_s >= 0 else ""
+    if sonuc == "passed":
+        return f"Baseline push CI geçti{sure} — 'kırma ön koşulu' sağlandı"
+    if sonuc in ("failed", "error"):
+        return f"Baseline push CI: {sonuc}{sure} — 'kırma ön koşulu' sağlanmadı; koşuyu inceleyin"
+    return f"Baseline push CI: {sonuc} — yeşil olunca 'kırma ön koşulu' sağlanır ({CI_TAHMINI})"
+
+
 def kontrol_ci(engine: Engine, pid: str, baslangic: datetime) -> list[dict[str, str]]:
     with engine.connect() as conn:
         row = conn.execute(
             text(
-                "SELECT sonuc FROM run WHERE project_id = :pid AND tetik = 'push' "
-                "AND olusturma >= :t ORDER BY olusturma DESC LIMIT 1"
+                "SELECT sonuc, baslama, bitis, sure_ms FROM run WHERE project_id = :pid "
+                "AND tetik = 'push' AND olusturma >= :t ORDER BY olusturma DESC LIMIT 1"
             ),
             {"pid": pid, "t": baslangic},
         ).first()
     if row is None:
         return [_k("ci_baseline", "uyari", "Baseline push CI koşusu bulunamadı")]
-    return [_k("ci_baseline", "bilgi", f"Baseline push CI: {row.sonuc}"
-               + " — yeşil olunca 'kırma ön koşulu' sağlanır (≈16–20 dk)")]  # fmt: skip
+    sure_s: float | None = None
+    if row.baslama is not None and row.bitis is not None:
+        sure_s = (row.bitis - row.baslama).total_seconds()
+    elif row.sure_ms is not None:
+        sure_s = row.sure_ms / 1000
+    return [_k("ci_baseline", "bilgi", ci_ayrintisi(str(row.sonuc), sure_s))]
 
 
 STRICT_ACIK = "AÇIK (sahnede kapalı beklenir; tp-env TP_REPLAY_STRICT)"

@@ -487,16 +487,29 @@ export function sonrakiAdimlar(x: SonrakiGirdi): YolAdimi[] {
   const kararli = buglar.filter((b) => b.durum === "approved" || b.durum === "published");
   const yayinliBug = buglar.filter((b) => b.durum === "published" && (b.jira_key || b.link_key));
   const bekleyen = buglar.filter((b) => b.durum === "draft");
+  // Ret de bir karardır (onayla / bağla / reddet): adım 13 için karar verilmiş sayılır, Jira yayınına (14) girmez.
+  const kararVerilen = kararli.length + buglar.filter((b) => b.durum === "dismissed").length;
   const ilkBug = bekleyen[0] ?? kararli[0] ?? buglar[0] ?? null;
   // Sahne notu yalnızca ilgili kararlar hâlâ bekliyorsa (mükerrer bağlantısı yapılmışsa gösterilmez).
   const tpd5Bagli = buglar.some((b) => b.karar === "link" && (b.link_key ?? b.jira_key) === "TPD-5");
-  const kirmaNotu = kirmaTaslaklari.length ? ` · ${kirmaTaslaklari.length} kasıtlı kırma taslağı (bilerek açık, sayılmaz)` : "";
+  // Kırma taslağı açıksa "bilerek açık"; reddedilmişse (beklenen akış) ya da karar verilmişse o yazılır.
+  // Her durumda adım 13'ün sayımına girmez.
+  const kirmaSay = (d: (b: BugTaslagi) => boolean) => kirmaTaslaklari.filter(d).length;
+  const kirmaParcalari = [
+    [kirmaSay((b) => b.durum === "draft"), "bilerek açık"],
+    [kirmaSay((b) => b.durum === "dismissed"), "reddedildi, beklenen"],
+    [kirmaSay((b) => b.durum === "approved" || b.durum === "published"), "karar verildi"],
+  ] as const;
+  const kirmaNotu = kirmaParcalari
+    .filter(([n]) => n > 0)
+    .map(([n, d]) => ` · ${n} kasıtlı kırma taslağı (${d}, sayılmaz)`)
+    .join("");
   const a13 =
     buglar.length === 0
       ? adim(13, { hal: "bekliyor", kanit: `Story için bug taslağı yok.${kirmaNotu}` })
       : adim(13, {
-          hal: kararli.length > 0 && bekleyen.length === 0 ? "tamam" : "suruyor",
-          kanit: `${buglar.length} taslak · ${kararli.length} karar verildi${bekleyen.length ? ` · ${bekleyen.length} Test Uzmanı kararı bekliyor` : ""}${kirmaNotu}`,
+          hal: kararVerilen > 0 && bekleyen.length === 0 ? "tamam" : "suruyor",
+          kanit: `${buglar.length} taslak · ${kararVerilen} karar verildi${bekleyen.length ? ` · ${bekleyen.length} Test Uzmanı kararı bekliyor` : ""}${kirmaNotu}`,
           ipucu: bekleyen.length
             ? tpd5Bagli
               ? "Kalan taslaklara Test Uzmanı kararı verin (onayla / bağla / reddet)."
