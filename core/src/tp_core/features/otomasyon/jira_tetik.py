@@ -787,17 +787,18 @@ def durum_ozeti(s: Session) -> dict[str, Any]:
                 x for x in (_sonuc_satiri(r) for r in son.get("sonuclar") or []) if x is not None
             ],
         }
-    # Story başına son eylemli sonuç (en yeni önce); son `SON_TETIK_TARAMA` kayıttan.
+    # Story başına son eylemli sonuç (en yeni önce); son `SON_TETIK_TARAMA` kayıttan. Demo tam
+    # sıfırlamasından önceki kayıtlar gösterilmez (`ayarlar.TETIK_GECMIS_KESIMI`).
     satirlar: list[Any] = []
     gorulen: set[str] = set()
     for r in s.execute(
         text(
             "SELECT ozet->>'jira_key' AS jira_key, ozet->>'sonuc' AS sonuc, "
             "ozet->>'neden' AS neden, zaman FROM audit_event "
-            "WHERE project_id = :pid AND eylem = 'requirements.jira_tetik' "
+            "WHERE project_id = :pid AND eylem = 'requirements.jira_tetik' AND id > :kesim "
             "ORDER BY id DESC LIMIT :n"
         ),
-        pid_param(n=SON_TETIK_TARAMA),
+        pid_param(n=SON_TETIK_TARAMA, kesim=ayarlar.tetik_gecmis_kesimi(s)),
     ):
         if r.jira_key in gorulen:
             continue

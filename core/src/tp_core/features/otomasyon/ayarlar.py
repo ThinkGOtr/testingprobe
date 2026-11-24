@@ -41,6 +41,10 @@ OTOMATIK_KOD = "otomatik_kod_uretimi"
 JIRA_TETIK = "jira_tetik"
 # Tetiğin iç durumu (başlangıç işareti); ayar değil, API'ye çıkmaz.
 TETIK_TABANI = "jira_tetik.taban"
+# Tetik geçmişi kesimi (iç durum): demo tam sıfırlaması anındaki son `requirements.jira_tetik`
+# denetim kaydının id'si. Denetim zinciri append-only olduğundan geçmiş silinemez; "Story başına
+# son tetik sonucu" yalnız bundan sonraki kayıtları gösterir.
+TETIK_GECMIS_KESIMI = "jira_tetik.gecmis_kesimi"
 
 ARALIK_MIN_S = 30
 ARALIK_MAX_S = 3600
@@ -322,6 +326,16 @@ def tetik_tabani(session: Session) -> dict[str, Any] | None:
     """Tetiğin başlangıç işareti (`{durum, zaman}`) ya da None (taban kurulmamış)."""
     satir = _satir(session, TETIK_TABANI)
     return satir.deger if satir is not None and isinstance(satir.deger, dict) else None
+
+
+def tetik_gecmis_kesimi(session: Session) -> int:
+    """Tetik geçmişi kesimi (audit id; yoksa 0): `durum_ozeti` yalnız `id > kesim` gösterir."""
+    satir = _satir(session, TETIK_GECMIS_KESIMI)
+    deger = satir.deger if satir is not None and isinstance(satir.deger, dict) else {}
+    try:
+        return int(deger.get("audit_id") or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def tetik_tabani_yaz(

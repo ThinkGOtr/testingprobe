@@ -94,6 +94,9 @@ def _tohumla(engine: Engine, pid: str) -> None:
             j = enqueue(c, "noop", {}, idempotency_key=f"bitmis-{pid}")
             c.execute(text("UPDATE job SET durum = 'failed' WHERE id = :j"), {"j": j})
             append_audit(c, "test", "test.olay", "x", {}, project_id=pid)
+            anahtar = "TPD-1" if pid.endswith("a") else "MNT-1"
+            append_audit(c, "jira-tetik", "requirements.jira_tetik", f"jira:{anahtar}",
+                         {"jira_key": anahtar, "sonuc": "tetiklendi"}, project_id=pid)  # fmt: skip
             c.execute(
                 text("INSERT INTO hata_kosusu (project_id, durum) VALUES (:p, 'done')"),
                 {"p": pid},
@@ -136,9 +139,45 @@ def test_silme_yalniz_hedef_projeye_dokunur(engine: Engine, iki_proje: tuple[str
                 text("SELECT anahtar FROM otomasyon_ayari WHERE project_id = :p"), {"p": a}
             ).scalars()
         )
-    assert anahtarlar == {"jira_tetik"}  # fmt: skip
+    # Tetik geçmişi kesimi yazılır (audit_event silinemez; görünüm kesimden sonrasını gösterir).
+    assert anahtarlar == {"jira_tetik", ayarlar.TETIK_GECMIS_KESIMI}  # fmt: skip
     for t in ("ai_call", "tool_call", "review", "test_verisi", "api_token", "asistan_sohbet"):
         assert sonra_a[t] == once_a[t], t
+
+
+def _son_tetiklenenler(pid: str) -> list[str]:
+    from tp_core.features.otomasyon import jira_tetik
+
+    with proje_icinde(pid, kaynak="test"), session_scope() as s:
+        return [r["jira_key"] for r in jira_tetik.durum_ozeti(s)["son_tetiklenenler"]]
+
+
+def test_silme_tetik_gecmisini_yalniz_hedef_projede_keser(
+    engine: Engine, iki_proje: tuple[str, str]
+) -> None:
+    """Tetik görünümü ("Story başına son tetik sonucu") sıfırlamadan sonra boş; diğer projede
+    aynen; sıfırlamadan sonraki yeni tetik kaydı görünür; taban işareti yine silinir (sonraki
+    tur taban turu)."""
+    a, b = iki_proje
+    _tohumla(engine, a)
+    _tohumla(engine, b)
+    assert _son_tetiklenenler(a) == ["TPD-1"] and _son_tetiklenenler(b) == ["MNT-1"]
+
+    ts.proje_verisini_sil(engine, a)
+    assert _son_tetiklenenler(a) == []
+    assert _son_tetiklenenler(b) == ["MNT-1"]
+    with proje_icinde(a, kaynak="test"), session_scope() as s:
+        assert ayarlar.tetik_tabani(s) is None
+    with proje_icinde(b, kaynak="test"), session_scope() as s:
+        assert ayarlar.tetik_tabani(s) is not None and ayarlar.tetik_gecmis_kesimi(s) == 0
+
+    with engine.begin() as c:
+        append_audit(c, "jira-tetik", "requirements.jira_tetik", "jira:TPD-3",
+                     {"jira_key": "TPD-3", "sonuc": "tetiklendi"}, project_id=a)  # fmt: skip
+    assert _son_tetiklenenler(a) == ["TPD-3"]
+    # İkinci sıfırlama kesimi ileri taşır (upsert).
+    ts.proje_verisini_sil(engine, a)
+    assert _son_tetiklenenler(a) == []
 
 
 def test_kosan_is_varsa_bekler_sure_dolunca_hicbir_sey_silmez(

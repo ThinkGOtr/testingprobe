@@ -9,10 +9,11 @@ başlangıcına döndürür. Adımlar (sıra güvenlik gereği; `ADIMLAR`):
 2. `tp_veri` — YALNIZ bu projenin iş verisi (`proje_verisini_sil`): gereksinim, case, karar
    tablosu, script/kod, koşu, hata, bug taslağı, hata koşusu, PR kaydı, iş kuyruğu… Diğer
    projelere, proje ayarlarına, test verisi kataloğuna, kullanıcılara ve append-only kayıtlara
-   (denetim zinciri, model çağrıları, review) dokunulmaz. Kuyruk yarışı: projenin bekleyen
-   işleri aynı işlemde iptal edilir; koşan iş varsa beklenir. Silmeden sonra özelliklerin
-   açılış kancaları yalnız bu proje için yeniden koşar (kendini yeniden planlayan periyodik
-   işler: Jira tetiği, PO sorgusu, CI senkronu…).
+   (denetim zinciri, model çağrıları, review) dokunulmaz; Jira tetik geçmişi (append-only
+   denetim kaydı) silinmez, `jira_tetik.gecmis_kesimi` işaretiyle görünümden kesilir. Kuyruk
+   yarışı: projenin bekleyen işleri aynı işlemde iptal edilir; koşan iş varsa beklenir. Silmeden
+   sonra özelliklerin açılış kancaları yalnız bu proje için yeniden koşar (kendini yeniden
+   planlayan periyodik işler: Jira tetiği, PO sorgusu, CI senkronu…).
 3. `jira` — `integrations.jira_demo_sifirla.sifirla` (TPD-1..7 sabit; TPD-8+ silinir ya da
    kapatılır; bağlantılar, etiketler, yorumlar, durumlar).
 4. `github` — eski `demo-baseline` koruması (main'de olup etikette olmayan, üretilmiş test
@@ -773,6 +774,20 @@ def _sil_tek_islem(engine: Engine, pid: str) -> dict[str, Any]:
         conn.execute(
             text("DELETE FROM otomasyon_ayari WHERE project_id = :pid AND anahtar = :a"),
             {"pid": pid, "a": "jira_tetik.taban"},
+        )
+        # Tetik geçmişi (audit_event; append-only, silinemez): kesim işareti, "Story başına son
+        # tetik sonucu" yalnız bundan sonraki kayıtları gösterir. Taban mantığına dokunmaz.
+        conn.execute(
+            text(
+                "INSERT INTO otomasyon_ayari (project_id, anahtar, deger, guncelleyen) "
+                "SELECT CAST(:pid AS TEXT), :a, "
+                "jsonb_build_object('audit_id', COALESCE(MAX(id), 0)), :aktor "
+                "FROM audit_event WHERE project_id = CAST(:pid AS TEXT) "
+                "AND eylem = 'requirements.jira_tetik' "
+                "ON CONFLICT (project_id, anahtar) DO UPDATE "
+                "SET deger = EXCLUDED.deger, guncelleyen = EXCLUDED.guncelleyen, guncelleme = now()"
+            ),
+            {"pid": pid, "a": "jira_tetik.gecmis_kesimi", "aktor": AKTOR},
         )
         conn.execute(
             text("DELETE FROM job WHERE project_id = :pid AND durum <> 'running'"),
