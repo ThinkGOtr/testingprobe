@@ -38,6 +38,7 @@ from sqlalchemy import Text, cast, func, or_, select
 from sqlalchemy.orm import Session
 
 from tp_core.auth import yetki
+from tp_core.features.assistant import ic_terimler
 from tp_core.features.assistant.tools.base import (
     AracBaglami,
     AracHatasi,
@@ -689,12 +690,32 @@ def _son_hata(s: Session, tur: str, nesne: Any, ham: Mapping[str, Any]) -> str |
     return None
 
 
+SINYAL_UST = 6
+
+
+def _sinyal_ozeti(sinyaller: Any) -> str:
+    """Sınıf kararının gerekçesi olan eşleşen sinyaller (Hata detay "Sinyaller" sekmesi); yalnız
+    insan için yazılmış açıklama (kod/kanıt kimliği değil)."""
+    out = []
+    for g in (sinyaller if isinstance(sinyaller, list) else [])[:SINYAL_UST]:
+        if not isinstance(g, Mapping):
+            continue
+        aciklama = g.get("aciklama") or g.get("baslik")
+        if isinstance(aciklama, str) and aciklama.strip():
+            out.append(_kirp(aciklama, 240))
+    return "; ".join(out) if out else "-"
+
+
 def probe_detay(s: Session, rol: str, tur: str, nesne: Any) -> list[str]:
     """`probe_get` gövdesi (satırlar). Öneri motoru aynı veriyi buradan okuyabilir."""
     _uc_kontrol(rol, DETAY_UCU[tur])
     ham = _detay_ham(s, rol, tur, nesne)
-    alanlar = alanlari_sec(ham, DETAY_ALANLARI[tur])
+    # İç kodlar (product_defect, rule, merged…) portal etiketiyle (F-B6-01): model ve alıntı
+    # kullanıcının ekranda gördüğü dili görür.
+    alanlar = ic_terimler.etiketle(tur, alanlari_sec(ham, DETAY_ALANLARI[tur]))
     satirlar = _satirlar(f"{tur} {nesne.id}", alanlar)
+    if tur == "failure":
+        satirlar.append(f"eslesen_sinyaller: {_sinyal_ozeti(ham.get('eslesen_sinyaller'))}")
     kapi = _kapi(tur, nesne, s)
     satirlar.append(f"bekleyen_kapi: {kapi.ad if kapi else '-'}")
     satirlar.append(f"sorumlu_rol: {_rol_metni(kapi.rol) if kapi else '-'}")

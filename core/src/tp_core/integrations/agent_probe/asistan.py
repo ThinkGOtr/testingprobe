@@ -68,7 +68,7 @@ VARSAYILAN_ENGEL: Final = 40
 VARSAYILAN_UYARI: Final = 70
 
 METIN_TAVANI: Final = 6000
-KAYNAK_TAVANI: Final = 4000
+KAYNAK_TAVANI: Final = 6000  # alıntılar + doğrulanmış kanıtların tam çıktısı (denetim)
 
 _SIRA: Final[dict[str, int]] = {"gec": 0, "uyar": 1, "engelle": 2}
 

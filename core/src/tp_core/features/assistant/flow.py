@@ -1363,6 +1363,9 @@ def cevapla(
                 cevap = guvenlik_cikti.istem_sizintisi_cevabi()
             if sizinti is not None:
                 _olay_yaz(session_factory, m, sizinti, ayrinti={"cevap": str(m.id)})
+            # İçerik kontrolü cevabı kaynak gösterilen kanıtın tam çıktısına karşı ölçer; havuz
+            # aşağıda temizlenmeden alınır (F-B6-01).
+            kanitlar = asistan_denetim.kanit_metinleri(cevap, araclar.havuz) if denetim_acik else {}
         finally:
             araclar.havuz.temizle()
         # (6a) İçerik kontrolü: cevap kullanıcıya gösterilmeden. Gösterilen tüm serbest metin
@@ -1391,7 +1394,7 @@ def cevapla(
                     kullanici_id=m.kullanici_id,
                     gw=gw,
                     soru=m.icerik,
-                    kaynak_ozetleri=asistan_denetim.kaynak_ozetleri(cevap),
+                    kaynak_ozetleri=asistan_denetim.kaynak_ozetleri(cevap, kanitlar),
                 )
             except asistan_denetim.DenetimCalismiyor as exc:
                 return _denetim_calismiyor(

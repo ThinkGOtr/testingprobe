@@ -128,6 +128,11 @@ Sources (`kaynaklar`):
 Answer blocks (`cevap_bloklari`): plain text; types `baslik`, `paragraf`, `liste` (items in
 `maddeler`, empty `maddeler` for the other types), `kod` (a short code or log excerpt). No Markdown,
 no links, no HTML. Keep the whole answer under about 2500 characters.
+Write classes, statuses and decision sources with the Turkish labels the tool results and the
+portal show ("Ürün hatası", "otomatik kural"). Never write internal codes or field names
+in `baslik`/`paragraf`/`liste` text: no snake_case identifiers (`product_defect`, `oneri_durumu`,
+`karar_tablosu`, `bug_draft`) and no English status codes (`merged`, `rule`); say what
+they mean in Turkish. Code and file names belong only in `kod` blocks and `kaynaklar`.
 
 Links and actions:
 - Never write a URL, a domain or a Markdown/wiki link anywhere in the output. Point to portal

@@ -36,6 +36,7 @@ tavanına, `asistan_denetim.ai_call_id` soru başı tavanına girer; mesajın `m
 from __future__ import annotations
 
 import logging
+import re
 import time
 import uuid
 from collections.abc import Callable, Iterable, Mapping
@@ -564,9 +565,57 @@ def isaretle(cevap: dict[str, Any], d: Denetim) -> dict[str, Any]:
     return out
 
 
-def kaynak_ozetleri(cevap: Mapping[str, Any]) -> list[str]:
-    """Cevabın kaynakları (tür, ref, alıntı) — `yanlis_bilgi` denetiminin girdisi."""
+# Havuz kanıtlı kaynak türleri: `ref` kanıt kimliğidir (`kN`), alıntı tam araç çıktısının bir
+# satırıdır (sonislem.HAVUZ_TURLERI + uygulama verisi).
+KANITLI_TURLER: Final = frozenset({"probe_verisi", "jira", "ci_log", "uygulama_verisi"})
+KANIT_TAVANI: Final = 2000
+
+
+_SARMA_SATIRI: Final = re.compile(r"^(?:\[kanit:k[0-9]+\]|<untrusted [^\n]*>|</untrusted [^\n]*>)$")
+
+
+def _kanit_govdesi(metin: str) -> str:
+    """Kanıt metninden `[kanit:kN]` ve `<untrusted>` sarma satırları atılır (yalnız araç
+    çıktısı; içerik zaten kaçışlıdır ve denetim girdisinde yeniden sarılır)."""
+    return "\n".join(s for s in metin.splitlines() if not _SARMA_SATIRI.match(s.strip()))
+
+
+def kanit_metinleri(cevap: Mapping[str, Any], havuz: Iterable[Any] | None) -> dict[str, str]:
+    """Cevabın **doğrulanmış** havuz kaynaklarının tam araç çıktısı (kimlik → maskeli metin).
+
+    Havuz son işlemden sonra temizlendiği için içerik kontrolünden önce alınır. `yanlis_bilgi`
+    denetimi cevabı asistanın gerçekten gördüğü ve kaynak gösterdiği kayda karşı ölçer: yalnız
+    tek satırlık alıntı verilince kaydın diğer alanlarından gelen doğru değerler ("beklenen 0,
+    gerçekleşen 1") kaynaksız sayılıyordu (B6.1 F-B6-01). Doğrulanmamış kaynak (alıntı kanıtta yok,
+    tür uyuşmuyor) metin vermez; kaynak gösterilmeyen araç çıktısı da verilmez — denetim
+    gevşemez. Metin modele giden maskeli metindir (açılmış kişisel veri denetime gitmez)."""
+    if havuz is None:
+        return {}
+    istenen = {
+        str(k.get("ref")).strip()
+        for k in cevap.get("kaynaklar") or []
+        if isinstance(k, Mapping)
+        and k.get("tur") in KANITLI_TURLER
+        and k.get("dogrulandi") is True
+        and isinstance(k.get("ref"), str)
+    }
+    out: dict[str, str] = {}
+    for kanit in havuz:
+        kimlik = getattr(kanit, "kimlik", None)
+        if kimlik in istenen and kimlik not in out:
+            metin = _kanit_govdesi(str(getattr(kanit, "metin", "") or ""))
+            out[kimlik] = metin if len(metin) <= KANIT_TAVANI else metin[:KANIT_TAVANI] + " …"
+    return out
+
+
+def kaynak_ozetleri(
+    cevap: Mapping[str, Any], kanitlar: Mapping[str, str] | None = None
+) -> list[str]:
+    """Cevabın kaynakları (tür, ref, alıntı) — `yanlis_bilgi` denetiminin girdisi. `kanitlar`
+    (`kanit_metinleri`) verilirse doğrulanmış kanıtın tam araç çıktısı kimlik başına bir kez
+    eklenir."""
     out = []
+    eklenen: set[str] = set()
     for k in cevap.get("kaynaklar") or []:
         if not isinstance(k, Mapping):
             continue
@@ -574,6 +623,16 @@ def kaynak_ozetleri(cevap: Mapping[str, Any]) -> list[str]:
         alinti = k.get("alinti")
         if isinstance(alinti, str) and alinti.strip():
             parca += f": {alinti.strip()[:400]}"
+        ref = k.get("ref")
+        if (
+            kanitlar
+            and isinstance(ref, str)
+            and ref.strip() in kanitlar
+            and ref.strip() not in eklenen
+            and k.get("dogrulandi") is True
+        ):
+            eklenen.add(ref.strip())
+            parca += f"\n  kanıt {ref.strip()} (aracın tam çıktısı):\n{kanitlar[ref.strip()]}"
         if parca:
             out.append(parca)
     return out[:12]

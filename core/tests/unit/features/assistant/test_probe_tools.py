@@ -18,6 +18,7 @@ from tp_core.features.assistant.tools import AracBaglami, AracHatasi, AracSarmal
 from tp_core.gateway.masking import PiiMasker
 from tp_core.models import (
     BugDraft,
+    Failure,
     Job,
     Requirement,
     Review,
@@ -27,6 +28,7 @@ from tp_core.models import (
     session_scope,
 )
 from tp_core.models.guard import allow_state_write
+from tp_core.models.triage_feature import FailureEk
 
 SAHTE_TOKEN = "gh" + "p_" + "Z9y8X7w6V5u4T3s2R1q0P9o8N7m6"
 
@@ -173,6 +175,46 @@ def test_probe_get_case_script_run_bug(veri: dict[str, Any]) -> None:
     assert "son_hata: runner çöktü" in kosu
     bug = sar("probe_get", {"tur": "bug_draft", "id_or_key": "TPD-9"})
     assert "sorumlu_rol: tester (Test Uzmanı)" in bug and "icerik.ozet: İndirim yanlış" in bug
+
+
+def test_probe_get_failure_ic_kodlari_etiketler(veri: dict[str, Any]) -> None:
+    """F-B6-01: hata kaydı modele ham kodla (product_defect, rule, karar_tablosu, bug_draft,
+    merged) gitmez; portal etiketi ve sınıfın gerekçesi (eşleşen sinyaller) gider."""
+    with session_scope() as s, allow_state_write():
+        f = Failure(
+            run_id=veri["run"],
+            test_adi="TPD-1 C3 › 6 adet kampanyalı üründe bedava ürün verilmez",
+            hata_imzasi="imza",
+            sinif="product_defect",
+            karar_kaynagi="rule",
+            oneri_turu="bug_draft",
+            oneri_durumu="merged",
+            eslesen_sinyaller=[
+                {
+                    "kod": "karar_tablosu_uyumlu",
+                    "aciklama": "Test beklentisi onaylı karar tablosu ile aynı, uygulama farklı",
+                    "kaynak": "onaylı karar tablosu",
+                    "kanit": None,
+                }
+            ],
+        )
+        s.add(f)
+        s.flush()
+        s.add(FailureEk(failure_id=f.id, anahtar=f"ek-{f.id}", kural="karar_tablosu"))
+        fid = f.id
+    metin = _sar(_baglam("tester", maske=False))(
+        "probe_get", {"tur": "failure", "id_or_key": str(fid)}
+    )
+    assert "sinif: Ürün hatası" in metin
+    assert "karar_kaynagi: otomatik kural" in metin
+    assert "kural: onaylı karar tablosu kuralı" in metin
+    assert "oneri_turu: bug taslağı" in metin
+    assert "oneri_durumu: karar verildi; bug Jira'ya yazıldı" in metin
+    assert "eslesen_sinyaller: Test beklentisi onaylı karar tablosu ile aynı" in metin
+    # Alan adları (oneri_turu, bug_draft_id) kalır; değerlerde iç kod yok.
+    for kod in ("product_defect", ": rule", ": karar_tablosu", ": bug_draft", "merged"):
+        assert kod not in metin, kod
+    assert "bekleyen_kapi: -" in metin  # karar verilmiş: bekleyen adım yok
 
 
 def test_probe_get_bulunamadi_ve_gecersiz(veri: dict[str, Any]) -> None:

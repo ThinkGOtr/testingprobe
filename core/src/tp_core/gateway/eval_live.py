@@ -399,7 +399,7 @@ class CaseEstimate:
     worst_usd: float  # şema yeniden istemleri dahil en kötü durum (bütçe denetimi bunu kullanır)
 
 
-GUARD_INPUT_CHARS = 8000  # soru/cevap + kaynak özetleri (asistan.METIN_TAVANI + KAYNAK_TAVANI)
+GUARD_INPUT_CHARS = 12000  # soru/cevap + kaynak özetleri (asistan.METIN_TAVANI + KAYNAK_TAVANI)
 
 
 def _guard_estimate(gw: Gateway) -> tuple[float, float]:

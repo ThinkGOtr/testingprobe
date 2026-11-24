@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Engine, text
 
 from tests.unit.features.assistant import test_asistan_api as _api
+from tests.unit.features.assistant import test_probe_tools as _probe
 from tests.unit.features.assistant.test_flow import (
     Gecit,
     bitir,
@@ -27,10 +28,11 @@ from tests.unit.features.assistant.test_flow import (
 from tp_core.audit import verify_chain
 from tp_core.features.assistant import budget, denetim
 from tp_core.gateway.errors import ProviderPermanentError
-from tp_core.gateway.testing import text_response
+from tp_core.gateway.testing import text_response, tool_response
 from tp_core.integrations.agent_probe import set_agent_probe_factory
 
 client = _api.client
+veri = _probe.veri
 giris = _api.giris
 tek = _api.tek
 sor = _api.sor
@@ -268,6 +270,38 @@ def test_cevabin_tum_gosterilen_alanlari_puanlanir(
     girdi = son.split("Denetlenecek metin:")[1]
     assert "Kaynak alıntısı:" in girdi and "Yalnızca mühendis rolü" in girdi
     assert "Kaynak: review-portal/src/pages/Script.tsx:12" in girdi
+
+
+def test_yanlis_bilgi_kontrolu_kaynak_kanitinin_tamamini_gorur(
+    client: TestClient, make_user, engine: Engine, veri: Any
+) -> None:
+    """F-B6-01: cevap kaynak gösterdiği kaydın alıntılanmayan alanını da söyleyebilir; kontrol
+    yalnız tek satırlık alıntıyı görünce doğru değeri kaynaksız sayıyordu. Doğrulanmış kanıtın
+    tam araç çıktısı (sarma satırları olmadan) kaynak özetine girer; doğrulanmamış kanıt girmez."""
+    giris(client, make_user("analyst"))
+    _, mid = soru_gonder(client, engine, "TPD-3 için PO ne istemiş, açıklar mısın?")
+    gecit = Gecit(
+        engine,
+        [
+            puan(95),
+            tool_response(("probe_get", {"tur": "requirement", "id_or_key": "TPD-3"})),
+            tool_response(("probe_get", {"tur": "run", "id_or_key": str(veri["run"])})),
+            bitir(
+                kaynaklar=[
+                    {"tur": "probe_verisi", "ref": "k1", "alinti": "durum: pending_po"},
+                    {"tur": "probe_verisi", "ref": "k2", "alinti": "uydurma satır"},
+                ]
+            ),
+            puan(92),
+        ],
+    )
+    assert cevapla(engine, mid, gecit) == "done"
+    son = json.dumps(gecit.saglayici.requests[-1].messages, ensure_ascii=False)
+    kaynak = son.split("Asistanın kullandığı kaynak özetleri:")[1].split("Denetlenecek metin:")[0]
+    assert "kanıt k1 (aracın tam çıktısı)" in kaynak
+    assert "bekleyen_kapi: PO onayı bekleniyor" in kaynak  # alıntıda olmayan alan
+    assert "[kanit:k1]" not in kaynak
+    assert "kanıt k2" not in kaynak and "runner çöktü" not in kaynak
 
 
 def test_uyari_notla_gosterilir(client: TestClient, make_user, engine: Engine) -> None:

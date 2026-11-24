@@ -47,6 +47,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final, Protocol
 
+from tp_core.features.assistant import ic_terimler
 from tp_core.features.assistant.siniflandir import normalize
 from tp_core.features.assistant.tools.base import KanitHavuzu, sir_temizle
 from tp_core.gateway.masking import MaskingSession
@@ -212,8 +213,11 @@ def taslak_metni(metin: Any) -> str:
 
 
 def _bahissiz(metin: str, tur: str) -> str:
-    """Cevapta `@ad` bahsi `ad` olur (yankılanan mention kimseyi anmaz); kod bloğu hariç."""
-    return metin if tur == "kod" else _MENTION.sub(lambda m: m.group(0)[1:], metin)
+    """Cevapta `@ad` bahsi `ad` olur (yankılanan mention kimseyi anmaz); bilinen iç kodlar
+    (`product_defect`, `oneri_durumu`…) kullanıcı etiketine çevrilir (F-B6-01); kod bloğu hariç."""
+    if tur == "kod":
+        return metin
+    return ic_terimler.kullanici_metni(_MENTION.sub(lambda m: m.group(0)[1:], metin))
 
 
 def kirp(metin: str, ust: int) -> str:
