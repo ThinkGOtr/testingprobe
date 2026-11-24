@@ -17,6 +17,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
@@ -79,6 +80,55 @@ public class SozlesmeBirimTesti {
     return m;
   }
 
+  /**
+   * Demo kırması eşdeğerleri (kimlikler.json `demo_kirma_esdegerleri`; yeni kimlik → kanonik kimlik).
+   * TP'nin "Buton kimliğini değiştir" demosu web'i bilinçli değiştirir; onarım (Kimlikler.java ya da
+   * locators.ts) yeni kimliğe geçer, diğer diller/sözleşme listesi eskide kalır. Bu çift sözleşmede
+   * aynı kimlik sayılır; başka her fark ihlaldir.
+   */
+  static Map<String, String> demoEsdegerleri() throws IOException {
+    Map<String, String> m = new TreeMap<>();
+    Matcher blok =
+        Pattern.compile("\"demo_kirma_esdegerleri\"\\s*:\\s*\\{([^}]*)\\}")
+            .matcher(Files.readString(KIMLIK_JSON, StandardCharsets.UTF_8));
+    if (blok.find()) {
+      Matcher cift = Pattern.compile("\"([^\"]+)\"\\s*:\\s*\"([^\"]+)\"").matcher(blok.group(1));
+      while (cift.find()) {
+        m.put(cift.group(1), cift.group(2));
+      }
+    }
+    return m;
+  }
+
+  /** Kimlik kümesinde iki biçim birlikte olamaz (eşdeğerlik gerçek bir kaymayı gizlemesin). */
+  private static void ikiBicimYok(Set<String> idler, Map<String, String> esdeger, String kaynak) {
+    for (Map.Entry<String, String> e : esdeger.entrySet()) {
+      assertTrue(
+          !(idler.contains(e.getKey()) && idler.contains(e.getValue())),
+          kaynak + ": '" + e.getKey() + "' ve '" + e.getValue() + "' birlikte (demo eşdeğerleri aynı anda bulunamaz)");
+    }
+  }
+
+  /** Kimlikler (grup yolu → değer), değerler demo eşdeğerleriyle kanonik biçimde. */
+  static TreeMap<String, String> kanonikKimlikler() throws IOException, IllegalAccessException {
+    Map<String, String> esdeger = demoEsdegerleri();
+    TreeMap<String, String> ham = kimlikler();
+    ikiBicimYok(new TreeSet<>(ham.values()), esdeger, "Kimlikler.java");
+    TreeMap<String, String> m = new TreeMap<>();
+    ham.forEach((k, v) -> m.put(k, esdeger.getOrDefault(v, v)));
+    return m;
+  }
+
+  /** TS locators.ts (testId → within), testId'ler demo eşdeğerleriyle kanonik biçimde. */
+  static TreeMap<String, String> kanonikTsKimlikleri() throws IOException {
+    Map<String, String> esdeger = demoEsdegerleri();
+    TreeMap<String, String> ham = tsKimlikleri();
+    ikiBicimYok(ham.keySet(), esdeger, "locators.ts");
+    TreeMap<String, String> m = new TreeMap<>();
+    ham.forEach((k, v) -> m.put(esdeger.getOrDefault(k, k), v));
+    return m;
+  }
+
   static List<Class<?>> ekranSiniflari() throws IOException {
     try (Stream<Path> s = Files.list(KOK.resolve("ekranlar"))) {
       List<Class<?>> l = new ArrayList<>();
@@ -117,8 +167,8 @@ public class SozlesmeBirimTesti {
 
   @Test(groups = "birim")
   public void kimliklerTsLocatorlariIleAyni() throws Exception {
-    TreeMap<String, String> java = kimlikler();
-    TreeMap<String, String> ts = tsKimlikleri();
+    TreeMap<String, String> java = kanonikKimlikler();
+    TreeMap<String, String> ts = kanonikTsKimlikleri();
     assertEquals(new TreeSet<>(java.values()), new TreeSet<>(ts.keySet()), "Kimlikler değerleri = TS locators.ts testId'leri");
     assertEquals(java.size(), ts.size(), "aynı değer iki kez tanımlanmamalı");
     for (var e : java.entrySet()) {
@@ -145,7 +195,7 @@ public class SozlesmeBirimTesti {
       sozlesme.put(m.group(1), Boolean.parseBoolean(m.group(2)));
     }
     assertTrue(sozlesme.size() > 20, "kimlikler.json okunamadı");
-    for (var e : kimlikler().entrySet()) {
+    for (var e : kanonikKimlikler().entrySet()) {
       assertTrue(sozlesme.containsKey(e.getValue()), e.getKey() + "=" + e.getValue() + " kimlikler.json'da yok");
       assertEquals(e.getKey().endsWith("_ONEK"), (boolean) sozlesme.get(e.getValue()), e.getKey() + ": önek bilgisi");
     }

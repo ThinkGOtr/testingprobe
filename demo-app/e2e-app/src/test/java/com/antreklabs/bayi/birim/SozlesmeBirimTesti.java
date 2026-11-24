@@ -16,6 +16,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
@@ -34,6 +35,7 @@ public class SozlesmeBirimTesti {
 
   private static final Path KOK = Path.of("src/test/java/com/antreklabs/bayi");
   private static final Path WEB_SRC = Path.of("../web/src");
+  private static final Path KIMLIK_JSON = Path.of("../kimlikler.json");
   private static final Set<Class<?>> IZINLI_PARAMETRE =
       Set.of(String.class, int.class, long.class, double.class, boolean.class);
 
@@ -116,12 +118,56 @@ public class SozlesmeBirimTesti {
     return idler;
   }
 
+  /**
+   * Demo kırması eşdeğerleri (kimlikler.json `demo_kirma_esdegerleri`; web'deki yeni kimlik → kanonik
+   * kimlik). TP'nin "Buton kimliğini değiştir" demosu YALNIZ web'i bilinçli değiştirir (ör. add-to-cart
+   * → cart-add); uygulamalar eski kimlikte kalır. Bu çift sözleşmede aynı kimlik sayılır.
+   */
+  static Map<String, String> demoEsdegerleri() throws IOException {
+    Map<String, String> m = new TreeMap<>();
+    if (!Files.exists(KIMLIK_JSON)) {
+      return m;
+    }
+    Matcher blok =
+        Pattern.compile("\"demo_kirma_esdegerleri\"\\s*:\\s*\\{([^}]*)\\}")
+            .matcher(Files.readString(KIMLIK_JSON, StandardCharsets.UTF_8));
+    if (blok.find()) {
+      Matcher cift = Pattern.compile("\"([^\"]+)\"\\s*:\\s*\"([^\"]+)\"").matcher(blok.group(1));
+      while (cift.find()) {
+        m.put(cift.group(1), cift.group(2));
+      }
+    }
+    return m;
+  }
+
+  /**
+   * Web kimliklerini demo eşdeğerleriyle kanonik biçime indirger. Aynı anda iki biçim varsa başarısız
+   * (eşdeğerlik gerçek bir kaymayı gizleyemesin); yalnız yeni biçim varsa bilgi satırı basar.
+   */
+  static Set<String> kanonikWeb(Set<String> web, Map<String, String> esdeger) {
+    Set<String> sonuc = new TreeSet<>();
+    for (String id : web) {
+      sonuc.add(esdeger.getOrDefault(id, id));
+    }
+    for (Map.Entry<String, String> e : esdeger.entrySet()) {
+      if (web.contains(e.getKey()) && web.contains(e.getValue())) {
+        fail("web'de '" + e.getKey() + "' ve '" + e.getValue() + "' birlikte (demo eşdeğerleri aynı anda bulunamaz)");
+      }
+      if (web.contains(e.getKey())) {
+        System.out.println(
+            "BİLGİ: demo kırması algılandı ('" + e.getKey() + "' ≡ '" + e.getValue()
+                + "', bilinçli web değişikliği); sözleşme '" + e.getValue() + "' ile denetlendi");
+      }
+    }
+    return sonuc;
+  }
+
   @Test(groups = "birim")
   public void kimliklerWebDataTestidleriyleBirebir() throws IOException, IllegalAccessException {
     if (!Files.isDirectory(WEB_SRC)) {
       fail("web kaynağı bulunamadı: " + WEB_SRC.toAbsolutePath() + " (testler demo-app/e2e-app dizininden koşar)");
     }
-    Set<String> web = webTestIdleri();
+    Set<String> web = kanonikWeb(webTestIdleri(), demoEsdegerleri());
     Set<String> java = new TreeSet<>(kimlikler().values());
     assertEquals(java.size(), kimlikler().size(), "Kimlikler değerleri tekil olmalı");
     assertEquals(java, web, "Kimlikler.java ile web data-testid kümesi aynı olmalı (plan §2.2)");
@@ -130,7 +176,7 @@ public class SozlesmeBirimTesti {
   @Test(groups = "birim")
   public void kimliklerJsonVarsaUyumlu() throws IOException, IllegalAccessException {
     // Tek liste demo-app/kimlikler.json (Ş1 üretir); varsa her Java değeri orada bulunmalı.
-    Path json = Path.of("../kimlikler.json");
+    Path json = KIMLIK_JSON;
     if (!Files.exists(json)) {
       return;
     }

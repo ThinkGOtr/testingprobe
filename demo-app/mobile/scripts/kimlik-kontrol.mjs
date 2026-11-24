@@ -11,6 +11,13 @@
 // Önek kimlikler (sonu `-`; ör. `product-card-`) dinamik kimliklerdir: web'de
 // data-testid={`product-card-${p.kod}`}, mobilde {...tid(`product-card-${p.kod}`)}.
 //
+// Demo kırması eşdeğerleri (DEMO_KIRMA_ESDEGER): TP'nin "Buton kimliğini değiştir" demosu
+// (core/src/tp_core/integrations/forge_demo.py OLD_TESTID → NEW_TESTID) YALNIZ web'i bilinçli olarak
+// değiştirir; mobil/masaüstü uygulamaları eski kimlikte kalır. Bu çift sözleşme açısından aynı kimlik
+// sayılır (her taraf kanonik kimliğe indirgenir) ve bilgi satırı basılır; başka HER fark ihlal
+// olmaya devam eder. Aynı tarafta iki biçim birlikte görülürse ihlaldir (eşdeğerlik bir kaymayı
+// gizleyemesin). Eşleme kimlikler.json'a da yazılır (diğer dillerdeki sözleşme testleri oradan okur).
+//
 // Kullanım: node scripts/kimlik-kontrol.mjs          → denetim (≠0 = ihlal)
 //           node scripts/kimlik-kontrol.mjs --uret   → kimlikler.json'u web kaynağından yazar
 import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
@@ -23,6 +30,26 @@ const LISTE = join(DEMO, "kimlikler.json");
 const WEB_SRC = join(DEMO, "web", "src");
 const E2E_PAGES = join(DEMO, "e2e", "pages");
 const MOBIL_SRC = join(MOBIL, "src");
+
+// Demo kırması: web'deki yeni kimlik → sözleşmedeki (kanonik) kimlik. forge_demo.py ile aynı
+// olmalı (TP birim testi core/tests/unit/integrations/test_demo_kirma_esdeger.py denetler).
+const DEMO_KIRMA_ESDEGER = { "cart-add": "add-to-cart" };
+const kanonik = (id) => DEMO_KIRMA_ESDEGER[id] ?? id;
+const bilgiler = [];
+
+/** Aynı kaynakta hem demo biçimi hem kanonik biçim varsa ihlal (eşdeğerlik kaymayı gizlemesin). */
+function ikiBicimDenetle(idler, kaynak, hatalar) {
+  const set = new Set(idler);
+  for (const [yeni, eski] of Object.entries(DEMO_KIRMA_ESDEGER)) {
+    if (set.has(yeni) && set.has(eski)) {
+      hatalar.push(`${kaynak}: "${yeni}" ve "${eski}" birlikte kullanılmış (demo eşdeğerleri aynı anda bulunamaz)`);
+    } else if (set.has(yeni)) {
+      bilgiler.push(
+        `${kaynak}: demo kırması algılandı ("${yeni}" ≡ "${eski}", bilinçli web değişikliği); sözleşme "${eski}" ile denetlendi`,
+      );
+    }
+  }
+}
 
 // Web dosyası → ekran adı. Yeni bir web sayfası eklenirse burada eşlenmeli (aksi halde HATA).
 const WEB_EKRAN = {
@@ -80,6 +107,7 @@ const yorumsuz = (metin) => metin.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[
 function webKimlikleri(hatalar) {
   const re = new RegExp(String.raw`data-testid=(?:\{\s*${ifade(1)}\s*\}|${ifade(3)})`, "g");
   const harita = new Map();
+  const ham = [];
   for (const yol of dosyalar(WEB_SRC, [".tsx", ".ts"])) {
     const g = goreli(WEB_SRC, yol);
     const metin = yorumsuz(readFileSync(yol, "utf8"));
@@ -89,6 +117,8 @@ function webKimlikleri(hatalar) {
         hatalar.push(`web ${g}: ${r.hata}`);
         continue;
       }
+      ham.push(r.id);
+      r.id = kanonik(r.id);
       const ekran = WEB_EKRAN[g];
       if (!ekran) {
         hatalar.push(`web ${g}: ekran eşlemesi yok (kimlik-kontrol.mjs WEB_EKRAN'a ekleyin)`);
@@ -101,6 +131,7 @@ function webKimlikleri(hatalar) {
       harita.set(r.id, { id: r.id, ekran, onek: r.onek });
     }
   }
+  ikiBicimDenetle(ham, "web", hatalar);
   return [...harita.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
@@ -110,19 +141,27 @@ function listeBelgesi(kimlikler) {
       "Erişilebilirlik kimliği sözleşmesi (specs/009-mobil-masaustu/plan.md §2.2). Web data-testid " +
       "değerlerinden üretilir: `cd demo-app/mobile && npm run kimlik-uret`. Elle düzenlemeyin. " +
       "onek=true: kimlik önektir, sonuna ürün kodu / sipariş numarası eklenir (product-card-P-001). " +
-      "iOS: accessibilityIdentifier, Android: resource-id, Windows: AutomationId.",
+      "iOS: accessibilityIdentifier, Android: resource-id, Windows: AutomationId. " +
+      "demo_kirma_esdegerleri: TP demo kırmasının (yalnız web) yeni kimliği → sözleşmedeki kimlik; " +
+      "sözleşme denetimleri bu çifti aynı kimlik sayar.",
     kaynak: "demo-app/web/src (data-testid)",
+    demo_kirma_esdegerleri: DEMO_KIRMA_ESDEGER,
     kimlikler,
   };
 }
 
-function e2eKimlikleri() {
+function e2eKimlikleri(hatalar) {
   const sonuc = [];
   for (const yol of dosyalar(E2E_PAGES, ["locators.ts"])) {
     const metin = readFileSync(yol, "utf8");
     for (const m of metin.matchAll(/testId:\s*"([^"]+)"/g)) sonuc.push({ id: m[1], dosya: goreli(DEMO, yol) });
   }
-  return sonuc;
+  ikiBicimDenetle(
+    sonuc.map((k) => k.id),
+    "e2e locators.ts",
+    hatalar,
+  );
+  return sonuc.map((k) => ({ ...k, id: kanonik(k.id) }));
 }
 
 function mobilKimlikleri(hatalar) {
@@ -186,7 +225,7 @@ function main() {
 
   // 2. e2e locator'ları listede mi?
   const ids = new Map(web.map((k) => [k.id, k]));
-  for (const { id, dosya: d } of e2eKimlikleri()) {
+  for (const { id, dosya: d } of e2eKimlikleri(hatalar)) {
     if (!ids.has(id)) hatalar.push(`e2e ${d}: "${id}" web kaynağında yok`);
   }
 
@@ -210,6 +249,7 @@ function main() {
     if (!ids.has(id)) hatalar.push(`mobil: "${id}" listede yok (${[...m.dosyalar].join(", ")})`);
   }
 
+  for (const b of bilgiler) console.log(`BİLGİ: ${b}`);
   if (hatalar.length) {
     for (const h of hatalar) console.error(`HATA: ${h}`);
     console.error(`kimlik-kontrol: ${hatalar.length} ihlal`);

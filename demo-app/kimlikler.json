@@ -1,6 +1,9 @@
 {
-  "$aciklama": "Erişilebilirlik kimliği sözleşmesi (specs/009-mobil-masaustu/plan.md §2.2). Web data-testid değerlerinden üretilir: `cd demo-app/mobile && npm run kimlik-uret`. Elle düzenlemeyin. onek=true: kimlik önektir, sonuna ürün kodu / sipariş numarası eklenir (product-card-P-001). iOS: accessibilityIdentifier, Android: resource-id, Windows: AutomationId.",
+  "$aciklama": "Erişilebilirlik kimliği sözleşmesi (specs/009-mobil-masaustu/plan.md §2.2). Web data-testid değerlerinden üretilir: `cd demo-app/mobile && npm run kimlik-uret`. Elle düzenlemeyin. onek=true: kimlik önektir, sonuna ürün kodu / sipariş numarası eklenir (product-card-P-001). iOS: accessibilityIdentifier, Android: resource-id, Windows: AutomationId. demo_kirma_esdegerleri: TP demo kırmasının (yalnız web) yeni kimliği → sözleşmedeki kimlik; sözleşme denetimleri bu çifti aynı kimlik sayar.",
   "kaynak": "demo-app/web/src (data-testid)",
+  "demo_kirma_esdegerleri": {
+    "cart-add": "add-to-cart"
+  },
   "kimlikler": [
     {
       "id": "add-to-cart",

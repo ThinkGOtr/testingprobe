@@ -9,6 +9,11 @@ Dinamik kimlikler önek olarak karşılaştırılır (sonu "-"):
   web     data-testid={`product-card-${p.kod}`}               → "product-card-"
   xaml    AutomationId="{Binding Kod, StringFormat=product-card-{0}}" → "product-card-"
 
+Demo kırması eşdeğerleri (demo-app/kimlikler.json `demo_kirma_esdegerleri`, ör. cart-add →
+add-to-cart): TP'nin "Buton kimliğini değiştir" demosu yalnız web'i bilinçli değiştirir; bu çift
+web tarafında kanonik kimliğe indirgenir ve BİLGİ satırı basılır. Başka her fark ihlaldir; aynı
+kaynakta iki biçim birlikte görülürse de ihlaldir.
+
 Çıkış kodu: 0 = birebir uyum; 1 = eksik ya da izinsiz fazla kimlik var.
 Kullanım: python3 demo-app/desktop/scripts/kimlik-kontrol.py [--json]
 """
@@ -24,6 +29,16 @@ DESKTOP = Path(__file__).resolve().parent.parent
 DEMO_APP = DESKTOP.parent
 WEB_SRC = DEMO_APP / "web" / "src"
 LOCATORS = DEMO_APP / "e2e" / "pages"
+KIMLIK_JSON = DEMO_APP / "kimlikler.json"
+
+
+def demo_esdegerleri() -> dict[str, str]:
+    """Demo kırması: web'deki yeni kimlik → kanonik kimlik (kimlikler.json; yoksa boş)."""
+    try:
+        belge = json.loads(KIMLIK_JSON.read_text(encoding="utf-8"))
+        return dict(belge.get("demo_kirma_esdegerleri", {}))
+    except (OSError, ValueError):
+        return {}
 
 # Yalnız masaüstünde bulunan, bilerek eklenmiş kimlikler (web'de karşılığı yok):
 # pencere, ekran kökleri ve meşgul göstergesi — UI Automation testlerinin deterministik beklemesi için.
@@ -96,8 +111,30 @@ def masaustu_kimlikleri() -> tuple[dict[str, set[str]], list[str]]:
     return sonuc, cozulemeyen
 
 
+def kanonik_web(web: dict[str, set[str]]) -> tuple[dict[str, set[str]], list[str], list[str]]:
+    """Demo eşdeğerlerini kanonik kimliğe indirger → (web, bilgiler, hatalar)."""
+    esdeger = demo_esdegerleri()
+    bilgiler: list[str] = []
+    hatalar: list[str] = []
+    sonuc: dict[str, set[str]] = {}
+    for kimlik, dosyalar in web.items():
+        sonuc.setdefault(esdeger.get(kimlik, kimlik), set()).update(dosyalar)
+    for yeni, eski in esdeger.items():
+        if yeni not in web:
+            continue
+        cakisan = {d for d in web[yeni] if d in web.get(eski, set())}
+        if cakisan:
+            hatalar.append(f"{yeni} ve {eski} aynı dosyada birlikte: {', '.join(sorted(cakisan))}")
+        else:
+            bilgiler.append(
+                f"demo kırması algılandı ({yeni} ≡ {eski}, bilinçli web değişikliği); "
+                f"{eski} ile denetlendi"
+            )
+    return sonuc, bilgiler, hatalar
+
+
 def main() -> int:
-    web = web_kimlikleri()
+    web, bilgiler, cakisma = kanonik_web(web_kimlikleri())
     masaustu, cozulemeyen = masaustu_kimlikleri()
     eksik = sorted(set(web) - set(masaustu))
     fazla = sorted(set(masaustu) - set(web) - set(MASAUSTU_EK))
@@ -110,8 +147,10 @@ def main() -> int:
         "izinsiz_fazla": {k: sorted(masaustu[k]) for k in fazla},
         "masaustune_ozgu": sorted(set(masaustu) & set(MASAUSTU_EK)),
         "cozulemeyen": cozulemeyen,
+        "demo_kirma": bilgiler,
+        "esdeger_cakismasi": cakisma,
     }
-    basarili = not eksik and not fazla and not cozulemeyen
+    basarili = not eksik and not fazla and not cozulemeyen and not cakisma
 
     if "--json" in sys.argv[1:]:
         print(json.dumps(rapor, ensure_ascii=False, indent=2))
@@ -123,6 +162,10 @@ def main() -> int:
             print(f"  FAZLA   {k}  (masaüstü: {', '.join(sorted(masaustu[k]))})")
         for c in cozulemeyen:
             print(f"  ÇÖZÜLEMEDİ  {c}")
+        for c in cakisma:
+            print(f"  ÇAKIŞMA {c}")
+        for b in bilgiler:
+            print(f"  BİLGİ   {b}")
         ek = sorted(set(masaustu) & set(MASAUSTU_EK))
         print(f"Masaüstüne özgü (izinli): {', '.join(ek) if ek else '-'}")
         print("SONUÇ: " + ("uyumlu" if basarili else "UYUMSUZ"))
