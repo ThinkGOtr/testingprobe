@@ -1,16 +1,16 @@
 import { BaskaProjedeKayit } from "../components/BaskaProjedeKayit";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useOlay } from "../api/events";
 import type { YayinOnizlemeKalemi, YayinSonucu } from "../api/types";
-import { jiraKayitAdresi } from "../api/uyum";
+import { jiraKayitAdresi, yayinSonucuUyarla } from "../api/uyum";
 import { useIzin } from "../auth";
 import { useBildirim } from "../components/Bildirim";
 import { DenetimOzeti } from "../components/KalitePanelleri";
 import { Baglanti, BosDurum, Cip, HataKutusu, IslemDugmesi, Kart, Kirinti, SayfaBasligi, Uyari, Yukleniyor } from "../components/ui";
 import { Kimlik, TabloSarici } from "../components/tasarim";
-import { useGeciktirilmis, useIslem, useVeri } from "../hooks";
+import { useGeciktirilmis, useGuvenlikYoklamasi, useIslem, useVeri } from "../hooks";
 import { durumKodunuCevir, type Ton } from "../lib/etiketler";
 import { hataMetniniAyikla, yayinlanamazOnekiz } from "../lib/kalite";
 
@@ -72,14 +72,42 @@ function YayinEkrani() {
     void metrik.yenile(true);
     void denetim.yenile(true);
   });
+  const bekleyenIsRef = useRef<string | null>(null);
+  bekleyenIsRef.current = bekleyenIs;
+  // Yayın işinin bitişi: core `publish.completed` (`{job_id, requirement_id, hedef, sonuclar}`) yayımlar;
+  // portal konusu `publish.updated`dır (olayKonulari: `publish.*` → publish.updated). `publish.failed`
+  // case başına, iş sürerken gelir; işin sonu değildir.
   useOlay(
     (o) => {
       if (typeof o.data.requirement_id === "string" && o.data.requirement_id !== id) return;
       sessiz();
-      if (/^publish\.(completed|done|failed)$/.test(o.type)) setBekleyenIs(null);
+      if (!/^publish\.(completed|done)$/.test(o.type)) return;
+      const is_ = typeof o.data.job_id === "string" ? o.data.job_id : null;
+      const b = bekleyenIsRef.current;
+      if (b === null || (is_ !== null && is_ !== b)) return;
+      // 202 yolunda sonuç kartı olayın sonuçlarıyla dolar; kırpılmış yükte önizlemenin `son_yayin`ından gelir.
+      const s = yayinSonucuUyarla(o.data);
+      if (s.sonuclar.length > 0) setSonuc(s);
+      setBekleyenIs(null);
     },
     ["publish.updated", "case.updated", "case.audit"],
   );
+  // Son yayın işi (core önizleme `son_yayin`): yenilemeye ve kaçan olaya dayanıklı tek kaynak.
+  const sonYayin = onizleme.veri?.son_yayin ?? null;
+  const sonYayinSuruyor = sonYayin !== null && ["queued", "retry", "running"].includes(sonYayin.durum);
+  const suren = bekleyenIs ?? (sonYayinSuruyor ? sonYayin.job_id : null);
+  useEffect(() => {
+    // Yerel bekleyiş, önizleme aynı işin bittiğini gösterince biter (olay gelmemiş olsa da).
+    if (bekleyenIs !== null && sonYayin?.job_id === bekleyenIs && !sonYayinSuruyor) setBekleyenIs(null);
+  }, [bekleyenIs, sonYayin, sonYayinSuruyor]);
+  // Olay kaçarsa iş sürerken önizleme seyrek yoklanır.
+  useGuvenlikYoklamasi(suren !== null, sessiz);
+  const gosterilenSonuc: YayinSonucu | null =
+    sonuc ??
+    (sonYayin && sonYayin.durum === "done" && sonYayin.sonuclar.length > 0
+      ? { hedef: sonYayin.hedef ?? onizleme.veri?.hedef ?? "jira", sonuclar: sonYayin.sonuclar }
+      : null);
+  const sonYayinHatasi = !sonuc && sonYayin && (sonYayin.durum === "failed" || sonYayin.durum === "cancelled") ? sonYayin : null;
 
   const kalemler = onizleme.veri?.kalemler ?? [];
   const olusturulabilir = kalemler.filter((k) => k.islem === "create");
@@ -100,6 +128,7 @@ function YayinEkrani() {
     const s = await islem.calistir(() => api.yayinla([...secili]));
     if (!s) return;
     if (s.sonuclar.length === 0 && s.job_id) {
+      setSonuc(null);
       setBekleyenIs(s.job_id);
       bildir("Yayın başlatıldı; sonuçlar geldikçe tablo güncellenir.");
     } else {
@@ -158,8 +187,8 @@ function YayinEkrani() {
             eylemler={
               <IslemDugmesi
                 izin="case.publish"
-                disabled={secili.size === 0 || bekleyenIs !== null}
-                calisiyor={islem.calisiyor || bekleyenIs !== null}
+                disabled={secili.size === 0 || suren !== null}
+                calisiyor={islem.calisiyor || suren !== null}
                 onClick={yayinla}
               >
                 Seçilenleri yayınla ({secili.size})
@@ -188,15 +217,18 @@ function YayinEkrani() {
                 </Uyari>
               </div>
             )}
-            {bekleyenIs && (
+            {suren && (
               <p role="status" className="soluk">
-                Yayın işi sürüyor (<span className="mono">{bekleyenIs}</span>)…
+                Yayın işi sürüyor (<span className="mono">{suren}</span>)…
               </p>
+            )}
+            {sonYayinHatasi && (
+              <HataKutusu hata={`Son yayın işi tamamlanamadı${sonYayinHatasi.hata ? `: ${sonYayinHatasi.hata}` : "."}`} />
             )}
             {islem.hata && <HataKutusu hata={islem.hata} kaynak={islem.hataNesnesi} />}
           </Kart>
 
-          {sonuc && <YayinSonucKarti sonuc={sonuc} adres={adres} />}
+          {gosterilenSonuc && <YayinSonucKarti sonuc={gosterilenSonuc} adres={adres} />}
 
           <Kart baslik="Oluşturulacak kayıtlar">
             {kalemler.length === 0 ? (

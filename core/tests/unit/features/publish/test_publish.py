@@ -493,6 +493,11 @@ def test_yayin_sse_olaylari(db, engine: Engine, targets, hazir) -> None:
     tamam = [o["data"] for o in olaylar if o["event"] == "publish.completed"]
     assert len(tamam) == 1 and tamam[0]["requirement_id"] == str(rid)
     assert {x["case_id"] for x in tamam[0]["sonuclar"]} == {a["id"], b["id"]}
+    # Portal sonuç kartı olaydan dolar: kalem şekli POST /publish yanıtındakiyle aynı alanlar.
+    assert tamam[0]["job_id"]
+    for x in tamam[0]["sonuclar"]:
+        assert set(x) == {"case_id", "durum", "external_key", "url", "hata"}
+        assert x["durum"] in ("created", "exists", "failed")
 
 
 # ------------------------------------------- story değişti → PO onayı sıfırlandı (I)
@@ -668,3 +673,22 @@ def test_replay_caseleri_jirada_replay_olarak_etiketlenir(
     # Yeniden yayın aynı mod yorumunu ikinci kez yazmaz.
     publish.run_publish(_ctx([c["id"]]), engine)
     assert sum("Üretim modu:" in y.body for y in jira.get_comments(key)) == 1
+
+
+def test_onizleme_son_yayin_isi_ve_sonuclari(
+    api: TestClient, engine: Engine, targets, hazir, yayin_testci
+) -> None:
+    """Portal "Yayın sonucu" kartı yenilemeye dayanıklı: önizleme son yayın işini taşır (kuyrukta →
+    sürüyor; bitince sonuçlar). 2026-11-24 canlı: iş 202'ye düşünce kart hiç oluşmuyordu."""
+    rid, _, a, _b = hazir
+    url = "/publish/preview"
+    assert api.get(url, params={"requirement_id": str(rid)}).json()["son_yayin"] is None
+    with session_scope() as s:
+        job_id = publish.request_publish(s, [a["id"]], yayin_testci)
+    son = api.get(url, params={"requirement_id": str(rid)}).json()["son_yayin"]
+    assert son["job_id"] == str(job_id) and son["durum"] == "queued" and son["sonuclar"] == []
+    assert [x.durum for x in run_jobs(engine)] == ["done"]
+    son = api.get(url, params={"requirement_id": str(rid)}).json()["son_yayin"]
+    assert son["durum"] == "done" and son["bitis"]
+    assert [(r["case_id"], r["durum"]) for r in son["sonuclar"]] == [(a["id"], "created")]
+    assert son["sonuclar"][0]["external_key"]

@@ -44,6 +44,7 @@ import type {
   SonOnay,
   TestCase,
   TestCaseIcerik,
+  SonYayin,
   YayinOnizleme,
   YayinOnizlemeKalemi,
   YayinSonucKalemi,
@@ -769,6 +770,24 @@ export function yayinOnizlemeUyarla(govde: unknown): YayinOnizleme {
     kalemler: Array.isArray(kalemler) ? kalemler.filter(nesneMi).map(onizlemeKalemiUyarla) : [],
     uyarilar: dizgeler(uyarilar),
     jira_browse_url: metinYaDaNull(govde.jira_browse_url),
+    son_yayin: sonYayinUyarla(govde.son_yayin),
+  };
+}
+
+const SON_YAYIN_DURUMLARI = new Set(["queued", "retry", "running", "done", "failed", "cancelled"]);
+
+/** Core `son_yayin` (yoksa / eski core: null). */
+export function sonYayinUyarla(ham: unknown): SonYayin | null {
+  if (!nesneMi(ham) || ham.job_id == null) return null;
+  const durum = metin(ham.durum);
+  const sonuclar = ham.sonuclar;
+  return {
+    job_id: kimlik(ham.job_id),
+    durum: (SON_YAYIN_DURUMLARI.has(durum) ? durum : "failed") as SonYayin["durum"],
+    hedef: ham.hedef === "xray" ? "xray" : ham.hedef === "jira" ? "jira" : null,
+    sonuclar: Array.isArray(sonuclar) ? sonuclar.filter(nesneMi).map(sonucKalemiUyarla) : [],
+    hata: metinYaDaNull(ham.hata),
+    bitis: metinYaDaNull(ham.bitis),
   };
 }
 

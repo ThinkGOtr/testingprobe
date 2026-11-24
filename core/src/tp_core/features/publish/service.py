@@ -439,6 +439,49 @@ def preview(session: Session, requirement_id: uuid.UUID) -> dict[str, Any]:
         "jira_browse_url": (s.jira_browse_url or s.jira_base_url).rstrip("/"),
         "kalemler": kalemler,
         "uyarilar": uyarilar,
+        "son_yayin": son_yayin(session, req.id),
+    }
+
+
+def son_yayin(session: Session, requirement_id: uuid.UUID) -> dict[str, Any] | None:
+    """Bu gereksinimin case'lerini içeren son yayın işi (oturum projesinde): durum ve sonuçlar.
+
+    Portal "Yayın sonucu" kartını ve "Yayın işi sürüyor" durumunu buradan çizer: POST 202'ye düşse,
+    `publish.completed` olayı kaçsa ya da sayfa yenilense de son yayının sonucu görünür. Sonuçlar
+    yalnız bu gereksinimin case'leriyle sınırlıdır.
+    """
+    ids = [
+        str(i)
+        for i in session.scalars(
+            select(TestCase.id).where(TestCase.requirement_id == requirement_id)
+        ).all()
+    ]
+    if not ids:
+        return None
+    row = session.execute(
+        text(
+            "SELECT id, durum, sonuc, son_hata, olusturma, bitis FROM job "
+            "WHERE tur = :t AND project_id = :pid AND (yuk -> 'case_ids') ?| CAST(:ids AS text[]) "
+            "ORDER BY olusturma DESC LIMIT 1"
+        ),
+        pid_param(t=PUBLISH_JOB, ids=ids),
+    ).first()
+    if row is None:
+        return None
+    kume = set(ids)
+    sonuc = row.sonuc if isinstance(row.sonuc, dict) else {}
+    return {
+        "job_id": str(row.id),
+        "durum": row.durum,
+        "hedef": sonuc.get("hedef"),
+        "sonuclar": [
+            r
+            for r in sonuc.get("sonuclar") or []
+            if isinstance(r, dict) and r.get("case_id") in kume
+        ],
+        "hata": (row.son_hata or "")[:500] or None,
+        "olusturma": row.olusturma,
+        "bitis": row.bitis,
     }
 
 
@@ -943,8 +986,15 @@ def run_publish(ctx: JobContext, engine: Engine, targets: Targets | None = None)
                 "requirement_id": next(iter(req_ids)) if len(req_ids) == 1 else None,
                 "requirement_ids": sorted(str(r) for r in req_ids),
                 "hedef": t.tm.name,
+                # Portal 202 yolunda sonuç kartını bu listeyle doldurur (hata kısaltılmış; NOTIFY
+                # sınırı aşılırsa yük kırpılır ve portal önizleme tablosunu yeniler).
                 "sonuclar": [
-                    {k: r[k] for k in ("case_id", "durum", "external_key")} for r in sonuclar
+                    {
+                        **{k: r[k] for k in ("case_id", "durum", "external_key")},
+                        "url": r.get("url"),
+                        "hata": (r.get("hata") or "")[:200] or None,
+                    }
+                    for r in sonuclar
                 ],
             },
         )

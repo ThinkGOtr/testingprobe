@@ -1103,6 +1103,17 @@ export interface YayinOnizleme {
   uyarilar: string[];
   /** Kullanıcıya gösterilen Jira bağlantı kökü (JIRA_BROWSE_URL; yerelde jira-sim). */
   jira_browse_url?: string | null;
+  /** Bu gereksinimin case'lerini içeren son yayın işi (core `son_yayin`); yenilemede sonuç kartı buradan çizilir. */
+  son_yayin?: SonYayin | null;
+}
+
+export interface SonYayin {
+  job_id: string;
+  durum: "queued" | "retry" | "running" | "done" | "failed" | "cancelled";
+  hedef: YayinHedefi | null;
+  sonuclar: YayinSonucKalemi[];
+  hata: string | null;
+  bitis: string | null;
 }
 
 export interface YayinSonucKalemi {

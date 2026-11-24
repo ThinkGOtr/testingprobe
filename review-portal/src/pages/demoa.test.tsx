@@ -9,6 +9,7 @@ import { api } from "../api/client";
 import { ApiError } from "../api/http";
 import { mockVerisi } from "../api/mock/handlers";
 import { mockOlayYayinla } from "../api/mock/olaylar";
+import type { SonYayin } from "../api/types";
 import { OturumProvider } from "../auth";
 import { BildirimProvider } from "../components/Bildirim";
 import { goruntulenenleriSifirla } from "../components/CaseKarti";
@@ -215,6 +216,59 @@ describe("yayın", () => {
       mockOlayYayinla({ type: "publish.completed", data: { requirement_id: "req-tpd-1" } });
     });
     await waitFor(() => expect(screen.queryByText(/Yayın işi sürüyor/)).toBeNull());
+  });
+
+  it("202 yolunda sonuç kartı publish.completed olayından dolar; publish.failed (case başına) bekleyişi bitirmez", async () => {
+    await kabulVeOnay("case-1-7");
+    await oturumAc("testci");
+    vi.spyOn(api, "yayinla").mockResolvedValue({ hedef: "jira", sonuclar: [], job_id: "job-9" });
+    const u = userEvent.setup();
+    uygulama("/gereksinimler/req-tpd-1/yayin");
+    await u.click(await screen.findByRole("button", { name: /Seçilenleri yayınla/ }));
+    expect(await screen.findByText(/Yayın işi sürüyor/)).toBeInTheDocument();
+    await act(async () => {
+      mockOlayYayinla({ type: "publish.failed", data: { requirement_id: "req-tpd-1", case_id: "case-1-4", hata: "Jira 503" } });
+      mockOlayYayinla({ type: "publish.completed", data: { requirement_id: "req-tpd-1", job_id: "baska-is", sonuclar: [] } });
+    });
+    await new Promise((r) => setTimeout(r, 400));
+    expect(screen.getByText(/Yayın işi sürüyor/)).toBeInTheDocument();
+    await act(async () => {
+      mockOlayYayinla({
+        type: "publish.completed",
+        data: {
+          requirement_id: "req-tpd-1",
+          job_id: "job-9",
+          hedef: "jira",
+          sonuclar: [
+            { case_id: "case-1-4", durum: "created", external_key: "TPD-87", url: null, hata: null },
+            { case_id: "case-1-7", durum: "created", external_key: "TPD-88", url: null, hata: null },
+          ],
+        },
+      });
+    });
+    await waitFor(() => expect(screen.queryByText(/Yayın işi sürüyor/)).toBeNull());
+    expect(await screen.findByTestId("yayin-ozeti")).toHaveTextContent("2 oluşturuldu");
+  });
+
+  it("sonuç kartı ve sürüyor durumu yenilemede önizlemenin son_yayin alanından gelir", async () => {
+    await oturumAc("testci");
+    const gercek = api.yayinOnizleme;
+    const sonYayin = vi.fn<() => SonYayin>(() => ({ job_id: "job-7", durum: "running", hedef: "jira", sonuclar: [], hata: null, bitis: null }));
+    vi.spyOn(api, "yayinOnizleme").mockImplementation(async (rid) => ({ ...(await gercek(rid)), son_yayin: sonYayin() }));
+    const ilk = uygulama("/gereksinimler/req-tpd-1/yayin");
+    expect(await screen.findByText(/Yayın işi sürüyor/)).toHaveTextContent("job-7");
+    ilk.unmount();
+    sonYayin.mockReturnValue({
+      job_id: "job-7",
+      durum: "done",
+      hedef: "jira",
+      sonuclar: [{ case_id: "case-1-4", durum: "created", external_key: "TPD-87", hata: null }],
+      hata: null,
+      bitis: "2026-11-24T09:33:09Z",
+    });
+    uygulama("/gereksinimler/req-tpd-1/yayin");
+    expect(await screen.findByTestId("yayin-ozeti")).toHaveTextContent("1 oluşturuldu");
+    expect(screen.queryByText(/Yayın işi sürüyor/)).toBeNull();
   });
 });
 
