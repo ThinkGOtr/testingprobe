@@ -77,6 +77,7 @@ jobs:
               - 'demo-app/api/**'
               - 'demo-app/web/**'
               - 'demo-app/kimlikler.json'
+              - 'demo-app/e2e/pages/**'  # kimlik sözleşmesi girdisi (kimlik-kontrol / SozlesmeBirimTesti okur)
               - 'demo-app/ci/run-java-checks.sh'
               - 'demo-app/ci/break-verify-java.sh'
               - 'toolchain/java-araclar/**'

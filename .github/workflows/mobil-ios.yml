@@ -32,6 +32,7 @@ on:
       - 'demo-app/web/**'
       - 'scripts/github-demo-serve.sh'
       - 'demo-app/kimlikler.json'
+      - 'demo-app/e2e/pages/**'  # kimlik sözleşmesi girdisi (kimlik-kontrol / SozlesmeBirimTesti okur)
       - 'demo-app/ci/run-app-checks.sh'
       - 'demo-app/ci/break-verify-app.sh'
       - 'tools/appium/**'

@@ -161,3 +161,35 @@ def test_masaustu_kontrol_kirmada_yesil_kaymada_kirmizi(demo_kopya: Path) -> Non
         encoding="utf-8",
     )
     assert _py(demo_kopya).returncode == 1
+
+
+def test_masaustu_kontrol_onarim_sonrasi_yesil(demo_kopya: Path) -> None:
+    """Onarım (TS locators.ts) sonrası: uygulama + locators yeni, masaüstü eski kimlikte."""
+    _kir(demo_kopya, "web/src")
+    _kir(demo_kopya, "e2e/pages")
+    r = _py(demo_kopya)
+    assert r.returncode == 0, r.stdout
+
+
+WORKFLOWS = REPO / ".github" / "workflows"
+# İş akışı → sözleşme denetiminin okuduğu ve PR yol süzgecinde bulunması gereken yollar.
+# Süzgeçte yoksa kırma/onarım PR'ında iş atlanır (SUCCESS) ve kırmızı yalnız merge sonrası görünür.
+SOZLESME_GIRDILERI = {
+    # derle-android/ios.sh → kimlik-kontrol.mjs: web/src + e2e/pages + kimlikler.json
+    "mobil-android": ("demo-app/web/**", "demo-app/e2e/pages/**", "demo-app/kimlikler.json"),
+    "mobil-ios": ("demo-app/web/**", "demo-app/e2e/pages/**", "demo-app/kimlikler.json"),
+    "mobil-ios-swift": ("demo-app/web/**", "demo-app/e2e/pages/**", "demo-app/kimlikler.json"),
+    "mobil-android-python": ("demo-app/web/**", "demo-app/e2e/pages/**", "demo-app/kimlikler.json"),
+    "mobil-ios-python": ("demo-app/web/**", "demo-app/e2e/pages/**", "demo-app/kimlikler.json"),
+    # e2e-app SozlesmeBirimTesti: web/src + kimlikler.json
+    "masaustu-windows": ("demo-app/web/src/**", "demo-app/kimlikler.json"),
+    # e2e-java SozlesmeBirimTesti: Kimlikler.java ↔ e2e/pages locators.ts ↔ kimlikler.json
+    "web-java": ("demo-app/e2e/pages/**", "demo-app/kimlikler.json", "demo-app/web/**"),
+}
+
+
+@pytest.mark.parametrize("akis", sorted(SOZLESME_GIRDILERI))
+def test_pr_yol_suzgeci_kimlik_sozlesmesi_girdilerini_kapsar(akis: str) -> None:
+    metin = (WORKFLOWS / f"{akis}.yml").read_text(encoding="utf-8")
+    for yol in SOZLESME_GIRDILERI[akis]:
+        assert re.search(rf"^\s*- '{re.escape(yol)}'", metin, re.M), f"{akis}: süzgeçte yok: {yol}"
