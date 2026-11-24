@@ -509,11 +509,11 @@ function LocatorKirmaKarti({ durum, canli = false }: { durum: DemoDurumu | null;
               değil, <em>test bakımı</em>. Kırmızılar için tek tek bug açılmaz.
             </li>
             <li>
-              <strong>Tek satırlık onarım önerir</strong>: yalnız kimlik değeri değişir; AST koruması testin neyi kontrol ettiğine
+              <strong>Tek değerlik onarım önerir</strong>: yalnız kimlik değeri değişir (web testinin her dildeki karşılığı aynı PR'da); AST koruması testin neyi kontrol ettiğine
               (assertion) dokunulamayacağını garanti eder — gerçek bir hata testi değiştirerek gizlenemez.
             </li>
             <li>
-              <strong>İnsan onaylar</strong>: Otomasyon Mühendisi bir satırlık farkı görüp merge eder; testler yeşile döner.
+              <strong>İnsan onaylar</strong>: Otomasyon Mühendisi yalnız kimlik değerini değiştiren farkı görüp merge eder; testler yeşile döner.
             </li>
           </ol>
           <p className="kucuk">Bu düğme o geliştiriciyi taklit eder: kimliği değiştiren commit'i ana dala alır, uygulamayı yeniden kurar, CI'ı başlatır.</p>

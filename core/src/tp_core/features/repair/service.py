@@ -1252,16 +1252,40 @@ def _onar(engine: Engine, sid: uuid.UUID, fid: uuid.UUID, kayit: dict[str, Any])
         except locators.PatchError as exc:
             raise _Engel("yama", f"Yama üretilemedi: {exc}") from exc
         fark = locators.birlesik_fark(dosya, once, sonra)
+        # Aynı kimliği taşıyan web testi dil bağları (Kimlikler.java / .cs / kimlikler.py) aynı
+        # PR'da güncellenir: onarım yalnız TS'yi düzeltirse diğer dillerin web testleri ve
+        # sözleşme testleri kırmızı kalırdı. Mobil/masaüstü (e2e-app*) bağlarına dokunulmaz.
+        dosyalar = {dosya: sonra}
+        for bag in locators.kimlik_bagi_yollari(e2e_root()):
+            try:
+                bag_once = forge.read_file(bag, main_sha)
+            except ForgeNotFoundError:
+                continue  # bu dilde web testi yok
+            except ForgeError as exc:
+                raise _Engel("yama", f"{bag} okunamadı: {exc}", "environment") from exc
+            try:
+                bag_sonra = locators.patch_bag_literal(bag_once, eski, yeni)
+            except locators.PatchError as exc:
+                raise _Engel("yama", f"{bag}: {exc}") from exc
+            if bag_sonra is not None:
+                dosyalar[bag] = bag_sonra
+                fark += locators.birlesik_fark(bag, bag_once, bag_sonra)
         dal = _bos_dal(forge, fid)
         mesaj = (
             f"fix(locators): {loc.tam_ad} testId {eski} → {yeni}\n\n"
             f"Locator onarımı (deterministik, AI yok). Hata: {fid}"
+            + (
+                "\nAynı kimliğin web testi dil bağları: " + ", ".join(sorted(dosyalar)[1:])
+                if len(dosyalar) > 1
+                else ""
+            )
         )
         try:
-            head = forge.commit_files(dal, {dosya: sonra}, mesaj, base=main_sha)
+            head = forge.commit_files(dal, dosyalar, mesaj, base=main_sha)
         except ForgeError as exc:
             raise _Engel("yama", f"Onarım dalı yazılamadı: {exc}", "environment") from exc
-        kayit.update(dal=dal, head_sha=head, fark=fark, dosya=dosya)
+        kayit.update(dal=dal, head_sha=head, fark=fark, dosya=dosya,
+                     kimlik_baglari=[d for d in dosyalar if d != dosya])  # fmt: skip
         with session_scope() as s:
             sc = s.get(Script, sid, with_for_update=True)
             assert sc is not None
@@ -1274,7 +1298,9 @@ def _onar(engine: Engine, sid: uuid.UUID, fid: uuid.UUID, kayit: dict[str, Any])
             sc.icerik_hash = content_hash({"dosya_yolu": dosya, "icerik": sonra, "head_sha": head})
             transition(s, sc, "checking", SYSTEM, "verifying", sebep="yama hazır",
                        ozet={"dal": dal, "head_sha": head})  # fmt: skip
-        _adim(engine, sid, fid, "yama", "ok", f"{dosya}: yalnızca testId değişti ({dal})")
+        baglar_ = ", ".join(d for d in dosyalar if d != dosya)
+        ek_ = f"; aynı kimliğin dil bağları: {baglar_}" if baglar_ else ""
+        _adim(engine, sid, fid, "yama", "ok", f"{dosya}: yalnızca testId değişti ({dal}){ek_}")
 
         # 6) AST koruması (onarım modu)
         try:

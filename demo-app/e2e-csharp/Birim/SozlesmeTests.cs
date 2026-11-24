@@ -155,8 +155,17 @@ public class SozlesmeTests
             sozlesme[m.Groups[1].Value] = m.Groups[2].Value == "true";
         }
         Assert.That(sozlesme.Count, Is.GreaterThan(20), "kimlikler.json okunamadı");
-        foreach (var (anahtar, deger) in Kimlikler_())
+        // Demo kırması eşdeğerleri (kimlikler.json `demo_kirma_esdegerleri`): TP onarımı web testi
+        // kimliğini yeni değere taşır; sözleşme listesi (mobil/masaüstü) kanonik değerde kalır.
+        var esdeger = new Dictionary<string, string>();
+        Match blok = Regex.Match(json, "\"demo_kirma_esdegerleri\"\\s*:\\s*\\{([^}]*)\\}");
+        foreach (Match c in Regex.Matches(blok.Success ? blok.Groups[1].Value : "", "\"([^\"]+)\"\\s*:\\s*\"([^\"]+)\""))
         {
+            esdeger[c.Groups[1].Value] = c.Groups[2].Value;
+        }
+        foreach (var (anahtar, ham) in Kimlikler_())
+        {
+            var deger = esdeger.GetValueOrDefault(ham, ham);
             Assert.That(sozlesme.ContainsKey(deger), Is.True, $"{anahtar}={deger} kimlikler.json'da yok");
             Assert.That(sozlesme[deger], Is.EqualTo(anahtar.EndsWith("_ONEK", StringComparison.Ordinal)), $"{anahtar}: önek bilgisi");
         }

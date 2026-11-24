@@ -521,3 +521,87 @@ def test_yesil_kosunun_sayfa_aria_dosyasi_kanit(
     assert blok["aria"]["kaynak"] == "son_yesil_kosu"
     assert blok["aria"]["dosya"] == "katalog.aria.yml" and blok["aria"]["run_id"] == str(yid)
     assert blok["aria"]["kapsayici_sayisi"] == 2
+
+
+def _maine_ekle(ortam: Ortam, dosyalar: dict[str, str], tmp: Any) -> None:
+    import subprocess
+
+    work = tmp / "ekle"
+    subprocess.run(["git", "clone", "-q", str(ortam.bare), str(work)], check=True)
+    for yol, metin in dosyalar.items():
+        p = work / yol
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(metin, encoding="utf-8")
+    git = ["git", "-C", str(work), "-c", "user.name=t", "-c", "user.email=t@t"]
+    subprocess.run([*git, "add", "-A"], check=True)
+    subprocess.run([*git, "commit", "-q", "-m", "dil bağları"], check=True)
+    subprocess.run([*git, "push", "-q", "origin", "HEAD:main"], check=True)
+
+
+def test_onarim_web_testi_dil_baglarini_ayni_prda_gunceller(
+    engine: Engine, ortam: Ortam, api: Any, muhendis: Any, tmp_path: Any
+) -> None:
+    """Kırma → onarım PR'ı: locators.ts + aynı kimliği taşıyan web testi dil bağları (Java, C#,
+    Python) tek commit'te; uygulama (mobil/masaüstü) testlerinin Kimlikler.java'sı DEĞİŞMEZ.
+    Gerçek ast-guard (repair) bu farkı kabul eder; eşsiz bir bağ değişikliğini reddeder."""
+    import shutil
+    import subprocess
+
+    from tests.unit.features.repair.conftest import REPO
+
+    demo = REPO / "demo-app"
+    java = "e2e-java/src/test/java/com/antreklabs/bayi/ekranlar/Kimlikler.java"
+    cs = "e2e-csharp/Pages/Kimlikler.cs"
+    py = "e2e-python/pages/kimlikler.py"
+    app = "e2e-app/src/test/java/com/antreklabs/bayi/ekranlar/Kimlikler.java"
+    _maine_ekle(ortam, {y: (demo / y).read_text(encoding="utf-8") for y in (java, cs, py, app)},
+                tmp_path)  # fmt: skip
+    yesil_kosu(engine, aria_dosyasi=YESIL_ARIA, artifacts=ortam.artifacts)
+    fid = kirik_hata(engine)
+    main_once = ortam.forge.head_sha("main")
+
+    assert _fix(api, fid).status_code == 202
+    assert [x.durum for x in run_jobs(engine)] == ["done"]
+    sc = _script(fid)
+    assert sc.durum == "pr_open" and sc.dosya_yolu == LOCATORS
+    degisen = ortam.forge.changed_paths(main_once, sc.head_sha)
+    assert sorted(degisen) == sorted([LOCATORS, java, cs, py])  # e2e-app YOK
+    for y in (java, cs, py):
+        once, sonra = (ortam.forge.read_file(y, r) for r in (main_once, sc.head_sha))
+        assert once.count('"add-to-cart"') == 1
+        assert sonra == once.replace('"add-to-cart"', '"cart-add"')
+    assert '"add-to-cart"' in ortam.forge.read_file(app, sc.head_sha)
+    pr = ortam.forge.get_pr(sc.pr_no)
+    assert "Kimlik bağları" in pr.body and java in pr.body
+    yama = api.get(f"/failures/{fid}/fix").json()["yama"]
+    for y in (LOCATORS, java, cs, py):
+        assert f"+++ b/{y}" in yama
+
+    cli = REPO / "toolchain" / "ast-guard" / "dist" / "src" / "cli.js"
+    if shutil.which("node") is None or not cli.exists():
+        pytest.skip("ast-guard derlenmemiş (npm run build) ya da node yok")
+
+    def guard(head: str) -> dict[str, Any]:
+        import json
+
+        r = subprocess.run(
+            ["node", str(cli), "--repo", str(ortam.bare), "--root", "e2e", "--base", main_once,
+             "--head", head, "--mode", "repair"],
+            capture_output=True, text=True, check=False,
+        )  # fmt: skip
+        return dict(json.loads(r.stdout))
+
+    rapor = guard(sc.head_sha)
+    assert rapor["ok"] is True, rapor["violations"]
+    assert len(rapor["testid_changes"]) == 4
+    # Eşsiz bağ değişikliği (uygulama testinin Kimlikler.java'sı) reddedilir.
+    kotu = ortam.forge.commit_files(
+        "kotu-dal",
+        {
+            LOCATORS: ortam.forge.read_file(LOCATORS, sc.head_sha),
+            app: ortam.forge.read_file(app, main_once).replace('"add-to-cart"', '"cart-add"'),
+        },
+        "kötü",
+        base=main_once,
+    )
+    assert guard(kotu)["ok"] is False

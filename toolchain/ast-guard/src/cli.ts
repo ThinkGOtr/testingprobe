@@ -20,6 +20,7 @@ const USAGE = `Kullanım: ast-guard --base <dizin|git-ref> --head <dizin|git-ref
                  [--repo <git-repo>] [--root <e2e-kökü>] [--out <rapor.json>] [--quiet]
 
   --mode repair  (varsayılan) yalnızca pages/**/locators.ts içindeki testId değerleri değişebilir
+                 (+ aynı çiftle web testi dil bağları: <kök kardeşi>/e2e-java|e2e-csharp|e2e-python)
   --mode pr      değişen locators.ts dosyaları saf veri olmalı; değişen testId'ler raporlanır
   --repo         git ref'lerinin çözüldüğü repo (varsayılan: çalışma dizini)
   --root         pages/ dizinini içeren kök, repo/dizin köküne göre (ör. demo-app/e2e; varsayılan .)

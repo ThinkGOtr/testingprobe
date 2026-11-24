@@ -3,6 +3,11 @@
 // repair modu: değişen her dosya <root>/pages/**/locators.ts olmalı; export ve anahtar kümeleri,
 //   role/name/intent (ve testId dışındaki tüm alanlar) aynı kalmalı; yalnızca testId string
 //   değerleri değişebilir. Dosya metni, testId literal'leri dışında bayt bayt aynı olmalı.
+//   Tek istisna web testlerinin diğer dillerdeki kimlik bağlarıdır (<root>'un kardeşi
+//   e2e-java/**/ekranlar/Kimlikler.java, e2e-csharp/Pages/Kimlikler.cs, e2e-python/pages/kimlikler.py):
+//   aynı onarımda yalnızca string literal değerleri ve YALNIZCA bu diff'teki locators.ts testId
+//   değişiklikleriyle birebir aynı (önce → sonra) çiftler olarak değişebilir; metnin geri kalanı
+//   bayt bayt aynı olmalı. Uygulama (mobil/masaüstü) testlerinin Kimlikler dosyaları kapsam dışıdır.
 // pr modu: değişen/eklenen locators.ts dosyalarının saf veri kaldığını doğrular ve değişen
 //   testId'leri raporlar; <root>/tsconfig.json değiştiyse tsc --strict kapısının gevşetilmediğini
 //   doğrular (tsconfig-gate.ts); başka dosya değişikliklerine karışmaz.
@@ -17,6 +22,8 @@ export interface ChangedFile {
   path: string;
   status: ChangeStatus;
   locator: boolean;
+  /** Web testlerinin başka dildeki kimlik bağı (repair modunda yalnız eşli literal değişebilir). */
+  binding?: boolean;
 }
 
 export interface TestIdChange {
@@ -72,6 +79,22 @@ export function isLocatorPath(path: string, root: string): boolean {
   return rel !== undefined && /^pages\/(?:[^/]+\/)*locators\.ts$/.test(rel);
 }
 
+/** Web e2e kökünün kardeşi olan diğer dil kimlik bağları (kök `demo-app/e2e` → `demo-app/…`). */
+const BINDING_RES: readonly RegExp[] = [
+  /^e2e-java\/src\/test\/java\/(?:[^/]+\/)*ekranlar\/Kimlikler\.java$/,
+  /^e2e-csharp\/Pages\/Kimlikler\.cs$/,
+  /^e2e-python\/pages\/kimlikler\.py$/,
+];
+
+export function isBindingPath(path: string, kok: string): boolean {
+  const root = normalizeRoot(kok);
+  if (root === "") return false;
+  const i = root.lastIndexOf("/");
+  const parent = i < 0 ? "" : root.slice(0, i);
+  const rel = parent === "" ? path : path.startsWith(`${parent}/`) ? path.slice(parent.length + 1) : undefined;
+  return rel !== undefined && BINDING_RES.some((re) => re.test(rel));
+}
+
 export function isPagesPath(path: string, root: string): boolean {
   const rel = underRoot(path, root);
   return rel !== undefined && rel.startsWith("pages/");
@@ -83,13 +106,19 @@ export function diffSources(base: Source, head: Source, root: string): ChangedFi
   const out: ChangedFile[] = [];
   for (const [path, entry] of b) {
     const prev = a.get(path);
-    if (!prev) out.push({ path, status: "added", locator: isLocatorPath(path, root) });
-    else if (prev.id !== entry.id) out.push({ path, status: "modified", locator: isLocatorPath(path, root) });
+    if (!prev) out.push(changedFile(path, "added", root));
+    else if (prev.id !== entry.id) out.push(changedFile(path, "modified", root));
   }
   for (const path of a.keys()) {
-    if (!b.has(path)) out.push({ path, status: "deleted", locator: isLocatorPath(path, root) });
+    if (!b.has(path)) out.push(changedFile(path, "deleted", root));
   }
   return out.sort((x, y) => (x.path < y.path ? -1 : x.path > y.path ? 1 : 0));
+}
+
+function changedFile(path: string, status: ChangeStatus, root: string): ChangedFile {
+  const cf: ChangedFile = { path, status, locator: isLocatorPath(path, root) };
+  if (isBindingPath(path, root)) cf.binding = true;
+  return cf;
 }
 
 export function runGuard(base: Source, head: Source, opts: GuardOptions): Report {
@@ -121,7 +150,12 @@ export function runGuard(base: Source, head: Source, opts: GuardOptions): Report
 }
 
 function checkRepair(base: Source, head: Source, changed: ChangedFile[], report: Report): void {
+  const bindings: ChangedFile[] = [];
   for (const cf of changed) {
+    if (!cf.locator && cf.binding && cf.status === "modified") {
+      bindings.push(cf); // locators.ts testId değişiklikleri toplandıktan sonra denetlenir
+      continue;
+    }
     if (!cf.locator) {
       report.violations.push({
         code: "non_locator_file_changed",
@@ -165,6 +199,60 @@ function checkRepair(base: Source, head: Source, changed: ChangedFile[], report:
         message: "testId değerleri dışında metin değişikliği var (yorum, sıra, biçim veya tırnak)",
       });
     }
+  }
+  const pairs = new Set(report.testid_changes.map((c) => `${c.before}\u0000${c.after}`));
+  for (const cf of bindings) checkBinding(base.read(cf.path), head.read(cf.path), cf.path, pairs, report);
+}
+
+const STRING_LITERAL = /"([^"\\\n]*)"/g;
+
+/**
+ * Kimlik bağı dosyası (Java/C#/Python): string literal'ler sırayla eşlenir; farklı olan her
+ * literal, aynı diff'teki bir locators.ts testId değişikliğiyle (önce → sonra) birebir aynı
+ * olmalı; head'deki literal'ler tabandakilerle değiştirildiğinde metin tabana bayt bayt eşit olmalı.
+ */
+function checkBinding(baseText: string, headText: string, file: string, pairs: Set<string>, report: Report): void {
+  const b = [...baseText.matchAll(STRING_LITERAL)];
+  const h = [...headText.matchAll(STRING_LITERAL)];
+  if (b.length !== h.length) {
+    report.violations.push({
+      code: "binding_structure_changed",
+      file,
+      message: "Kimlik bağı dosyasında string literal sayısı değişti; onarım yalnızca değerleri değiştirebilir",
+    });
+    return;
+  }
+  let text = headText;
+  let degisen = 0;
+  for (let i = h.length - 1; i >= 0; i--) {
+    const mb = b[i];
+    const m = h[i];
+    if (!mb || !m) continue;
+    const before = mb[1] ?? "";
+    const after = m[1] ?? "";
+    if (before !== after) {
+      degisen++;
+      if (!pairs.has(`${before}\u0000${after}`)) {
+        report.violations.push({
+          code: "binding_change_unpaired",
+          file,
+          before,
+          after,
+          message: `Kimlik bağında '${before}' → '${after}' değişikliği locators.ts'deki bir testId onarımına karşılık gelmiyor`,
+        });
+      } else {
+        report.testid_changes.push({ file, entry: "", before, after });
+      }
+    }
+    const start = m.index ?? 0;
+    text = text.slice(0, start) + mb[0] + text.slice(start + m[0].length);
+  }
+  if (text !== baseText || degisen === 0) {
+    report.violations.push({
+      code: "non_testid_change",
+      file,
+      message: "Kimlik bağında eşli kimlik değerleri dışında metin değişikliği var",
+    });
   }
 }
 

@@ -59,7 +59,9 @@ def pr_govdesi(k: Mapping[str, Any]) -> str:
         "onayıyla yapılır."
         if java
         else "Yalnızca `pages/**/locators.ts` içindeki ilgili `testId` değeri değişir; anahtar "
-        "kümesi, rol, ad, niyet ve `within` değişmez. Test dosyaları ve assertion'lara "
+        "kümesi, rol, ad, niyet ve `within` değişmez. Aynı kimliği taşıyan diğer dillerin web "
+        "testi kimlik bağları (Kimlikler.java / .cs / kimlikler.py) aynı değerle güncellenir; "
+        "mobil/masaüstü uygulama testlerine dokunulmaz. Test dosyaları ve assertion'lara "
         "dokunulmadı (Constitution VI). Merge yalnızca insan onayıyla yapılır."
     )
     satirlar = [
@@ -82,6 +84,11 @@ def pr_govdesi(k: Mapping[str, Any]) -> str:
         f"- Rol + ad: {_kod(loc.get('rol'))} {_kod(loc.get('ad'))}"
         + (f" · kapsam {_kod(loc.get('within'))}" if loc.get("within") else ""),
         f"- testId: {_kod(k.get('eski_test_id'))} → {_kod(k.get('yeni_test_id'))}",
+        *(
+            [f"- Kimlik bağları (aynı değer): {', '.join(_kod(d) for d in k['kimlik_baglari'])}"]
+            if k.get("kimlik_baglari")
+            else []
+        ),
         "",
         "```diff",
         str(k.get("fark") or "").replace("```", "'''")[:4000].rstrip(),

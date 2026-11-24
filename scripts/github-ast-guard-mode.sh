@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # ast-guard modunu seçer (Constitution VI; .github/workflows/ci.yml "ast-guard" job'u).
 #
-#   repair : en sıkı kontrol — yalnızca pages/**/locators.ts içindeki testId değerleri değişebilir.
+#   repair : en sıkı kontrol — yalnızca pages/**/locators.ts içindeki testId değerleri değişebilir
+#            (ve aynı önce→sonra çiftiyle web testi dil bağları: e2e-java/e2e-csharp/e2e-python Kimlikler).
 #   pr     : değişen locators.ts dosyaları saf veri kalmalı; değişen testId'ler özette listelenir.
 #
 # repair modu şu koşullardan BİRİ yeterliyse seçilir:

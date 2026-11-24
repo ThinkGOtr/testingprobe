@@ -536,3 +536,36 @@ def etkilenen_java_testler(dosyalar: Mapping[str, str], loc: LocatorRef) -> list
         for yol, icerik in dosyalar.items()
         if yol.endswith(".java") and any(i in icerik for i in isaretler)
     )
+
+
+# ------------------------------------------------- web testlerinin diğer dil kimlik bağları
+
+# Web e2e kökünün kardeşi (kök `demo-app/e2e` → `demo-app/<bağ>`); toolchain/ast-guard repair
+# modu aynı yolları "kimlik bağı" sayar ve yalnızca locators.ts testId değişikliğiyle eşli literal
+# değişikliğine izin verir. Uygulama (mobil/masaüstü, `e2e-app*`) testleri kapsam DIŞIdır: o
+# uygulamalar web kırmasından etkilenmez, kimlikleri değişmez.
+WEB_KIMLIK_BAGLARI = (
+    f"e2e-java/{KIMLIKLER_VARSAYILAN}",
+    "e2e-csharp/Pages/Kimlikler.cs",
+    "e2e-python/pages/kimlikler.py",
+)
+
+
+def kimlik_bagi_yollari(e2e_kok: str) -> list[str]:
+    """Web e2e kökü (`demo-app/e2e` | `e2e`) → kardeş dil bağlarının forge yolları."""
+    ust = e2e_kok.rsplit("/", 1)[0] if "/" in e2e_kok else ""
+    return [f"{ust}/{b}" if ust else b for b in WEB_KIMLIK_BAGLARI]
+
+
+def patch_bag_literal(metin: str, eski: str, yeni: str) -> str | None:
+    """Kimlik bağı dosyasında `"eski"` literal'ini `"yeni"` yapar. Bağ bu kimliği taşımıyorsa
+    None; birden çok kez taşıyorsa ya da `"yeni"` zaten varsa PatchError (insana)."""
+    once, sonra = f'"{eski}"', f'"{yeni}"'
+    sayi = metin.count(once)
+    if sayi == 0:
+        return None
+    if sayi > 1:
+        raise PatchError(f"'{eski}' kimlik bağında {sayi} kez geçiyor (tek olmalı)")
+    if sonra in metin:
+        raise PatchError(f"'{yeni}' kimlik bağında zaten var (çakışma)")
+    return metin.replace(once, sonra)
