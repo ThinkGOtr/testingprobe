@@ -7,6 +7,7 @@ rol kaldırma, home erişilemez → oturum korunur, boşta/mutlak süre, çıkı
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
@@ -285,7 +286,7 @@ def test_giris_turu_ve_jit(client: TestClient, home: SahteHome, engine: Engine) 
     assert q["product"] == ["testing-probe"] and q["continue"] == ["/x?y=1"]
     assert len(q["state"][0]) >= 43
     durum_cerezi = next(
-        h for h in r.headers.get_list("set-cookie") if h.startswith("__Host-aiprobe_state=")
+        h for h in r.headers.get_list("set-cookie") if h.startswith("__Host-aiprobe_state_")
     )
     assert "secure" in durum_cerezi.lower() and "httponly" in durum_cerezi.lower()
 
@@ -347,6 +348,78 @@ def test_state_uyusmazligi_takas_yapmaz(client: TestClient, home: SahteHome) -> 
     r = client.get("/auth/aiprobe/callback", params={"code": "k", "state": state})
     assert r.status_code == 400 and r.json()["kod"] == "durum_uyusmuyor"
     assert client.get("/auth/me").status_code == 401
+
+
+def test_paralel_giris_akislari_birbirini_ezmez(client: TestClient, home: SahteHome) -> None:
+    """Aynı tarayıcıda iki sekme aynı anda yeniden girişe düştü: state çerezi istek başına
+    anahtarlı olduğundan iki callback de (herhangi sırayla) geçer ve kendi `continue`'suna döner."""
+    home.kisiler[UID] = {"roles": ["tester"]}
+    akislar = []
+    for devam in ("/sekme-1", "/sekme-2"):
+        r = client.get("/auth/aiprobe/login", params={"continue": devam}, follow_redirects=False)
+        state = parse_qs(urlsplit(r.headers["location"]).query)["state"][0]
+        kod = uuid.uuid4().hex
+        home.kodlar[kod] = _devir(state, ["tester"])
+        akislar.append((kod, state, devam))
+    durum_cerezleri = [a for a in client.cookies if a.startswith("__Host-aiprobe_state_")]
+    assert len(durum_cerezleri) == 2
+    for kod, state, devam in akislar:  # önce birinci sekme (eski tek çerezde ezilmişti)
+        r = client.get(
+            "/auth/aiprobe/callback", params={"code": kod, "state": state}, follow_redirects=False
+        )
+        assert r.status_code == 302, r.text
+        assert r.headers["location"] == devam
+    assert client.get("/auth/me").status_code == 200
+    # Başarılı akışlar kendi çerezlerini sildi.
+    assert not [a for a in client.cookies if a.startswith("__Host-aiprobe_state_")]
+
+
+def test_baska_akisin_state_cerezi_dogrulamaz(client: TestClient, home: SahteHome) -> None:
+    """Anahtarlı çerez doğrulamayı gevşetmez: bilinmeyen state için çerez yoksa takas yapılmaz;
+    çerez adı başka bir state'in anahtarıyla taşınsa bile içerik eşleşmelidir."""
+    r = client.get("/auth/aiprobe/login", follow_redirects=False)
+    state = parse_qs(urlsplit(r.headers["location"]).query)["state"][0]
+    deger = next(v for a, v in client.cookies.items() if a.startswith("__Host-aiprobe_state_"))
+    saldirgan = "s" * 43
+    home.kodlar["k"] = _devir(saldirgan, ["tester"])
+    r = client.get("/auth/aiprobe/callback", params={"code": "k", "state": saldirgan})
+    assert r.status_code == 400 and r.json()["kod"] == "durum_uyusmuyor"
+    # Saldırganın state'inin anahtarına kurbanın çerez DEĞERİ konsa da içerik uyuşmaz.
+    client.cookies.set(
+        "__Host-aiprobe_state_" + hashlib.sha256(saldirgan.encode()).hexdigest()[:16], deger
+    )
+    r = client.get("/auth/aiprobe/callback", params={"code": "k", "state": saldirgan})
+    assert r.status_code == 400 and r.json()["kod"] == "durum_uyusmuyor"
+    assert home.cagrilar == [] and state != saldirgan
+
+
+def test_eski_tek_state_cerezi_gecis_doneminde_kabul(client: TestClient, home: SahteHome) -> None:
+    """Dağıtım anında sürmekte olan (eski sürümün yazdığı) tek çerezli akış bitebilir."""
+    state = "e" * 43
+    client.cookies.set("__Host-aiprobe_state", f"{state}|%2Feski")
+    home.kodlar["k"] = _devir(state, ["tester"])
+    home.kisiler[UID] = {"roles": ["tester"]}
+    r = client.get(
+        "/auth/aiprobe/callback", params={"code": "k", "state": state}, follow_redirects=False
+    )
+    assert r.status_code == 302 and r.headers["location"] == "/eski"
+
+
+def test_sessiz_yeniden_giris_basarida_kilidi_siler(client: TestClient, home: SahteHome) -> None:
+    r = client.get(
+        "/auth/aiprobe/callback",
+        params={"code": "k", "state": "bayat"},
+        headers=HTML,
+        follow_redirects=False,
+    )
+    assert r.status_code == 302 and r.headers["location"].startswith("login?")
+    assert "__Host-aiprobe_yeniden" in client.cookies
+    r = _giris(client, home, ["tester"])
+    assert r.status_code == 302
+    assert "__Host-aiprobe_yeniden" not in client.cookies
+    # JSON istemcisine yönlendirme yok: doğrudan 400.
+    r = client.get("/auth/aiprobe/callback", params={"code": "k", "state": "bayat"})
+    assert r.status_code == 400 and r.json()["kod"] == "durum_uyusmuyor"
 
 
 def test_kod_tekrari_ve_org_reddi(client: TestClient, home: SahteHome) -> None:
@@ -878,6 +951,16 @@ def test_callback_hatasi_tarayicida_turkce_sayfa(client: TestClient, home: Sahte
     r = client.get("/auth/aiprobe/login", params={"continue": "/gereksinimler"},
                    follow_redirects=False)  # fmt: skip
     state = parse_qs(urlsplit(r.headers["location"]).query)["state"][0]
+    # Durum uyuşmazlığı: tarayıcı önce bir kez SESSİZCE yeniden girişe gider (kilit çereziyle).
+    r = client.get(
+        "/auth/aiprobe/callback",
+        params={"code": "k", "state": state + "x"},
+        headers=HTML,
+        follow_redirects=False,
+    )
+    assert r.status_code == 302 and r.headers["location"] == "login?continue=%2F"
+    assert "__Host-aiprobe_yeniden" in r.cookies
+    # İkinci uyuşmazlık (kilit çerezi var): döngü yerine Türkçe hata sayfası.
     r = client.get(
         "/auth/aiprobe/callback", params={"code": "k", "state": state + "x"}, headers=HTML
     )
@@ -886,7 +969,7 @@ def test_callback_hatasi_tarayicida_turkce_sayfa(client: TestClient, home: Sahte
     assert r.headers["cache-control"] == "no-store"
     govde = r.text
     assert '<html lang="tr">' in govde and "Giriş isteği doğrulanamadı" in govde
-    assert "Tekrar dene" in govde and 'href="login?continue=%2Fgereksinimler"' in govde
+    assert "Tekrar dene" in govde and 'href="login?continue=%2F"' in govde
     assert "<script" not in govde
     assert home.cagrilar == []
     # Geçersiz kod ve home kapalı da sayfa.
@@ -904,9 +987,10 @@ def test_callback_hatasi_tarayicida_turkce_sayfa(client: TestClient, home: Sahte
 def test_callback_hata_sayfasi_kacislanir(client: TestClient, home: SahteHome) -> None:
     r = client.get("/auth/aiprobe/login", params={"continue": '/x"><b>'}, follow_redirects=False)
     state = parse_qs(urlsplit(r.headers["location"]).query)["state"][0]
-    r = client.get("/auth/aiprobe/callback", params={"code": "k", "state": "x"}, headers=HTML)
+    # Geçerli state + geçersiz kod: sayfa çerezdeki continue'yu taşır (yalnız kaçışlı/kodlanmış).
+    r = client.get("/auth/aiprobe/callback", params={"code": "yok", "state": state}, headers=HTML)
     assert r.status_code == 400 and "<b>" not in r.text
-    assert state  # çerezdeki continue yalnız kaçışlı/kodlanmış olarak sayfaya girer
+    assert 'href="login?continue=%2Fx%22%3E%3Cb%3E"' in r.text
 
 
 def test_login_yapilandirma_eksik_sayfa(
@@ -1285,7 +1369,7 @@ def test_state_cerezi_yerel_http_de_secure_siz(home: SahteHome) -> None:
     with TestClient(main.create_app(), base_url="http://localhost") as c:
         r = c.get("/auth/aiprobe/login", follow_redirects=False)
         cerez = r.headers["set-cookie"]
-        assert cerez.startswith("aiprobe_state=") and "secure" not in cerez.lower()
+        assert cerez.startswith("aiprobe_state_") and "secure" not in cerez.lower()
         state = parse_qs(urlsplit(r.headers["location"]).query)["state"][0]
         kod = uuid.uuid4().hex
         home.kodlar[kod] = _devir(state, ["tester"])
@@ -1297,7 +1381,7 @@ def test_state_cerezi_yerel_http_de_secure_siz(home: SahteHome) -> None:
     for taban in ("https://localhost", "http://testserver"):
         with TestClient(main.create_app(), base_url=taban) as c:
             cerez = c.get("/auth/aiprobe/login", follow_redirects=False).headers["set-cookie"]
-            assert cerez.startswith("__Host-aiprobe_state=") and "secure" in cerez.lower()
+            assert cerez.startswith("__Host-aiprobe_state_") and "secure" in cerez.lower()
 
 
 def test_rol_sec_taze_kontrol(

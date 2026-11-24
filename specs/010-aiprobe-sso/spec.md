@@ -138,7 +138,8 @@ kabul edilmez.
   (iptal → 401, rol kaldırıldı → 403, erişilemez → 503).
 - `/auth/me` `roles`: bağlı rol hesaplarından yalnız AI Probe'un şu an verdiği rollerdekiler.
 - Yerel geliştirme: düz `http://localhost` isteğinde state çerezi Secure'suz `aiprobe_state`
-  (CONTRACT); diğer her durumda `__Host-aiprobe_state`.
+  (CONTRACT); diğer her durumda `__Host-aiprobe_state`. Ad istek başına state anahtarıyla
+  sonlanır (`…_<sha256(state)[:16]>`): eşzamanlı giriş akışları (iki sekme) birbirini ezmez.
 - `local`'e dönülürse `external_uid`'li oturumlar reddedilir (fail-closed).
 - `continue=//evil`, `\`, şema, kontrol karakteri → `/`.
 - `org` izinli değil / TP rolü yok → 403, JIT yapılmaz.

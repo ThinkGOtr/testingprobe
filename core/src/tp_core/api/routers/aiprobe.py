@@ -3,6 +3,11 @@
 Yalnız `TP_AUTH_MODE=aiprobe|both`; `local` kipte bütün uçlar 404 (rota yok gibi).
 
 - `GET  /auth/aiprobe/login?continue=` → `state` çerezi + 302 `{AIPROBE_ID_ORIGIN}/login`.
+  State çerezi İSTEK BAŞINA anahtarlıdır (`__Host-aiprobe_state_<sha256(state)[:16]>`): aynı
+  tarayıcıda eşzamanlı iki giriş akışı (ör. iki sekme aynı anda yeniden girişe düştü) birbirinin
+  çerezini ezmez. Doğrulama gevşemez: callback'teki `state` için adlandırılmış çerez bulunmalı ve
+  içindeki state sabit zamanlı karşılaştırmayla eşit olmalıdır (çerezi yalnız bizim köken
+  yazabilir).
 - `GET  /auth/aiprobe/callback?code=&state=` → state eşleşmesi → sunucudan takas → JIT → oturum
   (302 `continue`) ya da rol seçici (302 `/rol-sec?continue=`).
 - `GET  /auth/aiprobe/hesaplar` → rol seçici / "Rol değiştir" listesi.
@@ -14,10 +19,13 @@ geliştirme: düz `http://localhost` isteğinde state çerezi Secure'suz `aiprob
 yazılır. Hata gövdesi `{"detail", "kod"}`;
 `login` ve `callback` tarayıcı gezintisidir: istek `Accept: text/html` taşıyorsa aynı durum kodu
 Türkçe bir hata sayfasıyla döner ("Tekrar dene" → yeniden giriş; JSON gösterilmez).
+State uyuşmazlığında tarayıcı gezintisi önce SESSİZCE bir kez yeniden girişe yönlenir (kısa ömürlü
+`aiprobe_yeniden` çereziyle döngü kilidi); ikinci uyuşmazlıkta hata sayfası gösterilir.
 """
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import html
 import logging
@@ -57,6 +65,10 @@ STATE_COOKIE = "__Host-aiprobe_state"
 STATE_COOKIE_YEREL = "aiprobe_state"
 YEREL_HOSTLAR = frozenset({"localhost", "127.0.0.1", "::1"})
 STATE_MAX_AGE_S = 600
+# State uyuşmazlığında tek seferlik sessiz yeniden giriş kilidi (döngü olmasın).
+YENIDEN_COOKIE = "__Host-aiprobe_yeniden"
+YENIDEN_COOKIE_YEREL = "aiprobe_yeniden"
+YENIDEN_MAX_AGE_S = 120
 SECIM_COOKIE = "__Host-tp_rol_secimi"
 SECIM_SALT = "tp-rol-secimi-v1"
 SECIM_MAX_AGE_S = 600
@@ -80,7 +92,9 @@ YAPILANDIRMA_YOK = "AI Probe girişi yapılandırılmamış (AIPROBE_* eksik)"
 
 
 def _guvenli_cerez(ad: str) -> bool:
-    return ad != STATE_COOKIE_YEREL
+    # Secure'suz yalnız yerel http adları (`aiprobe_state_…`, `aiprobe_yeniden`); geri kalan hepsi
+    # `__Host-` önekli.
+    return ad.startswith("__Host-")
 
 
 def _cerez(yanit: Response, ad: str, deger: str, max_age: int) -> None:
@@ -99,15 +113,28 @@ def _cerez_sil(yanit: Response, ad: str) -> None:
     yanit.delete_cookie(ad, path="/", httponly=True, samesite="lax", secure=_guvenli_cerez(ad))
 
 
-def _state_cerezi(request: Request) -> str:
+def _yerel_http(request: Request) -> bool:
+    return request.url.scheme == "http" and request.url.hostname in YEREL_HOSTLAR
+
+
+def _state_cerezi(request: Request, state: str | None = None) -> str:
     """İsteğin kanalına göre state çerezinin adı: düz http + localhost → Secure'suz yerel ad.
+
+    `state` verilince ad istek başına anahtarlıdır (`<önek>_<sha256(state)[:16]>`): eşzamanlı
+    akışların çerezleri ayrı kalır. `state=None` → eski tek çerez adı (geçiş: dağıtım anında süren
+    akışlar için yalnız okunur/silinir).
 
     Okuma da aynı kuralla yapılır: https'de Secure'suz (araya girilerek yazılabilen) çerez kabul
     edilmez.
     """
-    if request.url.scheme == "http" and request.url.hostname in YEREL_HOSTLAR:
-        return STATE_COOKIE_YEREL
-    return STATE_COOKIE
+    onek = STATE_COOKIE_YEREL if _yerel_http(request) else STATE_COOKIE
+    if state is None:
+        return onek
+    return f"{onek}_{hashlib.sha256(state.encode()).hexdigest()[:16]}"
+
+
+def _yeniden_cerezi(request: Request) -> str:
+    return YENIDEN_COOKIE_YEREL if _yerel_http(request) else YENIDEN_COOKIE
 
 
 def _onceki_oturumu_kapat(request: Request, session: Session, codec: SessionCodec) -> bool:
@@ -214,7 +241,9 @@ def login(
         {"product": ayar.aiprobe_product_id, "state": state, "continue": devam}
     )
     yanit = RedirectResponse(hedef, status_code=302)
-    _cerez(yanit, _state_cerezi(request), f"{state}|{quote(devam, safe='')}", STATE_MAX_AGE_S)
+    _cerez(
+        yanit, _state_cerezi(request, state), f"{state}|{quote(devam, safe='')}", STATE_MAX_AGE_S
+    )
     return yanit
 
 
@@ -254,6 +283,14 @@ def _oturum_ac(
     set_session_cookie(yanit, codec, user, sid)
 
 
+def _akis_cerezlerini_sil(request: Request, yanit: Response, *adlar: str) -> None:
+    """Başarılı akışın tek kullanımlık çerezleri (yalnız istekte olanlar; diğer sekmelerin süren
+    akışlarının anahtarlı çerezlerine dokunulmaz)."""
+    for ad in dict.fromkeys(adlar):
+        if ad in request.cookies:
+            _cerez_sil(yanit, ad)
+
+
 @router.get("/callback")
 def callback(
     request: Request,
@@ -262,19 +299,30 @@ def callback(
     code: Annotated[str, Query(max_length=512)] = "",
     state: Annotated[str, Query(max_length=256)] = "",
 ) -> Response:
-    state_adi = _state_cerezi(request)
+    state_adi = _state_cerezi(request, state)
     raw = request.cookies.get(state_adi) or ""
+    eski_adi = _state_cerezi(request)  # geçiş: tek çerezli eski akış
+    if not raw:
+        raw = request.cookies.get(eski_adi) or ""
     cerez_state, _, cerez_devam = raw.partition("|")
     devam = aiprobe.guvenli_continue(unquote(cerez_devam) or "/")
+    yeniden_adi = _yeniden_cerezi(request)
 
     def hata(status: int, kod: str, detail: str) -> Response:
-        return _hata_sayfasi(request, status, kod, detail, devam, state_adi)
+        return _hata_sayfasi(request, status, kod, detail, devam, state_adi, yeniden_adi)
 
     if _yapilandirma_eksik():
         return hata(503, "kimlik_servisi_yok", YAPILANDIRMA_YOK)
     if not cerez_state or not state or not hmac.compare_digest(cerez_state, state):
         log.warning("AI Probe girişi: state uyuşmadı (login CSRF ya da süresi dolmuş çerez)")
         audit_on_commit(session, aiprobe.AKTOR, "auth.aiprobe_rejected", None, {"neden": "state"})
+        if _html_ister(request) and not request.cookies.get(yeniden_adi):
+            # Tarayıcı gezintisi: bir kez sessizce yeni bir giriş akışı (takas YAPILMAZ; yeni state
+            # ile baştan). Kilit çerezi ikinci uyuşmazlıkta döngü yerine hata sayfası gösterir.
+            yanit_ = RedirectResponse("login?" + urlencode({"continue": devam}), status_code=302)
+            _cerez(yanit_, yeniden_adi, "1", YENIDEN_MAX_AGE_S)
+            yanit_.headers["Cache-Control"] = "no-store"
+            return yanit_
         return hata(400, "durum_uyusmuyor", "Giriş isteği doğrulanamadı; yeniden deneyin")
     try:
         devir = aiprobe.home().redeem(code)
@@ -324,7 +372,7 @@ def callback(
                    ozet={"acr": devir.acr}, org_id=devir.org_id,
                    project_id=proje_id)  # fmt: skip
         _secimi_kaydet(session, devir.uid, proje_id)
-        _cerez_sil(yanit, state_adi)
+        _akis_cerezlerini_sil(request, yanit, state_adi, eski_adi, yeniden_adi)
         return yanit
     secim = {
         "x": devir.uid,
@@ -340,7 +388,7 @@ def callback(
     }
     yanit = RedirectResponse(f"{ROL_SEC_SAYFASI}?continue={quote(devam, safe='')}", 302)
     _cerez(yanit, SECIM_COOKIE, codec.dumps_signed(SECIM_SALT, secim), SECIM_MAX_AGE_S)
-    _cerez_sil(yanit, state_adi)
+    _akis_cerezlerini_sil(request, yanit, state_adi, eski_adi, yeniden_adi)
     if onceki_kapandi:
         _cerez_sil(yanit, cookie_name())
     return yanit
