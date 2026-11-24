@@ -37,8 +37,9 @@ Kullanım (özellik şeritleri)::
   işleri) uzun bir CI koşusu/onarım kontrolü bitene kadar beklemez. `serit=ASISTAN_SERIT` portal
   asistanının kısa, paralel işlerini (`assistant.answer`) işaretler: worker onları birkaç iş
   parçacığında koşar ve zaman aşımında süreci kapatmaz (AI-ASISTAN-PLANI §10.1). `serit_turleri`
-  bir şeridin kayıtlı türlerini verir. `claim`/`process_one` `turler` (yalnızca bunlar) ve `haric`
-  (bunlar dışında) süzgeçlerini alır.
+  bir şeridin kayıtlı türlerini verir. `serit=ANLIK_SERIT` API'nin birkaç saniye beklediği kısa
+  dış çağrıları (`jira.vekil`) işaretler: worker onları ayrı bir iş parçacığında sırayla koşar.
+  `claim`/`process_one` `turler` (yalnızca bunlar) ve `haric` (bunlar dışında) süzgeçlerini alır.
 - `idempotency_key` verilirse aynı anahtarla ikinci ekleme yeni iş açmaz, mevcut işi döndürür.
   Karar işlem kapsamlı bir advisory lock altında verilir (eşzamanlı çağrılar yarışmaz).
 - Proje (TP-COK-PROJE-PLANI §5.1, K1): tüm projelerin işleri tek kuyrukta, tek sırada. İş satırı
@@ -85,7 +86,10 @@ HEARTBEAT_S = 15.0
 GENEL_SERIT = "genel"
 UZUN_SERIT = "uzun"
 ASISTAN_SERIT = "asistan"
-SERITLER: frozenset[str] = frozenset({GENEL_SERIT, UZUN_SERIT, ASISTAN_SERIT})
+# Kısa, kullanıcıyı bekleten dış okumalar (`jira.vekil`): API sonucu birkaç saniye bekler; model
+# üretimi gibi uzun genel işlerin arkasında sıraya girmesin diye ayrı iş parçacığında koşar.
+ANLIK_SERIT = "anlik"
+SERITLER: frozenset[str] = frozenset({GENEL_SERIT, UZUN_SERIT, ASISTAN_SERIT, ANLIK_SERIT})
 NABIZ_ZAMAN_ASIMI_S = 60.0
 NOTIFY_CHANNEL = "tp_jobs"
 # İki argümanlı advisory lock ad alanı (denetim zincirinin tek argümanlı kilidiyle çakışmaz).

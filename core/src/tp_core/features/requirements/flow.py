@@ -50,7 +50,7 @@ from __future__ import annotations
 import logging
 import re
 import uuid
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -382,6 +382,22 @@ def sync_from_jira(session: Session, jira: Any, actor: Principal) -> SyncReport:
         {"sonuc": rapor.sonuc, "baz_dosyasi": rapor.baz_dosyasi},
     )
     return rapor
+
+
+def vekil_ice_aktar(yuk: Mapping[str, Any]) -> dict[str, Any]:
+    """`jira.vekil` işlemi (core-worker): `POST /requirements/sync` (Jira OAuth kipinde core-api
+    Jira'yı okuyamaz). Aktör API'de yetkilendirilmiş kullanıcıdır (denetim kaydı)."""
+    from tp_core.integrations import jira_vekil
+    from tp_core.models import session_scope
+
+    with session_scope() as s:
+        rapor = sync_from_jira(s, services.jira(), jira_vekil.aktor(yuk))
+    return {
+        "mesaj": rapor.mesaj(),
+        "proje": rapor.proje,
+        "sonuc": rapor.sonuc,
+        "baz_dosyasi": rapor.baz_dosyasi,
+    }
 
 
 def upsert_issue(session: Session, issue: Any, actor: Actor) -> str:
@@ -2287,10 +2303,31 @@ def po_label_current(req: Requirement) -> bool:
     """
     if req.kaynak != "jira" or req.jira_key is None:
         return True
+    from tp_core.integrations import jira_vekil
+
+    if jira_vekil.gerekli():
+        # Jira OAuth kipinde core-api Jira istemcisi kuramaz (token yalnız core-worker'da):
+        # aynı salt okuma denetimi `jira.vekil` işiyle worker'da yapılır.
+        return bool(jira_vekil.calistir("po_etiketi", {"jira_key": req.jira_key}))
+    return _po_etiketi_dogrudan(req.jira_key)
+
+
+def _po_etiketi_dogrudan(jira_key: str) -> bool:
     jira = services.jira()
-    if PO_APPROVED_LABEL not in jira.get_issue(req.jira_key).labels:
+    if PO_APPROVED_LABEL not in jira.get_issue(jira_key).labels:
         return False
-    return bool(jira.po_approvals(req.jira_key, sorted(services.po_accounts())))
+    return bool(jira.po_approvals(jira_key, sorted(services.po_accounts())))
+
+
+_VEKIL_KEY = re.compile(r"[A-Z][A-Z0-9_]*-[1-9][0-9]*")
+
+
+def vekil_po_etiketi(yuk: Mapping[str, Any]) -> bool:
+    """`jira.vekil` işlemi (core-worker): `po_label_current`'in Jira okuması."""
+    key = str(yuk.get("jira_key") or "")
+    if not _VEKIL_KEY.fullmatch(key):
+        raise ValueError(f"geçersiz Jira anahtarı: {key!r}")
+    return _po_etiketi_dogrudan(key)
 
 
 def withdraw_po(req_id: uuid.UUID, key: str, durum: str) -> str:

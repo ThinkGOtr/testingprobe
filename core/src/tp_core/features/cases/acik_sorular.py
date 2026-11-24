@@ -869,7 +869,23 @@ def post_send(
     user: Gonderen,
     body: GonderGirdisi | None = None,
 ) -> dict[str, Any]:
-    return send(session, requirement_id, user, varsayimlar=bool(body and body.varsayimlar))
+    varsayimlar = bool(body and body.varsayimlar)
+    if _vekil_gerekli():
+        # Jira OAuth kipi: core-api Jira istemcisi kuramaz (token yalnız core-worker'da) ve yazma
+        # kimliği taşımaz → gönderim (Jira yorumu dahil) core-worker'da yürür.
+        from tp_core.integrations import jira_vekil
+
+        jira_vekil.calistir(
+            "acik_soru_gonder",
+            {
+                "requirement_id": str(requirement_id),
+                "varsayimlar": varsayimlar,
+                "aktor": jira_vekil.aktor_yuk(user),
+            },
+            bekleme_s=25.0,
+        )
+        return view(session, requirement_id)
+    return send(session, requirement_id, user, varsayimlar=varsayimlar)
 
 
 @router.post("/requirements/{requirement_id}/open-questions/refresh")
@@ -880,5 +896,50 @@ def post_refresh(requirement_id: uuid.UUID, session: DbSession, _user: Yenileyen
 
     req = get_requirement(session, requirement_id)
     if req.jira_key:
-        read_answers(session, services.jira(), services.po_accounts(), [req.id])
+        if _vekil_gerekli():
+            from tp_core.integrations import jira_vekil
+
+            rid = req.id
+            session.rollback()  # okuma işlemini kapat: worker satırları kendi işleminde yazar
+            jira_vekil.calistir("acik_soru_yanitlar", {"requirement_id": str(rid)})
+        else:
+            read_answers(session, services.jira(), services.po_accounts(), [req.id])
     return view(session, requirement_id)
+
+
+def _vekil_gerekli() -> bool:
+    """Bu süreçte Jira istemcisi kurulamıyor mu (Jira OAuth kipi + core-api)."""
+    from tp_core.integrations import jira_vekil
+
+    return jira_vekil.gerekli()
+
+
+def vekil_gonder(yuk: Mapping[str, Any]) -> None:
+    """`jira.vekil` işlemi (core-worker): `send` (aktör API'de yetkilendirildi)."""
+    from tp_core.integrations import jira_vekil
+    from tp_core.models import new_session
+
+    rid = uuid.UUID(str(yuk.get("requirement_id")))
+    with new_session() as session:
+        try:
+            send(session, rid, jira_vekil.aktor(yuk), varsayimlar=bool(yuk.get("varsayimlar")))
+            session.commit()
+        except BaseException:
+            session.rollback()
+            raise
+
+
+def vekil_yanitlar(yuk: Mapping[str, Any]) -> int:
+    """`jira.vekil` işlemi (core-worker): `read_answers` (tek gereksinim)."""
+    from tp_core.features.requirements import services
+    from tp_core.models import new_session
+
+    rid = uuid.UUID(str(yuk.get("requirement_id")))
+    with new_session() as session:
+        try:
+            n = read_answers(session, services.jira(), services.po_accounts(), [rid])
+            session.commit()
+        except BaseException:
+            session.rollback()
+            raise
+    return n

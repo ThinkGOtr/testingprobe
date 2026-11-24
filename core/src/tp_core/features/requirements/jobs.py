@@ -19,6 +19,10 @@
                                    işaretler); her zaman `aralik_s` sonrasına yeniden planlanır
                                    (ayar kapalıyken Jira'ya gidilmez). PO sorgusu ve worker
                                    açılışı zinciri yeniden kurar (`ensure`).
+- `jira.vekil`                    Jira OAuth kipinde core-api'nin eşzamanlı Jira işlemleri (PO
+                                   etiket kapısı, içe aktarma, bug bağlama hedefi, açık soru
+                                   gönderimi/yanıtları); `anlik` şeritte
+                                   (`integrations.jira_vekil`).
 - `requirements.otomatik_case`    tetikle akışa alınmış gereksinim PO onaylıyken case üretimini
                                    otomasyon aktörüyle başlatır (kapı kesin reddederse denetim;
                                    Jira'ya geçici erişilemezse yeniden denenir).
@@ -40,7 +44,8 @@ from tp_core.features.otomasyon import jira_tetik
 from tp_core.features.requirements import flow
 from tp_core.gateway import GatewayError, ReplayMiss, ReplayNoOutput, ReplayNotFound
 from tp_core.gateway.errors import BudgetExceeded
-from tp_core.workflow.jobs import JobContext, PermanentJobError, job_handler
+from tp_core.integrations import jira_vekil
+from tp_core.workflow.jobs import ANLIK_SERIT, JobContext, PermanentJobError, job_handler
 
 
 def _kalici(exc: BaseException, ctx: JobContext) -> bool:
@@ -162,3 +167,10 @@ def on_worker_start(conn: Connection) -> None:
     """
     flow.ensure_po_poll(conn)
     jira_tetik.ensure(conn)
+
+
+@job_handler(
+    jira_vekil.VEKIL_JOB, max_deneme=1, zaman_asimi_s=jira_vekil.ZAMAN_ASIMI_S, serit=ANLIK_SERIT
+)
+def jira_vekil_isi(ctx: JobContext) -> dict[str, Any]:
+    return jira_vekil.isle(ctx.yuk)

@@ -354,3 +354,15 @@ def test_asistan_serit_kapaliyken_bekleyen_soru_kalp_atisi_bayatlayinca_kapanir(
         assert _baglamsiz(worker.kapali_serit_temizle, set()) == 0
     finally:
         jobs.REGISTRY.pop(a_tur, None)
+
+
+def test_anlik_serit_jira_vekil_ayri_yuvada(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`jira.vekil` (core-api'nin Jira OAuth kipinde beklediği kısa işler) anlık şeritte; şerit
+    kapatılırsa genel şeride düşer."""
+    from tp_core.features.requirements import jobs as _req_jobs  # noqa: F401
+    from tp_core.integrations import jira_vekil
+
+    monkeypatch.delenv("TP_WORKER_ANLIK_SERIT", raising=False)
+    assert jira_vekil.VEKIL_JOB in worker.anlik_serit_turleri()
+    monkeypatch.setenv("TP_WORKER_ANLIK_SERIT", "0")
+    assert worker.anlik_serit_turleri() == frozenset()

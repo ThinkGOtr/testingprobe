@@ -102,9 +102,16 @@ def list_requirements(session: DbSession, _u: Okur) -> list[dict[str, Any]]:
 
 @router.post("/requirements/sync")
 def sync(session: DbSession, user: IceAktarir) -> dict[str, Any]:
+    from tp_core.integrations import jira_vekil
     from tp_core.integrations.jira import JiraError
 
     try:
+        if jira_vekil.gerekli():
+            # Jira OAuth kipi: core-api Jira istemcisi kuramaz → eşitleme core-worker'da.
+            ozet = jira_vekil.calistir(
+                "ice_aktar", {"aktor": jira_vekil.aktor_yuk(user)}, bekleme_s=25.0
+            )
+            return {"job_id": None, "durum": "done", **ozet}
         jira = services.jira()
         rapor = flow.sync_from_jira(session, jira, user)
     except JiraError as exc:

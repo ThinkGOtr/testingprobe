@@ -26,3 +26,6 @@ def _asistan_seridi_kapali(monkeypatch: pytest.MonkeyPatch) -> None:
     `tests/unit/features/assistant/test_worker_asistan.py`'dedir).
     """
     monkeypatch.setenv("TP_WORKER_ASISTAN_SERIT", "0")
+    # Anlık şerit (`jira.vekil`) de aynı nedenle kapalı: kayıt, özellik modülünün içe aktarılıp
+    # aktarılmadığına bağlıdır; kapalıyken türler genel şeritte koşar.
+    monkeypatch.setenv("TP_WORKER_ANLIK_SERIT", "0")

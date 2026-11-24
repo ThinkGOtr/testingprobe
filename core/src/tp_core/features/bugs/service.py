@@ -724,6 +724,29 @@ def link_target_problem(jira: Any, proje: str, link_key: str) -> str | None:
     return None
 
 
+def _link_hedefi_sorunu(link_key: str) -> str | None:
+    """Karar anındaki `link_target_problem` (core-api). Jira OAuth kipinde core-api Jira
+    istemcisi kuramaz: aynı salt okuma denetimi `jira.vekil` işiyle core-worker'da yapılır."""
+    from tp_core.integrations import jira_vekil
+
+    if jira_vekil.gerekli():
+        try:
+            sonuc = jira_vekil.calistir("bug_hedef", {"link_key": link_key})
+        except jira_vekil.JiraVekilHatasi as exc:
+            raise JiraUnreachable(
+                f"{link_key} Jira'da doğrulanamadı (Jira'ya ulaşılamadı); "
+                "biraz sonra tekrar deneyin"
+            ) from exc
+        return str(sonuc) if sonuc else None
+    return link_target_problem(services.jira(), services.project(), link_key)
+
+
+def vekil_bug_hedef(yuk: Mapping[str, Any]) -> str | None:
+    """`jira.vekil` işlemi (core-worker): `link_target_problem`."""
+    link_key = str(yuk.get("link_key") or "")
+    return link_target_problem(services.jira(), services.project(), link_key)
+
+
 def _check_human_content(s: Session, draft: BugDraft, yeni: Mapping[str, Any] | None) -> None:
     if yeni is None:
         return
@@ -827,7 +850,7 @@ def decide(
             raise GateClosed("İçerik siz görüntüledikten sonra değişmiş; yenileyin")
         # Hedef onaydan ÖNCE doğrulanır: Bug olmayan / olmayan / kapalı kayda bağlanan taslak
         # yayında kalıcı olarak takılırdı.
-        sorun = link_target_problem(services.jira(), services.project(), link_key)
+        sorun = _link_hedefi_sorunu(link_key)
         if sorun:
             raise InvalidDecision(sorun)
     elif link_key:

@@ -11,6 +11,10 @@ kesildiyse bırakılır (ölçeklenmiş kopyanın canlı işlerine dokunulmaz). 
 modüllerinin `on_worker_start` kancaları koşar; DB hazır değilken başarısız olan kanca sonraki
 turlarda başarılı olana dek yeniden denenir (Docker yeniden başlatma yarışı).
 
+Anlık şerit: `serit="anlik"` türleri (`jira.vekil`: core-api'nin Jira OAuth kipinde beklediği
+kısa Jira çağrıları) ayrı bir iş parçacığında sırayla koşar; genel şeritteki model üretimi gibi
+uzun işler onları bekletmez.
+
 İki yürütme yuvası (şerit): uzun işler (`ci.run`, `repair.fix`, kod üretimi, demo kırılması …;
 `uzun_serit_turleri()`) ayrı bir iş parçacığında, geri kalan her şey ana döngüde koşar. Böylece
 20 dakikalık bir CI koşusu ya da onarımın tam yerel kontrolü PO etiket sorgusunu
@@ -76,6 +80,7 @@ from tp_core.db import get_engine
 from tp_core.proje.baglam import KURULUM, baglamla, kurulu_projeler, proje_icinde
 from tp_core.workflow import jobs
 from tp_core.workflow.jobs import (
+    ANLIK_SERIT,
     ASISTAN_SERIT,
     HEARTBEAT_S,
     REGISTRY,
@@ -227,6 +232,14 @@ def asistan_serit_turleri() -> frozenset[str]:
     if not asistan_serit_acik():
         return frozenset()
     return serit_turleri(ASISTAN_SERIT)
+
+
+def anlik_serit_turleri() -> frozenset[str]:
+    """Anlık şeritte koşacak türler (`serit="anlik"` kayıtları). `TP_WORKER_ANLIK_SERIT=0` iken
+    boş: bu türler genel şeritte koşar (tek yuvalı eski davranış)."""
+    if (os.environ.get("TP_WORKER_ANLIK_SERIT") or "1").strip() == "0":
+        return frozenset()
+    return serit_turleri(ANLIK_SERIT)
 
 
 def asistan_paralel() -> int:
@@ -407,14 +420,15 @@ def run(dur: threading.Event, aralik: float = 1.0, *, uzun: Collection[str] | No
     # kapatırdı. Bekleyen asistan işleri kuyrukta kalır (asistan `worker_yok` görünür).
     tum_asistan = serit_turleri(ASISTAN_SERIT)
     kapali_asistan = tum_asistan - asistan
-    uzun_k = frozenset(uzun or ()) - tum_asistan
+    anlik_k = anlik_serit_turleri() - tum_asistan
+    uzun_k = frozenset(uzun or ()) - tum_asistan - anlik_k
 
     def genel() -> bool:
         if kapali_asistan:
             _kapali_serit_temizle_gerekirse(kapali_asistan)
         return tek_tur()
 
-    if not uzun_k and not asistan:
+    if not uzun_k and not asistan and not anlik_k:
         if not kapali_asistan:
             return _dongu(dur, aralik, genel, "genel")
         _genel_haric = sorted(kapali_asistan)
@@ -422,9 +436,22 @@ def run(dur: threading.Event, aralik: float = 1.0, *, uzun: Collection[str] | No
             return _dongu(dur, aralik, genel, "genel")
         finally:
             _genel_haric = None
-    _genel_haric = sorted(uzun_k | tum_asistan)
+    _genel_haric = sorted(uzun_k | tum_asistan | anlik_k)
     kodlar: list[int] = []
     iplikler: list[threading.Thread] = []
+
+    if anlik_k:
+        log.info("anlık şerit ayrı yuvada: %s", ", ".join(sorted(anlik_k)))
+
+        def anlik_serit() -> None:
+            kod = _dongu(dur, aralik, lambda: uzun_tur(anlik_k), "anlik")
+            if kod:
+                kodlar.append(kod)
+            dur.set()
+
+        iplikler.append(
+            threading.Thread(target=baglamla(anlik_serit), name="serit-anlik", daemon=True)
+        )
 
     if uzun_k:
         log.info("uzun şerit ayrı yuvada: %s", ", ".join(sorted(uzun_k)))

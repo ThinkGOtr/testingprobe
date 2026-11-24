@@ -606,3 +606,62 @@ def test_po_yaniti_gorunen_ad_yoksa_po_etiketi(monkeypatch: pytest.MonkeyPatch) 
     assert display_name({"displayName": "Ayşe PO"}) == "Ayşe PO"
     assert display_name(None) is None
     assert acik_sorular.PO_YAZAR_ETIKETI == "PO"
+
+
+def test_jira_oauth_kipinde_gonderim_ve_yanit_okuma_worker_da(
+    api: TestClient,
+    ortam: uuid.UUID,
+    sim: TestClient,
+    engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Jira OAuth kipinde core-api Jira istemcisi kuramaz ve yazma kimliği taşımaz: gönderim
+    (Jira yorumu) ve yanıt okuma `jira.vekil` işiyle core-worker'da yürür; yanıt aynıdır."""
+    import threading
+
+    from tp_core.features.requirements import jobs as _req_jobs  # noqa: F401
+    from tp_core.integrations import jira_vekil
+    from tp_core.workflow.jobs import process_one
+
+    monkeypatch.setattr(jira_vekil, "gerekli", lambda: True)
+    dur = threading.Event()
+
+    def worker() -> None:
+        while not dur.is_set():
+            if process_one(engine, worker="test-anlik:1", turler=[jira_vekil.VEKIL_JOB]) is None:
+                dur.wait(0.05)
+
+    t = threading.Thread(target=worker, daemon=True)
+    t.start()
+    try:
+        once = len(_yorumlar(sim))
+        r = api.post(f"/requirements/{ortam}/open-questions/send")
+        assert r.status_code == 200, r.text
+        soru = r.json()["sorular"][0]
+        assert (soru["etiket"], soru["durum"]) == ("CQ1", "gonderildi")
+        assert soru["gonderim"]["gonderen"].startswith("analyst")
+        assert len(_yorumlar(sim)) == once + 1
+        # İş kuralı reddi worker'dan aynı kodla döner (409).
+        r = api.post(f"/requirements/{ortam}/open-questions/send")
+        assert r.status_code == 409 and "Gönderilecek açık soru yok" in r.json()["detail"]
+
+        _po_yorumu(sim, "CQ1: 5 hatalı denemede kilitlenir.")
+        r = api.post(f"/requirements/{ortam}/open-questions/refresh")
+        assert r.status_code == 200, r.text
+        assert r.json()["sorular"][0]["durum"] == "yanitlandi"
+    finally:
+        dur.set()
+        t.join(5)
+    with engine.connect() as c:
+        islemler = [
+            (d, y["islem"])
+            for d, y in c.execute(
+                text("SELECT durum, yuk FROM job WHERE tur = :t ORDER BY olusturma"),
+                {"t": jira_vekil.VEKIL_JOB},
+            )
+        ]
+    assert islemler == [
+        ("done", "acik_soru_gonder"),
+        ("done", "acik_soru_gonder"),
+        ("done", "acik_soru_yanitlar"),
+    ]
