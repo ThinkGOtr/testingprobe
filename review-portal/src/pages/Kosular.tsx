@@ -316,9 +316,9 @@ export const MANUEL_PROD_ENGELI = "Geliştirici prod ortamında manuel koşu ba�
 const DEPLOY_ACIKLAMASI =
   "Müşterinin deploy hattının yükleme bitince göndereceği sinyali taklit eder ve testleri koşturur; uygulamayı hiçbir yere yüklemez.";
 export const IOS_DUMAN_ACIKLAMASI =
-  "iOS simülatöründe (GitHub mobil-ios) yalnız üç duman testini koşturur: giriş, sepete ekleme, sipariş. Tam iOS paketinden çok daha kısadır; Sauce Labs kullanmaz. Gece ve PR koşuları tam kapsamda kalır.";
+  "iOS simülatöründe (GitHub mobil-ios) yalnız üç duman testini koşturur: giriş, sepete ekleme, sipariş. Yaklaşık 20 dk sürer (tam iOS paketi ~50 dk); Sauce Labs kullanmaz. Gece ve PR koşuları tam kapsamda kalır.";
 export const SAUCE_ACIKLAMASI =
-  "Kısa duman testlerini (giriş, sepete ekleme, sipariş) Sauce Labs bulutunda koşturur: web (Windows 11 · Chromium ve Edge), Android emülatör ve iOS simülatör. Sonuç ve her platformun Sauce video bağlantısı koşu bitince görünür (mobil derlemeler önbellekteyse yaklaşık 10–15 dk; uygulama değiştiyse derleme nedeniyle daha uzun). Sauce deneme hesabından tur başına yaklaşık 5 dk düşer. Push, gece ve deploy koşuları Sauce'u kullanmaz.";
+  "Kısa duman testlerini (giriş, sepete ekleme, sipariş) Sauce Labs bulutunda koşturur: web (Windows 11 · Chromium ve Edge), Android emülatör ve iOS simülatör. Sonuç ve her platformun Sauce video bağlantısı koşu bitince görünür (mobil derlemeler önbellekteyse yaklaşık 7–10 dk; uygulama değiştiyse derleme nedeniyle daha uzun). Sauce deneme hesabından tur başına yaklaşık 5 dk düşer. Push, gece ve deploy koşuları Sauce'u kullanmaz.";
 
 /**
  * Koşunun Sauce Labs durumu (GitHub kipinde Sauce, koşunun içindeki bir job'dur: `sauce_durum`).
