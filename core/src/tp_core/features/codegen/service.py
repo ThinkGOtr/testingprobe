@@ -619,25 +619,58 @@ REPLAY_TEMEL_ENGELI = (
 )
 
 
-def replay_temel_durum_engeli() -> str | None:
-    """REPLAY kipinde main temel durumda değilse (testid `cart-add`) Türkçe engel; yoksa None.
+REPLAY_DURUM_OKUNAMADI = (
+    "Uyarı: REPLAY temel durum kontrolü yapılamadı (main'deki Sepete ekle düğmesinin kimliği "
+    "okunamadı: {neden}). Üretim başlatıldı; main temel durumda değilse işler 'kayıtlı adım "
+    "tekrarlanamadı' ile düşer — önce Demo durumu ekranından kontrol edin."
+)
+
+
+def replay_temel_durum_kontrolu() -> tuple[str | None, str | None]:
+    """REPLAY kipinde (engel, uyarı). Engel: main temel durumda değil (testid `cart-add`) → üretim
+    başlatılmaz. Uyarı: durum okunamadı/belirsiz → üretim engellenmez (işteki doğrulama yine
+    korur) ama kullanıcıya açıkça söylenir (sessiz atlama yok).
 
     REPLAY golden'larındaki tarayıcı adımları `[data-testid="add-to-cart"]` ile kaydedildi;
     locator demosundan (`make break` + onarım merge) sonra çalışan uygulama `cart-add` sunar ve
     her üretim "kayıtlı adım tekrarlanamadı" ile engellenir (Constitution V doğru davranış).
-    Bu kontrol aynı sonucu üretimi başlatmadan, yapılacak işi söyleyerek verir. Durum
-    belirlenemezse (forge erişilemez, `belirsiz`) engellenmez: işteki doğrulama yine korur.
+
+    GitHub App kipinde core-api forge kuramaz (kurulum token'ı yalnız core-worker'da): durum
+    `demo.durum_oku` işinin önbelleğe alınan sonucundan okunur (`demo.worker_testid_durumu`).
     """
     if beklenen_uretim_modu() != "replay":
-        return None
-    try:
-        from tp_core.integrations.forge_demo import NEW_TESTID, testid_state
+        return None, None
+    from tp_core.integrations.forge_demo import NEW_TESTID, OLD_TESTID
 
-        durum = testid_state(_forge(), "main")
-    except Exception as exc:  # forge okunamazsa ön kontrol atlanır
-        log.warning("REPLAY temel durum kontrolü yapılamadı: %s", exc)
-        return None
-    return REPLAY_TEMEL_ENGELI if durum == NEW_TESTID else None
+    if _worker_algilamali():
+        from tp_core.features.demo import service as demo_service
+
+        try:
+            durum, neden = demo_service.worker_testid_durumu()
+        except Exception as exc:
+            log.warning("REPLAY temel durum (worker) okunamadı", exc_info=True)
+            durum, neden = None, f"{type(exc).__name__}"
+    else:
+        try:
+            from tp_core.integrations.forge_demo import testid_state
+
+            durum, neden = testid_state(_forge(), "main"), None
+        except Exception as exc:
+            log.warning("REPLAY temel durum kontrolü yapılamadı: %s", exc)
+            durum, neden = None, str(exc)[:200] or type(exc).__name__
+        if neden is None and durum not in (NEW_TESTID, OLD_TESTID):
+            neden = f"kimlik belirsiz ({durum})"
+    if durum == NEW_TESTID:
+        return REPLAY_TEMEL_ENGELI, None
+    if neden is not None:
+        log.warning("REPLAY temel durum okunamadı: %s", neden)
+        return None, REPLAY_DURUM_OKUNAMADI.format(neden=neden)
+    return None, None
+
+
+def replay_temel_durum_engeli() -> str | None:
+    """`replay_temel_durum_kontrolu` engeli (uyarı yok sayılır)."""
+    return replay_temel_durum_kontrolu()[0]
 
 
 OTOMATIK_PR_ACIK = "Açık PR var; yeniden üretim mühendis kararıyla"
@@ -1298,7 +1331,9 @@ def start_generation(
     if len(ids) > MAX_CASE:
         raise CodegenRejected(f"Tek istekte en çok {MAX_CASE} case")
     # REPLAY temel durum kontrolü web uygulamasının kaynağına bakar (testid `add-to-cart`).
-    engel_replay = None if platformlar.uygulama_mi(platform) else replay_temel_durum_engeli()
+    engel_replay, uyari_replay = (
+        (None, None) if platformlar.uygulama_mi(platform) else replay_temel_durum_kontrolu()
+    )
     if engel_replay:
         raise CodegenRejected(engel_replay)
     sonuclar: list[dict[str, Any]] = []
@@ -1530,8 +1565,10 @@ def start_generation(
             if baslayan
             else "Yeni üretim gerekmiyor (süren iş ya da açık PR var)."
         )
-        + cakisma_eki,
+        + cakisma_eki
+        + (f" {uyari_replay}" if uyari_replay else ""),
         "cakisma_sayisi": cakisma_sayisi,
+        "replay_uyarisi": uyari_replay,
         "script_ids": [s["script_id"] for s in baslayan],
         "sonuclar": sonuclar,
     }

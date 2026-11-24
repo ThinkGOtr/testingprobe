@@ -244,3 +244,79 @@ def test_replay_on_kontrol_forge_okunamazsa_engellemez(
     monkeypatch.setattr(fd, "testid_state", patla)
     monkeypatch.setattr(svc, "_forge", lambda: object())
     assert service.replay_temel_durum_engeli() is None
+    # Sessiz atlama yok: okunamadı uyarısı döner.
+    engel, uyari = service.replay_temel_durum_kontrolu()
+    assert engel is None and uyari and "okunamadı" in uyari and "forge yok" in uyari
+
+
+def test_replay_app_kipinde_durum_worker_onbelleginden(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GitHub App kipinde core-api forge kuramaz: testid durumu `demo.durum_oku` işinin
+    önbelleğe alınan sonucundan okunur (S1, 03-api-kimlik-taramasi)."""
+    import tp_core.features.codegen.service as svc
+    from tp_core.features.demo import service as demo
+
+    monkeypatch.setattr(svc, "beklenen_uretim_modu", lambda: "replay")
+    monkeypatch.setattr(svc, "_worker_algilamali", lambda: True)
+
+    def forge_kurma() -> Any:
+        raise AssertionError("App kipinde core-api forge kurmamalı")
+
+    monkeypatch.setattr(svc, "_forge", forge_kurma)
+    monkeypatch.setattr(demo, "worker_testid_durumu", lambda: ("cart-add", None))
+    assert service.replay_temel_durum_kontrolu() == (service.REPLAY_TEMEL_ENGELI, None)
+    monkeypatch.setattr(demo, "worker_testid_durumu", lambda: ("add-to-cart", None))
+    assert service.replay_temel_durum_kontrolu() == (None, None)
+    monkeypatch.setattr(demo, "worker_testid_durumu", lambda: (None, "iş süresinde bitmedi"))
+    engel, uyari = service.replay_temel_durum_kontrolu()
+    assert engel is None and uyari and "iş süresinde bitmedi" in uyari
+
+
+def test_worker_testid_durumu_taze_eski_ve_yok(monkeypatch: pytest.MonkeyPatch) -> None:
+    import time as _time
+
+    from tp_core.features.demo import service as demo
+
+    cagri: list[int] = []
+    sonuc: dict[str, Any] = {"forge": {"testid": "add-to-cart"}}
+
+    def worker_bolumu() -> dict[str, Any]:
+        cagri.append(1)
+        return dict(sonuc)
+
+    monkeypatch.setattr(demo, "_worker_forge_bolumu", worker_bolumu)
+    demo.durum_onbellegini_temizle()
+    try:
+        # Önbellek yok → worker'dan okunur ve önbelleğe yazılır.
+        assert demo.worker_testid_durumu() == ("add-to-cart", None) and len(cagri) == 1
+        # Taze önbellek → worker'a gidilmez.
+        assert demo.worker_testid_durumu() == ("add-to-cart", None) and len(cagri) == 1
+        # Eski önbellek → yeniden okunur; worker sonucu yoksa açık neden (sessiz atlama yok).
+        demo._FORGE_ONBELLEK["zaman"] = _time.monotonic() - demo.REPLAY_DURUM_MAX_YAS_S - 1
+        sonuc.clear()
+        sonuc.update({"forge": {"hata": demo.DURUM_SURUYOR, "bekliyor": True}, demo._GECICI: True})
+        testid, neden = demo.worker_testid_durumu()
+        assert testid is None and neden == demo.DURUM_SURUYOR and len(cagri) == 2
+        sonuc.clear()
+        sonuc.update({"forge": {"testid": "belirsiz"}})
+        testid, neden = demo.worker_testid_durumu()
+        assert testid is None and neden and "belirsiz" in neden
+    finally:
+        demo.durum_onbellegini_temizle()
+
+
+def test_replay_durum_okunamazsa_uretim_baslar_ve_uyari_doner(
+    api: TestClient,
+    codegen: Any,
+    hazir: dict[str, Any],
+    muhendis: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import tp_core.features.codegen.service as svc
+
+    uyari = svc.REPLAY_DURUM_OKUNAMADI.format(neden="test")
+    monkeypatch.setattr(svc, "replay_temel_durum_kontrolu", lambda: (None, uyari))
+    r = api.post("/code/generate", json={"case_ids": [str(hazir["cases"][2])]})
+    assert r.status_code == 202, r.text
+    assert r.json()["replay_uyarisi"] == uyari and uyari in r.json()["mesaj"]

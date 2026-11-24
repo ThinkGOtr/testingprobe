@@ -1005,6 +1005,40 @@ def _arka_planda_yenile(forge: Any) -> None:
             _FORGE_ONBELLEK["yenileniyor"] = False
 
 
+# Kod üretimindeki REPLAY ön kontrolü (codegen `replay_temel_durum_kontrolu`) GitHub App kipinde
+# testid durumunu bu önbellekten okur; bundan eski bilgi kullanılmaz, taze okuma denenir.
+REPLAY_DURUM_MAX_YAS_S = 120.0
+
+
+def worker_testid_durumu() -> tuple[str | None, str | None]:
+    """(main'deki web testid'i, okunamadı nedeni) — core-api'de forge kurulmadan.
+
+    GitHub App kipinde forge yalnız core-worker'da kurulabilir: `demo.durum_oku` işinin bu süreçte
+    önbelleğe alınan sonucu (`/demo/status` ile aynı) kullanılır. Önbellek `REPLAY_DURUM_MAX_YAS_S`
+    sn'den eskiyse ya da yoksa iş kuyruğa alınıp en çok `DURUM_BEKLEME_S` sn beklenir. Sonuç
+    alınamazsa ya da testid belirsizse ikinci eleman Türkçe neden taşır (sessiz atlama yok).
+    """
+    simdi = time.monotonic()
+    with _FORGE_KILIT:
+        zaman, deger = _FORGE_ONBELLEK["zaman"], _FORGE_ONBELLEK["deger"]
+    taze = deger is not None and zaman is not None and simdi - zaman < REPLAY_DURUM_MAX_YAS_S
+    if taze:
+        bolum: Mapping[str, Any] = deger
+    else:
+        bolum = _worker_forge_bolumu()
+        if not bolum.get(_GECICI):
+            yeni = dict(bolum)
+            with _FORGE_KILIT:
+                _FORGE_ONBELLEK.update(zaman=time.monotonic(), deger=yeni)
+    forge_ = bolum.get("forge") if isinstance(bolum.get("forge"), Mapping) else {}
+    testid = forge_.get("testid")
+    if bolum.get(_GECICI) or forge_.get("hata"):
+        return None, str(forge_.get("hata") or "kod deposu okunamadı")[:300]
+    if testid not in (forge_demo.OLD_TESTID, forge_demo.NEW_TESTID):
+        return None, f"main'deki Sepete ekle düğmesinin kimliği belirsiz ({testid or 'yok'})"
+    return str(testid), None
+
+
 def durum(forge: Any | None = None, session: Session | None = None) -> dict[str, Any]:
     out: dict[str, Any] = {"forge": {}, "uygulama": {}, "web_yenileme_istegi": None}
     # Önbellek yalnız varsayılan forge'da (API ucu); verilen forge (test, iş) her zaman taze okur.

@@ -158,7 +158,9 @@ def test_codegen_reddi_onayi_geri_almaz(
     api: TestClient, hazir, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     rid, _ = hazir
-    monkeypatch.setattr(codegen_service, "replay_temel_durum_engeli", lambda: "REPLAY engeli")
+    monkeypatch.setattr(
+        codegen_service, "replay_temel_durum_kontrolu", lambda: ("REPLAY engeli", None)
+    )
     c = latest_cases(api, rid)[0]
     r = _onayla(api, c)
     assert r.status_code == 200, r.text
