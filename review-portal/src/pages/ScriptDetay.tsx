@@ -504,6 +504,11 @@ export function MusteriCiKarti({
           </li>
         )}
       </ul>
+      {mc?.okuma_hatasi && (
+        <Uyari ton={mc.okunuyor ? "bilgi" : "uyari"} baslik={mc.okunuyor ? "Müşteri CI durumu okunuyor" : "Müşteri CI durumu okunamadı"}>
+          {mc.okuma_hatasi}
+        </Uyari>
+      )}
       {mc?.artefakt === "yok" && (
         <Uyari ton="uyari" baslik="tp-results artefaktı yok">
           İş akışı bitti ama sonuç artefaktı yüklenmedi; test sonuçları okunamadı. İş akışının tp-results adımını denetleyin.

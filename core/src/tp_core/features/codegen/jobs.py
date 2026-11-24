@@ -7,6 +7,8 @@
   `MAX_CASE`'lik parçalarla `start_generation` (`features/otomasyon/otokod.py:toplu_uret`).
 - `codegen.dil_algila`: GitHub App kipinde core-api'nin `/code/languages` dil algılaması (App
   kurulum token'ı yalnız core-worker'da alınır; API işi kuyruğa alıp sonucu bekler).
+- `codegen.musteri_ci_durum` (014, anlık şerit): GitHub App kipinde script detayındaki müşteri CI
+  check/tp-results özeti (core-api forge kuramaz; API işi kuyruğa alıp kısa süre bekler).
 - `codegen.kurulum_pr` (014): müşteri CI kurulum PR'ı (`kurulum_pr.calistir`; forge yazma kimliği
   yalnız core-worker'da olduğundan API işi kuyruğa alıp sonucu bekler).
 - `codegen.pr_sync`: GitHub kipinde açık PR'ların forge durumunu (GitHub arayüzünde merge/kapatma)
@@ -23,10 +25,10 @@ from sqlalchemy.orm import Session
 
 from tp_core.db import get_engine
 from tp_core.features.ci.projeler import her_projede
-from tp_core.features.codegen import kurulum_pr, service
+from tp_core.features.codegen import kurulum_pr, service, views
 from tp_core.features.codegen.toolchain import varsayilan_check_timeout_s
 from tp_core.features.otomasyon import otokod
-from tp_core.workflow.jobs import JobContext, job_handler
+from tp_core.workflow.jobs import ANLIK_SERIT, JobContext, job_handler
 
 # İş zaman aşımı, içindeki /check çağrılarının istemci zaman aşımından türetilir (CI şeridinin
 # toolchain zinciri, `check_timeout_s()`); aksi halde en kötü durumda worker işi öldürür.
@@ -64,6 +66,11 @@ def update_branch(ctx: JobContext) -> dict[str, Any]:
 @job_handler(service.DIL_ALGILA_JOB, max_deneme=1, zaman_asimi_s=120)
 def dil_algila(ctx: JobContext) -> dict[str, Any]:
     return service.run_dil_algila(ctx)
+
+
+@job_handler(views.MCI_JOB, max_deneme=1, zaman_asimi_s=120, serit=ANLIK_SERIT)
+def musteri_ci_durum(ctx: JobContext) -> dict[str, Any]:
+    return views.run_musteri_ci_durum(ctx.yuk)
 
 
 @job_handler(

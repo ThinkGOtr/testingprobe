@@ -9,6 +9,7 @@ import { api } from "../api/client";
 import { ayar } from "../api/mock/handlers";
 import { OturumProvider } from "../auth";
 import { BildirimProvider } from "../components/Bildirim";
+import { MusteriCiKarti } from "./ScriptDetay";
 import { kodDilleriUyarla, kurulumUyarla, musteriCiUyarla, scriptUyarla } from "../api/uyumDemoB";
 import { mergeOnayNotu, mergeUyarilari, mergeEngelleri } from "../lib/kapi";
 import { oturumAc, sekmeAc } from "../test/yardimci";
@@ -70,8 +71,16 @@ describe("uyum katmanı (014)", () => {
       sonuc: { toplam: 2, gecen: 2, kalan: 0, atlanan: 0 },
       artefakt: "alindi",
       neden: null,
+      okuma_hatasi: null,
+      okunuyor: false,
     });
     expect(musteriCiUyarla({ durum: "gecti" })).toBeNull();
+    // core okuyamadıysa (GitHub App kipi: worker işi başarısız) neden taşınır; kart "durum okunamadı" der.
+    expect(musteriCiUyarla({ check_adi: "x", durum: "bilinmiyor", okuma_hatasi: "Müşteri CI durumu okunamadı: x" })).toMatchObject({
+      durum: "bilinmiyor",
+      okuma_hatasi: "Müşteri CI durumu okunamadı: x",
+      okunuyor: false,
+    });
     expect(musteriCiUyarla({ check_adi: "x", durum: "tuhaf" })!.durum).toBe("bilinmiyor");
     expect(musteriCiUyarla({ check_adi: "x", durum: "derleme" })!.durum).toBe("derleme_hatasi");
     expect(kurulumUyarla({ durum: "merged", number: 40 })).toMatchObject({ durum: "birlesti", number: 40 });
@@ -171,6 +180,14 @@ describe("Kod üretimi: dil seçici (014)", () => {
 });
 
 describe("Script detayı: müşteri CI (014)", () => {
+  it("core durumu okuyamadıysa kart 'durum okunamadı' uyarısını gösterir (sessiz 'check sonucu yok' değil)", () => {
+    const mc = musteriCiUyarla({ check_adi: "mobil-android-kotlin", durum: "bilinmiyor", okuma_hatasi: "Müşteri CI durumu okunamadı: RuntimeError" });
+    render(<MusteriCiKarti mc={mc} yk={null} dil={"kotlin" as never} uretiliyor={false} />);
+    expect(screen.getByText("Müşteri CI durumu okunamadı")).toBeInTheDocument();
+    expect(screen.getByText(/RuntimeError/)).toBeInTheDocument();
+    expect(screen.getByTestId("musteri-ci-check")).toHaveAttribute("data-durum", "bilinmiyor");
+  });
+
   it("Kotlin: rozetler, statik koruma + GitHub Actions check kartı, kırarak doğrulama yerine not, merge kapısı uyarısız", async () => {
     await oturumAc("muhendis");
     ayar.senaryolar.add("diller-acik");

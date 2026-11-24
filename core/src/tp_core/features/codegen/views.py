@@ -394,35 +394,134 @@ _MCI_KILIT = threading.Lock()
 MCI_ONBELLEK_S = 60.0
 _MCI_ONBELLEK_MAX = 256
 
+# GitHub App kipinde (Config R1) kurulum token'ı yalnız core-worker'da alınır: core-api forge/CI
+# istemcisi kuramaz. Özet `codegen.musteri_ci_durum` işiyle (anlık şerit) worker'da hesaplanır;
+# API işi (dilim başına tekil) kuyruğa alır ve script detayında en çok `MCI_BEKLEME_S` bekler.
+MCI_JOB = "codegen.musteri_ci_durum"
+MCI_DILIM_S = 60
+MCI_BEKLEME_S = 8.0  # portal nginx /api/ zaman aşımı 30 sn
+MCI_YOKLAMA_S = 0.2
+MCI_OKUNUYOR = "Müşteri CI durumu arka plan servisinde okunuyor; birkaç saniye sonra yenileyin."
+_SHA = re.compile(r"^[0-9a-f]{7,64}$")
 
-def _musteri_ci_ozeti(sc: Script) -> dict[str, Any] | None:
+
+def _mci_okunamadi(
+    p: str, d: str, sha: str, neden: str, *, okunuyor: bool = False
+) -> dict[str, Any]:
+    """Okuma hatası yutulmaz: portal kartı `okuma_hatasi` ile "durum okunamadı" gösterir."""
+    from tp_core.features import musteri_ci as mci
+
+    return {
+        "check_adi": mci.is_adi(p, d),
+        "durum": "bilinmiyor",
+        "hat_durumu": None,
+        "head_sha": sha,
+        "run_url": None,
+        "tamamlanma": None,
+        "sonuc": None,
+        "artefakt": None,
+        "neden": None,
+        "okuma_hatasi": neden[:300],
+        "okunuyor": okunuyor,
+    }
+
+
+def _musteri_ci_dogrudan(depo: str, p: str, d: str, sha: str) -> dict[str, Any]:
+    """Bu süreçte forge + GitHub Actions istemcisiyle özet (token kipi / core-worker).
+    Hata yükselir."""
+    from tp_core.features import musteri_ci as mci
+    from tp_core.features.ci import services as ci_services
+    from tp_core.features.codegen.service import _forge_depo
+
+    g = mci.hat_durumu(_forge_depo(depo or None, p), ci_services.github(depo, p), sha, p, d)
+    return mci.portal_musteri_ci(g, sha)
+
+
+def _musteri_ci_worker(depo: str, p: str, d: str, sha: str, bekleme_s: float) -> dict[str, Any]:
+    """App kipi (core-api): `codegen.musteri_ci_durum` işinin sonucu; yoksa okunuyor/okunamadı."""
+    from tp_core.db import get_engine
+    from tp_core.features.publish.service import job_status
+    from tp_core.models import session_scope
+    from tp_core.workflow.jobs import enqueue
+
+    dilim = int(time.time() // MCI_DILIM_S)
+    try:
+        with session_scope() as s:
+            job_id = enqueue(
+                s.connection(),
+                MCI_JOB,
+                {"depo": depo, "platform": p, "dil": d, "head_sha": sha},
+                idempotency_key=f"{MCI_JOB}:{depo}:{p}:{d}:{sha}:{dilim}",
+                max_deneme=1,
+                zaman_asimi_s=120,
+            )
+        engine = get_engine()
+        bitis = time.monotonic() + bekleme_s
+        while True:
+            durum, sonuc, hata = job_status(engine, job_id)
+            if durum in ("done", "failed", "cancelled") or time.monotonic() >= bitis:
+                break
+            time.sleep(MCI_YOKLAMA_S)
+    except Exception as exc:
+        log.warning("müşteri CI durum işi kuyruğa alınamadı", exc_info=True)
+        return _mci_okunamadi(p, d, sha, f"Müşteri CI durumu okunamadı (iş kuyruğa alınamadı: "
+                              f"{type(exc).__name__})")  # fmt: skip
+    if durum == "done" and isinstance(sonuc, Mapping):
+        if isinstance(sonuc.get("ozet"), Mapping):
+            return dict(sonuc["ozet"])
+        neden = sonuc.get("hata") or "sonuç yok"
+        return _mci_okunamadi(p, d, sha, f"Müşteri CI durumu okunamadı: {neden}")
+    if durum in ("failed", "cancelled"):
+        log.warning("müşteri CI durum işi %s: %s", durum, hata)
+        return _mci_okunamadi(p, d, sha, f"Müşteri CI durumu okunamadı (arka plan işi: {durum})")
+    return _mci_okunamadi(p, d, sha, MCI_OKUNUYOR, okunuyor=True)
+
+
+def run_musteri_ci_durum(yuk: Mapping[str, Any] | None) -> dict[str, Any]:
+    """`codegen.musteri_ci_durum` (core-worker): `{"ozet": …}` ya da `{"hata": …}` (iş düşmez)."""
+    yuk = yuk if isinstance(yuk, Mapping) else {}
+    p, d = str(yuk.get("platform") or ""), str(yuk.get("dil") or "")
+    sha, depo = str(yuk.get("head_sha") or ""), str(yuk.get("depo") or "")
+    if not platformlar.musteri_ci_mi(p, d) or not _SHA.match(sha) or len(depo) > 200:
+        return {"hata": "geçersiz istek"}
+    try:
+        return {"ozet": _musteri_ci_dogrudan(depo, p, d, sha)}
+    except Exception as exc:
+        log.warning("müşteri CI durumu okunamadı (worker)", exc_info=True)
+        return {"hata": f"{type(exc).__name__}: {str(exc)[:200]}"}
+
+
+def _musteri_ci_ozeti(sc: Script, bekleme_s: float = 0.0) -> dict[str, Any] | None:
     """Ş5 `portal_musteri_ci(hat_durumu(...))`: yalnız müşteri CI çiftinde, PR'ı ve head'i olan
-    script'te ve GitHub kipinde (yerel forge'da müşteri CI yok). Okuma hatası → None."""
+    script'te ve GitHub kipinde (yerel forge'da müşteri CI yok). Okuma hatası yutulmaz:
+    `okuma_hatasi` dolu özet döner (portal "durum okunamadı"). GitHub App kipinde core-api forge
+    kuramaz → `codegen.musteri_ci_durum` işi (`bekleme_s`: liste 0, detay `MCI_BEKLEME_S`)."""
     p = sc.platform or platformlar.WEB
     d = platformlar.dil(p, sc.dil)
     if not platformlar.musteri_ci_mi(p, d) or not sc.head_sha or not sc.pr_no:
         return None
     if get_settings().forge != "github":
         return None
-    anahtar = (sc.depo or "", p, d, sc.head_sha)
+    depo, sha = sc.depo or "", sc.head_sha
+    anahtar = (depo, p, d, sha)
     simdi = time.monotonic()
     with _MCI_KILIT:
         kayit = _MCI_ONBELLEK.get(anahtar)
     if kayit is not None and simdi - kayit[0] < MCI_ONBELLEK_S:
         return kayit[1]
-    ozet: dict[str, Any] | None
-    try:
-        from tp_core.features import musteri_ci as mci
-        from tp_core.features.ci import services as ci_services
-        from tp_core.features.codegen.service import _forge_depo
+    from tp_core.features.codegen.service import _worker_algilamali
 
-        g = mci.hat_durumu(
-            _forge_depo(sc.depo, p), ci_services.github(sc.depo or "", p), sc.head_sha, p, d
-        )
-        ozet = mci.portal_musteri_ci(g, sc.head_sha)
-    except Exception:
-        log.warning("müşteri CI durumu okunamadı: script %s", sc.id, exc_info=True)
-        ozet = None
+    ozet: dict[str, Any] | None
+    if _worker_algilamali():
+        ozet = _musteri_ci_worker(depo, p, d, sha, bekleme_s)
+    else:
+        try:
+            ozet = _musteri_ci_dogrudan(depo, p, d, sha)
+        except Exception as exc:
+            log.warning("müşteri CI durumu okunamadı: script %s", sc.id, exc_info=True)
+            ozet = _mci_okunamadi(p, d, sha, f"Müşteri CI durumu okunamadı: {type(exc).__name__}")
+    if ozet is not None and ozet.get("okunuyor"):
+        return ozet  # geçici: önbelleğe yazılmaz, sonraki okuma işin sonucunu alır
     with _MCI_KILIT:
         _MCI_ONBELLEK[anahtar] = (simdi, ozet)
         while len(_MCI_ONBELLEK) > _MCI_ONBELLEK_MAX:
@@ -435,6 +534,8 @@ def serialize(
     sc: Script,
     cg: ScriptCodegen,
     guncel_ozetler: Mapping[str, tuple[str | None, str]] | None = None,
+    *,
+    mci_bekleme_s: float = 0.0,
 ) -> dict[str, Any]:
     """`guncel_ozetler`: liste için tüm script'lerin test verisi özetleri tek sorguda (N+1 yok)."""
     veri_degisen = testveri.degisen_anahtarlar(session, cg.veri_izi, guncel_ozetler)
@@ -467,7 +568,7 @@ def serialize(
         "hat": "dogrulanmamis"
         if dogrulanmamis(sc)
         else platformlar.etkin_hat(sc.platform, platformlar.dil(sc.platform, sc.dil)),
-        "musteri_ci": _musteri_ci_ozeti(sc),
+        "musteri_ci": _musteri_ci_ozeti(sc, mci_bekleme_s),
         "branch": sc.branch or "",
         "durum": sc.durum,
         # Faz 4: defect adayı script'in triage sonucu (portal "Triage sonucuna git").
@@ -672,7 +773,7 @@ def _dogrulama_notu(m: StepMapping, ajan_bayileri: dict[str, str]) -> str | None
 
 
 def detail(session: Session, sc: Script, cg: ScriptCodegen) -> dict[str, Any]:
-    out = serialize(session, sc, cg)
+    out = serialize(session, sc, cg, mci_bekleme_s=MCI_BEKLEME_S)
     gizli = {AgentConfig.from_env().agent_password}
     ajan_bayileri = dict((cg.eslesme or {}).get(AJAN_BAYILERI) or {})
     adimlar = session.scalars(

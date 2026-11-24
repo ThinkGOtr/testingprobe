@@ -531,6 +531,8 @@ export function musteriCiUyarla(x: unknown): MusteriCi | null {
     sonuc: sonuc ? { toplam: sayi(sonuc.toplam), gecen: sayi(sonuc.gecen), kalan: sayi(sonuc.kalan), atlanan: sayi(sonuc.atlanan) } : null,
     artefakt: artefakt === "alindi" || artefakt === "yok" || artefakt === "bekliyor" ? artefakt : null,
     neden: metinYaDaNull(x.neden),
+    okuma_hatasi: metinYaDaNull(x.okuma_hatasi),
+    okunuyor: x.okunuyor === true,
   };
 }
 

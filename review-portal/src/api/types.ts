@@ -1517,7 +1517,10 @@ export interface MusteriCi {
   /** Artefakt alımı: `alindi`, `yok` (iş bitti ama artefakt yüklenmedi), `bekliyor`. */
   artefakt: "alindi" | "yok" | "bekliyor" | null;
   /** Derleme hatası / kalan test özeti (Türkçe, log kesiti kısaltılmış); yoksa null. */
-  neden: string | null;
+  neden: string | null;  /** core check'i/tp-results'ı okuyamadıysa Türkçe neden ("durum okunamadı"); okunduysa null. */
+  okuma_hatasi?: string | null;
+  /** Okuma arka plan servisinde sürüyor (geçici; yenilenince sonuç gelir). */
+  okunuyor?: boolean;
 }
 
 /** `GET /code/languages?platform=`: platformun dil seçenekleri ve repodan algılanan dil. */
