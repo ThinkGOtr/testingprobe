@@ -2014,6 +2014,11 @@ export interface DemoDurumu {
   locator_durumu?: "baseline" | "kirik" | "onarildi" | null;
   uygulama: { sha?: string | null; kaynak?: string | null; main_ile_eslesiyor?: boolean; neden?: string | null; yonerge?: string | null };
   web_yenileme_istegi: unknown;
+  /**
+   * Host izleyicisi (`demo-web-sync --watch`) kalp atışı (core `web.izleyici_durumu`). `calisiyor:
+   * false` → kırma/sıfırlama sonrası uygulama kendiliğinden yeniden kurulmaz. Core vermezse yok.
+   */
+  web_izleyici?: { calisiyor: boolean; yas_s?: number | null } | null;
   /** Locator demosu bu kipte destekleniyor mu. GitHub kipinde de evet (`kip: "github"`: kırılma insan kimliğiyle PR). Core vermezse yok. */
   locator_demo?: { destekleniyor: boolean; neden: string | null; kip?: string | null } | null;
   /** Kırma ön koşulu: main için yeşil temel koşu (yoksa core 409 + yönerge). Bilinmiyorsa `hazir: null`. */

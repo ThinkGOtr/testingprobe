@@ -35,8 +35,17 @@ interface KirmaDurumu {
   geriYuklendi?: boolean;
 }
 
-/** Web yenilemesi bu kadar sürerse sunucuya host komutu hatırlatılır (CI uygulama yenilenmeden başlamaz). */
+/**
+ * Host izleyicisinin (demo-web-sync) kalp atışı YOKSA web yenilemesi bu kadar sürünce host komutu
+ * hatırlatılır (CI uygulama yenilenmeden başlamaz).
+ */
 export const WEB_BEKLEME_UYARI_MS = 20_000;
+/**
+ * İzleyici canlıyken (ya da core bildirmiyorsa) normal yeniden kurulum ~3 dk sürer: bu süre içinde
+ * nötr "yeniden kuruluyor" gösterilir; yalnız bu süre aşılınca (ya da core zaman aşımı olayı
+ * gelince) uyarı.
+ */
+export const WEB_BEKLEME_ZAMAN_ASIMI_MS = 10 * 60_000;
 
 /** main'e ait CI koşusu tetikleri (PR, yerel kontrol ve kırarak doğrulama hariç). */
 const MAIN_TETIKLERI = ["push", "deploy", "nightly", "manual"];
@@ -262,6 +271,7 @@ function LocatorKirmaKarti({ durum, canli = false }: { durum: DemoDurumu | null;
   const [gunluk, ekle, temizle] = useGunluk();
   const runIdRef = useRef<string | null>(null);
   const [webBekliyor, setWebBekliyor] = useState<{ basladi: number; yonerge: string | null } | null>(null);
+  const [webZamanAsimi, setWebZamanAsimi] = useState(false);
   const [simdi, setSimdi] = useState(() => Date.now());
   const [kosular, setKosular] = useState<Kosu[] | null>(null);
 
@@ -345,6 +355,7 @@ function LocatorKirmaKarti({ durum, canli = false }: { durum: DemoDurumu | null;
       if (typeof o.data.run_id === "string") runIdRef.current = o.data.run_id;
       if (o.type === "demo.web_waiting") setWebBekliyor({ basladi: Date.now(), yonerge: typeof o.data.yonerge === "string" ? o.data.yonerge : null });
       if (o.type === "demo.web_ready" || o.type === "demo.web_timeout" || o.type === "demo.ci_enqueued") setWebBekliyor(null);
+      if (o.type === "demo.web_timeout") setWebZamanAsimi(true);
     },
     ["demo.updated"],
   );
@@ -418,9 +429,17 @@ function LocatorKirmaKarti({ durum, canli = false }: { durum: DemoDurumu | null;
   const mk = ld.mainKosusu;
   // Kırılmanın kendi koşusu main'in son koşusuysa (henüz onarım yok) ayrıca "son adım" olarak gösterilmez.
   const onarimAdimlari = ld.hal === "onarildi" && mk && (!k || mk.id !== k.id);
-  // CI koşusu henüz yokken web yenilemesi beklenir: ~20 sn sonra host komutu hatırlatılır.
+  // CI koşusu henüz yokken web yenilemesi beklenir. Normal yeniden kurulum (~3 dk; izleyici kalp
+  // atışı taze) nötr gösterilir; uyarı yalnız gerçek sorunda: core zaman aşımı olayı, toplam bekleme
+  // > 10 dk ya da izleyici kalp atışı yok (~20 sn sonra host komutu hatırlatılır).
   const beklemeBasi = webBekliyor?.basladi ?? (d && !d.bitti && !k ? d.basladi : null);
-  const uzunBekleme = beklemeBasi !== null && !k && ld.hal !== "onarildi" && simdi - beklemeBasi >= WEB_BEKLEME_UYARI_MS;
+  const bekleniyor = beklemeBasi !== null && !k && ld.hal !== "onarildi";
+  const izleyiciYok = durum?.web_izleyici?.calisiyor === false;
+  const toplamBeklemeMs = beklemeBasi === null ? 0 : simdi - Math.min(beklemeBasi, d?.basladi ?? beklemeBasi);
+  const uzunBekleme =
+    bekleniyor &&
+    (webZamanAsimi || toplamBeklemeMs >= WEB_BEKLEME_ZAMAN_ASIMI_MS || (izleyiciYok && simdi - (beklemeBasi ?? simdi) >= WEB_BEKLEME_UYARI_MS));
+  const kuruluyor = bekleniyor && !uzunBekleme;
   const yonerge = webBekliyor?.yonerge ?? durum?.uygulama?.yonerge ?? null;
 
   // Bekleme başlayınca sayaç da çalışsın (olay gelmese de).
@@ -575,6 +594,11 @@ function LocatorKirmaKarti({ durum, canli = false }: { durum: DemoDurumu | null;
             kullanıyor. Tekrar prova için demoyu sıfırlayın.
           </span>
         </Uyari>
+      )}
+      {kuruluyor && (
+        <p className="kucuk" role="status" data-testid="web-kuruluyor">
+          Demo uygulaması yeniden kuruluyor (yaklaşık 3 dk). CI, çalışan uygulama main'i yansıtınca kendiliğinden başlar.
+        </p>
       )}
       {uzunBekleme && (
         <Uyari ton="uyari" baslik="Demo uygulaması hâlâ yeniden kurulmadı">

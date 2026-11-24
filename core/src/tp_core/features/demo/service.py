@@ -1078,6 +1078,10 @@ def durum(forge: Any | None = None, session: Session | None = None) -> dict[str,
         bolum.pop(_GECICI, None)
         out.update(bolum)
     out["web_yenileme_istegi"] = web.bekleyen_istek()
+    # Host izleyicisinin kalp atışı (dosya okuması; önbelleksiz): portal normal yeniden kurulumu
+    # (izleyici canlı) nötr, kalp atışı yokken uyarı olarak gösterir.
+    iz = web.izleyici_durumu()
+    out["web_izleyici"] = {"calisiyor": bool(iz.get("calisiyor")), "yas_s": iz.get("yas_s")}
     return out
 
 

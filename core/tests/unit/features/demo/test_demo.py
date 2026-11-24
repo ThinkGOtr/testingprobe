@@ -393,6 +393,8 @@ def test_api_rol_ve_durum(
     assert d["demo_modu"] is True
     assert d["forge"]["testid"] == "add-to-cart" and d["forge"]["main_baseline_mi"] is True
     assert d["uygulama"]["main_ile_eslesiyor"] is True
+    # Host izleyicisi kalp atışı (portal normal yeniden kurulumu nötr gösterir).
+    assert d["web_izleyici"] == {"calisiyor": False, "yas_s": None}
 
     assert d["onarim_on_kosulu"]["hazir"] is True
     assert d["onarim_on_kosulu"]["son_yesil_kosu"]["tetik"] == "push"
@@ -402,6 +404,25 @@ def test_api_rol_ve_durum(
     assert r.status_code == 202, r.text
     # Süren demo işi varken ikinci istek reddedilir.
     assert api.post("/demo/reset").status_code == 409
+
+
+def test_durum_izleyici_kalp_atisi(
+    engine: Engine,
+    ortam: Ortam,
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import time
+
+    from tp_core.features.demo import service, web
+
+    dosya = tmp_path / "demo-web-sync.alive"
+    monkeypatch.setenv(web.IZLEYICI_FILE_ENV, str(dosya))
+    dosya.write_text(f"{int(time.time()) - 5}\n")
+    iz = service.durum()["web_izleyici"]
+    assert iz["calisiyor"] is True and 0 <= iz["yas_s"] <= 60
+    dosya.write_text(f"{int(time.time()) - 600}\n")
+    assert service.durum()["web_izleyici"]["calisiyor"] is False
 
 
 def test_kirilma_yesil_temel_kosu_yoksa_reddedilir(
