@@ -123,6 +123,9 @@ _JOB_SUZGEC = re.compile(r"\b(?:tur|yuk|idempotency_key)\b")
 ENV_IZINLI = ("tp_core/home_config/", "tp_core/proje/ayar.py")
 THREAD_BAGLAM = ("baglamla", "proje_icinde", "copy_context")
 _ENV_CAGRI = re.compile(r"(environ|getenv|(^|[._])_*(env|ortam)[a-z_]*(\.get)?$)", re.IGNORECASE)
+# `tp_core.proje.ayar` (ENV_IZINLI) proje kapsamlı çözücüdür:
+# `ayar.ortamda_kaldirildi_mi(ad, pid=p)` gibi erişimcileri ham env okuması değildir (ad `ortam…` diye başlasa da).
+_AYAR_MODULU = re.compile(r"^_*ayar\.")
 
 # Şerit sahipliği (§7): yol öneki → şerit. En uzun önek kazanır.
 SAHIPLIK: dict[str, int] = {
@@ -274,6 +277,7 @@ def ihlaller() -> list[str]:
                     and isinstance(d.args[0], ast.Constant)
                     and d.args[0].value in PROJE_ANAHTARLARI
                     and _ENV_CAGRI.search(ad)
+                    and not _AYAR_MODULU.match(ad)
                 ):
                     sonuc.append(f"{yol}:env:{d.args[0].value}:{ad}")
             elif isinstance(d, ast.Name | ast.Attribute):
@@ -381,6 +385,7 @@ def test_denetleyici_thread_env_tum_projeler(
         '    os.environ["TP_FORGE"]\n'
         '    _ortam_float("TP_CI_GITHUB_TIMEOUT_S", 1.0)\n'
         '    "GITHUB_REPO" in os.environ\n'
+        '    _ayar.ortamda_kaldirildi_mi("TP_FORGE", pid="p")\n'
         "def kacis(s):\n"
         "    s.execute(1, execution_options={}).execution_options(tum_projeler=True)\n"
     )

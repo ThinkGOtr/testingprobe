@@ -56,6 +56,7 @@ ISTISNA: frozenset[tuple[str, str]] = frozenset(
         ("GET", "/admin/demo-sifirla/onizleme"),
         ("GET", "/admin/demo-sifirla/{islem_id}"),
         ("POST", "/admin/demo-sifirla"),
+        ("POST", "/admin/demo-sifirla/{islem_id}/kontrol"),
         ("POST", "/mcp"),
         ("GET", "/mcp"),
         ("GET", "/artifacts/k/{token}/runs/{run_id}/{yol:path}"),
