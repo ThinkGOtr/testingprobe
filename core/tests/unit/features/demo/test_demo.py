@@ -830,6 +830,10 @@ def test_durum_github_app_kipinde_forge_bolumu_worker_isiyle_okunur(
     eşleşiyor" çipi çizilmiyordu. Artık forge bölümü `demo.durum_oku` işiyle worker'da okunur."""
     monkeypatch.setattr(service, "_worker_durumlu", lambda: True)
     monkeypatch.setattr(service, "DURUM_BEKLEME_S", 0.2)
+    # Kararsızlık kökü: iş anahtarı `time.time() // DURUM_DILIM_S` (20 sn) dilimidir. İki
+    # `durum()` çağrısı dilim sınırını aşarsa ikincisi yeni iş açar, 0.2 sn'de bitmez ve
+    # "bekliyor" döner. Test boyunca tek dilim: idempotent davranış saate bağlı olmadan sınanır.
+    monkeypatch.setattr(service, "DURUM_DILIM_S", 10**12)
     service.durum_onbellegini_temizle()
     try:
         # Worker henüz koşmadı: forge "bekliyor" (geçici, önbelleğe yazılmaz), uygulama yerelden.
