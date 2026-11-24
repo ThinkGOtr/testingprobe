@@ -77,6 +77,29 @@ def gerekli() -> bool:
         return False
 
 
+def yazma_gerekli() -> bool:
+    """Bu süreç Jira'ya YAZAMIYOR mu: `gerekli()` (OAuth kipi) ya da token kipinde yazma kimliği
+    (`JIRA_WRITE_EMAIL/TOKEN`) bu süreçte yok (compose: yalnız core-worker'da; simülatörde sim
+    kullanıcısı vardır). Yazan eşzamanlı uçlar (açık soruları PO'ya gönder) bu durumda devreder."""
+    if gerekli():
+        return True
+    from tp_core.home_config import baglanti
+
+    if baglanti.yetkili_surec():
+        return False
+    from tp_core.integrations.jira import SIM_WRITE, _creds, get_jira_settings
+
+    try:
+        s = get_jira_settings()
+        return (
+            _creds(s.jira_write_email, s.jira_write_token, SIM_WRITE, s.is_simulator, "write")
+            is None
+        )
+    except Exception:  # ayar okunamadı: doğrudan yol kendi hatasını raporlar
+        log.warning("jira vekili: yazma kimliği denetlenemedi", exc_info=True)
+        return False
+
+
 def aktor_yuk(user: Any) -> dict[str, Any]:
     """`Principal` → iş yükü (yetki API'de denetlendi; worker yalnız denetim/izlerde kullanır)."""
     return {

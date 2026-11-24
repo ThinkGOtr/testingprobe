@@ -665,3 +665,50 @@ def test_jira_oauth_kipinde_gonderim_ve_yanit_okuma_worker_da(
         ("done", "acik_soru_gonder"),
         ("done", "acik_soru_yanitlar"),
     ]
+
+
+def test_jira_token_kipinde_yazma_kimligi_yoksa_gonderim_worker_da(
+    api: TestClient,
+    ortam: uuid.UUID,
+    sim: TestClient,
+    engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Token kipinde core-api JIRA_WRITE_* taşımaz (compose: yalnız core-worker): "Açık soruları
+    PO'ya gönder" Jira yorumunu core-api'den yazmaya çalışmaz, `jira.vekil` ile worker'a
+    devreder."""
+    import threading
+
+    from tp_core.features.requirements import jobs as _req_jobs  # noqa: F401
+    from tp_core.integrations import jira_vekil
+    from tp_core.workflow.jobs import process_one
+
+    monkeypatch.setattr(jira_vekil, "gerekli", lambda: False)  # token kipi
+    monkeypatch.setattr(jira_vekil, "yazma_gerekli", lambda: True)  # yazma kimliği yok
+    dur = threading.Event()
+
+    def worker() -> None:
+        while not dur.is_set():
+            if process_one(engine, worker="test-anlik:1", turler=[jira_vekil.VEKIL_JOB]) is None:
+                dur.wait(0.05)
+
+    t = threading.Thread(target=worker, daemon=True)
+    t.start()
+    try:
+        once = len(_yorumlar(sim))
+        r = api.post(f"/requirements/{ortam}/open-questions/send")
+        assert r.status_code == 200, r.text
+        assert r.json()["sorular"][0]["durum"] == "gonderildi"
+        assert len(_yorumlar(sim)) == once + 1
+    finally:
+        dur.set()
+        t.join(5)
+    with engine.connect() as c:
+        islemler = (
+            c.execute(
+                text("SELECT yuk->>'islem' FROM job WHERE tur = :t"), {"t": jira_vekil.VEKIL_JOB}
+            )
+            .scalars()
+            .all()
+        )
+    assert islemler == ["acik_soru_gonder"]

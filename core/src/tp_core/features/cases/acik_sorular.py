@@ -870,9 +870,10 @@ def post_send(
     body: GonderGirdisi | None = None,
 ) -> dict[str, Any]:
     varsayimlar = bool(body and body.varsayimlar)
-    if _vekil_gerekli():
-        # Jira OAuth kipi: core-api Jira istemcisi kuramaz (token yalnız core-worker'da) ve yazma
-        # kimliği taşımaz → gönderim (Jira yorumu dahil) core-worker'da yürür.
+    if _yazma_vekili_gerekli():
+        # Jira OAuth kipi: core-api Jira istemcisi kuramaz (token yalnız core-worker'da); token
+        # kipinde de core-api yazma kimliği (JIRA_WRITE_*) taşımaz → gönderim (Jira yorumu dahil)
+        # core-worker'da yürür.
         from tp_core.integrations import jira_vekil
 
         jira_vekil.calistir(
@@ -912,6 +913,13 @@ def _vekil_gerekli() -> bool:
     from tp_core.integrations import jira_vekil
 
     return jira_vekil.gerekli()
+
+
+def _yazma_vekili_gerekli() -> bool:
+    """Bu süreç Jira'ya yorum yazamıyor mu (OAuth kipi ya da token kipinde yazma kimliği yok)."""
+    from tp_core.integrations import jira_vekil
+
+    return jira_vekil.yazma_gerekli()
 
 
 def vekil_gonder(yuk: Mapping[str, Any]) -> None:

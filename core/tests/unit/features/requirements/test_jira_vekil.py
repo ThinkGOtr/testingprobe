@@ -202,3 +202,30 @@ def test_aktor_yuku_gidis_donus() -> None:
     assert jira_vekil.aktor({"aktor": jira_vekil.aktor_yuk(p)}) == p
     with pytest.raises(ValueError):
         jira_vekil.aktor({})
+
+
+def test_yazma_gerekli_token_kipinde_yazma_kimligine_bakar(monkeypatch: pytest.MonkeyPatch) -> None:
+    from pydantic import SecretStr
+
+    from tp_core.integrations import jira as jira_mod
+
+    monkeypatch.setattr(jira_vekil, "gerekli", lambda: False)
+    for ad in ("TP_BAGLANTI_TOKENI", "JIRA_WRITE_EMAIL", "JIRA_WRITE_TOKEN"):
+        monkeypatch.delenv(ad, raising=False)
+
+    def ayarlar(**kw: Any) -> Any:
+        return jira_mod.JiraSettings(JIRA_BASE_URL="https://ornek.atlassian.net", **kw)
+
+    monkeypatch.setattr(jira_mod, "get_jira_settings", lambda: ayarlar())
+    assert jira_vekil.yazma_gerekli() is True  # core-api: JIRA_WRITE_* yok → worker'a devret
+    monkeypatch.setattr(
+        jira_mod,
+        "get_jira_settings",
+        lambda: ayarlar(JIRA_WRITE_EMAIL="bot@x", JIRA_WRITE_TOKEN=SecretStr("t" * 12)),
+    )
+    assert jira_vekil.yazma_gerekli() is False
+    monkeypatch.setattr(jira_mod, "get_jira_settings", lambda: ayarlar())
+    monkeypatch.setenv("TP_BAGLANTI_TOKENI", "1")
+    assert jira_vekil.yazma_gerekli() is False  # core-worker kendisi yazar
+    monkeypatch.setattr(jira_vekil, "gerekli", lambda: True)
+    assert jira_vekil.yazma_gerekli() is True  # OAuth kipi
